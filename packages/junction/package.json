@@ -28,6 +28,7 @@
     "./webhooks": "./src/plugins/webhooks/index.ts",
     "./manifest": "./src/plugins/manifest/index.ts",
     "./outbox": "./src/plugins/outbox/index.ts",
+    "./backfill": "./src/plugins/backfill/index.ts",
     "./devtools": "./src/plugins/devtools/index.ts",
     "./client": "./src/client/index.ts",
     "./email": "./src/plugins/email/index.ts",
@@ -35,7 +36,8 @@
     "./middleware": "./src/transport/middleware.ts",
     "./health": "./src/transport/health.ts",
     "./auth": "./src/auth/types.ts",
-    "./outbox.lite": "./db/outbox.lite"
+    "./outbox.lite": "./db/outbox.lite",
+    "./backfill.lite": "./db/backfill.lite"
   },
   "bin": {
     "junction": "./tools/cli.ts"

@@ -3,7 +3,7 @@
 
 import { existsSync, writeFileSync, readFileSync, statSync, mkdirSync, readdirSync } from 'fs'
 import { applyBusyTimeout } from '../core/pragmas.js'
-import { resolve, relative, join, dirname, basename } from 'path'
+import { resolve, relative, join, dirname, basename, extname } from 'path'
 import { spawnSync }                                from 'child_process'
 import { Database }                                from 'bun:sqlite'
 
@@ -212,6 +212,11 @@ const HELP = `
     ${cyan('litestone seed')} [SeederClass]             seed the database
     ${cyan('litestone seed run')} [name]               run an infrastructure seed (--force to re-run)
     ${cyan('litestone introspect')} <db>              reverse-engineer db → schema.lite
+    ${cyan('litestone import')} <path>                 read a foreign schema → .lite, and say what it cost
+    ${dim('  --from=prisma|rails|sql|frappe')}         the source format ${dim('(detected from the path if omitted)')}
+    ${dim('  --out=<path>')}                            write the schema ${dim('(default: stdout)')}
+    ${dim('  --report=<path>')}                         write every unexpressed construct as JSON
+    ${dim('  --strict')}                                exit 1 if anything CHANGED meaning
     ${cyan('litestone diagram')}                    ER diagram (opens in studio)
     ${cyan('litestone optimize')} [table]            optimize FTS5 indexes (all or one table)
     ${cyan('litestone edge eject')} <Model>.<field>  promote an @edge/@scoped field to a real model [--apply]
@@ -4453,8 +4458,26 @@ async function cmdMutate(cfg) {
 
   const { schemaMutants, mutationScore, createTestEnv } = await import('../testing.js')
   const schemaPath = resolve(cfg.schema)
-  const schemaText = readFileSync(schemaPath, 'utf8')
   const kinds      = getFlag('kinds')?.split(',').map(s => s.trim()).filter(Boolean) ?? null
+
+  // The schema INLINED, not the file's own bytes. `schemaMutants` mutates text
+  // and `mutationScore` parses it, and `parse` does not follow an import — so a
+  // schema that imports a fragment reads as a file full of `extend model`
+  // statements naming models nothing declared, and every mutant of it dies for a
+  // reason that has nothing to do with the mutation. On `packages/basecamp` that
+  // was all 300 of them and the run refused outright (FJS-597), which is the
+  // FJS-264 class: anything loading a schema from a PATH owes the imports.
+  //
+  // `inlineImportsFromDisk` rather than `parseFile`, because what is wanted here
+  // is TEXT — the mutation catalogue is line-oriented, and `createTestEnv` keys
+  // its template cache on the same string.
+  //
+  // A fragment that could not be read is named rather than skipped: its models
+  // are absent, so every rule they declare is silently outside the run.
+  const { text: schemaText, missing } = inlineImportsFromDisk(schemaPath)
+  if (missing.length) console.log(
+    `  ${yellow('⚠')}  ${missing.length === 1 ? 'an import' : `${missing.length} imports`} could not be read ` +
+    `(${missing.join(', ')}) — the models they declare are outside this run`)
 
   const all = schemaMutants(schemaText, { kinds })
   if (!all.length) fatal(
@@ -4472,7 +4495,11 @@ async function cmdMutate(cfg) {
   const result  = await mutationScore({
     schema: schemaText,
     kinds,
-    build:  (text) => createTestEnv({ schema: text, encryptionKey: cfg.encryptionKey }),
+    // `getEncKey()` is where every other command in this file reads the key —
+    // env, because a key is not config. This alone read `cfg.encryptionKey`,
+    // which loadConfig does not populate, so a schema declaring `@secret` could
+    // not be BUILT and every mutant came back refused by the loader.
+    build:  (text) => createTestEnv({ schema: text, encryptionKey: getEncKey() }),
     // Only on a terminal: `\r` does not erase in a pipe or a log, so a
     // redirected run collected one progress line per tick on a single row.
     onMutant: () => {
@@ -4956,20 +4983,53 @@ function fmtBytes(b) {
 async function cmdIntrospect(dbArg, cfg) {
   header('litestone introspect')
 
-  const dbPath = dbArg ?? cfg.db
+  // Where the database IS.
+  //
+  // `loadConfig` always answers a `db`, and it answers `./development.db` when
+  // nothing said otherwise — so this read a file the schema never named, for
+  // every app that declares a `database` block. `fli db:pull` passes `--schema`
+  // and no path at all, which is exactly that case, so the one documented way to
+  // run this command could not run it. Same class as FJS-449: the declaration is
+  // the answer, and `openSqliteDbs` has always known it.
+  //
+  // One database in, one schema out — this emits no `@@db` — so a schema
+  // declaring several is asked which, by name, rather than served the first.
+  let dbPath = dbArg
+  if (!dbPath && cfg.schema && existsSync(resolve(cfg.schema))) {
+    const parsed = loadSchema(cfg.schema)
+    if (parsed?.schema && declaresDatabases(parsed)) {
+      const sqlite = parsed.schema.databases.filter(d => !d.driver || d.driver === 'sqlite')
+      const named  = getFlag('db')
+      const pick   = named ? sqlite.filter(d => d.name === named) : sqlite
+      if (named && !pick.length)
+        fatal(`No database named '${named}' in ${rel(resolve(cfg.schema))}.\n` +
+              `     Declared: ${sqlite.map(d => d.name).join(', ')}`)
+      if (pick.length > 1)
+        fatal(`${rel(resolve(cfg.schema))} declares ${pick.length} databases — name one.\n` +
+              `     litestone introspect --db=${pick[0].name}   (of ${pick.map(d => d.name).join(', ')})`)
+      if (pick.length === 1) dbPath = resolveDbPath(pick[0].path, null, schemaAnchor(cfg.schema))
+    }
+  }
+  dbPath ??= cfg.db
   if (!dbPath) fatal('No database path provided.\n     Usage: litestone introspect ./mydb.db')
 
   const abs = resolve(dbPath)
   if (!existsSync(abs)) fatal(`Database not found: ${abs}`)
 
   const out      = getFlag('out')
+  const report   = getFlag('report')
   const noCamel  = flag('no-camel')
+  // Same rule `import` keeps: the report goes to stderr when the schema goes to
+  // stdout, so `litestone introspect app.db > schema.lite` is a schema and not a
+  // schema with a report glued to the top of it.
+  const say      = out ? console.log : console.error
 
-  const { Database: DB } = await import('bun:sqlite')
-  const { generateLiteSchema } = await import('./introspect.js')
+  const { Database: DB }      = await import('bun:sqlite')
+  const { introspectToLite }  = await import('./introspect.js')
+  const { tierOf }            = await import('../import/tiers.js')
 
   const db = new DB(abs, { readonly: true })
-  const liteSchema = generateLiteSchema(db, { camelCase: !noCamel })
+  const { lite: liteSchema, gaps, summary } = introspectToLite(db, { camelCase: !noCamel })
   db.close()
 
   if (out) {
@@ -4977,18 +5037,163 @@ async function cmdIntrospect(dbArg, cfg) {
     const { writeFileSync } = await import('fs')
     writeFileSync(outPath, liteSchema)
     console.log(`  ${green('✓')}  Schema written to ${rel(outPath)}`)
-    console.log(`  ${dim('Models:')} ${(liteSchema.match(/^model /gm) || []).length}`)
-    console.log(`  ${dim('Enums:')}  ${(liteSchema.match(/^enum /gm) || []).length}`)
   } else {
     console.log(liteSchema)
   }
 
-  console.log()
-  console.log(`  ${dim('Options:')}`)
-  console.log(`    ${cyan('--out=schema.lite')}  write to file instead of stdout`)
-  console.log(`    ${cyan('--no-camel')}         keep original snake_case names`)
-  console.log()
+  if (report) {
+    const target = resolve(report)
+    const { writeFileSync } = await import('fs')
+    mkdirSync(dirname(target), { recursive: true })
+    writeFileSync(target, JSON.stringify(gaps.map(g => ({ ...g, tier: tierOf(g.kind) })), null, 1))
+  }
+
+  say()
+  say(`  ${dim('Models')}   ${(liteSchema.match(/^model /gm) || []).length}`)
+  say(`  ${dim('Enums')}    ${(liteSchema.match(/^enum /gm) || []).length}`)
+  if (report) say(`  ${green('✓')}        ${summary.total} records written to ${rel(resolve(report))}`)
+
+  reportGaps(summary, gaps.map(g => ({ ...g, tier: tierOf(g.kind) })), say, Boolean(out))
+
+  if (flag('strict') && summary.changed) {
+    say(`  ${red('✗')}  --strict: ${summary.changed} construct${summary.changed === 1 ? '' : 's'} ` +
+        `changed meaning.\n`)
+    process.exit(1)
+  }
+
+  say()
+  say(`  ${dim('Options:')}`)
+  say(`    ${cyan('--out=schema.lite')}  write to file instead of stdout`)
+  say(`    ${cyan('--report=gaps.json')} what the reading could not carry`)
+  say(`    ${cyan('--strict')}           exit 1 if anything changed meaning`)
+  say(`    ${cyan('--no-camel')}         keep original snake_case names`)
+  say()
 }
+
+// ─── Import ───────────────────────────────────────────────────────────────────
+//
+// Bring the schema you already have. Four front-ends — Prisma, a Rails
+// schema.rb, a Postgres dump, a Frappe app — and one contract they all keep:
+// **the .lite is not the whole answer, the refusal list is.** A reading that
+// prints only the output is one that has quietly decided what to lose.
+//
+// The report is on stderr when the schema goes to stdout, so
+// `litestone import x.prisma > schema.lite` is a schema and not a schema with a
+// report glued to the top of it.
+
+async function cmdImport(pathArg) {
+  const { detectFormat, loadSource, convert, annotate, fileHeader, tierOf, FORMATS } =
+    await import('../import/index.js')
+
+  if (!pathArg) fatal(
+    `No source given.\n     Usage: litestone import <path> [--from=${FORMATS.join('|')}] [--out=db/schema.lite]`)
+
+  const abs = resolve(pathArg)
+  if (!existsSync(abs)) fatal(`Not found: ${abs}`)
+
+  const asked = getFlag('from')
+  if (asked && !FORMATS.includes(asked))
+    fatal(`Unknown --from=${asked}. One of: ${FORMATS.join(', ')}`)
+
+  // A dump named `.txt` is still a dump, so a stated format always wins over the
+  // guess from the filename.
+  const format = asked ?? detectFormat(abs)
+  if (!format) fatal(
+    `Cannot tell what kind of schema ${basename(abs)} is.\n` +
+    `     Name it: --from=${FORMATS.join('|')}`)
+
+  const out    = getFlag('out')
+  const report = getFlag('report')
+  const say    = out ? console.log : console.error   // keep stdout clean when piping
+
+  if (out) header('litestone import')
+
+  let source
+  try { ({ source } = loadSource(abs, format)) } catch (e) { fatal(e.message) }
+
+  const label = basename(abs, extname(abs)) || basename(abs)
+  const { lite, gaps, models, summary } = convert({ source, format, label })
+
+  // A reader pointed at the wrong file finds nothing and reports nothing missing,
+  // which is a green tick over an empty schema — the exact silence this command
+  // is built to break. Refuse before anything is written.
+  if (!models.length) fatal(
+    `Read ${rel(abs)} as ${format} and found no models.\n` +
+    `     ${asked ? 'Is --from=' + asked + ' right for this file?' : 'Name the format with --from=' + FORMATS.join('|') + '.'}`)
+
+  const body = fileHeader({ format, path: rel(abs), models: models.length, summary }) +
+               annotate(lite, gaps)
+
+  if (out) {
+    const target = resolve(out)
+    mkdirSync(dirname(target), { recursive: true })
+    writeFileSync(target, body)
+  } else {
+    process.stdout.write(body)
+  }
+
+  if (report) {
+    const target = resolve(report)
+    mkdirSync(dirname(target), { recursive: true })
+    writeFileSync(target, JSON.stringify(gaps.map(g => ({ ...g, tier: tierOf(g.kind) })), null, 1))
+  }
+
+  say()
+  say(`  ${dim('Source')}   ${rel(abs)} ${dim(`(${format})`)}`)
+  say(`  ${dim('Models')}   ${models.length}`)
+  if (out)    say(`  ${green('✓')}        written to ${rel(resolve(out))}`)
+  if (report) say(`  ${green('✓')}        ${summary.total} records written to ${rel(resolve(report))}`)
+
+  reportGaps(summary, gaps.map(g => ({ ...g, tier: tierOf(g.kind) })), say, Boolean(out))
+
+  if (flag('strict') && summary.changed) {
+    say(`  ${red('✗')}  --strict: ${summary.changed} construct${summary.changed === 1 ? '' : 's'} ` +
+        `changed meaning.\n`)
+    process.exit(1)
+  }
+  say()
+}
+
+// What each tier means is stated here rather than in a legend nobody reads, and
+// `changed` is printed ROW BY ROW while the other two are counted: a changed
+// construct is a column somebody has to look at, and there are rarely many.
+function reportGaps(summary, graded, say, wroteFile) {
+  if (!summary.total) {
+    say(`\n  ${green('✓')}  Nothing in the source went unexpressed.`)
+    return
+  }
+
+  say(`\n  ${bold(`What the reading could not express`)} ` +
+       `${dim(`— ${summary.total} construct${summary.total === 1 ? '' : 's'}`)}`)
+
+  const MEANING = {
+    changed: 'the schema says something the source does not',
+    lost:    'the source says something the schema does not',
+    noted:   'a decision for you, not a defect',
+  }
+  const paint = { changed: red, lost: yellow, noted: dim }
+
+  for (const tier of ['changed', 'lost', 'noted']) {
+    if (!summary[tier]) continue
+    say(`\n    ${paint[tier](tier.padEnd(8))} ${String(summary[tier]).padStart(4)}  ${dim(MEANING[tier])}`)
+
+    if (tier === 'changed') {
+      for (const g of graded.filter(x => x.tier === 'changed'))
+        say(`      ${dim('·')} ${cyan(where(g))}  ${g.detail} ${dim('→')} ${clip(g.emitted, 60)}`)
+      continue
+    }
+    for (const row of summary.byKind.filter(r => r.tier === tier))
+      say(`      ${String(row.count).padStart(4)}x ${row.kind}` +
+           `  ${dim(clip(`${where(row.first)} — ${row.first.emitted}`, 74))}`)
+  }
+
+  if (summary.changed && wroteFile)
+    say(`\n  ${dim('Every')} changed ${dim('one is marked in the file with')} // ⚠ imported:`)
+  say(`  ${dim('--report=<path>')}  the whole list as JSON, tier included`)
+}
+
+const where = (g) => g.field ? `${g.model}.${g.field}` : (g.model ?? '—')
+const clip  = (s, n) => { const t = String(s ?? '') ; return t.length > n ? t.slice(0, n - 1) + '…' : t }
 
 // ─── Seed ─────────────────────────────────────────────────────────────────────
 
@@ -5739,6 +5944,7 @@ async function main() {
     return
   }
   if (cmd === 'introspect') { const cfg = await loadConfig(); await cmdIntrospect(sub, cfg); return }
+  if (cmd === 'import') { await cmdImport(sub); return }
   if (cmd === 'doctor') { await cmdDoctor(); return }
   if (cmd === 'audit')  { await cmdDoctor(); return }  // alias
 
@@ -5939,7 +6145,7 @@ async function main() {
   // litestone transform config.js [--dry-run] [--preview] [--out=...] etc.
   // Also triggered when first arg looks like a .js config file and no cmd matches.
 
-  if (cmd === 'transform' || (cmd && cmd.endsWith('.js') && !['init','seed','introspect','doctor','audit','jsonschema','tenant','repl','studio','migrate','replicate'].includes(cmd))) {
+  if (cmd === 'transform' || (cmd && cmd.endsWith('.js') && !['init','seed','introspect','import','doctor','audit','jsonschema','tenant','repl','studio','migrate','replicate'].includes(cmd))) {
     const configPath   = cmd === 'transform' ? (sub ?? './litestone.transform.js') : cmd
     const dryRun       = flag('dry-run')
     const previewMode  = flag('preview')

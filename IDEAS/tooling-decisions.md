@@ -57,7 +57,7 @@ in this file.
 ### The finding: an opinionated formatter is incompatible with a stated house rule
 
 `CLAUDE.md` § House style requires **aligned columns** where a run of lines is
-parallel, and names `example/api/app.ts` as canonical. It looks like this:
+parallel, and names `example/api/src/app.ts` as canonical. It looks like this:
 
 ```ts
 import { createCaravan }        from '@frontierjs/caravan'

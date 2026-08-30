@@ -1,7 +1,7 @@
 // mastodon — the data model of mastodon/mastodon, expressed in .lite.
 //
 // Derived mechanically from db/schema.rb (AGPL-3.0) by
-// rails-to-lite.mjs beside this file. A CORPUS FIXTURE, not a design:
+// `litestone import --from rails`. A CORPUS FIXTURE, not a design:
 // nothing here is a claim about how any of it should be modelled, and every
 // place the conversion made a choice the source did not is recorded in
 // gaps.json. 116 models. Regenerate with fetch.mjs.
@@ -62,7 +62,7 @@ model AccountMigration {
   targetAccount Account? @relation(fields: [targetAccountId], references: [id], onDelete: SetNull)
   updatedAt DateTime @map("updated_at")
   @@index([accountId])
-  @@index([targetAccountId])
+  @@index([targetAccountId], where: targetAccountId != null)
 }
 
 model AccountModerationNote {
@@ -243,9 +243,9 @@ model Account {
   url String?
   username String @default("")
   @@index([domain])
-  @@index([movedToAccountId])
+  @@index([movedToAccountId], where: movedToAccountId != null)
   @@unique([uri])
-  @@index([url])
+  @@index([url], where: url != null)
 }
 
 model AccountsTag {
@@ -297,7 +297,7 @@ model AnnouncementReaction {
   updatedAt DateTime @map("updated_at")
   @@unique([accountId, announcementId, name])
   @@index([announcementId])
-  @@index([customEmojiId])
+  @@index([customEmojiId], where: customEmojiId != null)
 }
 
 model Announcement {
@@ -340,8 +340,8 @@ model Appeal {
   updatedAt DateTime @map("updated_at")
   @@index([accountId])
   @@unique([accountWarningId])
-  @@index([approvedByAccountId])
-  @@index([rejectedByAccountId])
+  @@index([approvedByAccountId], where: approvedByAccountId != null)
+  @@index([rejectedByAccountId], where: rejectedByAccountId != null)
 }
 
 model Backup {
@@ -859,8 +859,8 @@ model ListAccount {
   listId Int @map("list_id")
   list List @relation(fields: [listId], references: [id], onDelete: Cascade)
   @@unique([accountId, listId])
-  @@index([followId])
-  @@index([followRequestId])
+  @@index([followId], where: followId != null)
+  @@index([followRequestId], where: followRequestId != null)
   @@index([listId, accountId])
 }
 
@@ -931,7 +931,7 @@ model MediaAttachment {
   type Int @default(0)
   updatedAt DateTime @map("updated_at")
   @@index([accountId, statusId])
-  @@index([scheduledStatusId])
+  @@index([scheduledStatusId], where: scheduledStatusId != null)
   @@index([statusId])
 }
 
@@ -1018,7 +1018,7 @@ model Notification {
   groupKey String? @map("group_key")
   type String?
   updatedAt DateTime @map("updated_at")
-  @@index([accountId, groupKey])
+  @@index([accountId, groupKey], where: groupKey != null)
   @@index([accountId, type])
   @@index([activityId, activityType])
   @@index([fromAccountId])
@@ -1056,7 +1056,7 @@ model OauthAccessToken {
   revokedAt DateTime? @map("revoked_at")
   scopes String?
   token String
-  @@index([resourceOwnerId])
+  @@index([resourceOwnerId], where: resourceOwnerId != null)
   @@unique([token])
 }
 
@@ -1076,7 +1076,7 @@ model OauthApplication {
   updatedAt DateTime? @map("updated_at")
   website String?
   @@index([ownerId, ownerType])
-  @@index([superapp])
+  @@index([superapp], where: superapp == true)
   @@unique([uid])
 }
 
@@ -1184,8 +1184,8 @@ model PreviewCard {
   updatedAt DateTime @map("updated_at")
   url String @default("")
   width Int @default(0)
-  @@index([authorAccountId])
-  @@index([unverifiedAuthorAccountId])
+  @@index([authorAccountId], where: authorAccountId != null)
+  @@index([unverifiedAuthorAccountId], where: unverifiedAuthorAccountId != null)
   @@unique([url])
 }
 
@@ -1213,7 +1213,7 @@ model Quote {
   status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
   updatedAt DateTime @map("updated_at")
   @@index([accountId, quotedAccountId])
-  @@index([approvalUri])
+  @@index([approvalUri], where: approvalUri != null)
   @@index([quotedAccountId])
   @@index([quotedStatusId])
   @@unique([statusId])
@@ -1273,8 +1273,8 @@ model Report {
   updatedAt DateTime @map("updated_at")
   uri String?
   @@index([accountId])
-  @@index([actionTakenByAccountId])
-  @@index([assignedAccountId])
+  @@index([actionTakenByAccountId], where: actionTakenByAccountId != null)
+  @@index([assignedAccountId], where: assignedAccountId != null)
   @@index([targetAccountId])
 }
 
@@ -1481,13 +1481,13 @@ model Status {
   uri String?
   url String?
   visibility Int @default(0)
-  @@index([accountId, visibility, updatedAt])
+  @@index([accountId, visibility, updatedAt], where: deletedAt == null)
   @@index([accountId])
   @@index([conversationId])
-  @@index([deletedAt])
+  @@index([deletedAt], where: deletedAt != null)
   @@index([language, accountId])
-  @@index([inReplyToAccountId])
-  @@index([inReplyToId])
+  @@index([inReplyToAccountId], where: inReplyToAccountId != null)
+  @@index([inReplyToId], where: inReplyToId != null)
   @@index([reblogOfId, accountId])
 }
 
@@ -1660,10 +1660,10 @@ model User {
   webauthnId String? @map("webauthn_id")
   @@index([accountId])
   @@unique([confirmationToken])
-  @@index([createdByApplicationId])
+  @@index([createdByApplicationId], where: createdByApplicationId != null)
   @@unique([email])
-  @@index([roleId])
-  @@index([unconfirmedEmail])
+  @@index([roleId], where: roleId != null)
+  @@index([unconfirmedEmail], where: unconfirmedEmail != null)
 }
 
 model WebPushSubscription {
@@ -1679,7 +1679,7 @@ model WebPushSubscription {
   updatedAt DateTime @map("updated_at")
   userId Int @map("user_id")
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  @@index([accessTokenId])
+  @@index([accessTokenId], where: accessTokenId != null)
   @@index([userId])
 }
 

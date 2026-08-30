@@ -17,6 +17,8 @@ import { createScheduler }          from '../scheduler/index.ts'
 import { createDatabase, type DatabaseClient } from '../storage/database/index.ts'
 import { autoloadServices }         from './loader.ts'
 import { resolveServicesDir, describeServicesDir, type ServicesDirResolution } from './services-dir.ts'
+import { checkAttachments, formatAttachmentRefusal, formatAttachmentSkips } from './attachments.ts'
+import { resolveBuildId } from './build-id.ts'
 import { mergeHookMaps, type HookMap } from './hooks.ts'
 import { toFrameworkError, NotFound }   from './errors.ts'
 import { helmet, cors }                 from '../transport/middleware.ts'
@@ -1528,6 +1530,32 @@ export function createApp(opts: AppOptions = {}): App {
 
       { name: 'check-plugin-requires', run: assertPluginRequirements },
 
+      // The build this process serves, stated on every response and once per
+      // socket. After `load-config`, because `config.build` may come from the
+      // file; inert when nothing set one, which is every app nobody deployed.
+      { name: 'resolve-build-id', run: () => {
+        const id = resolveBuildId(config)
+        if (id) config.build = id
+        http.setBuildId(id)
+      }},
+
+      // An attached service the environment does not bind is a refusal HERE,
+      // where it names the service — not a 500 on the first request that
+      // reaches it, hours after the deploy that caused it.
+      //
+      // After `load-config`, because the declaration usually arrives from
+      // junction.config.js. NOT `needsHost`, so an app stating attachments in
+      // `createApp({ config })` is graded under a test runner too — the same
+      // split `autoload-services` reasons about, and for the same reason: the
+      // check that only runs in production is the one nobody sees fail.
+      { name: 'check-attachments', run: () => {
+        const report = checkAttachments(config.attachments)
+        for (const line of formatAttachmentSkips(report.skipped)) logger.warn(line)
+        for (const r of report.results)
+          for (const w of r.warnings) logger.warn(`[Junction] attachment ${r.name}: ${w}`)
+        if (report.fatal.length) throw new Error(formatAttachmentRefusal(report.fatal))
+      }},
+
       // Auto-load services — ON BY DEFAULT. Resolution order:
       //   autoload: false        → disabled
       //   opts.autoload (string) → explicit path, CWD-relative
@@ -1774,11 +1802,16 @@ export function registerServiceRoutes(app: App): void {
 
   // ── CRUD handler ──────────────────────────────────────────────────
   const crudHandler: RouteHandler = async (ctx) => {
-    const serviceName = ctx.route.service
-    const service     = app.services.get(serviceName)
+    const service = app.services.get(ctx.route.service)
 
     if (!service)
-      return ctx.json({ name: 'NotFound', message: `Service '${serviceName}' not found`, code: 404 }, 404)
+      return ctx.json({ name: 'NotFound', message: `Service '${ctx.route.service}' not found`, code: 404 }, 404)
+
+    // The CANONICAL name, not the one in the URL. A service reached through an
+    // older spelling of its name (`FJS-570`) must still announce, resolve its
+    // model and appear in telemetry under the one name it has — otherwise the
+    // alias is a second service wearing the same code.
+    const serviceName = service.name
 
     const model  = (service as unknown as { model?: string }).model ?? serviceName
     // $wrap is a three-state request, not a boolean:

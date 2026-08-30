@@ -49,6 +49,8 @@ import { runnables }              from './runnables.js'
 import { readProofs, resolveRun } from './proofs.js'
 import { readPreambles, resolveNeeds } from './preflight.js'
 import { hostCollisions }              from './proxy.js'
+import { docWordUnknown, docCitesDead, docClaimsCount, docInvariantRef,
+         COUNTABLES, checkRulesCountable } from './doc-audit.js'
 
 export const RULES = [
   { id: 'model-name-case',      scope: 'app',  severity: 'error', invariant: 2,
@@ -109,6 +111,8 @@ export const RULES = [
     title: 'a declared move and the code that makes it still name each other' },
   { id: 'capability-ladder',    scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a model graded by capability is not also graded by ladder' },
+  { id: 'polymorphic-subject',  scope: 'app',  severity: 'warn',  invariant: null,
+    title: 'a polymorphic pair names which models it can point at' },
   { id: 'css-token-undefined',  scope: 'app',  severity: 'error', invariant: 13,
     title: 'a styled value names a token the stylesheets define' },
   { id: 'package-root-md',      scope: 'repo', severity: 'warn',  invariant: 17,
@@ -127,6 +131,18 @@ export const RULES = [
     title: 'every step a drive says to start first is a script that exists' },
   { id: 'dev-host-unique',      scope: 'repo', severity: 'error', invariant: null,
     title: 'no two surfaces derive the same dev name' },
+
+  // The notes, graded against the tree — `core/doc-audit.js`. Prose is the one
+  // artefact here with no compiler, no test and no snapshot behind it, and it is
+  // read first by everyone.
+  { id: 'doc-word-unknown',     scope: 'repo', severity: 'warn',  invariant: null,
+    title: 'a document uses no schema word the language does not have' },
+  { id: 'doc-cites-dead',       scope: 'repo', severity: 'warn',  invariant: null,
+    title: 'every path, link and register id a document cites resolves' },
+  { id: 'doc-claims-count',     scope: 'repo', severity: 'warn',  invariant: null,
+    title: 'a count in prose is the count in the tree' },
+  { id: 'doc-invariant-ref',    scope: 'repo', severity: 'error', invariant: null,
+    title: 'every cited invariant is one CLAUDE.md declares' },
 ]
 
 const BY_ID = Object.fromEntries(RULES.map(r => [r.id, r]))
@@ -1350,13 +1366,14 @@ const CHECKS = {
                    `reaches the store and never this variable — the screen is stale with nothing said. ` +
                    `Watch it instead: \`const row = ${res}.record(id)\`, \`row.subscribe(v => ${assign[1]} = v)\`, ` +
                    `and release it when the screen goes. ` +
-                   `**Only where the detail row IS the row.** A store node holds one shape and a push ` +
-                   `REPLACES it, so if this service's \`get()\` composes children the list read does not ` +
-                   `carry — \`include:\`, a \`withWidgets()\`, an adapter ping — watching it drops them at ` +
-                   `the first announcement, silently. Four of basecamp's five composed reads did exactly ` +
-                   `that when this was adopted. There the reload-on-push those screens already hand-roll ` +
-                   `is the correct answer, and it is a fair exception; so is a row nothing will write ` +
-                   `again. Record either as one.`,
+                   `**Where this service's \`get()\` answers MORE than the row** — an \`include:\`, a ` +
+                   `\`withWidgets()\`, a count assembled per call — declare it: \`${res}.record(id, ` +
+                   `{ composed: true })\`. A node holds one shape and a push carries the row alone, so a ` +
+                   `plain watch drops the children at the first announcement, silently; declaring it makes ` +
+                   `the node the trigger and re-runs this read instead (\`FJS-533\`). ` +
+                   `What is left is a read with nothing to subscribe to — a row nothing will write again, ` +
+                   `or an answer that is not a row at all — and that is a fair exception. Baseline it ` +
+                   `with a reason.`,
         })
       }
     }
@@ -2081,6 +2098,86 @@ const CHECKS = {
   // The token table is read from the DEPENDENCIES rather than listed here —
   // whatever CSS this app installs is the answer, so an app on a design system
   // this file has never heard of is graded against its own.
+  // ─── the polymorphic pair, and the one thing it can still be told ───────────
+  //
+  // `(subjectType, subjectId)` is the honest answer when the target set is OPEN
+  // (`references/Tag.lite` argues all three), and it is ruled: no foreign key, no
+  // cascade, no `include`, and the target is not an input to the access-control
+  // compiler. None of that is in scope here.
+  //
+  // What IS in scope is that the discriminator usually has no constraint at all.
+  // `subjectType String` accepts `'Ordr'` — a row that will never join, forever,
+  // and nothing refuses it, so a migration, a seed and `asSystem()` write it too.
+  // Two spellings already fix that and neither is a new feature: an `enum`, which
+  // emits a CHECK *and* reaches the browser as a set a picker can render, or
+  // `@@check("col IN (…)")` where the values are not identifiers.
+  //
+  // **Measured on seven real applications**: ERPNext declares the target set for
+  // 17 of its 78 polymorphic fields and leaves 61 unconstrained — and the split
+  // is not domain, it is whether the author bothered. `party_type` is declared
+  // CLOSED twice (Customer/Supplier/Employee) and OPEN sixteen times in the same
+  // codebase; `invoice_type`, `voucher_type`, `reference_type` and `document_type`
+  // all do the same. So most open sets are knowable, which is why this asks.
+  //
+  // A warning, and the exemption is real: a set that grows with every model — an
+  // audit trail keyed by service name — legitimately stays a String, because an
+  // enum there refuses the first row a new service writes. Say so with a
+  // `check-baseline.json` entry rather than by making the rule quieter.
+  //
+  // Shape detection is a line scan here rather than litestone's own
+  // `src/import/polymorphic.js`, which finds the same pairs to ask a DIFFERENT
+  // question — *which of the three answers did you mean* — and would make this
+  // engine, which must run in a client app with only @frontierjs/cli installed,
+  // import a framework package to answer a question about text.
+  'polymorphic-subject': ({ root }) => {
+    const schema = schemaFile(root)
+    if (!schema) return { skipped: 'no db/schema.lite' }
+
+    const lines    = schema.text.split('\n')
+    const findings = []
+
+    for (const model of models(schema)) {
+      const body   = bodyOf(lines, model.line - 1)
+      const fields = [...body.matchAll(/^\s{2,}([a-z][A-Za-z0-9_]*)\s+(\w+)(\[\])?(\??)(.*)$/gm)]
+        .map(m => ({ name: m[1], type: m[2], array: !!m[3], rest: m[5] ?? '' }))
+      const byName = new Map(fields.map(f => [f.name, f]))
+
+      // Columns a real relation already owns — those are foreign keys, not a pair.
+      const owned = new Set()
+      for (const r of body.matchAll(/@relation\([^)]*fields:\s*\[([^\]]*)\]/g))
+        for (const c of r[1].split(',')) owned.add(c.trim())
+
+      for (const f of fields) {
+        const base = f.name.match(/^(.*?)(?:Type|Kind|Class)$/)?.[1]
+        // A String and only a String — an enum-typed one is already answered,
+        // which is the whole of what this rule asks for.
+        if (!base || f.type !== 'String' || f.array) continue
+
+        const id = byName.get(`${base}Id`) ?? byName.get(`${base}ID`)
+        if (!id || owned.has(id.name) || !SCALARS.has(id.type)) continue
+
+        // Already told what it may hold. `@values` counts: it is a declared set
+        // enforced at the Data boundary, which is the question being asked —
+        // that it is not also a table CHECK is `@values`' own trade.
+        if (/@values\s*\(/.test(f.rest)) continue
+        if (new RegExp(`@@check\\([^)]*\\b${f.name}\\b`).test(body)) continue
+
+        findings.push({
+          file: schema.path,
+          line: model.line + body.split('\n').findIndex(l => new RegExp(`^\\s+${f.name}\\s`).test(l)),
+          message: `${model.name}.${f.name} names what ${id.name} points at, and it is a bare String — so ` +
+                   `nothing refuses a value that names nothing, and not a migration, a seed or asSystem() ` +
+                   `either. There is no foreign key on a pair like this by design, which is exactly why the ` +
+                   `one column that CAN be constrained should be: make ${f.name} an enum and it emits a ` +
+                   `CHECK and reaches the browser as a set a picker renders, or @@check("${f.name} IN (…)") ` +
+                   `where the values are not identifiers. Leave it where the set genuinely grows with every ` +
+                   `model — an audit trail keyed by service name — and baseline this rule to say so.`,
+        })
+      }
+    }
+    return { findings }
+  },
+
   'css-token-undefined': ({ root }) => {
     const defined = shippedTokens(root)
     if (!defined.size) return { skipped: 'no dependency ships CSS' }
@@ -2283,6 +2380,17 @@ const CHECKS = {
     }
     return { findings }
   },
+
+  // ─── the notes ──────────────────────────────────────────────────────────────
+  //
+  // Four rules with one shape: a document that says something the tree does not
+  // say back. The bodies are in `core/doc-audit.js`, which carries the corpus
+  // and the argument for what a rule here may grade.
+
+  'doc-word-unknown':  ({ root }) => docWordUnknown({ root }),
+  'doc-cites-dead':    ({ root }) => docCitesDead({ root }),
+  'doc-claims-count':  ({ root }) => docClaimsCount({ root, countables: [...COUNTABLES, checkRulesCountable(RULES)] }),
+  'doc-invariant-ref': ({ root }) => docInvariantRef({ root, rules: RULES }),
 }
 
 // ─── reading source ───────────────────────────────────────────────────────────
@@ -2435,6 +2543,11 @@ function resourceFiles(root) {
   return resourceDirs(root).flatMap(dir =>
     readdirSync(dir).filter(n => extname(n) === '.mesa').map(n => join(dir, n)))
 }
+
+// The built-in column types. A field typed by anything else is an enum, a
+// relation or a `type` — which is how `polymorphic-subject` tells a key column
+// from a relation field standing beside it.
+const SCALARS = new Set(['String', 'Int', 'Float', 'Boolean', 'DateTime', 'Bytes', 'Json', 'File'])
 
 function schemaFile(root) {
   const path = join(root, 'db', 'schema.lite')

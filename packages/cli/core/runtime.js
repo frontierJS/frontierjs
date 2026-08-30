@@ -555,12 +555,22 @@ export async function Command({ file, arg, flag, emit }) {
 
         const stepMeta = extractFrontmatter(stepTemplate)
 
-        // Honor early-abort signaled by the orchestrator (or a previous step).
+        // Honor an early stop signalled by the orchestrator or a previous step.
         // The step body's own `if (context.config.abort) return` would still
         // catch this, but checking here means we skip the header log too —
         // a stuck "[1/N] step-name" line below an error message is confusing.
         // Cleanup steps that intentionally run on abort can opt in via
         // `runOnAbort: true` in their frontmatter (e.g. deploy's 09-cleanup).
+        //
+        // Both flags stop the pipeline and they differ in the OUTCOME, which is
+        // the whole of `FJS-589`: `abort` is a REFUSAL and fails the command,
+        // `stop` is a deliberate early exit that succeeded.
+        //
+        // `runOnAbort` means what it says — run on a REFUSAL. A cleanup step
+        // exists to undo a half-done run, and a deliberate stop did not start
+        // one: `fli deploy --plan` printed a plan and then reached 09-cleanup,
+        // which opens a connection to the target to release a lock nothing took.
+        if (config.config?.stop) return
         if (config.config?.abort && !stepMeta.runOnAbort) {
           return
         }
@@ -647,6 +657,14 @@ export async function Command({ file, arg, flag, emit }) {
           }
           stepContext.run  = stepRun.bind(stepContext)
           stepContext.echo = config.echo
+
+          // Announced BEFORE the step, which is the only useful moment: the one
+          // reader is the deploy lock, whose whole job is to say what a run is
+          // inside right now. `journal.afterStep` below is the other half and
+          // cannot serve it — the journal opens after the build, which is the
+          // longest step there is.
+          await config.config?.beforeStep?.(stepName, stepNum)
+
           await stepContext.run(stepContext)
 
           await config.config?.journal?.afterStep?.(stepName, stepNum, {
@@ -708,12 +726,19 @@ export async function Command({ file, arg, flag, emit }) {
       // skipped 09-cleanup and left `.deploy.lock` on the server. The next
       // deploy then refused, naming a deploy that had finished minutes earlier.
       let stepError = null
+      // Which step refused. A refusal prints its own reason, so the failure at
+      // the end names the step rather than restating it.
+      let refusedBy = null
+      const notice = (name) => {
+        if (!refusedBy && config.config?.abort && !config.config?.stop) refusedBy = name
+      }
 
       for (const group of groups) {
         if (group.type === 'serial') {
           const { file, template } = group.entries[0]
           try {
             await runOneStep(file, template)
+            notice(basename(file, '.md'))
           } catch (err) {
             if (!stepError) stepError = err
             config.config.abort = true
@@ -740,6 +765,7 @@ export async function Command({ file, arg, flag, emit }) {
 
           try {
             await Promise.all(group.entries.map(({ file, template }) => runOneStep(file, template)))
+            notice(names)
           } catch (err) {
             if (!stepError) stepError = err
             realConfig.abort = true
@@ -757,6 +783,24 @@ export async function Command({ file, arg, flag, emit }) {
 
       // Cleanup has now had its turn; fail the command with the original error.
       if (stepError) throw stepError
+
+      // ── A refusal that did not throw ────────────────────────────────────
+      //
+      // A step refuses by setting `context.config.abort` and returning. That
+      // made every later step self-skip and the command then exited **0**, so
+      // seven of the deploy pipeline's nine refusal sites reported success —
+      // including all six of `deploy:revert`'s, which are the whole safety
+      // argument of the Release realm (`FJS-589`).
+      //
+      // Fail CLOSED: an abort is a refusal unless the step says otherwise, so
+      // the next refusal somebody writes is loud without being told to be.
+      // `stop` is the other outcome — `--plan` prints a plan and stops, and
+      // that IS success — and it is the flag a deliberate early exit sets.
+      //
+      // `quiet` because the step already printed the reason and the ways out.
+      // A generic message under it, and an invitation to re-run with --debug
+      // for a stack that does not exist, would bury what the step said.
+      assertNotRefused(config, refusedBy)
     }
 
     runSteps._stepRunner = true
@@ -766,7 +810,40 @@ export async function Command({ file, arg, flag, emit }) {
   // echo is set on config above — compiled run() shadows the ZX global
   // via `if (context.echo !== undefined) { var echo = context.echo }`.
   // No globalThis patching — concurrent web requests are safe.
-  return () => config.run(config)
+  //
+  // A command with no steps refuses the same way one with steps does — half
+  // the deploy commands are this shape (`deploy:logs`, `:status`, `:run`,
+  // `:unlock`), and every one of their refusals exited 0 (`FJS-589`).
+  return async () => {
+    const out = await config.run(config)
+    assertNotRefused(config, null)
+    return out
+  }
+}
+
+// ─── A refusal that did not throw ─────────────────────────────────────────────
+//
+// A command or a step refuses by setting `context.config.abort` and returning.
+// That made every later step self-skip and the command then exited **0**, so
+// seven of the deploy pipeline's nine refusal sites reported success —
+// including all six of `deploy:revert`'s, which are the whole safety argument
+// of the Release realm (`FJS-589`).
+//
+// Fail CLOSED: an abort is a refusal unless the author says otherwise, so the
+// next refusal somebody writes is loud without being told to be. `stop` is the
+// other outcome — `--plan` prints a plan and stops, and that IS success — and
+// it is what a deliberate early exit sets instead.
+//
+// `quiet` because the refusal has already printed its reason and the ways out.
+// A generic message under it, and an invitation to re-run with `--debug` for a
+// stack that does not exist, would bury what was actually said.
+function assertNotRefused(config, refusedBy) {
+  if (!config.config?.abort || config.config?.stop) return
+  const err = new Error(
+    refusedBy ? `${refusedBy} refused — nothing after it ran` : 'refused')
+  err.quiet   = true
+  err.refusal = true
+  throw err
 }
 
 // ─── Default flags ────────────────────────────────────────────────────────────

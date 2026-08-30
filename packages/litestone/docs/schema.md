@@ -23,9 +23,20 @@ Schemas live in `.lite` files. Syntax is close to Prisma's SDL with SQLite-nativ
 
 An array column is JSON text with a `json_type = 'array'` CHECK, and the empty
 array is its null state — every array field is `NOT NULL DEFAULT '[]'`, so an
-absent one reads back as `[]` rather than `null`. A `@default` on one must
-therefore be a JSON array string (`@default("[]")`); anything else is a schema
-error, because the DDL would emit a default its own CHECK rejects.
+absent one reads back as `[]` rather than `null`, and a write of `null` is
+refused. That holds with no attribute at all, which is why `@default([])` says
+out loud what the column already does; declare it if the schema reads better for
+saying so.
+
+A non-empty default is an array literal — `@default(["a", "b"])`, `@default([1, 2])`,
+`@default([Active, Pending])` for enum members, written bare exactly as a scalar
+enum default is. Every element is graded against the column's own base type, so
+`String[] @default([1])` is a schema error rather than a number sitting in a text
+column. `@default("[…]")`, the JSON-string spelling, still parses and is graded
+by the same rules; it is normalised into the literal, so everything downstream —
+the DDL, the JSON Schema, `release:check` — reads one shape. A `Json` column
+takes the literal too, since it can hold a list; a column that holds one value
+refuses it by name.
 
 ## Field attributes
 
@@ -46,6 +57,9 @@ error, because the DDL would emit a default its own CHECK rejects.
 @default(true)                   boolean / number / string literal
 @default(auth().id)              stamped from ctx.auth at write time (runtime only, no SQL DEFAULT)
 @default(fieldName)              copy sibling field value on create (compose with @slug)
+@default([])                     an array column's empty list — what it does anyway
+@default(["a", "b"])             an array literal; elements typed against the column
+@default([Active])               enum members, bare — the scalar enum spelling, in a list
 ```
 
 ### Lifecycle
@@ -389,6 +403,37 @@ one case no relation can serve — there, the polymorphic pair is the honest
 answer, along with the sweep job and the absence of integrity it comes with. See
 `references/Tag.lite`, which argues both sides at the file somebody copies.
 
+**When you do take the pair, make the discriminator an `enum`.** There is no
+foreign key on it by construction, so the type column is the one thing left that
+can carry a rule — and an enum emits a table CHECK, which holds where every
+constraint in this section holds: against a migration, a seed, an atomic
+operator and `asSystem()`. It also reaches the browser as a set, so a generated
+form offers a picker instead of a text box for a model name.
+
+```
+enum NoteSubject { Order Product }
+
+model Note {
+  subjectType NoteSubject
+  subjectId   Int
+  @@index([subjectType, subjectId])
+}
+```
+
+`@@check("subjectType IN ('Order', 'Product')")` is the same enforcement where
+the values are not identifiers. Neither buys integrity — the *id* is still
+unenforced and the sweep is still owed — but it is the difference between *this
+points at something* and *this points at nothing and nobody noticed*.
+
+**Leave it a `String` only where the set grows with every model you add**: an
+audit trail naming the service that wrote the row is that case, and an enum
+there refuses the first row a new service writes. `fli check`'s
+`polymorphic-subject` asks the question and takes a baseline entry for the
+answer. Measured across seven published schemas, the genuine case is rare —
+ERPNext declares the target set for 17 of its 78 polymorphic fields and leaves
+61 unconstrained, and the split is not the domain: `party_type` is declared
+closed twice and left open sixteen times in the same codebase.
+
 ### Transforms (applied before validation + write)
 ```
 @trim    @lower    @upper    @slug
@@ -454,6 +499,36 @@ model Person {
 ### Table structure
 ```
 @@index([col1, col2])            composite index (partial on soft-delete tables automatically)
+@@index([a, b(sort: Desc)])      a per-column DIRECTION. SQLite walks a b-tree either way,
+                                 so one column never needs it; a COMPOSITE index whose
+                                 columns disagree does, and that is the only shape it is
+                                 for. Prisma's spelling, and ZenStack v2 and v3 declare
+                                 @@index byte-identically and mark it @@@prisma — inherited
+                                 unchanged — so an imported schema carries it through.
+                                 `Asc`/`Desc`; lowercase is the client's own orderBy word
+                                 for the same thing and is accepted. The index NAME is
+                                 derived from the columns and not from the directions, so
+                                 adding one does not rename an existing index — the
+                                 migrator sees the change, drops and recreates
+@@index([col], where: <expr>)    a PARTIAL index — it holds only the rows the predicate
+                                 admits, so it is smaller, cheaper to maintain, and can
+                                 express what a full index cannot. The predicate is the
+                                 @@scope expression language, narrowed to what a partial
+                                 index can actually be REACHED by: SQLite proves that a
+                                 query implies the index when it PREPARES the query, and
+                                 litestone binds every value in a `where` except a null
+                                 test — so a predicate comparing against a value would be
+                                 matched by nothing and maintained on every write. Refused
+                                 at parse, therefore, along with auth() (one index, every
+                                 caller), now() (SQLite refuses a non-deterministic index
+                                 predicate) and anything compiling to a subquery. What is
+                                 left is `col == null`, `col != null`, `col == true`,
+                                 `col == false`, and those joined with && or ||. On a
+                                 soft-delete model the declared
+                                 predicate is ANDed with `deletedAt IS NULL` rather than
+                                 replacing it. Two @@index over the same columns derive one
+                                 index name whatever their predicates, and the second is
+                                 refused. See docs/performance.md § Partial indexes
 @@unique([col1, col2])           composite unique constraint. A NULLABLE member is
                                  refused at parse: two NULLs never compare equal, so rows
                                  that leave it unset are all distinct to the index and the
@@ -624,6 +699,43 @@ model User {
   role Role @default(member)
 }
 ```
+
+### A member that is not an identifier
+
+A closed set in the wild is usually written for a person to read, and a space is
+all it takes to put it out of reach. So a member may be a quoted string:
+
+```prisma
+enum PurchaseStatus {
+  Draft
+  "On Hold"
+  "To Receive and Bill"
+  Completed
+}
+
+model Order {
+  status PurchaseStatus @default("To Receive and Bill")
+  @@transitions(status, complete: "To Receive and Bill" -> Completed)
+}
+```
+
+**The stored value IS the string.** There is no second name and nothing
+translates: the CHECK constrains it, the JSON Schema enumerates it, a picker
+renders it and the generated type is `'Draft' | 'On Hold' | …`. Postgres's own
+enums work this way. Prisma answers the same problem with `@map` on the member,
+which buys a separate code-name at the price of a bidirectional layer on every
+read and write — and `@label` below already covers display, so the code-name
+would be a third thing rather than a missing one.
+
+Three rules, each of which exists because the alternative is quietly wrong:
+
+- **A quoted member that IS a legal identifier is the same member.** `"Draft"`
+  beside `Draft` is a duplicate, not two values — so an importer may quote
+  everything and still emit a canonical schema.
+- **The empty string is not a member.**
+- **A move onto a quoted member must be named.** An unnamed move takes the name
+  of its target, which reads on a bare member (`-> refunded` is `refund`) and
+  says nothing as a sentence: write `complete: … -> "To Receive and Bill"`.
 
 ### Labelling a member
 

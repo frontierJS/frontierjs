@@ -70,6 +70,12 @@ const resolveTarget = (flag, git) => {
 // Returns null if the required fields are missing — callers should check and
 // set context.config.abort = true before returning.
 //
+// `abort` is a REFUSAL and fails the command: the runtime exits non-zero on it
+// even when nothing threw, which is what stops a refusal reading as success
+// (`FJS-589`). A deliberate early exit that SUCCEEDED — `--plan` prints a plan
+// and stops — sets `context.config.stop` instead. Both skip every later step;
+// they differ only in the outcome, and `abort` is the fail-closed default.
+//
 // Usage:
 //   const conf = resolveDeployConf(deployConf, target)
 //   if (!conf) { log.error('...'); context.config.abort = true; return }
@@ -260,35 +266,123 @@ const deployPlan = async (context, flag, { target, deployConf, doApi, doWeb, dig
 // exists to make impossible. Two copies of this script that had drifted on the
 // file name or the format would each hold a lock the other could not read.
 //
+// The format, the scripts and the reading of one are `core/lock.js`, where the
+// tests are; this is the wiring. The lock answers *is another run working in this
+// directory*; the journal answers *what state did the last run leave*. Two
+// questions, not two answers to one — `FJS-D156`, which is also why nothing here
+// settles a transition when a lock is dropped.
+//
 // The failure mode being bought off is a stranded lock: a second machine
 // refusing after the first accepted must release the first, or the next deploy
 // is blocked by a run that never happened.
-const LOCK_FILE = (path) => `${path}/.deploy.lock`
+const lockCore = () => import(new URL('file://' + global.fliRoot + '/core/lock.js'))
 
-const releaseLocks = (context, hosts = []) => {
+const releaseLocks = async (context, hosts = []) => {
+  const { lockPath, releaseScript } = await lockCore()
   for (const h of hosts) {
-    try { machineFor(context, h.host, h.path).run(`rm -f ${LOCK_FILE(h.path)}`) } catch {}
+    try { machineFor(context, h.host, h.path).run(releaseScript(lockPath(h.path))) } catch {}
   }
 }
 
-const acquireLock = (context, { hosts, target }) => {
+const acquireLock = async (context, { hosts, target, takeover = false }) => {
+  const { lockPath, acquireScript, parseLock } = await lockCore()
+  const { randomUUID } = await import('crypto')
+
+  const run = context.config.lockRun ??= {
+    run:     randomUUID().slice(0, 8),
+    actor:   context.config.deployConf?.actor ?? process.env.USER ?? 'unknown',
+    target,
+    started: new Date().toISOString(),
+  }
+
   const locked = []
   for (const h of hosts) {
-    const lockFile = LOCK_FILE(h.path)
+    const lockFile = lockPath(h.path)
+    const machine  = machineFor(context, h.host, h.path)
     try {
-      machineFor(context, h.host, h.path).run(`if [ -f ${lockFile} ]; then
-  echo "LOCKED: $(cat ${lockFile})"
-  exit 1
-fi
-echo "$$:$(date -u +%Y-%m-%dT%H:%M:%SZ):${target}" > ${lockFile}
-echo "ok"`)
+      const out = machine.capture(acquireScript(lockFile, run, { takeover }))
+      const took = /^TOOK: (.*)$/m.exec(out)
+      if (took) context.config.lockTookOver = took[1].replace(/;+$/, '').replace(/;/g, ' · ')
       locked.push(h)
-    } catch {
-      releaseLocks(context, locked)
-      return { ok: false, host: h.host, lockFile }
+    } catch (err) {
+      // The refusal carries the lock's own body on STDOUT — reading the file a
+      // second time is a second answer, and the run that holds it may have moved
+      // on between them. `attribute` folds stderr into the message and leaves
+      // stdout where it is, which is where the script wrote this.
+      const body = /HELD\n([\s\S]*)/.exec(String(err?.stdout ?? ''))
+      await releaseLocks(context, locked)
+      return { ok: false, host: h.host, lockFile, held: parseLock(body?.[1] ?? '') }
     }
   }
+  context.config.lockHosts  = hosts
+  // The step runner's one reader. Installed here rather than by the step, so a
+  // run that never took a lock never refreshes one.
+  context.config.beforeStep = (step) => refreshLock(context, step)
   return { ok: true }
+}
+
+// ─── refreshLock ──────────────────────────────────────────────────────────────
+// Say which step the run is inside.
+//
+// The step runner calls this before every step, which is the only place it can
+// be called from: the build is the longest thing a deploy does and it runs
+// BEFORE the journal opens (`04c-journal`), so for the window where *is this
+// alive* is asked most, the journal has nothing to say. `fli` cannot heartbeat
+// on a timer either — `execSync` blocks the loop for the whole of a step — so a
+// step boundary is the finest grain there is.
+//
+// It is a fact for a person to weigh, never one anything here decides on: the
+// time recorded is when a step STARTED, so a fresh one is as consistent with a
+// run three seconds into a five-minute build as with one killed three seconds
+// into it. What it buys is that a duration means something beside a step name —
+// four minutes in `04-build-api` reads differently from four minutes in
+// `06-swap`.
+const refreshLock = async (context, step) => {
+  const run   = context.config.lockRun
+  const hosts = context.config.lockHosts
+  if (!run || !hosts?.length) return
+
+  const { lockPath, refreshScript } = await lockCore()
+  const fields = { ...run, step, stepAt: new Date().toISOString() }
+
+  for (const h of hosts) {
+    try {
+      const out = machineFor(context, h.host, h.path).capture(refreshScript(lockPath(h.path), fields))
+      if (/stolen/.test(out) && !context.config.lockStolen) {
+        context.config.lockStolen = true
+        context.log?.warn?.(`  The deploy lock on ${h.host} is now held by another run — this one no longer owns it.`)
+      }
+    } catch {}
+  }
+}
+
+// ─── lockRefusal ──────────────────────────────────────────────────────────────
+// What an operator reads when the lock refuses them.
+//
+// It reports and never judges, because the fact that would settle it — is that
+// other `fli` still running — is on a machine this one cannot see. So it prints
+// what is known and names both ways out, and the two are not the same choice:
+// `--resume` continues what the journal is holding, which is safe because a
+// succeeded step replays into a no-op and a step is claimed compare-and-set;
+// `deploy:unlock` drops the lock and deploys fresh.
+const lockRefusal = async (lock, { verb = 'deploy' } = {}) => {
+  const { describeLock } = await lockCore()
+  const d = describeLock(lock.held)
+  // A revert takes the same lock and cannot resume — `j.attempt` gives it an
+  // attempt number and it opens a new transition either way — so pointing its
+  // operator at `--resume` would be advice for a command they are not running.
+  // What they can do is drop the lock, which is why `unlock` settles nothing.
+  const resume = verb === 'deploy'
+    ? '    fli deploy --resume    continue it — the journal knows how far it got'
+    : '    fli deploy --resume    continue it, if what died was a deploy'
+  return [
+    ['error', `A deploy is already in progress on ${lock.host}`],
+    ...d.lines.map(line => ['error', `  ${line}`]),
+    ['info', ''],
+    ['info', '  If that run is dead:'],
+    ['info', resume],
+    ['info', `    fli deploy:unlock      drop the lock and ${verb === 'deploy' ? 'start over' : 'revert'} (${lock.lockFile})`],
+  ]
 }
 
 // ─── swapContainer ────────────────────────────────────────────────────────────
@@ -304,7 +398,7 @@ echo "ok"`)
 // a tidy-up: only one writer at a time, and the new container's entrypoint opens
 // the database to migrate. That costs a 3–10s gap and it is the correct trade.
 // Litestream is unaffected — it checkpoints the WAL when `_replaced` stops.
-const swapContainer = (context, { host, container, image, apiPort, dbPath, envFile, log }) => {
+const swapContainer = (context, { host, container, image, apiPort, dbPath, envFile, build, log }) => {
   const machine  = machineFor(context, host)
   const replaced = `${container}_replaced`
 
@@ -335,11 +429,44 @@ fi`)
     // health step then reports as a sick application.
     `--env PORT=3000`,
     `--env NODE_ENV=production`,
+    // What this process states on every response, so a browser holding the
+    // previous build can tell (`FJS-D160`). The same value the web build was
+    // stamped with — one deploy is one build on both sides of the wire.
+    ...(build ? [`--env FJS_BUILD=${build}`] : []),
     image,
   ].join(' ')
 
   machine.run(runCmd)
   return { container, replaced }
+}
+
+// ─── showContainerTail ────────────────────────────────────────────────────────
+// Print the last lines a container wrote, when a health check has just failed.
+//
+// Separate from healthOrRestore because the REVERT path shares that function and
+// wants this too: a revert whose health check fails is a target with no working
+// release on it, which is the worst moment to be told only that a URL did not
+// answer.
+//
+// Never throws. This runs on a path that is already failing, and a deploy that
+// fell over because the log tail could not be read would be a worse bug than
+// the one it was trying to explain.
+const showContainerTail = (machine, container, log, lines = 40) => {
+  let out = ''
+  try {
+    out = machine.capture(`docker logs --tail ${lines} ${container} 2>&1 || true`)
+  } catch {
+    return
+  }
+  const body = String(out ?? '').trimEnd()
+  if (!body) {
+    log.info(`  ${container} wrote nothing — it may have failed before the app started`)
+    return
+  }
+  log.info('')
+  log.info(`  last ${lines} lines from ${container} — the app's own words:`)
+  for (const line of body.split('\n')) log.info(`  │ ${line}`)
+  log.info('')
 }
 
 // ─── healthOrRestore ──────────────────────────────────────────────────────────
@@ -385,6 +512,21 @@ exit 1`
   log.error(`Health check failed after ${attempts * intervalS}s`)
   log.error(`  polled: http://localhost:${apiPort}${healthPath}`)
   log.info(`  if the API is healthy, check deploy.api.health includes your apiPrefix`)
+
+  // ── The container's own last words ──────────────────────────────────────────
+  //
+  // An app that REFUSED to start says why, clearly, in its own output — a
+  // missing attachment binding, a bad encryption key, a port already taken —
+  // and until this the operator saw none of it. All they got was "health check
+  // failed", a rollback, and a message about apiPrefix that is wrong whenever
+  // the app never came up at all. The refusal was sitting in `docker logs`,
+  // where nobody looks at 3am because nothing said to.
+  //
+  // Tailed rather than dumped: an app that started and is merely unwell has
+  // written thousands of lines, and burying the one that matters is the same
+  // failure one layer along. A stopped container still answers, which is the
+  // case that matters most — it is the one that exited.
+  showContainerTail(machine, container, log)
 
   const restoreCmd = `docker stop ${container} || true
 docker rm   ${container} || true
@@ -513,19 +655,38 @@ const openDeployJournal = async (context, flag, opts) => {
 
     // What is actually serving, which is what the plan could only guess at.
     const state  = await j.state({ app: plan.release.app, environment: plan.release.environment })
+
+    // ── `--resume` adopts what is open rather than recomputing it ────────────
+    // The Release id carries the image digest, and a local image id is not a
+    // content address: an unchanged tree rebuilt without a full cache hit mints a
+    // different Release, so the attempt lookup — which keys on `releaseId` —
+    // missed the row it was standing on and opened a second transition every
+    // time. All the resume machinery below (skip a succeeded step, replay the
+    // image it recorded) was therefore unreachable in the one case it exists for
+    // (`FJS-595`). Only under the flag: an ordinary deploy of genuinely different
+    // bytes must still open its own transition.
+    const held = flag.resume
+      ? await j.live({ kind: 'deploy', app: plan.release.app, environment: plan.release.environment })
+      : null
+
+    // The Release is adopted WITH the transition. Resuming the old transition
+    // against the bytes this run just built is the two halves disagreeing, and
+    // `06-swap` would start an image the journal never named.
+    const release = held?.release ?? plan.release
     const intent = {
-      kind: 'deploy', app: plan.release.app, environment: plan.release.environment,
-      fromReleaseId: state.serving, releaseId: plan.release.id,
-      generation: state.generation ?? 1,
+      kind: 'deploy', app: release.app, environment: release.environment,
+      fromReleaseId: held?.transition.fromReleaseId ?? state.serving,
+      releaseId: release.id,
+      generation: held?.transition.generation ?? state.generation ?? 1,
     }
     const { attempt, resume } = await j.attempt(intent)
 
     // Rebuilt against the real serving state and attempt number — the two terms
     // `--plan` states as provisional.
     const real = planTransition({
-      release: plan.release, steps: plan.steps.map((s, i) => ({ ...s, ordinal: i + 1 })),
-      fromReleaseId: state.serving, generation: intent.generation, attempt,
-      actor: plan.release.createdBy,
+      release, steps: plan.steps.map((s, i) => ({ ...s, ordinal: i + 1 })),
+      fromReleaseId: intent.fromReleaseId, generation: intent.generation, attempt,
+      actor: release.createdBy,
     })
 
     const verdict = preconditionVerdict(
@@ -534,12 +695,12 @@ const openDeployJournal = async (context, flag, opts) => {
     if (!verdict.ok) return { error: formatDrift(verdict.drift) }
 
     const begun = await j.begin({
-      release: plan.release,
+      release,
       bindings: {
-        app: plan.release.app, environment: plan.release.environment,
-        generation: intent.generation, hash: plan.release.bindingsHash,
+        app: release.app, environment: release.environment,
+        generation: intent.generation, hash: release.bindingsHash,
         values: plan.bindings.values, secretRefs: plan.bindings.secretRefs,
-        createdBy: plan.release.createdBy,
+        createdBy: release.createdBy,
       },
       transition: real.transition,
       steps: real.steps,
@@ -572,8 +733,12 @@ const openDeployJournal = async (context, flag, opts) => {
     return {
       journal: j,
       transition: real.transition,
-      release: plan.release,
-      resumed: begun.resumed,
+      release,
+      // A transition adopted by `--resume` IS a resume, whatever the insert did:
+      // `begun.resumed` reads the OR IGNORE changes count, which is 0 for a row
+      // that was already there and also 0 for nothing at all.
+      resumed: begun.resumed || !!held,
+      adopted: !!held && held.release.id !== plan.release.id,
       attempt,
       serving: state.serving,
       // The recorder the step runner calls. It knows step NAMES, because that is

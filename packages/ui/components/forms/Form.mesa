@@ -225,6 +225,10 @@
   // makes the <Select> repopulate. $.onMount, so a prerendered form fetches
   // nothing at build time.
   let pickers = {}
+  // Why a picker's rows are not there, where they could not be fetched.
+  // `resource.options()` answers `error`, and dropping it makes *there are
+  // none* and *I could not ask* the same empty box (`FJS-587`).
+  let pickerErrors = {}
   let totals  = {}
 
   // Controls hand back an event; the record is REPLACED rather than mutated,
@@ -512,6 +516,7 @@
       resource?.options?.(f.name)?.then?.(r => {
         pickers = { ...pickers, [f.name]: Array.isArray(r) ? r : (r?.options ?? []) }
         totals  = { ...totals,  [f.name]: Array.isArray(r) ? null : (r?.total ?? null) }
+        pickerErrors = { ...pickerErrors, [f.name]: Array.isArray(r) ? null : (r?.error ?? null) }
       })
     }
   })
@@ -555,6 +560,7 @@
       field={f}
       value={record?.[f.name]}
       options={pickers[f.name]}
+      optionsError={pickerErrors[f.name]}
       total={totals[f.name]}
       write={(v) => writeField(f.name, v)}
     />

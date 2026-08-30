@@ -106,8 +106,8 @@ CREATE TABLE IF NOT EXISTS "discount" (
   "code" TEXT NOT NULL UNIQUE,
   "label" TEXT NOT NULL,
   "kind" TEXT NOT NULL DEFAULT 'percent',
-  "value" REAL NOT NULL,
-  "minSubtotal" REAL NOT NULL DEFAULT 0,
+  "value" INTEGER NOT NULL CHECK ("value" BETWEEN -9007199254740991 AND 9007199254740991),
+  "minSubtotal" INTEGER NOT NULL DEFAULT 0 CHECK ("minSubtotal" BETWEEN -9007199254740991 AND 9007199254740991),
   "startsAt" TEXT,
   "endsAt" TEXT,
   "maxRedemptions" INTEGER,
@@ -117,7 +117,7 @@ CREATE TABLE IF NOT EXISTS "discount" (
   CHECK ("kind" IN ('percent', 'fixed')),
   CHECK (maxRedemptions IS NULL OR redemptions <= maxRedemptions),
   CHECK (startsAt IS NULL OR endsAt IS NULL OR startsAt < endsAt),
-  CHECK (kind != 'percent' OR value <= 100)
+  CHECK (kind != 'percent' OR value <= 10000)
 ) STRICT;
 
 -- What the shop charges to send it.
@@ -131,8 +131,8 @@ CREATE TABLE IF NOT EXISTS "shipping_method" (
   "id" INTEGER NOT NULL PRIMARY KEY,
   "name" TEXT NOT NULL UNIQUE,
   "description" TEXT,
-  "price" REAL NOT NULL,
-  "freeOver" REAL,
+  "price" INTEGER NOT NULL CHECK ("price" BETWEEN -9007199254740991 AND 9007199254740991),
+  "freeOver" INTEGER CHECK ("freeOver" BETWEEN -9007199254740991 AND 9007199254740991),
   "position" INTEGER NOT NULL DEFAULT 0,
   "active" INTEGER NOT NULL DEFAULT 1,
   "version" INTEGER NOT NULL DEFAULT 1
@@ -191,7 +191,8 @@ CREATE TABLE IF NOT EXISTS "notification" (
   "contextType" TEXT,
   "contextId" INTEGER,
   "readAt" TEXT,
-  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("contextType" IN ('Order'))
 ) STRICT;
 
 -- The buyable thing. One row per option combination, and the row a basket
@@ -202,7 +203,7 @@ CREATE TABLE IF NOT EXISTS "product_variant" (
   "sku" TEXT NOT NULL UNIQUE,
   "colour" TEXT NOT NULL DEFAULT 'Default',
   "size" TEXT NOT NULL DEFAULT 'one',
-  "price" REAL NOT NULL,
+  "price" INTEGER NOT NULL CHECK ("price" BETWEEN -9007199254740991 AND 9007199254740991),
   "barcode" TEXT UNIQUE,
   "stock" INTEGER NOT NULL DEFAULT 0,
   "active" INTEGER NOT NULL DEFAULT 1,
@@ -212,22 +213,23 @@ CREATE TABLE IF NOT EXISTS "product_variant" (
   UNIQUE ("productId", "colour", "size"),
   FOREIGN KEY ("productId") REFERENCES "product" ("id") ON DELETE CASCADE
 ) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_product_variant_productId" ON "product_variant" ("productId") WHERE ("deletedAt" IS NULL) AND ("active" = 1);
 CREATE INDEX IF NOT EXISTS "idx_product_variant_deletedAt" ON "product_variant" ("deletedAt") WHERE "deletedAt" IS NULL;
 
 CREATE TABLE IF NOT EXISTS "order" (
   "id" INTEGER NOT NULL PRIMARY KEY,
   "reference" TEXT NOT NULL UNIQUE,
   "status" TEXT NOT NULL DEFAULT 'pending',
-  "subtotal" REAL NOT NULL DEFAULT 0,
+  "subtotal" INTEGER NOT NULL DEFAULT 0 CHECK ("subtotal" BETWEEN -9007199254740991 AND 9007199254740991),
   "discountCode" TEXT,
   "discountLabel" TEXT,
-  "discount" REAL NOT NULL DEFAULT 0,
+  "discount" INTEGER NOT NULL DEFAULT 0 CHECK ("discount" BETWEEN -9007199254740991 AND 9007199254740991),
   "shippingLabel" TEXT,
-  "shipping" REAL NOT NULL DEFAULT 0,
+  "shipping" INTEGER NOT NULL DEFAULT 0 CHECK ("shipping" BETWEEN -9007199254740991 AND 9007199254740991),
   "taxLabel" TEXT,
   "taxRate" REAL NOT NULL DEFAULT 0,
-  "tax" REAL NOT NULL DEFAULT 0,
-  "total" REAL NOT NULL DEFAULT 0,
+  "tax" INTEGER NOT NULL DEFAULT 0 CHECK ("tax" BETWEEN -9007199254740991 AND 9007199254740991),
+  "total" INTEGER NOT NULL DEFAULT 0 CHECK ("total" BETWEEN -9007199254740991 AND 9007199254740991),
   "note" TEXT,
   "customerId" INTEGER NOT NULL,
   "trackingCode" TEXT,
@@ -235,7 +237,7 @@ CREATE TABLE IF NOT EXISTS "order" (
   "deletedAt" TEXT,
   "userId" TEXT,
   CHECK ("status" IN ('pending', 'paid', 'shipped', 'refunded', 'cancelled')),
-  CHECK (subtotal = 0 OR abs(total - (subtotal - discount + shipping + tax)) < 0.005),
+  CHECK (subtotal = 0 OR total = subtotal - discount + shipping + tax),
   CHECK (discount <= subtotal),
   FOREIGN KEY ("customerId") REFERENCES "customer" ("id") ON DELETE CASCADE
 ) STRICT;
@@ -363,8 +365,8 @@ CREATE TABLE IF NOT EXISTS "order_line" (
   "sku" TEXT NOT NULL,
   "description" TEXT NOT NULL,
   "quantity" INTEGER NOT NULL,
-  "unitPrice" REAL NOT NULL,
-  "lineTotal" REAL NOT NULL,
+  "unitPrice" INTEGER NOT NULL CHECK ("unitPrice" BETWEEN -9007199254740991 AND 9007199254740991),
+  "lineTotal" INTEGER NOT NULL CHECK ("lineTotal" BETWEEN -9007199254740991 AND 9007199254740991),
   "userId" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
@@ -388,10 +390,10 @@ CREATE TABLE IF NOT EXISTS "payment" (
   "id" INTEGER NOT NULL PRIMARY KEY,
   "providerRef" TEXT NOT NULL UNIQUE,
   "status" TEXT NOT NULL DEFAULT 'pending',
-  "amount" REAL NOT NULL,
+  "amount" INTEGER NOT NULL CHECK ("amount" BETWEEN -9007199254740991 AND 9007199254740991),
   "currency" TEXT NOT NULL DEFAULT 'USD',
   "orderId" INTEGER NOT NULL,
-  "refundedAmount" REAL NOT NULL DEFAULT 0,
+  "refundedAmount" INTEGER NOT NULL DEFAULT 0 CHECK ("refundedAmount" BETWEEN -9007199254740991 AND 9007199254740991),
   "failureReason" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "settledAt" TEXT,
@@ -409,7 +411,7 @@ CREATE TABLE IF NOT EXISTS "cart_line" (
   "cartId" INTEGER NOT NULL,
   "variantId" INTEGER NOT NULL,
   "quantity" INTEGER NOT NULL DEFAULT 1,
-  "unitPrice" REAL NOT NULL,
+  "unitPrice" INTEGER NOT NULL CHECK ("unitPrice" BETWEEN -9007199254740991 AND 9007199254740991),
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "token" TEXT NOT NULL,
   UNIQUE ("cartId", "variantId"),

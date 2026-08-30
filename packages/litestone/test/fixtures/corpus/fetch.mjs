@@ -1,21 +1,20 @@
-// fetch.mjs — download a real Prisma schema and convert it, writing the .lite
-// beside this file plus a gaps.json naming everything the conversion could not
-// express.
+// fetch.mjs — download a real published schema and read it into .lite, writing
+// the result beside this file plus a gaps.json naming everything the reading
+// could not express.
+//
+// The readers are `src/import/` — the same code `litestone import` runs — so
+// what this regenerates is a regression fixture over the SHIPPED importer, not
+// over a copy of it.
 //
 //   bun test/fixtures/corpus/fetch.mjs            # every target below
 //   bun test/fixtures/corpus/fetch.mjs triggerdev # one
 //
-// Needs the network. Only `triggerdev` is committed — see README.md for why the
-// other two are fetched rather than vendored.
+// Needs the network. See README.md for the licence split that decides which of
+// these are committed and which are fetched on demand.
 
 import { writeFileSync, mkdirSync, rmSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { convert as fromPrisma } from './prisma-to-lite.mjs'
-import { convert as fromRails }  from './rails-to-lite.mjs'
-import { convert as fromSql }    from './sql-to-lite.mjs'
-import { convert as fromFrappe } from './frappe-to-lite.mjs'
-
-const READERS = { prisma: fromPrisma, rails: fromRails, sql: fromSql, frappe: fromFrappe }
+import { convert, summarise } from '../../../src/import/index.js'
 
 export const TARGETS = {
   erpnext: {
@@ -65,14 +64,12 @@ export async function fetchOne(key) {
   if (!t) throw new Error(`unknown target '${key}' — one of ${Object.keys(TARGETS).join(', ')}`)
   const src = t.reader === 'frappe' ? await fetchDoctypes(key, t) : await fetchFile(key, t)
 
-  const read = READERS[t.reader ?? 'prisma']
-  if (!read) throw new Error(`${key}: unknown reader '${t.reader}'`)
-  const { lite, gaps, models } = read(src, key)
+  const { lite, gaps, models } = convert({ source: src, format: t.reader ?? 'prisma', label: key })
   const header =
     `// ${key} — the data model of ${t.repo}, expressed in .lite.\n` +
     `//\n` +
     `// Derived mechanically from ${t.path} (${t.licence}) by\n` +
-    `// ${t.reader ?? 'prisma'}-to-lite.mjs beside this file. A CORPUS FIXTURE, not a design:\n` +
+    `// \`litestone import --from ${t.reader ?? 'prisma'}\`. A CORPUS FIXTURE, not a design:\n` +
     `// nothing here is a claim about how any of it should be modelled, and every\n` +
     `// place the conversion made a choice the source did not is recorded in\n` +
     `// gaps.json. ${models.length} models. Regenerate with fetch.mjs.\n\n`
@@ -131,7 +128,9 @@ if (import.meta.main) {
     const r = await fetchOne(k)
     const kinds = {}
     for (const g of r.gaps) (kinds[g.kind] ||= []).push(g)
-    console.log(`${k.padEnd(12)} ${String(r.models).padStart(3)} models · ${r.gaps.length} unconvertible`)
+    const s = summarise(r.gaps)
+    console.log(`${k.padEnd(12)} ${String(r.models).padStart(3)} models · ${r.gaps.length} unexpressed ` +
+                `(${s.changed} changed · ${s.lost} lost · ${s.noted} noted)`)
     for (const [kind, v] of Object.entries(kinds).sort((a, b) => b[1].length - a[1].length))
       console.log(`  ${String(v.length).padStart(4)}x ${kind}`)
     all.push(...r.gaps)

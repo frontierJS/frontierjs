@@ -182,3 +182,40 @@ export function minorUnits(currency) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: code })
     .resolvedOptions().maximumFractionDigits
 }
+
+/**
+ * A stored `@money` amount → the number a formatter reads.
+ *
+ * `@money` stores a whole number of MINOR units and `formatMoney` above takes
+ * MAJOR ones, so something has to divide — and the divisor is the currency's,
+ * never the caller's. A hand-rolled `/ 100` is right for the dollar, wrong for
+ * the yen by a factor of a hundred, and wrong for the dinar by ten; it is the
+ * same mistake `formatMoney` exists to stop, one step earlier in the pipe.
+ *
+ * @param {number} minor  a whole number of minor units, e.g. 1299
+ * @param {string} currency  ISO 4217
+ * @returns {number}  the major-unit amount, e.g. 12.99
+ */
+export function fromMinor(minor, currency) {
+  const n = Number(minor)
+  if (!Number.isFinite(n)) return 0
+  return n / 10 ** minorUnits(currency)
+}
+
+/**
+ * The other direction — what a person typed, as the integer a column stores.
+ *
+ * Rounds, and that is the point: `8.29 * 100` is 828.9999999999999 in binary
+ * floating point, so the truncation a caller reaches for first loses a cent on
+ * a number that looks exact. Every amount entering the Data boundary goes
+ * through here; nothing downstream of it is a float.
+ *
+ * @param {number} major  e.g. 12.99
+ * @param {string} currency  ISO 4217
+ * @returns {number}  minor units, e.g. 1299
+ */
+export function toMinor(major, currency) {
+  const n = Number(major)
+  if (!Number.isFinite(n)) return 0
+  return Math.round(n * 10 ** minorUnits(currency))
+}

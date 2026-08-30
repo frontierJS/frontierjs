@@ -212,6 +212,70 @@ describe('CLI smoke — one-shot commands', () => {
     expect(r.stdout).not.toMatch(/model\s+users\b/)  // no plural/lowercase regression
   })
 
+  // `fli db:pull` runs `litestone introspect --schema <schema>` and passes no
+  // path, so this is the only shape the documented command ever uses. It read
+  // `cfg.db`, which loadConfig answers as `./development.db` when nothing said
+  // otherwise — so for every app that declares a `database` block it named a
+  // file the schema never mentions, and the command could not be run at all.
+  test('introspect finds the database the SCHEMA declares, given no path', async () => {
+    const dir = makeFixtureDir('introspect-declared', {
+      schema: `
+database main { path "shop.db" }
+model Widget { id Int @id  name String }
+`,
+      config: `export default { schema: './schema.lite', migrations: './migrations' }\n`,
+    })
+    await runCli(dir, ['migrate', 'create', 'init'])
+    await runCli(dir, ['migrate', 'apply'])
+    expect(existsSync(join(dir, 'shop.db'))).toBe(true)
+
+    const r = await runCli(dir, ['introspect'])
+    expect(r.stderr).not.toMatch(/development\.db/)
+    expect(r.exit).toBe(0)
+    expect(r.stdout).toMatch(/model\s+Widget\b/)
+  })
+
+  test('introspect asks WHICH database when the schema declares several', async () => {
+    const dir = makeFixtureDir('introspect-multi', {
+      schema: `
+database main  { path "main.db" }
+database extra { path "extra.db" }
+model Widget { id Int @id  name String }
+model Note   { id Int @id  body String  @@db(extra) }
+`,
+      config: `export default { schema: './schema.lite', migrations: './migrations' }\n`,
+    })
+    await runCli(dir, ['migrate', 'create', 'init'])
+    await runCli(dir, ['migrate', 'apply'])
+
+    // One database in, one schema out — the output carries no @@db, so serving
+    // the first would silently answer half the question.
+    const r = await runCli(dir, ['introspect'])
+    expect(r.exit).not.toBe(0)
+    expect(r.stdout + r.stderr).toMatch(/--db=/)
+
+    const named = await runCli(dir, ['introspect', '--db=extra'])
+    expect(named.exit).toBe(0)
+    expect(named.stdout).toMatch(/model\s+Note\b/)
+    expect(named.stdout).not.toMatch(/model\s+Widget\b/)
+  })
+
+  // The property the six substring assertions above could never make (FJS-594).
+  test('what introspect writes, litestone can read', async () => {
+    const dir = makeFixtureDir('introspect-parses')
+    await runCli(dir, ['migrate', 'create', 'init'])
+    await runCli(dir, ['migrate', 'apply'])
+
+    const outPath = join(dir, 'pulled.lite')
+    const r = await runCli(dir, ['introspect', './test.db', `--out=${outPath}`])
+    expect(r.exit).toBe(0)
+
+    const { parse } = await import('../src/core/parser.js')
+    const parsed = parse(readFileSync(outPath, 'utf8'))
+    expect(parsed.errors ?? []).toEqual([])
+    expect(parsed.valid).toBe(true)
+  })
+
   test('jsonschema writes valid JSON with PascalCase model keys', async () => {
     const dir = makeFixtureDir('jsonschema')
     await runCli(dir, ['migrate', 'create', 'init'])

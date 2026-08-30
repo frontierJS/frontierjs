@@ -1,5 +1,201 @@
 # Changes — @frontierjs/junction
 
+## 2026-08-29 — a detail read that composes is a trigger, not a value
+
+1668 tests, 0 fail, typecheck clean. Ruled as
+[`FJS-D161`](../../DECISIONS.md#fjs-d161); closes
+[`FJS-533`](../../ISSUES.md#fjs-533).
+
+**`record(id, { composed: true })`.** A node holds ONE shape and `_write`
+replaces it, so a screen whose `get()` answers the row PLUS what hangs off it —
+an `include:`, a `withWidgets()`, a count assembled per call — showed its
+children until the first announcement and then showed none, because a push
+carries the row alone. Declaring it makes the node the TRIGGER: the view keeps
+its own value, the composed row is never written into the shared node, and any
+move of that node re-runs the read, coalesced per burst.
+
+It is declared rather than inferred because nothing in a browser can see what a
+service's `get()` composes — that is a server-side shape, and JSON Schema
+describes the model rather than the method.
+
+**`changed` re-reads in BOTH modes.** The announcement that names no row — a
+bulk write, a `select: false` write — carries a count, so no view can tell
+whether this row was in it. The list already re-reads on it; a record view did
+not, which made it the one write that left a watched row stale for good.
+
+## 2026-08-30 — a browser can tell it is running the previous deploy
+
+1661 tests, 0 fail, typecheck clean. Phase 3 of
+`IDEAS/release-transitions.md`, ruled as
+[`FJS-D160`](../../DECISIONS.md#fjs-d160).
+
+**The server states its build; the client compares.** A response header
+(`x-fjs-build`) and a field on the socket's `connected` frame — nothing here
+reads a build off a request. A server that diffed per call would answer a
+question that changes at most once per deploy, on every call, and would have to
+be written twice because the two transports carry headers differently.
+
+It rides `connected` rather than a new frame: that frame is sent once per socket,
+which is the cadence this needs — a deploy restarts the container, every socket
+drops, and the reconnect is when a stale client finds out.
+
+**It is the BUILD and not the Release.** A browser holds the web bundle; a
+Release is also an image digest and a schema surface. Two Releases share one
+bundle on every API-only deploy, and telling those browsers they are stale is a
+reload prompt for a change that cannot reach them.
+
+**Inert unless both sides know their build**, and the header is gated so
+`_finalizeWithHeaders`'s no-op fast path survives for every app that never
+deployed. `client.stale`, `client.serverBuild`, and a `stale` event that fires
+**once** — carrying both ids, so a screen can say which.
+
+`tests/client-types.test.ts` earned its keep: the client imports the wire names,
+a client compiles under the APP's tsconfig with no node types, and a bare
+`process.env` put `Cannot find name 'process'` into every consuming app —
+`FJS-268`'s class, caught before it shipped.
+
+## 2026-08-29 — a service filename derives one name, and keeps answering to the old one
+
+`FJS-570`, ruled `FJS-D159`. A kebab-case service FILENAME was a fourth spelling
+of a name Invariant 2 says three resolvers must agree on, and it broke two
+resolutions at once: `deriveModelName('product-variants')` singularises to
+`product-variant`, which is not the accessor — which is why all six multi-word
+services in `example` hand-write `model:` — and Sierra's
+`serviceNameFor('ProductVariant')` answered `productVariants`, which matched
+nothing, so every relation picker onto a multi-word model offered an empty list.
+
+`deriveName` folds `-` and `_` into camelCase. The file keeps its name; the
+service gets one spelling; the filename's own spelling is registered as an
+ALIAS, so `/product-variants`, `app.service('product-variants')` and a WS frame
+naming it all still resolve. Every lookup already went through
+`ServiceRegistry.get`, so one resolution covers HTTP, the socket, `app.service`
+and OpenAPI — and both transports now build the context from `service.name`, so
+a call arriving under the old spelling announces and resolves its model under
+the one name the service has.
+
+A DECLARED name is untouched: `createService({ name: 'hub-config' })` is a
+statement, and guessing at one is what this refuses. Every `surface.snapshot.md`
+carries the alias as **also answers to**.
+
+## 2026-08-29 — attached services, and the refusal that reaches the operator
+
+1635 tests, 0 fail, typecheck clean. Phase 2 of
+`IDEAS/release-transitions.md`, ruled as
+[`FJS-D158`](../../DECISIONS.md#fjs-d158).
+
+An app needs things it does not own — an n8n, a mail server, a search cluster —
+and nothing here knew that. The dependency was four environment variables
+somebody remembered to set, so a missing one surfaced at 3am on the first
+request that reached the service, hours after the deploy that caused it.
+
+`attachments` in `junction.config.js` (or `createApp({ config })`) declares what
+the app needs; the environment binds it, as the ordinary variables the process
+actually has. Not `fli deploy`'s recorded binding set — that is written into the
+Release and applied by nobody (`FJS-585`) — which is why the check grades
+`process.env`: it holds however the variables arrived. `check-attachments` is a start phase and
+refuses to boot on an unbound or half-bound service.
+
+**It is not a second `defineEnv`.** `checkEnvField` is extracted from it and
+called by both, so *present, non-empty, a URL, long enough* has one owner
+(Invariant 4). What an attachment adds is the three things a flat spec cannot
+say: these keys are ONE SERVICE, so the refusal names the service; ALL OR
+NOTHING, so `optional: true` forgives a service nobody bound and still refuses
+one bound halfway; and A DEFAULTED KEY IS NOT EVIDENCE, or an unbound service
+with one default would look half-bound.
+
+**Half-bound is the assertion worth having.** It is what actually reaches
+production — somebody binds the URL and forgets the key — and it is exactly what
+a per-variable check cannot see, because every individual variable it can name is
+either legitimately absent or legitimately set.
+
+**A top-level key in the config file had to be MAPPED or it does nothing.**
+`loadConfig` maps `app` and two `middleware` keys onto `AppConfig` and stashes
+the rest under `_junction`, so a block nobody looks up is read by nothing —
+`FJS-431`'s shape. The mapping is in `loadConfig`, not a fallback read in the
+phase, because a fallback is a second answer to where attachments live.
+
+`env.ts` had no tests at all before this; `checkEnvField`'s are the first.
+
+## 2026-08-29 — the backfill, which is the middle step of a split
+
+1581 tests, 0 fail, typecheck clean. `IDEAS/release-transitions.md` § *The hole
+in this record*, ruled as [`FJS-D157`](../../DECISIONS.md#fjs-d157).
+
+`litestone release` refuses a contract on a required column and hands back
+*expand → backfill → contract*. It grades the two deploys; the middle step was a
+sentence sitting between two commands. That is the step that takes hours and the
+only one that can fail halfway, and it is not a migration — a migration is a
+schema change applied once inside a transaction, and that definition is worth
+keeping.
+
+`defineBackfill({ name, model, field, fill })`, a `BackfillRun` row and
+`app.configure(backfills([...]))`. Shipped the way the outbox is: a `.lite`
+fragment imported by name (`fli backfill:install`), a plugin, and Caravan as the
+engine.
+
+**Four of pgroll's five properties come from the shape.** The row is the
+checkpoint, the queue makes each chunk durable and retried, and `dispatch({ id })`
+keyed on the cursor makes a replay a no-op. The one worth stating: **idempotence
+is the predicate, not the cursor** — a chunk re-reads *the column is still null*,
+so a row an interrupted chunk already filled is skipped whatever position was
+saved. A custom `where` that does not exclude its own writes gives that up, and
+the option says so.
+
+**Throttling is the one thing built, and it is a duty cycle**: the gap before the
+next chunk is a multiple of what the last one cost, so a backfill that is costing
+more stands down in proportion. What it does not measure is said rather than
+implied — the signal is this backfill's own latency, so it is blind to load that
+does not touch these rows, and `busy_timeout` is a PRAGMA so SQLite swallows the
+retries and only wall time is visible from here at all.
+
+**It starts itself.** A backfill that had to be triggered by hand would put a
+command between two deploys, and the person running it is the one who has just
+deployed the file declaring it. Boot queues the first chunk of anything
+unfinished; every replica does that and one row is queued, because the chunk id
+carries the cursor.
+
+**The assumption that was wrong, and it is the reason for the shape of the
+write.** `announce` is a BULK option — a single `update` has none and always
+fires — and `asSystem()` does **not** suppress a `$tapEvents` tap. A system
+per-row update announces `update:row` exactly as any other does, so a per-row
+backfill over ten million rows broadcasts ten million times. So a chunk groups
+its rows by the value the fill answered and issues one
+`updateMany({ announce: 'none' })` per group, and the run row's own progress
+goes the same way — every write this feature makes is silent, including its own
+bookkeeping. The test asserts it with two controls, because *silent* has to be
+told apart from *nothing is listening*.
+
+**Two things writing the tests found, and both are the same shape — a failure
+that reports success.**
+
+A backfill naming a column the model does not declare would have **marked itself
+done having filled nothing**: a `where` with an unknown key warns to stderr and
+matches no rows, so the empty first chunk reads as the end. `assertField` refuses
+it and lists what the model does declare. Silently finished is the one outcome a
+backfill must not have, because a later contract is allowed to rely on it.
+
+And **a paused run could not be resumed**. `dispatch({ id })` treats a taken
+primary key as work already queued *for all time*, so the chunk that ran and
+declined at the paused cursor holds that id forever and every later dispatch at
+that position is a no-op. The recovery sweep had the same hole, which is worse —
+restarting a run the queue gave up on is the sweep's whole job. `generation` is a
+term of the chunk id now, bumped by a resume and by the sweep's recovery: the
+same counter the deploy journal keeps, for the same reason.
+
+**What it is not**: a durable workflow. The record read *the noun arriving twice*
+as evidence for a general primitive; the opposite reading is taken — two narrow
+mechanisms that look alike are not yet one. Nothing here has steps, compensation,
+or a point past which it can only go forward.
+
+**Scope, stated rather than discovered.** One database. Under
+`createApp({ tenants })` each tenant has its own rows and its own run row, so a
+backfill there is N independent backfills carrying a tenant through the queue —
+not built, and refused by name rather than run against the app-level database,
+which is nobody's.
+
+The classifier half is `packages/cli`: litestone puts `needsBackfill` on the
+finding and `fli release:check` says whether one is declared.
+
 ## 2026-08-29 — `busyTimeout` on the SQLite cache
 
 `createSqliteCache({ busyTimeout })` — ms to wait for another process's write

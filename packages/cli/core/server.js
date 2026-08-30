@@ -132,6 +132,18 @@ function route(req, res) {
     return handleDoctor(req, res)
   }
 
+  // GET /api/release — the pivot verdict for every app in this tree
+  if (req.method === 'GET' && path === '/api/release') {
+    return handleRelease(req, res)
+  }
+
+  // POST /api/release/target — what is serving out there, and can it come back.
+  // POST because it reaches a machine: a GET that ssh'd would be fetched by a
+  // link preview and a browser's own prefetch.
+  if (req.method === 'POST' && path === '/api/release/target') {
+    return handleReleaseTarget(req, res)
+  }
+
   // GET /api/health/:id — what the thing on that port says about itself
   const healthMatch = path.match(/^\/api\/health\/(.+)$/)
   if (req.method === 'GET' && healthMatch) {
@@ -202,6 +214,46 @@ function handleMeta_info(req, res) {
     })
   } catch {
     json(res, 200, { version: null, built: null, name: 'fli' })
+  }
+}
+
+// ─── GET /api/release ────────────────────────────────────────────────────────
+//
+// The local half: what a deploy of this tree would be, per app. Reads the tree
+// and touches nothing else, which is what makes it safe on page load beside the
+// other panels. The remote half is a button — see below.
+async function handleRelease(req, res) {
+  try {
+    const { releaseLocal } = await import('./release-view.js')
+    json(res, 200, await releaseLocal({ root: global.projectRoot, fliRoot: global.fliRoot }))
+  } catch (err) {
+    json(res, 500, { error: err.message })
+  }
+}
+
+// ─── POST /api/release/target ────────────────────────────────────────────────
+//
+// The remote half. Reaches a real machine over ssh, so it is never polled and
+// never on page load; the panel calls it when somebody presses the button.
+//
+// The target is caller-supplied and is checked against `TARGETS` by KEY before
+// it becomes argv (Invariant 8). The app is matched exactly against the tree's
+// own list rather than joined onto a path.
+async function handleReleaseTarget(req, res) {
+  let body
+  try { body = await readBody(req) } catch { return json(res, 400, { error: 'Invalid JSON body' }) }
+
+  try {
+    const { releaseTarget } = await import('./release-view.js')
+    const out = await releaseTarget({
+      root:   global.projectRoot,
+      fliRoot: global.fliRoot,
+      target: String(body?.target ?? 'default'),
+      app:    body?.app ? String(body.app) : null,
+    })
+    json(res, out.ok ? 200 : 400, out)
+  } catch (err) {
+    json(res, 500, { error: err.message })
   }
 }
 

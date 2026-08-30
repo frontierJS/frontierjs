@@ -6,7 +6,6 @@
   // memory figure — is per-container telemetry nothing here collects; the app's
   // own `status` column is real and is what this card shows.
   import { apps } from '../../resources/App.mesa'
-  import { onWrite } from './live.js'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
   export let widget = null
@@ -20,11 +19,21 @@
     stopping: 'warning', stopped: 'muted', error: 'danger', unknown: 'muted',
   }
 
+  // Watched rather than read (`FJS-518`), and COMPOSED: `apps.get()` answers
+  // the app with its recent deployments, and a push carries the row alone — so
+  // the node says the row moved and this read is run again, where watching the
+  // node itself would empty `recent_deployments` (`FJS-533`).
+  let row     = null
+  let unwatch = null
+
   async function load() {
     error = null
     if (!widget?.appId) { loading = false; return }
     try {
-      app = await apps.service.get(widget.appId)
+      unwatch?.(); row?.release()
+      row = apps.record(widget.appId, { composed: true })
+      unwatch = row.subscribe(v => { app = v })
+      await row.ready
     } catch (e) {
       error = e.message
     } finally {
@@ -33,7 +42,7 @@
   }
 
   load()
-  $.onDestroy(onWrite(apps.service, load))
+  $.onDestroy(() => { unwatch?.(); row?.release() })
 
   $: last = app?.recent_deployments?.[0] ?? null
   const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'

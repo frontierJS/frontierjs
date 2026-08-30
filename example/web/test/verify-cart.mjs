@@ -387,7 +387,7 @@ check('…how many', billed[0]?.quantity, 2)
 // what the card is charged and `subtotal` is what the itemisation explains.
 // `verify:money` is where the rest of the breakdown is proved to add up.
 check('…and the lines add up to the subtotal',
-      Number(billed.reduce((n, l) => n + l.lineTotal, 0).toFixed(2)), placed?.subtotal)
+      billed.reduce((n, l) => n + l.lineTotal, 0), placed?.subtotal)
 
 // A line is written by the shop recording its own sale — `OrderLine` is
 // @@gate("0.8.8.8") and `order-lines` declares find and get — so there is no

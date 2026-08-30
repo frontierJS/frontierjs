@@ -217,8 +217,8 @@ model Product {
   /// reason written on `ProductVariant.stock`. A shopper is never shown this
   /// number.
   variantCount Int   @from(ProductVariant, count: true)
-  priceFrom    Float @from(ProductVariant, min: price)
-  priceTo      Float @from(ProductVariant, max: price)
+  priceFrom    Int   @from(ProductVariant, min: price) @money(USD)
+  priceTo      Int   @from(ProductVariant, max: price) @money(USD)
   onHand       Int   @from(ProductVariant, sum: stock)
 
   /// What a person is shown when a picker offers one of these. Without it the
@@ -305,7 +305,7 @@ model ProductVariant {
   colour        String               @length(1, 30) @default("Default") @values(ProductColour, open)
   size          Size                 @default(one)
   
-  price         Float                @gte(0)
+  price         Int                  @money(USD) @gte(0)
   barcode       String?              @unique
   
   /// ON HAND: what the warehouse could physically pick right now. NOT what is
@@ -340,6 +340,15 @@ model ProductVariant {
   /// A picker over variants shows the SKU — the option columns are two fields
   /// and a label field is one, and a SKU is what the shop floor says out loud.
   @@label(sku)
+  
+  /// The storefront never asks for a variant it cannot sell: the product page,
+  /// the buy box and the catalogue all read `{ productId, active: true }`, and
+  /// the prerender runs that once per product. A plain index on `productId`
+  /// carries every retired colourway the shop has ever run, which is the half
+  /// nothing reads. The predicate is ANDed with `@@softDelete`'s own clause, so
+  /// the index holds live active rows and the caller's query — which litestone
+  /// narrows to live rows for them — matches it exactly.
+  @@index([productId], where: active == true)
   
   /// `(cascade)` reaches the photographs of THIS colourway and nothing else — a
   /// flat-lay of the whole range names no variant, so its foreign key is null
@@ -546,10 +555,17 @@ model Discount {
   /// at the model instead, below. `pricing.ts` still caps the discount at the
   /// subtotal, which is a different rule: this one is about what may be
   /// STORED, that one about what may be charged.
-  value Float @gte(0) @label("Value")
+  ///
+  /// `@scale(2)` and not `@money`, and the two units are why: half the rows
+  /// here are not money. What they share is the SCALE — a dollar's minor unit
+  /// and a percentage's hundredth are both two places — so one exact integer
+  /// column carries both without either reading being a rounded copy of
+  /// itself. 1050 is $10.50 under `fixed` and 10.50% under `percent`, and the
+  /// bound below is stated in the same units.
+  value Int @scale(2) @gte(0) @label("Value")
 
   /// The floor this code is worth anything at. Zero means none.
-  minSubtotal Float @default(0) @gte(0) @label("Minimum spend")
+  minSubtotal Int @money(USD) @default(0) @gte(0) @label("Minimum spend")
 
   /// The window. Both nullable — a code with no start is live now, a code with
   /// no end runs until somebody turns it off.
@@ -600,7 +616,7 @@ model Discount {
 
   /// The bound `value` cannot state on its own, because what it means depends
   /// on `kind` and a field validator sees one field.
-  @@check("kind != 'percent' OR value <= 100",
+  @@check("kind != 'percent' OR value <= 10000",
           "a percentage discount cannot be more than 100%")
 
   @@gate("5.5.5.5")
@@ -620,7 +636,7 @@ model ShippingMethod {
   name         String   @length(1, 40) @unique @label("Method")
   description  String?  @length(0, 120) @label("Description")
   
-  price        Float    @gte(0) @label("Price")
+  price        Int      @money(USD) @gte(0) @label("Price")
   
   /// The subtotal at which this method costs nothing. Null means never free.
   ///
@@ -630,7 +646,7 @@ model ShippingMethod {
   /// qualifies. Discount-first is the answer that cannot surprise a merchant
   /// into shipping for free at a loss, and `pricing.ts` is where it is written
   /// down once.
-  freeOver     Float?   @gte(0) @label("Free over")
+  freeOver     Int?     @money(USD) @gte(0) @label("Free over")
   
   /// The order they are offered in. A merchant decides which one is at the
   /// top; alphabetical would put Express above Standard and change what most
@@ -723,11 +739,17 @@ model Order {
   ///
   ///     subtotal − discount + shipping + tax = total
   ///
-  /// Each component is rounded once, on the server, at the moment of sale, and
-  /// `total` is the sum of the ROUNDED components — so the breakdown a customer
-  /// reads adds up to the figure they were charged, by construction rather than
-  /// by luck. A screen that re-derived any line of it would round on its own
-  /// and be a penny out on exactly the orders where a penny is noticed.
+  /// Every one is `@money(USD)`, which is to say a whole number of CENTS. The
+  /// scale is the currency's and not the author's — `@frontierjs/toolbelt/units`
+  /// is what knows the yen has none — and storing the minor unit is what makes
+  /// the identity below an equality rather than a tolerance: five integers add
+  /// up exactly, where five binary floats add up to within half a cent and the
+  /// receipt has to be believed rather than checked.
+  ///
+  /// Rounding happens once, on the server, at the moment of sale, and only
+  /// where a rate is applied — tax is the one component that is a
+  /// multiplication. A screen that re-derived any line of this would round on
+  /// its own and be a penny out on exactly the orders where a penny is noticed.
   ///
   /// Every one is `@system`: the shop computes them, and there is no request in
   /// which a caller stating their own total is anything but an attack. They are
@@ -736,7 +758,7 @@ model Order {
   /// worked it out yet*, and that state does not exist after checkout.
   
   /// The lines, added up. What `OrderLine.lineTotal` sums to.
-  subtotal       Float        @default(0) @gte(0) @system @label("Subtotal")
+  subtotal       Int          @money(USD) @default(0) @gte(0) @system @label("Subtotal")
   
   /// What came off, and the code that took it off. The code is nullable
   /// because most orders have none; `discount` is 0 for those, and the two
@@ -744,20 +766,20 @@ model Order {
   /// find.
   discountCode   String?      @system @label("Code")
   discountLabel  String?      @system @label("Discount")
-  discount       Float        @default(0) @gte(0) @system @label("Discount amount")
+  discount       Int          @money(USD) @default(0) @gte(0) @system @label("Discount amount")
   
   /// What was charged to send it, and what the shopper picked. A label of
   /// `Standard` against a zero is the free-over threshold having been met, and
   /// that reads correctly on a receipt without a fourth column to say so.
   shippingLabel  String?      @system @label("Shipping")
-  shipping       Float        @default(0) @gte(0) @system @label("Shipping cost")
+  shipping       Int          @money(USD) @default(0) @gte(0) @system @label("Shipping cost")
   
   /// Money that was never the shop's. The RATE is stored beside the amount
   /// because a receipt has to be checkable: an auditor reading `$8.40` needs
   /// the 0.2 it came from, and the row in `TaxRate` may have moved since.
   taxLabel       String?      @system @label("Tax")
   taxRate        Float        @default(0) @gte(0) @system @label("Rate")
-  tax            Float        @default(0) @gte(0) @system @label("Tax amount")
+  tax            Int          @money(USD) @default(0) @gte(0) @system @label("Tax amount")
   
   /// What the card was charged. The sum of the five above, stored rather than
   /// derived, and the only one of them a payment is ever compared against.
@@ -768,7 +790,7 @@ model Order {
   /// therefore no breakdown to add up. A screen renders the five above only
   /// where there are lines to explain, which is the same condition under which
   /// they were computed at all.
-  total          Float        @default(0) @gte(0)
+  total          Int          @money(USD) @default(0) @gte(0)
   
   note           String?
   
@@ -883,7 +905,7 @@ model Order {
   /// raised by hand: a total, and no lines to itemise. What it cannot say is
   /// *no lines* — a CHECK may not hold a subquery, which is the same wall
   /// `@@fts`'s membership note runs into further up this file.
-  @@check("subtotal = 0 OR abs(total - (subtotal - discount + shipping + tax)) < 0.005",
+  @@check("subtotal = 0 OR total = subtotal - discount + shipping + tax",
           "the breakdown does not add up to the total")
   
   /// Nothing may take off more than was there. `pricing.ts` caps a fixed-amount
@@ -935,15 +957,15 @@ model OrderLine {
   description  String          @length(1, 160) @label("Item")
   
   quantity     Int             @gte(1) @lte(99)
-  unitPrice    Float           @gte(0) @label("Unit price")
+  unitPrice    Int             @money(USD) @gte(0) @label("Unit price")
   
   /// STORED, not multiplied at read time — and this is the column that decides
-  /// whether the lines add up to the total. Rounding is done once, on the
-  /// server, at the moment of sale; a screen that recomputed `unitPrice *
-  /// quantity` in JavaScript would round on its own and the sum of what is
-  /// shown would not be what was charged, by a penny, on the orders where it
-  /// matters most.
-  lineTotal    Float           @gte(0) @label("Total")
+  /// whether the lines add up to the total. In cents the multiplication is
+  /// exact, which removes the penny this column was written for and leaves the
+  /// other reason: a screen that recomputed `unitPrice * quantity` would be
+  /// quoting today's price for a sale that happened last week the moment
+  /// anything above it changes.
+  lineTotal    Int             @money(USD) @gte(0) @label("Total")
   
   /// A FOURTH copy, and the one that is not about the sale.
   ///
@@ -1025,7 +1047,14 @@ model Payment {
   /// whose total was corrected afterwards must not silently rewrite what the
   /// provider was asked for — the disagreement between the two numbers is the
   /// thing a person needs to see.
-  amount   Float  @gte(0)
+  ///
+  /// `@money(field: currency)` and not `@money(USD)`: this is the one table in
+  /// the shop that already stores a code per row, because a provider is asked
+  /// in a currency and answers in one. The scale is therefore that ROW's — a
+  /// JPY intent is a whole number of yen and a USD one is cents — which is
+  /// exactly the fact a shared `@money(USD)` here would get wrong by a
+  /// hundred.
+  amount   Int    @money(field: currency) @gte(0)
   currency String @default("USD") @length(3, 3) @upper
 
   orderId Int   @label("Order")
@@ -1035,7 +1064,7 @@ model Payment {
   /// refund is not one event: a shop refunds the postage today and the item
   /// next week, and each is a separate call to the provider with its own
   /// ledger row. The order only moves when this reaches `amount`.
-  refundedAmount Float @default(0) @gte(0)
+  refundedAmount Int @money(field: currency) @default(0) @gte(0)
 
   /// The provider's words, kept verbatim. Nothing branches on it — it is for
   /// the person reading the row, and inventing a taxonomy over somebody else's
@@ -1212,7 +1241,7 @@ model CartLine {
   variant    ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
   
   quantity   Int             @gte(1) @lte(99) @default(1)
-  unitPrice  Float           @gte(0) @system
+  unitPrice  Int             @money(USD) @gte(0) @system
   
   createdAt  DateTime        @default(now())
   
@@ -1469,12 +1498,23 @@ type StockAdjustment {
 // nothing here; the two audiences are two notification classes, not one class
 // with a branch in it.
 
+/// What a notification is ABOUT, for the row it links to. A pair like this
+/// carries no foreign key — nothing cascades, nothing joins, and a deleted
+/// order leaves its notifications behind as dead links, which is what this app
+/// wants (see `OrderPaid.ts`). What the pair CAN be told is which models it may
+/// name, and this is it: a value outside the set is refused by a table CHECK,
+/// so a migration, a seed and `asSystem()` are all held to it too, and a
+/// generated form gets a picker instead of a text box.
+///
+/// Add a member when a notification class starts pointing somewhere new.
+enum NotificationContext { Order }
+
 model Notification {
   id           Int        @id
   userId       String
   type         String
   data         Json
-  contextType  String?
+  contextType  NotificationContext?
   contextId    Int?
   readAt       DateTime?
   createdAt    DateTime   @default(now())

@@ -24619,8 +24619,12 @@ describe('enum arrays', () => {
     // choice for a column that holds several.
     const js: any = generateJsonSchema(parse(SCHEMA).schema)
     expect(js.$defs.Rule.properties.targets).toEqual({
-      type:  'array',
-      items: { $ref: '#/$defs/ReclaimTarget' },
+      type:    'array',
+      items:   { $ref: '#/$defs/ReclaimTarget' },
+      // Every array column is NOT NULL DEFAULT '[]' whether it says so or not,
+      // so the schema says so too — a form seeding `undefined` would be seeding
+      // a value the column cannot hold.
+      default: [],
     })
     expect(js.$defs.ReclaimTarget.enum).toEqual(['logs', 'cache', 'artifacts'])
   })
@@ -24643,13 +24647,48 @@ describe('array fields — @default', () => {
     for (const t of ['String[] @default("x")', 'T[] @default(a)', 'Int[] @default(1)']) {
       const r = bad(t)
       expect(r.valid, t).toBe(false)
-      expect(r.errors.join('\n'), t).toContain('must be a JSON array string')
+      expect(r.errors.join('\n'), t).toContain('@default on an array field is an array')
     }
   })
 
-  test('a JSON array default is accepted', () => {
+  test('a JSON array default is accepted, and normalised to the literal', () => {
     expect(bad('String[] @default("[]")').valid).toBe(true)
     expect(bad('T[] @default("[\\"a\\"]")').valid).toBe(true)
+
+    // One AST leaves, whichever spelling arrived — so `defaultExpr`, the JSON
+    // Schema and the release classifier read one kind rather than two.
+    const r  = bad('T[] @default("[\\"a\\"]")')
+    const f  = r.schema.models[0].fields.find((x: any) => x.name === 'f')
+    const dv = f.attributes.find((a: any) => a.kind === 'default').value
+    expect(dv).toEqual({ kind: 'array', values: [{ kind: 'enum', value: 'a' }] })
+  })
+
+  test('the literal is the canonical spelling, elements and all', () => {
+    const ok = (t: string) => {
+      const r = bad(t)
+      expect(r.errors.join('\n'), t).toBe('')
+      return r
+    }
+    ok('String[] @default([])')
+    ok('String[] @default(["a", "b"])')
+    ok('Int[] @default([1, 2])')
+    ok('T[] @default([a, b])')
+
+    // Each element is graded against the column's own base type — the half the
+    // JSON string never had: `String[] @default("[1,2]")` was valid JSON and
+    // put numbers in a text column.
+    const refuses = (t: string, phrase: string) => {
+      const r = bad(t)
+      expect(r.valid, t).toBe(false)
+      expect(r.errors.join('\n'), t).toContain(phrase)
+    }
+    refuses('String[] @default([1])',      'the column is String[]')
+    refuses('String[] @default("[1,2]")',  'the column is String[]')
+    refuses('Int[] @default(["a"])',       'the column is Int[]')
+    refuses('T[] @default([zzz])',         'not a value of enum T')
+    refuses('String[] @default([now()])',  'a generated value cannot be an array element')
+    refuses('String[] @default([[1]])',    'a column holds one dimension')
+    refuses('String @default(["a"])',      'on a column that is not an array')
   })
 })
 

@@ -60,7 +60,7 @@ Outlook fallback. Use `renderEmail` / `renderEmailFile` from
 
 ### The plain-text alternative was full of markup artefacts
 
-Fixed in Mesa's `htmlToText` (`packages/mesa/render-component.js`):
+Fixed in Mesa's `htmlToText` (`packages/mesa/src/render-component.js`):
 
 - `<style>` / `<script>` / `<head>` contents were read as prose.
 - Conditional comments were not handled, so the Outlook fallback text sat

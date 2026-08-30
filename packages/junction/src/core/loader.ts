@@ -72,7 +72,10 @@ export async function autoloadServices(opts: LoaderOptions): Promise<void> {
       }
 
       if (!registry.has(service.name)) {
-        registry.register(service)
+        // The filename's own spelling stays reachable — a URL and an
+        // `app.service(…)` written against it are not the app's mistake.
+        const raw = rawStem(filename)
+        registry.register(service, raw === service.name ? [] : [raw])
         // An inventory line, not news — `GET /manifest` answers the same
         // question on demand, and an app with 21 services printed 21 of these
         // before it had done anything. DEBUG=1 brings them back.
@@ -141,8 +144,31 @@ function findFactory(mod: Record<string, unknown>): ((app: unknown) => Service) 
 // accounts.service.ts → 'accounts'
 // user-profiles.service.ts → 'user-profiles'
 
-function deriveName(filename: string): string {
-  return filename.replace(/\.service\.ts$/, '')
+/**
+ * The canonical service name a filename derives.
+ *
+ * `accounts.service.ts` → `accounts`, and **`product-variants.service.ts` →
+ * `productVariants`** (`FJS-570`). A kebab or snake filename is a FOURTH
+ * spelling of a name Invariant 2 says three resolvers must agree on, and until
+ * this it was reconciled nowhere: `deriveModelName('product-variants')`
+ * singularises to `product-variant`, which is not the accessor — which is why
+ * all six multi-word services in `example` hand-write `model:` — and Sierra's
+ * `serviceNameFor('ProductVariant')` answers `productVariants`, which matched
+ * nothing, so every relation picker onto a multi-word model offered an empty
+ * list and read as *there are none*.
+ *
+ * The file keeps its kebab name; the SERVICE gets one spelling. The old name is
+ * registered as an alias, so `/product-variants` and
+ * `app.service('product-variants')` keep working — nothing on the wire moves.
+ */
+export function deriveName(filename: string): string {
+  const stem = filename.replace(/\.service\.(ts|js|mts|mjs)$/, '')
+  return stem.replace(/[-_]+([a-zA-Z0-9])/g, (_, c: string) => c.toUpperCase())
+}
+
+/** The filename's own spelling, for the alias — `product-variants`. */
+function rawStem(filename: string): string {
+  return filename.replace(/\.service\.(ts|js|mts|mjs)$/, '')
 }
 
 // ─── Manual service file loader ───────────────────────────────────────────

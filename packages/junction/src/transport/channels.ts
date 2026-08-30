@@ -685,7 +685,10 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
               } = extra
 
               const svcCtx = _bridge2.internal(
-                serviceName as string,
+                // The CANONICAL name — a frame naming an older spelling of it
+                // resolves, and then announces and resolves its model under the
+                // one name the service has (`FJS-570`).
+                svc.name,
                 method as 'create',
                 (data as Record<string, unknown> | null) ?? null,
                 {

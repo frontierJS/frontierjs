@@ -23,11 +23,16 @@
 // charged at, on the order; that is a feature, not a formatter, and inventing
 // half of it here would make this example teach the wrong thing.
 
-import { formatMoney } from '@frontierjs/toolbelt/units'
-import { prefs }       from './prefs.js'
+import { formatMoney, fromMinor } from '@frontierjs/toolbelt/units'
+import { prefs }                  from './prefs.js'
 
 /** What the seed's numbers ARE. Every `price` and every `total` in the
- *  database is this currency; nothing stores a currency per row. */
+ *  database is this currency; nothing stores a currency per row.
+ *
+ *  And every one of them is a whole number of MINOR units, because the columns
+ *  are `@money(USD)`. `fromMinor` below is the only place in this surface that
+ *  knows that — a screen dividing by a hundred by hand is `FJS-440` again, one
+ *  magnitude down: it is right for the dollar and wrong for the yen. */
 export const BASE = 'USD'
 
 /**
@@ -52,17 +57,23 @@ export function currency() {
 }
 
 /**
- * A stored amount, as the string a person reads.
+ * A stored amount — cents — as the string a person reads.
+ *
+ * Two conversions and they are different questions. `fromMinor` turns what the
+ * column stores into what the currency means, against BASE, because that is the
+ * currency the number was WRITTEN in. The rate then turns that into what the
+ * reader chose. Doing them the other way round would apply a dollar's scale to
+ * a yen amount.
  *
  * Readers must still declare `$: prefs.currency` — this is a plain function and
  * Mesa decides what an expression depends on from the expression's own text, so
  * a component that only calls `money(row.price)` renders once and never moves
  * when the preference changes.
  */
-export function money(amount) {
-  if (amount == null || amount === '') return ''
+export function money(cents) {
+  if (cents == null || cents === '') return ''
   const c = byCode(prefs.currency ?? BASE)
-  return formatMoney(Number(amount) * c.rate, c.code)
+  return formatMoney(fromMinor(cents, BASE) * c.rate, c.code)
 }
 
 /**

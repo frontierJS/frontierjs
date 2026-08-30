@@ -65,6 +65,23 @@
 
   const BIG   = resourceFor(FIELDS, TOTAL)
   const WHOLE = resourceFor(SMALL, PAGE.length)
+
+  // A picker that could not ASK. `resource.options()` answers `error` where the
+  // request failed — a service no name resolved to, a 401, a table the caller
+  // may not read — and dropping it made that render as an empty list, which a
+  // person reads as *there are none* (`FJS-587`).
+  const brokenFor = (fields, error) => ({
+    ...resourceFor(fields, 0),
+    options: () => Promise.resolve(
+      { options: [], total: null, truncated: null, ...(error ? { error } : {}) },
+    ),
+  })
+
+  const BROKEN = brokenFor(FIELDS, '/productVariants not found')
+  // The negative control: a list that is genuinely EMPTY and said so. Nothing
+  // is wrong, so nothing may be said — a control that announced a failure here
+  // would be one nobody reads.
+  const EMPTY  = brokenFor(SMALL, null)
 </script>
 
 <div id="big">
@@ -73,6 +90,14 @@
 
 <div id="whole">
   <Form resource={WHOLE} />
+</div>
+
+<div id="broken">
+  <Form resource={BROKEN} />
+</div>
+
+<div id="empty">
+  <Form resource={EMPTY} />
 </div>
 
 <output id="searches">{searches.join(',')}</output>

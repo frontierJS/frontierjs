@@ -1,5 +1,30 @@
 # Changes
 
+## 2026-08-29 — a picker that could not ask says so
+
+875 assertions, 0 fail. Closes
+[`FJS-587`](../../ISSUES.md#fjs-587).
+
+`resource.options()` answers `error` where the rows could not be fetched — a
+service no name resolved to, a 401, a value set that would not load. Nothing
+read it, so a picker that could not ask rendered as an empty list, and a person
+reads an empty picker as *there are none*.
+
+**Said where the count goes.** `optionsNote(error)` sits beside
+`truncationNote` and composes through the same `withNote`, so `Select`,
+`Combobox` and `MultiSelect` cannot word it three ways. A note rather than a
+field error on purpose: the value may be legitimately absent, so marking the
+field invalid would refuse a submit on every optional relation whose rows
+happened not to arrive.
+
+Carried by `Form` → `FormField` → the control, and by `defaultControlProps`, so
+a contributed control gets it without restating the builder. Each control also
+reads it off its own `optionsFor` fetch, which is the path taken when the form
+did not prefetch for it.
+
+The fourth assertion is the one that keeps the other three honest: a relation
+that is genuinely empty must say nothing.
+
 ## 2026-08-26 — `FileField`, the control a `File` column gets
 
 `FJS-409`. 70/70 components, 871 passing.

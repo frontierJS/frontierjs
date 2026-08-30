@@ -21,9 +21,12 @@
 // presentation is three chances to break validation. An enum that labels
 // nothing must emit exactly what it emitted before, and that is asserted.
 
-import { describe, it, expect } from 'bun:test'
+import { describe, it, test, expect } from 'bun:test'
+import { Database } from 'bun:sqlite'
 import { parse } from '../src/core/parser.js'
 import { generateJsonSchema } from '../src/jsonschema.js'
+import { generateDDL } from '../src/core/ddl.js'
+import { createClient } from '../src/index.js'
 
 const SCHEMA = `
 enum Plan {
@@ -94,5 +97,89 @@ describe('@label on an enum member', () => {
     const r = parse('enum E {\n  a @label("x") @label("y")\n}')
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/duplicate @label/)
+  })
+})
+
+// ─── a quoted member ─────────────────────────────────────────────────────────
+
+describe('an enum member may be a quoted string (`FJS-593`)', () => {
+  // A closed set in the wild is usually written for a person to read. Measured
+  // over seven published schemas, 283 Frappe Select fields declare a set `.lite`
+  // could not express, and almost every one is blocked by a space and nothing
+  // else — `On Hold`, `To Receive and Bill`, `Grand Total`.
+  //
+  // The stored value IS the string: no second name, nothing translates. That is
+  // Postgres's answer; Prisma's `@map` is the other one and buys a code-name at
+  // the price of a bidirectional layer on every read and write. `@label` is
+  // already the display override, which is the third thing neither needs to be.
+  const SRC = `model Order {
+  id     Int @id @default(autoincrement())
+  status S   @default("To Receive and Bill")
+  @@transitions(status, complete: "To Receive and Bill" -> Completed)
+}
+enum S {
+  Draft
+  "To Receive and Bill"
+  Completed
+}
+`
+
+  test('it parses, and the member is just its string', () => {
+    const r = parse(SRC)
+    expect(r.errors).toEqual([])
+    expect(r.schema.enums[0].values.map((v: any) => v.name))
+      .toEqual(['Draft', 'To Receive and Bill', 'Completed'])
+  })
+
+  test('a quoted member that IS an identifier is the same member, not a second one', () => {
+    // The reading FJS-564 gave the redundant array default: a language that
+    // refuses its own behaviour spelled another way fails a port on a line that
+    // means what the tree already does. So it parses — and collides.
+    expect(parse('model M { id Int @id  s S }\nenum S { Draft "Draft" }').errors.join(' '))
+      .toMatch(/duplicate member 'Draft'/)
+    expect(parse('model M { id Int @id  s S }\nenum S { "Draft" Completed }').valid).toBe(true)
+  })
+
+  test('the empty string is not a member', () => {
+    expect(parse('model M { id Int @id  s S }\nenum S { "" }').errors.join(' '))
+      .toMatch(/may not be the empty string/)
+  })
+
+  test('the CHECK carries it, and an apostrophe is escaped rather than closing the literal', () => {
+    const r = parse('model M { id Int @id @default(autoincrement())  s S }\nenum S { Draft "Don\'t ship" }')
+    expect(r.errors).toEqual([])
+    const ddl = generateDDL(r.schema)
+    expect(ddl).toContain(`CHECK ("s" IN ('Draft', 'Don''t ship'))`)
+
+    // It has to EXECUTE, which is the whole reason the escape is there.
+    const db = new Database(':memory:')
+    for (const st of ddl.split(';').map(x => x.trim()).filter(Boolean)) db.run(st + ';')
+    db.run(`INSERT INTO m (s) VALUES ('Don''t ship')`)
+    expect(() => db.run(`INSERT INTO m (s) VALUES ('Nope')`)).toThrow(/CHECK constraint failed/)
+    expect(db.query('SELECT s FROM m').all()).toEqual([{ s: "Don't ship" }])
+  })
+
+  test('a default, a transition and a write all name it the same way', async () => {
+    const db = await createClient({ schema: SRC, db: ':memory:' })
+    const row = await db.order.create({ data: {} })
+    expect(row.status).toBe('To Receive and Bill')
+
+    const moved = await db.order.update({ where: { id: row.id }, data: { status: 'Completed' } })
+    expect(moved.status).toBe('Completed')
+
+    await expect(db.order.create({ data: { status: 'Nope' } }))
+      .rejects.toThrow(/must be one of: Draft, To Receive and Bill, Completed/)
+  })
+
+  test('the JSON Schema enumerates the strings, so a picker needs nothing taught', () => {
+    const js: any = generateJsonSchema(parse(SRC).schema)
+    expect(js.$defs.S.enum).toEqual(['Draft', 'To Receive and Bill', 'Completed'])
+  })
+
+  test('an UNNAMED move onto a quoted member is refused', () => {
+    // Same reasoning as the boolean rule one step along: `-> refunded` reads as
+    // `refund`, and a sentence does not name an action.
+    const src = 'model O { id Int @id  s S\n  @@transitions(s, Draft -> "To Receive and Bill")\n}\nenum S { Draft "To Receive and Bill" }'
+    expect(parse(src).errors.join(' ')).toMatch(/a move onto a quoted member must be named/)
   })
 })

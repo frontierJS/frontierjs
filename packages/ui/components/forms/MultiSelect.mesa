@@ -16,7 +16,7 @@
   //   <MultiSelect bind:value asyncOptions={{ trigger: searchFn, delay: 200, min: 1 }} />
 
   import Field from '../forms/Field.mesa'
-  import { uid, resolveError, resolveRule, stated, truncationNote, withNote } from '../../utils.js'
+  import { uid, resolveError, resolveRule, stated, truncationNote, withNote, optionsNote } from '../../utils.js'
   import { rank, segments } from '@frontierjs/toolbelt/search'
 
   // ── Props ───────────────────────────────────────────────────────────────────
@@ -145,11 +145,13 @@
   // this map too, and a stated option must keep its own shape.
   const _sync = rule?.options ?? rule?.enum ?? null
   let _total = null
+  let _error = null
   if (_sync) optionsMap = { ...mapOf(_sync), ...optionsMap }
   else if (!options?.length && name && form?.optionsFor)
     form.optionsFor(name).then(r => {
       optionsMap = { ...mapOf(r?.options ?? []), ...optionsMap }
       _total = r?.total ?? null
+      _error = r?.error ?? null
     })
 
   // ── a list bigger than the answer ──────────────────────────────────
@@ -175,7 +177,13 @@
     ? { min: 0, trigger: (q) => form.optionsFor(name, { search: q || undefined }).then(r => r?.options ?? []) }
     : null)
 
-  const resolvedHint = withNote(hint, truncationNote(_shown, _count, { searchable: !!_async }))
+  // Why the rows are not there. Stated by the form, which fetched them; read
+  // off this control's own fetch otherwise. An empty list and a list nobody
+  // could fetch look identical, and a person reads both as *there are none*
+  // (`FJS-587`).
+  export let optionsError = undefined
+  const resolvedHint = withNote(withNote(hint, optionsNote(stated(optionsError, _error))),
+                               truncationNote(_shown, _count, { searchable: !!_async }))
 
   // Later arrivals merge in; a value already known keeps its newest shape.
   $: options, () => { optionsMap = { ...optionsMap, ...mapOf(options) } }

@@ -6,6 +6,7 @@
 
 import { isKnownCurrency } from '@frontierjs/toolbelt/units'
 import { expandCapabilityType } from './capabilities.js'
+import { compileStatic, policyExprToString } from './policy.js'
 
 // ─── Tokenizer ────────────────────────────────────────────────────────────────
 
@@ -1464,7 +1465,51 @@ class Parser {
       // if it matches an enum value → enum default (handled by DDL/SQL DEFAULT)
       return { kind: 'fieldRef', field: name }
     }
+    if (t.type === TK.LBRACKET) return this.parseDefaultArray()
     throw new ParseError(`Invalid default value`, t)
+  }
+
+  // @default([]) · @default(["a", "b"]) · @default([Active, Pending])
+  //
+  // An array column already has a zero — `columnDefaultExpr` gives every one of
+  // them `DEFAULT '[]'`, because an empty array is the null state of a list — so
+  // `@default([])` restates what the column already does. It parses anyway: it
+  // is what a Prisma schema writes (11 occurrences across three real ones), and
+  // a language that refuses the redundant spelling of its own behaviour makes a
+  // port fail on a line that means what the tree already does.
+  //
+  // A NON-empty one is the case with no other spelling at all.
+  //
+  // Elements are literals and enum members. A call is refused by name rather
+  // than parsed: `[now()]` is a list holding one timestamp frozen at DDL time,
+  // which nobody means, and there is no runtime stamp for an element. Nested
+  // arrays are refused for the plainer reason that a column holds one dimension.
+  parseDefaultArray() {
+    const open = this.eat(TK.LBRACKET)
+    const values = []
+
+    while (!this.check(TK.RBRACKET)) {
+      const t = this.peek()
+      if      (t.type === TK.STRING) values.push({ kind: 'string',   value: this.advance().value })
+      else if (t.type === TK.NUMBER) values.push({ kind: 'number',   value: this.advance().value })
+      else if (t.type === TK.BOOL)   values.push({ kind: 'boolean',  value: this.advance().value })
+      else if (t.type === TK.IDENT) {
+        const name = this.advance().value
+        if (this.check(TK.LPAREN)) throw new ParseError(
+          `@default([… ${name}() …]) — a generated value cannot be an array element. ` +
+          `Every element is written into the column DEFAULT, so it would be one value frozen at migrate time.`, t)
+        // Resolved against the field's enum in validate(), like a bare scalar one.
+        values.push({ kind: 'fieldRef', field: name })
+      }
+      else if (t.type === TK.LBRACKET) throw new ParseError(
+        `@default([[…]]) — a column holds one dimension`, t)
+      else throw new ParseError(`Invalid default value`, t)
+
+      if (!this.maybeEat(TK.COMMA)) break
+    }
+
+    this.eat(TK.RBRACKET)
+    return { kind: 'array', values, token: open }
   }
 
   parseRelation() {
@@ -1936,6 +1981,44 @@ class Parser {
     return names
   }
 
+  // An index's column list, where a column may carry a direction:
+  //
+  //   @@index([organizationId, type, createdAt(sort: Desc)])
+  //
+  // Prisma's spelling, and ZenStack v2 and v3 declare `@@index` byte-identically
+  // and mark it `@@@prisma` — inherited unchanged — so one spelling covers all
+  // three and an import carries it straight through. `fields` stays a plain
+  // array of names, because the index NAME is derived from it and three other
+  // readers walk it; the directions travel beside it, aligned by position.
+  parseIndexFieldList() {
+    this.eat(TK.LBRACKET)
+    const fields = []
+    const sorts  = []
+
+    const one = () => {
+      fields.push(this.eat(TK.IDENT).value)
+      if (!this.maybeEat(TK.LPAREN)) { sorts.push(null); return }
+      const at  = this.peek()
+      const key = this.eat(TK.IDENT).value
+      if (key !== 'sort') throw new ParseError(
+        `@@index: unknown column argument '${key}' — a column takes 'sort: Asc' or 'sort: Desc'`, at)
+      this.eat(TK.COLON)
+      const dir = this.eat(TK.IDENT).value
+      // Prisma's own casing. A lowercase `desc` is the client's `orderBy`
+      // spelling and means the same thing, so it is accepted rather than made
+      // into a second thing to remember.
+      if (!/^(asc|desc)$/i.test(dir)) throw new ParseError(
+        `@@index: sort must be Asc or Desc, got '${dir}'`, at)
+      sorts.push(dir.toUpperCase())
+      this.eat(TK.RPAREN)
+    }
+
+    one()
+    while (this.maybeEat(TK.COMMA)) one()
+    this.eat(TK.RBRACKET)
+    return { fields, sorts: sorts.some(Boolean) ? sorts : null }
+  }
+
   // ── Model attributes ────────────────────────────────────────────────────────
 
   parseModelAttribute() {
@@ -1943,7 +2026,26 @@ class Parser {
     const name = this.eat(TK.IDENT).value
 
     switch (name) {
-      case 'index':  return { kind: 'index',       fields: this.parseFieldListParen() }
+      // @@index([kind])                             — over every row
+      // @@index([kind], where: archivedAt == null)   — over the rows it admits
+      //
+      // A partial index. The predicate is the expression language @@scope and
+      // @@allow use, and what it may CONTAIN is decided in validate() by asking
+      // the compiler rather than by a grammar here — see § partial index there.
+      case 'index': {
+        this.eat(TK.LPAREN)
+        const { fields, sorts } = this.parseIndexFieldList()
+        let where = null
+        if (this.maybeEat(TK.COMMA)) {
+          const argName = this.eat(TK.IDENT).value
+          if (argName !== 'where')
+            throw new ParseError(`@@index: unknown argument '${argName}' — expected 'where'`, this.peek())
+          this.eat(TK.COLON)
+          where = this.parsePolicyExpr()
+        }
+        this.eat(TK.RPAREN)
+        return { kind: 'index', fields, sorts, where }
+      }
       // @@unique([a, b])                        — the tuple identifies a row
       // @@unique([a, b], nullsDistinct: true)   — and rows with a NULL member are
       //                                           deliberately not constrained
@@ -2421,7 +2523,12 @@ class Parser {
       // A state is an enum member or a boolean literal. `true`/`false` are their
       // own token, so an enum-only reader stopped at the tokeniser and the
       // commonest two-state machine in any schema had no declaration at all.
-      const state = () => this.check(TK.BOOL) ? this.eat(TK.BOOL).value : this.eat(TK.IDENT).value
+      // A state is an enum member, and a member may be quoted — so a move onto
+      // `"To Receive and Bill"` names it the way the enum declares it.
+      const state = () =>
+        this.check(TK.BOOL)   ? this.eat(TK.BOOL).value
+      : this.check(TK.STRING) ? this.eat(TK.STRING).value
+      :                         this.eat(TK.IDENT).value
 
       // from — a single value or [a, b, ...]
       let from
@@ -2446,6 +2553,14 @@ class Parser {
         throw new ParseError(
           `@@transitions(${field}): a boolean move must be named — '-> ${to}' says which value it writes, ` +
           `not what it does. Write \`promote: false -> true\`.`, this.peek())
+      // Same reasoning one step along: a QUOTED member is a display string, and
+      // `transition(id, 'To Receive and Bill')` is the value wearing the name of
+      // an action. A bare member reads as a verb (`-> refunded` is `refund`) and
+      // a sentence does not.
+      if (name === null && typeof to === 'string' && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(to))
+        throw new ParseError(
+          `@@transitions(${field}): a move onto a quoted member must be named — '-> "${to}"' is the ` +
+          `value it writes, not what it does. Write \`receive: … -> "${to}"\`.`, this.peek())
       if (name === null) name = to   // unnamed → named after the target state
 
       // Optional per-move attributes, in either order.
@@ -2643,7 +2758,29 @@ class Parser {
         }
         this.eat(TK.RBRACE)
       } else {
-        const vName = this.eat(TK.IDENT).value
+        // A member may be a quoted STRING, because a closed set in the wild is
+        // usually written for a person to read: `To Receive and Bill`,
+        // `Grand Total`, `Per Week`. Measured over seven published schemas, 283
+        // Frappe Select fields declare a set `.lite` could not express, and
+        // almost every one of them is blocked by a space and nothing else.
+        //
+        // The stored value IS the string — there is no second name and nothing
+        // translates. Postgres's own enums work this way; Prisma's `@map` is the
+        // other answer and buys a separate code-name at the price of a
+        // bidirectional layer on every read and write, which nothing in the
+        // corpus asks for. `@label` is already the display override.
+        //
+        // A quoted member that IS a legal identifier normalises to the bare
+        // spelling, so `"Draft"` and `Draft` are one member rather than two —
+        // the same reading `FJS-564` gave the redundant array default, and what
+        // lets an importer quote everything and still emit a canonical schema.
+        const vTok  = this.check(TK.STRING) ? this.eat(TK.STRING) : this.eat(TK.IDENT)
+        const vName = vTok.value
+        if (vTok.type === TK.STRING && vName === '') throw new ParseError(
+          `Enum '${name}': a member may not be the empty string`, vTok)
+        if (values.some(v => v.name === vName)) throw new ParseError(
+          `Enum '${name}': duplicate member '${vName}' — a quoted member that is a legal ` +
+          `identifier is the same member as the bare one`, vTok)
 
         // A member takes attributes through the SAME parser a field's do, so
         // there is one grammar for `@label("…")` rather than a second one that
@@ -3692,6 +3829,73 @@ function valueColumnRefusal(field, schema) {
   return null
 }
 
+// ─── @default([…]) elements ───────────────────────────────────────────────────
+//
+// Every element is graded against the column's own base type, which is the half
+// the older JSON-string spelling never had: `String[] @default("[1,2]")` is a
+// valid JSON array and was accepted, and the numbers reached the column.
+//
+// An enum element is written as a bare member — `@default([Active])`, the same
+// way a scalar enum default is — and is resolved here for the same reason it is
+// resolved there: the parser cannot know the field's enum until the schema is
+// whole. Anything the element cannot be is refused by name rather than emitted.
+function elementErrors(where, field, values, enumNames, schema) {
+  const errors = []
+  const base   = field.type.name
+
+  if (base === 'File') {
+    if (values.length) errors.push(
+      `${where}: a File column has no default — a file reference is minted when the bytes are stored, ` +
+      `so a literal here names a file nothing put there. @default([]) is the only one it can hold.`)
+    return errors
+  }
+
+  const isEnum = enumNames.has(base)
+  const values_ = isEnum ? (schema.enums.find(e => e.name === base)?.values ?? []).map(v => v.name) : null
+
+  for (const el of values) {
+    if (el.kind === 'unsupported') {
+      errors.push(`${where}: @default holds ${JSON.stringify(el.value)}, which is not a value a ${base} column can take`)
+      continue
+    }
+
+    if (isEnum) {
+      // A bare member in the literal, or the same member as a string — which is
+      // all the JSON spelling can write, since JSON has no bare words.
+      const member = el.kind === 'fieldRef' ? el.field : el.kind === 'string' ? el.value : null
+      if (member === null) {
+        errors.push(
+          `${where}: @default([${el.value}]) — an enum element is a member of ${base}, ` +
+          `like @default([${values_[0] ?? 'Value'}]).`)
+      } else if (!values_.includes(member)) {
+        errors.push(
+          `${where}: @default([${member}]) — '${member}' is not a value of enum ${base}. ` +
+          `One of ${values_.join(', ')}.`)
+      } else {
+        el.kind  = 'enum'
+        el.value = member
+        delete el.field
+      }
+      continue
+    }
+
+    if (el.kind === 'fieldRef') {
+      errors.push(
+        `${where}: @default([${el.field}]) — a bare word in an array is an enum member, and ${base} is not an enum. ` +
+        `Quote it: @default(["${el.field}"]).`)
+      continue
+    }
+
+    if (base === 'String' && el.kind !== 'string') {
+      errors.push(`${where}: @default holds ${el.value}, and the column is String[]. Quote it, or change the column.`)
+    } else if (base === 'Int' && (el.kind !== 'number' || !Number.isInteger(el.value))) {
+      errors.push(`${where}: @default holds ${JSON.stringify(el.value)}, and the column is Int[].`)
+    }
+  }
+
+  return errors
+}
+
 function validate(schema) {
   const errors   = []
   const warnings = []
@@ -3843,6 +4047,28 @@ function validate(schema) {
               `Declare the join as a model of its own to guard it.`))
       }
 
+      // The array literal is legal on the two columns that can hold a list: an
+      // array column, and `Json`, which can hold anything. On a column that
+      // holds one value it is refused by name — emitted verbatim it is a JSON
+      // string sitting in a TEXT column, and a type error anywhere else.
+      //
+      // A Json element is graded here rather than by `elementErrors`, which
+      // reads a base type Json does not have: any literal is a legal member of
+      // a JSON array, and a BARE WORD is not — it is the enum spelling, and
+      // there is no enum to resolve it against.
+      const scalarDef = field.attributes.find(a => a.kind === 'default')
+      if (!field.type.array && scalarDef?.value?.kind === 'array') {
+        if (field.type.name !== 'Json') {
+          errors.push(
+            `Model '${model.name}', field '${field.name}': @default([…]) on a column that is not an array. ` +
+            `Declare the column as '${field.type.name}[]', or give it a single value.`)
+        } else {
+          for (const el of scalarDef.value.values) if (el.kind === 'fieldRef') errors.push(
+            `Model '${model.name}', field '${field.name}': @default([${el.field}]) — a bare word in an array ` +
+            `is an enum member, and a Json column has no enum to read it against. Quote it: @default(["${el.field}"]).`)
+        }
+      }
+
       // Array type validation — String, Int, File and a declared enum support [].
       // An enum array is a SET of declared values, stored as a JSON TEXT column
       // like any other array. Membership is checked at the client boundary, not
@@ -3863,15 +4089,45 @@ function validate(schema) {
         // @default is emitted into the DDL verbatim. @default("x") therefore
         // parsed, migrated, and then failed the CHECK on the first insert that
         // relied on it — a schema error surfacing as a constraint violation.
+        //
+        // Two spellings reach here and exactly one AST leaves: `@default([a, b])`,
+        // and the JSON-array STRING that was the only spelling before it. The
+        // string is normalised into the literal's shape rather than carried
+        // alongside it, so `defaultExpr`, the JSON Schema and the release
+        // classifier each read one kind — and it is type-checked by the same
+        // rules, which it never used to be: `String[] @default("[1,2]")` was a
+        // valid JSON array of the wrong thing and passed.
         const arrDef = field.attributes.find(a => a.kind === 'default')
         if (arrDef && field.type.kind !== 'relation' && field.type.kind !== 'implicitM2M') {
-          const v = arrDef.value
-          let ok = false
-          if (v?.kind === 'string') {
-            try { ok = Array.isArray(JSON.parse(v.value)) } catch { ok = false }
+          const where  = `Model '${model.name}', field '${field.name}'`
+          const v      = arrDef.value
+          let   values = null
+
+          if (v?.kind === 'array') values = v.values
+          else if (v?.kind === 'string') {
+            let parsed
+            try { parsed = JSON.parse(v.value) } catch { parsed = null }
+            if (Array.isArray(parsed)) {
+              values = parsed.map(x => typeof x === 'string'  ? { kind: 'string',  value: x }
+                                     : typeof x === 'number'  ? { kind: 'number',  value: x }
+                                     : typeof x === 'boolean' ? { kind: 'boolean', value: x }
+                                     : { kind: 'unsupported', value: x })
+              warnings.push(
+                `${where}: @default("${v.value}") is the JSON spelling of @default(${JSON.stringify(parsed)}). ` +
+                `Both are checked the same way and emit the same column DEFAULT; the literal is the one that ` +
+                `can hold a bare enum member, so it is the spelling to write.`)
+            }
           }
-          if (!ok)
-            errors.push(`Model '${model.name}', field '${field.name}': @default on an array field must be a JSON array string, e.g. @default("[]") — an array column is stored as JSON text`)
+
+          if (values === null) {
+            errors.push(
+              `${where}: @default on an array field is an array — @default([]) for the empty one, ` +
+              `@default(["a", "b"]) or @default([Active]) for a set. An array column already defaults ` +
+              `to [] with no attribute at all, so the empty literal only says so out loud.`)
+          } else {
+            for (const e of elementErrors(where, field, values, enumNames, schema)) errors.push(e)
+            arrDef.value = { kind: 'array', values }
+          }
         }
       }
 
@@ -4434,6 +4690,140 @@ function validate(schema) {
         if (c.fields.includes(field.name))
           errors.push(`Model '${model.name}': @@unique([${c.fields.join(', ')}]) cannot be enforced — '${field.name}' is ${how}, ` +
                       `and a random IV makes every write of the same value store different ciphertext. ${fix}`)
+    }
+  }
+
+  // ── @@index(where:) — a partial index ───────────────────────────────────────
+  //
+  // What a predicate may CONTAIN is not a grammar question, and writing one here
+  // would be a second statement about the query compiler that goes stale the
+  // first time it changes. It is asked instead: compile the predicate, and
+  // refuse it if compiling BOUND anything.
+  //
+  // SQLite proves that a query implies a partial index at PREPARE time, so an
+  // index predicate holding `?` can never be matched — and litestone binds every
+  // filter value, which means a caller restating the predicate binds it too.
+  // A reachable predicate is exactly one that compiles to no parameters, which
+  // today is null tests, booleans and their conjunctions. `auth()` and `now()`
+  // need no case of their own — both push a parameter — but both get a sentence
+  // of their own, because *this binds a value* is not what the author did wrong.
+  //
+  // The compiled SQL is kept on the attribute and emitted verbatim, so the index
+  // predicate and the predicate a query compiles are the same bytes: that is
+  // what lets the planner match them, and what keeps the migrator's text
+  // comparison exact (FJS-576).
+  for (const model of schema.models) {
+    const seenIndexNames = new Map()
+    for (const attr of model.attributes) {
+      if (attr.kind !== 'index') continue
+
+      // Two @@index over the same columns derive one name, predicate or not.
+      const derived = attr.fields.join('_')
+      if (seenIndexNames.has(derived)) {
+        errors.push(
+          `Model '${model.name}': two @@index([${attr.fields.join(', ')}]) declarations derive the same index name ` +
+          `'idx_<table>_${derived}', so the second cannot be created. Indexes are named for their columns and not for ` +
+          `their predicate — give them different column lists, or write one predicate covering both`)
+        continue
+      }
+      seenIndexNames.set(derived, attr)
+
+      if (!attr.where) continue
+
+      const named = []
+      ;(function walk(n) {
+        if (!n || typeof n !== 'object') return
+        if (n.type === 'field' && n.name) named.push(n.name)
+        if (n.type === 'auth')  named.push('\0auth')
+        if (n.type === 'now')   named.push('\0now')
+        for (const k of ['left', 'right', 'expr', 'cond', 'then', 'else'])
+          if (n[k]) walk(n[k])
+        if (Array.isArray(n.args)) n.args.forEach(walk)
+      })(attr.where)
+
+      const where = `@@index([${attr.fields.join(', ')}], where: …)`
+      if (named.includes('\0auth')) {
+        errors.push(
+          `Model '${model.name}': ${where} names auth(), which is a different answer for every caller — ` +
+          `an index is one physical structure shared by all of them. A per-caller narrowing is @@scope or a row policy`)
+        continue
+      }
+      if (named.includes('\0now')) {
+        errors.push(
+          `Model '${model.name}': ${where} names now(), which SQLite refuses in an index predicate — ` +
+          `the index would be correct only at the instant it was built. Compare against a stored column instead`)
+        continue
+      }
+      const unknown = named.filter(n => n[0] !== '\0' && !model.fields.some(f => f.name === n))
+      if (unknown.length) {
+        errors.push(
+          `Model '${model.name}': ${where} names ${unknown.map(u => `'${u}'`).join(', ')}, which ` +
+          `${unknown.length > 1 ? 'are not columns' : 'is not a column'} of this model. ` +
+          `An index predicate reads the row it indexes and nothing else`)
+        continue
+      }
+
+      let compiled
+      try {
+        compiled = compileStatic(attr.where, model.name, schema)
+      } catch (e) {
+        errors.push(`Model '${model.name}': ${where} could not be compiled — ${e.message}`)
+        continue
+      }
+      if (/\bSELECT\b/i.test(compiled.sql)) {
+        errors.push(
+          `Model '${model.name}': ${where} compiles to a subquery, which SQLite refuses in an index predicate. ` +
+          `An index predicate reads the row it indexes and nothing else`)
+        continue
+      }
+      // Binding nothing is necessary and it is not sufficient, because there are
+      // TWO compilers. This one — @@scope, @@allow, the soft-delete injection —
+      // and the query builder a caller's own `where` goes through. A predicate
+      // only one of them inlines is reachable one way and not the other, which
+      // is the silent no-op this rule exists to prevent (FJS-578, where the two
+      // disagreed about a boolean until the query builder learned to inline it).
+      //
+      // Asked of the compiled SQL rather than of the source, so it stays a
+      // statement about emitted bytes: what survives the reduction is what one
+      // compiler emits and the other cannot.
+      const residue = compiled.sql
+        .replace(/"[^"]+"/g, ' ')
+        .replace(/\bIS\s+(NOT\s+)?NULL\b/gi, ' ')
+        .replace(/[=!]=?\s*[01]\b/g, ' ')          // a boolean — both inline it
+        .replace(/\b(AND|OR|NOT)\b/gi, ' ')
+        .replace(/[()\s]/g, '')
+      if (!compiled.params.length && residue) {
+        errors.push(
+          `Model '${model.name}': ${where} compiles to \`${compiled.sql}\`, which a caller's own filter cannot ` +
+          `reproduce — so SQLite could never prove a query implies this index and it would be matched by nothing. ` +
+          `Reachable predicates are the ones both compilers write as literal SQL: 'col == null', 'col != null', ` +
+          `'col == true', 'col == false', and those joined with && or ||`)
+        continue
+      }
+      if (compiled.params.length) {
+        errors.push(
+          `Model '${model.name}': ${where} compares against a value, and a partial index over one cannot be reached. ` +
+          `SQLite has to prove a query implies the index when it PREPARES the query, and litestone binds every filter ` +
+          `value as a parameter — so '${policyExprToString(attr.where)}' would be matched by nothing and maintained on ` +
+          `every write. Reachable predicates are the ones that bind nothing: 'col == null', 'col != null', ` +
+          `'col == true', and those joined with && or ||`)
+        continue
+      }
+      // The declaration a @@softDelete model already makes. Refused rather than
+      // deduped, for FJS-480's reason and in its words: what a dedupe would
+      // preserve is the ability to write a line with no effect, and this is the
+      // line a converter writes — `WHERE deleted_at IS NULL` is the commonest
+      // predicate there is, and on such a model it is already implied.
+      // (SQLite does reach the doubled index, so this is coherence and not a
+      // correctness fix — measured.)
+      if (compiled.sql === '"deletedAt" IS NULL' && model.attributes.some(a => a.kind === 'softDelete')) {
+        errors.push(
+          `Model '${model.name}': ${where} is the clause @@softDelete already gives every index on this model — ` +
+          `the declaration changes nothing. Remove the 'where:', or narrow it to something @@softDelete does not say`)
+        continue
+      }
+
+      attr.whereSql = compiled.sql
     }
   }
 

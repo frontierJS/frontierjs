@@ -149,7 +149,7 @@ None of these exists in `db/schema.lite`.
 ### D. Needs an outbound adapter (6)
 
 Real third parties. These belong behind `@frontierjs/conduit` as declared
-targets, not `fetch()` in a service — `example/api/mailer.ts` is the pattern.
+targets, not `fetch()` in a service — `example/api/src/core/mailer.ts` is the pattern.
 
 | View | Lines | Adapter |
 | --- | --- | --- |

@@ -9,6 +9,7 @@ import '@frontierjs/css'
 
 import { getClient }    from '@frontierjs/sierra/junction'
 import { useCartClient } from './cart.js'
+import './money-control.js'
 
 import { mount } from '@frontierjs/mesa/runtime'
 import App from './App.mesa'

@@ -7,6 +7,7 @@ examples:
   - fli deploy --production
   - fli deploy --stage
   - fli deploy --dry
+  - fli deploy --resume
 flags:
   production:
     type: boolean
@@ -27,6 +28,10 @@ flags:
   plan:
     type: boolean
     description: Print the journal rows this deploy would write, and run nothing
+    defaultValue: false
+  resume:
+    type: boolean
+    description: Continue a deploy a previous run did not finish, taking its lock over
     defaultValue: false
 ---
 
@@ -122,7 +127,9 @@ if (deployConf?.server) {
       console.log(plan.text)
       console.log()
     }
-    context.config.abort = true
+    // `stop`, not `abort`: printing the plan is what was asked for, so this
+    // exits 0. An abort is a REFUSAL and fails the command (`FJS-589`).
+    context.config.stop = true
     return
   }
 

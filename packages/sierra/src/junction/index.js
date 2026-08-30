@@ -243,6 +243,23 @@ function _wrapDebug(client) {
  *        `'verbose'` — additionally log every client event
  *        Both retain payloads in the console; leave off unless debugging.
  */
+/**
+ * The build this bundle was compiled as, or null.
+ *
+ * `import.meta.env` is vite's, replaced at build time, so this is a literal in
+ * the shipped bundle and not a lookup. Read through a function and guarded,
+ * because the same module is imported by the prerender, which runs in Node
+ * where `import.meta.env` does not exist.
+ */
+function buildId() {
+  try {
+    const v = import.meta.env?.VITE_FJS_BUILD
+    return typeof v === 'string' && v.trim() ? v.trim() : null
+  } catch {
+    return null
+  }
+}
+
 export function initJunction(config) {
   if (!config?.url) return
 
@@ -265,6 +282,17 @@ export function initJunction(config) {
     tokenStorage:  localTokenStore(tokenKey),
     // Only when the app renamed them on the server — see AuthPluginOptions.services.
     ...(config.authServices ? { authServices: config.authServices } : {}),
+    // Which build this bundle IS.
+    //
+    // `03-build-web` stamps `VITE_FJS_BUILD` at build time and vite inlines it,
+    // so it travels inside the bundle rather than being fetched — which is what
+    // makes it true for a browser still running the previous deploy's code. The
+    // server states its own on every response and on the socket's `connected`
+    // frame, and the CLIENT compares (`FJS-D160`).
+    //
+    // Absent in dev and in any build nobody deployed, and the client is inert
+    // on that: nothing to compare, so `stale` never fires.
+    ...(buildId() ? { build: buildId() } : {}),
   })
 
   // Capture for the session module and the navigation guard

@@ -273,7 +273,7 @@ export function startPspSink(): { stop(): void; port: number } {
           if (asked > intent.amount - intent.refunded)
             return Response.json({ error: 'that is more than is left to refund' }, { status: 409 })
 
-          intent.refunded = Number((intent.refunded + asked).toFixed(2))
+          intent.refunded = intent.refunded + asked
 
           const event = {
             id: mint('evt'), type: 'payment.refunded', at: Date.now(),

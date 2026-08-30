@@ -107,6 +107,114 @@ export type EnvOutput<S extends EnvSpec> = {
   readonly [K in keyof S]: EnvFieldOutput<S[K]>
 }
 
+// ─── checkEnvField ────────────────────────────────────────────────────────
+//
+// Does this raw value satisfy this field spec? One owner, because there are
+// now two callers asking it — `defineEnv` over a whole spec, and the
+// attachment check over the keys one declared service needs. A second copy
+// would answer *is this a URL* twice, and the two would drift on the day
+// somebody adds a type.
+//
+// It takes the raw value rather than reading `process.env` itself, which is
+// what lets an attachment be graded against a hypothetical environment and
+// what makes either caller testable at all.
+
+export interface EnvFieldResult {
+  /** The coerced value, or undefined when absent and not defaulted. */
+  value:    unknown
+  /** The failure, already worded for a person. Absent means it passed. */
+  error?:   string
+  /** Non-fatal notes, same wording rules. */
+  warnings: string[]
+  /** Was the variable actually set, before defaults were considered? */
+  present:  boolean
+}
+
+export function checkEnvField(key: string, field: EnvFieldSpec, raw: string | undefined): EnvFieldResult {
+  const warnings: string[] = []
+  const present = raw !== undefined && raw !== ''
+  const type    = field.type ?? 'string'
+
+  const fail = (error: string): EnvFieldResult => ({ value: undefined, error, warnings, present })
+
+  let value: unknown = present ? raw : field.default
+
+  if (field.required && !present && field.default === undefined)
+    return fail(
+      `${key} is required but not set` +
+      (field.description ? `  (${field.description})` : '') +
+      (field.example     ? `\n    example: ${key}="${field.example}"` : '')
+    )
+
+  if (value === undefined) return { value: undefined, warnings, present }
+
+  const strValue = String(value)
+
+  switch (type) {
+    case 'number':
+    case 'port': {
+      const n = Number(strValue)
+      if (isNaN(n)) return fail(`${key}: expected a number, got "${strValue}"`)
+      if (type === 'port' && (n < 1 || n > 65535))
+        return fail(`${key}: port must be between 1 and 65535, got ${n}`)
+      value = n
+      break
+    }
+
+    case 'boolean': {
+      const t = strValue.toLowerCase()
+      if (t === 'true' || t === '1' || t === 'yes') value = true
+      else if (t === 'false' || t === '0' || t === 'no') value = false
+      else return fail(`${key}: expected boolean (true/false/1/0/yes/no), got "${strValue}"`)
+      break
+    }
+
+    case 'url': {
+      try { new URL(strValue); value = strValue }
+      catch { return fail(`${key}: expected a valid URL, got "${strValue}"`) }
+      break
+    }
+
+    case 'json': {
+      try { value = JSON.parse(strValue) }
+      catch { return fail(`${key}: expected valid JSON, got "${strValue.slice(0, 40)}..."`) }
+      break
+    }
+
+    default:
+      value = strValue
+  }
+
+  if (typeof value === 'string') {
+    if (field.minLength !== undefined && value.length < field.minLength)
+      return fail(`${key}: must be at least ${field.minLength} characters (got ${value.length})`)
+    if (field.maxLength !== undefined && value.length > field.maxLength)
+      return fail(`${key}: must be at most ${field.maxLength} characters (got ${value.length})`)
+    if (field.enum && !field.enum.includes(value))
+      return fail(`${key}: must be one of [${field.enum.join(', ')}], got "${value}"`)
+  }
+
+  // Graded BY NAME and only when the app declares them. Junction reads none of
+  // them — a session issued by @frontierjs/auth is a row found by a random
+  // token, and there is no `auth.secret` in AppConfig — so this is a courtesy
+  // to an app holding its own signing key, never a sign that the framework is
+  // using the value. Reading it the other way is how `AUTH_SECRET` came to be
+  // generated, declared and required across three packages with no reader
+  // anywhere (FJS-360).
+  if (key === 'AUTH_SECRET' || key === 'JWT_SECRET' || key === 'SESSION_SECRET') {
+    if (typeof value === 'string' && value.length < 32)
+      warnings.push(`${key} is only ${value.length} chars — use at least 32 for security`)
+    const weakValues = ['change-me', 'secret', 'password', 'demo', 'dev', 'test', '12345']
+    if (typeof value === 'string' && weakValues.some(w => value.toLowerCase().includes(w))) {
+      if (process.env.NODE_ENV === 'production')
+        return fail(`${key} looks like a placeholder — set a real secret in production`)
+      warnings.push(`${key} looks like a placeholder — replace before going to production`)
+    }
+  }
+
+  return { value, warnings, present }
+}
+
 // ─── defineEnv ────────────────────────────────────────────────────────────
 
 export function defineEnv<S extends EnvSpec>(spec: S): EnvOutput<S> {
@@ -116,130 +224,11 @@ export function defineEnv<S extends EnvSpec>(spec: S): EnvOutput<S> {
   const result:   Record<string, unknown> = {}
 
   for (const [key, field] of Object.entries(spec)) {
-
-    const raw     = process.env[key]
-    const present = raw !== undefined && raw !== ''
-    const type    = field.type ?? 'string'
-
-    // ── Resolve value (raw → default → undefined) ────────────────
-    let value: unknown = present ? raw : field.default
-
-    // ── Required check ────────────────────────────────────────────
-    if (field.required && !present && field.default === undefined) {
-      errors.push(
-        `  ${key} is required but not set` +
-        (field.description ? `  (${field.description})` : '') +
-        (field.example     ? `\n    example: ${key}="${field.example}"` : '')
-      )
-      continue
-    }
-
-    // ── Nothing to coerce ─────────────────────────────────────────
-    if (value === undefined) {
-      result[key] = undefined
-      continue
-    }
-
-    const strValue = String(value)
-
-    // ── Type coercion ─────────────────────────────────────────────
-    switch (type) {
-
-      case 'number':
-      case 'port': {
-        const n = Number(strValue)
-        if (isNaN(n)) {
-          errors.push(`  ${key}: expected a number, got "${strValue}"`)
-          continue
-        }
-        if (type === 'port' && (n < 1 || n > 65535)) {
-          errors.push(`  ${key}: port must be between 1 and 65535, got ${n}`)
-          continue
-        }
-        value = n
-        break
-      }
-
-      case 'boolean': {
-        const t = strValue.toLowerCase()
-        if (t === 'true' || t === '1' || t === 'yes') {
-          value = true
-        } else if (t === 'false' || t === '0' || t === 'no') {
-          value = false
-        } else {
-          errors.push(`  ${key}: expected boolean (true/false/1/0/yes/no), got "${strValue}"`)
-          continue
-        }
-        break
-      }
-
-      case 'url': {
-        try {
-          new URL(strValue)
-          value = strValue
-        } catch {
-          errors.push(`  ${key}: expected a valid URL, got "${strValue}"`)
-          continue
-        }
-        break
-      }
-
-      case 'json': {
-        try {
-          value = JSON.parse(strValue)
-        } catch {
-          errors.push(`  ${key}: expected valid JSON, got "${strValue.slice(0, 40)}..."`)
-          continue
-        }
-        break
-      }
-
-      default: {
-        // 'string' — no coercion needed
-        value = strValue
-      }
-    }
-
-    // ── String constraints ─────────────────────────────────────────
-    if (typeof value === 'string') {
-      if (field.minLength !== undefined && value.length < field.minLength) {
-        errors.push(`  ${key}: must be at least ${field.minLength} characters (got ${value.length})`)
-        continue
-      }
-      if (field.maxLength !== undefined && value.length > field.maxLength) {
-        errors.push(`  ${key}: must be at most ${field.maxLength} characters (got ${value.length})`)
-        continue
-      }
-      if (field.enum && !field.enum.includes(value)) {
-        errors.push(`  ${key}: must be one of [${field.enum.join(', ')}], got "${value}"`)
-        continue
-      }
-    }
-
-    // ── Soft warnings (non-fatal) ─────────────────────────────────
-    //
-    // These are graded BY NAME and only when the app declares them. Junction
-    // reads none of them — a session issued by @frontierjs/auth is a row found
-    // by a random token, and there is no `auth.secret` in AppConfig — so this is
-    // a courtesy to an app holding its own signing key (better-auth, a JWT of
-    // its own), never a sign that the framework is using the value. Reading it
-    // the other way is how `AUTH_SECRET` came to be generated, declared and
-    // required across three packages with no reader anywhere (`FJS-360`).
-    if (key === 'AUTH_SECRET' || key === 'JWT_SECRET' || key === 'SESSION_SECRET') {
-      if (typeof value === 'string' && value.length < 32) {
-        warnings.push(`  ${key} is only ${value.length} chars — use at least 32 for security`)
-      }
-      const weakValues = ['change-me', 'secret', 'password', 'demo', 'dev', 'test', '12345']
-      if (typeof value === 'string' && weakValues.some(w => value.toLowerCase().includes(w))) {
-        if (process.env.NODE_ENV === 'production') {
-          errors.push(`  ${key} looks like a placeholder — set a real secret in production`)
-        } else {
-          warnings.push(`  ${key} looks like a placeholder — replace before going to production`)
-        }
-      }
-    }
-
-    result[key] = value
+    const r = checkEnvField(key, field, process.env[key])
+    // Two spaces, because these are rendered as an indented block below.
+    for (const w of r.warnings) warnings.push(`  ${w}`)
+    if (r.error) { errors.push(`  ${r.error}`); continue }
+    result[key] = r.value
   }
 
   // ── Emit warnings ─────────────────────────────────────────────────

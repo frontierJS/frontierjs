@@ -100,12 +100,32 @@ README's *Verified* section — not a claim.
   selling. The ledger is `@@gate("5.5.9.9")`: update and delete are 9, which
   nothing passes including `asSystem()`, and that is what append-only is spelled
   with.
+- **Every money column is `@money(USD)`, so what is stored is a whole number of
+  CENTS.** Seventeen columns across seven models, and the identity on `Order` is
+  an EQUALITY because of it — `subtotal − discount + shipping + tax = total`
+  used to be a `@@check` carrying a half-penny tolerance, which is what two
+  binary floats need to agree that they are equal. `pricing.ts` does two
+  multiplications (a percentage and a tax rate) and rounds each as it is
+  produced; every other line of it is the addition of two integers. `Payment` is
+  the one model that binds `@money(field: currency)`, because a provider is
+  asked in a currency and answers in one, and a JPY intent has no cent.
+  `Discount.value` is deliberately `@scale(2)` and NOT `@money`: half its rows
+  are a percentage, and the two readings share a scale but not a unit.
 - **Prices have a currency, and it is one function.** `money()` over
   `@frontierjs/toolbelt/units`, read by five screens including the prerendered
-  catalogue and the API's own email bodies. The toggle in Settings converts
-  against a fixed table stated in `web/src/money.js`; `verify:ui` asserts the
-  NUMBER moved and not only the symbol, because a toggle that changed the glyph
-  alone would show one price as two different amounts.
+  catalogue and the API's own email bodies. It is `fromMinor` and then
+  `formatMoney` — never `/ 100`, which is right for the dollar and wrong for
+  the yen. The toggle in Settings converts against a fixed table stated in
+  `web/src/money.js`; `verify:ui` asserts the NUMBER moved and not only the
+  symbol, because a toggle that changed the glyph alone would show one price as
+  two different amounts.
+- **A form takes dollars where the column takes cents**, and that is a
+  contributed control rather than a special case: `web/src/money-control.js`
+  registers `money` in sierra's table off `x-money` on the column — the
+  declaration, not the column's name — and binds it to the kit's `Input` with
+  the conversion in its `props`. Without it the generated order form offers a
+  spinner stepping by one, and staff raising a telephone order for forty-two
+  dollars charge forty-two cents with every screen agreeing.
 - **A customer can be taken off the books and their orders cannot.**
   `Customer` is `@@softDelete` and `orders Order[] @keep` — the third fate a
   soft-deleted parent's children can have, and the one that had no spelling
@@ -255,6 +275,10 @@ example/
     │   └── verify-build.mjs
     └── src/
         ├── prefs.js              ← browser preferences; the only non-model state
+        ├── money.js              ← BASE, the display currency, and the one
+        │                           `fromMinor` this surface performs
+        ├── money-control.js      ← the `money` control: a box in dollars over a
+        │                           column in cents, resolved off `x-money`
         ├── resources/Order.mesa  ← .mesa, invariants 18 + 19
         └── routes/               ← index, orders/{index,create,[id]}, products,
                                     customers, cart, inventory, settings
@@ -267,7 +291,8 @@ site/                       ← the PUBLIC storefront. Its own surface (FJS-D127
   src/
     api.js                  ← the API's ORIGIN. An island crosses one; the SPA,
                                 behind Vite's proxy, never has
-    money.js                ← the shop's BASE currency. No reader, no storage
+    money.js                ← the shop's BASE currency, and cents → what a
+                                person reads. No reader, no storage
     islands/                ← CatalogList (client:load), LiveStock (client:visible),
                                 LivePrices (client:load — corrects a stale price)
     routes/

@@ -54,6 +54,37 @@ const opts = [
 context.exec({
   command: `${litestone(context)} release --schema ${schemaPath(context)} ${opts}`,
 })
+
+// ─── the middle step ─────────────────────────────────────────────────────────
+// A contract on a required column is refused and offered as a split, and the
+// classifier grades the two deploys in it. The step BETWEEN them is the only
+// one that takes hours and the only one that can fail halfway, and litestone
+// stops after naming the column on purpose: which mechanism fills it is a
+// question about the running application, and litestone sits below the package
+// that answers it.
+//
+// So the fact travels on the finding (`needsBackfill`) and the advice is
+// rendered here, where the app is in scope. Asked with a second `--json` run
+// rather than by re-rendering the verdict from one: a schema diff is cheap, it
+// touches no database, and the alternative is a second copy of
+// `formatVerdict` that drifts.
+if (!flag.json && !flag.check && !flag.stdout) {
+  const { declaredBackfills, backfillReport, formatBackfillReport } =
+    await import(new URL('file://' + global.fliRoot + '/core/backfills.js'))
+
+  const probe = context.exec({
+    command: `${litestone(context)} release --schema ${schemaPath(context)} ${flag.from ? `--from ${flag.from}` : ''} --json`,
+    stdio:   'pipe',
+    dry:     false,
+  })
+
+  let findings = []
+  try { findings = JSON.parse(String(probe ?? '{}')).findings ?? [] } catch { findings = [] }
+
+  const rows = backfillReport(findings, declaredBackfills(context.paths.root))
+  for (const line of formatBackfillReport(rows)) log.info(line ? `  ${line}` : '')
+  if (rows.length) log.info('')
+}
 ```
 
 ## The question

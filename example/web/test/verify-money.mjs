@@ -112,9 +112,25 @@ function check(name, actual, expected) {
 
 const api = (path, opts = {}) => fetch(`${API}/api${path}`, opts)
 
-/** Money compared as money. Two doubles that both round to 4.95 are the same
- *  price, and asserting on the bits instead is a flake nobody can read. */
-const near = (a, b) => Math.abs(Number(a) - Number(b)) < 0.005
+/** Dollars → the whole number of CENTS every money column stores. Every
+ *  expectation below is written in the unit a person reads, exactly as
+ *  `db/seed.ts` writes the fixture — `cents(4.95)` beside a shipping charge is
+ *  checkable at a glance where `495` is a number you have to decode. */
+const cents = (major) => Math.round(major * 100)
+
+/** `Discount.value` is `@scale(2)` and not `@money`, because half its rows are
+ *  a percentage (the schema says why). Same two places, different unit, and a
+ *  different name so a reader can see which one an expectation means. */
+const scaled = (n) => Math.round(n * 100)
+
+/** A figure the shop produced, against one this drive computed.
+ *
+ *  It used to be a half-penny tolerance, and the tolerance was floating point:
+ *  two doubles that both round to 4.95 are the same price. In cents both sides
+ *  are integers wherever the shop did arithmetic, so what is left is the ONE
+ *  place a rate is applied — and the honest comparison is to round the
+ *  expectation the way `pricing.ts` rounds and then demand equality. */
+const near = (a, b) => Number(a) === Math.round(Number(b))
 
 // ─── Staff, for the half of this a shopper may not touch ──────────────────
 
@@ -144,7 +160,7 @@ async function mint(fields) {
   const code = `${PREFIX}${String(++minted).padStart(2, '0')}`
   const r = await asStaff('/discounts', {
     method: 'POST',
-    body:   JSON.stringify({ code, label: `drive code ${code}`, kind: 'percent', value: 10, ...fields }),
+    body:   JSON.stringify({ code, label: `drive code ${code}`, kind: 'percent', value: scaled(10), ...fields }),
   })
   const body = await r.json()
   if (!body?.id) throw new Error(`could not mint ${code}: ${JSON.stringify(body)}`)
@@ -185,7 +201,7 @@ async function tryMint(fields) {
   const code = `${PREFIX}X${String(++probed).padStart(2, '0')}`
   const r = await asStaff('/discounts', {
     method: 'POST',
-    body:   JSON.stringify({ code, label: `probe ${code}`, kind: 'percent', value: 10, ...fields }),
+    body:   JSON.stringify({ code, label: `probe ${code}`, kind: 'percent', value: scaled(10), ...fields }),
   })
   const body = await r.json()
   // Cleaned up on the way out: an accepted one is a row this drive made, and
@@ -194,15 +210,15 @@ async function tryMint(fields) {
   return { status: r.status, message: (body?.data ?? [])[0]?.message ?? body?.message ?? null }
 }
 
-const overHundred = await tryMint({ value: 150 })
+const overHundred = await tryMint({ value: scaled(150) })
 check('a percentage over 100 is refused',       overHundred.status,  400)
 check('…in the words the schema wrote',         overHundred.message, 'a percentage discount cannot be more than 100%')
-check('…and exactly 100 is not',                (await tryMint({ value: 100 })).status, 201)
+check('…and exactly 100 is not',                (await tryMint({ value: scaled(100) })).status, 201)
 // The one that separates this from `@lte(100)` on the field: the same number,
 // the other kind. A fixed discount of 150 is £150 off, which is a real thing a
 // shop sells, and a field rule could not tell the two apart.
 check('…while 150 OFF is a discount, not an error',
-      (await tryMint({ kind: 'fixed', value: 150 })).status, 201)
+      (await tryMint({ kind: 'fixed', value: scaled(150) })).status, 201)
 
 const backwards = await tryMint({ endsAt: '2026-01-01T00:00:00.000Z', startsAt: '2026-12-01T00:00:00.000Z' })
 check('a window that closes before it opens is refused', backwards.status,  400)
@@ -242,12 +258,14 @@ await ask('receiptAccepted', () => sys.order.create({ data: {
   reference: P + '-2', status: 'pending', customerId: 1,
   subtotal: 100, discount: 0, shipping: 5, tax: 20, total: 125 } }))
 
-// Off by a thousandth. The bound is half a penny rather than equality because
-// the arithmetic is binary floating point on both sides and the drift is real
-// but tiny — an equality here would refuse live data.
-await ask('toleranceAccepted', () => sys.order.create({ data: {
+// Off by ONE CENT, which is the smallest wrong answer that exists now. The
+// rule used to carry a half-penny tolerance and accepted this class, because
+// both sides were binary floating point and the drift was real; every one of
+// these columns is \`@money(USD)\` and therefore an integer, so the identity is
+// an equality and the nearest miss is refused like any other.
+await ask('offByOneRefused', () => sys.order.create({ data: {
   reference: P + '-3', status: 'pending', customerId: 1,
-  subtotal: 100, discount: 0, shipping: 5, tax: 20, total: 125.001 } }))
+  subtotal: 100, discount: 0, shipping: 5, tax: 20, total: 126 } }))
 
 // A discount larger than the subtotal, with a breakdown that still adds up
 // (10 - 50 + 45 + 0 = 5) — so the refusal can only be the rule under test.
@@ -281,8 +299,8 @@ check('a receipt that does not add up is refused at the Data boundary',
       dataBoundary.receiptRefused,  'the breakdown does not add up to the total')
 check('…and the same numbers made consistent are not',
       dataBoundary.receiptAccepted, 'accepted')
-check('…a thousandth of drift is inside the half-penny bound',
-      dataBoundary.toleranceAccepted, 'accepted')
+check('…and one cent out is refused, because cents do not drift',
+      dataBoundary.offByOneRefused, 'the breakdown does not add up to the total')
 check('a discount larger than the subtotal is refused',
       dataBoundary.discountRefused, 'a discount cannot be larger than the subtotal')
 check('…while an order with no lines to itemise is exempt',
@@ -330,8 +348,8 @@ const priced   = (want) => variants.find(v => v.price === want && v.active && v.
  *  under it once a tenth is taken off. The whole crossing case is these two
  *  rows, so they are found by PRICE rather than by SKU — a catalogue edit that
  *  moves them should fail here loudly rather than quietly stop testing it. */
-const HOOD = priced(65)
-const MUG  = priced(18)
+const HOOD = priced(cents(65))
+const MUG  = priced(cents(18))
 
 console.log('\n  the shop\'s own rates')
 
@@ -340,7 +358,7 @@ check('…and it is called something',      VAT?.label,  'VAT')
 check('three delivery methods are offered', methods.length, 3)
 check('…in the merchant\'s order, not alphabetically',
       methods.map(m => m.name), ['Standard', 'Express', 'Collect'])
-check('…and one of them is free over a threshold', STANDARD?.freeOver, 75)
+check('…and one of them is free over a threshold', STANDARD?.freeOver, cents(75))
 
 // ─── The gate that separates the two tables ───────────────────────────────
 //
@@ -361,7 +379,7 @@ check('staff may',                             (await asStaff('/discounts')).sta
 // A counter a person can write is not a count of anything.
 const forgedCount = await asStaff('/discounts', {
   method: 'POST',
-  body:   JSON.stringify({ code: `${PREFIX}XX`, label: 'forged', kind: 'fixed', value: 1, redemptions: 99 }),
+  body:   JSON.stringify({ code: `${PREFIX}XX`, label: 'forged', kind: 'fixed', value: scaled(1), redemptions: 99 }),
 })
 // 403 and not 400: `@system` is an ACCESS refusal at the Data boundary naming
 // the field, where a 400 would mean the value was the wrong shape.
@@ -383,19 +401,20 @@ const plain = await basket([{ variantId: HOOD.id, quantity: 1 }, { variantId: MU
 let cart = await read(plain)
 
 check('the subtotal is the lines',
-      cart.subtotal, Number((HOOD.price + MUG.price).toFixed(2)))
+      cart.subtotal, HOOD.price + MUG.price)
 check('…which is what the lines themselves add up to',
-      near(cart.lines.reduce((n, l) => n + l.total, 0), cart.subtotal), true)
+      cart.lines.reduce((n, l) => n + l.total, 0), cart.subtotal)
 check('tax is charged on the subtotal where nothing else applies',
       near(cart.tax, cart.subtotal * VAT.rate), true)
 check('the breakdown adds up to the total',
-      near(cart.subtotal - cart.discount + cart.shipping + cart.tax, cart.total), true)
-// Each component is rounded as it is produced and the total is the sum of the
-// rounded ones — so every figure on the response is already a price, and a
-// screen printing them is printing money rather than a float.
-check('every figure is a price, not a float',
+      cart.subtotal - cart.discount + cart.shipping + cart.tax, cart.total)
+// Every money column is `@money(USD)`, so what comes back over the wire is a
+// whole number of cents. This used to ask whether each figure survived a
+// round trip through `toFixed(2)`, which is the closest a float can get to the
+// question; the honest one is whether it is an integer at all.
+check('every figure is cents, not a float',
       [cart.subtotal, cart.discount, cart.shipping, cart.tax, cart.total]
-        .every(n => Number(n.toFixed(2)) === n), true)
+        .every(Number.isInteger), true)
 
 // ─── Delivery ─────────────────────────────────────────────────────────────
 
@@ -426,12 +445,12 @@ check('a method the shop does not offer is refused by name',
 console.log('\n  discount codes')
 
 const day     = 24 * 60 * 60 * 1000
-const tenth   = await mint({ kind: 'percent', value: 10 })
-const fiver   = await mint({ kind: 'fixed',   value: 5, minSubtotal: 200 })
-const expired = await mint({ kind: 'percent', value: 50, endsAt: new Date(Date.now() - day).toISOString() })
-const future  = await mint({ kind: 'percent', value: 50, startsAt: new Date(Date.now() + day).toISOString() })
-const off     = await mint({ kind: 'percent', value: 50, active: false })
-const huge    = await mint({ kind: 'fixed',   value: 10_000 })
+const tenth   = await mint({ kind: 'percent', value: scaled(10) })
+const fiver   = await mint({ kind: 'fixed',   value: scaled(5), minSubtotal: cents(200) })
+const expired = await mint({ kind: 'percent', value: scaled(50), endsAt: new Date(Date.now() - day).toISOString() })
+const future  = await mint({ kind: 'percent', value: scaled(50), startsAt: new Date(Date.now() + day).toISOString() })
+const off     = await mint({ kind: 'percent', value: scaled(50), active: false })
+const huge    = await mint({ kind: 'fixed',   value: scaled(10_000) })
 
 await on(plain, 'setShipping', { shippingMethodId: STANDARD.id })
 
@@ -474,15 +493,18 @@ check('a code can take a basket back below the free-delivery threshold',
 check('…and the tax follows the new figures',
       near(cart.tax, (cart.subtotal - cart.discount + cart.shipping) * VAT.rate), true)
 check('…and it still adds up',
-      near(cart.subtotal - cart.discount + cart.shipping + cart.tax, cart.total), true)
+      cart.subtotal - cart.discount + cart.shipping + cart.tax, cart.total)
 
 // A fixed code worth more than the basket takes the basket, not more. The
 // alternative is a negative subtotal that tax is then charged on and, at the
 // end of it, a shop paying somebody to take its stock.
 cart = await on(plain, 'applyDiscount', { code: huge.code })
 check('a fixed code is capped at the subtotal', cart.discount, cart.subtotal)
+// The tax is rounded once, on the delivery charge alone; adding it and then
+// rounding the sum is a different figure by a cent, which is the whole reason
+// `pricing.ts` rounds each component as it is produced.
 check('…so the goods cost nothing and the delivery still does not',
-      near(cart.total, cart.shipping + cart.shipping * VAT.rate), true)
+      cart.total, cart.shipping + Math.round(cart.shipping * VAT.rate))
 
 cart = await on(plain, 'removeDiscount')
 check('removing a code puts the price back', [cart.discount, cart.discountCode], [0, null])
@@ -492,7 +514,7 @@ check('…including the delivery it had cost', cart.shipping, 0)
 
 console.log('\n  a code worth one redemption')
 
-const once = await mint({ kind: 'fixed', value: 3, maxRedemptions: 1 })
+const once = await mint({ kind: 'fixed', value: scaled(3), maxRedemptions: 1 })
 
 // Two baskets, both holding the code, both checking out at the same instant.
 // Both passed the apply-time check — at that moment the count really was 0 —
@@ -555,9 +577,9 @@ check('…the tax and the rate it came from',   [row?.tax, row?.taxRate], [recei
 check('…and the total the card was charged',  row?.total,         receipt.total)
 
 check('the lines add up to the subtotal',
-      near(lines.reduce((n, l) => n + l.lineTotal, 0), row?.subtotal), true)
+      lines.reduce((n, l) => n + l.lineTotal, 0), row?.subtotal)
 check('…and the receipt adds up to the total',
-      near(row.subtotal - row.discount + row.shipping + row.tax, row.total), true)
+      row.subtotal - row.discount + row.shipping + row.tax, row.total)
 
 // The rate is COPIED and not joined. A merchant editing the rate tomorrow must
 // not reprice a sale from today, which is the whole reason nine columns exist
@@ -729,8 +751,14 @@ const shown = await evaluate(`(() => {
     total:    num('#basket-total'),
   }
 })()`)
+// The one comparison here that is NOT in cents, and the tolerance is back for
+// exactly that reason: these five numbers were scraped out of rendered text, so
+// they are the major-unit strings a person reads and adding them is floating
+// point again. What the shop computed is asserted exactly, above; this asks
+// whether what was printed can be checked by eye.
+const sameOnScreen = (a, b) => Math.abs(a - b) < 0.005
 check('the column on screen adds up to the figure at the bottom',
-      near(shown.subtotal - Math.abs(shown.discount) + shown.shipping + shown.tax, shown.total), true)
+      sameOnScreen(shown.subtotal - Math.abs(shown.discount) + shown.shipping + shown.tax, shown.total), true)
 
 // Removing it from the screen, and the price going back.
 const beforeRemove = await text('#basket-total')

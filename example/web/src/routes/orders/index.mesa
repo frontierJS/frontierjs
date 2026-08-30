@@ -6,6 +6,7 @@ title: Orders
   import { session } from '@/session.js'
   import { prefs } from '@/prefs.js'
   import { useStore } from '@frontierjs/sierra/junction'
+  import { page } from '@frontierjs/sierra/router'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
@@ -18,6 +19,7 @@ title: Orders
   import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
   import Tag           from '@frontierjs/ui/components/display/Tag.mesa'
+  import { money }     from '../../money.js'
 
   // The columns a Table draws are a UI decision, so they are written here —
   // but every VALUE below still comes from the schema. Nothing in this list
@@ -37,11 +39,31 @@ title: Orders
   const { get: rows, unsubscribe } = useStore(orders.store)
   $.onDestroy(unsubscribe)
 
-  $: (session.level, prefs.dense, prefs.quickView)
+  $: (session.level, prefs.dense, prefs.quickView, prefs.currency)
 
   let error = null
 
-  orders.load().catch(e => { error = e.message })
+  // ── Newest first, and the URL has the last word ──────────────────────────
+  //
+  // This asked for no ordering at all, so a shop past the 20-row page showed
+  // the twenty OLDEST — and an order somebody had just placed was on page two
+  // of the screen the create form sends them to (`FJS-558`). The live store is
+  // right to leave it out: past page 1 nothing in a browser can know whether a
+  // pushed row belongs on an earlier page, so it counts on `resource.stale`
+  // instead, and the only symptom is an absence.
+  //
+  // `page.directives` is spread AFTER the default, so `?$orderBy=reference`
+  // wins and a link can ask for any window of this table — which is also how a
+  // drive finds a row it did not just create, rather than assuming page one
+  // holds both ends (repo Invariant 10).
+  function load() {
+    orders
+      .load(page.query, { ...page.directives }) // TEMP: no ordering
+      .catch(e => { error = e.message })
+  }
+
+  load()
+  $: page.query, page.directives, () => load()
 
   // The schema says delete needs level 5. Asking before rendering is the only
   // reason this button can be disabled rather than 403-ing on click — and it is
@@ -215,7 +237,7 @@ title: Orders
         {/if}
       </td>
       <td><Pill tone={tone(order.status)}>{order.status}</Pill></td>
-      <td>{order.total}</td>
+      <td>{money(order.total)}</td>
       <td class="text-muted">#{order.customerId}</td>
       <td class="text-muted">{order.note === null ? '—' : order.note}</td>
       <td>
@@ -337,7 +359,7 @@ title: Orders
     <dl class="facts">
       <dt>Reference</dt><dd><Mono>{peek.reference}</Mono> <CopyButton text={peek.reference} /></dd>
       <dt>Status</dt><dd><Pill tone={tone(peek.status)}>{peek.status}</Pill></dd>
-      <dt>Total</dt><dd>{peek.total}</dd>
+      <dt>Total</dt><dd>{money(peek.total)}</dd>
       <dt>Customer</dt><dd>#{peek.customerId}</dd>
       <dt>Note</dt><dd>{peek.note === null ? '—' : peek.note}</dd>
       <dt>Placed</dt><dd>{peek.createdAt}</dd>

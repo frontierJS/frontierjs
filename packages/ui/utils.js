@@ -203,6 +203,22 @@ export function truncationNote(shown, total, { searchable = false } = {}) {
     : `Showing ${shown} of ${total}.`
 }
 
+/**
+ * A picker that could not ASK, said where the count goes.
+ *
+ * An empty list and a list nobody could fetch render identically, and a person
+ * reads both as *there are none* — which is how a service no name resolved to
+ * looked like a shop with no variants in it (`FJS-587`). `resource.options()`
+ * answers `error` for exactly this; without a reader it was thrown away.
+ *
+ * A note and not a field error, deliberately: the value may be legitimately
+ * absent, so marking the field invalid would refuse a submit on every optional
+ * relation whose rows happened not to arrive.
+ */
+export function optionsNote(error) {
+  return error ? `Options could not be loaded — ${String(error)}` : ''
+}
+
 /** The caller's hint and the count, in that order, as one line. */
 export function withNote(hint, note) {
   return [hint, note].filter(Boolean).join(' ')

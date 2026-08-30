@@ -14,7 +14,7 @@
  *   import { registerFormControl } from '@frontierjs/ui/controls'
  *   import Money from './Money.mesa'
  *
- *   registerControl('money', (rule, { field }) => field.endsWith('Cents') ? 'money' : null)
+ *   registerControl('money', (rule) => rule['x-money'] ? 'money' : null)
  *   registerFormControl('money', Money)
  *
  * A registered name REPLACES a built-in of the same name, so swapping the
@@ -87,6 +87,6 @@ export function registeredFormControls() {
  * Exported because `FormField.mesa` uses it and a `props` builder that only
  * wants to add one key should not have to restate it.
  */
-export function defaultControlProps({ field, value, onvalue, options, total }) {
-  return { name: field.name, field, value, onvalue, options, total }
+export function defaultControlProps({ field, value, onvalue, options, total, optionsError }) {
+  return { name: field.name, field, value, onvalue, options, total, optionsError }
 }

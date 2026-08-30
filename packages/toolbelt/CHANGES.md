@@ -1,5 +1,22 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-08-29 — `fromMinor` / `toMinor`, beside the scale they read
+
+`@money` stores a whole number of MINOR units and `formatMoney` takes MAJOR
+ones, so something between a column and a screen has to divide. Every caller
+reached for `/ 100`, which is right for the dollar, wrong for the yen by a
+hundred and wrong for the dinar by ten — the same mistake `formatMoney` was
+added to stop (`FJS-440`), one step earlier in the pipe.
+
+The pair is in `/units` because `minorUnits` already is: the divisor is read
+off ICU rather than shipped as a table, so it is the currency's answer and never
+the caller's. `toMinor` ROUNDS, and that is the substance — `8.29 * 100` is
+828.9999999999999, so the truncation a form reaches for first loses a cent on
+the prices that look exact. An unknown code throws in both directions, as
+`minorUnits` does.
+
+`formatMoney` is unchanged and still takes major units: one function, one unit.
+
 ## 2026-08-29 — a compound survives its own round trip (`FJS-571`)
 
 `singularize`'s two whole-word lookups — the irregular table and the `-ses`

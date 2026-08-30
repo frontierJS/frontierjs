@@ -49,6 +49,12 @@ src/
   drivers/
     jsonl.js       — JSONL append-only driver for logs/audit databases
 
+  import/          — a foreign schema → .lite. Four readers (prisma, rails, sql,
+                     frappe) + the tier table that grades what the reading could
+                     not express. Exported at `@frontierjs/litestone/import`;
+                     `litestone import` is a shell over it and the corpus fixtures
+                     are regenerated through it, so there is one implementation
+
   tools/           — dev/ops utilities, never imported by app code
     cli.js         — litestone CLI (all commands)
     studio.html    — browser-based Studio UI
@@ -89,6 +95,11 @@ test/
   litestone.test.ts  — 1191 tests (plus cli-smoke, elegance-fixes,
                        migrations-fixes, nullable-optional: 1289 total)
   scale.test.ts      — the fixture below, parsed and built. Two assertions
+  import.test.ts     — `litestone import`: the tiers, the marker, and the guard
+                       that every `gap('…')` literal in the four readers is
+                       graded. That guard found 18 refusals the seven corpus
+                       schemas had never fired
+
   fixtures/scale/    — openmrp.lite: 188 models, ~1,900 columns, ~300 relations,
                        derived from the MySQL schema of a real manufacturing ERP.
                        The apps in this repo top out near 40 models, so a rule
@@ -199,6 +210,14 @@ Type?      — optional (nullable)
                                  default, so the principal beats a caller-supplied
                                  value; skipped entirely when ctx.auth is null
 @createdBy(auth().field)         stamp custom auth field on CREATE
+@scale(n)                        exact fixed-point: an INTEGER column with the point
+                                 n places in. What a caller sends and reads back
+                                 is the whole number of MINOR units — 1299, not
+                                 12.99. At most 9 places, and bounded at both ends
+                                 by a CHECK — see SQLite gotchas
+@money(USD)                      @scale with the places DERIVED from the currency
+@money(field: currency)          the code is on the row; no static scale
+@money                           the app's default currency
 @version                         optimistic concurrency. Int, non-optional, one per
                                  model. Bumped on every write; `update()` REQUIRES
                                  the version it read in `data` and throws
@@ -973,7 +992,8 @@ litestone doctor
 litestone types [out.d.ts] [--only=User,Post] [--audience=client|system] [--augment=junction]
 litestone seed [SeederClass]
 litestone seed run [name] [--db=main] [--force]
-litestone introspect <db> [--out schema.lite] [--no-camel]
+litestone introspect <db> [--out=schema.lite] [--report=<path>] [--strict] [--no-camel]
+litestone import <path> [--from=prisma|rails|sql|frappe] [--out=<path>] [--report=<path>] [--strict]
 litestone transform config.js [--preview] [--dry-run]
 litestone explain [@word] [--visibility] [--json]        # the language, no schema needed
 litestone catalog --snapshot [--check]                   # the language surface, committed
@@ -1304,6 +1324,8 @@ Suites cover: parser, DDL, migrations, autoMigrate, client CRUD, soft delete, so
 
 **`busy_timeout` is 5000ms on every connection this package opens, and it is a CROSS-PROCESS device only.** `src/core/pragmas.js` is the one owner — the number was a literal in three files and absent from four others, so whether a database waited under contention was an accident of which file opened it (`FJS-569`). The one with no wait was the `logger` index, which is schema-global and therefore the single file every tenant and every process writes; a second API beside a running one died on its first audit write, in about a millisecond. **Inside one process the timeout is not a safety net, it is a stall** — `bun:sqlite` is synchronous, so a connection waiting on the lock blocks the event loop, and it can deadlock outright: the waiter blocks the loop, the holder's continuation never runs to commit, and the wait can only expire. Measured both ways — 5000ms then failure in one process for an 800ms hold, 1444ms then commit across two. What makes the in-process case fine is `$transaction`'s FIFO lock, which queues two transactions on one client in JavaScript so they never reach the SQLite lock — and what keeps THAT true is **one client per database file per process**, since `createClient` twice on one path is two connections that can deadlock where `$setAuth`/`asSystem`/`$scopedBy` are views over one handle. **The number is `createClient({ busyTimeout })`, precedence option → env (`LITESTONE_BUSY_TIMEOUT`) → 5000**, per database as `{ default, <db> }` because the audit index wants the opposite answer to main — its write is fire-and-forget and its failure swallowed, so `{ audit: 250 }` says *drop the row rather than stall the loop*. A malformed value and a key naming a database the schema does not declare are both refused by name at `createClient`, since a dropped key is a database silently keeping the default. **There is deliberately no `database { }` spelling** (`FJS-D155`): how long to wait for another process is a fact about THIS process, and the same schema is opened by an API answering a person and a queue draining a batch. `docs/concurrency.md` is the whole of it, including the worker-thread answer for a query that is genuinely long — measured, a worker holding the lock for 600ms let the main loop keep ticking and the main thread's write waited 639ms and committed, where the same shape on one thread deadlocks.
 
+**A scaled column's ceiling is 2^53, not int64, and it is now enforced at both ends.** `Int @scale(n)` promises an exact round trip, and the round trip goes through a JS `number` — nothing here sets `safeIntegers`, so `bun:sqlite` answers a `number` on every path, a column read and an aggregate alike. Past 2^53 the rounded double is stored and a DIFFERENT number is read back with nothing raised: `12345678900000001` reads back `…000` and `9007199254740993` reads back `…992`, which is `prisma#20635` — the bug `FJS-D142` cites as the reason `Int @scale` exists at all — reproduced one layer up. The documentation reasoned from the 64-bit column and said nine places leaves nine figures in front of the point; the true answer is **seven**, and two distinct minor-unit values collided into one row value (`FJS-583`). The boundary now refuses a value past `Number.MAX_SAFE_INTEGER` by name, in a different sentence from the fraction refusal because they are different mistakes, and `@scale`/`@money` emit `CHECK ("c" BETWEEN -9007199254740991 AND 9007199254740991)` — a CHECK because four writers never reach the boundary: a migration, a seed, a raw statement and `asSystem()`. `EXACT_INT_MAX` in `validate.js` is the one owner and `ddl.js` imports it. **A plain `Int` is deliberately NOT bounded** — it makes no exactness promise, and bounding every integer column in every app to buy back one is the wrong trade — so a snowflake id kept in an `Int` has the same ceiling and nothing reports it.
+
 **No ILIKE** — use `WHERE LOWER(name) LIKE '%term%'`
 
 **A plain object in `bun:sqlite`'s parameter list voids every positional binding in that statement.** It is read as a named-parameter bag, and a statement built with `?` matches none of its keys — so nothing is bound, including the WHERE, and no error is raised. `SELECT ? IS NULL` passed `{x:1}` answers 1; `UPDATE t SET a = ? WHERE id = ?` passed `({x:1}, 1)` changes no rows, because the id was voided along with the value. Every symptom of FJS-199 is this one fact wearing different clothes. Anything that reaches `run`/`query`/`prepare` with a caller-supplied value has to know the value is a bindable primitive first.
@@ -1447,6 +1469,25 @@ from belief asserts a wish.
   caller. The pair `@guarded(all) @system` is legal and means both halves; a
   field `@allow('write')` beside `@system` is refused, because one says nobody
   ever and the other says it depends who is asking.
+- **A converter is graded by reading its output BACK, never by matching strings
+  in it.** `generateLiteSchema` had six tests and every one was
+  `expect(schema).toContain(...)`; none fed the result to `parse()`, and the
+  emitter wrote a `.lite` litestone could not read for its whole life — no comma
+  before `onDelete:`, SQLite's `CASCADE` where `ON_DELETE_ACTIONS` wants
+  `Cascade`, and `@@index([deletedAt])` beside `@@softDelete`, which the parser
+  refuses BY NAME since `FJS-480` added that rule without asking who emitted the
+  pair. `test/introspect-roundtrip.test.ts` asserts the FIXED POINT instead —
+  reading a database built from the output must give the same output — over the
+  seven corpus schemas and `openmrp`. It found four more the same day, and every
+  one of them is a shape no substring assertion can see: a SQL expression default
+  emitted as a string literal (so the quotes doubled on every pass), a
+  `@@index(where:)` re-emitting the clause `createIndexes` ANDs on for
+  `@@softDelete` (so the predicate nested a level deeper each time), a relation
+  field named for the table it points at (which takes a real COLUMN's name and
+  deletes it, since the parser keeps one field per name), and an enum name
+  colliding with a MODEL name (which makes that model's own relations resolve as
+  enums and become TEXT columns). Anything here that WRITES `.lite` owes the same
+  property.
 - **The console's standing is only as true as its resolver, and the default is
   usually the wrong one.** `litestone repl --as <who>` grades with
   `FrontierGateGetLevel` unless `--gate <path[#export]>` points at the app's own.

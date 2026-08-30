@@ -1,7 +1,7 @@
 // discourse — the data model of discourse/discourse, expressed in .lite.
 //
 // Derived mechanically from db/structure.sql (GPL-2.0) by
-// sql-to-lite.mjs beside this file. A CORPUS FIXTURE, not a design:
+// `litestone import --from sql`. A CORPUS FIXTURE, not a design:
 // nothing here is a claim about how any of it should be modelled, and every
 // place the conversion made a choice the source did not is recorded in
 // gaps.json. 356 models. Regenerate with fetch.mjs.
@@ -214,7 +214,7 @@ model AiApiAuditLog {
   timeToFirstTokenMsecs Int? @map("time_to_first_token_msecs")
 
   @@index([id])
-  @@index([featureName, id])
+  @@index([featureName, id], where: featureName != null)
   @@index([userId, id])
   @@index([createdAt, featureName])
   @@index([createdAt, languageModel])
@@ -245,7 +245,7 @@ model AiApiRequestStat {
   @@index([bucketDate, featureName])
   @@index([bucketDate, languageModel])
   @@index([bucketDate, llmId])
-  @@index([bucketDate, rolledUp])
+  @@index([bucketDate, rolledUp], where: rolledUp == false)
   @@index([bucketDate, userId])
   @@index([createdAt, featureName])
   @@index([createdAt, languageModel])
@@ -781,18 +781,18 @@ model Post {
   outboundMessageId String? @map("outbound_message_id")
   locale String?
 
-  @@index([createdAt, topicId])
-  @@index([topicId, postNumber])
-  @@index([userId])
+  @@index([createdAt, topicId], where: deletedAt == null)
+  @@index([topicId, postNumber], where: deletedAt != null)
+  @@index([userId], where: deletedAt == null)
   @@index([id])
-  @@index([deletedById])
-  @@index([id, bakedVersion])
+  @@index([deletedById], where: deletedById != null)
+  @@index([id, bakedVersion], where: deletedAt == null)
   @@index([id, topicId])
   @@index([imageUploadId])
-  @@index([lastEditorId])
+  @@index([lastEditorId], where: lastEditorId != null)
   @@index([locale])
-  @@index([lockedById])
-  @@index([replyToUserId])
+  @@index([lockedById], where: lockedById != null)
+  @@index([replyToUserId], where: replyToUserId != null)
   @@index([topicId, createdAt])
   @@index([topicId, percentRank])
   @@unique([topicId, postNumber])
@@ -856,17 +856,17 @@ model Topic {
   ogImageUploadId Int? @map("og_image_upload_id")
 
   @@index([deletedAt, visible, archetype, categoryId, id])
-  @@index([userId])
-  @@index([slug])
-  @@index([banneredUntil])
+  @@index([userId], where: deletedAt == null)
+  @@index([slug], where: deletedAt == null && slug != null)
+  @@index([banneredUntil], where: banneredUntil != null)
   @@index([bumpedAt])
   @@index([categoryId])
   @@index([createdAt, visible])
   @@index([id, deletedAt])
   @@index([imageUploadId])
-  @@index([pinnedAt])
+  @@index([pinnedAt], where: pinnedAt != null)
   @@index([pinnedGlobally])
-  @@index([pinnedUntil])
+  @@index([pinnedUntil], where: pinnedUntil != null)
   @@index([bumpedAt, createdAt, updatedAt])
   @@index([updatedAt])
   @@index([updatedAt, visible, highestStaffPostNumber, highestPostNumber, categoryId, createdAt, id])
@@ -999,11 +999,11 @@ model BrowserPageviewEvent {
   browser Int?
 
   @@index([createdAt, id])
-  @@index([source, createdAt, id])
+  @@index([source, createdAt, id], where: browser == null)
   @@index([createdAt, countryCode])
   @@index([createdAt, normalizedReferrer])
   @@index([ipAddress, userAgent, createdAt])
-  @@index([normalizedReferrerVersion])
+  @@index([normalizedReferrerVersion], where: referrer != null)
   @@index([normalizedUrlVersion])
   @@index([sessionId, createdAt])
   @@index([createdAt])
@@ -1445,10 +1445,10 @@ model ChatMessage {
   createdBySdk Boolean @map("created_by_sdk") @default(false)
   blocks Json?
 
-  @@index([createdAt])
-  @@index([threadId])
+  @@index([createdAt], where: deletedAt == null)
+  @@index([threadId], where: deletedAt == null)
   @@index([chatChannelId, createdAt])
-  @@index([chatChannelId, id])
+  @@index([chatChannelId, id], where: deletedAt != null)
   @@index([lastEditorId])
 }
 
@@ -2054,7 +2054,7 @@ model DiscourseWorkflowsExecution {
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
 
-  @@index([resumeToken])
+  @@index([resumeToken], where: resumeToken != null)
   @@index([createdAt])
   @@index([status, waitingUntil])
   @@index([waitingUntil])
@@ -2099,9 +2099,9 @@ model DiscourseWorkflowsWebhook {
   expiresAt DateTime? @map("expires_at")
   createdAt DateTime @map("created_at") @default(now())
 
-  @@index([expiresAt])
+  @@index([expiresAt], where: expiresAt != null)
   @@unique([httpMethod, webhookPath, testWebhook])
-  @@index([webhookId, httpMethod, testWebhook])
+  @@index([webhookId, httpMethod, testWebhook], where: webhookId != null)
   @@index([workflowId])
   @@index([workflowVersionId])
 }
@@ -2302,7 +2302,7 @@ model EmailLog {
   @@index([createdAt])
   @@index([messageId])
   @@index([postId])
-  @@index([topicId])
+  @@index([topicId], where: topicId != null)
   @@index([userId])
 }
 
@@ -2743,7 +2743,7 @@ model IncomingEmail {
   @@index([messageId])
   @@index([postId])
   @@index([topicId])
-  @@index([userId])
+  @@index([userId], where: userId != null)
 }
 
 model IncomingLink {
@@ -2756,9 +2756,9 @@ model IncomingLink {
   incomingRefererId Int? @map("incoming_referer_id")
 
   @@index([createdAt, userId])
-  @@index([currentUserId])
+  @@index([currentUserId], where: currentUserId != null)
   @@index([postId])
-  @@index([userId])
+  @@index([userId], where: userId != null)
 }
 
 model IncomingReferer {
@@ -3295,15 +3295,15 @@ model PostAction {
   disagreedAt DateTime? @map("disagreed_at")
   disagreedById Int? @map("disagreed_by_id")
 
-  @@index([agreedById])
-  @@index([deferredById])
-  @@index([deletedById])
-  @@index([disagreedById])
+  @@index([agreedById], where: agreedById != null)
+  @@index([deferredById], where: deferredById != null)
+  @@index([deletedById], where: deletedById != null)
+  @@index([disagreedById], where: disagreedById != null)
   @@index([postActionTypeId])
-  @@index([postActionTypeId, disagreedAt])
+  @@index([postActionTypeId, disagreedAt], where: disagreedAt == null)
   @@index([postId])
   @@index([userId])
-  @@index([userId, postActionTypeId])
+  @@index([userId, postActionTypeId], where: deletedAt == null)
 }
 
 model PostCustomField {
@@ -3495,7 +3495,7 @@ model PostVotingComment {
   lastEditorId Int @map("last_editor_id")
 
   @@check("(qaVoteCount >= 0)")
-  @@index([deletedById])
+  @@index([deletedById], where: deletedById != null)
   @@index([lastEditorId])
   @@index([postId])
   @@index([userId])
@@ -3815,7 +3815,7 @@ model SearchLog {
   sessionId String? @map("session_id")
 
   @@index([createdAt])
-  @@index([userId, createdAt])
+  @@index([userId, createdAt], where: userId != null)
 }
 
 model SharedAiConversation {
@@ -4121,7 +4121,7 @@ model Tag {
   @@index([descriptionCookedVersion])
   @@unique([name])
   @@index([slug])
-  @@index([targetTagId])
+  @@index([targetTagId], where: targetTagId != null)
 }
 
 model TagsWebHook {
@@ -4473,8 +4473,8 @@ model TopicTimer {
   type String @default("TopicTimer")
   timerableId Int @map("timerable_id")
 
-  @@index([timerableId])
-  @@index([topicId])
+  @@index([timerableId], where: deletedAt == null)
+  @@index([topicId], where: deletedAt == null)
   @@index([userId])
 }
 
@@ -4519,7 +4519,7 @@ model TopicView {
   userId Int? @map("user_id")
   ipAddress String? @map("ip_address")
 
-  @@index([viewedAt, userId, topicId])
+  @@index([viewedAt, userId, topicId], where: userId != null)
   @@index([topicId, viewedAt])
   @@index([userId, viewedAt])
   @@index([viewedAt, topicId])
@@ -4638,7 +4638,7 @@ model Upload {
   @@index([verificationStatus])
   @@index([accessControlPostId])
   @@index([etag])
-  @@index([id])
+  @@index([id], where: dominantColor == null)
   @@index([id, url])
   @@index([originalSha1])
   @@unique([sha1])
@@ -4662,7 +4662,7 @@ model UserAction {
   @@index([actingUserId])
   @@index([actionType, createdAt, userId])
   @@index([targetPostId])
-  @@index([targetUserId])
+  @@index([targetUserId], where: targetUserId != null)
   @@index([userId, actionType])
 }
 
@@ -4786,7 +4786,7 @@ model UserAuthToken {
   impersonationExpiresAt DateTime? @map("impersonation_expires_at")
 
   @@unique([authToken])
-  @@index([impersonationExpiresAt])
+  @@index([impersonationExpiresAt], where: impersonationExpiresAt != null)
   @@unique([prevAuthToken])
   @@index([userId])
 }

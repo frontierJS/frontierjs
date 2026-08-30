@@ -1,6 +1,6 @@
 # @frontierjs/ui
 
-Mesa components over [`@frontierjs/css`](../css). 69 components across forms,
+Mesa components over [`@frontierjs/css`](../css). 70 components across forms,
 display, layout, overlay and feedback.
 
 ```bash

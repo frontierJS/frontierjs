@@ -377,15 +377,17 @@ describe('prerenderRoutes — a companion that will not import', () => {
    * The fail-OPEN hole the first version of this check had, found by running it
    * in `example/` rather than by reading it.
    *
-   * `importCompanion` swallows an import error and returns null. So a .meta.js
+   * `importCompanion` swallowed an import error and returned null. So a .meta.js
    * that throws on import — one importing a db client under a runtime that
    * cannot load it, which is exactly what happened — was indistinguishable from
    * a route with no companion, and sailed through as "reads nothing".
    *
-   * A companion that exists but could not be read is UNKNOWN, and unknown is
-   * the whole thing this check refuses.
+   * It is refused twice over now. The import itself throws, naming the route and
+   * carrying the module's own error (`FJS-551`), which is the earlier and more
+   * useful of the two; and behind it the safety check still treats a companion
+   * it could not read as UNKNOWN, which is the case it exists to refuse.
    */
-  test('is refused, not treated as reading nothing', async () => {
+  test('is refused, and the refusal carries the module\'s own error', async () => {
     const { renderComponent } = await import('@frontierjs/mesa/render-component.js')
     const { scan } = await import('../src/scanner/index.js')
 
@@ -405,6 +407,37 @@ describe('prerenderRoutes — a companion that will not import', () => {
       renderComponent,
       schemaDefs: DEFS, schemaModels: MODELS,
       db: null,
-    })).rejects.toThrow(/could not observe/)
+    })).rejects.toThrow(/companion threw while it was loading/)
+  }, RENDER_TIMEOUT)
+
+  test('and the cause is in the message, not only the fact', async () => {
+    const { renderComponent } = await import('@frontierjs/mesa/render-component.js')
+    const { scan } = await import('../src/scanner/index.js')
+
+    const root = tmpDir('sierra-broken-cause-')
+    mkdirSync(resolve(root, 'src/routes/report'), { recursive: true })
+    writeFileSync(resolve(root, 'src/routes/report/index.mesa'),
+      `---\nrender: static\n---\n<h1>hi</h1>\n`)
+    writeFileSync(resolve(root, 'src/routes/report/index.meta.js'),
+      `throw new Error('the schema has errors: line 837')\n` +
+      `export async function load() { return {} }\n`)
+
+    const tree = await scan('src/routes', { cwd: root })
+    let message = ''
+    try {
+      await prerenderRoutes({
+        tree, root,
+        outDir: tmpDir('sierra-broken-cause-out-'),
+        renderComponent,
+        schemaDefs: DEFS, schemaModels: MODELS,
+        db: null,
+      })
+    } catch (err) { message = err.message }
+
+    // The route, so the reader knows where — and the module's own sentence, so
+    // they know what. A build that prints only the first sends them to the file
+    // rather than to the schema.
+    expect(message).toMatch(/\/report/)
+    expect(message).toMatch(/the schema has errors: line 837/)
   }, RENDER_TIMEOUT)
 })

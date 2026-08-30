@@ -1,0 +1,99 @@
+// ─── @frontierjs/junction — the backfill ─────────────────────────────────────
+//
+// One row per backfill, holding the only thing that cannot be recomputed: how
+// far it got. `release:check` refuses a contract on a required column and hands
+// back *expand → backfill → contract*; the first and third steps are deploys
+// and the middle one is this.
+//
+// Filling a column for ten million existing rows is not a migration and the
+// migration runner must not grow into one — a migration is a schema change
+// applied once inside a transaction, and that definition is worth keeping. What
+// a backfill needs instead is to be resumable after a restart, chunked,
+// checkpointed, re-runnable without doubling its work, and throttled against
+// live traffic. This row is the checkpoint; Caravan is the engine.
+//
+// It is in the app's own database because that is where the rows it fills are.
+// A backfill against a second `database` block would be a cursor over a table
+// on the other side of a connection this row cannot be read with.
+//
+// @@gate("8"): nothing outside asSystem() has anything to say to this model,
+// and this package is the only thing that writes it. Same line `outbox.lite`
+// and `auth.lite` draw, and the same reason it is IMPORTED rather than pasted —
+// it changes when this package does.
+//
+// NO @@tenant HERE, and it is not an oversight: `@@tenant(none)` is a parse
+// error in a schema with no `tenancy` block, so a shipped fragment declaring it
+// would refuse to parse in every app that declares no tenants. A tenanted app
+// says it in its own schema, which is what `extend model` is for:
+//
+//     extend model BackfillRun { @@tenant(none) }
+//
+// and `none` is the right answer under either strategy — `strategy row` puts
+// every tenant's rows in the one table a single backfill sweeps, and
+// `strategy database` gives each tenant its own file and therefore its own row.
+//
+// This file is REAL .lite and parses standalone. `fli backfill:install` copies
+// it into an app's db/ and rewrites @@db(main) when --db names another
+// database. Keep @@db(main) spelled exactly — it is what that matches on.
+
+model BackfillRun {
+  /// The backfill's declared name, which is also its identity: re-running one
+  /// RESUMES it rather than starting a second. There is no separate run id
+  /// because there is no second run to tell apart.
+  name         String    @id
+
+  /// What it fills. Held on the row as well as in the code so that *what is
+  /// this backfill doing* is answerable without the definition file — which is
+  /// the state an operator is in when they find one half-finished.
+  modelName    String
+  fieldName    String
+
+  /// The last id this backfill has scanned PAST. Text because a model's id may
+  /// be a uuid or an integer and this column holds both.
+  ///
+  /// It is an optimisation and never the correctness: a chunk re-reads its own
+  /// predicate, so a row already filled is skipped whatever the cursor says.
+  /// That is what makes an interrupted chunk safe to run again.
+  cursor       String?
+
+  /// Rows looked at, and rows actually written. They differ whenever the fill
+  /// function declines a row, which is a legitimate answer and not an error.
+  scanned      Int       @default(0)
+  filled       Int       @default(0)
+
+  /// pending · running · done · failed · paused.
+  ///
+  /// `paused` is set by hand and is the throttle of last resort — the one an
+  /// operator reaches for at 3am when the duty cycle is not enough.
+  status       String    @default("pending")
+
+  /// Rows per chunk, and how long the last one took. The duty cycle is computed
+  /// from the second: the gap before the next chunk is a multiple of the work
+  /// the last one cost, so a backfill on a busy database slows itself down
+  /// without measuring the database.
+  chunkSize    Int
+  lastChunkMs  Int?
+
+  /// Bumped whenever this run has to be RESTARTED — resumed by hand, or picked
+  /// up by the recovery sweep after the queue gave up on a chunk.
+  ///
+  /// It is a term of the chunk's queue id, and without it a restart is
+  /// impossible rather than merely slow: `dispatch({ id })` treats a taken
+  /// primary key as work already queued FOR ALL TIME, so the chunk that
+  /// declined at the paused cursor holds that id forever and every later
+  /// dispatch at the same position is silently a no-op. The same counter the
+  /// deploy journal keeps for the same reason.
+  generation   Int       @default(0)
+
+  attempts     Int       @default(0)
+  lastError    String?
+
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@db(main)
+  @@gate("8")
+  @@index([status])
+}

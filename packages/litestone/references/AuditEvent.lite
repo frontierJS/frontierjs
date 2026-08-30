@@ -29,6 +29,8 @@
 /// **No `ip` or `userAgent`.** They belong to a REQUEST and most rows here are
 /// not written by one — a job, a cron fire, a replay. An app that wants them
 /// puts them in `meta`, where their absence is not a lie.
+enum ActorKind { user api_key system }
+
 model AuditEvent {
   id           String     @id @default(uuid())
 
@@ -53,8 +55,11 @@ model AuditEvent {
 
   /// What KIND of actor, because an id alone cannot say. A user, a machine, an
   /// API key, the system. Defaulted rather than nullable so a row always
-  /// answers.
-  actorType    String     @default("user")
+  /// answers — and an ENUM, because that list is closed and known: the writer
+  /// is one hook, so a value outside the set is a bug rather than a new case.
+  /// Compare `subjectType` below, which is the opposite call for the opposite
+  /// reason.
+  actorType    ActorKind  @default(user)
 
   /// The verb. A string and not an enum, for `Notification.type`'s reason: the
   /// set lives in application code and an enum makes every new one a migration.
@@ -71,6 +76,22 @@ model AuditEvent {
   ///
   /// Required here where a notification's is optional: an audit row with no
   /// subject records that something happened to nothing.
+  ///
+  /// ─── Why this one is a String and `actorType` is not ────────────────────
+  ///
+  /// A pair like this has no foreign key, so the ONE thing it can still be told
+  /// is which models it may name — an `enum`, which emits a table CHECK (so a
+  /// migration, a seed and `asSystem()` are held to it too) and reaches the
+  /// browser as a set a picker renders. Do that wherever the set is knowable.
+  /// Measured across seven published schemas, most are: ERPNext declares
+  /// `party_type` CLOSED twice and leaves the same set unconstrained sixteen
+  /// times in the same codebase.
+  ///
+  /// **This is the exemption.** An audit trail names whatever it was pointed
+  /// at — in practice the service that wrote the row — so the set grows with
+  /// every service and an enum would refuse the first row a new one writes.
+  /// `fli check`'s `polymorphic-subject` names that case and a
+  /// `check-baseline.json` entry is how an app says it means it.
   subjectType  String
   subjectId    String
 

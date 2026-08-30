@@ -33,8 +33,17 @@
 ///   3. ONE TABLE WITH A POLYMORPHIC SUBJECT — `subjectType` + `subjectId`, the
 ///      shape `AuditEvent` already uses in this tree. One table, one query for
 ///      the cross-model read, and NO referential integrity: nothing stops a row
-///      naming a model that does not exist or an id that has been deleted, and
-///      every read is a join the database cannot check.
+///      naming an id that has been deleted, and every read is a join the
+///      database cannot check.
+///
+///      **But the type column can still be told what it may hold**, and that is
+///      the half most schemas leave on the table. Declare an `enum` for it and
+///      the value is a table CHECK — enforced against a migration, a seed, an
+///      atomic operator and `asSystem()`, which drops the gate and every row
+///      policy and cannot drop this — and it reaches the browser as a set a
+///      picker renders instead of a text box. `String` is right only where the
+///      set genuinely grows with every model, which is an audit trail keyed by
+///      service name and is not tagging. See § *Tell it what it may name*.
 ///
 /// **Reach for 2 first** whenever the taggable set is closed and small — it is
 /// the only one of the three that keeps integrity AND the cross-model query, and
@@ -49,6 +58,34 @@
 /// If you take 3, own the cost explicitly: something has to sweep attachments
 /// whose subject is gone, and *something* means a job, because the database will
 /// not. That sweep is the whole of what 1 and 2 get for free.
+///
+/// ─── Tell it what it may name ─────────────────────────────────────────────
+///
+/// Answer 3's discriminator is the one column in the pair that can still carry a
+/// rule, and an `enum` is it — `subjectType TagSubject` below rather than
+/// `subjectType String`. Two things follow and both are free:
+///
+///   · a value outside the set is refused by a table CHECK, so a typo is not a
+///     row that will never join, forever, with nothing having objected
+///   · the set reaches the browser, so `controlFor` gives a picker and a
+///     generated form stops offering a text box for a model name
+///
+/// It is not integrity — there is still no foreign key, still no cascade, still
+/// no `include`, and the sweep above is still owed. It is the difference between
+/// *this points at something* and *this points at nothing and nobody noticed*.
+///
+/// **When to leave it a String**: the set grows with every model you add, so an
+/// enum would refuse the first row a new one writes. An audit trail keyed by
+/// service name is that case; tagging is not. `fli check`'s
+/// `polymorphic-subject` asks the question and takes a baseline for the answer.
+///
+/// Worth knowing how rare the genuine case is. Measured over seven published
+/// schemas: ERPNext declares the target set for 17 of its 78 polymorphic fields
+/// and leaves 61 unconstrained — and the split is not the domain, it is whether
+/// the author bothered. `party_type` is declared CLOSED twice (Customer,
+/// Supplier, Employee) and left OPEN sixteen times in the same codebase;
+/// `invoice_type`, `voucher_type`, `reference_type` and `document_type` all do
+/// the same. Assume yours is knowable until you have shown it is not.
 ///
 /// ─── What is deliberately NOT here ────────────────────────────────────────
 ///
@@ -107,6 +144,12 @@ model Tag {
 /// reason every such array eventually teaches: an array cannot be indexed,
 /// joined, or counted, and litestone classifies a `Json` column as opaque — so
 /// it cannot be sorted or grouped by either.
+/// The models this app tags. One member each — replace them with yours.
+///
+/// A String here would accept `'Prodcut'` for the life of the database. This is
+/// the whole of what the polymorphic pair can still be told, so tell it.
+enum TagSubject { Order Product Contact }
+
 model TagAttachment {
   id          Int      @id
 
@@ -123,10 +166,16 @@ model TagAttachment {
   /// must hold whatever the taggable models use, and `Int` cannot hold a uuid
   /// while `String` holds both.
   ///
-  /// **Nothing enforces this pair.** That is the cost of answer 3 above, stated
-  /// where somebody copying the file will read it — and the reason to check
-  /// whether `@@arc` covers your taggable set before taking it.
-  subjectType String
+  /// **No foreign key enforces this pair.** That is the cost of answer 3 above,
+  /// stated where somebody copying the file will read it — and the reason to
+  /// check whether `@@arc` covers your taggable set before taking it.
+  ///
+  /// The TYPE is an enum anyway, which is § *Tell it what it may name*: it
+  /// costs nothing, it makes a typo impossible rather than permanent, and it is
+  /// what gives a tag picker something to offer. Replace the members with the
+  /// models your app tags. The ID stays a String and stays unenforced — that
+  /// half is the one no declaration can reach.
+  subjectType TagSubject
   subjectId   String
 
   createdAt   DateTime @default(now())

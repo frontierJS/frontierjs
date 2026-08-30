@@ -1,7 +1,7 @@
 // lago — the data model of getlago/lago-api, expressed in .lite.
 //
 // Derived mechanically from db/structure.sql (AGPL-3.0) by
-// sql-to-lite.mjs beside this file. A CORPUS FIXTURE, not a design:
+// `litestone import --from sql`. A CORPUS FIXTURE, not a design:
 // nothing here is a claim about how any of it should be modelled, and every
 // place the conversion made a choice the source did not is recorded in
 // gaps.json. 139 models. Regenerate with fetch.mjs.
@@ -545,7 +545,7 @@ model BillableMetricFilter {
   organizationId String @map("organization_id")
   organization Organization @relation(fields: [organizationId], references: [id])
 
-  @@index([billableMetricId])
+  @@index([billableMetricId], where: deletedAt == null)
   @@index([deletedAt])
   @@index([organizationId])
 }
@@ -712,7 +712,7 @@ model ChargeFilterValue {
   organizationId String @map("organization_id")
   organization Organization @relation(fields: [organizationId], references: [id])
 
-  @@index([chargeFilterId])
+  @@index([chargeFilterId], where: deletedAt == null)
   @@index([billableMetricFilterId])
   @@index([deletedAt])
   @@index([organizationId])
@@ -731,7 +731,7 @@ model ChargeFilter {
   organization Organization @relation(fields: [organizationId], references: [id])
   code String?
 
-  @@index([chargeId])
+  @@index([chargeId], where: deletedAt == null)
   @@index([deletedAt])
   @@index([organizationId])
 }
@@ -761,14 +761,14 @@ model Charge {
   code String
   acceptsTargetWallet Boolean @map("accepts_target_wallet") @default(false)
 
-  @@index([planId, billableMetricId, payInAdvance])
-  @@index([acceptsTargetWallet])
-  @@index([billableMetricId])
+  @@index([planId, billableMetricId, payInAdvance], where: deletedAt == null)
+  @@index([acceptsTargetWallet], where: acceptsTargetWallet == true)
+  @@index([billableMetricId], where: deletedAt == null)
   @@index([deletedAt])
   @@index([organizationId])
   @@index([parentId])
   @@index([planId])
-  @@index([planId, billableMetricId, prorated])
+  @@index([planId, billableMetricId, prorated], where: deletedAt == null)
 }
 
 model ChargesTax {
@@ -1068,7 +1068,7 @@ model Customer {
   @@index([billingEntityId])
   @@index([deletedAt])
   @@index([organizationId, externalId])
-  @@index([organizationId])
+  @@index([organizationId], where: deletedAt == null)
   @@index([sequentialId])
 }
 
@@ -1429,11 +1429,11 @@ model Event {
   externalSubscriptionId String? @map("external_subscription_id")
   preciseTotalAmountCents Float? @map("precise_total_amount_cents")
 
-  @@index([createdAt])
+  @@index([createdAt], where: deletedAt == null)
   @@index([organizationId, code])
-  @@index([organizationId, createdAt])
-  @@index([organizationId, timestamp])
-  @@index([organizationId, transactionId])
+  @@index([organizationId, createdAt], where: deletedAt == null)
+  @@index([organizationId, timestamp], where: deletedAt == null)
+  @@index([organizationId, transactionId], where: deletedAt == null)
   @@unique([organizationId, externalSubscriptionId, transactionId], nullsDistinct: true)
 }
 
@@ -1591,16 +1591,16 @@ model Fee {
   @@index([billingEntityId])
   @@index([chargeFilterId])
   @@index([chargeId])
-  @@index([chargeId, invoiceId])
+  @@index([chargeId, invoiceId], where: deletedAt == null)
   @@index([deletedAt])
   @@index([fixedChargeId])
   @@index([groupId])
   @@index([invoiceId])
   @@index([invoiceableType, invoiceableId])
   @@index([organizationId])
-  @@index([organizationId, createdAt, id])
+  @@index([organizationId, createdAt, id], where: deletedAt == null)
   @@index([originalFeeId])
-  @@index([payInAdvanceEventTransactionId])
+  @@index([payInAdvanceEventTransactionId], where: deletedAt == null)
   @@index([rateCardRateId])
   @@index([rateOverrideId])
   @@index([subscriptionId])
@@ -1675,7 +1675,7 @@ model Invoice {
   @@index([customerId, organizationId])
   @@index([paymentDueDate])
   @@index([paymentMethodId])
-  @@index([readyToBeRefreshed])
+  @@index([readyToBeRefreshed], where: readyToBeRefreshed == true)
   @@index([voidedInvoiceId])
 }
 
@@ -1753,10 +1753,10 @@ model Subscription {
   @@index([planId, status])
   @@index([billingEntityId])
   @@index([customerId])
-  @@index([endingAt])
+  @@index([endingAt], where: status == true && endingAt != null)
   @@index([externalId])
   @@index([lastReceivedEventOn])
-  @@index([id])
+  @@index([id], where: lastReceivedEventOn == null)
   @@index([organizationId])
   @@index([paymentMethodId])
   @@index([planId])
@@ -2504,8 +2504,8 @@ model LifetimeUsage {
   historicalUsageAmountCents Int @map("historical_usage_amount_cents") @default(0)
 
   @@index([organizationId])
-  @@index([recalculateCurrentUsage])
-  @@index([recalculateInvoicedUsage])
+  @@index([recalculateCurrentUsage], where: deletedAt == null && recalculateCurrentUsage == true)
+  @@index([recalculateInvoicedUsage], where: deletedAt == null && recalculateInvoicedUsage == true)
   @@unique([subscriptionId])
 }
 
@@ -2519,7 +2519,7 @@ model MembershipRole {
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
 
-  @@index([membershipId, organizationId])
+  @@index([membershipId, organizationId], where: deletedAt == null)
   @@index([roleId])
 }
 
@@ -3204,7 +3204,7 @@ model SubscriptionRateCard {
 
   @@check("((endedAt IS NULL) OR (startedAt <= endedAt))")
   @@index([deletedAt])
-  @@index([nextBillingAt])
+  @@index([nextBillingAt], where: deletedAt == null && endedAt == null)
   @@index([organizationId])
   @@index([rateCardId])
   @@index([subscriptionId])

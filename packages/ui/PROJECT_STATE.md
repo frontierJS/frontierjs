@@ -10,7 +10,7 @@ State as of **2026-08-06**.
 
 ## What works
 
-- **69/69 components compile and emit parseable JavaScript** —
+- **69/70 components compile and emit parseable JavaScript** —
   `node test/compile-all.mjs`.
 - **27/27 render cases carry the css vocabulary** — `node test/render.mjs`,
   which renders through `renderComponent` and asserts both that the expected
@@ -163,7 +163,7 @@ decides which item is last.
 ## Landmines
 
 - **`bun install` resolves the workspace Mesa to a COPY under
-  `node_modules/.bun/`, not a symlink.** An edit to `packages/mesa/compiler.js`
+  `node_modules/.bun/`, not a symlink.** An edit to `packages/mesa/src/compiler.js`
   is invisible to anything importing `@frontierjs/mesa` until you reinstall —
   a test suite will report green against a stale snapshot. `test/compile-all.mjs`
   imports `../../mesa/compiler.js` by relative path for exactly this reason,

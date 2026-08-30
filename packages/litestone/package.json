@@ -43,6 +43,9 @@
     "./parser": {
       "import": "./src/core/parser.js"
     },
+    "./import": {
+      "import": "./src/import/index.js"
+    },
     "./jsonschema": {
       "import": "./src/jsonschema.js"
     },

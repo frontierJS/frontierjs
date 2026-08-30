@@ -32,6 +32,15 @@ core/
                 was asked for), because the words differ by kind and belong to
                 the page. `stopped` is marked before the signal: a SIGTERM looks
                 the same whoever sent it
+  release-view.js the Release realm read rather than typed — the pivot verdict
+                per app (local, free, on page load) and what is SERVING (remote,
+                a press). The split is the design: every other panel on that page
+                reads the tree, and a panel that ssh'd while a page loaded would
+                be the monitoring agent this realm refuses. It re-derives no
+                verdict — `classifyPivot` and the revert refusals are reached by
+                running the command that owns them, because a second
+                implementation is how the GUI ends up disagreeing with the
+                terminal about whether a deploy can be undone
   proofs.js     which drive proves a change — the parse of `CLAUDE.md`'s own
                 table and the resolution of both its columns. A PARSE and never
                 a second table; not a build graph, and it must not become one
@@ -95,6 +104,16 @@ core/
                 all. `run`/`capture` are the verbs; `tty` and `pipe` exist
                 because stdin can carry one thing and `docker exec -it` and the
                 journal runner each want it
+  lock.js       is another run working in this directory — the format, the
+                parser, the four scripts and the reading of one. A DIFFERENT
+                question from the journal's *what state did the last run leave*,
+                and the two only looked like rival answers because this one could
+                not expire (`FJS-D156`). It records the run, the actor, when, and
+                WHICH STEP — never a pid: `fli` runs on the operator's machine and
+                reaches the target one command at a time, so a pid there is dead
+                the moment it is written and no probe can be built on one.
+                `set -C` is the compare-and-set. `--resume` takes it over,
+                `deploy:unlock` drops it and settles nothing
   journal.js    the deploy journal — statements and verdicts, all pure. The
                 brain is HERE and `journal-runner.mjs` is the half that ships to
                 the target: it binds parameters and decides nothing, which is
@@ -384,10 +403,20 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
 - **`fli deploy --plan` and `fli deploy:plan` print the same document, from
   `deployPlan` in `_module.md`.** Two implementations of a plan is the failure
   the whole Release design is arranged against: a plan is what somebody reads to
-  decide. `--plan` sets `context.config.abort` rather than returning — the
+  decide. `--plan` sets `context.config.stop` rather than returning — the
   runner discovers steps AFTER the orchestrator and falls back to `_steps/` when
   no `stepsDir` is set, which is the legacy CapRover list, so an early return
   would run it.
+- **A step stops the pipeline two ways and they are different verdicts**
+  (`FJS-589`). `context.config.abort` is a REFUSAL: every later step self-skips
+  and the command exits NON-ZERO, even though nothing threw. `context.config.stop`
+  is a deliberate early exit that SUCCEEDED — `--plan` is the whole of its use.
+  Fail closed, so a refusal nobody thought about is loud. **`runOnAbort: true`
+  means run on a refusal** and not on a stop: a cleanup step undoes a half-done
+  run and a deliberate stop did not start one. The check is asked on BOTH of the
+  runtime's return paths, because a command with no steps (`deploy:logs`,
+  `:status`, `:run`, `:unlock`) takes the other one, and every refusal in those
+  four exited 0 until it was.
 - **A deploy target has bun and no `node_modules`, and that is what decides how
   the journal is written.** `deploy:setup` installs docker, nginx, git, bun,
   rsync and sqlite3; `02-pull` leaves a git checkout and the build happens inside
@@ -408,13 +437,24 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   reading it to get out of. `09-cleanup` settles on BOTH paths for the mirror
   reason — an aborted deploy must leave `failed` and not a `running` row the next
   run reads as a crash to resume.
-- **A recorded Release carries no digest under build-on-target, and must not.**
-  The id is content-addressed on the digest, and these bytes do not exist until
-  step 04 — minting around a digest that arrives later changes the id halfway
-  through the transition it names, so a resume computes a different id and opens
-  a second row. What step 04 built is recorded as that step's OUTPUT. The
-  consequence worth holding: resume works BECAUSE the id does not depend on a
-  rebuild being reproducible, which a build on the target cannot promise.
+- **A recorded Release carries the digest, and the resume no longer depends on
+  recomputing it.** This used to say a Release must carry NO digest under
+  build-on-target: the id is content-addressed on it, and a resume that
+  recomputes the id needs the rebuild to be reproducible, which a build on the
+  target cannot promise. Both halves were right and the conclusion was the wrong
+  way round. `04c-journal` moved the journal open to AFTER the build so a Release
+  names the bytes it deployed — a null digest made two deploys of different
+  source mint one id, and a revert restore what it was reverting from. What that
+  cost was the resume, silently and completely: an image ID is not a content
+  address, so any rebuild that is not a FULL cache hit mints a new Release from
+  identical bytes, the attempt lookup keys on `releaseId`, and every resume
+  opened a second transition while the skip-and-replay machinery below it stayed
+  unreachable (`FJS-595`). **`--resume` asks what is OPEN instead** —
+  `readLiveTransition`, scoped to app and environment and to the continuable
+  kinds — and adopts that transition WITH its Release, so the bytes the
+  interrupted run recorded are the bytes `06-swap` starts. An ordinary deploy
+  still keys on the Release, because there *different bytes are a different
+  Release* is the right question.
 - **`revert` and `rollback` are two commands on purpose, and one must not become
   the other.** `deploy:rollback` puts the previous IMAGE back — no journal, no
   history, no questions — and works on a target that has never deployed through
@@ -716,7 +756,14 @@ rather than inputs.
 
 ## Proving a change
 
-`bun run test`. There is no browser drive for `fli` — a change to a scaffold is
-proved by scaffolding into a temp directory and running what comes out. A change
-to `core/checks.js` also needs `node scripts/ci.mjs --fast`, because the repo is
-its other caller.
+`bun run test`. A change to a scaffold is proved by scaffolding into a temp
+directory and running what comes out. A change to `core/checks.js` also needs
+`node scripts/ci.mjs --fast`, because the repo is its other caller.
+
+**The GUI has its own drive and it is not in `test`**: `bun run test:browser`
+(`tests/browser/`, one spec per panel, over mesa's harness by relative path)
+needs Chrome. A change to `web/index.html` is proved there and nowhere else —
+the page is built from strings, so every class in it is a claim about a
+stylesheet nobody linked at author time, and a missing one renders as unstyled
+markup that a test asking what the page SAYS reports as passing (`FJS-545`'s
+shape one layer up).

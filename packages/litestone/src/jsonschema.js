@@ -687,6 +687,13 @@ function fieldToJsonSchema(field, schema, enumDefs, inlineEnums = false, audienc
   if (defaultAttr) {
     const dv = defaultValueToJson(defaultAttr.value, type)
     if (dv !== undefined) typeSchema.default = dv
+  } else if (type?.array && type.kind !== 'relation' && type.kind !== 'implicitM2M') {
+    // Every array column is NOT NULL DEFAULT '[]' whether or not it says so —
+    // an empty array is the null state of a list. The boundary already answers
+    // that way; saying it here is what lets a form, a factory and a generated
+    // type answer the same, instead of seeding `undefined` for a column that
+    // can never hold one.
+    typeSchema.default = []
   }
 
   // Annotate @guarded / @secret fields in system audience schemas
@@ -884,6 +891,10 @@ function defaultValueToJson(value, type) {
   if (wantsStructured && value.kind === 'string') {
     try { return JSON.parse(value.value) } catch { return undefined }
   }
+
+  // An array literal is already the value; its enum elements carry their member
+  // name, which is what the column stores and what a form has to offer back.
+  if (value.kind === 'array')    return value.values.map(e => e.value)
 
   if (value.kind === 'string')   return value.value
   if (value.kind === 'number')   return value.value

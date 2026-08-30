@@ -159,6 +159,40 @@ export function readAttempts({ kind, app, environment, fromReleaseId, releaseId,
 }
 
 /**
+ * The transition an interrupted run left open, found WITHOUT its Release id.
+ *
+ * `readAttempts` keys on `releaseId`, which is the right question for an
+ * ordinary deploy: different bytes are a different Release and deserve their own
+ * transition. It is the wrong question for `--resume`, because the Release id
+ * carries the image digest and a local image id is not a content address — an
+ * unchanged tree rebuilt without a full cache hit produces different bytes on
+ * paper, so the lookup missed the row it was standing on and every resume opened
+ * a second transition (`FJS-595`). Measured: one Dockerfile and one unchanged
+ * file give `1f021e1eccf8` cached and `a9c17ea37ed9` with `--no-cache`.
+ *
+ * So a resume asks the question it means — *what is open here* — and adopts what
+ * it finds, Release included. Scoped to one app and environment, and to the
+ * kinds that can be continued, because a revert opens a transition of its own and
+ * must not be picked up by a deploy.
+ */
+export function readLiveTransition({ kind = 'deploy', app, environment } = {}) {
+  return [{
+    name: 'live',
+    sql: `SELECT t.*, r."digest" AS "r_digest", r."imageRef" AS "r_imageRef",
+                 r."bindingsHash" AS "r_bindingsHash", r."schemaHash" AS "r_schemaHash",
+                 r."pivot" AS "r_pivot", r."pivotDeclared" AS "r_pivotDeclared",
+                 r."audienceKey" AS "r_audienceKey", r."createdBy" AS "r_createdBy"
+            FROM "${TABLE.transition}" t
+            JOIN "${TABLE.release}" r ON r."id" = t."releaseId"
+           WHERE t."kind" = ? AND t."app" = ? AND t."environment" = ?
+             AND t."status" IN ('planned','running')
+           ORDER BY t."rowid" DESC
+           LIMIT 1`,
+    params: [kind, app, environment],
+  }]
+}
+
+/**
  * Resume, or start a new attempt?
  *
  * A transition still `planned` or `running` is one this deploy was interrupted
@@ -495,6 +529,30 @@ export function journalClient({ exec, db, ddl, now = null } = {}) {
     async attempt(intent) {
       const r = await send(readAttempts(intent))
       return attemptDecision(r.attempts?.rows ?? [])
+    },
+
+    /**
+     * What is open here, asked without a Release id — the `--resume` lookup.
+     *
+     * Answers the transition AND the Release it was deploying, because adopting
+     * one without the other would resume the old transition against the bytes
+     * this run just built, which is the two halves disagreeing rather than a
+     * resume.
+     */
+    async live({ kind = 'deploy', app, environment } = {}) {
+      const row = one(await send(readLiveTransition({ kind, app, environment })), 'live')
+      if (!row) return null
+      return {
+        transition: row,
+        release: {
+          id: row.releaseId, app: row.app, environment: row.environment,
+          digest: row.r_digest ?? null, imageRef: row.r_imageRef ?? null,
+          bindingsHash: row.r_bindingsHash, generation: row.generation ?? 1,
+          schemaHash: row.r_schemaHash ?? null, pivot: row.r_pivot ?? 'unknown',
+          pivotDeclared: !!row.r_pivotDeclared, pivotFindings: [],
+          audienceKey: row.r_audienceKey ?? 'everyone', createdBy: row.r_createdBy ?? null,
+        },
+      }
     },
 
     /** Record the Release, its bindings and the transition, and read the steps back. */

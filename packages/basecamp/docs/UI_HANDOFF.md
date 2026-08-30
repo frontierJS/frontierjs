@@ -243,7 +243,7 @@ but no client has ever subscribed. Assume it needs debugging, not that it works.
 - **Gates.** `db/schema.lite` declares no `@@gate`, which violates Invariant 6.
   Access control is service hooks today. The blocker is a per-workspace
   `getLevel` mapping `WorkspaceMember.role` onto 0–7 — see `../db/README.md`
-  §Access control for the intended levels and `example/api/gate.ts` for the
+  §Access control for the intended levels and `example/api/src/core/gate.ts` for the
   pattern. **Do not build UI that assumes gate-derived permissions yet**;
   `resource.can()` will answer permissively.
 - **Auth.** Deferred by the user to the end. `@frontierjs/auth` is wired and

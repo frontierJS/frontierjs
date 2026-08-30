@@ -156,6 +156,9 @@ export function createProductVariantsService() {
         product:   variant.product?.name ?? '',
         colour:    variant.colour,
         size:      variant.size,
+        // MINOR units, because the column is `@money(USD)` and nothing between
+        // here and a screen may divide by a hundred by hand — the widget calls
+        // `fromMinor` with the code below.
         price:     variant.price,
         // Stated rather than assumed. The widget is on a page in some other
         // country and has no preferences store to read; the shop's base

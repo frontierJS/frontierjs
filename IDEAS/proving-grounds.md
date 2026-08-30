@@ -280,7 +280,14 @@ that would not reproduce at minimum size. All three were withdrawn before being
 written down, which is the discipline the loop needs — the same one the withdrawn
 `FJS-560` did not get. **A parser refusing a name is evidence about the name.**
 
-### The build-time half that is worth building
+### The build-time half that is worth building — **shipped 2026-08-29**
+
+> `litestone import <path> [--from prisma|rails|sql|frappe] [--out] [--report]
+> [--strict]` — `packages/litestone/src/import/`, `docs/import.md`. Four readers,
+> the refusal list graded `changed` / `lost` / `noted`, and every `changed` one
+> marked on its own line in the written file. What follows is the argument that
+> got it built, kept because the ranking below is still live. **`fli`'s half is
+> deliberately not built** — § *The half that is NOT built* below.
 
 **A converter whose refusal list is the artifact.** `.lite` is deliberately
 Prisma-shaped — `parser.js` pairs relations Prisma's way, takes positional relation
@@ -294,6 +301,11 @@ That prose is what a tool should emit as **data**. `litestone import --from pris
 repositories costs an afternoon instead of twenty hand ports, and re-running it after
 a grammar change says immediately what the change unlocked. **The refusal list is the
 roadmap** — it is the one artefact here that finds unknown unknowns automatically.
+
+Seven applications in, that is measured rather than hoped: 1,377 models, 2,178
+recorded constructs, two defects nothing else could have found (`FJS-563`,
+`FJS-571`), and one construct — the partial index, 251 instances — large enough
+to have become a feature.
 
 ### Candidates, ranked by what they probe
 
@@ -341,6 +353,51 @@ The natural home once there are two or three is a **CI phase** rather than a sui
 each corpus schema, emit its DDL and JSON Schema, and diff against a committed snapshot,
 which is `scripts/ci.mjs`'s `snapshots` phase with no new machinery — every generated
 artefact already names the command that wrote it in its own header.
+
+### The half that is NOT built — `fli`'s side of the door
+
+**Status: idea, nothing written.** `litestone import` is a Data-realm command: it
+takes a file and answers a `.lite` plus a graded list of what the reading cost. What
+it does not answer is the question an app arrives with — *I already have a schema,
+give me an application* — and that answer lives one package up, in `fli`.
+
+Two shapes, and they are not the same feature:
+
+| | |
+| --- | --- |
+| `fli import <path>` | into an app that already exists. Mostly a passthrough: `fli` knows where `db/schema.lite` is, so the value it adds is the path and the refusal to clobber a schema somebody has edited |
+| `fli new --from <path>` | the scaffold, seeded. This is the interesting one and the one with the argument against it |
+
+**The argument against seeding the scaffold is not effort, it is what an imported
+schema does not say.** It carries no `@@gate`, no `@@allow`, no `@@softDelete` and
+no `tenancy { }`, because the source had nowhere to say any of them — so
+`fli new --from` would scaffold an app whose Data boundary is **wide open by
+construction**, and hand back something that looks finished. Every other route into
+an FJS app starts from a schema somebody wrote a gate on. This one would not, and
+nothing in the scaffold currently notices.
+
+Three questions decide it, and none needs the code written to answer:
+
+1. **Does `fli new --from` pass `--strict`?** A `changed` construct is a column
+   whose meaning moved, and reviewing them is a step a person does. A scaffold that
+   runs the reading, prints the warnings and carries on has converted a refusal into
+   a log line — which is the shape `--strict` exists to refuse. Either the scaffold
+   stops on `changed` and the person fixes the schema first, or the feature is
+   `fli import` alone.
+2. **Who says the boundary is undeclared?** The honest answer is probably
+   `litestone advise` (legal-and-MISSING is already its half) or a `fli check` rule
+   that fires on a model with no `@@gate` in an app that HAS gated models — not a
+   banner the scaffold prints once and nobody sees again.
+3. **Is the target a new app or a live database?** *Import* and *adopt* are
+   different: an imported schema describes tables that already exist somewhere else,
+   and pointing a new app at them needs `litestone migrate baseline`, which is a
+   separate command with a separate refusal. Conflating the two is how a scaffold
+   ends up generating a first migration that would drop somebody's production
+   tables. **Whatever is built here moves no data and connects to nothing.**
+
+What is cheap and probably right regardless of the above: `fli import` as the
+passthrough, because an app that already exists has already answered question 1 by
+having a person in front of it.
 
 ---
 

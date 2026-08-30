@@ -5,6 +5,7 @@
 // App code never sees Request or Response directly.
 
 import { Router }                         from './router.ts'
+import { BUILD_HEADER } from '../core/build-id.ts'
 import { parsePathSegments, matchPathDirect } from './router.ts'
 import { parseBody, parseQuery, parseCookies, extractIP } from './body.ts'
 import { serveStatic }                    from './static.ts'
@@ -280,6 +281,17 @@ export class HttpTransport {
   // Swap the auth implementation used for session resolution. Public API —
   // core's app.setAuth() previously reached into the private _opts field
   // via type-erasing casts, which no type-checker could protect.
+  // The build this process is serving, stated on every response so a browser
+  // running the previous one can tell. Set after `load-config` rather than at
+  // construction, for the reason `setAuth` is: the transport exists before the
+  // config file has been read. Null keeps `_finalizeWithHeaders`'s no-op fast
+  // path intact for every app that never deployed. `core/build-id.ts` owns it.
+  private _buildId: string | null = null
+
+  setBuildId(id: string | null): void {
+    this._buildId = id
+  }
+
   setAuth(auth: SessionVerifier): void {
     this._opts.auth = auth
   }
@@ -611,9 +623,11 @@ export class HttpTransport {
     const correlation   = ctx.__correlationHeaders
 
     const needsCacheControl = canDecorate && response.status >= 200 && response.status < 300
+    const buildId = this._buildId
     const hasExtras =
       !!(cookieHeaders?.length || cors || security || rateLimit || correlation) ||
-      !!(this._opts.powered && canDecorate)
+      !!(this._opts.powered && canDecorate) ||
+      !!(buildId && canDecorate)
 
     // Compression decision is readable without cloning anything.
     const rawContentType = response.headers.get('content-type') ?? ''
@@ -648,6 +662,9 @@ export class HttpTransport {
     if (correlation) for (const [k, v] of Object.entries(correlation)) headers.set(k, v)
     if (this._opts.powered && canDecorate)
       headers.set('x-powered-by', this._opts.powered)
+    // Stated, never compared: the client holds the build it loaded and is the
+    // side that knows what to do about a difference.
+    if (buildId && canDecorate) headers.set(BUILD_HEADER, buildId)
 
     // ── Cache-Control ───────────────────────────────────────────────────────
     // Replace the blunt NOCACHE constant that was hardcoded in ctx.json() /
@@ -990,7 +1007,13 @@ export class HttpTransport {
     // Signal the client that auth is resolved and the connection is registered.
     // The client defers _wsReady until it receives this — prevents service calls
     // from firing before verifySession and connMap registration are complete.
-    wsSend(ws, JSON.stringify({ type: 'connected' }))
+    // The build this process serves rides the frame that already exists rather
+    // than a second one: `connected` is sent once per socket, which is exactly
+    // the cadence this needs — a deploy restarts the container, so every socket
+    // drops and the reconnect is when a stale client finds out. A client that
+    // predates the field ignores it.
+    wsSend(ws, JSON.stringify(
+      this._buildId ? { type: 'connected', build: this._buildId } : { type: 'connected' }))
   }
 
   private async _wsMessage(ws: Bun.ServerWebSocket<WsData>, message: string | Buffer): Promise<void> {

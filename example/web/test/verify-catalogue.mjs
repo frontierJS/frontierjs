@@ -193,7 +193,7 @@ check('image URL serves bytes',    head.ok && head.headers.get('content-type'), 
 // nullable — assert it holds through the API, not just in SQLite.
 const dup = await fetch(`${API}/api/product-variants`, {
   method: 'POST', headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ productId: 1, sku: 'DRIVE-DUP', colour: 'Night Navy', size: 'm', price: 1 }),
+  body: JSON.stringify({ productId: 1, sku: 'DRIVE-DUP', colour: 'Night Navy', size: 'm', price: 100 }),
 })
 check('anonymous variant write refused (@@gate)', dup.status, 401)
 

@@ -22,6 +22,9 @@ const { container, replaced } = swapContainer(context, {
   apiPort,
   dbPath:  deployConf.db?.path ?? `${serverPath}/db`,
   envFile: deployConf.api?.env ?? `${serverPath}/.env.production`,
+  // The same value `03-build-web` stamped into the bundle, so one deploy is one
+  // build on both sides of the wire — the server states it, the browser compares.
+  build:   context.config.commit,
   log,
 })
 

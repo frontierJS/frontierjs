@@ -24,7 +24,7 @@ import {
   openJournal, journalVerdict, readState, readAttempts, attemptDecision,
   recordRelease, recordBindings, openTransition, claimStep, finishStep,
   settleTransition, resumeDecision, preconditionVerdict, formatDrift,
-  readHistory, readSteps,
+  readHistory, readSteps, readLiveTransition,
 } from '../core/journal.js'
 
 const ROOT   = resolve(import.meta.dir, '..')
@@ -253,6 +253,90 @@ describe('the journal, through the runner that ships to the target', () => {
 
   const begin = (tid = 't1') =>
     j.begin({ release: RELEASE, transition: { ...TRANSITION, id: tid }, steps: steps(tid) })
+
+  // ─── what --resume adopts ──────────────────────────────────────────────────
+  //
+  // `attempt()` keys on `releaseId`, which is right for an ordinary deploy and
+  // wrong for a resume: the Release id carries the image digest, a local image
+  // ID is not a content address, and a rebuild that is not a full cache hit
+  // mints a new Release from identical bytes. So the lookup missed the row it
+  // was standing on and every resume opened a second transition (`FJS-595`).
+  //
+  // Every case here has its negative control in the same describe — a query that
+  // finds a live transition under every condition would pass while adopting
+  // somebody else's run.
+  describe('the transition --resume adopts', () => {
+    const otherRelease = { ...RELEASE, id: 'r9zzzzzzzzzz' }
+
+    test('finds the open transition even though the Release has moved', async () => {
+      await j.open({ app: 'shop', host: 'deploy@prod' })
+      await begin('t-live')
+      // The rebuild minted a different Release from the same source. This is the
+      // whole defect: `attempt()` answers nothing here.
+      expect(await j.attempt({
+        kind: 'deploy', app: 'shop', environment: 'production',
+        releaseId: otherRelease.id, fromReleaseId: null, generation: 1,
+      })).toMatchObject({ resume: null })
+
+      const held = await j.live({ app: 'shop', environment: 'production' })
+      expect(held?.transition.id).toBe('t-live')
+      // Adopted WITH its Release, or `06-swap` starts bytes the journal never named.
+      expect(held?.release.id).toBe(RELEASE.id)
+    })
+
+    test('a settled transition is not adopted — succeeded', async () => {
+      await j.open({ app: 'shop', host: 'deploy@prod' })
+      await begin('t-done')
+      await j.settle({ id: 't-done', status: 'succeeded' })
+      expect(await j.live({ app: 'shop', environment: 'production' })).toBeNull()
+    })
+
+    test('a settled transition is not adopted — failed', async () => {
+      await j.open({ app: 'shop', host: 'deploy@prod' })
+      await begin('t-failed')
+      await j.settle({ id: 't-failed', status: 'failed' })
+      expect(await j.live({ app: 'shop', environment: 'production' })).toBeNull()
+    })
+
+    test('another environment is not adopted', async () => {
+      await j.open({ app: 'shop', host: 'deploy@prod' })
+      await begin('t-live')
+      expect(await j.live({ app: 'shop', environment: 'stage' })).toBeNull()
+    })
+
+    test('another app is not adopted', async () => {
+      await j.open({ app: 'shop', host: 'deploy@prod' })
+      await begin('t-live')
+      expect(await j.live({ app: 'other', environment: 'production' })).toBeNull()
+    })
+
+    // A revert opens a transition of its own and takes the same lock. A deploy
+    // picking it up would continue somebody else's intent.
+    test('a revert in flight is not adopted by a deploy', async () => {
+      await j.open({ app: 'shop', host: 'deploy@prod' })
+      await j.begin({
+        release: RELEASE,
+        transition: { ...TRANSITION, id: 't-revert', kind: 'revert' },
+        steps: steps('t-revert'),
+      })
+      expect(await j.live({ kind: 'deploy', app: 'shop', environment: 'production' })).toBeNull()
+      expect((await j.live({ kind: 'revert', app: 'shop', environment: 'production' }))?.transition.id)
+        .toBe('t-revert')
+    })
+
+    test('the newest open transition wins where two are somehow open', async () => {
+      await j.open({ app: 'shop', host: 'deploy@prod' })
+      await begin('t-old')
+      await begin('t-new')
+      expect((await j.live({ app: 'shop', environment: 'production' }))?.transition.id).toBe('t-new')
+    })
+
+    test('the query names only the columns it is scoped by', () => {
+      const [q] = readLiveTransition({ kind: 'deploy', app: 'shop', environment: 'production' })
+      expect(q.sql).not.toMatch(/"releaseId"\s*=/)
+      expect(q.params).toEqual(['deploy', 'shop', 'production'])
+    })
+  })
 
   test('opening a journal that does not exist creates one and stamps it', async () => {
     const { journal } = await j.open({ app: 'shop', host: 'deploy@prod' })

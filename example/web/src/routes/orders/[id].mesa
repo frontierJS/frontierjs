@@ -44,15 +44,20 @@ title: Order
   import Tooltip        from '@frontierjs/ui/components/overlay/Tooltip.mesa'
   import { toasts }     from '@frontierjs/ui/stores/toastStore.js'
   // One owner of what a currency's decimals are — JPY has none, and every
-  // hand-rolled toFixed(2) invents one (`FJS-440`).
-  import { formatMoney } from '@frontierjs/toolbelt/units'
+  // hand-rolled toFixed(2) invents one (`FJS-440`). `fromMinor`/`toMinor` are
+  // the same fact one step earlier: every money column here is `@money`, so
+  // what the row holds is cents and what this screen shows and this person
+  // types is dollars.
+  import { formatMoney, fromMinor, toMinor } from '@frontierjs/toolbelt/units'
 
   $: (page.params, session.level)
 
   let order    = null
   let row      = null      // the record view the order is watched through
   let unwatch  = null
-  let customer = null
+  let customer    = null
+  let custRow     = null
+  let unwatchCust = null
   let items    = []        // OrderLine rows — what was bought
   let itemsError = null    // why the itemisation is empty, when it is empty for a reason
   let error    = null
@@ -108,15 +113,30 @@ title: Order
     return row.ready
   }
 
-  $.onDestroy(() => { unwatch?.(); row?.release() })
+  /** Who placed it, watched the same way — and re-keyed, because which
+   *  customer this is can change under the screen where the order itself
+   *  cannot. Same reason as the order above: a rename or a soft delete made
+   *  anywhere else reaches this line, and a `@version` this screen never read
+   *  is not remembered off it (`FJS-533`). */
+  function watchCustomer(id) {
+    if (id == null) { unwatchCust?.(); custRow?.release(); unwatchCust = custRow = null; customer = null; return }
+    if (custRow && String(custRow.id) === String(id)) return custRow.ready
+    unwatchCust?.(); custRow?.release()
+    custRow = customers.record(id)
+    unwatchCust = custRow.subscribe(v => { customer = v })
+    return custRow.ready
+  }
 
-  /** What hangs off the order and does NOT move with it — the customer, the
-   *  itemisation, the money. Each is its own read for its own reason (see
-   *  loadItems and loadMoney), and none of them changes when the status does. */
+  $.onDestroy(() => {
+    unwatch?.();     row?.release()
+    unwatchCust?.(); custRow?.release()
+  })
+
+  /** What hangs off the order and does NOT move with it — the itemisation and
+   *  the money. Each is its own read for its own reason (see loadItems and
+   *  loadMoney), and neither changes when the status does. */
   async function loadDetails() {
-    customer = order?.customerId
-      ? await customers.service.get(order.customerId).catch(() => null)
-      : null
+    await watchCustomer(order?.customerId ?? null)
     await loadItems()
     await loadMoney()
   }
@@ -190,12 +210,16 @@ title: Order
 
   const eventsFor = (payment) => told.filter(e => e.paymentRef === payment.providerRef)
 
-  /** What is still refundable on a payment — the schema's two columns, not a
-   *  flag. `refundedAmount` is a running total precisely so this is arithmetic
-   *  rather than a state to keep in step. */
-  const leftOn = (p) => Number((p.amount - p.refundedAmount).toFixed(2))
+  /** What is still refundable on a payment, in the payment's own minor units —
+   *  the schema's two columns, not a flag. `refundedAmount` is a running total
+   *  precisely so this is arithmetic rather than a state to keep in step, and
+   *  in cents that subtraction is exact. */
+  const leftOn = (p) => p.amount - p.refundedAmount
 
-  const money = (n) => formatMoney(n ?? 0, 'USD')
+  /** Cents → what a person reads. `Payment` is the one table in this shop that
+   *  stores a code per row (`@money(field: currency)`), so a payment figure
+   *  passes its own; everything on the ORDER is the shop's base. */
+  const money = (n, code = 'USD') => formatMoney(fromMinor(n ?? 0, code), code)
 
   /** Give money back. The amount is optional and blank means all of what is
    *  left, which is what the service means by omitting it — so the box is
@@ -208,7 +232,10 @@ title: Order
     busy = `refund:${target.id}`
     const said = toasts.loading('refunding…')
     try {
-      const body = amount === null || amount === '' ? {} : { amount: Number(amount) }
+      // The box is in dollars because that is what a person refunding £5 types;
+      // the service, the provider and the column are all in cents.
+      const cur  = target.currency ?? 'USD'
+      const body = amount === null || amount === '' ? {} : { amount: toMinor(Number(amount), cur) }
       const out = await payments.service.invoke('refund', target.id, body)
       // The provider's webhook is what moves the rows, and it has already
       // arrived by the time this resolves — the shop's own listener is
@@ -216,7 +243,7 @@ title: Order
       // needs no re-read; what does is everything beside it, since a refund
       // moves the payment, the money and the shelf.
       await loadDetails()
-      said.update('success', `${money(out.refunded)} back — ${money(out.refundedTotal)} of ${money(target.amount)}`)
+      said.update('success', `${money(out.refunded, cur)} back — ${money(out.refundedTotal, cur)} of ${money(target.amount, cur)}`)
     } catch (e) {
       // 403 from the seed's own @gate(5) on the transition, asked through
       // transitions(row); 502 when the provider could not be reached, carrying
@@ -505,7 +532,7 @@ title: Order
                   <Mono>{p.providerRef}</Mono>
                   <CopyButton text={p.providerRef} />
                 </div>
-                <strong data-amount>{money(p.amount)}</strong>
+                <strong data-amount>{money(p.amount, p.currency)}</strong>
               </div>
 
               <dl class="facts">
@@ -513,7 +540,7 @@ title: Order
                 {#if p.settledAt}<dt>Settled</dt><dd>{p.settledAt}</dd>{/if}
                 {#if p.refundedAmount > 0}
                   <dt>Refunded</dt>
-                  <dd data-refunded>{money(p.refundedAmount)} of {money(p.amount)}</dd>
+                  <dd data-refunded>{money(p.refundedAmount, p.currency)} of {money(p.amount, p.currency)}</dd>
                 {/if}
                 {#if p.failureReason}
                   <!-- The provider's words, verbatim. Nothing branches on them:
@@ -559,7 +586,7 @@ title: Order
                     loading={busy === 'refund:' + p.id}
                     onclick={() => { refund = p; amount = null }}
                   >Refund…</Button>
-                  <span class="text-sm text-muted">{money(leftOn(p))} still refundable</span>
+                  <span class="text-sm text-muted">{money(leftOn(p), p.currency)} still refundable</span>
                 </div>
               {/if}
 
@@ -648,22 +675,22 @@ title: Order
     <div class="cluster">
       <Button variant="ghost" onclick={() => { refund = null; amount = null }}>Keep it</Button>
       <Button tone="danger" id="refund-confirm" onclick={giveBack}>
-        Refund {refund ? (amount === null || amount === '' ? money(leftOn(refund)) : money(Number(amount))) : ''}
+        Refund {refund ? (amount === null || amount === '' ? money(leftOn(refund), refund.currency) : formatMoney(Number(amount), refund.currency ?? 'USD')) : ''}
       </Button>
     </div>
   {/snippet}
 
   {#if refund}
     <p>
-      <Mono>{refund.providerRef}</Mono> took {money(refund.amount)}
-      {#if refund.refundedAmount > 0}, of which {money(refund.refundedAmount)} has already gone back{/if}.
+      <Mono>{refund.providerRef}</Mono> took {money(refund.amount, refund.currency)}
+      {#if refund.refundedAmount > 0}, of which {money(refund.refundedAmount, refund.currency)} has already gone back{/if}.
     </p>
     <NumberInput
       id="refund-amount"
       label="How much"
-      hint={'Blank refunds all ' + money(leftOn(refund)) + ' that is left. A part refund leaves the order paid.'}
+      hint={'Blank refunds all ' + money(leftOn(refund), refund.currency) + ' that is left. A part refund leaves the order paid.'}
       min={0.01}
-      max={leftOn(refund)}
+      max={fromMinor(leftOn(refund), refund.currency ?? 'USD')}
       step={0.01}
       bind:value={amount}
     />

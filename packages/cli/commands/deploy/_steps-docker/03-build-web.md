@@ -29,8 +29,23 @@ machine.run('bun install --frozen-lockfile', { cwd: serverPath })
 // ─── Build on server ──────────────────────────────────────────────────────────
 // Code is already current from step 02 (git pull).
 // Run bun build inside the web sub-directory.
+// ─── The build's own identity ─────────────────────────────────────────────────
+//
+// A deploy replaces the code under browsers that are already running, and until
+// this nothing identified which build one of them was holding. `VITE_FJS_BUILD`
+// is inlined by vite at build time and reaches the client, which compares it
+// against what the server states on every response (`FJS-D160`).
+//
+// The env goes in the SCRIPT rather than in the exec options: the script is
+// piped to the TARGET's shell, so an env option here would set the operator's.
+// The value is a commit sha, and it is asserted to be one rather than trusted —
+// it is interpolated into a command line, and Invariant 8's reasoning applies to
+// a shell exactly as it does to SQL.
+if (!/^[0-9a-fA-F]{7,64}$/.test(String(commit)))
+  throw new Error(`refusing to build: the commit "${commit}" is not a sha`)
+
 log.info('Building web on server...')
-machine.run('bun run build', { cwd: `${serverPath}/web` })
+machine.run(`VITE_FJS_BUILD=${commit} bun run build`, { cwd: `${serverPath}/web` })
 
 // ─── Copy dist/ into versioned release dir ────────────────────────────────────
 // cp -a preserves timestamps and handles symlinks correctly.

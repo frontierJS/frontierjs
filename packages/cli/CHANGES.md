@@ -1,5 +1,357 @@
 # Changes — @frontierjs/cli
 
+## 2026-08-29 — a refusal is not a success
+
+1531 + 35 tests, 0 fail; `deployJournalCycle` 12/12. Closes
+[`FJS-589`](../../ISSUES.md#fjs-589).
+
+A step refuses by setting `context.config.abort` and returning. Every later step
+then self-skipped and the command exited **0** — so seven of the deploy
+pipeline's nine refusal sites reported success, `deploy:revert`'s six named
+refusals among them, which are the whole safety argument of the Release realm.
+
+**`abort` fails the command; `stop` is the deliberate early exit that
+succeeded.** Both skip every later step and they differ only in the verdict.
+Fail closed, so the next refusal somebody writes is loud without being told to
+be — `--plan` is the one shape that had to say otherwise, in three places.
+
+Asked on BOTH return paths. A command with steps runs the orchestrator then the
+loop; one without steps returns `config.run` directly, and `deploy:logs`,
+`:status`, `:run` and `:unlock` are that shape.
+
+The throw is `quiet`: the refusal has already printed its reason and the ways
+out, so `bin/fli.js` prints one line naming the step and nothing else.
+
+**`runOnAbort` now means run on a REFUSAL.** A cleanup step undoes a half-done
+run, and a deliberate stop did not start one — `fli deploy --plan` printed its
+plan and then reached `09-cleanup`, which opens a connection to the target to
+release a lock nothing took. Measured: five minutes hanging, now two seconds
+and exit 0.
+
+Doctor's trailing abort was deleted rather than converted. It protected nothing:
+doctor declares no `steps:` and is not `index.md`, so no step folder is ever
+discovered for it.
+
+## 2026-08-30 — `--resume` adopts the transition it finds
+
+`fli deploy --resume` took the lock over and then deployed from the beginning,
+because the transition it was continuing could not be found. `readAttempts` keys
+on `releaseId`; a Release id is content-addressed on the image digest; and a
+**local image ID is not a content address** — measured, one Dockerfile over one
+unchanged file gives `1f021e1eccf8` cached and `a9c17ea37ed9` with `--no-cache`.
+So an interrupted deploy rebuilt, minted a different Release from identical
+bytes, matched nothing, and opened a second transition. Every resume did this,
+and the machinery underneath it — `resumeDecision` skipping a succeeded step,
+`restoreStepNote` replaying the image `04-build-api` recorded so `06-swap` can
+start it — was unreachable in the one case it exists for (`FJS-595`).
+
+`readLiveTransition` asks the question a resume means: **what is open here**.
+Scoped to one app, one environment, and to the kinds that can be continued, so a
+revert in flight is not picked up by a deploy. It answers the transition AND its
+Release, because adopting one without the other resumes the old transition
+against the bytes this run just built.
+
+**Only under the flag.** An ordinary deploy still keys on the Release, because
+there *different bytes are a different Release* is the right question — the
+lookup was not wrong, it was being asked in the one place it does not fit.
+
+Two documents were carrying the reasoning that made this a bug and both are
+corrected: `04c-journal.md` said Docker's cache produces the same digest twice
+for an unchanged tree, and this package's `CLAUDE.md` still described the older
+design where a Release carried no digest at all and concluded that *resume works
+BECAUSE the id does not depend on a rebuild being reproducible*. That sentence
+was right about the mechanism and had stopped being true of the code.
+
+Found by clearing `FJS-544`, whose private-`/tmp` failure had masked the whole
+journal cycle since it was written — so `deployJournalCycle`, the only thing in
+the repo that runs `fli deploy`, had never reached this.
+
+## 2026-08-30 — the Release realm gets a surface
+
+`core/release-view.js` and two routes put the pivot on `fli gui`'s front page,
+beside *what proves this change* and *checks*. Until now the whole realm was
+terminal: you learned that a change crosses the pivot by typing `release:check`,
+which is a thing people type once something is already wrong. Its first run
+reported this repository's own tree as **contract** — twenty findings, all of
+them real — which nothing anybody looks at had been saying.
+
+**Two halves, and the split is the design.** The verdict per app READS THE TREE,
+so it loads with the page: free, offline, no side effect. What is SERVING
+reaches a machine over ssh, so it is a button and never a poll — a panel that
+ssh'd while a page loaded would be the monitoring agent this realm refuses. They
+are separate functions behind separate routes so the distinction cannot erode
+into a `setInterval`.
+
+**Nothing here re-derives a verdict.** `classifyPivot` is litestone's and the
+revert refusals are `core/revert.js`'s; both are reached by running the command
+that owns them and reading what it printed. A second implementation is how the
+GUI ends up disagreeing with the terminal about whether a deploy can be undone,
+which is the one disagreement that costs a database.
+
+Three things it cost to get right, each caught by running it rather than reading
+it:
+
+- **The refusal was thrown away.** The first version used `execFileSync` and
+  kept stderr only from the catch — but a deploy command that refuses exits 0
+  ([`FJS-589`](../../ISSUES.md#fjs-589)), so the success path handed the panel an
+  empty string and it reported *the journal answered nothing* about a command
+  that had said exactly what was wrong. `spawnSync`, both streams, every path.
+- **`.select` is defined by nothing.** The panel was written with it; the class
+  is `.field`. That is `FJS-545`'s shape one layer up — markup that looks styled
+  and is not — and it is invisible to any assertion about what the page SAYS.
+  `tests/browser/specs/release.spec.mjs` probes computed style against a bare
+  element, with a negative control that fails if the probe stops catching
+  `select` and `stack-sm`.
+- **A count in a badge is a Pill.** `badges.css` says so at the top and notes
+  that the failure is silent, which it was.
+
+The first attempt at that class check walked `document.styleSheets`; `cssRules`
+throws for the served stylesheet, so it reported every class in the page as
+undefined — `.badge` included, one assertion above the one measuring `.badge` as
+styled. A check that fails on correct markup is worse than no check.
+
+## 2026-08-30 — one deploy is one build, on both sides of the wire
+
+`03-build-web` stamps `VITE_FJS_BUILD=<commit>` so vite inlines it into the
+bundle, and `06-swap` passes `FJS_BUILD=<commit>` into the container so the API
+states the same value. A browser can then tell it is running the previous
+deploy's code ([`FJS-D160`](../../DECISIONS.md#fjs-d160)).
+
+The env goes in the SCRIPT rather than the exec options — the script is piped to
+the target's shell, so an env option would set the operator's — and the commit is
+asserted to be a sha before it is interpolated into a command line, because
+Invariant 8's reasoning applies to a shell exactly as it does to SQL.
+
+`deployJournalCycle` gained a twelfth assertion, and it is the only thing that can
+make this claim: two packages have to agree, the cli decides the value and
+junction states it, so it asks a DEPLOYED container what it answers and compares
+that against the commit the deploy built.
+
+## 2026-08-30 — the binding block stops being vacuous, and a refusal that reports success
+
+**`bindingsHash` covers a DECLARATION, and now says so.** `deploy.bindings` and
+`deploy.secrets` feed the Release id and their values are applied by nothing —
+`fli` writes no `.env` on a target, the operator owns that file, and the
+container is started with `--env-file` against it. `formatRelease` prints
+`(declared)`, `release:mint`'s term table says *as declared*, and
+`core/release.js` carries the reason. Half of [`FJS-585`](../../ISSUES.md#fjs-585);
+the values half is still open and is two different features.
+
+**The keys are now graded against the target.** `01b-env-check` reads the
+declared binding and secret KEYS alongside `.env.example`, reports which source
+named a missing one, and a declared block turns the check on by itself. That is
+what stops the declaration being a statement nothing checks — the values stay the
+operator's, and the keys become a per-target assertion in a file that is
+reviewed. `bindingSet` is asked rather than the two objects re-merged here,
+because per-target-beats-app-wide is its rule.
+
+**And it found [`FJS-589`](../../ISSUES.md#fjs-589), which is larger than what it
+was looking for.** `runtime.js` re-throws a step's ERROR, so a step that throws
+fails the command — but a step that refuses by setting `context.config.abort` and
+returning only makes the later steps self-skip, and the command exits **0**.
+Seven of the pipeline's nine refusal sites do it that way, `fli deploy:revert`'s
+six named refusals among them: the whole safety argument of the Release realm,
+each one telling a script the revert succeeded. Filed rather than fixed — a
+blanket *abort ⇒ non-zero* is wrong (`--plan` prints a plan and stops, which is
+success), so 34 abort sites each need the *refused* / *stopped on purpose* call
+made, and it should fail closed.
+
+`deployJournalCycle` gained an eleventh assertion, and it is the first thing here
+to run a step that refuses without throwing — which is why nothing had seen this.
+It asserts the pipeline STOPPED and the refusal named the key and its source,
+and gains `status !== 0` when 589 closes.
+
+## 2026-08-29 — a failed health check shows the container's own words
+
+`healthOrRestore` printed the URL it polled and a hint about `apiPrefix`, then
+rolled back. That hint is right when a running app serves health at a path the
+deploy block does not name, and **wrong in every case where the app never came
+up at all** — a missing attachment binding, a bad encryption key, a port already
+taken. In those the app had already said exactly what was wrong, clearly, in its
+own output, and the operator saw none of it: the sentence was in `docker logs`,
+where nobody looks at 3am because nothing said to.
+
+`showContainerTail` tails 40 lines on a failed health check, labelled as the
+app's own words. Tailed rather than dumped: an app that started and is merely
+unwell has written thousands of lines, and burying the one that matters is the
+same failure one layer along. A stopped container still answers, which is the
+case that matters most — it is the one that exited. It never throws; this runs on
+a path that is already failing.
+
+It is called from `healthOrRestore`, so the REVERT path gets it too — a revert
+whose health check fails is a target with no working release on it, which is the
+worst moment to be told only that a URL did not answer.
+
+**`deployJournalCycle` gained a tenth assertion**, and it is the one that proves
+phase 2 of `IDEAS/release-transitions.md` end to end: an app declaring an
+attachment nothing binds, deployed for real, must fail the deploy, carry the
+app's own refusal naming the service into the operator's terminal, and leave the
+release that was serving still serving. All three at once, which no unit test on
+either side can reach ([`FJS-D158`](../../DECISIONS.md#fjs-d158)).
+
+## 2026-08-29 — `polymorphic-subject`: the one thing an open pair can still be told
+
+`(subjectType, subjectId)` is the ruled answer for a target set that is open —
+no foreign key, no cascade, no `include`, and the target deliberately not an
+input to the access-control compiler (`IDEAS/polymorphic-relations.md`). None of
+that changes.
+
+**What changed is that the discriminator was carrying no rule at all.**
+`subjectType String` accepts a value naming nothing, forever, and nothing
+objects — not a migration, not a seed, not `asSystem()`. The fix is not a
+feature: an `enum` there emits a table CHECK, which holds where every other
+constraint holds, and reaches the browser as a set `controlFor` renders as a
+picker instead of a text box. `@@check("col IN (…)")` is the same enforcement
+where the values are not identifiers. The rule asks for one of the two.
+
+**A warning, because the exemption is real and it is named.** A set that grows
+with every model — an audit trail keyed by the service that wrote the row — must
+stay a String, since an enum there refuses the first row a new service writes.
+`check-baseline.json` is how an app says it means it, and basecamp's now does.
+
+**The evidence it is worth asking at all comes from the corpus.** Across seven
+published schemas ERPNext is the only source that DECLARES which kind each of
+its polymorphic fields is: 17 closed, 61 open. Reading the 61 is the finding —
+`party_type` is declared CLOSED twice (Customer, Supplier, Employee) and left
+open sixteen times in the same codebase, and `invoice_type`, `voucher_type`,
+`reference_type` and `document_type` all do the same. **Openness in the data is
+mostly an author not bothering rather than a domain requirement**, which is why
+the default here is to ask.
+
+Its first run reported five sites across this repo's two apps and every one was
+real, including two a hand grep had missed (`Server.providerKind + providerId`,
+`AuditEvent.actorType + actorId`). Four are enums now and the fifth is the
+baseline entry.
+
+Shape detection is a line scan here rather than litestone's
+`src/import/polymorphic.js`, which finds the same pairs to ask a different
+question — *which of the three answers did you mean* — and importing it would
+make an engine that must run in a client app with only `@frontierjs/cli`
+installed depend on a framework package to answer a question about text.
+
+`tests/checks.test.js` grows a correctly-declared pair in its CLEAN tree, so the
+rule RUNS there rather than skipping — the discipline that file already applies
+to `transition-methods`, `capability-ladder` and `service-as-system`.
+
+## 2026-08-29 — the split's middle step is checkable
+
+`fli release:check` refuses a contract on a required column and hands back
+*expand → backfill → contract*. The middle line used to read *fill `x` for the
+rows that predate it* — a sentence between two commands.
+
+`litestone release` now puts the FACT on the finding (`needsBackfill: { model,
+field }`) and stops there, because which mechanism fills a column is a question
+about the running application and litestone sits below the package that answers
+it. `fli release:check` reads the app's own source for a `defineBackfill` naming
+that model and field, and prints either where it is declared or the stub to
+write:
+
+```
+The middle step — every column that needs a value before its contract can pass:
+
+  ✗  Order.shippedAt — no defineBackfill names this column
+```
+
+Read as SOURCE rather than by a directory convention, the way the thirteen
+source-reading `fli check` rules already work: a rule keyed on a path reports a
+correct app as missing one. `core/backfills.js` counts braces rather than
+matching them with a regex — a `fill` is a function body and holds braces and
+quotes of its own, so `defineBackfill\({([^}]*)}` stops inside it and the
+`field` after it is never seen.
+
+**What no command here can answer is whether it has RUN**, because that is a row
+in the deployed database and this has no target. It says so, and names
+`app.backfills.status()`.
+
+`fli backfill:install` is the sibling of `outbox:install`: it imports
+`@frontierjs/junction/backfill.lite` by name rather than copying it, pushes the
+schema, and prints the declaration and the two lines to configure.
+
+## 2026-08-29 — the deploy lock says who holds it and how far they got
+
+1456 tests, 0 fail. `FJS-573` closed, ruled as [`FJS-D156`](../../DECISIONS.md#fjs-d156).
+
+Two records of a run in flight, and in the one case the whole Release design
+exists for they disagreed. The journal knew a killed deploy had left a `running`
+transition and `resumeDecision` graded exactly how to continue it; `.deploy.lock`
+refused the run that would. The only way through was to delete a file by hand,
+and the message telling an operator to do that named a pid.
+
+**The pid was a lie by construction and that is what settled the design.** The
+lock script wrote `$$`, expanded by the `sh -s` that ran it — a shell that exits
+the instant the file is written. It cannot be fixed by recording a better one:
+`fli` runs on the operator's machine and reaches the target one command at a
+time, so there is **no process on the target to point at**, and no probe can be
+built on one. `deploy:status` did not even parse its own format — it split
+`<pid>:<iso>:<target>` on `:` and had been reading the hour as the timestamp for
+its whole life.
+
+So the lock records what is true: the run, who started it, when, and **which step
+it is inside**. That last one is the fact that makes the duration beside it mean
+something — four minutes in `04-build-api` is a build, four minutes in `06-swap`
+is a run that died. It comes from a `beforeStep` announcement in the step runner,
+which is the only place it can: the build is the longest thing a deploy does and
+it runs BEFORE the journal opens (`04c-journal`), and a timer cannot serve it
+either, because `execSync` blocks the loop for the whole of a step.
+
+Neither register judges liveness, because that is a fact about a process this
+machine cannot see. The refusal reports and names both ways out, and they are not
+the same choice:
+
+```
+Deploy already in progress on deploy@box
+  held by sam deploying production, started 9m ago
+  in step 06-swap — 7m in it
+
+  If that run is dead:
+    fli deploy --resume    continue it — the journal knows how far it got
+    fli deploy:unlock      drop the lock and start over
+```
+
+`--resume` takes the lock over; `deploy:unlock` drops it and settles nothing, so
+a transition the dead run left open stays resumable. A resume was always safe
+without a liveness probe — a succeeded step replays into a no-op, a step is
+claimed compare-and-set, and different bytes are a different Release and
+therefore a new transition. The lock was only ever what made it unreachable.
+
+**A freshness check on `--resume` was built and then removed, and the reason
+generalises.** *A lock whose step moved seconds ago is a live run* looks sound and
+is not: the recorded time is when a step STARTED, and nothing records one ending
+or a pulse inside it — so a fresh timestamp is equally consistent with a run three
+seconds into a five-minute build and with a run killed three seconds into it. It
+was measured that way round, by the cycle: the crash it exists for leaves exactly
+that lock. A sound version needs a heartbeat within a step, which `execSync`
+forecloses. **Nothing was lost by removing it**, because the fact is already on
+screen — *in step 06-swap — 3s in it* — where a person can weigh it and the
+machine does not pretend to.
+
+**A TTL was considered and refused.** It is the shape the field uses and the one
+caravan uses one layer down (`FJS-294`), but the heartbeat can only tick per
+step, and a step is minutes long — so the TTL would have to exceed the longest
+build, putting an operator whose deploy was killed in a fifteen-minute wait to
+reach a feature that is already safe to reach immediately.
+
+`core/lock.js` is one format, one parser, four scripts and three readers, where
+`deploy`, `deploy:status` and `deploy:doctor` each used to `cat` the file and read
+it their own way. The format it replaced still parses and says it is legacy. Two
+things are proved by execution rather than compared as strings: `set -C` genuinely
+refuses a second writer, where the `[ -f ]` guard it replaces was two operations
+with a window between them; and a refresh carrying another run's id does not
+clobber. The `sh -n` guard over the deploy pipeline gained a second source, because
+these scripts left its text corpus by moving into a module — which is the shape of
+a check going quiet.
+
+`deployJournalCycle` used to `rm` the lock itself to reach the resume it was
+testing. It now asserts the refusal names the step the lock is holding and offers
+`--resume`, and resumes with it.
+
+Two other things the run turned up. `daemonBlindHint` is now one owner for *the
+daemon cannot see our work directory* — it matched the classic builder's wording
+only, so under BuildKit the same environment failed the journal cycle looking
+exactly like a broken Dockerfile. And `tests/lock.test.js` was written and not
+run: it is in the `test` script now, which is the rule `fli check`'s
+`test-files-run` already publishes and the reason it exists.
+
 ## 2026-08-29 — a dev surface has a name
 
 1430 tests + 99 browser assertions, 0 fail. `IDEAS/control-surface.md` §10.6,

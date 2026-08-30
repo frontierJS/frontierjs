@@ -45,6 +45,8 @@ title: Blueprints
   let rows       = []
   let categories = []
   let selected   = null
+  let selRow     = null      // the record view behind it
+  let unwatchSel = null
   let error      = null
   let loading    = true
   let category   = ''      // '' = every category
@@ -62,7 +64,6 @@ title: Blueprints
       const list  = await blueprints.service.find(query, { limit: 200 })
       rows        = list.data
       categories  = (await blueprints.service.invoke('categories', null)).categories
-      if (selected) selected = await blueprints.service.get(selected.id)
     } catch (e) {
       error = e.message
     } finally {
@@ -87,11 +88,29 @@ title: Blueprints
         || b.category.toLowerCase().includes(q)
   })
 
+  /** The expanded blueprint, watched rather than read (`FJS-518`).
+   *
+   *  `blueprints.get()` answers the row WITH its params, so this is a COMPOSED
+   *  view: a push carries the row alone and watching the node itself would
+   *  empty the parameter table at the first announcement (`FJS-533`). One view
+   *  at a time — opening another row re-keys it, closing releases it.
+   */
+  function watchSelected(id) {
+    unwatchSel?.(); selRow?.release()
+    unwatchSel = selRow = null
+    if (id == null) { selected = null; return }
+    selRow = blueprints.record(id, { composed: true })
+    unwatchSel = selRow.subscribe(v => { selected = v })
+    return selRow.ready
+  }
+
+  $.onDestroy(() => { unwatchSel?.(); selRow?.release() })
+
   async function open(bp) {
     error = null
-    if (selected?.id === bp.id) { selected = null; return }
+    if (selected?.id === bp.id) return watchSelected(null)
     try {
-      selected = await blueprints.service.get(bp.id)
+      await watchSelected(bp.id)
     } catch (e) {
       error = e.message
     }
@@ -101,7 +120,7 @@ title: Blueprints
     error = null
     try {
       await blueprints.service.remove(bp.id)
-      if (selected?.id === bp.id) selected = null
+      if (selected?.id === bp.id) watchSelected(null)
       await load()
     } catch (e) {
       // A 409 lands here when somebody else edited the row since this screen
@@ -220,7 +239,7 @@ title: Blueprints
   <Card id="blueprint-detail">
     <div class="section-header">
       <h2 class="h4">{selected.name} {selected.version}</h2>
-      <Button variant="ghost" onclick={() => selected = null}>Close</Button>
+      <Button variant="ghost" onclick={() => watchSelected(null)}>Close</Button>
     </div>
 
     <pre class="code" id="blueprint-image"><code>{selected.image}</code></pre>

@@ -341,6 +341,25 @@ describe('resource.options — a picker filled from the relation', () => {
     expect(truncated).toBe(null)
   })
 
+  // `FJS-570`: a picker that could not ASK looked exactly like a picker that
+  // asked and got nothing — the control rendered, opened, and offered zero
+  // choices, which a person reads as *there are no variants*. The service it
+  // wanted did not exist under the name it derived, and the miss went to the
+  // console.
+  test('a failure is an error on the answer, not an empty list', async () => {
+    _fail = new Error("Service 'productVariants' not found")
+    const orders = createResource('orders', { model: 'Order' })
+
+    const res = await orders.options('customerId')
+
+    expect(res.options).toEqual([])
+    expect(res.error).toMatch(/not found/)
+    // And the two are told apart: a real empty answer carries no error.
+    _fail = null
+    _rows = []
+    expect((await orders.options('customerId', { reload: true })).error).toBeUndefined()
+  })
+
   test('a stated labelField wins over the convention', async () => {
     _rows = [{ id: 7, name: 'Ada', email: 'ada@example.com' }]
     const orders = createResource('orders', { model: 'Order' })

@@ -1,5 +1,117 @@
 # Changes — @frontierjs/sierra
 
+## 2026-08-29 — `record()` takes options, and honours `detailQuery`
+
+1141 tests, 0 fail. Two changes behind
+[`FJS-D161`](../../DECISIONS.md#fjs-d161).
+
+`resource.record(id, { composed })` passes the declaration through to junction's
+record view, for a service whose `get()` answers more than the row.
+
+And the read behind it is now the same read `service.get(id)` makes — the
+resource's own `detailQuery`, which `record()` had silently ignored for its
+whole life. A resource that declares the include shape a detail view needs
+declares it once, and a record view is a detail view.
+
+## 2026-08-30 — the bundle knows which build it is
+
+`initJunction` passes `import.meta.env.VITE_FJS_BUILD` to the client as `build`,
+so a browser can tell it is running the previous deploy's code. The deploy stamps
+it (`03-build-web`), vite inlines it, and it travels INSIDE the bundle rather
+than being fetched — which is what makes it true for a browser still holding the
+old one. The server states its own on every response and on the socket's
+`connected` frame, and the client compares
+([`FJS-D160`](../../DECISIONS.md#fjs-d160)).
+
+Read through a guarded function, because the same module is imported by the
+prerender, which runs in Node where `import.meta.env` does not exist. Absent in
+dev and in any build nobody deployed, and the client is inert on that.
+
+## 2026-08-29 — a picker that could not ask says so
+
+`resource.options()` answers `error` where the fetch failed, a declared value set
+would not load, or the field is neither an enum nor a foreign key. *There are
+none* and *I could not reach the service* used to be the same empty list, which
+is how a service nobody could resolve looked like a shop with no variants in it
+(`FJS-570`). The kit does not render it yet — `FJS-587`.
+
+## 2026-08-29 — the prerender is bounded, and the shape that used to hang is pinned
+
+`FJS-549` and `FJS-550` were one failure wearing two descriptions — a layout
+holding an island, and that island's graph reaching `@frontierjs/sierra/junction`
+through a store. Neither reproduces. Every documented shape was run against a
+real build under `bun --bun`, including the composite nobody had tried, and all
+of them built and exited 0. What closes them is `tests/fixtures/layout-island/`
+and the prerender test over it, with a negative control that fails when the
+store is not really reached; the cause of the fix was not bisected and is not
+claimed.
+
+### the clock — the prerender is bounded
+
+A prerender that hangs writes nothing and says nothing, forever — the client
+bundle finishes, prints its chunk table, and then silence, which reads as a
+compiler that stopped rather than a build that will never finish. Both known
+causes (`FJS-549`, `FJS-550`) were found in one afternoon by one feature, and
+every diagnosis cost a full build cycle with no output to go on.
+
+Each unit of per-route work — `getStaticPaths()`, `load()`, `render` — is now
+raced against a clock. `prerender: { timeout }` in `sierra.config.js`, 30s by
+default, `0` to turn it off. A route that stops answering fails the build naming
+the route, the phase and the two shapes anybody has hit so far, so the failure
+can be reported by somebody who has not read this file.
+
+It diagnoses nothing and is not meant to: what it converts is silence into a
+message. **A synchronous spin is still not covered** — the timer needs the event
+loop, the same limit caravan's job timeout states about a handler that never
+awaits.
+
+## 2026-08-29 — the build keeps the one true error
+
+`FJS-551`. A module whose top-level `await` throws reports its real error
+exactly once; every import after that resolves to a partially-initialised
+namespace, so the next reader gets `Cannot access 'X' before initialization`
+naming whichever binding it touched, and the cause is gone from the process.
+That is the runtime's and cannot be fixed here. What was Sierra's is that it
+threw the one truthful error away — `resolveBuildDb` and `importCompanion` both
+read `catch { return null }` — so a schema parse error naming a file and a line
+came out as four TDZs and cost two people the same wrong diagnosis in a day.
+
+`src/build/app-import.js` is the one owner of *import a module the app wrote*.
+It records the first failure that is not itself a TDZ, refuses to import a
+module that already failed — re-importing is what manufactures the lie — and
+**touches every binding of a namespace it just imported**, because a half-built
+module does not throw on import: it throws when somebody reads a binding, which
+without this happens in whichever caller reached for `.db` or `.load`, outside
+anything that could explain it. `explainModuleInitFailure` now prints the
+recorded cause instead of advice to go and reproduce it.
+
+The two answers are separated at both doors. A db module that is ABSENT or
+wrong-shaped still warns and continues, because a page that cannot be observed
+is refused by `checkRoute` anyway; one that THREW fails the build. A companion
+that is not there is still `null`; one that would not load throws naming the
+route — the same fail-open shape `FJS-439` closed for a render that threw.
+
+## 2026-08-29 — `x-money` and `x-scale` reach a field rule
+
+1126 tests, 0 fail.
+
+`buildFieldRules` carries a fixed list of keys onto a rule, and neither of
+these was on it — so `@money` and `@scale` reached the JSON Schema and stopped
+there. Nothing downstream could tell a scaled integer from an ordinary one: a
+generated form offered a spinner stepping by 1, and a person editing a price
+typed the number on the label and stored a hundredth of it.
+
+They are carried for the reason `x-time` is — the keyword decides a CONTROL and
+nothing else on the rule can answer — and the effect is that the contributed
+control the docs have always shown can be resolved off the DECLARATION:
+
+    registerControl('money', (rule) => rule['x-money'] ? 'money' : null)
+
+which is what both docstrings now say. They used to match a column name ending
+in `Cents`, a convention no schema in this repo uses. What the control IS stays
+an app's decision — the currency's symbol, whether the box is in major units,
+what a blank means — and `example/web/src/money-control.js` is the first one.
+
 ## 2026-08-28 — a static surface's dev server shows its data
 
 1126 tests, 0 fail. Typecheck clean.

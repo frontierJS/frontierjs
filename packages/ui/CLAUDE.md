@@ -1,6 +1,6 @@
 # ui — package map
 
-**`@frontierjs/ui`** — a Mesa component kit over `@frontierjs/css`. 69
+**`@frontierjs/ui`** — a Mesa component kit over `@frontierjs/css`. 70
 components, no build step, no utility classes (Invariant 13: style with a tone
 and a treatment, never a color).
 

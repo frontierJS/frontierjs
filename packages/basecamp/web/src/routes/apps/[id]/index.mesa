@@ -51,10 +51,28 @@ title: App
   function write(name, value) { draft = { ...draft, [name]: value } }
   function writeCert(name, value) { certDraft = { ...certDraft, [name]: value } }
 
+  // The app itself, watched rather than read (`FJS-518`). `apps.get()` is
+  // `detail(id)` — the row plus its domains — so this is a COMPOSED view: the
+  // node says the row moved and the composed answer is read again. Watching the
+  // node's own value would empty `app.domains` at the first push, because a
+  // push carries the row alone (`FJS-533`).
+  // Named `appRow` and not `row`: the domains table below declares a
+  // `{#snippet row(d)}`, and a snippet is a binding in the same component.
+  let appRow  = null
+  let unwatch = null
+
+  function watchApp(id) {
+    if (appRow && String(appRow.id) === String(id)) return appRow.refresh()
+    unwatch?.(); appRow?.release()
+    appRow = apps.record(id, { composed: true })
+    unwatch = appRow.subscribe(v => { app = v })
+    return appRow.ready
+  }
+
   async function load() {
     error = null
     try {
-      app = await apps.service.get(page.params.id)
+      await watchApp(page.params.id)
       // The machines this app could be placed on. Read here rather than in the
       // markup because a select with no options and a select still loading look
       // identical, and the difference decides whether 'Place' is a dead button.
@@ -69,21 +87,15 @@ title: App
   load()
   $: page.params.id, () => load()
 
-  // Live. A deployment finishing, or somebody adding a hostname in another tab,
-  // changes this page without anyone touching it. Reads are filtered out or the
-  // handler answers its own refetch, forever.
+  // A domain write names the DOMAIN, not the app, so no node of App moves and
+  // the composed view above has nothing to fire on. Reads are filtered out or
+  // the handler answers its own refetch, forever.
   const READS = new Set(['get', 'find'])
-  const offApps = apps.service.on('*', (method, row) => {
-    if (READS.has(method) || row?.id !== page.params.id) return
+  const offDomains = domains.service.on('*', (method, changed) => {
+    if (READS.has(method) || changed?.appId !== page.params.id) return
     load()
   })
-  // A domain write names the DOMAIN, not the app, so this one reloads whenever
-  // the changed row belongs to the app on screen.
-  const offDomains = domains.service.on('*', (method, row) => {
-    if (READS.has(method) || row?.appId !== page.params.id) return
-    load()
-  })
-  $.onDestroy(() => { offApps(); offDomains() })
+  $.onDestroy(() => { offDomains(); unwatch?.(); appRow?.release() })
 
   async function addDomain() {
     error = null; busy = 'domain'

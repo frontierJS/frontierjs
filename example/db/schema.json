@@ -152,7 +152,10 @@
           "default": "one"
         },
         "price": {
-          "type": "number",
+          "type": "integer",
+          "x-money": {
+            "currency": "USD"
+          },
           "minimum": 0
         },
         "barcode": {
@@ -402,13 +405,17 @@
           "title": "Kind"
         },
         "value": {
-          "type": "number",
+          "type": "integer",
+          "x-scale": 2,
           "minimum": 0,
-          "description": "Percent: 0–100. Fixed: an amount in the shop's base currency. One column for two units, which is the cost of not having two tables — a FIELD validator here cannot see `kind`, so the bound that matters is declared at the model instead, below. `pricing.ts` still caps the discount at the subtotal, which is a different rule: this one is about what may be STORED, that one about what may be charged.",
+          "description": "Percent: 0–100. Fixed: an amount in the shop's base currency. One column for two units, which is the cost of not having two tables — a FIELD validator here cannot see `kind`, so the bound that matters is declared at the model instead, below. `pricing.ts` still caps the discount at the subtotal, which is a different rule: this one is about what may be STORED, that one about what may be charged.  `@scale(2)` and not `@money`, and the two units are why: half the rows here are not money. What they share is the SCALE — a dollar's minor unit and a percentage's hundredth are both two places — so one exact integer column carries both without either reading being a rounded copy of itself. 1050 is $10.50 under `fixed` and 10.50% under `percent`, and the bound below is stated in the same units.",
           "title": "Value"
         },
         "minSubtotal": {
-          "type": "number",
+          "type": "integer",
+          "x-money": {
+            "currency": "USD"
+          },
           "minimum": 0,
           "default": 0,
           "description": "The floor this code is worth anything at. Zero means none.",
@@ -515,14 +522,20 @@
           "title": "Description"
         },
         "price": {
-          "type": "number",
+          "type": "integer",
+          "x-money": {
+            "currency": "USD"
+          },
           "minimum": 0,
           "title": "Price"
         },
         "freeOver": {
           "anyOf": [
             {
-              "type": "number",
+              "type": "integer",
+              "x-money": {
+                "currency": "USD"
+              },
               "minimum": 0
             },
             {
@@ -630,10 +643,13 @@
           "default": "pending"
         },
         "subtotal": {
-          "type": "number",
+          "type": "integer",
+          "x-money": {
+            "currency": "USD"
+          },
           "minimum": 0,
           "default": 0,
-          "description": "─── What was charged, and why ──────────────────────────────────────────  Nine columns for one number, and every one of them is a copy of something that lives somewhere else — the code, its wording, the method, the rate. `OrderLine`'s header argues the general case; the specific one is that a merchant changes the VAT rate the week after a sale and every historical receipt silently reprices itself if the rate is joined rather than written down.  The arithmetic is `api/src/pricing.ts` and nothing here recomputes it:  subtotal − discount + shipping + tax = total  Each component is rounded once, on the server, at the moment of sale, and `total` is the sum of the ROUNDED components — so the breakdown a customer reads adds up to the figure they were charged, by construction rather than by luck. A screen that re-derived any line of it would round on its own and be a penny out on exactly the orders where a penny is noticed.  Every one is `@system`: the shop computes them, and there is no request in which a caller stating their own total is anything but an attack. They are `@default(0)` rather than nullable because an order with no discount was discounted by zero, which is a fact — where null would mean *nobody has worked it out yet*, and that state does not exist after checkout. The lines, added up. What `OrderLine.lineTotal` sums to.",
+          "description": "─── What was charged, and why ──────────────────────────────────────────  Nine columns for one number, and every one of them is a copy of something that lives somewhere else — the code, its wording, the method, the rate. `OrderLine`'s header argues the general case; the specific one is that a merchant changes the VAT rate the week after a sale and every historical receipt silently reprices itself if the rate is joined rather than written down.  The arithmetic is `api/src/pricing.ts` and nothing here recomputes it:  subtotal − discount + shipping + tax = total  Every one is `@money(USD)`, which is to say a whole number of CENTS. The scale is the currency's and not the author's — `@frontierjs/toolbelt/units` is what knows the yen has none — and storing the minor unit is what makes the identity below an equality rather than a tolerance: five integers add up exactly, where five binary floats add up to within half a cent and the receipt has to be believed rather than checked.  Rounding happens once, on the server, at the moment of sale, and only where a rate is applied — tax is the one component that is a multiplication. A screen that re-derived any line of this would round on its own and be a penny out on exactly the orders where a penny is noticed.  Every one is `@system`: the shop computes them, and there is no request in which a caller stating their own total is anything but an attack. They are `@default(0)` rather than nullable because an order with no discount was discounted by zero, which is a fact — where null would mean *nobody has worked it out yet*, and that state does not exist after checkout. The lines, added up. What `OrderLine.lineTotal` sums to.",
           "title": "Subtotal",
           "readOnly": true,
           "x-litestone-kind": "system"
@@ -658,7 +674,10 @@
           "x-litestone-kind": "system"
         },
         "discount": {
-          "type": "number",
+          "type": "integer",
+          "x-money": {
+            "currency": "USD"
+          },
           "minimum": 0,
           "default": 0,
           "title": "Discount amount",
@@ -676,7 +695,10 @@
           "x-litestone-kind": "system"
         },
         "shipping": {
-          "type": "number",
+          "type": "integer",
+          "x-money": {
+            "currency": "USD"
+          },
           "minimum": 0,
           "default": 0,
           "title": "Shipping cost",
@@ -702,7 +724,10 @@
           "x-litestone-kind": "system"
         },
         "tax": {
-          "type": "number",
+          "type": "integer",
+          "x-money": {
+            "currency": "USD"
+          },
           "minimum": 0,
           "default": 0,
           "title": "Tax amount",
@@ -710,7 +735,10 @@
           "x-litestone-kind": "system"
         },
         "total": {
-          "type": "number",
+          "type": "integer",
+          "x-money": {
+            "currency": "USD"
+          },
           "minimum": 0,
           "default": 0,
           "description": "What the card was charged. The sum of the five above, stored rather than derived, and the only one of them a payment is ever compared against.  The ONE money column here that is not `@system`, and the exception is deliberate: staff raise an order by hand for a sale that happened on the telephone, and that order has a total and no itemisation — no lines, and therefore no breakdown to add up. A screen renders the five above only where there are lines to explain, which is the same condition under which they were computed at all."
@@ -854,14 +882,20 @@
           "maximum": 99
         },
         "unitPrice": {
-          "type": "number",
+          "type": "integer",
+          "x-money": {
+            "currency": "USD"
+          },
           "minimum": 0,
           "title": "Unit price"
         },
         "lineTotal": {
-          "type": "number",
+          "type": "integer",
+          "x-money": {
+            "currency": "USD"
+          },
           "minimum": 0,
-          "description": "STORED, not multiplied at read time — and this is the column that decides whether the lines add up to the total. Rounding is done once, on the server, at the moment of sale; a screen that recomputed `unitPrice * quantity` in JavaScript would round on its own and the sum of what is shown would not be what was charged, by a penny, on the orders where it matters most.",
+          "description": "STORED, not multiplied at read time — and this is the column that decides whether the lines add up to the total. In cents the multiplication is exact, which removes the penny this column was written for and leaves the other reason: a screen that recomputed `unitPrice * quantity` would be quoting today's price for a sale that happened last week the moment anything above it changes.",
           "title": "Total"
         },
         "userId": {
@@ -936,9 +970,12 @@
           "default": "pending"
         },
         "amount": {
-          "type": "number",
+          "type": "integer",
+          "x-money": {
+            "field": "currency"
+          },
           "minimum": 0,
-          "description": "COPIED from the order at the moment the intent was created, not joined. What was authorised is a fact about that authorisation, and an order whose total was corrected afterwards must not silently rewrite what the provider was asked for — the disagreement between the two numbers is the thing a person needs to see."
+          "description": "COPIED from the order at the moment the intent was created, not joined. What was authorised is a fact about that authorisation, and an order whose total was corrected afterwards must not silently rewrite what the provider was asked for — the disagreement between the two numbers is the thing a person needs to see.  `@money(field: currency)` and not `@money(USD)`: this is the one table in the shop that already stores a code per row, because a provider is asked in a currency and answers in one. The scale is therefore that ROW's — a JPY intent is a whole number of yen and a USD one is cents — which is exactly the fact a shared `@money(USD)` here would get wrong by a hundred."
         },
         "currency": {
           "type": "string",
@@ -951,7 +988,10 @@
           "title": "Order"
         },
         "refundedAmount": {
-          "type": "number",
+          "type": "integer",
+          "x-money": {
+            "field": "currency"
+          },
           "minimum": 0,
           "default": 0,
           "description": "How much has gone back, of `amount`. A number rather than a flag because a refund is not one event: a shop refunds the postage today and the item next week, and each is a separate call to the provider with its own ledger row. The order only moves when this reaches `amount`."
@@ -1172,7 +1212,10 @@
           "default": 1
         },
         "unitPrice": {
-          "type": "number",
+          "type": "integer",
+          "x-money": {
+            "currency": "USD"
+          },
           "minimum": 0,
           "readOnly": true,
           "x-litestone-kind": "system"
@@ -1383,9 +1426,13 @@
         },
         "data": {},
         "contextType": {
-          "type": [
-            "string",
-            "null"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NotificationContext"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "contextId": {
@@ -1490,6 +1537,13 @@
         "damaged"
       ],
       "title": "StockMovementKind"
+    },
+    "NotificationContext": {
+      "type": "string",
+      "enum": [
+        "Order"
+      ],
+      "title": "NotificationContext"
     },
     "TrackingUpdate": {
       "type": "object",

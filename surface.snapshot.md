@@ -168,9 +168,10 @@ name when it declares none.
 | before | `create` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
-### `order-lines` · model `OrderLine`
+### `orderLines` · model `OrderLine`
 
 - **methods** — `find`, `get`
+- **also answers to** — `order-lines`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -199,9 +200,10 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `recordTracking` | `validateInput` |
 
-### `payment-events` · model `PaymentEvent`
+### `paymentEvents` · model `PaymentEvent`
 
 - **methods** — `find`, `get`
+- **also answers to** — `payment-events`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -228,25 +230,11 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
-### `product-images` · model `ProductImage`
+### `productImages` · model `ProductImage`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`
+- **also answers to** — `product-images`
 - **broadcasts on** — `product-images`
-
-| Phase | Method | Chain |
-| --- | --- | --- |
-| around | `all` | `gateAuth` |
-| before | `find` | `autoFilter` → `autoSort` |
-| before | `get` | `autoFilter` |
-| before | `create` | `autoValidate` |
-| before | `patch` | `autoValidate` |
-| before | `update` | `autoValidate` |
-
-### `product-variants` · model `ProductVariant`
-
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `availability`, `embed`
-- **custom methods** — `availability`, `embed`
-- **broadcasts on** — `product-variants`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -271,6 +259,22 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
+### `productVariants` · model `ProductVariant`
+
+- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `availability`, `embed`
+- **custom methods** — `availability`, `embed`
+- **also answers to** — `product-variants`
+- **broadcasts on** — `product-variants`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
 ### `sessions` · model `sessions`
 
 - **methods** — `find`, `remove`, `revokeOthers`
@@ -285,9 +289,10 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
-### `shipping-methods` · model `ShippingMethod`
+### `shippingMethods` · model `ShippingMethod`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`
+- **also answers to** — `shipping-methods`
 - **broadcasts on** — `shipping-methods`
 
 | Phase | Method | Chain |
@@ -313,9 +318,10 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
-### `tax-rates` · model `TaxRate`
+### `taxRates` · model `TaxRate`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`
+- **also answers to** — `tax-rates`
 - **broadcasts on** — `tax-rates`
 
 | Phase | Method | Chain |

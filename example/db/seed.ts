@@ -27,9 +27,31 @@
 // direction that would be a problem. Nothing in db/ is imported BY api/.
 
 import { createLitestoneAuth } from '@frontierjs/auth'
+import { toMinor }             from '@frontierjs/toolbelt/units'
 import { sys, db, DEV_KEY }    from '../api/src/core/db.ts'
 import { move }                from '../api/src/inventory.ts'
-import { priceBasket }         from '../api/src/pricing.ts'
+import { priceBasket, BASE }   from '../api/src/pricing.ts'
+
+// ─── The unit, and why this file is not written in it ─────────────────────
+//
+// Every money column in the schema is `@money(USD)`, which stores a whole
+// number of CENTS. The tables below are written in DOLLARS anyway — `price: 28`
+// and not `price: 2800` — because a fixture is read and edited by people, and a
+// four-figure integer beside a tee shirt is a number nobody can check at a
+// glance. The conversion happens at the write, which is where it happens in the
+// application too: a person types a major-unit amount into a form and the
+// boundary stores the minor one.
+//
+// `cents` is `toMinor`, and it rounds: `8.29 * 100` is 828.9999999999999 in
+// binary floating point, so the multiplication a seed file reaches for first
+// loses a cent on prices that look exact.
+const cents = (major: number) => toMinor(major, BASE)
+
+// `Discount.value` is `@scale(2)` and not `@money`, because half its rows are a
+// PERCENTAGE and not an amount (the schema says why). The scale is the same two
+// places either way — 1050 is $10.50 under `fixed` and 10.50% under `percent` —
+// so this is the same arithmetic under a name that does not claim it is money.
+const scaled = (n: number) => Math.round(n * 100)
 
 const DEMO = {
   user:  { email: 'sam@shop.test',  password: 'correct-horse-battery', name: 'Sam',  role: 'user'  },
@@ -63,7 +85,7 @@ const APPAREL = ['s', 'm', 'l'] as const
 /// price per family the range the catalogue renders could never differ from
 /// itself, and the code path that formats it would never run. The drive asserts
 /// a range on screen, which is what keeps that honest.
-const SIZE_UPLIFT: Record<string, number> = { s: 0, m: 0, l: 2, xl: 4, xxl: 6 }
+const SIZE_UPLIFT: Record<string, number> = { s: 0, m: 0, l: 2, xl: 4, xxl: 6 }   // dollars
 
 /// Which size carries the colourway photograph. A picture is of a COLOUR, and
 /// a colour spans every size it is cut in, so the image hangs off one variant
@@ -83,6 +105,7 @@ type SeedProduct = {
   brand:       'frontierjs' | 'junction' | 'litestone'
   description: string
   skuStem:     string
+  /** DOLLARS. `cents()` converts at the write — see the header. */
   price:       number
   sizes:       readonly string[]
   colours:     Colourway[]
@@ -259,9 +282,9 @@ async function seedMoney() {
     // is measured against the subtotal AFTER the discount and a code can
     // therefore take a basket back BELOW the threshold it had qualified for.
     await sys.shippingMethod.createMany({ data: [
-      { name: 'Standard', description: '3–5 working days', price: 4.95, freeOver: 75,   position: 1 },
-      { name: 'Express',  description: 'Next working day',  price: 12.5, freeOver: null, position: 2 },
-      { name: 'Collect',  description: 'Pick up in store',  price: 0,    freeOver: null, position: 3 },
+      { name: 'Standard', description: '3–5 working days', price: cents(4.95), freeOver: cents(75), position: 1 },
+      { name: 'Express',  description: 'Next working day',  price: cents(12.5), freeOver: null,      position: 2 },
+      { name: 'Collect',  description: 'Pick up in store',  price: cents(0),    freeOver: null,      position: 3 },
     ] })
   }
 
@@ -271,15 +294,16 @@ async function seedMoney() {
     // reach each refusal without inventing rows of its own.
     const day = 24 * 60 * 60 * 1000
     await sys.discount.createMany({ data: [
-      { code: 'WELCOME10', label: '10% off your first order', kind: 'percent', value: 10 },
-      { code: 'FIVER',     label: '5 off orders over 40',     kind: 'fixed',   value: 5, minSubtotal: 40 },
+      { code: 'WELCOME10', label: '10% off your first order', kind: 'percent', value: scaled(10) },
+      { code: 'FIVER',     label: '5 off orders over 40',     kind: 'fixed',   value: scaled(5),
+        minSubtotal: cents(40) },
       // Ended yesterday. A code that is a row and is worth nothing is a
       // different state from one that was never issued, and only a shop with
       // both in it can prove the two are told apart.
-      { code: 'EXPIRED',   label: 'Last season',              kind: 'percent', value: 25,
+      { code: 'EXPIRED',   label: 'Last season',              kind: 'percent', value: scaled(25),
         endsAt: new Date(Date.now() - day).toISOString() },
       // One redemption, ever. What the checkout's read-modify-write is for.
-      { code: 'ONLYONCE',  label: 'One customer only',        kind: 'fixed',   value: 3,
+      { code: 'ONLYONCE',  label: 'One customer only',        kind: 'fixed',   value: scaled(3),
         maxRedemptions: 1 },
     ] })
   }
@@ -331,7 +355,7 @@ async function seedCatalogue() {
           sku:       `${p.skuStem}-${c.code}-${size.toUpperCase()}`,
           colour:    c.colour,
           size,
-          price:     p.price + (SIZE_UPLIFT[size] ?? 0),
+          price:     cents(p.price + (SIZE_UPLIFT[size] ?? 0)),
         } })
 
         // A zero-stock colourway is seeded deliberately (see OLV below) and
@@ -598,7 +622,7 @@ async function orderLinesFor(items: Array<{ sku: string, quantity: number }>) {
       description: `${product.name} — ${variant.colour} · ${variant.size}`,
       quantity,
       unitPrice:   variant.price,
-      lineTotal:   Number((variant.price * quantity).toFixed(2)),
+      lineTotal:   variant.price * quantity,
     })
   }
   return out

@@ -3,6 +3,7 @@
 // Junction Browser Client
 //
 // Works in the browser with no bundler — import as ESM or compile to a
+import { BUILD_HEADER, BUILD_FIELD } from '../core/build-id.ts'
 // single file with `bun build framework/client/index.ts --outfile hub/ui/public/junction-client.js`
 //
 // Usage:
@@ -89,6 +90,15 @@ export interface JunctionClientOptions {
   // `http.callHeaders` — a frame that could name its own header could name
   // Authorization, and the identity belongs to the upgrade.
   callHeaders?: Record<string, string>
+
+  /**
+   * The build this client was shipped as — what it compares the server's
+   * against. Sierra's build stamps it into the page; an app may state it.
+   *
+   * Absent, nothing is compared and no `stale` event ever fires, which is the
+   * right behaviour for a dev server and for an app that does not build one in.
+   */
+  build?: string
   timeout?: number // request timeout ms, default 30_000
   reconnectDelay?: number // initial WS reconnect delay ms, default 1_000
   reconnectMax?: number // max reconnect delay ms, default 30_000
@@ -798,6 +808,47 @@ export class JunctionClient extends EventEmitter {
   /** Lowercased, because HTTP header names are case-insensitive and the WS
    *  side merges into a map that is keyed lowercase. */
   private _callHeaders: Record<string, string> = {}
+
+  // ── which build this client is, and which one the server is on ────────────
+  //
+  // The server STATES its build — a response header, and a field on the socket's
+  // `connected` frame — and the comparison happens here, because the side
+  // holding the stale code is the side that can do something about it. A server
+  // that diffed per request would answer a question that changes at most once
+  // per deploy, twice, once per transport.
+  //
+  // `stale` fires ONCE. A person is told a new version is available; being told
+  // again on every subsequent call is the same fact turned into noise, and the
+  // reload that resolves it is theirs to make whenever they choose.
+  private _build:       string | null = null
+  private _serverBuild: string | null = null
+  private _staleFired = false
+
+  /** The build this client was shipped as, or null if nothing stamped one. */
+  get build(): string | null { return this._build }
+
+  /** The build the server last said it was serving, or null. */
+  get serverBuild(): string | null { return this._serverBuild }
+
+  /** Has the server moved to a build this client is not on? */
+  get stale(): boolean {
+    return !!(this._build && this._serverBuild && this._build !== this._serverBuild)
+  }
+
+  /**
+   * Record what the server says it is serving, from either transport.
+   *
+   * Inert unless BOTH sides know their build: a client with none cannot be
+   * stale, and a server with none has not been deployed by anything that stamps
+   * one. Emits `stale` at most once, with both ids, so a screen can say which.
+   */
+  private _noteServerBuild(id: unknown): void {
+    if (typeof id !== 'string' || !id) return
+    this._serverBuild = id
+    if (this._staleFired || !this.stale) return
+    this._staleFired = true
+    this.emit('stale', { client: this._build, server: id })
+  }
   connected: boolean = false
 
   private _url: string
@@ -863,6 +914,7 @@ export class JunctionClient extends EventEmitter {
     this.token = opts.token ?? this._tokens?.get() ?? null
     this.workspaceId = opts.workspaceId ?? null
     for (const [k, v] of Object.entries(opts.callHeaders ?? {})) this.setCallHeader(k, v)
+    this._build = opts.build?.trim() || null
   }
 
   // ── Auth ────────────────────────────────────────────────────────────
@@ -1246,6 +1298,15 @@ export class JunctionClient extends EventEmitter {
     const record = (id: unknown, ropts: RecordOptions<T> = {}): RecordResult<T> => {
       const node = registry.node<T>(model, id)
 
+      // What `load` answers is the row PLUS what hangs off it — an `include:`,
+      // a `withWidgets()`, a count assembled per call. The node holds ONE shape
+      // and a push carries the row alone, so the node cannot be the value here:
+      // adopting a push would drop the children silently, which is what four of
+      // basecamp's five composed reads did when this was first adopted
+      // (`FJS-533`). In composed mode the node is the TRIGGER — it says the row
+      // moved — and the answer is read again.
+      const composed = ropts.composed === true
+
       // *Gone* is this view's own state and never the node's. Clearing the
       // shared node would shorten every list holding the row before that list
       // ran its own removal accounting — and two resources over one service
@@ -1256,7 +1317,47 @@ export class JunctionClient extends EventEmitter {
       const subs = new Set<(v: T | null) => void>()
       const emit = (v: T | null): void => { for (const fn of subs) fn(v) }
 
-      const offNode = node.watch((v) => { if (!gone) emit(v) })
+      // Composed mode's own value, and the coalescing state under it. A burst
+      // of pushes about one row is one re-read: `dirty` is what makes the reply
+      // to the last of them the one that is kept, rather than N requests racing
+      // to write the same view in arrival order.
+      let own:     T | null = null
+      let running: Promise<T | null> | null = null
+      let dirty = false
+
+      const value = (): T | null => (gone ? null : composed ? own : node.get())
+
+      const readComposed = async (): Promise<T | null> => {
+        if (running) { dirty = true; return running }
+        running = (async () => {
+          try {
+            do {
+              dirty = false
+              const row = ropts.load
+                ? await ropts.load()
+                : await svc.get(id as string | number)
+              own = row ?? null
+            } while (dirty)
+          } catch {
+            // A refused or missing row is not a crash: this answers whatever it
+            // last knew, exactly as the node-backed path does.
+          } finally {
+            running = null
+          }
+          if (!gone) emit(own)
+          return own
+        })()
+        return running
+      }
+
+      const offNode = node.watch((v) => {
+        if (gone) return
+        // The row moved. In composed mode the pushed row is the row and not the
+        // shape this screen is showing, so it is a signal to read again; a
+        // removal is the `removed` handler's, below.
+        if (composed) { if (v != null) void readComposed() ; return }
+        emit(v)
+      })
       const offGone = svc.on('removed', (raw: unknown) => {
         // The same key the node is filed under: this view may have been asked
         // for by a URL, where the id is a string, about a row whose id is a
@@ -1266,9 +1367,15 @@ export class JunctionClient extends EventEmitter {
         emit(null)
       })
 
-      const value = (): T | null => (gone ? null : node.get())
+      // A change with no record. `changed` is what a bulk write or a
+      // `select: false` write announces and it carries a count, so nothing here
+      // can tell whether this row was in it — which is the same position the
+      // list is in, and it takes the same answer (`FJS-307`). Without it a
+      // watched row goes stale under exactly the writes that say least.
+      const offChanged = svc.on('changed', () => { if (!gone) void fetch() })
 
       const fetch = async (): Promise<T | null> => {
+        if (composed) return readComposed()
         try {
           const row = ropts.load
             ? await ropts.load()
@@ -1284,7 +1391,9 @@ export class JunctionClient extends EventEmitter {
 
       return {
         id,
-        ready:     node.get() != null ? Promise.resolve(node.get()) : fetch(),
+        // A composed read always runs: a node another view filled holds the row
+        // alone, which is not what this view answers.
+        ready:     !composed && node.get() != null ? Promise.resolve(node.get()) : fetch(),
         get:       value,
         subscribe: (fn) => {
           subs.add(fn)
@@ -1293,7 +1402,7 @@ export class JunctionClient extends EventEmitter {
         },
         refresh:   fetch,
         // `watch` is itself the hold, so letting it go is what starts the TTL.
-        release:   () => { offNode(); offGone(); subs.clear() },
+        release:   () => { offNode(); offGone(); offChanged(); subs.clear() },
       }
     }
 
@@ -1419,6 +1528,8 @@ export class JunctionClient extends EventEmitter {
 
       clearTimeout(timer)
 
+      this._noteServerBuild(res.headers.get(BUILD_HEADER))
+
       const text = await res.text()
       let data: unknown
       try {
@@ -1537,6 +1648,7 @@ export class JunctionClient extends EventEmitter {
       // service calls — the server has the auth context for this socket.
       if (type === 'connected') {
         this._wsReady = true
+        this._noteServerBuild(msg[BUILD_FIELD])
         this.emit('connect')
         return
       }
@@ -2203,6 +2315,22 @@ export interface RecordOptions<T extends Record<string, unknown> = Record<string
    * WHEN to read — a row a list already put in the node is not read again.
    */
   load?: () => Promise<T | null>
+
+  /**
+   * What `load` answers is the row plus what hangs off it, not the row.
+   *
+   * A store node holds ONE shape and a push carries the row alone, so a view
+   * that adopted the node would drop an `include:`, a `withWidgets()` or a
+   * per-call count at the first announcement, silently (`FJS-533`). Declaring
+   * it makes the node the TRIGGER instead: the row moved, so the composed
+   * answer is read again, coalesced per burst.
+   *
+   * The composed row is deliberately NOT written to the node — every list over
+   * that model is a view of it, and one screen's children are not the shape a
+   * list asked for. The cost is a request per announcement, which is what the
+   * screens that hand-rolled this were already paying.
+   */
+  composed?: boolean
 }
 
 export interface RecordResult<T extends Record<string, unknown> = Record<string, unknown>>

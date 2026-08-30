@@ -97,7 +97,7 @@ ok('a customer is created at revision 1', { id: typeof made.id, version: made.ve
 // An order for them, so removal has something to leave behind. Written through
 // the orders service like any other — `@keep` is not a special write path.
 const order = await body(await post('/orders', {
-  reference: `ORD-REV-${RUN}`.toUpperCase().slice(0, 20), customerId: made.id, total: 12.5,
+  reference: `ORD-REV-${RUN}`.toUpperCase().slice(0, 20), customerId: made.id, total: 1250,
 }))
 ok('…and an order under them', typeof order.id, 'number')
 

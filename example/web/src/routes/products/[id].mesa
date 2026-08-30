@@ -55,6 +55,23 @@ title: Product
   let error   = null
   let loading = true
 
+  // The product itself, watched rather than read (`FJS-518`). `products.get()`
+  // is the derived CRUD read, so the row IS the row and a plain record view is
+  // correct here — a reprice or a rename made anywhere moves this page with
+  // nothing refreshing. The two lists beneath it are already live, through
+  // their own stores.
+  let row     = null
+  let unwatch = null
+
+  function watchProduct(id) {
+    unwatch?.(); row?.release()
+    row = products.record(id)
+    unwatch = row.subscribe(v => { product = v })
+    return row.ready
+  }
+
+  $.onDestroy(() => { unwatch?.(); row?.release() })
+
   // ── What may actually be sold ────────────────────────────────────────────
   //
   // `stock` on a variant is ON HAND — what the warehouse could pick. What this
@@ -87,7 +104,7 @@ title: Product
     error = null; loading = true
     try {
       const id = Number(page.params.id)
-      product = await products.service.get(id)
+      await watchProduct(id)
       // Filtered server-side — `productId` is a real column, so this is a
       // WHERE and not a page of everything narrowed in the browser.
       await Promise.all([

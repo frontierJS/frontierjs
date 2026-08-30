@@ -142,13 +142,23 @@ normal case, not an edge one.
 | Term | What it is | Where it comes from |
 | --- | --- | --- |
 | `digest` | the bytes | `--digest`, or absent |
-| `bindingsHash` | the configuration | `deploy.bindings` + `deploy.secrets` |
+| `bindingsHash` | the configuration **as declared** | `deploy.bindings` + `deploy.secrets` |
 | `schemaHash` | the data boundary | `db/release.snapshot.md`, hashed |
 | `pivot` | can N-1 still serve | `litestone release --json` |
 
 **The environment is not in the id.** One artefact promotes from staging to
 production unchanged and only its bindings differ, so the environment is on the
 row and the bindings are in the hash.
+
+**`bindingsHash` covers a DECLARATION and not the running configuration.** `fli`
+writes no `.env` on a target — the operator owns that file, and the container is
+started with `--env-file` against it — so nothing under `deploy.bindings` is
+applied by a deploy. What the hash and the generation are for is the question a
+revert asks: *has the configuration been changed since the release I am going
+back to*, which is why `fli deploy:revert` refuses rather than putting old code
+onto today's config. Reading the hash as *what the process is running on* is
+[`FJS-585`](../../../../ISSUES.md#fjs-585); `01b-env-check` is what turns the
+declaration into something the target is actually graded against.
 
 **The digest is absent unless one is passed.** `fli deploy` records what it
 built — `core/image.js` asks the daemon and keeps the registry digest where one

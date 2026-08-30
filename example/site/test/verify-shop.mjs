@@ -59,6 +59,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { serveSite } from '@frontierjs/sierra/site/serve'
+import { formatMoney, fromMinor } from '@frontierjs/toolbelt/units'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SITE = join(HERE, '..')
@@ -381,7 +382,10 @@ try {
     // `email @unique @lower`, which is how a shopper with no account ends up
     // with a record the shop can post a receipt to.
     email:    buyer?.email ?? buyer?.data?.email ?? null,
-    total:    `$${Number(order?.total ?? 0).toFixed(2)}` === receipt.total,
+    // The row holds cents and the receipt prints money, so the comparison goes
+    // through the storefront's own conversion rather than a `toFixed(2)` that
+    // would only be right for a two-decimal currency.
+    total:    formatMoney(fromMinor(order?.total ?? 0, 'USD'), 'USD') === receipt.total,
     lines:    lines.map(l => [l.sku, l.quantity]),
   }, {
     exists: true, status: 'pending', email: 'robin@buyer.test', total: true,

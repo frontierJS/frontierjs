@@ -36,6 +36,31 @@ src/
                     jsonSchemaToJunctionSchema → createSchema
     envelope.ts     the result envelope — one module, one owner
     outbox.ts       the transactional outbox — ctx.enqueue + the relay pass
+    build-id.ts     which build this is, and which one the browser is on
+                    (`FJS-D160`). The server STATES (`x-fjs-build` on a response,
+                    a field on the socket's `connected` frame) and the CLIENT
+                    compares — nothing here reads a build off a request. It is
+                    the BUILD and not the Release: a browser holds the web
+                    bundle, and two Releases share one on every API-only deploy.
+                    Reaches `process` through `globalThis`, because the browser
+                    client imports the wire names and compiles under the app's
+                    own tsconfig
+    attachments.ts  the attached service — a third-party dependency this app
+                    needs and does not own, DECLARED here and BOUND per
+                    environment (`FJS-D158`). Not a second `defineEnv`:
+                    `checkEnvField` is extracted from it and called by both. What
+                    it adds is that these keys are ONE SERVICE, that half-bound
+                    always refuses (`optional` forgives a service nobody bound,
+                    never one bound halfway), and that a DEFAULTED key is not
+                    evidence anybody bound anything
+    backfill.ts     the middle step of expand → backfill → contract. A CURSOR
+                    OVER ONE TABLE and not a durable workflow (`FJS-D157`).
+                    Idempotence is the PREDICATE, not the cursor — a chunk
+                    re-reads `field IS NULL`, so an interrupted one skips what
+                    it already wrote. Every write is silent, including the run
+                    row's own: `announce` is a bulk option and `asSystem()` does
+                    NOT suppress a tap, so a per-row update would broadcast
+                    every row
     errors.ts       named HTTP error classes + `retryable`
     schema.ts       request validation from the generated JSON Schema
     loader.ts       auto-discovers *.service.ts (factory must be create*Service)
@@ -62,8 +87,12 @@ src/
   ../tools/errors-snapshot.ts  `junction errors` — the committed errors.snapshot.md,
                     every row a value actually thrown through toFrameworkError()
   auth/             IAuth types (implemented by @frontierjs/auth) + providers
-  plugins/          manifest, openapi, webhooks, email, devtools, outbox, shims
+  plugins/          manifest, openapi, webhooks, email, devtools, outbox, backfill, shims
   ../db/outbox.lite the OutboxMessage model, shipped for an app to import
+  ../db/backfill.lite the BackfillRun row — how far a backfill got. No @@tenant:
+                    `@@tenant(none)` is a PARSE ERROR with no `tenancy` block, so
+                    a shipped fragment cannot carry one. `extend model` is the
+                    way in for a tenanted app
   mail/  cache/  scheduler/  events/  storage/  workers/  ai/  testing/
 ```
 
@@ -80,6 +109,31 @@ src/
   one word per realm, and the crossing is stated in both docs.
 
   See **§ The two contexts** below for which one you are holding and when.
+
+- **The build a client compares against is stated, never diffed.** A response
+  carries `x-fjs-build` and the socket's `connected` frame carries `build`; the
+  client holds its own (Sierra stamps `VITE_FJS_BUILD` at build time) and decides.
+  Both halves are inert unless both sides know one, and the response header is
+  GATED — `_finalizeWithHeaders` has a no-op fast path that hands an untouched
+  `Response` back, and setting a header unconditionally would defeat it for every
+  request in every app that never deployed. `stale` fires once.
+
+- **A top-level key in `junction.config.js` reaches the app only if `loadConfig`
+  MAPS it.** `app` and two `middleware` keys map onto `AppConfig`; everything
+  else is stashed under `config._junction` for whichever subsystem owns it. So a
+  block nobody looks up is read by nothing, silently — an app writes it, the app
+  boots, and the feature is simply off (`FJS-431`). `attachments` is mapped
+  straight through; anything new needs the same line, and reading a fallback in
+  the consumer instead is a second answer to where the block lives.
+
+- **An attached service that is BOUND HALFWAY refuses, `optional` included.**
+  `optional: true` says the app can run without the service, never that it can
+  run against half of one — and half-bound is the shape that reaches production,
+  because somebody binds the URL and forgets the key. A key carrying a `default`
+  is not evidence either way, so it never counts toward *is this bound here*.
+  The refusal is at STARTUP and the operator sees it because a failed health
+  check now tails the container (`fli`'s `showContainerTail`); before that the
+  app's own sentence died in `docker logs`.
 
 - **A `methods:` list that names one method narrows the service to it.** The
   entry form that carries an `input:` is the same declaration as a bare name, so

@@ -15,6 +15,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { parse, createClient, generateJsonSchema } from '../src/index.js'
+import { generateDDL } from '../src/core/ddl.js'
 
 const errsOf = (src: string) => parse(src).errors.join(' · ')
 
@@ -123,6 +124,76 @@ describe('the boundary', () => {
 
     const summed = await db.line.aggregate({ _sum: { total: true } })
     expect(summed._sum.total).toBe(100 + 1299 + 25000)
+  })
+})
+
+describe('the range — the ceiling is 2^53, not int64 (`FJS-583`)', () => {
+  // SQLite's INTEGER is 64-bit, but the value arrives and leaves as a JS number
+  // and `bun:sqlite` returns one on every path. Past 2^53 the rounded double is
+  // stored and a different number is read back with nothing raised — which is
+  // exactly the failure `FJS-D142` cites `prisma#20635` for, one layer up.
+  const SCHEMA = `model Rate {
+    id    Int @id @default(autoincrement())
+    price Int @scale(9)
+    total Int @money(USD)
+  }`
+  const open = () => createClient({ schema: SCHEMA, db: ':memory:' })
+
+  test('the failure this exists to stop — two distinct values, one double', () => {
+    // Not a claim about litestone: a claim about the numbers themselves, which
+    // is why nothing below could have caught it by being more careful.
+    expect(Number('12345678900000001')).toBe(Number('12345678900000000'))
+    expect(Number.isInteger(Number('12345678900000001'))).toBe(true)
+  })
+
+  test('a value past the range is refused by name, and names the bound', async () => {
+    const db = await open()
+    await expect(db.rate.create({ data: { price: 12345678900000001, total: 0 } }))
+      .rejects.toThrow(/at most 9,007,199,254,740,991 minor units/)
+  })
+
+  test("the refusal works the value out at the column's own places", async () => {
+    const db = await open()
+    await expect(db.rate.create({ data: { price: Number.MAX_SAFE_INTEGER + 10, total: 0 } }))
+      .rejects.toThrow(/at 9 decimal place\(s\) that is 9,007,199/)
+  })
+
+  test('@money says the bound and works nothing out — at 2 places it is £90bn away', async () => {
+    const db = await open()
+    const bad = () => db.rate.create({ data: { price: 0, total: Number.MAX_SAFE_INTEGER + 10 } })
+    await expect(bad()).rejects.toThrow(/at most 9,007,199,254,740,991 minor units/)
+    await expect(bad()).rejects.not.toThrow(/decimal place\(s\) that is/)
+  })
+
+  test('the bound itself is legal and round-trips', async () => {
+    const db = await open()
+    const row = await db.rate.create({ data: { price: Number.MAX_SAFE_INTEGER, total: 1299 } })
+    expect(row.price).toBe(Number.MAX_SAFE_INTEGER)
+    expect((await db.rate.findUnique({ where: { id: row.id } })).price).toBe(Number.MAX_SAFE_INTEGER)
+  })
+
+  test('a fraction still gets the OTHER sentence — two mistakes, two answers', async () => {
+    const db = await open()
+    await expect(db.rate.create({ data: { price: 1.5, total: 0 } }))
+      .rejects.toThrow(/whole number of minor units/)
+  })
+
+  test('the CHECK holds where the boundary is not — asSystem() and raw SQL', async () => {
+    const db = await open()
+    // asSystem() drops the gate, the row policies and @@softDelete, and cannot
+    // drop this: the rule is in the table (`FJS-519`).
+    await expect(db.asSystem().sql`INSERT INTO rate (price, total) VALUES (9007199254740999, 0)`)
+      .rejects.toThrow(/CHECK constraint failed/)
+  })
+
+  test('the DDL carries it, so a migration and a seed are held to it too', () => {
+    const ddl = generateDDL(parse(`model P { id Int @id  t Int @money(USD)  q Int @scale(6)  n Int }`).schema)
+    expect(ddl).toMatch(/"t" INTEGER NOT NULL CHECK \("t" BETWEEN -9007199254740991 AND 9007199254740991\)/)
+    expect(ddl).toMatch(/"q" INTEGER NOT NULL CHECK \("q" BETWEEN/)
+    // A plain Int is NOT bounded. It makes no exactness promise, and bounding
+    // every integer column in every app to buy back one is the wrong trade —
+    // stated here so the scope is a decision rather than an oversight.
+    expect(ddl).toMatch(/"n" INTEGER NOT NULL\n/)
   })
 })
 

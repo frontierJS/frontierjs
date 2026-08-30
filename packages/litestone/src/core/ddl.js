@@ -6,6 +6,10 @@
 // twice (Invariant 2). @@map is the escape hatch for anything they cannot reach.
 import { pluralize as pluralizeWord } from '@frontierjs/toolbelt/inflect'
 
+// One owner for the range a scaled column may hold — the validator's, because
+// the boundary and the table have to refuse the same value.
+import { EXACT_INT_MAX } from './validate.js'
+
 // ─── Type mapping ─────────────────────────────────────────────────────────────
 // Prisma-style names → SQLite storage classes
 // Json is stored as TEXT — SQLite has no native JSON type but json_extract() works on TEXT
@@ -108,6 +112,11 @@ function defaultExpr(attr) {
   if (v.kind === 'number')  return String(v.value)
   if (v.kind === 'boolean') return v.value ? '1' : '0'
   if (v.kind === 'enum')     return `'${v.value}'`
+  // An array column is JSON TEXT, so its default is the JSON text of the list.
+  // An enum element is its member name — the same string the scalar enum
+  // default emits, which is what makes a set and a single value comparable.
+  if (v.kind === 'array')
+    return `'${JSON.stringify(v.values.map(e => e.value)).replace(/'/g, "''")}'`
   if (v.kind === 'fieldRef') return null  // runtime-only — copied from sibling field at write time
   if (v.kind === 'call') {
     if (v.fn === 'auth') return null  // runtime-only — stamped from ctx.auth, not a SQL DEFAULT
@@ -201,6 +210,16 @@ function columnDef(field, schema = null, compositePk = false) {
     }
   }
 
+  // @scale / @money — the column holds minor units and the promise is that what
+  // goes in comes back. The round trip goes through a JS number at both ends, so
+  // it stops being exact at 2^53: past that the rounded double is stored and a
+  // different number is read back, silently (`FJS-583`). A CHECK rather than the
+  // validator alone because four writers never reach the boundary — a migration,
+  // a seed, a raw statement and `asSystem()`, which drops every rule this package
+  // owns and cannot drop this one.
+  if (field.attributes.some(a => a.kind === 'scale' || a.kind === 'money'))
+    parts.push(`CHECK ("${field.name}" BETWEEN -${EXACT_INT_MAX} AND ${EXACT_INT_MAX})`)
+
   // CHECK
   const chk = field.attributes.find(a => a.kind === 'check')
   if (chk) parts.push(`CHECK (${chk.expr})`)
@@ -282,7 +301,10 @@ function enumCheck(field, schema) {
   if (field.type.array) return null
   const enumDef = schema.enums.find(e => e.name === field.type.name)
   if (!enumDef) return null
-  const values = enumDef.values.map(v => `'${v.name}'`).join(', ')
+  // A member may be a quoted string, so it may hold an apostrophe. SQL escapes
+  // one by doubling it; without this a member like `Don't ship` closes the
+  // literal and the whole CREATE TABLE stops parsing.
+  const values = enumDef.values.map(v => `'${String(v.name).replace(/'/g, "''")}'`).join(', ')
   return `  CHECK ("${field.name}" IN (${values}))`
 }
 
@@ -328,14 +350,36 @@ function createTable(model, schema, tableName, pluralize = false) {  // schema n
 
 function createIndexes(model, softDelete = false, tableName) {
   const lines = []
-  const partial = softDelete ? ` WHERE "deletedAt" IS NULL` : ''
+  const soft  = softDelete ? `"deletedAt" IS NULL` : null
 
   for (const attr of model.attributes) {
     if (attr.kind !== 'index') continue
-    const cols   = attr.fields.map(f => `"${f}"`).join(', ')
-    // Partial indexes on soft-delete tables — only index live rows.
-    // Smaller index, better cache fit, faster queries.
-    lines.push(`CREATE INDEX IF NOT EXISTS "idx_${tableName}_${attr.fields.join('_')}" ON "${tableName}" (${cols})${partial};`)
+    // A direction is part of what the index IS. SQLite walks a b-tree in either
+    // direction, so `DESC` earns its place on a COMPOSITE index whose columns
+    // disagree — which is the shape a caller declares it for. The index NAME is
+    // derived from the field list and not from this, so adding a direction does
+    // not rename an existing index; the migrator sees the change through
+    // `indexKey`, which carries the sorts.
+    const cols = attr.fields
+      .map((f, i) => `"${f}"${attr.sorts?.[i] ? ` ${attr.sorts[i]}` : ''}`)
+      .join(', ')
+
+    // Partial indexes on soft-delete tables — only index live rows. Smaller
+    // index, better cache fit, and reachable because every read on such a model
+    // carries the same clause.
+    //
+    // A DECLARED predicate (@@index(where:)) is ANDed with it rather than
+    // replacing it: the soft-delete clause is what makes the index reachable on
+    // such a model at all, so honouring the declaration by dropping it would
+    // silently un-optimise every read. `whereSql` is the parser's own compiled
+    // output — the same compiler a query goes through — which is what makes the
+    // two byte-identical and therefore matchable.
+    const parts = [soft, attr.whereSql].filter(Boolean)
+    const where = parts.length === 0 ? ''
+                : parts.length === 1 ? ` WHERE ${parts[0]}`
+                : ` WHERE ${parts.map(p => `(${p})`).join(' AND ')}`
+
+    lines.push(`CREATE INDEX IF NOT EXISTS "idx_${tableName}_${attr.fields.join('_')}" ON "${tableName}" (${cols})${where};`)
   }
 
   // Auto-generate a partial index on deletedAt itself for soft-delete tables.
@@ -900,7 +944,14 @@ export function generateTableDDL(model, schema, { pluralize = false } = {}) {
 /**
  * Generate just the indexes for a model.
  */
-export function generateIndexDDL(model, softDelete = false, { pluralize = false } = {}) {
+// `softDelete` defaulted to `false`, which made the `?? isSoftDelete(model)`
+// beside it unreachable for every caller — `false ?? x` is `false` — so this
+// function never emitted a partial index for anyone, and the migrator's rebuild
+// path used it to recreate the indexes of a @@softDelete model as FULL ones
+// (FJS-577, the same shape as FJS-443 in a branch its fix did not reach).
+// Absent now means ask the model, which is the only answer a caller who does
+// not state one can have meant.
+export function generateIndexDDL(model, softDelete, { pluralize = false } = {}) {
   return createIndexes(model, softDelete ?? isSoftDelete(model), modelToTableName(model, pluralize))
 }
 

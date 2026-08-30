@@ -195,6 +195,13 @@ export { outboxSchemaFragment }                                    from './src/c
 export type { OutboxApi, OutboxRow, EnqueueOptions, EnqueueRef,
               DeliverOptions, DeliverResult }                      from './src/core/outbox.ts'
 
+export { backfills }                                               from './src/plugins/backfill/index.ts'
+export type { BackfillPluginOptions, BackfillApi }                 from './src/plugins/backfill/index.ts'
+export { defineBackfill, backfillSchemaFragment, nextDelayMs,
+         assertField as assertBackfillField }                      from './src/core/backfill.ts'
+export type { BackfillDefinition, BackfillOptions, BackfillRow,
+              ChunkResult }                                        from './src/core/backfill.ts'
+
 export { manifestPlugin }                                          from './src/plugins/manifest/index.ts'
 export type { ManifestPluginOptions, AppManifest, ServiceManifest,
               ChannelManifest, HookManifest, AppMeta }              from './src/plugins/manifest/index.ts'

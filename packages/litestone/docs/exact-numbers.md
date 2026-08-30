@@ -34,9 +34,49 @@ That refusal is most of the feature. Without it the same write is stopped by
 SQLite saying `cannot store REAL value in INTEGER column stock_line.weekly_demand`
 — true, about a physical column, and no help at all.
 
-At most **9 places**. A signed 64-bit integer holds about 9.2 × 10¹⁸, so nine
-places still leaves nine figures in front of the point; past that the headroom
-goes somewhere nobody is looking.
+At most **9 places**, and the range is bounded at both ends.
+
+## The range — and it is not int64
+
+SQLite's `INTEGER` is 64-bit, but the value arrives and leaves as a JS `number`,
+and `bun:sqlite` returns one on every path — a column read and an aggregate
+alike. So the ceiling is **2^53**, not 2^63, and past it the rounded double is
+stored and a *different* number is read back with nothing raised:
+
+```
+stored 12345678900000001  →  read back 12345678900000000
+stored  9007199254740993  →  read back  9007199254740992
+```
+
+That is the same failure `prisma#20635` records for `Decimal` on SQLite, one
+layer up, and it is the failure this attribute exists to prevent — so the range
+is enforced rather than assumed:
+
+| | exact up to (value) | exact up to (minor units) |
+| --- | --- | --- |
+| `@scale(2)`, `@money(USD)` | 90,071,992,547,409 | 9,007,199,254,740,991 |
+| `@scale(6)` | 9,007,199,254 | 9,007,199,254,740,991 |
+| `@scale(9)` | **9,007,199** | 9,007,199,254,740,991 |
+
+Money never meets it: two places leaves ninety trillion. Nine places leaves
+**seven** figures in front of the point, which is room for any per-unit rate and
+not for a running total.
+
+A value past the bound is refused by name at the boundary, and the column
+carries a `CHECK` besides:
+
+```sql
+"price" INTEGER NOT NULL CHECK ("price" BETWEEN -9007199254740991 AND 9007199254740991)
+```
+
+The `CHECK` is there because four writers never reach the boundary — a
+migration, a seed, a raw statement, and `asSystem()`, which drops the gate, the
+row policies and `@@softDelete` and cannot drop a rule that is in the table.
+
+**A plain `Int` is not bounded**, and has the same ceiling. It makes no
+exactness promise, and bounding every integer column in every app to buy back
+one is the wrong trade — but a snowflake id kept in an `Int` is the same hazard,
+and nothing here reports it.
 
 ## `@money` — the currency declares the scale
 
@@ -110,6 +150,14 @@ object, and so does this: see `example/api/src/pricing.ts`, which owns one
 **Changing `n` is a migration that rescales every stored row**, and nothing here
 does it for you. `@@transitions` and `@encrypted` both changed a column's
 meaning without rewriting bytes; this one would.
+
+**More than nine places is not expressible, and that is a shape rather than a
+limit to raise.** A per-unit rate wants many places and a small magnitude; a
+running total wants the opposite, and no 64-bit integer holds both at once —
+`FJS-575`. Postgres answers it with `NUMERIC`; Stripe answers it with two fields,
+an integer `unit_amount` beside a `unit_amount_decimal` string of at most twelve
+places. Here the rate is `@scale(9)` and the total is the application's, rounded
+once — which is the same split, said in one column fewer.
 
 **Aggregating across currencies is not prevented.** `SUM` over a `@money(field:)`
 column adds unlike things, and the schema cannot see it. Group by the currency

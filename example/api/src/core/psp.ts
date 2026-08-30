@@ -128,8 +128,8 @@ export async function verifyWebhook(ctx: {
  * intention and not about this function: a uuid minted per call would be
  * perfectly unique and would guard nothing.
  *
- * `amount` omitted means all of what is left, which is what a shop means nine
- * times in ten. Stating a number to mean "everything" is the shape that goes
+ * `amount` is minor units, and omitting it means all of what is left, which is
+ * what a shop means nine times in ten. Stating a number to mean "everything" is the shape that goes
  * wrong when the number is stale.
  */
 export async function createRefund(app: App, req: {
@@ -155,7 +155,8 @@ export async function createRefund(app: App, req: {
   return { refund: result.data }
 }
 
-/** What the provider answers when a refund is taken. */
+/** What the provider answers when a refund is taken. Both figures are minor
+ *  units — see `Intent.amount`. */
 export interface Refund {
   id:         string
   paymentRef: string
@@ -168,6 +169,10 @@ export interface Refund {
 /** What the provider answers when an intent is created. */
 export interface Intent {
   id:       string
+  /** MINOR units — cents for a dollar, whole yen for a yen. The same unit
+   *  `@money` stores and the same unit every real provider is addressed in;
+   *  `stripe.ts` refuses a non-integer here by name, for the reason written
+   *  there. A major-unit amount charges a hundredth of what was meant. */
   amount:   number
   currency: string
   status:   string
@@ -187,6 +192,7 @@ export interface Intent {
  * into the shop's own sentence.
  */
 export async function createIntent(app: App, req: {
+  /** Minor units. See `Intent.amount`. */
   amount: number
   currency: string
   reference: string

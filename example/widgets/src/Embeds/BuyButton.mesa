@@ -23,6 +23,7 @@
 
 <script>
   import { createShop } from '@/lib/shop.js'
+  import { formatMoney, fromMinor } from '@frontierjs/toolbelt/units'
 
   // ── Props ────────────────────────────────────────────────────────────────
   //
@@ -68,11 +69,12 @@
   // shopper is told yes and then no.
   $: sellable = !!item && item.active && item.available > 0
 
-  $: price = item
-    ? new Intl.NumberFormat('en-US', {
-        style: 'currency', currency: item.currency ?? 'USD', currencyDisplay: 'narrowSymbol',
-      }).format(item.price)
-    : ''
+  // `item.price` is MINOR units — the column is `@money(USD)` and the service
+  // says so beside the code it sends. The pair is `@frontierjs/toolbelt/units`
+  // rather than a `/ 100` and an `Intl` call written out here: this widget runs
+  // on a page in some other country, and the two facts it must not invent are
+  // how many decimals the currency has and which symbol goes in front.
+  $: price = item ? formatMoney(fromMinor(item.price, item.currency ?? 'USD'), item.currency ?? 'USD') : ''
 
   async function add() {
     busy = true; error = null

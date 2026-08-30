@@ -41,6 +41,10 @@ title: Flags
   let rows     = []
   let envs     = []
   let detail   = {}      // flagId → the flag with its resolved overrides
+  // One record view per expanded flag. Several can be open at once and none of
+  // them closes, so this is a map rather than a single view; every one of them
+  // is released when the screen goes.
+  const views  = new Map()
   let picked   = {}      // flagId → the environment id the picker is showing
   let error    = null
   let loading  = true
@@ -79,14 +83,35 @@ title: Flags
     if (READS.has(method) || !row?.id) return
     load()
   })
-  $.onDestroy(off)
+
+  /** One expanded flag, watched rather than read (`FJS-518`).
+   *
+   *  `flags.get()` is `flagWithOverrides(...)` — the row plus every override
+   *  resolved against it — so this is a COMPOSED view: a push carries the row
+   *  alone and watching the node itself would empty the override table at the
+   *  first announcement (`FJS-533`).
+   */
+  function watchFlag(id) {
+    const held = views.get(id)
+    if (held) return held.view.refresh()
+    const view = flags.record(id, { composed: true })
+    const stop = view.subscribe(v => { detail = { ...detail, [id]: v } })
+    views.set(id, { view, stop })
+    return view.ready
+  }
+
+  $.onDestroy(() => {
+    off()
+    for (const { view, stop } of views.values()) { stop(); view.release() }
+    views.clear()
+  })
 
   // Loaded on demand: a flag overridden nowhere is the common case, and the
   // list already carries the count that says so.
   async function open(flag) {
     busy = flag.id
     try {
-      detail = { ...detail, [flag.id]: await flags.service.get(flag.id) }
+      await watchFlag(flag.id)
     } catch (e) {
       error = e.message
     } finally {
@@ -114,7 +139,7 @@ title: Flags
       const updated = await flags.service.patch(flag.id, { isEnabled: !flag.isEnabled })
       const i = rows.findIndex(r => r.id === flag.id)
       if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...updated }, ...rows.slice(i + 1)]
-      if (detail[flag.id]) detail = { ...detail, [flag.id]: updated }
+      if (views.has(flag.id)) await watchFlag(flag.id)
     } catch (e) {
       error = messageFor(flags, e)
     } finally {
@@ -125,8 +150,8 @@ title: Flags
   async function override(flag, environmentId, isEnabled) {
     error = null; busy = flag.id
     try {
-      const updated = await flags.service.invoke('setOverride', flag.id, { environmentId, isEnabled })
-      detail = { ...detail, [flag.id]: updated }
+      await flags.service.invoke('setOverride', flag.id, { environmentId, isEnabled })
+      await watchFlag(flag.id)
       picked = { ...picked, [flag.id]: '' }
       await load()
     } catch (e) {
@@ -139,8 +164,8 @@ title: Flags
   async function clear(flag, environmentId) {
     error = null; busy = flag.id
     try {
-      const updated = await flags.service.invoke('clearOverride', flag.id, { environmentId })
-      detail = { ...detail, [flag.id]: updated }
+      await flags.service.invoke('clearOverride', flag.id, { environmentId })
+      await watchFlag(flag.id)
       await load()
     } catch (e) {
       error = e.message

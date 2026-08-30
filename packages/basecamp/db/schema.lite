@@ -193,6 +193,7 @@ enum WorkspaceStatus { active suspended }
 enum SecretKind     { ssh_key provider_key registry_auth tls_cert notification generic }
 enum ServerStatus   { pending provisioning installing ready online unreachable draining stopped destroyed }
 enum ServerRole     { general build database gateway worker }
+enum ProviderKind   { custom hetzner }
 enum EnvironmentTier { development test preview staging production }
 enum AppType        { container worker database daemon cron static function }
 enum AppStatus      { unknown stopped starting running stopping deploying error }
@@ -212,6 +213,8 @@ enum RunStatus      { pending running success failed timeout }
 // gives the column its CHECK, the API its validation and the UI its options,
 // from one place (2026-08-06).
 enum AlertSeverity  { info warning critical }
+enum AlertSubject   { server volume }
+enum ActorKind      { user api_key system }
 
 // Where an alert is delivered. Each kind reads a different shape out of
 // NotificationChannel.config and a different credential out of its Secret —
@@ -340,7 +343,7 @@ model User {
   username       String?    @trim
   displayName    String?    @trim
   avatarUrl      String?
-  scopes         Json       @default("[]")
+  scopes         Json       @default([])
 
   // The hub tier — who may read across workspaces and suspend a tenant.
   //
@@ -528,7 +531,7 @@ model WorkspaceMember {
   /// Read onto the principal as `auth().capabilities` by `membershipClaim`,
   /// per request and per workspace — the same person holds a different set in
   /// each, which is why it is a column here and not a field on the session.
-  capabilities Capability[] @default("[]")
+  capabilities Capability[] @default([])
   invitedBy   String?
   invitedAt   DateTime?
   acceptedAt  DateTime?
@@ -737,7 +740,7 @@ model ApiKey {
   // field the caller was never meant to send (`FJS-095`).
   tokenHint    String    @system
 
-  scopes       String[]  @default("[]")
+  scopes       String[]  @default([])
 
   expiresAt    DateTime?
   revokedAt    DateTime?
@@ -780,7 +783,13 @@ model Server {
   status           ServerStatus @default(pending)
   role             ServerRole   @default(general)
 
-  providerKind     String       @default("custom")
+  // Which cloud, and the two ids that mean something only THERE — an account and
+  // a machine. Not a relation: those rows live in somebody else's database, so
+  // there is no key to point at and nothing to cascade. What the column can be
+  // told is which clouds this app knows, and a value outside the set is refused
+  // by a table CHECK rather than sitting there naming an integration nobody
+  // wrote. Add a member when a provider is added.
+  providerKind     ProviderKind @default(custom)
   providerId       String?
   providerServerId String?
   registerMethod   String       @default("imported")
@@ -971,7 +980,7 @@ model Volume {
   // a container back to an App is a guess, and a wrong join here would put a
   // volume under the wrong app on the app screen.
   inUse        Boolean   @default(false)
-  containers   String[]  @default("[]")
+  containers   String[]  @default([])
 
   // Three different times, and they are not interchangeable. `createdOnServer`
   // is Docker's, and is the only one that answers "how long has this been
@@ -1047,7 +1056,7 @@ model Project {
   slug        String    @trim @length(1, 64)
   description String?
   status      String    @default("active")
-  tags        Json      @default("[]")
+  tags        Json      @default([])
   metadata    Json      @default("{}")
 
   version     Int       @version
@@ -1081,7 +1090,7 @@ model Environment {
   /// The environment's variables — a separate grant from editing the
   /// environment itself. Renaming a staging environment and reading its
   /// secrets are the same `update` to the gate and are not the same act.
-  variables   Json            @default("[]") @capability
+  variables   Json            @default([]) @capability
 
   version     Int             @version
   createdAt   DateTime        @default(now())
@@ -1552,7 +1561,7 @@ model CleanupRun {
 
   // The vocabulary is owned by api/src/services/cleanup/targets.ts — see the
   // section note above for why it cannot be an enum here.
-  targets     String[]  @default("[]")
+  targets     String[]  @default([])
 
   // How many images per repository survive an `unused_images` sweep. On the
   // run rather than in a setting, because it is what THIS sweep did.
@@ -1601,12 +1610,12 @@ model FeatureFlag {
   key         String    @trim @slug @length(1, 120)
   description String?
   type        FlagType  @default(boolean)
-  tags        String[]  @default("[]")
+  tags        String[]  @default([])
 
   // Only meaningful for type=variant: [{ key, name, weight }]. Left as Json
   // rather than a model because a variant has no identity outside its flag —
   // nothing references one, and the whole set is rewritten as a unit.
-  variants    Json      @default("[]")
+  variants    Json      @default([])
 
   isEnabled   Boolean   @default(false)
   // 100, not 0. `isEnabled` is the switch and this NARROWS it, so the pair a
@@ -1769,7 +1778,11 @@ model AlertEvent {
 
   status         String        @default("firing")
   severity       AlertSeverity
-  subjectType    String
+  // What fired — the pair carries no foreign key, so a destroyed server leaves
+  // its history readable instead of taking it away, which is what an event log
+  // is for. The type is an enum so the engine that writes these cannot invent a
+  // subject nothing measures.
+  subjectType    AlertSubject
   subjectId      String
   valueAtTrigger Float      @default(0)
   message        String
@@ -1889,8 +1902,14 @@ model AuditEvent {
   workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   actorId     String?
-  actorType   String     @default("user")
+  // WHO acted. Three kinds and `hooks.ts` writes all three, so this is a closed
+  // set and says so.
+  actorType   ActorKind  @default(user)
   action      String
+  // WHAT was acted on, written as the SERVICE name (`hooks.ts`). Deliberately a
+  // String and not an enum: the set grows with every service, so an enum here
+  // would refuse the first row a new service writes — which is the one case
+  // `fli check`'s `polymorphic-subject` exempts, and why this app baselines it.
   subjectType String
   subjectId   String
   diff        Json?
@@ -1979,7 +1998,7 @@ model Blueprint {
   // and no row anywhere refers to one. That is the distinction `AlertRule`
   // taught: its `channels` was a Json array naming rows no model declared, and
   // became a real join. A link names nothing here.
-  links          Json       @default("[]")
+  links          Json       @default([])
 
   // A blueprint that is no longer offered but is still referenced by the apps
   // it created. Withdrawn rather than deleted, for the same reason `Recipe`

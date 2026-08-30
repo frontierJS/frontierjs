@@ -42,7 +42,7 @@ three independent implementations with different capabilities:
 
 | Where                                       | Implementation             | Handles                                                              |
 | ------------------------------------------- | -------------------------- | -------------------------------------------------------------------- |
-| `packages/mesa/compiler-md.js`              | hand-rolled "YAML-ish"     | strings, numbers, booleans, null, inline arrays, multi-line arrays    |
+| `packages/mesa/src/compiler-md.js`              | hand-rolled "YAML-ish"     | strings, numbers, booleans, null, inline arrays, multi-line arrays    |
 | `packages/sierra/src/scanner/parse-frontmatter.js` | real `js-yaml`       | full YAML; malformed input silently treated as *no frontmatter*        |
 | `packages/cli/core/compiler.js`             | a second hand-rolled parser | its own `parseYaml` + `coerceYamlValue` coercion rules                |
 
@@ -60,7 +60,7 @@ Sierra's."
 ## 2. `ctx` names two unrelated things
 
 `ARCHITECT.md` §2 makes **Context** mandatory vocabulary for the request object.
-But `packages/mesa/compiler.js:437` uses `ctx` for *compile state* —
+But `packages/mesa/src/compiler.js:437` uses `ctx` for *compile state* —
 `{ setters, accessors, script, proxyFireFns }` — in the package a newcomer is
 most likely to read first. Same word, unrelated concept.
 
@@ -318,7 +318,7 @@ frameworks — comments explain *why*, not *what*. Specific issues:
 
 ## The good news: Mesa's multi-target vision is largely built
 
-`packages/mesa/render-component.js` opens with *"Unified pipeline: Mesa source →
+`packages/mesa/src/render-component.js` opens with *"Unified pipeline: Mesa source →
 HTML / email / fragment / JS"* and already handles recursive import resolution,
 CSS collection across the component tree, CSS inlining for email/fragment targets,
 UnoCSS scanning, email subject extraction, and plain-text fallback generation.

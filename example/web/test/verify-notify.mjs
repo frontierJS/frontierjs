@@ -103,7 +103,7 @@ try {
 
   const created = await (await fetch(`${API}/api/orders`, {
     method: 'POST', headers: admin,
-    body: JSON.stringify({ reference: REF, total: 42, status: 'pending', customerId: 1 }),
+    body: JSON.stringify({ reference: REF, total: 4200, status: 'pending', customerId: 1 }),
   })).json()
   orderId = created.id ?? created.data?.id
 
@@ -239,7 +239,7 @@ try {
 
   const second = await (await fetch(`${API}/api/orders`, {
     method: 'POST', headers: admin,
-    body: JSON.stringify({ reference: `${REF}-B`, total: 7, status: 'pending', customerId: 2 }),
+    body: JSON.stringify({ reference: `${REF}-B`, total: 700, status: 'pending', customerId: 2 }),
   })).json()
   const secondId = second.id ?? second.data?.id
 

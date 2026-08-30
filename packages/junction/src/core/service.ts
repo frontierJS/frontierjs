@@ -2268,6 +2268,12 @@ export function createService(def: ServiceDefinition): Service {
 export class ServiceRegistry {
 
   private _map:      Map<string, Service> = new Map()
+  // alias → canonical name. A service has ONE name and may answer to older
+  // spellings of it: `product-variants.service.ts` registers `productVariants`
+  // and keeps `product-variants` reachable, so a URL, a `app.service(…)` and a
+  // WS frame written against the filename are not broken by the reconciliation
+  // (`FJS-570`). Every lookup goes through `get`, so this covers all of them.
+  private _aliases:  Map<string, string>  = new Map()
   // Set by app.start() after all plugins have registered — used to
   // immediately compile pipelines for services registered late (e.g. inside
   // a plugin's boot() or ready() hook) so they never fall back to per-request
@@ -2296,8 +2302,12 @@ export class ServiceRegistry {
     for (const svc of this._map.values()) svc.pipelines(this._appHooks)
   }
 
-  register(service: Service): void {
+  register(service: Service, aliases: string[] = []): void {
     this._map.set(service.name, service)
+    for (const alias of aliases) {
+      if (alias === service.name || this._map.has(alias)) continue
+      this._aliases.set(alias, service.name)
+    }
     // Registered after start() — warm it here so it is on the same footing as
     // everything registered before. This used to also monkey-patch hooks() on
     // the instance, because a late svc.hooks() left a compiled cache that
@@ -2307,11 +2317,21 @@ export class ServiceRegistry {
   }
 
   get(name: string): Service | undefined {
-    return this._map.get(name)
+    const direct = this._map.get(name)
+    if (direct) return direct
+    const canonical = this._aliases.get(name)
+    return canonical ? this._map.get(canonical) : undefined
   }
 
   has(name: string): boolean {
-    return this._map.has(name)
+    return this._map.has(name) || this._aliases.has(name)
+  }
+
+  /** The older spellings this name still answers to. `[]` for most services. */
+  aliasesOf(name: string): string[] {
+    return Array.from(this._aliases.entries())
+      .filter(([, canonical]) => canonical === name)
+      .map(([alias]) => alias)
   }
 
   list(): string[] {
@@ -2324,7 +2344,7 @@ export class ServiceRegistry {
   }
 
   async call(name: string, ctx: ServiceContext, appHooks?: HookMap, events?: { emit(e: string, d: unknown): void }, telemetry?: { emit(e: string, d: unknown): void }): Promise<void> {
-    const service = this._map.get(name)
+    const service = this.get(name)
     if (!service)
       throw new NotFound(`Service '${name}' not found`)
     await callService(service, ctx, appHooks, events, telemetry)

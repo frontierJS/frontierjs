@@ -187,10 +187,22 @@ litestone introspect ./existing.db --out schema.lite
 
 Reconstructs column types, FK relations, indexes, `@@softDelete`, and enum CHECK constraints.
 
+**The output parses, and reading it back is a fixed point.** That is asserted over
+the corpus (`test/introspect-roundtrip.test.ts`) rather than assumed: for its whole
+life this command wrote a `.lite` litestone could not read, behind six tests that
+only matched substrings of the output (`FJS-594`). The generated file is also
+order-stable — models and enums by name, relations by their foreign key — because
+`sqlite_master` is in creation order, so a table a migration rebuilt moves to the
+end and re-running the command otherwise produces a diff nobody can read.
+
+`--report=<path>` writes what the reading could not carry as JSON, graded on the
+same three tiers `litestone import` uses; `--strict` exits 1 on `changed`.
+
 ### What introspection cannot recover
 
 SQLite does not store these, so `generateLiteSchema()` cannot reconstruct them. Add
-them by hand after reviewing the generated output — the CLI emits a comment saying so.
+them by hand after reviewing the generated output — the CLI says so at the top of
+the file and once in the report.
 
 - `@@allow` / `@@deny` row-level policies
 - `@allow` field-level policies
@@ -205,6 +217,50 @@ A `@generated` column IS recovered — as `@generated("…")`, with `"col"` writ
 back as `{col}`. An expression that cannot be spelled inside that string (one
 holding a double-quoted literal) is handed over as a `/// FIXME` line instead of
 being mangled into a plain, writable column.
+
+Nor can the TYPE of a column whose storage class is shared. `DateTime` is stored as
+TEXT and `Boolean` as INTEGER, so both come back as `String` and `Int` — faithful
+to the file, thinner than the schema that wrote it. Reported where the DEFAULT is
+evidence (a clock function, a 0 or a 1) and nowhere else: one row per TEXT column
+is one row per column, and a report nobody reads is the same as no report.
+
+A DEFAULT that is a SQL expression is recovered only where litestone wrote it —
+`uuid()` and `now()` — because those are the two `ddl.js` emits. Any other is
+handed over rather than quoted: emitted as `@default("<its text>")` it stops being
+an expression and becomes a string LITERAL, so every row written afterwards gets
+the SQL as its value.
+
+### Partial indexes, and why the two halves differ
+
+An index over SOME rows is not the same index as one over all of them, and what
+that costs depends on whether it is UNIQUE.
+
+**A partial unique index is handed over, never emitted.**
+`CREATE UNIQUE INDEX u ON note (email) WHERE deleted_at IS NULL` is uniqueness
+among LIVE rows, and `.lite` has no way to say that — `@unique` would mean
+uniqueness among ALL rows, which is a **stronger** constraint than the database
+it came from, and one that then refuses writes the source accepted. So it comes
+back as a `// FIXME` naming the predicate.
+
+**A partial plain index is emitted whole where it can be**, since dropping a
+predicate there only widens the index — the same rows are answered by a larger
+structure:
+
+```prisma
+@@index([kind], where: archivedAt == null)
+@@index([kind, email], where: live == true)
+```
+
+Where the predicate is not one `@@index(where:)` accepts, the plain index is
+emitted with a `// NOTE` saying what was dropped. Where the model has
+`@@softDelete` and the predicate is exactly `deleted_at IS NULL`, it comes back
+as a plain `@@index` — litestone adds that clause to every index on such a model
+itself, and declaring it as well is refused.
+
+Two things a database can hold that a schema cannot, both handed over by name:
+an index over an **expression** (`lower(email)`), and a **second index over the
+same column list** — litestone names an index for its columns, so only the first
+can be declared.
 
 Introspecting a database whose schema used any of the above and pushing the result
 back is **lossy**: the access rules are silently gone, and the tables become readable

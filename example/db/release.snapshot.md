@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-17 model(s) · 7 enum(s) · 2 database(s) · 1 value set(s)
+17 model(s) · 8 enum(s) · 2 database(s) · 1 value set(s)
 audit → logger · main → sqlite
 ```
 
@@ -23,6 +23,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `Brand` | `frontierjs` · `junction` · `litestone` |
 | `CartStatus` | `abandoned` · `open` · `ordered` |
 | `DiscountKind` | `fixed` · `percent` |
+| `NotificationContext` | `Order` |
 | `OrderStatus` | `cancelled` · `paid` · `pending` · `refunded` · `shipped` |
 | `PaymentStatus` | `failed` · `pending` · `refunded` · `succeeded` |
 | `Size` | `l` · `m` · `one` · `s` · `xl` · `xs` · `xxl` |
@@ -77,7 +78,7 @@ table `cart_line` · db `main` · gate `0.0.0.0`
 | `id` | `Int` | no | — | id |
 | `quantity` | `Int` | no | `1` | — |
 | `token` | `String` | no | — | **required on write** |
-| `unitPrice` | `Float` | no | — | @system · **required on write** |
+| `unitPrice` | `Int` | no | — | @system · **required on write** |
 | `variant` | `ProductVariant` | — | — | relation |
 | `variantId` | `Int` | no | — | **required on write** |
 
@@ -141,13 +142,13 @@ table `discount` · db `main` · gate `5.5.5.5`
 | `kind` | `DiscountKind` | no | `'percent'` | — |
 | `label` | `String` | no | — | **required on write** |
 | `maxRedemptions` | `Int` | yes | — | — |
-| `minSubtotal` | `Float` | no | `0` | — |
+| `minSubtotal` | `Int` | no | `0` | — |
 | `redemptions` | `Int` | no | `0` | @system |
 | `startsAt` | `DateTime` | yes | — | — |
-| `value` | `Float` | no | — | **required on write** |
+| `value` | `Int` | no | — | **required on write** |
 
 ```
-@@check(kind != 'percent' OR value <= 100)
+@@check(kind != 'percent' OR value <= 10000)
 @@check(maxRedemptions IS NULL OR redemptions <= maxRedemptions)
 @@check(startsAt IS NULL OR endsAt IS NULL OR startsAt < endsAt)
 ```
@@ -176,7 +177,7 @@ table `notification` · db `main` · gate `0.8.4.8`
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `contextId` | `Int` | yes | — | — |
-| `contextType` | `String` | yes | — | — |
+| `contextType` | `NotificationContext` | yes | — | — |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `data` | `Json` | no | — | **required on write** |
 | `id` | `Int` | no | — | id |
@@ -199,27 +200,27 @@ table `order` · db `main` · gate `1.4.4.5` · @@softDelete(cascade)
 | `customer` | `Customer` | — | — | relation |
 | `customerId` | `Int` | no | — | **required on write** |
 | `deletedAt` | `DateTime` | yes | — | — |
-| `discount` | `Float` | no | `0` | @system |
+| `discount` | `Int` | no | `0` | @system |
 | `discountCode` | `String` | yes | — | @system |
 | `discountLabel` | `String` | yes | — | @system |
 | `id` | `Int` | no | — | id |
 | `lines` | `OrderLine[]` | — | — | relation |
 | `note` | `String` | yes | — | — |
 | `reference` | `String` | no | — | unique · **required on write** |
-| `shipping` | `Float` | no | `0` | @system |
+| `shipping` | `Int` | no | `0` | @system |
 | `shippingLabel` | `String` | yes | — | @system |
 | `status` | `OrderStatus` | no | `'pending'` | — |
-| `subtotal` | `Float` | no | `0` | @system |
-| `tax` | `Float` | no | `0` | @system |
+| `subtotal` | `Int` | no | `0` | @system |
+| `tax` | `Int` | no | `0` | @system |
 | `taxLabel` | `String` | yes | — | @system |
 | `taxRate` | `Float` | no | `0` | @system |
-| `total` | `Float` | no | `0` | — |
+| `total` | `Int` | no | `0` | — |
 | `trackingCode` | `String` | yes | — | @system |
 | `userId` | `String` | yes | — | @system |
 
 ```
 @@check(discount <= subtotal)
-@@check(subtotal = 0 OR abs(total - (subtotal - discount + shipping + tax)) < 0.005)
+@@check(subtotal = 0 OR total = subtotal - discount + shipping + tax)
 @@allow('read', auth().isStaff)
 @@allow('read', userId == auth().id)
 transition status.cancel: paid, pending → cancelled
@@ -238,12 +239,12 @@ table `order_line` · db `main` · gate `1.8.8.8` · @@softDelete
 | `deletedAt` | `DateTime` | yes | — | — |
 | `description` | `String` | no | — | **required on write** |
 | `id` | `Int` | no | — | id |
-| `lineTotal` | `Float` | no | — | **required on write** |
+| `lineTotal` | `Int` | no | — | **required on write** |
 | `order` | `Order` | — | — | relation |
 | `orderId` | `Int` | no | — | **required on write** |
 | `quantity` | `Int` | no | — | **required on write** |
 | `sku` | `String` | no | — | **required on write** |
-| `unitPrice` | `Float` | no | — | **required on write** |
+| `unitPrice` | `Int` | no | — | **required on write** |
 | `userId` | `String` | yes | — | @system |
 | `variant` | `ProductVariant` | — | — | relation |
 | `variantId` | `Int` | no | — | **required on write** |
@@ -260,7 +261,7 @@ table `payment` · db `main` · gate `5.8.8.9`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `amount` | `Float` | no | — | **required on write** |
+| `amount` | `Int` | no | — | **required on write** |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `currency` | `String` | no | `'USD'` | — |
 | `failureReason` | `String` | yes | — | — |
@@ -268,7 +269,7 @@ table `payment` · db `main` · gate `5.8.8.9`
 | `order` | `Order` | — | — | relation |
 | `orderId` | `Int` | no | — | **required on write** |
 | `providerRef` | `String` | no | — | unique · **required on write** |
-| `refundedAmount` | `Float` | no | `0` | — |
+| `refundedAmount` | `Int` | no | `0` | — |
 | `settledAt` | `DateTime` | yes | — | — |
 | `status` | `PaymentStatus` | no | `'pending'` | — |
 
@@ -303,8 +304,8 @@ table `product` · db `main` · gate `0.4.4.5` · @@softDelete(cascade)
 | `images` | `ProductImage[]` | — | — | relation |
 | `name` | `String` | no | — | unique · **required on write** |
 | `onHand` | `Int` | — | — | from |
-| `priceFrom` | `Float` | — | — | from |
-| `priceTo` | `Float` | — | — | from |
+| `priceFrom` | `Int` | — | — | from |
+| `priceTo` | `Int` | — | — | from |
 | `slug` | `String` | no | — | unique · **required on write** |
 | `variantCount` | `Int` | — | — | from |
 | `variants` | `ProductVariant[]` | — | — | relation |
@@ -341,7 +342,7 @@ table `product_variant` · db `main` · gate `0.4.4.5` · @@softDelete(cascade)
 | `id` | `Int` | no | — | id |
 | `images` | `ProductImage[]` | — | — | relation |
 | `movements` | `InventoryMovement[]` | — | — | relation |
-| `price` | `Float` | no | — | **required on write** |
+| `price` | `Int` | no | — | **required on write** |
 | `product` | `Product` | — | — | relation |
 | `productId` | `Int` | no | — | **required on write** |
 | `reservations` | `StockReservation[]` | — | — | relation |
@@ -351,6 +352,7 @@ table `product_variant` · db `main` · gate `0.4.4.5` · @@softDelete(cascade)
 
 ```
 @@unique(colour, productId, size)
+@@index(productId)
 ```
 
 ### `ShippingMethod`
@@ -362,11 +364,11 @@ table `shipping_method` · db `main` · gate `0.5.5.5`
 | `active` | `Boolean` | no | `1` | — |
 | `carts` | `Cart[]` | — | — | relation |
 | `description` | `String` | yes | — | — |
-| `freeOver` | `Float` | yes | — | — |
+| `freeOver` | `Int` | yes | — | — |
 | `id` | `Int` | no | — | id |
 | `name` | `String` | no | — | unique · **required on write** |
 | `position` | `Int` | no | `0` | — |
-| `price` | `Float` | no | — | **required on write** |
+| `price` | `Int` | no | — | **required on write** |
 | `version` | `Int` | no | `1` | — |
 
 ### `StockReservation`

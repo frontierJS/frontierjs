@@ -130,6 +130,56 @@ CREATE INDEX ... ON "users" ("accountId") WHERE "deletedAt" IS NULL
 
 This means indexes only cover live rows — smaller, faster, and `WHERE deletedAt IS NULL` is always index-covered.
 
+### Declaring one
+
+```prisma
+model Note {
+  kind       String
+  archivedAt DateTime?
+
+  @@index([kind], where: archivedAt == null)
+}
+```
+
+```sql
+CREATE INDEX "idx_note_kind" ON "note" ("kind") WHERE "archivedAt" IS NULL
+```
+
+**A partial index is only used when the query says so.** SQLite has to prove
+that your query implies the index's predicate, and it has to prove it when the
+query is PREPARED — before any value is bound. So the index above is used by
+
+```js
+db.note.findMany({ where: { kind: 'k3', archivedAt: null } })   // SEARCH … USING INDEX
+db.note.findMany({ where: { kind: 'k3' } })                     // SCAN
+```
+
+and the second one is not a mistake — it is what asking a different question
+costs. Declare the predicate you actually filter by.
+
+**What a predicate may hold is narrowed to what can be reached**, and it is
+refused at parse otherwise. Litestone binds most values in a `where`, and a
+bound `?` proves nothing at prepare time — so `where: status == "pending"` would
+build an index that nothing matches and every write maintains. Also refused:
+`auth()`, because one index serves every caller; `now()`, which SQLite will not
+have in an index predicate; and anything compiling to a subquery.
+
+What is left is what litestone writes as literal SQL on both sides of that
+comparison — the null tests and the booleans:
+
+```prisma
+@@index([kind], where: archivedAt == null)
+@@index([kind], where: live == true)
+@@index([kind], where: live == true && archivedAt == null)
+```
+
+On a `@@softDelete` model the declared predicate is **ANDed** with
+`deletedAt IS NULL` rather than replacing it — that clause is what makes the
+index reachable there at all, since every read carries it.
+
+Two `@@index` over the same columns derive one index name whatever their
+predicates differ by, and the second is refused at parse.
+
 ## select — fetch only what you need
 
 ```js

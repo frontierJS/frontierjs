@@ -149,6 +149,31 @@ while silently not cascading, not enforcing and not compiling into a policy. Two
 honest columns beat one lying attribute, and that is the reason the pair has no
 sugar over it.
 
+**What the pair CAN be told, and 2026-08-29 is when it started being told.** The
+discriminator is the one column left that can carry a rule, and an `enum` is it —
+a table CHECK, so `asSystem()`, a migration and a seed are all held to it, plus
+the set reaching the browser so `controlFor` gives a picker. No new syntax; it
+was always legal and nobody wrote it down. `docs/schema.md` § *Exclusive foreign
+keys* ends with it, all three reference files are written that way, and `fli
+check`'s `polymorphic-subject` asks. It buys no integrity — the id is still
+unenforced and the sweep is still owed — so it changes nothing above, and it is
+the difference between *this points at something* and *this points at nothing
+and nobody noticed*.
+
+**How often the genuinely-open case turns up is now measured.** ERPNext is the
+only source in the corpus whose schema declares which kind each of its
+polymorphic fields is: 17 closed, 61 open — and the 61 do not survive reading.
+`party_type` is declared CLOSED twice (Customer, Supplier, Employee) and left
+open sixteen times in the same application; `invoice_type`, `voucher_type`,
+`reference_type` and `document_type` all do the same. **Openness in the data is
+mostly an author not bothering rather than a domain requirement**, which cuts
+two ways: `@@arc`'s coverage of real need is much better than 17-of-78 suggests
+(the closed sets cluster at three members, well inside its ceiling), and a pair
+should be assumed constrainable until shown otherwise. The genuine case is the
+cross-cutting table — an audit trail, `Version.item`, an attachment record —
+where the set grows with every model and an enum would refuse the first row a
+new one writes.
+
 ## The neighbouring idea
 
 `schema-variants.md` (4.26) is the **other** half of what gets asked for as

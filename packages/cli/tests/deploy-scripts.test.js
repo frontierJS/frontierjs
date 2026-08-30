@@ -170,3 +170,44 @@ describe('the join that produced the nine', () => {
     expect(offenders).toEqual([])
   })
 })
+
+// ─── the scripts a module BUILDS ─────────────────────────────────────────────
+// The corpus above is text, read out of `commands/deploy/**`, so a script that
+// moves into a module leaves it — silently, and looking like a script that was
+// deleted. The lock's three did exactly that (`core/lock.js`), so they are
+// generated here and parsed by the same `sh -n`.
+
+import { acquireScript, refreshScript, releaseScript, lockPath } from '../core/lock.js'
+
+const LOCK_FIELDS = {
+  run: 'a1b2c3d4', actor: 'deploy', target: 'production',
+  started: '2026-08-29T10:00:00Z', step: '04-build-api', stepAt: '2026-08-29T10:04:00Z',
+}
+
+describe('every script the lock builds', () => {
+  const file = lockPath('/srv/app')
+  const built = {
+    acquire:  acquireScript(file, LOCK_FIELDS),
+    takeover: acquireScript(file, LOCK_FIELDS, { takeover: true }),
+    refresh:  refreshScript(file, LOCK_FIELDS),
+    release:  releaseScript(file),
+  }
+
+  for (const [name, script] of Object.entries(built)) {
+    test(`core/lock.js · ${name}`, () => {
+      const v = parses(script)
+      expect(v.ok ? '' : `${v.why}\n${script}`).toBe('')
+    })
+  }
+
+  // A value reaches the script through interpolation, so a newline in one would
+  // become a second field and a quote would end the operand. `safeValue` is what
+  // stops that and this is the assertion that it is actually applied.
+  test('a hostile value cannot add a line or close a quote', () => {
+    const nasty = { run: "x'\nrun=other", actor: '$(id)', target: 'a`b`', started: 'z' }
+    const script = acquireScript(file, nasty)
+    expect(parses(script).ok).toBe(true)
+    expect(script).not.toContain('$(id)')
+    expect(script.split('\n').filter(l => l.includes('run='))).toHaveLength(1)
+  })
+})

@@ -368,6 +368,7 @@ CREATE TABLE IF NOT EXISTS "server" (
   "deletedAt" TEXT,
   CHECK ("status" IN ('pending', 'provisioning', 'installing', 'ready', 'online', 'unreachable', 'draining', 'stopped', 'destroyed')),
   CHECK ("role" IN ('general', 'build', 'database', 'gateway', 'worker')),
+  CHECK ("providerKind" IN ('custom', 'hetzner')),
   UNIQUE ("workspaceId", "slug"),
   FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
 ) STRICT;
@@ -505,6 +506,7 @@ CREATE TABLE IF NOT EXISTS "audit_event" (
   "subjectId" TEXT NOT NULL,
   "diff" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("actorType" IN ('user', 'api_key', 'system')),
   FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_audit_event_workspaceId" ON "audit_event" ("workspaceId");
@@ -671,6 +673,7 @@ CREATE TABLE IF NOT EXISTS "alert_event" (
   "acknowledgedBy" TEXT,
   "acknowledgedAt" TEXT,
   CHECK ("severity" IN ('info', 'warning', 'critical')),
+  CHECK ("subjectType" IN ('server', 'volume')),
   FOREIGN KEY ("ruleId") REFERENCES "alert_rule" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_alert_event_ruleId" ON "alert_event" ("ruleId");

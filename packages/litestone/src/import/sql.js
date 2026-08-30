@@ -1,12 +1,12 @@
-// sql-to-lite.mjs — a PostgreSQL `pg_dump --schema-only` / Rails `structure.sql`,
-// converted mechanically to .lite.
+// sql.js — a PostgreSQL `pg_dump --schema-only` or Rails `structure.sql`, read
+// into .lite.
 //
-// The third front-end, and the one that reaches surfaces the other two cannot
-// put any input in front of: a dump carries CHECK constraints, views and native
-// enums, none of which Prisma has and Rails' schema.rb mostly does not.
+// The reader that reaches surfaces the other three cannot put any input in front
+// of: a dump carries CHECK constraints, views and native enums, none of which
+// Prisma has and Rails' schema.rb mostly does not.
 //
-// Same contract as its siblings — the output is not the artifact, the refusal
-// list is; it never repairs and never guesses.
+// Same contract as its siblings — the output is not the whole answer, the
+// refusal list is; it never repairs and never guesses.
 //
 // Two shapes make a dump harder to read than a schema.rb:
 //   · keys and foreign keys arrive as separate ALTER TABLE statements, split
@@ -15,7 +15,9 @@
 //     SET, ACL — so the reader is a whitelist and records what it skipped
 
 import { singularize } from '@frontierjs/toolbelt/inflect'
-import { detectPolymorphic } from './polymorphic.mjs'
+import { detectPolymorphic } from './polymorphic.js'
+import { BIGINT_EMITTED, namesATable } from './wide-int.js'
+import { predicateToLite } from '../core/migrate.js'
 
 const pascal = (s) => s.split('_').filter(Boolean).map(p => p[0].toUpperCase() + p.slice(1)).join('')
 const camel  = (s) => { const p = pascal(s); return p[0].toLowerCase() + p.slice(1) }
@@ -28,7 +30,7 @@ const bare   = (id) => id.replace(/"/g, '').replace(/^[a-z_]\w*\./i, '')
 export function convert(src, label = 'schema') {
   const gaps = []
   const gap = (kind, model, field, detail, emitted) =>
-    gaps.push({ repo: label, kind, model, field, detail, emitted })
+    gaps.push({ source: label, kind, model, field, detail, emitted })
 
   const statements = split(src)
   const enums  = new Map()
@@ -173,6 +175,16 @@ function emitTable(t, tables, enums, gap) {
     if (t.pk.length === 1 && t.pk[0] === col.name) { col.extra.unshift('@id'); col.optional = false }
 
     const fk = fkByCol.get(col.name)
+
+    // A 64-bit value the application SUPPLIES. A generated key and a foreign key
+    // are exempt — see wide-int.js for why that is the line. A single-column
+    // primary key counts as generated: a dump attaches its sequence in a later
+    // ALTER, so the column itself carries no default to read. A supplied
+    // snowflake primary key is therefore missed, and is the known cost.
+    if (/^(bigint|int8|bigserial|serial8)\b/i.test(col.srcType) && !fk &&
+        !col.extra.includes('@id') && !col.extra.includes('@default(autoincrement())') &&
+        !namesATable(col.name, (n) => tables.has(n), singularize))
+      gap('bigint', t.model, col.name, col.srcType, BIGINT_EMITTED)
     const target = fk && tables.get(fk.parent)
     out.push(render(col))
     if (target) {
@@ -206,12 +218,18 @@ function emitTable(t, tables, enums, gap) {
     if (a) attrs.push(a)
   }
 
+  // Keyed on the COLUMN LIST rather than on the emitted text. Litestone names an
+  // index for its columns, so two over one list collide whatever their predicates
+  // differ by — and once a predicate is emitted, two such indexes no longer
+  // produce the same string to collapse on. A real database has them, precisely
+  // because a partial index is what makes a second one useful.
   const seen = new Set()
   for (const idx of t.indexes) {
     const a = emitIndex(idx, t, cols, gap)
     if (!a) continue
-    if (seen.has(a)) { gap('index-collapsed', t.model, null, a, 'dropped — identical to an earlier index once its predicate was stripped'); continue }
-    seen.add(a); attrs.push(a)
+    const key = `${idx.unique ? 'u:' : ''}${idx.cols.join(',')}`
+    if (seen.has(key)) { gap('index-collapsed', t.model, null, a, 'dropped — an earlier index already claims this column list, and an index is named for its columns'); continue }
+    seen.add(key); attrs.push(a)
   }
 
   if (attrs.length) out.push('', ...attrs.map(a => '  ' + a))
@@ -280,7 +298,9 @@ function readColumn(raw, t, enums, gap) {
     else extra.push(`@default(${v})`)
   }
 
-  return { name, type, optional: !notNull, isArray, extra }
+  // The source spelling travels: whether a `bigint` is worth reporting depends
+  // on whether it is a key, which is a fact about the TABLE (wide-int.js).
+  return { name, type, optional: !notNull, isArray, extra, srcType: typeText }
 }
 
 function pgDefault(def, type, isArray) {
@@ -397,10 +417,17 @@ function emitIndex(idx, t, cols, gap) {
   }
   const camelNames = names.map(camel)
 
+  // A predicate `@@index(where:)` can hold is emitted WHOLE; one it cannot is
+  // dropped, which only widens the index. A UNIQUE one is dropped entirely,
+  // because there the predicate is the difference between uniqueness among some
+  // rows and among all of them (FJS-586, FJS-590).
+  let whereLite = null
   if (idx.where) {
+    whereLite = idx.unique ? null : predicateToLite(idx.where, camel)
     gap('partial-index', t.model, camelNames.join(', '), `${idx.unique ? 'unique ' : ''}WHERE ${idx.where.slice(0, 50)}`,
-        idx.unique ? 'DROPPED — emitting it unconditionally would be a stronger constraint than the source declares'
-                   : 'emitted without the predicate')
+        idx.unique  ? 'DROPPED — emitting it unconditionally would be a stronger constraint than the source declares'
+      : whereLite   ? `emitted whole — where: ${whereLite}`
+                    : 'emitted without the predicate — a plain index answers the same rows and is only larger')
     if (idx.unique) return null
   }
 
@@ -414,5 +441,5 @@ function emitIndex(idx, t, cols, gap) {
     }
     return `@@unique([${camelNames.join(', ')}])`
   }
-  return `@@index([${camelNames.join(', ')}])`
+  return `@@index([${camelNames.join(', ')}]${whereLite ? `, where: ${whereLite}` : ''})`
 }

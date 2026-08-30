@@ -1,5 +1,542 @@
 # Changes — @frontierjs/litestone
 
+## 2026-08-29 — an index's column ORDER is part of what it is
+
+3439 tests, 0 fail. Closes
+[`FJS-592`](../../ISSUES.md#fjs-592); files
+[`FJS-596`](../../ISSUES.md#fjs-596).
+
+`indexKey` sorted the columns, so `@@index([a, b])` and `@@index([b, a])` were
+one index to the diff. A composite is prefix-matched — the first answers
+`WHERE a = ?` and the second does not — so swapping them was a real schema
+change that reported as no change at all.
+
+**What kept it open was the migration consequence, and that was measured rather
+than argued.** Both live databases in this repo were diffed against their own
+schemas after the change: `example/db/shop.db` and `basecamp/db/basecamp.db`,
+zero index churn each. `createIndexes` emits columns in declaration order, so
+for any database this emitter created the live order already is the pristine
+one, and the only schema that migrates is one whose declaration genuinely moved.
+
+Where it does fire the cost is one `DROP INDEX` + `CREATE INDEX` — not a table
+rebuild, which is what makes being strict here cheap.
+
+The sibling is filed and not fixed: `@@unique` emits a table CONSTRAINT, so
+reordering it is invisible to the index diff, and changing a table constraint
+costs a rebuild. Different price, different decision.
+
+## 2026-08-29 — introspect writes a schema litestone can read back
+
+`litestone introspect` is the adoption door — point it at a database you already
+have and get a `.lite` to start from, which is also what `fli db:pull` runs. Its
+output did not parse. Reproduced through the shipped command on a database
+litestone itself built from a valid schema: three defects in ten lines of output.
+
+```
+author  Author  @relation(fields: [authorId], references: [id] onDelete: CASCADE)
+@@softDelete
+@@index([deletedAt])
+```
+
+No comma, so the file stops at `Expected COLON, got ')'`. `CASCADE` is SQLite's
+word where the parser's `ON_DELETE_ACTIONS` wants Prisma's, and `ddl.js` had only
+ever translated that one way. And `@@softDelete` beside `@@index([deletedAt])` is
+refused BY NAME — both are called `idx_<table>_deletedAt` — which `FJS-480`
+ruled, without anyone asking who was PRODUCING the pair.
+
+**Why six tests missed it.** Every assertion on `generateLiteSchema` was
+`expect(schema).toContain(...)`, and not one fed the result back to `parse()`.
+The foreign-key test asserted a relation carrying no `onDelete`, so the case that
+breaks was the case nobody wrote.
+
+**Closed with the property, not the three fixes.** `test/introspect-roundtrip.test.ts`
+asserts that reading a database built from the output is a FIXED POINT, over the
+seven corpus schemas and the 188-model `openmrp` fixture — 1,565 models of input
+nobody here wrote. It found four more the same day, each invisible to any
+substring assertion:
+
+- A **SQL expression default emitted as a string literal.** A `@default(uuid())`
+  column came back as `@default("lower(hex(randomblob(4))) || …")`, so every row
+  written afterwards got 200 characters of SQL instead of a uuid — and `ddl.js`
+  doubles the quotes inside a string on the way out, so the text grew a level on
+  every pass. `renderDefault` now reads the SHAPE of what SQLite hands back: `(…)`
+  is an expression, `'…'` a literal. The two expressions litestone itself writes
+  come back as `uuid()` and `now()`; any other is handed over rather than quoted.
+- **`@@index(where:)` re-emitting the soft-delete clause.** `createIndexes` ANDs
+  `"deletedAt" IS NULL` onto every index on a `@@softDelete` model, so the stored
+  predicate is never the declared one. Emitted whole, the next migration ANDs it
+  on again — `where: active == true` became `deletedAt == null && active == true`
+  and then nested a level deeper than `predicateToLite` can read, at which point
+  the predicate was dropped entirely with a comment.
+- **An enum member that is not an identifier, emitted bare.** `Half-yearly` from
+  a CHECK constraint. The quoted-member spelling shipped the same day and never
+  reached the second producer.
+- **A relation field named for the table it points at.** Two foreign keys into one
+  table produce two fields with one name; worse, a relation can take the name of a
+  real COLUMN, and the parser keeps one field per name — so the column is gone
+  from the next migration's table. Measured on erpnext, where a self-reference on
+  `amendedFrom` deleted a `supplierScorecardPeriod` column. The name comes from
+  the FK column now, the way the emitter reads it in the other direction.
+- **An enum name colliding with a MODEL name.** `SupplierScorecard.period` derives
+  `SupplierScorecardPeriod`, which is also a doctype — and the parser resolves a
+  field's type as an enum before a relation, so that model's own relations became
+  TEXT columns. The same collision `frappe.js` grew a loop for; one producer was
+  fixed and the other was not looked at.
+
+The output is also ORDER-STABLE now — models and enums by name, relations by their
+FK column. `sqlite_master` is in creation order, so a table a migration rebuilt
+moves to the end of the file, and re-running `fli db:pull` produced an unreadable
+diff.
+
+**And it says what it could not carry.** `import` grades every construct it could
+not express and `introspect` printed a prose disclaimer, which is the same job
+with one of the two doors honest. The three tiers are `src/import/tiers.js` now —
+one table, because two would be two answers to *how bad is this* — and
+`introspect` reports partial indexes, expression indexes, collapsed indexes,
+unspellable generated columns and defaults, referential actions with no `.lite`
+word, and, where the DEFAULT is evidence, the two types SQLite cannot hold
+(`DateTime` is TEXT, `Boolean` is INTEGER). `--report=<path>` writes the list as
+JSON and `--strict` exits 1 on `changed`, as `import` already did.
+`test/import.test.ts`'s totality guard reads `introspect.js` alongside the four
+readers, in both directions.
+
+**And the documented door could not reach any of it.** `fli db:pull` runs
+`litestone introspect --schema <schema>` and passes no path, so the command fell
+to `cfg.db` — which `loadConfig` answers as `./development.db` when nothing said
+otherwise. Every app that declares a `database` block was pointed at a file its
+schema never mentions. It resolves from the declaration now; a schema declaring
+several is asked WHICH by name, because the output carries no `@@db` and serving
+the first would answer half the question silently.
+
+`FJS-594`.
+
+## 2026-08-29 — an enum member may be a quoted string
+
+`enum S { Draft }` parsed; `enum S { "On Hold" }` did not. Measured over seven
+published schemas, **283 Frappe Select fields declare a closed set `.lite` could
+not carry**, and almost every one is blocked by a space and nothing else — `On
+Hold`, `To Receive and Bill`, `Grand Total`, `Per Week`. Every one landed as a
+bare `String` with the constraint gone.
+
+**The stored value IS the string.** No second name, nothing translates, which is
+how Postgres's own enums work. Prisma answers the same problem with `@map` on
+the member and buys a separate code-name for a bidirectional layer on every read
+and write of the column; `@label` already covers display, so that code-name
+would be a third thing rather than a missing one.
+
+Three rules. A quoted member that is a legal identifier is the SAME member, so
+`"Draft"` beside `Draft` collides rather than making two — the reading `FJS-564`
+gave the redundant array default, and what lets an importer quote everything and
+still emit a canonical schema. The empty string is not a member. And an unnamed
+move onto a quoted member is refused, the same reasoning the boolean rule
+already makes: `-> refunded` reads as `refund` and a sentence does not name an
+action.
+
+Four paths name a member and all four take it — a `@default`, a `@@transitions`
+state, the JSON Schema `enum` array, and the client's own write validator, whose
+refusal reads *must be one of: Draft, To Receive and Bill, Completed*. Typegen
+was already a string union. The enum CHECK now escapes an apostrophe: without it
+`Don't ship` closes the SQL literal and the whole CREATE TABLE stops parsing, so
+the test executes the DDL rather than matching its text.
+
+**The Frappe reader is the payoff.** An option list only has to be a SET now, so
+`select-not-an-enum` fell **283 → 60** and ERPNext's `lost` fell 633 → 410. The
+sixty left are single-option `naming_series` — `PUR-ORD-.YYYY.-`, a format string
+wearing a Select — and one option is not a set. Widening it made one name
+collision reachable, since `Supplier Scorecard Period` is a doctype as well as
+`SupplierScorecard.period`; the derived name is suffixed and reported rather
+than colliding. `FJS-593`.
+
+## 2026-08-29 — an index column carries a direction
+
+`@@index([organizationId, type, createdAt(sort: Desc)])`. SQLite walks a b-tree
+in either direction, so one column never needs it; a composite index whose
+columns disagree does, and trigger.dev writes exactly that twenty-one times —
+every one of which imported as an ascending index serving a different set of
+queries.
+
+**Prisma's spelling, and it is ZenStack's too.** `stdlib.zmodel` in both v2 and
+v3 declares `@@index(_ fields: FieldReference[], …, sort: SortOrder?, …)
+@@@prisma`, byte-identical, where `@@@prisma` is their own marker for *inherited
+unchanged*. So one spelling covers all three and an import carries it straight
+through. Lowercase `desc` is accepted because it is the client's own `orderBy`
+word for the same thing, rather than a second thing to remember.
+
+`fields` stays a plain array of names and the directions travel beside it as
+`sorts`, aligned by position — the index NAME is derived from the field list and
+three other readers walk it, so changing its shape would have reached all of
+them.
+
+**Three places in the migrator were blind to a direction and all three moved.**
+`indexKey` did not carry it, so a declared `sort: Desc` compared equal to the
+ascending index already in the database and migrated nothing. The added-index
+emit rebuilt its column list from names alone, so the drop would have been
+followed by a `CREATE` of the index it had just removed. And `parseIndexColumns`
+de-quoted `"createdAt" DESC` into `createdAt" DESC`, which `isIndexExpression`
+then reported as an expression — the `FJS-584` shape one modifier along. A
+direction change now drops and recreates in that order, which matters because
+the name does not change and `CREATE INDEX IF NOT EXISTS` over a live index is a
+silent no-op.
+
+The Prisma reader carries `sort:` through. `type:`, `ops:` and `length:` are a
+Postgres access method, an opclass and a MySQL prefix length, still reported as
+lost because SQLite has none of them; the SQL and Rails readers do not carry a
+direction yet. `FJS-591`.
+
+**One thing found and deliberately not fixed.** `indexKey` compares a composite
+index's columns as a SET, so `@@index([a, b])` and `@@index([b, a])` are one
+index to the diff — and a composite index is prefix-matched, so those serve
+different queries. Making the order significant changes what every existing
+schema migrates on its next run, which is a decision rather than a detail:
+`FJS-592`.
+
+## 2026-08-29 — a `bigint` is a `changed` import, and two readers now say so
+
+`litestone import` graded `bigint` `noted`, on the stated ground that *SQLite
+INTEGER is 64-bit, so the range holds*. The same day's measurement of the
+scaled-column ceiling says it does not: the value crosses a JS `number` at both
+ends, so a `bigint` becomes an `Int` that stops round-tripping at 2^53 with
+nothing raised. trigger.dev writes `TaskEvent.startTime BigInt` as nanoseconds
+since the epoch — about 1.7 × 10¹⁸ — and importing it loses roughly microsecond
+granularity in silence. Graded `changed` now, so `--strict` fails on it.
+
+**Only the Prisma reader had ever reported it.** `sql.js` and `rails.js` carried
+`bigint|int8|bigserial → Int` in their type tables with no `gap()` beside it, so
+the three largest sources of the construct said nothing, and the regrade alone
+would have made `--strict` fail a Prisma import and pass a Postgres one over the
+same column. Both report it now.
+
+**Keys and key references are exempt, and that is what makes the pass readable.**
+A generated key counts from one and will not reach 9,007,199,254,740,991; a
+foreign key holds one of those values. Where the source declares its relations
+the exemption is purely structural — a Prisma `BigInt` that no relation owns is
+supplied, which is how `GithubAppInstallation.appInstallationId` stays reported
+where a rule keyed on the `Id` suffix would skip the one case it most needs. A
+Postgres dump commonly declares no foreign keys at all, so `namesATable` is the
+single named fallback: an unconstrained `*_id` whose prefix IS a table in the
+same dump. Measured, it drops 185 of discourse's 221 conventional keys and none
+of lago's.
+
+Across the corpus that is **235 reported** — discourse 124 of its 458 bigint
+columns, lago 64 of 67, because lago declares its keys as `uuid` and its values
+as `bigint`, and 61 of those are `*_amount_cents`. `FJS-588`.
+
+## 2026-08-29 — a scaled column's range is enforced, and the ceiling is 2^53
+
+`Int @scale(n)` promised an exact round trip and stopped delivering one two
+digits before the documentation said it would. `docs/exact-numbers.md` reasoned
+from SQLite's 64-bit `INTEGER` and concluded that nine places still leaves nine
+figures in front of the point. But the value crosses a JS `number` at both ends
+and nothing here sets `safeIntegers`, so `bun:sqlite` returns a `number` on
+every path — a column read and an aggregate alike. Measured: `12345678900000001`
+reads back `…000`, `9007199254740993` reads back `…992`, and `sum()` rounds the
+same way. The true range at nine places is **seven** figures, and two distinct
+minor-unit values collided into one row value with nothing raised.
+
+That is `prisma#20635` one layer up — the bug `FJS-D142` cites as the reason to
+prefer `Int @scale` over a `Decimal` scalar, and the same silence Rails has on
+SQLite, where `123456.01` stores as `123460.0`.
+
+**Both ends now refuse it.** The boundary answers a value past
+`Number.MAX_SAFE_INTEGER` by name, and it is a different sentence from the
+fraction refusal because they are different mistakes — not knowing the unit
+against exceeding the range. It names the bound in minor units, which is what a
+caller sends, and works it out at the column's own places where they are known:
+`must be at most 9,007,199,254,740,991 minor units … at 9 decimal place(s) that
+is 9,007,199`. `@money` states the bound and works nothing out; at two places it
+is ninety trillion away and nobody meets it.
+
+**And the column carries a `CHECK`**, because four writers never reach the
+boundary — a migration, a seed, a raw statement, and `asSystem()`, which drops
+the gate, the row policies and `@@softDelete` and cannot drop a rule that is in
+the table (`FJS-519`). One constant owns the bound, `validate.js`'s
+`EXACT_INT_MAX`, and `ddl.js` imports it, so the two refusals cannot disagree.
+
+A plain `Int` is deliberately not bounded: it makes no exactness promise, and
+bounding every integer column in every app to buy back one is the wrong trade.
+The hazard is stated in the doc instead, since a snowflake id kept in an `Int`
+has the same ceiling and nothing reports it. `FJS-583`.
+
+**`FJS-575` closes with it, and not the way it was written.** The row asked for
+the nine-place cap to be raised to fifteen, because Lago writes
+`numeric(40, 15)` twenty times. Measuring the ceiling answered a different
+question: raising the cap would have moved the silent hole further into the
+dark. What the corpus needs splits in two, and Lago's own `Fee` writes both
+halves — `amountCents Int` beside `preciseAmountCents numeric(40,15)`, and
+`preciseCouponsAmountCents` at scale 5, which `@scale` took cleanly. A **rate**
+is small-magnitude and many-placed, and nine places holds every rate in the 25
+columns found across lago, discourse and triggerdev. A **precise accumulated
+total** is big-magnitude *and* many-placed, fits no 64-bit integer at any useful
+scale, and is an un-rounded intermediate rather than a stored quantity — so it
+belongs to rounding and allocation, which is `FJS-D154` and already open.
+Stripe writes the same split as two fields: an integer `unit_amount` beside a
+`unit_amount_decimal` string of at most twelve places.
+
+## 2026-08-29 — an array column's default, said out loud
+
+`@default([])`, `@default(["a", "b"])` and `@default([Active, Pending])` parse.
+The ruling `FJS-564` asked for turned out to be made already and unsaid: every
+array column is `NOT NULL DEFAULT '[]'` because an empty array is the null state
+of a list, so an omitted one already read back `[]` and a `null` was already
+refused. The empty literal restates that — and it parses because a language that
+refuses the redundant spelling of its own behaviour fails a port on a line that
+means what the tree already does. Prisma writes it 11 times across three real
+schemas.
+
+**The non-empty one is the case with no other spelling.** Elements are literals
+or bare enum members, the same way a scalar enum default is written, and each is
+graded against the column's own base type — which the JSON-string spelling never
+was: `String[] @default("[1,2]")` was valid JSON and put numbers in a TEXT
+column, and is refused now. A call is refused by name (`[now()]` is one
+timestamp frozen at migrate time, and there is no runtime stamp for an element);
+so is a nested array.
+
+**Two spellings arrive and one AST leaves.** The JSON string is normalised into
+the literal at parse, so `defaultExpr`, the JSON Schema and the release
+classifier read one kind rather than two, and the older spelling keeps working
+under a warning that names the literal.
+
+**The empty default is stated at the second boundary too.** Every array column
+emits `default: []` into its JSON Schema whether it declares one or not, so a
+generated form, a factory and a generated type seed what the column can hold
+instead of `undefined`. `Json` takes the literal as well, since it can hold a
+list; a column that holds one value refuses it by name.
+
+## 2026-08-29 — the open polymorphic pair, told what it may name
+
+No language change. `@@arc` still stops around six members, the pair is still
+the answer above that, and `IDEAS/polymorphic-relations.md`'s ruling stands: no
+real polymorphic relation, because a relation's target is an input to the
+access-control compiler and N targets is N gates.
+
+**What was missing was an idiom, not a feature.** The pair carries no foreign
+key by construction, so the type column is the one thing left that can carry a
+rule — and an `enum` there was always legal and never written down. Measured: it
+emits a table CHECK, so `asSystem()`, a migration, a seed and an atomic operator
+are all held to it, and it reaches the browser as a set `controlFor` renders as
+a picker rather than a text box. It buys no integrity; the id is still
+unenforced and the sweep is still owed. It is the difference between *this
+points at something* and *this points at nothing and nobody noticed*.
+
+`docs/schema.md` § *Exclusive foreign keys* now ends with it, and all three
+reference files that carry the shape are written that way:
+
+- `Tag.lite` grows § *Tell it what it may name* and its `TagAttachment` takes a
+  `TagSubject` enum — the file somebody copies should not copy the weaker form
+- `Notification.lite` takes a `NotificationContext`, since a notification's set
+  is the classes the app declares
+- `AuditEvent.lite` takes an `ActorKind` for `actorType` and **deliberately
+  keeps `subjectType String`**, with the reason stated where the two sit
+  together: an audit trail names whatever it was pointed at, so the set grows
+  with every service and an enum would refuse the first row a new one writes.
+  That is the exemption, and it now reads as a decision rather than an omission
+
+`fli check`'s `polymorphic-subject` is the executed half.
+
+**The evidence for asking at all is the corpus.** ERPNext is the only source in
+it that declares which kind each polymorphic field is — 17 closed, 61 open — and
+the 61 do not hold up: `party_type` is declared CLOSED twice and left open
+sixteen times in the same application, and `invoice_type`, `voucher_type`,
+`reference_type` and `document_type` all do the same. The closed sets cluster at
+three members, which is also where `@@arc`'s ceiling turns out to be correctly
+placed.
+
+## 2026-08-29 — `litestone import`: bring the schema you already have
+
+**Four readers that were a test fixture are now a command.** `litestone import
+<path>` reads a Prisma schema, a Rails `db/schema.rb`, a PostgreSQL dump or a
+Frappe app into `.lite`. They live at `src/import/`, ship in the package and are
+exported at `@frontierjs/litestone/import`; `test/fixtures/corpus/` imports them
+rather than keeping a copy, so the corpus is now a regression fixture over the
+SHIPPED importer — 1,377 models of input nobody here wrote, through the code an
+app runs. The regenerated fixtures are byte-identical bar the header's
+attribution line, which is the evidence the promotion changed nothing.
+
+**The output is not the whole answer, and the product is the half that says so.**
+Every construct a reader cannot express was already recorded with its model, its
+field and what was emitted instead. Seven real applications produce 2,178 of
+those, and undifferentiated that is the same as nothing — so each is graded:
+
+- **changed** — the schema says something the source does not. An invented
+  primary key, an exact number turned into a Float, a Postgres `NOT VALID`
+  foreign key emitted as an enforced one.
+- **lost** — the source says something the schema does not. Thinner, never
+  wrong: a partial index's predicate, an array default, a view, an index name.
+- **noted** — a decision only the author can make, or a translation that is
+  exact.
+
+`--strict` fails on `changed` alone. Failing on `lost` too would fail every real
+import — 251 partial indexes in one of the seven — and a check that always fires
+is one nobody reads.
+
+**The warning has to outlive the terminal.** The written file opens with the
+three counts, and every `changed` construct is marked on **its own line** —
+`positionX Int @scale(2)  // ⚠ imported: Decimal with no @db.Decimal(p, s) →
+Int @scale(2) — a GUESS` — because that line is the only thing anyone is looking
+at when the value turns out wrong. A model-level one, an invented key, is marked
+on the `model` line. The annotated output parses, which is asserted rather than
+assumed.
+
+**The tier table is total and the totality is enforced.** `test/import.test.ts`
+reads every `gap('…')` literal out of the four readers and fails on one the
+table does not name — which immediately found 18 refusals that exist in the
+readers and had never fired on the seven corpus schemas. An ungraded kind falls
+back to `changed`, fail-closed, so a reader that learns a new refusal cannot
+have it filed under *ignore me*; the test is what keeps that a backstop rather
+than the mechanism.
+
+Format is detected from the path and `--from` always wins, because a dump named
+`.txt` is still a dump. Without `--out` the schema goes to stdout and the report
+to stderr, so `litestone import x.prisma > db/schema.lite` is a schema.
+`docs/import.md` is the reference.
+
+## 2026-08-29 — one owner for the predicate, and the corpus keeps 94 of them
+
+`litestone introspect` and `litestone import` both answer *what does this partial
+index become*, and for a few hours they answered differently — introspect emitted
+the predicate and the importer, written before `@@index(where:)` existed, dropped
+it. `predicateToLite` now sits beside `parseIndexColumns` and `indexPredicate` in
+`core/migrate.js`: **one owner, three converters.**
+
+It also learned Postgres's boolean. The readers consume a dump, where a boolean
+is `= true`; SQLite writes `= 1`, and only the second was understood — so every
+boolean partial index in the corpus fell through as untranslatable.
+
+**94 of the corpus's 251 partial indexes now survive the conversion whole**,
+where the number was 0: 45 discourse, 23 lago, 26 mastodon, 89 `where:` clauses
+in the committed fixtures. The other 119 are unique and correctly dropped; 38
+hold a predicate `.lite` cannot express and come back as a plain index with a
+note, which only widens them.
+
+**Building it broke the corpus, and that is the part worth keeping.** Both
+readers deduped indexes on the EMITTED STRING — which worked only while the
+predicate was being stripped, because two indexes over one column list then
+rendered the same `@@index([a, b])` and collapsed into it. Emitting the predicate
+made them different strings, so both survived; litestone names an index for its
+COLUMNS, so the regenerated fixtures stopped parsing. The key is the column list
+now, in both readers, and the gap reason no longer claims a predicate was
+stripped.
+
+Green: litestone 3406, typecheck clean.
+
+## 2026-08-29 — the predicate crossing back: `litestone introspect`
+
+Reading a database INTO a schema is the other direction, and it discarded every
+index predicate. **The two halves are not symmetrical and that is the fix.**
+
+Dropping the predicate from a UNIQUE index **strengthens** the constraint.
+`CREATE UNIQUE INDEX u ON note (email) WHERE deleted_at IS NULL` is uniqueness
+among LIVE rows; `@unique` is uniqueness among all of them. Both introspected to
+the identical `email String? @unique`, so `introspect` → `db push` refused writes
+the source database accepted — permanently, since a soft-deleted row keeps its
+slot (`FJS-204`). A partial unique is now handed over as a `// FIXME` naming the
+predicate, which is the call the corpus converters had already made and this
+path had not got.
+
+Dropping it from a PLAIN index only **widens** the index — same rows answered, a
+bigger structure — so that stays safe, and is what happens where the predicate
+is one `.lite` cannot hold. Where it can be held it is emitted whole:
+`@@index([kind], where: archivedAt == null)`, `where: live == true`. That is
+`FJS-578` paying for itself the same day. The soft-delete clause stays implicit,
+because declaring it is refused.
+
+**The product is a file somebody can use, so the assertion is that it PARSES**,
+and asking that found three more things:
+
+- a `///` note at the end of a model body attaches to no declaration and stops
+  the parse — the notes are `//`
+- litestone names an index for its **columns**, so two partial indexes over one
+  column list cannot both be declared. A real database has them, precisely
+  because partial indexes are what make them useful. First wins; the rest are
+  handed over by name
+- a composite unique over a nullable column needs `nullsDistinct: true` to be
+  legal at all (`FJS-D130`) — SQL's own word for what the source database is
+  already doing
+
+`FJS-584` is closed as a byproduct, which is the only reason it was worth doing:
+the two copies of the broken column regex became one owner —
+`parseIndexColumns`, counting brackets rather than stopping at the first `)` —
+because a converter that must read a predicate has to read the column list
+correctly too. It is not a SQL parser and says so.
+
+44 cases in `test/index-predicates.test.ts`, every guard negative-controlled.
+Green: litestone 3382, typecheck clean.
+
+## 2026-08-29 — `@@index(where:)`, and two silent things underneath it
+
+**`@@index([kind], where: archivedAt == null)` — a partial index the schema
+declares.** The corpus put partial index at 251 instances, the largest construct
+`.lite` could not express; 119 of those are partial UNIQUE, which `FJS-204`
+refused and this does not reopen, leaving 132 in scope.
+
+**What a predicate may hold is asked, not described.** A grammar written here
+would be a second statement about the query compiler that goes stale the first
+time it moves, so the parser compiles the predicate and reads what came back.
+SQLite proves that a query implies a partial index when it PREPARES the query,
+so a predicate holding a bound value can never be matched — and litestone binds
+every value in a `where` except a null test, which means a caller restating the
+predicate binds it too. `auth()` and `now()` need no rule of their own; both
+bind. Both get a sentence of their own anyway, because *this binds a value* is
+not what the author did wrong.
+
+The compiled SQL is kept on the attribute and emitted verbatim, so the index
+predicate and the predicate a query compiles are the same bytes — which is what
+lets the planner match them, and what keeps the migrator's comparison exact.
+Proven rather than argued: 2000 rows, `ANALYZE`, `SEARCH … USING INDEX
+idx_note_kind` with the predicate stated and `SCAN` without it.
+
+On a `@@softDelete` model a declared predicate is **ANDed** with
+`deletedAt IS NULL` rather than replacing it — that clause is what makes the
+index reachable there at all.
+
+**Two defects were sitting under it, and each was invisible for the other's
+reason.**
+
+`FJS-576` — `introspect` kept `{name, cols, unique}` per index and dropped the
+predicate, so a partial index and a full one over the same columns compared
+equal: `hasChanges: false` over two databases that genuinely differ. Litestone
+has emitted partial indexes for every `@@softDelete` model since the attribute
+existed, so this was live. Fixed by reading the tail — the first `)` followed by
+WHERE closes the column list — and carrying it in the index identity.
+
+`FJS-577` — `generateIndexDDL(model, softDelete = false, …)` returns
+`createIndexes(model, softDelete ?? isSoftDelete(model), …)`, and `false ?? x`
+is `false`, so the fallback was unreachable for every caller and the function
+never emitted a partial index for anybody. The migrator's rebuild branch called
+it as `generateIndexDDL(model, false, …)`, so **any** schema change that rebuilt
+the table dropped the clause from every index on the model. `FJS-443`'s shape in
+the branch its fix did not reach. The parameter no longer defaults, so unstated
+means ask the model.
+
+They compound: 577 degraded the index and 576 is why nothing noticed, then or
+ever. Neither returns a wrong row — an index predicate changes which index the
+planner may use and never which rows match — so the cost was speed and a
+database drifting one rebuild at a time.
+
+**`FJS-578` was found by building this and is fixed with it.** Two compilers
+turn a predicate into SQL and they disagreed about a boolean: the policy
+compiler inlined `= 1`, the query builder bound `= ?`. Ordinarily invisible —
+both answer the same rows — and it costs nothing until something has to COMPARE
+the two strings, which a partial index does.
+
+`operandSql(v, push)` in `query.js` is the one decision now: a literal where
+that is safe, a bound `?` otherwise. A boolean is 0 or 1 and nothing else, so
+there is no escaping and no injection surface, and the plan cache grows by at
+most two strings per predicate. Applied at the six sites a boolean could
+reach — the scalar shorthand, an array shorthand, `equals`, `not`, `in`,
+`notIn` — and `push` still coerces one for every caller that keeps binding.
+
+So `where: live == true` is accepted, and the shipped corpus surface goes from
+90 of 132 to **97 (73%)**.
+
+The test for it EXPLAINs the bytes the client actually sent — the `sql` and
+`params` captured off `onQuery`, against a file-backed database — rather than a
+hand-written lookalike, which passes whatever the query builder does and is no
+test of it at all. That is what makes it fail when the inlining is removed.
+
+30 cases in `test/index-predicates.test.ts`, every check negative-controlled.
+Green: litestone 3361, typecheck clean.
+
 ## 2026-08-29 — ERPNext, and a declared answer to where `@@arc` stops
 
 `test/fixtures/corpus/frappe-to-lite.mjs`, and **ERPNext — 534 models**, the new

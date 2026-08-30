@@ -60,10 +60,25 @@ title: Dashboard
   let serverOptions = []
   let appOptions    = []
 
+  // The board, watched rather than read (`FJS-518`). `dashboards.get()` answers
+  // the board WITH its widgets, so this is a COMPOSED view: the node says the
+  // row moved and the composed answer is read again. Watching the node's own
+  // value would empty the widget list at the first push (`FJS-533`).
+  let row     = null
+  let unwatch = null
+
+  function watchBoard(id) {
+    if (row && String(row.id) === String(id)) return row.refresh()
+    unwatch?.(); row?.release()
+    row = dashboards.record(id, { composed: true })
+    unwatch = row.subscribe(v => { board = v })
+    return row.ready
+  }
+
   async function load() {
     error = null
     try {
-      board = await dashboards.service.get(page.params.id)
+      await watchBoard(page.params.id)
     } catch (e) {
       error = e.message
     } finally {
@@ -91,15 +106,7 @@ title: Dashboard
   loadKinds()
   $: page.params.id, () => load()
 
-  // Live. Another tab adding a card, or anything this board's widgets read
-  // changing, should land here — the widgets subscribe for themselves, this is
-  // the board's own shape.
-  const READS = new Set(['get', 'find', 'kinds'])
-  const off = dashboards.service.on('*', (method, row) => {
-    if (READS.has(method) || (row?.id && row.id !== page.params.id)) return
-    load()
-  })
-  $.onDestroy(off)
+  $.onDestroy(() => { unwatch?.(); row?.release() })
 
   const specFor = (kind) => kinds.find(k => k.kind === kind) ?? null
 

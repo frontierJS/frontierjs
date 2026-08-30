@@ -3,16 +3,21 @@
 `../scale/openmrp.lite` asks whether the Data realm survives **size**. These ask
 whether it survives **shapes this project did not invent**.
 
-Every file here is converted mechanically from a published schema — Prisma by
-`prisma-to-lite.mjs`, Rails `db/schema.rb` by `rails-to-lite.mjs`, a PostgreSQL
-dump by `sql-to-lite.mjs`, Frappe DocType JSON by `frappe-to-lite.mjs`. That is the whole point: nothing in them was chosen by
-somebody who already knew what `.lite` can say, so they hit walls a hand-written
-fixture never approaches — and walls a `fli check` rule can never reach, because
-a rule is written by someone who has already thought of the case.
+Every file here is read mechanically out of a published schema by **`litestone
+import`** — `src/import/`, the shipped readers, not a copy of them, so what this
+directory regenerates is a regression fixture over the command an app runs.
+That is the whole point: nothing in these was chosen by somebody who already
+knew what `.lite` can say, so they hit walls a hand-written fixture never
+approaches — and walls a `fli check` rule can never reach, because a rule is
+written by someone who has already thought of the case.
 
 **The `.lite` output is not the artifact. The refusal list is.** Every construct
-the conversion could not express is recorded in `gaps.json` with its model, its
-field, and what was emitted instead.
+the reading could not express is recorded in `gaps.json` with its model, its
+field, and what was emitted instead — and graded `changed` / `lost` / `noted`
+(`docs/import.md`), which is what makes 2,178 of them readable.
+
+`fetch.mjs` downloads each source and runs the readers over it. `gaps.json` is
+regenerated rather than tracked.
 
 ## What it found on its first run, 2026-08-29
 
@@ -34,7 +39,7 @@ constructs Prisma cannot express and one it can:
 | --- | --- |
 | **43 partial indexes** | `unique … where: "deleted_at IS NULL"` is uniqueness among LIVE rows. `.lite` cannot say it, and a **unique** one is therefore DROPPED rather than emitted whole — emitting it would be a stronger constraint than the source declares |
 | **1 single-table inheritance** | a string `type` column partitioning one table across several classes. No spelling; the column is emitted as an ordinary String and the partition is lost |
-| **3 polymorphic candidates** | see `polymorphic.mjs` — reported, never resolved to `@@arc` |
+| **3 polymorphic candidates** | see `src/import/polymorphic.js` — reported, never resolved to `@@arc` |
 
 Rails also inverts one default that matters: **a column is nullable unless
 `null: false`**, the opposite of `.lite`, so every conversion decides optionality
@@ -64,16 +69,23 @@ and writes them as hand-rolled SQL because it has nothing better to say.
 
 It also produced `FJS-575`: **20 columns are `numeric(40, 15)`** and `@scale`
 stops at 9, so every per-unit rate in a real usage-based billing schema lands as
-a `Float`. The 9 is not arbitrary — a minor-unit integer in a 64-bit INTEGER has
-about four digits left in front of the point at 15 places — so it is a shape
-question rather than a limit to raise, and it is the first thing the billing work
-will hit.
+a `Float`. The row asked for the cap to be raised and closed the other way.
+Measuring the ceiling found it is **2^53** rather than int64 — the value crosses
+a JS `number` at both ends — so raising the cap would have moved a silent hole
+further into the dark; that half is `FJS-583`, fixed. The other half is in this
+very fixture: Lago's `Fee` writes `amountCents Int` beside
+`preciseAmountCents numeric(40,15)`, and `preciseCouponsAmountCents` at scale 5,
+which `@scale` took cleanly. A **rate** is small-magnitude and many-placed and
+nine places holds every one of the 25; a **precise accumulated total** is
+big-magnitude *and* many-placed, fits no 64-bit integer at any scale, and is an
+un-rounded intermediate rather than a stored quantity — which is `FJS-D154`,
+allocation, and not a column type.
 
 ## Discourse — the scale ceiling, 2026-08-29
 
 **356 models**, nearly twice `openmrp`'s 188 and with real relations rather than
 a mechanical MySQL conversion. Parses in 82ms, builds in 365ms, re-boots in
-116ms, zero drift. It reused `sql-to-lite.mjs` unchanged, which is the argument
+116ms, zero drift. It reused the `sql` reader unchanged, which is the argument
 for a front-end paying for itself across targets.
 
 **15 polymorphic pairs, and these are the unambiguous ones** — `bookmarkable`,
@@ -90,24 +102,37 @@ that would make one useful.
 
 ## The whole corpus
 
-843 models across six applications and three front-ends, 803 recorded
+1,377 models across seven applications and four front-ends, 2,403 recorded
 constructs. Every one parses, builds and re-boots with zero drift.
 
 | Class | Count | Where |
 | --- | --- | --- |
-| partial index | **251** | discourse 103 · lago 105 · mastodon 43 |
-| array default (`FJS-564`) | 108 | every schema |
+| partial index (`FJS-576`) | **251** | lago 105 · discourse 103 · mastodon 43 |
+| wide integer (`FJS-583`) | **235** | discourse 124 · lago 64 · mastodon 38 |
+| array default (`FJS-564`, shipped) | 108 | every schema |
 | composite unique over nullable (`FJS-D130`, works) | 62 | every schema |
-| index over an expression | 47 | discourse · lago |
+| index over an expression (`FJS-584`) | 47 | discourse · lago |
 | view | 41 | lago 38 |
-| polymorphic candidate | 35 | every schema |
-| STI candidate | 21 | every schema |
-| `@scale` over 9 (`FJS-575`) | 25 | lago 20 |
+| polymorphic candidate | 36 | every schema |
+| no primary key at all | 29 | discourse 22 |
+| `@scale` over 9 (`FJS-575`, closed) | 25 | lago 20 |
+| STI candidate | 24 | every schema |
+| `numeric` with no precision | 15 | lago 10 |
 | composite primary key (`FJS-561`) | 7 | three schemas |
 | **exclusive arc found as SQL** | **5** | lago — all arity 2 |
 
-**A partial index is now the largest unrepresented construct in the corpus by
-2.3×**, and it is the one thing every source has and `.lite` cannot say.
+**A partial index is the largest unrepresented construct**, and it is the one
+thing every source has and `.lite` cannot say.
+
+**A wide integer is the second, and it is the one that grades `changed`.** A
+`bigint` becomes `Int` and the COLUMN is fine — SQLite's INTEGER is 64-bit too —
+but the value crosses a JS `number` at both ends, so past 2^53 what is read back
+is not what was written (`FJS-583`). It was graded `noted` on the claim that
+*the range holds*, which measurement contradicted, and two of the four readers
+did not report it at all. Keys and key references are exempt or the report is
+unreadable: discourse holds 458 bigint columns and 124 are reported; lago holds
+67 and 64 are, because lago declares its keys as `uuid` and its VALUES as
+bigint — 61 of them `*_amount_cents`, which is money.
 
 ## ERPNext — and a declared answer to the `@@arc` question, 2026-08-29
 

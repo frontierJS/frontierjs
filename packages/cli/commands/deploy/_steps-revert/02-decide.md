@@ -89,7 +89,9 @@ if (stopping.length) {
 
 if (flag.plan) {
   log.info('--plan: nothing was written or run.')
-  context.config.abort = true
+  // `stop`, not `abort`: the six refusals above this line fail the command,
+  // and asking for a plan is not one of them (`FJS-589`).
+  context.config.stop = true
   return
 }
 

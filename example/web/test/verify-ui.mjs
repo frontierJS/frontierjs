@@ -236,7 +236,7 @@ try {
   const created = await (await fetch(`${API}/api/orders`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...auth },
-    body: JSON.stringify({ reference: REF, status: 'pending', total: 9.5, customerId: 1 }),
+    body: JSON.stringify({ reference: REF, status: 'pending', total: 950, customerId: 1 }),
   })).json()
   const orderId = created?.id ?? created?.data?.id
   if (!orderId) throw new Error('could not create the order this drive works on: ' + JSON.stringify(created))
@@ -401,12 +401,16 @@ try {
 
   const orderB = (await (await fetch(`${API}/api/orders`, {
     method: 'POST', headers: { 'content-type': 'application/json', ...auth },
-    body: JSON.stringify({ reference: REF_B, status: 'pending', total: 24, customerId: 1 }),
+    body: JSON.stringify({ reference: REF_B, status: 'pending', total: 2400, customerId: 1 }),
   })).json())?.id
   if (!orderB) throw new Error('could not create the settled order this drive works on')
 
+  // As STAFF. `payments.start` takes either a checkout code or a caller the
+  // order's own policies admit, and no third way — a stranger naming a bare id
+  // is a 404 that says nothing (`FJS-497`). This drive is the console, so it is
+  // the second: the same door the Pay button on the screen below goes through.
   const intent = await (await fetch(`${API}/api/payments`, {
-    method: 'POST', headers: { 'content-type': 'application/json', 'x-service-method': 'start' },
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-service-method': 'start', ...auth },
     body: JSON.stringify({ orderId: orderB }),
   })).json()
   await fetch(`${PSP}/v1/intents/${intent.providerRef}/confirm`, {

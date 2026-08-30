@@ -1,0 +1,7 @@
+<script>
+  import Basket from '../islands/Basket.mesa'
+</script>
+<div class="shell">
+  <header><Basket client:load /></header>
+  <slot />
+</div>

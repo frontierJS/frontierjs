@@ -60,6 +60,13 @@ export const TIME_PATTERNS = {
 // E.164 international format + common local formats
 const PHONE_RE    = /^\+?[\d\s\-().]{7,20}$/
 
+// The largest whole number a JS number carries exactly. A scaled column's whole
+// promise is that what goes in comes back, and the round trip goes through a
+// `number` at both ends — so this, and not SQLite's 64-bit INTEGER, is the range
+// the column may hold. `ddl.js` emits it as a CHECK for the writes that never
+// reach this file: a migration, a seed, a raw statement, `asSystem()`.
+export const EXACT_INT_MAX = Number.MAX_SAFE_INTEGER
+
 const VALIDATORS = {
   // String validators
   email:       (v)          => EMAIL_RE.test(String(v)),
@@ -102,6 +109,13 @@ const VALIDATORS = {
   // that tells nobody what to send instead (`FJS-D142`).
   scale:       (v)    => Number.isInteger(typeof v === 'string' ? Number(v) : v),
   money:       (v)    => Number.isInteger(typeof v === 'string' ? Number(v) : v),
+
+  // The second half of the same promise, and the lower of two ceilings. SQLite's
+  // INTEGER is 64-bit, but the value arrives and leaves as a JS number, which
+  // stops being exact at 2^53 — so past it the rounded double is stored and a
+  // DIFFERENT number is read back with nothing raised (`FJS-583`). Above int64
+  // SQLite itself refuses; between the two there is only this.
+  exactRange:  (v)    => Math.abs(typeof v === 'string' ? Number(v) : v) <= EXACT_INT_MAX,
 }
 
 // What an array column's elements have to be. Only the two kinds SQLite cannot
@@ -141,6 +155,17 @@ export const DEFAULT_MESSAGES = {
   // at 2 places £12.99 is 1299, and at 0 places ¥1235 is 1235.
   scale:       (n) => `must be a whole number of minor units — the column holds ${n} decimal place(s), so 12.99 is 1299`,
   money:       (c) => `must be a whole number of minor units${c ? ` of ${c}` : ''} — 12.99 is 1299`,
+  // The range refusal names the bound in MINOR UNITS, because that is what the
+  // caller sends, and adds the value it works out to where the places are known.
+  // At 2 places the bound is £90bn away and nobody meets it; at 9 it is 9,007,199.
+  exactRange:  (places) => {
+    const cap  = `must be at most ${EXACT_INT_MAX.toLocaleString('en-GB')} minor units` +
+                 ' — past that a JS number cannot carry the value and what is read back' +
+                 ' is not what was written'
+    return places == null
+      ? cap
+      : `${cap}; at ${places} decimal place(s) that is ${Math.floor(EXACT_INT_MAX / 10 ** places).toLocaleString('en-GB')}`
+  },
   // The two array rules that come from the TYPE rather than an attribute. They
   // are in this table for the same reason as the rest: it is the one definition
   // of the wording, and `x-messages` falls back to it.
@@ -316,15 +341,21 @@ export function validateField(fieldName, value, attributes) {
         defaultMsg = DEFAULT_MESSAGES[kind]()
         break
 
+      // Two ways a scaled value is wrong and they want different sentences: a
+      // fraction is not knowing the unit, and a magnitude past 2^53 is a value
+      // no JS number carries. The range refusal ignores `attr.message` — it is
+      // the framework's own refusal about the column's range, not the rule the
+      // author wrote about its meaning.
       case 'scale':
-        pass       = VALIDATORS.scale(value)
-        defaultMsg = DEFAULT_MESSAGES.scale(attr.places)
-        break
-
-      case 'money':
-        pass       = VALIDATORS.money(value)
-        defaultMsg = DEFAULT_MESSAGES.money(attr.currency)
-        break
+      case 'money': {
+        const unit = kind === 'scale'
+          ? DEFAULT_MESSAGES.scale(attr.places)
+          : DEFAULT_MESSAGES.money(attr.currency)
+        if (!VALIDATORS[kind](value)) { pass = false; defaultMsg = unit; break }
+        if (!VALIDATORS.exactRange(value))
+          errors.push({ path: [fieldName], message: DEFAULT_MESSAGES.exactRange(kind === 'scale' ? attr.places : null) })
+        continue
+      }
 
       case 'time':
         // @time(seconds: true) accepts HH:MM:SS as well as HH:MM. Default

@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-31 definitions · 24 models · 7 enums · 0 other
+32 definitions · 24 models · 8 enums · 0 other
 ```
 
 ## Definitions
@@ -49,6 +49,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `PaymentStatus` | enum |
 | `CartStatus` | enum |
 | `StockMovementKind` | enum |
+| `NotificationContext` | enum |
 | `TrackingUpdate` | model |
 | `DiscountCode` | model |
 | `ShippingChoice` | model |
@@ -69,6 +70,7 @@ validates, and a select that silently drops an option.
 - `PaymentStatus` — `pending`, `succeeded`, `failed`, `refunded`
 - `CartStatus` — `open`, `ordered`, `abandoned`
 - `StockMovementKind` — `received`, `sold`, `returned`, `adjusted`, `damaged`
+- `NotificationContext` — `Order`
 
 ## Models
 
@@ -92,8 +94,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `active` | `boolean` = `true` | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 | `variantCount` | `integer` | — | — | `x-litestone-from` `x-litestone-kind` | — |
-| `priceFrom` | `number` | — | — | `x-litestone-from` `x-litestone-kind` | — |
-| `priceTo` | `number` | — | — | `x-litestone-from` `x-litestone-kind` | — |
+| `priceFrom` | `integer` | — | — | `x-litestone-from` `x-litestone-kind` `x-money` | — |
+| `priceTo` | `integer` | — | — | `x-litestone-from` `x-litestone-kind` `x-money` | — |
 | `onHand` | `integer` | — | — | `x-litestone-from` `x-litestone-kind` | — |
 
 **On create**: required — `name`, `slug`, `brand` · not accepted — `id`, `version`, `variantCount`, `priceFrom`, `priceTo`, `onHand`
@@ -126,7 +128,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `sku` | `string` | yes | — | `minLength: 3` `maxLength: 20` | — |
 | `colour` | `string` = `"Default"` | — | — | `minLength: 1` `maxLength: 30` `x-values` | — |
 | `size` | `Size` = `"one"` | — | — | — | — |
-| `price` | `number` | yes | — | `minimum: 0` | — |
+| `price` | `integer` | yes | — | `minimum: 0` `x-money` | — |
 | `barcode` | `string`? | — | — | — | — |
 | `stock` | `integer` = `0` | — | — | `minimum: 0` | — |
 | `active` | `boolean` = `true` | — | — | — | — |
@@ -181,8 +183,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `code` | `string` | yes | Code | `minLength: 3` `maxLength: 20` | `length` `maxLength` `minLength` |
 | `label` | `string` | yes | Description | `minLength: 1` `maxLength: 60` | — |
 | `kind` | `DiscountKind` = `"percent"` | — | Kind | — | — |
-| `value` | `number` | yes | Value | `minimum: 0` | — |
-| `minSubtotal` | `number` = `0` | — | Minimum spend | `minimum: 0` | — |
+| `value` | `integer` | yes | Value | `minimum: 0` `x-scale` | — |
+| `minSubtotal` | `integer` = `0` | — | Minimum spend | `minimum: 0` `x-money` | — |
 | `startsAt` | `string`? | — | Starts | `format: "date-time"` | — |
 | `endsAt` | `string`? | — | Ends | `format: "date-time"` | — |
 | `maxRedemptions` | `integer`? | — | Redemption limit | `minimum: 1` | — |
@@ -201,8 +203,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `integer` | — | — | — | — |
 | `name` | `string` | yes | Method | `minLength: 1` `maxLength: 40` | — |
 | `description` | `string`? | — | Description | `minLength: 0` `maxLength: 120` | — |
-| `price` | `number` | yes | Price | `minimum: 0` | — |
-| `freeOver` | `number`? | — | Free over | `minimum: 0` | — |
+| `price` | `integer` | yes | Price | `minimum: 0` `x-money` | — |
+| `freeOver` | `integer`? | — | Free over | `minimum: 0` `x-money` | — |
 | `position` | `integer` = `0` | — | Position | — | — |
 | `active` | `boolean` = `true` | — | Active | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
@@ -236,16 +238,16 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `integer` | — | — | — | — |
 | `reference` | `string` | yes | — | `minLength: 3` `maxLength: 20` | `length` `maxLength` `minLength` |
 | `status` | `OrderStatus` = `"pending"` | — | — | — | — |
-| `subtotal` | `number` = `0` | — | Subtotal | `minimum: 0` `x-litestone-kind` | — |
+| `subtotal` | `integer` = `0` | — | Subtotal | `minimum: 0` `x-litestone-kind` `x-money` | — |
 | `discountCode` | `string`? | — | Code | `x-litestone-kind` | — |
 | `discountLabel` | `string`? | — | Discount | `x-litestone-kind` | — |
-| `discount` | `number` = `0` | — | Discount amount | `minimum: 0` `x-litestone-kind` | — |
+| `discount` | `integer` = `0` | — | Discount amount | `minimum: 0` `x-litestone-kind` `x-money` | — |
 | `shippingLabel` | `string`? | — | Shipping | `x-litestone-kind` | — |
-| `shipping` | `number` = `0` | — | Shipping cost | `minimum: 0` `x-litestone-kind` | — |
+| `shipping` | `integer` = `0` | — | Shipping cost | `minimum: 0` `x-litestone-kind` `x-money` | — |
 | `taxLabel` | `string`? | — | Tax | `x-litestone-kind` | — |
 | `taxRate` | `number` = `0` | — | Rate | `minimum: 0` `x-litestone-kind` | — |
-| `tax` | `number` = `0` | — | Tax amount | `minimum: 0` `x-litestone-kind` | — |
-| `total` | `number` = `0` | — | — | `minimum: 0` | — |
+| `tax` | `integer` = `0` | — | Tax amount | `minimum: 0` `x-litestone-kind` `x-money` | — |
+| `total` | `integer` = `0` | — | — | `minimum: 0` `x-money` | — |
 | `note` | `string`? | — | — | — | — |
 | `customerId` | `integer` | yes | Customer | — | `required` |
 | `trackingCode` | `string`? | — | Tracking | `x-litestone-kind` | — |
@@ -267,8 +269,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `sku` | `string` | yes | — | `minLength: 1` `maxLength: 40` | — |
 | `description` | `string` | yes | Item | `minLength: 1` `maxLength: 160` | — |
 | `quantity` | `integer` | yes | — | `minimum: 1` `maximum: 99` | — |
-| `unitPrice` | `number` | yes | Unit price | `minimum: 0` | — |
-| `lineTotal` | `number` | yes | Total | `minimum: 0` | — |
+| `unitPrice` | `integer` | yes | Unit price | `minimum: 0` `x-money` | — |
+| `lineTotal` | `integer` | yes | Total | `minimum: 0` `x-money` | — |
 | `userId` | `string`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `orderId`, `variantId`, `sku`, `description`, `quantity`, `unitPrice`, `lineTotal` · not accepted — `id`
@@ -283,10 +285,10 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `integer` | — | — | — | — |
 | `providerRef` | `string` | yes | Provider reference | `minLength: 3` `maxLength: 64` | — |
 | `status` | `PaymentStatus` = `"pending"` | — | — | — | — |
-| `amount` | `number` | yes | — | `minimum: 0` | — |
+| `amount` | `integer` | yes | — | `minimum: 0` `x-money` | — |
 | `currency` | `string` = `"USD"` | — | — | `minLength: 3` `maxLength: 3` | — |
 | `orderId` | `integer` | yes | Order | — | — |
-| `refundedAmount` | `number` = `0` | — | — | `minimum: 0` | — |
+| `refundedAmount` | `integer` = `0` | — | — | `minimum: 0` `x-money` | — |
 | `failureReason` | `string`? | — | — | `minLength: 0` `maxLength: 200` | — |
 | `settledAt` | `string`? | — | — | `format: "date-time"` | — |
 
@@ -339,7 +341,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `cartId` | `integer` | yes | Basket | — | — |
 | `variantId` | `integer` | yes | Variant | — | `required` |
 | `quantity` | `integer` = `1` | — | — | `minimum: 1` `maximum: 99` | — |
-| `unitPrice` | `number` | — | — | `minimum: 0` `x-litestone-kind` | — |
+| `unitPrice` | `integer` | — | — | `minimum: 0` `x-litestone-kind` `x-money` | — |
 | `token` | `string` | yes | — | — | — |
 
 **On create**: required — `cartId`, `variantId`, `token` · not accepted — `id`
@@ -388,7 +390,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `userId` | `string` | yes | — | — | — |
 | `type` | `string` | yes | — | — | — |
 | `data` | `json` | yes | — | — | — |
-| `contextType` | `string`? | — | — | — | — |
+| `contextType` | `NotificationContext`? | — | — | — | — |
 | `contextId` | `integer`? | — | — | — | — |
 | `readAt` | `string`? | — | — | `format: "date-time"` | — |
 

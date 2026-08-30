@@ -45,12 +45,14 @@ for (const h of hosts) {
 // One lock per machine+path pair. A split app is two locks; an app whose halves
 // share a host is one, which is why distinctHosts() dedupes on the pair.
 log.info('Acquiring deploy lock...')
-const lock = acquireLock(context, { hosts, target })
+const lock = await acquireLock(context, { hosts, target, takeover: context.flag.resume })
 if (!lock.ok) {
-  log.error(`Deploy already in progress on ${lock.host} — if this is stale, remove ${lock.lockFile}`)
+  for (const [level, line] of await lockRefusal(lock)) log[level](line)
   context.config.abort = true
   return
 }
+if (context.config.lockTookOver)
+  log.warn(`  --resume took the lock over — it held: ${context.config.lockTookOver}`)
 
 context.config.lockAcquired = true
 

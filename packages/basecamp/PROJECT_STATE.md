@@ -772,7 +772,7 @@ The order, decided 2026-08-14:
 decided 2026-08-06, and it cost nothing to defer: the admin zone everyone
 expected to break was already written through `asSystem()` because `User` was
 `@@gate("8")` at the time. All 45 models declare a level; the ladder is per WORKSPACE
-(`api/src/core/gate.ts`), which is the part `example/api/gate.ts` could not
+(`api/src/core/gate.ts`), which is the part `example/api/src/core/gate.ts` could not
 supply.
 
 **`@@allow` started the same day, on one model.** `Server` declares

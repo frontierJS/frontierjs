@@ -1,4 +1,5 @@
 import { Database } from 'bun:sqlite'
+import { parseIndexColumns, indexPredicate } from '../core/migrate.js'
 import workerBundleSource from './split-worker.source.js'
 import { existsSync, copyFileSync, writeFileSync, statSync, unlinkSync, mkdirSync } from 'fs'
 import { resolve } from 'path'
@@ -53,12 +54,17 @@ export function introspectSQL(db) {
     const indexes = db
       .query(`SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL`)
       .all(tableName)
-      .map(({ name, sql }) => {
-        const match = sql.match(/\(([^)]+)\)/)
-        const cols  = match ? match[1].split(',').map(c => c.trim().replace(/^["'`]|["'`]$/g, '')) : []
-        const unique = /CREATE UNIQUE INDEX/i.test(sql)
-        return { name, cols, unique }
-      })
+      // The parse is core/migrate.js's — one owner, because this file carried a
+      // hand copy of it and the copy read an index over an expression as one
+      // column called `lower(a` (FJS-584). The PREDICATE comes back too: an
+      // index that holds only some rows is not the same index as one that holds
+      // them all, and discarding that silently is what FJS-586 was.
+      .map(({ name, sql }) => ({
+        name,
+        cols:   parseIndexColumns(sql),
+        unique: /CREATE UNIQUE INDEX/i.test(sql),
+        where:  indexPredicate(sql),
+      }))
 
     schema[tableName] = { columns, foreignKeys, indexes }
   }

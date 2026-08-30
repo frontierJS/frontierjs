@@ -1,7 +1,7 @@
 // erpnext — the data model of frappe/erpnext, expressed in .lite.
 //
 // Derived mechanically from erpnext/**/doctype/*/*.json (GPL-3.0) by
-// frappe-to-lite.mjs beside this file. A CORPUS FIXTURE, not a design:
+// `litestone import --from frappe`. A CORPUS FIXTURE, not a design:
 // nothing here is a claim about how any of it should be modelled, and every
 // place the conversion made a choice the source did not is recorded in
 // gaps.json. 534 models. Regenerate with fetch.mjs.
@@ -10,6 +10,35 @@ enum RequestForQuotationStatus {
   Draft
   Submitted
   Cancelled
+}
+
+enum PurchaseOrderApplyDiscountOn {
+  "Grand Total"
+  "Net Total"
+}
+
+enum PurchaseOrderStatus {
+  Draft
+  "On Hold"
+  "To Receive and Bill"
+  "To Bill"
+  "To Receive"
+  Completed
+  Cancelled
+  Closed
+  Delivered
+}
+
+enum PurchaseOrderAdvancePaymentStatus {
+  "Not Initiated"
+  Initiated
+  "Partially Paid"
+  "Fully Paid"
+}
+
+enum SupplierQuotationApplyDiscountOn {
+  "Grand Total"
+  "Net Total"
 }
 
 enum SupplierQuotationStatus {
@@ -30,6 +59,12 @@ enum RequestForQuotationSupplierQuoteStatus {
   Received
 }
 
+enum SupplierScorecardPeriodEnum {
+  "Per Week"
+  "Per Month"
+  "Per Year"
+}
+
 enum SupplierScorecardStandingStandingColor {
   Blue
   Purple
@@ -44,6 +79,12 @@ enum SupplierQuotationItemMarginType {
   Amount
 }
 
+enum BuyingSettingsSuppMasterName {
+  "Supplier Name"
+  "Naming Series"
+  "Auto Name"
+}
+
 enum BuyingSettingsPoRequired {
   No
   Yes
@@ -54,9 +95,19 @@ enum BuyingSettingsPrRequired {
   Yes
 }
 
+enum BuyingSettingsBackflushRawMaterialsOfSubcontractBasedOn {
+  BOM
+  "Material Transferred for Subcontract"
+}
+
 enum BuyingSettingsMaintainSameRateAction {
   Stop
   Warn
+}
+
+enum BuyingSettingsProjectUpdateFrequency {
+  "Each Transaction"
+  Manual
 }
 
 enum SupplierScorecardScoringStandingStandingColor {
@@ -86,6 +137,27 @@ enum PlaidSettingsPlaidEnv {
   production
 }
 
+enum IssueStatus {
+  Open
+  Replied
+  "On Hold"
+  Resolved
+  Closed
+}
+
+enum IssueAgreementStatus {
+  "First Response Due"
+  "Resolution Due"
+  Fulfilled
+  Failed
+}
+
+enum ServiceLevelAgreementEntityType {
+  Customer
+  "Customer Group"
+  Territory
+}
+
 enum ServiceDayWorkday {
   Monday
   Tuesday
@@ -101,6 +173,20 @@ enum SupportSearchSourceSourceType {
   Link
 }
 
+enum WarrantyClaimStatus {
+  Open
+  Closed
+  "Work In Progress"
+  Cancelled
+}
+
+enum WarrantyClaimWarrantyAmcStatus {
+  "Under Warranty"
+  "Out of Warranty"
+  "Under AMC"
+  "Out of AMC"
+}
+
 enum AssetMaintenanceLogMaintenanceStatus {
   Planned
   Completed
@@ -108,10 +194,40 @@ enum AssetMaintenanceLogMaintenanceStatus {
   Overdue
 }
 
+enum AssetFinanceBookDepreciationMethod {
+  "Straight Line"
+  "Double Declining Balance"
+  "Written Down Value"
+  Manual
+}
+
+enum AssetMaintenanceTaskMaintenanceType {
+  "Preventive Maintenance"
+  Calibration
+}
+
 enum AssetMaintenanceTaskMaintenanceStatus {
   Planned
   Overdue
   Cancelled
+}
+
+enum AssetMaintenanceTaskPeriodicity {
+  Daily
+  Weekly
+  Monthly
+  Quarterly
+  "Half-yearly"
+  Yearly
+  "2 Yearly"
+  "3 Yearly"
+}
+
+enum AssetDepreciationScheduleDepreciationMethod {
+  "Straight Line"
+  "Double Declining Balance"
+  "Written Down Value"
+  Manual
 }
 
 enum AssetDepreciationScheduleStatus {
@@ -126,15 +242,51 @@ enum AssetAssetOwner {
   Customer
 }
 
+enum AssetDepreciationMethod {
+  "Straight Line"
+  "Double Declining Balance"
+  "Written Down Value"
+  Manual
+}
+
+enum AssetStatus {
+  Draft
+  Submitted
+  Cancelled
+  "Partially Depreciated"
+  "Fully Depreciated"
+  Sold
+  Scrapped
+  "In Maintenance"
+  "Out of Order"
+  Issue
+  Receipt
+  Capitalized
+  "Work In Progress"
+}
+
 enum AssetDeprEntryPostingStatus {
   Successful
   Failed
+}
+
+enum AssetAssetType {
+  "Existing Asset"
+  "Composite Asset"
+  "Composite Component"
 }
 
 enum AssetRepairRepairStatus {
   Pending
   Completed
   Cancelled
+}
+
+enum AssetMovementPurpose {
+  Issue
+  Receipt
+  Transfer
+  "Transfer and Issue"
 }
 
 enum ShipmentPickupFromType {
@@ -159,6 +311,11 @@ enum ShipmentShipmentType {
   Documents
 }
 
+enum ShipmentPickupType {
+  Pickup
+  "Self delivery"
+}
+
 enum ShipmentStatus {
   Draft
   Submitted
@@ -167,10 +324,53 @@ enum ShipmentStatus {
   Completed
 }
 
+enum ShipmentTrackingStatus {
+  "In Progress"
+  Delivered
+  Returned
+  Lost
+}
+
+enum StockEntryTypePurpose {
+  "Material Issue"
+  "Material Receipt"
+  "Material Transfer"
+  "Material Transfer for Manufacture"
+  "Material Consumption for Manufacture"
+  Manufacture
+  Repack
+  "Send to Subcontractor"
+  Disassemble
+  "Receive from Customer"
+  "Return Raw Material to Customer"
+  "Subcontracting Delivery"
+  "Subcontracting Return"
+}
+
+enum LandedCostPurchaseReceiptReceiptDocumentType {
+  "Purchase Invoice"
+  "Purchase Receipt"
+  "Stock Entry"
+  "Subcontracting Receipt"
+}
+
+enum LandedCostVoucherDistributeChargesBasedOn {
+  Qty
+  Amount
+  "Distribute Manually"
+}
+
 enum SerialNoAssetStatus {
   Issue
   Receipt
   Transfer
+}
+
+enum SerialNoMaintenanceStatus {
+  "Under Warranty"
+  "Out of Warranty"
+  "Under AMC"
+  "Out of AMC"
 }
 
 enum SerialNoStatus {
@@ -181,9 +381,34 @@ enum SerialNoStatus {
   Expired
 }
 
+enum SerialAndBatchBundleTypeOfTransaction {
+  Inward
+  Outward
+  Maintenance
+  "Asset Repair"
+}
+
 enum DeliveryNoteItemMarginType {
   Percentage
   Amount
+}
+
+enum ItemBarcodeBarcodeType {
+  EAN
+  "UPC-A"
+  "CODE-39"
+  "EAN-13"
+  "EAN-8"
+  GS1
+  GTIN
+  "GTIN-14"
+  ISBN
+  "ISBN-10"
+  "ISBN-13"
+  ISSN
+  JAN
+  PZN
+  UPC
 }
 
 enum StockRepostingSettingsLimitsDontApplyOn {
@@ -194,6 +419,25 @@ enum StockRepostingSettingsLimitsDontApplyOn {
   Friday
   Saturday
   Sunday
+}
+
+enum ItemReorderMaterialRequestType {
+  Purchase
+  Transfer
+  "Material Issue"
+  Manufacture
+}
+
+enum StockSettingsItemNamingBy {
+  "Item Code"
+  "Naming Series"
+}
+
+enum StockSettingsValuationMethod {
+  FIFO
+  "Moving Average"
+  LIFO
+  "Standard Cost"
 }
 
 enum StockSettingsActionIfQualityInspectionIsNotSubmitted {
@@ -212,10 +456,159 @@ enum StockSettingsPickSerialAndBatchBasedOn {
   Expiry
 }
 
+enum StockSettingsUpdatePriceListBasedOn {
+  Rate
+  "Price List Rate"
+}
+
+enum LandedCostItemReceiptDocumentType {
+  "Purchase Invoice"
+  "Purchase Receipt"
+  "Stock Entry"
+  "Subcontracting Receipt"
+}
+
+enum DeliveryNoteNamingSeries {
+  "MAT-DN-.YYYY.-"
+  "MAT-DN-RET-.YYYY.-"
+}
+
+enum DeliveryNoteApplyDiscountOn {
+  "Grand Total"
+  "Net Total"
+}
+
+enum DeliveryNoteStatus {
+  Draft
+  "To Bill"
+  "Partially Billed"
+  Completed
+  Return
+  "Return Issued"
+  Cancelled
+  Closed
+}
+
+enum MaterialRequestMaterialRequestType {
+  Purchase
+  "Material Transfer"
+  "Material Issue"
+  Manufacture
+  Subcontracting
+  "Customer Provided"
+}
+
+enum MaterialRequestStatus {
+  Draft
+  Submitted
+  Stopped
+  Cancelled
+  Pending
+  "Partially Ordered"
+  "Partially Received"
+  Ordered
+  Issued
+  Transferred
+  Received
+}
+
+enum MaterialRequestTransferStatus {
+  "Not Started"
+  "In Transit"
+  Completed
+}
+
+enum StockEntryDetailSecondaryItemType {
+  "Co-Product"
+  "By-Product"
+  Scrap
+  "Additional Finished Good"
+}
+
+enum QualityInspectionInspectionType {
+  Incoming
+  Outgoing
+  "In Process"
+}
+
+enum QualityInspectionReferenceType {
+  "Purchase Receipt"
+  "Purchase Invoice"
+  "Subcontracting Receipt"
+  "Delivery Note"
+  "Sales Invoice"
+  "Stock Entry"
+  "Job Card"
+}
+
 enum QualityInspectionStatus {
   Accepted
   Rejected
   Cancelled
+}
+
+enum StockClosingEntryStatus {
+  Draft
+  Queued
+  "In Progress"
+  Completed
+  Failed
+  Cancelled
+}
+
+enum RepostItemValuationStatus {
+  Queued
+  "In Progress"
+  Completed
+  Skipped
+  Failed
+  Cancelled
+}
+
+enum RepostItemValuationBasedOn {
+  Transaction
+  "Item and Warehouse"
+}
+
+enum PurchaseReceiptNamingSeries {
+  "MAT-PRE-.YYYY.-"
+  "MAT-PR-RET-.YYYY.-"
+}
+
+enum PurchaseReceiptApplyDiscountOn {
+  "Grand Total"
+  "Net Total"
+}
+
+enum PurchaseReceiptStatus {
+  Draft
+  "Partly Billed"
+  "To Bill"
+  Completed
+  Return
+  "Return Issued"
+  Cancelled
+  Closed
+}
+
+enum ItemDefaultMaterialRequestType {
+  Purchase
+  "Material Transfer"
+  "Material Issue"
+  Manufacture
+  "Customer Provided"
+}
+
+enum ItemValuationMethod {
+  FIFO
+  "Moving Average"
+  LIFO
+  "Standard Cost"
+}
+
+enum ItemVariantBasedOn {
+  "Item Attribute"
+  Manufacturer
 }
 
 enum InventoryDimensionTypeOfTransaction {
@@ -224,9 +617,76 @@ enum InventoryDimensionTypeOfTransaction {
   Both
 }
 
+enum StockReconciliationPurpose {
+  "Opening Stock"
+  "Stock Reconciliation"
+}
+
+enum DeliveryTripStatus {
+  Draft
+  Scheduled
+  "In Transit"
+  Completed
+  Cancelled
+}
+
 enum QualityInspectionReadingStatus {
   Accepted
   Rejected
+}
+
+enum StockReservationEntryVoucherType {
+  "Sales Order"
+  "Work Order"
+  "Subcontracting Inward Order"
+  "Production Plan"
+  "Subcontracting Order"
+}
+
+enum StockReservationEntryStatus {
+  Draft
+  "Partially Reserved"
+  Reserved
+  "Partially Delivered"
+  "Partially Used"
+  Delivered
+  Cancelled
+  Closed
+}
+
+enum StockReservationEntryReservationBasedOn {
+  Qty
+  "Serial and Batch"
+}
+
+enum StockReservationEntryFromVoucherType {
+  "Pick List"
+  "Purchase Receipt"
+  "Stock Entry"
+  "Work Order"
+  "Production Plan"
+  "Subcontracting Inward Order"
+}
+
+enum PickListPurpose {
+  "Material Transfer for Manufacture"
+  "Material Transfer"
+  Delivery
+}
+
+enum PickListStatus {
+  Draft
+  Open
+  "Partly Delivered"
+  "Partially Transferred"
+  Completed
+  Cancelled
+}
+
+enum PickListDeliveryStatus {
+  "Not Delivered"
+  "Fully Delivered"
+  "Partly Delivered"
 }
 
 enum PurchaseReceiptItemMarginType {
@@ -234,15 +694,51 @@ enum PurchaseReceiptItemMarginType {
   Amount
 }
 
+enum StockEntryPurpose {
+  "Material Issue"
+  "Material Receipt"
+  "Material Transfer"
+  "Material Transfer for Manufacture"
+  "Material Consumption for Manufacture"
+  Manufacture
+  Repack
+  "Send to Subcontractor"
+  Disassemble
+  "Receive from Customer"
+  "Return Raw Material to Customer"
+  "Subcontracting Delivery"
+  "Subcontracting Return"
+}
+
 enum StockEntryIsOpening {
   No
   Yes
+}
+
+enum MaintenanceScheduleItemPeriodicity {
+  Weekly
+  Monthly
+  Quarterly
+  "Half Yearly"
+  Yearly
+  Random
 }
 
 enum MaintenanceScheduleStatus {
   Draft
   Submitted
   Cancelled
+}
+
+enum MaintenanceScheduleDetailCompletionStatus {
+  Pending
+  "Partially Completed"
+  "Fully Completed"
+}
+
+enum MaintenanceVisitCompletionStatus {
+  "Partially Completed"
+  "Fully Completed"
 }
 
 enum MaintenanceVisitMaintenanceType {
@@ -262,16 +758,46 @@ enum VideoProvider {
   Vimeo
 }
 
+enum VideoSettingsFrequency {
+  "30 mins"
+  "1 hr"
+  "6 hrs"
+  Daily
+}
+
 enum DriverStatus {
   Active
   Suspended
   Left
 }
 
+enum EmployeeEducationLevel {
+  Graduate
+  "Post Graduate"
+  "Under Graduate"
+}
+
+enum CompanyCreateChartOfAccountsBasedOn {
+  "Standard Template"
+  "Existing Company"
+}
+
 enum CompanyAutoErrFrequency {
   Daily
   Weekly
   Monthly
+}
+
+enum CompanyReconciliationTakesEffectOn {
+  "Advance Payment Date"
+  "Oldest Of Invoice Or Advance"
+  "Reconciliation Date"
+}
+
+enum CompanyValuationMethod {
+  FIFO
+  "Moving Average"
+  LIFO
 }
 
 enum EmailDigestFrequency {
@@ -293,6 +819,12 @@ enum EmployeeSalaryMode {
   Cheque
 }
 
+enum EmployeePreferedContactEmail {
+  "Company Email"
+  "Personal Email"
+  "User ID"
+}
+
 enum EmployeePermanentAccommodationType {
   Rented
   Owned
@@ -308,6 +840,17 @@ enum EmployeeMaritalStatus {
   Married
   Divorced
   Widowed
+}
+
+enum EmployeeBloodGroup {
+  "A+"
+  "A-"
+  "B+"
+  "B-"
+  "AB+"
+  "AB-"
+  "O+"
+  "O-"
 }
 
 enum EmployeeLeaveEncashed {
@@ -369,9 +912,41 @@ enum HolidayListWeeklyOff {
   Saturday
 }
 
+enum VehicleFuelType {
+  Petrol
+  Diesel
+  "Natural Gas"
+  Electric
+}
+
 enum PartyTypeAccountType {
   Payable
   Receivable
+}
+
+enum AuthorizationRuleTransaction {
+  "Sales Order"
+  "Purchase Order"
+  Quotation
+  "Delivery Note"
+  "Sales Invoice"
+  "Purchase Invoice"
+  "Purchase Receipt"
+}
+
+enum AuthorizationRuleBasedOn {
+  "Grand Total"
+  "Average Discount"
+  "Customerwise Discount"
+  "Itemwise Discount"
+  "Item Group wise Discount"
+  "Not Applicable"
+}
+
+enum AuthorizationRuleCustomerOrItem {
+  Customer
+  Item
+  "Item Group"
 }
 
 enum SalesOrderItemMarginType {
@@ -385,6 +960,12 @@ enum CustomerCustomerType {
   Partnership
 }
 
+enum SellingSettingsCustMasterName {
+  "Customer Name"
+  "Naming Series"
+  "Auto Name"
+}
+
 enum SellingSettingsSoRequired {
   No
   Yes
@@ -395,9 +976,92 @@ enum SellingSettingsDnRequired {
   Yes
 }
 
+enum SellingSettingsSalesUpdateFrequency {
+  Monthly
+  "Each Transaction"
+  Daily
+}
+
 enum SellingSettingsMaintainSameRateAction {
   Stop
   Warn
+}
+
+enum SalesOrderOrderType {
+  Sales
+  Maintenance
+  "Shopping Cart"
+}
+
+enum SalesOrderApplyDiscountOn {
+  "Grand Total"
+  "Net Total"
+}
+
+enum SalesOrderStatus {
+  Draft
+  "On Hold"
+  "To Pay"
+  "To Deliver and Bill"
+  "To Bill"
+  "To Deliver"
+  Completed
+  Cancelled
+  Closed
+}
+
+enum SalesOrderDeliveryStatus {
+  "Not Delivered"
+  "Fully Delivered"
+  "Partly Delivered"
+  Closed
+  "Not Applicable"
+}
+
+enum SalesOrderBillingStatus {
+  "Not Billed"
+  "Fully Billed"
+  "Partly Billed"
+  Closed
+}
+
+enum SalesOrderAdvancePaymentStatus {
+  "Not Requested"
+  Requested
+  "Partially Paid"
+  "Fully Paid"
+}
+
+enum QuotationOrderType {
+  Sales
+  Maintenance
+  "Shopping Cart"
+}
+
+enum QuotationApplyDiscountOn {
+  "Grand Total"
+  "Net Total"
+}
+
+enum QuotationStatus {
+  Draft
+  Open
+  Replied
+  "Partially Ordered"
+  Ordered
+  Lost
+  Cancelled
+  Expired
+}
+
+enum SMSCenterSendTo {
+  "All Contact"
+  "All Customer Contact"
+  "All Supplier Contact"
+  "All Sales Partner Contact"
+  "All Lead (Open)"
+  "All Employee (Active)"
+  "All Sales Person"
 }
 
 enum ProformaInvoiceBasedOn {
@@ -417,6 +1081,19 @@ enum InstallationNoteStatus {
   Cancelled
 }
 
+enum PartySpecificItemPartyType {
+  Customer
+  "Customer Group"
+  Supplier
+  "Supplier Group"
+}
+
+enum PartySpecificItemRestrictBasedOn {
+  Item
+  "Item Group"
+  Brand
+}
+
 enum QuotationItemMarginType {
   Percentage
   Amount
@@ -428,6 +1105,39 @@ enum QualityGoalFrequency {
   Weekly
   Monthly
   Quarterly
+}
+
+enum QualityGoalDate {
+  "1"
+  "2"
+  "3"
+  "4"
+  "5"
+  "6"
+  "7"
+  "8"
+  "9"
+  "10"
+  "11"
+  "12"
+  "13"
+  "14"
+  "15"
+  "16"
+  "17"
+  "18"
+  "19"
+  "20"
+  "21"
+  "22"
+  "23"
+  "24"
+  "25"
+  "26"
+  "27"
+  "28"
+  "29"
+  "30"
 }
 
 enum QualityGoalWeekday {
@@ -454,6 +1164,12 @@ enum QualityFeedbackDocumentType {
   Customer
 }
 
+enum QualityMeetingMinutesDocumentType {
+  "Quality Review"
+  "Quality Action"
+  "Quality Feedback"
+}
+
 enum QualityReviewObjectiveStatus {
   Open
   Passed
@@ -476,10 +1192,65 @@ enum QualityActionCorrectivePreventive {
   Preventive
 }
 
+enum QualityFeedbackParameterRating {
+  "1"
+  "2"
+  "3"
+  "4"
+  "5"
+}
+
 enum QualityReviewStatus {
   Open
   Passed
   Failed
+}
+
+enum WorkOrderStatus {
+  Draft
+  Submitted
+  "Not Started"
+  "In Process"
+  "Stock Reserved"
+  "Stock Partially Reserved"
+  Completed
+  Stopped
+  Closed
+  Cancelled
+}
+
+enum WorkOrderTransferMaterialAgainst {
+  "Work Order"
+  "Job Card"
+}
+
+enum WorkOrderOperationStatus {
+  Pending
+  "Work in Progress"
+  Completed
+}
+
+enum JobCardOperationStatus {
+  Complete
+  Pause
+  Pending
+  "Work In Progress"
+}
+
+enum MaterialRequestPlanItemMaterialRequestType {
+  Purchase
+  "Material Transfer"
+  "Material Issue"
+  Manufacture
+  Subcontracting
+  "Customer Provided"
+}
+
+enum BOMSecondaryItemSecondaryItemType {
+  "Co-Product"
+  "By-Product"
+  Scrap
+  "Additional Finished Good"
 }
 
 enum BlanketOrderBlanketOrderType {
@@ -487,9 +1258,77 @@ enum BlanketOrderBlanketOrderType {
   Purchasing
 }
 
+enum ProductionPlanSubAssemblyItemTypeOfManufacturing {
+  "In House"
+  Subcontract
+  "Material Request"
+}
+
+enum BOMUpdateLogUpdateType {
+  "Replace BOM"
+  "Update Cost"
+}
+
+enum BOMUpdateLogStatus {
+  Queued
+  "In Progress"
+  Completed
+  Failed
+  Cancelled
+}
+
+enum ManufacturingSettingsBackflushRawMaterialsBasedOn {
+  BOM
+  "Material Transferred for Manufacture"
+}
+
+enum SalesForecastStatus {
+  Planned
+  "MPS Generated"
+  Cancelled
+}
+
 enum SalesForecastFrequency {
   Weekly
   Monthly
+}
+
+enum JobCardSecondaryItemSecondaryItemType {
+  "Co-Product"
+  "By-Product"
+  Scrap
+  "Additional Finished Good"
+}
+
+enum ProductionPlanScheduleRowType {
+  "Finished Good"
+  "Sub Assembly"
+  "Raw Material"
+}
+
+enum DowntimeEntryStopReason {
+  "Excessive machine set up time"
+  "Unplanned machine maintenance"
+  "On-machine press checks"
+  "Machine operator errors"
+  "Machine malfunction"
+  "Electricity down"
+  Other
+}
+
+enum BOMCreatorRmCostAsPer {
+  "Valuation Rate"
+  "Last Purchase Rate"
+  "Price List"
+}
+
+enum BOMCreatorStatus {
+  Draft
+  Submitted
+  "In Progress"
+  Completed
+  Failed
+  Cancelled
 }
 
 enum BOMUpdateBatchStatus {
@@ -504,6 +1343,56 @@ enum WorkstationStatus {
   Problem
   Maintenance
   Setup
+}
+
+enum JobCardStatus {
+  Open
+  "Work In Progress"
+  "Partially Transferred"
+  "Material Transferred"
+  "On Hold"
+  Submitted
+  "To Manufacture"
+  Cancelled
+  Completed
+}
+
+enum ProductionPlanGetItemsFrom {
+  "Sales Order"
+  "Material Request"
+}
+
+enum ProductionPlanStatus {
+  Draft
+  Submitted
+  "Not Started"
+  "In Process"
+  Completed
+  Closed
+  Cancelled
+  "Material Requested"
+}
+
+enum ProductionPlanSalesOrderStatus {
+  "To Deliver and Bill"
+  "To Bill"
+  "To Deliver"
+}
+
+enum BOMTransferMaterialAgainst {
+  "Work Order"
+  "Job Card"
+}
+
+enum BOMRmCostAsPer {
+  "Valuation Rate"
+  "Last Purchase Rate"
+  "Price List"
+}
+
+enum BOMBackflushBasedOn {
+  BOM
+  "Material Transferred for Manufacture"
 }
 
 enum CommunicationMediumCommunicationMediumType {
@@ -522,9 +1411,41 @@ enum CommunicationMediumTimeslotDayOfWeek {
   Sunday
 }
 
+enum SubcontractingReceiptItemSecondaryItemType {
+  "Co-Product"
+  "By-Product"
+  Scrap
+  "Additional Finished Good"
+}
+
+enum SubcontractingOrderStatus {
+  Draft
+  Open
+  "Partially Received"
+  Completed
+  "Material Transferred"
+  "Partial Material Transferred"
+  Cancelled
+  Closed
+}
+
 enum SubcontractingOrderDistributeAdditionalCostsBasedOn {
   Qty
   Amount
+}
+
+enum SubcontractingReceiptNamingSeries {
+  "MAT-SCR-.YYYY.-"
+  "MAT-SCR-RET-.YYYY.-"
+}
+
+enum SubcontractingReceiptStatus {
+  Draft
+  Completed
+  Return
+  "Return Issued"
+  Cancelled
+  Closed
 }
 
 enum SubcontractingReceiptDistributeAdditionalCostsBasedOn {
@@ -543,6 +1464,35 @@ enum SubcontractingInwardOrderStatus {
   Closed
 }
 
+enum SubcontractingInwardOrderSecondaryItemSecondaryItemType {
+  "Co-Product"
+  "By-Product"
+  Scrap
+  "Additional Finished Good"
+}
+
+enum BankStatementImportStatus {
+  Pending
+  Success
+  "Partial Success"
+  Error
+}
+
+enum BankStatementImportImportType {
+  "Insert New Records"
+  "Update Existing Records"
+}
+
+enum ProcessPaymentReconciliationStatus {
+  Queued
+  Running
+  Paused
+  Completed
+  "Partially Reconciled"
+  Failed
+  Cancelled
+}
+
 enum ChequePrintTemplateChequeSize {
   Regular
   A4
@@ -553,9 +1503,28 @@ enum OpeningInvoiceCreationToolInvoiceType {
   Purchase
 }
 
+enum POSInvoiceMergeLogMergeInvoicesBasedOn {
+  Customer
+  "Customer Group"
+}
+
 enum BankGuaranteeBgType {
   Receiving
   Providing
+}
+
+enum ProcessPaymentReconciliationLogStatus {
+  Running
+  Paused
+  Reconciled
+  "Partially Reconciled"
+  Failed
+  Cancelled
+}
+
+enum BudgetBudgetAgainst {
+  "Cost Center"
+  Project
 }
 
 enum BudgetActionIfAnnualBudgetExceededOnMr {
@@ -606,14 +1575,77 @@ enum BudgetActionIfAccumulatedMonthlyExceededOnCumulativeExpense {
   Ignore
 }
 
+enum BudgetDistributionFrequency {
+  Monthly
+  Quarterly
+  "Half-Yearly"
+  Yearly
+}
+
+enum JournalEntryAccountReferenceType {
+  "Sales Invoice"
+  "Purchase Invoice"
+  "Journal Entry"
+  "Sales Order"
+  "Purchase Order"
+  "Expense Claim"
+  Asset
+  Loan
+  "Payroll Entry"
+  "Employee Advance"
+  "Exchange Rate Revaluation"
+  "Invoice Discounting"
+  Fees
+  "Full and Final Statement"
+  "Payment Entry"
+  "Bank Transaction"
+}
+
 enum JournalEntryAccountIsAdvance {
   No
   Yes
 }
 
+enum PromotionalSchemeApplyOn {
+  "Item Code"
+  "Item Group"
+  Brand
+  Transaction
+}
+
+enum PromotionalSchemeApplyRuleOnOther {
+  "Item Code"
+  "Item Group"
+  Brand
+}
+
+enum PromotionalSchemeApplicableFor {
+  Customer
+  "Customer Group"
+  Territory
+  "Sales Partner"
+  Campaign
+  Supplier
+  "Supplier Group"
+}
+
+enum PurchaseTaxesAndChargesCategory {
+  "Valuation and Total"
+  Valuation
+  Total
+}
+
 enum PurchaseTaxesAndChargesAddDeductTax {
   Add
   Deduct
+}
+
+enum PurchaseTaxesAndChargesChargeType {
+  Actual
+  "On Net Total"
+  "On Previous Row Amount"
+  "On Previous Row Total"
+  "On Item Quantity"
 }
 
 enum GLEntryIsOpening {
@@ -639,6 +1671,32 @@ enum ShareBalanceCurrentState {
   Purchased
 }
 
+enum SalesInvoiceNamingSeries {
+  "ACC-SINV-.YYYY.-"
+  "ACC-SINV-RET-.YYYY.-"
+}
+
+enum SalesInvoiceApplyDiscountOn {
+  "Grand Total"
+  "Net Total"
+}
+
+enum SalesInvoiceStatus {
+  Draft
+  Return
+  "Credit Note Issued"
+  Submitted
+  Paid
+  "Partly Paid"
+  Unpaid
+  "Unpaid and Discounted"
+  "Partly Paid and Discounted"
+  "Overdue and Discounted"
+  Overdue
+  Cancelled
+  "Internal Transfer"
+}
+
 enum SalesInvoiceIsOpening {
   No
   Yes
@@ -651,6 +1709,12 @@ enum RepostAccountingLedgerItemsStatus {
   Failed
 }
 
+enum SubscriptionPlanPriceDetermination {
+  "Fixed Rate"
+  "Based On Price List"
+  "Monthly Rate"
+}
+
 enum SubscriptionPlanBillingInterval {
   Day
   Week
@@ -658,9 +1722,28 @@ enum SubscriptionPlanBillingInterval {
   Year
 }
 
+enum PaymentTermDueDateBasedOn {
+  "Day(s) after invoice date"
+  "Day(s) after the end of the invoice month"
+  "Month(s) after the end of the invoice month"
+}
+
 enum PaymentTermDiscountType {
   Percentage
   Amount
+}
+
+enum PaymentTermDiscountValidityBasedOn {
+  "Day(s) after invoice date"
+  "Day(s) after the end of the invoice month"
+  "Month(s) after the end of the invoice month"
+}
+
+enum AdvanceTaxesAndChargesChargeType {
+  Actual
+  "On Paid Amount"
+  "On Previous Row Amount"
+  "On Previous Row Total"
 }
 
 enum AdvanceTaxesAndChargesAddDeductTax {
@@ -681,9 +1764,39 @@ enum PurchaseInvoiceItemMarginType {
   Amount
 }
 
+enum BankStatementImportLogDetectedAmountFormat {
+  "Separate columns for withdrawal and deposit"
+  "Amount column has \"CR\"/\"DR\" values"
+  "Amount column has positive/negative values"
+  "Transaction type column has \"CR\"/\"DR\" values"
+  "Transaction type column has \"Deposit\"/\"Withdrawal\" values"
+  "Transaction type column has \"C\"/\"D\" values"
+}
+
+enum BankStatementImportLogStatus {
+  "Not Started"
+  Completed
+}
+
 enum AccountingDimensionFilterAllowOrRestrict {
   Allow
   Restrict
+}
+
+enum JournalEntryTemplateVoucherType {
+  "Journal Entry"
+  "Inter Company Journal Entry"
+  "Bank Entry"
+  "Cash Entry"
+  "Credit Card Entry"
+  "Debit Note"
+  "Credit Note"
+  "Contra Entry"
+  "Excise Entry"
+  "Write Off Entry"
+  "Opening Entry"
+  "Depreciation Entry"
+  "Exchange Rate Revaluation"
 }
 
 enum JournalEntryTemplateIsOpening {
@@ -702,14 +1815,76 @@ enum RepostPaymentLedgerRepostStatus {
   Completed
 }
 
+enum PricingRuleApplyOn {
+  "Item Code"
+  "Item Group"
+  Brand
+  Transaction
+}
+
 enum PricingRulePriceOrProductDiscount {
   Price
   Product
 }
 
+enum PricingRuleApplyRuleOnOther {
+  "Item Code"
+  "Item Group"
+  Brand
+}
+
+enum PricingRuleApplicableFor {
+  Customer
+  "Customer Group"
+  Territory
+  "Sales Partner"
+  Campaign
+  Supplier
+  "Supplier Group"
+}
+
 enum PricingRuleMarginType {
   Percentage
   Amount
+}
+
+enum PricingRuleRateOrDiscount {
+  Rate
+  "Discount Percentage"
+  "Discount Amount"
+}
+
+enum PricingRuleApplyDiscountOn {
+  "Grand Total"
+  "Net Total"
+}
+
+enum PricingRulePriority {
+  "1"
+  "2"
+  "3"
+  "4"
+  "5"
+  "6"
+  "7"
+  "8"
+  "9"
+  "10"
+  "11"
+  "12"
+  "13"
+  "14"
+  "15"
+  "16"
+  "17"
+  "18"
+  "19"
+  "20"
+}
+
+enum POSSettingsInvoiceType {
+  "Sales Invoice"
+  "POS Invoice"
 }
 
 enum ProcessPeriodClosingVoucherStatus {
@@ -720,10 +1895,26 @@ enum ProcessPeriodClosingVoucherStatus {
   Cancelled
 }
 
+enum CouponCodeCouponType {
+  Promotional
+  "Gift Card"
+}
+
 enum BankTransactionRuleTransactionType {
   Any
   Withdrawal
   Deposit
+}
+
+enum BankTransactionRuleClassifyAs {
+  "Bank Entry"
+  "Payment Entry"
+  Transfer
+}
+
+enum BankTransactionRuleBankEntryType {
+  "Single Account"
+  "Multiple Accounts"
 }
 
 enum BankTransactionStatus {
@@ -734,11 +1925,39 @@ enum BankTransactionStatus {
   Cancelled
 }
 
+enum FinancialReportRowDataSource {
+  "Account Data"
+  "Calculated Amount"
+  "Custom API"
+  "Blank Line"
+  "Column Break"
+  "Section Break"
+}
+
+enum FinancialReportRowBalanceType {
+  "Opening Balance"
+  "Closing Balance"
+  "Period Movement (Debits - Credits)"
+}
+
 enum FinancialReportRowFieldtype {
   Currency
   Float
   Int
   Percent
+}
+
+enum TaxWithholdingEntryStatus {
+  Settled
+  "Under Withheld"
+  "Over Withheld"
+  Duplicate
+  Cancelled
+}
+
+enum TaxWithholdingEntryUnderWithheldReason {
+  "Threshold Exemption"
+  "Lower Deduction Certificate"
 }
 
 enum ProcessStatementOfAccountsFrequency {
@@ -749,14 +1968,47 @@ enum ProcessStatementOfAccountsFrequency {
   Quarterly
 }
 
+enum ProcessStatementOfAccountsCustomerCollection {
+  "Customer Group"
+  Territory
+  "Sales Partner"
+  "Sales Person"
+}
+
 enum ProcessStatementOfAccountsOrientation {
   Landscape
   Portrait
 }
 
+enum ProcessStatementOfAccountsAgeingBasedOn {
+  "Due Date"
+  "Posting Date"
+}
+
+enum ProcessStatementOfAccountsReport {
+  "General Ledger"
+  "Accounts Receivable"
+}
+
+enum ProcessStatementOfAccountsCategorizeBy {
+  "Categorize by Voucher"
+  "Categorize by Voucher (Consolidated)"
+}
+
 enum PaymentRequestPaymentRequestType {
   Outward
   Inward
+}
+
+enum PaymentRequestStatus {
+  Draft
+  Requested
+  Initiated
+  "Partially Paid"
+  "Payment Ordered"
+  Paid
+  Failed
+  Cancelled
 }
 
 enum PaymentRequestPaymentChannel {
@@ -765,9 +2017,82 @@ enum PaymentRequestPaymentChannel {
   Other
 }
 
+enum PromotionalSchemePriceDiscountRateOrDiscount {
+  Rate
+  "Discount Percentage"
+  "Discount Amount"
+}
+
+enum PromotionalSchemePriceDiscountPriority {
+  "1"
+  "2"
+  "3"
+  "4"
+  "5"
+  "6"
+  "7"
+  "8"
+  "9"
+  "10"
+  "11"
+  "12"
+  "13"
+  "14"
+  "15"
+  "16"
+  "17"
+  "18"
+  "19"
+  "20"
+}
+
+enum TaxWithholdingCategoryTaxDeductionBasis {
+  "Gross Total"
+  "Net Total"
+}
+
+enum PaymentOrderPaymentOrderType {
+  "Payment Request"
+  "Payment Entry"
+}
+
+enum PurchaseInvoiceNamingSeries {
+  "ACC-PINV-.YYYY.-"
+  "ACC-PINV-RET-.YYYY.-"
+}
+
+enum PurchaseInvoiceApplyDiscountOn {
+  "Grand Total"
+  "Net Total"
+}
+
 enum PurchaseInvoiceIsOpening {
   No
   Yes
+}
+
+enum PurchaseInvoiceStatus {
+  Draft
+  Return
+  "Debit Note Issued"
+  Submitted
+  Paid
+  "Partly Paid"
+  Unpaid
+  Overdue
+  Cancelled
+  "Internal Transfer"
+}
+
+enum PaymentEntryPaymentType {
+  Receive
+  Pay
+  "Internal Transfer"
+}
+
+enum PaymentEntryPaymentOrderStatus {
+  Initiated
+  "Payment Ordered"
 }
 
 enum PaymentEntryStatus {
@@ -789,12 +2114,80 @@ enum ProcessPeriodClosingVoucherDetailStatus {
   Cancelled
 }
 
+enum ProcessPeriodClosingVoucherDetailReportType {
+  "Profit and Loss"
+  "Balance Sheet"
+}
+
+enum PromotionalSchemeProductDiscountPriority {
+  "1"
+  "2"
+  "3"
+  "4"
+  "5"
+  "6"
+  "7"
+  "8"
+  "9"
+  "10"
+  "11"
+  "12"
+  "13"
+  "14"
+  "15"
+  "16"
+  "17"
+  "18"
+  "19"
+  "20"
+}
+
 enum AccountRootType {
   Asset
   Liability
   Income
   Expense
   Equity
+}
+
+enum AccountReportType {
+  "Balance Sheet"
+  "Profit and Loss"
+}
+
+enum AccountAccountType {
+  "Accumulated Depreciation"
+  "Asset Received But Not Billed"
+  Bank
+  Cash
+  Chargeable
+  "Capital Work in Progress"
+  "Cost of Goods Sold"
+  "Current Asset"
+  "Current Liability"
+  Depreciation
+  "Direct Expense"
+  "Direct Income"
+  Equity
+  "Expense Account"
+  "Expenses Included In Asset Valuation"
+  "Expenses Included In Valuation"
+  "Fixed Asset"
+  "Income Account"
+  "Indirect Expense"
+  "Indirect Income"
+  Liability
+  Payable
+  Receivable
+  "Round Off"
+  "Round Off for Opening"
+  Stock
+  "Stock Adjustment"
+  "Stock Received But Not Billed"
+  "Stock Delivered But Not Billed"
+  "Service Received But Not Billed"
+  Tax
+  Temporary
 }
 
 enum AccountFreezeAccount {
@@ -807,9 +2200,61 @@ enum AccountBalanceMustBe {
   Credit
 }
 
+enum BankStatementImportLogColumnMapMapsTo {
+  "Do not import"
+  Date
+  Withdrawal
+  Deposit
+  Amount
+  Description
+  Reference
+  "Transaction Type"
+  "Debit/Credit"
+  Balance
+  "Included Fee"
+  "Excluded Fee"
+  "Party Name/Account Holder"
+  "Party Account No."
+  "Party IBAN"
+}
+
 enum ProcessDeferredAccountingType {
   Income
   Expense
+}
+
+enum SalesTaxesAndChargesChargeType {
+  Actual
+  "On Net Total"
+  "On Previous Row Amount"
+  "On Previous Row Total"
+  "On Item Quantity"
+}
+
+enum JournalEntryVoucherType {
+  "Journal Entry"
+  "Inter Company Journal Entry"
+  "Bank Entry"
+  "Cash Entry"
+  "Credit Card Entry"
+  "Debit Note"
+  "Credit Note"
+  "Contra Entry"
+  "Excise Entry"
+  "Write Off Entry"
+  "Opening Entry"
+  "Depreciation Entry"
+  "Asset Disposal"
+  "Periodic Accounting Entry"
+  "Exchange Rate Revaluation"
+  "Exchange Gain Or Loss"
+  "Deferred Revenue"
+  "Deferred Expense"
+}
+
+enum JournalEntryWriteOffBasedOn {
+  "Accounts Receivable"
+  "Accounts Payable"
 }
 
 enum JournalEntryIsOpening {
@@ -817,9 +2262,26 @@ enum JournalEntryIsOpening {
   Yes
 }
 
+enum PaymentReconciliationInvoiceInvoiceType {
+  "Sales Invoice"
+  "Purchase Invoice"
+  "Journal Entry"
+}
+
 enum PaymentLedgerEntryAccountType {
   Receivable
   Payable
+}
+
+enum POSProfileApplyDiscountOn {
+  "Grand Total"
+  "Net Total"
+}
+
+enum POSProfileActionOnNewInvoice {
+  "Always Ask"
+  "Save Changes and Load New Invoice"
+  "Discard Changes and Load New Invoice"
 }
 
 enum ShippingRuleShippingRuleType {
@@ -827,9 +2289,33 @@ enum ShippingRuleShippingRuleType {
   Buying
 }
 
+enum ShippingRuleCalculateBasedOn {
+  Fixed
+  "Net Total"
+  "Net Weight"
+}
+
 enum PaymentScheduleDiscountType {
   Percentage
   Amount
+}
+
+enum PaymentScheduleDueDateBasedOn {
+  "Day(s) after invoice date"
+  "Day(s) after the end of the invoice month"
+  "Month(s) after the end of the invoice month"
+}
+
+enum PaymentScheduleDiscountValidityBasedOn {
+  "Day(s) after invoice date"
+  "Day(s) after the end of the invoice month"
+  "Month(s) after the end of the invoice month"
+}
+
+enum PeriodClosingVoucherGleProcessingStatus {
+  "In Progress"
+  Completed
+  Failed
 }
 
 enum POSClosingEntryStatus {
@@ -845,6 +2331,41 @@ enum TaxRuleTaxType {
   Purchase
 }
 
+enum SubscriptionStatus {
+  Trialing
+  Active
+  "Grace Period"
+  Cancelled
+  Unpaid
+  Completed
+  Refunded
+}
+
+enum SubscriptionApplyAdditionalDiscount {
+  "Grand Total"
+  "Net Total"
+}
+
+enum SubscriptionGenerateInvoiceAt {
+  "Postpaid (bill at period end)"
+  "Prepaid (bill at period start)"
+  "Bill N days before period start"
+}
+
+enum RepostAccountingLedgerStatus {
+  Queued
+  "In Progress"
+  "Partially Reposted"
+  Completed
+  Failed
+  Cancelled
+}
+
+enum BankTransactionPaymentsReconciliationType {
+  Matched
+  "Voucher Created"
+}
+
 enum SalesInvoiceItemMarginType {
   Percentage
   Amount
@@ -856,14 +2377,58 @@ enum ShareTransferTransferType {
   Transfer
 }
 
+enum CurrencyExchangeSettingsServiceProvider {
+  "frankfurter.dev"
+  "exchangerate.host"
+  "frankfurter.dev - v2"
+  Custom
+}
+
+enum POSInvoiceApplyDiscountOn {
+  "Grand Total"
+  "Net Total"
+}
+
+enum POSInvoiceStatus {
+  Draft
+  Return
+  "Credit Note Issued"
+  Consolidated
+  Submitted
+  Paid
+  "Partly Paid"
+  Unpaid
+  "Partly Paid and Discounted"
+  "Unpaid and Discounted"
+  "Overdue and Discounted"
+  Overdue
+  Cancelled
+}
+
 enum POSInvoiceIsOpening {
   No
   Yes
 }
 
+enum AccountsSettingsDetermineAddressTaxCategoryFrom {
+  "Billing Address"
+  "Shipping Address"
+}
+
 enum AccountsSettingsBookDeferredEntriesBasedOn {
   Days
   Months
+}
+
+enum AccountsSettingsExchangeGainLossPostingDate {
+  Invoice
+  Payment
+  "Reconciliation Date"
+}
+
+enum AccountsSettingsReceivablePayableFetchMethod {
+  "Buffered Cursor"
+  "UnBuffered Cursor"
 }
 
 enum AccountsSettingsMaintainSameRateAction {
@@ -876,6 +2441,13 @@ enum POSOpeningEntryStatus {
   Open
   Closed
   Cancelled
+}
+
+enum FinancialReportTemplateReportType {
+  "Profit and Loss Statement"
+  "Balance Sheet"
+  "Cash Flow"
+  "Custom Financial Statement"
 }
 
 enum DunningStatus {
@@ -892,6 +2464,13 @@ enum ModeOfPaymentType {
   Phone
 }
 
+enum LedgerMergeStatus {
+  Pending
+  Success
+  "Partial Success"
+  Error
+}
+
 enum LedgerMergeRootType {
   Asset
   Liability
@@ -900,9 +2479,33 @@ enum LedgerMergeRootType {
   Equity
 }
 
+enum LoyaltyProgramLoyaltyProgramType {
+  "Single Tier Program"
+  "Multiple Tier Program"
+}
+
+enum BankTransactionRuleDescriptionConditionsCheck {
+  Contains
+  "Starts With"
+  "Ends With"
+  Regex
+}
+
+enum PaymentTermsTemplateDetailDueDateBasedOn {
+  "Day(s) after invoice date"
+  "Day(s) after the end of the invoice month"
+  "Month(s) after the end of the invoice month"
+}
+
 enum PaymentTermsTemplateDetailDiscountType {
   Percentage
   Amount
+}
+
+enum PaymentTermsTemplateDetailDiscountValidityBasedOn {
+  "Day(s) after invoice date"
+  "Day(s) after the end of the invoice month"
+  "Month(s) after the end of the invoice month"
 }
 
 enum PaymentGatewayAccountPaymentChannel {
@@ -916,15 +2519,46 @@ enum POSInvoiceItemMarginType {
   Amount
 }
 
+enum TimesheetStatus {
+  Draft
+  Submitted
+  "Partially Billed"
+  Billed
+  Payslip
+  Completed
+  Cancelled
+}
+
+enum ProjectStatus {
+  Open
+  "On hold"
+  Completed
+  Cancelled
+}
+
 enum ProjectIsActive {
   Yes
   No
+}
+
+enum ProjectPercentCompleteMethod {
+  Manual
+  "Task Completion"
+  "Task Progress"
+  "Task Weight"
 }
 
 enum ProjectPriority {
   Medium
   Low
   High
+}
+
+enum ProjectFrequency {
+  Hourly
+  "Twice Daily"
+  Daily
+  Weekly
 }
 
 enum ProjectDayToSend {
@@ -937,11 +2571,70 @@ enum ProjectDayToSend {
   Sunday
 }
 
+enum TaskStatus {
+  Open
+  Working
+  "Pending Review"
+  Overdue
+  Template
+  Completed
+  Cancelled
+}
+
 enum TaskPriority {
   Low
   Medium
   High
   Urgent
+}
+
+enum ProspectNoOfEmployees {
+  "1-10"
+  "11-50"
+  "51-200"
+  "201-500"
+  "501-1000"
+  "1000+"
+}
+
+enum LeadStatus {
+  Lead
+  Open
+  Replied
+  Opportunity
+  Quotation
+  "Lost Quotation"
+  Interested
+  Converted
+  "Do Not Contact"
+}
+
+enum LeadType {
+  Client
+  "Channel Partner"
+  Consultant
+}
+
+enum LeadRequestType {
+  "Product Enquiry"
+  "Request for Information"
+  Suggestions
+  Other
+}
+
+enum LeadNoOfEmployees {
+  "1-10"
+  "11-50"
+  "51-200"
+  "201-500"
+  "501-1000"
+  "1000+"
+}
+
+enum LeadQualificationStatus {
+  Unqualified
+  "In Process"
+  Qualified
 }
 
 enum ContractPartyType {
@@ -957,6 +2650,23 @@ enum ContractStatus {
   Cancelled
 }
 
+enum ContractFulfilmentStatus {
+  "N/A"
+  Unfulfilled
+  "Partially Fulfilled"
+  Fulfilled
+  Lapsed
+}
+
+enum ContractDocumentType {
+  Quotation
+  Project
+  "Sales Order"
+  "Purchase Order"
+  "Sales Invoice"
+  "Purchase Invoice"
+}
+
 enum OpportunityStatus {
   Open
   Quotation
@@ -964,6 +2674,33 @@ enum OpportunityStatus {
   Lost
   Replied
   Closed
+}
+
+enum OpportunityNoOfEmployees {
+  "1-10"
+  "11-50"
+  "51-200"
+  "201-500"
+  "501-1000"
+  "1000+"
+}
+
+enum AppointmentBookingSettingsActionForExpiredUnverifiedAppointments {
+  "Mark as Closed"
+  "Delete Permanently"
+}
+
+enum EmailCampaignStatus {
+  Scheduled
+  "In Progress"
+  Completed
+  Unsubscribed
+}
+
+enum EmailCampaignEmailCampaignFor {
+  Lead
+  Contact
+  "Email Group"
 }
 
 enum AppointmentStatus {
@@ -992,6 +2729,11 @@ enum AppointmentBookingSlotsDayOfWeek {
   Saturday
 }
 
+enum CRMSettingsCampaignNamingBy {
+  "Campaign Name"
+  "Naming Series"
+}
+
 enum VoiceCallSettingsCallReceivingDevice {
   Computer
   Phone
@@ -1010,6 +2752,17 @@ enum IncomingCallHandlingScheduleDayOfWeek {
 enum IncomingCallSettingsCallRouting {
   Sequential
   Simultaneous
+}
+
+enum CallLogStatus {
+  Ringing
+  "In Progress"
+  Completed
+  Failed
+  Busy
+  "No Answer"
+  Queued
+  Cancelled
 }
 
 enum CallLogType {
@@ -1139,7 +2892,7 @@ model PurchaseOrder {
   taxesAndChargesAdded Float? @map("taxes_and_charges_added")
   taxesAndChargesDeducted Float? @map("taxes_and_charges_deducted")
   totalTaxesAndCharges Float? @map("total_taxes_and_charges")
-  applyDiscountOn String? @map("apply_discount_on")
+  applyDiscountOn PurchaseOrderApplyDiscountOn? @map("apply_discount_on")
   baseDiscountAmount Float? @map("base_discount_amount")
   additionalDiscountPercentage Float? @map("additional_discount_percentage")
   discountAmount Float? @map("discount_amount")
@@ -1158,7 +2911,7 @@ model PurchaseOrder {
   tcName String? @map("tc_name")
   tcNameRef TermsAndConditions? @relation(fields: [tcName], references: [id])
   terms String?
-  status String
+  status PurchaseOrderStatus
   refSq String? @map("ref_sq")
   refSqRef SupplierQuotation? @relation(fields: [refSq], references: [id])
   partyAccountCurrency String? @map("party_account_currency")
@@ -1191,7 +2944,7 @@ model PurchaseOrder {
   incoterm String?
   incotermRef Incoterm? @relation(fields: [incoterm], references: [id])
   namedPlace String? @map("named_place")
-  advancePaymentStatus String? @map("advance_payment_status")
+  advancePaymentStatus PurchaseOrderAdvancePaymentStatus? @map("advance_payment_status")
   hasUnitPriceItems Boolean? @map("has_unit_price_items") @default(false)
   dispatchAddress String? @map("dispatch_address")
   dispatchAddressDisplay String? @map("dispatch_address_display")
@@ -1253,7 +3006,7 @@ model SupplierQuotation {
   taxesAndChargesAdded Float? @map("taxes_and_charges_added")
   taxesAndChargesDeducted Float? @map("taxes_and_charges_deducted")
   totalTaxesAndCharges Float? @map("total_taxes_and_charges")
-  applyDiscountOn String? @map("apply_discount_on")
+  applyDiscountOn SupplierQuotationApplyDiscountOn? @map("apply_discount_on")
   baseDiscountAmount Float? @map("base_discount_amount")
   additionalDiscountPercentage Float? @map("additional_discount_percentage")
   discountAmount Float? @map("discount_amount")
@@ -1456,7 +3209,7 @@ model SupplierScorecard {
   supplierScore String? @map("supplier_score")
   indicatorColor String? @map("indicator_color")
   status String?
-  period String
+  period SupplierScorecardPeriodEnum
   weightingFunction String @map("weighting_function") @default("{total_score} * max( 0, min ( 1 , (12 - {period_number}) / 12) )")
   warnRfqs Boolean? @map("warn_rfqs") @default(false)
   warnPos Boolean? @map("warn_pos") @default(false)
@@ -1642,7 +3395,7 @@ model SupplierScorecardVariable {
 
 model BuyingSettings {
   id String @id @map("name")
-  suppMasterName String? @map("supp_master_name")
+  suppMasterName BuyingSettingsSuppMasterName? @map("supp_master_name")
   supplierGroup String? @map("supplier_group")
   supplierGroupRef SupplierGroup? @relation(fields: [supplierGroup], references: [id])
   buyingPriceList String? @map("buying_price_list")
@@ -1651,7 +3404,7 @@ model BuyingSettings {
   prRequired BuyingSettingsPrRequired? @map("pr_required")
   maintainSameRate Boolean? @map("maintain_same_rate") @default(false)
   allowMultipleItems Boolean? @map("allow_multiple_items") @default(false)
-  backflushRawMaterialsOfSubcontractBasedOn String? @map("backflush_raw_materials_of_subcontract_based_on")
+  backflushRawMaterialsOfSubcontractBasedOn BuyingSettingsBackflushRawMaterialsOfSubcontractBasedOn? @map("backflush_raw_materials_of_subcontract_based_on")
   overTransferAllowance Float? @map("over_transfer_allowance")
   maintainSameRateAction BuyingSettingsMaintainSameRateAction? @map("maintain_same_rate_action")
   roleToOverrideStopAction String? @map("role_to_override_stop_action")
@@ -1663,7 +3416,7 @@ model BuyingSettings {
   blanketOrderAllowance Float? @map("blanket_order_allowance") @default(0)
   autoCreateSubcontractingOrder Boolean? @map("auto_create_subcontracting_order") @default(false)
   autoCreatePurchaseReceipt Boolean? @map("auto_create_purchase_receipt") @default(false)
-  projectUpdateFrequency String? @map("project_update_frequency")
+  projectUpdateFrequency BuyingSettingsProjectUpdateFrequency? @map("project_update_frequency")
   allowZeroQtyInPurchaseOrder Boolean? @map("allow_zero_qty_in_purchase_order") @default(false)
   allowZeroQtyInRequestForQuotation Boolean? @map("allow_zero_qty_in_request_for_quotation") @default(false)
   allowZeroQtyInSupplierQuotation Boolean? @map("allow_zero_qty_in_supplier_quotation") @default(false)
@@ -1954,7 +3707,7 @@ model Issue {
   customer String?
   customerRef Customer? @relation(fields: [customer], references: [id])
   raisedBy String? @map("raised_by")
-  status String?
+  status IssueStatus?
   priority String?
   priorityRef IssuePriority? @relation(fields: [priority], references: [id])
   issueType String? @map("issue_type")
@@ -1987,7 +3740,7 @@ model Issue {
   userResolutionTime Int? @map("user_resolution_time")
   onHoldSince DateTime? @map("on_hold_since")
   totalHoldTime Int? @map("total_hold_time")
-  agreementStatus String? @map("agreement_status")
+  agreementStatus IssueAgreementStatus? @map("agreement_status")
   firstResponseTime Int? @map("first_response_time")
   slaResolutionBy DateTime? @map("sla_resolution_by")
   slaResolutionDate DateTime? @map("sla_resolution_date")
@@ -2018,7 +3771,7 @@ model ServiceLevelAgreement {
   startDate DateTime? @map("start_date")
   endDate DateTime? @map("end_date")
   entity String?
-  entityType String? @map("entity_type")
+  entityType ServiceLevelAgreementEntityType? @map("entity_type")
   defaultServiceLevelAgreement Boolean? @map("default_service_level_agreement") @default(false)
   defaultPriority String? @map("default_priority")
   defaultPriorityRef IssuePriority? @relation(fields: [defaultPriority], references: [id])
@@ -2080,7 +3833,7 @@ model SupportSearchSource {
 model WarrantyClaim {
   id String @id @map("name")
   namingSeries String @map("naming_series")
-  status String
+  status WarrantyClaimStatus
   complaintDate DateTime @map("complaint_date") @default(now())
   serialNo String? @map("serial_no")
   serialNoRef SerialNo? @relation(fields: [serialNo], references: [id])
@@ -2091,7 +3844,7 @@ model WarrantyClaim {
   itemCodeRef Item? @relation(fields: [itemCode], references: [id])
   itemName String? @map("item_name")
   description String?
-  warrantyAmcStatus String? @map("warranty_amc_status")
+  warrantyAmcStatus WarrantyClaimWarrantyAmcStatus? @map("warranty_amc_status")
   warrantyExpiryDate DateTime? @map("warranty_expiry_date")
   amcExpiryDate DateTime? @map("amc_expiry_date")
   resolutionDate DateTime? @map("resolution_date")
@@ -2315,7 +4068,7 @@ model AssetFinanceBook {
   id String @id @map("name")
   financeBook String? @map("finance_book")
   financeBookRef FinanceBook? @relation(fields: [financeBook], references: [id])
-  depreciationMethod String @map("depreciation_method")
+  depreciationMethod AssetFinanceBookDepreciationMethod @map("depreciation_method")
   totalNumberOfDepreciations Int @map("total_number_of_depreciations")
   frequencyOfDepreciation Int @map("frequency_of_depreciation")
   depreciationStartDate DateTime? @map("depreciation_start_date")
@@ -2415,10 +4168,10 @@ model AssetCapitalizationAssetItem {
 model AssetMaintenanceTask {
   id String @id @map("name")
   maintenanceTask String @map("maintenance_task")
-  maintenanceType String? @map("maintenance_type")
+  maintenanceType AssetMaintenanceTaskMaintenanceType? @map("maintenance_type")
   maintenanceStatus AssetMaintenanceTaskMaintenanceStatus @map("maintenance_status")
   startDate DateTime @map("start_date") @default(now())
-  periodicity String
+  periodicity AssetMaintenanceTaskPeriodicity
   endDate DateTime? @map("end_date")
   certificateRequired Boolean? @map("certificate_required") @default(false)
   assignTo String? @map("assign_to")
@@ -2483,7 +4236,7 @@ model AssetDepreciationSchedule {
   amendedFromRef AssetDepreciationSchedule? @relation(fields: [amendedFrom], references: [id])
   financeBook String? @map("finance_book")
   financeBookRef FinanceBook? @relation(fields: [financeBook], references: [id])
-  depreciationMethod String? @map("depreciation_method")
+  depreciationMethod AssetDepreciationScheduleDepreciationMethod? @map("depreciation_method")
   rateOfDepreciation Float? @map("rate_of_depreciation")
   totalNumberOfDepreciations Int? @map("total_number_of_depreciations")
   notes String?
@@ -2619,7 +4372,7 @@ model Asset {
   availableForUseDate DateTime? @map("available_for_use_date")
   calculateDepreciation Boolean? @map("calculate_depreciation") @default(false)
   openingAccumulatedDepreciation Float? @map("opening_accumulated_depreciation")
-  depreciationMethod String? @map("depreciation_method")
+  depreciationMethod AssetDepreciationMethod? @map("depreciation_method")
   valueAfterDepreciation Float? @map("value_after_depreciation")
   totalNumberOfDepreciations Int? @map("total_number_of_depreciations")
   frequencyOfDepreciation Int? @map("frequency_of_depreciation")
@@ -2631,7 +4384,7 @@ model Asset {
   insuranceEndDate DateTime? @map("insurance_end_date")
   comprehensiveInsurance String? @map("comprehensive_insurance")
   maintenanceRequired Boolean? @map("maintenance_required") @default(false)
-  status String?
+  status AssetStatus?
   bookedFixedAsset Boolean? @map("booked_fixed_asset") @default(false)
   purchaseReceipt String? @map("purchase_receipt")
   purchaseReceiptRef PurchaseReceipt? @relation(fields: [purchaseReceipt], references: [id])
@@ -2653,7 +4406,7 @@ model Asset {
   purchaseReceiptItem String? @map("purchase_receipt_item")
   purchaseInvoiceItem String? @map("purchase_invoice_item")
   netPurchaseAmount Float? @map("net_purchase_amount")
-  assetType String? @map("asset_type")
+  assetType AssetAssetType? @map("asset_type")
   itemName String? @map("item_name")
   owner String?
   creation DateTime?
@@ -2791,7 +4544,7 @@ model AssetMovement {
   id String @id @map("name")
   company String
   companyRef Company @relation(fields: [company], references: [id])
-  purpose String
+  purpose AssetMovementPurpose
   transactionDate DateTime @map("transaction_date") @default(now())
   referenceDoctype String? @map("reference_doctype")
   referenceName String? @map("reference_name")
@@ -2987,7 +4740,7 @@ model Shipment {
   pickupFrom DateTime @map("pickup_from")
   pickupTo DateTime @map("pickup_to")
   shipmentType ShipmentShipmentType? @map("shipment_type")
-  pickupType String? @map("pickup_type")
+  pickupType ShipmentPickupType? @map("pickup_type")
   descriptionOfContent String @map("description_of_content")
   serviceProvider String? @map("service_provider")
   shipmentId String? @map("shipment_id")
@@ -2997,7 +4750,7 @@ model Shipment {
   carrier String?
   carrierService String? @map("carrier_service")
   awbNumber String? @map("awb_number")
-  trackingStatus String? @map("tracking_status")
+  trackingStatus ShipmentTrackingStatus? @map("tracking_status")
   trackingStatusInfo String? @map("tracking_status_info")
   amendedFrom String? @map("amended_from")
   amendedFromRef Shipment? @relation(fields: [amendedFrom], references: [id])
@@ -3086,7 +4839,7 @@ model ItemQualityInspectionParameter {
 
 model StockEntryType {
   id String @id @map("name")
-  purpose String
+  purpose StockEntryTypePurpose
   addToTransit Boolean? @map("add_to_transit") @default(false)
   batchSplit Boolean? @map("batch_split") @default(false)
   isStandard Boolean? @map("is_standard") @default(false)
@@ -3100,7 +4853,7 @@ model StockEntryType {
 
 model LandedCostPurchaseReceipt {
   id String @id @map("name")
-  receiptDocumentType String @map("receipt_document_type")
+  receiptDocumentType LandedCostPurchaseReceiptReceiptDocumentType @map("receipt_document_type")
   receiptDocument String @map("receipt_document")
   supplier String?
   supplierRef Supplier? @relation(fields: [supplier], references: [id])
@@ -3181,7 +4934,7 @@ model LandedCostVoucher {
   company String
   companyRef Company @relation(fields: [company], references: [id])
   totalTaxesAndCharges Float @map("total_taxes_and_charges")
-  distributeChargesBasedOn String @map("distribute_charges_based_on")
+  distributeChargesBasedOn LandedCostVoucherDistributeChargesBasedOn @map("distribute_charges_based_on")
   amendedFrom String? @map("amended_from")
   amendedFromRef LandedCostVoucher? @relation(fields: [amendedFrom], references: [id])
   postingDate DateTime @map("posting_date") @default(now())
@@ -3286,7 +5039,7 @@ model SerialNo {
   locationRef Location? @relation(fields: [location], references: [id])
   employee String?
   employeeRef Employee? @relation(fields: [employee], references: [id])
-  maintenanceStatus String? @map("maintenance_status")
+  maintenanceStatus SerialNoMaintenanceStatus? @map("maintenance_status")
   warrantyPeriod Int? @map("warranty_period")
   warrantyExpiryDate DateTime? @map("warranty_expiry_date")
   amcExpiryDate DateTime? @map("amc_expiry_date")
@@ -3397,7 +5150,7 @@ model SerialAndBatchBundle {
   totalQty Float? @map("total_qty")
   warehouse String?
   warehouseRef Warehouse? @relation(fields: [warehouse], references: [id])
-  typeOfTransaction String @map("type_of_transaction")
+  typeOfTransaction SerialAndBatchBundleTypeOfTransaction @map("type_of_transaction")
   isRejected Boolean? @map("is_rejected") @default(false)
   voucherDetailNo String? @map("voucher_detail_no")
   returnedAgainst String? @map("returned_against")
@@ -3646,7 +5399,7 @@ model LandedCostVendorInvoice {
 model ItemBarcode {
   id String @id @map("name")
   barcode String @unique
-  barcodeType String? @map("barcode_type")
+  barcodeType ItemBarcodeBarcodeType? @map("barcode_type")
   uom String?
   uomRef UOM? @relation(fields: [uom], references: [id])
   owner String?
@@ -3913,7 +5666,7 @@ model ItemReorder {
   warehouseRef Warehouse @relation(fields: [warehouse], references: [id])
   warehouseReorderLevel Float? @map("warehouse_reorder_level")
   warehouseReorderQty Float? @map("warehouse_reorder_qty")
-  materialRequestType String @map("material_request_type")
+  materialRequestType ItemReorderMaterialRequestType @map("material_request_type")
   owner String?
   creation DateTime?
   modified DateTime?
@@ -3977,12 +5730,12 @@ model ItemWebsiteSpecification {
 
 model StockSettings {
   id String @id @map("name")
-  itemNamingBy String? @map("item_naming_by")
+  itemNamingBy StockSettingsItemNamingBy? @map("item_naming_by")
   itemGroup String? @map("item_group")
   itemGroupRef ItemGroup? @relation(fields: [itemGroup], references: [id])
   stockUom String? @map("stock_uom")
   stockUomRef UOM? @relation(fields: [stockUom], references: [id])
-  valuationMethod String? @map("valuation_method")
+  valuationMethod StockSettingsValuationMethod? @map("valuation_method")
   overDeliveryReceiptAllowance Float? @map("over_delivery_receipt_allowance")
   actionIfQualityInspectionIsNotSubmitted StockSettingsActionIfQualityInspectionIsNotSubmitted? @map("action_if_quality_inspection_is_not_submitted")
   showBarcodeField Boolean? @map("show_barcode_field") @default(true)
@@ -4021,7 +5774,7 @@ model StockSettings {
   setSerialAndBatchBundleNamingBasedOnNamingSeries Boolean? @map("set_serial_and_batch_bundle_naming_based_on_naming_series") @default(false)
   allowUomWithConversionRateDefinedInItem Boolean? @map("allow_uom_with_conversion_rate_defined_in_item") @default(false)
   allowToMakeQualityInspectionAfterPurchaseOrDelivery Boolean? @map("allow_to_make_quality_inspection_after_purchase_or_delivery") @default(false)
-  updatePriceListBasedOn String? @map("update_price_list_based_on")
+  updatePriceListBasedOn StockSettingsUpdatePriceListBasedOn? @map("update_price_list_based_on")
   validateMaterialTransferWarehouses Boolean? @map("validate_material_transfer_warehouses") @default(false)
   allowNegativeStockForBatch Boolean? @map("allow_negative_stock_for_batch") @default(false)
   enableSerialAndBatchNoForItem Boolean? @map("enable_serial_and_batch_no_for_item") @default(false)
@@ -4041,7 +5794,7 @@ model LandedCostItem {
   itemCode String @map("item_code")
   itemCodeRef Item @relation(fields: [itemCode], references: [id])
   description String?
-  receiptDocumentType String? @map("receipt_document_type")
+  receiptDocumentType LandedCostItemReceiptDocumentType? @map("receipt_document_type")
   receiptDocument String? @map("receipt_document")
   qty Float?
   rate Float?
@@ -4166,7 +5919,7 @@ model ItemAlternative {
 
 model DeliveryNote {
   id String @id @map("name")
-  namingSeries String @map("naming_series")
+  namingSeries DeliveryNoteNamingSeries @map("naming_series")
   customer String
   customerRef Customer @relation(fields: [customer], references: [id])
   customerName String? @map("customer_name")
@@ -4223,7 +5976,7 @@ model DeliveryNote {
   otherChargesCalculation String? @map("other_charges_calculation")
   baseTotalTaxesAndCharges Float? @map("base_total_taxes_and_charges")
   totalTaxesAndCharges Float? @map("total_taxes_and_charges")
-  applyDiscountOn String? @map("apply_discount_on")
+  applyDiscountOn DeliveryNoteApplyDiscountOn? @map("apply_discount_on")
   baseDiscountAmount Float? @map("base_discount_amount")
   additionalDiscountPercentage Float? @map("additional_discount_percentage")
   discountAmount Float? @map("discount_amount")
@@ -4259,7 +6012,7 @@ model DeliveryNote {
   language String?
   printWithoutAmount Boolean? @map("print_without_amount") @default(false)
   groupSameItems Boolean? @map("group_same_items") @default(false)
-  status String
+  status DeliveryNoteStatus
   perInstalled Float? @map("per_installed")
   installationStatus String? @map("installation_status")
   excisePage String? @map("excise_page")
@@ -4409,7 +6162,7 @@ model MaterialRequest {
   id String @id @map("name")
   namingSeries String @map("naming_series")
   title String?
-  materialRequestType String @map("material_request_type")
+  materialRequestType MaterialRequestMaterialRequestType @map("material_request_type")
   customer String?
   customerRef Customer? @relation(fields: [customer], references: [id])
   scheduleDate DateTime? @map("schedule_date")
@@ -4419,7 +6172,7 @@ model MaterialRequest {
   amendedFromRef MaterialRequest? @relation(fields: [amendedFrom], references: [id])
   scanBarcode String? @map("scan_barcode")
   transactionDate DateTime @map("transaction_date") @default(now())
-  status String?
+  status MaterialRequestStatus?
   perOrdered Float? @map("per_ordered")
   perReceived Float? @map("per_received")
   letterHead String? @map("letter_head")
@@ -4433,7 +6186,7 @@ model MaterialRequest {
   setWarehouseRef Warehouse? @relation(fields: [setWarehouse], references: [id])
   setFromWarehouse String? @map("set_from_warehouse")
   setFromWarehouseRef Warehouse? @relation(fields: [setFromWarehouse], references: [id])
-  transferStatus String? @map("transfer_status")
+  transferStatus MaterialRequestTransferStatus? @map("transfer_status")
   workOrder String? @map("work_order")
   workOrderRef WorkOrder? @relation(fields: [workOrder], references: [id])
   buyingPriceList String? @map("buying_price_list")
@@ -4550,7 +6303,7 @@ model StockEntryDetail {
   scioDetail String? @map("scio_detail")
   againstFg String? @map("against_fg")
   againstFgRef SubcontractingInwardOrderItem? @relation(fields: [againstFg], references: [id])
-  secondaryItemType String? @map("secondary_item_type")
+  secondaryItemType StockEntryDetailSecondaryItemType? @map("secondary_item_type")
   bomSecondaryItem String? @map("bom_secondary_item")
   isLegacyScrapItem Boolean? @map("is_legacy_scrap_item") @default(false)
   owner String?
@@ -4568,8 +6321,8 @@ model QualityInspection {
   id String @id @map("name")
   namingSeries String @map("naming_series")
   reportDate DateTime @map("report_date") @default(now())
-  inspectionType String @map("inspection_type")
-  referenceType String @map("reference_type")
+  inspectionType QualityInspectionInspectionType @map("inspection_type")
+  referenceType QualityInspectionReferenceType @map("reference_type")
   referenceName String @map("reference_name")
   itemCode String @map("item_code")
   itemCodeRef Item @relation(fields: [itemCode], references: [id])
@@ -4608,7 +6361,7 @@ model StockClosingEntry {
   namingSeries String? @map("naming_series")
   company String?
   companyRef Company? @relation(fields: [company], references: [id])
-  status String?
+  status StockClosingEntryStatus?
   fromDate DateTime? @map("from_date")
   toDate DateTime? @map("to_date")
   amendedFrom String? @map("amended_from")
@@ -4629,7 +6382,7 @@ model RepostItemValuation {
   warehouseRef Warehouse? @relation(fields: [warehouse], references: [id])
   postingDate DateTime @map("posting_date")
   postingTime DateTime? @map("posting_time")
-  status String?
+  status RepostItemValuationStatus?
   amendedFrom String? @map("amended_from")
   amendedFromRef RepostItemValuation? @relation(fields: [amendedFrom], references: [id])
   errorLog String? @map("error_log")
@@ -4637,7 +6390,7 @@ model RepostItemValuation {
   companyRef Company? @relation(fields: [company], references: [id])
   voucherType String? @map("voucher_type")
   voucherNo String? @map("voucher_no")
-  basedOn String @map("based_on")
+  basedOn RepostItemValuationBasedOn @map("based_on")
   allowNegativeStock Boolean? @map("allow_negative_stock") @default(true)
   viaLandedCostVoucher Boolean? @map("via_landed_cost_voucher") @default(false)
   allowZeroRate Boolean? @map("allow_zero_rate") @default(false)
@@ -4674,7 +6427,7 @@ model QualityInspectionParameterGroup {
 model PurchaseReceipt {
   id String @id @map("name")
   title String?
-  namingSeries String @map("naming_series")
+  namingSeries PurchaseReceiptNamingSeries @map("naming_series")
   supplier String
   supplierRef Supplier @relation(fields: [supplier], references: [id])
   supplierName String? @map("supplier_name")
@@ -4728,7 +6481,7 @@ model PurchaseReceipt {
   taxesAndChargesAdded Float? @map("taxes_and_charges_added")
   taxesAndChargesDeducted Float? @map("taxes_and_charges_deducted")
   totalTaxesAndCharges Float? @map("total_taxes_and_charges")
-  applyDiscountOn String? @map("apply_discount_on")
+  applyDiscountOn PurchaseReceiptApplyDiscountOn? @map("apply_discount_on")
   baseDiscountAmount Float? @map("base_discount_amount")
   additionalDiscountPercentage Float? @map("additional_discount_percentage")
   discountAmount Float? @map("discount_amount")
@@ -4744,7 +6497,7 @@ model PurchaseReceipt {
   tcName String? @map("tc_name")
   tcNameRef TermsAndConditions? @relation(fields: [tcName], references: [id])
   terms String?
-  status String
+  status PurchaseReceiptStatus
   amendedFrom String? @map("amended_from")
   amendedFromRef PurchaseReceipt? @relation(fields: [amendedFrom], references: [id])
   range String?
@@ -4833,8 +6586,8 @@ model Item {
   description String?
   shelfLifeInDays Int? @map("shelf_life_in_days")
   endOfLife DateTime? @map("end_of_life")
-  defaultMaterialRequestType String? @map("default_material_request_type")
-  valuationMethod String? @map("valuation_method")
+  defaultMaterialRequestType ItemDefaultMaterialRequestType? @map("default_material_request_type")
+  valuationMethod ItemValuationMethod? @map("valuation_method")
   warrantyPeriod String? @map("warranty_period")
   weightPerUnit Float? @map("weight_per_unit")
   weightUom String? @map("weight_uom")
@@ -4848,7 +6601,7 @@ model Item {
   hasSerialNo Boolean? @map("has_serial_no") @default(false)
   serialNoSeries String? @map("serial_no_series")
   hasVariants Boolean? @map("has_variants") @default(false)
-  variantBasedOn String? @map("variant_based_on")
+  variantBasedOn ItemVariantBasedOn? @map("variant_based_on")
   isPurchaseItem Boolean? @map("is_purchase_item") @default(true)
   purchaseUom String? @map("purchase_uom")
   purchaseUomRef UOM? @relation(fields: [purchaseUom], references: [id])
@@ -4944,7 +6697,7 @@ model StockReconciliation {
   namingSeries String @map("naming_series")
   company String
   companyRef Company @relation(fields: [company], references: [id])
-  purpose String
+  purpose StockReconciliationPurpose
   postingDate DateTime @map("posting_date") @default(now())
   postingTime DateTime @map("posting_time") @default(now())
   setPostingTime Boolean? @map("set_posting_time") @default(false)
@@ -4983,7 +6736,7 @@ model DeliveryTrip {
   vehicle String
   vehicleRef Vehicle @relation(fields: [vehicle], references: [id])
   departureTime DateTime @map("departure_time")
-  status String?
+  status DeliveryTripStatus?
   amendedFrom String? @map("amended_from")
   amendedFromRef DeliveryTrip? @relation(fields: [amendedFrom], references: [id])
   driverAddress String? @map("driver_address")
@@ -5082,7 +6835,7 @@ model StockReservationEntry {
   itemCodeRef Item? @relation(fields: [itemCode], references: [id])
   warehouse String?
   warehouseRef Warehouse? @relation(fields: [warehouse], references: [id])
-  voucherType String? @map("voucher_type")
+  voucherType StockReservationEntryVoucherType? @map("voucher_type")
   voucherNo String? @map("voucher_no")
   voucherDetailNo String? @map("voucher_detail_no")
   stockUom String? @map("stock_uom")
@@ -5092,7 +6845,7 @@ model StockReservationEntry {
   company String?
   companyRef Company? @relation(fields: [company], references: [id])
   reservedQty Float? @map("reserved_qty")
-  status String?
+  status StockReservationEntryStatus?
   deliveredQty Float? @map("delivered_qty") @default(0)
   amendedFrom String? @map("amended_from")
   amendedFromRef StockReservationEntry? @relation(fields: [amendedFrom], references: [id])
@@ -5100,8 +6853,8 @@ model StockReservationEntry {
   voucherQty Float? @map("voucher_qty") @default(0)
   hasSerialNo Boolean? @map("has_serial_no") @default(false)
   hasBatchNo Boolean? @map("has_batch_no") @default(false)
-  reservationBasedOn String? @map("reservation_based_on")
-  fromVoucherType String? @map("from_voucher_type")
+  reservationBasedOn StockReservationEntryReservationBasedOn? @map("reservation_based_on")
+  fromVoucherType StockReservationEntryFromVoucherType? @map("from_voucher_type")
   fromVoucherDetailNo String? @map("from_voucher_detail_no")
   fromVoucherNo String? @map("from_voucher_no")
   consumedQty Float? @map("consumed_qty")
@@ -5166,7 +6919,7 @@ model PickList {
   forQty Float? @map("for_qty")
   amendedFrom String? @map("amended_from")
   amendedFromRef PickList? @relation(fields: [amendedFrom], references: [id])
-  purpose String?
+  purpose PickListPurpose?
   materialRequest String? @map("material_request")
   materialRequestRef MaterialRequest? @relation(fields: [materialRequest], references: [id])
   namingSeries String @map("naming_series")
@@ -5175,11 +6928,11 @@ model PickList {
   scanMode Boolean? @map("scan_mode") @default(false)
   promptQty Boolean? @map("prompt_qty") @default(false)
   customerName String? @map("customer_name")
-  status String
+  status PickListStatus
   considerRejectedWarehouses Boolean? @map("consider_rejected_warehouses") @default(false)
   pickManually Boolean? @map("pick_manually") @default(false)
   ignorePricingRule Boolean? @map("ignore_pricing_rule") @default(false)
-  deliveryStatus String? @map("delivery_status")
+  deliveryStatus PickListDeliveryStatus? @map("delivery_status")
   perDelivered Float? @map("per_delivered")
   owner String?
   creation DateTime?
@@ -5329,7 +7082,7 @@ model StockEntry {
   outgoingStockEntryRef StockEntry? @relation(fields: [outgoingStockEntry], references: [id])
   sourceStockEntry String? @map("source_stock_entry")
   sourceStockEntryRef StockEntry? @relation(fields: [sourceStockEntry], references: [id])
-  purpose String?
+  purpose StockEntryPurpose?
   company String
   companyRef Company @relation(fields: [company], references: [id])
   workOrder String? @map("work_order")
@@ -5517,7 +7270,7 @@ model MaintenanceScheduleItem {
   description String?
   startDate DateTime @map("start_date")
   endDate DateTime @map("end_date")
-  periodicity String?
+  periodicity MaintenanceScheduleItemPeriodicity?
   noOfVisits Int @map("no_of_visits")
   salesPerson String? @map("sales_person")
   salesPersonRef SalesPerson? @relation(fields: [salesPerson], references: [id])
@@ -5577,7 +7330,7 @@ model MaintenanceScheduleDetail {
   salesPerson String? @map("sales_person")
   salesPersonRef SalesPerson? @relation(fields: [salesPerson], references: [id])
   serialNo String? @map("serial_no")
-  completionStatus String? @map("completion_status")
+  completionStatus MaintenanceScheduleDetailCompletionStatus? @map("completion_status")
   itemReference String? @map("item_reference")
   itemReferenceRef MaintenanceScheduleItem? @relation(fields: [itemReference], references: [id])
   owner String?
@@ -5603,7 +7356,7 @@ model MaintenanceVisit {
   contactEmail String? @map("contact_email")
   mntcDate DateTime @map("mntc_date") @default(now())
   mntcTime DateTime? @map("mntc_time")
-  completionStatus String @map("completion_status")
+  completionStatus MaintenanceVisitCompletionStatus @map("completion_status")
   maintenanceType MaintenanceVisitMaintenanceType @map("maintenance_type")
   customerFeedback String? @map("customer_feedback")
   status MaintenanceVisitStatus
@@ -5767,7 +7520,7 @@ model VideoSettings {
   id String @id @map("name")
   enableYoutubeTracking Boolean? @map("enable_youtube_tracking") @default(false)
   apiKey String? @map("api_key")
-  frequency String?
+  frequency VideoSettingsFrequency?
   owner String?
   creation DateTime?
   modified DateTime?
@@ -5917,7 +7670,7 @@ model EmployeeEducation {
   id String @id @map("name")
   schoolUniv String? @map("school_univ")
   qualification String?
-  level String?
+  level EmployeeEducationLevel?
   yearOfPassing Int? @map("year_of_passing")
   classPer String? @map("class_per")
   majOptSubj String? @map("maj_opt_subj")
@@ -6014,7 +7767,7 @@ model Company {
   defaultWarehouseForSalesReturn String? @map("default_warehouse_for_sales_return")
   defaultWarehouseForSalesReturnRef Warehouse? @relation(fields: [defaultWarehouseForSalesReturn], references: [id])
   country String
-  createChartOfAccountsBasedOn String? @map("create_chart_of_accounts_based_on")
+  createChartOfAccountsBasedOn CompanyCreateChartOfAccountsBasedOn? @map("create_chart_of_accounts_based_on")
   chartOfAccounts String? @map("chart_of_accounts")
   existingCompany String? @map("existing_company")
   existingCompanyRef Company? @relation(fields: [existingCompany], references: [id])
@@ -6123,7 +7876,7 @@ model Company {
   defaultOperatingCostAccountRef Account? @relation(fields: [defaultOperatingCostAccount], references: [id])
   roundOffForOpening String? @map("round_off_for_opening")
   roundOffForOpeningRef Account? @relation(fields: [roundOffForOpening], references: [id])
-  reconciliationTakesEffectOn String? @map("reconciliation_takes_effect_on")
+  reconciliationTakesEffectOn CompanyReconciliationTakesEffectOn? @map("reconciliation_takes_effect_on")
   reportingCurrency String? @map("reporting_currency")
   purchaseExpenseAccount String? @map("purchase_expense_account")
   purchaseExpenseAccountRef Account? @relation(fields: [purchaseExpenseAccount], references: [id])
@@ -6136,7 +7889,7 @@ model Company {
   expensesAddedToStockContraAccount String? @map("expenses_added_to_stock_contra_account")
   expensesAddedToStockContraAccountRef Account? @relation(fields: [expensesAddedToStockContraAccount], references: [id])
   enableItemWiseInventoryAccount Boolean? @map("enable_item_wise_inventory_account") @default(false)
-  valuationMethod String @map("valuation_method")
+  valuationMethod CompanyValuationMethod @map("valuation_method")
   defaultWipWarehouse String? @map("default_wip_warehouse")
   defaultWipWarehouseRef Warehouse? @relation(fields: [defaultWipWarehouse], references: [id])
   defaultFgWarehouse String? @map("default_fg_warehouse")
@@ -6252,7 +8005,7 @@ model Employee {
   bankName String? @map("bank_name")
   bankAcNo String? @map("bank_ac_no")
   cellNumber String? @map("cell_number")
-  preferedContactEmail String? @map("prefered_contact_email")
+  preferedContactEmail EmployeePreferedContactEmail? @map("prefered_contact_email")
   preferedEmail String? @map("prefered_email")
   companyEmail String? @map("company_email")
   personalEmail String? @map("personal_email")
@@ -6267,7 +8020,7 @@ model Employee {
   validUpto DateTime? @map("valid_upto")
   placeOfIssue String? @map("place_of_issue")
   maritalStatus EmployeeMaritalStatus? @map("marital_status")
-  bloodGroup String? @map("blood_group")
+  bloodGroup EmployeeBloodGroup? @map("blood_group")
   familyBackground String? @map("family_background")
   healthDetails String? @map("health_details")
   resignationLetterDate DateTime? @map("resignation_letter_date")
@@ -6538,7 +8291,7 @@ model Vehicle {
   policyNo String? @map("policy_no")
   startDate DateTime? @map("start_date")
   endDate DateTime? @map("end_date")
-  fuelType String @map("fuel_type")
+  fuelType VehicleFuelType @map("fuel_type")
   uom String
   uomRef UOM @relation(fields: [uom], references: [id])
   carbonCheckDate DateTime? @map("carbon_check_date")
@@ -6660,9 +8413,9 @@ model EmployeeGroupTable {
 
 model AuthorizationRule {
   id String @id @map("name")
-  transaction String
-  basedOn String @map("based_on")
-  customerOrItem String? @map("customer_or_item")
+  transaction AuthorizationRuleTransaction
+  basedOn AuthorizationRuleBasedOn @map("based_on")
+  customerOrItem AuthorizationRuleCustomerOrItem? @map("customer_or_item")
   masterName String? @map("master_name")
   company String?
   companyRef Company? @relation(fields: [company], references: [id])
@@ -6938,7 +8691,7 @@ model InstallationNoteItem {
 
 model SellingSettings {
   id String @id @map("name")
-  custMasterName String? @map("cust_master_name")
+  custMasterName SellingSettingsCustMasterName? @map("cust_master_name")
   customerGroup String? @map("customer_group")
   customerGroupRef CustomerGroup? @relation(fields: [customerGroup], references: [id])
   territory String?
@@ -6948,7 +8701,7 @@ model SellingSettings {
   soRequired SellingSettingsSoRequired? @map("so_required")
   dnRequired SellingSettingsDnRequired? @map("dn_required")
   skipDeliveryNoteForServiceItems Boolean? @map("skip_delivery_note_for_service_items") @default(false)
-  salesUpdateFrequency String @map("sales_update_frequency")
+  salesUpdateFrequency SellingSettingsSalesUpdateFrequency @map("sales_update_frequency")
   maintainSameSalesRate Boolean? @map("maintain_same_sales_rate") @default(false)
   editablePriceListRate Boolean? @map("editable_price_list_rate") @default(false)
   allowMultipleItems Boolean? @map("allow_multiple_items") @default(false)
@@ -7023,7 +8776,7 @@ model SalesOrder {
   customer String
   customerRef Customer @relation(fields: [customer], references: [id])
   customerName String? @map("customer_name")
-  orderType String @map("order_type")
+  orderType SalesOrderOrderType @map("order_type")
   amendedFrom String? @map("amended_from")
   amendedFromRef SalesOrder? @relation(fields: [amendedFrom], references: [id])
   company String
@@ -7080,7 +8833,7 @@ model SalesOrder {
   loyaltyAmount Float? @map("loyalty_amount")
   couponCode String? @map("coupon_code")
   couponCodeRef CouponCode? @relation(fields: [couponCode], references: [id])
-  applyDiscountOn String? @map("apply_discount_on")
+  applyDiscountOn SalesOrderApplyDiscountOn? @map("apply_discount_on")
   baseDiscountAmount Float? @map("base_discount_amount")
   additionalDiscountPercentage Float? @map("additional_discount_percentage")
   discountAmount Float? @map("discount_amount")
@@ -7107,11 +8860,11 @@ model SalesOrder {
   letterHead String? @map("letter_head")
   selectPrintHeading String? @map("select_print_heading")
   groupSameItems Boolean? @map("group_same_items") @default(false)
-  status String
-  deliveryStatus String? @map("delivery_status")
+  status SalesOrderStatus
+  deliveryStatus SalesOrderDeliveryStatus? @map("delivery_status")
   perDelivered Float? @map("per_delivered")
   perBilled Float? @map("per_billed")
-  billingStatus String? @map("billing_status")
+  billingStatus SalesOrderBillingStatus? @map("billing_status")
   salesPartner String? @map("sales_partner")
   salesPartnerRef SalesPartner? @relation(fields: [salesPartner], references: [id])
   commissionRate Float? @map("commission_rate")
@@ -7134,7 +8887,7 @@ model SalesOrder {
   incotermRef Incoterm? @relation(fields: [incoterm], references: [id])
   namedPlace String? @map("named_place")
   reserveStock Boolean? @map("reserve_stock") @default(false)
-  advancePaymentStatus String? @map("advance_payment_status")
+  advancePaymentStatus SalesOrderAdvancePaymentStatus? @map("advance_payment_status")
   utmMedium String? @map("utm_medium")
   utmContent String? @map("utm_content")
   utmSource String? @map("utm_source")
@@ -7167,7 +8920,7 @@ model Quotation {
   companyRef Company @relation(fields: [company], references: [id])
   transactionDate DateTime @map("transaction_date") @default(now())
   validTill DateTime? @map("valid_till")
-  orderType String @map("order_type")
+  orderType QuotationOrderType @map("order_type")
   customerAddress String? @map("customer_address")
   addressDisplay String? @map("address_display")
   contactPerson String? @map("contact_person")
@@ -7206,7 +8959,7 @@ model Quotation {
   couponCodeRef CouponCode? @relation(fields: [couponCode], references: [id])
   referralSalesPartner String? @map("referral_sales_partner")
   referralSalesPartnerRef SalesPartner? @relation(fields: [referralSalesPartner], references: [id])
-  applyDiscountOn String? @map("apply_discount_on")
+  applyDiscountOn QuotationApplyDiscountOn? @map("apply_discount_on")
   baseDiscountAmount Float? @map("base_discount_amount")
   additionalDiscountPercentage Float? @map("additional_discount_percentage")
   discountAmount Float? @map("discount_amount")
@@ -7229,7 +8982,7 @@ model Quotation {
   language String?
   autoRepeat String? @map("auto_repeat")
   orderLostReason String? @map("order_lost_reason")
-  status String
+  status QuotationStatus
   enqDet String? @map("enq_det")
   supplierQuotation String? @map("supplier_quotation")
   supplierQuotationRef SupplierQuotation? @relation(fields: [supplierQuotation], references: [id])
@@ -7301,7 +9054,7 @@ model SupplierNumberAtCustomer {
 
 model SMSCenter {
   id String @id @map("name")
-  sendTo String? @map("send_to")
+  sendTo SMSCenterSendTo? @map("send_to")
   customer String?
   customerRef Customer? @relation(fields: [customer], references: [id])
   supplier String?
@@ -7461,9 +9214,9 @@ model InstallationNote {
 
 model PartySpecificItem {
   id String @id @map("name")
-  partyType String @map("party_type")
+  partyType PartySpecificItemPartyType @map("party_type")
   party String
-  restrictBasedOn String @map("restrict_based_on")
+  restrictBasedOn PartySpecificItemRestrictBasedOn @map("restrict_based_on")
   basedOnValue String @map("based_on_value")
   owner String?
   creation DateTime?
@@ -7573,7 +9326,7 @@ model QualityGoal {
   frequency QualityGoalFrequency?
   procedure String?
   procedureRef QualityProcedure? @relation(fields: [procedure], references: [id])
-  date String?
+  date QualityGoalDate?
   weekday QualityGoalWeekday?
   goal String @unique
   owner String?
@@ -7630,7 +9383,7 @@ model QualityFeedback {
 model QualityMeetingMinutes {
   id String @id @map("name")
   minute String?
-  documentType String @map("document_type")
+  documentType QualityMeetingMinutesDocumentType @map("document_type")
   documentName String? @map("document_name")
   owner String?
   creation DateTime?
@@ -7777,7 +9530,7 @@ model QualityGoalObjective {
 model QualityFeedbackParameter {
   id String @id @map("name")
   parameter String?
-  rating String
+  rating QualityFeedbackParameterRating
   feedback String?
   owner String?
   creation DateTime?
@@ -7829,7 +9582,7 @@ model QualityReview {
 model WorkOrder {
   id String @id @map("name")
   namingSeries String @map("naming_series")
-  status String
+  status WorkOrderStatus
   productionItem String @map("production_item")
   productionItemRef Item @relation(fields: [productionItem], references: [id])
   itemName String? @map("item_name")
@@ -7860,7 +9613,7 @@ model WorkOrder {
   plannedEndDate DateTime? @map("planned_end_date")
   actualEndDate DateTime? @map("actual_end_date")
   expectedDeliveryDate DateTime? @map("expected_delivery_date")
-  transferMaterialAgainst String? @map("transfer_material_against")
+  transferMaterialAgainst WorkOrderTransferMaterialAgainst? @map("transfer_material_against")
   plannedOperatingCost Float? @map("planned_operating_cost")
   actualOperatingCost Float? @map("actual_operating_cost")
   additionalOperatingCost Float? @map("additional_operating_cost")
@@ -7993,7 +9746,7 @@ model WorkOrderOperation {
   bomRef BOM? @relation(fields: [bom], references: [id])
   description String?
   completedQty Float? @map("completed_qty")
-  status String?
+  status WorkOrderOperationStatus?
   workstation String?
   workstationRef Workstation? @relation(fields: [workstation], references: [id])
   plannedStartTime DateTime? @map("planned_start_time")
@@ -8040,7 +9793,7 @@ model WorkOrderOperation {
 
 model JobCardOperation {
   id String @id @map("name")
-  status String?
+  status JobCardOperationStatus?
   completedTime String? @map("completed_time")
   subOperation String? @map("sub_operation")
   subOperationRef Operation? @relation(fields: [subOperation], references: [id])
@@ -8063,7 +9816,7 @@ model MaterialRequestPlanItem {
   itemName String? @map("item_name")
   warehouse String
   warehouseRef Warehouse @relation(fields: [warehouse], references: [id])
-  materialRequestType String? @map("material_request_type")
+  materialRequestType MaterialRequestPlanItemMaterialRequestType? @map("material_request_type")
   supplier String?
   supplierRef Supplier? @relation(fields: [supplier], references: [id])
   quantity Float
@@ -8123,7 +9876,7 @@ model ProductionPlanSalesOrder {
 
 model BOMSecondaryItem {
   id String @id @map("name")
-  secondaryItemType String? @map("secondary_item_type")
+  secondaryItemType BOMSecondaryItemSecondaryItemType? @map("secondary_item_type")
   itemCode String @map("item_code")
   itemCodeRef Item @relation(fields: [itemCode], references: [id])
   itemName String? @map("item_name")
@@ -8206,7 +9959,7 @@ model ProductionPlanSubAssemblyItem {
   indent Int?
   fgWarehouse String? @map("fg_warehouse")
   fgWarehouseRef Warehouse? @relation(fields: [fgWarehouse], references: [id])
-  typeOfManufacturing String? @map("type_of_manufacturing")
+  typeOfManufacturing ProductionPlanSubAssemblyItemTypeOfManufacturing? @map("type_of_manufacturing")
   supplier String?
   supplierRef Supplier? @relation(fields: [supplier], references: [id])
   scheduleDate DateTime? @map("schedule_date")
@@ -8539,8 +10292,8 @@ model BOMUpdateLog {
   currentBomRef BOM? @relation(fields: [currentBom], references: [id])
   newBom String? @map("new_bom")
   newBomRef BOM? @relation(fields: [newBom], references: [id])
-  updateType String? @map("update_type")
-  status String?
+  updateType BOMUpdateLogUpdateType? @map("update_type")
+  status BOMUpdateLogStatus?
   amendedFrom String? @map("amended_from")
   amendedFromRef BOMUpdateLog? @relation(fields: [amendedFrom], references: [id])
   errorLog String? @map("error_log")
@@ -8620,7 +10373,7 @@ model ManufacturingSettings {
   minsBetweenOperations Int? @map("mins_between_operations")
   overproductionPercentageForSalesOrder Float? @map("overproduction_percentage_for_sales_order")
   overproductionPercentageForWorkOrder Float? @map("overproduction_percentage_for_work_order")
-  backflushRawMaterialsBasedOn String? @map("backflush_raw_materials_based_on")
+  backflushRawMaterialsBasedOn ManufacturingSettingsBackflushRawMaterialsBasedOn? @map("backflush_raw_materials_based_on")
   materialConsumption Boolean? @map("material_consumption") @default(false)
   updateBomCostsAutomatically Boolean? @map("update_bom_costs_automatically") @default(false)
   disableCapacityPlanning Boolean? @map("disable_capacity_planning") @default(false)
@@ -8670,7 +10423,7 @@ model SalesForecast {
   amendedFrom String? @map("amended_from")
   amendedFromRef SalesForecast? @relation(fields: [amendedFrom], references: [id])
   demandNumber Int @map("demand_number") @default(6)
-  status String?
+  status SalesForecastStatus?
   frequency SalesForecastFrequency
   owner String?
   creation DateTime?
@@ -8733,7 +10486,7 @@ model JobCardSecondaryItem {
   stockQty Float @map("stock_qty")
   stockUom String? @map("stock_uom")
   stockUomRef UOM? @relation(fields: [stockUom], references: [id])
-  secondaryItemType String @map("secondary_item_type")
+  secondaryItemType JobCardSecondaryItemSecondaryItemType @map("secondary_item_type")
   bomSecondaryItem String? @map("bom_secondary_item")
   owner String?
   creation DateTime?
@@ -8753,7 +10506,7 @@ model ProductionPlanSchedule {
   productionPlanRef ProductionPlan @relation(fields: [productionPlan], references: [id])
   company String?
   companyRef Company? @relation(fields: [company], references: [id])
-  rowType String? @map("row_type")
+  rowType ProductionPlanScheduleRowType? @map("row_type")
   planRow String? @map("plan_row")
   taskKey String? @map("task_key")
   itemCode String? @map("item_code")
@@ -8785,7 +10538,7 @@ model DowntimeEntry {
   operator String
   operatorRef Employee @relation(fields: [operator], references: [id])
   downtime Float?
-  stopReason String @map("stop_reason")
+  stopReason DowntimeEntryStopReason @map("stop_reason")
   remarks String?
   namingSeries String @map("naming_series")
   owner String?
@@ -8877,7 +10630,7 @@ model BOMCreator {
   id String @id @map("name")
   company String
   companyRef Company @relation(fields: [company], references: [id])
-  rmCostAsPer String @map("rm_cost_as_per")
+  rmCostAsPer BOMCreatorRmCostAsPer @map("rm_cost_as_per")
   buyingPriceList String? @map("buying_price_list")
   buyingPriceListRef PriceList? @relation(fields: [buyingPriceList], references: [id])
   priceListCurrency String? @map("price_list_currency")
@@ -8901,7 +10654,7 @@ model BOMCreator {
   defaultWarehouse String? @map("default_warehouse")
   defaultWarehouseRef Warehouse? @relation(fields: [defaultWarehouse], references: [id])
   setRateBasedOnWarehouse Boolean? @map("set_rate_based_on_warehouse") @default(false)
-  status String?
+  status BOMCreatorStatus?
   errorLog String? @map("error_log")
   routing String?
   routingRef Routing? @relation(fields: [routing], references: [id])
@@ -9079,7 +10832,7 @@ model JobCard {
   project String?
   projectRef Project? @relation(fields: [project], references: [id])
   remarks String?
-  status String?
+  status JobCardStatus?
   amendedFrom String? @map("amended_from")
   amendedFromRef JobCard? @relation(fields: [amendedFrom], references: [id])
   namingSeries String @map("naming_series")
@@ -9142,7 +10895,7 @@ model ProductionPlan {
   namingSeries String @map("naming_series")
   company String
   companyRef Company @relation(fields: [company], references: [id])
-  getItemsFrom String? @map("get_items_from")
+  getItemsFrom ProductionPlanGetItemsFrom? @map("get_items_from")
   postingDate DateTime @map("posting_date") @default(now())
   itemCode String? @map("item_code")
   itemCodeRef Item? @relation(fields: [itemCode], references: [id])
@@ -9159,14 +10912,14 @@ model ProductionPlan {
   ignoreExistingOrderedQty Boolean? @map("ignore_existing_ordered_qty") @default(true)
   totalPlannedQty Float? @map("total_planned_qty") @default(0)
   totalProducedQty Float? @map("total_produced_qty") @default(0)
-  status String?
+  status ProductionPlanStatus?
   amendedFrom String? @map("amended_from")
   amendedFromRef ProductionPlan? @relation(fields: [amendedFrom], references: [id])
   forWarehouse String? @map("for_warehouse")
   forWarehouseRef Warehouse? @relation(fields: [forWarehouse], references: [id])
   rawMaterialGroupWarehouse String? @map("raw_material_group_warehouse")
   rawMaterialGroupWarehouseRef Warehouse? @relation(fields: [rawMaterialGroupWarehouse], references: [id])
-  salesOrderStatus String? @map("sales_order_status")
+  salesOrderStatus ProductionPlanSalesOrderStatus? @map("sales_order_status")
   includeSafetyStock Boolean? @map("include_safety_stock") @default(false)
   combineItems Boolean? @map("combine_items") @default(false)
   fromDeliveryDate DateTime? @map("from_delivery_date")
@@ -9206,10 +10959,10 @@ model BOM {
   qualityInspectionTemplateRef QualityInspectionTemplate? @relation(fields: [qualityInspectionTemplate], references: [id])
   company String
   companyRef Company @relation(fields: [company], references: [id])
-  transferMaterialAgainst String? @map("transfer_material_against")
+  transferMaterialAgainst BOMTransferMaterialAgainst? @map("transfer_material_against")
   conversionRate Float @map("conversion_rate") @default(1)
   currency String
-  rmCostAsPer String? @map("rm_cost_as_per")
+  rmCostAsPer BOMRmCostAsPer? @map("rm_cost_as_per")
   buyingPriceList String? @map("buying_price_list")
   buyingPriceListRef PriceList? @relation(fields: [buyingPriceList], references: [id])
   routing String?
@@ -9252,7 +11005,7 @@ model BOM {
   baseSecondaryItemsCost Float? @map("base_secondary_items_cost")
   costAllocation Float? @map("cost_allocation")
   costAllocationPer Float? @map("cost_allocation_per") @default(100)
-  backflushBasedOn String? @map("backflush_based_on")
+  backflushBasedOn BOMBackflushBasedOn? @map("backflush_based_on")
   owner String?
   creation DateTime?
   modified DateTime?
@@ -9420,7 +11173,7 @@ model SubcontractingReceiptItem {
   landedCostVoucherAmount Float? @map("landed_cost_voucher_amount")
   serviceExpenseAccount String? @map("service_expense_account")
   serviceExpenseAccountRef Account? @relation(fields: [serviceExpenseAccount], references: [id])
-  secondaryItemType String? @map("secondary_item_type")
+  secondaryItemType SubcontractingReceiptItemSecondaryItemType? @map("secondary_item_type")
   secondaryItemsCostPerQty Float? @map("secondary_items_cost_per_qty") @default(0)
   isLegacyScrapItem Boolean? @map("is_legacy_scrap_item") @default(false)
   processLossQty Float? @map("process_loss_qty") @default(0)
@@ -9549,7 +11302,7 @@ model SubcontractingOrder {
   setReserveWarehouse String? @map("set_reserve_warehouse")
   setReserveWarehouseRef Warehouse? @relation(fields: [setReserveWarehouse], references: [id])
   totalAdditionalCosts Float? @map("total_additional_costs")
-  status String
+  status SubcontractingOrderStatus
   perReceived Float? @map("per_received")
   selectPrintHeading String? @map("select_print_heading")
   letterHead String? @map("letter_head")
@@ -9572,7 +11325,7 @@ model SubcontractingOrder {
 model SubcontractingReceipt {
   id String @id @map("name")
   title String?
-  namingSeries String @map("naming_series")
+  namingSeries SubcontractingReceiptNamingSeries @map("naming_series")
   supplier String
   supplierRef Supplier @relation(fields: [supplier], references: [id])
   supplierName String? @map("supplier_name")
@@ -9599,7 +11352,7 @@ model SubcontractingReceipt {
   inWords String? @map("in_words")
   billNo String? @map("bill_no")
   billDate DateTime? @map("bill_date")
-  status String
+  status SubcontractingReceiptStatus
   amendedFrom String? @map("amended_from")
   amendedFromRef SubcontractingReceipt? @relation(fields: [amendedFrom], references: [id])
   range String?
@@ -9813,7 +11566,7 @@ model SubcontractingInwardOrderSecondaryItem {
   fgItemCodeRef Item @relation(fields: [fgItemCode], references: [id])
   warehouse String
   warehouseRef Warehouse @relation(fields: [warehouse], references: [id])
-  secondaryItemType String @map("secondary_item_type")
+  secondaryItemType SubcontractingInwardOrderSecondaryItemSecondaryItemType @map("secondary_item_type")
   owner String?
   creation DateTime?
   modified DateTime?
@@ -9907,12 +11660,12 @@ model BankStatementImport {
   bankRef Bank? @relation(fields: [bank], references: [id])
   importFile String? @map("import_file")
   templateOptions String? @map("template_options")
-  status String?
+  status BankStatementImportStatus?
   templateWarnings String? @map("template_warnings")
   showFailedLogs Boolean? @map("show_failed_logs") @default(false)
   googleSheetsUrl String? @map("google_sheets_url")
   referenceDoctype String @map("reference_doctype")
-  importType String @map("import_type")
+  importType BankStatementImportImportType @map("import_type")
   submitAfterImport Boolean? @map("submit_after_import") @default(true)
   muteEmails Boolean? @map("mute_emails") @default(true)
   customDelimiters Boolean? @map("custom_delimiters") @default(false)
@@ -9929,7 +11682,7 @@ model BankStatementImport {
 
 model ProcessPaymentReconciliation {
   id String @id @map("name")
-  status String?
+  status ProcessPaymentReconciliationStatus?
   company String
   companyRef Company @relation(fields: [company], references: [id])
   partyType String @map("party_type")
@@ -10070,7 +11823,7 @@ model POSInvoiceMergeLog {
   consolidatedCreditNoteRef SalesInvoice? @relation(fields: [consolidatedCreditNote], references: [id])
   posClosingEntry String? @map("pos_closing_entry")
   posClosingEntryRef POSClosingEntry? @relation(fields: [posClosingEntry], references: [id])
-  mergeInvoicesBasedOn String @map("merge_invoices_based_on")
+  mergeInvoicesBasedOn POSInvoiceMergeLogMergeInvoicesBasedOn @map("merge_invoices_based_on")
   customerGroup String? @map("customer_group")
   customerGroupRef CustomerGroup? @relation(fields: [customerGroup], references: [id])
   postingTime DateTime @map("posting_time")
@@ -10211,7 +11964,7 @@ model ProcessPaymentReconciliationLog {
   errorLog String? @map("error_log")
   processPr String @map("process_pr")
   processPrRef ProcessPaymentReconciliation @relation(fields: [processPr], references: [id])
-  status String?
+  status ProcessPaymentReconciliationLogStatus?
   owner String?
   creation DateTime?
   modified DateTime?
@@ -10366,7 +12119,7 @@ model ShareType {
 
 model Budget {
   id String @id @map("name")
-  budgetAgainst String @map("budget_against")
+  budgetAgainst BudgetBudgetAgainst @map("budget_against")
   company String
   companyRef Company @relation(fields: [company], references: [id])
   costCenter String? @map("cost_center")
@@ -10399,7 +12152,7 @@ model Budget {
   toFiscalYearRef FiscalYear @relation(fields: [toFiscalYear], references: [id])
   budgetStartDate DateTime? @map("budget_start_date")
   budgetEndDate DateTime? @map("budget_end_date")
-  distributionFrequency String @map("distribution_frequency")
+  distributionFrequency BudgetDistributionFrequency @map("distribution_frequency")
   budgetDistributionTotal Float? @map("budget_distribution_total")
   owner String?
   creation DateTime?
@@ -10453,7 +12206,7 @@ model JournalEntryAccount {
   debit Float?
   creditInAccountCurrency Float? @map("credit_in_account_currency")
   credit Float?
-  referenceType String? @map("reference_type")
+  referenceType JournalEntryAccountReferenceType? @map("reference_type")
   referenceName String? @map("reference_name")
   referenceDueDate DateTime? @map("reference_due_date")
   project String?
@@ -10480,11 +12233,11 @@ model JournalEntryAccount {
 
 model PromotionalScheme {
   id String @id @map("name")
-  applyOn String @map("apply_on")
+  applyOn PromotionalSchemeApplyOn @map("apply_on")
   disable Boolean? @default(false)
   mixedConditions Boolean? @map("mixed_conditions") @default(false)
   isCumulative Boolean? @map("is_cumulative") @default(false)
-  applyRuleOnOther String? @map("apply_rule_on_other")
+  applyRuleOnOther PromotionalSchemeApplyRuleOnOther? @map("apply_rule_on_other")
   otherItemCode String? @map("other_item_code")
   otherItemCodeRef Item? @relation(fields: [otherItemCode], references: [id])
   otherItemGroup String? @map("other_item_group")
@@ -10493,7 +12246,7 @@ model PromotionalScheme {
   otherBrandRef Brand? @relation(fields: [otherBrand], references: [id])
   selling Boolean? @default(false)
   buying Boolean? @default(false)
-  applicableFor String? @map("applicable_for")
+  applicableFor PromotionalSchemeApplicableFor? @map("applicable_for")
   validFrom DateTime? @map("valid_from") @default(now())
   validUpto DateTime? @map("valid_upto")
   company String
@@ -10579,9 +12332,9 @@ model ItemWiseTaxDetail {
 
 model PurchaseTaxesAndCharges {
   id String @id @map("name")
-  category String
+  category PurchaseTaxesAndChargesCategory
   addDeductTax PurchaseTaxesAndChargesAddDeductTax @map("add_deduct_tax")
-  chargeType String @map("charge_type")
+  chargeType PurchaseTaxesAndChargesChargeType @map("charge_type")
   rowId String? @map("row_id")
   allocateFullAmountToStockItems Boolean? @map("allocate_full_amount_to_stock_items") @default(true)
   includedInPrintRate Boolean? @map("included_in_print_rate") @default(false)
@@ -10800,7 +12553,7 @@ model PartyLink {
 
 model SalesInvoice {
   id String @id @map("name")
-  namingSeries String @map("naming_series")
+  namingSeries SalesInvoiceNamingSeries @map("naming_series")
   customer String
   customerRef Customer @relation(fields: [customer], references: [id])
   customerName String? @map("customer_name")
@@ -10878,7 +12631,7 @@ model SalesInvoice {
   loyaltyRedemptionAccountRef Account? @relation(fields: [loyaltyRedemptionAccount], references: [id])
   loyaltyRedemptionCostCenter String? @map("loyalty_redemption_cost_center")
   loyaltyRedemptionCostCenterRef CostCenter? @relation(fields: [loyaltyRedemptionCostCenter], references: [id])
-  applyDiscountOn String? @map("apply_discount_on")
+  applyDiscountOn SalesInvoiceApplyDiscountOn? @map("apply_discount_on")
   baseDiscountAmount Float? @map("base_discount_amount")
   additionalDiscountPercentage Float? @map("additional_discount_percentage")
   discountAmount Float? @map("discount_amount")
@@ -10922,7 +12675,7 @@ model SalesInvoice {
   customerGroup String? @map("customer_group")
   customerGroupRef CustomerGroup? @relation(fields: [customerGroup], references: [id])
   isDiscounted Boolean? @map("is_discounted") @default(false)
-  status String?
+  status SalesInvoiceStatus?
   debitTo String @map("debit_to")
   debitToRef Account @relation(fields: [debitTo], references: [id])
   partyAccountCurrency String? @map("party_account_currency")
@@ -11121,7 +12874,7 @@ model SubscriptionPlan {
   currency String
   item String
   itemRef Item @relation(fields: [item], references: [id])
-  priceDetermination String @map("price_determination")
+  priceDetermination SubscriptionPlanPriceDetermination @map("price_determination")
   cost Float?
   priceList String? @map("price_list")
   priceListRef PriceList? @relation(fields: [priceList], references: [id])
@@ -11207,13 +12960,13 @@ model PaymentTerm {
   invoicePortion Float? @map("invoice_portion")
   modeOfPayment String? @map("mode_of_payment")
   modeOfPaymentRef ModeOfPayment? @relation(fields: [modeOfPayment], references: [id])
-  dueDateBasedOn String? @map("due_date_based_on")
+  dueDateBasedOn PaymentTermDueDateBasedOn? @map("due_date_based_on")
   creditDays Int? @map("credit_days")
   creditMonths Int? @map("credit_months")
   description String?
   discountType PaymentTermDiscountType? @map("discount_type")
   discount Float?
-  discountValidityBasedOn String? @map("discount_validity_based_on")
+  discountValidityBasedOn PaymentTermDiscountValidityBasedOn? @map("discount_validity_based_on")
   discountValidity Int? @map("discount_validity")
   owner String?
   creation DateTime?
@@ -11225,7 +12978,7 @@ model PaymentTerm {
 
 model AdvanceTaxesAndCharges {
   id String @id @map("name")
-  chargeType String @map("charge_type")
+  chargeType AdvanceTaxesAndChargesChargeType @map("charge_type")
   rowId String? @map("row_id")
   accountHead String @map("account_head")
   accountHeadRef Account @relation(fields: [accountHead], references: [id])
@@ -11513,12 +13266,12 @@ model BankStatementImportLog {
   endDate DateTime? @map("end_date")
   file String
   detectedDateFormat String? @map("detected_date_format")
-  detectedAmountFormat String? @map("detected_amount_format")
+  detectedAmountFormat BankStatementImportLogDetectedAmountFormat? @map("detected_amount_format")
   detectedHeaderIndex Int? @map("detected_header_index")
   detectedTransactionStartingIndex Int? @map("detected_transaction_starting_index")
   detectedTransactionEndingIndex Int? @map("detected_transaction_ending_index")
   pdfTables Json? @map("pdf_tables")
-  status String?
+  status BankStatementImportLogStatus?
   currency String?
   totalDebits Float? @map("total_debits")
   totalCredits Float? @map("total_credits")
@@ -11624,7 +13377,7 @@ model CostCenterAllocationPercentage {
 
 model JournalEntryTemplate {
   id String @id @map("name")
-  voucherType String @map("voucher_type")
+  voucherType JournalEntryTemplateVoucherType @map("voucher_type")
   company String
   companyRef Company @relation(fields: [company], references: [id])
   isOpening JournalEntryTemplateIsOpening? @map("is_opening")
@@ -11821,14 +13574,14 @@ model PricingRule {
   id String @id @map("name")
   title String
   disable Boolean? @default(false)
-  applyOn String @map("apply_on")
+  applyOn PricingRuleApplyOn @map("apply_on")
   priceOrProductDiscount PricingRulePriceOrProductDiscount @map("price_or_product_discount")
   warehouse String?
   warehouseRef Warehouse? @relation(fields: [warehouse], references: [id])
   mixedConditions Boolean? @map("mixed_conditions") @default(false)
   isCumulative Boolean? @map("is_cumulative") @default(false)
   couponCodeBased Boolean? @map("coupon_code_based") @default(false)
-  applyRuleOnOther String? @map("apply_rule_on_other")
+  applyRuleOnOther PricingRuleApplyRuleOnOther? @map("apply_rule_on_other")
   otherItemCode String? @map("other_item_code")
   otherItemCodeRef Item? @relation(fields: [otherItemCode], references: [id])
   otherItemGroup String? @map("other_item_group")
@@ -11837,7 +13590,7 @@ model PricingRule {
   otherBrandRef Brand? @relation(fields: [otherBrand], references: [id])
   selling Boolean? @default(false)
   buying Boolean? @default(false)
-  applicableFor String? @map("applicable_for")
+  applicableFor PricingRuleApplicableFor? @map("applicable_for")
   customer String?
   customerRef Customer? @relation(fields: [customer], references: [id])
   customerGroup String? @map("customer_group")
@@ -11862,8 +13615,8 @@ model PricingRule {
   currency String
   marginType PricingRuleMarginType? @map("margin_type")
   marginRateOrAmount Float? @map("margin_rate_or_amount") @default(0)
-  rateOrDiscount String? @map("rate_or_discount")
-  applyDiscountOn String? @map("apply_discount_on")
+  rateOrDiscount PricingRuleRateOrDiscount? @map("rate_or_discount")
+  applyDiscountOn PricingRuleApplyDiscountOn? @map("apply_discount_on")
   rate Float? @default(0)
   discountAmount Float? @map("discount_amount") @default(0)
   discountPercentage Float? @map("discount_percentage")
@@ -11877,7 +13630,7 @@ model PricingRule {
   freeItemUomRef UOM? @relation(fields: [freeItemUom], references: [id])
   freeItemRate Float? @map("free_item_rate")
   thresholdPercentage Float? @map("threshold_percentage")
-  priority String?
+  priority PricingRulePriority?
   applyMultiplePricingRules Boolean? @map("apply_multiple_pricing_rules") @default(false)
   applyDiscountOnRate Boolean? @map("apply_discount_on_rate") @default(false)
   validateAppliedRule Boolean? @map("validate_applied_rule") @default(false)
@@ -11924,7 +13677,7 @@ model DiscountedInvoice {
 
 model POSSettings {
   id String @id @map("name")
-  invoiceType String? @map("invoice_type")
+  invoiceType POSSettingsInvoiceType? @map("invoice_type")
   postChangeGlEntries Boolean? @map("post_change_gl_entries") @default(false)
   owner String?
   creation DateTime?
@@ -11981,7 +13734,7 @@ model PaymentTermsTemplate {
 model CouponCode {
   id String @id @map("name")
   couponName String @map("coupon_name") @unique
-  couponType String @map("coupon_type")
+  couponType CouponCodeCouponType @map("coupon_type")
   customer String?
   customerRef Customer? @relation(fields: [customer], references: [id])
   couponCode String? @map("coupon_code") @unique
@@ -12025,7 +13778,7 @@ model BankTransactionRule {
   minAmount Float? @map("min_amount")
   maxAmount Float? @map("max_amount")
   ruleDescription String? @map("rule_description")
-  classifyAs String @map("classify_as")
+  classifyAs BankTransactionRuleClassifyAs @map("classify_as")
   account String?
   accountRef Account? @relation(fields: [account], references: [id])
   partyType String? @map("party_type")
@@ -12033,7 +13786,7 @@ model BankTransactionRule {
   priority Int
   company String
   companyRef Company @relation(fields: [company], references: [id])
-  bankEntryType String? @map("bank_entry_type")
+  bankEntryType BankTransactionRuleBankEntryType? @map("bank_entry_type")
   owner String?
   creation DateTime?
   modified DateTime?
@@ -12172,8 +13925,8 @@ model FinancialReportRow {
   referenceCode String? @map("reference_code")
   displayName String? @map("display_name")
   indentationLevel Int? @map("indentation_level")
-  dataSource String? @map("data_source")
-  balanceType String? @map("balance_type")
+  dataSource FinancialReportRowDataSource? @map("data_source")
+  balanceType FinancialReportRowBalanceType? @map("balance_type")
   boldText Boolean? @map("bold_text") @default(false)
   italicText Boolean? @map("italic_text") @default(false)
   hiddenCalculation Boolean? @map("hidden_calculation") @default(false)
@@ -12206,7 +13959,7 @@ model TaxWithholdingEntry {
   taxableAmount Float? @map("taxable_amount")
   lowerDeductionCertificate String? @map("lower_deduction_certificate")
   lowerDeductionCertificateRef LowerDeductionCertificate? @relation(fields: [lowerDeductionCertificate], references: [id])
-  status String?
+  status TaxWithholdingEntryStatus?
   currency String?
   conversionRate Float? @map("conversion_rate")
   withholdingDoctype String? @map("withholding_doctype")
@@ -12215,7 +13968,7 @@ model TaxWithholdingEntry {
   taxableName String? @map("taxable_name")
   taxableDate DateTime? @map("taxable_date")
   withholdingDate DateTime? @map("withholding_date")
-  underWithheldReason String? @map("under_withheld_reason")
+  underWithheldReason TaxWithholdingEntryUnderWithheldReason? @map("under_withheld_reason")
   withholdingAmount Float? @map("withholding_amount")
   taxWithholdingGroup String? @map("tax_withholding_group")
   taxWithholdingGroupRef TaxWithholdingGroup? @relation(fields: [taxWithholdingGroup], references: [id])
@@ -12284,7 +14037,7 @@ model ProcessStatementOfAccounts {
   companyRef Company @relation(fields: [company], references: [id])
   fromDate DateTime? @map("from_date")
   toDate DateTime? @map("to_date")
-  customerCollection String? @map("customer_collection")
+  customerCollection ProcessStatementOfAccountsCustomerCollection? @map("customer_collection")
   collectionName String? @map("collection_name")
   account String?
   accountRef Account? @relation(fields: [account], references: [id])
@@ -12294,7 +14047,7 @@ model ProcessStatementOfAccounts {
   startDate DateTime? @map("start_date") @default(now())
   currency String?
   includeAgeing Boolean? @map("include_ageing") @default(false)
-  ageingBasedOn String? @map("ageing_based_on")
+  ageingBasedOn ProcessStatementOfAccountsAgeingBasedOn? @map("ageing_based_on")
   enableAutoEmail Boolean? @map("enable_auto_email") @default(false)
   primaryMandatory Boolean? @map("primary_mandatory") @default(true)
   filterDuration Int? @map("filter_duration") @default(1)
@@ -12306,7 +14059,7 @@ model ProcessStatementOfAccounts {
   includeBreak Boolean? @map("include_break") @default(true)
   showNetValuesInPartyAccount Boolean? @map("show_net_values_in_party_account") @default(false)
   sender String?
-  report String
+  report ProcessStatementOfAccountsReport
   postingDate DateTime? @map("posting_date") @default(now())
   paymentTermsTemplate String? @map("payment_terms_template")
   paymentTermsTemplateRef PaymentTermsTemplate? @relation(fields: [paymentTermsTemplate], references: [id])
@@ -12321,7 +14074,7 @@ model ProcessStatementOfAccounts {
   ignoreExchangeRateRevaluationJournals Boolean? @map("ignore_exchange_rate_revaluation_journals") @default(false)
   ignoreCrDrNotes Boolean? @map("ignore_cr_dr_notes") @default(false)
   showRemarks Boolean? @map("show_remarks") @default(false)
-  categorizeBy String? @map("categorize_by")
+  categorizeBy ProcessStatementOfAccountsCategorizeBy? @map("categorize_by")
   showFuturePayments Boolean? @map("show_future_payments") @default(false)
   printFormat String? @map("print_format")
   showOpeningEntries Boolean? @map("show_opening_entries") @default(false)
@@ -12398,7 +14151,7 @@ model PaymentRequest {
   subject String?
   paymentGatewayAccount String? @map("payment_gateway_account")
   paymentGatewayAccountRef PaymentGatewayAccount? @relation(fields: [paymentGatewayAccount], references: [id])
-  status String?
+  status PaymentRequestStatus?
   makeSalesInvoice Boolean? @map("make_sales_invoice") @default(false)
   message String?
   muteEmail Boolean? @map("mute_email") @default(false)
@@ -12433,7 +14186,7 @@ model PromotionalSchemePriceDiscount {
   maxQty Float? @map("max_qty") @default(0)
   minAmount Float? @map("min_amount") @default(0)
   maxAmount Float? @map("max_amount") @default(0)
-  rateOrDiscount String? @map("rate_or_discount")
+  rateOrDiscount PromotionalSchemePriceDiscountRateOrDiscount? @map("rate_or_discount")
   rate Float?
   discountAmount Float? @map("discount_amount")
   discountPercentage Float? @map("discount_percentage")
@@ -12443,7 +14196,7 @@ model PromotionalSchemePriceDiscount {
   warehouseRef Warehouse? @relation(fields: [warehouse], references: [id])
   thresholdPercentage Float? @map("threshold_percentage")
   validateAppliedRule Boolean? @map("validate_applied_rule") @default(false)
-  priority String?
+  priority PromotionalSchemePriceDiscountPriority?
   applyMultiplePricingRules Boolean? @map("apply_multiple_pricing_rules") @default(false)
   applyDiscountOnRate Boolean? @map("apply_discount_on_rate") @default(false)
   owner String?
@@ -12462,7 +14215,7 @@ model TaxWithholdingCategory {
   categoryName String? @map("category_name")
   taxOnExcessAmount Boolean? @map("tax_on_excess_amount") @default(false)
   roundOffTaxAmount Boolean? @map("round_off_tax_amount") @default(false)
-  taxDeductionBasis String @map("tax_deduction_basis")
+  taxDeductionBasis TaxWithholdingCategoryTaxDeductionBasis @map("tax_deduction_basis")
   disableCumulativeThreshold Boolean? @map("disable_cumulative_threshold") @default(false)
   disableTransactionThreshold Boolean? @map("disable_transaction_threshold") @default(false)
   owner String?
@@ -12483,7 +14236,7 @@ model PaymentOrder {
   postingDate DateTime? @map("posting_date") @default(now())
   amendedFrom String? @map("amended_from")
   amendedFromRef PaymentOrder? @relation(fields: [amendedFrom], references: [id])
-  paymentOrderType String @map("payment_order_type")
+  paymentOrderType PaymentOrderPaymentOrderType @map("payment_order_type")
   companyBankAccount String @map("company_bank_account")
   companyBankAccountRef BankAccount @relation(fields: [companyBankAccount], references: [id])
   companyBank String? @map("company_bank")
@@ -12516,7 +14269,7 @@ model POSOpeningEntryDetail {
 model PurchaseInvoice {
   id String @id @map("name")
   title String?
-  namingSeries String @map("naming_series")
+  namingSeries PurchaseInvoiceNamingSeries @map("naming_series")
   supplier String
   supplierRef Supplier @relation(fields: [supplier], references: [id])
   supplierName String? @map("supplier_name")
@@ -12584,7 +14337,7 @@ model PurchaseInvoice {
   taxesAndChargesAdded Float? @map("taxes_and_charges_added")
   taxesAndChargesDeducted Float? @map("taxes_and_charges_deducted")
   totalTaxesAndCharges Float? @map("total_taxes_and_charges")
-  applyDiscountOn String? @map("apply_discount_on")
+  applyDiscountOn PurchaseInvoiceApplyDiscountOn? @map("apply_discount_on")
   baseDiscountAmount Float? @map("base_discount_amount")
   additionalDiscountPercentage Float? @map("additional_discount_percentage")
   discountAmount Float? @map("discount_amount")
@@ -12628,7 +14381,7 @@ model PurchaseInvoice {
   partyAccountCurrency String? @map("party_account_currency")
   isOpening PurchaseInvoiceIsOpening? @map("is_opening")
   againstExpenseAccount String? @map("against_expense_account")
-  status String?
+  status PurchaseInvoiceStatus?
   interCompanyInvoiceReference String? @map("inter_company_invoice_reference")
   interCompanyInvoiceReferenceRef SalesInvoice? @relation(fields: [interCompanyInvoiceReference], references: [id])
   remarks String?
@@ -12696,7 +14449,7 @@ model ApplicableOnAccount {
 model PaymentEntry {
   id String @id @map("name")
   namingSeries String @map("naming_series")
-  paymentType String @map("payment_type")
+  paymentType PaymentEntryPaymentType @map("payment_type")
   postingDate DateTime @map("posting_date") @default(now())
   company String
   companyRef Company @relation(fields: [company], references: [id])
@@ -12745,7 +14498,7 @@ model PaymentEntry {
   bankAccountRef BankAccount? @relation(fields: [bankAccount], references: [id])
   partyBankAccount String? @map("party_bank_account")
   partyBankAccountRef BankAccount? @relation(fields: [partyBankAccount], references: [id])
-  paymentOrderStatus String? @map("payment_order_status")
+  paymentOrderStatus PaymentEntryPaymentOrderStatus? @map("payment_order_status")
   status PaymentEntryStatus?
   customRemarks Boolean? @map("custom_remarks") @default(false)
   taxWithholdingCategory String? @map("tax_withholding_category")
@@ -12829,7 +14582,7 @@ model ProcessPeriodClosingVoucherDetail {
   processingDate DateTime? @map("processing_date")
   status ProcessPeriodClosingVoucherDetailStatus?
   closingBalance Json? @map("closing_balance")
-  reportType String? @map("report_type")
+  reportType ProcessPeriodClosingVoucherDetailReportType? @map("report_type")
   owner String?
   creation DateTime?
   modified DateTime?
@@ -12859,7 +14612,7 @@ model PromotionalSchemeProductDiscount {
   warehouse String?
   warehouseRef Warehouse? @relation(fields: [warehouse], references: [id])
   thresholdPercentage Float? @map("threshold_percentage")
-  priority String?
+  priority PromotionalSchemeProductDiscountPriority?
   applyMultiplePricingRules Boolean? @map("apply_multiple_pricing_rules") @default(false)
   isRecursive Boolean? @map("is_recursive") @default(false)
   recurseFor Float? @map("recurse_for") @default(0)
@@ -12884,11 +14637,11 @@ model Account {
   company String
   companyRef Company @relation(fields: [company], references: [id])
   rootType AccountRootType? @map("root_type")
-  reportType String? @map("report_type")
+  reportType AccountReportType? @map("report_type")
   accountCurrency String? @map("account_currency")
   parentAccount String @map("parent_account")
   parentAccountRef Account @relation(fields: [parentAccount], references: [id])
-  accountType String? @map("account_type")
+  accountType AccountAccountType? @map("account_type")
   taxRate Float? @map("tax_rate")
   freezeAccount AccountFreezeAccount? @map("freeze_account")
   balanceMustBe AccountBalanceMustBe? @map("balance_must_be")
@@ -12910,7 +14663,7 @@ model Account {
 model BankStatementImportLogColumnMap {
   id String @id @map("name")
   headerText String @map("header_text")
-  mapsTo String @map("maps_to")
+  mapsTo BankStatementImportLogColumnMapMapsTo @map("maps_to")
   index Int
   variable String?
   owner String?
@@ -13038,7 +14791,7 @@ model SalesInvoiceAdvance {
 
 model SalesTaxesAndCharges {
   id String @id @map("name")
-  chargeType String @map("charge_type")
+  chargeType SalesTaxesAndChargesChargeType @map("charge_type")
   rowId String? @map("row_id")
   accountHead String @map("account_head")
   accountHeadRef Account @relation(fields: [accountHead], references: [id])
@@ -13076,7 +14829,7 @@ model SalesTaxesAndCharges {
 model JournalEntry {
   id String @id @map("name")
   title String?
-  voucherType String @map("voucher_type")
+  voucherType JournalEntryVoucherType @map("voucher_type")
   namingSeries String @map("naming_series")
   postingDate DateTime @map("posting_date")
   company String
@@ -13100,7 +14853,7 @@ model JournalEntry {
   billNo String? @map("bill_no")
   billDate DateTime? @map("bill_date")
   dueDate DateTime? @map("due_date")
-  writeOffBasedOn String? @map("write_off_based_on")
+  writeOffBasedOn JournalEntryWriteOffBasedOn? @map("write_off_based_on")
   writeOffAmount Float? @map("write_off_amount")
   payToRecdFrom String? @map("pay_to_recd_from")
   letterHead String? @map("letter_head")
@@ -13265,7 +15018,7 @@ model POSProfileUser {
 
 model PaymentReconciliationInvoice {
   id String @id @map("name")
-  invoiceType String? @map("invoice_type")
+  invoiceType PaymentReconciliationInvoiceInvoiceType? @map("invoice_type")
   invoiceNumber String? @map("invoice_number")
   invoiceDate DateTime? @map("invoice_date")
   amount Float?
@@ -13428,7 +15181,7 @@ model POSProfile {
   costCenterRef CostCenter? @relation(fields: [costCenter], references: [id])
   taxesAndCharges String? @map("taxes_and_charges")
   taxesAndChargesRef SalesTaxesAndChargesTemplate? @relation(fields: [taxesAndCharges], references: [id])
-  applyDiscountOn String? @map("apply_discount_on")
+  applyDiscountOn POSProfileApplyDiscountOn? @map("apply_discount_on")
   taxCategory String? @map("tax_category")
   taxCategoryRef TaxCategory? @relation(fields: [taxCategory], references: [id])
   printFormat String? @map("print_format")
@@ -13451,7 +15204,7 @@ model POSProfile {
   project String?
   projectRef Project? @relation(fields: [project], references: [id])
   setGrandTotalToDefaultMop Boolean? @map("set_grand_total_to_default_mop") @default(true)
-  actionOnNewInvoice String? @map("action_on_new_invoice")
+  actionOnNewInvoice POSProfileActionOnNewInvoice? @map("action_on_new_invoice")
   allowPartialPayment Boolean? @map("allow_partial_payment") @default(false)
   allowWarehouseChange Boolean? @map("allow_warehouse_change") @default(false)
   owner String?
@@ -13525,7 +15278,7 @@ model ShippingRule {
   accountRef Account @relation(fields: [account], references: [id])
   costCenter String? @map("cost_center")
   costCenterRef CostCenter? @relation(fields: [costCenter], references: [id])
-  calculateBasedOn String? @map("calculate_based_on")
+  calculateBasedOn ShippingRuleCalculateBasedOn? @map("calculate_based_on")
   shippingAmount Float? @map("shipping_amount")
   project String?
   projectRef Project? @relation(fields: [project], references: [id])
@@ -13571,10 +15324,10 @@ model PaymentSchedule {
   basePaymentAmount Float? @map("base_payment_amount")
   baseOutstanding Float? @map("base_outstanding")
   basePaidAmount Float? @map("base_paid_amount")
-  dueDateBasedOn String? @map("due_date_based_on")
+  dueDateBasedOn PaymentScheduleDueDateBasedOn? @map("due_date_based_on")
   creditDays Int? @map("credit_days")
   creditMonths Int? @map("credit_months")
-  discountValidityBasedOn String? @map("discount_validity_based_on")
+  discountValidityBasedOn PaymentScheduleDiscountValidityBasedOn? @map("discount_validity_based_on")
   discountValidity Int? @map("discount_validity")
   owner String?
   creation DateTime?
@@ -13610,7 +15363,7 @@ model PeriodClosingVoucher {
   closingAccountHead String @map("closing_account_head")
   closingAccountHeadRef Account @relation(fields: [closingAccountHead], references: [id])
   remarks String
-  gleProcessingStatus String? @map("gle_processing_status")
+  gleProcessingStatus PeriodClosingVoucherGleProcessingStatus? @map("gle_processing_status")
   errorMessage String? @map("error_message")
   periodEndDate DateTime @map("period_end_date")
   periodStartDate DateTime @map("period_start_date")
@@ -13733,7 +15486,7 @@ model RepostPaymentLedgerItems {
 
 model Subscription {
   id String @id @map("name")
-  status String?
+  status SubscriptionStatus?
   cancelationDate DateTime? @map("cancelation_date")
   trialPeriodStart DateTime? @map("trial_period_start")
   trialPeriodEnd DateTime? @map("trial_period_end")
@@ -13743,7 +15496,7 @@ model Subscription {
   nextBillingPeriodEnd DateTime? @map("next_billing_period_end")
   daysUntilDue Int? @map("days_until_due") @default(0)
   cancelAtPeriodEnd Boolean? @map("cancel_at_period_end") @default(false)
-  applyAdditionalDiscount String? @map("apply_additional_discount")
+  applyAdditionalDiscount SubscriptionApplyAdditionalDiscount? @map("apply_additional_discount")
   additionalDiscountPercentage Float? @map("additional_discount_percentage")
   additionalDiscountAmount Float? @map("additional_discount_amount")
   partyType String @map("party_type")
@@ -13761,7 +15514,7 @@ model Subscription {
   company String?
   companyRef Company? @relation(fields: [company], references: [id])
   submitInvoice Boolean? @map("submit_invoice") @default(true)
-  generateInvoiceAt String @map("generate_invoice_at")
+  generateInvoiceAt SubscriptionGenerateInvoiceAt @map("generate_invoice_at")
   numberOfDays Int? @map("number_of_days")
   owner String?
   creation DateTime?
@@ -13796,7 +15549,7 @@ model RepostAccountingLedger {
   amendedFromRef RepostAccountingLedger? @relation(fields: [amendedFrom], references: [id])
   deleteCancelledEntries Boolean? @map("delete_cancelled_entries") @default(false)
   errorLog String? @map("error_log")
-  status String?
+  status RepostAccountingLedgerStatus?
   scheduledJob String? @map("scheduled_job")
   owner String?
   creation DateTime?
@@ -13827,7 +15580,7 @@ model BankTransactionPayments {
   paymentEntry String @map("payment_entry")
   allocatedAmount Float @map("allocated_amount")
   clearanceDate DateTime? @map("clearance_date")
-  reconciliationType String? @map("reconciliation_type")
+  reconciliationType BankTransactionPaymentsReconciliationType? @map("reconciliation_type")
   owner String?
   creation DateTime?
   modified DateTime?
@@ -14115,7 +15868,7 @@ model CurrencyExchangeSettings {
   id String @id @map("name")
   apiEndpoint String @map("api_endpoint")
   url String?
-  serviceProvider String @map("service_provider")
+  serviceProvider CurrencyExchangeSettingsServiceProvider @map("service_provider")
   disabled Boolean? @default(false)
   accessKey String? @map("access_key")
   useHttp Boolean? @map("use_http") @default(false)
@@ -14247,7 +16000,7 @@ model POSInvoice {
   loyaltyRedemptionAccountRef Account? @relation(fields: [loyaltyRedemptionAccount], references: [id])
   loyaltyRedemptionCostCenter String? @map("loyalty_redemption_cost_center")
   loyaltyRedemptionCostCenterRef CostCenter? @relation(fields: [loyaltyRedemptionCostCenter], references: [id])
-  applyDiscountOn String? @map("apply_discount_on")
+  applyDiscountOn POSInvoiceApplyDiscountOn? @map("apply_discount_on")
   baseDiscountAmount Float? @map("base_discount_amount")
   additionalDiscountPercentage Float? @map("additional_discount_percentage")
   discountAmount Float? @map("discount_amount")
@@ -14291,7 +16044,7 @@ model POSInvoice {
   customerGroup String? @map("customer_group")
   customerGroupRef CustomerGroup? @relation(fields: [customerGroup], references: [id])
   isDiscounted Boolean? @map("is_discounted") @default(false)
-  status String?
+  status POSInvoiceStatus?
   debitTo String @map("debit_to")
   debitToRef Account @relation(fields: [debitTo], references: [id])
   partyAccountCurrency String? @map("party_account_currency")
@@ -14327,7 +16080,7 @@ model POSInvoice {
 
 model AccountsSettings {
   id String @id @map("name")
-  determineAddressTaxCategoryFrom String? @map("determine_address_tax_category_from")
+  determineAddressTaxCategoryFrom AccountsSettingsDetermineAddressTaxCategoryFrom? @map("determine_address_tax_category_from")
   creditController String? @map("credit_controller")
   checkSupplierInvoiceUniqueness Boolean? @map("check_supplier_invoice_uniqueness") @default(false)
   makePaymentViaJournalEntry Boolean? @map("make_payment_via_journal_entry") @default(false)
@@ -14368,8 +16121,8 @@ model AccountsSettings {
   autoReconciliationJobTrigger Int? @map("auto_reconciliation_job_trigger") @default(15)
   reconciliationQueueSize Int? @map("reconciliation_queue_size") @default(5)
   ignoreIsOpeningCheckForReporting Boolean? @map("ignore_is_opening_check_for_reporting") @default(false)
-  exchangeGainLossPostingDate String? @map("exchange_gain_loss_posting_date")
-  receivablePayableFetchMethod String? @map("receivable_payable_fetch_method")
+  exchangeGainLossPostingDate AccountsSettingsExchangeGainLossPostingDate? @map("exchange_gain_loss_posting_date")
+  receivablePayableFetchMethod AccountsSettingsReceivablePayableFetchMethod? @map("receivable_payable_fetch_method")
   maintainSameInternalTransactionRate Boolean? @map("maintain_same_internal_transaction_rate") @default(false)
   maintainSameRateAction AccountsSettingsMaintainSameRateAction? @map("maintain_same_rate_action")
   roleToOverrideStopAction String? @map("role_to_override_stop_action")
@@ -14443,7 +16196,7 @@ model TransactionDeletionRecordDetails {
 model FinancialReportTemplate {
   id String @id @map("name")
   templateName String @map("template_name") @unique
-  reportType String @map("report_type")
+  reportType FinancialReportTemplateReportType @map("report_type")
   module String?
   disabled Boolean? @default(false)
   owner String?
@@ -14560,7 +16313,7 @@ model LedgerMerge {
   accountRef Account @relation(fields: [account], references: [id])
   company String
   companyRef Company @relation(fields: [company], references: [id])
-  status String?
+  status LedgerMergeStatus?
   rootType LedgerMergeRootType @map("root_type")
   accountName String @map("account_name")
   isGroup Boolean? @map("is_group") @default(false)
@@ -14590,7 +16343,7 @@ model SouthAfricaVATAccount {
 model LoyaltyProgram {
   id String @id @map("name")
   loyaltyProgramName String @map("loyalty_program_name") @unique
-  loyaltyProgramType String? @map("loyalty_program_type")
+  loyaltyProgramType LoyaltyProgramLoyaltyProgramType? @map("loyalty_program_type")
   fromDate DateTime @map("from_date")
   toDate DateTime? @map("to_date")
   customerGroup String? @map("customer_group")
@@ -14618,7 +16371,7 @@ model LoyaltyProgram {
 
 model BankTransactionRuleDescriptionConditions {
   id String @id @map("name")
-  check String
+  check BankTransactionRuleDescriptionConditionsCheck
   value String
   owner String?
   creation DateTime?
@@ -14686,14 +16439,14 @@ model PaymentTermsTemplateDetail {
   paymentTermRef PaymentTerm? @relation(fields: [paymentTerm], references: [id])
   description String?
   invoicePortion Float @map("invoice_portion")
-  dueDateBasedOn String @map("due_date_based_on")
+  dueDateBasedOn PaymentTermsTemplateDetailDueDateBasedOn @map("due_date_based_on")
   creditDays Int? @map("credit_days") @default(0)
   creditMonths Int? @map("credit_months") @default(0)
   modeOfPayment String? @map("mode_of_payment")
   modeOfPaymentRef ModeOfPayment? @relation(fields: [modeOfPayment], references: [id])
   discountType PaymentTermsTemplateDetailDiscountType? @map("discount_type")
   discount Float?
-  discountValidityBasedOn String? @map("discount_validity_based_on")
+  discountValidityBasedOn PaymentTermsTemplateDetailDiscountValidityBasedOn? @map("discount_validity_based_on")
   discountValidity Int? @map("discount_validity")
   owner String?
   creation DateTime?
@@ -14996,7 +16749,7 @@ model Timesheet {
   companyRef Company? @relation(fields: [company], references: [id])
   salesInvoice String? @map("sales_invoice")
   salesInvoiceRef SalesInvoice? @relation(fields: [salesInvoice], references: [id])
-  status String?
+  status TimesheetStatus?
   employee String?
   employeeRef Employee? @relation(fields: [employee], references: [id])
   employeeName String? @map("employee_name")
@@ -15113,11 +16866,11 @@ model TaskDependsOn {
 model Project {
   id String @id @map("name")
   projectName String @map("project_name") @unique
-  status String?
+  status ProjectStatus?
   projectType String? @map("project_type")
   projectTypeRef ProjectType? @relation(fields: [projectType], references: [id])
   isActive ProjectIsActive? @map("is_active")
-  percentCompleteMethod String? @map("percent_complete_method")
+  percentCompleteMethod ProjectPercentCompleteMethod? @map("percent_complete_method")
   percentComplete Float? @map("percent_complete")
   projectTemplate String? @map("project_template")
   projectTemplateRef ProjectTemplate? @relation(fields: [projectTemplate], references: [id])
@@ -15151,7 +16904,7 @@ model Project {
   collectProgress Boolean? @map("collect_progress") @default(false)
   holidayList String? @map("holiday_list")
   holidayListRef HolidayList? @relation(fields: [holidayList], references: [id])
-  frequency String?
+  frequency ProjectFrequency?
   fromTime DateTime? @map("from_time")
   toTime DateTime? @map("to_time")
   firstEmail DateTime? @map("first_email")
@@ -15234,7 +16987,7 @@ model Task {
   type String?
   typeRef TaskType? @relation(fields: [type], references: [id])
   isGroup Boolean? @map("is_group") @default(false)
-  status String?
+  status TaskStatus?
   priority TaskPriority?
   color String?
   parentTask String? @map("parent_task")
@@ -15327,7 +17080,7 @@ model Prospect {
   customerGroupRef CustomerGroup? @relation(fields: [customerGroup], references: [id])
   territory String?
   territoryRef Territory? @relation(fields: [territory], references: [id])
-  noOfEmployees String? @map("no_of_employees")
+  noOfEmployees ProspectNoOfEmployees? @map("no_of_employees")
   annualRevenue Float? @map("annual_revenue")
   fax String?
   website String?
@@ -15378,7 +17131,7 @@ model Lead {
   companyName String? @map("company_name")
   emailId String? @map("email_id")
   leadOwner String? @map("lead_owner")
-  status String
+  status LeadStatus
   salutation String?
   gender String?
   customer String?
@@ -15387,12 +17140,12 @@ model Lead {
   phone String?
   mobileNo String? @map("mobile_no")
   fax String?
-  type String?
+  type LeadType?
   marketSegment String? @map("market_segment")
   marketSegmentRef MarketSegment? @relation(fields: [marketSegment], references: [id])
   industry String?
   industryRef IndustryType? @relation(fields: [industry], references: [id])
-  requestType String? @map("request_type")
+  requestType LeadRequestType? @map("request_type")
   company String?
   companyRef Company? @relation(fields: [company], references: [id])
   website String?
@@ -15405,12 +17158,12 @@ model Lead {
   firstName String? @map("first_name")
   middleName String? @map("middle_name")
   lastName String? @map("last_name")
-  noOfEmployees String? @map("no_of_employees")
+  noOfEmployees LeadNoOfEmployees? @map("no_of_employees")
   whatsappNo String? @map("whatsapp_no")
   phoneExt String? @map("phone_ext")
   qualifiedBy String? @map("qualified_by")
   qualifiedOn DateTime? @map("qualified_on")
-  qualificationStatus String? @map("qualification_status")
+  qualificationStatus LeadQualificationStatus? @map("qualification_status")
   jobTitle String? @map("job_title")
   annualRevenue Float? @map("annual_revenue")
   disabled Boolean? @default(false)
@@ -15447,7 +17200,7 @@ model Contract {
   partyName String @map("party_name")
   partyUser String? @map("party_user")
   status ContractStatus?
-  fulfilmentStatus String? @map("fulfilment_status")
+  fulfilmentStatus ContractFulfilmentStatus? @map("fulfilment_status")
   startDate DateTime? @map("start_date")
   endDate DateTime? @map("end_date")
   signee String?
@@ -15458,7 +17211,7 @@ model Contract {
   contractTerms String @map("contract_terms")
   requiresFulfilment Boolean? @map("requires_fulfilment") @default(false)
   fulfilmentDeadline DateTime? @map("fulfilment_deadline")
-  documentType String? @map("document_type")
+  documentType ContractDocumentType? @map("document_type")
   documentName String? @map("document_name")
   amendedFrom String? @map("amended_from")
   amendedFromRef Contract? @relation(fields: [amendedFrom], references: [id])
@@ -15511,7 +17264,7 @@ model Opportunity {
   baseTotal Float? @map("base_total")
   total Float?
   conversionRate Float? @map("conversion_rate")
-  noOfEmployees String? @map("no_of_employees")
+  noOfEmployees OpportunityNoOfEmployees? @map("no_of_employees")
   annualRevenue Float? @map("annual_revenue")
   industry String?
   industryRef IndustryType? @relation(fields: [industry], references: [id])
@@ -15550,7 +17303,7 @@ model AppointmentBookingSettings {
   successRedirectUrl String? @map("success_redirect_url")
   verificationLinkExpiryDuration Int? @map("verification_link_expiry_duration") @default(30)
   enableAppointmentPortal Boolean? @map("enable_appointment_portal") @default(false)
-  actionForExpiredUnverifiedAppointments String? @map("action_for_expired_unverified_appointments")
+  actionForExpiredUnverifiedAppointments AppointmentBookingSettingsActionForExpiredUnverifiedAppointments? @map("action_for_expired_unverified_appointments")
   owner String?
   creation DateTime?
   modified DateTime?
@@ -15574,10 +17327,10 @@ model EmailCampaign {
   id String @id @map("name")
   campaignName String @map("campaign_name")
   campaignNameRef Campaign @relation(fields: [campaignName], references: [id])
-  status String?
+  status EmailCampaignStatus?
   startDate DateTime @map("start_date")
   endDate DateTime? @map("end_date")
-  emailCampaignFor String @map("email_campaign_for")
+  emailCampaignFor EmailCampaignEmailCampaignFor @map("email_campaign_for")
   recipient String
   sender String?
   owner String?
@@ -15805,7 +17558,7 @@ model OpportunityLostReasonDetail {
 
 model CRMSettings {
   id String @id @map("name")
-  campaignNamingBy String? @map("campaign_naming_by")
+  campaignNamingBy CRMSettingsCampaignNamingBy? @map("campaign_naming_by")
   defaultValidTill String? @map("default_valid_till")
   allowLeadDuplicationBasedOnEmails Boolean? @map("allow_lead_duplication_based_on_emails") @default(false)
   autoCreationOfContact Boolean? @map("auto_creation_of_contact") @default(true)
@@ -15926,7 +17679,7 @@ model CallLog {
   id String @id @map("name")
   from String?
   to String?
-  status String?
+  status CallLogStatus?
   duration Int?
   recordingUrl String? @map("recording_url")
   medium String?

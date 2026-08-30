@@ -301,6 +301,25 @@ export async function mutationScore({ schema, build, check, kinds = null, onMuta
     ...await env.verifyRowPolicies({ against: orig.schema }),
   ])
 
+  // THE CONTROL. A mutant that will not BUILD is counted as killed — a schema
+  // the framework refuses cannot ship — and that reading is only true while the
+  // ORIGINAL builds. Where it does not, every mutant is refused for a reason
+  // that has nothing to do with the mutation and the run reports 100% having
+  // graded nothing: measured on basecamp, which declares `@secret` columns, so
+  // `createTestEnv` wants an `encryptionKey` and 14 of 14 came back killed.
+  //
+  // Same rule the checks below already keep one level down — an `error` row is
+  // not a kill — and the same rule `verifyRowPolicies` keeps about rows on one
+  // side of a predicate: a thing that always passes and a thing that never ran
+  // are the same observation until something separates them.
+  try {
+    await build(schema)
+  } catch (err) {
+    throw new Error(
+      `mutationScore: the ORIGINAL schema does not build, so nothing can be graded ` +
+      `— every mutant would be reported killed by a refusal that is not about the mutation.\n${err.message}`)
+  }
+
   const mutants  = schemaMutants(schema, { kinds })
   const survived = []
   const errored  = []

@@ -169,6 +169,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./webhooks` | `src/plugins/webhooks/index.ts` | yes |
 | exports | `./manifest` | `src/plugins/manifest/index.ts` | yes |
 | exports | `./outbox` | `src/plugins/outbox/index.ts` | yes |
+| exports | `./backfill` | `src/plugins/backfill/index.ts` | yes |
 | exports | `./devtools` | `src/plugins/devtools/index.ts` | yes |
 | exports | `./client` | `src/client/index.ts` | yes |
 | exports | `./email` | `src/plugins/email/index.ts` | yes |
@@ -177,6 +178,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./health` | `src/transport/health.ts` | yes |
 | exports | `./auth` | `src/auth/types.ts` | yes |
 | exports | `./outbox.lite` | `db/outbox.lite` | yes |
+| exports | `./backfill.lite` | `db/backfill.lite` | yes |
 | bin | `junction` | `tools/cli.ts` | yes |
 | main | `main` | `index.ts` | yes |
 
@@ -193,6 +195,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./migrate (import)` | `src/core/migrate.js` | yes |
 | exports | `./migrations (import)` | `src/core/migrations.js` | yes |
 | exports | `./parser (import)` | `src/core/parser.js` | yes |
+| exports | `./import (import)` | `src/import/index.js` | yes |
 | exports | `./jsonschema (import)` | `src/jsonschema.js` | yes |
 | exports | `./ddl (import)` | `src/core/ddl.js` | yes |
 | exports | `./testing (import)` | `src/testing.js` | yes |

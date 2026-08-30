@@ -2257,6 +2257,8 @@ litestone diagram                    ER diagram (opens in studio)
 litestone seed [SeederClass]         seed the database
 litestone seed run [name]            run an infrastructure seed (--force to re-run)
 litestone introspect <db>            reverse-engineer db → schema.lite
+litestone import <path>              a Prisma/Rails/Postgres/Frappe schema → .lite,
+                                     graded by what the reading could not express
 litestone edge eject <Model>.<field> promote an @edge/@scoped field to a real model [--apply]
 litestone optimize [table]           merge FTS5 index segments
 litestone transform [config.js]      anonymise / shard pipeline (dev only)

@@ -115,6 +115,27 @@ export interface AppConfig {
     anthropic?: string
   }
 
+  /**
+   * This build's identity — what a browser compares its own against.
+   *
+   * A deploy supplies it as `FJS_BUILD` in the container's environment;
+   * `config.build` is how a test or an embedding app states one. Absent, every
+   * reader is inert: an app nobody deployed announces nothing.
+   * `core/build-id.ts` is the owner.
+   */
+  build?: string
+
+  /**
+   * Third-party services this app needs and does not own — an n8n, a mail
+   * server, a search cluster.
+   *
+   * Declared here and BOUND per environment as ordinary environment variables,
+   * which is what `fli deploy`'s binding set already supplies per target. A
+   * missing or half-bound service refuses at startup rather than at 3am on the
+   * first request that reaches it. `core/attachments.ts` is the owner.
+   */
+  attachments?: import('../core/attachments.ts').Attachments
+
   // Extensions — app can add anything here
   [key: string]: unknown
 }
@@ -213,6 +234,14 @@ export interface JunctionConfig {
   services?:   JunctionServicesConfig
   conduit?:    JunctionConduitConfig
   caravan?:    JunctionCaravanConfig
+
+  /**
+   * Third-party services this app needs and does not own. Maps straight onto
+   * `AppConfig.attachments` — it is a declaration about the app rather than a
+   * section for a subsystem, so it is one of the few keys here with no
+   * translation.
+   */
+  attachments?: import('../core/attachments.ts').Attachments
 }
 
 // ─── Config loader ────────────────────────────────────────────────────────
@@ -254,6 +283,12 @@ export async function loadConfig(configDir = './config'): Promise<AppConfig & { 
     if (junctionCfg.app)        config = deepMerge(config, junctionCfg.app) as typeof config
     if (junctionCfg.middleware?.cors)   config.http = deepMerge(config.http ?? {}, { cors: junctionCfg.middleware.cors } as Partial<typeof config.http>) as typeof config.http
     if (junctionCfg.middleware?.rateLimit) config.http = deepMerge(config.http ?? {}, { ddos: { enabled: true, ...junctionCfg.middleware.rateLimit } } as Partial<typeof config.http>) as typeof config.http
+    // Straight through, because it maps 1:1 onto AppConfig. Everything not
+    // named here is stashed under `_junction` and read by whichever subsystem
+    // owns it — a section a reader forgets to look up is a config block that
+    // silently does nothing (FJS-431), and the attachment check reads
+    // `config.attachments`.
+    if (junctionCfg.attachments) config.attachments = junctionCfg.attachments
     config._junction = junctionCfg
   }
 

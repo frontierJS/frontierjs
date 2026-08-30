@@ -1,7 +1,7 @@
 // triggerdev — the data model of triggerdotdev/trigger.dev, expressed in .lite.
 //
 // Derived mechanically from internal-packages/database/prisma/schema.prisma (Apache-2.0) by
-// prisma-to-lite.mjs beside this file. A CORPUS FIXTURE, not a design:
+// `litestone import --from prisma`. A CORPUS FIXTURE, not a design:
 // nothing here is a claim about how any of it should be modelled, and every
 // place the conversion made a choice the source did not is recorded in
 // gaps.json. 81 models. Regenerate with fetch.mjs.
@@ -120,7 +120,7 @@ model OrganizationAccessToken {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([organizationId, type, createdAt])
+  @@index([organizationId, type, createdAt(sort: Desc)])
 }
 
 model Organization {
@@ -284,7 +284,7 @@ model ApiKey {
   updatedAt DateTime @updatedAt @map("updated_at")
   createdAt DateTime @map("created_at") @default(now())
 
-  @@index([runtimeEnvironmentId, revokedAt, createdAt])
+  @@index([runtimeEnvironmentId, revokedAt, createdAt(sort: Desc)])
   @@map("api_keys")
 }
 
@@ -437,7 +437,7 @@ model BackgroundWorker {
 
   @@unique([projectId, runtimeEnvironmentId, version])
   @@index([runtimeEnvironmentId])
-  @@index([runtimeEnvironmentId, createdAt])
+  @@index([runtimeEnvironmentId, createdAt(sort: Desc)])
 }
 
 model BackgroundWorkerFile {
@@ -579,7 +579,7 @@ model WebhookEndpoint {
 
   @@unique([runtimeEnvironmentId, handlerWebhookId, endpointTenantId, endpointExternalRef])
   @@index([runtimeEnvironmentId, source])
-  @@index([projectId, createdAt])
+  @@index([projectId, createdAt(sort: Desc)])
 }
 
 enum WebhookEndpointStatus {
@@ -610,7 +610,7 @@ model WebhookDelivery {
   updatedAt DateTime @updatedAt
   processedAt DateTime?
 
-  @@index([webhookEndpointId, createdAt])
+  @@index([webhookEndpointId, createdAt(sort: Desc)])
   @@unique([id, createdAt])
 }
 
@@ -641,7 +641,7 @@ model PlaygroundConversation {
   updatedAt DateTime @updatedAt
 
   @@unique([chatId, runtimeEnvironmentId])
-  @@index([runtimeEnvironmentId, agentSlug, updatedAt])
+  @@index([runtimeEnvironmentId, agentSlug, updatedAt(sort: Desc)])
   @@index([userId, runtimeEnvironmentId])
 }
 
@@ -800,7 +800,7 @@ model TaskRun {
   @@index([parentSpanId])
   @@index([runTags])
   @@index([runtimeEnvironmentId, batchId])
-  @@index([runtimeEnvironmentId, createdAt])
+  @@index([runtimeEnvironmentId, createdAt(sort: Desc)])
   @@index([createdAt])
 }
 
@@ -825,7 +825,7 @@ model TaskRunTemplate {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([projectId, taskSlug, triggerSource, createdAt])
+  @@index([projectId, taskSlug, triggerSource, createdAt(sort: Desc)])
 }
 
 enum TaskRunStatus {
@@ -881,7 +881,7 @@ model TaskRunExecutionSnapshot {
   lastHeartbeatAt DateTime?
   metadata Json?
 
-  @@index([runId, isValid, createdAt])
+  @@index([runId, isValid, createdAt(sort: Desc)])
 }
 
 enum TaskRunExecutionStatus {
@@ -951,9 +951,9 @@ model Waitpoint {
 
   @@unique([environmentId, idempotencyKey])
   @@index([completedByBatchId])
-  @@index([environmentId, type, createdAt])
+  @@index([environmentId, type, createdAt(sort: Desc)])
   @@index([environmentId, type, status])
-  @@index([environmentId, type, id])
+  @@index([environmentId, type, id(sort: Desc)])
 }
 
 enum WaitpointType {
@@ -1328,8 +1328,8 @@ model BatchTaskRun {
   @@unique([oneTimeUseToken])
   @@unique([runtimeEnvironmentId, idempotencyKey], nullsDistinct: true)
   @@index([dependentTaskAttemptId])
-  @@index([runtimeEnvironmentId, id])
-  @@index([runtimeEnvironmentId, createdAt, id])
+  @@index([runtimeEnvironmentId, id(sort: Desc)])
+  @@index([runtimeEnvironmentId, createdAt(sort: Desc), id(sort: Desc)])
 }
 
 enum BatchTaskRunStatus {
@@ -1575,7 +1575,7 @@ model TaskSchedule {
 
   @@unique([projectId, deduplicationKey])
   @@index([projectId])
-  @@index([projectId, createdAt])
+  @@index([projectId, createdAt(sort: Desc)])
 }
 
 enum ScheduleType {
@@ -1765,7 +1765,7 @@ model BulkActionGroup {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([environmentId, createdAt])
+  @@index([environmentId, createdAt(sort: Desc)])
   @@index([environmentId, type, dedupeKey])
   @@index([environmentId, status, type])
 }
@@ -1986,7 +1986,7 @@ model CustomerQuery {
   filterTo DateTime?
   createdAt DateTime @default(now())
 
-  @@index([organizationId, createdAt])
+  @@index([organizationId, createdAt(sort: Desc)])
   @@index([createdAt])
 }
 
@@ -2020,7 +2020,7 @@ model MetricsDashboard {
   updatedAt DateTime @updatedAt
   layout String
 
-  @@index([projectId, createdAt])
+  @@index([projectId, createdAt(sort: Desc)])
 }
 
 model LlmModel {
@@ -2145,7 +2145,7 @@ model LogsSearchProjectorCheckpoint {
   completedAt DateTime @default(now())
 
   @@unique([projectorId, mode, windowStart, windowEnd])
-  @@index([projectorId, mode, windowEnd])
+  @@index([projectorId, mode, windowEnd(sort: Desc)])
 }
 
 enum ErrorGroupStatus {

@@ -1,4 +1,4 @@
-// polymorphic.mjs — find the (typeName, id) pairs in converted output, and
+// polymorphic.js — find the (typeName, id) pairs in converted output, and
 // refuse to guess what they mean.
 //
 // `.lite` answers polymorphism in three shapes, and which one is right depends
@@ -13,15 +13,15 @@
 //                      whose subject is gone
 //
 // The same pass reports single-table inheritance — a string `type` column — and
-// on the same terms. It found 21 across six schemas, but a `type` column is
+// on the same terms. It found 21 across seven schemas, but a `type` column is
 // also just a category in plenty of them, and only reading the application
 // separates the two. Rails names its STI column `type` by convention, which is
 // why the heuristic is worth having and why it cannot be trusted alone.
 //
-// **It is a CANDIDATE list, not a finding.** Measured on the first corpus run:
-// three hits, of which one was real (`GithubAppInstallation.targetType` — a
-// GitHub install targets a User or an Organization, a closed set of two, which
-// is exactly @@arc's case) and two were not (`SelectedCalendar.googleChannelKind`
+// **It is a CANDIDATE list, not a finding.** Measured over seven real schemas:
+// the first run gave three hits, of which one was real (a GitHub app install
+// targets a User or an Organization, a closed set of two, which is exactly
+// @@arc's case) and two were not (`SelectedCalendar.googleChannelKind`
 // is a Google push-channel's `api#channel` string beside its channel id, no
 // association anywhere). Nothing in a schema separates those, so the pass is
 // deliberately broad and says so, rather than being tuned until it looks clean.
@@ -31,9 +31,8 @@
 // takes. So this reports the pair and names the column, and NEVER emits an
 // @@arc: a converter that guessed `closed` would invent integrity the source
 // does not have, and one that guessed `open` would hide an arc the author
-// should have written. The count is the artifact — how real schemas distribute
-// across that boundary is evidence about whether @@arc's ceiling sits in the
-// right place.
+// should have written. The pair is reported as a decision, never as a defect:
+// which of the two shapes is right is the one thing the importer cannot know.
 
 const TYPE_SUFFIX = /^(.*?)(Type|Kind|Class)$/
 

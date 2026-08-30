@@ -256,3 +256,67 @@ describe('_steps/ attaches to the index, not to every sibling', () => {
   })
 
 })
+
+// ─── A refusal is not a success (FJS-589) ────────────────────────────────────
+//
+// A step refuses by setting `context.config.abort` and returning. Every later
+// step then self-skips and the command exited **0**, so seven of the deploy
+// pipeline's nine refusal sites reported success — including all six of
+// `deploy:revert`'s, which are the whole safety argument of the Release realm.
+//
+// `runCommand` above swallows the throw into an `error` event, so these call
+// `Command()` directly: what is under test is whether anything is thrown at
+// all, and a helper that catches it cannot see the difference.
+
+describe('a refusal fails the command', () => {
+  const raw = async (file, flag = {}) => {
+    const events = []
+    const cmd = await Command({ file, arg: [], flag, emit: (e) => { events.push(e); return Promise.resolve() } })
+    let thrown = null
+    try { await cmd() } catch (err) { thrown = err }
+    return { events, thrown, log: texts(events) }
+  }
+
+  test('a step that refuses without throwing still fails, and cleanup gets its turn', async () => {
+    const { thrown, log } = await raw(resolve(__dir, 'fixtures/refuses/index.md'))
+    expect(thrown).not.toBeNull()
+    expect(thrown.refusal).toBe(true)
+    // The step named, not the reason restated — it printed that itself.
+    expect(thrown.message).toContain('01-refuses')
+    expect(log.some(t => t.includes('NORMAL STEP RAN'))).toBe(false)
+    expect(log.some(t => t.includes('CLEANUP RAN'))).toBe(true)
+  })
+
+  test('`quiet` says the reason is already on screen', async () => {
+    // The refusal printed `Env check: 1 key(s) missing` and the ways out. A
+    // generic message under it, plus an invitation to re-run with --debug for a
+    // stack that says nothing, would bury what the step actually said.
+    const { thrown, log } = await raw(resolve(__dir, 'fixtures/refuses/index.md'))
+    expect(thrown.quiet).toBe(true)
+    expect(log.some(t => t.includes('key(s) missing'))).toBe(true)
+  })
+
+  test('a deliberate stop is NOT a refusal — the pipeline stops and the command succeeds', async () => {
+    // The negative control, and the reason a blanket `abort ⇒ non-zero` is
+    // wrong: `--plan` prints a plan and stops, which is what was asked for.
+    const { thrown, log } = await raw(resolve(__dir, 'fixtures/stops/index.md'))
+    expect(thrown).toBeNull()
+    expect(log.some(t => t.includes('nothing was written or run'))).toBe(true)
+    expect(log.some(t => t.includes('NORMAL STEP RAN'))).toBe(false)
+    // `runOnAbort` means run on a REFUSAL. A cleanup step undoes a half-done
+    // run and a deliberate stop did not start one — `fli deploy --plan` printed
+    // its plan and then reached 09-cleanup, which opens a connection to the
+    // target to release a lock nothing took, and hung there.
+    expect(log.some(t => t.includes('CLEANUP RAN'))).toBe(false)
+  })
+
+  test('a command with NO steps refuses the same way', async () => {
+    // Half the deploy commands are this shape — `deploy:logs`, `:status`,
+    // `:run`, `:unlock` — and they take a different return path in the runtime,
+    // so every one of their refusals exited 0 until both paths asked.
+    const { thrown, log } = await raw(resolve(__dir, 'fixtures/refuses-no-steps/index.md'))
+    expect(thrown).not.toBeNull()
+    expect(thrown.refusal).toBe(true)
+    expect(log.some(t => t.includes('No deploy block'))).toBe(true)
+  })
+})

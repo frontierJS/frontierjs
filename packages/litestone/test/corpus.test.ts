@@ -2,18 +2,20 @@
 //
 // `test/fixtures/scale/openmrp.lite` asks whether the Data realm survives SIZE.
 // This file asks a different question: whether it survives SHAPES this project
-// did not invent. Every fixture beside it was converted mechanically from a
-// published Prisma schema by `fixtures/corpus/prisma-to-lite.mjs`, so nothing in
-// it was chosen by someone who already knew what `.lite` can say — which is the
-// half a hand-written fixture cannot cover and a `fli check` rule can never
-// reach. The first run found FJS-563 and FJS-564.
+// did not invent. Every fixture beside it was read mechanically out of a
+// published schema by `litestone import`, so nothing in it was chosen by someone
+// who already knew what `.lite` can say — which is the half a hand-written
+// fixture cannot cover and a `fli check` rule can never reach. The first run
+// found FJS-563 and FJS-564.
 //
-// Four front-ends feed it, each added for what the previous one cannot put in
-// front of the parser: `prisma-to-lite.mjs`; `rails-to-lite.mjs` for single-table
-// inheritance and partial indexes; `sql-to-lite.mjs` for a Postgres dump, which is
-// the only source carrying CHECK constraints, views and native enums; and
-// `frappe-to-lite.mjs`, the only one where the schema DECLARES whether a
-// polymorphic target set is closed.
+// Four readers feed it (`src/import/`), each added for what the previous one
+// cannot put in front of the parser: `prisma.js`; `rails.js` for single-table
+// inheritance and partial indexes; `sql.js` for a Postgres dump, the only source
+// carrying CHECK constraints, views and native enums; and `frappe.js`, the only
+// one where the schema DECLARES whether a polymorphic target set is closed.
+//
+// It is therefore also the widest test of the SHIPPED importer: 1,377 models of
+// input nobody here wrote, through the same code an app runs.
 //
 // Only `triggerdev.lite` is committed; the others are fetched (`fixtures/
 // corpus/README.md` says why) and are SKIPPED BY NAME when absent rather than

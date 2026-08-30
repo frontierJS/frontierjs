@@ -106,15 +106,16 @@ if (deployConf.web !== false) {
 // ─── Deploy lock ──────────────────────────────────────────────────────────────
 echo('\nDeploy')
 try {
-  const lock = ask(`cat ${path}/.deploy.lock 2>/dev/null || echo ''`)
-  if (lock) {
-    // Lock format: pid:timestamp:target
-    const [pid, ts, tgt] = lock.split(':')
-    echo(`  lock:       ACTIVE — pid ${pid}, target ${tgt}, since ${ts}`)
-    const byHand = `rm ${path}/.deploy.lock`
-    echo(`  ⚠ Remove if stale: ${machine.local ? byHand : `ssh ${host} "${byHand}"`}`)
-  } else {
+  const { lockPath, parseLock, describeLock } =
+    await import(new URL('file://' + global.fliRoot + '/core/lock.js'))
+  const held = parseLock(ask(`cat ${lockPath(path)} 2>/dev/null || true`))
+  if (!held) {
     echo(`  lock:       clear`)
+  } else {
+    const d = describeLock(held)
+    echo(`  lock:       ACTIVE — ${d.lines[0]}`)
+    for (const line of d.lines.slice(1)) echo(`              ${line}`)
+    echo(`  ⚠ If that run is dead: fli deploy --resume, or fli deploy:unlock`)
   }
 } catch {
   echo(`  lock:       error reading`)

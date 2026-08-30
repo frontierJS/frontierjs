@@ -118,7 +118,7 @@ try {
   // ── 2. ship answers WITHOUT waiting for the courier ────────────────────
   const created = await fetch(`${API}/api/orders`, {
     method: 'POST', headers: auth,
-    body: JSON.stringify({ reference: REF, total: 12, status: 'pending', customerId: 1 }),
+    body: JSON.stringify({ reference: REF, total: 1200, status: 'pending', customerId: 1 }),
   })
   const body = await created.json()
   orderId = body.id ?? body.data?.id

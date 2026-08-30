@@ -1,13 +1,13 @@
 # Junction — project state
 
-Last verified by running: **2026-08-17**.
+Last verified by running: **2026-08-29**.
 
 ## Snapshot
 
 | | |
 | --- | --- |
 | Version | 0.1.0 — **published to npm 2026-08-10**, tag `latest`, public. Bun-only by construction: Node will not strip types inside `node_modules`, and compiling would only move the failure later (`Bun.serve`, `Bun.file`, `bun:sqlite`) |
-| Tests | **1193 pass / 0 fail**, 56 files, 2,285 assertions (`bun run test`, 12s) |
+| Tests | **1597 pass / 0 fail**, 82 files, 3,067 assertions (`bun run test`, 15s) |
 | Typecheck | **clean — 0 errors**, and junction is absent from `scripts/typecheck-baselines.json`, where absent means 0 (`FJS-034`). It was 212, then 138, then gone; clearing the last of it found eleven defects in the shipped types, because `tests/` and `example/` are the only code here that uses junction the way an app does |
 | Realm | API / D8 |
 
@@ -15,7 +15,16 @@ Last verified by running: **2026-08-17**.
 
 Services + hook pipeline, HTTP and WebSocket transport, channels, the browser
 client, and the batteries (mail, cache, scheduler, workers, file storage,
-webhooks, AI, OpenAPI, manifest, devtools, health, the transactional outbox).
+webhooks, AI, OpenAPI, manifest, devtools, health, the transactional outbox,
+the backfill).
+
+**The backfill** is the middle step of expand → backfill → contract
+(`FJS-D157`): `defineBackfill({ name, model, field, fill })`, a `BackfillRun` row
+holding the position, and a Caravan job that fills one chunk and queues the next
+after a gap proportional to what the last one cost. It is a **cursor over one
+table** and not a durable workflow. Idempotence is the predicate rather than the
+cursor, every write it makes is silent including its own bookkeeping, and a
+per-tenant backfill is refused by name rather than half-run.
 
 Two verbs decide when an effect runs. `ctx.afterCommit(fn)` is ordering — it
 runs only if the call succeeded and, under `transactional:`, only after the

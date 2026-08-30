@@ -22,9 +22,9 @@ for (const h of hosts) {
 // have two writers on one SQLite database and two answers to what is serving,
 // which is the state the journal exists to make impossible.
 log.info('Acquiring deploy lock...')
-const lock = acquireLock(context, { hosts, target })
+const lock = await acquireLock(context, { hosts, target })
 if (!lock.ok) {
-  log.error(`A deploy is in progress on ${lock.host} — if this is stale, remove ${lock.lockFile}`)
+  for (const [level, line] of await lockRefusal(lock, { verb: 'revert' })) log[level](line)
   context.config.abort = true
   return
 }

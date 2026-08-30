@@ -347,11 +347,31 @@ one thing.
 
 ---
 
-## The hole in this record: the step between expand and contract
+## The hole in this record: the step between expand and contract — **filled 2026-08-29**
 
 Added 2026-08-12, found by a sweep for what a developer still has to wire up by hand.
 It is a gap in the design above rather than beside it, so it is recorded here rather
 than in a new file.
+
+**It is built** (`FJS-D157`). `defineBackfill({ name, model, field, fill })`, a
+`BackfillRun` row and `app.configure(backfills([...]))`, shipped from junction the way
+the outbox is. Four of the five properties below come from the shape rather than being
+built — the row is the checkpoint, Caravan makes each chunk durable and retried, and
+**idempotence is the PREDICATE and not the cursor**: a chunk re-reads *the column is
+still null*, so an interrupted one skips what it already wrote whatever position was
+saved. Throttling is the one build and it is a duty cycle, measured on this side of
+the wire; what it cannot see is said out loud. The classifier's fourth answer arrived
+as the layering this record did not predict: **litestone names the column and stops**
+(`needsBackfill` on the finding), because which mechanism fills it is a question about
+the running application, and `fli release:check` renders the advice.
+
+**One thing below is now disagreed with**, and it is the paragraph about 4.19. The
+reading taken is the opposite: two narrow mechanisms that look alike are not yet a
+primitive, and a backfill is a *cursor over one table* — no steps, no compensation, no
+point past which it can only go forward. 4.19 stays where it is.
+
+The rest of this section is kept as it was written, because the property list is the
+part that turned out to be right.
 
 Phase 1's guarantee ends with *"a contract deploy is refused and offered as a split."*
 That sentence hands back a three-step plan — **expand now, backfill, contract later** —
@@ -782,12 +802,51 @@ What one run of it found, in order:
   by name and a revert has none.
 - **`fli deploy --plan` could not grade `01c-journal`**, the journal step itself.
 
-Two are filed rather than fixed: `FJS-573`, a crashed deploy strands its lock and the
-pid recorded in it is the pid of the shell that wrote it, so nothing can tell a stale
-lock from a live one — and the journal already knows better, which makes it a ruling
-about who owns *is a deploy in progress* rather than a patch. `FJS-574`, every deploy
-of a freshly scaffolded app fails its backup because a declared-but-never-written
-database has no file, and blames the container.
+Two were filed rather than fixed. `FJS-574` is still open: every deploy of a freshly
+scaffolded app fails its backup because a declared-but-never-written database has no
+file, and blames the container.
+
+**`FJS-573` was the other, and it is closed as a ruling** (`FJS-D156`, 2026-08-29).
+A crashed deploy stranded its lock, and the cycle above had to `rm` that file itself
+to reach the resume it was testing — so the two features 1e and 1f had just shipped
+disagreed with each other in the one case they both exist for: the journal knew the
+transition was `running` and graded exactly how to continue it, and the lock refused
+the run that would.
+
+The ruling is that these are **two questions, not two answers**. The journal owns
+*what state did the last run leave*; the lock owns *is another run working in this
+directory*, and it only ever looked like a rival answer because it could not expire.
+The pid it recorded was `$$`, expanded by the `sh -s` that wrote it — a shell that
+exits at once — and no better one is available: `fli` runs on the operator's machine
+and reaches the target one command at a time, so **there is no process on the target
+to point at**. So the lock records what is true — the run, the actor, when, and
+**which step it is inside**, which is what makes the duration beside it mean
+something. That comes from a `beforeStep` announcement in the step runner, the only
+place it can: since 2.3f the build runs BEFORE the journal opens, and `execSync`
+blocks the loop, so no timer can tick inside a step.
+
+Neither register judges liveness, because that is a fact about a process the target
+cannot see. The refusal reports and names both ways out — **`fli deploy --resume`**,
+which continues what the journal holds and takes the lock over, and
+**`fli deploy:unlock`**, which drops the lock and settles nothing. A resume was
+always safe without a probe: a succeeded step replays into a no-op, a step is claimed
+compare-and-set, and different bytes are a different Release and therefore a new
+transition. The lock was only what made it unreachable.
+
+**A freshness check on `--resume` was built and then removed, and the reason
+generalises.** *A lock whose step moved seconds ago is a live run* looks sound and
+is not: the recorded time is when a step STARTED, and nothing records one ending
+or a pulse inside it — so a fresh timestamp is equally consistent with a run three
+seconds into a five-minute build and with a run killed three seconds into it. It
+was measured that way round, by the cycle: the crash it exists for leaves exactly
+that lock. A sound version needs a heartbeat within a step, which `execSync`
+forecloses. **Nothing was lost by removing it**, because the fact is already on
+screen — *in step 06-swap — 3s in it* — where a person can weigh it and the
+machine does not pretend to.
+
+A TTL was considered and refused — the shape the field uses, and the one Caravan uses
+one layer down (`FJS-294`) — because the heartbeat can only tick per step and a step
+is minutes long, so the TTL would have to exceed the longest build.
 
 ### Phase 1 is complete
 
@@ -798,7 +857,43 @@ What is deliberately not in phase 1: the traffic switch stays stop-then-start wi
 stated downtime window, retention keeps the previous Release only, and the audience
 column has exactly one value in it.
 
-### Phase 2 — Attach
+### Phase 2 — Attach — **shipped 2026-08-29**
+
+Ruled as [`FJS-D158`](../DECISIONS.md#fjs-d158). `attachments` is declared in the
+app (`junction.config.js`, or `createApp({ config })`) and bound per environment
+by the variables the process actually carries — **not** phase 1's binding set,
+which is recorded into the Release and applied by nobody (`FJS-585`);
+`check-attachments` is a
+junction start phase that refuses to boot on a service that is unbound or bound
+halfway.
+
+**Three things this record did not predict, and each was found by building it.**
+
+**It must not be a second `defineEnv`.** Every per-key question — present,
+non-empty, a URL, long enough — was already answered inside `defineEnv`, so the
+check would have been a second implementation of it (Invariant 4). `checkEnvField`
+is extracted and both call it. What an attachment adds is what a flat spec cannot
+say: these keys are ONE SERVICE, so the refusal names the service; ALL OR
+NOTHING, so `optional: true` forgives a service nobody bound and still refuses one
+bound halfway; and a DEFAULTED key is not evidence, or an unbound service with one
+default looks half-bound.
+
+**Half-bound is the case worth building for**, and it is the one this record's
+phrase *missing or mismatched* was reaching for. It is what actually reaches
+production — somebody binds the URL and forgets the key — and it is exactly the
+shape a per-variable check cannot see, because every variable it can name is
+either legitimately absent or legitimately set.
+
+**A startup refusal nobody reads is not a refusal.** `healthOrRestore` printed
+the polled URL, a hint about `apiPrefix` that is wrong whenever the app never came
+up, and rolled back — so an app that refused to start had its own clear sentence
+die in `docker logs`. Surfacing it (`showContainerTail`) turned out to be half the
+build, and it is `fli`'s half rather than a second implementation of the check:
+the app is the thing that knows, and the deploy only had to stop throwing its
+answer away.
+
+The original text of this phase follows.
+
 
 The **attached service** — a third-party dependency the app needs and does not own.
 Declared in the app, bound per Environment, and a missing or mismatched binding is a
@@ -818,7 +913,41 @@ instance.** Syncing instances is the trap.
 Placed second because it is a daily pain and it is small — Environment bindings from
 phase 1 already do most of the work.
 
-### Phase 3 — Survive
+### Phase 3 — Survive — **shipped 2026-08-30**
+
+Ruled as [`FJS-D160`](../DECISIONS.md#fjs-d160), and the phase turned out to be
+two halves of which one already existed.
+
+**The assets were already covered and nobody had said so.** `03-build-web` merges
+the previous release's assets into the new one, so a stale client's
+content-hashed chunks keep resolving — and because each deploy merges from the
+one before it, the coverage chains forward across `keep_releases`. What was
+missing was never the assets. It was identity.
+
+**The server STATES its build and the client compares** — a response header and a
+field on the socket's `connected` frame. Not a per-request diff on the server:
+that answers a question which changes at most once per deploy, on every call, and
+has to be written twice because the two transports carry headers differently.
+
+**It is the BUILD and not the Release, and that is a correction to this record.**
+This section says *Release identity stamped into served HTML*. A browser holds
+the web bundle; a Release is also an image digest and a schema surface, and two
+Releases share one bundle on every API-only or schema-only deploy — so stamping
+the Release id would fire a reload prompt for changes that cannot reach the
+browser being prompted. (It is also the only identity available where it must be
+stamped, since `03-build-web` runs before `04-build-api` — but that is a
+consequence rather than the reason.)
+
+**The routing table is REFUSED rather than deferred.** Serving two Releases at
+once needs a second container, an nginx map and a lifecycle for the old one,
+which is the orchestrator this document refuses three sections below and which
+Phase 4 already defers alongside multi-host. The honest single-host claim is the
+one now true: browsers already out there keep working, and are told when they
+cannot. **Audience preview does NOT fall out of this**, contrary to the paragraph
+below — it needs the routing half, so it stays with Phase 4.
+
+The original text of this phase follows.
+
 
 Release identity stamped into served HTML, the previous Release's assets kept
 addressable for a stated retention window, and the routing table that serves two
@@ -863,12 +992,12 @@ journal that is already a queryable database.
 
 ## What each phase lets us honestly say
 
-| After | The claim |
-| --- | --- |
-| 0 | *We know whether this change is reversible.* |
-| 1 | *…and if it is, one command puts it back.* |
-| 2 | *…and every external dependency is declared, so environments cannot drift silently.* |
-| 3 | *…and that includes the browsers already out there, for N days.* |
+| After | The claim | |
+| --- | --- | --- |
+| 0 | *We know whether this change is reversible.* | shipped |
+| 1 | *…and if it is, one command puts it back.* | shipped |
+| 2 | *…and every external dependency is declared, so environments cannot drift silently.* | shipped |
+| 3 | *…and that includes the browsers already out there — they keep working, and are told when they cannot.* | shipped |
 
 Each line is true when shipped and stays true afterwards. No phase invalidates the
 previous mental model, which is the actual test — *preserve the mental model, not the
@@ -1063,7 +1192,13 @@ Compose has no traffic layer at all and stops the old container before starting 
   tenant override or only the Environment's binding, and whether the binding set
   should simply adopt the committed-allow-list idiom rather than invent a second one.
 - **Is the compose file for an attached service ours to generate or yours to write?**
-  The line between helpful and Caprover is exactly there.
+  The line between helpful and Caprover is exactly there. **Still open after the
+  phase shipped, and narrowed by it**: the declaration names the variables a
+  service is reached through and says nothing about its image, its version or its
+  volumes — so generating a compose file means inventing all three, which is the
+  crossing rather than a step toward it. What IS free is an `.env.example`
+  grouped by service, since the declaration already carries every field spec
+  `generateEnvExample` reads.
 - **Retention economics.** Nobody publishes the storage and routing cost of keeping N
   Releases addressable for a week. We would be finding out.
 - **Who owns a backfill** — a Caravan job holding a cursor, a journalled transition, or

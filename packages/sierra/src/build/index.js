@@ -28,6 +28,7 @@ import { autoImportPlugin } from './auto-import-plugin.js'
 import { appAliasPlugin } from './app-alias-plugin.js'
 import { staticDataPlugin } from './static-data-plugin.js'
 import { explainModuleInitFailure } from './warnings.js'
+import { beginBuildImports, importAppModule } from './app-import.js'
 
 /**
  * @typedef {Object} SierraConfig
@@ -325,6 +326,9 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
     async closeBundle() {
       if (!isBuild) return  // skip in dev server
 
+      // One build, one record of what failed while loading — see app-import.js.
+      beginBuildImports()
+
       // What the prerenderer actually emitted, for the post-build steps that
       // have to enumerate the site. Stays null on an SPA, where the route
       // table is the whole answer (`FJS-502`).
@@ -406,6 +410,9 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
           // interactive — it ships no other script — so the marker pass is on
           // for this target rather than being another flag to find.
           islands: config.islands !== false,
+          // What one route may take before the build stops waiting rather than
+          // hanging with nothing written and nothing said (`FJS-549`).
+          ...(config.prerender?.timeout !== undefined ? { timeout: config.prerender.timeout } : {}),
           // The document around the body: the app's own stylesheet, plus
           // whatever `index.html` puts on <body> (a theme class, in every app
           // in this repo). Neither reaches a prerendered page any other way.
@@ -512,41 +519,49 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
  * `client` — and a function export is called, which covers the common
  * `export default () => createClient(…)` factory.
  *
- * Every failure returns null rather than throwing. A missing or broken client
+ * ABSENT and WRONG-SHAPED return null rather than throwing. A missing client
  * does NOT make the build pass: it makes reads unobservable, and an
  * unobservable route is refused by checkRoute unless it declares `publishes:`.
- * Failing here instead would report "cannot import db.js" for what is really
+ * Failing there instead would report "cannot import db.js" for what is really
  * "this page might be leaking", which sends the reader to the wrong problem.
+ *
+ * **A module that THREW is the case that is not ambiguous, and it fails the
+ * build** (`FJS-551`). It was on the same warn-and-continue path as the other
+ * two for its whole life, so the one truthful error a build ever gets — the
+ * schema parse error, the missing environment variable, whatever the app's own
+ * module said on its way up — was written to stderr as a warning and then
+ * buried under every downstream TDZ. The same separation `FJS-439` made for a
+ * route whose render threw: *nothing to emit* and *broken* are two answers.
  */
 async function resolveBuildDb(config, root) {
   if (!config?.db) return null
 
   const abs = isAbsolute(config.db) ? config.db : resolve(root, config.db)
-  if (!existsSync(abs)) {
+  const res = await importAppModule(abs)
+
+  if (!res.ok && res.reason === 'missing') {
     console.warn(`  [Sierra] static safety: config.db '${config.db}' not found — reads cannot be checked`)
     return null
   }
 
-  try {
-    const mod = await import(pathToFileURL(abs).href + `?t=${Date.now()}`)
-    let candidate = mod.default ?? mod.db ?? mod.client ?? null
-    if (typeof candidate === 'function') candidate = await candidate()
+  if (!res.ok) throw new Error(
+    `[Sierra] static safety: '${config.db}' threw while it was loading.\n` +
+    `  ${explainModuleInitFailure(res.error?.message ?? String(res.error), config.db)}\n` +
+    `  The build cannot observe what a page reads without this client, and a module that ` +
+    `threw is not a module that is missing — fix it, or take it out of sierra.config.js.`
+  )
 
-    if (!candidate || typeof candidate.$tapQuery !== 'function') {
-      console.warn(
-        `  [Sierra] static safety: '${config.db}' does not export a Litestone client ` +
-        `with $tapQuery — reads cannot be checked`
-      )
-      return null
-    }
-    return candidate
-  } catch (err) {
+  let candidate = res.module.default ?? res.module.db ?? res.module.client ?? null
+  if (typeof candidate === 'function') candidate = await candidate()
+
+  if (!candidate || typeof candidate.$tapQuery !== 'function') {
     console.warn(
-      `  [Sierra] static safety: could not load '${config.db}': ` +
-      explainModuleInitFailure(err.message, config.db)
+      `  [Sierra] static safety: '${config.db}' does not export a Litestone client ` +
+      `with $tapQuery — reads cannot be checked`
     )
     return null
   }
+  return candidate
 }
 
 /**

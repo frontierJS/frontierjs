@@ -293,14 +293,32 @@ export function classifyPivot(before, after) {
   return { verdict, findings: f, counts }
 }
 
-/** The three-step plan a contract on a required column is offered instead of. */
+/**
+ * The three-step plan a contract on a required column is offered instead of.
+ *
+ * The first and third steps are deploys and this classifier grades them. The
+ * MIDDLE one is the only step that takes hours and the only one that can fail
+ * halfway, and for a long time it was the only one that named nothing you could
+ * run — a sentence sitting between two commands. Offering a split whose middle
+ * step is a hand-written script is worse than not classifying the pivot at all,
+ * because the refusal implies there is a supported alternative.
+ *
+ * What is added here is the FACT — `needsBackfill` on the finding, beside these
+ * lines. Which mechanism fills it is a question about the running application
+ * and not about this schema, so the advice is rendered a layer up where the app
+ * is in scope: litestone says a backfill is required and names the column, and
+ * `fli release:check` says whether one is declared.
+ */
 function split(model, field) {
   return [
     `expand:   declare \`${field}\` optional on \`${model}\` and deploy — N-1 keeps serving`,
-    `backfill: fill \`${field}\` for the rows that predate it`,
+    `backfill: give every existing \`${model}\` a \`${field}\` — required before the contract can pass`,
     `contract: declare it required and deploy again — this deploy is the pivot`,
   ]
 }
+
+/** The machine-readable half of the middle step. */
+const needsBackfill = (model, field) => ({ needsBackfill: { model, field } })
 
 const add = (f, severity, subject, detail, extra = {}) => f.push({ severity, subject, detail, ...extra })
 
@@ -503,7 +521,7 @@ function compareFields(b, m, f) {
     if (!old) {
       if (field.writeRequired)
         add(f, CONTRACT, at, `added as required \`${field.type}\` with no default — every N-1 write to \`${m.table}\` omits it and is refused`,
-            { split: split(m.name, name) })
+            { split: split(m.name, name), ...needsBackfill(m.name, name) })
       else
         add(f, EXPAND, at, `added as ${field.optional ? 'optional' : 'defaulted'} \`${field.type}\` — N-1 writes without it`)
       continue
@@ -522,7 +540,7 @@ function compareFields(b, m, f) {
 
     if (old.optional && !field.optional)
       add(f, CONTRACT, at, 'optional → required — N-1 writes omit it and existing NULLs fail the constraint',
-          { split: split(m.name, name) })
+          { split: split(m.name, name), ...needsBackfill(m.name, name) })
 
     if (!old.unique && field.unique)
       add(f, CONTRACT, at, '@unique added — an N-1 write that duplicates an existing value is now refused')

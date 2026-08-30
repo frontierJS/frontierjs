@@ -88,6 +88,79 @@ therefore the one most likely to be wrong.
 
 ---
 
+## Partial indexes — `where:` on `@@index`, and the rule that is asked rather than written (2026-08-29)
+
+**`@@index([cols], where: <expr>)` ships.** It came out of the corpus: a partial
+index was the largest unrepresented `.lite` construct by 2.3x — 251 instances,
+every source that has predicates at all has them — and the language could not
+say it. `IDEAS/partial-indexes.md` is the record and it is `partial` rather than
+`done`, because Option A is built and B and C are deliberately still open.
+
+**The design is one sentence and it is asked of the compiler, not described in a
+grammar.** A predicate is legal exactly when compiling it pushes no parameter and
+its SQL is reproducible by a caller's own filter. That is not a stylistic
+preference: SQLite must prove query implies index at PREPARE time, so a bound `?`
+on either side makes the index unmatchable, and an unmatchable index is not a
+slower index — it is one that is built, maintained, and never used, with nothing
+anywhere reporting it. Writing the rule as a grammar means maintaining a second
+model of what the compiler does. Asking `compileStatic` and refusing on
+`params.length > 0` means the rule cannot drift from the thing it is about.
+
+**It survived being wrong twice, and that is the evidence for the approach.**
+First on booleans: the policy compiler inlines `= 1` and the query builder bound
+`= ?`, so `live == true` passed the rule and produced an index no caller could
+reach (`FJS-578`). Second on the existence of a second compiler at all. Both
+times the fix was one clause, not a rewrite, because the rule delegates.
+
+**Four of the five issues closed were found by building, not filed in advance** —
+`FJS-577` (the rebuild path recreating a soft-delete model's indexes without
+their predicate, `FJS-443`'s shape in a branch its fix never reached), `FJS-578`,
+`FJS-586` (`indexOf('(')` finding the bracket inside a QUOTED table name, and the
+corpus's 47 expression indexes breaking the same function for a second reason),
+`FJS-590` (the two conversion paths disagreeing). `parseIndexColumns`,
+`indexPredicate` and `predicateToLite` are one owner in `core/migrate.js` now,
+read by three converters; there were two copies of the same broken regex.
+
+**Measured payoff: 94 of the corpus's 251 partial indexes survive conversion
+whole, where the number was 0.** The other 119 are unique and correctly dropped —
+`FJS-204` is not reopened and the asymmetry is why: dropping a predicate from a
+UNIQUE index STRENGTHENS the constraint, which can refuse rows that already
+exist, where dropping one from a plain index only widens it.
+
+**`example`'s `ProductVariant` declares the repo's only `where:`**, and it is
+there because three things can be proven nowhere else: the migrator adding a
+partial index to a database that already holds rows, the predicate ANDing with
+`@@softDelete`'s own clause, and the planner reaching it through a query where
+the caller wrote HALF the predicate and litestone injected the other half. The
+four ways to miss it were run as negative controls and all four miss. The last of
+them is `active = ?` — `FJS-578` seen from an app, and the reason that fix
+mattered.
+
+**One thing found and deliberately not filed.** The release surface keys an index
+on its column list alone, so a predicate appears in neither the rendering nor the
+comparison: edit one and `ddl.snapshot.sql` moves while `release.snapshot.md`
+does not. The verdict stays correct, because an index is EXPAND either way and
+partial uniques are refused — so this is an artefact that is less informative
+than the DDL beside it, not a misclassification, and `ISSUES.md` is for behaviour
+that is wrong. It becomes a correctness hole the day Option C ships, and it is
+recorded against Option C in the idea rather than as a defect.
+
+**What no drive can do is prove an index is used**, because an index changes no
+answer and every behavioural assertion passes with it dropped. The EXPLAIN in
+`test/index-predicates.test.ts` is the proof and the negative controls are the
+test; `verify:catalogue` proves only that the app still works with it.
+
+**Concurrency, honestly.** This session and another ran in the same tree
+throughout. Theirs regenerated the corpus fixtures while this one's importer
+change was half-applied, baking a non-parsing schema in, which was then fixed and
+regenerated. This one regenerated `repo-atlas` and `repo-map` — which the section
+below records their session as having deliberately avoided doing for exactly this
+reason — and regenerated `example`'s `ddl.snapshot.sql` and `release.snapshot.md`
+over their uncommitted `Float -> Int @money` migration, which had left the
+snapshots phase red before this work started. Nothing was lost, but that was
+partly luck. Two sessions in `packages/litestone` and `example/db/` at once want
+coordinating before, not after.
+
 ## Left open, and whose it is (2026-08-29)
 
 **`FJS-570` was filed and not fixed, because it needs a ruling.** A relation

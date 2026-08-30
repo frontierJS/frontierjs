@@ -68,7 +68,7 @@ the placeholder in place and drops the Outlook fallback. Use `renderEmail` /
 
 ## 2. `htmlToText` must treat the two conditional-comment shapes OPPOSITELY
 
-`packages/mesa/render-component.js` (`htmlToText`) — Mesa's function, but this
+`packages/mesa/src/render-component.js` (`htmlToText`) — Mesa's function, but this
 kit is what exercises it, and getting it wrong is visible in every email.
 
 | shape | what it is | what the text alternative must do |

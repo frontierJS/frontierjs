@@ -14,6 +14,7 @@
 
 import { Notification, inApp } from '@frontierjs/notifications'
 import type { InAppMessage, Recipient, Transport } from '@frontierjs/notifications'
+import { money }              from '../pricing.ts'
 
 interface Order {
   id:        number
@@ -33,7 +34,7 @@ export class OrderPaid extends Notification {
   toInApp(_recipient: Recipient): InAppMessage {
     return inApp()
       .title('Order paid')
-      .body(`${this.order.reference} — ${this.order.total.toFixed(2)}`)
+      .body(`${this.order.reference} — ${money(this.order.total)}`)
       .action('View order', `/orders/${this.order.id}/`)
       // contextType/contextId are a loose reference with no foreign key, so a
       // deleted order leaves its notifications intact rather than cascading

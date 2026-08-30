@@ -62,6 +62,10 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { serveSite } from '@frontierjs/sierra/site/serve'
+// The storefront's own conversion, asked rather than restated. Every price
+// column is `@money(USD)`, so what the database holds and what `data-baked`
+// carries is a whole number of CENTS, and what the page prints is dollars.
+import { formatMoney, fromMinor, toMinor } from '@frontierjs/toolbelt/units'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const SITE   = join(HERE, '..')
@@ -345,7 +349,8 @@ try {
   // ── the headline: a price that moved after the build ─────────────────────
   // What a merchant does between two builds. The file still says the old price
   // — it cannot say anything else — and the page must not.
-  const newPrice = Math.round((originalPrice + 7) * 100) / 100
+  // Seven dollars more, said in the unit the column stores.
+  const newPrice = originalPrice + toMinor(7, 'USD')
   await sys.productVariant.update({ where: { id: victim.id }, data: { price: newPrice } })
   priceMoved = true
 
@@ -552,8 +557,11 @@ const expected = {
   'stale.fileStillSaysOld': true,
   'stale.corrected':       {
     baked:  originalPrice,
-    live:   Math.round((originalPrice + 7) * 100) / 100,
-    shown:  `$${(Math.round((originalPrice + 7) * 100) / 100).toFixed(2)}`,
+    live:   originalPrice + toMinor(7, 'USD'),
+    // What the CELL says, which is the half that matters: the drive asserts the
+    // page corrected the number AND printed it as money rather than as the
+    // integer the column holds.
+    shown:  formatMoney(fromMinor(originalPrice + toMinor(7, 'USD'), 'USD'), 'USD'),
     marked: true,
   },
   'stale.saidSo':          1,

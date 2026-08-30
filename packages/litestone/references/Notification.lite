@@ -26,6 +26,10 @@
 ///
 /// **No `dismissedAt` beside `readAt`.** Read and dismissed is a product
 /// decision, not a shape one; add it when a screen actually distinguishes them.
+/// The things this app tells somebody about. One member per notification
+/// class that sets a context.
+enum NotificationContext { Order }
+
 model Notification {
   id           Int       @id
 
@@ -65,7 +69,22 @@ model Notification {
   /// a package change. See references/README.md.
   ///
   /// Nullable, both: a notification may be about nothing in particular.
-  contextType  String?
+  ///
+  /// ─── Tell it what it may name ───────────────────────────────────────────
+  ///
+  /// The pair carries no foreign key, so nothing cascades and a deleted order
+  /// leaves its notifications behind as dead links — which is usually what an
+  /// app wants and is `example`'s stated choice. What the pair CAN be told is
+  /// which models it may name, and an `enum` is how: it emits a table CHECK, so
+  /// a migration, a seed and `asSystem()` are all held to it, and it reaches
+  /// the browser as a set a picker renders instead of a text box.
+  ///
+  /// A notification's set is knowable — it is the classes the app declares, one
+  /// per thing it tells somebody about — so declare it and add a member when a
+  /// class starts pointing somewhere new. `String` is right only where the set
+  /// grows with every model, which is `AuditEvent.subjectType` and not this.
+  /// `fli check`'s `polymorphic-subject` asks the question.
+  contextType  NotificationContext?
   contextId    Int?
 
   /// Null until seen. A timestamp rather than a boolean so *when* survives, and

@@ -426,7 +426,7 @@ its core primitive. The ban is narrowed rather than dropped: **do not call an
 Event a signal.** Calling a reactive cell a Signal is correct and required.
 They cannot be confused in practice because they live in different realms — a
 Signal never crosses a Boundary, an Event only exists to.
-*Lives in:* `ARCHITECT.md` §2; `packages/mesa/runtime.js`;
+*Lives in:* `ARCHITECT.md` §2; `packages/mesa/src/runtime.js`;
 `packages/junction/src/transport/channels.ts`.
 
 ### <a id="fjs-d45"></a>2026-08-06 · `FJS-D45` — `Policy` keeps exactly one meaning, and it is not "business rule".
@@ -3742,6 +3742,284 @@ takes them off the list.
 rationale in `publishToChannels()`, the fallback in
 `packages/junction/src/transport/channels.ts` (`publishDefault`).
 
+### <a id="fjs-d160"></a>2026-08-30 · `FJS-D160` — the server STATES its build; the client compares. It is the build and not the Release.
+
+**The gap.** A deploy replaces the code under browsers that are already running.
+Their HTML and their JavaScript are the previous build's, and they keep calling
+the API — which is fine until it is not, and the failure is silent on both sides:
+the person sees a screen that half works, and nothing connects it to the deploy
+that caused it. Phase 3 of `IDEAS/release-transitions.md`.
+
+**Half of it already shipped and nobody had said so.** `03-build-web` merges the
+previous release's assets into the new one, so a stale client's content-hashed
+chunks keep resolving, and because each deploy merges from the one before it the
+coverage chains forward across `keep_releases`. What was missing was never the
+assets — it was identity.
+
+**The server states, the client compares.** A response header (`x-fjs-build`) and
+a field on the socket's `connected` frame, and nothing on the server reads a
+build off a request. The alternative — the server diffing per call — answers a
+question that changes at most once per deploy, on every call, and has to be
+written twice because the two transports carry headers differently. Stating a
+value is one fact on both wires, and the side holding the stale code is the side
+that can act on it.
+
+**It rides `connected` rather than a new frame.** That frame is sent once per
+socket, which is exactly the cadence: a deploy restarts the container, every
+socket drops, and the reconnect is when a stale client finds out.
+
+**It is the BUILD, not the Release** (`FJS-D158`'s neighbour and a sharper
+distinction than it looks). A Release is the image digest ⨯ bindings ⨯ schema
+surface ⨯ pivot; a browser holds none of that — it holds the web bundle. Two
+Releases can share one bundle, which is every API-only or schema-only deploy, and
+telling those browsers they are stale is a reload prompt for a change that cannot
+reach them. It is *also* the only identity available where it must be stamped —
+`03-build-web` runs before `04-build-api`, so no Release id exists yet — but that
+is a consequence of the argument rather than its reason. If the two disagreed,
+the argument would win.
+
+**Inert unless both sides know their build.** A client with none cannot be
+behind; a server with none was deployed by nothing that stamps one. The header is
+gated so `_finalizeWithHeaders`'s no-op fast path — which exists to hand an
+untouched `Response` back — survives for every app that never deployed. `stale`
+fires **once**: being told a new version is available is useful, being told on
+every call afterwards is the same fact as noise, and the reload that settles it
+belongs to the person.
+
+**Refused: routing two Releases at once.** The record's text asks for it, and it
+needs a second container, an nginx routing table and a lifecycle for the old one
+— which is the orchestrator this realm refuses in the same document, and which
+Phase 4 already defers alongside multi-host. The honest single-host claim is that
+browsers already out there keep working, and are told when they cannot.
+
+**Proven where it crosses.** Two packages have to agree — the cli decides the
+value (`03-build-web` stamps `VITE_FJS_BUILD`, `06-swap` passes `FJS_BUILD`) and
+junction states it — and neither can be asked alone, so `deployJournalCycle`
+asks a deployed container and compares what it answers against the commit the
+deploy built.
+
+**What it cost to get right**: the browser client imports the wire names, and a
+client is compiled under the *app's* tsconfig with no node types — so a bare
+`process.env` put `Cannot find name 'process'` into every consuming app's `tsc`,
+which is `FJS-268`'s class. `tests/client-types.test.ts` caught it by compiling a
+fixture the way an app does.
+
+`packages/junction/src/core/build-id.ts` · `tests/build-id.test.ts` ·
+`packages/sierra/src/junction/index.js` · `_steps-docker/03-build-web.md`
+
+### <a id="fjs-d159"></a>2026-08-29 · `FJS-D159` — a service filename derives ONE canonical name, and the filename's own spelling stays mounted as an alias.
+
+**The gap.** Invariant 2 names three resolvers that depend on a model's name
+agreeing. A kebab-case service FILENAME was a fourth spelling and nothing
+reconciled it, so `product-variants.service.ts` broke two resolutions at once.
+`deriveModelName('product-variants')` singularises to `product-variant`, which
+is not the accessor — which is why all six multi-word services in `example`
+hand-write `model:` — and Sierra's `serviceNameFor('ProductVariant')` answers
+`productVariants`, which matched nothing. **Every relation picker onto a
+multi-word model rendered, opened and offered nothing**, which a person reads as
+*there are no variants* (`FJS-570`). One word hid the whole class: `Product` →
+`products` and `products.service.ts` → `products` agree by accident, so every
+single-word model in both apps was fine and no drive could see it.
+
+**The ruling.** `deriveName` folds `-` and `_` into camelCase, so the SERVICE is
+`productVariants` — one spelling, the one the other three resolvers already
+derive. The FILE keeps its kebab name, because that is this repo's convention
+everywhere else and a rename would move every multi-word URL an app has already
+shipped. The filename's own spelling is registered as an ALIAS, so
+`/product-variants`, `app.service('product-variants')` and a WS frame naming it
+all still resolve.
+
+**Why not the alternatives.** Teaching Sierra both spellings invents a fifth
+rule and leaves junction's own model derivation broken, so the `model:`
+workaround stays written six times. Reading the mapping off `createResource` is
+exact where it applies and silently wrong where the resource module has not been
+imported yet. Renaming the files kills the class at the source and changes every
+multi-word URL, which is a cost paid by apps rather than by the framework.
+
+**What the alias is not.** It is not a second service. Every lookup goes through
+`ServiceRegistry.get`, which resolves an alias to the canonical service, and both
+transports then use `service.name` — so a call arriving under the old spelling
+announces, resolves its model and appears in telemetry under the one name the
+service has. `list()` answers canonical names only, and an alias never shadows a
+real service: a registered name always wins.
+
+**A DECLARED name is untouched.** `createService({ name: 'hub-config' })` is a
+statement, and basecamp's three make it deliberately; auth's `api-keys` is the
+same. The reconciliation is of a DERIVED name, and guessing at a declared one is
+the thing this ruling refuses. What covers those is the second half:
+`resource.options()` now answers `error` on a failure, so *there are none* and
+*I could not ask* stop being the same empty list.
+
+*Lives in:* `packages/junction/src/core/loader.ts` (`deriveName`),
+`src/core/service.ts` (`ServiceRegistry`), `tests/service-name-kebab.test.ts`;
+the alias is committed in every `surface.snapshot.md` as **also answers to**.
+
+### <a id="fjs-d158"></a>2026-08-29 · `FJS-D158` — an attached service is declared in the app and bound per environment, and half-bound always refuses.
+
+**The gap.** An app needs things it does not own — an n8n, a mail server, a
+search cluster — and nothing in the framework knew that. The dependency existed
+as four environment variables somebody remembered to set, so a missing one was
+discovered at 3am on the first request that reached the service, hours after the
+deploy that caused it and with nothing connecting the two events. Phase 2 of
+`IDEAS/release-transitions.md`.
+
+**Where it is declared, and why that is not two files.** The app declares what it
+NEEDS (`attachments` in `junction.config.js`, or `createApp({ config })`); the
+environment BINDS it, as the ordinary variables the target actually carries.
+**Not phase 1's binding set** — that is RECORDED into the Release for identity
+and revert and applied by nobody; the container's environment comes from a file
+`fli` reads and mounts and does not write (`FJS-585`). The check grades the
+process's own environment, which is the right place precisely because it is true
+however the variables got there. That is the declaration/binding split the phase is named
+for rather than a duplication — `frontier.config.js` is what the tooling reads
+about where the app goes, and *this app needs a workflow engine* is a fact about
+the app.
+
+**It is not a second `defineEnv`.** Every per-key question — present, non-empty,
+a URL, long enough — is `checkEnvField`'s, which is now extracted from
+`defineEnv` and called by both (Invariant 4). An attachment adds exactly the
+three things a flat spec cannot say:
+
+- **These keys are one service**, so the refusal names the service. `N8N_API_KEY
+  is required but not set` says a string is missing; `n8n is bound halfway` says
+  what is broken.
+- **All or nothing.** `optional: true` forgives a service nobody bound and still
+  refuses one bound halfway, because *the app can run without this* is not *the
+  app can run against half of this*. Half-bound is the shape that actually
+  reaches production — somebody sets the URL and forgets the key — and it is
+  precisely the shape a per-variable check cannot see, since every individual
+  variable it can name is either legitimately absent or legitimately set.
+- **A defaulted key is not evidence.** It is satisfied whether or not anybody
+  bound the service, so counting it would make every unbound attachment with one
+  default look half-bound and turn the rule above into noise.
+
+**The refusal is at STARTUP, and surfacing it is half the build.** An app that
+refuses to boot says why in its own output — and until now the operator running
+the deploy saw none of it: `healthOrRestore` printed the polled URL, a hint about
+`apiPrefix` that is wrong whenever the app never came up, and rolled back. The
+app's own sentence was in `docker logs`, where nobody looks at 3am because
+nothing said to. So `showContainerTail` tails the container on a failed health
+check — bounded at 40 lines, because burying the one line that matters is the
+same failure one layer along, and on the revert path too, where a failed health
+check means a target with no working release on it.
+
+**A top-level key in `junction.config.js` had to be mapped or it does nothing.**
+`loadConfig` maps `app` and two `middleware` keys onto `AppConfig` and stashes
+everything else under `_junction` for whichever subsystem owns it — so a block
+nobody looks up is read by nothing, silently, which is `FJS-431`'s shape. The
+mapping is in `loadConfig` rather than a fallback read in the phase, because a
+reader that falls back is a second answer to *where do attachments live*.
+
+**Refused, and stated.** We never manage the service: not install, not upgrade,
+not health-check, not back up. Provisioning is easy and *de*-provisioning is
+where integrated platforms die, so the boundary is the declaration and the
+binding. **Whether the dev compose file is ours to generate stays open**
+(`IDEAS/release-transitions.md` § Open questions) — the declaration names the
+variables a service is reached through and says nothing about its image, its
+version or its volumes, and inventing those is exactly where the helpful/Caprover
+line is crossed.
+
+**Proven end to end.** `deployJournalCycle`'s tenth assertion declares an
+attachment nothing binds, deploys for real, and grades all three halves at once:
+the deploy fails, the operator's terminal carries the app's own refusal naming
+the service, and the release that was serving is still serving.
+
+`packages/junction/src/core/attachments.ts` · `tests/attachments.test.ts` ·
+`packages/cli/commands/deploy/_module.md` § showContainerTail
+
+### <a id="fjs-d157"></a>2026-08-29 · `FJS-D157` — a backfill is a durable row plus a Caravan job, and it is a cursor over one table rather than a durable workflow.
+
+**The gap.** `litestone release` refuses a contract on a required column and
+hands back *expand → backfill → contract*. It grades the first and third steps —
+they are deploys — and the middle one was a sentence sitting between two
+commands: *fill `x` for the rows that predate it*. Offering a split whose middle
+step is a hand-written script is worse than not classifying the pivot at all,
+because the refusal implies there is a supported alternative
+(`IDEAS/release-transitions.md` § *The hole in this record*).
+
+**What it is.** A `BackfillRun` row holding the position, and a Caravan job that
+fills one chunk and queues the next. Shipped from **junction**, the way the
+outbox is: a `.lite` fragment imported by name, a plugin, and Caravan as the
+engine. Litestone cannot own it — it cannot see Caravan, and dependency
+direction is Invariant 1.
+
+**Why not the deploy journal.** It is the other thing here that records progress
+durably, and the shape is wrong on inspection rather than by preference: a
+transition's steps are READ off `_steps-docker/` and planned ahead of time,
+where a backfill is N chunks and N is unknown until the scan ends.
+
+**Why not a bare Caravan job carrying its own cursor.** Cheaper, and it gives no
+single object to observe — `app.backfills.status()` would have nothing to read,
+and the rows would accumulate one per chunk.
+
+**And what it is NOT: a durable workflow.** The record treats *the noun arriving
+twice* as evidence for `IDEAS/overview.md` 4.19. The opposite reading is taken
+here: **two narrow mechanisms that look alike are not yet a primitive.** Nothing
+in this feature is general — no steps, no compensation, no point past which it
+can only go forward — and 4.19 stays where it is until something needs those.
+
+**Four of pgroll's five properties come from the shape rather than being built.**
+Idempotent, resumable, chunked, checkpointed. The one worth saying out loud:
+**idempotence is the PREDICATE, not the cursor.** A chunk re-reads *the column is
+still null*, so a row an interrupted chunk already filled is skipped whatever
+position was saved — the cursor is an optimisation, and a custom `where` that
+does not exclude its own writes breaks the property, which the option says.
+
+**Throttling is the one build, and it is a duty cycle.** The gap before the next
+chunk is a multiple of what the last one cost, so a backfill that is costing more
+stands down in proportion without anything measuring the database. **What it does
+not measure is stated rather than implied**: the signal is this backfill's own
+latency, so it responds to contention it is part of and is blind to load that
+does not touch these rows. `busy_timeout` is a PRAGMA (`FJS-D155`), so SQLite
+swallows the retries and only wall time is visible from here at all. `paused` on
+the row is the throttle of last resort.
+
+**Every write it makes is silent, including its own bookkeeping — and that took
+measuring.** `announce` is a BULK option: a single `update` has none and always
+fires. So the chunk groups its rows by the value the fill answered and issues one
+`updateMany({ announce: 'none' })` per group, and the run row's own progress is
+written the same way, through `updateMany` on its primary key. The assumption
+worth recording is the one that was **wrong**: `asSystem()` does not suppress a
+`$tapEvents` tap. A system per-row update announces `update:row` exactly as any
+other does, so a per-row backfill over ten million rows broadcasts ten million
+times. The test asserts it with two controls, because *silent* has to be told
+apart from *nothing is listening*.
+
+**A restart needs a term that MOVES, and that is not obvious until it is
+measured.** `dispatch({ id })` treats a taken primary key as work already queued
+for all time, so a chunk that ran and declined — the run was paused under it —
+holds that id forever. Without a moving term, resuming is not slow but
+impossible, and the recovery sweep cannot restart a run the queue gave up on
+either. `generation` on the row is a term of the chunk id, bumped by a resume and
+by recovery: the same counter the deploy journal keeps, for the same reason.
+
+**A backfill naming a column that does not exist is refused rather than
+completed.** Nothing below would catch it — a `where` with an unknown key warns
+to stderr and matches no rows, so the empty first chunk reads as the end and the
+run marks itself `done` having filled nothing. Silently finished is the one
+outcome this feature must not have, because a later contract is allowed to rely
+on it.
+
+**Where the advice is rendered is a layering decision.** Litestone puts the FACT
+on the finding — `needsBackfill: { model, field }` — and stops. Which mechanism
+fills a column is a question about the running application, so `fli
+release:check` reads the app's own source for a `defineBackfill` naming that
+model and field, and prints either where it is declared or the stub to write.
+Read as source rather than by a directory convention, the way `fli check`'s
+thirteen source-reading rules already work: a rule keyed on a path reports a
+correct app as missing one.
+
+**What no command can answer is whether it has RUN**, because that is a row in
+the deployed database and `release:check` has no target. It says so, and names
+`app.backfills.status()`.
+
+**Scope, stated rather than discovered.** One database. Under
+`createApp({ tenants })` with `strategy database` each tenant has its own rows
+and its own run row, so a backfill there is N independent backfills carrying a
+tenant through the queue — not built, and **refused by name** rather than run
+against the app-level database, which is nobody's and would report a completed
+backfill having touched no tenant's rows.
+
 ### <a id="fjs-d36"></a>2026-08-17 · `FJS-D36` — Caravan owns the clock; `app.scheduler` is in-process only.
 
 (Closing `FJS-047`.)
@@ -3776,7 +4054,7 @@ something to execute.
 
 *Lives in:* `packages/junction/src/scheduler/index.ts`,
 `packages/caravan/src/cron.ts`; the app-side pattern is
-`packages/basecamp/api/src/engine/job-schedule.ts`.
+`packages/basecamp/api/src/services/jobs/job-schedule.ts`.
 
 ### <a id="fjs-d35"></a>2026-08-17 · `FJS-D35` — A durable effect is a NAME and a PAYLOAD in the app's own database, and the queue stays a separate file.
 
@@ -3838,7 +4116,7 @@ idempotent — the framework hands it the outbox row id and says nothing else.
 
 *Lives in:* `packages/junction/src/core/outbox.ts`,
 `packages/junction/db/outbox.lite`, `packages/junction/src/plugins/outbox/`;
-the worked example is `example/api/services/orders.service.ts` (`pay`).
+the worked example is `example/api/src/services/orders.service.ts` (`pay`).
 
 ### <a id="fjs-d30"></a>2026-08-17 · `FJS-D30` — Login stays HTTP; cycling the socket IS the login event.
 
@@ -3885,7 +4163,7 @@ Feathers `channels.js` that has no equal here (`FJS-334`).
 *Lives in:* `packages/junction/src/client/index.ts` (`setToken`),
 `packages/junction/src/transport/channels.ts` (`handleConnect`, `on('connection')`),
 `packages/junction/src/transport/http.ts` (`_wsOpen`); the worked wirings are
-`example/api/app.ts` and `packages/basecamp/api/src/core/app.ts`.
+`example/api/src/app.ts` and `packages/basecamp/api/src/app.ts`.
 
 
 ## UI substrate (Mesa)
@@ -4881,7 +5159,7 @@ inherits straight past every `.theme-*` override. This has now bitten twice:
 `--badge-radius` (Elite's square buttons kept round badges) and `--ring`
 (**every** focus ring in **every** theme was the default blue). There is no
 case where the `:root` form does what it looks like it does.
-*Lives in:* `packages/css/tokens.css`; tested in `test/specs/focus.spec.js`.
+*Lives in:* `packages/css/src/foundation/tokens.css`; tested in `test/specs/focus.spec.js`.
 
 ### <a id="fjs-d102"></a>2026-08-02 · `FJS-D102` — One focus ring, in the last cascade layer.
 `focus.css` writes the whole recipe once, at `:where()` specificity, in the
@@ -4891,7 +5169,7 @@ cannot switch the ring off by accident — which is exactly what had happened:
 `.btn.outlined { box-shadow: none }` and the ring's `box-shadow` were the same
 specificity in the same layer, so outlined and link buttons had **no focus
 indicator at all**. A consumer's unlayered CSS still overrides deliberately.
-*Lives in:* `packages/css/focus.css`; `test/specs/focus.spec.js`.
+*Lives in:* `packages/css/src/a11y/focus.css`; `test/specs/focus.spec.js`.
 
 ### <a id="fjs-d103"></a>2026-08-02 · `FJS-D103` — A Treatment class works on every element that reads it, or it is a bug.
 This was already the rule for the seven tones; it applies equally to
@@ -4899,14 +5177,14 @@ This was already the rule for the seven tones; it applies equally to
 so a toolbar of `.btn.ghost` rendered as solid primary blue. The test for a new
 Treatment consumer is not "does it look right" but "does every value of that
 Treatment do something".
-*Lives in:* `packages/css/buttons.css`; `test/specs/components.spec.js`.
+*Lives in:* `packages/css/src/components/buttons.css`; `test/specs/components.spec.js`.
 
 ### <a id="fjs-d104"></a>2026-08-02 · `FJS-D104` — Competing background inputs compose through a variable, not specificity.
 Stripe, hover and tone all want a say in a table row and only one can own
 `background`. They set `--row-base` and the tone mixes into it, so a tone
 survives a stripe instead of being out-specified by it. Any future "several
 things tint the same surface" follows the same shape.
-*Lives in:* `packages/css/tables.css`; `test/specs/tables.spec.js`.
+*Lives in:* `packages/css/src/components/tables.css`; `test/specs/tables.spec.js`.
 
 ### <a id="fjs-d105"></a>2026-08-02 · `FJS-D105` — `.icon` means "this element IS an icon". The icon-only button is `.btn.square`.
 **Breaking rename**, v0.10. One class cannot mean both, or `<button class="btn
@@ -4917,7 +5195,7 @@ package owns, plus `.icon` for anywhere else, varied by `--icon-size`.
 Note the old markup fails *quietly*: with `border-box` a width under
 padding+border clamps, so a stale `.btn.icon` floors at 30x30 and looks
 roughly right while having lost its `aspect-ratio` and padding.
-*Lives in:* `packages/css/icon.css`, `buttons.css`; `test/specs/core-gaps.spec.js`.
+*Lives in:* `packages/css/src/components/icon.css`, `buttons.css`; `test/specs/core-gaps.spec.js`.
 
 ### <a id="fjs-d106"></a>2026-08-02 · `FJS-D106` — Interactive state is styled from ARIA, never from a class.
 `[aria-selected]`, `[aria-current]`, `:user-invalid`, `[hidden]`, `[open]`.
@@ -4937,6 +5215,88 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d156"></a>2026-08-29 · `FJS-D156` — the journal owns *what state did the last run leave*; the deploy lock owns *is another run working here*. They are two questions, and the lock only looked like a second answer to the first because it could not expire.
+
+**The problem.** `fli deploy` had two records of a run in flight. `.deploy.lock`, a
+file per machine and path, written at preflight and removed at cleanup. And the
+journal, a `running` transition per app and environment, opened after the build
+and settled at the end. In the ordinary case they agree because they are written
+and cleared by the same run. In the case the whole Release design exists for —
+a deploy killed mid-flight — they disagree: the journal knows the transition is
+`running` and `resumeDecision` grades exactly how to continue it, while the lock
+refuses the run that would. The only way through was to delete a file by hand
+(`FJS-573`), and the message telling an operator to do that named a pid.
+
+**The pid was a lie by construction, and that is the load-bearing fact.** The lock
+script wrote `$$`, expanded by the `sh -s` that ran it — a shell that exits the
+instant the file is written. The number was dead on arrival. It cannot be fixed
+by recording a better one: `fli` runs on the operator's machine and reaches the
+target one command at a time, so **there is no process on the target to point
+at**, and no probe can be built on one. `deploy:status` did not even parse its own
+format — it split `<pid>:<iso>:<target>` on `:` and read the hour as the timestamp.
+
+**The ruling.**
+
+1. **The journal is the record of what happened.** Unchanged. A transition it
+   left `running` is resumable, and dropping a lock never settles one.
+
+2. **The lock is mutual exclusion, and it records what is TRUE**: the run, who
+   started it, when, and **which step it is inside**. Not a pid. It is
+   `core/lock.js` — one format, one parser, four scripts, three readers
+   (`deploy`, `deploy:status`, `deploy:doctor`), where each used to `cat` the
+   file and read it its own way.
+
+3. **The step is what makes the duration mean something.** Four minutes in
+   `04-build-api` is a build; four minutes in `06-swap` is a run that died. The
+   step runner announces it before each step, which is the only place it can come
+   from: the build is the longest thing a deploy does and it runs BEFORE the
+   journal opens (`04c-journal`), so for the window where *is this alive* is asked
+   most, the journal has nothing to say. **A timer cannot serve it either** —
+   `execSync` blocks the loop for the whole of a step — so a step boundary is the
+   finest grain there is.
+
+4. **Neither judges.** Whether that other `fli` is still running is a fact about a
+   process on a machine this one cannot see. So the refusal reports and names both
+   ways out, and they are not the same choice: **`fli deploy --resume`** continues
+   what the journal holds and takes the lock over, and **`fli deploy:unlock`**
+   drops the lock and starts fresh.
+
+**Why `--resume` is safe without a liveness probe.** Resuming is idempotent by
+construction and was already: a succeeded step replays into a no-op, a step is
+claimed compare-and-set, and the transition id carries the Release id, so a rerun
+against different bytes opens a new transition rather than continuing the old one.
+The lock was never what made a resume correct — it was only what made it
+unreachable.
+
+**A TTL was considered and refused.** It is the shape the field uses (and the one
+caravan uses one layer down, `FJS-294`), but it needs a heartbeat, the heartbeat
+can only tick per step, and a step is minutes long — so the TTL would have to
+exceed the longest build, which puts an operator whose deploy was killed in a
+fifteen-minute wait to reach a feature that is already safe to reach immediately.
+A declared verb costs nothing and says what it does.
+
+**A freshness check on `--resume` was built and then removed, and the reason
+generalises.** *A lock whose step moved seconds ago is a live run* looks sound and
+is not: the recorded time is when a step STARTED, and nothing records one ending
+or a pulse inside it — so a fresh timestamp is equally consistent with a run three
+seconds into a five-minute build and with a run killed three seconds into it. It
+was measured that way round, by the cycle: the crash it exists for leaves exactly
+that lock. A sound version needs a heartbeat within a step, which `execSync`
+forecloses. **Nothing was lost by removing it**, because the fact is already on
+screen — *in step 06-swap — 3s in it* — where a person can weigh it and the
+machine does not pretend to.
+
+**What the lock still cannot do**, said rather than hidden: two operators deploying
+at once, one of whom types `--resume`, is a takeover of a live run. It is reported (the takeover prints what it
+displaced, and a refresh finding another run id warns and stops writing), and the
+narrower guarantee underneath is the step claim, which already assumed the lock could
+be wrong.
+
+**Proven** by `deployJournalCycle` in CI's `deploy` phase, which used to `rm` the
+lock file itself to reach the resume it was testing and now asserts the refusal
+names the step, offers `--resume`, and that `--resume` continues the same
+transition.
 
 ### <a id="fjs-d133"></a>2026-08-24 · `FJS-D133` — the live-hazard catalogue is `fli check`'s rule table. `fli doctor` stays what it already is: fli's own setup.
 
@@ -5898,6 +6258,51 @@ Closes `FJS-D12`, and retires the *1.5 precedes 1.1* dependency in
 *Lives in:* `packages/litestone/src/core/parser.js` (`@label`) ·
 `packages/sierra/src/junction/field-rules.js` (`labelFieldFor`, `toFieldErrors`)
 · `packages/toolbelt/src/inflect/inflect.js` · `IDEAS/ecosystem-gaps.md` 4.
+
+### <a id="fjs-d161"></a>2026-08-29 · `FJS-D161` — a detail read that composes is a TRIGGER, not a value
+
+**The gap.** `resource.record(id)` made a detail screen live (`FJS-518`,
+`FJS-D138`): the row has one node, every view is a view of it, and a push moves
+what is on screen. Adopting it across basecamp split the sixteen readers of
+`service.get(id)` into two kinds, and the second kind broke. A node holds ONE
+shape and `_write` REPLACES it, so a screen whose `get()` answers the row PLUS
+what hangs off it — an `include:`, a `withWidgets()`, a count assembled per
+call — showed its children until the first announcement and then showed none:
+a push carries the row alone. Measured: converting `apps/[id]` took the drive
+from 302/302 to two failures, `app.domains` empty. Four of basecamp's five
+composed reads did the same.
+
+**Not fixed by merging.** A merge cannot tell *this key is absent from the push*
+from *this key was cleared*, and it would put one screen's children into the
+node every list over that model is a view of.
+
+**Ruled: the node is the trigger and the read is run again.**
+`record(id, { composed: true })` says what `load` answers is not the row. The
+value is the view's own, the composed row is deliberately NOT written to the
+node, and any move of that node — a push, another view's write, an optimistic
+overlay — re-runs the read, coalesced per burst. `changed`, the announcement
+that names no row, re-runs it too, in both modes: a bulk or `select: false`
+write says least and would otherwise be the one thing that leaves a watched row
+stale for good.
+
+**Why declared rather than inferred.** Nothing in a browser can see what a
+service's `get()` composes — it is a server-side shape, and JSON Schema
+describes the model, not the method. The alternative was a per-screen
+reload-on-push, which is what all five of these hand-rolled, each with its own
+copy of *was that a read?*. One option replaces five copies and keeps the rule
+that made them (`detail-read-dead`) unconditional.
+
+**The cost is stated.** One request per announcement about that row, which is
+what the hand-rolled version already paid — and a screen that genuinely wants
+the row alone should not declare it. What is left after this is a read with
+nothing to subscribe to: basecamp's `portal.get()` builds an entry from an
+adapter ping, over no model, so no node exists and no announcement will ever
+arrive. That is a fair exception and is baselined by name.
+
+Closes `FJS-533`. Extends `FJS-D138`.
+*Lives in:* `packages/junction/src/client/index.ts` (`RecordOptions.composed`)
+· `packages/sierra/src/junction/resource.js` (`record`) ·
+`packages/cli/core/checks.js` (`detail-read-dead`).
 
 ## Open (discussed, not yet ruled)
 

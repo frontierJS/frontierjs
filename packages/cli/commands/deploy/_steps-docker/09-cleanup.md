@@ -7,9 +7,9 @@ runOnAbort: true
 ```js
 // Every machine the run locked, not just the API's — a split deploy that aborts
 // after taking both locks otherwise leaves the web host locked forever.
-const dropLocks = () => {
+const dropLocks = async () => {
   if (!context.config.lockAcquired) return
-  releaseLocks(context, context.config.hosts ?? [])
+  await releaseLocks(context, context.config.hosts ?? [])
   context.config.lockAcquired = false
 }
 
@@ -27,7 +27,7 @@ const settle = async (status) => {
 if (context.config.abort) {
   // Abnormal exit — still release the locks so the next deploy isn't blocked
   await settle('failed')
-  dropLocks()
+  await dropLocks()
   return
 }
 
@@ -51,7 +51,7 @@ machine.run(`docker image prune -f --filter label=app=${appId} 2>/dev/null || tr
 
 // ─── Settle, then release the locks ───────────────────────────────────────────
 await settle('succeeded')
-dropLocks()
+await dropLocks()
 
 // ─── Report ───────────────────────────────────────────────────────────────────
 const elapsed = ((Date.now() - context.config.startTime) / 1000).toFixed(1)

@@ -116,9 +116,43 @@ Both are gated by CI, and every example on the reference page is the same text
 property of this package, not of your seed.
 
 ```bash
-litestone introspect <db> [--out schema.lite] [--no-camel]
+litestone introspect <db> [--out=schema.lite] [--report=<path>] [--strict] [--no-camel]
 ```
-Reverse-engineer a live SQLite database into a `.lite` schema. Reconstructs column types, FK relations, indexes, `@@softDelete`, enum CHECK constraints.
+Reverse-engineer a live SQLite database into a `.lite` schema. Reconstructs column
+types, FK relations, indexes, `@@softDelete` and enum CHECK constraints.
+
+**Graded the same way `import` is**, and for the same reason: a database says less
+than the schema that built it, and a converter that prints only its output has
+quietly decided what to lose. `--report` writes the list as JSON, `--strict` exits
+1 on `changed`. What it reports here is partial and expression indexes, a second
+index over one column list, a generated column or a default `.lite` has no
+spelling for, a referential action it has no word for — and, where the DEFAULT is
+evidence, the two types SQLite cannot hold: `DateTime` is stored as TEXT and
+`Boolean` as INTEGER, so both come back as something else and only you know which.
+No `@@gate`, `@@allow`, `@secret` or `@@fts` is in a SQLite file at all; that is
+said once, in the report and at the top of the generated schema.
+
+Given no path it uses the database the SCHEMA declares — which is what
+`fli db:pull` passes, and for its whole life it fell back to `./development.db`
+instead and named a file the app never mentioned. A schema declaring several is
+asked which with `--db=<name>`: the output carries no `@@db`, so one database in
+is one schema out.
+
+**The output parses, and reading it back is a fixed point** —
+`test/introspect-roundtrip.test.ts` asserts it over the corpus. That is the
+property rather than a nicety: for its whole life this emitted a `.lite` litestone
+could not read, behind six tests that only ever matched substrings of it
+(`FJS-594`). The output is order-stable, so re-running it produces a diff you can
+read.
+
+```bash
+litestone import <path> [--from=prisma|rails|sql|frappe] [--out=<path>] [--report=<path>] [--strict]
+```
+Read a schema you already have — a Prisma schema, a Rails `db/schema.rb`, a PostgreSQL dump, or a Frappe app — into `.lite`. The format is detected from the path; `--from` always wins.
+
+**The output is not the whole answer.** Every construct the reading could not express is recorded and graded: **changed** (the schema says something the source does not), **lost** (the source says something the schema does not), **noted** (a decision for you). `--strict` fails on `changed` alone. Each `changed` one is marked on its own line in the written file with `// ⚠ imported:`.
+
+Without `--out` the schema goes to stdout and the report to stderr, so `litestone import x.prisma > db/schema.lite` parses. [import.md](import.md) is the full reference.
 
 ```bash
 litestone jsonschema [--out=<path>] [--stdout] [--mode=create|update|full] [--all-modes]

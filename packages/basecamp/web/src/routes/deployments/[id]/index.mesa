@@ -16,14 +16,28 @@ title: Deployment
   let error      = null
   let loading    = true
 
+  // The deployment, watched rather than read (`FJS-518`). `get()` answers it
+  // WITH its steps and a push carries the row alone, so this is a COMPOSED
+  // view: the node says the row moved and the composed answer is read again
+  // (`FJS-533`). This is the screen the channel exists for — a release advances
+  // over ~10 seconds and a person watching it should not have to reload to find
+  // out it finished. One request per step transition, on one open screen, is
+  // the cheapest correct answer.
+  let row     = null
+  let unwatch = null
+
+  function watchDeployment(id) {
+    if (row && String(row.id) === String(id)) return row.refresh()
+    unwatch?.(); row?.release()
+    row = deployments.record(id, { composed: true })
+    unwatch = row.subscribe(v => { deployment = v })
+    return row.ready
+  }
+
   async function load() {
     error = null
     try {
-      // get() returns the deployment WITH its steps; the channel event does
-      // not carry them, which is why a push triggers a reload here rather than
-      // a merge. One request per step transition, on one open screen, is the
-      // cheapest correct answer.
-      deployment = await deployments.service.get(page.params.id)
+      await watchDeployment(page.params.id)
     } catch (e) {
       error = e.message
     } finally {
@@ -34,13 +48,7 @@ title: Deployment
   load()
   $: page.params.id, () => load()
 
-  // The job pushes on every step transition. This is the screen the channel
-  // exists for: a release advances over ~10 seconds and a person watching it
-  // should not have to reload to find out it finished.
-  const off = deployments.service.on('patched', (row) => {
-    if (row.id === page.params.id) load()
-  })
-  $.onDestroy(off)
+  $.onDestroy(() => { unwatch?.(); row?.release() })
 
   async function cancel() {
     error = null

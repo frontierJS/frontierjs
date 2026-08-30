@@ -172,11 +172,9 @@ export function introspect(db) {
       `SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL`
     ).all(t).map(r => {
       const unique = /CREATE UNIQUE INDEX/i.test(r.sql)
-      const match  = r.sql.match(/\(([^)]+)\)/)
-      const cols   = match
-        ? match[1].split(',').map(c => c.trim().replace(/^["'`]|["'`]$/g, ''))
-        : []
-      return { name: r.name, cols, unique }
+      const cols   = parseIndexColumns(r.sql)
+      const sorts  = parseIndexSorts(r.sql)
+      return { name: r.name, cols, sorts, unique, where: indexPredicate(r.sql) }
     })
 
     const fkRows = db.prepare(`PRAGMA foreign_key_list("${t}")`).all()
@@ -229,6 +227,167 @@ export function introspect(db) {
 // Two trigger definitions are the same trigger when SQLite would build the same
 // thing from them. `IF NOT EXISTS` is stripped because buildPristine strips it
 // on the way in, so the pristine side never carries it and the live side does.
+// The column list of a CREATE INDEX, split on TOP-LEVEL commas.
+//
+// It was `sql.match(/\(([^)]+)\)/)` in two places — here and in
+// `transform/framework.js` — which stops at the first `)` it meets, so an index
+// over an expression read as one column called `lower(a` (FJS-584). Harmless
+// while nothing could declare one, and wrong in both copies of it.
+//
+// Not a SQL parser: a string literal holding a bracket inside an expression
+// would still fool the depth count. It is a column list, so that is a shape
+// nothing in this repo can emit and a converter reading one is told rather than
+// guessed at — `isIndexExpression` is how the caller sees it is not a name.
+export function parseIndexColumns(sql) {
+  return rawIndexMembers(sql)
+    .map(c => stripSort(c.trim()).member.replace(/^["'`]|["'`]$/g, ''))
+    .filter(Boolean)
+}
+
+// A member's trailing direction, taken off before the quotes are. Without this
+// `"createdAt" DESC` de-quotes to `createdAt" DESC`, which `isIndexExpression`
+// then reports as an expression — the FJS-584 shape, one modifier along.
+function stripSort(raw) {
+  const m = /^([\s\S]+?)\s+(ASC|DESC)$/i.exec(raw)
+  return m ? { member: m[1].trim(), sort: m[2].toUpperCase() } : { member: raw, sort: null }
+}
+
+// The members of a CREATE INDEX's column list, split on TOP-LEVEL commas and
+// otherwise untouched. One owner, because the names and the directions are read
+// off the same list and a second split is how the two end up misaligned.
+function rawIndexMembers(sql) {
+  const on = /\sON\s/i.exec(sql ?? '')
+  if (!on) return []
+
+  // Step over the table name before looking for the list, because a QUOTED one
+  // may hold a bracket of its own and `indexOf('(')` would find that instead.
+  let i = on.index + on[0].length
+  while (i < sql.length && /\s/.test(sql[i])) i++
+  const quote = { '"': '"', "'": "'", '`': '`', '[': ']' }[sql[i]]
+  if (quote) { i++; while (i < sql.length && sql[i] !== quote) i++; i++ }
+
+  const open = sql.indexOf('(', i)
+  if (open < 0) return []
+
+  let depth = 0, end = -1
+  for (let j = open; j < sql.length; j++) {
+    if (sql[j] === '(') depth++
+    else if (sql[j] === ')' && --depth === 0) { end = j; break }
+  }
+  if (end < 0) return []
+
+  const out = []
+  let cur = '', d = 0
+  for (const ch of sql.slice(open + 1, end)) {
+    if (ch === '(') d++
+    else if (ch === ')') d--
+    if (ch === ',' && d === 0) { out.push(cur); cur = '' } else cur += ch
+  }
+  out.push(cur)
+  return out
+}
+
+// The directions of a CREATE INDEX's columns, aligned with parseIndexColumns.
+// Its own function rather than a second return value, because three callers
+// walk that list expecting names and a shape change would reach all of them.
+export function parseIndexSorts(sql) {
+  return rawIndexMembers(sql).map(m => stripSort(m.trim()).sort)
+}
+
+// ─── A SQL index predicate → the .lite expression meaning the same thing ──────
+//
+// One owner, because THREE converters ask it: `litestone introspect` reading a
+// live database, and the `sql` and `rails` readers behind `litestone import`.
+// They disagreed for a few hours and that is the whole of FJS-590 — the same
+// question answered twice, and one of the answers older than the feature.
+//
+// Only the shapes `@@index(where:)` accepts — a null test and a boolean —
+// because those are the only ones a partial index can be REACHED by. Anything
+// else answers null and the caller says what it dropped rather than guessing at
+// it, which is the whole difference between a converter and a liar.
+//
+// Mixed AND/OR at one level answers null too: emitting it would be a precedence
+// judgement, and getting that wrong changes which rows the index holds.
+export function stripParens(t) {
+  let s = t.trim()
+  while (s.startsWith('(') && s.endsWith(')')) {
+    let d = 0, whole = true
+    for (let i = 0; i < s.length; i++) {
+      if (s[i] === '(') d++
+      else if (s[i] === ')' && --d === 0 && i < s.length - 1) { whole = false; break }
+    }
+    if (!whole) break
+    s = s.slice(1, -1).trim()
+  }
+  return s
+}
+
+function splitTop(text, word) {
+  const parts = []
+  const re = new RegExp(`\\b${word}\\b`, 'gi')
+  let d = 0, last = 0
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '(') d++
+    else if (text[i] === ')') d--
+    else if (d === 0) {
+      re.lastIndex = i
+      const m = re.exec(text)
+      if (m && m.index === i) { parts.push(text.slice(last, i)); last = i + m[0].length; i = last - 1 }
+    }
+  }
+  parts.push(text.slice(last))
+  return parts.map(p => p.trim()).filter(Boolean)
+}
+
+export function predicateToLite(where, nameOf) {
+  const atom = t => {
+    const x = stripParens(t)
+    let m
+    if ((m = /^"?([A-Za-z_]\w*)"?\s+IS\s+NOT\s+NULL$/i.exec(x))) return `${nameOf(m[1])} != null`
+    if ((m = /^"?([A-Za-z_]\w*)"?\s+IS\s+NULL$/i.exec(x)))       return `${nameOf(m[1])} == null`
+    // SQLite spells a boolean 1/0 and Postgres spells it true/false, and both
+    // reach here — the first from a live database, the second from a dump the
+    // importer is reading. A BARE column (`WHERE live`, legal in Postgres) is
+    // deliberately not accepted: it is only a boolean if the column is one, and
+    // that is a guess about a type this function is not given.
+    if ((m = /^"?([A-Za-z_]\w*)"?\s*=\s*(1|true)$/i.exec(x)))     return `${nameOf(m[1])} == true`
+    if ((m = /^"?([A-Za-z_]\w*)"?\s*=\s*(0|false)$/i.exec(x)))    return `${nameOf(m[1])} == false`
+    return null
+  }
+  const body = stripParens(where ?? '')
+  if (!body) return null
+
+  const ands = splitTop(body, 'AND')
+  const ors  = splitTop(body, 'OR')
+  if (ands.length > 1 && ors.length > 1) return null   // precedence is not ours to decide
+
+  const parts = ands.length > 1 ? ands : ors
+  const join  = ands.length > 1 ? ' && ' : ' || '
+  const out   = parts.map(atom)
+  return out.every(Boolean) ? out.join(parts.length > 1 ? join : '') : null
+}
+
+// Is this member an expression rather than a column name? A converter has to
+// know, because there is no `.lite` spelling for one.
+export function isIndexExpression(member) {
+  return !/^[A-Za-z_][A-Za-z0-9_]*$/.test(member)
+}
+
+// A partial index's predicate is part of what the index IS. It was dropped on
+// the floor here, so a partial index and a full one over the same columns
+// compared equal and a changed predicate migrated nothing — while litestone
+// already emits partial indexes for every @@softDelete model (FJS-576).
+//
+// Both sides of the comparison are this package's own emit, which is what makes
+// a text match exact — the same property parseChecks relies on for CHECK.
+//
+// The first `)` followed by WHERE closes the column list: a column list cannot
+// contain one, and a predicate cannot be followed by a second WHERE.
+export function indexPredicate(sql) {
+  const m = /\)\s*WHERE\s+([\s\S]+?)\s*;?\s*$/i.exec(sql ?? '')
+  return m ? m[1].replace(/\s+/g, ' ').trim() : null
+}
+
 export function normaliseTriggerSql(sql) {
   return sql
     .replace(/CREATE\s+TRIGGER\s+IF\s+NOT\s+EXISTS/i, 'CREATE TRIGGER')
@@ -439,7 +598,30 @@ function arraysEqual(a, b) {
   return a.length === b.length && a.every((v, i) => v === b[i])
 }
 
-function indexKey(idx) { return `${idx.unique ? 'u' : ''}:${[...idx.cols].sort().join(',')}` }
+// What makes two indexes the same index — the columns IN ORDER, their
+// directions, uniqueness and the partial predicate.
+//
+// The order is the whole of it. A composite index is prefix-matched, so
+// `@@index([a, b])` answers `WHERE a = ?` and `@@index([b, a])` does not; they
+// serve different queries and are different indexes. This compared them as a
+// SET, so swapping two columns was a real schema change that reported as no
+// change at all (FJS-592). The direction is the same fact one column along —
+// SQLite walks a b-tree either way for a single column, so a direction only
+// ever matters on a composite whose columns disagree (FJS-591).
+//
+// What it costs is one DROP INDEX + CREATE INDEX, on the next migration, for a
+// database whose live column order differs from what the schema declares. That
+// is not a table rebuild, and it is the right outcome anyway: the order in
+// `sqlite_master` is the order the index is actually walked in, so a difference
+// there means the live index is not the one the schema asks for. The same
+// argument the CHECK comparison below makes about an emitter that spelled a
+// constraint differently.
+function indexKey(idx) {
+  const cols = idx.sorts?.some(Boolean)
+    ? idx.cols.map((c, i) => `${c}${idx.sorts[i] ? ` ${idx.sorts[i]}` : ''}`)
+    : idx.cols
+  return `${idx.unique ? 'u' : ''}:${cols.join(',')}:${idx.where ?? ''}`
+}
 
 // Every index litestone generates for a model table is named
 // `idx_<table>_<fields>` (createIndexes in ddl.js), so the prefix is what
@@ -905,7 +1087,7 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
         }
         lines.push(rebuildSQL(model, parseResult, pluralize, d))
         lines.push(``)
-        const idxSQL = generateIndexDDL(model, false, { pluralize })
+        const idxSQL = generateIndexDDL(model, undefined, { pluralize })
         if (idxSQL.length) {
           lines.push(`-- recreate indexes for "${d.name}"`)
           lines.push(idxSQL.join('\n'))
@@ -958,9 +1140,15 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
       if (d.indexes.added.length) {
         lines.push(`-- "${d.name}": add indexes`)
         for (const idx of d.indexes.added) {
-          const u    = idx.unique ? 'UNIQUE ' : ''
-          const cols = idx.cols.map(c => `"${c}"`).join(', ')
-          lines.push(`CREATE ${u}INDEX IF NOT EXISTS "${idx.name}" ON "${d.name}" (${cols});`)
+          const u     = idx.unique ? 'UNIQUE ' : ''
+          // The direction travels, or the drop above is followed by a CREATE of
+          // the very index it just removed and the migration is a no-op that
+          // reports success.
+          const cols  = idx.cols
+            .map((c, i) => `"${c}"${idx.sorts?.[i] ? ` ${idx.sorts[i]}` : ''}`)
+            .join(', ')
+          const where = idx.where ? ` WHERE ${idx.where}` : ''
+          lines.push(`CREATE ${u}INDEX IF NOT EXISTS "${idx.name}" ON "${d.name}" (${cols})${where};`)
         }
         lines.push(``)
       }

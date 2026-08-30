@@ -40,6 +40,10 @@ const argv = Bun.argv.slice(2)
 
 export interface SurfaceService {
   name:          string
+  // Older spellings this service still answers to. A kebab FILENAME derives a
+  // camel service name now (`FJS-570`), and the filename's own spelling stays
+  // mounted — which is a fact about the wire and therefore belongs here.
+  aliases:       string[]
   model:         string
   methods:       string[]
   customMethods: string[]
@@ -77,6 +81,7 @@ export function describeSurface(app: App): Surface {
 
     return {
       name:          d.name,
+      aliases:       app.services.aliasesOf(d.name),
       model:         d.model,
       methods:       d.methods,
       customMethods: d.customMethods,
@@ -178,6 +183,7 @@ export function renderSurfaceSnapshot(surface: Surface, opts: { source?: string;
     out.push('')
     out.push(`- **methods** — ${svc.methods.length ? svc.methods.map(m => `\`${m}\``).join(', ') : '(none)'}`)
     if (svc.customMethods.length) out.push(`- **custom methods** — ${svc.customMethods.map(a => `\`${a}\``).join(', ')}`)
+    if (svc.aliases.length)       out.push(`- **also answers to** — ${svc.aliases.map(a => `\`${a}\``).join(', ')}`)
     // A declared input is a fact about the wire that is written in a service
     // file and readable nowhere else.
     for (const [method, type] of Object.entries(svc.inputs).sort())

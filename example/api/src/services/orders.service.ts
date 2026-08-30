@@ -218,7 +218,9 @@ const checkOrderRules = async () => {
   await validateFields(e => {
     // Cross-FIELD. Neither column is wrong on its own, which is exactly why
     // this cannot be an attribute on either of them.
-    if (Number(data.total ?? 0) >= 1000 && !String(data.note ?? '').trim())
+    // `total` is cents, so the threshold is stated in cents. A bare 1000 here
+    // is ten dollars, and the rule would fire on almost every order.
+    if (Number(data.total ?? 0) >= 100_000 && !String(data.note ?? '').trim())
       e.invalid('note', 'An order of 1,000 or more needs a note saying why')
 
     // A new order starts at `pending`. @@transitions governs every MOVE after

@@ -249,6 +249,18 @@ button[data-health] {
   overflow-y:     auto;
   padding:        var(--space-2xs);
 }
+/* The revert plan is a command's own output, shown verbatim: the refusals are
+   the part worth reading and a parse into a shape would lose their wording.
+   Preformatted, so it scrolls in its own box rather than widening the page. */
+.gui-plan {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  overflow-x: auto;
+  white-space: pre;
+  line-height: 1.5;
+  color: var(--ink-soft, inherit);
+}
+
 /* Keyboard selection is the same state a current nav link is in, and takes the
    same recipe — `.navlink[aria-current]`'s, which is a tint of the tone rather
    than a colour. Hover alone was invisible: it lands on the ground the palette
@@ -347,6 +359,40 @@ button[data-health] {
           <div class="bar dense" id="checks-more" hidden>
             <button class="btn ghost text-xs" onclick="showAllChecks()" id="checks-more-btn"></button>
           </div>
+        </section>
+
+        <!-- The Release realm, which was entirely terminal until now: you
+             learned that a change crossed the pivot by typing `release:check`,
+             which is a thing people type when something is already wrong.
+             Two halves, and the split is load-bearing — the verdict READS THE
+             TREE and is free; what is serving reaches a MACHINE and is a
+             button. A panel that ssh'd on page load would be a monitoring
+             agent, which is the orchestrator this realm refuses. -->
+        <section class="surface" id="release">
+          <div class="bar bordered dense">
+            <strong class="text-sm">release</strong>
+            <span class="text-xs text-muted" id="release-note">reading…</span>
+            <button class="btn ghost text-xs" onclick="loadRelease()">recheck</button>
+          </div>
+          <ul class="rows divided" id="release-rows"></ul>
+
+          <!-- Hidden until an app declares one: a section that says "none" on
+               every page load is a section people learn to scroll past. -->
+          <div class="bar dense" id="attach-bar" hidden><strong class="text-xs text-muted">attachments</strong></div>
+          <ul class="rows divided" id="attach-rows" hidden></ul>
+
+          <div class="bar dense">
+            <label class="text-xs text-muted" for="release-target">target</label>
+            <select class="field text-xs" id="release-target">
+              <option value="default">default (branch)</option>
+              <option value="production">production</option>
+              <option value="stage">stage</option>
+            </select>
+            <select class="field text-xs" id="release-app"></select>
+            <button class="btn ghost text-xs" onclick="readTarget()" id="release-read">read the target</button>
+            <span class="text-xs text-muted" id="target-note">reaches the machine over ssh — nothing is read until you press it</span>
+          </div>
+          <div id="target-out" hidden></div>
         </section>
 
         <div class="stack gap-lg" id="dash-groups"></div>
@@ -1456,6 +1502,7 @@ async function loadDashboard() {
   }
   loadProves()
   loadChecks()
+  loadRelease()
 }
 
 // ─── what proves this change ──────────────────────────────────────────────────
@@ -1698,6 +1745,179 @@ async function pollState() {
 const CHECKS_SHOWN = 6
 let checkRows = []
 let checkAll  = false
+
+// ─── release ─────────────────────────────────────────────────────────────────
+//
+// Two questions and they are answered by two different things. The verdict is
+// a fact about the working tree, so it loads with the page. What is serving is
+// a fact about a machine, so it waits for a press.
+
+let releaseApps = []
+let releaseAll  = new Set()
+
+async function loadRelease() {
+  const note = document.getElementById('release-note')
+  const sect = document.getElementById('release')
+  try {
+    note.textContent = 'classifying…'
+    const body = await fetch(`${API}/api/release`).then(r => r.json())
+    if (body.error) throw new Error(body.error)
+
+    releaseApps = body.apps ?? []
+    releaseAll  = new Set()
+
+    // The headline is the worst verdict, because one contract in a workspace of
+    // four is the fact that decides whether this deploy can be taken back.
+    const worst = releaseApps.some(a => a.verdict === 'contract') ? 'contract'
+                : releaseApps.some(a => a.verdict === 'unknown')  ? 'unknown'
+                : releaseApps.length ? 'expand' : 'nothing'
+    note.textContent = worst === 'nothing'
+      ? 'no app in this tree declares a schema'
+      : worst === 'contract' ? 'a deploy of this tree crosses the pivot — after it, only forward'
+      : worst === 'unknown'  ? 'something moved and nothing here can say which way — counts as contract'
+      : 'reversible — N-1 keeps working'
+
+    renderRelease()
+    renderAttachments(body.attachments ?? [])
+    fillApps()
+    sect.hidden = false
+  } catch (err) {
+    note.textContent = `could not classify: ${err.message}`
+  }
+}
+
+function renderRelease() {
+  document.getElementById('release-rows').innerHTML = releaseApps.map(releaseRow).join('')
+}
+
+const VERDICT_WORD = {
+  expand:      'N-1 keeps working — reversible',
+  unchanged:   'nothing moved',
+  contract:    'N-1 cannot serve this — the pivot',
+  unknown:     'not decidable from the text — counts as contract',
+  unavailable: 'no verdict',
+}
+
+function releaseRow(a) {
+  const open = releaseAll.has(a.label)
+  const n    = a.findings.length
+  // Findings are the reason the verdict is what it is, so they are reachable
+  // without leaving the page — but folded, since a contract can be twenty rows
+  // and the verdict is the thing being read.
+  const list = open ? a.findings.map(f => `
+        <li class="list-row">
+          <div class="cluster gap-sm">
+            <span class="badge ${f.severity === 'contract' ? 'danger' : f.severity === 'unknown' ? 'warning' : 'success'} text-xs">${esc(f.severity)}</span>
+            <code class="gui-cmd">${esc(f.subject)}</code>
+            ${f.needsBackfill ? '<span class="badge info text-xs">backfill</span>' : ''}
+          </div>
+          <span class="text-xs text-muted gui-clamp">${esc(f.detail)}</span>
+        </li>`).join('') : ''
+
+  return `
+    <li class="list-row">
+      <div class="stack gap-3xs">
+        <div class="cluster gap-sm">
+          <span class="badge ${esc(a.tone)} text-xs">${esc(a.verdict)}</span>
+          <code class="gui-cmd">${esc(a.label)}</code>
+          ${a.baseline ? `<span class="text-xs text-muted">vs ${esc(a.baseline.replace(/\`/g, ''))}</span>` : ''}
+          ${n ? `<button class="btn ghost text-xs" onclick="toggleRelease('${esc(a.label)}')">${open ? 'hide' : `${n} finding(s)`}</button>` : ''}
+        </div>
+        <span class="text-xs text-muted gui-clamp">${esc(a.note ?? VERDICT_WORD[a.verdict] ?? '')}</span>
+        ${open ? `<ul class="rows divided">${list}</ul>` : ''}
+      </div>
+    </li>`
+}
+
+function toggleRelease(label) {
+  releaseAll.has(label) ? releaseAll.delete(label) : releaseAll.add(label)
+  renderRelease()
+}
+
+// `bound` is a COUNT and never a verdict — the verdict is the app's own, made
+// at startup where the defaults and the field specs are in scope. Saying more
+// than this from outside the process is how a panel and a refusal disagree.
+function renderAttachments(rows) {
+  const bar  = document.getElementById('attach-bar')
+  const list = document.getElementById('attach-rows')
+  bar.hidden = list.hidden = rows.length === 0
+  list.innerHTML = rows.map(r => {
+    const half = r.bound > 0 && r.bound < r.keys.length
+    const tone = half ? 'danger' : r.bound === r.keys.length ? 'success' : r.optional ? 'muted' : 'warning'
+    const word = half ? 'bound halfway — always a refusal'
+               : r.bound === r.keys.length ? 'this shell carries every key'
+               : r.optional ? 'nothing bound — forgiven, it is optional'
+               : 'nothing bound'
+    return `
+      <li class="list-row">
+        <div class="stack gap-3xs">
+          <div class="cluster gap-sm">
+            <span class="pill ${tone} text-xs">${r.bound}/${r.keys.length}</span>
+            <code class="gui-cmd">${esc(r.app)} · ${esc(r.service)}</code>
+          </div>
+          <span class="text-xs text-muted gui-clamp">${esc(word)} — ${esc(r.keys.join(', '))}</span>
+        </div>
+      </li>`
+  }).join('')
+}
+
+function fillApps() {
+  const sel = document.getElementById('release-app')
+  sel.innerHTML = releaseApps.map(a => `<option value="${esc(a.label)}">${esc(a.label)}</option>`).join('')
+}
+
+// ─── the remote half ─────────────────────────────────────────────────────────
+//
+// A press, never a poll. It runs two commands over ssh and the second one is
+// slow, so the button says what it is doing rather than going quiet.
+async function readTarget() {
+  const out  = document.getElementById('target-out')
+  const note = document.getElementById('target-note')
+  const btn  = document.getElementById('release-read')
+
+  btn.disabled = true
+  note.textContent = 'reaching the machine…'
+  try {
+    const body = await fetch(`${API}/api/release/target`, {
+      method:  'POST',
+      headers: { 'content-type': 'application/json' },
+      body:    JSON.stringify({
+        target: document.getElementById('release-target').value,
+        app:    document.getElementById('release-app').value,
+      }),
+    }).then(r => r.json())
+
+    out.hidden = false
+    if (!body.ok) {
+      // The command's own sentence, not a rewrite of it. A refusal that reaches
+      // nobody is not a refusal (`FJS-D158`), and this is the same lesson.
+      note.textContent = 'the target could not be read'
+      out.innerHTML = `<div class="bar dense"><span class="text-xs" data-finding="error">${esc(body.error ?? 'no reason given')}</span></div>`
+      return
+    }
+
+    note.textContent = `${esc(body.app)} · ${esc(body.target)}`
+    out.innerHTML = `
+      <ul class="rows divided">
+        ${body.transitions.map(t => `
+          <li class="list-row">
+            <div class="cluster gap-sm">
+              <span class="badge ${t.status === 'succeeded' ? 'success' : t.status === 'failed' ? 'danger' : 'warning'} text-xs">${esc(t.status)}</span>
+              <code class="gui-cmd">${esc(t.releaseId ?? '—')}</code>
+              <span class="text-xs text-muted">${esc(t.kind ?? '')} ${esc(t.startedAt ?? '')}</span>
+              ${t.serving ? '<span class="badge info text-xs">serving</span>' : ''}
+              ${t.crossesPivot ? '<span class="badge danger text-xs">crossed the pivot</span>' : ''}
+            </div>
+          </li>`).join('') || '<li class="list-row"><span class="text-xs text-muted">nothing recorded — no deploy has run against this target since the journal existed</span></li>'}
+      </ul>
+      <div class="bar dense"><strong class="text-xs text-muted">can it come back?</strong></div>
+      <pre class="gui-plan text-xs">${esc(body.plan.text || 'the revert plan said nothing')}</pre>`
+  } catch (err) {
+    note.textContent = `could not reach the target: ${err.message}`
+  } finally {
+    btn.disabled = false
+  }
+}
 
 async function loadChecks() {
   const note = document.getElementById('checks-note')

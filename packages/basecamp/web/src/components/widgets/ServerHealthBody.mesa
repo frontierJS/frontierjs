@@ -9,7 +9,6 @@
   // A server with no `health` has not checked in. That is a state worth naming
   // rather than three bars at zero, which reads as a machine at rest.
   import { servers } from '../../resources/Server.mesa'
-  import { onWrite } from './live.js'
   import Bar from '@frontierjs/ui/components/display/Bar.mesa'
 
   export let widget = null
@@ -18,11 +17,21 @@
   let error   = null
   let loading = true
 
+  // Watched rather than read (`FJS-518`): a heartbeat is a write to this row
+  // from a machine nobody on this page is driving, which is the whole of what
+  // this card shows. `servers.get()` answers the row itself, so this is the
+  // plain form — no `composed:`, and the node IS the value.
+  let row     = null
+  let unwatch = null
+
   async function load() {
     error = null
     if (!widget?.serverId) { loading = false; return }
     try {
-      server = await servers.service.get(widget.serverId)
+      unwatch?.(); row?.release()
+      row = servers.record(widget.serverId)
+      unwatch = row.subscribe(v => { server = v })
+      await row.ready
     } catch (e) {
       error = e.message
     } finally {
@@ -31,7 +40,7 @@
   }
 
   load()
-  $.onDestroy(onWrite(servers.service, load))
+  $.onDestroy(() => { unwatch?.(); row?.release() })
 
   // Only the three the mock draws, and only when the outpost reported a number.
   // Anything else the outpost sends is its own vocabulary and belongs on the

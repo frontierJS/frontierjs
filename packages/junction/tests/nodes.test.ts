@@ -483,3 +483,132 @@ describe('resource().mutate()', () => {
     expect(r.store.get().map(x => x.id)).toEqual([1, 2])
   })
 })
+
+// ─── a view of one that is more than one ──────────────────────────────────────
+//
+// `FJS-533`. A node holds ONE shape and `_write` REPLACES it, so a screen whose
+// `get()` composes children — an `include:`, a `withWidgets()`, a count built
+// per call — cannot read the node: the first push carries the row alone and the
+// children vanish with nothing said. Four of basecamp's five composed reads did
+// exactly that when `record()` was first adopted. `composed: true` makes the
+// node the TRIGGER instead.
+//
+// The negative control is the block above: every case there is the same view
+// with the node AS the value, and none of them re-reads.
+
+/** A row whose composed shape is whatever `answer()` says at the time. */
+function mockComposed(answer: () => unknown) {
+  const original = globalThis.fetch
+  let calls = 0
+  globalThis.fetch = (async () => {
+    calls++
+    return new Response(JSON.stringify(answer()), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    })
+  }) as unknown as typeof fetch
+  return { restore: () => { globalThis.fetch = original }, calls: () => calls }
+}
+
+describe('resource().record(id, { composed: true })', () => {
+  it('keeps the children a push does not carry, by reading again', async () => {
+    const c = client()
+    let status = 'pending'
+    const m = mockComposed(() => ({ id: 1, status, domains: [{ id: 9, host: 'a.test' }] }))
+    const r = c.resource('apps', 'id', { model: 'App' })
+    const row = r.record(1, { composed: true })
+    await row.ready
+    expect(row.get()).toEqual({ id: 1, status: 'pending', domains: [{ id: 9, host: 'a.test' }] })
+
+    // The announcement carries the ROW — no domains, because a list never
+    // asked for them. This is the shape that used to empty the screen.
+    status = 'live'
+    r.service._receive('patched', { id: 1, status: 'live' })
+    await Promise.resolve(); await Promise.resolve(); await new Promise(r => setTimeout(r, 0))
+
+    expect(row.get()).toEqual({ id: 1, status: 'live', domains: [{ id: 9, host: 'a.test' }] })
+    expect(m.calls()).toBe(2)
+    m.restore()
+  })
+
+  it('does not write its composed row into the node, so a list keeps the list shape', async () => {
+    const c = client()
+    const list = mockList([{ id: 1, status: 'pending' }], { limit: 20, offset: 0, total: 1 })
+    const r = c.resource('apps', 'id', { model: 'App' })
+    await r.load()
+    list.restore()
+
+    const m = mockComposed(() => ({ id: 1, status: 'pending', domains: [{ id: 9 }] }))
+    const row = r.record(1, { composed: true })
+    await row.ready
+    expect(row.get()).toHaveProperty('domains')
+    // The list is a view of the node, and the node was never handed children.
+    expect(r.store.get()).toEqual([{ id: 1, status: 'pending' }])
+    m.restore()
+  })
+
+  it('reads even when a list has already filled the node — the node is not this value', async () => {
+    const c = client()
+    const list = mockList([{ id: 1, status: 'pending' }], { limit: 20, offset: 0, total: 1 })
+    const r = c.resource('apps', 'id', { model: 'App' })
+    await r.load()
+    list.restore()
+
+    const m = mockComposed(() => ({ id: 1, status: 'pending', domains: [] }))
+    const row = r.record(1, { composed: true })
+    expect(await row.ready).toHaveProperty('domains')
+    expect(m.calls()).toBe(1)
+    m.restore()
+  })
+
+  it('coalesces a burst — three announcements are not three reads', async () => {
+    const c = client()
+    const m = mockComposed(() => ({ id: 1, domains: [] }))
+    const r = c.resource('apps', 'id', { model: 'App' })
+    const row = r.record(1, { composed: true })
+    await row.ready
+    expect(m.calls()).toBe(1)
+
+    r.service._receive('patched', { id: 1, n: 1 })
+    r.service._receive('patched', { id: 1, n: 2 })
+    r.service._receive('patched', { id: 1, n: 3 })
+    await new Promise(res => setTimeout(res, 5))
+
+    // One read in flight, one more for everything that arrived while it was.
+    expect(m.calls()).toBe(3)
+    m.restore()
+  })
+
+  it("re-reads on `changed`, the announcement that names no row", async () => {
+    // A bulk write or a `select: false` write carries a count and nothing else,
+    // so no view can tell whether this row was in it. The list re-reads; so
+    // does this, or a watched row goes stale under the writes that say least.
+    const c = client()
+    let n = 1
+    const m = mockComposed(() => ({ id: 1, n, domains: [] }))
+    const r = c.resource('apps', 'id', { model: 'App' })
+    const row = r.record(1, { composed: true })
+    await row.ready
+    expect(row.get()).toMatchObject({ n: 1 })
+
+    n = 2
+    r.service._receive('changed', { model: 'App', operation: 'update', count: 12 })
+    await new Promise(res => setTimeout(res, 5))
+    expect(row.get()).toMatchObject({ n: 2 })
+    m.restore()
+  })
+
+  it('still answers null once the row is removed', async () => {
+    const c = client()
+    const m = mockComposed(() => ({ id: 1, domains: [{ id: 9 }] }))
+    const r = c.resource('apps', 'id', { model: 'App' })
+    const row = r.record(1, { composed: true })
+    await row.ready
+
+    const seen: unknown[] = []
+    row.subscribe(v => seen.push(v))
+    r.service._receive('removed', { id: 1 })
+    expect(row.get()).toBeNull()
+    expect(seen.at(-1)).toBeNull()
+    m.restore()
+  })
+})

@@ -113,6 +113,15 @@ try {
   const { rewriteStack } = await import('../core/stack.js')
   rewriteStack(err)
 
+  // A REFUSAL has already printed its reason and the ways out (`FJS-589`).
+  // What is owed here is a non-zero exit and one line naming what stopped —
+  // not a generic message on top of a specific one, and not an invitation to
+  // re-run with --debug for a stack that says nothing.
+  if (err?.quiet) {
+    console.error(`\n\x1b[31m✗\x1b[0m ${err.message}\n`)
+    process.exit(1)
+  }
+
   const debug = process.argv.includes('--debug') || process.env.FLI_DEBUG
   if (debug) {
     console.error(err)

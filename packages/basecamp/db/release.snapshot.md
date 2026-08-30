@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-46 model(s) · 27 enum(s) · 2 database(s)
+46 model(s) · 30 enum(s) · 2 database(s)
 audit → logger · main → sqlite
 ```
 
@@ -21,7 +21,9 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | Enum | Members |
 | --- | --- |
 | `AccountType` | `individual` · `organization` |
+| `ActorKind` | `api_key` · `system` · `user` |
 | `AlertSeverity` | `critical` · `info` · `warning` |
+| `AlertSubject` | `server` · `volume` |
 | `AppStatus` | `deploying` · `error` · `running` · `starting` · `stopped` · `stopping` · `unknown` |
 | `AppType` | `container` · `cron` · `daemon` · `database` · `function` · `static` · `worker` |
 | `BackupDestination` | `local` · `s3` |
@@ -35,6 +37,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `JobStatus` | `cancelled` · `failed` · `pending` · `running` |
 | `NotificationKind` | `alert_firing` · `alert_resolved` · `deploy_failed` · `deploy_success` · `job_failed` · `member_joined` · `weekly_digest` |
 | `ParamGenerator` | `random_hex_16` · `random_hex_32` · `random_hex_64` |
+| `ProviderKind` | `custom` · `hetzner` |
 | `RunStatus` | `failed` · `pending` · `running` · `success` · `timeout` |
 | `SecretKind` | `generic` · `notification` · `provider_key` · `registry_auth` · `ssh_key` · `tls_cert` |
 | `ServerRole` | `build` · `database` · `gateway` · `general` · `worker` |
@@ -85,7 +88,7 @@ table `alert_event` · db `main` · gate `2.8.4.8`
 | `severity` | `AlertSeverity` | no | — | **required on write** |
 | `status` | `String` | no | `'firing'` | — |
 | `subjectId` | `String` | no | — | **required on write** |
-| `subjectType` | `String` | no | — | **required on write** |
+| `subjectType` | `AlertSubject` | no | — | **required on write** |
 | `valueAtTrigger` | `Float` | no | `0` | — |
 
 ```
@@ -302,7 +305,7 @@ table `audit_event` · db `main` · gate `5.8.9.9`
 | --- | --- | --- | --- | --- |
 | `action` | `String` | no | — | **required on write** |
 | `actorId` | `String` | yes | — | — |
-| `actorType` | `String` | no | `'user'` | — |
+| `actorType` | `ActorKind` | no | `'user'` | — |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `diff` | `Json` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
@@ -1195,7 +1198,7 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 | `outpostVersion` | `String` | yes | — | — |
 | `plan` | `Json` | no | `'{}'` | — |
 | `providerId` | `String` | yes | — | — |
-| `providerKind` | `String` | no | `'custom'` | — |
+| `providerKind` | `ProviderKind` | no | `'custom'` | — |
 | `providerServerId` | `String` | yes | — | — |
 | `region` | `String` | no | `'custom'` | — |
 | `registerMethod` | `String` | no | `'imported'` | — |

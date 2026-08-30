@@ -328,6 +328,26 @@ export function dependsOnClock(node) {
 // schema error rather than a last-one-wins, because the two would be
 // indistinguishable at the call site.
 
+// Compile a predicate with no caller in scope, and hand back what it BOUND.
+//
+// An index predicate is the one place a bound parameter is fatal rather than
+// ordinary. SQLite proves that a query implies a partial index at PREPARE time,
+// so a predicate holding `?` can never be matched — and litestone binds every
+// filter value, which means a caller restating the predicate binds it too.
+// `params.length === 0` is therefore the whole of what makes a partial index
+// reachable, and ASKING the compiler is what stops that rule drifting away from
+// the emitter it is a statement about.
+//
+// `auth()` and `now()` need no case of their own: both push a parameter and are
+// refused by the same count. A subquery — a relation hop, a check() — pushes
+// none, so the caller looks for SELECT in the SQL instead.
+export function compileStatic(node, modelName, schema, relationMap = new Map()) {
+  const params = []
+  const ctx    = { auth: null, _now: null, enc: {} }
+  const sql    = compileSql(node, params, ctx, modelName, null, new Map(), schema, relationMap, new Set())
+  return { sql, params }
+}
+
 export function buildScopeMap(schema, relationMap) {
   const map = {}
   for (const model of schema.models) {

@@ -1,12 +1,10 @@
-// rails-to-lite.mjs — a Rails `db/schema.rb`, converted mechanically to .lite.
+// rails.js — a Rails `db/schema.rb`, read into .lite.
 //
-// The second front-end, and it exists for the constructs Prisma cannot express
-// at all: single-table inheritance, partial indexes, and the (type, id)
-// polymorphic pair. Three Prisma schemas largely agree with each other; a Rails
-// one disagrees, which is the only reason to add it.
+// Here for the constructs Prisma cannot express at all: single-table
+// inheritance, partial indexes, and the (type, id) polymorphic pair.
 //
-// Same contract as prisma-to-lite.mjs: the output is not the artifact, the
-// refusal list is. It never repairs and never guesses.
+// Same contract as its siblings — the output is not the whole answer, the
+// refusal list is; it never repairs and never guesses.
 //
 // Two Rails facts drive most of the work:
 //   · a column is NULLABLE unless `null: false`, the opposite of .lite's default
@@ -15,7 +13,9 @@
 //     the one owner — and the original is kept with @map.
 
 import { singularize } from '@frontierjs/toolbelt/inflect'
-import { detectPolymorphic } from './polymorphic.mjs'
+import { detectPolymorphic } from './polymorphic.js'
+import { BIGINT_EMITTED, namesATable } from './wide-int.js'
+import { predicateToLite } from '../core/migrate.js'
 
 // Rails column type → .lite type. `decimal` is handled separately (it carries a
 // scale), and anything absent here is recorded rather than guessed.
@@ -37,7 +37,7 @@ const modelOf = (table) => pascal(singularize(table))
 export function convert(src, label = 'schema') {
   const gaps = []
   const gap = (kind, model, field, detail, emitted) =>
-    gaps.push({ repo: label, kind, model, field, detail, emitted })
+    gaps.push({ source: label, kind, model, field, detail, emitted })
 
   const tables = readTables(src, gap)
   readForeignKeys(src, tables, gap)
@@ -133,6 +133,13 @@ function emitTable(t, tables, gap) {
               'emitted as an ordinary relation — Postgres NOT VALID has no .lite spelling, and the existing rows may violate it')
       }
     }
+    // A 64-bit value the application SUPPLIES. The table's own `id` is emitted
+    // above and never reaches this loop, so a foreign key is the only exemption
+    // left to make — see wide-int.js for why that is the line.
+    if (col.railsType === 'bigint' && !col.relation &&
+        !namesATable(col.name, (n) => tables.has(n), singularize))
+      gap('bigint', t.model, col.name, `t.bigint${col.isArray ? ' array: true' : ''}`, BIGINT_EMITTED)
+
     out.push(renderColumn(col))
     if (col.relation)
       out.push(`  ${col.relation.field} ${col.relation.target}${col.optional ? '?' : ''} ` +
@@ -142,15 +149,21 @@ function emitTable(t, tables, gap) {
   // Dropping a partial predicate or an opclass can make two DIFFERENT source
   // indexes identical, and litestone derives an index name from its columns, so
   // emitting both is one CREATE INDEX twice.
+  // Keyed on the COLUMN LIST rather than on the emitted text. Litestone names an
+  // index for its columns, so two over one list collide whatever their predicates
+  // differ by — and once a predicate is emitted, two such indexes no longer
+  // produce the same string to collapse on. A real database has them, precisely
+  // because a partial index is what makes a second one useful.
   const seen = new Set()
   for (const raw of t.indexes) {
     const a = emitIndex(raw, t, byColumn, gap)
     if (!a) continue
-    if (seen.has(a)) {
-      gap('index-collapsed', t.model, null, a, 'dropped — identical to an earlier index once its predicate or modifiers were stripped')
+    const key = `${/unique:\s*true/.test(raw) ? 'u:' : ''}${(a.match(/\[([^\]]*)\]/) ?? ['',''])[1]}`
+    if (seen.has(key)) {
+      gap('index-collapsed', t.model, null, a, 'dropped — an earlier index already claims this column list, and an index is named for its columns')
       continue
     }
-    seen.add(a)
+    seen.add(key)
     out.push(`  ${a}`)
   }
 
@@ -201,7 +214,9 @@ function readColumn(raw, t, gap) {
     else extra.push(`@default(${railsDefault(def, type)})`)
   }
 
-  return { name, type, optional, isArray, extra, relation: null }
+  // The source spelling travels: whether a `t.bigint` is worth reporting turns
+  // on whether it is a foreign key, which is a fact about the TABLE.
+  return { name, type, optional, isArray, extra, relation: null, railsType }
 }
 
 function railsDefault(def, type) {
@@ -233,10 +248,13 @@ function emitIndex(raw, t, byColumn, gap) {
   // would be a stronger constraint than the source has.
   const where = raw.match(/where:\s*"((?:[^"\\]|\\.)*)"/)?.[1]
   const unique = /unique:\s*true/.test(raw)
+  let whereLite = null
   if (where) {
+    whereLite = unique ? null : predicateToLite(where, camel)
     gap('partial-index', t.model, names.join(', '), `${unique ? 'unique ' : ''}index where: ${where.slice(0, 60)}`,
-        unique ? 'DROPPED — emitting it unconditionally would be a stronger constraint than the source declares'
-               : 'emitted without the predicate — an ordinary index over the same columns')
+        unique     ? 'DROPPED — emitting it unconditionally would be a stronger constraint than the source declares'
+      : whereLite  ? `emitted whole — where: ${whereLite}`
+                   : 'emitted without the predicate — a plain index answers the same rows and is only larger')
     if (unique) return null
   }
   if (/opclass:|using:\s*:g/.test(raw))
@@ -255,5 +273,5 @@ function emitIndex(raw, t, byColumn, gap) {
     }
     return `@@unique([${names.join(', ')}])`
   }
-  return `@@index([${names.join(', ')}])`
+  return `@@index([${names.join(', ')}]${whereLite ? `, where: ${whereLite}` : ''})`
 }

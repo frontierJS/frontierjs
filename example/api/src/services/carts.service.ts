@@ -1,6 +1,6 @@
 import { createBaseService, $ } from '@frontierjs/junction'
 import { hold, release, consume, heldUntil, levelsFor, HOLD_MINUTES } from '../inventory.ts'
-import { priceBasket, contextFor, discountByCode, discountProblem, round2 } from '../pricing.ts'
+import { priceBasket, contextFor, discountByCode, discountProblem } from '../pricing.ts'
 import { checkoutCodeFor } from '../core/checkout-code.ts'
 
 // The basket. Its ACCESS is entirely in db/schema.lite — `@@allow('read',
@@ -251,7 +251,7 @@ export function createCartsService() {
       // about the lines and the answer must not include the discount it is
       // gating.
       const lines    = await linesOf(cart.id)
-      const subtotal = round2(lines.reduce((n, l) => n + l.total, 0))
+      const subtotal = lines.reduce((n, l) => n + l.total, 0)
 
       const problem = discountProblem(discount, subtotal)
       if (problem) throw bad(problem)
@@ -739,8 +739,9 @@ async function linesOf(cartId: number, client: Record<string, any> = $.db): Prom
       alt:     photo?.alt       ?? null,
       // Money is computed on the SERVER even though it is one multiplication:
       // the total a shopper is shown and the total that is charged have to be
-      // the same arithmetic, and `checkout` does it here.
-      total:   Number((line.unitPrice * line.quantity).toFixed(2)),
+      // the same arithmetic, and `checkout` does it here. Cents times a
+      // quantity is exact, so there is nothing to round.
+      total:   line.unitPrice * line.quantity,
     }
   })
 }

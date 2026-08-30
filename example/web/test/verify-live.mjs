@@ -246,7 +246,7 @@ try {
   // 1 ─ create
   const created = await fetch(`${API}/api/orders`, {
     method: 'POST', headers: auth,
-    body: JSON.stringify({ reference: REF, total: 9.5, status: 'pending', customerId: 1 }),
+    body: JSON.stringify({ reference: REF, total: 950, status: 'pending', customerId: 1 }),
   })
   const body = await created.json()
   orderId = body.id ?? body.data?.id
@@ -336,7 +336,7 @@ try {
   //     above has already been taken and the row above has been deleted.
   const second = await fetch(`${API}/api/orders`, {
     method: 'POST', headers: auth,
-    body: JSON.stringify({ reference: REF2, total: 4.25, status: 'pending', customerId: 1 }),
+    body: JSON.stringify({ reference: REF2, total: 425, status: 'pending', customerId: 1 }),
   })
   const secondBody = await second.json()
   detailId = secondBody.id ?? secondBody.data?.id

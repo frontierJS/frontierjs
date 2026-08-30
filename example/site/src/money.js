@@ -16,15 +16,19 @@
 // available: a surface may not import another surface's `src/` (Invariant 3),
 // and the real fix is the shop's own currency being a row in the Data realm
 // rather than a constant in the UI — which is a feature, not a formatter.
-import { formatMoney } from '@frontierjs/toolbelt/units'
+import { formatMoney, fromMinor } from '@frontierjs/toolbelt/units'
 
-/** What the seed's numbers ARE. Every `price` in the database is this. */
+/** What the seed's numbers ARE. Every `price` in the database is this, and
+ *  every one of them is a whole number of MINOR units — the columns are
+ *  `@money(USD)`. */
 export const BASE = 'USD'
 
-/** A stored amount, as the string a person reads. */
-export function money(amount) {
-  if (amount == null || amount === '') return ''
-  return formatMoney(Number(amount), BASE)
+/** A stored amount — cents — as the string a person reads. `fromMinor` and not
+ *  `/ 100`: the divisor is the currency's, and this file is the only place on
+ *  this surface that applies it. */
+export function money(cents) {
+  if (cents == null || cents === '') return ''
+  return formatMoney(fromMinor(cents, BASE), BASE)
 }
 
 /** A price RANGE, for a product family whose variants disagree. */

@@ -1,22 +1,21 @@
-// frappe-to-lite.mjs — Frappe/ERPNext DocType JSON, converted mechanically.
+// frappe.js — Frappe/ERPNext DocType JSON, read into .lite.
 //
-// The fourth front-end, and it is here for one construct the other three cannot
-// supply: **polymorphism that the schema DECLARES**. A Frappe `Dynamic Link`
-// field names the field holding its target doctype, so the pair is a fact in the
-// file rather than a guess off a column name — and the controlling field says
-// whether the target set is CLOSED or OPEN:
+// Here for one construct the other three readers cannot supply: **polymorphism
+// that the schema DECLARES**. A Frappe `Dynamic Link` field names the field
+// holding its target doctype, so the pair is a fact in the file rather than a
+// guess off a column name — and the controlling field says whether the target
+// set is CLOSED or OPEN:
 //
 //   controlling field is a Select with N options  → a closed set of N  → @@arc
 //   controlling field is a Link to DocType        → open               → the pair
 //
-// That is the one question `references/Tag.lite` leaves to the author and no
-// other source in this corpus can answer, so the counts here are the evidence
-// for where @@arc's ceiling belongs.
+// That is the question `references/Tag.lite` leaves to the author, and the only
+// place any input answers it.
 //
 // Same contract as its siblings: the refusal list is the artifact, and it never
 // repairs and never guesses.
 
-import { detectPolymorphic } from './polymorphic.mjs'
+import { detectPolymorphic } from './polymorphic.js'
 
 const LAYOUT = new Set(['Section Break', 'Column Break', 'Tab Break', 'HTML', 'Button', 'Heading', 'Fold', 'Image'])
 
@@ -39,7 +38,7 @@ const camel = (s) => { const p = pascal(s); return p[0].toLowerCase() + p.slice(
 export function convert(docs, label = 'schema') {
   const gaps = []
   const gap = (kind, model, field, detail, emitted) =>
-    gaps.push({ repo: label, kind, model, field, detail, emitted })
+    gaps.push({ source: label, kind, model, field, detail, emitted })
 
   const byName = new Map()
   for (const d of docs) if (d && d.doctype === 'DocType' && d.name) byName.set(d.name, d)
@@ -59,7 +58,11 @@ export function convert(docs, label = 'schema') {
   for (const [model, doc] of models) out.push(...emitDoc(model, doc, byName, models, enums, gap))
 
   const head = []
-  for (const [name, values] of enums) head.push(`enum ${name} {`, ...values.map(v => '  ' + v), '}', '')
+  // A member that is not a bare identifier is quoted — the stored value is the
+  // string either way, and a legal identifier stays bare so the output reads
+  // like something a person wrote.
+  const member = (v) => /^[A-Za-z_]\w*$/.test(v) ? v : `"${v.replace(/(["\\])/g, '\\$1')}"`
+  for (const [name, values] of enums) head.push(`enum ${name} {`, ...values.map(v => '  ' + member(v)), '}', '')
 
   const lite = head.concat(out).join('\n')
   detectPolymorphic(lite, gap)
@@ -161,15 +164,35 @@ function emitField(model, f, byField, byName, models, enums, gap, taken) {
 
   if (f.fieldtype === 'Select') {
     const values = String(f.options || '').split('\n').map(s => s.trim()).filter(Boolean)
-    const safe = values.length >= 2 && values.every(v => /^[A-Za-z_]\w*$/.test(v))
+    // A member may be a quoted string now, so an option list only has to be a
+    // SET — two or more distinct values. It used to have to be identifiers,
+    // which lost 283 declared sets across ERPNext to a bare `String`, and
+    // almost every one was blocked by a space and nothing else: `On Hold`,
+    // `To Receive and Bill`, `Grand Total`.
+    //
+    // One option is still not a set. Frappe's `naming_series` is the shape —
+    // `PUR-RFQ-.YYYY.-`, a format string wearing a Select — and an enum of one
+    // member says the column is a constant, which it is not.
+    const safe = values.length >= 2
     if (safe) {
-      const enumName = `${model}${pascal(f.fieldname)}`
+      // `<Model><Field>` is the derived name, and ERPNext has a doctype called
+      // `Supplier Scorecard Period` as well as a `Supplier Scorecard.period`,
+      // so the two land on one declaration name and the schema does not parse.
+      // Widening which Selects become enums is what made the collision reachable.
+      let enumName = `${model}${pascal(f.fieldname)}`
+      while (models.has(enumName) || enums.has(enumName)) {
+        const alt = `${enumName}Enum`
+        gap('enum-name-collision', model, f.fieldname,
+            `${enumName} is already ${models.has(enumName) ? 'a doctype' : 'an enum'}`,
+            `named ${alt} instead — the set is intact and the NAME is this reader's`)
+        enumName = alt
+      }
       enums.set(enumName, [...new Set(values)])
       return [`  ${name} ${enumName}${optional ? '?' : ''}${extra.length ? ' ' + extra.join(' ') : ''}`]
     }
     if (values.length)
-      gap('select-not-an-enum', model, f.fieldname, `${values.length} options, e.g. ${values.slice(0, 3).join(' | ').slice(0, 50)}`,
-          'String — the options are not identifiers, so they cannot be enum values')
+      gap('select-not-an-enum', model, f.fieldname, `${values.length} option, ${values[0].slice(0, 40)}`,
+          'String — one option is not a set. A naming series is a format string rather than a closed set of values')
     return [`  ${name} String${optional ? '?' : ''}${extra.length ? ' ' + extra.join(' ') : ''}`]
   }
 

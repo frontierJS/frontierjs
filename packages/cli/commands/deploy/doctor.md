@@ -550,11 +550,15 @@ if (flag.remote) {
           warn()
         }
 
-        // Stale lock
-        const lockContent = ask(`cat ${path}/.deploy.lock 2>/dev/null`)
-        if (lockContent) {
+        // A lock, and what it is holding. Reported and never graded: whether
+        // that run is still alive is a fact about a process on somebody else's
+        // machine, so a doctor that called it stale would be guessing.
+        const { lockPath, parseLock, describeLock } =
+          await import(new URL('file://' + global.fliRoot + '/core/lock.js'))
+        const held = parseLock(ask(`cat ${lockPath(path)} 2>/dev/null`))
+        if (held) {
           renderCheck('deploy lock', 'warn',
-            `lock present (${lockContent}) — clear with: ${machine.local ? `rm ${path}/.deploy.lock` : `ssh ${host} "rm ${path}/.deploy.lock"`}`)
+            `${describeLock(held).lines.join(' · ')} — if that run is dead: fli deploy --resume, or fli deploy:unlock`)
           warn()
         } else {
           renderCheck('deploy lock', 'pass', 'clear')
@@ -605,8 +609,8 @@ if (failed === 0 && warned === 0) {
 }
 echo('')
 
-// Doctor is read-only — never run any of the deploy/_steps under any
-// circumstance. Setting abort=true short-circuits the auto-discovered
-// step folder that lives at commands/deploy/_steps/.
-context.config.abort = true
+// Nothing here short-circuits a step folder: doctor declares no `steps:` and is
+// not `index.md`, so none is ever discovered for it. This used to set
+// `context.config.abort` against a pipeline it cannot reach, which would now
+// fail the command for having run (`FJS-589`).
 ```

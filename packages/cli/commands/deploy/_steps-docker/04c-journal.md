@@ -61,6 +61,11 @@ log.info(`  transition  ${opened.transition.id}`)
 if (opened.resumed) {
   log.warn(`  RESUMING attempt ${opened.attempt} — a previous run did not finish`)
   log.info('  Steps it completed replay into a no-op; a step it died inside runs again.')
+  // Worth saying out loud: the bytes this run just built are NOT what continues.
+  // The adopted Release names the image the interrupted run recorded, and
+  // `06-swap` starts that.
+  if (opened.adopted)
+    log.info(`  adopted the open transition's Release — this run's rebuild is set aside`)
 } else if (opened.attempt > 1) {
   log.info(`  attempt     ${opened.attempt}`)
 }
@@ -72,11 +77,17 @@ if (opened.resumed) {
 // That is the rest of `2.3f` — a builder with an identity, and the bytes shipped
 // rather than rebuilt.
 //
-// The cost of putting it in the id is that a resume must recompute the same id,
-// which means the build has to produce the same digest twice. Docker's cache
-// does that for an unchanged tree; where it does not, the resume opens a second
-// transition rather than continuing the first, which is honest — different bytes
-// are a different Release, and pretending otherwise is what the old ordering did.
+// Putting it in the id used to cost the resume, and the reasoning was wrong.
+// The claim was that a resume recomputes the same id because Docker's cache
+// produces the same digest twice for an unchanged tree. It does not: an image ID
+// is not a content address, and any rebuild that is not a FULL cache hit mints a
+// new one from identical bytes — measured, `1f021e1eccf8` cached against
+// `a9c17ea37ed9` with `--no-cache` for one file that did not change. So the
+// second transition was never *different bytes are a different Release*; it was
+// the same bytes wearing a new name, and every resume opened one (`FJS-595`).
+// `--resume` now asks the journal what is OPEN rather than recomputing an id,
+// and adopts that transition with its Release. An ordinary deploy is unchanged
+// and still keys on the Release, because there the question is the right one.
 if (!opened.release.digest)
   log.info('  digest      — the build recorded none; this Release names no bytes')
 ```

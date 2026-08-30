@@ -343,7 +343,9 @@ const record = async () => {
     // back on an order that is still paid and still shipping — the shop has
     // refunded the postage, not the sale — and moving `status` for it would
     // make `refunded` mean two different things.
-    const whole = total >= payment.amount - 0.005
+    // An exact comparison, because both are cents. It used to carry a half-cent
+    // tolerance, which is what two floats needed to agree that they were equal.
+    const whole = total >= payment.amount
 
     $.dispatch = await system.payment.update({ where: { id: payment.id }, data: {
       refundedAmount: total,

@@ -891,9 +891,23 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * answering with a revision nobody on the screen had read, which won the race
    * `@version` exists to lose. The value on screen moves; what this screen has
    * READ does not.
+   *
+   * **`{ composed: true }` where this service's `get()` answers more than the
+   * row** — an `include:`, a count assembled per call, a child list. A node
+   * holds one shape and a push carries the row alone, so watching one there
+   * drops the children at the first announcement (`FJS-533`); declaring it
+   * makes the node the trigger and re-runs this read instead.
    */
-  function record(id) {
-    return junctionResource.record(id, { load: () => _call('get', id) })
+  function record(id, opts = {}) {
+    return junctionResource.record(id, {
+      // The same read `service.get(id)` makes, `detailQuery` included: a
+      // resource that declares the include shape a detail view needs declares
+      // it once, and a record view is a detail view.
+      load: () => _call('get', id, null,
+                        opts.query      ?? detailQuery?.query      ?? {},
+                        opts.directives ?? detailQuery?.directives ?? {}),
+      composed: opts.composed === true,
+    })
   }
 
   /**
@@ -1068,7 +1082,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         .catch(err => {
           console.warn(`[${serviceName}] options('${fieldName}') — ${vs.set} failed to load: ${err?.message ?? err}`)
           if (key) _options.delete(key)
-          return { options: [], total: null, truncated: null }
+          return { options: [], total: null, truncated: null, error: `${vs.set} failed to load: ${err?.message ?? err}` }
         })
 
       if (key) _options.set(key, pending)
@@ -1082,7 +1096,8 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         'key, so there is nothing to offer. A picker comes from a relation or a declared set; ' +
         'check the name against the model.',
       )
-      return Promise.resolve({ options: [], total: 0, truncated: false })
+      return Promise.resolve({ options: [], total: 0, truncated: false,
+        error: `'${fieldName}' is neither an enum, a declared value set nor a foreign key` })
     }
 
     const relatedService = serviceNameFor(ref.model) ?? ref.model
@@ -1142,7 +1157,11 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         // The field still renders, empty, and the failure is said out loud.
         console.warn(`[${serviceName}] options('${fieldName}') failed — ${err?.message ?? err}`)
         if (key) _options.delete(key)
-        return { options: [], total: null, truncated: null }
+        // `error` is what separates *there are none* from *I could not ask*.
+        // Both used to answer an empty list, and a person reads an empty picker
+        // as the first one — which is how a service nobody could reach looked
+        // like a shop with no variants in it (`FJS-570`).
+        return { options: [], total: null, truncated: null, error: String(err?.message ?? err) }
       })
 
     if (key) _options.set(key, pending)

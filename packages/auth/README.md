@@ -99,7 +99,7 @@ app.configure({
 await app.start()
 ```
 
-A working version of exactly this is [`example/api/app.ts`](../../example/api/app.ts),
+A working version of exactly this is [`example/api/src/app.ts`](../../example/api/src/app.ts),
 driven end to end by `example`'s `bun run verify`.
 
 ## Routes

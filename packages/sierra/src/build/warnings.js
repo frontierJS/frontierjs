@@ -16,6 +16,8 @@
 
 import { relative } from 'path'
 
+import { firstRealFailure } from './app-import.js'
+
 // ─── Warning 1: unexported top-level snippets ─────────────────────────────────
 
 /**
@@ -426,13 +428,28 @@ function extractProvidedSlots(source) {
  *
  * Additive: the original message is kept in front, because it is still the only
  * thing that names where the read happened.
+ *
+ * **And where the build caught the first failure itself, it says what it was.**
+ * `app-import.js` records the earliest failure that was not already a TDZ, so
+ * the cause the runtime threw away is still in the build's own hands — printing
+ * the advice instead would be asking the reader to reproduce something this
+ * process already knows.
  */
 export function explainModuleInitFailure(message, specifier) {
   if (!/before initialization/.test(String(message ?? ''))) return message
   const where = specifier ? ` '${specifier}'` : ''
-  return `${message}\n` +
+  const first = firstRealFailure()
+
+  const head = `${message}\n` +
     `      This is not the real error. A module${where} in this import graph threw while\n` +
     `      it was initialising; re-importing it yields a half-built namespace rather than\n` +
-    `      the original throw, so what you are reading is a binding that never got a value.\n` +
+    `      the original throw, so what you are reading is a binding that never got a value.`
+
+  if (!first) return `${head}\n` +
     `      To see the cause, import it once on its own:  bun -e "await import('<the module>')"`
+
+  return `${head}\n` +
+    `      The first module that failed in this build was '${first.path}', and this is\n` +
+    `      what it said:\n` +
+    `        ${String(first.error?.message ?? first.error).split('\n').join('\n        ')}`
 }

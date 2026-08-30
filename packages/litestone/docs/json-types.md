@@ -91,7 +91,7 @@ A type describes a JSON value, which means anything that doesn't make sense in J
 | `@encrypted`, `@guarded`, `@secret` | ✗ |
 | `@default(now())`, `@default(cuid())`, `@default(auth().id)` | ✗ |
 | `@updatedAt`, `@from`, `@generated` | ✗ |
-| Field-level `@allow` / `@deny` | ✗ |
+| Field-level `@allow` | ✗ |
 | Model-level attributes (`@@anything`) | ✗ |
 
 The reasoning is consistent: anything that needs a SQL column to work (encryption, FK, server-side defaults, policy gates) doesn't apply to a JSON sub-key. The error message tells you exactly why.

@@ -96,4 +96,33 @@ export async function run(t) {
   await t.type('zu')
   await t.eventually(`document.querySelector('#searches').textContent.includes('labels:zu')`, 'true',
     'a bound array searches the server too, with no asyncOptions written by hand')
+
+  /* ── a list nobody could fetch ────────────────────────────────────────── */
+  //
+  // The sibling failure, and the sharper one: a truncated list is missing rows,
+  // an unreachable one is missing all of them — and both render as an empty
+  // box, which a person reads as *there are none*. `resource.options()` has
+  // answered `error` since `FJS-570`; nothing read it (`FJS-587`).
+
+  await t.eventually(`(() => { ${hintFor('#broken', 'customerId')} })()`,
+    'Options could not be loaded — /productVariants not found',
+    'a picker that could not ask says so, and says why')
+
+  await t.eventually(`(() => { ${hintFor('#broken', 'tag')} })()`,
+    'Options could not be loaded — /productVariants not found',
+    'and a combobox words it identically')
+
+  await t.eventually(`(() => {
+    const el = document.querySelector('#broken .fjs-multiselect-input');
+    const group = el?.closest('.field-group');
+    return group?.querySelector('.field-hint')?.textContent?.trim() ?? '';
+  })()`,
+    'Options could not be loaded — /productVariants not found',
+    'and so does the array form — one owner for the sentence, three controls')
+
+  // The negative control, and the one that keeps the other three honest: a
+  // relation with no rows is an ordinary, correct answer. A control that said
+  // something here would be saying it on every empty picker in every app.
+  await t.eventually(`(() => { ${hintFor('#empty', 'tag')} })()`, '',
+    'a list that is genuinely empty says nothing at all')
 }

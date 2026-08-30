@@ -82,6 +82,30 @@ function trapSignals() {
     process.on(sig, () => { sweep(); process.exit(code) })
 }
 
+// ─── the daemon cannot see our work directory ────────────────────────────────
+// A build context that is plainly on disk and that the daemon reports as absent
+// is not a deploy defect, and reading it as one costs an hour: it means this
+// shell has a private /tmp, which is the case $FJS_CI_WORKDIR exists for.
+//
+// Two shapes, because the two builders word it differently — the classic builder
+// says `unable to prepare context: path … not found`, BuildKit says
+// `resolve : lstat <name>: no such file or directory`. Only the first was ever
+// matched, so the same environment failed the journal cycle looking exactly like
+// a broken Dockerfile. Detected rather than guessed: unreachable-for-them is only
+// interesting where it is present for us.
+const CONTEXT_BLIND = [
+  /unable to prepare context: path .* not found/,
+  /failed to build: resolve .*lstat .*: no such file or directory/,
+]
+
+const daemonBlindHint = (output, dir) => {
+  if (!dir || !existsSync(dir)) return ''
+  if (!CONTEXT_BLIND.some(re => re.test(String(output)))) return ''
+  return `\n\nThe build context exists at ${dir} and the Docker daemon cannot see it — ` +
+    `this shell's /tmp is private to it. Re-run with FJS_CI_WORKDIR set to a ` +
+    `directory the daemon shares, e.g. FJS_CI_WORKDIR=$HOME/fjs-ci-work.`
+}
+
 /** A scaffold/deploy work directory: previous runs' swept, this one registered
  *  so an interrupt takes it with it. `base` is honoured for the reason
  *  $FJS_CI_WORKDIR exists — the Docker daemon must be able to read it. */
@@ -367,26 +391,16 @@ export function scaffoldAndDeploy({ source = 'npm', keep = false, verbose = fals
     // the exit code is the assertion. It did not always: `log.error` writes a
     // line and nothing more, so each path used to report a problem and exit 0.
     const d = exec('bun', [fli, 'deploy:local', '--port', String(PORT), '--clean'], { cwd: app, verbose })
-    if (d.status !== 0) {
-      // The daemon refusing a build context that is plainly on disk is not a
-      // deploy defect, and reading it as one costs an hour. It means the daemon
-      // cannot see this process's /tmp — the case $FJS_CI_WORKDIR exists for.
-      // Detected rather than guessed: the path is only unreachable-for-them if
-      // it is present for us.
-      const hidden = /unable to prepare context: path .* not found/.test(d.output) && existsSync(app)
-      const hint   = hidden
-        ? `\n\nThe build context exists at ${app} and the Docker daemon cannot see it — ` +
-          `this shell's /tmp is private to it. Re-run with FJS_CI_WORKDIR set to a ` +
-          `directory the daemon shares, e.g. FJS_CI_WORKDIR=$HOME/fjs-ci-work.`
-        : ''
-      return fail('fli deploy:local failed' + hint, d.output + dockerLogs(container))
-    }
+    if (d.status !== 0)
+      return fail('fli deploy:local failed' + daemonBlindHint(d.output, app),
+                  d.output + dockerLogs(container))
 
     log(`  ✓ container built from ${source}, started and answered health on :${PORT}`)
 
     const smoke = smokeAuth(app, PORT)
     if (smoke) return fail(smoke.message, smoke.output + dockerLogs(container))
     log(`  ✓ register + login answered at the prefix the app's own web config names`)
+
 
     return { findings, skipped: null }
 
@@ -460,10 +474,9 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
                             `http://127.0.0.1:${PORT}/api/health`], { verbose: false })
     return r.output.trim()
   }
-  // A crashed deploy leaves the lock behind — the pid in it is the pid of the
-  // shell that wrote it, which exited immediately, so nothing can tell a stale
-  // lock from a live one. Asserted below rather than hidden here.
-  const unlock = () => rmSync(join(srv, '.deploy.lock'), { force: true })
+  const lockBody = () => {
+    try { return readFileSync(join(srv, '.deploy.lock'), 'utf8') } catch { return '' }
+  }
 
   try {
     // ── the app, and a "server" that is a clone of it ──────
@@ -510,10 +523,28 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
 
     // ── 1 · deploy ────────────────────────────────────────
     const d1 = inApp(['deploy', '--api'])
-    if (d1.status !== 0) return fail('the first fli deploy failed', d1.output + dockerLogs(container))
+    if (d1.status !== 0)
+      return fail('the first fli deploy failed' + daemonBlindHint(d1.output, srv),
+                  d1.output + dockerLogs(container))
     const A = running()
     if (!A) return fail('the first deploy finished and no container is on an image', d1.output)
     if (health() !== '200') return fail(`the deployed app answers ${health()} at /api/health`, dockerLogs(container))
+
+    // ── the build a browser compares against ──────────────────────
+    //
+    // `03-build-web` stamps VITE_FJS_BUILD into the bundle and `06-swap` passes
+    // FJS_BUILD into the container, and the claim is that those are the same
+    // value — one deploy is one build on both sides of the wire (`FJS-D160`).
+    // Two packages have to agree for that to hold and neither can be asked
+    // alone: the cli decides the value, junction states it, and only a deployed
+    // container answers with it.
+    const stated = headerOf(`http://127.0.0.1:${PORT}/api/health`, 'x-fjs-build')
+    if (!stated)
+      return fail('the deployed app states no build — a browser cannot tell it is behind', dockerLogs(container))
+    if (stated !== shortCommit(app))
+      return fail(`the app states build ${stated}, which is not the commit this deploy built (${shortCommit(app)})`,
+                  d1.output)
+    log('  ✓ the deployed app states the build a browser compares against')
     log(`  ✓ deploy ran the real pipeline — journal, build, swap, health`)
 
     const j1 = inApp(['deploy:journal'])
@@ -583,16 +614,26 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
       return fail('a killed deploy left no unfinished transition in the journal', j2.output)
     const before = countTransitions(j2.output)
 
-    // The stranded lock is CURRENT behaviour and is asserted rather than swept:
-    // the pid recorded in the lock is the pid of the shell that wrote it, which
-    // exits at once, so no run can tell a stale lock from a live one.
+    // A crashed deploy leaves its lock behind, and the refusal has to be worth
+    // reading: whether that run is still alive is a fact about a process on the
+    // operator's machine, which the target cannot see, so what the lock owes is
+    // who holds it and how far they got — not the pid it used to invent
+    // (`FJS-573`).
     const blocked = inApp(['deploy', '--api'])
-    if (!/already in progress/.test(blocked.output))
+    if (!/already in progress/i.test(blocked.output))
       return fail('a crashed deploy left no lock — the next run was not refused', blocked.output)
-    log('  ✓ a crashed deploy leaves an unfinished transition and a held lock')
+    const heldStep = /step=(\S+)/.exec(lockBody())?.[1]
+    if (!heldStep)
+      return fail('the lock records no step, so its age says nothing', lockBody())
+    if (!blocked.output.includes(heldStep))
+      return fail(`the refusal does not name the step the lock is holding (${heldStep})`, blocked.output)
+    if (!/--resume/.test(blocked.output))
+      return fail('the refusal does not say how to continue the run it is refusing for', blocked.output)
+    log(`  ✓ a crashed deploy leaves an unfinished transition and a lock naming ${heldStep}`)
 
-    unlock()
-    const resumed = inApp(['deploy', '--api'])
+    // `--resume` takes the lock over — the whole of what makes deleting the file
+    // by hand unnecessary, and the case the resume exists for.
+    const resumed = inApp(['deploy', '--api', '--resume'])
     if (resumed.status !== 0) return fail('the resumed deploy failed', resumed.output + dockerLogs(container))
     if (!/RESUMING/.test(resumed.output)) {
       // A resume is keyed on the transition id, which carries the Release id,
@@ -636,6 +677,82 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
 
     const steps = inApp(['deploy:journal', '--steps'])
     if (!/revert/.test(steps.output)) return fail('the journal does not record the revert', steps.output)
+
+    // ── 6 · an attached service the environment does not bind ──
+    //
+    // Phase 2's whole claim is that this is a REFUSAL somebody reads, not a
+    // mystery at 3am. Two halves have to hold at once and neither is provable
+    // alone: the app must refuse to start naming the service, and the operator
+    // running the deploy must SEE that refusal — until `showContainerTail` they
+    // got "health check failed", a rollback, and a hint about apiPrefix that is
+    // wrong whenever the app never came up.
+    //
+    // Last, because it deliberately fails a deploy. The rollback is asserted
+    // too: a refusal that takes the running release down with it would be worse
+    // than the mystery.
+    const cfgPath = join(app, 'api', 'config', 'junction.config.js')
+    writeFileSync(cfgPath, readFileSync(cfgPath, 'utf8').replace(
+      'export default {',
+      `export default {\n  attachments: {\n    n8n: {\n      describe: 'workflow automation',\n` +
+      `      env: {\n        N8N_URL:     { required: true, type: 'url' },\n` +
+      `        N8N_API_KEY: { required: true },\n      },\n    },\n  },\n`))
+    git(app, ['add', '-A'])
+    git(app, ['commit', '-qm', 'declare an attachment nothing binds'])
+
+    const serving = running()
+    const d6 = inApp(['deploy', '--api'])
+    if (d6.status === 0)
+      return fail('a deploy succeeded with a declared attachment the environment does not bind',
+                  d6.output)
+    if (!/n8n/.test(d6.output))
+      return fail('the deploy failed without naming the attachment the app refused over',
+                  d6.output)
+    if (!/not bound here/.test(d6.output))
+      return fail("the app's own refusal did not reach the operator — the container's output is not shown",
+                  d6.output)
+    if (running() !== serving)
+      return fail('the refused deploy did not roll back to the release that was serving', d6.output)
+    if (health() !== '200')
+      return fail('the refused deploy left the target without a working release', dockerLogs(container))
+    log('  ✓ an unbound attachment refuses the deploy, names the service, and rolls back')
+
+    // ── 7 · a declared binding key the target does not carry ──
+    //
+    // `deploy.bindings` and `deploy.secrets` feed the Release hash, and their
+    // VALUES are applied by nothing — `fli` writes no `.env` on a target. So the
+    // keys are graded for presence instead (`FJS-585`), and this is the
+    // assertion that they are graded at all: a declaration nothing checks is the
+    // vacuous state being fixed.
+    //
+    // Cheap, because `01b-env-check` runs before the build — this costs a
+    // handful of ssh round trips rather than an image.
+    writeFileSync(confPath, readFileSync(confPath, 'utf8').replace(
+      /app_id: '([^']*)',/, `app_id: '$1',\n    bindings: { FJS_DECLARED_ONLY: 'x' },`))
+    git(app, ['add', '-A'])
+    git(app, ['commit', '-qm', 'declare a binding key the server does not carry'])
+
+    const wasServing = running()
+    const d7 = inApp(['deploy', '--api'])
+
+    // The EXIT CODE is asserted FIRST, and it is the half this used to be unable
+    // to ask: a step that refuses by setting `context.config.abort` and
+    // returning skipped every later step and then exited 0, so seven of the
+    // pipeline's nine refusal sites reported success — `deploy:revert`'s six
+    // named refusals among them (`FJS-589`). A refusal fails the command now,
+    // and this is the only thing here that runs one end to end.
+    if (d7.status === 0)
+      return fail('the env check refused and `fli deploy` exited 0', d7.output)
+    if (!/FJS_DECLARED_ONLY/.test(d7.output))
+      return fail('the env check did not name the missing declared key', d7.output)
+    if (!/deploy block/.test(d7.output))
+      return fail('the env check named the key without saying the deploy block declared it', d7.output)
+    if (/build-api|02-pull/.test(d7.output.split('Env check')[1] ?? ''))
+      return fail('the env check refused and the pipeline kept going', d7.output)
+    if (running() !== wasServing)
+      return fail('a refused env check swapped the container anyway', d7.output)
+    if (health() !== '200')
+      return fail('a refused env check took the running release down', dockerLogs(container))
+    log('  ✓ a declared binding key the target does not carry stops the deploy before it builds')
 
     return { findings, skipped: null }
 
@@ -703,6 +820,19 @@ exit 2
   })
   const output = existsSync(log) ? readFileSync(log, 'utf8') : ''
   return { finished: r.status === 1, timedOut: r.status === 2, output }
+}
+
+/** One response header, or '' — curl, because this file is synchronous end to end. */
+function headerOf(url, name) {
+  const r = exec('curl', ['-s', '-o', '/dev/null', '-D', '-', '--max-time', '10', url], { verbose: false })
+  const line = String(r.output ?? '').split('\n').find(l => l.toLowerCase().startsWith(`${name}:`))
+  return line ? line.slice(line.indexOf(':') + 1).trim() : ''
+}
+
+/** The commit the server directory is on — what the deploy stamped. */
+function shortCommit(dir) {
+  const r = exec('git', ['rev-parse', '--short', 'HEAD'], { cwd: dir, verbose: false })
+  return r.status === 0 ? r.output.trim() : ''
 }
 
 // The container is gone by the time a caller reads the finding, so its logs

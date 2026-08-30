@@ -8,7 +8,7 @@
  * no answer.
  */
 
-import { formatBytes, formatMoney, BYTE_UNITS, minorUnits, isKnownCurrency, knownCurrencies } from '../../src/units/units.js'
+import { formatBytes, formatMoney, BYTE_UNITS, minorUnits, isKnownCurrency, knownCurrencies, fromMinor, toMinor } from '../../src/units/units.js'
 
 /* ── The ladder ────────────────────────────────────────────────────── */
 
@@ -184,4 +184,33 @@ test('units: the runtime knows a few hundred codes, and the odd ones are the poi
   // stopped deriving anything.
   const odd = [...known].filter(c => minorUnits(c) !== 2)
   assert.ok(odd.length > 10, `expected currencies with non-2 minor units, got ${odd.length}`)
+})
+
+test('units: the minor-unit conversion is the currency\'s, not a hundred', function () {
+  assert.equal(fromMinor(1299, 'USD'), 12.99)
+  assert.equal(fromMinor(1299, 'JPY'), 1299)     // the yen has no minor unit
+  assert.equal(fromMinor(1299, 'KWD'), 1.299)    // and the dinar has three
+  assert.equal(fromMinor(0, 'USD'), 0)
+  assert.equal(fromMinor(null, 'USD'), 0)
+  assert.equal(fromMinor('1250', 'USD'), 12.5)   // the wire is text
+})
+
+test('units: toMinor ROUNDS, because 8.29 * 100 is not 829', function () {
+  // The truncation a caller reaches for first loses a cent here.
+  assert.equal(Math.trunc(8.29 * 100), 828)
+  assert.equal(toMinor(8.29, 'USD'), 829)
+  assert.equal(toMinor(12.99, 'USD'), 1299)
+  assert.equal(toMinor(1299, 'JPY'), 1299)
+  assert.equal(toMinor(1.2345, 'KWD'), 1235)
+  assert.equal(toMinor('', 'USD'), 0)
+})
+
+test('units: minor units round-trip through a formatter', function () {
+  assert.equal(formatMoney(fromMinor(1299, 'USD'), 'USD'), '$12.99')
+  assert.equal(formatMoney(fromMinor(1299, 'JPY'), 'JPY'), '¥1,299')
+})
+
+test('units: an unknown code is refused in both directions', function () {
+  assert.throws(() => fromMinor(100, 'UDS'), /not a currency this runtime knows/)
+  assert.throws(() => toMinor(1, 'UDS'),     /not a currency this runtime knows/)
 })

@@ -56,6 +56,17 @@ const _CARRIED = [
   // this key exists only to pick the control, because `<input type="time">`
   // shows a seconds box or does not and nothing in a pattern says which.
   'x-time',
+  // `x-money` is `@money` and `x-scale` is `@scale`: an integer column whose
+  // stored value is a SCALED one — 1299 for $12.99. Both are carried for the
+  // reason `x-time` is, and it is the sharper case: nothing else on the rule
+  // separates a scaled integer from an ordinary one, so a form generated
+  // without them offers a spinner stepping by 1 and a person editing a price
+  // types the number they can see and is out by a hundred. What that control
+  // IS remains an app's decision (`registerControl` — the currency's symbol,
+  // whether the box is in major units, what a blank means), and this is what
+  // lets that decision be made off the declaration rather than off a column
+  // name ending in `Cents`.
+  'x-money', 'x-scale',
 ]
 
 /**
@@ -258,7 +269,7 @@ const _controls = new Map()
  * Contribute a control.
  *
  *   registerControl('money', (rule) =>
- *     rule.type === 'number' && rule['x-litestone-kind'] === 'money' ? 'money' : null)
+ *     rule['x-money'] ? 'money' : null)
  *
  * `resolve(rule, ctx)` answers a control NAME, a full descriptor
  * (`{ control, …anything the component needs }`), or null to decline and let

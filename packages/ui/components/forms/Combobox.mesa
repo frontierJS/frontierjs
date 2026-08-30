@@ -14,7 +14,7 @@
   //   <Combobox bind:value allowNew placeholder="Select or type a tag…" {options} />
 
   import Field from '../forms/Field.mesa'
-  import { uid, resolveError, resolveRule, stated, nativeValidationGuard, truncationNote, withNote } from '../../utils.js'
+  import { uid, resolveError, resolveRule, stated, nativeValidationGuard, truncationNote, withNote, optionsNote } from '../../utils.js'
 
   export let value       = undefined    // scalar — bindable
   export let options     = []           // string[] | { value, label, disabled? }[]
@@ -74,8 +74,18 @@
 
   let _fetched = []
   let _total   = null
+  let _error   = null
+  // Why the rows are not there. Stated by the form, which fetched them; read
+  // off this control's own fetch otherwise. An empty list and a list nobody
+  // could fetch look identical, and a person reads both as *there are none*
+  // (`FJS-587`).
+  export let optionsError = undefined
   if (!options?.length && !_sync && name && form?.optionsFor)
-    form.optionsFor(name).then(r => { _fetched = r?.options ?? []; _total = r?.total ?? null })
+    form.optionsFor(name).then(r => {
+      _fetched = r?.options ?? []
+      _total   = r?.total ?? null
+      _error   = r?.error ?? null
+    })
 
   // ── a list bigger than the answer ──────────────────────────────────
   //
@@ -147,7 +157,8 @@
     ? normOptions.filter(o => o.label.toLowerCase().includes(query.toLowerCase()))
     : normOptions
 
-  const resolvedHint = withNote(hint, truncationNote(filtered.length, _count, { searchable: canSearchServer }))
+  const resolvedHint = withNote(withNote(hint, optionsNote(stated(optionsError, _error))),
+                               truncationNote(filtered.length, _count, { searchable: canSearchServer }))
 
   // Reset active index when filter changes
   $: query, () => { activeIdx = 0 }

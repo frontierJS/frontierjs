@@ -15,15 +15,15 @@ const settle = async (status) => {
   catch (err) { log.warn(`Journal: could not settle the revert — ${err.message}`) }
 }
 
-const dropLocks = () => {
+const dropLocks = async () => {
   if (!context.config.lockAcquired) return
-  releaseLocks(context, context.config.hosts ?? [])
+  await releaseLocks(context, context.config.hosts ?? [])
   context.config.lockAcquired = false
 }
 
 if (context.config.abort) {
   await settle('failed')
-  dropLocks()
+  await dropLocks()
   return
 }
 
@@ -42,7 +42,7 @@ fi`)
   } catch {}
 }
 
-dropLocks()
+await dropLocks()
 
 const elapsed = ((Date.now() - context.config.startTime) / 1000).toFixed(1)
 log.success(`Reverted ${context.config.appId} to ${context.config.revertTo?.id} in ${elapsed}s`)

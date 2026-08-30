@@ -1,19 +1,16 @@
-// prisma-to-lite.mjs — a Prisma schema, converted mechanically to .lite.
+// prisma.js — a Prisma schema, read into .lite.
 //
-// The output is not the artifact. THE REFUSAL LIST IS: every construct this
-// cannot express is recorded with its model, its field and what was emitted
-// instead, so a run over N real repositories answers "what does .lite not say"
-// without anybody guessing in advance. A gap found this way is one nobody
-// anticipated, which is the half a `fli check` rule can never reach.
+// The output is not the whole answer. THE REFUSAL LIST IS: every construct this
+// cannot express is recorded with its model, its field, what the source said and
+// what was emitted instead, so the person reading the result is told where it
+// stopped being faithful rather than left to find out from a migration.
 //
 // Deliberately dumb. It does not repair, rename or improve the source — a
-// converter that quietly fixes things up is one that cannot find anything.
-//
-// The product form of this is `litestone import --from prisma`, which does not
-// exist; see IDEAS/proving-grounds.md § The corpus. This copy exists to
-// regenerate the fixtures beside it.
+// converter that quietly fixes things up is one that cannot report anything, and
+// a silent repair is the failure this whole seam exists to avoid.
 
-import { detectPolymorphic } from './polymorphic.mjs'
+import { detectPolymorphic } from './polymorphic.js'
+import { BIGINT_EMITTED }   from './wide-int.js'
 
 const SCALARS = {
   String: 'String', Int: 'Int', Float: 'Float', Boolean: 'Boolean',
@@ -27,7 +24,7 @@ const SCALARS = {
 export function convert(src, label = 'schema', { labelOneToOne: addLabels = false } = {}) {
   const gaps = []
   const gap = (kind, model, field, detail, emitted) =>
-    gaps.push({ repo: label, kind, model, field, detail, emitted })
+    gaps.push({ source: label, kind, model, field, detail, emitted })
 
   // A doc comment can hold anything, including a brace, and a brace at the
   // start of a line is how a block is closed here.
@@ -54,6 +51,10 @@ export function convert(src, label = 'schema', { labelOneToOne: addLabels = fals
     if (/^\s*(datasource|generator)\s/.test(l)) block = 'skip'
   }
   flush()
+
+  // Over the SOURCE, not the output: by the time it is emitted a BigInt is an
+  // `Int` and indistinguishable from one the source wrote.
+  reportWideIntegers(lines.join('\n'), gap)
 
   const joined = out.join('\n')
   detectPolymorphic(joined, gap)
@@ -144,8 +145,9 @@ function emitField(model, fname, ptype, isList, isOpt, rest, gap) {
       gap('decimal-no-precision', model, fname, 'Decimal with no @db.Decimal(p, s)', 'Int @scale(2) — a GUESS')
     }
   } else if (ptype === 'BigInt') {
+    // Reported by reportWideIntegers, not here: whether this column is a key or
+    // a foreign key is a fact about the MODEL, and this function is handed a line.
     type = 'Int'
-    gap('bigint', model, fname, 'BigInt', 'Int — SQLite INTEGER is 64-bit, so the range holds; the name does not')
   } else if (ptype === 'Unsupported') {
     gap('unsupported-column', model, fname, rest.slice(0, 60), 'field dropped')
     return null
@@ -220,14 +222,27 @@ function modelAttr(line, model, gap, optional) {
 
   if (/^@@(index|unique)\(/.test(line)) {
     const cols = bracket(line) ?? ''
-    if (/\(sort:|type:|ops:|length:/.test(line)) gap('index-modifier', model, null, line.trim(), 'modifiers stripped')
+    // `sort:` survives on an @@index — it is the same spelling `.lite` takes,
+    // and ZenStack v2 and v3 declare `@@index` byte-identically and mark it
+    // `@@@prisma`, so this crosses all three unchanged. `type:`/`ops:` are a
+    // Postgres access method and an opclass, and `length:` is MySQL's prefix
+    // index — none has a SQLite answer, and a @@unique takes no direction here.
+    const isIndex = !/unique/.test(line)
+    if (/\(sort:/.test(line) && !isIndex)
+      gap('index-modifier', model, null, line.trim(), 'sort dropped — a @@unique takes no direction in .lite')
+    if (/type:|ops:|length:/.test(line))
+      gap('index-modifier', model, null, line.trim(), 'access method, opclass or prefix length stripped — no SQLite equivalent')
 
-    let clean = cols, prev
-    do { prev = clean; clean = clean.replace(/\([^()]*\)/g, '') } while (clean !== prev)
-    clean = clean.split(',').map(c => c.trim()).filter(Boolean).join(', ')
+    // Keep `col(sort: Desc)` and strip every other per-column argument.
+    const keepSort = (member) => {
+      const dir = isIndex && /\(\s*sort:\s*(Asc|Desc)\s*\)/i.exec(member)
+      const name = member.replace(/\([\s\S]*\)/, '').trim()
+      return dir ? `${name}(sort: ${dir[1][0].toUpperCase()}${dir[1].slice(1).toLowerCase()})` : name
+    }
+    const clean = splitTopLevel(cols).map(keepSort).filter(Boolean).join(', ')
 
     if (/unique/.test(line) && clean.includes(',')) {
-      const nullable = clean.split(',').map(c => c.trim()).filter(c => optional.has(c))
+      const nullable = clean.split(',').map(c => c.trim()).filter(c => optional.has(c))  // a @@unique carries no direction
       if (nullable.length) {
         // FJS-D130. Two NULLs never compare equal, so the index admits the pair
         // twice; nullsDistinct is how a schema says it meant that.
@@ -294,6 +309,46 @@ function labelOneToOne(src, gap) {
   return { text: lines.join('\n'), count }
 }
 
+// A BigInt column whose values are SUPPLIED rather than generated. `.lite` has
+// no wider integer, so every one of them becomes `Int`; what separates the ones
+// worth reporting is whether anything can reach 2^53 (wide-int.js).
+//
+// Structural, never by name: a scalar named in some relation's `fields: [...]`
+// holds another model's key, and an `@id @default(autoincrement())` counts from
+// one. Everything else is a value the application writes — `appInstallationId`
+// included, which is a GitHub id and exactly the case a name rule would skip.
+function reportWideIntegers(src, gap) {
+  let cur = null
+  const models = new Map()
+
+  for (const l of src.split('\n')) {
+    const m = l.match(/^model (\w+) \{/)
+    if (m) { cur = { name: m[1], fields: [], owned: new Set() }; models.set(m[1], cur); continue }
+    if (/^\}/.test(l)) { cur = null; continue }
+    if (!cur) continue
+
+    // The SOURCE is column-aligned where the emitted output is not, so the
+    // separator is a run of spaces rather than one.
+    const f = l.match(/^\s{2,}(\w+)\s+(\w+)(\[\])?(\??)(.*)$/)
+    if (!f) continue
+    const rest = f[5] || ''
+    cur.fields.push({ name: f[1], type: f[2], rest })
+    const owns = rest.match(/@relation\([^)]*fields:\s*\[([^\]]*)\]/)
+    if (owns) for (const c of owns[1].split(',')) cur.owned.add(c.trim())
+  }
+
+  let count = 0
+  for (const model of models.values())
+    for (const f of model.fields) {
+      if (f.type !== 'BigInt') continue
+      if (model.owned.has(f.name)) continue
+      if (/@id\b/.test(f.rest) && /@default\(\s*autoincrement\(\)/.test(f.rest)) continue
+      gap('bigint', model.name, f.name, 'BigInt', BIGINT_EMITTED)
+      count++
+    }
+  return count
+}
+
 // ─── two balanced readers ────────────────────────────────────────────────────
 
 // Prisma nests calls inside @default(…) — dbgenerated("now()"), now(), auto() —
@@ -320,4 +375,18 @@ function bracket(s) {
     else if (s[j] === ']') { depth--; if (!depth) return s.slice(i + 1, j) }
   }
   return null
+}
+
+// A bracketed column list, split on TOP-LEVEL commas — a per-column argument
+// may hold one, and `split(',')` cuts the member in half.
+function splitTopLevel(list) {
+  const out = []
+  let cur = '', d = 0
+  for (const ch of list) {
+    if (ch === '(') d++
+    else if (ch === ')') d--
+    if (ch === ',' && d === 0) { out.push(cur); cur = '' } else cur += ch
+  }
+  out.push(cur)
+  return out.map(c => c.trim()).filter(Boolean)
 }

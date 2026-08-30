@@ -17,7 +17,7 @@ inside `node_modules` — and a build step would only move that failure later, s
 there is no Node path to have. `engines` says the same thing.
 
 `@frontierjs/litestone` is an optional peer: install it and `createService`
-generates all five CRUD methods, validation and `@file` wiring from the schema.
+generates all five CRUD methods, validation and `File` column wiring from the schema.
 Without it, services are hand-written and everything else works unchanged.
 
 ## Quick start
@@ -1094,7 +1094,7 @@ For tests: `createInMemoryDatabase()` gives the same interface with `:memory:`.
 
 ## Litestone ORM
 
-[Litestone](https://github.com/frontierjs/litestone) is Junction's first-party SQLite ORM. When installed, `createService` replaces manual CRUD — all five methods are generated from the schema, validation is auto-generated from the JSON Schema output, and `@file` fields wire up to object storage transparently.
+[Litestone](https://github.com/frontierjs/litestone) is Junction's first-party SQLite ORM. When installed, `createService` replaces manual CRUD — all five methods are generated from the schema, validation is auto-generated from the JSON Schema output, and `File` columns wire up to object storage transparently.
 
 ```typescript
 import { createService, withLitestoneDb } from '@frontierjs/junction'
@@ -1386,7 +1386,7 @@ curl -X PATCH https://api.example.com/users/1 \
   -F "avatar=@photo.jpg"
 ```
 
-`ctx.data` arrives as `{ name: 'Alice', avatar: File }` — all standard text fields and file fields merged together. When using Litestone with `@file` / `File?` fields, the `FileStorage` plugin detects the `File` instance, uploads to R2/S3, and stores a JSON ref in SQLite. The service never knows storage happened.
+`ctx.data` arrives as `{ name: 'Alice', avatar: File }` — all standard text fields and file fields merged together. When using Litestone with a `File` / `File?` column, the `FileStorage` plugin detects the `File` instance, uploads to R2/S3, and stores a JSON ref in SQLite. The service never knows storage happened.
 
 **Accessing files in custom routes** — use `ctx.files` (already parsed, no manual `formData()` call):
 

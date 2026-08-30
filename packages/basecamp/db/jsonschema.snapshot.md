@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-73 definitions · 46 models · 27 enums · 0 other
+76 definitions · 46 models · 30 enums · 0 other
 ```
 
 ## Definitions
@@ -81,6 +81,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `SecretKind` | enum |
 | `ServerStatus` | enum |
 | `ServerRole` | enum |
+| `ProviderKind` | enum |
 | `EnvironmentTier` | enum |
 | `AppType` | enum |
 | `AppStatus` | enum |
@@ -90,6 +91,8 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `JobStatus` | enum |
 | `RunStatus` | enum |
 | `AlertSeverity` | enum |
+| `AlertSubject` | enum |
+| `ActorKind` | enum |
 | `ChannelKind` | enum |
 | `FlagType` | enum |
 | `WidgetKind` | enum |
@@ -114,6 +117,7 @@ validates, and a select that silently drops an option.
 - `SecretKind` — `ssh_key`, `provider_key`, `registry_auth`, `tls_cert`, `notification`, `generic`
 - `ServerStatus` — `pending`, `provisioning`, `installing`, `ready`, `online`, `unreachable`, `draining`, `stopped`, `destroyed`
 - `ServerRole` — `general`, `build`, `database`, `gateway`, `worker`
+- `ProviderKind` — `custom`, `hetzner`
 - `EnvironmentTier` — `development`, `test`, `preview`, `staging`, `production`
 - `AppType` — `container`, `worker`, `database`, `daemon`, `cron`, `static`, `function`
 - `AppStatus` — `unknown`, `stopped`, `starting`, `running`, `stopping`, `deploying`, `error`
@@ -123,6 +127,8 @@ validates, and a select that silently drops an option.
 - `JobStatus` — `pending`, `running`, `failed`, `cancelled`
 - `RunStatus` — `pending`, `running`, `success`, `failed`, `timeout`
 - `AlertSeverity` — `info`, `warning`, `critical`
+- `AlertSubject` — `server`, `volume`
+- `ActorKind` — `user`, `api_key`, `system`
 - `ChannelKind` — `slack`, `pagerduty`, `email`, `webhook`
 - `FlagType` — `boolean`, `variant`
 - `WidgetKind` — `server_fleet`, `server_health`, `app_status`, `deploy_feed`, `job_history`, `activity_feed`, `alert_status`, `service_health`, `stat_counter`
@@ -367,7 +373,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `slug` | `string` | yes | — | — | — |
 | `status` | `ServerStatus` = `"pending"` | — | — | — | — |
 | `role` | `ServerRole` = `"general"` | — | — | — | — |
-| `providerKind` | `string` = `"custom"` | — | — | — | — |
+| `providerKind` | `ProviderKind` = `"custom"` | — | — | — | — |
 | `providerId` | `string`? | — | — | — | — |
 | `providerServerId` | `string`? | — | — | — | — |
 | `registerMethod` | `string` = `"imported"` | — | — | — | — |
@@ -902,7 +908,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `ruleId` | `string` | yes | — | — | — |
 | `status` | `string` = `"firing"` | — | — | — | — |
 | `severity` | `AlertSeverity` | yes | — | — | — |
-| `subjectType` | `string` | yes | — | — | — |
+| `subjectType` | `AlertSubject` | yes | — | — | — |
 | `subjectId` | `string` | yes | — | — | — |
 | `valueAtTrigger` | `number` = `0` | — | — | — | — |
 | `message` | `string` | yes | — | — | — |
@@ -963,7 +969,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string`? | — | — | `x-litestone-kind` | — |
 | `actorId` | `string`? | — | — | — | — |
-| `actorType` | `string` = `"user"` | — | — | — | — |
+| `actorType` | `ActorKind` = `"user"` | — | — | — | — |
 | `action` | `string` | yes | — | — | — |
 | `subjectType` | `string` | yes | — | — | — |
 | `subjectId` | `string` | yes | — | — | — |

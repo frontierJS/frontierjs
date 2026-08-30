@@ -10,6 +10,7 @@
   // orchestrator and deliberately NOT a copy of Sierra's — Sierra calls
   // `client.service(name)` and this calls `harbor.request('service:call')`.
   import { createResource, login, logout, getConnectionState } from '@frontierjs/jetty/resources'
+  import { formatMoney, fromMinor } from '@frontierjs/toolbelt/units'
 
   export let harbor = null
 
@@ -58,7 +59,12 @@
   // and one 409 rather than two silent successes.
   const ship = row => guard(() => queue.service.call('ship', row.id, null))
 
-  const money = pennies => `£${(pennies / 100).toFixed(2)}`
+  // The order's own columns are `@money(USD)`, so what arrives is a whole
+  // number of CENTS in the shop's base currency. This used to hand-roll
+  // `£${n / 100}` against a column that held dollars — a pound sign on a dollar
+  // amount, at a hundredth of it — which is `FJS-440`'s shape twice over and is
+  // exactly what one owner of the conversion removes.
+  const money = cents => formatMoney(fromMinor(cents ?? 0, 'USD'), 'USD')
 </script>
 
 <div class="dock">

@@ -37,6 +37,10 @@
   // of a big relation and one that shows all of it are the same screen once
   // the count is dropped (`FJS-391`), so the three list controls take it.
   export let total   = undefined
+  // Why the rows are not there, where the form could not fetch them. Only the
+  // three list controls take it — every other control's options are the enum
+  // the schema declared, which cannot fail to arrive (`FJS-587`).
+  export let optionsError = undefined
 
   // The kit's own controls, in the registry's shape. `props` receives the same
   // object a contributed control's builder does.
@@ -68,8 +72,8 @@
     // does not apply under `<Form>`, which writes through the resource.
     picker: {
       component: Combobox,
-      props: ({ field: f, value: v, onvalue, options: rows, total: n }) => ({
-        name: f.name, options: rows ?? [], allowNew: false, total: n,
+      props: ({ field: f, value: v, onvalue, options: rows, total: n, optionsError: e }) => ({
+        name: f.name, options: rows ?? [], allowNew: false, total: n, optionsError: e,
         value: v, onchange: (next) => onvalue(next),
       }),
     },
@@ -80,8 +84,8 @@
     // why that strength answers `picker` instead and never arrives here.
     combobox: {
       component: Combobox,
-      props: ({ field: f, value: v, onvalue, options: rows, total: n }) => ({
-        name: f.name, options: rows ?? [], allowNew: f.allowNew === true, total: n,
+      props: ({ field: f, value: v, onvalue, options: rows, total: n, optionsError: e }) => ({
+        name: f.name, options: rows ?? [], allowNew: f.allowNew === true, total: n, optionsError: e,
         value: v, onchange: (next) => onvalue(next),
       }),
     },
@@ -90,8 +94,8 @@
     // is the whole difference.
     multiselect: {
       component: MultiSelect,
-      props: ({ field: f, value: v, onvalue, options: rows, total: n }) => ({
-        name: f.name, options: rows ?? [], multiple: true, total: n,
+      props: ({ field: f, value: v, onvalue, options: rows, total: n, optionsError: e }) => ({
+        name: f.name, options: rows ?? [], multiple: true, total: n, optionsError: e,
         allowNew: f.allowNew === true,
         value: Array.isArray(v) ? v : (v == null ? [] : [v]),
         onchange: (next) => onvalue(next),
@@ -172,7 +176,7 @@
 
   const props = entry
     ? (entry.props ?? defaultControlProps)({
-        field, value, options, total, onvalue: (v) => write?.(v),
+        field, value, options, total, optionsError, onvalue: (v) => write?.(v),
       })
     : {}
 </script>

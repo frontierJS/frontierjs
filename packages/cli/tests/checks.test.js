@@ -62,6 +62,21 @@ model Lead {
     qualify: new              -> qualified,
     close:   [new, qualified] -> closed)
 }
+
+// A polymorphic pair, declared the way the rule asks for, so
+// \`polymorphic-subject\` RUNS on the clean tree rather than skipping — and finds
+// nothing, which is the shape an open target set is meant to be in: no foreign
+// key, and the one column that CAN carry a rule carrying one.
+enum NoteSubject { Account Lead }
+
+model Note {
+  id          Int         @id
+  workspaceId Int
+  subjectType NoteSubject
+  subjectId   Int
+  @@gate("2")
+  @@index([subjectType, subjectId])
+}
 `
 
 const resource = (service, opts = '') => `<script module>
@@ -1566,6 +1581,103 @@ describe('transition-methods', () => {
   test('an app with no api/ source skips — the machine is driven elsewhere', () => {
     const root = tree('tm-noapi', without('api/'))
     expect(only(root, 'transition-methods').skipped[0].why).toMatch(/no api\/ source/)
+  })
+})
+
+describe('polymorphic-subject', () => {
+  // The clean tree already carries a correctly-declared pair (`Note`), so these
+  // add the shapes that are NOT one, and the two spellings that answer it.
+  const withModel = (body) => ({ ...CLEAN, 'db/schema.lite': SCHEMA + body })
+
+  test('a bare String discriminator is reported', () => {
+    const root = tree('ps-bare', withModel(`
+model Comment {
+  id          Int    @id
+  workspaceId Int
+  subjectType String
+  subjectId   Int
+}
+`))
+    const { findings } = only(root, 'polymorphic-subject')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/Comment\.subjectType names what subjectId points at/)
+    expect(findings[0].message).toMatch(/make subjectType an enum/)
+  })
+
+  // The line has to be the FIELD's, not the model's — a schema is long and a
+  // finding that points at the top of a model is a finding nobody can act on.
+  test('it points at the discriminator, not the model', () => {
+    const root = tree('ps-line', withModel(`
+model Comment {
+  id          Int    @id
+  workspaceId Int
+  body        String
+  subjectType String
+  subjectId   Int
+}
+`))
+    const { findings } = only(root, 'polymorphic-subject')
+    const line = readFileSync(join(root, 'db/schema.lite'), 'utf8').split('\n')[findings[0].line - 1]
+    expect(line).toMatch(/^\s+subjectType\s/)
+  })
+
+  test('@@check naming the column is the other answer, and it is accepted', () => {
+    const root = tree('ps-check', withModel(`
+model Comment {
+  id          Int    @id
+  workspaceId Int
+  subjectType String
+  subjectId   Int
+  @@check("subjectType IN ('Account', 'Lead')")
+}
+`))
+    expect(only(root, 'polymorphic-subject').findings).toEqual([])
+  })
+
+  // A declared set enforced at the Data boundary. That it is not also a table
+  // CHECK is `@values`' own trade, not this rule's question.
+  test('@values is a declared set and is accepted', () => {
+    const root = tree('ps-values', withModel(`
+model Comment {
+  id          Int    @id
+  workspaceId Int
+  subjectType String @values(SubjectSet, open)
+  subjectId   Int
+}
+`))
+    expect(only(root, 'polymorphic-subject').findings).toEqual([])
+  })
+
+  // A real foreign key is not this shape — the relation already names the table.
+  test('a column a @relation owns is not a pair', () => {
+    const root = tree('ps-relation', withModel(`
+model Comment {
+  id          Int     @id
+  workspaceId Int
+  accountType String
+  accountId   Int
+  account     Account @relation(fields: [accountId], references: [id])
+}
+`))
+    expect(only(root, 'polymorphic-subject').findings).toEqual([])
+  })
+
+  test('a type column with no id beside it is not a pair', () => {
+    const root = tree('ps-lonely', withModel(`
+model Comment {
+  id          Int    @id
+  workspaceId Int
+  subjectType String
+}
+`))
+    expect(only(root, 'polymorphic-subject').findings).toEqual([])
+  })
+
+  test('an app with no schema is skipped rather than passed', () => {
+    const root = tree('ps-noschema', without('db/'))
+    const { findings, skipped } = only(root, 'polymorphic-subject')
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
   })
 })
 

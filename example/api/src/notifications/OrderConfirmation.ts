@@ -23,6 +23,7 @@
 import { Notification, mail }  from '@frontierjs/notifications'
 import { renderEmailFile }     from '@frontierjs/email-kit/render'
 import type { MailMessage, Recipient, Transport } from '@frontierjs/notifications'
+import { money }               from '../pricing.ts'
 
 interface Order {
   id:        number
@@ -59,7 +60,7 @@ export class OrderConfirmation extends Notification {
     const data = {
       reference: order.reference,
       customer:  customer.name,
-      total:     order.total.toFixed(2),
+      total:     money(order.total),
       orderUrl:  `http://localhost:8010/orders/${order.id}/`,
     }
 

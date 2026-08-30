@@ -476,7 +476,15 @@ try {
   // Re-opened, because signing in does not re-run a load() that already
   // answered — the anonymous one answered NOTHING, which is the correct answer
   // to the question it asked. A person does this by clicking Orders again.
-  await goto('/orders/')
+  //
+  // ASKED FOR, not assumed. The four assertions below read the three seeded
+  // orders, and the list is a WINDOW: it is newest-first and twenty rows deep
+  // (`FJS-558`), so which rows page one holds depends on how many orders the
+  // shop has and on what this run has already created. A drive that reads
+  // whatever page one happens to hold passes for a reason it did not state and
+  // fails later for a reason that has nothing to do with the assertion. The
+  // filter travels in the URL because the screen reads it (repo Invariant 10).
+  await goto('/orders/?reference[contains]=ORD-100')
 
   t('orders.rows', await evaluate(`
     await settled('tbody tr');
@@ -996,11 +1004,15 @@ const expected = {
   'live.submitRevealsRelation': { customer: 'Please select a customer from the list', stillOnForm: '/orders/create/' },
 
   'afterSubmit.path': '/orders/',
-  'afterSubmit.row':  ['ORD-CDP-1', 'pending', '42.5', '#1', '—'],
+  // The list renders money and not the column: `total` is `@money(USD)`, so
+  // what the row holds is 4250 and what a person may be shown is $42.50.
+  'afterSubmit.row':  ['ORD-CDP-1', 'pending', '$42.50', '#1', '—'],
 
-  // @upper uppercased it, coerce made 42.5 a number and not "42.5", and the
-  // blank note stored as NULL rather than ''.
-  'stored.record': { reference: 'ORD-CDP-1', total: 42.5, note: null, status: 'pending' },
+  // @upper uppercased it, the blank note stored as NULL rather than '', and
+  // 42.5 typed into a box in DOLLARS was written down as 4250 CENTS — the
+  // contributed `money` control (web/src/money-control.js), resolved off
+  // `x-money` on the column and not off its name.
+  'stored.record': { reference: 'ORD-CDP-1', total: 4250, note: null, status: 'pending' },
 
   'afterDelete.gone':        true,
   // Level 4: everything except refund, which wants 5. The per-move gate.

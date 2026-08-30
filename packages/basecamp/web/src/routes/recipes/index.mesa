@@ -36,7 +36,9 @@ title: Recipes
 
   let rows      = []
   let fleet     = []
-  let selected  = null      // the recipe with its runs, as `get` answers it
+  let selected   = null     // the recipe with its runs, as `get` answers it
+  let selRow     = null     // the record view behind it
+  let unwatchSel = null
   let error     = null
   let loading   = true
   let busy      = null
@@ -55,10 +57,6 @@ title: Recipes
     try {
       rows  = (await recipes.service.find({}, { limit: 200 })).data
       fleet = (await servers.service.find({}, { limit: 200 })).data
-      // Keep whatever is open open, and refresh it: a run finishing is the one
-      // update this screen exists to show, and reloading the list alone would
-      // leave the pane showing the run as it was queued.
-      if (selected) selected = await recipes.service.get(selected.id)
     } catch (e) {
       error = e.message
     } finally {
@@ -77,7 +75,25 @@ title: Recipes
     if (READS.has(method)) return
     load()
   })
-  $.onDestroy(off)
+
+  /** The open recipe, watched rather than read (`FJS-518`).
+   *
+   *  `recipes.get()` answers the row WITH its runs, so this is a COMPOSED view:
+   *  a push carries the row alone and watching the node itself would empty the
+   *  run table at the first announcement (`FJS-533`). It is also what keeps the
+   *  pane current — a fleet run fills in machine by machine, and the list
+   *  reload beside it would leave the pane showing the run as it was queued.
+   */
+  function watchSelected(id) {
+    unwatchSel?.(); selRow?.release()
+    unwatchSel = selRow = null
+    if (id == null) { selected = null; return }
+    selRow = recipes.record(id, { composed: true })
+    unwatchSel = selRow.subscribe(v => { selected = v })
+    return selRow.ready
+  }
+
+  $.onDestroy(() => { off(); unwatchSel?.(); selRow?.release() })
 
   async function create(data) {
     error = null
@@ -86,7 +102,7 @@ title: Recipes
       toasts.success(`${created.name} saved`)
       creating = false
       draft    = recipes.make()
-      selected = created
+      await watchSelected(created.id)
       await load()
     } catch (e) {
       error = e.message
@@ -97,7 +113,7 @@ title: Recipes
   async function open(recipe) {
     error = null; busy = recipe.id
     try {
-      selected = await recipes.service.get(recipe.id)
+      await watchSelected(recipe.id)
     } catch (e) {
       error = e.message
     } finally {
@@ -109,7 +125,7 @@ title: Recipes
     error = null; busy = recipe.id
     try {
       const res = await recipes.service.invoke('run', recipe.id, target ? { serverId: target } : {})
-      selected  = { ...res, runs: res.runs }
+      await watchSelected(recipe.id)
       toasts.success(
         `${recipe.name} queued on ${res.queued} server(s)`,
         res.unreachable.length ? `No outpost on ${res.unreachable.join(', ')}` : 'Output appears as each machine answers',
@@ -130,7 +146,7 @@ title: Recipes
     try {
       await recipes.service.remove(recipe.id)
       toasts.success(`${recipe.name} deleted`)
-      if (selected?.id === recipe.id) selected = null
+      if (selected?.id === recipe.id) watchSelected(null)
       await load()
     } catch (e) {
       error = e.message
@@ -254,7 +270,7 @@ title: Recipes
   <Card id="recipe-detail">
     <div class="section-header">
       <h2 class="h4">{selected.name}</h2>
-      <Button variant="ghost" onclick={() => selected = null}>Close</Button>
+      <Button variant="ghost" onclick={() => watchSelected(null)}>Close</Button>
     </div>
 
     <pre class="code" id="recipe-script"><code>{selected.script}</code></pre>

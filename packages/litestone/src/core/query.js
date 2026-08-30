@@ -530,20 +530,19 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
     if (typeof val !== 'object' || Array.isArray(val) || val instanceof Date) {
       if (Array.isArray(val)) {
         if (!val.length) { clauses.push('0 = 1'); continue }
-        val.forEach(v => push(typeof v === 'boolean' ? (v ? 1 : 0) : v))
         // The shorthand says the same thing either way — the column's value is
         // in this list. A scalar has one value; an array column supplies its
         // elements, so the IN moves inside json_each. For an exact, ordered
         // match, say `equals`.
+        const list = val.map(v => operandSql(v, push)).join(', ')
         clauses.push(isArrayCol
-          ? `EXISTS (SELECT 1 FROM json_each(${col}) WHERE value IN (${val.map(() => '?').join(', ')}))`
-          : `${col} IN (${val.map(() => '?').join(', ')})`)
+          ? `EXISTS (SELECT 1 FROM json_each(${col}) WHERE value IN (${list}))`
+          : `${col} IN (${list})`)
       } else if (typeof val === 'boolean' && isFromExpr && col.includes('EXISTS')) {
         // EXISTS subquery — already returns 0/1; emit directly or negate
         clauses.push(val ? col : `NOT ${col}`)
       } else {
-        push(typeof val === 'boolean' ? (val ? 1 : 0) : val)
-        clauses.push(`${col} = ?`)
+        clauses.push(`${col} = ${operandSql(val, push)}`)
       }
       continue
     }
@@ -578,21 +577,23 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
         // so they have to compile the same way: on an array column the row
         // supplies several values and the IN moves inside json_each. Without
         // this the shorthand answered and its own explicit spelling did not.
-        case 'in':
+        case 'in': {
           if (!operand?.length) { clauses.push('0 = 1'); break }
-          operand.forEach(v => push(v))
+          const inList = operand.map(v => operandSql(v, push)).join(', ')
           clauses.push(isArrayCol
-            ? `EXISTS (SELECT 1 FROM json_each(${col}) WHERE value IN (${operand.map(() => '?').join(', ')}))`
-            : `${col} IN (${operand.map(() => '?').join(', ')})`)
+            ? `EXISTS (SELECT 1 FROM json_each(${col}) WHERE value IN (${inList}))`
+            : `${col} IN (${inList})`)
           break
-        case 'notIn':
+        }
+        case 'notIn': {
           if (!operand?.length) break
-          operand.forEach(v => push(v))
+          const notInList = operand.map(v => operandSql(v, push)).join(', ')
           // Include NULL rows — NOT IN silently excludes them in SQLite
           clauses.push(isArrayCol
-            ? `NOT EXISTS (SELECT 1 FROM json_each(${col}) WHERE value IN (${operand.map(() => '?').join(', ')}))`
-            : `(${col} NOT IN (${operand.map(() => '?').join(', ')}) OR ${col} IS NULL)`)
+            ? `NOT EXISTS (SELECT 1 FROM json_each(${col}) WHERE value IN (${notInList}))`
+            : `(${col} NOT IN (${notInList}) OR ${col} IS NULL)`)
           break
+        }
         case 'has':
           // element exists in JSON array: json_each(col) WHERE value = ?
           push(operand)
@@ -632,8 +633,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
             break
           }
           if (operand === null) { clauses.push(`${col} IS NULL`); break }
-          push(typeof operand === 'boolean' ? (operand ? 1 : 0) : operand)
-          clauses.push(`${col} = ?`)
+          clauses.push(`${col} = ${operandSql(operand, push)}`)
           break
         case 'not':
           if (operand === null) { clauses.push(`${col} IS NOT NULL`); break }
@@ -650,8 +650,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
             }
             break
           }
-          push(operand)
-          clauses.push(`${col} != ?`)
+          clauses.push(`${col} != ${operandSql(operand, push)}`)
           break
         default: {
           // An untyped `Json` column has no declared shape to traverse, so a
@@ -672,6 +671,23 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
   }
 
   return clauses.join(' AND ')
+}
+
+// Emit a scalar as SQL: a literal where that is safe, a bound `?` otherwise.
+//
+// A boolean is 0 or 1 and nothing else — no escaping, no injection surface, and
+// a plan cache bounded at two strings per predicate. It is inlined because the
+// POLICY compiler (@@scope, @@allow, the soft-delete clause) already inlines it,
+// and one meaning reaching SQLite two ways is not free: SQLite proves that a
+// query implies a PARTIAL INDEX when it PREPARES the query, and a `?` proves
+// nothing there — so a partial index over a boolean was reachable through a
+// $scope and never through a caller's own filter (FJS-578).
+//
+// `push` still coerces a boolean itself, for every caller that keeps binding.
+function operandSql(v, push) {
+  if (typeof v === 'boolean') return v ? '1' : '0'
+  push(v)
+  return '?'
 }
 
 // ─── Order by ─────────────────────────────────────────────────────────────────

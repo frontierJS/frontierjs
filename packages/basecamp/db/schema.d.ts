@@ -46,6 +46,8 @@ export type ServerStatus = 'pending' | 'provisioning' | 'installing' | 'ready' |
 
 export type ServerRole = 'general' | 'build' | 'database' | 'gateway' | 'worker'
 
+export type ProviderKind = 'custom' | 'hetzner'
+
 export type EnvironmentTier = 'development' | 'test' | 'preview' | 'staging' | 'production'
 
 export type AppType = 'container' | 'worker' | 'database' | 'daemon' | 'cron' | 'static' | 'function'
@@ -63,6 +65,10 @@ export type JobStatus = 'pending' | 'running' | 'failed' | 'cancelled'
 export type RunStatus = 'pending' | 'running' | 'success' | 'failed' | 'timeout'
 
 export type AlertSeverity = 'info' | 'warning' | 'critical'
+
+export type AlertSubject = 'server' | 'volume'
+
+export type ActorKind = 'user' | 'api_key' | 'system'
 
 export type ChannelKind = 'slack' | 'pagerduty' | 'email' | 'webhook'
 
@@ -836,7 +842,7 @@ export interface Server {
   slug: string
   status: ServerStatus
   role: ServerRole
-  providerKind: string
+  providerKind: ProviderKind
   providerId?: string | null
   providerServerId?: string | null
   registerMethod: string
@@ -866,7 +872,7 @@ export interface ServerCreate {
   slug: string
   status?: ServerStatus
   role?: ServerRole
-  providerKind?: string
+  providerKind?: ProviderKind
   providerId?: string | null
   providerServerId?: string | null
   registerMethod?: string
@@ -893,7 +899,7 @@ export interface ServerUpdate {
   slug?: string
   status?: ServerStatus
   role?: ServerRole
-  providerKind?: string
+  providerKind?: ProviderKind
   providerId?: string | null
   providerServerId?: string | null
   registerMethod?: string
@@ -920,7 +926,7 @@ export interface ServerWhere extends WhereBase {
   slug?: string | WhereOp<string> | null
   status?: ServerStatus | WhereOp<ServerStatus> | null
   role?: ServerRole | WhereOp<ServerRole> | null
-  providerKind?: string | WhereOp<string> | null
+  providerKind?: ProviderKind | WhereOp<ProviderKind> | null
   providerId?: string | WhereOp<string> | null
   providerServerId?: string | WhereOp<string> | null
   registerMethod?: string | WhereOp<string> | null
@@ -2481,7 +2487,7 @@ export interface AlertEvent {
   ruleId: string
   status: string
   severity: AlertSeverity
-  subjectType: string
+  subjectType: AlertSubject
   subjectId: string
   valueAtTrigger: number
   message: string
@@ -2496,7 +2502,7 @@ export interface AlertEventCreate {
   ruleId: string
   status?: string
   severity: AlertSeverity
-  subjectType: string
+  subjectType: AlertSubject
   subjectId: string
   valueAtTrigger?: number
   message: string
@@ -2511,7 +2517,7 @@ export interface AlertEventUpdate {
   ruleId?: string
   status?: string
   severity?: AlertSeverity
-  subjectType?: string
+  subjectType?: AlertSubject
   subjectId?: string
   valueAtTrigger?: number
   message?: string
@@ -2526,7 +2532,7 @@ export interface AlertEventWhere extends WhereBase {
   ruleId?: string | WhereOp<string> | null
   status?: string | WhereOp<string> | null
   severity?: AlertSeverity | WhereOp<AlertSeverity> | null
-  subjectType?: string | WhereOp<string> | null
+  subjectType?: AlertSubject | WhereOp<AlertSubject> | null
   subjectId?: string | WhereOp<string> | null
   valueAtTrigger?: number | WhereOp<number> | null
   message?: string | WhereOp<string> | null
@@ -2669,7 +2675,7 @@ export interface AuditEvent {
   id: string
   workspaceId?: string | null
   actorId?: string | null
-  actorType: string
+  actorType: ActorKind
   action: string
   subjectType: string
   subjectId: string
@@ -2681,7 +2687,7 @@ export interface AuditEventCreate {
   id?: string
   workspaceId?: string | null
   actorId?: string | null
-  actorType?: string
+  actorType?: ActorKind
   action: string
   subjectType: string
   subjectId: string
@@ -2692,7 +2698,7 @@ export interface AuditEventUpdate {
   id?: string
   workspaceId?: string | null
   actorId?: string | null
-  actorType?: string
+  actorType?: ActorKind
   action?: string
   subjectType?: string
   subjectId?: string
@@ -2703,7 +2709,7 @@ export interface AuditEventWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
   actorId?: string | WhereOp<string> | null
-  actorType?: string | WhereOp<string> | null
+  actorType?: ActorKind | WhereOp<ActorKind> | null
   action?: string | WhereOp<string> | null
   subjectType?: string | WhereOp<string> | null
   subjectId?: string | WhereOp<string> | null

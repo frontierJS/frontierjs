@@ -56,6 +56,15 @@ function canonical(obj) {
 // the rule is not a convention to remember: a value is committed and a
 // reference points at something that is not.
 //
+// **The hash covers a DECLARATION, not the running configuration.** `fli` writes
+// no `.env` on a target — the operator owns that file, and the container is
+// started with `--env-file` against it — so nothing here is applied by a deploy.
+// What the hash and the generation are for is the pair a revert compares:
+// *has the configuration been changed since the release I am going back to*.
+// Reading it as *what the process is running on* is `FJS-585`, and the two
+// places that invite it are the `values` recorded beside the hash and the word
+// "configuration" in `release:mint`'s own table.
+//
 // A reference is pinned, and `latest` is refused by name. Cloud Run resolves a
 // secret reference at instance startup, so `latest` means two instances of one
 // immutable Release hold two different values and the Release is immutable in
@@ -189,7 +198,11 @@ export function formatRelease(rel, { bindings } = {}) {
   // it were one.
   row('digest',     rel.digest ?? '— not built (fli deploy builds on the target; see 2.3f)')
   if (rel.imageRef) row('image', `${rel.imageRef}  (a name, not an identity)`)
-  row('bindings',   `${short(rel.bindingsHash)}  · generation ${rel.generation}` +
+  // Named as DECLARED, because the values recorded beside this hash are not
+  // applied by any step — the container reads the target's own env file, which
+  // `fli` does not write (`FJS-585`). A reader who takes this as the running
+  // configuration is reading a fact about the repository.
+  row('bindings',   `${short(rel.bindingsHash)}  · generation ${rel.generation}  (declared)` +
                     (bindings ? `  · ${bindings.count} binding(s), ${Object.keys(bindings.secretRefs).length} secret ref(s)` : ''))
   row('schema',     rel.schemaHash ? short(rel.schemaHash) : '— no release.snapshot.md (run fli release:check)')
   row('pivot',      rel.pivot + (rel.pivotDeclared ? '  (declared)' : ''))

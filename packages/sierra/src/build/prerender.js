@@ -59,6 +59,7 @@ import { existsSync } from 'fs'
 import { pathToFileURL } from 'url'
 import { appSrcDir } from './app-alias-plugin.js'
 import { explainModuleInitFailure } from './warnings.js'
+import { importAppModule }           from './app-import.js'
 import {
   installSchemas, createReadRecorder, checkRoute,
   declaredPublishLevel, formatReport,
@@ -123,11 +124,78 @@ function makeBuildFetch(routeId) {
   }
 }
 
-/** Import a companion module fresh (cache-busted so a watch rebuild re-reads it). */
-async function importCompanion(absPath) {
-  if (!absPath || !existsSync(absPath)) return null
-  const url = pathToFileURL(absPath).href + `?t=${Date.now()}`
-  try { return await import(url) } catch { return null }
+/**
+ * Import a route's companion, and say which of the two nothings it was.
+ *
+ * `null` means there is no companion — a page with no `.meta.js` reads nothing
+ * at build time and has nothing to prove. A companion that THREW is the other
+ * answer and it is fatal (`FJS-551`): it used to come back as the same `null`,
+ * so a `.meta.js` that could not load was indistinguishable from a page that
+ * has none, and the error it threw — usually the only true one in the whole
+ * build — was discarded at the `catch`.
+ */
+async function importCompanion(absPath, routeId) {
+  const res = await importAppModule(absPath)
+  if (res.ok) return res.module
+  if (res.reason === 'missing') return null
+
+  throw new Error(
+    `[Sierra] ${routeId}: its companion threw while it was loading.\n` +
+    `  ${absPath}\n` +
+    `  ${explainModuleInitFailure(res.error?.message ?? String(res.error), routeId)}`
+  )
+}
+
+// ─── the prerender is bounded ─────────────────────────────────────────────────
+//
+// A prerender that hangs is the least describable failure this build has
+// (`FJS-549`, `FJS-550`): the client bundle finishes, prints its chunk table,
+// and then nothing — forever, with nothing written and nothing said, which
+// reads as a compiler that stopped rather than a build that will never finish.
+// Both known causes were found in one afternoon by one feature, and every
+// diagnosis cost a full build cycle with no output to go on.
+//
+// So each unit of per-route work is raced against a clock. The bound does not
+// diagnose anything and does not try to: it converts *silence* into a message
+// naming the route, the phase and the two causes anybody has hit so far, which
+// is the difference between a bug that can be reported and one that cannot.
+//
+// **A synchronous spin is not covered, and saying so is the point.** The timer
+// needs the event loop, so a page that never yields hangs exactly as it did —
+// the same limit caravan's job timeout states about a handler that never
+// awaits. What that case still gets is the notice below, printed BEFORE the
+// work starts once a route has been slow.
+const PRERENDER_TIMEOUT_MS = 30_000
+
+const HANG_CAUSES =
+  `      Two things are known to do this, both of them about what the page's module graph reaches:\n` +
+  `        · an island marker inside a LAYOUT (\`_module.mesa\`), or an island given element children\n` +
+  `        · \`@frontierjs/sierra/junction\` anywhere in a prerendered island's imports\n` +
+  `      A layout that holds no state and a client that is injected rather than imported are the\n` +
+  `      shapes that work today.`
+
+/**
+ * Run one unit of per-route work under a clock.
+ *
+ * Racing does not cancel the work — nothing in JavaScript cancels a promise —
+ * so the hung operation is still pending when this rejects. That is acceptable
+ * here and nowhere else: the rejection fails the build, and the process exits.
+ */
+async function bounded(label, ms, work) {
+  if (!(ms > 0)) return work()
+
+  let timer = null
+  const clock = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(
+      `[Sierra] ${label} did not finish within ${Math.round(ms / 1000)}s and the build stopped waiting.\n` +
+      HANG_CAUSES + `\n` +
+      `      If this page is genuinely slow rather than stuck, raise prerender.timeout in sierra.config.js.`
+    )), ms)
+    timer.unref?.()
+  })
+
+  try { return await Promise.race([work(), clock]) }
+  finally { clearTimeout(timer) }
 }
 
 /**
@@ -138,7 +206,7 @@ export async function pathsForRoute(node, root) {
   if (!node.meta?.dynamic) return [{ path: node.path, params: {} }]
 
   const companion = node.companion ? resolve(root, node.companion) : null
-  const mod = await importCompanion(companion)
+  const mod = await importCompanion(companion, node.id)
   if (!mod || typeof mod.getStaticPaths !== 'function') {
     // scanner-plugin already fails the build for this case; treat it as
     // "nothing to emit" rather than throwing a second, worse error here.
@@ -277,6 +345,9 @@ export async function prerenderRoutes(opts) {
     // what a route's load() actually reads. No schema means no gates, so the
     // whole check stands down — a Sierra app with no database is unaffected.
     schemaDefs = null, schemaModels = null, db = null,
+    // What a single route may take before the build stops waiting. See
+    // `bounded` — 0 turns the clock off, for a build that is genuinely slow.
+    timeout = PRERENDER_TIMEOUT_MS,
   } = opts
 
   const routesDirAbs = resolve(root, routesDir)
@@ -332,7 +403,7 @@ export async function prerenderRoutes(opts) {
 
     let targets
     try {
-      targets = await pathsForRoute(node, root)
+      targets = await bounded(`${node.id}: getStaticPaths()`, timeout, () => pathsForRoute(node, root))
     } catch (err) {
       skipped.push({ route: node.id, reason: `getStaticPaths() threw: ${explainModuleInitFailure(err.message, node.file)}` })
       continue
@@ -345,20 +416,19 @@ export async function prerenderRoutes(opts) {
     const chain    = layoutChainFor(pageFile, routesDirAbs)
     const wrapper  = composeWrapper(pageFile, chain)
     const companion = node.companion ? resolve(root, node.companion) : null
-    const mod      = await importCompanion(companion)
+    const mod      = await importCompanion(companion, node.id)
 
     // Does this route pull data at all? A page with no companion has no way to
     // read a model at build time, so it has nothing to prove and is never asked
     // for a declaration. That keeps the check off the pages it cannot help.
     //
-    // The `?? companionExists` half is load-bearing and was a fail-OPEN hole in
-    // the first version of this check. `importCompanion` swallows an import
-    // error and returns null, so a `.meta.js` that throws on import — one that
-    // imports the app's db client under a runtime that cannot load it, say —
-    // looked identical to a route with no companion at all, and was waved
-    // through as "reads nothing". A companion that exists but could not be
-    // read is UNKNOWN, and unknown is the case this whole check exists to
-    // refuse. Found by running it in `example/`, not by reading it.
+    // The `?? companionExists` half was written when `importCompanion` swallowed
+    // an import error and returned null, which made a `.meta.js` that throws
+    // look identical to a route with no companion at all — a fail-OPEN hole,
+    // waved through as "reads nothing". That case now throws (`FJS-551`), so
+    // this reads as belt and braces; it stays because the fallback is what the
+    // check wants to be true of ANY companion it could not read, and being
+    // right for a reason that has moved is not a reason to remove it.
     const companionExists = !!companion && existsSync(companion)
     _readsData = mod
       ? (typeof mod.load === 'function' || typeof mod.getStaticPaths === 'function')
@@ -368,7 +438,8 @@ export async function prerenderRoutes(opts) {
       let data = null
       if (mod && typeof mod.load === 'function') {
         try {
-          data = await mod.load({ params, fetch: makeBuildFetch(node.id), url: urlPath })
+          data = await bounded(`${urlPath}: load()`, timeout,
+            () => mod.load({ params, fetch: makeBuildFetch(node.id), url: urlPath }))
         } catch (err) {
           skipped.push({ route: urlPath, reason: `load() threw: ${explainModuleInitFailure(err.message, node.file)}` })
           continue
@@ -382,7 +453,7 @@ export async function prerenderRoutes(opts) {
         // renderComponent takes SOURCE — the wrapper is synthetic and never
         // hits disk. `filename` only steers import resolution and error
         // messages, so it points at the page's own directory.
-        rendered = await renderComponent(wrapper, {
+        rendered = await bounded(`${urlPath}: render`, timeout, () => renderComponent(wrapper, {
           data:     { data },
           cwd:      dirname(pageFile),
           filename: join(dirname(pageFile), '__prerender__.mesa'),
@@ -397,7 +468,7 @@ export async function prerenderRoutes(opts) {
           // Without this, `import { page } from '@frontierjs/sierra/router'` in
           // a layout dies with "Cannot find package" (Mesa SSR_SPEC W1).
           ...(tmpDir ? { tmpDir } : {}),
-        })
+        }))
       } catch (err) {
         skipped.push({ route: urlPath, reason: `render failed: ${explainModuleInitFailure(err.message, node.file)}` })
         continue

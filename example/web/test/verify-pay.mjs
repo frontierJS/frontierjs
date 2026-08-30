@@ -232,7 +232,7 @@ try {
   // shopper with no session, and what makes that possible is the CODE: `Order`
   // reads at VISITOR(1) behind two policies, so there is nobody here for either
   // of them to admit, and the code is the credential instead (`FJS-497`).
-  const orderId = await newOrder('ORD-PAY-1', 42.5)
+  const orderId = await newOrder('ORD-PAY-1', 4250)
   const payCode = await codeFor(orderId)
   const startRes = await fetch(`${API}/api/payments`, {
     method: 'POST',
@@ -281,7 +281,7 @@ try {
   t('start.refusesAStrangerNamingAnId', {
     status:        anonById.status,
     // Nothing about the order came back with the refusal.
-    leaksAmount:   JSON.stringify(anonBody ?? {}).includes('42.5'),
+    leaksAmount:   JSON.stringify(anonBody ?? {}).includes('4250'),
     leaksStatus:   /pending|paid|shipped|cancelled/.test(anonBody?.message ?? ''),
     wrongCode:     wrongCode.status,
     // A real order and an imaginary one are indistinguishable from outside.
@@ -291,7 +291,7 @@ try {
 
   // Staff need no code: they can read the order, so the policy already answers.
   // Its own order, so the assertion is about the DOOR and not about the money.
-  const staffOrder = await newOrder('ORD-PAY-4', 3.5)
+  const staffOrder = await newOrder('ORD-PAY-4', 350)
   const staffStart = await fetch(`${API}/api/payments`, {
     method: 'POST', headers: { ...auth, 'x-service-method': 'start' },
     body: JSON.stringify({ orderId: staffOrder }),
@@ -314,7 +314,7 @@ try {
 
   // ── 3. four ways a webhook is refused ─────────────────────────────────
   const evt = (id, type = 'payment.succeeded', paymentRef = ref) =>
-    ({ id, type, created: Math.floor(Date.now() / 1000), data: { paymentRef, amount: 42.5, currency: 'USD', reference: 'ORD-PAY-1', reason: null } })
+    ({ id, type, created: Math.floor(Date.now() / 1000), data: { paymentRef, amount: 4250, currency: 'USD', reference: 'ORD-PAY-1', reason: null } })
 
   // (a) a forged signature
   const forged = await postWebhook(evt(`evt_${RUN}_forged`), { secret: 'not-the-secret' })
@@ -471,7 +471,7 @@ try {
   // The order stays PENDING. A refusal is not a cancellation: the shopper is
   // expected to try another card, and `start` has to keep answering — which it
   // only does because nothing moved the status.
-  const order2 = await newOrder('ORD-PAY-2', 9.99)
+  const order2 = await newOrder('ORD-PAY-2', 999)
   const code2  = await codeFor(order2)
   const start2 = await json(await fetch(`${API}/api/payments`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-service-method': 'start' },
@@ -519,7 +519,7 @@ try {
   // and "our key is wrong" are one failed fetch and two different things to
   // tell a shopper.
   await fetch(`${PSP}/fail-next`, { method: 'POST' })
-  const order3 = await newOrder('ORD-PAY-3', 5)
+  const order3 = await newOrder('ORD-PAY-3', 500)
   const outage = await fetch(`${API}/api/payments`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-service-method': 'start' },
     body: JSON.stringify({ code: await codeFor(order3) }),
@@ -611,7 +611,7 @@ try {
     // basket chose no delivery method, so the gap is the shop's tax alone.
     // The refunds below are all fractions of `total`, which is the figure a
     // payment was taken for and therefore the only one a refund can be against.
-    total:    bought.subtotal === Number((variant.price * 2).toFixed(2)),
+    total:    bought.subtotal === variant.price * 2,
   })
 
   // ── 13. the authority is the SEED's, not a number in a service ─────────
@@ -642,7 +642,10 @@ try {
   // Money back on an order that is still paid and still shipping — the shop
   // has refunded the postage, not the sale. The order must NOT move and the
   // shelf must NOT change, because neither has happened.
-  const half = Number((bought.total / 2).toFixed(2))
+  // Cents, so a half is an integer division that may leave one over — and the
+  // remainder matters: the whole of the rest is refunded below and the two have
+  // to add up to what was charged.
+  const half = Math.floor(bought.total / 2)
   const partial = await json(await doRefund(auth, { amount: half }))
   const afterPartial = await paymentNow()
   t('refund.partial', {
@@ -727,13 +730,13 @@ const expected = {
   // a real signature over a body that was then swapped is still refused.
   'provider.refusesUnsigned': { unsigned: 401, bodySwapped: 401 },
 
-  'start.answers': { status: 200, providerRef: true, amount: 42.5, paymentStatus: 'pending' },
+  'start.answers': { status: 200, providerRef: true, amount: 4250, paymentStatus: 'pending' },
   'start.refusesAStrangerNamingAnId': {
     status: 404, leaksAmount: false, leaksStatus: false, wrongCode: 404, sameAsMissing: true,
   },
   'start.staffNeedNoCode': { status: 200 },
   'start.reachedTheProvider': {
-    found: true, amount: 42.5, currency: 'USD',
+    found: true, amount: 4250, currency: 'USD',
     reference: 'ORD-PAY-1', status: 'requires_confirmation',
   },
 
@@ -746,7 +749,7 @@ const expected = {
 
   'confirm.deliveredTheWebhook': { status: 200, webhook: 200 },
   'webhook.settledTheOrder': { status: 'paid' },
-  'webhook.settledThePayment': { status: 'succeeded', settled: true, amount: 42.5, orderId: true },
+  'webhook.settledThePayment': { status: 'succeeded', settled: true, amount: 4250, orderId: true },
 
   // FJS-463: a transition made outside the service that owns the model used to
   // announce nothing at all.
@@ -813,7 +816,7 @@ const expected = {
   // …and the two that must be REAL numbers rather than whatever was answered:
   // half of the order total, and the whole of it.
   if (setup.total === true && typeof half === 'number' && typeof total === 'number') {
-    if (Math.abs(half * 2 - total) > 0.011) {
+    if (Math.abs(half * 2 - total) > 1) {
       console.log(`  FAIL refund.amountsAgree`)
       console.log(`         half ${half} does not double to total ${total}`)
       process.exitCode = 1

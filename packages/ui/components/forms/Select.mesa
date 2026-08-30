@@ -17,7 +17,7 @@
   // bind:this exposes: focus()
 
   import Field from './Field.mesa'
-  import { nameToLabel, uid, resolveError, resolveRule, stated, nativeValidationGuard, truncationNote, withNote } from '../../utils.js'
+  import { nameToLabel, uid, resolveError, resolveRule, stated, nativeValidationGuard, truncationNote, withNote, optionsNote } from '../../utils.js'
 
   export let value       = null
   export let options     = []          // flat or grouped (see above)
@@ -64,8 +64,13 @@
 
   let _fetched = []
   let _total   = null
+  let _error   = null
   if (!options?.length && !_sync && name && form?.optionsFor)
-    form.optionsFor(name).then(r => { _fetched = r?.options ?? []; _total = r?.total ?? null })
+    form.optionsFor(name).then(r => {
+      _fetched = r?.options ?? []
+      _total   = r?.total ?? null
+      _error   = r?.error ?? null
+    })
 
   const resolved = options?.length ? options : (_sync ?? _fetched)
 
@@ -77,7 +82,14 @@
   // select cannot — that is what `combobox` is for.
   export let total = undefined
   const resolvedTotal = stated(total, _total)
-  const resolvedHint  = withNote(hint, truncationNote(resolved.length, resolvedTotal))
+
+  // Why the rows are not there. Stated by the form, which fetched them; read
+  // off this control's own fetch otherwise. An empty list and a list nobody
+  // could fetch look identical, and a person reads both as *there are none*
+  // (`FJS-587`).
+  export let optionsError = undefined
+  const resolvedHint  = withNote(withNote(hint, optionsNote(stated(optionsError, _error))),
+                                 truncationNote(resolved.length, resolvedTotal))
 
   // …and the `required` that comment names. It was read off the rule for the
   // option list alone, so a select stated no constraint the model insisted on.

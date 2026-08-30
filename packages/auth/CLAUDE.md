@@ -96,7 +96,7 @@ index.ts     public API
   `sessionGateLevel()` grade ADMINISTRATOR(5) from — so an app whose resolver
   keys on a role string must project it (`{ isAdmin: user.role === 'admin' }`)
   or the level and the policy disagree, silently, because a policy filters
-  rather than refuses. Both scaffolds and `example/api/app.ts` do this.
+  rather than refuses. Both scaffolds and `example/api/src/app.ts` do this.
 - **This package owns `model User`; apps EXTEND it, and their columns reach the
   session through `sessionFields` — nothing else.** `toContext()` is the single
   place every issued session is built, so the hook covers login,

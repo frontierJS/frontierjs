@@ -26,16 +26,48 @@
 //   priceBasket(...)   pure arithmetic over rows somebody else loaded
 //   contextFor(...)    the loads — a cart's code, method and the shop's rate
 //
-// ─── Rounding, stated once ────────────────────────────────────────────────
+// ─── The unit, stated once ────────────────────────────────────────────────
 //
-// Every component is rounded to two places as it is produced, and the total is
-// the sum of the ROUNDED components. Not the rounding of the sum. The two
-// differ by a penny often enough to matter, and only the first one has the
-// property that makes a receipt readable: what is printed adds up to what was
-// charged, by construction, without anything downstream being careful.
+// EVERY number in and out of this module is a whole number of minor units —
+// cents — because every money column in the schema is `@money(USD)` and that is
+// what `@money` stores. Nothing here is a float, and that is not a style
+// preference: `0.1 + 0.2` is the oldest bug in commerce, and the identity
+//
+//     subtotal − discount + shipping + tax = total
+//
+// is an equality over integers where over floats it is a tolerance somebody has
+// to remember to write. The Data boundary asserts it as an `@@check` for that
+// reason.
+//
+// Two operations produce a number that is not already exact — a percentage
+// discount and a tax rate — and each is rounded to the cent at the point it is
+// produced, half away from zero. Everything else is addition. The total is the
+// sum of the ROUNDED components, not the rounding of a sum, so what is printed
+// adds up to what was charged by construction.
 //
 // The corollary is the rule for every screen: render these numbers, never
-// recompute them. A percentage re-applied in JavaScript rounds on its own.
+// recompute them, and never divide by a hundred by hand — `fromMinor` in
+// `@frontierjs/toolbelt/units` is what knows the yen has no cent.
+
+import { formatMoney, fromMinor } from '@frontierjs/toolbelt/units'
+
+/** The currency every `@money(USD)` column in this schema is in.
+ *
+ *  Stated here because this is the API's one owner of money and the API has
+ *  readers of its own — a refused code answers with an amount in it, and two
+ *  email bodies quote a total. `web/src/money.js` and `site/src/money.js` each
+ *  state it again for their own surface; a surface may not import another
+ *  surface's `src/` (Invariant 3), and the real fix is the shop's currency
+ *  being a row rather than a constant, which is a feature and not a formatter. */
+export const BASE = 'USD'
+
+/** Cents → what a person reads. The API's half of `money()`, and the reason it
+ *  exists at all is that nothing may divide by a hundred by hand: `fromMinor`
+ *  is what knows the yen has no cent (`FJS-440`). */
+export function money(cents: number | null | undefined): string {
+  if (cents == null) return ''
+  return formatMoney(fromMinor(cents, BASE), BASE)
+}
 
 /** A Litestone client of some flavour — see `inventory.ts` for why this is
  *  loose. The reads below go through whichever one the caller is entitled to. */
@@ -48,6 +80,8 @@ export type DiscountRow = {
   code:           string
   label:          string
   kind:           'percent' | 'fixed'
+  /** `@scale(2)`, two readings: 1050 is $10.50 under `fixed` and 10.50% under
+   *  `percent`. One column, one scale — see the schema. */
   value:          number
   minSubtotal:    number
   startsAt:       string | null
@@ -105,12 +139,16 @@ export type MoneyContext = {
 
 // ─── The arithmetic ───────────────────────────────────────────────────────
 
-/** Two places, once, at the point the figure is produced. Rounds half away from
- *  zero on the value's own sign, which is what `toFixed` does and what a person
- *  checking the sum on paper expects. */
-export function round2(n: number): number {
+/** To the cent, once, at the point a figure is produced by a multiplication.
+ *  Half away from zero on the value's own sign, which is what a person checking
+ *  the sum on paper expects — `Math.round` alone breaks ties towards positive
+ *  infinity, so −0.5 would go the other way from 0.5.
+ *
+ *  Only two callers below produce a non-integer at all; every other line here
+ *  is the addition of two integers and needs nothing. */
+export function roundCents(n: number): number {
   if (!Number.isFinite(n)) return 0
-  return Number(n.toFixed(2))
+  return Math.sign(n) * Math.round(Math.abs(n))
 }
 
 /**
@@ -146,8 +184,10 @@ export function discountProblem(
 
   // Compared against the subtotal, which is the lines and nothing else — a
   // minimum spend that shipping could satisfy would be a shop paying itself.
-  if (discount.minSubtotal > 0 && round2(subtotal) < round2(discount.minSubtotal))
-    return `${discount.code} needs a subtotal of at least ${discount.minSubtotal.toFixed(2)}`
+  // Both are cents, so this is an integer comparison and there is nothing to
+  // round before making it.
+  if (discount.minSubtotal > 0 && subtotal < discount.minSubtotal)
+    return `${discount.code} needs a subtotal of at least ${money(discount.minSubtotal)}`
 
   return null
 }
@@ -163,16 +203,18 @@ export function discountProblem(
  * The percentage is clamped rather than trusted. `value` is one column for two
  * units (see the schema), so nothing in the Data boundary can enforce *at most
  * 100* on the percent half without seeing `kind`, and here both are in scope.
+ * It is `@scale(2)`, so a hundred per cent is 10000 and the divisor below is
+ * the two places of the percentage times the two of the money it is taken off.
  */
 export function discountAmount(discount: DiscountRow | null | undefined, subtotal: number): number {
   if (!discount) return 0
   const base = Math.max(0, subtotal)
 
   const raw = discount.kind === 'percent'
-    ? base * (Math.min(100, Math.max(0, discount.value)) / 100)
+    ? roundCents(base * Math.min(10000, Math.max(0, discount.value)) / 10000)
     : Math.max(0, discount.value)
 
-  return round2(Math.min(base, raw))
+  return Math.min(base, raw)
 }
 
 /**
@@ -187,8 +229,8 @@ export function discountAmount(discount: DiscountRow | null | undefined, subtota
  */
 export function shippingAmount(method: ShippingMethodRow | null | undefined, afterDiscount: number): number {
   if (!method || !method.active) return 0
-  if (method.freeOver != null && round2(afterDiscount) >= round2(method.freeOver)) return 0
-  return round2(method.price)
+  if (method.freeOver != null && afterDiscount >= method.freeOver) return 0
+  return method.price
 }
 
 /**
@@ -200,7 +242,7 @@ export function shippingAmount(method: ShippingMethodRow | null | undefined, aft
  * column and not a rewrite — the arithmetic already has one place to change.
  */
 export function priceBasket(lines: PricedLine[], ctx: MoneyContext = {}): Breakdown {
-  const subtotal = round2(lines.reduce((n, l) => n + (Number(l.total) || 0), 0))
+  const subtotal = lines.reduce((n, l) => n + (Number(l.total) || 0), 0)
 
   // The code is only worth something if it is currently valid. A basket
   // carrying an expired code prices at zero off and says so on the screen,
@@ -208,11 +250,14 @@ export function priceBasket(lines: PricedLine[], ctx: MoneyContext = {}): Breakd
   const usable  = discountProblem(ctx.discount, subtotal) === null ? ctx.discount ?? null : null
   const discount = discountAmount(usable, subtotal)
 
-  const afterDiscount = round2(subtotal - discount)
+  const afterDiscount = subtotal - discount
   const shipping      = shippingAmount(ctx.shippingMethod, afterDiscount)
 
+  // The rate is the one figure here that is not money and is therefore still a
+  // fraction — 0.2 and not 20, `TaxRate.rate` says why — so this is the second
+  // and last multiplication, and the second and last rounding.
   const rate = ctx.taxRate ? Math.max(0, Number(ctx.taxRate.rate) || 0) : 0
-  const tax  = round2(Math.max(0, afterDiscount + shipping) * rate)
+  const tax  = roundCents(Math.max(0, afterDiscount + shipping) * rate)
 
   return {
     subtotal,
@@ -228,7 +273,7 @@ export function priceBasket(lines: PricedLine[], ctx: MoneyContext = {}): Breakd
     taxRate:       rate,
     taxLabel:      rate > 0 ? ctx.taxRate?.label ?? null : null,
     // The sum of the rounded components. See the header.
-    total:         round2(subtotal - discount + shipping + tax),
+    total:         subtotal - discount + shipping + tax,
   }
 }
 

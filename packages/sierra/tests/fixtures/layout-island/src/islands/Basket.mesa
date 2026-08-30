@@ -1,0 +1,5 @@
+<script>
+  import { count } from '../cart.js'
+  let n = count()
+</script>
+<button id="basket">basket: {n}</button>

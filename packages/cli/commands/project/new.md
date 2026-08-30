@@ -827,6 +827,22 @@ export default {
     health:   true,
     manifest: true,
   },
+
+  // Third-party services this app needs and does not own — an n8n, a mail
+  // server, a search cluster. Declared here, BOUND per environment as ordinary
+  // variables, and the app refuses to start if one is missing or bound halfway.
+  // Setting optional: true forgives a service nobody bound; it never forgives
+  // one bound halfway, because that is the shape that reaches production.
+  //
+  // attachments: {
+  //   n8n: {
+  //     describe: 'workflow automation',
+  //     env: {
+  //       N8N_URL:     { required: true, type: 'url' },
+  //       N8N_API_KEY: { required: true },
+  //     },
+  //   },
+  // },
 }
 `
 }
