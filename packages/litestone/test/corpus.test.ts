@@ -59,10 +59,10 @@ describe('the corpus — schemas converted from real applications', () => {
       clean()
 
       try {
-        const db = await createClient({ schema: source, db: dbPath, autoMigrate: true })
+        const db = await createClient({ schema: source, db: dbPath })
         if ('close' in db) db.close()
 
-        const db2 = await createClient({ schema: source, db: dbPath, autoMigrate: true })
+        const db2 = await createClient({ schema: source, db: dbPath })
         if ('close' in db2) db2.close()
 
         const parsed     = parse(source)

@@ -129,7 +129,7 @@ describe('@@arc — DDL', () => {
 
 describe('@@arc — against a real database', () => {
   const open = async (arc: string) => {
-    const db = await createClient({ schema: attachment(arc), db: ':memory:', autoMigrate: true })
+    const db = await createClient({ schema: attachment(arc), db: ':memory:' })
     const order   = await db.order.create({ data: {} })
     const product = await db.product.create({ data: {} })
     return { db, order, product }
@@ -186,7 +186,7 @@ describe('@@arc — what a violation says', () => {
   // feature: the person cannot act on it. Same argument as `FJS-534` made for
   // `@check` one attribute earlier.
   const violate = async (arc: string) => {
-    const db = await createClient({ schema: attachment(arc), db: ':memory:', autoMigrate: true })
+    const db = await createClient({ schema: attachment(arc), db: ':memory:' })
     const order   = await db.order.create({ data: {} })
     const product = await db.product.create({ data: {} })
     try {

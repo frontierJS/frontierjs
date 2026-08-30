@@ -27,7 +27,9 @@ src/units/           a magnitude with a unit, as a person reads it. Bytes:
                      callers had four copies and two answers (`FJS-408`).
                      Money: `Intl.NumberFormat`, one locale, the bare symbol —
                      five copies in one app and two email bodies with no
-                     currency at all (`FJS-440`)
+                     currency at all (`FJS-440`). Arithmetic: `roundMinor` and
+                     `allocate`, the rounding mode and the leftover unit
+                     `@money` deliberately left to the app (`FJS-D154`)
 src/directives/      the `$` convention — which params are directives, and how
                      a bag of them splits into filters + directives. Two
                      boundaries read it: junction's bridge and sierra's router
@@ -142,10 +144,21 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
   letters) raises, and that is the branch the `catch` exists for. An assertion
   written with a plain space fails against two strings that are identical in the
   diff.
-- **The amount is MAJOR units.** 28.5 is twenty-eight fifty. This kit does not
-  do minor units, because a caller storing integer cents knows it and a caller
-  storing a float does not — guessing between them is how a price gains two
-  zeroes.
+- **`formatMoney`'s amount is MAJOR units.** 28.5 is twenty-eight fifty. It does
+  not guess between major and minor, because a caller storing integer cents
+  knows it and a caller storing a float does not — guessing between them is how
+  a price gains two zeroes. `fromMinor`/`toMinor` are the crossing, and
+  `roundMinor`/`allocate` are on the other side of it: everything they touch is
+  minor units, and neither takes a currency at all.
+- **`roundMinor` throws where every formatter here answers `''`.** Not a number
+  is not zero either way, but display can say nothing and arithmetic cannot: a
+  silent 0 in a total is a receipt that balances and is wrong. `allocate`
+  refuses for the same reason rather than splitting evenly when the ratios sum
+  to zero — a guess that adds up is the worst kind.
+- **`allocate` has no `scale` and no currency, and that is not an omission.**
+  The smallest thing a split can hand out is one of whatever `amount` is counted
+  in, which the caller decided by holding an integer. `FJS-D154` was filed with
+  a third parameter and it did not survive being written.
 - **`createStore` is NOT here and must not arrive.** `FJS-D16` named it to move
   and the ruling is amended: a store is state. Admitting one costs the standing
   that lets litestone and mesa import this package at all.

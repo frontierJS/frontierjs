@@ -276,6 +276,80 @@ model Note   { id Int @id  body String  @@db(extra) }
     expect(parsed.valid).toBe(true)
   })
 
+  // `schemaMutants` mutates TEXT and `mutationScore` parses it, and `parse` does
+  // not follow an import — so a schema that imports a fragment read as a file
+  // full of `extend model` naming models nothing declared, every mutant died for
+  // a reason that had nothing to do with the mutation, and the command refused
+  // outright. On basecamp that was all 300 of them (`FJS-597`).
+  test('mutate follows an import, and mutates what the fragment declares', async () => {
+    const dir = makeFixtureDir('mutate-import', {
+      schema: `
+import "./vendor.lite"
+
+model Team { id Int @id  name String }
+`,
+      config: `export default { schema: './schema.lite', migrations: './migrations', db: './test.db' }\n`,
+    })
+    writeFileSync(join(dir, 'vendor.lite'), `
+model Ticket {
+  id     Int    @id
+  ref    String @unique
+  @@gate("2.4.4.5")
+}
+`, 'utf8')
+
+    const r = await runCli(dir, ['mutate', '--kinds=unique-drop'], { timeoutMs: 60_000 })
+    expect(r.stdout + r.stderr).not.toMatch(/does not parse/)
+    // The @unique is in the IMPORTED file and nowhere else, so a mutant at all
+    // is proof the fragment was read.
+    expect(r.stdout).toMatch(/1 mutants/)
+    expect(r.exit).toBe(0)
+  })
+
+  // The key is read from the environment by every other command in the CLI;
+  // this one read `cfg.encryptionKey`, which loadConfig does not populate — so a
+  // schema declaring `@secret` could not be BUILT and every mutant came back
+  // "refused by the loader", which the score counts as a kill.
+  test('mutate reads the encryption key where every other command does', async () => {
+    const dir = makeFixtureDir('mutate-secret', {
+      schema: `
+model Vault {
+  id    Int    @id
+  label String @unique
+  data  String @secret
+  @@gate("4.4.4.5")
+}
+`,
+    })
+    const key = '11'.repeat(32)
+    const r = await runCli(dir, ['mutate', '--kinds=unique-drop'], {
+      timeoutMs: 60_000, env: { ENCRYPTION_KEY: key },
+    })
+    // Without the key the ORIGINAL cannot build, and the control below refuses
+    // rather than reporting every mutant killed.
+    expect(r.stdout + r.stderr).not.toMatch(/ORIGINAL schema does not build/)
+    expect(r.exit).toBe(0)
+  })
+
+  test('mutate refuses when the ORIGINAL cannot be built', async () => {
+    const dir = makeFixtureDir('mutate-nokey', {
+      schema: `
+model Vault {
+  id    Int    @id
+  label String @unique
+  data  String @secret
+  @@gate("4.4.4.5")
+}
+`,
+    })
+    // Same schema, no key. Every mutant would be refused by the loader for a
+    // reason that is not about the mutation, and the run would read 100%.
+    const r = await runCli(dir, ['mutate', '--kinds=unique-drop'], { timeoutMs: 60_000 })
+    expect(r.exit).not.toBe(0)
+    expect(r.stdout + r.stderr).toMatch(/ORIGINAL schema does not build/)
+    expect(r.stdout + r.stderr).not.toMatch(/100% killed/)
+  })
+
   test('jsonschema writes valid JSON with PascalCase model keys', async () => {
     const dir = makeFixtureDir('jsonschema')
     await runCli(dir, ['migrate', 'create', 'init'])

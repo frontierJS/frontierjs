@@ -35,7 +35,7 @@ describe('a 188-model schema', () => {
     clean()
 
     try {
-      const db = await createClient({ schema: source, db: dbPath, autoMigrate: true })
+      const db = await createClient({ schema: source, db: dbPath })
       if ('close' in db) db.close()
 
       const parsed     = parse(source)

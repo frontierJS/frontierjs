@@ -240,11 +240,13 @@ same measurement and they are the ones to lead with:
   on-hand compared against a safety stock, both derived — is a comparison of two
   drifted values, not a sum of clean ones.
 - **The JS boundary.** `0.1 + 0.2 !== 0.3`, and ten accumulated tenths are
-  `0.9999999999999999`, which is `< 1`. This is where `example` already lives:
-  [`api/src/pricing.ts`](../example/api/src/pricing.ts) carries a hand-rolled
-  `round2()` at eight call sites plus a literal `.toFixed(2)`, which is
+  `0.9999999999999999`, which is `< 1`. This is where `example` lived:
+  [`api/src/pricing.ts`](../example/api/src/pricing.ts) carried a hand-rolled
+  `round2()` at eight call sites plus a literal `.toFixed(2)`, which was
   `FJS-440`'s minor-unit assumption returning in the arithmetic after being
-  removed from the formatting.
+  removed from the formatting. It is minor units throughout since `FJS-562`,
+  and one rounding survives it — the two multiplications that produce a
+  non-integer at all.
 
 That reorders the argument rather than retiring it: the harm is real and it is
 in the operations, not in the accumulation.

@@ -1,5 +1,34 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-08-30 — `roundMinor` and `allocate`, the half `@money` left to the app (`FJS-D154`)
+
+`FJS-D142` made storage exact and said nothing about rounding mode or about
+which line of a split bill gets the leftover unit. Both are here now, and they
+are two functions because they answer different questions: a mode belongs to a
+MULTIPLICATION, where ties are genuinely disputed, and a remainder belongs to a
+SPLIT, where the only requirement is that the parts add up.
+
+`roundMinor(value, { mode })` is half away from zero by default — `Math.round`
+alone breaks ties towards positive infinity, so a refund would not mirror its
+charge — with `half-even` for the jurisdictions that require banker's rounding
+of tax. Per call and never a module setting, because an application needing both
+needs them in one process. It THROWS on a non-finite value where the formatters
+in this kit answer `''`: display can say nothing, arithmetic cannot, and a
+silent 0 inside a total is the failure the whole area exists to stop.
+
+`allocate(amount, ratios)` floors every share and hands the leftover units one
+each to the largest fractional parts, ties by position. Integers in, integers
+out, and the parts sum to `amount` exactly — asserted over 2,000 generated
+splits from a fixed seed, since a distribution that is right on the cases
+somebody thought of is still a receipt that does not add up.
+
+**No Money value object, and no `scale` parameter.** The ruling was filed as a
+function over `(amount, ratios, scale)` and the third argument did not survive
+being written: the smallest thing a split can hand out is one of whatever
+`amount` is counted in, and a caller holding an integer has already decided
+that. `example/api/src/pricing.ts` keeps its `roundCents` name as an alias of
+`roundMinor`.
+
 ## 2026-08-29 — `fromMinor` / `toMinor`, beside the scale they read
 
 `@money` stores a whole number of MINOR units and `formatMoney` takes MAJOR

@@ -5581,6 +5581,89 @@ describe('@guarded — write half', () => {
 })
 
 
+// ─── 18a-ii. The engine's own stamp is not the caller's write (FJS-565) ───────
+//
+// The refusals above grade the payload writeData is handed, and by then the
+// create path has stamped @default(uuid()), @createdBy, @version and @sequence
+// into it. So a @guarded column with a generated default refused its own stamp
+// and no caller below system could create the row at all — while the pairing
+// (`@guarded @default(nanoid())`, a token the engine mints and nobody may set)
+// is exactly what the two attributes together are for. What is graded now is
+// what the CALLER sent. Every case here is paired with the caller naming the
+// same column, because a create that succeeds proves nothing about a rule
+// unless the write it is supposed to refuse still refuses.
+
+describe('a stamped column is not a caller write (FJS-565)', () => {
+  const SCHEMA = `
+    model Doc {
+      id     Int    @id @default(autoincrement())
+      ref    String @guarded @default(nanoid())
+      owner  Int    @guarded @createdBy
+      slot   String @system  @default(cuid())
+      title  String
+      @@gate("4")
+    }
+  `
+  const AS = { id: 7, role: 'user', activatedAt: new Date(), verifiedAt: new Date() }
+  let db: any, user: any
+  beforeAll(async () => { db = await makeDb(SCHEMA, 'stamped-write'); user = db.$setAuth(AS) })
+  afterAll(() => db.$close())
+
+  const stored = async (id: number) => db.asSystem().doc.findUnique({ where: { id } })
+
+  test('create: a @guarded generated default is minted, not refused', async () => {
+    const row = await user.doc.create({ data: { title: 'a' } })
+    const raw = await stored(row.id)
+    expect(raw.ref).toHaveLength(21)          // nanoid
+    expect(raw.slot).toBeTruthy()             // @system + cuid
+    expect(raw.owner).toBe(7)                 // @createdBy off the principal
+    expect('ref' in row).toBe(false)          // and @guarded still strips it on read
+  })
+
+  test('createMany mints per ROW — one shared set would let row 0 excuse row 1', async () => {
+    const before = await db.asSystem().doc.count()
+    await user.doc.createMany({ data: [{ title: 'x' }, { title: 'y' }] })
+    const rows = await db.asSystem().doc.findMany({ orderBy: { id: 'desc' }, limit: 2 })
+    expect(await db.asSystem().doc.count()).toBe(before + 2)
+    expect(new Set(rows.map((r: any) => r.ref)).size).toBe(2)
+  })
+
+  test('upsert and upsertMany mint it too', async () => {
+    const one = await user.doc.upsert({
+      where: { id: 8100 }, create: { id: 8100, title: 'u' }, update: { title: 'u2' } })
+    expect((await stored(one.id)).ref).toHaveLength(21)
+    await user.doc.upsertMany({ data: [{ id: 8110, title: 'p' }, { id: 8111, title: 'q' }] })
+    expect((await stored(8111)).ref).toHaveLength(21)
+  })
+
+  test('CONTROL — naming the @guarded column is still refused', async () => {
+    await expect(user.doc.create({ data: { title: 'b', ref: 'mine' } }))
+      .rejects.toThrow(/"ref" is @guarded/)
+    await expect(user.doc.create({ data: { title: 'b', owner: 42 } }))
+      .rejects.toThrow(/"owner" is @guarded/)
+    await expect(user.doc.create({ data: { title: 'b', slot: 'mine' } }))
+      .rejects.toThrow(/"slot" is @system/)
+  })
+
+  test('CONTROL — an explicit null is naming it, so the stamp does not excuse it', async () => {
+    await expect(user.doc.create({ data: { title: 'c', ref: null } }))
+      .rejects.toThrow(/"ref" is @guarded/)
+  })
+
+  test('CONTROL — a batch is graded row by row, and one bad row takes the batch', async () => {
+    const before = await db.asSystem().doc.count()
+    await expect(user.doc.createMany({ data: [{ title: 'x' }, { title: 'y', ref: 'mine' }] }))
+      .rejects.toThrow(/"ref" is @guarded/)
+    expect(await db.asSystem().doc.count()).toBe(before)
+  })
+
+  test('system: [col] still writes a @system column, and still names it', async () => {
+    const row = await user.doc.create({ data: { title: 'd', slot: 'chosen' }, system: ['slot'] })
+    expect((await stored(row.id)).slot).toBe('chosen')
+  })
+})
+
+
 // ─── 18b. @guarded(all) + WHERE clause behaviour ──────────────────────────────
 //
 // Confirms the three documented cases:
@@ -24981,6 +25064,47 @@ model Site { id Int @id  url String @default("http://x.test") @length(1, 200) }
     expect(all.length).toBeGreaterThan(0)
     for (const m of all) expect(m.text).toContain('http://x.test')
     expect(all.every((m: any) => m.parses)).toBe(true)
+  })
+
+  // ── the control ────────────────────────────────────────────────────────────
+  //
+  // A mutant that will not BUILD is counted as killed, which is right — a schema
+  // the framework refuses cannot ship. It is right only while the ORIGINAL
+  // builds. Measured on basecamp, which declares `@secret` columns: with no
+  // encryption key nothing built, every mutant came back refused, and the run
+  // reported 100% killed having graded nothing (FJS-597).
+  test('mutationScore refuses when the ORIGINAL does not build', async () => {
+    const { mutationScore } = await import('../src/mutate.js')
+    let threw: string | null = null
+    try {
+      await mutationScore({
+        schema: S,
+        build:  () => { throw new Error('no encryption key') },
+      })
+    } catch (e: any) { threw = e.message }
+
+    expect(threw).toBeTruthy()
+    expect(threw).toContain('ORIGINAL')
+    // The reason has to travel — "it refused" is what the run already looked like.
+    expect(threw).toContain('no encryption key')
+  })
+
+  test('a build that refuses only the MUTANT still counts as a kill', async () => {
+    const { mutationScore } = await import('../src/mutate.js')
+    // The original builds; every mutant is refused. That is the reading the
+    // control exists to keep meaningful, so it must still hold.
+    let first = true
+    const res = await mutationScore({
+      schema: S,
+      kinds:  ['guarded-drop'],
+      build:  () => {
+        if (first) { first = false; return { close() {} } as any }
+        throw new Error('the framework will not load this')
+      },
+      check:  async () => [],
+    })
+    expect(res.survived).toHaveLength(0)
+    expect(res.refused.length).toBeGreaterThan(0)
   })
 })
 

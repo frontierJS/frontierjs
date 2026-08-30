@@ -1,3 +1,114 @@
+# Handoff — 2026-08-29 (converters and the checks that grade them)
+
+> **A converter is graded by reading its output BACK, and neither of ours was.**
+> `litestone introspect` — the adoption door, and what `fli db:pull` runs — wrote
+> a `.lite` litestone could not parse, for its whole life, behind six tests that
+> only ever matched substrings of it. `expect(schema).toContain(...)`, six times,
+> and not one of them fed the result to `parse()`. The foreign-key test asserted a
+> relation carrying no `onDelete`, so the case that breaks was the case nobody
+> wrote (`FJS-594`).
+
+> **The property replaced the fixes, and that is the transferable part.**
+> `test/introspect-roundtrip.test.ts` asserts that reading a database built from
+> the output gives the same output, over the seven corpus schemas and the
+> 188-model `openmrp` fixture. Three known defects went in; **five more came out
+> the same day**, every one of them invisible to a substring assertion:
+>
+> - a SQL expression default emitted as a **string literal**, so a
+>   `@default(uuid())` column got 200 characters of SQL as its value and `ddl.js`
+>   doubled the quotes inside it on every pass;
+> - `@@index(where:)` re-emitting the clause `createIndexes` ANDs on for
+>   `@@softDelete`, nesting one level deeper each time until `predicateToLite`
+>   could no longer read it and dropped the predicate;
+> - a non-identifier enum member emitted **bare** (`Half-yearly`) — the quoted
+>   spelling shipped the same day and never reached the second producer;
+> - a relation field named for **the table it points at**, which takes a real
+>   COLUMN's name and deletes it, since the parser keeps one field per name;
+> - an enum name colliding with a **MODEL** name, which makes that model's own
+>   relations resolve as enums and become TEXT columns.
+>
+> The last two lose data. Both were found by erpnext, 534 models of input nobody
+> here wrote.
+
+> **`import` said what it could not carry and `introspect` printed a paragraph.**
+> One job, one of its two doors honest. `src/import/tiers.js` is the grading table
+> now — one, because two would be two answers to *how bad is this* — and
+> `test/import.test.ts`'s totality guard reads `introspect.js` alongside the four
+> readers, in **both** directions. `--report` writes the list, `--strict` fails on
+> `changed`.
+
+> **And the documented door could not reach any of it.** `fli db:pull` passes
+> `--schema` and no path, so the command fell to `cfg.db`, which `loadConfig`
+> answers as `./development.db` when nothing said otherwise. Every app declaring a
+> `database` block was pointed at a file its schema never named — `FJS-449`'s
+> class. It resolves from the declaration now, and a schema declaring several is
+> asked WHICH, because the output carries no `@@db`.
+
+---
+
+## `litestone mutate` — three defects stacked, and what each hid (2026-08-29)
+
+`FJS-597`, and the shape is worth keeping: each fix exposed the next.
+
+**It read the schema as TEXT.** `readFileSync` into `schemaMutants`, so nothing
+followed an `import` — a schema importing a fragment parses as a file full of
+`extend model` naming models nothing declared. basecamp (45 models, all gated)
+died at *the original schema does not parse*. `FJS-264`'s class, fourth instance,
+and the only one that fails loudly. Fixed with `inlineImportsFromDisk` and not
+`parseFile`: the catalogue is line-oriented and wants text, the same reason
+`createTestEnv` keys its template cache on one string.
+
+**That unblocked the second.** With the fragment in, every mutant came back
+*refused by the loader* and the run printed `100% killed · 14/14` having graded
+nothing — `createTestEnv` cannot build a schema declaring `@secret` without a key,
+so the refusal was about the schema and not about the mutation. Counting a build
+refusal as a kill is right, and right ONLY while the original builds, which
+nothing checked. `mutationScore` builds it first now and refuses with the reason
+attached. Same control it already kept one level down, where an `error` row from a
+check is not a kill.
+
+**The third was why it could not build.** This command alone read
+`cfg.encryptionKey`, which `loadConfig` does not populate; every other command in
+the CLI reads `getEncKey()`.
+
+**The payoff is immediate and it is `FJS-602`.** The first `unique-drop` run that
+could reach the imported models scores **63% — 5 of 8** on basecamp, and all three
+survivors are `String @unique @guarded(all)` on `@@gate("8")` models:
+`Session.token`, `Verification.value`, `OauthFlow.state`. None is nullable, so
+none is either survivor class the tool names as expected. `verifyConstraints`
+proves a UNIQUE by writing two rows that collide, and it can write neither — so
+**nothing in the package can see the uniqueness of a session token being
+removed**, and a schema that dropped it would migrate cleanly and pass every
+check.
+
+## Left open, and whose it is (2026-08-29, second session)
+
+**`FJS-598` — no CI phase runs `mutate`, and the tier is the open question.**
+Measured rather than guessed, after one wrong guess: `example` is 159 mutants,
+**100% killed in 239s**; basecamp is 328 and was still going at **25 minutes**
+when it was killed. It does not scale from example's rate — the per-mutant cost is
+a property of the SCHEMA, and basecamp's 34 policied models under row tenancy give
+`verifyRowPolicies` and `verifyTenantIsolation` far more to grade. So a full tier
+is out and the candidates are a nightly or a `--kinds` subset. **The 100% on
+example is the argument FOR a phase, not against it**: the checks already see
+everything that schema can express, so a phase starts green and fires the first
+time somebody declares something they cannot see. A score baseline that ratchets
+(Invariant 14) is the other half.
+
+**`FJS-592` — the migrator compares a composite index's columns as a SET**, so
+reordering them migrates nothing. Filed earlier in the session and not taken.
+
+**A shared tree, again.** A concurrent session committed mid-work (`aeeff46`,
+`720a0ed`), which swept `src/import/tiers.js` and the widened totality guard into
+its commits; ids 586, 589, 590, 595, 596, 599–601 were taken as they were reached,
+which is why this session's are 594, 597, 598 and 602. One careless
+`git checkout -- src/import/sql.js` happened here against a recorded rule not to
+do that; it was harmless because the tree had been committed, and it is written
+down rather than glossed. Two sessions in `packages/litestone` at once still want
+coordinating before, not after.
+
+---
+
 # Handoff — 2026-08-29
 
 > **A question that arrives constantly — *can this row point at any row?* — was

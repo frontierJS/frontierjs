@@ -140,12 +140,16 @@ formatMoney(order.total / 10 ** scale, 'USD')   // '$12.99'
 
 ## What this does NOT do
 
-**Rounding and allocation are the application's.** `@scale` makes the stored
-value exact and refuses a fraction at the boundary. It does not decide
-round-half-up against banker's rounding, and it does not decide which line of a
-split bill gets the leftover penny. Every prior art keeps those in a value
-object, and so does this: see `example/api/src/pricing.ts`, which owns one
-`round2()` for the whole shop.
+**Rounding and allocation are the application's, and the tools for them are not
+here.** `@scale` makes the stored value exact and refuses a fraction at the
+boundary. It does not decide round-half-up against banker's rounding, and it
+does not decide which line of a split bill gets the leftover penny; a rounding
+policy is not a fact about a table. Both live in `@frontierjs/toolbelt/units` as
+pure functions over minor units — `roundMinor(value, { mode })` and
+`allocate(amount, ratios)` — ruled as `FJS-D154`, with no value object and
+nothing handed out by the seed. `example/api/src/pricing.ts` is the worked
+caller: one rounding for the whole shop, applied at the two multiplications a
+basket cannot avoid — a percentage discount and a tax rate.
 
 **Changing `n` is a migration that rescales every stored row**, and nothing here
 does it for you. `@@transitions` and `@encrypted` both changed a column's

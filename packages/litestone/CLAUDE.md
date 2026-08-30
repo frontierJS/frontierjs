@@ -1381,7 +1381,7 @@ realm every other package sits on: `example`: `bun run verify` and `basecamp`:
 `bun run verify`, plus `sierra`: `bun run test:safety` — the five checks that run
 against a real client rather than a stand-in.
 
-**`test/matrix.test.ts` is where a CROSSING is answered.** 14 column kinds × 12
+**`test/matrix.test.ts` is where a CROSSING is answered.** 20 column kinds × 16
 operations, one cell each, under one invariant — *no cell may silently return a
 wrong answer*: supported, or refused **by name**. Adding a column kind or an
 operation means filling its row or column; a missing cell fails rather than being
@@ -1390,7 +1390,12 @@ that each feature's own suite passed. A cell reading `200:ref` is open FJS-200,
 asserted **still broken** — fix it and the matrix goes red telling you to promote
 the cell, so a fix cannot leave the grid stale. Fill cells from
 `MATRIX_REPORT=1 bun test test/matrix.test.ts`, never by hand: a grid written
-from belief asserts a wish.
+from belief asserts a wish. **What is still out is named in the file's own
+header**, and the reasons differ: the relation kinds and `@from` need a second
+model and therefore a second expectation table; `File` needs a `FileStorage`;
+and `@version` is not a column kind at all — declaring one makes every update on
+the model carry a revision, so it would change what every other row's `update`
+cell means.
 
 **Traps that cost time here, all verified by running:**
 
@@ -1554,6 +1559,23 @@ from belief asserts a wish.
   outcomes was worth 36 points on a 14-mutant schema: every mutant came back with
   the same 22 error rows and the score read 93% while four mutations went
   completely unnoticed. Same rule as the gate matrix, one level up.
+- **The same rule one level up again: a mutant refused by the LOADER counts as a
+  kill, and only while the ORIGINAL builds.** A schema the framework will not
+  load cannot ship, so refusing it is a real kill — but nothing checked that the
+  original loads, and on basecamp it does not: it declares `@secret`, so
+  `createTestEnv` wants a key, so every mutant was refused and the run printed
+  `100% killed · 14/14` having graded nothing (`FJS-597`). `mutationScore` builds
+  the original first now and refuses with the reason attached. A thing that
+  always passes and a thing that never ran are the same observation until
+  something separates them.
+- **`litestone mutate` mutates the schema with its IMPORTS INLINED.** `parse`
+  does not follow an import, so reading the file's own bytes made every mutant of
+  an importing schema die for a reason unrelated to the mutation — all 300 of
+  basecamp's, and the command refused outright. `inlineImportsFromDisk` rather
+  than `parseFile`, because the catalogue is line-oriented and wants text; a
+  fragment that cannot be read is NAMED, since its models are otherwise silently
+  outside the run. What this buys is reach: the `@secret` and `@guarded` columns
+  auth ships are only mutable once the fragment is in.
 - **Mutation is code-only and quote-aware.** An attribute named inside a doc
   comment is prose; editing it produces a mutant identical in behaviour, which
   survives everything. `example` reported four surviving `guarded-drop` mutants

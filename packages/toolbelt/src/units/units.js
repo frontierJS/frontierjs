@@ -219,3 +219,122 @@ export function toMinor(major, currency) {
   if (!Number.isFinite(n)) return 0
   return Math.round(n * 10 ** minorUnits(currency))
 }
+
+/*
+ * ─── Rounding and allocation (`FJS-D154`) ─────────────────────────────────
+ *
+ * `@scale`/`@money` make storage exact and stop there: the schema does not
+ * decide a rounding mode and does not decide which line of a split bill gets
+ * the leftover unit. Both live here, as functions over integers, because a
+ * Money value object would have to be wrapped on every read and unwrapped on
+ * every write at four boundaries an app already has — the wire, a form control,
+ * an `@@check` the database evaluates, and a `SUM` the client compiles.
+ *
+ * The two are separate because they answer different questions. A rounding mode
+ * belongs to a MULTIPLICATION — a rate applied to a base — and there is a real
+ * disagreement about it, so it is an option. A remainder belongs to a SPLIT,
+ * where the only requirement is that the parts add up, and a second answer
+ * there would produce two receipts for one basket.
+ */
+
+/**
+ * A value that is not a whole number of minor units → one that is.
+ *
+ * Half away from zero by default, which is what a person checking a sum on
+ * paper expects: `Math.round` alone breaks ties towards positive infinity, so
+ * −0.5 would go the other way from 0.5 and a refund would not mirror its
+ * charge.
+ *
+ * `mode: 'half-even'` is banker's rounding, required of tax in several
+ * jurisdictions. It is a per-call option and never a module setting, because an
+ * application that needs both needs them in one process — and because the
+ * reader of one line can then see which rule produced it.
+ *
+ * @param {number} value
+ * @param {{ mode?: 'half-away' | 'half-even' }} [opts]
+ * @returns {number}  a whole number
+ */
+export function roundMinor(value, opts = {}) {
+  const mode = opts.mode ?? 'half-away'
+  if (mode !== 'half-away' && mode !== 'half-even')
+    throw new Error(`roundMinor: unknown mode '${mode}' — 'half-away' or 'half-even'`)
+
+  const n = Number(value)
+  // Not a number is not zero anywhere else in this file, and it is not zero
+  // here either — but this one is arithmetic rather than display, so a caller
+  // handed NaN has a bug upstream and a silent 0 buries it in a total.
+  if (!Number.isFinite(n)) throw new Error(`roundMinor: ${value} is not a finite number`)
+
+  const sign = n < 0 ? -1 : 1
+  const mag  = Math.abs(n)
+  const low  = Math.floor(mag)
+  const frac = mag - low
+
+  if (frac > 0.5) return sign * (low + 1)
+  if (frac < 0.5) return sign * low
+  if (mode === 'half-away') return sign * (low + 1)
+  return sign * (low % 2 === 0 ? low : low + 1)
+}
+
+/**
+ * Split a whole amount across lines so the parts sum to it EXACTLY.
+ *
+ * The proration case: a third of a monthly price across three lines is
+ * 333.333… each, and three lines of 333 is a receipt that is a unit short of
+ * what was charged. Every line is floored to its exact share and the leftover
+ * units go one each to the lines with the largest fractional part — Fowler's
+ * answer, fair by size rather than by position, and deterministic given the
+ * ratios, so two runs and two machines agree. **Ties break by position**,
+ * because a rule that leaves them open is one that produces two receipts for
+ * one basket.
+ *
+ * Integers in, integers out. `amount` is minor units (or a `@scale(n)` column's
+ * stored value — it is the same statement, that the unit is 1). There is no
+ * `scale` parameter and no currency: the smallest thing this can hand out is
+ * one of whatever `amount` is counted in, which the caller has already decided
+ * by holding an integer.
+ *
+ * A negative amount allocates by magnitude and comes back negative, so a refund
+ * splits the way its charge did.
+ *
+ * @param {number} amount  a whole number, may be negative
+ * @param {number[]} ratios  non-negative weights; need not sum to anything
+ * @returns {number[]}  same length, summing to `amount`
+ */
+export function allocate(amount, ratios) {
+  const n = Number(amount)
+  if (!Number.isInteger(n))
+    throw new Error(`allocate: amount must be a whole number of minor units, got ${amount}`)
+  if (!Number.isSafeInteger(n))
+    throw new Error(`allocate: ${amount} is past 2^53, where a JS number stops being exact`)
+
+  const list = Array.isArray(ratios) ? ratios.map(Number) : null
+  if (!list || !list.length)
+    throw new Error('allocate: ratios must be a non-empty array')
+  if (list.some((r) => !Number.isFinite(r) || r < 0))
+    throw new Error('allocate: every ratio must be a finite number >= 0')
+
+  const total = list.reduce((a, b) => a + b, 0)
+  // Nothing to be proportional TO. Splitting evenly here would be a guess about
+  // what the caller meant, and a guess that sums correctly is the worst kind.
+  if (total <= 0)
+    throw new Error('allocate: ratios sum to 0, so there is no share to divide by')
+
+  const sign  = n < 0 ? -1 : 1
+  const mag   = Math.abs(n)
+  const exact = list.map((r) => (mag * r) / total)
+  const parts = exact.map(Math.floor)
+
+  // What the floors left behind. Rounded because the subtraction is over
+  // floats: it is a whole number by construction and strictly less than the
+  // number of lines, and `Math.round` is what stops 2.9999999999 becoming 2.
+  let left = Math.round(mag - parts.reduce((a, b) => a + b, 0))
+
+  const order = exact
+    .map((e, i) => ({ i, frac: e - Math.floor(e) }))
+    .sort((a, b) => b.frac - a.frac || a.i - b.i)
+
+  for (let k = 0; k < left && k < order.length; k++) parts[order[k].i] += 1
+
+  return parts.map((v) => v * sign)
+}

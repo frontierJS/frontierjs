@@ -893,13 +893,13 @@ model Order {
   /// `asSystem()` repair that touched one column and not the rest left a receipt
   /// that did not add up, and nothing said so.
   ///
-  /// A tolerance rather than equality, and it is not caution: fuzzed over 4,000
-  /// real breakdowns from `priceBasket` — every discount kind, five tax rates,
-  /// the free-over threshold either side — the worst drift between `total` and
-  /// SQLite's own sum of the components was 7.3e-12, and it was never zero. So
-  /// equality would fail on live data. Half a penny is nine orders of magnitude
-  /// above the noise and an order of magnitude below the smallest real error,
-  /// which is one penny.
+  /// Equality, and it is only sayable because all five columns are `@money`,
+  /// which stores a whole number of cents. As `Float` this had to be a
+  /// tolerance — measured over 4,000 real breakdowns from `priceBasket`, the
+  /// worst drift between `total` and SQLite's own sum of the components was
+  /// 7.3e-12 and was never zero, so equality failed on live data. Turn any one
+  /// of these back into a `Float` and this constraint starts refusing correct
+  /// receipts.
   ///
   /// `subtotal = 0` is the exemption, and it is the shape of an order staff
   /// raised by hand: a total, and no lines to itemise. What it cannot say is

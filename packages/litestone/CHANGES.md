@@ -1,5 +1,151 @@
 # Changes — @frontierjs/litestone
 
+## 2026-08-30 — an unknown option was dropped in silence while an unknown property threw
+
+A client THROWS on an unknown property, by design, so a typo'd accessor is loud.
+`createClient` destructured a fixed list of options with no rest capture, so an
+unknown OPTION was dropped the way JavaScript drops any undeclared key — the same
+typo, silently not applying (`FJS-579`).
+
+`createClient({ autoMigrate: true })` is the shape that made it visible. It has
+never been an option and it does nothing; the exported `autoMigrate(client)` is
+what the documentation describes. **Five of this package's own test files passed
+it** — `scale`, `arc`, `corpus`, `retention`, `one-to-one` — and none of them
+could see it, because a client emits DDL for a table it does not find, so every
+suite that opens a fresh database passes identically with the option, without it,
+and with `autoMigrateee: true` (all three measured).
+
+**Refused by name now**, from a rest capture, so the refusal cannot go stale: what
+is unknown is whatever the destructure did not bind. A near miss suggests the
+option it is one edit from; `autoMigrate` gets an ANSWER rather than a suggestion,
+naming the function and the reason it stays one — *migrate on open* moves a live
+database ahead of the code serving it (`FJS-566`). A misspelling of an answered
+name gets the answer too, since pointing at the nearest real option would be worse
+than the answer that exists.
+
+**`CreateClientOptions` was the third statement of the same fact and it disagreed
+with both**: it declared 20 of the 23 options, so a TypeScript caller passing
+`resolveFrom`, `busyTimeout` or `now` — two of them the subject of live hazards —
+got an excess-property error on a real option. All three now, and
+`test/client-options.test.ts` parses the destructure and fails if the list, the
+type or the destructure drift apart.
+
+9 tests. litestone 3591, junction 1667, sierra safety 5/5, typecheck unmoved.
+
+## 2026-08-29 — a column refused its own stamp, so the pairing it exists for could not be spelled
+
+`@guarded` and `@system` refuse a write by name, and until now they graded the
+payload `writeData` was handed. By that point the create path has stamped its own
+columns into it — `@default(uuid()/ulid()/cuid()/nanoid())`, `@createdBy`,
+`@version`, `@sequence`, `@default(auth().x)`, `@default(field)` — so a guarded
+column carrying a generated default refused the value litestone itself had just
+injected, and **no caller below system could create the row at all** (`FJS-565`).
+
+The cost was a whole combination rather than an inconvenience. *A token the server
+mints that nobody may read and nobody may write* is exactly what `@guarded` plus a
+generated default describes, and it could not be written down; `@secret` expands to
+`@encrypted @guarded(all)`, so `@secret` + `@default(uuid())` was uncreatable too.
+`advise.js`'s own `required-guarded-uncreatable` rule has always offered *a
+`@default` generates it at the Data boundary* as the first way out, and that advice
+did not work.
+
+**What is graded now is what the CALLER sent.** Each stamp records the columns it
+injected into a `stamped` set — the keys the payload did not carry — and the two
+refusals skip those. Absence is the test, not a null value: naming a guarded column
+and setting it to `null` is still naming it. Six write paths pass one (`create`,
+`createMany`, `update`, `updateMany`, `upsert`'s fast-path insert, `upsertMany`),
+and `createMany`/`upsertMany` mint one **per row**, because rows are not required
+to be uniform and a shared set would let row 0's stamp excuse row 1's caller. A
+path that forgets to pass one is refused rather than let through, which keeps the
+old fail-closed direction where it belongs — on the framework, not on the schema.
+
+The prior behaviour was deliberate and stated at the check, and the trade-off it
+named was real: grading the caller's payload separately means every write path has
+to remember to. What changed is that the remembering is now the stamp's job rather
+than each path's, so there is one place to add to.
+
+Seven tests in `test/litestone.test.ts` § *a stamped column is not a caller write*,
+every acceptance paired with the refusal of an otherwise identical payload; all
+seven go red with the `stamped` term removed. litestone 3591, junction 1667.
+
+## 2026-08-29 — a delete that matched nothing, and two positions nobody validated
+
+Both found by widening `test/matrix.test.ts`, which grew four operations
+(`createSt`, `createOm`, `select`, `delWhere`) and five column kinds (`float`,
+`money`, `guarded`, `system`, `transient`) — 180 cells to 320.
+
+**`delete` and `deleteMany` were the only two call sites calling `buildWhere`
+directly** instead of `buildWhereWithEncryption`, and they passed `null` for four
+of its seven arguments. So a `@encrypted(deterministic: true)` or `@hashed`
+column compared a plaintext operand against stored bytes and matched no row —
+`findMany` answered `[1]`, `count` answered `1`, `updateMany` answered
+`{count:1}`, and `deleteMany` answered `{count: 0}` with the row still there. A
+zero count is the one wrong answer a caller will not question. Scope expansion,
+`@from` expressions and the typed-JSON map rode on the same omission; the
+typed-JSON half shows in the grid as `typedJson × delWhere` going `ref` → `ok`,
+a delete that had been refusing a predicate its own `find` accepts (`FJS-600`).
+
+**`select` and `distinct` accepted any key and ignored it.** `where` and
+`orderBy` each refuse an unknown key by name; the other two positions a caller
+can name a column in had no owner, so `select: { nope: true }` answered `[{}]` —
+indistinguishable from a column whose value is legitimately absent — and
+`distinct: ['aComputedField']` returned every row undeduplicated. `checkSelect`
+sits beside `checkWhereKeys` and `checkOrderBy` in `withArgValidation`.
+
+The two admit different sets and that is the substance. **Select** takes every
+declared field minus `@transient`, plus edge namespaces: a `@guarded` column
+stays nameable and keeps answering nothing, because the read strip is deliberate
+and the question here is *is this a stored field at all*, never *may this caller
+read it*. **Distinct** is a SQL clause and takes real columns only, so a
+relation, a `@computed` field and a `@transient` key are each refused with the
+reason (`FJS-601`).
+
+`@version` is not in the new grid and the reason is worth keeping: declaring one
+makes every update on the model carry a revision, so a `@version` column in a
+shared fixture changes what every other row's `update` cell means. It is a
+model-wide semantic rather than a column kind.
+
+
+## 2026-08-29 — mutate can be pointed at an app that imports a schema
+
+Three defects in one command, each hiding the next.
+
+**It read the schema as TEXT.** `readFileSync` straight into `schemaMutants`, so
+nothing followed an `import` — and a schema importing a fragment parses as a file
+full of `extend model` statements naming models nothing declared. `packages/basecamp`
+(45 models, every one gated) died at `mutationScore: the original schema does not
+parse`. That is `FJS-264`'s class — *anything that loads a schema from a PATH loads
+it with `parseFile`, never `parse`* — and the only instance of it that fails loudly.
+
+Fixed with `inlineImportsFromDisk`, not `parseFile`: the mutation catalogue is
+line-oriented and wants text, which is the same reason `createTestEnv` keys its
+template cache on one string. An import that cannot be read is now named — its
+models are otherwise silently outside the run.
+
+**That unblocked the second.** With the fragment in, every mutant came back
+*refused by the loader* and the run printed `100% killed · 14/14` having graded
+nothing: `createTestEnv` cannot build a schema declaring `@secret` without a key,
+so the refusal was about the schema and not about the mutation.
+
+Counting a build refusal as a kill is right — a schema the framework will not load
+cannot ship — and it is right only while the ORIGINAL builds, which nothing
+checked. `mutationScore` builds it first now and refuses with the reason attached.
+The same control it already kept one level down, where an `error` row from a check
+is not a kill; and the same one `verifyRowPolicies` keeps about rows on one side of
+a predicate. A thing that always passes and a thing that never ran are the same
+observation until something separates them.
+
+**And the third was why it could not build.** This command alone read
+`cfg.encryptionKey`, which `loadConfig` does not populate. Every other command in
+the CLI reads `getEncKey()` — env, because a key is not config.
+
+Measured on basecamp: **300 mutants, all killed by the parser, run refused** →
+**328 mutants, none killed by the parser**, with `guarded-drop` 1 → 6. The
+`@secret` and `@guarded` columns of the credential tables had been outside
+anything mutate could grade.
+
+`FJS-597`. Whether a CI phase runs any of this is `FJS-598`, still open.
+
 ## 2026-08-29 — an index's column ORDER is part of what it is
 
 3439 tests, 0 fail. Closes
@@ -268,7 +414,7 @@ is small-magnitude and many-placed, and nine places holds every rate in the 25
 columns found across lago, discourse and triggerdev. A **precise accumulated
 total** is big-magnitude *and* many-placed, fits no 64-bit integer at any useful
 scale, and is an un-rounded intermediate rather than a stored quantity — so it
-belongs to rounding and allocation, which is `FJS-D154` and already open.
+belongs to rounding and allocation, which is `FJS-D154`.
 Stripe writes the same split as two fields: an integer `unit_amount` beside a
 `unit_amount_decimal` string of at most twelve places.
 

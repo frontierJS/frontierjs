@@ -40,6 +40,17 @@
 // `@sequence`, `File`, and the cursor/window/FTS operations are NOT in the grid
 // yet. They are not passing — they are unasked. Adding a row is cheap; a silent
 // gap here would be the exact failure this file exists to prevent.
+//
+// The relation kinds and `@from` need a SECOND model, so they need a second
+// fixture and a second expectation table — that is the cost, and it is why they
+// are still out rather than an oversight.
+//
+// `@version` is out for a different reason and it is not a column kind at all:
+// declaring one makes every update on the model carry a revision, so a `rev`
+// column here would change what every other row's `update` cell means. It is a
+// model-wide semantic and belongs in a fixture of its own.
+//
+// `File` needs a `FileStorage`, which is I/O this fixture has none of.
 
 import { describe, test, expect, beforeAll } from 'bun:test'
 import { parse }        from '../src/core/parser.js'
@@ -61,6 +72,8 @@ model Cell {
   id    Int      @id @default(autoincrement())
   text  String
   num   Int      @default(0)
+  rate  Float    @default(0)
+  price Int      @money(USD)
   flag  Boolean  @default(false)
   when  DateTime
   words String[] @default("[]")
@@ -72,6 +85,9 @@ model Cell {
   enc   String?  @encrypted
   encs  String?  @encrypted(deterministic: true)
   hsh   String?  @hashed
+  lock  String?  @guarded(all)
+  sys   String?  @system
+  tmp   String?  @transient
   comp  String?  @computed
   gen   String   @generated("upper(text)")
 }
@@ -81,17 +97,28 @@ const D1 = new Date('2024-01-01T00:00:00.000Z')
 const D2 = new Date('2024-06-01T00:00:00.000Z')
 
 const ROW_A = {
-  text: 'alpha', num: 7, flag: true,  when: D1,
+  text: 'alpha', num: 7, rate: 1.5, price: 1000, flag: true,  when: D1,
   words: ['x', 'y'], nums: [1, 2], tag: 'alpha', tags: ['alpha'],
   meta: { tier: 3 }, addr: { city: 'NYC', state: 'NY' },
   enc: 'e-alpha', encs: 's-alpha', hsh: 'h-alpha',
+  lock: 'l-alpha', sys: 'y-alpha',
 }
 const ROW_B = {
-  text: 'beta',  num: 9, flag: false, when: D2,
+  text: 'beta',  num: 9, rate: 2.5, price: 2000, flag: false, when: D2,
   words: ['z'],      nums: [3],    tag: 'beta',  tags: ['beta'],
   meta: { tier: 4 }, addr: { city: 'LA', state: 'CA' },
   enc: 'e-beta',  encs: 's-beta',  hsh: 'h-beta',
+  lock: 'l-beta',  sys: 'y-beta',
 }
+
+// The fixture is seeded through `asSystem()`, because two of its columns are
+// server-owned and a caller cannot write them — the rows are the GIVEN, not the
+// assertion. The create operations run on the kind's own client and therefore
+// need a payload a caller could legally send, which is the fixture minus those
+// columns; `createSt` adds the kind's own field back, which for a server-owned
+// kind IS the question being asked.
+const CALLER_WRITABLE = Object.fromEntries(
+  Object.entries(ROW_A).filter(([k]) => k !== 'lock' && k !== 'sys'))
 
 // ─── the kinds ────────────────────────────────────────────────────────────────
 //
@@ -126,6 +153,11 @@ const KINDS: Record<string, any> = {
   encrypted: { field: 'enc',   a: 'e-alpha', b: 'e-beta', sub: 'alph', write: 'e-gamma', system: true },
   encDet:    { field: 'encs',  a: 's-alpha', b: 's-beta', sub: 'alph', write: 's-gamma', system: true },
   hashed:    { field: 'hsh',   a: 'h-alpha', b: 'h-beta', sub: 'alph', write: 'h-gamma', system: true, verifyByMatch: true },
+  float:     { field: 'rate',  a: 1.5,     b: 2.5,    sub: '1.5', ascIds: [1, 2], write: 3.5 },
+  money:     { field: 'price', a: 1000,    b: 2000,   sub: '100', ascIds: [1, 2], write: 3000 },
+  guarded:   { field: 'lock',  a: 'l-alpha', b: 'l-beta', sub: 'alph', ascIds: [1, 2], write: 'l-gamma' },
+  system:    { field: 'sys',   a: 'y-alpha', b: 'y-beta', sub: 'alph', ascIds: [1, 2], write: 'y-gamma' },
+  transient: { field: 'tmp',   a: 't-alpha', b: 't-beta', sub: 'alph', ascIds: [1, 2], write: 't-gamma' },
   computed:  { field: 'comp',  a: 'ALPHA', b: 'BETA', sub: 'LPH', write: 'ZZZ' },
   generated: { field: 'gen',   a: 'ALPHA', b: 'BETA', sub: 'LPH', ascIds: [1, 2], write: 'ZZZ' },
 }
@@ -164,6 +196,26 @@ const OPS: Record<string, any> = {
               wrote: true },
   updMany:  { run: (db, k) => db.cell.updateMany({ where: { id: 1 }, data: { [k.field]: k.write } }),
               wrote: true },
+
+  // Create is where the read-only kinds differ from each other, and until this
+  // column existed the grid could not see any of it: a caller STATING a column
+  // the server owns and a caller OMITTING one the model requires are two
+  // different refusals, and neither is an update.
+  createSt: { run: (db, k) => db.cell.create({ data: { ...CALLER_WRITABLE, [k.field]: k.write } }),
+              created: true },
+  createOm: { run: (db, k) => {
+                const data: any = { ...CALLER_WRITABLE }
+                delete data[k.field]
+                return db.cell.create({ data })
+              }, createdOm: true },
+
+  // A projection must answer what a full read answers. Anything else means a
+  // column's value depends on how it was asked for, which is the same failure
+  // `distinct`/`groupBy`/`aggMax` are here to catch one layer down.
+  select:   { run: (db, k) => db.cell.findMany({ where: { id: 1 }, select: { [k.field]: true } }),
+              sel: true },
+
+  delWhere: { run: (db, k) => db.cell.deleteMany({ where: { [k.field]: k.a } }), deleted: true },
 }
 
 // ─── the grid ─────────────────────────────────────────────────────────────────
@@ -173,22 +225,27 @@ const OPS: Record<string, any> = {
 // ISSUES.md; a cell carrying `ref` is refused today and stays refused.
 
 const GRID = `
-kind      | whereEq  whereIn  whereNot contains bareArr  hasOp    orderBy  distinct groupBy  aggMax   update   updMany
-text      | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok
-int       | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok
-bool      | ok       ok       ok       ref      ok       ref      ok       ok       ok       ok       ok       ok
-datetime  | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok
-array     | ok       ok       ok       ref      ok       ok       ref      ok       ok       ref      ok       ok
-intArray  | ok       ok       ok       ref      ok       ok       ref      ok       ok       ref      ok       ok
-enum      | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok
-enumArray | ok       ok       ok       ref      ok       ok       ref      ok       ok       ref      ok       ok
-json      | ref      ref      ref      ref      ref      ref      ref      ok       ok       ref      ok       ok
-typedJson | ok       ref      ref      ref      ref      ref      ref      ok       ok       ref      ok       ok
-encrypted | ref      ref      ref      ref      ref      ref      ref      ok       ok       ref      ok       ok
-encDet    | ok       ok       ok       ref      ok       ref      ref      ok       ok       ref      ok       ok
-hashed    | ok       ok       ok       ref      ok       ref      ref      ok       ref      ref      ok       ok
-computed  | ref      ref      ref      ref      ref      ref      ref      ok       ref      ref      ref      ref
-generated | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ref      ref
+kind      | whereEq  whereIn  whereNot contains bareArr  hasOp    orderBy  distinct groupBy  aggMax   update   updMany  createSt createOm select   delWhere
+text      | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ok       ref      ok       ok
+int       | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ok       ok       ok       ok
+bool      | ok       ok       ok       ref      ok       ref      ok       ok       ok       ok       ok       ok       ok       ok       ok       ok
+datetime  | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ok       ref      ok       ok
+array     | ok       ok       ok       ref      ok       ok       ref      ok       ok       ref      ok       ok       ok       ok       ok       ok
+intArray  | ok       ok       ok       ref      ok       ok       ref      ok       ok       ref      ok       ok       ok       ok       ok       ok
+enum      | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ok       ref      ok       ok
+enumArray | ok       ok       ok       ref      ok       ok       ref      ok       ok       ref      ok       ok       ok       ok       ok       ok
+json      | ref      ref      ref      ref      ref      ref      ref      ok       ok       ref      ok       ok       ok       ok       ok       ref
+typedJson | ok       ref      ref      ref      ref      ref      ref      ok       ok       ref      ok       ok       ok       ref      ok       ok
+encrypted | ref      ref      ref      ref      ref      ref      ref      ok       ok       ref      ok       ok       ok       ok       ok       ref
+encDet    | ok       ok       ok       ref      ok       ref      ref      ok       ok       ref      ok       ok       ok       ok       ok       ok
+hashed    | ok       ok       ok       ref      ok       ref      ref      ok       ref      ref      ok       ok       ok       ok       ref      ok
+float     | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ok       ok       ok       ok
+money     | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ok       ref      ok       ok
+guarded   | ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ok       ok       ref
+system    | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ref      ref      ref      ok       ok       ok
+transient | ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ok       ref      ref
+computed  | ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ok       ok       ref
+generated | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ref      ref      ref      ok       ok       ok
 `
 
 // ─── runner ───────────────────────────────────────────────────────────────────
@@ -253,7 +310,36 @@ async function observe(root: any, kind: any, op: any): Promise<{ threw?: string,
     const want = kind.write instanceof Date ? kind.write.toISOString() : kind.write
     return { ok: JSON.stringify(back) === JSON.stringify(want), saw: back }
   }
+  if (op.created) {
+    if (kind.verifyByMatch) {
+      const hit = await db.cell.findFirst({ where: { [kind.field]: kind.write } })
+      return { ok: !!hit && hit.id > 2, saw: hit?.id ?? null }
+    }
+    const back = raw?.[kind.field]
+    const want = kind.write instanceof Date ? kind.write.toISOString() : kind.write
+    return { ok: JSON.stringify(back) === JSON.stringify(want), saw: back }
+  }
+  if (op.createdOm) return { ok: typeof raw?.id === 'number', saw: raw?.id ?? raw }
+  if (op.sel) {
+    const full = (await db.cell.findMany({ where: { id: 1 } }))[0]?.[kind.field]
+    const got  = (raw ?? [])[0]?.[kind.field]
+    return { ok: JSON.stringify(got) === JSON.stringify(full), saw: got }
+  }
+  if (op.deleted) {
+    const left = (await db.cell.findMany({})).map((r: any) => r.id)
+    return { ok: JSON.stringify(left) === JSON.stringify([2]), saw: left }
+  }
   return { ok: true, saw: raw }
+}
+
+// The two rows are put back exactly as declared before every cell, through
+// `asSystem()` — see CALLER_WRITABLE. A write op mutates row 1, and a later
+// cell reading a mutated row would grade a fixture the grid was not filled from.
+async function seed(root: any) {
+  const sys = root.asSystem()
+  await sys.cell.deleteMany({})
+  await sys.cell.create({ data: { ...ROW_A } })
+  await sys.cell.create({ data: { ...ROW_B } })
 }
 
 const { ops, cells } = parseGrid(GRID)
@@ -283,9 +369,7 @@ describe('crossing matrix', () => {
     for (const [kindName, kind] of Object.entries(KINDS)) {
       const row: string[] = []
       for (const opName of ops) {
-        await db.cell.deleteMany({})
-        await db.cell.create({ data: { ...ROW_A } })
-        await db.cell.create({ data: { ...ROW_B } })
+        await seed(db)
         const r = await observe(db, kind, OPS[opName])
         row.push((r.threw ? (r.threw.includes(kind.field) ? 'ref' : 'raw') : (r.ok ? 'ok' : 'bad')).padEnd(w))
       }
@@ -315,12 +399,7 @@ describe('crossing matrix', () => {
       const label = `${kindName} × ${opName}`
 
       test(`${label} — ${cell.issue ?? cell.code}`, async () => {
-        // Each cell gets the fixture back exactly as declared; the write ops
-        // mutate row 1, and a later cell reading a mutated row would grade a
-        // different fixture than the one the grid was filled from.
-        await db.cell.deleteMany({})
-        await db.cell.create({ data: { ...ROW_A } })
-        await db.cell.create({ data: { ...ROW_B } })
+        await seed(db)
 
         const r = await observe(db, kind, op)
 

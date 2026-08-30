@@ -40,7 +40,7 @@ const SCHEMA = (dir: string) => `
 
 async function seeded() {
   const dir = tmp()
-  const db  = await createClient({ schema: SCHEMA(dir), autoMigrate: true })
+  const db  = await createClient({ schema: SCHEMA(dir) })
   const sys = db.asSystem()
   for (const model of ['log', 'auditEvent'] as const) {
     await sys[model].create({ data: { body: 'old',   createdAt: ago(200) } })
@@ -80,7 +80,7 @@ describe('the sweep names the TABLE', () => {
 describe('$retain() — because startup is not a schedule', () => {
   test('sweeps rows that aged past the window AFTER the client opened', async () => {
     const dir = tmp()
-    const db  = await createClient({ schema: SCHEMA(dir), autoMigrate: true })
+    const db  = await createClient({ schema: SCHEMA(dir) })
     const sys = db.asSystem()
 
     // Nothing to do at boot, which is the state a long-lived server is in every
@@ -102,7 +102,7 @@ describe('$retain() — because startup is not a schedule', () => {
 
   test('the cutoff is a rolling instant, so a row inside the window stays', async () => {
     const dir = tmp()
-    const db  = await createClient({ schema: SCHEMA(dir), autoMigrate: true })
+    const db  = await createClient({ schema: SCHEMA(dir) })
     const sys = db.asSystem()
     // 89 days and 23 hours: inside 90 flat days from NOW, whatever the calendar
     // or the zone would say about it.
@@ -133,7 +133,7 @@ describe('the jsonl half', () => {
       database logs { path "${logs}"  driver jsonl  retention 90d }
       model Entry { id Int @id @default(autoincrement())  body String  createdAt DateTime @default(now())  @@db(logs) }
     `
-    const db  = await createClient({ schema: src, autoMigrate: true })
+    const db  = await createClient({ schema: src })
     const sys = db.asSystem()
 
     await sys.entry.create({ data: { body: 'old',   createdAt: ago(200) } })
@@ -170,7 +170,7 @@ describe('the jsonl half', () => {
       // two of them. Without one the driver opens no index and this proves nothing.
       model Entry { id Int @id @default(autoincrement())  body String  createdAt DateTime @default(now())  @@db(logs)  @@index([body]) }
     `
-    const db  = await createClient({ schema: src, autoMigrate: true })
+    const db  = await createClient({ schema: src })
     const sys = db.asSystem()
 
     await sys.entry.create({ data: { body: 'old',   createdAt: ago(200) } })

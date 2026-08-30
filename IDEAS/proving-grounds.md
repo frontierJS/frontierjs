@@ -150,13 +150,18 @@ support and has never had to.
 
 **One thing blocks it and should be settled first, and it is not the one this record
 originally named.** The storage half is done: `Int @money(CUR)` shipped 2026-08-26
-(`FJS-D142`), so an exact money column is expressible today and the epsilon in
-`example`'s receipt identity is a migration that has not happened
-(`FJS-562` — neither app uses `@money` at all) rather than a language gap. What is genuinely unruled is **allocation**
-(`FJS-D154`) — proration is a third of a monthly price split across lines that must sum
-to what was charged, and `FJS-D142` deliberately left rounding mode and the leftover
-penny to the application without saying where in the application they live. Rule that
-before the first model, not after the first drive.
+(`FJS-D142`), so an exact money column is expressible today, and the epsilon in
+`example`'s receipt identity was a migration that had not happened rather than a
+language gap. That migration has since landed (`FJS-562`): `example` is minor
+units throughout and the identity is an exact equality, which took two defects
+with it (`FJS-582`, `FJS-583`). What was genuinely unruled is **allocation** — proration is a third of a monthly
+price split across lines that must sum to what was charged, and `FJS-D142`
+deliberately left rounding mode and the leftover penny to the application without
+saying where in the application they live. Ruled as `FJS-D154`: a pure
+`allocate(amount, ratios, scale)` in toolbelt, largest-remainder, half away from
+zero and overridable, with no value object and nothing handed out by the seed.
+What is owed before the first model is the function itself, which does not exist
+yet.
 
 **Risk is low and bounded.** Roughly ten models. No regulator. Getting it wrong costs a
 credit note, not a tribunal. And the failure modes are already documented by other
@@ -416,5 +421,5 @@ having a person in front of it.
   this record was written, invisible to every rule `fli check` could carry. Its sibling
   `FJS-560` was filed the same hour as *no `Decimal`* and was a misread of shipped
   behaviour; what it is now is the migration `example` still owes
-- `ISSUES.md` `FJS-D154` — allocation, the half `FJS-D142` left open and the one
+- `DECISIONS.md` `FJS-D154` — allocation, the half `FJS-D142` left open and the one
   candidate C actually waits on

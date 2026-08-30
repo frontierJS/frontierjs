@@ -292,6 +292,30 @@ export interface CreateClientOptions {
   /** Policy debug logging */
   policyDebug?: boolean | 'verbose'
   /**
+   * Where a relative `database { path }` is anchored: 'cwd' (default), 'schema'
+   * (the app root, taken from the schema FILE's directory, or its parent when
+   * that directory is `db`), a directory path, or a `file:` URL. A schema
+   * assembled in memory has no file, so it states the root. Getting this wrong
+   * is silent — SQLite creates the file and every tool reports on a new empty
+   * database.
+   */
+  resolveFrom?: 'cwd' | 'schema' | string
+  /**
+   * Milliseconds a connection waits for another PROCESS's write lock before
+   * SQLITE_BUSY. A number applies to every connection; an object sets a default
+   * and overrides it per database. 0 fails immediately. Absent reads
+   * LITESTONE_BUSY_TIMEOUT, then 5000.
+   */
+  busyTimeout?: number | { default?: number, [db: string]: number | undefined }
+  /**
+   * The clock this client reads and writes — `now()` in a policy predicate,
+   * `@@softDelete`'s stamp, `@default(now())`, `@updatedAt` on create and
+   * update, and the retention cutoff. Injected so a test can freeze or move it.
+   * What it does NOT reach is SQL that runs without it: a raw statement, and a
+   * `@derived` expression, which is compiled once at startup.
+   */
+  now?:         () => Date | string
+  /**
    * Reusable named query fragments registered per model. Each scope is an
    * object shaped like findMany args (where, orderBy, limit, etc.). The where
    * may be a function (ctx) => whereObject for dynamic filters that depend on

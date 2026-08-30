@@ -12,6 +12,18 @@ import { autoMigrate } from '@frontierjs/litestone'
 autoMigrate(db)   // safe to call on every app start in dev
 ```
 
+**It is a call and there is no `createClient({ autoMigrate: true })`.** That
+spelling was silently ignored for as long as anyone reached for it — five of
+this package's own test files carried it, and every one of them opens a fresh
+database, where creating and migrating are the same thing, so none of them could
+see it. `createClient` refuses an unknown option by name now (`FJS-579`), and
+this one is answered rather than suggested at.
+
+It stays a separate call because *migrate on open* has a hazard inside it: the
+schema a process migrates TO is read later than the schema it is serving, so a
+long-running app can move its own database ahead of its code on an ordinary
+request, and the next boot inherits a migration it never ran (`FJS-566`).
+
 No migration files generated. Handles: add/drop columns, add/drop tables, add/drop indexes, change defaults. Does not run data migrations — for those, use JS migration files.
 
 ```bash

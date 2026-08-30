@@ -58,7 +58,7 @@ title: Orders
   // holds both ends (repo Invariant 10).
   function load() {
     orders
-      .load(page.query, { ...page.directives }) // TEMP: no ordering
+      .load(page.query, { orderBy: '-createdAt', ...page.directives })
       .catch(e => { error = e.message })
   }
 

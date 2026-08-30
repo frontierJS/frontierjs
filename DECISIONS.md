@@ -1517,6 +1517,73 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d154"></a>2026-08-30 · `FJS-D154` — allocation is a pure function over minor units. There is no Money value object, the remainder goes to the largest fractional part, and nothing in the seed hands an allocator out.
+
+`FJS-D142` made storage exact and stopped there deliberately: it does not decide
+round-half-up against banker's, and it does not decide which line of a split bill
+gets the leftover penny. Billing is what makes the second one urgent — proration
+is a third of a monthly price split across lines that must sum to what was
+charged, which is allocation and nothing else — so it is ruled before the first
+model rather than after the first drive.
+
+> `allocate(amount, ratios) → number[]` and `roundMinor(value, { mode })`, in
+> `@frontierjs/toolbelt/units`, beside `formatMoney`, `toMinor` and `fromMinor`.
+> Integers in, integers out, and the parts sum to `amount` exactly.
+
+**Two functions rather than one, and building it is what separated them.** A
+rounding mode belongs to a MULTIPLICATION — a rate applied to a base, where
+there is a real disagreement about ties — and a remainder belongs to a SPLIT,
+where the only requirement is that the parts add up. Putting the mode on
+`allocate` would have offered a knob that changes nothing: the distribution
+floors every share and hands out whole units, so no tie is ever rounded.
+
+**No wrapper, against every prior art.** Fowler's `allocate`, Rails' `Money` and
+`py-moneyed` all keep allocation on a value object, and the wrapper is what makes
+the arithmetic total — you cannot add a Money to a bare number by accident. The
+cost is what settles it here. `@money` stores an integer and litestone answers
+one, so a wrapper is wrapped on every read and unwrapped on every write, at every
+boundary an app already has: JSON on the wire, a form control, an `@@check` the
+database evaluates, a `SUM` litestone compiles. `FJS-D142` ruled that the schema
+must not imply a value object exists; a kit that ships one makes the schema's own
+integer the odd spelling out. What the wrapper buys is bought here by everything
+in scope already being minor units of one column's currency.
+
+**The leftover goes to the largest fractional part.** A split rarely divides
+evenly, and the unit has to land somewhere or the parts do not sum to the whole —
+which is the one thing this function exists to guarantee. Largest-remainder is
+Fowler's answer, it is fair by size rather than by position, and it is
+deterministic given the ratios, so two runs and two machines agree. Ties break by
+position, because a rule that leaves them open is a rule that produces two
+receipts for one basket.
+
+**Half away from zero, and the mode is a per-call option on `roundMinor`.** The
+default is what `example/api/src/pricing.ts` did in its own `roundCents`, which
+is now an alias of this, and what a person checking the sum on paper expects — `Math.round` alone breaks ties towards
+positive infinity, so a negative would round the other way from its positive
+twin. It is overridable rather than fixed because banker's rounding is required
+of tax in several jurisdictions, and an app that needs both needs them in one
+process: a module-wide constant would make the second one unreachable. Per call
+and never global, so a reader of one line can see which rule produced it.
+
+**Nothing in the seed reaches it, and there is no scale to pass either.** This
+row was filed as *a pure function over `(amount, ratios, scale)`* and the third
+argument did not survive being written: the smallest thing a split can hand out
+is one of whatever `amount` is counted in, and a caller holding an integer has
+already decided that. A `scale` parameter would have been inert, which is worse
+than absent. Litestone could still hand out a column's declared scale, and a
+step past that a pre-bound allocator; both stay declined, because a rounding
+policy is not a fact about a table and an allocator returned by the Data
+boundary is a policy the Data boundary appears to own. What an app names twice
+is the currency — once in the schema, once where it formats — and that was
+already true of `formatMoney`.
+
+**What this does not rule.** Where an application puts the call is the
+application's — `example` has no proration and therefore no caller for
+`allocate` yet, and `pricing.ts` uses the rounding half alone.
+More than nine places is `FJS-575`, and it is a feature about the JS boundary
+rather than about allocation: reaching Stripe's twelve places means BigInt at the
+wire, which `type: 'integer'`, the form controls and `pricing.ts` all assume away.
+
 ### <a id="fjs-d152"></a>2026-08-26 · `FJS-D152` — litestone's clock has ONE owner and it is the client. The `@updatedAt` trigger is retired, and `@updatedAt` stops covering a raw `UPDATE`.
 
 `createClient({ now })` reached `now()` in a row policy and `@@softDelete`'s
@@ -1611,7 +1678,7 @@ currency-declares-scale fact (`FJS-440`).
 `@scale` makes storage exact and refuses a float at the boundary. It does not
 decide half-up against banker's, and it does not decide which line of a split bill
 gets the leftover penny — Fowler's `allocate` is a value-object concern and every
-prior art keeps it there. `example`'s `api/src/pricing.ts` keeps its `round2()`;
+prior art keeps it there. `example`'s `api/src/pricing.ts` keeps its own rounding;
 what changes is that the stored column can no longer disagree with it. A Money
 value object is a separate question with a separate home (toolbelt, beside
 `formatMoney`), and one file must not promise both.
@@ -6316,4 +6383,4 @@ PATCH/REMOVE partial success (2026-08-14) · `FJS-D04` litestone `onEvent`
 post-construction subscribe (2026-08-16) · `FJS-D06` coherence-review vocabulary
 (2026-08-16) · `FJS-D09` migrations second tier (2026-08-16) · `FJS-D10` the
 deferred API cluster (2026-08-16). What is still unruled is `ISSUES.md`
-§ Needs a decision, which is five rows.
+§ Needs a decision, which is eight rows.

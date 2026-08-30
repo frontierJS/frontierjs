@@ -545,11 +545,12 @@ function buildGeneratedDefaultMap(schema, now) {
   return map
 }
 
-function applyGeneratedDefaults(data, entries) {
+function applyGeneratedDefaults(data, entries, stamped = null) {
   if (!entries?.length) return data
   let out = data
   for (const { field, generate } of entries) {
     if (out != null && field in out) continue
+    stamped?.add(field)
     out = { ...(out ?? {}), [field]: generate() }
   }
   return out
@@ -708,19 +709,30 @@ function buildCreatedByMap(schema) {
 // Neither fires without ctx.auth, which is what lets asSystem() seeders,
 // imports and backfills carry an explicit author in.
 
-function stampFromAuth(data, list, auth) {
+// Every stamp below takes an optional `stamped` Set and records the columns it
+// INJECTED — the ones the caller's payload did not carry. The @guarded and
+// @system write refusals grade what the CALLER sent, and writeData sees the
+// payload after the engine has added its own columns to it, so without this a
+// guarded column with a generated default refused its own stamp and made the
+// model uncreatable (FJS-565). Absence of the key is the test, not a null
+// value: naming a guarded column and setting it to null is still naming it.
+function noteStamp(stamped, data, field) {
+  if (stamped && !(data != null && field in data)) stamped.add(field)
+}
+
+function stampFromAuth(data, list, auth, stamped = null) {
   if (!list?.length || !auth) return data
   const stamps = {}
   for (const { field, authField } of list)
-    if (auth[authField] != null) stamps[field] = auth[authField]
+    if (auth[authField] != null) { stamps[field] = auth[authField]; noteStamp(stamped, data, field) }
   return Object.keys(stamps).length ? { ...(data ?? {}), ...stamps } : data
 }
 
-function applyAuthDefaults(data, list, auth) {
+function applyAuthDefaults(data, list, auth, stamped = null) {
   if (!list?.length || !auth) return data
   const stamps = {}
   for (const { field, authField } of list)
-    if (data?.[field] == null && auth[authField] != null) stamps[field] = auth[authField]
+    if (data?.[field] == null && auth[authField] != null) { stamps[field] = auth[authField]; noteStamp(stamped, data, field) }
   return Object.keys(stamps).length ? { ...(data ?? {}), ...stamps } : data
 }
 // { modelName: [{ field, scope }] }
@@ -781,7 +793,7 @@ function nextSequenceValue(db, model, field, scopeValue) {
 // `modelName` is the PascalCase schema name (e.g. "User") — used both to look up
 // the sequences defined on that model AND as the key stored in _litestone_sequences.
 // Keeping these consistent matters because the counter is scoped by (model, field, scope).
-function applySequences(data, modelName, sequenceMap, writeDb) {
+function applySequences(data, modelName, sequenceMap, writeDb, stamped = null) {
   const seqs = sequenceMap?.[modelName]
   if (!seqs?.length || !data) return data
   let out = data
@@ -801,6 +813,7 @@ function applySequences(data, modelName, sequenceMap, writeDb) {
     } else {
       // Auto: bump and use the new counter value
       const next = nextSequenceValue(writeDb, modelName, field, scopeValue)
+      noteStamp(stamped, data, field)
       if (out === data) out = { ...data }
       out[field] = next
     }
@@ -2273,6 +2286,58 @@ function withArgValidation(table, model, ctx) {
     }])
   }
 
+  // ─── select / distinct ──────────────────────────────────────────────────
+  //
+  // The third and fourth positions a caller can name a column in. `where` and
+  // `orderBy` refuse an unknown key BY NAME; these two accepted anything and
+  // ignored it, so `select: { nope: true }` answered `[{}]` — indistinguishable
+  // from a column whose value is legitimately absent — and `distinct` over a
+  // field with no column returned every row undeduplicated (FJS-601).
+  //
+  // The question here is *is this a stored field at all*, never *may this
+  // caller read it*: a `select` naming a @guarded column must keep answering
+  // nothing, which is the documented read strip and is checked above.
+  const selectable = new Set()
+  for (const f of model.fields) if (!transient.has(f.name)) selectable.add(f.name)
+  for (const d of Object.values(ctx.edgeMap?.[model.name] ?? {})) selectable.add(d.as)
+  // `distinct` is a SQL clause and reaches real columns only. A relation, a
+  // @computed field and a @transient key are each something SQLite has never
+  // heard of, and DISTINCT over an identifier it cannot bind silently dedupes
+  // nothing rather than failing.
+  const distinctable = new Set([...sortable, ...opaque.keys()])
+
+  const selectRefusal = (position, key, allowed, method) => new ValidationError([{
+    path:    [position, key],
+    message: transient.has(key)
+      ? `Cannot ${position} '${key}' on ${modelName}.${method} — it is @transient, a payload key ` +
+        `the API accepts and nothing stores, so there is no column to read`
+      : computed.has(key) && position === 'distinct'
+        ? `Cannot distinct '${key}' on ${modelName}.${method} — it is a @computed field, derived in ` +
+          `JS after the row is read, so SQLite cannot group by it`
+        : relations.has(key) && position === 'distinct'
+          ? `Cannot distinct '${key}' on ${modelName}.${method} — it is a relation, which has no ` +
+            `column on this table`
+          : `Unknown field '${key}' in ${position} for ${modelName}.${method}` +
+            (suggestKey(key, allowed) ? `. Did you mean: ${suggestKey(key, allowed)}?` : ''),
+  }])
+
+  const checkSelect = (args, method) => {
+    const sel = args?.select
+    if (sel && typeof sel === 'object' && !Array.isArray(sel)) {
+      for (const [k, v] of Object.entries(sel)) {
+        if (!v || selectable.has(k)) continue
+        throw selectRefusal('select', k, selectable, method)
+      }
+    }
+    // `distinct: true` is the whole-row shorthand and names no key.
+    if (Array.isArray(args?.distinct)) {
+      for (const k of args.distinct) {
+        if (distinctable.has(k)) continue
+        throw selectRefusal('distinct', k, distinctable, method)
+      }
+    }
+  }
+
   const checkTakeSkip = (args, method) => {
     if (!args || typeof args !== 'object') return
     for (const bad of ['take', 'skip']) {
@@ -2301,6 +2366,7 @@ function withArgValidation(table, model, ctx) {
       }
       checkWhereKeys(args?.where, whereKeys, modelName, method, isWrite, scopeNames)
       checkOrderBy(args, method)
+      checkSelect(args, method)
       // After the key checks, so a caller naming a column that does not exist
       // still hears about the typo rather than a predicate they cannot see.
       if (checkFieldRead) args = applyFieldRead(args, method)
@@ -4719,7 +4785,7 @@ function makeTable(
     return `"${col}" = CASE WHEN ${pred.sql} THEN ? ELSE "${col}" END`
   }
 
-  function writeData(data, { requireAll = false, system = null, fieldWrite = 'js' } = {}) {
+  function writeData(data, { requireAll = false, system = null, fieldWrite = 'js', stamped = null } = {}) {
     const model = ctx.models[modelName]
 
     // Unknown keys in the data payload are silently stripped — mass-assignment
@@ -4765,13 +4831,18 @@ function makeTable(
     // hides a value from a reader, and the caller supplying a secret is
     // routinely not the system.
     //
-    // The check reads the payload writeData was handed, which is after the
-    // create path stamps @createdBy / @version / @sequence / @default(auth().x).
-    // A guarded column carrying one of those therefore refuses its own stamp —
-    // fail-closed and loud, naming the field, rather than a hole that opens
-    // whichever entry point forgot to ask.
+    // It grades the CALLER's keys, which is not the same set as the payload's:
+    // by the time writeData is handed one, the create path has stamped
+    // @default(uuid()) / @createdBy / @version / @sequence / @default(auth().x)
+    // into it. Grading the payload made a guarded column refuse its own stamp,
+    // so `@guarded @default(nanoid())` — a token the engine mints and no caller
+    // may set, which is the shape this pairing exists for — made the model
+    // uncreatable by anyone below system (FJS-565). `stamped` is what the
+    // stamps injected; every caller of writeData that stamps passes one, and an
+    // entry point that forgets is refused rather than let through, which is the
+    // safe direction for a fail-closed rule.
     if (!ctx.isSystem && _guardedWriteKeys.size && data && typeof data === 'object' && !Array.isArray(data)) {
-      const denied = Object.keys(data).filter(k => _guardedWriteKeys.has(k))
+      const denied = Object.keys(data).filter(k => _guardedWriteKeys.has(k) && !stamped?.has(k))
       if (denied.length) throw new AccessDeniedError(
         `${modelName}: ${denied.map(f => `"${f}"`).join(', ')} ${denied.length > 1 ? 'are' : 'is'} @guarded — ` +
         `a system-context column on write as well as read. Write it through asSystem(), or leave it out of the ` +
@@ -4807,7 +4878,9 @@ function makeTable(
     // silently.
     if (!ctx.isSystem && _systemWriteKeys.size && data && typeof data === 'object' && !Array.isArray(data)) {
       const allowed = new Set(Array.isArray(system) ? system : system ? [system] : [])
-      const denied  = Object.keys(data).filter(k => _systemWriteKeys.has(k) && !allowed.has(k))
+      // `stamped` for @guarded's reason — a @system column with a generated
+      // default is written by the application in the most literal sense.
+      const denied  = Object.keys(data).filter(k => _systemWriteKeys.has(k) && !allowed.has(k) && !stamped?.has(k))
       if (denied.length) throw new AccessDeniedError(
         `${modelName}: ${denied.map(f => `"${f}"`).join(', ')} ${denied.length > 1 ? 'are' : 'is'} @system — ` +
         `readable by anyone, written by the application rather than by its caller. Name the column on the call ` +
@@ -6830,17 +6903,24 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (ctx.hasPolicies) checkCreatePolicy(modelName, data, ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
       if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, include, select }, ctx)
       // Auto-generate @id if field uses @default(uuid/ulid/cuid) and not provided
+      // What the ENGINE puts in this payload, so the @guarded/@system refusals
+      // in writeData can grade the caller's keys alone (FJS-565).
+      const stamped = new Set()
       const autoId = ctx.autoIdMap?.[modelName]
       if (autoId && (data == null || data[autoId.field] == null)) {
+        noteStamp(stamped, data, autoId.field)
         data = { ...(data ?? {}), [autoId.field]: autoId.generate() }
       }
-      data = applyGeneratedDefaults(data, ctx.generatedDefaultMap?.[modelName])
-      data = applyAuthDefaults(data, ctx.authDefaultMap?.[modelName], ctx.auth)
-      data = stampFromAuth(data, ctx.createdByMap?.[modelName], ctx.auth)
+      data = applyGeneratedDefaults(data, ctx.generatedDefaultMap?.[modelName], stamped)
+      data = applyAuthDefaults(data, ctx.authDefaultMap?.[modelName], ctx.auth, stamped)
+      data = stampFromAuth(data, ctx.createdByMap?.[modelName], ctx.auth, stamped)
       // A new row is version 1, whatever the payload says. Honouring a supplied
       // version would let a client start a row at 500 and make the first real
       // editor's read look stale.
-      if (ctx.versionMap?.[modelName]) data = { ...(data ?? {}), [ctx.versionMap[modelName]]: 1 }
+      if (ctx.versionMap?.[modelName]) {
+        noteStamp(stamped, data, ctx.versionMap[modelName])
+        data = { ...(data ?? {}), [ctx.versionMap[modelName]]: 1 }
+      }
       // Apply @default(fieldName) — copy value from sibling field if not already provided
       // Must run BEFORE writeData/applyTransforms so @slug and other transforms see the value
       const fieldRefDefaults = ctx.fieldRefDefaultMap?.[modelName]
@@ -6848,6 +6928,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         const stamps = {}
         for (const { field, sourceField } of fieldRefDefaults) {
           if ((data == null || data[field] == null) && data?.[sourceField] != null) {
+            noteStamp(stamped, data, field)
             stamps[field] = data[sourceField]
           }
         }
@@ -6855,7 +6936,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       }
       // Apply @sequence fields — inject per-scope auto-incremented values
       extractWriteOps(data, { where: 'create' })
-      data = applySequences(data, modelName, ctx.sequenceMap, writeDb)
+      data = applySequences(data, modelName, ctx.sequenceMap, writeDb, stamped)
       // Split nested write ops from scalar fields
       const { scalar, nested } = extractNestedWrites(data)
       const { data: _scalarNoEdge, edgeWrites } = extractEdgeWrites(scalar)
@@ -6865,7 +6946,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
       if (ctx.selfRelationMap?.[modelName])
         assertNoParentCycle([data?.[ctx.selfRelationMap[modelName][0].referencedField]], data)
-      const row   = writeData(data, { requireAll: true, system })
+      const row   = writeData(data, { requireAll: true, system, stamped })
       const cols  = Object.keys(row)
       // cols can be empty when all fields are optional and none were supplied,
       // or when all fields were stripped by @allow write policies.
@@ -6945,18 +7026,23 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       await tx.wrapExclusive(() => {
         rows = data.map((item, i) => {
           let d = item
-          if (autoId && (d == null || d[autoId.field] == null))
+          // Per ROW — rows are not required to be uniform, so one shared set
+          // would let row 0's stamp excuse row 1's caller-supplied column.
+          const stamped = new Set()
+          if (autoId && (d == null || d[autoId.field] == null)) {
+            noteStamp(stamped, d, autoId.field)
             d = { ...(d ?? {}), [autoId.field]: autoId.generate() }
-          d = applyGeneratedDefaults(d, genDefaults)
-          d = applyAuthDefaults(d, authDefaults, ctx.auth)
-          d = stampFromAuth(d, createdByStamps, ctx.auth)
-          if (versionField) d = { ...(d ?? {}), [versionField]: 1 }
+          }
+          d = applyGeneratedDefaults(d, genDefaults, stamped)
+          d = applyAuthDefaults(d, authDefaults, ctx.auth, stamped)
+          d = stampFromAuth(d, createdByStamps, ctx.auth, stamped)
+          if (versionField) { noteStamp(stamped, d, versionField); d = { ...(d ?? {}), [versionField]: 1 } }
           // Apply @sequence per row — each row gets its own counter increment
-          d = applySequences(d, modelName, ctx.sequenceMap, writeDb)
+          d = applySequences(d, modelName, ctx.sequenceMap, writeDb, stamped)
           // A validation failure here names the field and, without this, no row.
           // The row itself is NOT passed on: it is the caller's payload before
           // writeData ran, so a @encrypted value in it is still plaintext.
-          try { return writeData(d, { requireAll: true, system }) }
+          try { return writeData(d, { requireAll: true, system, stamped }) }
           catch (e) { throw asBatchRowError(e, i, data.length, null) }
         })
 
@@ -7017,7 +7103,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
                    withDeleted, onlyDeleted, withTemplates, onlyTemplates } = {}) {
       await enforceValueSets(modelName, [data], ctx)
       if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data, include, select }, ctx)
-      data = stampFromAuth(data, ctx.updatedByMap?.[modelName], ctx.auth)
+      const stamped = new Set()
+      data = stampFromAuth(data, ctx.updatedByMap?.[modelName], ctx.auth, stamped)
 
       // ── @version — take the caller's expected version off the payload ───────
       // It is a precondition, not a value to write: the column is bumped by SQL
@@ -7041,7 +7128,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       data = { ..._scalarNoEdge, ...extraFKs }
 
       const { data: _upValues, ops: _upOps } = extractWriteOps(data)
-      const row       = writeData(_upValues, { system, fieldWrite: 'sql' })
+      const row       = writeData(_upValues, { system, fieldWrite: 'sql', stamped })
       const setParams = []
       const setCols   = [
         ...Object.keys(row).map(c => setFragment(c, row[c], setParams)),
@@ -7237,7 +7324,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // anywhere else: @updatedAt is a SQL trigger, so the timestamp moved while
       // the identity beside it stayed at whoever wrote last through update() —
       // a row reading "just edited by Bob" when Ann edited it.
-      data = stampFromAuth(data, ctx.updatedByMap?.[modelName], ctx.auth)
+      const stamped = new Set()
+      data = stampFromAuth(data, ctx.updatedByMap?.[modelName], ctx.auth, stamped)
       // @version bumps here but is never required: a where clause matching many
       // rows matches many versions, so there is no single value to compare
       // against. Bumping is the part that matters — without it a bulk write
@@ -7245,7 +7333,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const _umVersion = ctx.versionMap?.[modelName]
       if (_umVersion && data && _umVersion in data) { data = { ...data }; delete data[_umVersion] }
       const { data: _umValues, ops: _umOps } = extractWriteOps(data)
-      const row       = writeData(_umValues, { system, fieldWrite: 'sql' })
+      const row       = writeData(_umValues, { system, fieldWrite: 'sql', stamped })
       // SET params and WHERE params are collected apart and joined at the end.
       // Sharing one array made the statement depend on the order the two halves
       // happened to be built in, which is why the empty-SET case below could not
@@ -7348,17 +7436,23 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
         // Same data massage as create(): auto-@id, auth()/field-ref defaults
         let cData = createData
+        const _fpStamped = new Set()
         const _fpAutoId = ctx.autoIdMap?.[modelName]
-        if (_fpAutoId && cData[_fpAutoId.field] == null)
+        if (_fpAutoId && cData[_fpAutoId.field] == null) {
+          noteStamp(_fpStamped, cData, _fpAutoId.field)
           cData = { ...cData, [_fpAutoId.field]: _fpAutoId.generate() }
-        cData = applyGeneratedDefaults(cData, ctx.generatedDefaultMap?.[modelName])
-        cData = applyAuthDefaults(cData, ctx.authDefaultMap?.[modelName], ctx.auth)
-        cData = stampFromAuth(cData, ctx.createdByMap?.[modelName], ctx.auth)
+        }
+        cData = applyGeneratedDefaults(cData, ctx.generatedDefaultMap?.[modelName], _fpStamped)
+        cData = applyAuthDefaults(cData, ctx.authDefaultMap?.[modelName], ctx.auth, _fpStamped)
+        cData = stampFromAuth(cData, ctx.createdByMap?.[modelName], ctx.auth, _fpStamped)
         const _fpFieldRefs = ctx.fieldRefDefaultMap?.[modelName]
         if (_fpFieldRefs?.length) {
           const stamps = {}
           for (const { field, sourceField } of _fpFieldRefs) {
-            if (cData[field] == null && cData[sourceField] != null) stamps[field] = cData[sourceField]
+            if (cData[field] == null && cData[sourceField] != null) {
+              noteStamp(_fpStamped, cData, field)
+              stamps[field] = cData[sourceField]
+            }
           }
           if (Object.keys(stamps).length) cData = { ...cData, ...stamps }
         }
@@ -7370,7 +7464,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         if (_hasFieldWrite) break fastPath
 
         // writeData runs transforms + validation on both branches' data
-        const insRow = writeData({ ...cData, [wKey]: cData[wKey] ?? wVal }, { requireAll: true, system })
+        const insRow = writeData({ ...cData, [wKey]: cData[wKey] ?? wVal }, { requireAll: true, system, stamped: _fpStamped })
         const updRow = writeData(updateData, { system })
         const insCols = Object.keys(insRow)
         const updCols = Object.keys(updRow).filter(c => c !== wKey)
@@ -7500,15 +7594,18 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       await tx.wrapExclusive(() => {
         const rows = data.map((item, i) => {
           let d = item
-          if (autoId && (d == null || d[autoId.field] == null))
+          const stamped = new Set()   // per row — see createMany
+          if (autoId && (d == null || d[autoId.field] == null)) {
+            noteStamp(stamped, d, autoId.field)
             d = { ...(d ?? {}), [autoId.field]: autoId.generate() }
-          d = applyGeneratedDefaults(d, genDefaults)
-          d = applyAuthDefaults(d, authDefaults, ctx.auth)
-          d = stampFromAuth(d, createdBys, ctx.auth)
-          d = stampFromAuth(d, updatedBys, ctx.auth)
-          if (usVersion) d = { ...(d ?? {}), [usVersion]: 1 }
-          d = applySequences(d, modelName, ctx.sequenceMap, writeDb)
-          try { return writeData(d, { requireAll: true, system }) }
+          }
+          d = applyGeneratedDefaults(d, genDefaults, stamped)
+          d = applyAuthDefaults(d, authDefaults, ctx.auth, stamped)
+          d = stampFromAuth(d, createdBys, ctx.auth, stamped)
+          d = stampFromAuth(d, updatedBys, ctx.auth, stamped)
+          if (usVersion) { noteStamp(stamped, d, usVersion); d = { ...(d ?? {}), [usVersion]: 1 } }
+          d = applySequences(d, modelName, ctx.sequenceMap, writeDb, stamped)
+          try { return writeData(d, { requireAll: true, system, stamped }) }
           catch (e) { throw asBatchRowError(e, i, data.length, null) }
         })
 
@@ -8274,8 +8371,13 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // stop being refused.
       if (!buildWhere(where, [], null, null, null, null, fieldKinds))
         throw new Error(`delete on "${tableName}" requires a where clause — use deleteMany({}) to delete all rows`)
-      const whereSql = buildWhere(_hardDeleteWhere({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates }),
-                                  params, null, null, null, null, fieldKinds)
+      // Through `buildWhereWithEncryption` like every other where in the client:
+      // a `@encrypted(deterministic: true)` or `@hashed` column stores bytes the
+      // caller never sends, so a raw comparison against the plaintext matches
+      // nothing — and a DELETE that matches nothing reports a plausible zero
+      // (FJS-600). Scope expansion, `@from` and typed JSON ride the same call.
+      const whereSql = buildWhereWithEncryption(
+        _hardDeleteWhere({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates }), params)
       const delPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       const delFinalSql = delPolicy ? `(${whereSql}) AND (${delPolicy.sql})` : whereSql
       const delFinalParams = delPolicy ? [...params, ...delPolicy.params] : params
@@ -8309,8 +8411,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const _dmNeedRows = tableHasAnyLog || _dmWantRows
       if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
       const params   = []
-      const whereSql = buildWhere(_hardDeleteWhere({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates }),
-                                  params, null, null, null, null, fieldKinds)
+      const whereSql = buildWhereWithEncryption(
+        _hardDeleteWhere({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates }), params)
       const delManyPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       if (delManyPolicy) params.push(...delManyPolicy.params)
       const dmFinalSql = whereSql && delManyPolicy ? `(${whereSql}) AND (${delManyPolicy.sql})`
@@ -8855,6 +8957,59 @@ function fireLog(logTable, entry) {
  * // Simple single-database — pass db path via options when no database block in schema
  * const db = await createClient('./schema.lite', { db: './app.db' })
  */
+// ─── The options this client takes ───────────────────────────────────────────
+//
+// An unknown OPTION was dropped the way JavaScript drops any undeclared key,
+// while an unknown PROPERTY on the built client throws by design — so a typo'd
+// accessor was loud and a typo'd capability quietly did not apply (FJS-579).
+// Five of this package's own test files passed `autoMigrate: true`, which has
+// never been an option; all five open a fresh database, where creating and
+// migrating are the same thing, so all five passed either way.
+//
+// The list below is for the SUGGESTION only. The refusal comes from the rest
+// object, so a name missing here costs a "did you mean" and never a wrong
+// answer — and `test/client-options.test.ts` parses the destructure and fails
+// if the two disagree.
+const CLIENT_OPTIONS = [
+  'path', 'schema', 'parsed', 'resolveFrom', 'db', 'computed', 'encryptionKey',
+  'hooks', 'onEvent', 'announce', 'filters', 'plugins', 'databases', 'access',
+  'readOnly', 'busyTimeout', 'pluralize', 'onLog', 'onQuery', 'policyDebug',
+  'now', 'scopes', 'allowChildFkOverride',
+]
+
+// A key with a real answer says it, rather than being suggested at — the
+// suggestion is for a typo, and these are not typos.
+const OPTION_ANSWERS = {
+  autoMigrate:
+    'is not an option. `autoMigrate(client)` is the exported function that diffs the schema\n' +
+    '    against the open database and applies the difference:\n\n' +
+    "        import { createClient, autoMigrate } from '@frontierjs/litestone'\n" +
+    "        const db = await createClient({ path: './db/schema.lite' })\n" +
+    '        await autoMigrate(db)\n\n' +
+    '    It is a separate call rather than a flag because migrating on open has a hazard in\n' +
+    '    it: a process holding the schema it booted with can move the database ahead of the\n' +
+    '    code it is serving, on an ordinary request (FJS-566).',
+}
+
+function assertClientOptions(rest) {
+  const unknown = Object.keys(rest)
+  if (!unknown.length) return
+  const lines = unknown.map(k => {
+    if (OPTION_ANSWERS[k]) return `  ${k} ${OPTION_ANSWERS[k]}`
+    // The answered names are candidates too: `autoMigrateee` is a misspelling of
+    // a thing that is not an option, and pointing at the nearest real option
+    // would be a worse answer than the one there is (FJS-579 measured that spelling).
+    const near = suggestKey(k, [...CLIENT_OPTIONS, ...Object.keys(OPTION_ANSWERS)])
+    if (near && OPTION_ANSWERS[near]) return `  ${k} — \`${near}\` ${OPTION_ANSWERS[near]}`
+    return `  ${k}${near ? ` — did you mean \`${near}\`?` : ''}`
+  })
+  throw new Error(
+    `createClient(): unknown option${unknown.length > 1 ? 's' : ''}\n\n` +
+    `${lines.join('\n')}\n\n` +
+    `  Options: ${CLIENT_OPTIONS.join(', ')}`
+  )
+}
+
 export async function createClient({
   path:       schemaFilePath,  // path to .lite file  — e.g. './db/schema.lite'
   schema:     schemaInline,    // inline schema string — e.g. `model users { ... }`
@@ -8896,7 +9051,10 @@ export async function createClient({
   scopes:     scopeRegistry = {},   // { ModelName: { scopeName: scopeDef, ... } }
   allowChildFkOverride = false,     // false (default) → parent's co-FK silently overwrites child's value
                                     // true → explicit child value wins; missing values still auto-filled
+  ...unknownOptions
 } = {}) {
+
+  assertClientOptions(unknownOptions)
 
   // ── Parse schema ───────────────────────────────────────────────────────────
   // Resolution order: parsed > schema (inline string) > path (file)

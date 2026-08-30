@@ -8,7 +8,7 @@
  * no answer.
  */
 
-import { formatBytes, formatMoney, BYTE_UNITS, minorUnits, isKnownCurrency, knownCurrencies, fromMinor, toMinor } from '../../src/units/units.js'
+import { formatBytes, formatMoney, BYTE_UNITS, minorUnits, isKnownCurrency, knownCurrencies, fromMinor, toMinor, roundMinor, allocate } from '../../src/units/units.js'
 
 /* ── The ladder ────────────────────────────────────────────────────── */
 
@@ -213,4 +213,106 @@ test('units: minor units round-trip through a formatter', function () {
 test('units: an unknown code is refused in both directions', function () {
   assert.throws(() => fromMinor(100, 'UDS'), /not a currency this runtime knows/)
   assert.throws(() => toMinor(1, 'UDS'),     /not a currency this runtime knows/)
+})
+
+/* ── Rounding (`FJS-D154`) ─────────────────────────────────────────── */
+
+test('units: half away from zero, so a refund mirrors its charge', function () {
+  assert.equal(roundMinor(0.5), 1)
+  assert.equal(roundMinor(-0.5), -1)
+  assert.equal(roundMinor(1.4999), 1)
+  assert.equal(roundMinor(-1.5001), -2)
+  // The reason this is not `Math.round`: it breaks ties towards +Infinity, so
+  // the two lines below would disagree about the same magnitude.
+  assert.equal(Math.round(-0.5), -0)
+})
+
+test('units: half-even is the option, because tax law asks for it', function () {
+  assert.equal(roundMinor(2.5, { mode: 'half-even' }), 2)
+  assert.equal(roundMinor(3.5, { mode: 'half-even' }), 4)
+  assert.equal(roundMinor(-2.5, { mode: 'half-even' }), -2)
+  // Away from a tie it is the same function.
+  assert.equal(roundMinor(2.6, { mode: 'half-even' }), 3)
+})
+
+test('units: an unknown mode is refused by name, never taken as the default', function () {
+  assert.throws(() => roundMinor(1.5, { mode: 'floor' }), /unknown mode/)
+})
+
+test('units: NaN throws here, where the formatters answer an empty string', function () {
+  // Display can say nothing; arithmetic cannot. A silent 0 in a total is the
+  // failure this whole area exists to stop.
+  assert.throws(() => roundMinor(undefined), /finite/)
+  assert.throws(() => roundMinor('abc'), /finite/)
+})
+
+/* ── Allocation (`FJS-D154`) ───────────────────────────────────────── */
+
+test('units: the parts sum to the whole — the one thing allocate promises', function () {
+  assert.deepEqual(allocate(1000, [1, 1, 1]), [334, 333, 333])
+  assert.equal(allocate(1000, [1, 1, 1]).reduce((a, b) => a + b, 0), 1000)
+})
+
+test('units: Fowler’s five cents by 3:7', function () {
+  assert.deepEqual(allocate(5, [3, 7]), [2, 3])
+})
+
+test('units: the leftover goes to the largest fractional part, ties by position', function () {
+  // Exact shares 1.5 and 1.5 — an even tie, so the earlier line takes it.
+  assert.deepEqual(allocate(3, [1, 1]), [2, 1])
+  // Exact shares 0.5, 1.5, 3.0 — one unit to place, two lines tied on .5 and
+  // the third with no fraction at all, so position decides and the earlier of
+  // the tied pair takes it.
+  assert.deepEqual(allocate(5, [1, 3, 6]), [1, 1, 3])
+})
+
+test('units: a refund splits the way its charge did', function () {
+  assert.deepEqual(allocate(-1000, [1, 1, 1]), [-334, -333, -333])
+  assert.equal(allocate(-1000, [1, 1, 1]).reduce((a, b) => a + b, 0), -1000)
+})
+
+test('units: a zero ratio is a line that gets nothing, not an error', function () {
+  assert.deepEqual(allocate(100, [1, 0, 0]), [100, 0, 0])
+  assert.deepEqual(allocate(101, [0, 1, 1]), [0, 51, 50])
+})
+
+test('units: an exact division leaves nothing to distribute', function () {
+  assert.deepEqual(allocate(900, [1, 1, 1]), [300, 300, 300])
+  assert.deepEqual(allocate(0, [1, 2, 3]), [0, 0, 0])
+})
+
+test('units: it sums exactly over a long sweep of awkward splits', function () {
+  // The negative control for the whole function. A rounding bug that is right
+  // on the cases somebody thought of is still a receipt that does not add up,
+  // so this asks the only question that matters over inputs nobody chose:
+  // a deterministic walk, no Math.random, so a failure is reproducible.
+  let seed = 12345
+  const next = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648
+
+  for (let run = 0; run < 2000; run++) {
+    const lines  = 1 + Math.floor(next() * 8)
+    const ratios = Array.from({ length: lines }, () => Math.floor(next() * 100))
+    if (ratios.reduce((a, b) => a + b, 0) === 0) continue
+    const amount = Math.floor((next() - 0.5) * 2_000_000)
+
+    const parts = allocate(amount, ratios)
+    assert.equal(parts.length, lines)
+    assert.equal(parts.reduce((a, b) => a + b, 0), amount)
+    assert.ok(parts.every(Number.isInteger))
+    // Nobody is off by more than one unit from their exact share, which is what
+    // separates a correct distribution from a sum that merely balances.
+    const total = ratios.reduce((a, b) => a + b, 0)
+    parts.forEach((p, i) => {
+      const exact = (Math.abs(amount) * ratios[i]) / total
+      assert.ok(Math.abs(Math.abs(p) - exact) < 1)
+    })
+  }
+})
+
+test('units: the refusals name what is wrong with the call', function () {
+  assert.throws(() => allocate(10.5, [1, 1]), /whole number/)
+  assert.throws(() => allocate(Number.MAX_SAFE_INTEGER + 2, [1, 1]), /2\^53/)
+  assert.throws(() => allocate(10, []), /non-empty/)
+  assert.throws(() => allocate(10, [1, -1]), />= 0/)
+  assert.throws(() => allocate(10, [0, 0]), /sum to 0/)
 })

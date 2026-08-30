@@ -42,12 +42,12 @@ const dbPath = join(tmpdir(), `litestone-scale-${process.pid}.db`)
 for (const p of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) if (existsSync(p)) rmSync(p)
 
 const db = await time('createClient + autoMigrate', () =>
-  createClient({ schema: source, db: dbPath, autoMigrate: true }))
+  createClient({ schema: source, db: dbPath }))
 
 // The case CLAUDE.md names: an unchanged schema must migrate nothing. A constraint
 // compared by text rebuilds every table on every boot, and only size shows it.
 const db2 = await time('reboot, unchanged schema', () =>
-  createClient({ schema: source, db: dbPath, autoMigrate: true }))
+  createClient({ schema: source, db: dbPath }))
 
 // ...and that it really was nothing, rather than fast enough not to notice.
 const pristineDb = new Database(':memory:')

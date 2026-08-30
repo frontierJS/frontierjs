@@ -268,6 +268,27 @@ differently, which is deliberate: a field `@allow` DROPS the key, because the
 same form body is legitimate for the caller one level up, while `@guarded`
 REFUSES the write by name, because no caller was ever meant to send it.
 
+**What it refuses is what the CALLER sent, which is not the same set as the
+payload.** By the time the write is assembled the engine has put its own columns
+into it — `@default(uuid())`, `@createdBy`, `@version`, `@sequence`,
+`@default(auth().x)`. Grading the assembled payload made a guarded column refuse
+its own stamp, so the one pairing the two attributes exist for could not be
+spelled at all:
+
+```lite
+model ApiKey {
+  id      Int    @id @default(autoincrement())
+  token   String @guarded @default(nanoid())   // minted here; only asSystem() reads or writes it
+  label   String
+  @@gate("4")
+}
+```
+
+That creates. Naming `token` on the write still refuses, and so does sending it
+as `null` — an explicit null is naming the column, not omitting it. The same
+holds for `@system`, where a generated default is the application writing the
+column in the most literal sense (`FJS-565`).
+
 ## Gates — level-based access control
 
 Assigns numeric levels to users (0–7) and declares the minimum level required per operation.

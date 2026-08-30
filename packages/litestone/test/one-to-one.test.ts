@@ -127,7 +127,7 @@ describe('reading through a one-to-one', () => {
     user User @relation(fields: [userId], references: [id]) }`
 
   test('include answers the row itself, never a list of one', async () => {
-    const db = await createClient({ schema, db: ':memory:', autoMigrate: true })
+    const db = await createClient({ schema, db: ':memory:' })
     try {
       const u = await db.user.create({ data: { email: 'a@b.c' } })
       await db.profile.create({ data: { bio: 'hello', userId: u.id } })

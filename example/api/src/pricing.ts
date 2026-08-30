@@ -49,7 +49,7 @@
 // recompute them, and never divide by a hundred by hand — `fromMinor` in
 // `@frontierjs/toolbelt/units` is what knows the yen has no cent.
 
-import { formatMoney, fromMinor } from '@frontierjs/toolbelt/units'
+import { formatMoney, fromMinor, roundMinor } from '@frontierjs/toolbelt/units'
 
 /** The currency every `@money(USD)` column in this schema is in.
  *
@@ -140,16 +140,16 @@ export type MoneyContext = {
 // ─── The arithmetic ───────────────────────────────────────────────────────
 
 /** To the cent, once, at the point a figure is produced by a multiplication.
- *  Half away from zero on the value's own sign, which is what a person checking
- *  the sum on paper expects — `Math.round` alone breaks ties towards positive
- *  infinity, so −0.5 would go the other way from 0.5.
+ *
+ *  The rule is `roundMinor`'s and this shop states no mode, so it takes the
+ *  default: half away from zero, which is what a person checking the sum on
+ *  paper expects. A jurisdiction requiring banker's rounding for tax passes
+ *  `{ mode: 'half-even' }` at the one call below that computes it, and the two
+ *  figures on one receipt can then disagree honestly (`FJS-D154`).
  *
  *  Only two callers below produce a non-integer at all; every other line here
  *  is the addition of two integers and needs nothing. */
-export function roundCents(n: number): number {
-  if (!Number.isFinite(n)) return 0
-  return Math.sign(n) * Math.round(Math.abs(n))
-}
+export const roundCents = roundMinor
 
 /**
  * Why this code is worth nothing to this basket — or null if it is worth
