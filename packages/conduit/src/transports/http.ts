@@ -6,7 +6,7 @@
 
 import { BaseTransport } from './base.ts'
 import { encodeBody, CONTENT_TYPE } from './encode.ts'
-import type { BodyEncoding } from './encode.ts'
+import type { BodyEncoding, EncodedBody } from './encode.ts'
 import { CredentialError, ConduitStreamError } from '../types.ts'
 import type {
   ConduitRequest,
@@ -32,6 +32,29 @@ function backoffWithJitter(attempt: number): number {
   return Math.round(base / 2 + Math.random() * (base / 2))
 }
 
+/**
+ * `Retry-After` → milliseconds.
+ *
+ * Two spellings in one header, and both are in the wild: a count of seconds
+ * (`7`) and an HTTP-date (`Wed, 21 Oct 2026 07:28:00 GMT`). A caller that reads
+ * the raw string handles one of them and is silently wrong about the other, so
+ * it is parsed once, here.
+ *
+ * A date in the past answers 0 rather than a negative wait, and anything
+ * unparseable answers undefined — the ladder's own backoff then applies, which
+ * is the honest fallback for a header we could not read.
+ */
+function parseRetryAfter(value: string | undefined): number | undefined {
+  if (!value) return undefined
+
+  const seconds = Number(value.trim())
+  if (Number.isFinite(seconds)) return Math.max(0, Math.round(seconds * 1000))
+
+  const at = Date.parse(value)
+  if (Number.isNaN(at)) return undefined
+  return Math.max(0, at - Date.now())
+}
+
 // Thrown by readBody() when a response exceeds the cap. Local to this
 // module — it is translated to an invalid_request result before returning.
 class ResponseTooLargeError extends Error {
@@ -44,6 +67,16 @@ class ResponseTooLargeError extends Error {
 // Methods safe to replay. A retried GET or DELETE lands the caller in the
 // same state; a retried POST bills for a second server.
 const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE'])
+
+// A followed redirect is a second request nobody wrote. Bounded so a pair of
+// hosts pointing at each other cannot spin.
+const MAX_REDIRECT_HOPS = 5
+
+// 303 is deliberately absent: it MEANS "fetch the result with GET", which is a
+// method rewrite, and this transport rewrites nothing. 301 and 302 are followed
+// only for GET/HEAD, where a rewrite is a no-op.
+const PRESERVE_METHOD_STATUSES = new Set([307, 308])
+const REDIRECT_STATUSES        = new Set([301, 302, 303, 307, 308])
 
 export class HttpTransport extends BaseTransport {
   readonly protocol: Protocol = 'http'
@@ -100,7 +133,15 @@ export class HttpTransport extends BaseTransport {
       attempt++
       this.opts.onRetry?.(req, result.error, attempt)
 
-      const wait = backoffWithJitter(attempt)
+      // A stated Retry-After beats our own ladder. Ignoring it and retrying at
+      // 400ms against a target that asked for seven seconds is how a rate limit
+      // becomes a ban — and it is measured: before this, `Retry-After: 7` was
+      // answered at 396ms and 1385ms (`FJS-650`). No jitter on a stated wait:
+      // the target chose the instant, and spreading it is our idea rather than
+      // theirs. Still capped by the deadline, like any other sleep here.
+      const stated = result.error.retry_after_ms
+      const wait   = stated !== undefined ? stated : backoffWithJitter(attempt)
+
       // Don't sleep past the deadline — return the error we already have
       // rather than burning the remaining budget on a wait.
       if (performance.now() + wait >= deadline) return result
@@ -138,7 +179,7 @@ export class HttpTransport extends BaseTransport {
     const timer      = setTimeout(() => controller.abort(), timeout)
 
     try {
-      const url    = this.buildUrl(req)
+      const url = this.buildUrl(req)
       // send() rejects an unknown verb before reaching here.
       const method = this.resolveMethod(req.method)!
 
@@ -154,26 +195,45 @@ export class HttpTransport extends BaseTransport {
         ? serialise(req.body, encoding)
         : undefined
 
-      const res = await fetch(url, this.fetchInit({
+      const { res, url: finalUrl } = await this.dispatch(url, method, async (target) => this.fetchInit({
         method,
-        headers: {
-          'Content-Type': CONTENT_TYPE[encoding],
-          'Accept':       'application/json',
-          ...(req.idempotency_key ? { 'Idempotency-Key': req.idempotency_key } : {}),
-          // Caller headers first, auth headers last: auth always wins.
-          // Reversing this lets any path where user data reaches
-          // req.headers substitute or strip the target's credential.
-          ...req.headers,
-          // Signed over the same path the URL carries, so a captured
-          // signature cannot be replayed against another endpoint.
-          ...await this.buildAuthHeaders({
+        // Later source wins, and it has to be mergeHeaders rather than a spread:
+        // object keys are case-sensitive, header names are not, so a spread keeps
+        // both spellings and fetch joins them with a comma (`FJS-656`).
+        //
+        // Order: our defaults, then the target's constant headers, then the
+        // caller's, then auth. Auth is last because any path where user data
+        // reaches req.headers must not be able to substitute or strip the
+        // target's credential.
+        headers: this.mergeHeaders(
+          {
+            'Content-Type': CONTENT_TYPE[encoding],
+            'Accept':       'application/json',
+          },
+          req.idempotency_key ? { 'Idempotency-Key': req.idempotency_key } : undefined,
+          this.descriptor.headers,
+          req.headers,
+          // Signed over the same path AND query the URL carries, so a captured
+          // signature cannot be replayed against another endpoint — nor against
+          // the same endpoint with different parameters, which it could until
+          // `FJS-678`: only the pathname was signed, so a captured
+          // `?amount=1&to=alice` verified unchanged as `?amount=1000000&to=mallory`.
+          await this.buildAuthHeaders({
             method,
-            path: new URL(url).pathname,
-            body: rawBody,
+            path:  new URL(target).pathname,
+            query: new URL(target).search,
+            body:  rawBody,
           }),
-        },
-        body:   rawBody,
-        signal: controller.signal
+        ),
+        // `Uint8Array<ArrayBufferLike>` does not structurally satisfy this
+        // lib's `BodyInit` union even though fetch accepts it; the cast is
+        // about the type declaration, not about the value.
+        body:   rawBody as BodyInit | undefined,
+        signal: controller.signal,
+        // `fetch` follows redirects by default and re-sends every header it was
+        // given except `Authorization` — so an `api_key` header and an HMAC
+        // signature both went to whatever host the 3xx named (`FJS-679`).
+        redirect: 'manual' as RequestRedirect,
       }))
 
       // The timeout deliberately stays armed through the body read below.
@@ -182,38 +242,67 @@ export class HttpTransport extends BaseTransport {
       // a body forever hangs the request indefinitely (§1.5).
 
       const duration = elapsed()
+      // Read once and pass to every exit below: `Link`, `ETag` and
+      // `X-Total-Count` are answers a caller cannot get any other way, and a
+      // failure carries them too — `Retry-After` rides a 429 (`FJS-648`).
+      const headers  = this.readHeaders(res)
+      const meta     = { status: res.status, headers }
+      const retryMs  = parseRetryAfter(headers['retry-after'])
+
+      // A redirect this target does not follow, or one it may not: its own kind
+      // rather than an `ok` at an address nobody declared. `location` is what a
+      // caller acts on, and it is answered as the target wrote it plus the
+      // resolved absolute form, since a relative `Location` is legal and common.
+      if (REDIRECT_STATUSES.has(res.status)) {
+        const location = headers['location'] ?? ''
+        return this.fail('redirected', `Target answered ${res.status} → ${location || '(no Location)'}`, {
+          retryable: false,
+        }, { status: res.status, headers: { ...headers, ...(location ? { location: absolute(location, finalUrl) } : {}) } })
+      }
 
       if (res.status === 401 || res.status === 403) {
         return this.fail('auth_failed', `Auth failed: ${res.status}`, {
           raw: await readBody(res, maxBytes),
           retryable: false
-        })
+        }, meta)
       }
 
-      if (res.status === 429) {
-        return this.fail('server_error', 'Rate limited', {
+      // A conditional request that succeeded. `If-None-Match` is what the
+      // target's own documentation asks a caller to send, and until this every
+      // cache hit came back as a failure — the one way a 304 can be answered
+      // reported as the target being broken (`FJS-649`). `data` is null and the
+      // status says why: the caller serves the copy it already holds.
+      if (res.status === 304) return this.ok<T>(null as T, 304, duration, headers)
+
+      // 429 always, and a 503 that named a wait — a 503 without one stays a
+      // plain server error, since that is a target in trouble rather than a
+      // target pacing us.
+      if (res.status === 429 || (res.status === 503 && retryMs !== undefined)) {
+        return this.fail('rate_limited', `Rate limited by the target: ${res.status}`, {
           retryable: true,
-          raw: res.headers.get('retry-after')
-        })
+          raw: await readBody(res, maxBytes),
+          ...(retryMs !== undefined ? { retry_after_ms: retryMs } : {}),
+        }, meta)
       }
 
       if (res.status >= 500) {
         return this.fail('server_error', `Server error: ${res.status}`, {
           retryable: true,
-          raw: await readBody(res, maxBytes)
-        })
+          raw: await readBody(res, maxBytes),
+          ...(retryMs !== undefined ? { retry_after_ms: retryMs } : {}),
+        }, meta)
       }
 
       if (!res.ok) {
         return this.fail('server_error', `HTTP ${res.status}`, {
           retryable: false,
           raw: await readBody(res, maxBytes)
-        })
+        }, meta)
       }
 
       const text = await readBody(res, maxBytes)
 
-      if (text === '') return this.ok<T>(null as T, res.status, duration)
+      if (text === '') return this.ok<T>(null as T, res.status, duration, headers)
 
       // A 200 carrying HTML is a captive portal, a proxy interstitial or a
       // provider error page — common in exactly this layer. The connection
@@ -224,7 +313,7 @@ export class HttpTransport extends BaseTransport {
         return this.fail('server_error', `Expected a payload, got '${contentType}'`, {
           retryable: false,
           raw:       text.slice(0, 512),
-        })
+        }, meta)
       }
 
       // Anything else that is not JSON comes back as the text it is. This
@@ -235,10 +324,10 @@ export class HttpTransport extends BaseTransport {
       // had been delivered. A target that answers plain text is not a broken
       // target; only markup where a payload was expected is evidence of one.
       if (contentType !== '' && !isJsonType(contentType))
-        return this.ok<T>(text as T, res.status, duration)
+        return this.ok<T>(text as T, res.status, duration, headers)
 
       try {
-        return this.ok<T>(JSON.parse(text) as T, res.status, duration)
+        return this.ok<T>(JSON.parse(text) as T, res.status, duration, headers)
       } catch {
         // An empty content-type with a non-JSON body lands here rather than
         // above, and is still a failure: nothing said what this was, and it
@@ -277,6 +366,60 @@ export class HttpTransport extends BaseTransport {
 
     } finally {
       clearTimeout(timer)
+    }
+  }
+
+  /**
+   * One fetch, and then as many more as this target's `follow_redirects` allows.
+   *
+   * `redirect: 'manual'` is set by the caller's init, so a 3xx comes back as a
+   * response rather than being followed by the runtime with every credential
+   * still attached (`FJS-679`). Following is opt-in, and where it happens the
+   * headers are rebuilt for the new target — which is why the modes that carry
+   * a per-request credential are refused at `register()` rather than handled
+   * here: an HMAC signature is bound to one path and query, and an API key
+   * belongs to the address the descriptor named.
+   *
+   * Answers the response and the URL it came from, because a relative
+   * `Location` resolves against the hop that sent it, not against the original.
+   */
+  private async dispatch(
+    startUrl: string,
+    method:   string,
+    init:     (target: string) => Promise<RequestInit>,
+  ): Promise<{ res: Response; url: string }> {
+    const mode = this.descriptor.follow_redirects ?? 'never'
+    let   url  = startUrl
+
+    for (let hop = 0; ; hop++) {
+      const res = await fetch(url, await init(url))
+
+      if (mode === 'never' || !REDIRECT_STATUSES.has(res.status)) return { res, url }
+
+      // Every refusal below answers the 3xx itself, which the caller turns into
+      // a `redirected` result naming where the target pointed. Silently
+      // stopping at the last hop and reporting a 200 would be a body from an
+      // address the descriptor never named.
+      if (hop >= MAX_REDIRECT_HOPS - 1) return { res, url }
+
+      const location = res.headers.get('location')
+      if (!location) return { res, url }
+
+      // A method rewrite is a request nobody wrote. 301/302/303 permit one, so
+      // they are followed only where the rewrite is a no-op.
+      if (!PRESERVE_METHOD_STATUSES.has(res.status) && method !== 'GET' && method !== 'HEAD')
+        return { res, url }
+
+      const next = safeUrl(location, url)
+      // Cross-origin is where the credential leaks, so it is the line rather
+      // than a warning: a redirect off this target's own origin is answered,
+      // never followed.
+      if (!next || next.origin !== new URL(url).origin) return { res, url }
+
+      // The body of a hop we are leaving behind is nobody's, and an unread one
+      // holds the connection.
+      await res.body?.cancel().catch(() => {})
+      url = next.toString()
     }
   }
 
@@ -341,6 +484,16 @@ export class HttpTransport extends BaseTransport {
   }
 }
 
+/** Resolve a `Location` against the hop that sent it. `null` when it will not parse. */
+function safeUrl(location: string, base: string): URL | null {
+  try { return new URL(location, base) } catch { return null }
+}
+
+/** A `Location` as the caller can act on it — relative ones are legal and common. */
+function absolute(location: string, base: string): string {
+  return safeUrl(location, base)?.toString() ?? location
+}
+
 function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -375,7 +528,7 @@ function isJsonType(contentType: string): boolean {
 // that will not encode fails the same way whichever encoding was asked for —
 // JSON.stringify throws on a cycle and on BigInt, and form encoding throws on a
 // body that is not an object.
-function serialise(body: unknown, encoding: BodyEncoding): string {
+function serialise(body: unknown, encoding: BodyEncoding): EncodedBody {
   try {
     return encodeBody(body, encoding)
   } catch (err) {

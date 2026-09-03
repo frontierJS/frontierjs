@@ -480,6 +480,34 @@ model Vault {
     expect(existsSync(join(dir, 'nested', 'deep', 'app.db'))).toBe(true)
   })
 
+  // `cmdDbPush` branched on skipped / in-sync / migrated and nothing else, so a
+  // refused migration printed nothing, fell through to "already in sync" and
+  // exited 0 — the command reporting the refusal was the one hiding it
+  // (`FJS-646`). Nothing had ever asserted what this command PRINTS.
+  test('db push refuses a change that destroys data, and says so', async () => {
+    const dir = makeFixtureDir('db-push-loss', {
+      schema: `model Post { id Int @id @default(autoincrement())  body String?  keep String? }`,
+    })
+    expect((await runCli(dir, ['db', 'push'])).exit).toBe(0)
+
+    writeFileSync(join(dir, 'schema.lite'),
+      `model Post { id Int @id @default(autoincrement())  content String?  keep String? }`, 'utf8')
+
+    const blocked = await runCli(dir, ['db', 'push'])
+    const out     = blocked.stdout + blocked.stderr
+    expect(blocked.exit).toBe(1)                    // a script has to be able to see it
+    expect(out).toContain('DB not pushed')
+    expect(out).toContain('post.body')
+    expect(out).toContain('--accept-data-loss')
+    expect(out).not.toContain('already in sync')    // the sentence it used to print
+
+    // …and the flag applies it, which is the control: without this the test
+    // passes against a command that refuses everything.
+    const forced = await runCli(dir, ['db', 'push', '--accept-data-loss'])
+    expect(forced.exit).toBe(0)
+    expect(forced.stdout + forced.stderr).toContain('DB pushed')
+  })
+
   test('db push works on a schema with @encrypted fields when ENCRYPTION_KEY is set', async () => {
     // Regression guard: cmdDbPush (and other CLI cmds) used to call
     // createClient without forwarding encryptionKey, so any schema with

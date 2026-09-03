@@ -1432,9 +1432,9 @@ describe('WebSocket transport — auth on the upgrade', () => {
       await t.send({ target: target.id, method: 'POST', path: '/deploy' })
 
       const up = s.upgrades[0]
-      expect(up['x-hub-signature']).toMatch(/^sha256=[0-9a-f]{64}$/)
-      expect(up['x-hub-timestamp']).toMatch(/^\d+$/)
-      expect(up['x-hub-nonce']).toBeDefined()
+      expect(up['x-fjs-signature']).toMatch(/^v2-sha256=[0-9a-f]{64}$/)
+      expect(up['x-fjs-timestamp']).toMatch(/^\d+$/)
+      expect(up['x-fjs-nonce']).toBeDefined()
     } finally { t.destroy(); s.stop() }
   })
 
@@ -1691,36 +1691,36 @@ describe('hmac signing', () => {
   // Every bodyless command used to go out completely unsigned.
   it('signs a bodyless POST', async () => {
     const h = await headersFor({ method: 'POST', path: '/reboot' }, '')
-    expect(h.get('x-hub-signature')).toMatch(/^sha256=[0-9a-f]{64}$/)
+    expect(h.get('x-fjs-signature')).toMatch(/^v2-sha256=[0-9a-f]{64}$/)
   })
 
   it('signs a DELETE', async () => {
     const h = await headersFor({ method: 'DELETE', path: '/servers/42' }, '')
-    expect(h.get('x-hub-signature')).toMatch(/^sha256=[0-9a-f]{64}$/)
+    expect(h.get('x-fjs-signature')).toMatch(/^v2-sha256=[0-9a-f]{64}$/)
   })
 
   it('signs a GET', async () => {
     const h = await headersFor({ method: 'GET', path: '/status' }, '')
-    expect(h.get('x-hub-signature')).toMatch(/^sha256=[0-9a-f]{64}$/)
+    expect(h.get('x-fjs-signature')).toMatch(/^v2-sha256=[0-9a-f]{64}$/)
   })
 
   it('emits a timestamp and nonce for replay rejection', async () => {
     const h = await headersFor({ method: 'POST', path: '/deploy', body: { a: 1 } }, '')
-    const ts = Number(h.get('x-hub-timestamp'))
+    const ts = Number(h.get('x-fjs-timestamp'))
     expect(ts).toBeGreaterThan(Date.now() / 1000 - 60)
-    expect(h.get('x-hub-nonce')).toMatch(/^[0-9a-f-]{36}$/)
+    expect(h.get('x-fjs-nonce')).toMatch(/^[0-9a-f-]{36}$/)
   })
 
   it('binds the signature to the path — same body, different path, different sig', async () => {
     const a = await headersFor({ method: 'POST', path: '/deploy', body: { x: 1 } }, '')
     const b = await headersFor({ method: 'POST', path: '/destroy', body: { x: 1 } }, '')
-    expect(a.get('x-hub-signature')).not.toBe(b.get('x-hub-signature'))
+    expect(a.get('x-fjs-signature')).not.toBe(b.get('x-fjs-signature'))
   })
 
   it('binds the signature to the method', async () => {
     const a = await headersFor({ method: 'POST',   path: '/x' }, '')
     const b = await headersFor({ method: 'DELETE', path: '/x' }, '')
-    expect(a.get('x-hub-signature')).not.toBe(b.get('x-hub-signature'))
+    expect(a.get('x-fjs-signature')).not.toBe(b.get('x-fjs-signature'))
   })
 
   it('honours a custom header prefix', async () => {
@@ -1733,8 +1733,8 @@ describe('hmac signing', () => {
       const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
       await t.send({ target: target.id, method: 'POST', path: '/deploy' })
 
-      expect(s.seen[0].headers.get('x-frontier-signature')).toMatch(/^sha256=/)
-      expect(s.seen[0].headers.get('x-hub-signature')).toBeNull()
+      expect(s.seen[0].headers.get('x-frontier-signature')).toMatch(/^v2-sha256=/)
+      expect(s.seen[0].headers.get('x-fjs-signature')).toBeNull()
     } finally { s.stop() }
   })
 })
@@ -1767,7 +1767,7 @@ describe('unix transport', () => {
       expect(req.method).toBe('DELETE')                          // was forced to POST
       expect(new URL(req.url).pathname).toBe('/servers/42')      // was `/${path ?? method}`
       expect(req.headers.get('x-custom')).toBe('1')              // was dropped
-      expect(req.headers.get('x-hub-signature')).toMatch(/^sha256=/) // was absent entirely
+      expect(req.headers.get('x-fjs-signature')).toMatch(/^v2-sha256=/) // was absent entirely
     } finally { server.stop(true) }
   })
 
@@ -2749,5 +2749,779 @@ describe('body encoding — over a real socket', () => {
       expect(result.error!.kind).toBe('invalid_request')
       expect(s.seen.length).toBe(0)
     } finally { s.stop() }
+  })
+})
+
+// ─── FJS-656 — header precedence is case-insensitive ─────────
+//
+// The invariant is "auth headers win and a caller cannot displace them", and it
+// held for exactly one spelling. Object keys are case-sensitive and header names
+// are not, so a caller writing `authorization` created a SECOND key and fetch
+// joined the two with a comma — `Bearer FORGED, Bearer REAL` on the wire, which a
+// strict server refuses and a lenient one reads first-value-wins.
+//
+// Every row here is a spelling, because a single-casing test is what let this
+// ship: the three assertions that guarded it all used 'Authorization'.
+
+describe('HTTP transport — header precedence is case-insensitive (FJS-656)', () => {
+  const spellings = ['Authorization', 'authorization', 'AUTHORIZATION', 'aUtHoRiZaTiOn']
+
+  for (const spelling of spellings) {
+    it(`a caller's '${spelling}' cannot displace or join the credential`, async () => {
+      const s = recorder(() => Response.json({ ok: true }))
+      try {
+        const target = providerTarget({ address: s.url })
+        const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+        await t.send({
+          target:  target.id,
+          method:  'GET',
+          headers: { [spelling]: 'Bearer ATTACKER' },
+        })
+
+        const sent = s.seen[0].headers.get('authorization')
+        expect(sent).toBe('Bearer htz-token-abc')
+        expect(sent).not.toContain('ATTACKER')
+      } finally { s.stop() }
+    })
+  }
+
+  it('an api_key header cannot be joined by a differently-cased caller header', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = providerTarget({
+        address: s.url,
+        auth:    { type: 'api_key', ref: 'HETZNER_TOKEN', header: 'X-Api-Key' },
+      })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      await t.send({ target: target.id, method: 'GET', headers: { 'x-api-key': 'FORGED' } })
+
+      expect(s.seen[0].headers.get('x-api-key')).toBe('htz-token-abc')
+    } finally { s.stop() }
+  })
+
+  it('an hmac signature cannot be joined by a differently-cased caller header', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = outpostTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      await t.send({ target: target.id, method: 'GET', headers: { 'x-fjs-signature': 'deadbeef' } })
+
+      const sig = s.seen[0].headers.get('x-fjs-signature')
+      expect(sig).toMatch(/^v2-sha256=[0-9a-f]{64}$/)
+      expect(sig).not.toContain('deadbeef')
+    } finally { s.stop() }
+  })
+
+  it('a caller cannot join the content-type the target declared', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = providerTarget({ address: s.url, encoding: 'form' })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      await t.send({
+        target:  target.id,
+        method:  'POST',
+        body:    { a: 1 },
+        headers: { 'content-type': 'text/plain' },
+      })
+
+      // The caller wins outright — that is legitimate, and it is a REPLACEMENT
+      // rather than 'application/x-www-form-urlencoded, text/plain'.
+      expect(s.seen[0].headers.get('content-type')).toBe('text/plain')
+    } finally { s.stop() }
+  })
+
+  it('a caller header that collides with nothing still passes through', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      await t.send({ target: target.id, method: 'GET', headers: { 'X-Custom': '1' } })
+
+      expect(s.seen[0].headers.get('x-custom')).toBe('1')
+      expect(s.seen[0].headers.get('authorization')).toBe('Bearer htz-token-abc')
+    } finally { s.stop() }
+  })
+})
+
+// ─── FJS-652 — constant headers on the target ────────────────
+
+describe('TargetDescriptor.headers (FJS-652)', () => {
+  it('are sent on every request', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = providerTarget({
+        address: s.url,
+        headers: { 'User-Agent': 'acme (ops@acme.test)', 'Stripe-Version': '2024-06-20' },
+      })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      await t.send({ target: target.id, method: 'GET' })
+      await t.send({ target: target.id, method: 'GET' })
+
+      for (const req of s.seen) {
+        expect(req.headers.get('user-agent')).toBe('acme (ops@acme.test)')
+        expect(req.headers.get('stripe-version')).toBe('2024-06-20')
+      }
+    } finally { s.stop() }
+  })
+
+  it('are overridden by the caller, whatever the casing', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = providerTarget({ address: s.url, headers: { 'Stripe-Version': '2024-06-20' } })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      await t.send({ target: target.id, method: 'GET', headers: { 'stripe-version': '2020-01-01' } })
+
+      expect(s.seen[0].headers.get('stripe-version')).toBe('2020-01-01')
+    } finally { s.stop() }
+  })
+
+  it('cannot displace the credential', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = providerTarget({ address: s.url, headers: { authorization: 'Bearer FROM-DESCRIPTOR' } })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      await t.send({ target: target.id, method: 'GET' })
+
+      expect(s.seen[0].headers.get('authorization')).toBe('Bearer htz-token-abc')
+    } finally { s.stop() }
+  })
+})
+
+// ─── FJS-648 — a response's headers reach the caller ─────────
+
+describe('ResponseMeta.headers (FJS-648)', () => {
+  it('carries Link, ETag and X-Total-Count off a success', async () => {
+    const s = recorder(() => new Response('[{"id":1}]', {
+      headers: {
+        'content-type':  'application/json',
+        etag:            'W/"abc"',
+        link:            '<https://api.example/x?page=2>; rel="next"',
+        'x-total-count': '42',
+      },
+    }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      const res = await t.send({ target: target.id, method: 'GET' })
+
+      expect(res.error).toBeNull()
+      expect(res.meta.headers?.etag).toBe('W/"abc"')
+      expect(res.meta.headers?.link).toContain('rel="next"')
+      expect(res.meta.headers?.['x-total-count']).toBe('42')
+    } finally { s.stop() }
+  })
+
+  it('carries them off a failure too', async () => {
+    const s = recorder(() => new Response('nope', { status: 500, headers: { 'x-request-id': 'req_1' } }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      const res = await t.send({ target: target.id, method: 'GET' })
+
+      expect(res.error?.kind).toBe('server_error')
+      expect(res.meta.status).toBe(500)
+      expect(res.meta.headers?.['x-request-id']).toBe('req_1')
+    } finally { s.stop() }
+  })
+
+  it('is absent when nothing was sent', async () => {
+    const c = createConduit({ credentials: secrets() })
+    await c.init()
+    const res = await c.send({ target: 'nope', method: 'GET' })
+    expect(res.error?.kind).toBe('target_not_found')
+    expect(res.meta.headers).toBeUndefined()
+    await c.destroy()
+  })
+})
+
+// ─── FJS-649 — a 304 is a success ────────────────────────────
+
+describe('304 Not Modified (FJS-649)', () => {
+  it('is a success carrying null data and the validator headers', async () => {
+    const s = recorder(req =>
+      req.headers.get('if-none-match') === 'W/"abc"'
+        ? new Response(null, { status: 304, headers: { etag: 'W/"abc"' } })
+        : Response.json({ fresh: true }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      const res = await t.send({
+        target: target.id, method: 'GET', headers: { 'If-None-Match': 'W/"abc"' },
+      })
+
+      expect(res.error).toBeNull()
+      expect(res.data).toBeNull()
+      expect(res.meta.status).toBe(304)
+      expect(res.meta.headers?.etag).toBe('W/"abc"')
+    } finally { s.stop() }
+  })
+
+  it('the same request without the validator still returns a body', async () => {
+    const s = recorder(req =>
+      req.headers.get('if-none-match') === 'W/"abc"'
+        ? new Response(null, { status: 304 })
+        : Response.json({ fresh: true }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      const res = await t.send({ target: target.id, method: 'GET' })
+
+      expect(res.error).toBeNull()
+      expect(res.data).toEqual({ fresh: true })
+    } finally { s.stop() }
+  })
+})
+
+// ─── FJS-650 — rate limiting is its own answer ───────────────
+
+describe('rate limiting (FJS-650)', () => {
+  it('a 429 is rate_limited, retryable, with Retry-After parsed from seconds', async () => {
+    const s = recorder(() => new Response('{}', { status: 429, headers: { 'retry-after': '7' } }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      const res = await t.send({ target: target.id, method: 'GET' })
+
+      expect(res.error?.kind).toBe('rate_limited')
+      expect(res.error?.retryable).toBe(true)
+      expect(res.error?.retry_after_ms).toBe(7000)
+    } finally { s.stop() }
+  })
+
+  it('parses the HTTP-date spelling of Retry-After too', async () => {
+    const when = new Date(Date.now() + 5_000).toUTCString()
+    const s = recorder(() => new Response('{}', { status: 429, headers: { 'retry-after': when } }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      const res = await t.send({ target: target.id, method: 'GET' })
+
+      // Seconds resolution on the wire, so allow the rounding either way.
+      expect(res.error?.retry_after_ms).toBeGreaterThan(3_000)
+      expect(res.error?.retry_after_ms).toBeLessThanOrEqual(6_000)
+    } finally { s.stop() }
+  })
+
+  it('waits the time the target asked for rather than its own backoff', async () => {
+    const at: number[] = []
+    const started = performance.now()
+    const s = recorder(() => {
+      at.push(performance.now() - started)
+      return at.length < 2
+        ? new Response('{}', { status: 429, headers: { 'retry-after': '0.4' } })
+        : Response.json({ ok: true })
+    })
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 2 })
+
+      const res = await t.send({ target: target.id, method: 'GET' })
+
+      expect(res.error).toBeNull()
+      // The default ladder's first rung is 500ms halved-plus-jitter — 250–500 —
+      // so a gap at or past 400 is only explicable by the stated wait.
+      expect(at[1]! - at[0]!).toBeGreaterThanOrEqual(380)
+    } finally { s.stop() }
+  })
+
+  it('a 503 WITHOUT Retry-After stays a server_error', async () => {
+    const s = recorder(() => new Response('down', { status: 503 }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      const res = await t.send({ target: target.id, method: 'GET' })
+
+      expect(res.error?.kind).toBe('server_error')
+    } finally { s.stop() }
+  })
+
+  it('being rate limited does not open the circuit breaker', async () => {
+    const s = recorder(() => new Response('{}', { status: 429, headers: { 'retry-after': '0' } }))
+    try {
+      const c = createConduit({
+        credentials: secrets(),
+        retry_limit: 0,
+        resilience:  { failure_threshold: 2, reset_ms: 10_000 },
+        targets:     [providerTarget({ address: s.url })],
+      })
+      await c.init()
+
+      for (let i = 0; i < 4; i++) {
+        const res = await c.send({ target: 'provider:hetzner', method: 'GET' })
+        // Never circuit_open: the target is healthy and is pacing us.
+        expect(res.error?.kind).toBe('rate_limited')
+      }
+      expect(c.stats().breakers['provider:hetzner']?.state ?? 'closed').toBe('closed')
+      await c.destroy()
+    } finally { s.stop() }
+  })
+
+  it('a real server error still opens it — the control for the row above', async () => {
+    const s = recorder(() => new Response('boom', { status: 500 }))
+    try {
+      const c = createConduit({
+        credentials: secrets(),
+        retry_limit: 0,
+        resilience:  { failure_threshold: 2, reset_ms: 10_000 },
+        targets:     [providerTarget({ address: s.url })],
+      })
+      await c.init()
+
+      for (let i = 0; i < 2; i++) await c.send({ target: 'provider:hetzner', method: 'GET' })
+      const shed = await c.send({ target: 'provider:hetzner', method: 'GET' })
+
+      expect(shed.error?.kind).toBe('circuit_open')
+      await c.destroy()
+    } finally { s.stop() }
+  })
+})
+
+// ─── FJS-651 — a binary body goes out as bytes ───────────────
+
+describe("encoding: 'binary' (FJS-651)", () => {
+  const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+
+  it('sends the bytes untouched, not an object of byte indices', async () => {
+    let got: Uint8Array | null = null
+    const s = recorder(async req => {
+      got = new Uint8Array(await req.arrayBuffer())
+      return Response.json({ id: 'att_1' })
+    })
+    try {
+      const target = providerTarget({ address: s.url, encoding: 'binary' })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      const res = await t.send({
+        target:  target.id,
+        method:  'POST',
+        body:    PNG,
+        headers: { 'content-type': 'image/png' },
+      })
+
+      expect(res.error).toBeNull()
+      expect(Array.from(got!)).toEqual(Array.from(PNG))
+      expect(s.seen[0].headers.get('content-type')).toBe('image/png')
+    } finally { s.stop() }
+  })
+
+  it('defaults the content-type to octet-stream when the caller states none', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = providerTarget({ address: s.url, encoding: 'binary' })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      await t.send({ target: target.id, method: 'POST', body: PNG })
+
+      expect(s.seen[0].headers.get('content-type')).toBe('application/octet-stream')
+    } finally { s.stop() }
+  })
+
+  it('signs the bytes that were sent, and the far side verifies', async () => {
+    // The body is read inside the handler: `recorder` keeps a clone, and reading
+    // the clone's stream while the original is never drained blocks forever.
+    let bytes:   Uint8Array | null = null
+    let headers: Record<string, string> = {}
+    const s = recorder(async req => {
+      bytes   = new Uint8Array(await req.arrayBuffer())
+      headers = Object.fromEntries(req.headers)
+      return Response.json({ ok: true })
+    })
+    try {
+      const target = outpostTarget({ address: s.url, encoding: 'binary' })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      await t.send({ target: target.id, method: 'POST', path: '/upload', body: PNG })
+
+      const checked = await verifyRequest({
+        secret: 'test-secret',
+        method: 'POST',
+        path:   '/upload',
+        body:   bytes!,
+        headers,
+        now:    Math.floor(Date.now() / 1000),
+      })
+
+      expect(checked.ok).toBe(true)
+      // The control: the signature is over the BYTES, so a re-serialised body
+      // must not verify — that is the failure this whole path exists to avoid.
+      const wrong = await verifyRequest({
+        secret: 'test-secret', method: 'POST', path: '/upload',
+        body: JSON.stringify(Array.from(PNG)), headers,
+        now: Math.floor(Date.now() / 1000),
+      })
+      expect(wrong.ok).toBe(false)
+    } finally { s.stop() }
+  })
+
+  it('refuses bytes under json encoding rather than serialising them', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = providerTarget({ address: s.url })   // json
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      const res = await t.send({ target: target.id, method: 'POST', body: PNG })
+
+      expect(res.error?.kind).toBe('invalid_request')
+      expect(res.error?.message).toContain("encoding: 'binary'")
+      expect(s.seen.length).toBe(0)
+    } finally { s.stop() }
+  })
+
+  it('refuses a structure under binary encoding', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = providerTarget({ address: s.url, encoding: 'binary' })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      const res = await t.send({ target: target.id, method: 'POST', body: { a: 1 } })
+
+      expect(res.error?.kind).toBe('invalid_request')
+      expect(s.seen.length).toBe(0)
+    } finally { s.stop() }
+  })
+
+  it('encodeBody passes bytes through and refuses them under json', () => {
+    expect(encodeBody(PNG, 'binary')).toBe(PNG)
+    expect(() => encodeBody(PNG, 'json')).toThrow(/binary body cannot be sent/)
+    expect(() => encodeBody({ a: 1 }, 'binary')).toThrow(/needs a Uint8Array/)
+  })
+})
+
+// ─── the SQLite registry keeps the optional fields ───────────
+//
+// `encoding` shipped for FJS-556 and was never added to this store, so a target
+// declared 'form' came back 'json' after a restart and every body went out as
+// JSON again — the defect that feature exists to fix, resurrected by persistence.
+
+describe('createSQLiteStore — optional descriptor fields survive a restart', () => {
+  it('round-trips encoding and headers', async () => {
+    const db    = new Database(':memory:')
+    const store = createSQLiteStore(db)
+    await store.init()
+
+    await store.set(providerTarget({
+      encoding: 'form',
+      headers:  { 'User-Agent': 'acme (ops@acme.test)' },
+    }))
+
+    const back = await store.get('provider:hetzner')
+    expect(back?.encoding).toBe('form')
+    expect(back?.headers).toEqual({ 'User-Agent': 'acme (ops@acme.test)' })
+
+    // And through a second store over the same file, which is the restart.
+    const reopened = createSQLiteStore(db)
+    await reopened.init()
+    expect((await reopened.list())[0]?.encoding).toBe('form')
+  })
+
+  it('a target declaring neither carries neither back', async () => {
+    const db    = new Database(':memory:')
+    const store = createSQLiteStore(db)
+    await store.init()
+
+    await store.set(providerTarget())
+
+    const back = await store.get('provider:hetzner')
+    expect(back?.encoding).toBeUndefined()
+    expect(back?.headers).toBeUndefined()
+  })
+
+  it('adds the column to a registry written before it existed', async () => {
+    const db = new Database(':memory:')
+    // The table as it shipped, without `extra`.
+    db.run(`
+      CREATE TABLE conduit_targets (
+        id TEXT PRIMARY KEY, kind TEXT NOT NULL, protocol TEXT NOT NULL,
+        address TEXT NOT NULL, auth TEXT NOT NULL,
+        registered_at INTEGER NOT NULL, last_seen_at INTEGER
+      )
+    `)
+    db.run(`INSERT INTO conduit_targets VALUES ('provider:old','provider','http','https://x','{"type":"none"}',1,null)`)
+
+    const store = createSQLiteStore(db)
+    await store.init()
+
+    // The old row reads back, with no optional fields and no throw.
+    const old = await store.get('provider:old')
+    expect(old?.address).toBe('https://x')
+    expect(old?.encoding).toBeUndefined()
+
+    // And the column is usable now.
+    await store.set(providerTarget({ encoding: 'form' }))
+    expect((await store.get('provider:hetzner'))?.encoding).toBe('form')
+  })
+})
+
+// ─── FJS-678 · the query is signed ───────────────────────────
+
+describe('hmac signing — the query is bound (FJS-678)', () => {
+  // A signed GET carries its parameters in the URL and nowhere else, so a
+  // canonical string that stops at the pathname binds nothing about what was
+  // asked for: a captured `?amount=1&to=alice` verified unchanged against
+  // `?amount=1000000&to=mallory`, and the receiver could not include the query
+  // even if it wanted to, because the signer had excluded it.
+  async function signedGet(query: Record<string, string | number>) {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = outpostTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+      await t.send({ target: target.id, method: 'GET', path: '/echo', query })
+      const req = s.seen[0]
+      return { headers: req.headers, url: new URL(req.url) }
+    } finally { s.stop() }
+  }
+
+  const verify = (headers: Headers, url: URL, over: string) => verifyRequest({
+    secret: 'test-secret', method: 'GET', path: url.pathname, query: over,
+    headers, now: Math.floor(Date.now() / 1000),
+  })
+
+  it('verifies against the query it was signed with', async () => {
+    const { headers, url } = await signedGet({ amount: 1, to: 'alice' })
+    expect((await verify(headers, url, url.search)).ok).toBe(true)
+  })
+
+  it('refuses the replay the probe found — ?amount=1000000&to=mallory', async () => {
+    const { headers, url } = await signedGet({ amount: 1, to: 'alice' })
+    const tampered = await verify(headers, url, '?amount=1000000&to=mallory')
+    expect(tampered.ok).toBe(false)
+    // And the query dropped entirely is not the same request either — which is
+    // exactly what a v1 verifier was computing.
+    expect((await verify(headers, url, '')).ok).toBe(false)
+  })
+
+  it('does not depend on the order the parameters arrived in', async () => {
+    // Nothing preserves parameter order across a proxy or a client library, so
+    // an order-sensitive scheme fails intermittently and reads as a clock skew.
+    const { headers, url } = await signedGet({ amount: 1, to: 'alice' })
+    expect((await verify(headers, url, '?to=alice&amount=1')).ok).toBe(true)
+  })
+
+  it('a request with no query signs and verifies an empty one', async () => {
+    const { headers, url } = await signedGet({})
+    expect(url.search).toBe('')
+    expect((await verify(headers, url, '')).ok).toBe(true)
+  })
+
+  it('two different queries on one path do not share a signature', async () => {
+    const a = await signedGet({ to: 'alice' })
+    const b = await signedGet({ to: 'mallory' })
+    expect(a.headers.get('x-fjs-signature')).not.toBe(b.headers.get('x-fjs-signature'))
+  })
+
+  it('the signature carries its version, so an old signer is refused by name', async () => {
+    const { headers, url } = await signedGet({ to: 'alice' })
+    expect(headers.get('x-fjs-signature')).toMatch(/^v2-sha256=[0-9a-f]{64}$/)
+
+    const v1 = new Headers(headers)
+    v1.set('x-fjs-signature', headers.get('x-fjs-signature')!.replace(/^v2-/, ''))
+    const result = await verify(v1, url, url.search)
+    expect(result.ok).toBe(false)
+    expect((result as { reason: string }).reason).toMatch(/version 1 is no longer accepted/)
+  })
+})
+
+// ─── FJS-679 · redirects are not followed with credentials ───
+
+describe('redirects (FJS-679)', () => {
+  // Two origins. A redirects to B; B records what arrived. Before this, `fetch`
+  // followed the 3xx and re-sent every header but `Authorization` — so B saw
+  // the api_key and a valid HMAC signature — and turned a 302'd POST into a GET
+  // carrying the Idempotency-Key.
+  function pair() {
+    const b = recorder(() => Response.json({ at: 'B' }))
+    const a = recorder((req) => {
+      const url = new URL(req.url)
+      const to  = url.searchParams.get('to') ?? `${b.url}/echo`
+      const status = url.pathname === '/redirect307' ? 307 : 302
+      return new Response(null, { status, headers: { location: to } })
+    })
+    return { a, b, stop: () => { a.stop(); b.stop() } }
+  }
+
+  const transport = (d: Partial<TargetDescriptor>) =>
+    new HttpTransport(providerTarget(d as Partial<TargetDescriptor>), secrets(), { retry_limit: 0 })
+
+  it('answers a 3xx as its own kind rather than following it', async () => {
+    const { a, b, stop } = pair()
+    try {
+      const t = transport({ address: a.url })
+      const r = await t.send({ target: 'provider:hetzner', method: 'GET', path: '/redirect' })
+
+      expect(r.error?.kind).toBe('redirected')
+      expect(r.error?.retryable).toBe(false)
+      expect(r.meta.status).toBe(302)
+      expect(r.meta.headers?.location).toBe(`${b.url}/echo`)
+      // Nothing reached the other host.
+      expect(b.seen.length).toBe(0)
+    } finally { stop() }
+  })
+
+  it('an api_key never reaches the redirect host', async () => {
+    const { a, b, stop } = pair()
+    try {
+      const t = transport({
+        address: a.url,
+        auth: { type: 'api_key', ref: 'HETZNER_TOKEN', header: 'X-Api-Key' },
+      })
+      await t.send({ target: 'provider:hetzner', method: 'GET', path: '/redirect' })
+      expect(b.seen.length).toBe(0)
+    } finally { stop() }
+  })
+
+  it('an HMAC signature never reaches the redirect host', async () => {
+    const { a, b, stop } = pair()
+    try {
+      const t = new HttpTransport(
+        outpostTarget({ address: a.url }), secrets(), { retry_limit: 0 })
+      await t.send({ target: 'outpost:srv-test', method: 'GET', path: '/redirect' })
+      expect(b.seen.length).toBe(0)
+    } finally { stop() }
+  })
+
+  it('a 302 on a POST is not turned into a GET at another host', async () => {
+    // The shape that bills twice: fetch rewrites 302'd POSTs to GET and carries
+    // the Idempotency-Key with them, so the key that makes a retry safe is
+    // handed to a host the descriptor never named.
+    const { a, b, stop } = pair()
+    try {
+      const t = transport({ address: a.url })
+      const r = await t.send({
+        target: 'provider:hetzner', method: 'POST', path: '/redirect',
+        body: { pay: 1 }, idempotency_key: 'k1',
+      })
+      expect(r.error?.kind).toBe('redirected')
+      expect(b.seen.length).toBe(0)
+    } finally { stop() }
+  })
+
+  it('a redirect is not a target fault — the breaker stays shut', async () => {
+    // Five of these under `server_error` opened the breaker and every later
+    // send shed as circuit_open against a target that is answering correctly.
+    const { a, stop } = pair()
+    try {
+      const c = createConduit({
+        credentials: secrets(),
+        targets: [providerTarget({ address: a.url })],
+        retry_limit: 0,
+        resilience: { failure_threshold: 2 },
+      })
+      await c.init()
+      for (let i = 0; i < 4; i++)
+        await c.send({ target: 'provider:hetzner', method: 'GET', path: '/redirect' })
+
+      const last = await c.send({ target: 'provider:hetzner', method: 'GET', path: '/redirect' })
+      expect(last.error?.kind).toBe('redirected')
+      // An empty breakers map is the healthy shape — a target that never
+      // recorded a fault is not in it at all.
+      expect(c.stats().breakers['provider:hetzner']?.state ?? 'closed').toBe('closed')
+    } finally { stop() }
+  })
+
+  it("follow_redirects: 'same-origin' follows a hop on the target's own origin", async () => {
+    const s = recorder((req) => {
+      const url = new URL(req.url)
+      if (url.pathname === '/hop') return new Response(null, { status: 302, headers: { location: '/final' } })
+      return Response.json({ at: 'final' })
+    })
+    try {
+      const t = transport({ address: s.url, follow_redirects: 'same-origin' })
+      const r = await t.send({ target: 'provider:hetzner', method: 'GET', path: '/hop' })
+      expect(r.error).toBeNull()
+      expect(r.data).toEqual({ at: 'final' })
+    } finally { s.stop() }
+  })
+
+  it("follow_redirects: 'same-origin' still refuses to cross an origin", async () => {
+    const { a, b, stop } = pair()
+    try {
+      const t = transport({ address: a.url, follow_redirects: 'same-origin' })
+      const r = await t.send({ target: 'provider:hetzner', method: 'GET', path: '/redirect' })
+      expect(r.error?.kind).toBe('redirected')
+      expect(b.seen.length).toBe(0)
+    } finally { stop() }
+  })
+
+  it("follow_redirects: 'same-origin' does not rewrite a POST into a GET", async () => {
+    // 301/302/303 permit a method rewrite; this transport rewrites nothing, so
+    // it follows those for GET/HEAD only. 307 preserves the method and is
+    // followed.
+    const seen: Array<{ method: string; path: string }> = []
+    const s = recorder(async (req) => {
+      const url = new URL(req.url)
+      seen.push({ method: req.method, path: url.pathname })
+      if (url.pathname === '/hop302') return new Response(null, { status: 302, headers: { location: '/final' } })
+      if (url.pathname === '/hop307') return new Response(null, { status: 307, headers: { location: '/final' } })
+      return Response.json({ at: 'final' })
+    })
+    try {
+      const t = transport({ address: s.url, follow_redirects: 'same-origin' })
+
+      const r302 = await t.send({ target: 'provider:hetzner', method: 'POST', path: '/hop302', body: { a: 1 } })
+      expect(r302.error?.kind).toBe('redirected')
+
+      const r307 = await t.send({ target: 'provider:hetzner', method: 'POST', path: '/hop307', body: { a: 1 } })
+      expect(r307.error).toBeNull()
+      expect(seen.filter(x => x.path === '/final').every(x => x.method === 'POST')).toBe(true)
+    } finally { s.stop() }
+  })
+
+  it('a redirect loop is bounded rather than spun', async () => {
+    let hits = 0
+    const s = recorder(() => {
+      hits++
+      return new Response(null, { status: 302, headers: { location: '/loop' } })
+    })
+    try {
+      const t = transport({ address: s.url, follow_redirects: 'same-origin' })
+      const r = await t.send({ target: 'provider:hetzner', method: 'GET', path: '/loop' })
+      expect(r.error?.kind).toBe('redirected')
+      expect(hits).toBeLessThanOrEqual(5)
+    } finally { s.stop() }
+  })
+
+  it("register() refuses 'same-origin' beside a credential a hop would re-send", async () => {
+    const c = createConduit({ credentials: secrets() })
+    await c.init()
+    await expect(c.register(outpostTarget({ follow_redirects: 'same-origin' })))
+      .rejects.toThrow(/follow_redirects/)
+    await expect(c.register(providerTarget({
+      follow_redirects: 'same-origin',
+      auth: { type: 'api_key', ref: 'HETZNER_TOKEN', header: 'X-Api-Key' },
+    }))).rejects.toThrow(/api_key/)
+
+    // A bearer target is the one shape fetch never leaked, and it is allowed.
+    await c.register(providerTarget({ follow_redirects: 'same-origin' }))
+    expect((await c.resolve('provider:hetzner'))?.follow_redirects).toBe('same-origin')
+  })
+
+  it('follow_redirects survives a restart of the SQLite registry (FJS-657)', async () => {
+    // A descriptor field absent from EXTRA_KEYS is dropped on write with
+    // nothing said: the target keeps working and quietly stops following.
+    const db    = new Database(':memory:')
+    const store = createSQLiteStore(db)
+    await store.init()
+    await store.set(providerTarget({ follow_redirects: 'same-origin' }))
+
+    expect((await store.get('provider:hetzner'))?.follow_redirects).toBe('same-origin')
+
+    const reopened = createSQLiteStore(db)
+    await reopened.init()
+    expect((await reopened.list())[0]?.follow_redirects).toBe('same-origin')
   })
 })

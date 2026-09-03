@@ -1,6 +1,6 @@
 # @frontierjs/notifications
 
-Transport-agnostic notification system for FrontierJS apps. One notification class delivers across several transports — in-app, email, whatever you register a driver for — chosen per recipient.
+Transport-agnostic notification system for FrontierJS apps. One notification delivers across several transports — in-app, email, whatever you register a driver for — chosen per recipient.
 
 **A transport is a delivery medium; a channel is junction's broadcast set.** The in-app driver uses both: it writes a row, then publishes on `app.channel('notifications:user:<id>')`. The two words are not interchangeable here (`FJS-D06`).
 
@@ -31,8 +31,8 @@ model Notification {              // PascalCase singular → accessor db.notific
   id          Int       @id
   userId      String              // String, not Int — @frontierjs/auth issues uuid ids
                                   // (use Int only if your own User.id is an Int)
-  type        String              // stable notification class id, e.g. 'PaymentReceived'
-  data        Json                // payload built by toInApp() — varies by type
+  type        String              // stable notification id, e.g. 'PaymentReceived'
+  data        Json                // payload built by the inApp formatter — varies by type
   contextType String?             // optional: 'Order', 'Project', 'Invoice'
   contextId   Int?                // optional: id of the related record (loose ref, no FK)
   readAt      DateTime?           // null = unread
@@ -54,7 +54,7 @@ either — so a `9` in the create slot would stop `notify()` from ever writing a
 `@@allow`/`@@deny` with schema expressions (`auth().id`) — there is no `@@policy`
 attribute and no JS-string predicate.
 
-`type` stores the notification class's `static type` identifier — not a foreign key, not an enum. Adding a new notification type requires no migration.
+`type` stores the notification's stable identifier — its file name (`PaymentReceived.notification.ts`), or the `type:` it states. Not a foreign key, not an enum: adding a notification type requires no migration.
 
 `contextType`/`contextId` are a loose polymorphic reference. No foreign key by design — notifications survive record deletion without cascades.
 
@@ -83,50 +83,111 @@ The plugin declares `requires: ['mailer']` when the email transport uses the mai
 
 ---
 
-## Writing a notification class
+## Writing a notification
+
+A notification is a file under `notifications/`, named for the type it writes.
+The file name IS the type — `PaymentReceived.notification.ts` is
+`PaymentReceived`, verbatim, the same rule `<name>.job.ts` follows — so nothing
+restates it and nothing can drift from what the browser reads back.
 
 ```typescript
-// api/src/notifications/PaymentReceived.ts
-import { Notification, inApp, mail } from '@frontierjs/notifications'
-import type { InAppMessage, MailMessage, Recipient, Transport } from '@frontierjs/notifications'
+// api/src/notifications/PaymentReceived.notification.ts
+import { defineNotification, inApp, mail } from '@frontierjs/notifications'
 
-export class PaymentReceived extends Notification {
-  // Stable identifier written to the DB — survives class renames
-  static type = 'PaymentReceived'
+export default defineNotification<Payment>({
+  // Which transports, for THIS payment and THIS recipient.
+  via: (payment, recipient) => recipient.notificationPreferences ?? ['inApp', 'email'],
 
-  constructor(private payment: Payment) {
-    super()
-  }
+  inApp: (payment) => inApp()
+    .title('Payment received')
+    .body(`$${payment.amount} has been received.`)
+    .action('View order', `/orders/${payment.orderId}`)
+    .context('Order', payment.orderId)
+    .data({ amount: payment.amount, orderId: payment.orderId }),
 
-  via(recipient: Recipient): Transport[] {
-    // Respect per-user preferences when available
-    return recipient.notificationPreferences ?? ['inApp', 'email']
-  }
+  email: (payment, recipient) => mail()
+    .subject('Payment received')
+    .greeting(`Hi ${recipient.firstName ?? 'there'}`)
+    .line(`$${payment.amount} received for order #${payment.orderId}.`)
+    .action('View order', `https://app.example.com/orders/${payment.orderId}`),
+})
+```
 
-  toInApp(recipient: Recipient): InAppMessage {
-    return inApp()
-      .title('Payment received')
-      .body(`$${this.payment.amount} has been received.`)
-      .action('View order', `/orders/${this.payment.orderId}`)
-      .context('Order', this.payment.orderId)
-      .data({ amount: this.payment.amount, orderId: this.payment.orderId })
-      .build()
-  }
+Send it by calling the definition with its payload:
 
-  toEmail(recipient: Recipient): MailMessage {
-    return mail()
-      .subject('Payment received')
-      .greeting(`Hi ${recipient.firstName ?? 'there'}`)
-      .line(`$${this.payment.amount} received for order #${this.payment.orderId}.`)
-      .action('View order', `https://app.example.com/orders/${this.payment.orderId}`)
-      .build()
-  }
+```typescript
+import paymentReceived from '../notifications/PaymentReceived.notification.ts'
+
+await app.notify(user, paymentReceived(payment))
+```
+
+**A formatter may be async.** That is what lets a body be rendered where it is
+read, rather than earlier:
+
+```typescript
+email: async (order) => {
+  const { subject, html, text } = await renderEmailFile(TEMPLATE, { data: order })
+  return mail().subject(subject).html(html).text(text)
 }
 ```
 
+**`via` takes the payload rather than closing over it**, so a definition can be
+asked what it supports before anything is sent — which is what a preferences
+screen and a devtools panel need:
+
+```typescript
+paymentReceived.type        // 'PaymentReceived'
+paymentReceived.transports  // ['inApp', 'email']
+app.notifications           // every type this app declares, by name
+```
+
+### Where they are found
+
+Two directories are probed beside the entry — `notifications/` and
+`src/notifications/` — which covers the flat layout and the scaffolded one.
+State the path when neither applies, or when the entry is not the app (a test
+runner and a drive that imports the app module both make themselves the entry):
+
+```typescript
+app.configure(notificationsPlugin({
+  db,
+  notifications: new URL('./notifications', import.meta.url).pathname,
+  transports:    { email: { mailer: 'default' } },
+}))
+```
+
+A stated path that is not a directory throws naming it. `notifications: false`
+turns loading off, and definitions then have to state `type:` themselves.
+
+### Renaming
+
+The type is persisted — it is written into `notifications.type` and read by the
+browser to choose a renderer — so renaming the file renames the type, and rows
+already written keep the old one. State `type:` to hold it still:
+
+```typescript
+export default defineNotification<Payment>({
+  type: 'PaymentReceived',   // rows were written under this; the file moved on
+  via:  () => ['inApp'],
+  inApp: (payment) => inApp().title('Payment received'),
+})
+```
+
+The loader reports the divergence, because a deliberate rename and a typo look
+identical from where it stands.
+
+### The class form
+
+`class X extends Notification` still works and is not deprecated —
+`notify()` reads three members and never asks which shape produced them. It
+costs a `static type` restating the file name, and a `static async` factory
+behind a private constructor wherever a body has to be rendered, because its
+`toEmail()` cannot be async.
+
+
 Notification classes live in `api/src/notifications/`. One file per class, same convention as `services/` and `hooks/`.
 
-If `via()` returns a transport but the corresponding `to<Transport>()` method is not implemented, `notify()` throws `NotificationTransportNotImplementedError` — before anything is delivered, so a two-transport notification cannot half-land.
+If `via` returns a transport the definition has no formatter for, `notify()` throws `NotificationTransportNotImplementedError` — before anything is delivered, so a two-transport notification cannot half-land.
 
 ---
 
@@ -134,7 +195,7 @@ If `via()` returns a transport but the corresponding `to<Transport>()` method is
 
 ```typescript
 // From anywhere with app context:
-await app.notify(user, new PaymentReceived(payment))
+await app.notify(user, paymentReceived(payment))
 
 // From a service hook — ctx.app is always available on ServiceContext
 after: {
@@ -142,7 +203,7 @@ after: {
     async (ctx) => {
       // `db.user`, singular — the accessor derived from `model User`.
       const user = await db.asSystem().user.findUnique({ where: { id: ctx.result.data.userId } })
-      await ctx.app.notify(user, new PaymentReceived(ctx.result.data))
+      await ctx.app.notify(user, paymentReceived(ctx.result.data))
     }
   ]
 }
@@ -179,45 +240,44 @@ await app.notify({ email: customer.email, name: customer.name }, new OrderConfir
 
 ## @frontierjs/auth integration
 
-`@frontierjs/auth` sets `authMethod: 'created'` on the `SessionContext` returned by `createUser()`. Use this in an after hook to send a welcome notification on registration — no coupling between the two packages:
-
 ```typescript
-// api/src/notifications/WelcomeUser.ts
-export class WelcomeUser extends Notification {
-  static type = 'WelcomeUser'
+// api/src/notifications/WelcomeUser.notification.ts
+import { defineNotification, inApp, mail } from '@frontierjs/notifications'
 
-  via(_recipient: Recipient): Transport[] { return ['inApp', 'email'] }
+export default defineNotification<void>({
+  via: () => ['inApp', 'email'],
 
-  toInApp(user: Recipient): InAppMessage {
-    return inApp()
-      .title('Welcome!')
-      .body(`Good to have you${user.firstName ? `, ${user.firstName}` : ''}.`)
-      .action('Get started', '/dashboard')
-      .build()
-  }
+  inApp: (_, user) => inApp()
+    .title('Welcome')
+    .body(`Good to have you${user.firstName ? `, ${user.firstName}` : ''}.`)
+    .action('Get started', '/dashboard'),
 
-  toEmail(user: Recipient): MailMessage {
-    return mail()
-      .subject('Welcome to the app')
-      .greeting(`Hi ${user.firstName ?? 'there'}`)
-      .line('Your account is ready.')
-      .action('Go to dashboard', 'https://app.example.com/dashboard')
-      .build()
-  }
-}
+  email: (_, user) => mail()
+    .subject('Welcome to the app')
+    .greeting(`Hi ${user.firstName ?? 'there'}`)
+    .line('Your account is ready.')
+    .action('Go to dashboard', 'https://app.example.com/dashboard'),
+})
 
 // api/src/services/users.ts
+import welcomeUser from '../notifications/WelcomeUser.notification.ts'
+
 after: {
   create: [
     async (ctx) => {
       // authMethod: 'created' is stamped by @frontierjs/auth createUser()
       if (ctx.auth.user?.authMethod === 'created') {
-        await ctx.app.notify(ctx.result.data, new WelcomeUser())
+        await ctx.app.notify(ctx.result.data, welcomeUser())
       }
     }
   ]
 }
 ```
+
+A notification with nothing to carry is `defineNotification<void>` and is sent
+as `welcomeUser()`. The recipient still arrives — it is every formatter's second
+argument, which is where `user.firstName` above comes from.
+
 
 ---
 
@@ -226,14 +286,16 @@ after: {
 `notify()` formats and validates eagerly, then executes every transport in parallel:
 
 1. Call `notification.via(recipient)` — get the transport list
-2. Format each transport's message **once**, and validate before any delivery:
-   - Missing `to<Transport>()` → `NotificationTransportNotImplementedError`
+2. Format each transport's message **once**, awaiting it, and validate before any delivery:
+   - No formatter for that transport → `NotificationTransportNotImplementedError`
    - Unregistered custom transport → `NotificationDriverNotFoundError`
    - Recipient not addressable on it → `NotificationRecipientError`
 3. `Promise.allSettled` across all transports — a failed email does not block inApp delivery
 4. Failures collected and thrown as `NotificationDeliveryError` with per-transport detail
 
-The message formatted in step 2 is the one delivered in step 3. It used to be built twice — once to check the method existed, once to send — so a `to*()` that rendered a template did it twice per notification.
+The message formatted in step 2 is the one delivered in step 3. It used to be built twice — once to check the method existed, once to send — so a formatter that rendered a template did it twice per notification.
+
+Step 2 awaits, so a formatter may be async. Validation is still eager: every transport is formatted and checked before any of them is delivered.
 
 ---
 
@@ -314,17 +376,15 @@ app.configure(notificationsPlugin({
   }
 }))
 
-// api/src/notifications/OrderAlert.ts
-export class OrderAlert extends Notification {
-  static type = 'OrderAlert'
-  via(_recipient: Recipient): Transport[] { return ['inApp', 'slack'] }
+// api/src/notifications/OrderAlert.notification.ts
+export default defineNotification<Order>({
+  via: () => ['inApp', 'slack'],
 
-  toInApp(recipient: Recipient): InAppMessage { ... }
+  inApp: (order) => inApp().title('New order').body(`#${order.id}`),
 
-  toSlack(recipient: Recipient) {
-    return { text: `New order #${this.order.id} received.` }
-  }
-}
+  // A formatter is named for the transport its driver is registered under.
+  slack: (order) => ({ text: `New order #${order.id} received.` }),
+})
 ```
 
 ---
@@ -358,7 +418,7 @@ PATCH /notifications/456          { readAt: "2026-04-18T..." }
 
 | Error | When |
 |---|---|
-| `NotificationTransportNotImplementedError` | `via()` returns a transport but `to<Transport>()` is not implemented |
+| `NotificationTransportNotImplementedError` | `via` returns a transport the definition has no formatter for |
 | `NotificationRecipientError` | the recipient cannot be addressed on a transport `via()` named — no `id` for `inApp`, no address for `email` |
 | `NotificationDriverNotFoundError` | `via()` returns a transport name with no registered driver |
 | `NotificationDeliveryError` | one or more transports failed — carries per-transport error detail |

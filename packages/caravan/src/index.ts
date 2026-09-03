@@ -14,9 +14,10 @@
 // A handler then reaches the app as `ctx.app` and runs as whoever dispatched
 // the job — see JobContext in types.ts.
 
+import { timingSafeEqual } from 'node:crypto'
 import { occurrenceKey } from '@frontierjs/toolbelt/history'
 import type { Database }                            from 'bun:sqlite'
-import { openDb, buildStatements, aggregateStats, isPrimaryKeyCollision } from './db.ts'
+import { openDb, buildStatements, aggregateStats, isPrimaryKeyCollision, isUniqueKeyCollision } from './db.ts'
 import type { Statements }                          from './db.ts'
 import { QueueWorker, WorkerPool }                  from './worker.ts'
 import { autoloadJobs }                             from './autoload.ts'
@@ -54,6 +55,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
   // `pollInterval`, `queues` and `admin` unsettable from a config file at all.
   let dbPath       = opts.db           ?? './db/jobs.db'
   let busyTimeout  = opts.busyTimeout  ?? 5_000
+  let synchronous  = opts.synchronous  ?? 'NORMAL'
   let pollInterval = opts.pollInterval ?? 1_000
   let drainTimeout = opts.drainTimeout ?? 30_000
   let jobsDir      = opts.jobsDir
@@ -79,6 +81,10 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
   let   started  = false
   let   telemetry: CaravanTelemetry | null = null
   let   ownerTimer: ReturnType<typeof setInterval> | null = null
+  // Held where ownerTimer is held, for the reason it is: a `const` local to
+  // start() cannot be cleared, so the hourly sweep went on firing against a
+  // closed handle after stop() and a restart added a second one.
+  let   sweepTimer: ReturnType<typeof setInterval> | null = null
   // The running app, or null standalone. Held so dispatch can read who is in
   // scope and the worker can open a scope to run the handler in.
   let   host: CaravanApp | null = null
@@ -96,7 +102,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
 
   const rt = (): { db: Database; stmts: Statements } => {
     if (!runtime) {
-      const db = openDb(dbPath, busyTimeout)
+      const db = openDb(dbPath, busyTimeout, synchronous)
       runtime    = { db, stmts: buildStatements(db) }
       openedPath = dbPath
     }
@@ -115,7 +121,20 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
   // under it. That is the same ground as FJS-295 and the same answer: work that
   // does not yield is work this queue cannot supervise.
 
+  // Every timer callback here catches its own throw. `sweepOwners` used to
+  // throw `database is locked` out of a `setInterval`, which is an
+  // uncaughtException and a dead process — and the heartbeat it missed on the
+  // way out is exactly what makes another instance reclaim this one's running
+  // rows. A missed sweep is nothing; a missed sweep that kills the process is
+  // the failure.
+  const onTimer = (label: string, fn: () => void) => (): void => {
+    try { fn() } catch (err) {
+      console.warn(`[Caravan] ${label} failed and was skipped:`, (err as Error)?.message ?? err)
+    }
+  }
+
   const sweepOwners = (): void => {
+    if (!runtime) return
     const { stmts } = rt()
     const now    = Date.now()
     const cutoff = now - leaseMs
@@ -169,6 +188,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       if (junctionCaravan) {
         if (opts.db           === undefined && junctionCaravan.db           !== undefined) dbPath       = junctionCaravan.db
         if (opts.busyTimeout  === undefined && junctionCaravan.busyTimeout  !== undefined) busyTimeout  = junctionCaravan.busyTimeout
+        if (opts.synchronous  === undefined && junctionCaravan.synchronous  !== undefined) synchronous  = junctionCaravan.synchronous
         if (opts.jobsDir      === undefined && junctionCaravan.jobsDir      !== undefined) jobsDir      = junctionCaravan.jobsDir
         if (opts.cleanupAfter === undefined && junctionCaravan.cleanupAfter !== undefined) cleanupAfter = junctionCaravan.cleanupAfter
         if (opts.pollInterval === undefined && junctionCaravan.pollInterval !== undefined) pollInterval = junctionCaravan.pollInterval
@@ -197,6 +217,12 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       }
   }
 
+  // What the admin surface may say about a payload. `data` is the caller's own
+  // arguments — the string, not a parse — so a redacted row keeps the shape a
+  // reader expects and says why the value is not there.
+  const redactList = (rows: JobRecord[], withData: boolean): JobRecord[] =>
+    withData ? rows : rows.map(r => ({ ...r, data: '[redacted]' }))
+
   // ── admin routes ──────────────────────────────────────────────────────────
   //
   // Mounted at boot() rather than register(), because whether to mount them at
@@ -210,6 +236,24 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
     const adminCfg  = adminOpts === true ? {} : adminOpts
       const basePath  = adminCfg.path ?? '/jobs'
       const secret    = adminCfg.secret
+      const authorize = adminCfg.authorize
+
+      // These routes are raw `app.get`/`app.post`, so no `@@gate`, no row
+      // policy and no session hook is on the path by construction — and
+      // `POST /jobs/run/{name}` executes any registered handler with the app's
+      // own standing, while `GET /jobs` returns every payload in plaintext.
+      // Unauthenticated in production, that is remote job execution on the
+      // public API prefix. Refused rather than served, the way junction's own
+      // devtools plugin refuses: an authorizer is what makes it mountable, and
+      // `secret` is a dev shortcut that stops being one here.
+      if (process.env.NODE_ENV === 'production' && !authorize) {
+        console.warn(
+          '[Caravan] NODE_ENV=production and no `admin.authorize` configured — ' +
+          'admin routes NOT mounted. Pass admin: { authorize: async (ctx) => boolean } to enable ' +
+          'them in production; `admin: { secret }` is a development shortcut and is refused here.'
+        )
+        return
+      }
 
       // These are raw app.get/app.post routes, so ctx is Junction's
       // TransportContext: headers live on ctx.headers (lowercased by the
@@ -225,10 +269,30 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         throw Object.assign(new Error(message), { status })
       }
 
-      const guard = (ctx: Record<string, unknown>): void => {
-        if (!secret) return
+      // A byte-by-byte `!==` leaks the shared secret one character at a time to
+      // anyone who can time the answer. Compared over equal-length buffers,
+      // since timingSafeEqual throws on a length mismatch — which is itself the
+      // cheap half of the answer and is given away first.
+      const secretMatches = (given: string | undefined): boolean => {
+        if (!secret || typeof given !== 'string') return false
+        const a = Buffer.from(given)
+        const b = Buffer.from(secret)
+        if (a.length !== b.length) return false
+        return timingSafeEqual(a, b)
+      }
+
+      const guard = async (ctx: Record<string, unknown>): Promise<void> => {
         const headers = (ctx.headers ?? {}) as Record<string, string>
-        if (headers['x-caravan-secret'] !== secret) deny(401, 'Unauthorized')
+        // An authorizer is the app's own answer — its session, its gate — and
+        // it is asked first and alone where it exists.
+        if (authorize) {
+          let ok = false
+          try { ok = await authorize(ctx) } catch { ok = false }
+          if (!ok) deny(401, 'Unauthorized')
+          return
+        }
+        if (!secret) return
+        if (!secretMatches(headers['x-caravan-secret'])) deny(401, 'Unauthorized')
       }
 
       const appRouter = app as unknown as {
@@ -239,36 +303,43 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       // Junction's router uses brace syntax for path params ({id}); an
       // Express-style ':id' parses as a literal static segment and never
       // matches, which 404s every by-id route.
-      appRouter.get(basePath, (ctx: unknown) => {
+      appRouter.get(basePath, async (ctx: unknown) => {
         const c = ctx as Record<string, unknown>
-        guard(c)
+        await guard(c)
         const q = c.query as Record<string, string> | undefined
-        return Response.json(caravan.list({
+        // A payload is whatever a caller passed — a reset token, an address, a
+        // provider key — and this list is the one place the whole table is
+        // handed over at once. Redacted unless asked for by name.
+        // The transport parses a query string, so `?data=1` arrives as the
+        // number 1 rather than the string.
+        const withData = String(q?.data ?? '') === '1'
+        return Response.json(redactList(caravan.list({
           queue:  q?.queue,
           status: q?.status as JobStatus | undefined,
           limit:  q?.limit  ? parseInt(q.limit)  : 50,
           offset: q?.offset ? parseInt(q.offset) : 0,
-        }))
+        }), withData))
       })
 
-      appRouter.get(`${basePath}/schedules`, (ctx: unknown) => {
+      appRouter.get(`${basePath}/schedules`, async (ctx: unknown) => {
         const c = ctx as Record<string, unknown>
-        guard(c)
+        await guard(c)
         return Response.json(caravan.nextRuns())
       })
 
-      appRouter.get(`${basePath}/{id}`, (ctx: unknown) => {
+      appRouter.get(`${basePath}/{id}`, async (ctx: unknown) => {
         const c = ctx as Record<string, unknown>
-        guard(c)
+        await guard(c)
         const id  = (c.route as Record<string, string>)?.id
         const job = caravan.find(id)
         if (!job) deny(404, `Job '${id}' not found`)
-        return Response.json(job)
+        const withData = String((c.query as Record<string, unknown> | undefined)?.data ?? '') === '1'
+        return Response.json(redactList([job as JobRecord], withData)[0])
       })
 
       appRouter.post(`${basePath}/{id}/retry`, async (ctx: unknown) => {
         const c = ctx as Record<string, unknown>
-        guard(c)
+        await guard(c)
         const id = (c.route as Record<string, string>)?.id
         const ok = await caravan.retry(id)
         return Response.json({ ok })
@@ -276,7 +347,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
 
       appRouter.post(`${basePath}/{id}/cancel`, async (ctx: unknown) => {
         const c = ctx as Record<string, unknown>
-        guard(c)
+        await guard(c)
         const id = (c.route as Record<string, string>)?.id
         const ok = await caravan.cancel(id)
         return Response.json({ ok })
@@ -297,7 +368,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       // queueing a job no worker will ever pick up.
       appRouter.post(`${basePath}/run/{name}`, async (ctx: unknown) => {
         const c = ctx as Record<string, unknown>
-        guard(c)
+        await guard(c)
         const name = (c.route as Record<string, string>)?.name
         if (!handlers.has(name))
           deny(404, `No handler registered for '${name}'`)
@@ -398,6 +469,26 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         stmts.insert.run(row)
       } catch (err) {
         if (dispatchOpts.id && isPrimaryKeyCollision(err)) return id
+        // The index decided the race this dispatch lost. Ask it who won: the
+        // caller asked for "do not queue this twice", and the answer to that is
+        // the id of the job already doing the work, never a 500.
+        if (dispatchOpts.unique && isUniqueKeyCollision(err)) {
+          const winner = stmts.findByUniqueKey.get({ unique_key: dispatchOpts.unique })
+          if (winner) return winner.id
+          // Gone terminal between the collision and the read, which frees the
+          // key — the partial index covers live jobs only. One more attempt;
+          // a second collision is a live job again and answers above.
+          try {
+            stmts.insert.run(row)
+            return id
+          } catch (again) {
+            if (isUniqueKeyCollision(again)) {
+              const other = stmts.findByUniqueKey.get({ unique_key: dispatchOpts.unique })
+              if (other) return other.id
+            }
+            throw again
+          }
+        }
         throw err
       }
 
@@ -627,19 +718,22 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       // the first was executing a job released that row and the second claimed
       // it, running the handler twice, concurrently, with the atomic claim
       // saying nothing because the second claim was legitimate (FJS-294).
-      sweepOwners()
+      onTimer('owner sweep', sweepOwners)()
 
       // Heartbeat, recovery and owner pruning are one timer: the sweep is only
       // meaningful relative to a lease this instance is also renewing.
-      ownerTimer = setInterval(sweepOwners, heartbeatMs)
+      ownerTimer = setInterval(onTimer('owner sweep', sweepOwners), heartbeatMs)
       if (ownerTimer.unref) ownerTimer.unref()
 
       // Cleanup sweep — remove old terminal jobs (done/failed/cancelled) on
       // start and every hour
       if (cleanupAfter > 0) {
-        const sweep = () => stmts.cleanup.run({ before: Date.now() - cleanupAfter })
+        const sweep = onTimer('cleanup sweep', () => {
+          if (!runtime) return
+          stmts.cleanup.run({ before: Date.now() - cleanupAfter })
+        })
         sweep()
-        const sweepTimer = setInterval(sweep, 60 * 60 * 1_000)
+        sweepTimer = setInterval(sweep, 60 * 60 * 1_000)
         if (sweepTimer.unref) sweepTimer.unref()
       }
 
@@ -665,6 +759,10 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         clearInterval(ownerTimer)
         ownerTimer = null
       }
+      if (sweepTimer) {
+        clearInterval(sweepTimer)
+        sweepTimer = null
+      }
       await pool.stop()
       started = false
 
@@ -678,6 +776,10 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         try { runtime.stmts.dropOwner.run({ id: ownerId }) } catch {}
       }
 
+      // Closed BEFORE the handle goes: a handler abandoned past the drain
+      // deadline is still running, and its completion write would otherwise
+      // reject with `Database has closed` as an unhandled rejection.
+      pool.markClosed()
       runtime?.db.close()
       // The database the workers hold is now closed, so they cannot be reused;
       // a start() after this builds fresh ones against a freshly opened db.

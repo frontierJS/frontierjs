@@ -18,6 +18,12 @@ const DEFAULT_RESET_MS          = 30_000
 // a body that will not serialise, a typo'd method or an unknown target are
 // all local bugs — counting them would open a breaker that no amount of
 // waiting can heal, and hide the actual error behind circuit_open.
+//
+// `rate_limited` is deliberately NOT here, and it is the one absence worth
+// stating: a 429 says the target is healthy and we are asking too fast. Counted
+// as a fault it opened the breaker, after which every send failed `circuit_open`
+// — load shed by the one status that means *slow down* (`FJS-650`). The answer to
+// being paced is to wait the stated time, which the retry ladder now does.
 const TARGET_FAULTS: ReadonlySet<ConduitErrorKind> = new Set([
   'connection_failed',
   'timeout',

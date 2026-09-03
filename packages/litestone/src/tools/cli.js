@@ -203,6 +203,7 @@ const HELP = `
     ${cyan('litestone migrate status')}            show applied / pending / modified
     ${cyan('litestone migrate verify')}            check if live db matches schema
     ${cyan('litestone db push')}                    apply schema directly — no migration files (dev)
+    ${dim('  --accept-data-loss')}                  allow a change that drops a column and its values
     ${cyan('litestone types')} [out.d.ts]            generate TypeScript declarations from schema
     ${dim('  --only=users,posts')}                  only emit types for specified models
     ${dim('  --audience=client|system')}             field visibility (default: client)
@@ -3607,6 +3608,7 @@ async function cmdJsonSchema(cfg) {
         ? resolve(outputPath, `schema.${m}.json`)
         : `${schemaName}.${m}.json`
       const schema  = generateJsonSchema(parseResult.schema, { ...opts, mode: m })
+      mkdirSync(dirname(outPath), { recursive: true })
       writeFileSync(outPath, JSON.stringify(schema, null, 2))
       const { size } = statSync(outPath)
       console.log(`  ${green('✓')}  ${rel(outPath)}  ${dim(`(${size}b)`)}`)
@@ -3619,6 +3621,13 @@ async function cmdJsonSchema(cfg) {
       : `${schemaName}.json`
 
     const schema = generateJsonSchema(parseResult.schema, { ...opts, mode })
+    // Create the directory the caller named. `--out db/.json/schema.json` is a
+    // path into a directory that does not exist yet on a fresh clone, and
+    // writeFileSync answers ENOENT naming the FILE, which reads as a permission
+    // problem rather than a missing parent. Note that a `--out` naming a
+    // directory that does not exist yet is treated as a FILE path by the branch
+    // above — that is why the recommended spelling states `schema.json`.
+    mkdirSync(dirname(outPath), { recursive: true })
     writeFileSync(outPath, JSON.stringify(schema, null, 2))
     const { size } = statSync(outPath)
     console.log(`  ${green('✓')}  ${rel(outPath)}  ${dim(`(${(size/1024).toFixed(1)}kb)`)}`)
@@ -5750,16 +5759,26 @@ async function cmdDbPush(cfg) {
   const db = await createClient({ parsed: parseResult, path: cfg.schema, resolveFrom: 'schema', db: clientDb(parseResult, cfg), encryptionKey: getEncKey() })
 
   const t0      = performance.now()
-  const results = autoMigrate(db)
+  const results = autoMigrate(db, null, { acceptDataLoss: flag('accept-data-loss') })
   const ms      = (performance.now() - t0).toFixed(0)
 
   let anyChanges = false
+  let refused    = false
 
   for (const [dbName, result] of Object.entries(results)) {
     const label = hasDbs ? `  ${cyan(dbName)}  ` : '  '
 
     if (result.state === 'skipped') {
       console.log(`${label}${dim('skipped')}  ${dim(`(${result.reason})`)}`)
+    // `blocked` and `failed` had no branch at all, so a refused migration
+    // printed nothing and the summary below said "already in sync" — a green
+    // tick over a change that did not happen, which is the class this command's
+    // own refusals exist to prevent (`FJS-646`).
+    } else if (result.state === 'blocked' || result.state === 'failed') {
+      refused = true
+      console.log(`${label}${red('✗')}  ${result.state === 'blocked' ? 'blocked' : 'failed'}  ${result.reason}`)
+      if (result.dataLoss?.length)
+        console.log(`  ${dim('Pass')} ${cyan('--accept-data-loss')} ${dim('to apply it anyway.')}`)
     } else if (result.state === 'in-sync') {
       console.log(`${label}${green('✓')}  already in sync`)
     } else if (result.state === 'migrated') {
@@ -5776,7 +5795,13 @@ async function cmdDbPush(cfg) {
   db.$close()
 
   console.log()
-  if (anyChanges) {
+  if (refused) {
+    // Non-zero, because `db push` is run from scripts and a boot sequence, and
+    // a refusal that exits 0 is the same silence one layer up.
+    process.exitCode = 1
+    console.log(`  ${red(bold('✗  DB not pushed'))}  ${dim(`(${ms}ms)`)}`)
+    console.log(`  ${dim('The database is unchanged. Fix the schema, or write it as a file migration:')} ${cyan('litestone migrate create')}`)
+  } else if (anyChanges) {
     console.log(`  ${green(bold('✓  DB pushed'))}  ${dim(`(${ms}ms)`)}`)
     console.log(`  ${dim('Schema applied directly — no migration files written, so a deploy')}`)
     console.log(`  ${dim('replaying migrations will not have this change.')}`)

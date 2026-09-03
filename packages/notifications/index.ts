@@ -1,9 +1,11 @@
 // ─── Core ─────────────────────────────────────────────────────────────────────
 
 export { Notification }          from './notification.ts'
+export { defineNotification }    from './define.ts'
 export { notificationsPlugin }   from './plugin.ts'
 
 import type { Notification as NotificationBase } from './notification.ts'
+import type { SendableNotification } from './define.ts'
 import type { Recipient } from './types.ts'
 
 // Contribute the real call signature of `app.notify` to Junction's augmentable
@@ -18,7 +20,16 @@ import type { Recipient } from './types.ts'
 // See the AppConduit note in the repo CLAUDE.md.
 declare module '@frontierjs/junction' {
   interface AppNotify {
-    (recipient: Recipient, notification: NotificationBase): Promise<void>
+    // Either shape. `notify()` reads three members and never asks which one it
+    // was handed, so the type says the same: a class instance, or the value a
+    // `defineNotification` factory answers.
+    (recipient: Recipient, notification: NotificationBase | SendableNotification): Promise<void>
+  }
+
+  interface App {
+    /** Every notification this app declares, by type — filled at boot from
+     *  `*.notification.ts`. Asking it costs no payload and sends nothing. */
+    notifications?: ReadonlyMap<string, import('./define.ts').NotificationFactory<never>>
   }
 }
 
@@ -36,6 +47,18 @@ export {
 } from './errors.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+export type {
+  NotificationDefinition,
+  NotificationFactory,
+  SendableNotification,
+  Formatter,
+} from './define.ts'
+
+export type {
+  NotificationRegistry,
+  NotificationsDirResolution,
+} from './loader.ts'
 
 export type {
   Transport,

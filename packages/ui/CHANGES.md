@@ -1,5 +1,35 @@
 # Changes
 
+## 2026-08-30 — a form with nothing to fill in says so
+
+878 assertions, 0 fail. The cheap half of
+[`FJS-607`](../../ISSUES.md#fjs-607); the expensive half stays open.
+
+`<Form>` generates its field list when the caller passed no children, and
+`slot=` is an attribute on an ELEMENT — so `{#if ready}<Button slot="actions" />{/if}`
+puts the BLOCK in the default slot, `$slots.default` is truthy, and the caller
+is read as having written the form themselves. Every field disappears, the form
+still submits, and the page looks like a component that failed to load.
+
+**What is decidable here is the pair.** This form generated nothing AND nothing
+a person can type into is inside it, over a resource that had fields to offer.
+That is not a legitimate form under any reading, so it warns, naming the fields
+and the cause.
+
+Asked of the DOM in `$.onMount`, because that is the only place the answer is:
+children arrive as opaque content, so counting them says nothing about whether
+any of them is a control. The resource's own offer is the gate — a form built
+entirely by hand and a form over a resource with nothing writable both stay
+silent — and `$.onMount` is a no-op server-side, so a prerendered form says
+nothing about a page nobody is developing.
+
+**What did NOT change is the behaviour.** Whether a block whose every branch is
+slotted should count as default content is a Mesa question about `$slots`, and
+the workaround is unchanged: render the slotted children unconditionally, which
+is what every resource file in `example/` already does. `form-generate`'s two
+new rows PIN the behaviour rather than assert it is right, so settling the Mesa
+half turns them red on purpose, with the warning asserted beside them.
+
 ## 2026-08-29 — a picker that could not ask says so
 
 875 assertions, 0 fail. Closes

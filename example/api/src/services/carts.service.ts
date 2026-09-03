@@ -1,7 +1,9 @@
 import { createBaseService, $ } from '@frontierjs/junction'
-import { hold, release, consume, heldUntil, levelsFor, HOLD_MINUTES } from '../inventory.ts'
-import { priceBasket, contextFor, discountByCode, discountProblem } from '../pricing.ts'
-import { checkoutCodeFor } from '../core/checkout-code.ts'
+import { hold, release, consume, heldUntil, levelsFor, HOLD_MINUTES } from '../domain/shop'
+import { priceBasket, contextFor, discountByCode, discountProblem } from '../domain/shop'
+import type { CustomField } from '../domain/shop/custom-fields.ts'
+import { checkoutCodeFor } from '../domain/shop'
+import { postJournal, saleJournal } from '../domain/ledger.ts'
 
 // The basket. Its ACCESS is entirely in db/schema.lite — `@@allow('read',
 // token == auth().cartToken)` on both models — so nothing in this file checks
@@ -60,6 +62,33 @@ type DisplayLine = LineRow & {
  * hold taken here rolls back with the line it was taken for.
  */
 const sys = () => ($.db as { asSystem(): Record<string, any> }).asSystem()
+
+/**
+ * This shop's declared custom fields. One read per call that needs them.
+ *
+ * Separate from `audienceFor` because checkout already holds the customer and
+ * only wants this half — and because a shop that has declared nothing gets an
+ * empty list here rather than a null the audience check would have to special
+ * case.
+ */
+async function declaredFields(system: any): Promise<CustomField[]> {
+  return await system.customField.findMany({})
+}
+
+/**
+ * Who the basket belongs to, for a code that names an audience.
+ *
+ * `Customer.userId` is `@unique`, so a signed-in basket resolves to exactly one
+ * person. A guest basket answers `{ customer: null }` and an audience code is
+ * then refused by name — which is the honest answer: the shop cannot tell
+ * whether a stranger is in the audience, and honouring the code because it
+ * cannot tell is how an audience stops meaning anything.
+ */
+async function audienceFor(system: any, userId: string | null | undefined) {
+  const declared = await declaredFields(system)
+  if (!userId) return { customer: null, declared }
+  return { customer: await system.customer.findFirst({ where: { userId } }), declared }
+}
 
 export function createCartsService() {
   return createBaseService({
@@ -253,7 +282,12 @@ export function createCartsService() {
       const lines    = await linesOf(cart.id)
       const subtotal = lines.reduce((n, l) => n + l.total, 0)
 
-      const problem = discountProblem(discount, subtotal)
+      // An audience code needs to know WHO. A signed-in basket carries
+      // `userId` and `Customer.userId` is unique, so the row is one lookup; a
+      // guest basket has nobody, and `discountProblem` refuses an audience code
+      // by name rather than applying it to a person it cannot identify.
+      const problem = discountProblem(discount, subtotal, new Date(),
+        await audienceFor(system, cart.userId))
       if (problem) throw bad(problem)
 
       await system.cart.update({ where: { id: cart.id }, data: { discountId: discount!.id } })
@@ -454,11 +488,6 @@ export function createCartsService() {
       // because nobody finds out. `discountProblem` is the same function
       // `applyDiscount` refused with, so the sentence is the one they were
       // already told the rules in.
-      if (cart.discountId != null) {
-        const problem = discountProblem(context.discount, money.subtotal)
-        if (problem) throw bad(problem)
-      }
-
       // A guest has no Customer row until this moment, and a returning one must
       // not get a second. `email` is @unique @lower, so this is the lookup.
       const existing = await system.customer.findFirst({ where: { email: email.toLowerCase() } })
@@ -468,6 +497,26 @@ export function createCartsService() {
         firstName: name.split(' ')[0] ?? name,
         lastName:  name.split(' ').slice(1).join(' ') || name,
       } })
+
+      // ─── The code, re-checked ───────────────────────────────────────────
+      //
+      // Refused BY NAME rather than quietly dropped. A basket that showed 10%
+      // off and an order that charges full price is the shop taking money the
+      // shopper did not agree to, and it is worse than a failed checkout
+      // because nobody finds out. `discountProblem` is the same function
+      // `applyDiscount` refused with, so the sentence is the one they were
+      // already told the rules in.
+      //
+      // It happens HERE, below the customer, and that ordering is load-bearing
+      // now that a code can name an audience: run above it there is no customer
+      // row yet, so every audience code would refuse at checkout having been
+      // accepted onto the basket — a discount a shopper watched apply and then
+      // could not buy with.
+      if (cart.discountId != null) {
+        const problem = discountProblem(context.discount, money.subtotal, new Date(),
+          { customer, declared: await declaredFields(system) })
+        if (problem) throw bad(problem)
+      }
 
       // ─── Whose sale is this ─────────────────────────────────────────────
       //
@@ -560,6 +609,21 @@ export function createCartsService() {
         unitPrice:   l.unitPrice,
         lineTotal:   l.total,
       })) })
+
+      // ─── The books ───────────────────────────────────────────────────────
+      //
+      // The sale in double entry, inside the same transaction as everything
+      // else — an order that rolls back did not post a journal, and a journal
+      // that fails takes the order with it.
+      //
+      // `ledger.ts` owns the rule, and the rule is that the lines sum to zero.
+      // It cannot fail here for an arithmetic reason: `saleJournal` is built
+      // from the five figures `priceBasket` just decided, and `Order`'s own
+      // `@@check` says those five add up. That is exactly why it is worth
+      // asserting — the day somebody adds a sixth figure to a receipt and not
+      // to the journal, this is what says so, and it says so before the money
+      // is taken rather than at a month end.
+      await postJournal(system, saleJournal({ id: order.id, reference: order.reference, ...money }))
 
       // The shelf comes down and the holds go away, together, through the one
       // module that owns both — every decrement writes an InventoryMovement in
@@ -664,7 +728,7 @@ async function view(cart: CartRow, client: Record<string, any> = $.db) {
     // to be the sum of the lines, and it is the right way round: the number a
     // checkout button carries has to be the number the checkout writes.
     //
-    // Every figure is the server's. `api/src/pricing.ts` rounds each component
+    // Every figure is the server's. `api/src/domain/shop` rounds each component
     // once and sums the rounded ones, so what a screen prints adds up by
     // construction — which is only true while a screen renders these and does
     // not re-derive any of them.

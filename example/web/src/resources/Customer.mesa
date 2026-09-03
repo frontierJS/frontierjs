@@ -29,6 +29,7 @@
   // screen's; nothing is written twice.
   import Form   from '@frontierjs/ui/components/forms/Form.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import { withCustomFields } from '@/custom-fields.js'
 
   export let record      = undefined   // absent → Form makes one from the schema
   export let method      = undefined   // Form's auto | create | patch
@@ -38,12 +39,23 @@
   export let submitId    = undefined   // a drive needs to find the button
   export let actions     = null        // snippet — replaces the whole button row
 
+  /// This shop's own `CustomField` rows, when the screen has them.
+  ///
+  /// Passed in rather than fetched here because a Resource's markup half runs
+  /// per instance and the declarations are one read per screen. Absent, the form
+  /// is exactly what it was: `withCustomFields` returns the resource unchanged
+  /// when there is nothing to add, so a screen that does not know about custom
+  /// fields is not paying for them.
+  export let declaredFields = null
+
+  $: _resource = withCustomFields(customers, declaredFields)
+
   // Everything else — class, style, ondone, onerror, showError — rides
   // $attributes onto <Form>, which is where those props are declared. The
   // customers screen turns `showError` off while its conflict panel is up.
 </script>
 
-<Form resource={customers} bind:record={record} {method} {actions} {...$attributes}>
+<Form resource={_resource} bind:record={record} {method} {actions} {...$attributes}>
   <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
   <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
 </Form>

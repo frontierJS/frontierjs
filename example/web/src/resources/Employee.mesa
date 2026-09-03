@@ -1,0 +1,52 @@
+<script module>
+  // web/src/resources/Employee.mesa — the Resource layer.
+  //
+  // Named for the model, exporting the accessor — see Order.mesa.
+  //
+  // ─── The one-audience model ───────────────────────────────────────────────
+  //
+  // `Employee` is `@@gate("5.5.5.5")` — read, create, update and delete all at
+  // the same level — and it is the first model in this application shaped that
+  // way. Every other noun here has at least two audiences and a ladder between
+  // them: an order is read by a shopper at 1 and moved by staff at 5, a product
+  // is public at 0 and written at 4. A payroll has one, so the ladder is flat
+  // and the affordance layer has nothing to say: `can('update', level)` is the
+  // same answer as `can('read', level)`, and a screen that hid a button would be
+  // hiding it from nobody who could see the screen.
+  //
+  // That is worth knowing rather than working around. `x-gate` is an affordance
+  // and the boundary is the boundary either way (Invariant 6); what a flat
+  // ladder removes is the reason to ASK, not the enforcement.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const employees = createResource('employees')
+</script>
+
+<script>
+  // …and the markup half is this model's DEFAULT form (repo Invariant 18).
+  //
+  // Every column is writable, which is unusual here and is the point: what
+  // somebody is PAID is not on this form, because it is not a column on this
+  // model. `PayWindow` carries it with a lifetime, and the only way to change
+  // it is `employees.setPay` — so a form generated from the schema cannot
+  // accidentally offer a salary box that would mean *and forget what they used
+  // to earn*.
+  import Form   from '@frontierjs/ui/components/forms/Form.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let record      = undefined
+  export let method      = undefined
+  export let submitLabel = 'Save'
+  export let cancelHref  = null
+  export let oncancel    = null
+  export let submitId    = undefined
+  export let actions     = null
+</script>
+
+<Form resource={employees} bind:record={record} {method} {actions} {...$attributes}>
+  <!-- Both unconditionally — `slot=` inside an `{#if}` is default content and
+       silently turns generation off (`FJS-607`). -->
+  <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
+  <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
+</Form>

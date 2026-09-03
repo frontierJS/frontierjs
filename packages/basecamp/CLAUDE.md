@@ -12,7 +12,8 @@ bun run verify       # 271 checks in a real browser; starts and stops both serve
 bun run verify:build # builds, then probes the PRODUCTION output (FJS-085)
 bun run db:types     # regenerate db/schema.d.ts — the client's types
 bun run db:seed      # an example fleet
-bun run verify:screens # five screens + the audit window, in a browser, on a temp database
+bun run verify:screens # 61 checks — the Phase 13 and 14 screens + the audit window,
+                       # in a browser, on a database it seeds in a temp directory
 bun run db:reset     # stops the servers, deletes the databases
 DEVTOOLS=1 bun run api   # …and junction's console on 8503 beside it
 bun run image        # build the container image from the WORKING TREE
@@ -80,11 +81,19 @@ api/src/  app.ts (builds the app, never starts it) · services/ (22) ·
           caravan (`jobsDir`), and the default export is the dispatch handle
           jobs/{recipe,cleanup}-run are both ways this app acts on a MACHINE —
           one shape, opposite safeguards; jobs/outpost-run.ts is their half
-          providers/ is who the app SPEAKS to — `index.ts` is the 8
-          self-hosted appliances, executor.ts and outpost.ts are the fleet's
-          own. One folder, because FJS-D06 rules Provider to mean a party
-          outside the app and Infisical is one in the sense Hetzner is
+          providers/ is who the app SPEAKS to — `index.ts` is the 10 (eight
+          self-hosted appliances, plus `edge` and `cloudSpend`, which are
+          somebody else's service reached with a token), executor.ts and
+          outpost.ts are the fleet's own. One folder, because FJS-D06 rules
+          Provider to mean a party outside the app and Infisical is one in the
+          sense Hetzner is. `hosted` on the portal entry is what separates the
+          two kinds, and it is there because *unconfigured* means different
+          work for each: install it and set a URL, or open an account and hold
+          a key
           services/hub/ is the ONLY service that takes no workspace
+          services/infra/ takes one and has no MODEL — `graph` and
+          `onboarding`, two projections assembled from several tables, where
+          storing either would be a second answer that goes stale
           services/invitations/ holds the only two UNAUTHENTICATED methods —
           `preview` and `accept`; the token is the credential and the service
           decides everything a token cannot (`FJS-032`)
@@ -94,9 +103,12 @@ web/src/  App.mesa · main.js · session.js · notices.js (one leaf definition t
           shell and the home screen share) · routes/ · components/ ·
           resources/ (PascalCase singular, one Resource per file — Invariant 19)
 web/test/ verify.mjs · verify-build.mjs + preview.mjs (the built output)
-docs/     SCREENS.md — the mock inventory, 35 of 41 screens built, the rest
-          grouped by what blocks them (FJS-153). No screen is blocked on an
-          API any more — the 10 left need a model or a real third party
+docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
+          2026-08-30). Four of them are a screen with a skeleton where a third
+          party's numbers go — what is owed there is adapters, not UI
+          ADAPTERS.md — that debt, per adapter: every boundary declared,
+          nothing behind any of them, what wiring one costs and which drive
+          assertions flip when you do
           UI_PLAN.md · UI_HANDOFF.md · VISION.md · mock/
 ```
 
@@ -286,6 +298,15 @@ docs/     SCREENS.md — the mock inventory, 35 of 41 screens built, the rest
   it sends, and a `find` that answers anything but a list throws rather than
   guessing. NAMED keys and no `data` is still the clearest shape for an action
   that answers more than one thing — `volumes.usage`, `cleanup.targets`.
+- **The three API snapshots stay at the PACKAGE ROOT here, and `example`'s four
+  moved into `api/`.** A snapshot belongs in the surface it describes, and the
+  `snapshots` phase reruns each generator from the snapshot's own directory — so
+  moving them means the app has to boot from `api/`, and this one cannot: its
+  database and its audit trail both follow the process CWD, deliberately, which
+  is what `db/test/seed.test.ts` isolates a run with (`api/src/core/db.ts` says
+  so and says not to "fix" it). `AUDIT_PATH` exists and nothing sets it, which
+  is the way out and is `FJS-633`. Until then, generate all three from the
+  package root as their headers say.
 - **`API_PATHS` is DERIVED from `surface.snapshot.md` — do not add a path to it.**
   It was a hand-kept copy of the service registry and went stale six times;
   three of those were paths this app's source names nowhere, because a plugin

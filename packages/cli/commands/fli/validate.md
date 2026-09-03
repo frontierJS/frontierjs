@@ -21,7 +21,7 @@ import { resolve, extname, basename } from 'path'
 import { execSync } from 'child_process'
 
 // ─── JSON Schema parser ───────────────────────────────────────────────────────
-// Reads db/schema.json (output of litestone jsonschema) and extracts model names.
+// Reads db/.json/schema.json (output of litestone jsonschema) and extracts model names.
 // Models are $defs entries with type "object". Enums are type "string" — excluded.
 
 function parseJsonSchema(src) {
@@ -157,7 +157,7 @@ function printResults(errors, warns) {
 </script>
 
 Validates referential integrity across schema, services, resources, and routes.
-Reads `db/schema.json` (regenerated fresh each run via `litestone jsonschema`)
+Reads `db/.json/schema.json` (regenerated fresh each run via `litestone jsonschema`)
 so results always reflect the current schema, not a stale snapshot.
 
 **Checks:**
@@ -174,7 +174,12 @@ Use `--layer` to scope: `schema` `services` `resources` `env`
 ```js
 const root        = context.paths.root
 const schemaLite  = resolve(context.paths.db, 'schema.lite')
-const schemaJson  = resolve(context.paths.db, 'schema.json')
+// One owner for where the derived JSON Schema lives (`core/derived-paths.js`).
+// This command both WRITES it and reads it back, so a literal here is the
+// shape that regenerates one file and validates another — a clean pass over a
+// schema nobody looked at.
+const { jsonSchemaPath } = await import(resolve(global.fliRoot, 'core/derived-paths.js'))
+const schemaJson  = jsonSchemaPath(context.paths.db)
 const servicesDir = existsSync(resolve(context.paths.api, 'src/services'))
   ? resolve(context.paths.api, 'src/services')
   : resolve(context.paths.api, 'services')
@@ -200,7 +205,7 @@ if (!existsSync(schemaLite)) {
 
 log.info('Generating schema.json...')
 try {
-  execSync(`cd ${root} && bunx litestone jsonschema --schema db/schema.lite`, {
+  execSync(`cd ${root} && bunx litestone jsonschema --schema db/schema.lite --out ${schemaJson}`, {
     stdio: 'pipe',
   })
 } catch (e) {
@@ -209,7 +214,7 @@ try {
 }
 
 if (!existsSync(schemaJson)) {
-  log.error('litestone jsonschema ran but db/schema.json was not written')
+  log.error(`litestone jsonschema ran but ${schemaJson} was not written`)
   return
 }
 

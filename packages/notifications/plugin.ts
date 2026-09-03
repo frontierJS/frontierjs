@@ -2,6 +2,8 @@ import type { App, NotificationDriver, NotificationsPluginOptions, Recipient } f
 import type { Notification } from './notification.ts'
 import { setState } from './state.ts'
 import { notify } from './notify.ts'
+import { resolveNotificationsDir, loadNotifications, sealRegistry } from './loader.ts'
+import type { NotificationRegistry } from './loader.ts'
 
 /**
  * notificationsPlugin — wires app.notify and registers transport drivers.
@@ -55,6 +57,7 @@ export function notificationsPlugin(opts: NotificationsPluginOptions) {
     typeof (emailTransport as { send?: unknown }).send !== 'function'
 
   const drivers = new Map<string, NotificationDriver>()
+  let registry: NotificationRegistry = new Map()   // sealed once the loader answers
 
   return {
     name: 'notifications',
@@ -99,7 +102,33 @@ export function notificationsPlugin(opts: NotificationsPluginOptions) {
     // that registered and left `app.mail` unset used to be found by the first
     // email notification of the deployment, which is hours after the process
     // that could have refused to start.
-    boot(app: App) {
+    // Autoload runs in boot() and not register(): register() is synchronous and
+    // this reads the file system. Nothing sends before boot completes, and a
+    // definition's type is stamped onto the module object every caller already
+    // holds — so a file imported directly by a job is the same object the
+    // loader named.
+    async boot(app: App) {
+      const resolution = resolveNotificationsDir({
+        entry:    typeof Bun !== 'undefined' ? Bun.main : null,
+        declared: opts.notifications,
+      })
+
+      if (resolution.source === 'declared-missing') {
+        throw new Error(
+          `[notifications] notifications: "${resolution.declared}" is not a directory ` +
+          `(${resolution.probed[0]}). A declared path is a statement, so it is reported ` +
+          'rather than probed around — a wrong relative path looks exactly like an app ' +
+          'that declares no notifications.'
+        )
+      }
+
+      registry = resolution.dir ? await loadNotifications(resolution.dir) : sealRegistry(new Map())
+
+      // Claimed so a devtools panel, a preferences screen or a snapshot can ask
+      // what this app can send WITHOUT sending one. That is the whole reason a
+      // definition holds `via` rather than closing over a payload.
+      if (typeof app.claim === 'function') app.claim('notifications', registry)
+
       if (emailUsesMailer && !app.mail) {
         throw new Error(
           '[notifications] the email transport is configured but app.mail is not set. ' +

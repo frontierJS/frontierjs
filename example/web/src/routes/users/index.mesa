@@ -1,0 +1,266 @@
+---
+title: Users
+---
+
+<script>
+  // The roster — and the one screen in this app where the thing being
+  // administered is the account itself.
+  //
+  // Every other screen here is over a model db/schema.lite declares. This one
+  // is over @frontierjs/auth's `User`, which arrives in the schema from a
+  // package (api/src/core/db.ts) and is extended by db/user.lite. That is the
+  // whole reason it is worth having: an admin panel that can only administer
+  // the tables you wrote yourself is not one.
+  //
+  // ─── What is being demonstrated, and where it is declared ───────────────
+  //
+  // Nothing on this page decides anything. Four rules do, and all four are in
+  // the seed:
+  //
+  //   @@gate("4.4.4.5")        a caller with no session gets 401 on the list.
+  //                            A gate REFUSES.
+  //
+  //   @@allow('read', id == auth().id || auth().isStaff)
+  //                            a shopper asking for the roster gets 200 and
+  //                            ONE row — their own. A policy FILTERS, so the
+  //                            wrong answer here is an empty screen and never
+  //                            an error (Invariant 6). Measured: admin 5 rows,
+  //                            staff 5 rows, shopper 1 row, stranger 401.
+  //
+  //   @@allow('update', id == auth().id || auth().isAdmin)
+  //                            a member of staff who is not an admin editing
+  //                            somebody else gets **404**, not 403 — a refusal
+  //                            must never confirm a row exists.
+  //
+  //   role / emailVerified / isStaff  @allow('write', auth().isAdmin)
+  //                            and this is the one worth reading twice. A field
+  //                            write policy compiles to
+  //                            `SET col = CASE WHEN … THEN ? ELSE col END`, so
+  //                            a non-admin sending `isStaff: true` on their own
+  //                            row is answered **200 with the column
+  //                            unchanged**. No error, no field message. That is
+  //                            correct — the same payload is legitimate one
+  //                            level up, so refusing it would break the admin's
+  //                            form — and it is a trap, because a screen that
+  //                            says "Saved" is telling the truth about the
+  //                            request and lying about the column.
+  //
+  // `settled()` below is this screen's answer to that last one: it compares
+  // what came back against what was sent and says so when a switch did not
+  // move. It is not a permission check — `users.can()` and `isAdmin` already
+  // grey the control out — it is what catches the case where the affordance and
+  // the boundary disagree, which is the case an affordance can never cover.
+  import User, { users } from '@/resources/User.mesa'
+  import { session }     from '@/session.js'
+  import { prefs }       from '@/prefs.js'
+  import { useStore }    from '@frontierjs/sierra/junction'
+
+  import Alert          from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Avatar         from '@frontierjs/ui/components/display/Avatar.mesa'
+  import Button         from '@frontierjs/ui/components/forms/Button.mesa'
+  import Drawer         from '@frontierjs/ui/components/overlay/Drawer.mesa'
+  import Mono           from '@frontierjs/ui/components/display/Mono.mesa'
+  import Pill           from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader  from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Spinner        from '@frontierjs/ui/components/feedback/Spinner.mesa'
+  import Switch         from '@frontierjs/ui/components/forms/Switch.mesa'
+  import Table          from '@frontierjs/ui/components/display/Table.mesa'
+
+  const { get: rows, unsubscribe } = useStore(users.store)
+  $.onDestroy(unsubscribe)
+
+  $: (session.level, session.user, prefs.dense)
+
+  let error   = null
+  let note    = null
+  let loading = false
+  let busy    = null
+
+  // Who may act. `can` is the model's own gate read off the schema the browser
+  // was handed; `isAdmin` is the field policy's subject, which x-gate cannot
+  // express because it is per column rather than per model. Both are
+  // affordances — every call is graded again on arrival.
+  $: canEdit = users.can('update', session.level)
+  $: isAdmin = session.user?.isAdmin === true
+
+  const reload = () => {
+    loading = true
+    return users.load({}, { orderBy: 'email' })
+      .catch(e => { error = e.message })
+      .finally(() => { loading = false })
+  }
+  reload()
+
+  const columns = [
+    { key: 'person',   label: 'Person' },
+    { key: 'standing', label: 'Standing' },
+    { key: 'verified', label: 'Verified' },
+    { key: 'staff',    label: 'Staff' },
+    ...(canEdit ? [{ key: 'actions', label: '' }] : []),
+  ]
+
+  // Staff or shopper is `isStaff`, and it is NOT the gate ladder: both grade
+  // USER(4). `role` is auth's own column and defaults to "user" for everybody
+  // who registers, which is exactly why it cannot be the test.
+  const standing = (u) =>
+    u.role === 'admin' ? { tone: 'danger',  text: 'admin'   }
+    : u.isStaff        ? { tone: 'info',    text: 'staff'   }
+    :                    { tone: 'neutral', text: 'shopper' }
+
+  // ── The write, and the silent half of it ─────────────────────────────────
+  //
+  // `patch` answers the row as it now stands, so the value that came back is
+  // the value the database holds — not the value that was sent. Comparing them
+  // is the only thing on this page that can see a field policy declining.
+  async function set(u, field, value) {
+    error = null; note = null; busy = u.id
+    try {
+      const saved = await users.save({ id: u.id, [field]: value }, { mode: 'patch' })
+      if (saved?.[field] !== value) {
+        note = `${field} did not move. The request succeeded — the column is `
+             + `@allow('write', auth().isAdmin), so the boundary kept the value `
+             + `it had rather than refusing the whole patch.`
+      }
+      await reload()
+    } catch (e) {
+      // A member of staff who is not an admin editing somebody else lands here
+      // as a 404: the update policy filtered the row out, and a refusal that
+      // said 403 would confirm the row exists.
+      error = e.message
+    } finally { busy = null }
+  }
+
+  // ── Editing the whole row ────────────────────────────────────────────────
+  //
+  // A COPY, for the reason the customers screen states: editing the store's own
+  // row would move what this screen believes it read.
+  let editing = null
+  let draft   = null
+
+  const open  = (u) => { editing = u; draft = { ...u }; note = null }
+  const close = () => { editing = null; draft = null }
+
+  // ── Adding somebody ──────────────────────────────────────────────────────
+  //
+  // The same `<User />` form, in `create` mode. There is no second form and no
+  // field list here either: what a new account may carry is what the model says
+  // is writable, which is the whole argument for the form living on the
+  // Resource (Invariant 18).
+  //
+  // Two things this screen deliberately does not do. It does not ask for a
+  // PASSWORD — `users.service.ts` follows the create with
+  // `requestPasswordReset`, so the person sets their own and no colleague ever
+  // knows it. And it does not hide `isStaff` from a non-admin: the control is
+  // offered to everybody and the boundary refuses, which is the same shape as
+  // the roster above and the reason `x-gate` is an affordance rather than a
+  // rule. What a non-admin actually gets is a 403 from
+  // `@@allow('create', auth().isAdmin)` before any of it matters.
+  let adding = null
+
+  const openAdd  = () => { note = null; error = null; adding = users.make() }
+  const closeAdd = () => { adding = null }
+
+  async function added() {
+    closeAdd()
+    await reload()
+    note = 'Account created. They have been sent a link to set a password — '
+         + 'until they use it there is no credential, so they cannot sign in yet.'
+  }
+</script>
+
+<SectionHeader title="Users" level={1}>
+  {#snippet action()}
+    <div class="cluster" style="align-items: center; gap: .5rem">
+      <!-- An affordance. `@@allow('create', auth().isAdmin)` is what actually
+           decides, and it THROWS rather than filtering — create is the one
+           operation with no stored row to hide, so a shopper gets a 403 naming
+           the model instead of a silent nothing. -->
+      <Button id="u-add" onclick={openAdd} disabled={!isAdmin}>Add someone</Button>
+      <Button variant="outlined" onclick={reload} disabled={loading}>
+        {#if loading}<Spinner size="sm" label="Reloading" />{/if}
+        Reload
+      </Button>
+    </div>
+  {/snippet}
+</SectionHeader>
+
+<Alert tone="muted" id="u-explain">
+  This list is <code>@frontierjs/auth</code>'s <code>User</code> — a model this app
+  did not write. What you can see of it is
+  <code>@@allow('read', id == auth().id || auth().isStaff)</code>: staff read
+  everybody, a shopper reads one row, a stranger gets 401. Nothing on this screen
+  enforces that.
+</Alert>
+
+{#if error}<Alert tone="danger" id="u-error">{error}</Alert>{/if}
+{#if note}<Alert tone="warning" id="u-note">{note}</Alert>{/if}
+
+<Table {columns} rows={rows()} striped hover compact={prefs.dense}>
+  {#snippet row(u)}
+    <tr data-user={u.id}>
+      <td>
+        <div class="cluster" style="align-items: center; gap: .5rem">
+          <Avatar name={u.name || u.email} size="sm" />
+          <div class="stack-3xs">
+            <span data-name>{u.name || '—'}</span>
+            <Mono size="xs">{u.email}</Mono>
+          </div>
+        </div>
+      </td>
+      <td><Pill tone={standing(u).tone} data-standing>{standing(u).text}</Pill></td>
+      <td>
+        <Switch
+          id={'u-verified-' + u.id}
+          label="Verified"
+          checked={u.emailVerified}
+          disabled={!isAdmin || busy === u.id}
+          onchange={(on) => set(u, 'emailVerified', on)} />
+      </td>
+      <td>
+        <Switch
+          id={'u-staff-' + u.id}
+          label="Staff"
+          checked={u.isStaff === true}
+          disabled={!isAdmin || busy === u.id}
+          onchange={(on) => set(u, 'isStaff', on)} />
+      </td>
+      {#if canEdit}
+        <td>
+          <Button variant="ghost" data-edit disabled={busy === u.id} onclick={() => open(u)}>Edit</Button>
+        </td>
+      {/if}
+    </tr>
+  {/snippet}
+</Table>
+
+<Drawer open={adding !== null} title="Add someone" side="right" onclose={closeAdd}>
+  {#if adding}
+    <!-- A duplicate address comes back as a 409 whose payload is a list of
+         `{ path, message }`, which is one of the three shapes `toFieldErrors`
+         reads — so <Form> marks the email box rather than showing a banner, and
+         nothing here had to be taught the rule. -->
+    <User
+      bind:record={adding}
+      method="create"
+      submitId="u-create"
+      submitLabel="Create and send invitation"
+      oncancel={closeAdd}
+      ondone={added}
+      onerror={(e) => { error = e.message }} />
+  {/if}
+</Drawer>
+
+<Drawer open={editing !== null} title={editing ? (editing.name || editing.email) : ''} side="right" onclose={close}>
+  {#if editing}
+    <!-- The model's own form. Every writable column of `User` in schema order,
+         which is three of this app's own decisions and none of this file's. -->
+    <User
+      bind:record={draft}
+      method="patch"
+      submitId="u-save"
+      submitLabel="Save"
+      oncancel={close}
+      ondone={() => { close(); reload() }}
+      onerror={(e) => { error = e.message }} />
+  {/if}
+</Drawer>

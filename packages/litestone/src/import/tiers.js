@@ -36,12 +36,12 @@
 // changed — the emitted schema means something the source does not.
 const CHANGED = [
   'no-primary-key',           // a surrogate id invented; the real key is whatever @@unique names
-  'composite-primary-key',    // same, and it admits a second identity for the same tuple (FJS-561)
+  'composite-primary-key',    // same, and now only where the source's key has a NULLABLE member: SQLite
+                              // permits one on a rowid table and @@id refuses it, so the tuple the source
+                              // called a key admits several rows leaving it unset. A key every member of
+                              // which is required is CARRIED, in its own column order (FJS-561)
   'scale-over-9',             // an exact number became a Float — the money bug, silent
   'decimal-no-precision',     // the same, with no scale to have carried
-  'bigint',                   // → Int. The COLUMN holds 64 bits and the boundary does not:
-                              // past 2^53 the value read back is not the one written (FJS-583).
-                              // A generated key and a foreign key are exempt — see wide-int.js
   'unknown-column-type',      // → String, and the values are unknown
   'search-vector-column',     // tsvector → String; the .lite answer is @@fts, which is not a column
   'vector-column',            // → String, and no index that would make one useful
@@ -55,7 +55,10 @@ const CHANGED = [
 
 // lost — the source says something the output does not. Weaker, never wrong.
 const LOST = [
-  'partial-index',            // the predicate; a UNIQUE one is dropped whole rather than strengthened
+  'partial-index',            // the predicate. A UNIQUE one is CARRIED where the reading can express it
+                              // (FJS-603) and dropped WHOLE where it cannot — never strengthened. On an
+                              // @@index an unreadable predicate is dropped and the index only widens,
+                              // which is why one row covers both and the note says which happened
   'index-expression',
   'index-modifier',
   'index-collapsed',
@@ -109,6 +112,11 @@ const NOTED = [
   'fulltext',                 // @@fulltext → @@fts: a different search engine, the same declaration
   'arc-member-required',      // an exclusive arc emitted as a plain @@check — SQLite enforces it either way
   'unlabelled-one-to-one',    // an explicit @relation name on both sides; identical in meaning (FJS-563)
+  'bigint',                   // → Int @big. It was `changed` while the boundary narrowed the value
+                              // to a double; @big carries all 64 bits (FJS-643), so the schema now says
+                              // what the source said and what is left is a DECISION — a @big column
+                              // crosses as digits, so arithmetic on it in application code has to say
+                              // BigInt(v). A generated key and a foreign key are exempt: see wide-int.js
 
   // introspect — SQLite has five storage classes, so a column's TYPE is a
   // decision the author makes and the database cannot hold. Reported only where

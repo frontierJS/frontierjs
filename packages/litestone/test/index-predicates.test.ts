@@ -623,13 +623,15 @@ describe('an index\'s column ORDER is part of what it is (`FJS-592`)', () => {
     expect(ev?.indexes.dropped ?? []).toEqual([])
   })
 
-  it('a reordered `@@unique` is NOT this — it is a table constraint, and it migrates nothing', () => {
-    // Pinned rather than fixed. `@@unique` emits `UNIQUE ("a", "b")` inside
-    // CREATE TABLE and never reaches `indexKey`, so reordering it is invisible
-    // to the index diff — and the two orders admit exactly the same rows, so
-    // what differs is only the prefix behaviour of the implicit index SQLite
-    // builds for the constraint. Changing that costs a full table rebuild,
-    // which is a different decision from one DROP/CREATE INDEX (`FJS-596`).
+  it('a reordered `@@unique` migrates too — as a REBUILD, because it is a table constraint', () => {
+    // The sibling of the above, and the expensive half. `@@unique` emits
+    // `UNIQUE ("a", "b")` inside CREATE TABLE, so it never reaches `indexKey`
+    // and the index diff cannot see it at all; the implicit index SQLite builds
+    // for the constraint is prefix-matched like any other, so the two orders
+    // serve different queries while admitting exactly the same rows. There is
+    // no ALTER for a table constraint, so the only way to change one is to
+    // rebuild — which is why this shipped after FJS-592 rather than with it
+    // (`FJS-596`).
     const U = (cols: string) =>
       `model Ev {\n  id Int @id @default(autoincrement())\n  orgId Int\n  createdAt DateTime\n  @@unique([${cols}])\n}\n`
     expect(ddl(U('orgId, createdAt'))).toContain('UNIQUE ("orgId", "createdAt")')
@@ -638,7 +640,113 @@ describe('an index\'s column ORDER is part of what it is (`FJS-592`)', () => {
     for (const stmt of ddl(U('orgId, createdAt')).split(';').map(x => x.trim()).filter(Boolean)) live.run(stmt + ';')
     const pr = parse(U('createdAt, orgId'))
     const d  = diffSchemas(buildPristine(new Database(':memory:'), pr), introspect(live), pr)
+    const ev = d.tableDiffs.find((t: any) => t.name === 'ev')!
+
+    expect(ev.uniquesChanged).toBe(true)
+    expect(ev.needsRebuild).toBe(true)
+    expect(ev.uniques.added.map((u: any) => u.cols)).toEqual([['createdAt', 'orgId']])
+    expect(ev.uniques.dropped.map((u: any) => u.cols)).toEqual([['orgId', 'createdAt']])
+
+    // The index diff still sees nothing — which is the point. The constraint is
+    // not an index to `sqlite_master`, so this had to be read somewhere else.
+    expect(ev.indexes.added).toEqual([])
+    expect(ev.indexes.dropped).toEqual([])
+
+    const sql = generateMigrationSQL(d, pr)
+    expect(sql).toContain('DROP TABLE "ev"')
+    expect(sql).toContain('UNIQUE ("createdAt", "orgId")')
+  })
+
+  it('the same `@@unique` order still migrates nothing — the negative control', () => {
+    const U = `model Ev {\n  id Int @id @default(autoincrement())\n  orgId Int\n  createdAt DateTime\n  @@unique([orgId, createdAt])\n}\n`
+    const live = new Database(':memory:')
+    for (const stmt of ddl(U).split(';').map(x => x.trim()).filter(Boolean)) live.run(stmt + ';')
+    const pr = parse(U)
+    const d  = diffSchemas(buildPristine(new Database(':memory:'), pr), introspect(live), pr)
     expect(d.tableDiffs.find((t: any) => t.name === 'ev')).toBeUndefined()
+  })
+})
+
+// ─── Uniqueness the TABLE declares (FJS-596) ─────────────────────────────────
+//
+// The reorder above is the performance half. This is the sharp one: a `@@unique`
+// ADDED to an existing model migrated nothing, so the schema declared a
+// constraint the live table did not enforce, `UniqueConflictError` never fired,
+// and the duplicate landed. The mirror is as bad the other way — a `@@unique`
+// REMOVED left the live table refusing writes the schema allows, in SQLite's
+// own words about a table nobody named.
+//
+// Invisible for the same one reason in every case: an implicit index has NULL
+// `sql` in `sqlite_master`, which is exactly what the index read filters on.
+
+describe('a UNIQUE the table declares itself', () => {
+  const ddl = (src: string) => generateDDL(parse(src).schema)
+  const probe = (liveSrc: string, wantSrc: string) => {
+    const live = new Database(':memory:')
+    for (const stmt of ddl(liveSrc).split(';').map(x => x.trim()).filter(Boolean)) live.run(stmt + ';')
+    const pr = parse(wantSrc)
+    const d  = diffSchemas(buildPristine(new Database(':memory:'), pr), introspect(live), pr)
+    return { d, pr, ev: d.tableDiffs.find((t: any) => t.name === 'ev') as any }
+  }
+  const M = (body: string) =>
+    `model Ev {\n  id Int @id @default(autoincrement())\n  orgId Int\n  email String${body}\n}\n`
+
+  it('ADDING one rebuilds — the schema was declaring a constraint the table did not enforce', () => {
+    const { ev, d, pr } = probe(M(''), M('\n  @@unique([orgId, email])'))
+    expect(ev.needsRebuild).toBe(true)
+    expect(ev.uniques.added.map((u: any) => u.cols)).toEqual([['orgId', 'email']])
+    expect(generateMigrationSQL(d, pr)).toContain('UNIQUE ("orgId", "email")')
+  })
+
+  it('REMOVING one rebuilds — the table was refusing writes the schema allows', () => {
+    const { ev, d, pr } = probe(M('\n  @@unique([orgId, email])'), M(''))
+    expect(ev.needsRebuild).toBe(true)
+    expect(ev.uniques.dropped.map((u: any) => u.cols)).toEqual([['orgId', 'email']])
+    expect(generateMigrationSQL(d, pr)).not.toContain('UNIQUE (')
+  })
+
+  it('a column-level `@unique` is the same constraint, and is caught the same way', () => {
+    const { ev } = probe(M(''), M(' @unique'))
+    expect(ev.needsRebuild).toBe(true)
+    expect(ev.uniques.added.map((u: any) => u.cols)).toEqual([['email']])
+  })
+
+  it('and moving between the two SPELLINGS migrates nothing — the negative control', () => {
+    // `@unique` on a column and `@@unique([thatColumn])` build the same implicit
+    // index, so a schema that swaps one for the other has changed nothing about
+    // the database. Read off the pragma rather than the CREATE text, which is
+    // what makes the two compare equal.
+    const { d } = probe(M(' @unique'), M('\n  @@unique([email])'))
+    expect(d.tableDiffs).toEqual([])
+  })
+
+  it('a composite PRIMARY KEY is the third spelling of it, and its column order counts too', () => {
+    // Same pragma, same prefix-matching fact: `PRIMARY KEY (a, b)` builds an
+    // implicit index that answers `WHERE a = ?` and the swap does not. Column
+    // NAMES were already diffed; the order was not.
+    const P = (a: string, b: string) => `model Ev {\n  ${a} String @id\n  ${b} String @id\n  x Int\n}\n`
+    const live = new Database(':memory:')
+    for (const stmt of ddl(P('orgId', 'userId')).split(';').map(x => x.trim()).filter(Boolean)) live.run(stmt + ';')
+    const pr = parse(P('userId', 'orgId'))
+    const d  = diffSchemas(buildPristine(new Database(':memory:'), pr), introspect(live), pr)
+    const ev = d.tableDiffs.find((t: any) => t.name === 'ev') as any
+    expect(ev.needsRebuild).toBe(true)
+    expect(ev.uniques.added.map((u: any) => u.cols)).toEqual([['userId', 'orgId']])
+  })
+
+  it('an explicit CREATE UNIQUE INDEX is NOT read here — it belongs to the index diff', () => {
+    // `origin: 'c'` is filtered out, or an index over the same columns would be
+    // seen by both readers and each would report the other's as missing. It is
+    // also what keeps an index the APP made out of this: those are `foreign` to
+    // `diffIndexes`, which deliberately leaves them alone, and reading one here
+    // would rebuild the table to remove a constraint litestone never declared.
+    const live = new Database(':memory:')
+    live.run(`CREATE TABLE "ev" ("id" INTEGER PRIMARY KEY, "orgId" INTEGER, "email" TEXT UNIQUE);`)
+    live.run(`CREATE UNIQUE INDEX "u_ev" ON "ev" ("orgId", "email");`)
+
+    // The constraint is read; the explicit index is not.
+    expect(introspect(live).ev.uniques).toEqual([{ origin: 'u', cols: ['email'] }])
+    expect(introspect(live).ev.indexes.map((i: any) => i.name)).toEqual(['u_ev'])
   })
 })
 
@@ -702,10 +810,32 @@ describe('litestone import — the predicate survives', () => {
     expect(r.gaps.find((g: any) => g.kind === 'partial-index').emitted).toMatch(/without the predicate/)
   })
 
-  it('still refuses a partial UNIQUE — the half that was always right', () => {
+  // FJS-603 turned this one round: a partial unique is CARRIED now, because
+  // `@@unique(where:)` exists to hold it.
+  it('carries a partial UNIQUE, which it used to drop whole', () => {
+    const r = imported([`CREATE UNIQUE INDEX u ON notes (kind) WHERE deleted_at IS NULL;`])
+    expect(r.lite).toMatch(/@@unique\(\[kind\], where: deletedAt == null\)/)
+    expect(r.gaps.find((g: any) => g.kind === 'partial-index').emitted).toMatch(/carried whole/)
+  })
+
+  // …and the value form, which is the grammar the two attributes do not share:
+  // a partial INDEX over a bound value is refused at parse, so this reading is
+  // asked for on the unique path alone.
+  it('carries a value comparison on a unique and never on an index', () => {
+    const u = imported([`CREATE UNIQUE INDEX u ON notes (kind) WHERE status = 'active';`])
+    expect(u.lite).toMatch(/@@unique\(\[kind\], where: status == "active"\)/)
+    const i = imported([`CREATE INDEX i ON notes (kind) WHERE status = 'active';`])
+    expect(i.lite).toMatch(/@@index\(\[kind\]\)/)
+    expect(i.gaps.find((g: any) => g.kind === 'partial-index').emitted).toMatch(/without the predicate/)
+  })
+
+  // The one it still drops, and the reason is the round trip: a nullable member
+  // needs `nullsDistinct: true`, a predicate excludes it, and emitting both is
+  // a schema this parser refuses (FJS-594).
+  it('drops a partial unique whose tuple has a nullable member, rather than writing one that will not parse', () => {
     const r = imported([`CREATE UNIQUE INDEX u ON notes (email, kind) WHERE deleted_at IS NULL;`])
     expect(r.lite).not.toMatch(/@@unique/)
-    expect(r.gaps.find((g: any) => g.kind === 'partial-index').emitted).toMatch(/DROPPED/)
+    expect(r.gaps.find((g: any) => g.kind === 'partial-index').emitted).toMatch(/nullsDistinct, which a predicate excludes/)
   })
 
   it('and what it emits parses', () => {
@@ -735,5 +865,263 @@ describe('litestone import — the predicate survives', () => {
       const b = (imported([pg]).lite.match(/@@index\(.*\)/) ?? [''])[0]
       expect(b).toBe(a)
     }
+  })
+})
+
+// ─── @@unique(where:) — conditional uniqueness (FJS-603) ─────────────────────
+//
+// `@@unique([planId], where: effectiveTo == null)` — at most one OPEN row per
+// parent, which is the constraint effective dating is built on and which three
+// models in `example` declared the exact opposite of, because `nullsDistinct:
+// true` was the only argument the attribute took.
+//
+// One word, two node kinds. A plain `@@unique` rides inside CREATE TABLE; a
+// predicate cannot, so this is a standalone CREATE UNIQUE INDEX. Most of the
+// assertions below are about that split being real rather than cosmetic.
+//
+// The load-bearing one is `the soft-delete clause is NOT ANDed in`. On an
+// @@index the AND is an optimisation; on a UNIQUE index the predicate IS the
+// constraint, and ANDing it is FJS-204's rejected derivation arriving through
+// the back door — the deleted row stops holding its @unique slot.
+
+describe('@@unique(where:) — what it parses to', () => {
+  const one = (src: string) => parse(`model W {
+    id Int @id @default(autoincrement())
+    employeeId Int
+    rate Int
+    status String @default("active")
+    effectiveTo DateTime?
+    ${src}
+  }`)
+
+  it('a predicate makes it a DIFFERENT node kind from a plain @@unique', () => {
+    const a = one('@@unique([employeeId])').schema.models[0].attributes.find((x: any) => x.kind === 'uniqueIndex')
+    const b = one('@@unique([employeeId], where: effectiveTo == null)').schema.models[0]
+      .attributes.find((x: any) => x.kind === 'partialUnique')
+    expect(a).toBeTruthy()
+    expect(b).toBeTruthy()
+    // Which is what keeps the table emitter correct without being edited.
+    expect(b.whereSql).toBe('"effectiveTo" IS NULL')
+  })
+
+  it('emits a standalone CREATE UNIQUE INDEX and nothing inside the table', () => {
+    const ddl = generateDDL(one('@@unique([employeeId], where: effectiveTo == null)').schema)
+    expect(ddl).toContain('CREATE UNIQUE INDEX IF NOT EXISTS "idx_w_employeeId" ON "w" ("employeeId") WHERE "effectiveTo" IS NULL;')
+    expect(ddl).not.toContain('UNIQUE ("employeeId")')
+  })
+
+  // The record this was built from claimed the value comparison could simply be
+  // allowed, on the grounds that enforcement never goes through the planner.
+  // Half right: SQLite refuses a BOUND PARAMETER in a partial index predicate
+  // whether or not it is unique, and litestone binds every value it compiles.
+  // Measured — `parameters prohibited in partial index WHERE clauses`, at
+  // migration time, naming a table the author is no longer looking at.
+  it('inlines the literals a value comparison compiles to, because SQLite refuses a parameter', () => {
+    const r = one('@@unique([employeeId], where: status == "active")')
+    expect(r.errors).toEqual([])
+    const a = r.schema.models[0].attributes.find((x: any) => x.kind === 'partialUnique')
+    expect(a.whereSql).toBe(`"status" = 'active'`)
+    expect(a.whereSql).not.toContain('?')
+    // …and the DDL SQLite is handed actually builds.
+    const db = new Database(':memory:')
+    apply(db, generateDDL(r.schema))
+    expect(idxSql(db, 'idx_w_employeeId')).toContain(`WHERE "status" = 'active'`)
+  })
+
+  it('accepts a comparison @@index(where:) refuses, and for the reason the two differ', () => {
+    // On @@index this is refused: the planner cannot prove a query implies it.
+    // A unique index is enforced on INSERT and never consults the planner.
+    expect(one('@@index([employeeId], where: status == "active")').errors.length).toBe(1)
+    expect(one('@@unique([employeeId], where: status == "active")').errors).toEqual([])
+  })
+
+  it('refuses `where` and `nullsDistinct` together', () => {
+    const r = one('@@unique([employeeId], where: effectiveTo == null, nullsDistinct: true)')
+    expect(r.valid).toBe(false)
+  })
+
+  it('refuses now() by name, because SQLite ACCEPTS a clock there', () => {
+    const r = one('@@unique([employeeId], where: effectiveTo > now())')
+    expect(r.errors.join(' ')).toContain('now()')
+    expect(r.errors.join(' ')).toContain('never moved')
+  })
+
+  it('refuses auth(), a column of another model, and a subquery', () => {
+    expect(one('@@unique([employeeId], where: rate == auth().rate)').errors.length).toBe(1)
+    expect(one('@@unique([employeeId], where: nope == null)').errors.join(' ')).toContain('not a column')
+  })
+
+  it('collides with an @@index over the same columns, and says which two', () => {
+    const r = one('@@index([employeeId])\n    @@unique([employeeId], where: effectiveTo == null)')
+    expect(r.errors.join(' ')).toContain('idx_<table>_employeeId')
+    expect(r.errors.join(' ')).toContain('@@index([employeeId]) and @@unique([employeeId])')
+  })
+
+  it('the nullable-member refusal now offers the predicate as the third answer', () => {
+    const r = parse(`model W {
+      id Int @id
+      planId Int
+      effectiveTo DateTime?
+      @@unique([planId, effectiveTo])
+    }`)
+    const msg = r.errors.join(' ')
+    expect(msg).toContain('nullsDistinct: true')
+    // …and the column list is CHANGED in the suggestion, which is the whole of
+    // what separates the two answers: the nullable column moves into the
+    // predicate rather than staying in the tuple.
+    expect(msg).toContain('@@unique([planId], where: effectiveTo == null)')
+  })
+})
+
+describe('@@unique(where:) — against a real database', () => {
+  const SRC = (extra = '') => `model PayWindow {
+    id Int @id @default(autoincrement())
+    employeeId Int
+    rate Int
+    effectiveTo DateTime?
+    ${extra}
+    @@unique([employeeId], where: effectiveTo == null)
+  }`
+
+  it('accepts every row OUTSIDE the predicate and refuses the second one inside it', async () => {
+    const db: any = await createClient({ schema: SRC(), db: ':memory:' })
+    const mk = (e: number, to: string | null) => db.payWindow.create({ data: { employeeId: e, rate: 1, effectiveTo: to } })
+
+    // Three CLOSED windows for one employee — the rows a plain @@unique would
+    // have refused, and the reason a predicate is what this shape needs.
+    await mk(1, '2020-01-01T00:00:00.000Z')
+    await mk(1, '2021-01-01T00:00:00.000Z')
+    await mk(1, '2022-01-01T00:00:00.000Z')
+    expect(await db.payWindow.count({ where: { employeeId: 1 } })).toBe(3)
+
+    await mk(1, null)                                   // one open window: fine
+    await expect(mk(1, null)).rejects.toThrow(/already taken/i)   // a second: not
+    await mk(2, null)                                   // another employee: fine
+    expect(await db.payWindow.count({ where: { effectiveTo: null } })).toBe(2)
+    db.$close()
+  })
+
+  // The line this feature turns on. Asserted against the emitted TEXT, because
+  // nothing else can see it: the constraint behaves identically either way
+  // until a row is soft-deleted, and then it behaves like FJS-204 reversed.
+  it('does NOT get @@softDelete\'s clause ANDed in, where @@index does', () => {
+    const ddl = generateDDL(parse(SRC('deletedAt DateTime?\n    @@softDelete')).schema)
+    const line = ddl.split('\n').find(l => l.includes('CREATE UNIQUE INDEX')) ?? ''
+    expect(line).toContain('WHERE "effectiveTo" IS NULL')
+    expect(line).not.toContain('deletedAt')
+
+    // The control, one attribute along: an @@index on the same model DOES.
+    const both = generateDDL(parse(`model N {
+      id Int @id
+      kind String
+      deletedAt DateTime?
+      @@index([kind], where: kind != null)
+      @@softDelete
+    }`).schema)
+    expect(both.split('\n').find(l => l.includes('CREATE INDEX'))).toContain('deletedAt')
+  })
+})
+
+describe('@@unique(where:) — the migrator', () => {
+  const SRC = (pred: string) => `model PayWindow {
+    id Int @id @default(autoincrement())
+    employeeId Int
+    rate Int
+    effectiveTo DateTime?
+    @@unique([employeeId], where: ${pred})
+  }`
+
+  const liveFrom = (pred: string) => {
+    const db = new Database(':memory:')
+    apply(db, generateDDL(parse(SRC(pred)).schema))
+    return { db, live: introspect(db) }
+  }
+  const planAgainst = (live: any, pred: string) => {
+    const pr = parse(SRC(pred))
+    return diffSchemas(buildPristine(new Database(':memory:'), pr), live, pr)
+  }
+
+  it('an unchanged predicate migrates nothing', () => {
+    const { live } = liveFrom('effectiveTo == null')
+    expect(planAgainst(live, 'effectiveTo == null').tableDiffs).toEqual([])
+  })
+
+  // The cost is the reason the node kinds are split: a table constraint can
+  // only change by rebuilding the table, and this changes by swapping an index.
+  it('an edited predicate is one DROP and one CREATE, never a rebuild', () => {
+    const { live } = liveFrom('effectiveTo == null')
+    const d: any = planAgainst(live, 'effectiveTo != null')
+    expect(d.tableDiffs.length).toBe(1)
+    expect(d.tableDiffs[0].needsRebuild).toBe(false)
+    expect(d.tableDiffs[0].indexes.added.length).toBe(1)
+    expect(d.tableDiffs[0].indexes.dropped.length).toBe(1)
+    expect(d.tableDiffs[0].indexes.added[0].unique).toBe(true)
+    expect(d.tableDiffs[0].indexes.added[0].where).toContain('IS NOT NULL')
+  })
+
+  it('is read back as an index and never as a table constraint', () => {
+    const { db } = liveFrom('effectiveTo == null')
+    const rows = db.prepare(`PRAGMA index_list("pay_window")`).all() as any[]
+    const ours = rows.find(r => r.name === 'idx_pay_window_employeeId')
+    // origin 'c' — an explicit CREATE INDEX, which is what puts it in the index
+    // diff rather than in `tableUniques`, with no edit to either.
+    expect(ours).toMatchObject({ unique: 1, origin: 'c', partial: 1 })
+  })
+})
+
+import { deriveReleaseSurface, classifyPivot } from '../src/release.js'
+
+describe('@@unique(where:) — the deploy gate (release.js)', () => {
+  const SRC = (attr: string) => `model W {
+    id Int @id
+    employeeId Int
+    effectiveTo DateTime?
+    ${attr}
+  }`
+  const grade = (before: string, after: string) => {
+    const b = deriveReleaseSurface(parse(SRC(before)).schema)
+    const a = deriveReleaseSurface(parse(SRC(after)).schema)
+    return classifyPivot(b, a)
+  }
+
+  // The correctness hole this had to close: keyed on the column list alone, a
+  // narrowed or widened predicate graded as no change at all.
+  it('gaining a predicate is an EXPAND — the constraint now covers fewer rows', () => {
+    const r = grade('@@unique([employeeId])', '@@unique([employeeId], where: effectiveTo == null)')
+    expect(r.verdict).toBe('expand')
+    expect(JSON.stringify(r.findings)).toContain('gained a predicate')
+  })
+
+  it('losing one is a CONTRACT — N-1 writes rows the new constraint refuses', () => {
+    const r = grade('@@unique([employeeId], where: effectiveTo == null)', '@@unique([employeeId])')
+    expect(r.verdict).toBe('contract')
+  })
+
+  // Deliberately not decided: whether one predicate implies the other is
+  // implication between two SQL expressions, and answering it with a text
+  // comparison would be a deploy verdict made by a regex.
+  it('a predicate moving between two non-empty ones is UNKNOWN, not a guess', () => {
+    const r = grade('@@unique([employeeId], where: effectiveTo == null)',
+                    '@@unique([employeeId], where: effectiveTo != null)')
+    expect(r.verdict).toBe('unknown')           // its own word, and it ranks with contract
+    expect(JSON.stringify(r.findings)).toContain('implication between two SQL expressions')
+  })
+
+  it('adding one where there was none is still a contract, like any new @@unique', () => {
+    expect(grade('', '@@unique([employeeId], where: effectiveTo == null)').verdict).toBe('contract')
+  })
+})
+
+describe('@@unique(where:) — what it deliberately does NOT satisfy', () => {
+  // A one-to-one needs the far side to hold at most one row PER PARENT, always.
+  // A constraint that holds over only some rows does not say that, and the node
+  // kind is what makes the check correct without being taught anything.
+  it('does not make a relation one-to-one', () => {
+    const r = parse(`
+      model A { id Int @id  b B? }
+      model B { id Int @id  aId Int  a A @relation(fields: [aId], references: [id])  live Boolean
+        @@unique([aId], where: live == true) }
+    `)
+    expect(r.errors.join(' ')).toContain('is not unique')
   })
 })

@@ -494,6 +494,7 @@ await db.post.update({ where: { id: 1 }, data: {
 | --- | --- |
 | `increment` `decrement` `multiply` `divide` | `Int` `Float` `BigInt` `Decimal` |
 | `push` | any array column — `String[]`, `Int[]`, an enum array |
+| `$merge` | any `Json` column — see below |
 
 **The declared type decides.** `{ addr: { city: 'x' } }` on a `Json @type(Addr)`
 column is still a value, because that column can carry an object; the same shape
@@ -510,4 +511,59 @@ rather than guessed at, including:
   the new value is computed inside SQLite where no validator can see it, and a
   validator that quietly stops applying is worse than one that says it cannot.
   Read the row, change it and write it back; that path validates.
+
+#### `$merge` — changing one key of a document
+
+```js
+await db.account.update({ where: { id }, data: {
+  settings: { $merge: { commute: { source: 'bus' } } },   // json_patch(settings, ?)
+} })
+```
+
+**It wears a `$` and the others do not.** The rule above — *the declared type
+decides* — is what makes a bare `increment` safe, because a numeric column
+cannot hold an object. A `Json` column can, so a document's own key could be
+spelled `merge` and there would be no way to tell. (That ambiguity is also why
+`{ doc: { increment: 1 } }` on a `Json` column stores `{"increment":1}` as the
+document, which is correct and is a trap.)
+
+It is RFC 7396 merge-patch, so three of its rules are worth knowing before you
+reach for it:
+
+| the patch holds | what happens |
+| --- | --- |
+| `null` | **deletes the key** — not *sets it to null* |
+| an array | replaces it whole; there is no element merge and no path-push |
+| an object, target absent | **replaces** rather than merges |
+
+**A `Json @type(T)` column grades the patch; a plain `Json` column has nothing
+to grade.** An undescribed column declares no shape, so no merge can break it.
+A described one is checked key by key against the type's own rules, and a `null`
+on a key the type requires is refused by name.
+
+The third row of that table is the one that decides how a described patch is
+graded, and it is not obvious. Because `json_patch` REPLACES an absent or null
+target, a patch aimed at something optional is a **create** however partial it
+looks — so the required keys of that type are not optional after all:
+
+```js
+// commute is `Json? @type(Commute)`, and Commute requires source AND minutes
+{ typ: { $merge: { commute: { source: 'car' } } } }
+// → commute.minutes: is required — the value being merged into may not be
+//   there, and json_patch replaces rather than merges when it is absent, so
+//   this write creates a whole Commute and needs every required key
+```
+
+A **required** field is present in every valid parent, so a patch into it really
+is partial and absent keys keep their stored value. The whole rule is decidable
+from the schema, which is what lets the operator keep the property it exists
+for: it never reads the row.
+
+The same applies one level up — a `Json? @type(T)` **column** may stand at
+`null`, so its patch is graded as a create; a `Json @type(T)` column cannot, so
+its patch is partial.
+
+`$merge` is refused on an `@encrypted` or `@secret` column: what is stored there
+is ciphertext, and patching that produces something that is neither.
+
 Bulk ops (`createMany`, `updateMany`, `upsertMany`, `removeMany`, `deleteMany`) return `{ count }` only — no row data. This is intentional: `RETURNING *` on thousands of rows negates the performance reason for bulk ops. Use `$transaction` + single-row ops when you need the modified rows.

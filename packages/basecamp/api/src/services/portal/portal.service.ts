@@ -2,6 +2,12 @@
 // Window into every provider this app speaks to.
 // Shows which adapters are wired, which are stubs, and live health status.
 //
+// **Ten, and they are two kinds.** Eight are self-hosted appliances an operator
+// installs and points a URL at; `edge` and `cloudSpend` are somebody else's
+// service reached with a token. `hosted` is what separates them, and it is here
+// rather than on the screen because *unconfigured* means different work for
+// each — install and set a URL, against open an account and hold a key.
+//
 // GET  /portal      → find (all adapters, no live pings — fast)
 // GET  /portal/:id  → get  (one adapter, with live ping)
 // POST /portal/:id  → ping (force health check, admin only) — dispatched
@@ -22,6 +28,7 @@ export interface PortalEntry {
   url:         string | null
   adapter:     string
   configured:  boolean
+  hosted:      boolean
   checked_at:  number
 }
 
@@ -33,6 +40,10 @@ const SERVICES: Array<{
   description: string
   config_key:  string
   ui_port?:    number
+  /** Installed here, or somebody else's account. Absent means self-hosted —
+   *  the eight that were here first, where a `ui_port` is a screen an operator
+   *  can open. A hosted one has neither. */
+  hosted?:     boolean
 }> = [
   { id: 'secrets',       name: 'Infisical',  description: 'Secrets management',              config_key: 'providers.secrets.url',               ui_port: 8080 },
   { id: 'flags',         name: 'Unleash',    description: 'Feature flags',                   config_key: 'providers.flags.url',                 ui_port: 4242 },
@@ -42,6 +53,12 @@ const SERVICES: Array<{
   { id: 'observability', name: 'Grafana',    description: 'Metrics, logs & traces',          config_key: 'providers.observability.grafana_url', ui_port: 3030 },
   { id: 'networking',    name: 'NetBird',    description: 'Private mesh networking',         config_key: 'providers.networking.url',            ui_port: 80   },
   { id: 'integrations',  name: 'Nango',      description: '3rd-party OAuth & integrations',  config_key: 'providers.integrations.nango_url',    ui_port: 3003 },
+
+  // Hosted. No `ui_port` — there is no screen on this machine to open, and the
+  // config key is a token rather than a URL, which is why `url` reads null for
+  // both of these even once they are wired.
+  { id: 'edge',          name: 'Edge & DNS', description: 'Zones, records, TLS at the edge', config_key: 'providers.edge.api_token',         hosted: true },
+  { id: 'cloudSpend',    name: 'Cloud spend', description: 'What the provider is billing',   config_key: 'providers.cloud_spend.api_token',  hosted: true },
 ]
 
 /**
@@ -85,6 +102,7 @@ function buildEntry(svc: typeof SERVICES[0], adapter: unknown, status: ServiceSt
     url:         getConfigValue(config, svc.config_key) ?? null,
     adapter:     (adapter as { constructor?: { name?: string } })?.constructor?.name ?? 'unknown',
     configured:  !isStub(adapter),
+    hosted:      svc.hosted ?? false,
     checked_at:  Date.now(),
   }
 }

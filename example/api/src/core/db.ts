@@ -1,14 +1,11 @@
-// api/db.ts — the Data realm, wired once.
+// api/src/core/db.ts — the Data realm, wired once.
 //
 // Three things happen here and nowhere else: the schema is assembled, the gate
 // resolver is installed, and the tables are created.
 
-import { readFileSync } from 'node:fs'
 import { join }         from 'node:path'
 
 import { createTenantRegistry, autoMigrate, GatePlugin, FileStorage } from '@frontierjs/litestone'
-import { authSchemaFragments }                   from '@frontierjs/auth'
-import { outboxSchemaFragment }                  from '@frontierjs/junction'
 
 import { shopGateLevel } from './gate.ts'
 
@@ -16,41 +13,33 @@ const HERE = import.meta.dir
 
 // ─── The schema ───────────────────────────────────────────────────────────
 //
-// db/schema.lite is the app. The four auth models are APPENDED from auth's own
-// exported fragments rather than pasted into the file, so there is one copy of
-// them in the repo. Two consequences worth knowing:
+// **db/schema.lite is the whole of it, and this file assembles nothing**
+// (`FJS-626`). It used to append auth's fragments, junction's outbox model and
+// db/user.lite in memory, which meant the app ran a schema no tool could read:
+// every one of them takes a PATH, so `access.snapshot.md`,
+// `release.snapshot.md`, `ddl.snapshot.sql` and `jsonschema.snapshot.md` each
+// described 32 models while 39 ran. The seven missing were `User`, `Credential`,
+// `Session`, `Verification`, `OauthFlow`, `OutboxMessage` and the audit trail —
+// the identity model and the credential store, in the one artefact whose whole
+// job is *who may do what*. The `snapshots` CI phase passed throughout, because
+// it re-runs the same command from the same directory and gets the same
+// incomplete answer.
 //
-//   · The browser build reads db/schema.lite from disk and therefore never
-//     sees User / Credential / Session / Verification. That is correct — the
-//     three credential models are @@gate("8"), and User reads at USER(4),
-//     which is still above anything a public page may publish.
-//   · `fli auth:install` writes them to disk instead — User appended into
-//     db/schema.lite, the three @@gate("8") models into db/auth.lite, imported.
-//     Same bytes, both ways: auth ships them as .lite and schema.ts reads them.
-//     This file is the in-memory alternative, for an app assembling one string.
+// The deploy gate is what made it worth fixing rather than documenting:
+// `release:check` compares release SURFACES, so a contract on `Session` was in
+// neither and graded expand.
+//
+// The models now arrive the way `fli auth:install` and `fli outbox:install`
+// write them — `User` pasted into schema.lite because an app owns that one, the
+// rest `import`ed so a package upgrade reaches this app. `parseFile` resolves an
+// import and every reader uses it, so the browser build gets them too, which is
+// what let db/user.lite become an ordinary `import "./user.lite"` rather than a
+// third string concatenated here.
 
-// The FILE, kept beside the string it was read from. It is what every relative
-// `database { path }` and the `tenancy { }` block resolve against once
-// `resolveFrom: 'schema'` is stated below — a schema assembled in memory has no
-// location, so this is the location (`FJS-449`).
+// The FILE. It is what every relative `database { path }` and the `tenancy { }`
+// block resolve against once `resolveFrom: 'schema'` is stated below, and it is
+// now also where the schema itself comes from (`FJS-449`).
 export const SCHEMA_FILE = join(HERE, '../../../db/schema.lite')
-
-export const appSchema = readFileSync(SCHEMA_FILE, 'utf8')
-
-// OutboxMessage arrives the same way and for the same reason — it is
-// @@gate("8") framework machinery that changes when @frontierjs/junction does,
-// so there is one copy of it in the repo. `fli outbox:install` writes an
-// `import` line into db/schema.lite instead; both read the same shipped bytes.
-// What the shop says about a model auth ships. It is a separate file and it is
-// NOT imported by db/schema.lite, because that file is read by the browser
-// build ALONE — no auth fragments — where `extend model User` is refused by
-// name and takes the whole schema registry down with it. This is the one place
-// both halves exist. See db/user.lite.
-export const userExtension = readFileSync(join(HERE, '../../../db/user.lite'), 'utf8')
-
-export const fullSchema = appSchema + '\n' + authSchemaFragments('main')
-                                    + '\n' + outboxSchemaFragment('main')
-                                    + '\n' + userExtension
 
 // ─── The client ───────────────────────────────────────────────────────────
 //
@@ -64,7 +53,10 @@ export const fullSchema = appSchema + '\n' + authSchemaFragments('main')
 // createClient rejects it with "must be 32 bytes (got 1)".
 export const DEV_KEY = 'deadbeef'.repeat(8)
 
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ?? DEV_KEY
+// Exported for the same reason `APP_CLAIMS` is: a drive building its own client
+// off this schema gets `@frontierjs/auth`'s `@encrypted` columns with it, so it
+// needs the key the app is using rather than one of its own.
+export const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ?? DEV_KEY
 
 if (!process.env.ENCRYPTION_KEY) {
   console.warn(
@@ -112,8 +104,25 @@ export const STORAGE_BASE = process.env.STORAGE_BASE ?? `http://localhost:${proc
 //
 // The CLI reads the file and gets the same two paths. That is the point: one
 // answer, whoever is asking.
+/**
+ * The claims this app's principal carries that no schema can name.
+ *
+ * `cartToken` is a capability a caller with NO SESSION holds, resolved per
+ * request off a declared header — on no row and in no schema, so it is the one
+ * claim `@@auth User` cannot answer for. Declared, `auth().cartToken` is graded
+ * like any column; undeclared, a misspelling of it denies every basket read and
+ * admits every basket write (`FJS-666`).
+ *
+ * Exported because a drive that builds its own client off this schema has to
+ * state the same list, and two copies of it is how one of them goes stale. The
+ * same names are what `api/principal.snapshot.md` § Claims records.
+ */
+export const APP_CLAIMS = ['cartToken']
+
 const registry = await createTenantRegistry({
-  schema:        fullSchema,
+  // No `schema:`. Handed the path alone, litestone reads it with `parseFile`,
+  // which resolves the imports — which is the whole of what makes the committed
+  // artefacts describe the schema that runs.
   path:          SCHEMA_FILE,
   encryptionKey: ENCRYPTION_KEY,
 
@@ -128,6 +137,8 @@ const registry = await createTenantRegistry({
     // read from the app root.
     path:        SCHEMA_FILE,
     resolveFrom: 'schema',
+
+    claims: APP_CLAIMS,
 
     plugins: [
       new GatePlugin({ getLevel: shopGateLevel }),

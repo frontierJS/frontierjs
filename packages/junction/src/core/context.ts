@@ -129,6 +129,38 @@ export interface ServiceContext {
    */
   reserved: Record<string, unknown>
 
+  /**
+   * The columns THIS APPLICATION is supplying on this call's write — the
+   * `@system` half of a payload.
+   *
+   * A `@system` column reads like any other and is written by the application
+   * rather than by the person using it, so the Data boundary refuses one that a
+   * caller's payload names. A hook that DERIVES such a column — a slot mirror
+   * rebuilt from the shape a shop declared, a code a job books — was therefore
+   * refused for writing it, because a hook shapes `ctx.data` and the write
+   * happens downstream on the caller's own client (`FJS-644`).
+   *
+   *   ctx.system.add('slots')
+   *
+   * The derived `create`/`update`/`patch` pass the set to litestone as
+   * `system: [...]`, which keeps the gate, the row policies, soft-delete and the
+   * audit actor — where `asSystem()` would drop all four to write one column.
+   *
+   * **A Set that hooks ADD to, never a list one hook assigns**: `before.all` and
+   * `validated.create` each legitimately derive their own column, and an
+   * assignment from the second silently drops the first's — which is the same
+   * class of silent loss this seam exists to fix. `readonly` so that is a
+   * compile error rather than a measurement.
+   *
+   * Naming the field IS the statement, exactly as it is at the boundary: this
+   * widens what one call may write and may not do so silently. It says nothing
+   * about `@guarded`, which is a system-context lock in both directions and has
+   * no hatch by design.
+   *
+   * FRESH every call and does NOT propagate, on the same terms as locals.
+   */
+  readonly system: Set<string>
+
   // ── app reference ─────────────────────────────────────────────────────
   app: import('./app.ts').App
 
@@ -232,13 +264,18 @@ export interface ServiceContext {
  * literal is still checked against every other field it owes.
  */
 export function withCallEffects(
-  base: Omit<ServiceContext, 'afterCommit' | '_afterCommit' | 'enqueue' | '_outbox'>
+  base: Omit<ServiceContext, 'afterCommit' | '_afterCommit' | 'enqueue' | '_outbox' | 'system'>
 ): ServiceContext {
   const queued: Array<() => void | Promise<void>> = []
   const ctx = base as ServiceContext
   ctx._afterCommit = queued
   ctx.afterCommit  = (fn) => { queued.push(fn) }
   ctx.enqueue = (job, payload, opts) => enqueueOutbox(ctx, job, payload, opts)
+  // Here rather than in the three builders, because callService calls this for
+  // any context that arrived without it — a hand-built one in a test can run a
+  // hook that names a system column too, and a missing set is a 403 the test
+  // reports as the hook being wrong.
+  ;(ctx as { system: Set<string> }).system = new Set()
   return ctx
 }
 
@@ -536,6 +573,25 @@ export type CallContext = ServiceContext & {
    * statement about WHEN the value is read and none at all about what it is.
    */
   readonly config: import('../config/index.ts').AppConfig
+
+  /**
+   * The app's logger, already told which call it is inside.
+   *
+   * `app.logger.child('orders.pay', { correlationId, userId, tenantId })` —
+   * namespaced by service and method, with the request's own id on every line
+   * it writes. The bound context is the whole of it: a log line that cannot be
+   * joined to the request that produced it is a line nobody can act on, and
+   * every framework that has solved this solved it exactly here (Adonis's
+   * `ctx.logger`, Laravel's `Log::withContext`, Rails' `log_tags`,
+   * django-structlog, nestjs-pino). Junction already opened the store — the
+   * correlation id has been on `RequestMeta` the whole time — and nothing read
+   * it into a log entry.
+   *
+   * Memoised per call, because a `child()` per read allocates a logger for
+   * every line. Read `app.logger` directly for anything not inside a call; the
+   * two coexist and the module-scope one is correct and unbound.
+   */
+  readonly log: import('./logger.ts').ILogger
 }
 
 function held(key: string | symbol): ServiceContext {
@@ -569,6 +625,47 @@ const NOT_WRITABLE = (key: string | symbol) =>
   `${[...WRITABLE].join(', ')} — everything else is a view of the call, not a ` +
   `place to keep state: use $.locals for one call, or app.claim() for the app.`
 
+// Derived accessors: reachable by name, absent from the context's own keys.
+// Enumerating one makes a spread EVALUATE it, and `$.db` on an app with no
+// Litestone client throws — so `{ ...$ }` became the error it was reporting.
+// One set, because three trap implementations have to agree about the list.
+const DERIVED = new Set(['db', 'me', 'config', 'log'])
+
+// ─── callLogger ───────────────────────────────────────────────────────────
+// The child logger for one call, made once and kept on the context.
+//
+// A symbol rather than a `locals` key: `locals` is the app's scratch space and
+// a framework value sitting in it is a name an app can collide with. The cache
+// is per CONTEXT, so a nested call gets its own — which is right, because the
+// namespace is that call's service and method.
+const LOGGER = Symbol.for('junction.call.logger')
+
+function callLogger(ctx: ServiceContext): import('./logger.ts').ILogger {
+  const held = ctx as unknown as Record<symbol, unknown>
+  if (held[LOGGER]) return held[LOGGER] as import('./logger.ts').ILogger
+
+  const app = (ctx as { app?: { logger?: import('./logger.ts').ILogger } }).app
+  if (!app?.logger) throw new Error(
+    `[Junction] '$.log' — this call has no app on it. A hand-built context passed ` +
+    `to a method directly carries no app; call through app.service(name), or use ` +
+    `the logger you built the app with.`
+  )
+
+  const meta = _requestStore.getStore()
+  // Only what is actually known. A key whose value is undefined reads as a
+  // stated absence on every line, which is noise on the internal calls that
+  // legitimately have no tenant and no principal.
+  const bound: Record<string, unknown> = {}
+  if (meta?.correlationId)        bound.correlationId = meta.correlationId
+  if (ctx.auth?.user?.userId)     bound.userId        = ctx.auth.user.userId
+  if (ctx.locals?.tenantId)       bound.tenantId      = ctx.locals.tenantId
+
+  const ns  = ctx.service ? `${ctx.service}.${ctx.method ?? '?'}` : 'call'
+  const log = app.logger.child(ns, bound)
+  Object.defineProperty(ctx, LOGGER, { value: log, enumerable: false, configurable: true })
+  return log
+}
+
 export const $: CallContext = new Proxy({} as CallContext, {
   get(_t, key) {
     // A context is not a promise. Left to fall through, `await $` and every
@@ -592,6 +689,7 @@ export const $: CallContext = new Proxy({} as CallContext, {
       )
       return app.configFor(held(key).locals?.tenantId ?? null)
     }
+    if (key === 'log') return callLogger(held(key))
     // Symbols are protocol, not data — inspection and toString must not throw
     // outside a call, or a logger printing `$` becomes the error.
     if (typeof key === 'symbol') return _callStore.getStore()?.[key as never]
@@ -599,6 +697,14 @@ export const $: CallContext = new Proxy({} as CallContext, {
   },
 
   set(_t, key, value) {
+    // Named rather than left to NOT_WRITABLE, whose advice — keep it in
+    // $.locals — is wrong here: the set exists and is the right place, it is
+    // just added to rather than replaced.
+    if (key === 'system') throw new Error(
+      `[Junction] '$.system' cannot be assigned — it is a Set two hooks may each ` +
+      `add to, and an assignment drops what the other named. Use ` +
+      `$.system.add(field) instead.`
+    )
     if (typeof key === 'string' && WRITABLE.has(key)) {
       (held(key) as unknown as Record<string, unknown>)[key] = value
       return true
@@ -609,14 +715,14 @@ export const $: CallContext = new Proxy({} as CallContext, {
   deleteProperty(_t, key) { throw new Error(NOT_WRITABLE(key)) },
 
   has(_t, key) {
-    if (key === 'db' || key === 'me' || key === 'config') return true
+    if (DERIVED.has(key as string)) return true
     return key in held(key)
   },
 
   // Destructuring, spread and Object.keys() go through these, and they answer
   // the CONTEXT's own keys only.
   //
-  // `db`, `me` and `config` are deliberately absent: they are derived accessors,
+  // The DERIVED set is deliberately absent: they are accessors rather than data,
   // not data, and enumerating them makes a spread EVALUATE them — so `{ ...$ }`
   // on an app with no Litestone client threw the "no client on ctx.locals.db"
   // error from inside a spread that never asked for a db. They stay reachable
@@ -628,7 +734,7 @@ export const $: CallContext = new Proxy({} as CallContext, {
     return Reflect.ownKeys(held('ownKeys'))
   },
   getOwnPropertyDescriptor(_t, key) {
-    if (key === 'db' || key === 'me' || key === 'config') return undefined
+    if (DERIVED.has(key as string)) return undefined
     const d = Reflect.getOwnPropertyDescriptor(held(key), key)
     return d ? { ...d, configurable: true } : undefined
   },

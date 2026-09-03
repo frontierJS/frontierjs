@@ -26,6 +26,8 @@ import { Database }   from 'bun:sqlite'
 import { buildWhere } from '../core/query.js'
 import { ID_GENERATORS } from '../core/ids.js'
 import { compactJsonl } from '../tools/retention.js'
+import { indexPathFor, indexShapeFor, openIndexDb, ensureIndexTable, withWriteLock }
+  from './jsonl-index.js'
 
 // ─── File I/O ─────────────────────────────────────────────────────────────────
 
@@ -62,19 +64,41 @@ function parseLinesInto(out, content) {
   return out
 }
 
+// The file and its directory, made before anything opens either it or the index
+// beside it. Its own function because the LOCK is opened first now — the index
+// database lives in this directory too, and `new Database()` on a path whose
+// directory does not exist is `SQLITE_CANTOPEN`, which arrives as *the audit
+// write failed* rather than as *the directory is missing*.
+function ensureFile(filePath) {
+  if (existsSync(filePath)) return
+  const dir = dirname(filePath)
+  // Same signal as a minted SQLite directory: a jsonl/logger database whose
+  // directory did not exist is a relative declared path resolved from one
+  // directory away, and it is silent — an orphan `<surface>/db/audit/` sat in
+  // this repo for two days under the `*.db*` ignore rule (`FJS-449`).
+  const minted = !existsSync(dir)
+  mkdirSync(dir, { recursive: true })
+  if (minted) noteMintedDirectory(dir, filePath)
+  appendFileSync(filePath, '', 'utf8')
+}
+
 // Append a JSON line to a file. Returns { offset, bytes }.
+//
+// **The offset is read and the line appended as one step, and the CALLER is what
+// makes that true across processes.** `statSync(f).size` then `appendFileSync`
+// is two syscalls, so a second process appending between them makes the returned
+// offset name the OTHER writer's line — measured on the shipped code at 1,999 of
+// 8,000, one in four, with no artificial delay. An indexed read then answers the
+// wrong record with no error, which for an audit trail is the worst failure
+// there is (`FJS-665`).
+//
+// Nothing here can close that window alone: where an O_APPEND write landed is
+// not reported back, so the position is only knowable by holding a lock across
+// the pair. The lock is the index database's write transaction
+// (`jsonl-index.js`), taken by `create`/`createMany` — which is also where the
+// index row is written, so the offset and the row naming it commit together.
 function appendLine(filePath, line) {
-  if (!existsSync(filePath)) {
-    const dir = dirname(filePath)
-    // Same signal as a minted SQLite directory: a jsonl/logger database whose
-    // directory did not exist is a relative declared path resolved from one
-    // directory away, and it is silent — an orphan `<surface>/db/audit/` sat in
-    // this repo for two days under the `*.db*` ignore rule (`FJS-449`).
-    const minted = !existsSync(dir)
-    mkdirSync(dir, { recursive: true })
-    if (minted) noteMintedDirectory(dir, filePath)
-    appendFileSync(filePath, '', 'utf8')
-  }
+  ensureFile(filePath)
   const offset = statSync(filePath).size
   appendFileSync(filePath, line, 'utf8')
   return { offset, bytes: Buffer.byteLength(line, 'utf8') }
@@ -196,11 +220,10 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
   // When @id is present it's included so the index can do INSERT OR REPLACE (upsert by id).
   // When @id is absent (e.g. audit log), indexed fields come purely from @@index attrs —
   // _offset is the primary key in that case since every appended line has a unique offset.
-  const indexAttrs        = model.attributes.filter(a => a.kind === 'index')
-  const hasIndex          = indexAttrs.length > 0
-  const indexedFieldNames = idName
-    ? [...new Set([idName, ...indexAttrs.flatMap(a => a.fields)])]
-    : [...new Set(indexAttrs.flatMap(a => a.fields))]
+  // The index's shape is `jsonl-index.js`'s, because compaction rewrites every
+  // row of it and the two may not disagree about what a row is.
+  const shape = indexShapeFor(model)
+  const { indexAttrs, hasIndex, indexedFieldNames } = shape
 
   // ── Companion index.db ────────────────────────────────────────────────────
 
@@ -227,7 +250,7 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
   // a syscall against a path the OS has cached, on a driver that already
   // appends to a file for every write, and the alternative is a process that
   // dies.
-  const indexPath = filePath + '.index.db'
+  const indexPath = indexPathFor(filePath)
 
   function getIndexDb() {
     if (_indexDb && existsSync(indexPath)) return _indexDb
@@ -237,108 +260,13 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
       try { _indexDb.close() } catch { /* already dead — the reopen is the point */ }
       _indexDb = null
     }
-    _indexDb = new Database(indexPath)
-
-    // The most contended database an app has, and until `FJS-569` the only one
-    // with no wait at all: a `logger`/`jsonl` database is schema-global, so
-    // every tenant and every process writes THIS index. A second API beside a
-    // running one died on its first audit write, in about a millisecond.
-    //
-    // The timeout and NOT WAL, which was tried and taken back out. WAL would help
-    // here on its own terms — under a rollback journal a reader and a writer
-    // exclude each other on the file every process touches — but it adds `-wal`
-    // and `-shm` beside the index, and this index is DELETED by anything that
-    // rewrites the .jsonl, which is compaction and also any hand-written probe.
-    // Every one of those places would silently start owing two more unlinks, and
-    // one that did not would recover the byte offsets the rewrite invalidated:
-    // measured, as a retention sweep that reported success and removed nothing.
-    // The floor alone fixes what was actually broken.
-    // A short wait is a real answer here and `{ audit: 250 }` is how a caller
-    // says it: this write is fire-and-forget and its failure is swallowed, so
-    // blocking the loop for seconds to place a row nobody awaits is the wrong
-    // trade for an app that would rather lose the row.
-    applyBusyTimeout(_indexDb, busyTimeout)
-
-    // Build index table: indexed fields + _offset
-    // Primary key is the @id field when present, otherwise _offset itself.
-    const colDefs = indexedFieldNames.map(name => {
-      const f    = storedFields.find(f => f.name === name)
-      const type = f ? (FIELD_TYPES[f.type.name] ?? 'TEXT') : 'TEXT'
-      return `  "${name}" ${type}`
-    })
-    colDefs.push(`  "_offset" INTEGER NOT NULL`)
-
-    const pk = idName ? `PRIMARY KEY ("${idName}")` : `PRIMARY KEY ("_offset")`
-
-    // The index is a CACHE — every column in it is re-derivable from the .jsonl,
-    // which is the source of truth. So when the declared column types no longer
-    // match the table on disk, drop it and let it refill rather than writing
-    // into a shape that will throw. `CREATE TABLE IF NOT EXISTS` does nothing
-    // to an existing table, so without this an index built before a type
-    // changed keeps the old column forever and every write fails with a
-    // datatype error naming a column the schema no longer describes.
-    const declared = new Map(indexedFieldNames.map(name => {
-      const f = storedFields.find(f => f.name === name)
-      return [name, f ? (FIELD_TYPES[f.type.name] ?? 'TEXT') : 'TEXT']
-    }))
-    const existing = _indexDb.query(
-      `SELECT name, type FROM pragma_table_info(?)`
-    ).all(`${model.name}_idx`)
-
-    const drifted = existing.length > 0 && existing.some(
-      col => declared.has(col.name) && declared.get(col.name) !== col.type
-    )
-    if (drifted) _indexDb.run(`DROP TABLE "${model.name}_idx"`)
-
-    _indexDb.run(
-      `CREATE TABLE IF NOT EXISTS "${model.name}_idx" (\n${colDefs.join(',\n')},\n` +
-      `  ${pk}\n) STRICT;`
-    )
-
-    // Indexes from @@index attrs
-    for (const attr of indexAttrs) {
-      const cols    = attr.fields.map(f => `"${f}"`).join(', ')
-      const idxName = `idx_${model.name}_${attr.fields.join('_')}`
-      _indexDb.run(`CREATE INDEX IF NOT EXISTS "${idxName}" ON "${model.name}_idx" (${cols});`)
-    }
-
-    // A dropped index is refilled from the .jsonl, which has every line and
-    // every byte offset. Without this the rows written before the type changed
-    // stay in the file and become unfindable through the index — the log would
-    // look truncated, which for an audit trail is the worst possible failure.
-    if (drifted) refillIndex(_indexDb)
-
+    _indexDb = openIndexDb(indexPath, busyTimeout)
+    ensureIndexTable(_indexDb, model, shape, filePath)
     return _indexDb
   }
 
-  /** Re-derive every index row from the file. Offsets are byte positions. */
-  function refillIndex(db) {
-    if (!existsSync(filePath)) return
-    const text = readFileSync(filePath, 'utf8')
-    const cols = [...indexedFieldNames, '_offset']
-    const stmt = db.query(
-      `INSERT OR REPLACE INTO "${model.name}_idx" (${cols.map(c => `"${c}"`).join(', ')}) ` +
-      `VALUES (${cols.map(() => '?').join(', ')})`
-    )
-    let offset = 0
-    db.run('BEGIN')
-    try {
-      for (const line of text.split('\n')) {
-        const bytes = Buffer.byteLength(line, 'utf8') + 1   // + the newline
-        if (line.trim()) {
-          try {
-            const record = JSON.parse(line)
-            stmt.run(...indexedFieldNames.map(c => record[c] ?? null), offset)
-          } catch { /* a torn last line — skip it, the file is append-only */ }
-        }
-        offset += bytes
-      }
-      db.run('COMMIT')
-    } catch (err) {
-      db.run('ROLLBACK')
-      throw err
-    }
-  }
+  /** Run this holding the file's write lock. See `jsonl-index.js`. */
+  function locked(fn) { return withWriteLock(getIndexDb(), fn) }
 
   function insertIndexRecord(record, offset) {
     const db   = getIndexDb()
@@ -354,7 +282,7 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
     // so every tenant's client writes the audit trail through its own driver
     // instance over one file, and the first second shop to be opened crashed the
     // app with `UNIQUE constraint failed: auditLogs_idx._offset` — from inside
-    // an audit write, about a table nobody named. `refillIndex` next to this has
+    // an audit write, about a table nobody named. `rebuildIndex` in `jsonl-index.js` has
     // always used OR REPLACE for the same reason.
     const verb = 'INSERT OR REPLACE'
     // db.query() caches the compiled statement (db.prepare compiles fresh every call)
@@ -547,9 +475,17 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
 
   async function create({ data }) {
     const record = buildRecord(data)
-    const { offset, bytes } = appendLine(filePath, JSON.stringify(record) + '\n')
-    absorbIntoCache(record, offset, bytes)
-    if (hasIndex) insertIndexRecord(record, offset)
+    // Where the line lands is only knowable while holding the lock, and the
+    // index row naming that offset is written under the same one, so the two
+    // commit together or not at all (`FJS-665`). Unindexed there is no offset
+    // and nothing to guard.
+    ensureFile(filePath)                       // before the lock — the index lives here too
+    const write = () => {
+      const { offset, bytes } = appendLine(filePath, JSON.stringify(record) + '\n')
+      absorbIntoCache(record, offset, bytes)
+      if (hasIndex) insertIndexRecord(record, offset)
+    }
+    if (hasIndex) locked(write); else write()
     return record
   }
 
@@ -575,27 +511,23 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
     // cycles and N implicit index-db commits.
     const records = data.map(d => buildRecord(d))
     const lines   = records.map(r => JSON.stringify(r) + '\n')
-    const { offset } = appendLine(filePath, lines.join(''))
 
-    let pos = offset
-    const offsets = lines.map(l => { const o = pos; pos += Buffer.byteLength(l, 'utf8'); return o })
-    if (_cache && _cache.size === offset) {
-      for (const r of records) _cache.records.push({ ...r })
-      _cache.size = pos
-      try { _cache.mtimeMs = statSync(filePath).mtimeMs } catch { _cache = null }
-    }
-
-    if (hasIndex) {
-      const db = getIndexDb()
-      db.run('BEGIN')
-      try {
-        for (let i = 0; i < records.length; i++) insertIndexRecord(records[i], offsets[i])
-        db.run('COMMIT')
-      } catch (e) {
-        try { db.run('ROLLBACK') } catch {}
-        throw e
+    // One lock for the batch, and it IS the transaction the index rows were
+    // already written in — `withWriteLock` replaced that BEGIN/COMMIT — so the
+    // batch costs the same lock it always did and gains a correct offset.
+    ensureFile(filePath)                       // before the lock — the index lives here too
+    const write = () => {
+      const { offset } = appendLine(filePath, lines.join(''))
+      let pos = offset
+      const offsets = lines.map(l => { const o = pos; pos += Buffer.byteLength(l, 'utf8'); return o })
+      if (_cache && _cache.size === offset) {
+        for (const r of records) _cache.records.push({ ...r })
+        _cache.size = pos
+        try { _cache.mtimeMs = statSync(filePath).mtimeMs } catch { _cache = null }
       }
+      if (hasIndex) for (let i = 0; i < records.length; i++) insertIndexRecord(records[i], offsets[i])
     }
+    if (hasIndex) locked(write); else write()
     return records
   }
 

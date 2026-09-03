@@ -10,7 +10,7 @@
  * Three things stand between the sum of the lines and what a card is charged,
  * and each is a different kind of thing: a discount is the shop giving
  * something up, shipping is a service it is buying on the shopper's behalf, and
- * tax is money that was never the shop's. `api/src/pricing.ts` is the one owner
+ * tax is money that was never the shop's. `api/src/domain/shop` is the one owner
  * of the arithmetic that combines them, and the whole point of this file is
  * that NOTHING ELSE computes any of it — not the basket screen, not the
  * receipt, not this drive. Every figure asserted below is compared against
@@ -589,6 +589,80 @@ const later = (await (await asStaff(`/orders?reference=${receipt.reference}`)).j
 check('a rate edited afterwards does not reprice the sale',
       [later?.tax, later?.taxRate, later?.total], [row.tax, row.taxRate, row.total])
 await asStaff(`/tax-rates/${VAT.id}`, { method: 'PATCH', body: JSON.stringify({ rate: VAT.rate }) })
+
+// ─── The books ────────────────────────────────────────────────────────────
+//
+// The same sale, read out of the ledger instead of off the order. This is the
+// only assertion in this drive that crosses `api/src/domain/ledger.ts`, and it is here
+// rather than in a drive of its own because the thing being checked is that TWO
+// records of one sale agree — which needs both of them in scope.
+//
+// Every count below is scoped to this run's own order. `JournalEntry` is
+// append-only by declaration (`@@gate("5.8.9.9")` — update and delete are
+// LOCKED, so not even `asSystem()` can tidy up), so a drive that counted rows
+// globally would pass once and then drift upward forever.
+
+console.log('\n  the books')
+
+const jrnls = (await (await asStaff(`/journal-entries?orderId=${row?.id}`)).json()).data ?? []
+check('the sale posted exactly one journal', jrnls.length, 1)
+
+const jrnl  = jrnls[0] ? await (await asStaff(`/journal-entries/${jrnls[0].id}`)).json() : null
+const jl    = jrnl?.lines ?? []
+
+// The rule the language cannot say, asked of a real posting. `ledger.ts`
+// refuses an unbalanced entry, so this can only fail if something wrote one
+// past that function — which is exactly the regression worth catching.
+check('…and it balances', jl.reduce((n, l) => n + l.amount, 0), 0)
+
+// The journal is the receipt written the other way round: rearrange
+// `total = subtotal − discount + shipping + tax` and it is debits equal
+// credits. Each of the five figures appears exactly once, which is what makes
+// the entry readable back AS the receipt rather than merely consistent with it.
+const at = (account) => jl.find(l => l.account === account)?.amount
+check('…receivables debit the total',        at('receivables'),      row.total)
+check('…the discount is its own debit',      at('discountsAllowed'), row.discount)
+check('…sales credit the subtotal',          at('sales'),           -row.subtotal)
+check('…delivery credits its own account',   at('shippingIncome'),  -row.shipping)
+check('…and tax credits what is owed onward', at('taxPayable'),     -row.tax)
+
+// A composed `get`, for `invoices.get`'s reason and a stronger one: a journal
+// header carries no amount at all, so a read that answered the row alone would
+// answer a reference and a date and nothing anybody could check.
+check('the entry answers its own lines', jl.length, 5)
+check('…and names the sale it came from', jrnl?.narrative, `Sale — ${receipt.reference}`)
+
+// The zero line is DROPPED rather than written. A sale with no code applied
+// gives `discountsAllowed` nothing to say, and `@@check("amount != 0")` would
+// refuse the row anyway — so the arithmetic upstream must not produce one.
+const bare     = await basket([{ variantId: MUG.id, quantity: 1 }])
+const plainRcp = await on(bare, 'checkout', { email: 'plain@drive.test', name: 'Pat Plain' })
+const plainRow = (await (await asStaff(`/orders?reference=${plainRcp.reference}`)).json()).data?.[0]
+const plainJ   = (await (await asStaff(`/journal-entries?orderId=${plainRow?.id}`)).json()).data ?? []
+const plainL   = plainJ[0] ? (await (await asStaff(`/journal-entries/${plainJ[0].id}`)).json()).lines ?? [] : []
+check('an undiscounted sale posts no discount line',
+      plainL.some(l => l.account === 'discountsAllowed'), false)
+check('…and it still balances', plainL.reduce((n, l) => n + l.amount, 0), 0)
+
+// Append-only, asked over the wire rather than assumed from the schema — and
+// **the answer is 405, not 403, which is worth being precise about.**
+//
+// There are TWO refusals here and this is the first: `journalEntries` declares
+// `methods: ['find', 'get']`, so a service that never mounts PATCH or DELETE
+// answers *method not allowed* and the gate is never consulted. The second is
+// `@@gate("5.8.9.9")` — `9` is LOCKED, so even `asSystem()` (which grades 8) is
+// refused BY NAME — and it is the one that would still hold if somebody added
+// `'update'` to that list tomorrow.
+//
+// This drive can only see the first, because it has no Litestone client;
+// `verify:payroll` asserts the second, where one exists. Asserting 403 here
+// named a rule that had never run — `FJS-351`'s shape, in a drive that had
+// itself never run.
+const amend = await asStaff(`/journal-entries/${jrnls[0].id}`,
+  { method: 'PATCH', body: JSON.stringify({ narrative: 'restated' }) })
+check('the books offer no way to restate an entry', amend.status, 405)
+const erase = await asStaff(`/journal-entries/${jrnls[0].id}`, { method: 'DELETE' })
+check('…nor to delete one', erase.status, 405)
 
 // ─── Chrome ────────────────────────────────────────────────────────────────
 

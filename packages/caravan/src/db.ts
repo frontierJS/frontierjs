@@ -107,31 +107,97 @@ export function isPrimaryKeyCollision(err: unknown): boolean {
   return /UNIQUE constraint failed: jobs\.id/i.test(message)
 }
 
-export function openDb(path: string, busyTimeout = 5000): Database {
+/**
+ * Did this throw come from the partial unique index on `unique_key`?
+ *
+ * `dispatch({ unique })` reads `findByUniqueKey` and then inserts, which is
+ * check-then-act across processes: two of them read nothing and both insert,
+ * and the loser used to surface a raw `UNIQUE constraint failed` out of an
+ * HTTP request — a 500 under exactly the shape the option exists to make safe.
+ * The index is what decides, so the loser asks it who won.
+ */
+export function isUniqueKeyCollision(err: unknown): boolean {
+  const message = (err as { message?: string } | null)?.message ?? ''
+  return /UNIQUE constraint failed: jobs\.unique_key/i.test(message)
+}
+
+/**
+ * Run a statement that another process's lock can refuse, retrying briefly.
+ *
+ * SQLite does not invoke the busy handler for a journal-mode change or for the
+ * schema-creation block, so `busy_timeout` covers neither: four processes
+ * opening a jobs.db that does not exist yet — a fresh volume, first boot, the
+ * deployment this package advertises — threw `database is locked` on 36 of 40
+ * starts. Bounded and short: a lock held longer than this is a different
+ * problem and is worth surfacing rather than waiting out.
+ */
+function withOpenRetry(label: string, fn: () => void): void {
+  const deadline = Date.now() + 2_000
+  for (;;) {
+    try { return fn() } catch (err) {
+      const message = (err as { message?: string } | null)?.message ?? ''
+      if (!/locked|busy/i.test(message) || Date.now() >= deadline)
+        throw new Error(`[Caravan] ${label}: ${message}`, { cause: err })
+      Bun.sleepSync(5 + Math.floor(Math.random() * 20))
+    }
+  }
+}
+
+export function openDb(
+  path: string,
+  busyTimeout = 5000,
+  synchronous: 'NORMAL' | 'FULL' = 'NORMAL',
+): Database {
   const db = new Database(path, { create: true })
 
-  // WAL mode — readers don't block writers, better concurrent performance
-  db.exec('PRAGMA journal_mode = WAL')
-  db.exec('PRAGMA foreign_keys = ON')
-  // A jobs database is shared by construction, so the wait is the normal case.
-  // Configurable because the two callers want different answers: a worker
-  // draining a batch can afford to wait, an API dispatching a job cannot
-  // (`FJS-569` — and the wait blocks this process's event loop while it runs).
-  //
   // Refused rather than coerced: `Number('5s') || 0` is zero, which is SQLite's
   // *fail immediately* — so a typo would silently buy the opposite of what it
   // asked for, on the one database every process in the app writes.
   if (!Number.isInteger(busyTimeout) || busyTimeout < 0)
     throw new Error(`[Caravan] busyTimeout must be a whole number of milliseconds (0 or more), got ${JSON.stringify(busyTimeout)}`)
+  // Set first, because it is connection-local and takes no lock, and because
+  // everything below it is what a second process can be holding.
+  //
+  // A jobs database is shared by construction, so the wait is the normal case.
+  // Configurable because the two callers want different answers: a worker
+  // draining a batch can afford to wait, an API dispatching a job cannot
+  // (`FJS-569` — and the wait blocks this process's event loop while it runs).
   db.exec(`PRAGMA busy_timeout = ${busyTimeout}`)
-  migrateUniqueKey(db)
-  // Before SCHEMA, not after: SCHEMA declares an index over `owner_id`, and on
-  // a jobs table created before that column existed the index is a hard error
-  // naming a column the same statement never adds.
-  addColumn(db, 'actor_id')
-  addColumn(db, 'tenant_id')
-  addColumn(db, 'owner_id')
-  db.exec(SCHEMA)
+
+  // WAL mode — readers don't block writers, better concurrent performance.
+  //
+  // The READ is inside the retry as well as the change: on a database another
+  // process is mid-mode-change on, asking what the mode is throws the same
+  // `database is locked` that setting it does.
+  withOpenRetry('could not put the jobs database into WAL mode', () => {
+    const mode = db.query<{ journal_mode: string }, []>('PRAGMA journal_mode').get()
+    if (mode?.journal_mode?.toLowerCase() !== 'wal') db.exec('PRAGMA journal_mode = WAL')
+  })
+  db.exec('PRAGMA foreign_keys = ON')
+  // WAL + NORMAL fsyncs at a checkpoint rather than at every commit: a dispatch
+  // from an HTTP handler costs a fraction of a millisecond instead of 3ms, and
+  // 2000 inserts take 136ms instead of 5913ms. What it trades is durability
+  // across a POWER LOSS — not a process crash, which WAL survives either way —
+  // where the last committed transactions can be lost. That is the right trade
+  // for a queue: a lost claim is a running row whose owner never heartbeats
+  // again, which the lease sweep already recovers by design. FULL is the option
+  // for a deployment that would rather pay the fsync.
+  db.exec(`PRAGMA synchronous = ${synchronous === 'FULL' ? 'FULL' : 'NORMAL'}`)
+
+  // The whole schema step under one retry, for the same reason: N processes
+  // reaching `CREATE … IF NOT EXISTS` on a file none of them has finished
+  // creating is the same race, and the reads that decide the migration are
+  // refused by the same lock.
+  withOpenRetry('could not create the jobs schema', () => {
+    migrateUniqueKey(db)
+    // Before SCHEMA, not after: SCHEMA declares an index over `owner_id`, and on
+    // a jobs table created before that column existed the index is a hard error
+    // naming a column the same statement never adds.
+    addColumn(db, 'actor_id')
+    addColumn(db, 'tenant_id')
+    addColumn(db, 'owner_id')
+    db.exec(SCHEMA)
+  })
 
   return db
 }
@@ -291,6 +357,38 @@ export function buildStatements(db: Database) {
     RETURNING *
   `))
 
+  // A process only claims what it can run. The handler set is a fact about
+  // this process, so the name list is bound rather than compiled in, and the
+  // statement is cached per list SIZE — the shape of the SQL is the only thing
+  // that varies. `releaseClaim` above stays the backstop: an autoloaded handler
+  // registered between the claim and the execute is still possible.
+  const claimCache = new Map<number, WrappedStatement<JobRecord, BindObject>>()
+  const claimNextNamed = (count: number) => {
+    let stmt = claimCache.get(count)
+    if (!stmt) {
+      const names = Array.from({ length: count }, (_, i) => `$n${i}`).join(', ')
+      stmt = wrap<JobRecord, BindObject>(db.prepare(`
+        UPDATE jobs SET
+          status     = 'running',
+          started_at = $now,
+          owner_id   = $owner,
+          attempts   = attempts + 1
+        WHERE id = (
+          SELECT id FROM jobs
+          WHERE  queue  = $queue
+            AND  status = 'pending'
+            AND  run_at <= $now
+            AND  name IN (${names})
+          ORDER BY priority DESC, run_at ASC
+          LIMIT 1
+        )
+        RETURNING *
+      `))
+      claimCache.set(count, stmt)
+    }
+    return stmt
+  }
+
   // ── Mark done ───────────────────────────────────────────────────────────────
   // Guarded on 'running': cancel() can land while the attempt is in flight, and
   // an unguarded UPDATE writes 'done' over the cancellation the caller asked for.
@@ -325,6 +423,35 @@ export function buildStatements(db: Database) {
       run_at      = $run_at,
       owner_id    = NULL
     WHERE id = $id AND status = 'running' AND owner_id = $owner
+  `))
+
+  // ── Release a claim this process cannot execute ─────────────────────────────
+  //
+  // *I cannot do this* is not *this cannot be done*. A process with no handler
+  // for a name used to mark the row terminally failed, so a web process polling
+  // beside a worker one — or the old replica of a rolling deploy — destroyed
+  // work the process that owns the handler was about to do. The attempt the
+  // claim consumed is given back with it.
+
+  const releaseClaim = wrap<void, { id: string; owner: string }>(db.prepare(`
+    UPDATE jobs SET
+      status     = 'pending',
+      started_at = NULL,
+      owner_id   = NULL,
+      attempts   = MAX(attempts - 1, 0)
+    WHERE id = $id AND status = 'running' AND owner_id = $owner
+  `))
+
+  // ── Is there anything to claim? ─────────────────────────────────────────────
+  //
+  // Read-only, so it takes no write lock. `_claim` opened BEGIN IMMEDIATE on
+  // every poll of every queue whether or not anything was pending — 3 write
+  // transactions a second per replica on one shared file, with nothing to do.
+
+  const anyPending = wrap<{ one: number }, { queue: string; now: number }>(db.prepare(`
+    SELECT 1 AS one FROM jobs
+    WHERE queue = $queue AND status = 'pending' AND run_at <= $now
+    LIMIT 1
   `))
 
   // ── Cancel ──────────────────────────────────────────────────────────────────
@@ -478,9 +605,12 @@ export function buildStatements(db: Database) {
   return {
     insert,
     claimNext,
+    claimNextNamed,
     markDone,
     markFailed,
     cancel,
+    releaseClaim,
+    anyPending,
     retryTerminal,
     statsByQueue,
     oldestRunning,

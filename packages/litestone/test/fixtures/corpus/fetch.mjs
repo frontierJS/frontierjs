@@ -22,6 +22,11 @@ export const TARGETS = {
     path: 'erpnext/**/doctype/*/*.json',
     what: 'an ERP — accounting and stock, and the only source that DECLARES whether a polymorphic target set is closed',
   },
+  hrms: {
+    repo: 'frappe/hrms', licence: 'GPL-3.0', reader: 'frappe', branch: 'develop',
+    path: 'hrms/**/doctype/*/*.json',
+    what: 'payroll and HR — the half ERPNext no longer carries: salary structures, slips, components and tax slabs',
+  },
   discourse: {
     repo: 'discourse/discourse', licence: 'GPL-2.0', reader: 'sql',
     path: 'db/structure.sql',

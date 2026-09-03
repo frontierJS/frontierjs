@@ -44,6 +44,57 @@ const INTERNAL_TABLE = /^sqlite_/
 const BOOKKEEPING = new Set(['_migrations', '_litestone_migrations', 'migrations'])
 
 /**
+ * Every `database` block in a schema, as written.
+ *
+ * One parser, because the two readers below want opposite halves of the same
+ * list — `declaredDatabases` skips everything that is not SQLite and
+ * `declaredLogDatabases` keeps only those — and a second regex is how they end
+ * up disagreeing about what a block is.
+ *
+ *   `database main  { path env("DATABASE_URL", "./db/app.db") }`
+ *   `database audit { path "./db/audit/" driver logger retention 90d }`
+ *
+ * @returns {Array<{ name: string, body: string, driver: string }>}
+ */
+export function databaseBlocks(text) {
+  const out = []
+  for (const [, name, body] of text.matchAll(/^\s*database\s+(\w+)\s*\{([^}]*)\}/gm))
+    out.push({ name, body, driver: body.match(/\bdriver\s+(\w+)/)?.[1] ?? 'sqlite' })
+  return out
+}
+
+/**
+ * The databases that are a DIRECTORY of append-only files rather than a SQLite
+ * file — `driver jsonl` and `driver logger`.
+ *
+ * Reported with how their path is written, because that is the whole question a
+ * deploy asks of them: a bare literal cannot be pointed at the mounted volume
+ * without editing the schema, so the trail is written inside the container and
+ * goes with it on the next swap. `envVar` is the variable a deploy would have
+ * to bind; null where the schema names none.
+ *
+ * @returns {Array<{ name: string, driver: string, path: string|null, envVar: string|null }>}
+ */
+export function declaredLogDatabases(dbDir) {
+  const schemaPath = resolve(dbDir, 'schema.lite')
+  if (!existsSync(schemaPath)) return []
+  let text = ''
+  try { text = readFileSync(schemaPath, 'utf8') } catch { return [] }
+
+  return databaseBlocks(text)
+    .filter(b => b.driver !== 'sqlite')
+    .map(({ name, body, driver }) => ({
+      name,
+      driver,
+      // The DEFAULT, not what the variable currently holds: this is asked about
+      // a server, from a laptop, so the local environment is not the answer.
+      path:   body.match(/\bpath\s+env\(\s*['"`][^'"`]+['"`]\s*,\s*['"`]([^'"`]+)['"`]\s*\)/)?.[1]
+           ?? body.match(/\bpath\s+['"`]([^'"`]+)['"`]/)?.[1] ?? null,
+      envVar: body.match(/\bpath\s+env\(\s*['"`]([^'"`]+)['"`]/)?.[1] ?? null,
+    }))
+}
+
+/**
  * Every database the schema declares, resolved to a filesystem path.
  *
  * Non-sqlite drivers are skipped: a `driver logger` database is a directory of
@@ -59,11 +110,8 @@ export function declaredDatabases(appRoot, dbDir) {
     let text = ''
     try { text = readFileSync(schemaPath, 'utf8') } catch { return [] }
 
-    // `database main { path env("DATABASE_URL", "./db/basecamp.db") }`
-    // `database audit { path "./db/audit/" driver logger retention 90d }`
-    const blocks = text.matchAll(/^\s*database\s+(\w+)\s*\{([^}]*)\}/gm)
-    for (const [, name, body] of blocks) {
-      if (/\bdriver\s+(?!sqlite)\w+/.test(body)) continue   // logger, and anything else
+    for (const { name, body, driver } of databaseBlocks(text)) {
+      if (driver !== 'sqlite') continue   // logger, and anything else
       const path = readPath(body)
       if (path) out.push({ name, path: absolute(path, appRoot) })
     }

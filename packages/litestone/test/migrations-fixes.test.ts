@@ -6,9 +6,9 @@
 //      CREATE TRIGGER opens a BEGIN...END body.
 //   3. apply()/autoMigrate() own the transaction: ROLLBACK on failure, no
 //      partial state, bookkeeping committed atomically, FK pragma restored.
-import { describe, it, expect } from 'bun:test'
+import { describe, it, test, expect } from 'bun:test'
 import { Database } from 'bun:sqlite'
-import { mkdirSync, writeFileSync, readFileSync, readdirSync } from 'fs'
+import { mkdirSync, writeFileSync, readFileSync, readdirSync, mkdtempSync, rmSync } from 'fs'
 import { tempDir } from '../src/tmp-dirs.js'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -285,7 +285,13 @@ model Post {
   bio    String?
 }
 `)
-    const res = autoMigrate({ $db: db }, pr2)
+    // `views` goes and `bio` arrives, so this is a destructive change and is
+    // refused by default since `FJS-641`. The flag is what this test is NOT
+    // about: its subject is that a rebuild carries the SURVIVING values across,
+    // so it says the loss is intended and then asserts `title` came through.
+    expect(autoMigrate({ $db: db }, pr2).main.state).toBe('blocked')
+
+    const res = autoMigrate({ $db: db }, pr2, { acceptDataLoss: true })
     expect(res.main.state).toBe('migrated')
 
     const rows = db.query(`SELECT * FROM post ORDER BY id`).all() as Record<string, unknown>[]
@@ -479,5 +485,230 @@ describe('a CHECK constraint migrates (FJS-466)', () => {
       `"mood" IN ('happy', 'sad')`,
       `json_valid("tags") AND json_type("tags") = 'array'`,
     ].sort())
+  })
+})
+
+/**
+ * A blocked column add reports `blocked`, on the ALTER path as well as the
+ * rebuild one (`FJS-604`).
+ *
+ * The hole was narrow and the consequence was not: adding one NOT NULL column
+ * with no default to a populated table does not need a rebuild, so the diff
+ * collected it as `blockedAdds` and `autoMigrate` looked only at the rebuild
+ * list. The SQL generator wrote the ALTER out as a comment — correctly — and
+ * the run reported `migrated` with `applied: 0`. An application then ran
+ * against a table missing a column its own seed declares, and every write of
+ * that column was stripped by mass-assignment protection.
+ */
+describe('a blocked column add is reported, not reported as success', () => {
+  test('the ALTER path answers `blocked` and applies nothing', async () => {
+    const dir  = mkdtempSync(join(tmpdir(), 'litestone-blocked-'))
+    const path = join(dir, 'b.db')
+    const v1 = `database main { path "${path}" }\nmodel Doc { id Int @id @default(autoincrement())  n String }`
+    const v2 = `database main { path "${path}" }\nmodel Doc { id Int @id @default(autoincrement())  n String  dueAt DateTime }`
+
+    const a = await createClient({ schema: v1, resolveFrom: dir })
+    autoMigrate(a)
+    await a.doc.create({ data: { n: 'one' } })
+
+    const b = await createClient({ schema: v2, resolveFrom: dir })
+    const out = autoMigrate(b) as Record<string, { state: string, reason?: string }>
+
+    expect(out.main.state).toBe('blocked')
+    expect(out.main.reason).toMatch(/doc\.dueAt/)
+    // The negative control: `migrated` with `applied: 0` was the old answer, and
+    // it is indistinguishable from a schema that had nothing to do.
+    expect(out.main).not.toHaveProperty('applied')
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('an OPTIONAL column on the same table still migrates', async () => {
+    // The rule has to be about the column, not about the path — otherwise the
+    // fix above turns every ordinary column add into a refusal.
+    const dir  = mkdtempSync(join(tmpdir(), 'litestone-blocked-ok-'))
+    const path = join(dir, 'b.db')
+    const v1 = `database main { path "${path}" }\nmodel Doc { id Int @id @default(autoincrement())  n String }`
+    const v2 = `database main { path "${path}" }\nmodel Doc { id Int @id @default(autoincrement())  n String  dueAt DateTime? }`
+
+    const a = await createClient({ schema: v1, resolveFrom: dir })
+    autoMigrate(a)
+    await a.doc.create({ data: { n: 'one' } })
+
+    const b = await createClient({ schema: v2, resolveFrom: dir })
+    const out = autoMigrate(b) as Record<string, { state: string }>
+    expect(out.main.state).toBe('migrated')
+    expect(await b.doc.findFirst({})).toHaveProperty('dueAt', null)
+    rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+/**
+ * An EXPRESSION default routes through the rebuild, because `ALTER TABLE ADD
+ * COLUMN` cannot take one (`FJS-605`).
+ *
+ * SQLite allows an expression default in `CREATE TABLE` and refuses it in an
+ * ALTER, where it wants a constant. `@default(now())` emits
+ * `DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`, so the generated ALTER
+ * threw `near "(": syntax error` out of `autoMigrate` — naming no column, no
+ * table and no schema line, at application boot.
+ *
+ * The rebuild path already did the right thing: it omits added columns from the
+ * copy, so the new table's own DEFAULT fills them for every existing row. What
+ * was missing was the classification.
+ */
+describe('an expression default cannot be ALTERed in', () => {
+  test('it rebuilds instead of throwing, and existing rows get the value', async () => {
+    const dir  = mkdtempSync(join(tmpdir(), 'litestone-exprdefault-'))
+    const path = join(dir, 'e.db')
+    const v1 = `database main { path "${path}" }\nmodel Doc { id Int @id @default(autoincrement())  n String }`
+    const v2 = `database main { path "${path}" }\nmodel Doc { id Int @id @default(autoincrement())  n String  dueAt DateTime @default(now()) }`
+
+    const a = await createClient({ schema: v1, resolveFrom: dir })
+    autoMigrate(a)
+    await a.doc.create({ data: { n: 'one' } })
+
+    const b = await createClient({ schema: v2, resolveFrom: dir })
+    const out = autoMigrate(b) as Record<string, { state: string }>
+    expect(out.main.state).toBe('migrated')
+
+    const row = await b.doc.findFirst({}) as { dueAt: string }
+    // The row that existed BEFORE the column did has a value, which is the
+    // whole reason a rebuild is the right path rather than a refusal.
+    expect(typeof row.dueAt).toBe('string')
+    expect(Number.isNaN(Date.parse(row.dueAt))).toBe(false)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('a CONSTANT default still takes the cheap ALTER', async () => {
+    // The negative control. Treating every default as an expression would
+    // rebuild every table that gains an ordinary column, which is slow and
+    // takes the app's own indexes and triggers with it (`FJS-183`).
+    const dir  = mkdtempSync(join(tmpdir(), 'litestone-constdefault-'))
+    const path = join(dir, 'c.db')
+    const v1 = `database main { path "${path}" }\nmodel Doc { id Int @id @default(autoincrement())  n String }`
+    const v2 = `database main { path "${path}" }\nmodel Doc { id Int @id @default(autoincrement())  n String  hits Int @default(0) }`
+
+    const a = await createClient({ schema: v1, resolveFrom: dir })
+    autoMigrate(a)
+    await a.doc.create({ data: { n: 'one' } })
+
+    const b = await createClient({ schema: v2, resolveFrom: dir })
+    const out = autoMigrate(b) as Record<string, { state: string, sql?: string }>
+    expect(out.main.state).toBe('migrated')
+    expect(out.main.sql).toMatch(/ALTER TABLE "doc" ADD COLUMN "hits"/)
+    expect(out.main.sql).not.toMatch(/rebuild "doc"/)
+    rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+// ─── destructive changes ──────────────────────────────────────────────────────
+//
+// `diffColumns` is a name-set diff with no rename detection, so a rename is a
+// drop plus an add and the rebuild copies only what the two tables share
+// (`FJS-641`). Three shapes had three behaviours and two of them were silent:
+// a rename destroyed values reporting `migrated`, a plain drop did the same,
+// and a type change SQLite could not satisfy threw a raw `SQLiteError` out of
+// `autoMigrate` and killed the app at boot (`FJS-645`).
+//
+// The negative control is the point of every case here: `keep` is asserted to
+// survive alongside, because a migration that refused everything would look
+// identical from the refused side.
+
+describe('autoMigrate — a change that destroys data', () => {
+  const D1 = `model Doc { id Int @id @default(autoincrement())  body String?  keep String? }`
+  const lab = async (schema = D1) => {
+    const dir = tempDir('litestone-loss-')
+    const db  = await createClient({ schema, db: join(dir, 'a.db'), resolveFrom: dir })
+    autoMigrate(db, parse(schema))
+    await db.doc.create({ data: { body: 'the payload', keep: 'kept' } })
+    return db
+  }
+  const rows = (db: any) => db.asSystem().sql`SELECT * FROM doc`
+
+  it('blocks a rename, and says what it thinks you meant', async () => {
+    const db = await lab()
+    const r  = autoMigrate(db, parse(`model Doc { id Int @id @default(autoincrement())  content String?  keep String? }`))
+    expect(r.main.state).toBe('blocked')
+    expect(r.main.dataLoss).toEqual([{ table: 'doc', columns: ['body'], renameTo: 'content' }])
+    expect((await rows(db))[0].body).toBe('the payload')
+    db.$close()
+  })
+
+  it('blocks a plain drop too — it is the same mechanism and equally silent', async () => {
+    const db = await lab()
+    const r  = autoMigrate(db, parse(`model Doc { id Int @id @default(autoincrement())  keep String? }`))
+    expect(r.main.state).toBe('blocked')
+    expect(r.main.dataLoss[0].renameTo).toBe(null)   // nothing was added, so no guess
+    expect((await rows(db))[0].body).toBe('the payload')
+    db.$close()
+  })
+
+  it('re-announces on the next boot rather than going quiet', async () => {
+    // The hash is withheld, which is what the two older blocked rules do and
+    // what stops a blocked schema from looking in-sync a moment later.
+    const db = await lab()
+    const V2 = parse(`model Doc { id Int @id @default(autoincrement())  keep String? }`)
+    expect(autoMigrate(db, V2).main.state).toBe('blocked')
+    expect(autoMigrate(db, V2).main.state).toBe('blocked')
+    db.$close()
+  })
+
+  it('applies it when the caller says the loss is intended', async () => {
+    const db = await lab()
+    const r  = autoMigrate(db, parse(`model Doc { id Int @id @default(autoincrement())  keep String? }`),
+                           { acceptDataLoss: true })
+    expect(r.main.state).toBe('migrated')
+    const after = await rows(db)
+    expect('body' in after[0]).toBe(false)
+    expect(after[0].keep).toBe('kept')      // the control: only the named column went
+    db.$close()
+  })
+
+  it('does not block a change that takes nothing away', async () => {
+    const db = await lab()
+    const r  = autoMigrate(db, parse(`model Doc { id Int @id @default(autoincrement())  body String?  keep String?  extra String? }`))
+    expect(r.main.state).toBe('migrated')
+    expect((await rows(db))[0].body).toBe('the payload')
+    db.$close()
+  })
+
+  it('grades a rebuild SQLite refuses instead of throwing out of the migrator', async () => {
+    // A STRICT table takes no TEXT into an INTEGER column, so the copy fails.
+    // The transaction rolls back either way — what was missing is that the
+    // caller heard about it in the same vocabulary as the other refusals.
+    const db = await lab()
+    const r  = autoMigrate(db, parse(`model Doc { id Int @id @default(autoincrement())  body Int?  keep String? }`))
+    expect(r.main.state).toBe('failed')
+    expect(r.main.reason).toContain('SQLite refused the rebuild')
+    expect((await rows(db))[0].body).toBe('the payload')
+    db.$close()
+  })
+})
+
+describe('create — a destructive migration is banner-marked in the file', () => {
+  it('names the columns whose values the file will delete', async () => {
+    // The file IS the review step here, which is why this warns rather than
+    // refusing: the header already listed `- col body` at the same weight as
+    // every other line of the diff.
+    const { dir, db } = freshLab()
+    create(db, parse(V1), 'initial', dir)
+    await apply(db, dir)
+    db.run(`INSERT INTO post (title, views) VALUES ('Hello', 42)`)
+
+    create(db, parse(`model Post { id Int @id  heading String  views Int @default(0) }`), 'rename', dir)
+    const files = readdirSync(dir).filter(f => f.endsWith('.sql')).sort()
+    const sql   = readFileSync(join(dir, files[files.length - 1]), 'utf8')
+    expect(sql).toContain('DESTRUCTIVE')
+    expect(sql).toContain('post.title')
+    expect(sql).toContain('RENAME COLUMN "title" TO "heading"')
+  })
+
+  it('leaves an additive migration unmarked', async () => {
+    const { dir, db } = freshLab()
+    create(db, parse(V1), 'initial', dir)
+    await apply(db, dir)
+    create(db, parse(`model Post { id Int @id  title String  views Int @default(0)  extra String? }`), 'add', dir)
+    const files = readdirSync(dir).filter(f => f.endsWith('.sql')).sort()
+    expect(readFileSync(join(dir, files[files.length - 1]), 'utf8')).not.toContain('DESTRUCTIVE')
   })
 })

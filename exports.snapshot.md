@@ -186,7 +186,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/litestone`
 
-`packages/litestone` · ships `LICENSE` `README.md` `package.json` `src/`
+`packages/litestone` · ships `AGENTS.md` `LICENSE` `README.md` `catalog.snapshot.md` `package.json` `src/`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -234,7 +234,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/notifications`
 
-`packages/notifications` · ships `LICENSE` `README.md` `builders.ts` `drivers/` `errors.ts` `index.ts` `notification.ts` `notify.ts` `package.json` `plugin.ts` `state.ts` `types.ts`
+`packages/notifications` · ships `LICENSE` `README.md` `builders.ts` `define.ts` `drivers/` `errors.ts` `index.ts` `loader.ts` `notification.ts` `notify.ts` `package.json` `plugin.ts` `state.ts` `types.ts`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |

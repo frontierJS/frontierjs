@@ -83,6 +83,50 @@ src/
   before `app.configure(…)` opens the queue at the DEFAULT path and a configured
   one can no longer apply — `register()` warns by path. `stop()` closes that
   database and the pool forgets its workers, so a restart builds both again.
+  **It opens WAL + `synchronous = NORMAL`**, and both are held against a
+  concurrent cold start: N processes reaching a jobs.db that does not exist yet
+  is the advertised deployment on its likeliest morning, and SQLite invokes no
+  busy handler for a journal-mode change, so `busyTimeout` covers neither that
+  nor the schema block — each is a bounded retry, and the mode is READ first
+  because a database already in WAL needs no lock to say so. NORMAL is 43×
+  dispatch throughput and loses committed rows only on power loss; a lost claim
+  is a running row whose owner stops heartbeating, which the lease sweep already
+  recovers. `synchronous: 'FULL'` pays the fsync back.
+- **`stop()` marks the workers closed BEFORE it closes the database, and the
+  hourly sweep is cleared with the heartbeat.** Past `drainTimeout` a handler is
+  still running, and its `markDone` used to reject with `Database has closed` as
+  an unhandled rejection — on the ordinary SIGTERM path. A completion write
+  after the handle is gone no-ops instead; the row waits for the lease, which is
+  the only thing that can decide it. The cleanup timer was a `const` local to
+  `start()` and could not be cleared, so it went on firing against that closed
+  handle and a restart added a second one.
+- **A process claims only names it has a handler for, and a claim it cannot run
+  is RELEASED.** *I cannot do this* and *this cannot be done* are different
+  answers: a no-handler claim used to be a terminal failure with no attempt
+  left, so a web process polling beside a worker one — or the old replica of a
+  rolling deploy — destroyed the worker's work in silence. The claim binds the
+  registered names, and the release (back to `pending`, the attempt given back,
+  one warn per name per process) is the backstop for a handler registered
+  between the claim and the execute.
+- **A finished job claims the next one, and the interval is the backstop.**
+  Throughput was exactly `concurrency / pollInterval` — 2 jobs a second at the
+  defaults, sleeping a whole interval with capacity free and work queued. The
+  poll also asks a read-only question before `BEGIN IMMEDIATE`, because an empty
+  poll of every queue used to open a write transaction: 3 a second per replica
+  on one shared file, contention nothing had asked for.
+- **Every timer callback catches its own throw.** `sweepOwners` threw
+  `database is locked` out of a `setInterval`, which is an uncaughtException and
+  a dead process — and the heartbeat it missed on the way out is what makes
+  another instance reclaim this one's running rows. A missed sweep is nothing.
+- **The admin routes are refused in production without an `authorize`.** They
+  are raw routes, so no gate, no row policy and no session hook is on the path
+  by construction, and `POST /jobs/run/{name}` executes any registered handler
+  with the app's own standing while `GET /jobs` hands over every payload. Mounted
+  unauthenticated on the public prefix that is remote job execution, so it fails
+  closed the way junction's `devtools()` does: `admin: { authorize: (ctx) =>
+  boolean }` composes with the app's own session and gate, `{ secret }` is a
+  development shortcut compared constant-time and refused in production, and
+  `data` is `[redacted]` in the list unless the request asks with `?data=1`.
 - **`unique` is a lock on work IN FLIGHT, not an idempotency key.** Once a job is
   terminal the key is free and the same work can be queued again later. A key
   built from a row id is not idempotent either — SQLite reuses ids, so
@@ -96,7 +140,12 @@ src/
   an id unique to the work itself: anything reused names a job that already ran,
   and the dispatch is silently dropped. The catch on the insert is the
   CROSS-PROCESS path — in one process there is no await between the read and the
-  write, so nothing can interleave.
+  write, so nothing can interleave. **`unique` has the same catch now**: the
+  partial index is what decides a race two processes both read nothing before,
+  and the loser asks it who won rather than surfacing
+  `UNIQUE constraint failed: jobs.unique_key` as a 500 out of an HTTP request —
+  under exactly the shape the option exists to make safe. A key freed by the
+  winner going terminal in between is one retried insert.
 - **A handler takes ONE argument and it is a `JobContext`** — the job's facts
   plus `app` and `auth`. Both used to be missing, and each cost every app a
   workaround. There was no route from an autoloaded `*.job.ts` to

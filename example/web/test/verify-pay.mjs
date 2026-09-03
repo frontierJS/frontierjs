@@ -42,7 +42,7 @@ const PSP  = process.env.PSP_URL ?? 'http://localhost:8112'
 const HOOK = '/api/webhooks/payments'
 
 /** What the PROVIDER signs with. The shop's own key is a different secret —
- *  see api/src/core/psp.ts for why the two directions are two credentials. */
+ *  see api/src/providers/psp/index.ts for why the two directions are two credentials. */
 const HOOK_SECRET = process.env.SHOP_PSP_WEBHOOK_SECRET ?? 'dev-psp-webhook-secret'
 /** What the SHOP signs with, so this drive can prove the provider checks it. */
 const SHOP_KEY    = process.env.SHOP_PSP_KEY ?? 'dev-psp-key'
@@ -171,7 +171,7 @@ try {
   // other of the two doors, and the reason `orders.paymentCode` exists rather
   // than the code living only in a checkout response nothing here produces.
   //
-  // Derived rather than stored (`api/src/core/checkout-code.ts`), so it is on no
+  // Derived rather than stored (`api/src/domain/shop`), so it is on no
   // read of the order and there is no column to probe: asking is the only way
   // to hold one, and this method's own read is what grades the asker.
   const codeFor = async (orderId) => {
@@ -217,7 +217,7 @@ try {
     const headers = await signRequest({
       secret: SHOP_KEY, method: 'POST', path: '/v1/intents',
       body: JSON.stringify({ amount: 1, currency: 'USD', reference: 'a' }),
-      prefix: 'X-Hub', timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
+      prefix: 'X-Fjs', timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
     })
     return fetch(`${PSP}/v1/intents`, {
       method: 'POST', headers: { 'content-type': 'application/json', ...headers },
@@ -429,9 +429,12 @@ try {
   // half `@@transitions` could not cover on its own.
   //
   // Counted as a DELTA from before the settlement, for the reason verify-jobs
-  // counts its bookings that way: db/jobs.db outlives `bun run reset` and
-  // SQLite reuses row ids, so an announcement naming order 4 is this run's and
-  // also whichever order held id 4 last time.
+  // counts its bookings that way: SQLite reuses row ids, so an announcement
+  // naming order 4 is this run's and also whichever order held id 4 last time.
+  //
+  // (This used to say the queue outlives `bun run reset`. It does not — reset
+  // removes db/jobs.db deliberately, and has since the stale-row problem that
+  // made it do so. The delta is still right; the reason was not.)
   const queued = await until(async () => {
     const rows = await announcements()
     return rows.length > announcementsBefore ? rows : null

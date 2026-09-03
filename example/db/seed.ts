@@ -29,8 +29,9 @@
 import { createLitestoneAuth } from '@frontierjs/auth'
 import { toMinor }             from '@frontierjs/toolbelt/units'
 import { sys, db, DEV_KEY }    from '../api/src/core/db.ts'
-import { move }                from '../api/src/inventory.ts'
-import { priceBasket, BASE }   from '../api/src/pricing.ts'
+import { move }                from '../api/src/domain/shop'
+import { priceBasket, BASE }   from '../api/src/domain/shop'
+import { issueInvoice, periodLines, settleInvoice } from '../api/src/domain/billing'
 
 // ─── The unit, and why this file is not written in it ─────────────────────
 //
@@ -555,6 +556,311 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
       data: lines.map(l => ({ ...l, orderId: order.id, userId: buyerUser.id })),
     })
   }
+
+  // Last, because it needs the buyer's customer row and the shop's tax rate.
+  await seedBilling()
+}
+
+
+/**
+ * The recurring half — one plan, its price window, a live subscription and the
+ * invoice it has already been charged.
+ *
+ * Two things here are deliberately unlike everything above.
+ *
+ * **The plan's price is a ROW with a lifetime**, not a column, so this seeds a
+ * closed window and an open one: the shop raised its price, and the subscriber
+ * below is still on the old one. That pair is the whole of what effective
+ * dating is for and it is invisible in a shop with one price.
+ *
+ * **The invoice is written WHOLE.** Every money column on it is `@immutable`
+ * (`FJS-D162`), so there is no row to add lines to afterwards — header and
+ * lines go in one transaction, and the subtotal is summed from the lines here
+ * rather than typed, for the reason `priceOrder` exists: a seed that states a
+ * total beside a list can state one the list does not add up to.
+ */
+async function seedBilling() {
+  const PLAN = 'PRO'
+
+  let plan = await sys.plan.findFirst({ where: { code: PLAN } })
+  if (!plan) {
+    plan = await sys.plan.create({ data: {
+      code: PLAN, name: 'Pro', interval: 'monthly',
+      description: 'Everything in the shop, restocked monthly.',
+    } })
+  }
+
+  // Two versions: one that ended when the price went up, one still open.
+  // `@@unique([planId], where: effectiveTo == null)` says *only one open window*
+  // since `FJS-603` closed, and a seed is one of the four writers that reaches
+  // no service — so it is HELD to the rule rather than trusted with it, and it
+  // closes before it opens.
+  if (await sys.planVersion.count({ where: { planId: plan.id } }) === 0) {
+    const raisedOn = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    await sys.planVersion.create({ data: {
+      planId: plan.id, price: cents(19), effectiveFrom: new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString(),
+      effectiveTo: raisedOn,
+    } })
+    await sys.planVersion.create({ data: {
+      planId: plan.id, price: cents(24), effectiveFrom: raisedOn,
+    } })
+  }
+
+  // ─── The rest of the price list ─────────────────────────────────────────
+  //
+  // `PRO` above carries the argument — two windows, a subscriber on the older
+  // one — and these carry the PAGE: a pricing page with one row on it cannot
+  // show a plan being compared to another, cannot show two intervals side by
+  // side, and cannot show that `active: false` is what retires a plan rather
+  // than deleting the rows every past subscription points at.
+  //
+  // One version each and it is open, which is the state a price is in for
+  // almost all of its life. They are seeded through the same two writes the
+  // block above uses rather than through `plans.reprice`, because a seed runs
+  // with no request and `reprice` is a service method — the shop's own way of
+  // saying *charge something else from now on*, which needs a caller.
+  for (const spec of [
+    { code: 'STARTER', name: 'Starter',    interval: 'monthly' as const, price: cents(9),
+      description: 'One shelf, restocked when you ask.',            active: true },
+    { code: 'SCALE',   name: 'Scale',      interval: 'monthly' as const, price: cents(49),
+      description: 'Every shelf, restocked weekly, with a buyer.',  active: true },
+    { code: 'PROYEAR', name: 'Pro annual', interval: 'yearly'  as const, price: cents(240),
+      description: 'Pro, paid for the year — two months of it free.', active: true },
+    { code: 'LEGACY',  name: 'Legacy',     interval: 'monthly' as const, price: cents(12),
+      description: 'Closed to new subscribers.',                    active: false },
+  ]) {
+    let row = await sys.plan.findFirst({ where: { code: spec.code } })
+    if (!row) {
+      row = await sys.plan.create({ data: {
+        code: spec.code, name: spec.name, interval: spec.interval,
+        description: spec.description, active: spec.active,
+      } })
+    }
+    if (await sys.planVersion.count({ where: { planId: row.id } }) === 0) {
+      await sys.planVersion.create({ data: { planId: row.id, price: spec.price } })
+    }
+  }
+
+  const versions = await sys.planVersion.findMany({
+    where: { planId: plan.id }, orderBy: { effectiveFrom: 'asc' },
+  })
+  const soldAt = versions[0]                  // the subscriber is on the OLD price
+  const buyerUser     = await sys.user.findFirst({ where: { email: DEMO.buyer.email } })
+  const buyerCustomer = await reseed<any>(sys.customer, { email: DEMO.buyer.email })
+  if (!soldAt || !buyerCustomer) return
+
+  const REF = 'SUB-3001'
+  let sub = await sys.subscription.findFirst({ where: { reference: REF } })
+
+  // Put it back on its feet. `verify:billing` drives a subscription to
+  // `cancelled` and the deadline is a one-way door, so without this the demo
+  // shop's only subscription is dead after the first run and no re-seed brings
+  // it back — the row exists, so the branch below never fires. The same shape
+  // as `reseed()` restoring a soft-deleted customer, one state machine along.
+  // `asSystem()` is what makes it possible at all: it bypasses `@@transitions`
+  // like every other rule that is not a check.
+  if (sub && sub.status === 'cancelled') {
+    await sys.subscription.update({ where: { id: sub.id }, data: { status: 'active', cancelledAt: null },
+                                    system: ['cancelledAt'] })
+    sub = await sys.subscription.findFirst({ where: { id: sub.id } })
+  }
+
+  // …and back onto the price it was SOLD at, with the seats it was sold with.
+  // `verify` changes both — a plan reprice and a mid-cycle seat change are what
+  // that drive is for — and neither is restored by the branch below, which only
+  // fires when the row does not exist. Without this the demo shop drifts one
+  // change per run and the thing the seed exists to show (a subscriber on a
+  // price the plan no longer sells at) stops being true after the first.
+  if (sub && (sub.planVersionId !== soldAt.id || sub.quantity !== 2)) {
+    await sys.subscription.update({
+      where: { id: sub.id }, data: { planVersionId: soldAt.id, quantity: 2 },
+    })
+    sub = await sys.subscription.findFirst({ where: { id: sub.id } })
+  }
+
+  if (!sub) {
+    const periodStart = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000)
+    const periodEnd   = new Date(periodStart.getTime() + 30 * 24 * 60 * 60 * 1000)
+    sub = await sys.subscription.create({ data: {
+      reference: REF,
+      customerId: buyerCustomer.id,
+      planVersionId: soldAt.id,
+      status: 'active',
+      quantity: 2,
+      currentPeriodStart: periodStart.toISOString(),
+      currentPeriodEnd:   periodEnd.toISOString(),
+      userId: buyerUser?.id ?? null,
+    } })
+  }
+
+  // The document, through the same function the renewal job issues one with.
+  //
+  // `issueInvoice` sums the lines, reads the shop's own tax rate, mints the due
+  // date from the shop's terms and writes the header and the lines in one
+  // transaction. A seed that wrote those columns itself would be a second
+  // opinion about what an invoice IS — and it would be the opinion every screen
+  // and every drive was built against.
+  const INV = 'INV-3001'
+  if (!await sys.invoice.findFirst({ where: { number: INV } })) {
+    const plan = await sys.plan.findFirst({ where: { id: soldAt.planId } })
+    await issueInvoice(sys, {
+      number:         INV,
+      customerId:     buyerCustomer.id,
+      subscriptionId: sub.id,
+      userId:         buyerUser?.id ?? null,
+      periodStart:    sub.currentPeriodStart,
+      periodEnd:      sub.currentPeriodEnd,
+      issuedAt:       sub.currentPeriodStart,
+      lines: periodLines({
+        name:        plan?.name ?? 'Pro',
+        quantity:    sub.quantity,
+        unitAmount:  soldAt.price,
+        periodStart: sub.currentPeriodStart,
+        periodEnd:   sub.currentPeriodEnd,
+      }),
+    })
+
+  }
+
+  // Settled, and that is not decoration. The seeded period started ten days
+  // ago, so the invoice is already past the shop's seven-day terms — an unpaid
+  // one puts the demo shop into dunning on the first cron fire and cancels its
+  // only subscription for a reason nobody asked for.
+  //
+  // Outside the branch above, because the branch only fires the first time and
+  // this has to be true on every run: a drive can settle it, void it, or leave
+  // a re-seeded shop holding an overdue document.
+  const issued = await sys.invoice.findFirst({ where: { number: INV } })
+  if (issued?.status === 'issued') await settleInvoice(sys, issued.id, issued.dueAt)
+  // A row an earlier seed settled with the transition alone, before
+  // `settleInvoice` owned both writes. Repaired rather than left, because a
+  // paid invoice with no payment date is the kind of thing a screen renders as
+  // a blank and nobody notices.
+  else if (issued && !issued.paidAt)
+    await sys.invoice.update({ where: { id: issued.id }, data: { paidAt: issued.dueAt }, system: ['paidAt'] })
+}
+
+// ─── The payroll ──────────────────────────────────────────────────────────
+
+/**
+ * Three people, with pay HISTORIES rather than pay.
+ *
+ * A single window per person would let every as-at read pass by accident: with
+ * one row, *what were they on in March* and *what are they on* are the same
+ * query. Each of these is seeded with a window that has already CLOSED and one
+ * that is open, so a read that forgets its instant gets a different answer from
+ * one that does not.
+ *
+ * The dates are relative to the run for `db:seed`'s usual reason — a fixture
+ * pinned to a literal year stops being *last March* the moment the year turns.
+ *
+ * The third person has LEFT, which is the half `PayWindow` says nothing
+ * about: their pay window is still open, and they are still not on a payroll
+ * run dated after they went. `employedAt` is what separates the two, and
+ * seeding somebody who exercises it is what stops that being theoretical.
+ */
+/**
+ * The band tables, as of a year ago.
+ *
+ * Dated in the past rather than at `now` so that every as-at read in
+ * `verify:employment` has bands in force — a table opened at the instant the
+ * seed ran answers nothing for any date before it, and a drive asking what
+ * March looked like would get zero tax and pass.
+ *
+ * The figures are UK-shaped and the shape is what matters: a zero band that is
+ * the personal allowance, two bands above it, an unbounded top band, and a flat
+ * contribution with a floor. Nothing here is advice.
+ */
+async function seedPayRates() {
+  const DAY  = 24 * 60 * 60 * 1000
+  const from = new Date(Date.now() - 400 * DAY).toISOString()
+
+  // [kind, fromAmount, toAmount, percent] — minor units, and percent at two
+  // places (2000 is 20.00%), which is `Discount.value`'s spelling.
+  const BANDS = [
+    ['incomeTax',       0,           1_257_000,   0],
+    ['incomeTax',       1_257_000,   5_027_000,   2000],
+    ['incomeTax',       5_027_000,   12_514_000,  4000],
+    ['incomeTax',       12_514_000,  null,        4500],
+
+    // Flat above a floor, which is the other shape a band table holds and the
+    // one that would pass unnoticed if every kind were a ladder.
+    ['employeePension', 624_000,     null,        500],
+    ['employerPension', 624_000,     null,        300],
+    ['employerNI',      910_000,     null,        1380],
+  ] as const
+
+  for (const [kind, fromAmount, toAmount, percent] of BANDS) {
+    const held = await sys.payRate.findFirst({
+      where: { kind, fromAmount, effectiveTo: null },
+    })
+    if (held) continue
+    await sys.payRate.create({ data: {
+      kind, fromAmount, toAmount, percent, effectiveFrom: from,
+    } })
+  }
+}
+
+async function seedPayroll() {
+  const DAY  = 24 * 60 * 60 * 1000
+  const ago  = (days: number) => new Date(Date.now() - days * DAY).toISOString()
+
+  const PEOPLE = [
+    { reference: 'EMP-1001', name: 'Dana Fletcher', email: 'dana@shop.test',
+      startedOn: ago(900), endedOn: null,
+      windows: [
+        { basis: 'salary', rate: 4_200_000, hoursPerWeek: 40, from: ago(900), to: ago(200) },
+        { basis: 'salary', rate: 4_800_000, hoursPerWeek: 40, from: ago(200), to: null    },
+      ] },
+    { reference: 'EMP-1002', name: 'Ira Sandoval', email: 'ira@shop.test',
+      startedOn: ago(500), endedOn: null,
+      windows: [
+        { basis: 'hourly', rate: 1_850, hoursPerWeek: 30, from: ago(500), to: ago(120) },
+        { basis: 'hourly', rate: 2_100, hoursPerWeek: 35, from: ago(120), to: null    },
+      ] },
+    // Left. The open window is deliberate: leaving does not close a pay window,
+    // and a payroll that read the terms table alone would keep paying them.
+    { reference: 'EMP-1003', name: 'Wren Okafor', email: 'wren@shop.test',
+      startedOn: ago(700), endedOn: ago(60),
+      windows: [
+        { basis: 'salary', rate: 3_600_000, hoursPerWeek: 40, from: ago(700), to: null },
+      ] },
+  ] as const
+
+  for (const person of PEOPLE) {
+    let employee = await sys.employee.findFirst({ where: { reference: person.reference } })
+    if (!employee) {
+      employee = await sys.employee.create({ data: {
+        reference: person.reference, name: person.name, email: person.email,
+        startedOn: person.startedOn, endedOn: person.endedOn,
+      } })
+    }
+
+    // Idempotent by REBUILDING, not by matching, and that is a correction worth
+    // keeping: this loop first keyed on `effectiveFrom`, which is `ago(900)` —
+    // recomputed on every run, so nothing ever matched and each `db:seed` added
+    // another whole history. Three seeds gave one person six windows, several of
+    // them open at once, and the next as-at read refused by name. A seed whose
+    // idempotency key is a computed timestamp is not idempotent.
+    //
+    // The count is the check because the history is the fixture: if it is not
+    // exactly the windows below, it is somebody else's and this rebuilds it.
+    // Drives mint their own employee under a run prefix and are unaffected.
+    const held = await sys.payWindow.findMany({ where: { employeeId: employee.id } })
+    if (held.length !== person.windows.length) {
+      if (held.length) await sys.payWindow.deleteMany({ where: { employeeId: employee.id } })
+      for (const w of person.windows) {
+        await sys.payWindow.create({ data: {
+          employeeId:    employee.id,
+          basis:         w.basis,
+          rate:          w.rate,
+          hoursPerWeek:  w.hoursPerWeek,
+          effectiveFrom: w.from,
+          effectiveTo:   w.to,
+        } })
+      }
+    }
+  }
 }
 
 /**
@@ -641,12 +947,15 @@ const auth = createLitestoneAuth(db, {
 
 await seed(auth)
 
-const [products, customers, orders, users] = await Promise.all([
-  sys.product.count(), sys.customer.count(), sys.order.count(), sys.user.count(),
+await seedPayRates()
+await seedPayroll()
+
+const [products, customers, orders, users, staff] = await Promise.all([
+  sys.product.count(), sys.customer.count(), sys.order.count(), sys.user.count(), sys.employee.count(),
 ])
 
 console.log(`
-  seeded  ${products} product(s) · ${customers} customer(s) · ${orders} order(s) · ${users} user(s)
+  seeded  ${products} product(s) · ${customers} customer(s) · ${orders} order(s) · ${users} user(s) · ${staff} employee(s)
 
   sign in as  ${DEMO.user.email}  / ${DEMO.user.password}   → level 4
               ${DEMO.admin.email} / ${DEMO.admin.password}  → level 5

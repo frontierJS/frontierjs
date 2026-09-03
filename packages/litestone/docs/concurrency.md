@@ -176,6 +176,37 @@ answer, and it is why `@frontierjs/caravan`'s queue is a database rather than an
 in-memory list — though note that `app.jobs` workers run **in the API's own
 process** unless you start a separate one, so a long handler blocks the API.
 
+**A second process announces nothing to the first unless the database says so.**
+`$tapEvents` is a callback list on one client, so a worker's writes reached a
+serving process's subscribers never — every live list, `record(id)` and `changed`
+reload stale with nothing marking it (`FJS-642`). Declare it:
+
+```prisma
+database main {
+  path     "./db/app.db"
+  announce crossProcess     // default: inProcess
+}
+```
+
+Each announced write then records a row in the database, and every other process
+on this machine reads it and hands it to its own `$tapEvents` subscribers — the
+same seam, so nothing above Litestone can tell a foreign event from a local one.
+It costs about **+14 µs on a single-row write** and nothing on a bulk one, which
+is why it is declared rather than default.
+
+Three things it does not promise, all stated rather than approximated:
+
+- **One machine.** Two processes share a file; a second machine shares nothing
+  and hears nothing.
+- **At-most-once across a crash.** The row is recorded after the write's own
+  transaction commits, so a process that dies in the microseconds between them
+  loses that one announcement — the same trade Junction's `ctx.afterCommit`
+  makes, for the same reason.
+- **The row arrives as it is NOW.** The table carries the id, never the row, so
+  the receiving process re-reads it — which is what keeps the plaintext of an
+  `@encrypted` column out of a table beside the ciphertext, and what makes the
+  row the shape that process's own reads produce.
+
 ### A worker thread
 
 `node:worker_threads` works with `bun:sqlite`, and a worker is a second thread of

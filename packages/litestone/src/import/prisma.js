@@ -35,13 +35,20 @@ export function convert(src, label = 'schema', { labelOneToOne: addLabels = fals
 
   const flush = () => {
     if (!block) return
-    if (block === 'model')     { names.push(name); out.push(...emitModel(name, body, gap)) }
+    if (block === 'model')     { names.push(name); out.push(...emitModel(name, body, gap, wide)) }
     else if (block === 'enum') out.push(...emitEnum(name, body))
     else if (block === 'type') gap('composite-type', name, null, 'Prisma `type` block (an embedded document)', 'skipped')
     else if (block === 'view') gap('view', name, null, 'Prisma `view` block', 'skipped — .lite has `view`, but its body is SQL')
     block = null
     body  = []
   }
+
+  // Before the emit loop, because whether a BigInt column is wide is a fact
+  // about the MODEL — is this scalar named in some relation's `fields: [...]`,
+  // is it a generated key — and `emitField` is handed one line. Once emitted a
+  // BigInt is an `Int` and indistinguishable from one the source wrote, which
+  // is why this reads the SOURCE.
+  const wide = wideIntegerSet(lines.join('\n'))
 
   for (const l of lines) {
     const open = l.match(/^\s*(model|enum|type|view)\s+([A-Za-z0-9_]+)\s*\{/)
@@ -52,9 +59,7 @@ export function convert(src, label = 'schema', { labelOneToOne: addLabels = fals
   }
   flush()
 
-  // Over the SOURCE, not the output: by the time it is emitted a BigInt is an
-  // `Int` and indistinguishable from one the source wrote.
-  reportWideIntegers(lines.join('\n'), gap)
+  reportWideIntegers(wide, gap)
 
   const joined = out.join('\n')
   detectPolymorphic(joined, gap)
@@ -73,7 +78,7 @@ function emitEnum(name, body) {
   return [`enum ${name} {`, ...values.map(v => '  ' + v), '}', '']
 }
 
-function emitModel(name, body, gap) {
+function emitModel(name, body, gap, wide) {
   let fields = []
   const attrs = [], optional = new Set(), deferred = []
   let compositeId = null
@@ -87,7 +92,7 @@ function emitModel(name, body, gap) {
     if (!m) { gap('unparsed-line', name, null, line.slice(0, 80), 'dropped'); continue }
     const [, fname, ptype, list, opt, rest] = m
     if (opt) optional.add(fname)
-    const f = emitField(name, fname, ptype, !!list, !!opt, rest || '', gap)
+    const f = emitField(name, fname, ptype, !!list, !!opt, rest || '', gap, wide)
     if (f) fields.push(f)
   }
 
@@ -110,14 +115,13 @@ function emitModel(name, body, gap) {
   const hasIdMarker = fields.some(f => /@id\b/.test(f))
 
   if (compositeId) {
-    // FJS-561: there is no @@id. A surrogate key is a DIFFERENT statement — it
-    // admits a second identity for the same tuple — so it is emitted as one.
+    // Carried, not surrogated. `@@id` is the same spelling here and it means the
+    // same thing, so this reads across with nothing lost and nothing graded —
+    // it used to invent `id String @id @default(cuid())` plus `@@unique([…])`,
+    // which is a DIFFERENT statement (it admits a second identity for the same
+    // tuple) and was the first wall a mechanical import met (`FJS-561`).
     const cols = compositeId.match(/\[([^\]]*)\]/)?.[1] ?? ''
-    gap('composite-primary-key', name, null, `@@id([${cols}])`,
-        'surrogate `id String @id @default(cuid())` + `@@unique([…])` — admits a second identity for the same tuple')
-    if (!hasIdField) fields.unshift('  id String @id @default(cuid())')
-    else if (!hasIdMarker) fields = fields.map(f => /^\s{2}id\s/.test(f) ? f.replace(/^(\s{2}id\s+\w+\??)/, '$1 @id') : f)
-    attrs.push(`@@unique([${cols}])`)
+    attrs.unshift(`@@id([${cols}])`)
   } else if (!hasIdMarker && !hasIdField) {
     gap('no-primary-key', name, null, 'the model declares no @id', 'surrogate `id String @id @default(cuid())` added')
     fields.unshift('  id String @id @default(cuid())')
@@ -128,7 +132,7 @@ function emitModel(name, body, gap) {
 
 // ─── fields ──────────────────────────────────────────────────────────────────
 
-function emitField(model, fname, ptype, isList, isOpt, rest, gap) {
+function emitField(model, fname, ptype, isList, isOpt, rest, gap, wide) {
   const extra = []
   let type = SCALARS[ptype]
 
@@ -145,9 +149,12 @@ function emitField(model, fname, ptype, isList, isOpt, rest, gap) {
       gap('decimal-no-precision', model, fname, 'Decimal with no @db.Decimal(p, s)', 'Int @scale(2) — a GUESS')
     }
   } else if (ptype === 'BigInt') {
-    // Reported by reportWideIntegers, not here: whether this column is a key or
-    // a foreign key is a fact about the MODEL, and this function is handed a line.
+    // Whether this column is a key or a foreign key is a fact about the MODEL
+    // and this function is handed a line, so the set is decided up front and
+    // passed in. A list is left narrow — an array column is JSON text and
+    // JSON's number IS the double, which is what @big exists to get past.
     type = 'Int'
+    if (!isList && wide?.has(`${model}.${fname}`)) extra.push('@big')
   } else if (ptype === 'Unsupported') {
     gap('unsupported-column', model, fname, rest.slice(0, 60), 'field dropped')
     return null
@@ -209,6 +216,36 @@ function emitField(model, fname, ptype, isList, isOpt, rest, gap) {
 
 const COMPOSITE_ID = Symbol('composite-id')
 
+// Prisma's typed predicate literal → the .lite expression language.
+//
+// `{ published: { not: false } }` · `{ status: "active" }` · `{ deletedAt: null }`
+// · `{ deletedAt: { not: null } }`. Shallow and deliberately narrow: anything
+// with an operator this does not name, a nested relation or a list is answered
+// `null` and the caller drops the whole constraint rather than emitting a
+// weaker or stronger one. A comma at depth 0 is an AND, which is what Prisma
+// means by two keys in one object.
+function prismaWhereToLite(src) {
+  const body = src.trim().replace(/^\{|\}$/g, '').trim()
+  if (!body) return null
+  const parts = splitTopLevel(body)
+  const out = []
+  for (const part of parts) {
+    const m = /^([A-Za-z_]\w*)\s*:\s*([\s\S]+)$/.exec(part.trim())
+    if (!m) return null
+    const [, col, rawVal] = m
+    let val = rawVal.trim(), op = '=='
+    const not = /^\{\s*not\s*:\s*([\s\S]+?)\s*\}$/.exec(val)
+    if (not) { op = '!='; val = not[1].trim() }
+    else if (val.startsWith('{')) return null      // an operator this does not name
+    if (val === 'null' || val === 'true' || val === 'false' || /^-?\d+(\.\d+)?$/.test(val))
+      out.push(`${col} ${op} ${val}`)
+    else if (/^"(?:[^"\\]|\\.)*"$/.test(val))
+      out.push(`${col} ${op} ${val}`)
+    else return null
+  }
+  return out.join(' && ')
+}
+
 function modelAttr(line, model, gap, optional) {
   if (/^@@id\b/.test(line)) return COMPOSITE_ID
   if (/^@@ignore\b/.test(line)) { gap('ignored-model', model, null, '@@ignore', 'kept — .lite has no opt-out'); return null }
@@ -255,6 +292,28 @@ function modelAttr(line, model, gap, optional) {
 
     const named = line.match(/name:\s*"([^"]*)"/) || line.match(/map:\s*"([^"]*)"/)
     if (named) gap('index-name', model, null, `name/map: "${named[1]}"`, 'dropped — litestone derives index names')
+
+    // Prisma 7.4's partial index, behind its `partialIndexes` preview flag, and
+    // the same argument name .lite uses. Two predicate forms and only one of
+    // them can be read: a typed object literal is structure this can walk, and
+    // `raw("…")` is a SQL string with no schema behind it — .lite has no
+    // verbatim predicate anywhere, and inventing one for this would be a second
+    // spelling of a predicate in a language that has one.
+    //
+    // Carried on a @@unique alone. On an @@index the predicate is dropped and
+    // the index only widens; on a UNIQUE it is the constraint, so emitting it
+    // whole is the only reading that is not a stronger claim than the source.
+    const pred = line.match(/\bwhere:\s*([\s\S]*?)\s*\)\s*$/)?.[1]
+    if (pred) {
+      const asRaw  = /^raw\s*\(/.test(pred)
+      const asLite = asRaw ? null : prismaWhereToLite(pred)
+      gap('partial-index', model, clean, `${isIndex ? '' : 'unique '}where: ${pred.slice(0, 60)}`,
+          !isIndex && asLite ? `carried whole — where: ${asLite}`
+        : asRaw              ? 'DROPPED — raw("…") is a SQL string and .lite has no verbatim predicate'
+        : isIndex            ? 'emitted without the predicate — a plain index answers the same rows and is only larger'
+                             : 'DROPPED — emitting it unconditionally would be a stronger constraint than the source declares')
+      if (!isIndex) return asLite ? `@@unique([${clean}], where: ${asLite})` : null
+    }
     return `@@${/unique/.test(line) ? 'unique' : 'index'}([${clean}])`
   }
 
@@ -317,7 +376,7 @@ function labelOneToOne(src, gap) {
 // holds another model's key, and an `@id @default(autoincrement())` counts from
 // one. Everything else is a value the application writes — `appInstallationId`
 // included, which is a GitHub id and exactly the case a name rule would skip.
-function reportWideIntegers(src, gap) {
+function wideIntegerSet(src) {
   let cur = null
   const models = new Map()
 
@@ -337,16 +396,26 @@ function reportWideIntegers(src, gap) {
     if (owns) for (const c of owns[1].split(',')) cur.owned.add(c.trim())
   }
 
-  let count = 0
+  const wide = new Set()
   for (const model of models.values())
     for (const f of model.fields) {
       if (f.type !== 'BigInt') continue
       if (model.owned.has(f.name)) continue
       if (/@id\b/.test(f.rest) && /@default\(\s*autoincrement\(\)/.test(f.rest)) continue
-      gap('bigint', model.name, f.name, 'BigInt', BIGINT_EMITTED)
-      count++
+      wide.add(`${model.name}.${f.name}`)
     }
-  return count
+  return wide
+}
+
+// The report is the same set said out loud. Split from the walk above because
+// the walk now has a second caller — the emitter, which needs the answer before
+// it writes the line rather than after.
+function reportWideIntegers(wide, gap) {
+  for (const key of wide) {
+    const [model, field] = key.split('.')
+    gap('bigint', model, field, 'BigInt', BIGINT_EMITTED)
+  }
+  return wide.size
 }
 
 // ─── two balanced readers ────────────────────────────────────────────────────

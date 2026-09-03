@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-31 services · 27 routes · 9 plugins · prefix (none)
+32 services · 27 routes · 9 plugins · prefix (none)
 ```
 
 ## App hooks
@@ -89,8 +89,8 @@ name when it declares none.
 
 ### `apps` · model `App`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `place`, `unplace`
-- **custom methods** — `place`, `unplace`
+- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `place`, `unplace`
+- **custom methods** — `logs`, `place`, `unplace`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -331,6 +331,21 @@ name when it declares none.
 
 - **methods** — `current`, `save`
 - **custom methods** — `current`, `save`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `anonymous` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `infra` · model `infra`
+
+- **methods** — `graph`, `onboarding`
+- **custom methods** — `graph`, `onboarding`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

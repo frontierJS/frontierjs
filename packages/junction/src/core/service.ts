@@ -447,35 +447,26 @@ export const AUTO_EVENT_MAP: Record<string, string> = {
 
 const CRUD_METHODS = new Set(['find', 'get', 'create', 'update', 'patch', 'remove', 'restore'])
 
-// Warned once per service+method, so a table miss is loud but not a per-request
-// log flood.
-const _warnedUntabled = new Set<string>()
-
 /**
  * The function behind a custom method name, or undefined.
  *
- * The table is the answer. The fallback to an own key is a transition: a method
- * attached to a service object AFTER construction was never a supported shape,
- * but nothing refused it either, and a silent 404 is the worst way to find out.
+ * **The table is the whole answer.** It used to fall back to an own key on the
+ * service object, which made `X-Service-Method` an allow-list written as a
+ * block-list: six CRUD names were refused and every other own function was
+ * dispatchable, so a caller could name `_create` or `_find` — the twins that
+ * skip `autoValidate` and `autoFilter` — or `pipelines` and `describe`, which
+ * hand back the hook layout (`FJS-690`).
+ *
+ * Read with `Object.hasOwn`, because the table is an object literal: bare
+ * indexing answers `Object.prototype.toString` for `toString` and
+ * `Object.prototype` for `__proto__`, so the two names nobody declares were
+ * the two that resolved to something.
  */
 function customMethodFn(service: Service, method: string): CustomMethodFn | undefined {
-  const declared = service._customMethods?.[method]
-  if (declared) return declared
-
-  const attached = (service as unknown as Record<string, unknown>)[method]
-  if (typeof attached !== 'function') return undefined
-
-  const key = `${service.name}.${method}`
-  if (!_warnedUntabled.has(key)) {
-    _warnedUntabled.add(key)
-    console.warn(
-      `[Junction] service '${service.name}': custom method '${method}' is on the ` +
-      `service object but not in its method table, so it was attached after ` +
-      `construction. ` +
-      `Declare it on the definition — a later release dispatches from the table alone.`
-    )
-  }
-  return attached as CustomMethodFn
+  const table = service._customMethods
+  if (!table || !Object.hasOwn(table, method)) return undefined
+  const fn = table[method]
+  return typeof fn === 'function' ? fn : undefined
 }
 
 export async function callService(
@@ -1544,7 +1535,15 @@ export function createBaseService(
       get:    derived(autoFilter(model)),
       create: derived(autoValidate(model, 'create')),
       patch:  derived(autoValidate(model, 'patch')),
-      update: derived(autoValidate(model, 'create')),
+      // `'patch'` and not `'create'` (`FJS-663`, ruled `FJS-D179`). The create
+      // document omits `@version`, so a create-mode validator STRIPPED the
+      // version a PUT carried and the Data boundary then refused the write for
+      // not carrying one — `FJS-335` exactly, one method along, and it made
+      // every PUT to a versioned model a 400 naming the field the request had
+      // just sent. What create mode bought was requiredness, which the write
+      // does not honour: `table.update` merges, so demanding a field that will
+      // not be replaced enforces a discipline nothing delivers.
+      update: derived(autoValidate(model, 'patch')),
     },
   }
 

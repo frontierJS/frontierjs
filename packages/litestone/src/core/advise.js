@@ -296,6 +296,9 @@ export const RULES = [
         // Covered means "an index whose FIRST column is this one" — a composite
         // is usable for a prefix and useless for anything else, which is the
         // same rule SQLite applies.
+        // A PARTIAL unique is deliberately not on this list: it indexes only the
+        // rows its predicate admits, so a foreign-key lookup over the others is
+        // still a scan.
         const covered = new Set()
         for (const a of model.attributes ?? [])
           if ((a.kind === 'index' || a.kind === 'uniqueIndex') && a.fields?.length) covered.add(a.fields[0])

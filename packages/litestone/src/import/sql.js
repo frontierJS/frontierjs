@@ -183,8 +183,11 @@ function emitTable(t, tables, enums, gap) {
     // snowflake primary key is therefore missed, and is the known cost.
     if (/^(bigint|int8|bigserial|serial8)\b/i.test(col.srcType) && !fk &&
         !col.extra.includes('@id') && !col.extra.includes('@default(autoincrement())') &&
-        !namesATable(col.name, (n) => tables.has(n), singularize))
+        !namesATable(col.name, (n) => tables.has(n), singularize)) {
+      // Before `render(col)`, or the attribute is reported and not emitted.
+      col.extra.push('@big')
       gap('bigint', t.model, col.name, col.srcType, BIGINT_EMITTED)
+    }
     const target = fk && tables.get(fk.parent)
     out.push(render(col))
     if (target) {
@@ -198,21 +201,37 @@ function emitTable(t, tables, enums, gap) {
   }
 
   const hasIdCol = cols.has('id')
+  let compositePk = null
   if (!t.pk.length) {
     gap('no-primary-key', t.model, null, 'no PRIMARY KEY',
         hasIdCol ? "the existing `id` column was marked @id" : 'surrogate `id String @id @default(cuid())` added')
     if (hasIdCol) promoteId(out)
     else out.splice(1, 0, '  id String @id @default(cuid())')
   } else if (t.pk.length > 1) {
-    // FJS-561 — no composite @@id.
-    gap('composite-primary-key', t.model, null, `PRIMARY KEY (${t.pk.join(', ')})`,
-        'surrogate id + @@unique([…]) — admits a second identity for the same tuple')
-    if (hasIdCol) promoteId(out)
-    else out.splice(1, 0, '  id String @id @default(cuid())')
-    t.indexes.push({ unique: true, cols: t.pk, where: null })
+    // Carried in the key's own column ORDER, which is the half a surrogate plus
+    // `@@unique([…])` could never hold: a primary key builds an implicit index
+    // and an implicit index is prefix-matched (`FJS-561`).
+    //
+    // Unless a member is NULLABLE, which SQLite permits on a rowid table and
+    // `@@id` refuses — a key that does not identify anything. There the
+    // surrogate is the honest reading and stays graded, because the tuple the
+    // source called a key admits several rows that leave a member unset.
+    const nullable = t.pk.filter(c => cols.get(c)?.optional)
+    if (nullable.length) {
+      gap('composite-primary-key', t.model, null, `PRIMARY KEY (${t.pk.join(', ')})`,
+          `surrogate id + @@unique([…], nullsDistinct: true) — ${nullable.join(', ')} is nullable, ` +
+          `so the source's own key does not identify a row`)
+      if (hasIdCol) promoteId(out)
+      else out.splice(1, 0, '  id String @id @default(cuid())')
+      t.indexes.push({ unique: true, cols: t.pk, where: null })
+    } else {
+      compositePk = t.pk
+    }
   }
 
   const attrs = []
+  // First, so the key reads at the top of the model's own attribute block.
+  if (compositePk) attrs.push(`@@id([${compositePk.map(camel).join(', ')}])`)
   for (const c of t.checks) {
     const a = emitCheck(c, t, cols, gap)
     if (a) attrs.push(a)
@@ -418,21 +437,37 @@ function emitIndex(idx, t, cols, gap) {
   const camelNames = names.map(camel)
 
   // A predicate `@@index(where:)` can hold is emitted WHOLE; one it cannot is
-  // dropped, which only widens the index. A UNIQUE one is dropped entirely,
-  // because there the predicate is the difference between uniqueness among some
-  // rows and among all of them (FJS-586, FJS-590).
+  // dropped, which only widens the index (FJS-586, FJS-590).
+  //
+  // A UNIQUE one is CARRIED now that `@@unique(where:)` exists (FJS-603) — and
+  // the two grammars differ, which is why the value form is asked for here and
+  // not on the index path: a partial unique may compare against a value and a
+  // partial index may not. One the reading still cannot express is dropped
+  // WHOLE rather than emitted unconditionally, because there the predicate is
+  // the difference between uniqueness among some rows and among all of them,
+  // and a stronger constraint than the source declares refuses rows the source
+  // permits.
+  const nullableCols = camelNames.filter((n, i) => cols.get(names[i])?.optional)
   let whereLite = null
   if (idx.where) {
-    whereLite = idx.unique ? null : predicateToLite(idx.where, camel)
+    // A tuple with a nullable member takes `nullsDistinct: true`, and that
+    // cannot be combined with a predicate — so a partial unique over one is
+    // dropped rather than emitted as a schema this parser refuses. Anything
+    // that WRITES .lite owes the round trip (FJS-594).
+    const blocked = idx.unique && nullableCols.length && camelNames.length > 1
+    whereLite = blocked ? null : predicateToLite(idx.where, camel, { values: !!idx.unique })
     gap('partial-index', t.model, camelNames.join(', '), `${idx.unique ? 'unique ' : ''}WHERE ${idx.where.slice(0, 50)}`,
-        idx.unique  ? 'DROPPED — emitting it unconditionally would be a stronger constraint than the source declares'
+        whereLite && idx.unique ? `carried whole — where: ${whereLite}`
       : whereLite   ? `emitted whole — where: ${whereLite}`
+      : blocked     ? `DROPPED — ${nullableCols.join(', ')} is nullable, so the tuple needs nullsDistinct, which a predicate excludes`
+      : idx.unique  ? 'DROPPED — emitting it unconditionally would be a stronger constraint than the source declares'
                     : 'emitted without the predicate — a plain index answers the same rows and is only larger')
-    if (idx.unique) return null
+    if (idx.unique && !whereLite) return null
+    if (idx.unique) return `@@unique([${camelNames.join(', ')}], where: ${whereLite})`
   }
 
   if (idx.unique) {
-    const nullable = camelNames.filter((n, i) => cols.get(names[i])?.optional)
+    const nullable = nullableCols
     if (nullable.length && camelNames.length > 1) {
       gap('composite-unique-over-nullable', t.model, null,
           `@@unique([${camelNames.join(', ')}]) with ${nullable.join(', ')} nullable`,

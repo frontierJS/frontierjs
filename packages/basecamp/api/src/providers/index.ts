@@ -1,6 +1,9 @@
 // src/providers/index.ts
-// The self-hosted appliances this app speaks to — the 8 beyond Junction's
-// built-ins. (IQueue is gone — replaced by @frontierjs/caravan via app.jobs)
+// The parties this app speaks to — the 10 beyond Junction's built-ins. Eight
+// are self-hosted appliances; `edge` and `cloudSpend` are somebody else's
+// service, which changes nothing here and one thing for an operator: an
+// appliance is installed and pointed at, a hosted service is an account with a
+// bill behind it. (IQueue is gone — replaced by @frontierjs/caravan via app.jobs)
 //
 // They live under `providers/` because that is what FJS-D06 rules the word to
 // mean: a party outside the app that a capability speaks to. Infisical, Unleash
@@ -13,7 +16,9 @@
 import type {
   BasecampProviders,
   ISecrets, IFlags, ISearch,
-  IRegistry, IGit, IObservability, INetworking, IIntegrations
+  IRegistry, IGit, IObservability, INetworking, IIntegrations,
+  IEdge, ICloudSpend, GitRepo, GitPullRequest,
+  EdgeZone, EdgeRecord, EdgeAnalytics, SpendPeriod, SpendLine
 } from '../basecamp.types.ts'
 
 // ─── Stub helpers ────────────────────────────────────────────────────────
@@ -75,7 +80,10 @@ class StubRegistry implements IRegistry {
 class StubGit implements IGit {
   async createRepo(name: string)  { stubWarn('Git', `createRepo(${name})`); return { id: 0, clone_url: '' } }
   async deleteRepo(name: string)  { stubWarn('Git', `deleteRepo(${name})`) }
-  async listRepos()               { stubWarn('Git', 'listRepos'); return [] }
+  async listRepos(): Promise<GitRepo[]> { stubWarn('Git', 'listRepos'); return [] }
+  async listPullRequests(repo: string): Promise<GitPullRequest[]> {
+    stubWarn('Git', `listPullRequests(${repo})`); return []
+  }
   async createWebhook()           { stubWarn('Git', 'createWebhook'); return { id: 0 } }
 }
 
@@ -84,6 +92,35 @@ class StubObservability implements IObservability {
   async pushMetric() { /* silent — metrics fire frequently */ }
   async queryLogs()    { stubWarn('Observability', 'queryLogs');    return [] }
   async queryMetrics() { stubWarn('Observability', 'queryMetrics'); return [] }
+}
+
+// ── Edge (DNS, TLS termination) ───────────────────────────────────────────
+// Empty answers, never invented ones. A stub that returned a plausible zone
+// would put a hostname on /dns/ that this app cannot reach and nobody owns.
+class StubEdge implements IEdge {
+  async listZones(): Promise<EdgeZone[]>   { stubWarn('Edge', 'listZones');   return [] }
+  async listRecords(zoneId: string): Promise<EdgeRecord[]> {
+    stubWarn('Edge', `listRecords(${zoneId})`); return []
+  }
+  async analytics(zoneId: string): Promise<EdgeAnalytics> {
+    stubWarn('Edge', `analytics(${zoneId})`)
+    // Zeroes are a lie of a different kind — "no requests" reads as an outage.
+    // The screen asks whether the adapter is configured BEFORE it asks this,
+    // so nothing renders these; they exist because the signature must return.
+    return { requests: 0, cached: 0, bandwidthBytes: 0, threats: 0 }
+  }
+}
+
+// ── Cloud spend ───────────────────────────────────────────────────────────
+class StubCloudSpend implements ICloudSpend {
+  async monthToDate(): Promise<SpendPeriod> {
+    stubWarn('CloudSpend', 'monthToDate')
+    return { currency: 'USD', amountMinor: 0, from: '', to: '' }
+  }
+  async lineItems(): Promise<SpendLine[]> { stubWarn('CloudSpend', 'lineItems'); return [] }
+  async forServer(id: string): Promise<SpendLine | null> {
+    stubWarn('CloudSpend', `forServer(${id})`); return null
+  }
 }
 
 // ── Networking ────────────────────────────────────────────────────────────
@@ -132,5 +169,17 @@ export async function buildProviders(
   // TODO: if (cfg.integrations?.nango_url) → NangoIntegrations(...)
   const integrations: IIntegrations = new StubIntegrations()
 
-  return { secrets, flags, search, registry, git, observability, networking, integrations }
+  // The two that are somebody else's service rather than an appliance. Both
+  // are a `@frontierjs/conduit` target when they land — a declared target with
+  // its token held as a `Secret`, never a `fetch()` in a service.
+  // TODO: if (cfg.edge?.api_token) → CloudflareEdge(cfg.edge)
+  const edge: IEdge = new StubEdge()
+
+  // TODO: if (cfg.cloud_spend?.api_token) → DigitalOceanSpend(cfg.cloud_spend)
+  const cloudSpend: ICloudSpend = new StubCloudSpend()
+
+  return {
+    secrets, flags, search, registry, git, observability, networking, integrations,
+    edge, cloudSpend,
+  }
 }

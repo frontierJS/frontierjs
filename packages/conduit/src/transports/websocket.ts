@@ -260,6 +260,11 @@ export class WebSocketTransport extends BaseTransport {
     const headers = await this.buildAuthHeaders({
       method: 'CONNECT',
       path:   safePath(this.descriptor.address),
+      // The upgrade URL's query is signed too, or a verifier recomputing from
+      // the raw request URL builds a different canonical string than this side
+      // did and refuses every connection to an address carrying one
+      // (`FJS-678`).
+      query:  safeQuery(this.descriptor.address),
     })
 
     return new Promise((resolve) => {
@@ -397,5 +402,13 @@ function safePath(address: string): string {
     return new URL(address).pathname || '/'
   } catch {
     return '/'
+  }
+}
+
+function safeQuery(address: string): string {
+  try {
+    return new URL(address).search
+  } catch {
+    return ''
   }
 }

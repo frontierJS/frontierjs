@@ -1,0 +1,120 @@
+---
+title: Observability
+---
+<script>
+  // The mock's ObservabilityView — four metric tiles and a live log stream,
+  // both from constants.
+  //
+  // Like git activity, this has an interface waiting for it: `IObservability`
+  // with `queryLogs` and `queryMetrics`, Grafana as the intended adapter and a
+  // Stub in front of it. And like git activity, the screen reports that off
+  // the portal rather than keeping a second opinion about whether it is wired.
+  //
+  // ── Why there is nothing to show even when it is wired ───────────────────
+  // No service exposes either query. That is deliberate rather than missing:
+  // a log line is somebody else's row, a metrics range is a query language
+  // this app does not speak, and putting `queryLogs` behind a CRUD service
+  // would hand every caller a pass-through to whatever the adapter is pointed
+  // at. What goes here is a read with a shape — a window, a service name, a
+  // level — and that is a service worth designing rather than one to ship
+  // because the interface happened to exist.
+  //
+  // The one number this app DOES own is on /hub/, read at request time from
+  // Caravan, Conduit and SQLite. It is linked rather than repeated.
+  import { session } from '../../session.js'
+  import { portal } from '../../resources/Portal.mesa'
+
+  import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout  from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card     from '@frontierjs/ui/components/layout/Card.mesa'
+  import Pill     from '@frontierjs/ui/components/display/Pill.mesa'
+  import Skeleton from '@frontierjs/ui/components/feedback/Skeleton.mesa'
+
+  $: session.workspaceId
+
+  let entry   = null
+  let error   = null
+  let loading = true
+
+  async function load() {
+    error = null; loading = true
+    try {
+      entry = await portal.service.get('observability')
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  const TONE = { healthy: 'success', unconfigured: 'muted', unreachable: 'danger', degraded: 'warning' }
+</script>
+
+{#if error}
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if loading}
+  <div aria-busy="true" class="stack">
+    <Skeleton variant="text" width="12rem" />
+    <Skeleton height="16rem" />
+  </div>
+{:else if entry}
+  <Card>
+    <div class="section-header">
+      <h2 class="h4">{entry.name}</h2>
+      <Pill tone={TONE[entry.status] ?? 'muted'} id="observability-status">{entry.status}</Pill>
+    </div>
+    <dl class="facts">
+      <dt>Adapter</dt><dd><code>{entry.adapter}</code></dd>
+      <dt>URL</dt><dd><code>{entry.url ?? 'not set'}</code></dd>
+    </dl>
+    <div class="cluster">
+      <Button variant="ghost" href="/admin/adapters/">All adapters</Button>
+      <Button variant="ghost" href="/hub/">Runtime numbers</Button>
+    </div>
+  </Card>
+
+  <Callout tone="muted" title="Nothing is being measured here">
+    <p class="text-body">
+      Response times, request rates, error rates and latency percentiles are the metrics
+      store's, and nothing in this process samples any of them. A figure derived from one
+      reading would be noise printed beside numbers that are real, which is the same call
+      <a href="/hub/">the hub overview</a> makes about CPU.
+    </p>
+    <p class="text-body">
+      <code>IObservability</code> declares <code>queryLogs</code> and
+      <code>queryMetrics</code> and no service exposes either — a window, a service name and
+      a level are what a read here needs, and that is a service to design rather than a
+      pass-through to ship.
+    </p>
+  </Callout>
+
+  <div class="tiles" style="--tile-min: 12rem" aria-busy="true" aria-label="Metrics, not connected">
+    <Skeleton variant="stat" />
+    <Skeleton variant="stat" />
+    <Skeleton variant="stat" />
+    <Skeleton variant="stat" />
+  </div>
+
+  <Card>
+    <h2 class="h4">Log stream</h2>
+    <div aria-busy="true" class="stack" aria-label="Logs, not connected">
+      <Skeleton variant="text" width="88%" />
+      <Skeleton variant="text" width="76%" />
+      <Skeleton variant="text" width="82%" />
+      <Skeleton variant="text" width="69%" />
+      <Skeleton variant="text" width="79%" />
+    </div>
+    <p class="text-sm text-muted">
+      What this app writes is in <a href="/activity/">the audit trail</a> — who did what,
+      here. A log line from a container is a different thing and belongs to whatever is
+      collecting them.
+    </p>
+  </Card>
+{/if}

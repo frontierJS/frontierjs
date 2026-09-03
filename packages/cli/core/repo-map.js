@@ -634,11 +634,22 @@ function severityOf(section = '') {
   return 'other'
 }
 
-/** A row's cells. A title carrying a `|` inside code would over-split, so the surplus is folded back. */
-function splitRow(line) {
-  const cells = line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim())
-  if (cells.length <= 6) return cells
-  return [cells[0], cells[1], cells.slice(2, cells.length - 3).join(' | '), ...cells.slice(-3)]
+/**
+ * A row's cells. A prose cell carrying a `|` inside code over-splits and shifts every
+ * column right of it — `docker save | docker load` put half a paragraph in the effort
+ * column — so the surplus is folded back into the prose cell. The tail columns are
+ * short and fixed, which is what makes counting from the end safe.
+ */
+function splitRow(line, want = 6, foldAt = 2) {
+  const cells = line.trim().replace(/^\|/, '').replace(/\|$/, '')
+    .split(/(?<!\\)\|/).map(c => c.trim().replace(/\\\|/g, '|'))
+  if (cells.length <= want) return cells
+  const tail = want - foldAt - 1
+  return [
+    ...cells.slice(0, foldAt),
+    cells.slice(foldAt, cells.length - tail).join(' | '),
+    ...cells.slice(-tail),
+  ]
 }
 
 // ─── commands ─────────────────────────────────────────────────────────────────
@@ -759,7 +770,7 @@ function ideas(root) {
       if (line.startsWith('## ')) { wave = null; continue }
       if (!wave || !/^\|\s*\d/.test(line)) continue
 
-      const cells = line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim())
+      const cells = splitRow(line, 8, 1)
       if (cells.length < 8) continue
 
       wave.rows.push({

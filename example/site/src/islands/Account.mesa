@@ -37,6 +37,15 @@
   let orders   = []
   let lines    = new Map()
   let open     = null
+  // The recurring half. Two lists rather than one nested read: a subscription
+  // and an invoice are different questions asked at different rates, and the
+  // policies that scope them are each on their own model.
+  let subs     = []
+  let bills    = []
+  let needy    = []   // payments whose bank has asked for the cardholder
+  let billOpen = null
+  let detail   = new Map()   // invoiceId → the composed document
+  let working  = null        // the subscription a cancel is in flight for
   let error    = ''
   let mode     = 'in'         // in | up
   let email    = ''
@@ -71,7 +80,61 @@
     // Everything, sorted. What comes back is what the boundary allows.
     const list = await client.service('orders').find({}, { orderBy: '-createdAt', limit: 50 })
     orders = list?.data ?? []
+
+    // Nothing here filters by who is asking, and that is the assertion: both
+    // models declare `@@allow('read', userId == auth().id)`, so asking for
+    // everything and getting this person's rows is the boundary working. A
+    // screen that also filtered would be a second copy of that rule in the one
+    // place it cannot be enforced.
+    const [sl, bl, pl] = await Promise.all([
+      client.service('subscriptions').find({}, { orderBy: '-createdAt', limit: 20 }),
+      client.service('invoices').find({},      { orderBy: '-issuedAt',  limit: 50 }),
+      // The payments that are waiting for THIS person. `Payment` reads at
+      // VISITOR(1) behind the same pair of policies, and it is here for one
+      // reason: when a bank asks for the cardholder, nobody but the cardholder
+      // can finish it, so a row only staff could read would leave the one
+      // person who can act unable to find out.
+      client.service('payments').find({ status: 'requiresAction' }, { limit: 10 }),
+    ])
+    subs  = sl?.data ?? []
+    bills = bl?.data ?? []
+    needy = pl?.data ?? []
+
     state  = 'in'
+  }
+
+  /** One invoice, opened. `invoices.get()` answers the document — the header
+   *  AND its lines — because a total with nothing under it is not something
+   *  anybody can check. The list read above cannot carry them: it is a page of
+   *  headers, and a nested read on every row of it would be a query per
+   *  invoice for lines nobody has asked to see. */
+  async function showBill(inv) {
+    billOpen = billOpen === inv.id ? null : inv.id
+    if (billOpen === null || detail.has(inv.id)) return
+    const got = await client.service('invoices').get(inv.id)
+    detail = new Map(detail).set(inv.id, got)
+  }
+
+  /** Stop it renewing, or start again.
+   *
+   *  Not a move: every one of this model's four transitions is `@system`, so no
+   *  request can ask for any of them. `cancel` sets `cancelAtPeriodEnd` and the
+   *  arrangement ends when the renewal job reaches the period that has already
+   *  been paid for — which is what the word means to somebody pressing it, and
+   *  is why the button says so rather than saying *cancel*.
+   *
+   *  What lets a shopper do it to their OWN is
+   *  `@@allow('update', userId == auth().id)` on the model; nothing here grades
+   *  anybody. */
+  async function setRenewal(sub, on) {
+    working = sub.id
+    error = ''
+    try {
+      await client.service('subscriptions').invoke(on ? 'resume' : 'cancel', sub.id)
+      await load()
+    } catch (e) {
+      error = e?.message ?? 'That did not work'
+    } finally { working = null }
   }
 
   async function show(order) {
@@ -124,6 +187,119 @@
       </div>
       <button class="btn ghost" onclick={signOut} data-signout>Sign out</button>
     </div>
+
+    <h3>Your standing orders</h3>
+    {#if subs.length === 0}
+      <p class="text-muted" data-no-subs>
+        None. <a href="/pricing/">See what we send on a cycle</a>.
+      </p>
+    {:else}
+      <ul class="orders" data-subs>
+        {#each subs as sub (sub.id)}
+          <li data-sub={sub.reference}>
+            <div class="row static">
+              <span class="ref">{sub.reference}</span>
+              <span class="when text-muted">
+                {sub.status === 'cancelled' ? 'ended'
+                 : sub.cancelAtPeriodEnd    ? 'ends'
+                 :                            'renews'} {when(sub.currentPeriodEnd)}
+              </span>
+              <!--
+                `cancelAtPeriodEnd` is a flag and not a state, so the row still
+                reads `active` while it is running out. That is correct and it
+                is also the whole reason it has to be SAID here: a status pill
+                alone tells somebody who has just pressed the button nothing
+                about what they pressed.
+              -->
+              <span class="status" data-sub-status={sub.status}
+                    data-sub-stopping={sub.cancelAtPeriodEnd ? '1' : ''}>{sub.status}</span>
+              <span class="total">
+                {#if sub.status === 'cancelled'}
+                {:else if sub.cancelAtPeriodEnd}
+                  <button class="btn ghost" data-resume={sub.reference}
+                          disabled={working === sub.id}
+                          onclick={() => setRenewal(sub, true)}>Keep it</button>
+                {:else}
+                  <button class="btn ghost" data-cancel={sub.reference}
+                          disabled={working === sub.id}
+                          onclick={() => setRenewal(sub, false)}>Stop renewing</button>
+                {/if}
+              </span>
+            </div>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+
+    <!--
+      The one thing on this page a person has to ACT on, so it is above the
+      lists rather than a status inside one. The link goes to the PROVIDER's
+      own page: a card network's challenge belongs on the network's origin, and
+      hosting it here would put a third party's script on a prerendered site to
+      collect the one thing this whole app is arranged not to see.
+    -->
+    {#if needy.length}
+      <div class="notice" data-action-required={needy.length}>
+        <h3>One moment — your bank wants to check</h3>
+        <p>
+          {needy.length === 1 ? 'A payment could not' : 'Some payments could not'}
+          be taken without you. Nothing has been charged yet.
+        </p>
+        <ul class="orders">
+          {#each needy as p (p.id)}
+            <li data-needs={p.id}>
+              <div class="row static">
+                <span class="ref">{money(p.amount)}</span>
+                <span class="when text-muted">{when(p.createdAt)}</span>
+                <span class="total">
+                  {#if p.actionUrl}
+                    <a class="btn primary" data-confirm={p.id} href={p.actionUrl} rel="noopener">Confirm it</a>
+                  {:else}
+                    <span class="text-muted">waiting for your bank</span>
+                  {/if}
+                </span>
+              </div>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+
+    <h3>Your invoices</h3>
+    {#if bills.length === 0}
+      <p class="text-muted" data-no-bills>Nothing has been billed yet.</p>
+    {:else}
+      <ul class="orders" data-bills>
+        {#each bills as bill (bill.id)}
+          <li data-bill={bill.number}>
+            <button class="row" onclick={() => showBill(bill)} data-open-bill={bill.number}>
+              <span class="ref">{bill.number}</span>
+              <span class="when text-muted">{when(bill.issuedAt)}</span>
+              <span class="status" data-bill-status={bill.status}>{bill.status}</span>
+              <span class="total" data-bill-total={bill.total}>{money(bill.total)}</span>
+            </button>
+
+            {#if billOpen === bill.id}
+              <table class="lines" data-bill-lines={bill.number}>
+                <tbody>
+                  {#each (detail.get(bill.id)?.lines ?? []) as line (line.id)}
+                    <tr>
+                      <td>{line.description}</td>
+                      <td class="num">×{line.quantity}</td>
+                      <td class="num">{money(line.amount)}</td>
+                    </tr>
+                  {:else}
+                    <tr><td colspan="3" class="text-muted">Loading…</td></tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+
+    {#if error}<p class="error" data-account-error>{error}</p>{/if}
 
     <h3>Your orders</h3>
     {#if orders.length === 0}
@@ -205,6 +381,9 @@
              padding: var(--space-lg); background: none; border: 0;
              text-align: left; cursor: pointer; font: inherit; color: inherit; }
   .row:hover { background: var(--surface-sunken); }
+  /* A subscription line is not a button — there is nothing to expand — so it
+     takes the same grid without the cursor or the hover. */
+  .row.static, .row.static:hover { cursor: default; background: none; }
   .ref     { font-variant-numeric: tabular-nums; font-weight: 600; }
   .total   { text-align: right; font-variant-numeric: tabular-nums; }
   .status  { font-size: 0.8rem; }

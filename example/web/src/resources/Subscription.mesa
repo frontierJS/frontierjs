@@ -1,0 +1,40 @@
+<script module>
+  // web/src/resources/Subscription.mesa — the Resource layer.
+  //
+  // Named for the model, exporting the accessor — see Order.mesa.
+  //
+  // The model declares four moves and three of them are `@system` — `activate`
+  // when a trial converts, `lapse` when an invoice goes unpaid past its grace,
+  // `recover` when the ledger comes clean. `transitions(row, level)` reads them
+  // off `x-transitions` and answers what a person may ask for, which on this
+  // model is `cancel` and nothing else. Nothing on any screen lists the four.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const subscriptions = createResource('subscriptions')
+</script>
+
+<script>
+  // …and the markup half is this model's DEFAULT form (repo Invariant 18).
+  //
+  // The cycle columns are absent from it and that is the schema's doing:
+  // `currentPeriodStart`, `currentPeriodEnd` and `cancelledAt` are `@system`,
+  // stamped by the renewal job, so they reach the browser `readOnly` and a
+  // generated form does not offer them. What is left is what a person actually
+  // decides — who, which price, how many, and when the trial ends.
+  import Form   from '@frontierjs/ui/components/forms/Form.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let record      = undefined
+  export let method      = undefined
+  export let submitLabel = 'Save'
+  export let cancelHref  = null
+  export let oncancel    = null
+  export let submitId    = undefined
+  export let actions     = null
+</script>
+
+<Form resource={subscriptions} bind:record={record} {method} {actions} {...$attributes}>
+  <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
+  <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
+</Form>

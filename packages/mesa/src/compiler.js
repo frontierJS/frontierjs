@@ -2011,6 +2011,28 @@ function memberPath(node) {
   return null
 }
 
+// A `$:` dep list is a comma expression, and a PARENTHESISED group inside one
+// is another SequenceExpression rather than a leaf. `$: (a.x, a.y), () => f()`
+// therefore arrived as a single node whose memberPath is null and whose
+// collectRefs is the root alone, so the two paths were silently replaced by a
+// watch on the whole object — and where the component also held a bare
+// `$: a.x`, the emitter went on to reference `$$watch_a`, which nothing
+// declares (`FJS-599`). Flattening is what makes the parenthesised form compile
+// to exactly what its unparenthesised twin compiles to.
+function flattenSeq(exprs) {
+  return exprs.flatMap((e) =>
+    e.type === 'SequenceExpression' ? flattenSeq(e.expressions) : [e]
+  )
+}
+
+// One dep expression → the path it names, or every identifier it reads.
+function watchDeps(exprs) {
+  return flattenSeq(exprs).flatMap((e) => {
+    const p = memberPath(e)
+    return p ? [p] : [...collectRefs(e)]
+  })
+}
+
 /**
  * The twelve builtins are reachable only through `$` (FJS-D132 phase 4).
  *
@@ -2806,10 +2828,7 @@ export function analyzeScript(raw, ast) {
             const lastE = seqExprs[seqExprs.length - 1]
             const depExprs = seqExprs.slice(0, -1)
             entries.push({
-              deps: depExprs.flatMap((de) => {
-                const p = memberPath(de)
-                return p ? [p] : [...collectRefs(de)]
-              }),
+              deps: watchDeps(depExprs),
               isAsync: lastE.async || false,
               handlerRaw: raw.slice(lastE.start, lastE.end),
               depsRaw: depExprs.map((de) => raw.slice(de.start, de.end)).join(', ')
@@ -2883,10 +2902,7 @@ export function analyzeScript(raw, ast) {
         if (isHandler) {
           // Shape 2: $: dep, handler  or  $: (dep1, dep2), handler
           watchHandlers.push({
-            deps: rest.flatMap((e) => {
-              const p = memberPath(e)
-              return p ? [p] : [...collectRefs(e)]
-            }),
+            deps: watchDeps(rest),
             isAsync: lastEx.async || false,
             handlerRaw: raw.slice(lastEx.start, lastEx.end),
             depsRaw: rest.map((e) => raw.slice(e.start, e.end)).join(', '),
@@ -2896,7 +2912,7 @@ export function analyzeScript(raw, ast) {
           })
         } else {
           // Shape 3: $: (path1, path2)  — multi-path watch
-          exprs.forEach((e) => {
+          flattenSeq(exprs).forEach((e) => {
             const p = memberPath(e)
             if (p)
               watchPaths.push({
@@ -5592,9 +5608,16 @@ export function makeComponent(node, option = {}) {
         w.writeLine(`${n.bindThisSetter}($$runtime.componentApi(${n.anchorName}));`)
       }
 
-      // Reactive prop sync: push new values whenever deps change
+      // Reactive prop sync: push new values whenever deps change.
+      //
+      // The WHOLE props object, not just the reactive half. A prop the child
+      // declared has a signal of its own and a static value written twice is a
+      // no-op; an attribute the child did NOT declare has no signal, arrives as
+      // `$attributes`, and is rebuilt wholesale on the other side — so a push
+      // carrying only the reactive keys loses every static one, and a key can
+      // never LEAVE a spread.
       if (n.hasReactive || n.hasSpreads) {
-        const pushObj = buildPropsObj(n.reactiveProps, n.hasSpreads ? n.spreadProps : [])
+        const pushObj = buildPropsObj(n.allProps, n.hasSpreads ? n.spreadProps : [])
         w.writeLine(`$$runtime.createEffect(() => { $$runtime.pushProps(${n.anchorName}, ${pushObj}); });`)
       }
     }
@@ -6440,14 +6463,34 @@ export function emitScript(ctx) {
   // proxy for it would change its accessor from `$$runtime.get($$sig_a)` to
   // `$$proxy_a` — which is the deep-watch opt-in that only the bare `$: a` form
   // should trigger.
-  const watchedPaths = [
+  //
+  // A `$: { }` ordered group's deps are read the same way and were collected
+  // nowhere, so every one of them referenced a signal nothing declared — or,
+  // where no proxy root existed at all, was dropped from the group and the
+  // entry never fired (`FJS-599`).
+  const groupDeps = watchGroups.flatMap((g) => g.entries.flatMap((e) => e.deps))
+  const dottedDeps = [
     ...watchPaths.map((p) => p.path),
     ...watchHandlers.flatMap((wh) => wh.deps.filter((d) => d.includes('.'))),
+    ...groupDeps.filter((d) => d.includes('.')),
   ]
 
   const proxyRoots = new Set(
-    watchedPaths.map((path) => path.replace(/\?\.|\./g, '.').split('.')[0])
+    dottedDeps.map((path) => path.replace(/\?\.|\./g, '.').split('.')[0])
   )
+
+  // A BARE dep whose root is already a proxy root is the other half. It adds no
+  // root — that is the deep-watch opt-in above — but the emitter reads it as
+  // `$$watch_<root>`, the whole-object signal, and only the bare `$: a` form
+  // ever declared one. `$: a.x` beside `$: a, () => f()` therefore emitted a
+  // reference to `$$watch_a` that nothing declares: the module parses, so
+  // Invariant 15's parse check cannot see it, and what is raised is a
+  // ReferenceError from inside createEffect on mount (`FJS-599`).
+  const watchedPaths = [
+    ...dottedDeps,
+    ...[...watchHandlers.flatMap((wh) => wh.deps), ...groupDeps]
+      .filter((d) => !d.includes('.') && proxyRoots.has(d)),
+  ]
 
   // Split into local-let roots and import roots
   const localProxyRoots = new Set(
@@ -6545,6 +6588,29 @@ export function emitScript(ctx) {
         })
       }
     }
+  }
+
+  // Every `$$watch_*` this component declares, in the one spelling both
+  // emitters build by hand. A reference to a name absent from this set is a
+  // module that PARSES and throws a ReferenceError from inside createEffect on
+  // mount, which no parse check can see (`FJS-599`) — so a dep that resolved to
+  // one is reported at compile time instead of being written out.
+  const declaredWatchSigs = new Set(
+    watchedPaths.map((rawPath) => {
+      const norm = rawPath.replace(/\?\./g, '.')
+      const dotIdx = norm.indexOf('.')
+      const root = dotIdx >= 0 ? norm.slice(0, dotIdx) : norm
+      const dotPath = dotIdx >= 0 ? norm.slice(dotIdx + 1) : ''
+      return dotPath ? `$$watch_${root}_${dotPath.replace(/\./g, '_')}` : `$$watch_${root}`
+    })
+  )
+  const requireWatchSig = (sigVar, dep) => {
+    if (declaredWatchSigs.has(sigVar)) return sigVar
+    ctx.analysis.errors.push(
+      `'$: ${dep}' resolves to a watch signal this component does not declare (${sigVar}). ` +
+      `This is a compiler bug — please report it with the component that produced it.`
+    )
+    return null
   }
 
   // One watchPath signal per unique (root, dotPath) pair.
@@ -7030,7 +7096,10 @@ export function emitScript(ctx) {
           // TRACKED OBJECT when the root is a local `let` (track). Calling it
           // directly threw "$$watch_o_a is not a function" on mount for every
           // local-let path watch — get() already reads both shapes.
-          return { subscribe: `$$runtime.get(${sigVar})`, value: rewriteExpr(dep, ctx.accessors) }
+          const declared = requireWatchSig(sigVar, dep)
+          return declared
+            ? { subscribe: `$$runtime.get(${declared})`, value: rewriteExpr(dep, ctx.accessors) }
+            : { subscribe: null, value: rewriteExpr(dep, ctx.accessors) }
         }
         if (acc) return { subscribe: acc, value: acc }
         return { subscribe: null, value: dep }
@@ -7150,7 +7219,7 @@ export function emitScript(ctx) {
             const sigVar = dotPath
               ? `$$watch_${root}_${dotPath.replace(/\./g, '_')}`
               : `$$watch_${root}`
-            return `${sigVar}`
+            return requireWatchSig(sigVar, dep)
           }
           // New accessor format: $$runtime.get($$sig_x) → extract $$sig_x as fn ref
           if (acc) {

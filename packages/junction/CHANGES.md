@@ -1,5 +1,380 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-02 — a background write is graded like a published one, and one telemetry listener stops killing every signed-in call
+
+`FJS-672`, `FJS-673`, `FJS-700`, `FJS-702`, `FJS-677`, `FJS-691`, `FJS-692`.
+1781 pass (34 new), typecheck clean.
+
+**`FJS-673` — `typeof db.x` on a Litestone client is a throwing expression, and
+that trap was in the hot path of every authenticated call.** `getTable` probed
+`typeof scopedDb.$tapQuery === 'function'` to install the query tap, and
+`$tapQuery` is a ROOT-client member: a `$setAuth` proxy answers `'"$tapQuery" is
+not a table in this schema'` rather than `undefined`. So attaching one
+`app.telemetry.on(…)` listener anywhere turned every AUTHENTICATED service call
+into a 500, while anonymous callers — who hold the root client — kept working.
+The devtools console registers four listeners, so opening it in dev killed the
+app for every signed-in user. 1733 green tests never saw it because the listener
+and the signed-in caller have to be in the same test.
+
+`'x' in db` alone would have been a silent regression rather than a fix: the
+probe answers FALSE on a scoped client, so the tap would have stopped installing
+for exactly the calls it was installed for. It is one tap on the ROOT client now
+(`installQueryTelemetry`, wired beside `announceDataWrites` and on the per-tenant
+seam), and attribution comes from `currentCall()` — the ALS store is the only
+thing that knows which of several concurrent calls a query belongs to, and a
+per-request tap on a shared client would have misattributed every one of them.
+
+**`FJS-672` — `FJS-D175` graded the `publish()` path and `announceDataWrites`
+sent raw.** So every write that went through no service call — a job, a webhook,
+a cron, a bulk write, `asSystem()` anywhere — put whole rows on every subscribed
+socket whatever the schema said. Measured on a policied `Order` with 100
+anonymous sockets: the service path reached 0 of 100 and `asSystem().create`
+reached 100 of 100.
+
+The rule is not re-implemented. `gradeRecipients` is lifted off `ServiceContext`
+and takes the two facts grading needs instead — the client the rule lives on and
+the accessor the payload is a row of — so the channel manager owns the fan-out
+and the cohorts, litestone owns who may read, and the litestone tap reaches both
+through `manager.sendGraded()`, duck-typed like every other reach into the
+manager there.
+
+**A count-only `changed` is graded by the GATE alone.** A bulk write announces a
+count (`FJS-D34`), so there is nothing for `$readAs` to grade — and handing it
+one refuses everybody for a reason that has nothing to do with who may read. But
+*something you may not read changed* is still an existence oracle over a gated
+model, so `readGateLevel` is the coarse half and the mode is STATED by the
+caller, because a payload cannot say which of the two it is.
+
+**`FJS-700` — grading resolved the model from the SERVICE NAME**, so a service
+whose name maps to no model broadcast to NOBODY, silently: `orders2` over
+`Order`, a modelless service, any Invariant-19 irregular. The accessor is the
+declared `model:` first and the name only as a fallback, at both call sites. And
+a channel that grades to nobody now warns once per service — a correct refusal
+and a misresolved accessor look identical from the send side.
+
+**`FJS-702` — a token that was present and failed to verify connected as
+ANONYMOUS.** `_wsOpen` swallowed the throw, so a revoked, expired or forged
+session kept a socket for its whole life, the client's own `4001` no-reconnect
+branch was dead code, and the plugin's doc comment promised an `auth_failed`
+message nothing ever sent. It closes 4001 before `open` runs, so nothing joins a
+channel and no `connected` frame goes out. No token at all is still anonymous:
+a caller who claimed nothing is a different answer from one whose claim was
+rejected.
+
+**`FJS-677` — SMTP is line-oriented and every field on a message reaches a
+line.** A `to` of `victim@y.test>\r\nRCPT TO:<…>\r\nDATA\r\n…` is not a bad
+address, it is a second transaction: a fake MTA queued TWO messages from one
+`sendMail`, the second composed by whoever typed the address into a form. One
+`assertAddress` (RFC 5321 addr-spec) at BOTH ends — `MailBuilder.build()` and
+`createSmtpMailer`, where a mistake is cheapest to attribute, and `sendMessage()`,
+which is the last thing before a socket write and is reachable directly through
+the exported `sendMail`; one of the two alone is a validator somebody routes
+around. Every header value goes through an encoder that REFUSES a CRLF rather
+than encoding it — the subject had survived only because `encodeMimeHeader`
+base64-encodes non-printables, an accident of a rule that exists for emoji — and
+any 4xx/5xx mid-transaction is fatal with an `RSET`, so a reused session cannot
+inherit a half-open envelope.
+
+The tests run OUT OF PROCESS against a real fake MTA, and both halves are
+load-bearing: the MTA, because the assertion that matters is what reached the
+WIRE; the separate process, because `tests/email.test.ts` calls `mock.module()`
+on the shim that `export *`s this client and the replacement is process-wide and
+never undone — measured, five assertions went green in isolation and failed in
+the full run against a mock.
+
+**`FJS-691` — the devtools console bound every interface.** `Bun.serve({ port })`
+with no `hostname`, and the only thing between it and a café network was
+`NODE_ENV === 'production'` — which is unset in dev, and unset is the common
+case. Three refusals that fail apart: `hostname` defaults to `127.0.0.1`;
+binding anywhere else REQUIRES `auth` regardless of `NODE_ENV`, refusing to bind
+and naming why; and every POST and the WS upgrade check `Sec-Fetch-Site` then
+`Origin`, because a `text/plain` POST needs no preflight and a page on any origin
+could otherwise run a job by name. A request carrying neither header is not a
+browser and is left alone, which is what keeps `curl` and the drives working.
+
+**`FJS-692` — `createFileStorage` joined the caller's `id` straight into a
+path.** `../../../../outside/p2` wrote two directories above the root and read
+back out of it. `assertSafeId` is on both path builders rather than on the entry
+points, so there is no way to reach the filesystem from that module without
+having passed it, and it refuses by NAME rather than sanitising — a silently
+rewritten id is a file nobody can find again. Beside it: `nosniff` on every
+response and `attachment` for anything outside a small image allow-list that
+EXCLUDES svg (the type comes off a caller-supplied filename, so an upload named
+`x.svg` was served `image/svg+xml` inline — stored XSS); a 416 carrying
+`bytes */N` for an unsatisfiable range, where `bytes=50-10` used to answer 206
+with `content-length: -39` and `bytes=200-` on 100 bytes answered
+`bytes 200-99/100`; and an optional `maxBytes` on `save`, refused before the
+write. It is a SECOND owner of file storage — litestone already ships the real
+`FileStorage` — and retiring it is a ruling rather than a refactor; the file says
+so and points at `FJS-692`.
+
+**One thing measured and not fixed here.** A `SessionContext` carries `userId` as
+a string, so on an Int column `customerId == auth().id` is TRUE through a query —
+SQLite applies the column's affinity — and FALSE in `$readAs`, which compares in
+JS. The two paths disagree about the owner of a row, which is `FJS-D175`'s
+`toDataPrincipal` hazard one column type over. It belongs to the Data boundary.
+
+## 2026-09-02 — five things the wire could be told, and one it could be asked for
+
+`FJS-683`, `FJS-680`, `FJS-690`, `FJS-689`, `FJS-686`. 1747 pass (20 new), typecheck clean.
+
+Five audit findings in the transport and the error boundary, each the same
+shape: a guard written against the input somebody hit rather than against the
+closed set of inputs that are legal.
+
+**`$limit=-1` served the whole table** (`FJS-683`). `clampPage` ceiled at
+`paginate.max` and floored at nothing, and SQLite reads a negative `LIMIT` as
+NO limit — so the one directive a paginated endpoint exists to bound was the
+way past the bound, unauthenticated: 5000 rows on an endpoint capped at 100.
+Two halves, because they answer different callers. `clampPage` floors at 0 for
+every caller that does not come through the wire — an internal call, a
+`paginate()` fallback, a hook. The bridge REFUSES a stated negative by name,
+in `$checkWhere`'s shape, because a clamp answers somebody who asked for
+something impossible with silence. Only a stated negative: a non-numeric
+`$limit` keeps its fallback to the default, since text is a caller who wrote
+nothing usable where a negative number is a caller who wrote something and
+meant it.
+
+**An `Idempotency-Key` from nobody was everybody's** (`FJS-680`). The cache key
+fell back to the literal string `anonymous`, so every stranger on the internet
+shared one namespace: the second to send a key the first had used was replayed
+the first one's row — somebody else's created record, with their id in it — or
+refused a 409 about a request they never made. Measured: two anonymous POSTs,
+different bodies, one key, both answered `201 {"id":1,"title":"first caller"}`
+over one row. There is nothing to key on instead, and that is a fact about the
+design rather than a gap: a guest's claims deliberately never become
+`ctx.auth.user`, because `sessionGateLevel` would grade a claims-only principal
+at USER(4). So the key is not claimed at all, with one `console.warn` naming
+why, and two anonymous calls are two calls — the safe reading of an ambiguous
+request. **The second half is that a key names ONE request**: the entry stores
+a sha256 of method + path + query + body, and the same key with a different
+payload is a 422 rather than a silent replay of the earlier answer, which is
+what Stripe answers and the only way a client finds out it reused a key.
+
+**`X-Service-Method` was an allow-list written as a block-list** (`FJS-690`).
+Six CRUD names were refused and every other own function on the service object
+was dispatchable: `_create` and `_find`, the twins that skip `autoValidate` and
+`autoFilter`; `describe` and `pipelines`, which hand back the hook layout; and
+`constructor`/`toString`/`__proto__`, which reached `Object.prototype` and
+became 500s. The table is the whole answer now, read with `Object.hasOwn` —
+bare indexing on an object literal is why the two names nobody declares were
+the two that resolved. The own-key fallback was already a stated transition,
+warning that a later release would dispatch from the table alone; this is that
+release. It costs the shape it was there for — a method attached after
+construction — which now 404s naming the method, as it says.
+
+**`cors({ origins: '*', credentials: true })` reflected the caller's Origin**
+(`FJS-689`) and answered `access-control-allow-credentials: true` beside it,
+which is every site on the internet reading a cookie-authenticated response.
+Refused at CONSTRUCTION, naming both keys and the way out: a guard that fires
+on the attacker's request and not on the developer's is one nobody sees until
+it is being used. With credentials on, a request carrying no `Origin` now gets
+no CORS headers at all rather than the `*` fallback, and a reflected origin
+carries `vary: Origin`, or a shared cache hands one site's ACAO to the next
+caller.
+
+**A 500 said what went wrong to whoever asked** (`FJS-686`). The `message` on
+the wire was the raw exception text, so a bun:sqlite failure published table
+names and the absolute path of the database file, and a native TypeError
+published a line of source. And `data` is ADOPTED from the original error, so a
+domain error that helpfully attached the row it refused sent that row's
+`@secret` column with it. `sanitizeError` is the one owner: for a status ≥ 500
+outside debug the sentence becomes `Internal Server Error` plus the correlation
+id — the one thing that lets somebody REPORT it — and the original goes to
+`app.logger` at error level, where the operator is. The payload is walked
+against `db.$protectedFields(accessor)`, which is Invariant 7's own list asked
+of the schema rather than hand-copied; `accessorCandidates` resolves `notes` →
+`Note`, and only keys that ARE protected are replaced, so `VersionConflictError`'s
+declared payload of two revision numbers survives whole. **The boundary had two
+exits and only one of them was the boundary**: `crudHandler` built its own body
+with `toFrameworkError` + `ctx.json`, which is the exit every service failure
+takes, so a fix applied to `errorResponse` alone would have changed nothing
+anybody could see.
+
+`tests/wire-safety.test.ts` is the new file and it runs against a real
+Litestone client with a real `@secret` column, because the redaction list comes
+out of the schema and a fake client would agree with whatever it was handed.
+Both halves of the production branch are asserted with `NODE_ENV` really set —
+the whole rule is a branch on it, and a test running under `test` grades the
+dev path and reports it as the production one.
+
+## 2026-09-02 — `update` is patch with an id required, and a PUT to a `@version` model works
+
+`FJS-663`, ruled `FJS-D179`. 1731 pass (9 new), typecheck clean.
+
+`update` was validated against the CREATE-mode document. That document omits
+`@version` — it is emitted for update and only for update — so the validator
+stripped the version a `PUT` carried and the Data boundary then refused the write
+for not carrying one. **`FJS-335` exactly, one method along**, and unfound because
+nothing here drives a `PUT` on a versioned model: measured on `example`,
+`PUT /api/tax-rates/1` carrying the version read one request earlier was a 400
+naming `version`, on a service with no hooks at all, while the identical payload
+through `PATCH` was a 200.
+
+**One word, and a ruling, because of what create mode was buying.** The two
+documents differ on exactly two things: create omits `id` and `version`, and
+create carries a `required` list. So create mode's only contribution to `update`
+was requiredness — over a write that MERGES. Measured: a `PUT` stating only
+`title` leaves `subtitle` and `note` where they were. The validator demanded
+fields that would not be replaced.
+
+Three layers already treated `update` as patch-by-id — the write merges, sierra's
+`field-rules.js` grades a form the same way for both, and a sierra resource never
+issues `update` at all (`save()` is create-or-patch, `FJS-D114`). Feathers'
+full-replace survived in one comment and one half-working validator.
+
+**What stays is the id.** `patch` without one is a bulk write over a query;
+`update` refuses without one, so a REST client's `PUT` can never become a bulk
+write. Making it genuinely replace was ruled out rather than overlooked: junction
+would have to synthesise the null-out set for every absent writable column and
+hand every caller a write that silently discards what they did not restate.
+
+5 of the 9 tests in `tests/update-semantics.test.ts` fail on the old wiring, and
+the pairs are the substance — a stale version is still a 409 (a validator that
+carried the key over a boundary that ignored it would pass the happy path), and
+omitting it is still refused, so the fix cannot read as *the boundary stopped
+asking*.
+
+## 2026-09-02 — a hook can say which `@system` columns this call is supplying
+
+`FJS-644`, ruled `FJS-D178`. 1722 pass (13 new), typecheck clean.
+
+litestone refuses a payload naming a `@system` column, and its hatch is
+`system: ['col']` on the call — which keeps the gate, the row policies,
+`@@softDelete` and the audit actor where `asSystem()` drops all four to write one
+value. The derived `create`/`update`/`patch` never passed it, and a hook had no
+way to ask them to: a hook shapes `ctx.data`, the write happens downstream on the
+caller's own client, so a value the application DERIVED arrived at the boundary
+indistinguishable from one the caller sent.
+
+That is not a corner. Any column computed from the payload rather than declared
+in the schema has this shape — measured on `example`, where a hook rebuilds a
+slot-keyed mirror from a customer's `fields` and **every customer create over
+HTTP was a 403**.
+
+`ctx.system` is a Set a hook adds to — `ctx.system.add('slots')` — installed by
+`withCallEffects` so a hand-built context in a test has one too, fresh per call,
+not propagated, and `readonly` so an assignment is a compile error. A Set rather
+than a list one hook assigns because `before.all` and `validated.create` each
+legitimately derive their own column and an assignment from the second silently
+drops the first's. `$.system` reads it; `$.system =` is refused by name, pointing
+at `.add`.
+
+`systemFields(ctx)` is the one reader, called at each of the five write args —
+create single and bulk, update, patch by id and bulk. Enumerated, because the arg
+objects are built differently; what is not enumerated is the rule.
+
+**Every acceptance in `tests/system-fields.test.ts` is paired with the refusal of
+the identical payload** by a call that did not name the column, and 5 of its 13
+fail with the seam stubbed out. Three properties are the substance: naming a
+column widens one CALL and never the model; a caller sending the same key has it
+overwritten by the hook, so what lands is the derived value (asserted on the
+stored value, since a 201 is what a service accepting the forgery would also
+answer); and an empty set is not "all".
+
+## 2026-09-02 — a dot-path write key is carried to the Data boundary, not stripped
+
+`FJS-658`. 1709 pass (4 new), typecheck clean.
+
+`createSchema` builds its output from the declared fields, so an undeclared key
+is never copied — mass-assignment protection, and right about a key with nothing
+behind it. `{ 'settings.commute': … }` is not that key: its head names a field
+the schema declares, so it is a caller who meant something, and stripping it
+made the request a 200 that changed nothing.
+
+It is carried now, and **not refused here**. litestone already refuses it by
+name and knows the column's type, so its sentence can say whether the target is
+a document or a scalar; two boundaries writing that sentence is how the two come
+to disagree. Carrying it grants nothing — the Data boundary throws on the key
+before any write, so the value never becomes a column.
+
+The crossing is graded in `tests/real-litestone-client.test.ts` against a real
+client, which is the only place it can be: with litestone fixed and this side
+still stripping, every HTTP and WS caller keeps the silence, and a unit test on
+either side passes. Sierra needed no change — it already passes the key through.
+
+
+## 2026-09-02 — a broadcast is graded per recipient
+
+`FJS-631`. Ruled as `FJS-D175`. 1705 pass (13 new).
+
+A channel is a named set of connections and joining one was an ungraded
+**grant**: every row published there reached every member, whatever the schema
+said about who may read it. `@@allow` compiles into a SELECT's WHERE, and a
+broadcast is not a SELECT.
+
+Measured on `example`: a socket opened with **no token** received a whole
+`Order` row — reference, status, subtotal, tax, total, `customerId`,
+`trackingCode` — one publish after an admin's `PATCH`, while the same caller was
+answered **401** on `GET /api/orders`.
+
+`manager.publish` now asks the Data boundary, per recipient, and sends each one
+the row shaped by their own field policies. Nothing in an app changes: `@@allow`
+already says who may read, and this makes the socket obey the same sentence as
+the SELECT.
+
+**The unit is a cohort, not a connection.** Phoenix names the cost of the naive
+version — intercepting a broadcast means "the broadcast will be encoded N times
+instead of a single shared encoding" — and measured here the encoding (288 ns)
+is the term that multiplies, not the verdict (684 ns). So recipients are grouped
+by their principal's object identity, the way Hasura multiplexes subscribers by
+session variables: two tabs of one person are one verdict and one frame. Over
+100 connections — **14.9 µs** where the model needs no grading at all,
+**49.8 µs** for one cohort, **445.6 µs** for 100 distinct principals.
+
+**A model that can only ever say yes is skipped**, read off the schema rather
+than declared: gate 0, no read policy, no field policy — a catalogue, which is
+also the busiest channel an app has.
+
+**Undecidable refuses, inapplicable does not.** A boundary that throws refuses
+that recipient; a call with no Data boundary on its context — a raw route, a
+test harness — is ungraded rather than refused, because grading was never
+applicable there. A list payload is not graded either: a bulk write announces a
+count, which names no row.
+
+`telemetry` on `junction.channel.publish` gains `refusedCount` and `graded`,
+because a graded publish is the one case where *who was in the channel* and *who
+was sent to* differ, and the gap between them is the point.
+
+**One trap, and the drive is what caught it.** A `SessionContext` puts the id at
+`userId` and litestone's `auth()` reads `.id`, so handing the session straight to
+the boundary compares every policy against `undefined` — and it does not merely
+refuse: `userId == auth().id` was false for the buyer's own order and TRUE for a
+guest order whose `userId` is null, so the first working version refused the
+anonymous socket correctly and delivered the one row the recipient may not read.
+`toDataPrincipal` is the owner of that translation.
+
+
+## 2026-09-01 — what an app can tell somebody, committed
+
+**`junction notifications --app <module>`** writes `notifications.snapshot.md` —
+every notification type the app declares and the transports each can format for.
+The fourth thing read off a BUILT app, after `surface`, `jobs` and `principal`,
+and for a reason of its own: a notification takes its type from its own FILE
+NAME, so no source file states it and no file tree can say which types survived
+a rename.
+
+**Where it differs from `jobs` is the failure.** A schedule that stops being
+registered is *nothing happening*. A notification that stops being registered
+THROWS — at the moment somebody was owed a message, usually inside a job, hours
+after the deploy that dropped it.
+
+**`app.notifications` is duck-typed and @frontierjs/notifications is not a
+dependency**, exactly as `app.jobs` is duck-typed and caravan is not. An app
+that configures no plugin renders as a stated absence, which is a different fact
+from a plugin that is configured and found nothing — the reason `installed` is a
+field rather than `declared.length`.
+
+**What a payload decides is deliberately absent.** `via` is a function of
+`(payload, recipient)`, so which transports a given send uses is a runtime answer
+two boots would agree on by accident. The file records the set each definition
+CAN format for, which is what a preferences screen offers and what a missing
+driver is graded against. Rows are sorted by type: the loader walks a directory,
+and the file system's order is not a fact about the app.
+
+Proven by removing a notification from `example` and running `--check`: exit 1,
+with the diff naming the type that went.
+
 ## 2026-08-29 — a detail read that composes is a trigger, not a value
 
 1668 tests, 0 fail, typecheck clean. Ruled as

@@ -98,6 +98,10 @@ siteName: Kitchen sink
     { id: 'go-cart',      group: 'Navigate', label: 'Basket',     action: () => goto('/cart/') },
     { id: 'go-customers', group: 'Navigate', label: 'Customers',  action: () => goto('/customers/') },
     { id: 'go-inventory', group: 'Navigate', label: 'Inventory',  sub: 'On hand, held, and the ledger', action: () => goto('/inventory/') },
+    { id: 'go-users',     group: 'Navigate', label: 'Users',      sub: 'Staff and shoppers', action: () => goto('/users/') },
+    { id: 'go-plans',         group: 'Navigate', label: 'Plans',         sub: 'What the shop sells on a cycle', action: () => goto('/plans/') },
+    { id: 'go-subscriptions', group: 'Navigate', label: 'Subscriptions', sub: 'Who is paying, and what state that is in', action: () => goto('/subscriptions/') },
+    { id: 'go-invoices',      group: 'Navigate', label: 'Invoices',      sub: 'The documents', action: () => goto('/invoices/') },
     { id: 'go-settings',  group: 'Navigate', label: 'Settings',   action: () => goto('/settings/') },
     { id: 'sign-in-user',  group: 'Session', label: 'Sign in as sam (level 4)',  action: () => as('user') },
     { id: 'sign-in-admin', group: 'Session', label: 'Sign in as alex (level 5)', action: () => as('admin') },
@@ -178,6 +182,10 @@ siteName: Kitchen sink
       <a class="navlink" href="/orders/create/" aria-current={(page.route, isActive('/orders/create/')) ? 'page' : null}>New order</a>
       <a class="navlink" href="/products/" aria-current={(page.route, isActive('/products/')) ? 'page' : null}>Products</a>
       <a class="navlink" href="/customers/" aria-current={(page.route, isActive('/customers/')) ? 'page' : null}>Customers</a>
+      <!-- The recurring half. One link rather than three: plans, subscriptions
+           and invoices cross-link, and a topbar that names every screen stops
+           being a way in and becomes a table of contents. -->
+      <a class="navlink" href="/subscriptions/" aria-current={(page.route, isActive('/subscriptions/') || isActive('/plans/') || isActive('/invoices/')) ? 'page' : null}>Billing</a>
       <!-- A shopper is not a user: this one is here at level 0 with no
            account, which is what the Cart gate says. -->
       <a class="navlink" id="nav-basket" href="/cart/" aria-current={(page.route, isActive('/cart/')) ? 'page' : null}>
@@ -188,6 +196,17 @@ siteName: Kitchen sink
            clicking and changes nothing about what is reachable. -->
       {#if session.level >= 5}
         <a class="navlink" id="nav-inventory" href="/inventory/" aria-current={(page.route, isActive('/inventory/')) ? 'page' : null}>Inventory</a>
+        <!-- The one-audience half of this app. Every model behind it reads at
+             5, so unlike every other link here the level is not narrowing an
+             audience — it is the whole audience there is. One link for two
+             screens, for Billing's reason. -->
+        <a class="navlink" id="nav-payroll" href="/payroll/" aria-current={(page.route, isActive('/payroll/') || isActive('/people/')) ? 'page' : null}>Payroll</a>
+        <!-- Also 5, and for a different reason from Inventory's. `User` READS
+             at 4, so a shopper is not refused the screen — they are served
+             their own single row by the row policy, which is a working page
+             that says nothing. The link is at 5 because that is the level the
+             screen is FOR, not the level the boundary enforces. -->
+        <a class="navlink" id="nav-users" href="/users/" aria-current={(page.route, isActive('/users/')) ? 'page' : null}>Users</a>
       {/if}
       <a class="navlink" href="/settings/"  aria-current={(page.route, isActive('/settings/')) ? 'page' : null}>Settings</a>
     </nav>

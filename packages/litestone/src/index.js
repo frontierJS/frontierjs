@@ -2,11 +2,11 @@
 
 export { createClient, ValidationError,
          TransitionViolationError, TransitionConflictError,
-         TransitionNotFoundError, TransitionGateError, TransitionSystemError,
+         TransitionNotFoundError, TransitionGateError, TransitionSystemError, BulkTransitionError,
          VersionRequiredError, VersionConflictError,
          LockNotAcquiredError, LockReleasedByOtherError,
          LockExpiredError, SoftDeletedUniqueError,
-         UniqueConflictError,
+         UniqueConflictError, SealedDocumentError,
          CapabilityNotDeclaredError }             from './core/client.js'
 export { sql, now, buildWindowCols, isNamedAgg, buildNamedAggExpr, extractNamedAggs } from './core/query.js'
 export { Plugin, PluginRunner, AccessDeniedError } from './core/plugin.js'

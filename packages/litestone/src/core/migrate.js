@@ -11,14 +11,15 @@
 // SQLite ALTER TABLE constraints:
 //   Simple ALTER:  add nullable col, add col with DEFAULT, add/drop index
 //   Full rebuild:  drop col, change type, change NOT NULL, change DEFAULT,
-//                  change PK, change FK, change CHECK, add @@strict
+//                  change PK, change FK, change CHECK, add @@strict,
+//                  add/drop/reorder a UNIQUE the table declares itself
 
 import { generateDDL, generateDDLForDatabase, generateTableDDL, generateIndexDDL, generateModelDDL, generateViewDDL, modelToTableName , detectM2MPairs, generateJoinTableDDL, isStoredField } from './ddl.js'
 import { createHash } from 'crypto'
 
 // ─── Introspect ───────────────────────────────────────────────────────────────
 // Works on any db handle with .prepare() (Bun Database).
-// Returns: { tableName: { columns, indexes, foreignKeys, strict } }
+// Returns: { tableName: { columns, indexes, foreignKeys, strict, checks, uniques } }
 
 // Underscore prefix = machinery tables: _litestone_*, implicit-m2m join tables
 // (_task_user, _members, _TagToTag), matching Prisma's convention.
@@ -129,6 +130,48 @@ export function parseChecks(sql) {
   return out.sort()
 }
 
+// The uniqueness a CREATE TABLE declares itself — `UNIQUE ("a", "b")` as a table
+// constraint, `UNIQUE` inside a column definition, and a composite PRIMARY KEY.
+//
+// None of it reaches the index diff. SQLite builds an implicit index for each,
+// and an implicit index has NULL `sql` in `sqlite_master`, which is exactly what
+// the index read above filters on — so for as long as this file has existed,
+// ADDING a `@@unique`, removing one, or reordering its columns produced no diff
+// at all. The first two are the sharp ones: the schema declares a constraint the
+// live table does not enforce, `UniqueConflictError` never fires, and the
+// duplicate lands (`FJS-596`). Reordering is the performance half — the implicit
+// index is prefix-matched like any other, so `(orgId, createdAt)` answers
+// `WHERE orgId = ?` and the swap does not (`FJS-592`'s fact, one constraint kind
+// along).
+//
+// Read from the pragma rather than parsed out of the CREATE statement, because
+// there is one here and it answers the column ORDER directly — the same reason
+// `generated` is taken from `table_xinfo` and CHECK is not. `origin` separates
+// the three: `c` is an explicit CREATE INDEX, which the index diff already owns
+// and must not see twice; `u` is a UNIQUE constraint in either spelling, so
+// `@unique` on a column and `@@unique([thatColumn])` compare equal, which is
+// right — SQLite builds the same index for both and moving between the two
+// spellings changes nothing; `pk` is a composite primary key, whose column order
+// is prefix-matched the same way and was invisible for the same reason.
+//
+// Sorted, so a constraint moving position in the CREATE TABLE is not a
+// constraint changing — the rule `parseChecks` already follows.
+function tableUniques(db, table) {
+  return db.prepare(`PRAGMA index_list("${table}")`).all()
+    .filter(r => r.origin === 'u' || r.origin === 'pk')
+    .map(r => ({
+      origin: r.origin,
+      cols:   db.prepare(`PRAGMA index_info("${r.name}")`).all().map(c => c.name),
+    }))
+    .sort((a, b) => uniqueKey(a).localeCompare(uniqueKey(b)))
+}
+
+/** What makes two declared constraints the same one — the kind, and the columns IN ORDER. */
+const uniqueKey = (u) => `${u.origin}:${u.cols.join(',')}`
+
+/** …and how it reads in a plan. */
+const constraintLabel = (u) => `${u.origin === 'pk' ? 'PRIMARY KEY' : 'UNIQUE'} (${u.cols.join(', ')})`
+
 export function introspect(db) {
   const schema = {}
 
@@ -194,7 +237,7 @@ export function introspect(db) {
     const strict = /\)\s*STRICT\s*;?\s*$/i.test(tblSql)
     const checks = parseChecks(tblSql)
 
-    schema[t] = { columns, indexes, foreignKeys, strict, checks }
+    schema[t] = { columns, indexes, foreignKeys, strict, checks, uniques: tableUniques(db, t) }
   }
 
   // Views — stored separately under __views (filtered out of table comparisons)
@@ -339,12 +382,25 @@ function splitTop(text, word) {
   return parts.map(p => p.trim()).filter(Boolean)
 }
 
-export function predicateToLite(where, nameOf) {
+export function predicateToLite(where, nameOf, { values = false } = {}) {
   const atom = t => {
     const x = stripParens(t)
     let m
     if ((m = /^"?([A-Za-z_]\w*)"?\s+IS\s+NOT\s+NULL$/i.exec(x))) return `${nameOf(m[1])} != null`
     if ((m = /^"?([A-Za-z_]\w*)"?\s+IS\s+NULL$/i.exec(x)))       return `${nameOf(m[1])} == null`
+    // A comparison against a VALUE, for the one caller that can hold one.
+    // `@@index(where:)` refuses these at parse — a partial index over a bound
+    // value is matched by nothing — so emitting one there would write a .lite
+    // this parser will not read, which is the fixed-point rule (FJS-594).
+    // `@@unique(where:)` accepts them, because enforcement never consults the
+    // planner, and `WHERE status = 'active'` is the second-commonest partial
+    // unique there is.
+    if (values) {
+      if ((m = /^"?([A-Za-z_]\w*)"?\s*=\s*'((?:[^']|'')*)'$/.exec(x)))
+        return `${nameOf(m[1])} == "${m[2].replace(/''/g, "'").replace(/(["\\])/g, '\\$1')}"`
+      if ((m = /^"?([A-Za-z_]\w*)"?\s*(=|<>|!=|>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)$/.exec(x)))
+        return `${nameOf(m[1])} ${m[2] === '=' ? '==' : m[2] === '<>' ? '!=' : m[2]} ${m[3]}`
+    }
     // SQLite spells a boolean 1/0 and Postgres spells it true/false, and both
     // reach here — the first from a live database, the second from a dump the
     // importer is reading. A BARE column (`WHERE live`, legal in Postgres) is
@@ -650,6 +706,27 @@ function diffIndexes(pristineIdxs, liveIdxs, table) {
   }
 }
 
+// ─── Declared-uniqueness diff ─────────────────────────────────────────────────
+
+// A table constraint can only change by rebuilding the table — there is no
+// ALTER for one — so this is the whole of the cost, and it is why the cheap
+// half (`FJS-592`, a reordered `@@index`, one DROP + CREATE) shipped alone.
+//
+// Measured before it was taken, the way FJS-592 was: the two live databases in
+// this repo — `example/db/shops/flagship.db` and `packages/basecamp/db/basecamp.db`
+// — each diffed against its own schema with this in place, both zero churn. That is not luck — the emitter writes
+// declaration order, so for any database litestone created the live order
+// already IS the pristine order, and the only schema that migrates is one whose
+// declaration genuinely moved.
+function diffUniques(pristineUniques, liveUniques) {
+  const pk = new Set(pristineUniques.map(uniqueKey))
+  const lk = new Set(liveUniques.map(uniqueKey))
+  return {
+    added:   pristineUniques.filter(u => !lk.has(uniqueKey(u))),
+    dropped: liveUniques.filter(u => !pk.has(uniqueKey(u))),
+  }
+}
+
 // ─── FK diff ──────────────────────────────────────────────────────────────────
 
 function fkKey(fk) {
@@ -760,11 +837,36 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
     // is the right outcome anyway — it is the rebuild that brings it up to date.
     const checksChanged = !arraysEqual(p.checks ?? [], l.checks ?? [])
 
+    // The same argument one constraint kind along, and the sharper half of it:
+    // a CHECK that never migrated refused a write the schema allows, and a
+    // UNIQUE that never migrated ALLOWS a write the schema refuses. See
+    // `tableUniques`.
+    const uniques        = diffUniques(p.uniques ?? [], l.uniques ?? [])
+    const uniquesChanged = uniques.added.length > 0 || uniques.dropped.length > 0
+
     // A generated column ALTERs in only one shape. SQLite refuses `ADD COLUMN`
     // for a STORED one outright — `cannot add a STORED column` — and a VIRTUAL
     // one is fine, but only when the expression could be read: emitting the
     // ALTER without it would add a plain, writable column of the same name.
-    const rebuildAdds = cols.added.filter(c => c.generated && (c.generated.mode === 'stored' || !c.generated.expr))
+    //
+    // A DEFAULT that is an EXPRESSION is the same shape and cost the app that
+    // found it a crash at boot. SQLite allows an expression default in
+    // `CREATE TABLE` and refuses one in `ALTER TABLE ADD COLUMN` — it wants a
+    // constant there, and `@default(now())` emits
+    // `DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`. The ALTER was
+    // generated anyway and threw `near "(": syntax error` from inside
+    // `autoMigrate`, naming no column and no schema line (`FJS-605`). A rebuild
+    // handles it correctly and already does: the copy omits added columns, so
+    // the new table's own DEFAULT fills them.
+    // Anything that is not a LITERAL. Tested that way round rather than by
+    // looking for a leading `(`, because what is compared here is SQLite's own
+    // reading of the pristine database and it does not always keep the parens
+    // the emitter wrote — so the narrow test passed the check and threw at the
+    // ALTER anyway.
+    const LITERAL = /^(?:'(?:[^']|'')*'|-?\d+(?:\.\d+)?|NULL|TRUE|FALSE|X'[0-9a-fA-F]*')$/i
+    const exprDefault = (c) => typeof c.default === 'string' && !LITERAL.test(c.default.trim())
+    const rebuildAdds = cols.added.filter(c =>
+      (c.generated && (c.generated.mode === 'stored' || !c.generated.expr)) || exprDefault(c))
 
     const needsRebuild =
       cols.dropped.length  > 0 ||
@@ -772,7 +874,8 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
       rebuildAdds.length   > 0 ||
       fkChanged            ||
       strictChanged        ||
-      checksChanged
+      checksChanged        ||
+      uniquesChanged
 
     // Cols we can safely ADD COLUMN — nullable, or has a default, not PK.
     // A generated column is neither: it has no default and nothing writes it,
@@ -789,7 +892,7 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
       indexes.dropped.length > 0
 
     if (hasChanges) {
-      tableDiffs.push({ name, needsRebuild, simpleAdds, blockedAdds, cols, indexes, fkChanged, strictChanged, checksChanged })
+      tableDiffs.push({ name, needsRebuild, simpleAdds, blockedAdds, cols, indexes, fkChanged, strictChanged, checksChanged, uniques, uniquesChanged })
     }
   }
 
@@ -1219,6 +1322,12 @@ export function summariseDiff(diffResult) {
     // rebuild that follows is the whole table — worth seeing in a plan rather
     // than discovering in the row count.
     if (d.checksChanged) lines.push(`      ~ CHECK constraints changed (an enum's members, or an @check)`)
+    // Named per constraint rather than as one flag, because a rebuild that ADDS
+    // uniqueness is the one that can fail on the copy — the rows that violate it
+    // are already there — and which columns those are is the whole of what the
+    // reader needs to go and look.
+    for (const u of d.uniques?.added   ?? []) lines.push(`      + ${constraintLabel(u)}  (rebuild; the copy fails if existing rows violate it)`)
+    for (const u of d.uniques?.dropped ?? []) lines.push(`      - ${constraintLabel(u)}`)
     for (const i of d.indexes.added)
       lines.push(`      + idx  (${i.cols.join(', ')})`)
     for (const i of d.indexes.dropped)

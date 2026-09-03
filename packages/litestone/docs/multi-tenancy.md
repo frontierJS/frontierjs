@@ -81,10 +81,41 @@ tenants.meta.set('acme', { plan: 'enterprise' })
 
 ### The connection pool
 
-`maxOpen` bounds open connections; the least recently used is closed when the
-pool is full. Files are never deleted by eviction. Concurrent `get()` calls for
-one cold tenant share a single open — without that, K simultaneous requests on a
-deploy restart each ran a full `createClient` and leaked K-1 sets of handles.
+**`maxOpen` is how many tenants to keep WARM, not a ceiling on open
+connections** (`FJS-D172`). Eviction removes the least recently used from the
+pool and does **not** close it, because `get()` hands a client to a request that
+holds it across every await it makes and the pool is full again by traffic
+rather than by that request finishing. Files are never deleted by eviction.
+Concurrent `get()` calls for one cold tenant share a single open — without that,
+K simultaneous requests on a deploy restart each ran a full `createClient` and
+leaked K-1 sets of handles.
+
+**A lease is what lets an eviction close anything.**
+
+```js
+const release = tenants.retain(id)
+try   { /* the unit of work */ }
+finally { release() }
+```
+
+Junction's `withTenantDb` does exactly this for every request, so an app on
+Junction gets it without writing a line. A client evicted after its last lease
+ended is closed immediately; one still leased stays open until the last holder
+lets go; and a client from a bare `get()` was never leased, so it is dropped and
+bun's finaliser closes it when nothing references it. Releasing twice is a
+no-op, so a `finally` is safe on a path that already released.
+
+`tenants.poolStats()` answers `{ pooled, leased, retired, overflows, maxOpen }`.
+`retired` is evicted clients not yet collected — the number `openCount` cannot
+report. `overflows` counts evictions where **every** slot was in use, which is
+the only condition that means this process's concurrent tenant working set is
+larger than `maxOpen`; it warns once.
+
+**`tenants.query` and `aggregate` insert COLD.** A fan-out walks every tenant,
+so through a plain LRU an admin dashboard evicts the tenants under live traffic.
+Cold entries are the eviction victim before any hot one, within a ring sized to
+the fan-out's concurrency (capped at half the pool) — Postgres uses a ring
+buffer for sequential scans and MySQL midpoint insertion for the same reason.
 
 ### JSONL and logger databases are NOT per-tenant
 
@@ -238,6 +269,49 @@ The report names them:
 tenancy: 2 model(s) carry no 'workspaceId' and are scoped through a parent —
 Deploy (via app), LogLine (via deploy).
 ```
+
+### A `@unique` is not scoped for you
+
+The desugar guards **reads**. A `@unique` guards **writes**, and nothing above
+touches it — so on a scoped model this is unique across the whole installation:
+
+```lite
+model Post {
+  id          Int    @id
+  workspaceId Int
+  slug        String @unique      // ← two tenants cannot both hold "launch"
+}
+```
+
+Two costs, and the second is the sharper one. Tenants collide on values that
+should be theirs alone — a slug, an email, an SKU, an order number — and the
+refusal carries the value, which tells the second tenant that a row they may not
+read exists. That is exactly what `docs/access-control.md` says a refusal must
+never do.
+
+The parser reports it, and the test is **transitive**: a unique is per-tenant if
+its columns carry the tenant column **or** a key reaching a model that is itself
+scoped. Both of these are already correct and are not reported —
+
+```lite
+@@unique([workspaceId, slug])     // names the column
+@@unique([serverId, name])        // a Server is scoped, so a Volume is
+```
+
+— and so is a grandchild, because the check reads the same scoping fixpoint the
+delegation above is built on.
+
+Where the global reading is the one you meant — a credential looked up **by** its
+value, before anybody knows whose it is; a public subdomain — say so:
+
+```lite
+token String @unique(global)
+@@unique([hostname], global: true)
+```
+
+It changes no DDL and appears in no snapshot. It is a statement to the reader and
+to the parser, and it is the difference between a warning you answered and a
+warning you learned to scroll past.
 
 ---
 

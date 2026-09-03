@@ -14,8 +14,8 @@
 
 import { defineJob } from '@frontierjs/caravan'
 import { db } from '../core/db.ts'
-import { OrderPaid } from '../notifications/OrderPaid.ts'
-import { OrderConfirmation, asRecipient } from '../notifications/OrderConfirmation.ts'
+import orderPaid         from '../notifications/OrderPaid.notification.ts'
+import orderConfirmation, { asRecipient } from '../notifications/OrderConfirmation.notification.ts'
 
 interface AnnouncePayment {
   orderId: number
@@ -54,10 +54,7 @@ export default defineJob<AnnouncePayment>(
       try {
         // Rendered before it is sent: `build()` compiles the .mesa template and
         // hands the result to the notification, because `toEmail()` is sync.
-        await app.notify(
-          asRecipient(customer),
-          await OrderConfirmation.build(order, customer)
-        )
+        await app.notify(asRecipient(customer), orderConfirmation({ order, customer }))
       } catch (err) {
         failures.push(`email: ${(err as Error).message}`)
       }
@@ -71,9 +68,16 @@ export default defineJob<AnnouncePayment>(
     // the model's own `@@allow('read', userId == auth().id)` — no service code
     // says "only your own notifications".
     const staff = (await db.asSystem().user.findMany({})) as { id: string; email: string }[]
+
+    // Built once, sent many times. The payload is bound here and the recipient
+    // arrives per send, which is what `via(payload, recipient)` is for — the
+    // class had to be constructed inside the loop because it held the payload
+    // and answered nothing without one.
+    const paid = orderPaid(order)
+
     for (const user of staff) {
       try {
-        await app.notify(user, new OrderPaid(order))
+        await app.notify(user, paid)
       } catch (err) {
         failures.push(`inApp ${user.email}: ${(err as Error).message}`)
       }

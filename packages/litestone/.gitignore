@@ -22,3 +22,6 @@ node_modules/
 test/fixtures/corpus/calcom.lite
 test/fixtures/corpus/documenso.lite
 test/fixtures/corpus/gaps.json
+# maidtech is a private source: not fetchable and not published, so it is a
+# local fixture rather than a target anybody else can regenerate.
+test/fixtures/corpus/maidtech.lite

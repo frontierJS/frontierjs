@@ -1,13 +1,17 @@
 // wide-int.js — what a 64-bit source integer becomes, and which ones are worth
 // saying out loud.
 //
-// A `bigint` column becomes `Int`, and the COLUMN is fine: SQLite's INTEGER is
-// 64-bit too. What is not fine is the boundary — the value crosses a JS
-// `number` at both ends, so past 2^53 the rounded double is stored and a
-// different number is read back with nothing raised (`FJS-583`). The source
-// says a range the schema cannot round-trip, which is `changed`, not `noted`;
-// this file exists because the sentence has to be the same in all three
-// readers and it was previously a claim that measurement contradicted.
+// A `bigint` column becomes `Int`, and the COLUMN was always fine: SQLite's
+// INTEGER is 64-bit too. What was not fine was the boundary — the value crossed
+// a JS `number` at both ends, so past 2^53 the rounded double was stored and a
+// different number read back with nothing raised. That is what `@big` closed
+// (`FJS-643`), so a wide column is now CARRIED rather than narrowed, and the
+// grade moved with it: `noted` — the schema says what the source said, and what
+// is left is a decision, because a @big column crosses as digits and code doing
+// arithmetic on it has to say so.
+//
+// This file exists because the sentence has to be the same in all three readers
+// and it was previously a claim that measurement contradicted.
 //
 // **Keys and foreign keys are exempt, and the exemption is structural.** A
 // generated key counts from 1 and will not reach 9,007,199,254,740,991 in any
@@ -36,9 +40,12 @@
 // ids is a value column and one of the shapes most likely to be wide.
 
 export const BIGINT_EMITTED =
-  'Int — the column holds 64 bits, but the value crosses a JS number at both ends, ' +
-  'so past 9,007,199,254,740,991 what is read back is not what was written (FJS-583). ' +
-  'Store it as String, or satisfy yourself the values stay inside that range.'
+  'Int @big — the column holds 64 bits and so does the crossing now, but a @big ' +
+  'column is read back and written as a STRING of digits rather than a number, ' +
+  'because past 9,007,199,254,740,991 a JS number cannot carry the value (FJS-643). ' +
+  'Ordering, comparison and indexes stay numeric. Application code that does ' +
+  'arithmetic on this column has to say BigInt(v) first; drop @big where you are ' +
+  'satisfied the values stay inside a number\'s range.'
 
 // An unconstrained `*_id` that names a table present in the same source. Used
 // only by the readers whose sources may declare no foreign keys at all; a

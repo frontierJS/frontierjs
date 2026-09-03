@@ -643,3 +643,148 @@ describe('$withDeleted on a write', () => {
     expect(((await notes.find(ctx(plain, { service: 'notes' }))) as { data: unknown[] }).data).toHaveLength(0)
   })
 })
+
+// ─── A write key that is a PATH, and the two boundaries it has to cross ──────
+//
+// `{ 'settings.commute': { source } }` is not supported and never was. What
+// made it worth a crossing test is that BOTH boundaries dropped it in silence
+// and each was right about the case it was written for: junction's validator
+// builds its output from the declared fields, so an undeclared key is simply
+// not copied (mass-assignment protection), and litestone's `writeData` strips
+// an unknown key for the same reason. The request was a 200 that changed
+// nothing, with no throw, no warning and no `errors` array (FJS-658).
+//
+// The fix is one refusal at the Data boundary and a carry at the API one, and
+// neither half can be graded alone: with litestone fixed and junction still
+// stripping, every HTTP and WS caller keeps the silence. This is the only test
+// that can see that, which is the whole reason it is in this file.
+describe('a dot-path write key crosses autoValidate and is refused by the Data boundary', () => {
+
+  async function docDb(): Promise<AnyClient> {
+    return await createClient({
+      db: ':memory:',
+      schema: `
+        type Commute { source String? }
+        type Settings {
+          commute Json? @type(Commute)
+          theme   String
+        }
+
+        model Account {
+          id       Int    @id
+          name     String
+          settings Json   @type(Settings)
+          @@gate("0.0.0.0")
+        }
+      `,
+    }) as unknown as AnyClient
+  }
+
+  // The half that was junction's. Before the fix `ctx.data` came out of
+  // autoValidate as `{ name: 'a' }` and the path was gone.
+  test('autoValidate carries the key rather than stripping it', async () => {
+    const db = await docDb()
+    const c  = ctx(db, { method: 'patch', data: { name: 'a', 'settings.commute': { source: 'bus' } } })
+    await autoValidate('account', 'patch')(c)
+    expect(Object.keys(c.data as object)).toContain('settings.commute')
+  })
+
+  // The half that was litestone's, reached through the layer above it.
+  test('and the write then refuses it by name, naming the column', async () => {
+    const db: any = await docDb()
+    await db.asSystem().account.create({ data: { id: 1, name: 'a', settings: { commute: { source: 'x' }, theme: 'dark' } } })
+
+    const c = ctx(db, { method: 'patch', data: { 'settings.commute': { source: 'bus' } } })
+    await autoValidate('account', 'patch')(c)
+
+    const err: any = await db.asSystem().account
+      .update({ where: { id: 1 }, data: c.data })
+      .then(() => null, (e: Error) => e)
+
+    expect(err).toBeTruthy()
+    expect(err.errors?.[0]?.message).toMatch(/reads as a path into "settings"/)
+    // And it lands as a 400 rather than a 500, so a form marks the box —
+    // through the error boundary, which adopts the class's own `errors` array
+    // ahead of its `data`, so the sentence arrives under the field.
+    const mapped: any = toFrameworkError(err)
+    expect(mapped.code).toBe(400)
+    // The class's own `errors` array is adopted as the payload, so the sentence
+    // arrives keyed by the field and lands under the box rather than in a banner.
+    expect(mapped.data?.[0]?.path).toEqual(['settings.commute'])
+  })
+
+  // The control. A key with nothing behind it is what the strip exists for, and
+  // it must still be dropped — a fix that carried every unknown key would have
+  // traded a silent no-op for mass assignment.
+  test('a key whose head is not a field is still stripped', async () => {
+    const db = await docDb()
+    const c  = ctx(db, { method: 'patch', data: { name: 'a', 'nosuch.deep': 1, alsoUnknown: 2 } })
+    await autoValidate('account', 'patch')(c)
+    expect(Object.keys(c.data as object).sort()).toEqual(['name'])
+  })
+
+  test('an ordinary whole-document write is unaffected end to end', async () => {
+    const db: any = await docDb()
+    await db.asSystem().account.create({ data: { id: 1, name: 'a', settings: { commute: { source: 'x' }, theme: 'dark' } } })
+
+    const c = ctx(db, { method: 'patch', data: { settings: { commute: { source: 'bus' }, theme: 'dark' } } })
+    await autoValidate('account', 'patch')(c)
+    const row: any = await db.asSystem().account.update({ where: { id: 1 }, data: c.data })
+    expect(row.settings).toEqual({ commute: { source: 'bus' }, theme: 'dark' })
+  })
+})
+
+// ─── $merge crosses the transport untouched ─────────────────────────────────
+//
+// The operator is litestone's, and the question this file exists for is whether
+// the layer above lets it through. `autoValidate` builds its output from the
+// declared fields and validates a Json column's value as a whole — so a payload
+// carrying `{ $merge: … }` could plausibly have been stripped (FJS-658's shape)
+// or rejected as a document missing its required keys. Measured: neither. It is
+// passed through and litestone owns the grading, which is what keeps one owner
+// for what a document must look like.
+describe('a $merge payload reaches the Data boundary and is graded there', () => {
+  async function mergeDb(): Promise<AnyClient> {
+    return await createClient({
+      db: ':memory:',
+      schema: `
+        type Settings { theme String  count Int? }
+        model Account {
+          id  Int  @id
+          doc Json @default("{}")
+          typ Json @type(Settings)
+          @@gate("0.0.0.0")
+        }
+      `,
+    }) as unknown as AnyClient
+  }
+
+  test('an undescribed column merges through the pipeline', async () => {
+    const db: any = await mergeDb()
+    await db.asSystem().account.create({ data: { id: 1, doc: { a: 1 }, typ: { theme: 'd' } } })
+
+    const c = ctx(db, { method: 'patch', data: { doc: { $merge: { b: 2 } } } })
+    await autoValidate('account', 'patch')(c)
+    const row: any = await db.asSystem().account.update({ where: { id: 1 }, data: c.data })
+    expect(row.doc).toEqual({ a: 1, b: 2 })
+  })
+
+  test('a described column is graded, and the refusal lands as a 400 under the field', async () => {
+    const db: any = await mergeDb()
+    await db.asSystem().account.create({ data: { id: 1, typ: { theme: 'd' } } })
+
+    const c = ctx(db, { method: 'patch', data: { typ: { $merge: { theme: null } } } })
+    await autoValidate('account', 'patch')(c)
+
+    const err: any = await db.asSystem().account
+      .update({ where: { id: 1 }, data: c.data })
+      .then(() => null, (e: Error) => e)
+
+    const mapped: any = toFrameworkError(err)
+    expect(mapped.code).toBe(400)
+    // The path points at the SUB-KEY, not the column — which is what a form
+    // needs to mark the right box once a typed column renders as a fieldset.
+    expect(mapped.data?.[0]?.path).toEqual(['typ', 'theme'])
+    expect(mapped.data?.[0]?.message).toMatch(/null would delete 'theme'/)
+  })
+})

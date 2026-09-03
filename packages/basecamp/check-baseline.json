@@ -1,7 +1,7 @@
 {
   "//": "fli check's ratchet — one number per rule, and a number may only ever fall.",
-  "//detail-read-dead": "Both are `portal.get()` — web/src/routes/portal/[id] and web/src/components/widgets/ServiceHealthBody. It is not a row: it builds an entry from an adapter ping, over no model, so there is no node to watch and no announcement will ever arrive. The other nine on this app are record views, composed where the service answers more than the row (FJS-533).",
-  "detail-read-dead": 2,
+  "//detail-read-dead": "All six are `portal.get()` — web/src/routes/portal/[id], web/src/components/widgets/ServiceHealthBody, and the four screens that each report one adapter (git-activity, observability, dns, cloud-spend). It is not a row: it builds an entry from an adapter ping, over no model, so there is no node to watch and no announcement will ever arrive. The other nine on this app are record views, composed where the service answers more than the row (FJS-533).",
+  "detail-read-dead": 6,
   "//polymorphic-subject": "AuditEvent.subjectType is the SERVICE name (api/src/core/hooks.ts), so the set grows with every service and an enum would refuse the first row a new service writes. The other four pairs in this schema are enums; this one is the exemption the rule names.",
   "polymorphic-subject": 1
 }

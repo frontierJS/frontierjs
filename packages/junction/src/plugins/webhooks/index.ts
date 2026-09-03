@@ -354,10 +354,14 @@ async function attemptDelivery(
   // The path alone, not the whole URL: a receiver behind a proxy recomputes from
   // the request it was handed, which carries no origin.
   const path   = (() => { try { return new URL(registration.url).pathname } catch { return registration.url } })()
+  // Signed since `FJS-678`: a subscriber URL carrying a parameter would verify
+  // unchanged against any other value of it.
+  const query  = (() => { try { return new URL(registration.url).search } catch { return '' } })()
   const signed = await signRequest({
     secret: registration.secret,
     method: 'POST',
     path,
+    query,
     body,
     prefix: 'X-Webhook',
     timestamp,

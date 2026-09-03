@@ -20,7 +20,10 @@ const server     = flag.dev ? env.DEV_SERVER      : env.PROD_SERVER
 const serverPath = flag.dev ? env.DEV_SERVER_PATH  : env.PROD_SERVER_PATH
 
 if (!server) {
+  // A bare `return` leaves the steps to run with `undefined` interpolated into
+  // every ssh/scp/rm they build. `abort` is what refuses the whole command.
   log.error(`${flag.dev ? 'DEV' : 'PROD'}_SERVER not set in .env`)
+  context.config.abort = true
   return
 }
 

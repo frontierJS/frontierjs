@@ -18,7 +18,8 @@
 //     maxSize   500mb     ← size-based: trim oldest lines when file exceeds limit
 //   }
 
-import { existsSync, readFileSync, writeFileSync, rmSync, statSync, openSync, readSync, closeSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, rmSync, renameSync, statSync, openSync, readSync, closeSync } from 'fs'
+import { indexPathFor, openIndexDb, withWriteLock, rebuildIndex } from '../drivers/jsonl-index.js'
 import { modelToTableName } from '../core/ddl.js'
 
 // ─── Duration parser ──────────────────────────────────────────────────────────
@@ -225,6 +226,29 @@ export function compactJsonl(filePath, model, retention, maxSize, now = Date.now
     if (timeOk) return null
   }
 
+  // ── Everything below runs holding the file's write lock ──────────────────
+  //
+  // **The READ is inside it, and that is the whole point.** Locking only the
+  // write-back leaves the window where it always was: compaction reads at T0, a
+  // second process appends, compaction writes back what it read, and those rows
+  // are gone. Measured with the lock around the write alone — 43,441 appends
+  // during one size compaction, and the survivors carried **a gap of 297 rows**
+  // that no error anywhere reported.
+  //
+  // So an append waits for a compaction, for as long as the compaction takes
+  // (48 ms on a 3 MB file, longer on a large one). That is the correct trade and
+  // not a reluctant one: the alternative to a blocked append is a destroyed
+  // audit row, and under WAL the hold blocks writers only — every reader is
+  // unaffected.
+  const indexPath = indexPathFor(filePath)
+  const db        = existsSync(indexPath) ? openIndexDb(indexPath) : null
+  try {
+    return db ? withWriteLock(db, () => rewrite(db)) : rewrite(null)
+  } finally {
+    try { db?.close() } catch { /* the rewrite is done; a stuck handle is not */ }
+  }
+
+  function rewrite(db) {
   const raw   = readFileSync(filePath, 'utf8')
   let   lines = raw.split('\n').filter(l => l.trim())
 
@@ -279,16 +303,47 @@ export function compactJsonl(filePath, model, retention, maxSize, now = Date.now
   // ── Rewrite file ───────────────────────────────────────────────────────────
 
   const newContent = lines.length ? lines.join('\n') + '\n' : ''
-  writeFileSync(filePath, newContent, 'utf8')
 
-  // ── Invalidate companion index ─────────────────────────────────────────────
-  // Byte offsets are wrong after the rewrite — safer to delete and rebuild lazily.
-  // The index will be repopulated on the next createMany/create call.
+  // ── Rewrite, holding the file's lock, and rebuild the index ───────────────
+  //
+  // Two things were wrong with the three lines this replaces, and both destroy
+  // an audit trail rather than merely inconveniencing it.
+  //
+  // **It rewrote in place, with nothing excluding a writer.** `readFileSync` →
+  // filter → `writeFileSync` over the same path, so every line appended between
+  // the read and the write is discarded — and `writeFileSync` truncates first,
+  // so a crash inside it leaves a TRUNCATED trail. Measured, one compaction
+  // overlapping one appender: **619 of 3,000 rows destroyed**. This runs inside
+  // every `createClient`, so a deploy landing on retention night is the ordinary
+  // case rather than the unlucky one.
+  //
+  // **And it deleted the index rather than rebuilding it**, which is what made
+  // the sidecar unsafe to put in WAL: the unlink leaves `-wal` and `-shm` behind,
+  // and a live process's next write then answers `ok` while writing into an
+  // inode with no directory entry (measured — under a rollback journal the same
+  // write is a loud `SQLITE_READONLY_DBMOVED`, which is `FJS-540`). Rebuilding
+  // costs one pass over a file already in memory and is what lets the index be
+  // fast at all (`FJS-665`).
+  //
+  // The lock is the index database's own write transaction, so an append cannot
+  // land between the read above and the rename below. A temp file plus `rename`
+  // makes the swap atomic: a reader sees the old file or the new one and never
+  // a half-written one.
+  // A temp file plus `rename` rather than `writeFileSync` over the path:
+  // `writeFileSync` truncates first, so a crash inside it leaves a TRUNCATED
+  // trail, and a concurrent reader sees a half-written file. `rename` is atomic
+  // — a reader gets the old file or the new one and never something between.
+  const tmp = `${filePath}.compact-${process.pid}.tmp`
+  writeFileSync(tmp, newContent, 'utf8')
+  renameSync(tmp, filePath)
 
-  const indexPath = filePath + '.index.db'
-  if (existsSync(indexPath)) {
-    try { rmSync(indexPath) } catch {}
-  }
+  // Rebuild rather than unlink. The offsets the index holds are all wrong after
+  // a rewrite, and deleting the database was the old answer — which is what made
+  // the sidecar unsafe in WAL, since the unlink leaves `-wal` and `-shm` behind
+  // and a live process's next write then answers `ok` while writing into an
+  // inode with no directory entry. The file is already in memory; re-deriving
+  // the rows from it costs one pass.
+  if (db) rebuildIndex(db, model, filePath)
 
   console.log(
     `[litestone] retention: compacted "${model.name}" — ` +
@@ -297,4 +352,5 @@ export function compactJsonl(filePath, model, retention, maxSize, now = Date.now
   )
 
   return { removed, remaining: lines.length, reason: reasons.join(' + ') }
+  }
 }

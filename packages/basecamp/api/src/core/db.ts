@@ -26,10 +26,18 @@
 //
 // That is a property this app DEPENDS on rather than merely tolerates, so do not
 // "fix" it with `resolveFrom: 'schema'`: db/test/seed.test.ts isolates a run by
-// giving it a scratch CWD, which redirects `database main` by env var and
-// `database audit` — which has no env var — by the CWD alone. Anchoring sends
-// that audit log back to the shared db/audit/ and the suite fails on a locked
-// database (`FJS-449`).
+// giving it a scratch CWD, and it redirects `database main` by env var and
+// `database audit` by the CWD alone. Anchoring sends that audit log back to the
+// shared db/audit/ and the suite fails on a locked database (`FJS-449`).
+//
+// `database audit` DOES have an env var — `AUDIT_PATH` — and nothing sets it,
+// which is why the CWD is still what isolates it. The two drives disagree about
+// this: db/test/seed.test.ts isolates by CWD and gets an isolated trail, while
+// web/test/verify-screens.mjs redirects DATABASE_URL and runs with `cwd: PKG`,
+// so its audit rows land in the developer's own db/audit/ (`FJS-633`). Setting
+// AUDIT_PATH in both is what would make `resolveFrom: 'schema'` safe here, and
+// it is also what would let the API's snapshots move into api/ the way
+// example's have.
 
 import { createClient, GatePlugin } from '@frontierjs/litestone'
 import { env, DEV_ENCRYPTION_KEY } from './env.ts'

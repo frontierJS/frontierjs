@@ -87,7 +87,16 @@ const resource = (service, opts = '') => `<script module>
 
 /** The shape a passing app has — every rule runs, nothing fires. */
 const CLEAN = {
-  'db/schema.lite':                     SCHEMA,
+  // The schema PLUS a logger database, so `log-db-unbound` RUNS on the clean
+  // tree rather than skipping — a rule that only ever skips is the failure this
+  // file exists to prevent — and finds nothing, because the path is written as
+  // an `env()` and the key file declares the variable. That pair is the shape
+  // an app with a trail is meant to be in: the deploy binds it under the volume
+  // it mounts, and the trail survives the swap that replaces the container.
+  'db/schema.lite':
+    SCHEMA + '\ndatabase audit { path env("AUDIT_PATH", "./db/audit/") driver logger retention 90d }\n',
+  'frontier.config.js': "export default { deploy: { server: 'x.test', path: '/apps/x' } }\n",
+  '.env.example':       'AUDIT_PATH=/db/audit/\n',
   // A dependency that ships a schema fragment, and no copy of its model here.
   // Present so `package-model-drift` RUNS on the clean tree rather than skipping
   // — a rule that only ever skips is the failure this file exists to prevent —
@@ -1968,6 +1977,69 @@ describe('the baseline', () => {
 // rules below were measured by running `checkRoute` rather than read off the
 // source: `publishes: 0` turns two refusals into passes.
 
+describe('log-db-unbound', () => {
+  const DEPLOY = "export default { deploy: { server: 'x.test', path: '/apps/x' } }\n"
+  const LOGGER = (path) => SCHEMA + `\ndatabase audit { path ${path} driver logger retention 90d }\n`
+
+  test('a literal path cannot be pointed at the volume, and that is certain', () => {
+    // basecamp's real shape. The app root is /app and the volume is /db, so the
+    // trail is written into the image and the next swap takes it — with the app
+    // working perfectly throughout, which is why nothing has ever noticed.
+    const root = tree('ldu-literal', {
+      'db/schema.lite': LOGGER('"./db/audit/"'), 'frontier.config.js': DEPLOY,
+    })
+    const { findings } = only(root, 'log-db-unbound')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/cannot be pointed at the mounted volume/)
+    expect(findings[0].message).toMatch(/AUDIT_PATH/)   // it names the way out
+  })
+
+  test('an env() nothing declares is reported, because the env check will not require it', () => {
+    const root = tree('ldu-undeclared', {
+      'db/schema.lite': LOGGER('env("AUDIT_PATH", "./db/audit/")'),
+      'frontier.config.js': DEPLOY,
+      '.env.example': 'DATABASE_URL=\n',
+    })
+    const { findings } = only(root, 'log-db-unbound')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/nothing in this app declares AUDIT_PATH/)
+  })
+
+  test('an env() the key file declares is clean', () => {
+    const root = tree('ldu-declared', {
+      'db/schema.lite': LOGGER('env("AUDIT_PATH", "./db/audit/")'),
+      'frontier.config.js': DEPLOY,
+      '.env.example': '# the trail lives on the volume\nAUDIT_PATH=/db/audit/\n',
+    })
+    expect(only(root, 'log-db-unbound').findings).toEqual([])
+  })
+
+  test('.env.keys counts too — an app may declare keys without example values', () => {
+    const root = tree('ldu-keys', {
+      'db/schema.lite': LOGGER('env("AUDIT_PATH", "./db/audit/")'),
+      'frontier.config.js': DEPLOY,
+      '.env.keys': 'AUDIT_PATH\n',
+    })
+    expect(only(root, 'log-db-unbound').findings).toEqual([])
+  })
+
+  test('a sqlite-only schema is skipped, not passed', () => {
+    // The rule must not fire on the app that has no trail to lose; `fli new`
+    // scaffolds exactly this.
+    const root = tree('ldu-sqlite', { 'db/schema.lite': SCHEMA, 'frontier.config.js': DEPLOY })
+    const { findings, skipped } = only(root, 'log-db-unbound')
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
+  })
+
+  test('no deploy block is skipped — nothing mounts a volume to be outside of', () => {
+    const root = tree('ldu-nodeploy', { 'db/schema.lite': LOGGER('"./db/audit/"') })
+    const { findings, skipped } = only(root, 'log-db-unbound')
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
+  })
+})
+
 describe('static-publish-db', () => {
   const site = (config, extra = {}) => ({
     ...CLEAN,
@@ -2250,5 +2322,95 @@ describe('a model graded by capability is not also graded by ladder', () => {
     const root = tree('cap-none', { ...CLEAN, 'db/schema.lite': 'model Lead { id Int @id }\n' })
     const { skipped } = runChecks({ root, only: ['capability-ladder'] })
     expect(skipped).toHaveLength(1)
+  })
+})
+
+describe('schema-in-memory', () => {
+
+  // An app that hands `createClient` a schema STRING while `db/schema.lite`
+  // exists is running models no tool can read — every schema tool takes a path.
+  // The cost is not documentation: `release:check` compares release surfaces, so
+  // a contract on a model absent from both grades as an expand.
+  //
+  // Measured on `example`, which appended auth's fragments at boot: 39 models
+  // ran and 32 were in each of the four committed artefacts, the identity model
+  // and the credential store among the seven missing (`FJS-626`).
+
+  test('a schema: string beside a schema.lite is a warning naming the artefacts', () => {
+    const root = tree('sim-inline', {
+      ...CLEAN,
+      'api/src/db.ts': [
+        "import { createClient } from '@frontierjs/litestone'",
+        "export const db = await createClient({",
+        "  path:   './db/schema.lite',",
+        "  schema: appSchema + authSchemaFragments('main'),",
+        "})",
+      ].join('\n'),
+    })
+
+    const { findings } = only(root, 'schema-in-memory')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].severity).toBe('warn')
+    expect(findings[0].message).toContain('createClient')
+    expect(findings[0].message).toContain('release:check')
+    // The way out, spelled: a path is read with parseFile, which resolves imports.
+    expect(findings[0].message).toContain('parseFile')
+  })
+
+  test('createTenantRegistry is the same call and is named as itself', () => {
+    const root = tree('sim-registry', {
+      ...CLEAN,
+      'api/src/db.ts': [
+        "import { createTenantRegistry } from '@frontierjs/litestone'",
+        "const registry = await createTenantRegistry({ schema: full, path: FILE })",
+      ].join('\n'),
+    })
+
+    const { findings } = only(root, 'schema-in-memory')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toContain('createTenantRegistry')
+  })
+
+  // The three controls. Each is a legitimate shape that an over-eager version of
+  // this rule reports, and the first two are how it would get switched off.
+
+  test('a TEST states its own schema inline, and that is how a test is written', () => {
+    // Found by running the rule over basecamp, where its only finding was
+    // `db/test/schema.test.ts`.
+    const root = tree('sim-test', {
+      ...CLEAN,
+      'db/test/schema.test.ts': "await createClient({ schema: 'model X { id Int @id }', db: ':memory:' })\n",
+      'api/src/thing.spec.ts':  "await createClient({ schema: 'model Y { id Int @id }' })\n",
+    })
+    expect(only(root, 'schema-in-memory').findings).toHaveLength(0)
+  })
+
+  test('the word in a COMMENT is prose, because this rule describes its own hazard', () => {
+    const root = tree('sim-comment', {
+      ...CLEAN,
+      'api/src/db.ts': [
+        '// Never pass createClient({ schema: … }) here — see FJS-626.',
+        "export const db = await createClient({ path: './db/schema.lite' })",
+      ].join('\n'),
+    })
+    expect(only(root, 'schema-in-memory').findings).toHaveLength(0)
+  })
+
+  test('an app handed a path alone is what the rule is for, and is silent', () => {
+    const root = tree('sim-clean', {
+      ...CLEAN,
+      'api/src/db.ts': "export const db = await createClient({ path: './db/schema.lite' })\n",
+    })
+    expect(only(root, 'schema-in-memory').findings).toHaveLength(0)
+  })
+
+  test('no db/schema.lite is a skip, not a pass — an app may declare none', () => {
+    const files = { ...CLEAN }
+    delete files['db/schema.lite']
+    const root = tree('sim-noschema', {
+      ...files,
+      'api/src/db.ts': "await createClient({ schema: 'model X { id Int @id }' })\n",
+    })
+    expect(only(root, 'schema-in-memory').skipped).toBeTruthy()
   })
 })

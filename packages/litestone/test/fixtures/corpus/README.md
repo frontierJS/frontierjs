@@ -100,10 +100,72 @@ on a different table, so a replacement the author makes and never a conversion �
 and **`halfvec`** (pgvector embeddings), where `.lite` has no type and no index
 that would make one useful.
 
+## Frappe HR — payroll, and the walls a schema does not carry, 2026-08-30
+
+**160 models**, fetched because `erpnext` no longer contains payroll: HR was
+split back out into `frappe/hrms`, so the ERP port has `GLEntry` and `Employee`
+and no `Salary Slip` at all. Added as phase 0 of `IDEAS/payroll.md` — read the
+refusals before writing a model.
+
+**526 unexpressed, and `0 changed`.** Nothing was silently mis-stated; the whole
+list is `lost` (335) or `noted` (191), which is the grading working as intended
+on a source that leans hard on framework convention.
+
+| | |
+| --- | --- |
+| **323 `link-to-unknown-doctype`** | hrms is an app **on top of** ERPNext, so `Employee`, `Company` and `Account` are links to doctypes that are not in this repository. Not a language gap — a reminder that a Frappe app's schema is only ever half a schema |
+| **74 `child-table-field` · 54 `frappe-child-parent`** | the same `(parenttype, parent)` open pair ERPNext uses 252 times |
+| **53 `submit-workflow`** | `docstatus` 0/1/2 as a bare `Int`. A real draft → submitted → cancelled machine that `@@transitions` could carry, declared nowhere |
+| **12 `select-not-an-enum` · 7 open / 2 closed polymorphic · 1 STI** | the shapes every Frappe port produces |
+
+### What it says about payroll specifically
+
+**The five walls are absent from the source too, and that is the finding.** A
+mature payroll application's schema declares none of them:
+
+- **Money is `Float`.** 59 float columns across the six payroll-core models —
+  `grossPay`, `netPay`, `totalDeduction`, `base`, `amount`. Zero `@money`-shaped
+  intent anywhere, and no scale on anything. This is the hazard `FJS-D142` exists
+  for, met in the wild in the domain least able to afford it.
+- **The cross-row invariant is undeclared and has an exclusion.** `SalarySlip`
+  stores `grossPay`, `netPay`, `totalDeduction` and `roundedTotal` as ordinary
+  columns with no stated relation to `SalaryDetail`, and the line carries
+  `doNotIncludeInTotal` and `statisticalComponent` — so the real invariant is not
+  *lines sum to net* but *lines that count sum to net*. Any spelling this project
+  rules has to admit a predicate over the child, not just an aggregate.
+- **Effective dating has a THIRD shape.** `SalaryStructureAssignment` carries
+  `fromDate` and **no `toDate`** — the window is implied by the next row's start.
+  `example`'s `PlanVersion` uses a nullable `effectiveTo` pair (`FJS-D164`), and
+  a closed interval is a third. Evidence that the two-column window is a choice
+  rather than the only shape — which is what the open question about declaring
+  validity windows in the schema needs in front of it before it is answered
+  (`IDEAS/payroll.md` § The rulings this will force).
+- **Amend-not-edit is a plain self-relation, used 54 times.** `amendedFrom` points
+  a new document at the cancelled one it replaces. That is *reversal rather than
+  edit* already in the wild, and it is the nearest thing in this corpus to
+  declaring **derived from** — a link, not a computation.
+- **The formula is in the schema as a string.** `SalaryDetail` carries
+  `condition`, `formula` and `amountBasedOnFormula`; `TaxableSalarySlab` carries
+  `condition`. Frappe evaluates them as Python. That is schema-as-data, which
+  `IDEAS/proving-grounds.md` § Considered declined to build and
+  `IDEAS/payroll.md` § Out of scope declines again — now with the source in front
+  of it rather than from memory.
+
+**And it prices the 80/20 budget.** Of 160 models, roughly 38 are payroll proper;
+the rest are recruitment, appraisal, leave, travel, expenses, shifts and
+onboarding — every one of them a domain `IDEAS/payroll.md` § Out of scope names.
+The plan's budget of **eight models** is measured against that 38, not invented.
+
 ## The whole corpus
 
-1,377 models across seven applications and four front-ends, 2,403 recorded
+1,537 models across eight applications and four front-ends, 2,929 recorded
 constructs. Every one parses, builds and re-boots with zero drift.
+
+The per-class table below is from the seven-application run of 2026-08-29 and
+does not yet include `hrms`, whose classes are broken out in its own section
+above. `bun test/fixtures/corpus/fetch.mjs` with no argument rewrites `gaps.json`
+over every target — **naming one target rewrites the file as if the others did
+not exist**, which is worth knowing before reading a total off it.
 
 | Class | Count | Where |
 | --- | --- | --- |
@@ -199,24 +261,38 @@ bun test/fixtures/corpus/fetch.mjs calcom  # just one
 
 An absent fixture is **skipped by name**, never silently not run.
 
-## Why only one is committed
+## What is committed, and the question nobody has answered
 
 `@frontierjs/litestone` is MIT.
 
 | Target | Upstream licence | Committed |
 | --- | --- | --- |
 | `triggerdev` | Apache-2.0 — permissive, attribution in the file header | **yes** |
+| `discourse` | GPL-2.0 | **yes** |
+| `mastodon` | AGPL-3.0 | **yes** |
+| `lago` | AGPL-3.0 | **yes** |
+| `erpnext` | GPL-3.0 | **yes** |
+| `hrms` | GPL-3.0 | **yes** — same upstream org and licence as `erpnext` |
 | `calcom` | AGPL-3.0, with a commercial `/ee` | no — fetched |
 | `documenso` | AGPL-3.0 | no — fetched |
+| `maidtech` | private — a legacy FJS app of this repository's own | no — **local only**: not published, so `fetch.mjs` has no entry and nobody else can regenerate it |
 
-A schema converted from a copyleft source is plausibly a derived work, and
-vendoring one into an MIT package is a licensing decision rather than a testing
-one. Until somebody makes it deliberately, those two are fetched on demand and
-git-ignored. Nothing about the test changes if that ruling goes the other way —
-drop the files in and they run.
+**This table used to say only `triggerdev` was committed, and four copyleft
+fixtures had been added under it without the paragraph being revisited.** It is
+corrected here to describe the directory rather than the intention, because a
+policy statement contradicted by `git ls-files` is worse than none.
+
+The argument that produced the original split still stands and is now unresolved
+rather than applied: a schema converted from a copyleft source is plausibly a
+derived work, and vendoring one into an MIT package is a licensing decision
+rather than a testing one. Somebody should either take that decision or move six
+files. Nothing about the test changes either way — an absent fixture is skipped
+by name and `fetch.mjs` regenerates it.
 
 Adding a target is an entry in `fetch.mjs`'s `TARGETS` and a name in
 `corpus.test.ts`. Check the licence first.
 
-See `IDEAS/proving-grounds.md` § The corpus for the argument, and for the product
-form of the converter — `litestone import --from prisma`, which does not exist.
+See `IDEAS/proving-grounds.md` § The corpus for the argument. The product form of
+the converter is no longer hypothetical: `litestone import <path> --from
+prisma|rails|sql|frappe` shipped 2026-08-29 (`docs/import.md`), and it is the
+code this directory runs.

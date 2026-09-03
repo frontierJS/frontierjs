@@ -1,7 +1,7 @@
 {
   "name": "@frontierjs/conduit",
   "version": "0.1.2",
-  "description": "Outbound transport layer for FrontierJS Junction apps. One interface. Any protocol. Any direction.",
+  "description": "The outbound half of an app's third-party integrations. Declared targets, resolved credentials, one send().",
   "type": "module",
   "license": "MIT",
   "author": "FrontierJS",

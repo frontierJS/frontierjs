@@ -1,8 +1,9 @@
 import { createBaseService, $ } from '@frontierjs/junction'
 import { occurrenceKey }        from '@frontierjs/toolbelt/history'
-import { createIntent, createRefund } from '../core/psp.ts'
-import { orderIdFromCheckoutCode }     from '../core/checkout-code.ts'
-import { settleOrder, refundOrder }   from '../core/settle.ts'
+import { createIntent, createRefund } from '../providers/psp/index.ts'
+import { orderIdFromCheckoutCode }     from '../domain/shop'
+import { settleOrder, refundOrder }   from '../domain/shop'
+import { settleInvoice, declineKind } from '../domain/billing'
 
 // Money, in two methods that face opposite directions.
 //
@@ -27,9 +28,15 @@ import { settleOrder, refundOrder }   from '../core/settle.ts'
  */
 const sys = () => ($.db as { asSystem(): Record<string, any> }).asSystem()
 
-type OrderRow   = { id: number; reference: string; status: string; total: number }
+type OrderRow   = { id: number; reference: string; status: string; total: number
+                    userId: string | null }
+// Both parents are nullable and exactly one is set — `Payment` is
+// `@@arc([orderId, invoiceId])`, so the shape here is the declaration's, and a
+// branch that reads one without checking it is a branch the schema already
+// refused to let exist.
 type PaymentRow = {
-  id: number; providerRef: string; orderId: number
+  id: number; providerRef: string
+  orderId: number | null; invoiceId: number | null
   status: string; amount: number; refundedAmount: number
 }
 
@@ -82,7 +89,7 @@ const start = async () => {
   // So the id says WHICH order and something else has to say the caller may pay
   // it. Either:
   //
-  //   · `code` — `core/checkout-code.ts`, handed to the shopper by
+  //   · `code` — `domain/checkout-code.ts`, handed to the shopper by
   //     `carts.checkout` and to staff by `orders.paymentCode`. It IS the
   //     credential, so it is checked here rather than by a policy: a caller with
   //     no session has no claim for a policy to work with, which is exactly what
@@ -160,6 +167,11 @@ const start = async () => {
     orderId:     order.id,
     amount:      order.total,
     currency:    intent.currency ?? 'USD',
+    // Copied from the order, like the invoice path does. Null for a guest,
+    // which is most of this shop's orders and is the honest answer: there is no
+    // account for the row policy to match, and a checkout link is what the
+    // stranger was given instead.
+    userId:      order.userId ?? null,
   } }) as PaymentRow
 
   // ─── Two audiences, two payloads ─────────────────────────────────────────
@@ -167,8 +179,9 @@ const start = async () => {
   // The CALLER gets a narrow view: the provider's id, because their next hop
   // is the provider's own page and that is how it is addressed, plus the row's
   // own id so a staff screen can link to it. Not the row — `Payment` reads at
-  // ADMINISTRATOR(5) and this method answers a shopper at 0, and a custom
-  // method's return value is not filtered by anything.
+  // VISITOR(1) behind two row policies, this method answers a stranger at 0
+  // holding a checkout link, and a custom method's return value is not filtered
+  // by anything.
   //
   // SUBSCRIBERS get the row, through `$.dispatch`. It is the announcement
   // payload and nothing else, so widening it does not widen the response, and
@@ -214,6 +227,16 @@ const refund = async () => {
   // or has already gone back whole.
   if (payment.status !== 'succeeded')
     throw bad(`That payment is ${payment.status} — there is nothing to give back`)
+
+  // An invoice payment is refused by NAME here rather than falling through to
+  // an order lookup that answers null. `Payment` is
+  // `@@arc([orderId, invoiceId])`, so a payment for an invoice legitimately has
+  // no order — and *that payment names an order that is no longer here* is the
+  // wrong sentence for it, blaming a missing row for a shape that is correct.
+  // Giving money back on a subscription is a credit note, which is a document
+  // somebody authorises rather than a button that moves an order.
+  if (payment.invoiceId)
+    throw bad('That payment is for an invoice — money goes back on a subscription as a credit note, not as an order refund')
 
   const order = await $.db.order.findFirst({ where: { id: payment.orderId } }) as OrderRow | null
   if (!order) throw bad('That payment names an order that is no longer here')
@@ -286,7 +309,20 @@ const record = async () => {
   const body = ($.data ?? {}) as {
     id?: string
     type?: string
-    data?: { paymentRef?: string; reason?: string | null; refunded?: number; refundedTotal?: number }
+    data?: { paymentRef?: string; reason?: string | null; refunded?: number; refundedTotal?: number
+             /** The provider's own decline code. What separates a retry from an
+              *  answer — see `declineKind`. */
+             declineCode?: string | null
+             /** Only on `payment.action_required`: where the CARDHOLDER has to
+              *  go. The provider's own page — see `Payment.actionUrl`. */
+             actionUrl?: string | null
+             /** Only on `setup.succeeded`: the shop's own reference for whose
+              *  card this is, echoed back, and what the provider is now
+              *  holding. */
+             setupRef?: string
+             reference?: string | null
+             instrument?: { id?: string; brand?: string; last4?: string
+                            expMonth?: number; expYear?: number } }
   }
 
   const eventId = String(body.id ?? '')
@@ -309,6 +345,60 @@ const record = async () => {
 
   await system.paymentEvent.create({ data: { eventId, kind, paymentRef: ref } })
 
+  // ── A card being filed is not a payment ─────────────────────────────────
+  //
+  // Handled ABOVE the lookup below, because there is no `Payment` row for a
+  // setup intent and the generic path would answer `unknown-payment` and drop
+  // the one event that files an instrument.
+  //
+  // The event is where the shop learns which card it has, and not the reply to
+  // the confirm: the browser that confirmed is on the person's own machine and
+  // is not a caller this shop can believe about whose card was filed. The
+  // signature is what makes this one believable.
+  if (kind === 'setup.succeeded') {
+    const inst = body.data?.instrument
+    const who  = String(body.data?.reference ?? '')
+    const id   = Number(/^CUS-(\d+)$/.exec(who)?.[1] ?? NaN)
+    $.dispatch = false
+
+    if (!inst?.id || !Number.isInteger(id))
+      return { status: 'unusable-setup', eventId, reference: who || null }
+
+    const customer = await system.customer.findFirst({ where: { id } })
+    if (!customer) return { status: 'unknown-customer', eventId, reference: who }
+
+    // Already filed. A redelivery of an event whose row survived is the same
+    // answer as a duplicate id — the ledger check above only catches the ones
+    // that arrive under the same event.
+    const held = await system.paymentMethod.findFirst({ where: { providerRef: String(inst.id) } })
+    if (held) return { status: 'already-filed', eventId, paymentMethod: held.id }
+
+    // The newest card is the one a renewal reaches for, which is what a person
+    // adding one means. **One default per customer is still not declarable** —
+    // the predicate is expressible since `FJS-603`, and the DECLARATION is not,
+    // because this model already indexes `customerId` for the ordinary read and
+    // an index is named for its columns alone (`FJS-614`) — so these two writes
+    // are the invariant, and they are only sound because `record` is `transactional:`:
+    // between the clear and the create there is an instant with no default at
+    // all, and a renewal landing in it charges nobody and duns them for it.
+    await system.paymentMethod.updateMany({
+      where: { customerId: customer.id, isDefault: true },
+      data:  { isDefault: false },
+    })
+    const filed = await system.paymentMethod.create({ data: {
+      customerId:  customer.id,
+      providerRef: String(inst.id),
+      brand:       String(inst.brand ?? 'card'),
+      last4:       String(inst.last4 ?? '0000'),
+      expMonth:    Number(inst.expMonth ?? 12),
+      expYear:     Number(inst.expYear ?? 2030),
+      isDefault:   true,
+      userId:      customer.userId ?? null,
+    } })
+
+    return { status: 'filed', eventId, paymentMethod: filed.id, customer: customer.id }
+  }
+
   // An event about a payment this shop has no row for is recorded and not
   // acted on — a refund issued from the provider's dashboard, a test event
   // fired at a fresh database. Recording it is the point of the ledger; 200,
@@ -321,6 +411,39 @@ const record = async () => {
     return { status: 'unknown-payment', eventId, paymentRef: ref }
   }
 
+  // ── The bank wants the cardholder ──────────────────────────────────────
+  //
+  // Neither a decline nor a success, which is why it is its own event and its
+  // own status rather than a third `declineKind`. Nothing the shop can do
+  // advances it: the money has not moved, re-presenting produces the same
+  // answer, and the only thing that resolves it is a person answering their
+  // issuer's challenge.
+  //
+  // So the row records WHERE to send them and stops. The invoice stays
+  // `issued`, which means the dunning clock keeps running — correctly: a
+  // challenge nobody ever answers is an invoice nobody ever pays, and the
+  // deadline is the same one every other unpaid invoice is measured against.
+  // What must NOT happen is a lapse at once, and it does not, because that is
+  // the hard-decline path and this is not a decline.
+  if (kind === 'payment.action_required') {
+    // Out of order, exactly as the failure path below: a challenge delivered
+    // after the payment has already been settled or refused is a provider
+    // retrying an event it thinks it owes, and acting on it would move a
+    // finished payment back to *waiting for somebody*.
+    if (payment.status !== 'pending') {
+      $.dispatch = false
+      return { status: 'stale', eventId, payment: payment.id, was: payment.status }
+    }
+
+    $.dispatch = await system.payment.update({ where: { id: payment.id }, data: {
+      status:    'requiresAction',
+      actionUrl: body.data?.actionUrl ?? null,
+    } })
+
+    return { status: 'recorded', eventId, payment: payment.id,
+             invoice: payment.invoiceId ?? null, action: 'required' }
+  }
+
   if (kind === 'payment.failed') {
     // The row is what goes on the wire, and it is the UPDATED row — the write
     // itself announces nothing, because callService is already announcing for
@@ -329,6 +452,49 @@ const record = async () => {
       status:        'failed',
       failureReason: body.data?.reason ?? null,
     } })
+
+    // ── A subscription payment: a decline is a DOMAIN answer ──────────────
+    //
+    // For an order a declined card is nothing but a card — the shopper tries
+    // another one. For a subscription it is the start of a process, and WHICH
+    // process is decided by the code the provider sent: a soft decline is a
+    // retry, because the money may be there tomorrow, and a hard one is an
+    // answer that re-presenting cannot change. A shop that keeps re-presenting
+    // a stolen card gets its merchant account reviewed.
+    //
+    // The MOVE is the subscription's own `lapse`, so the dunning clock starts
+    // from the invoice's due date exactly as it does for a card nobody ever
+    // tried — one deadline, one place. What the hard case skips is the grace,
+    // and nothing else.
+    if (payment.invoiceId) {
+      const invoice = await system.invoice.findFirst({ where: { id: payment.invoiceId } }) as
+        { id: number, status: string, subscriptionId: number | null } | null
+      const hard = declineKind(body.data?.declineCode ?? null) === 'hard'
+
+      // OUT OF ORDER. A provider retries an event it thinks it owes, so a
+      // failure delivered after a settlement is ordinary rather than exotic —
+      // and acting on it lapses a subscription that is paid up.
+      //
+      // The guard is the INVOICE's state and not the subscription's, because
+      // the subscription is `active` in both the stale case and the real one.
+      // `settle: issued -> paid` already stops the SUCCESS path being applied
+      // twice; this is the same protection on the other side, and it is the
+      // document's state machine doing the work in both directions.
+      const stale = invoice && invoice.status !== 'issued'
+
+      if (hard && !stale && invoice?.subscriptionId) {
+        const sub = await system.subscription.findFirst({ where: { id: invoice.subscriptionId } }) as
+          { id: number, status: string } | null
+        // Asked before it is moved, for the same reason the order path asks:
+        // a move the machine refuses is a 409 to the provider, which reads as
+        // *retry this forever*.
+        if (sub?.status === 'active') await system.subscription.transition(sub.id, 'lapse')
+      }
+      return { status: stale ? 'stale' : 'recorded', eventId, payment: payment.id,
+               invoice: invoice?.id ?? null,
+               decline: declineKind(body.data?.declineCode ?? null) }
+    }
+
     // The order stays `pending`. A declined card is not a cancelled order —
     // the shopper is expected to try another one, and `start` will answer
     // because the status has not moved.
@@ -354,6 +520,14 @@ const record = async () => {
 
     if (!whole) return { status: 'partly-refunded', eventId, payment: payment.id, refunded: back, order: null }
 
+    // A refund against an INVOICE is a credit note, and issuing one is a
+    // decision rather than a consequence — a shop that credited automatically
+    // on every provider refund would write documents nobody authorised. So the
+    // payment row is updated and the ledger says so; the note is `changePlan`'s
+    // business or a person's.
+    if (payment.invoiceId)
+      return { status: 'refunded-invoice-payment', eventId, payment: payment.id, invoice: payment.invoiceId, refunded: back }
+
     const order = await system.order.findFirst({ where: { id: payment.orderId } }) as OrderRow | null
     if (!order)                    return { status: 'unknown-order', eventId, payment: payment.id }
     if (order.status === 'refunded') return { status: 'already-refunded', eventId, payment: payment.id, order: order.id }
@@ -373,6 +547,10 @@ const record = async () => {
   $.dispatch = await system.payment.update({ where: { id: payment.id }, data: {
     status:    'succeeded',
     settledAt: new Date().toISOString(),
+    // The challenge is answered, so the link stops being anywhere to send
+    // anybody. Cleared rather than left: a screen that offers a stale one sends
+    // a person to a page that answers 409 about a payment they already made.
+    actionUrl: null,
   } })
 
   // The order may already be paid — a member of staff pressed the button while
@@ -381,6 +559,27 @@ const record = async () => {
   // 409 to the provider means "retry this forever". So the state is asked
   // first, and the two paths answer differently on purpose: `settled` means
   // this delivery moved the row, `already-paid` means it found it moved.
+  // ── A subscription payment settles the INVOICE ────────────────────────
+  //
+  // `Payment` is `@@arc([orderId, invoiceId])`, so exactly one of the two is
+  // set and this branch is decided by the row rather than by the event.
+  //
+  // Nothing here tells dunning that the money arrived: `dun-subscriptions`
+  // reads the ledger, so a subscription sitting at `pastDue` with a clean
+  // ledger recovers on its own. That is why an out-of-order delivery cannot
+  // corrupt anything either — the state machine refuses a move from where the
+  // row already is, and `settle` is `issued -> paid`.
+  if (payment.invoiceId) {
+    const invoice = await system.invoice.findFirst({ where: { id: payment.invoiceId } }) as
+      { id: number, status: string } | null
+    if (!invoice) return { status: 'unknown-invoice', eventId, payment: payment.id }
+    if (invoice.status !== 'issued')
+      return { status: 'already-paid', eventId, payment: payment.id, invoice: invoice.id, was: invoice.status }
+
+    await settleInvoice(system, invoice.id)
+    return { status: 'settled', eventId, payment: payment.id, invoice: invoice.id }
+  }
+
   const order = await system.order.findFirst({ where: { id: payment.orderId } }) as OrderRow | null
   if (!order) return { status: 'unknown-order', eventId, payment: payment.id }
 

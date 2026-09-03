@@ -8,12 +8,12 @@
 // port, which is the only reason it is two files rather than one.
 
 import app, { MAIL_SINK, PORT, COOKIE_AUTH } from './src/app.ts'
-import { startMailSink }        from './src/core/mail-sink.ts'
-import { startPspSink }         from './src/core/psp-sink.ts'
-import { startIdpSink, IDP_URL } from './src/core/idp-sink.ts'
-import { startStripeSink }      from './src/core/stripe-sink.ts'
-import { PSP_URL }              from './src/core/psp.ts'
-import { STRIPE_URL }           from './src/core/stripe.ts'
+import { startMailSink }        from './src/providers/mail/sink.ts'
+import { startPspSink }         from './src/providers/psp/sink.ts'
+import { startIdpSink, IDP_URL } from './src/providers/idp/sink.ts'
+import { startStripeSink }      from './src/providers/stripe/sink.ts'
+import { PSP_URL }              from './src/providers/psp/index.ts'
+import { STRIPE_URL }           from './src/providers/stripe/index.ts'
 import { sys }                  from './src/core/db.ts'
 
 // The two dev sinks are SECOND AND THIRD LISTENERS, so they are bound here

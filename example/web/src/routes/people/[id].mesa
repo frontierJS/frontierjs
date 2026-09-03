@@ -1,0 +1,283 @@
+---
+title: Person
+---
+<script>
+  // One person: what they are on, what they WERE on, and their payslips.
+  //
+  // ─── The screen the whole domain is arranged around ───────────────────────
+  //
+  // Two questions live here and they are not the same question:
+  //
+  //   *what are they on*   — the open window, a row
+  //   *what were they on*  — `employees.payOn(id, { at })`, the as-at read
+  //
+  // The second is the one payroll is built on, and it is the only place in this
+  // application where a person types a DATE in order to be told what was true
+  // then. It goes over the wire to the service rather than being worked out
+  // from the history table below, which is the point: `api/src/domain/payroll`
+  // owns the half-open interval, and a second reading of it written here would
+  // be a wrong salary once per raise and never reproducible.
+  //
+  // ─── Setting pay, and the two acts that share one form ────────────────────
+  //
+  // The form is a CREATE over `PayWindow` narrowed to four fields, with the
+  // request replaced by `employees.setPay` — the shape `/plans/[id]/` uses for
+  // `reprice`, over an unrelated noun.
+  //
+  // **What is new here is the date box.** Leave it and this is a raise. Put a
+  // past date in it and the same write is a CORRECTION to what we believed —
+  // and afterwards nothing distinguishes them, because the schema holds when
+  // terms were IN FORCE and nothing holds when we learnt them
+  // (`api/src/domain/payroll` § Bitemporality). The screen says so out loud rather
+  // than offering two buttons that write the same row.
+  import PayWindow, { payWindows } from '@/resources/PayWindow.mesa'
+  import { employees } from '@/resources/Employee.mesa'
+  import { payslips }  from '@/resources/Payslip.mesa'
+  import { session } from '@/session.js'
+  import { page } from '@frontierjs/sierra/router'
+  import { money } from '../../money.js'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Badge         from '@frontierjs/ui/components/display/Badge.mesa'
+  import Breadcrumbs   from '@frontierjs/ui/components/display/Breadcrumbs.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input         from '@frontierjs/ui/components/forms/Input.mesa'
+  import Mono          from '@frontierjs/ui/components/display/Mono.mesa'
+  import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Skeleton      from '@frontierjs/ui/components/feedback/Skeleton.mesa'
+  import StatCard      from '@frontierjs/ui/components/display/StatCard.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+  import { toasts }    from '@frontierjs/ui/stores/toastStore.js'
+
+  $: (page.params, session.level)
+
+  let person  = null
+  let row     = null
+  let unwatch = null
+  let history = []
+  let slips   = []
+  let error   = null
+  let draft   = payWindows.make()
+
+  // The as-at question, and its answer. `asAt` is a date the person types;
+  // `wasOn` is whatever the SERVER said was in force then.
+  let asAt    = ''
+  let wasOn   = null
+  let asking  = false
+  let askErr  = null
+
+  const columns = [
+    { key: 'rate',  label: 'Rate',  align: 'right' },
+    { key: 'basis', label: 'Basis' },
+    { key: 'from',  label: 'From' },
+    { key: 'to',    label: 'Until' },
+  ]
+
+  const slipColumns = [
+    { key: 'reference', label: 'Payslip' },
+    { key: 'period',    label: 'Period' },
+    { key: 'gross',     label: 'Gross', align: 'right' },
+    { key: 'net',       label: 'Net',   align: 'right' },
+  ]
+
+  /** Watched rather than read: a raise entered in another tab moves the tile
+   *  above with nothing refreshing (`FJS-518`). */
+  function watch() {
+    row?.release()
+    row = employees.record(page.params.id)
+    unwatch = row.subscribe(v => { person = v })
+    return row.ready
+  }
+
+  async function loadHistory() {
+    const list = await payWindows.service.find(
+      { employeeId: Number(page.params.id) }, { orderBy: '-effectiveFrom', limit: 50 })
+    history = list?.data ?? []
+  }
+
+  async function loadSlips() {
+    try {
+      const list = await payslips.service.find(
+        { employeeId: Number(page.params.id) }, { orderBy: '-periodEnd', limit: 24 })
+      slips = list?.data ?? []
+    } catch { slips = [] }
+  }
+
+  async function boot() {
+    error = null
+    try { await watch(); await Promise.all([loadHistory(), loadSlips()]) }
+    catch (e) { error = e.message }
+  }
+  boot()
+  $: page.params.id, () => boot()
+  $.onDestroy(() => { unwatch?.(); row?.release() })
+
+  $: current = history.find(w => !w.effectiveTo) ?? null
+
+  /** Annual, which is the magnitude a band table is written in. */
+  const annual = (w) => w && (w.basis === 'hourly' ? w.rate * w.hoursPerWeek * 52 : w.rate)
+
+  /**
+   * Change what they are paid.
+   *
+   * `<Form onsubmit>` replaces the request and nothing else, so what arrives
+   * here has already been coerced, blank-stripped and validated against
+   * `PayWindow`'s own rules — and the service's refusals (a future date,
+   * backdating across an earlier change) come back as a 409 the form renders.
+   */
+  async function setPay(record) {
+    const pay = {
+      basis:        record.basis,
+      rate:         record.rate,
+      hoursPerWeek: record.hoursPerWeek,
+    }
+    // Absent means now. Stated means a correction — and an empty box must send
+    // NOTHING rather than an empty string, which `assertEffectiveFrom` would
+    // compare as an instant before every window there is.
+    if (record.effectiveFrom) pay.effectiveFrom = new Date(record.effectiveFrom).toISOString()
+
+    const opened = await employees.service.invoke('setPay', page.params.id, pay)
+    toasts.success(pay.effectiveFrom
+      ? `Corrected — ${money(annual(opened))} a year from ${when(opened.effectiveFrom)}`
+      : `Now ${money(annual(opened))} a year`)
+    draft = payWindows.make()
+    await Promise.all([loadHistory(), row.refresh()])
+
+    // A backdate makes an answer already on this screen wrong, so the screen
+    // that made the change is the one place that knows to ask again.
+    if (asAt && wasOn) await ask()
+    return opened
+  }
+
+  /** What were they on, then. One request, and the answer is the server's. */
+  async function ask() {
+    if (!asAt) { wasOn = null; askErr = null; return }
+    asking = true; askErr = null
+    try {
+      wasOn = await employees.service.invoke('payOn', page.params.id,
+        { at: new Date(asAt).toISOString() })
+    } catch (e) {
+      wasOn = null
+      // Nothing in force is an ANSWER, not a failure — before they were hired,
+      // or a gap somebody left — so it reads as one.
+      askErr = e.status === 404 ? 'Nothing was in force on that date.' : e.message
+    } finally { asking = false }
+  }
+
+  const when = iso => iso ? new Date(iso).toLocaleDateString(undefined,
+    { year: 'numeric', month: 'short', day: 'numeric' }) : null
+</script>
+
+<Breadcrumbs items={[{ label: 'People', href: '/people/' }, { label: person?.reference ?? '…' }]} />
+
+{#if error}<Alert tone="danger" id="pd-error">{error}</Alert>{/if}
+
+{#if !person}
+  <Skeleton lines={4} />
+{:else}
+  <SectionHeader title={person.name} level={1}>
+    {#snippet action()}
+      <div class="cluster">
+        <Mono size="xs" data-reference={person.reference}>{person.reference}</Mono>
+        {#if person.endedOn}
+          <Badge tone="muted" data-left>left {when(person.endedOn)}</Badge>
+        {:else}
+          <Badge tone="success" data-here>since {when(person.startedOn)}</Badge>
+        {/if}
+      </div>
+    {/snippet}
+  </SectionHeader>
+
+  <div class="cluster">
+    <StatCard label="On now" value={current ? money(annual(current)) : '—'} id="pd-now" />
+    <StatCard label="Basis"  value={current?.basis ?? '—'} />
+    <StatCard label="Since"  value={when(current?.effectiveFrom) ?? '—'} />
+    <StatCard label="Payslips" value={String(slips.length)} id="pd-slips" />
+  </div>
+
+  <!-- ─── the as-at read ──────────────────────────────────────────────── -->
+
+  <SectionHeader title="What were they on?" level={2} />
+
+  <Alert tone="muted">
+    The answer comes from the server, not from the table below. The half-open
+    interval — <code>effectiveFrom &lt;= at &lt; effectiveTo</code> — has one
+    owner in <code>api/src/domain/payroll</code>, and a second reading of it
+    written into this page would be a wrong salary once per raise.
+  </Alert>
+
+  <div class="cluster">
+    <Input type="date" label="As at" bind:value={asAt} id="pd-asat" onchange={ask} />
+    <Button variant="ghost" id="pd-ask" disabled={!asAt || asking} onclick={ask}>Ask</Button>
+    {#if wasOn}
+      <!--
+        The answer is carried twice — on a plain element and forwarded to the
+        Pill — because the pair is what `verify:payroll` compares. This screen
+        answers about three different dates in turn, which is the shape that
+        found `FJS-612`: a forwarded attribute frozen at the first answer looks
+        identical to a working one until somebody asks a second question.
+      -->
+      <span id="pd-answer" data-rate={wasOn.rate} data-window={wasOn.id}>
+        <Pill tone="info" id="pd-wason" data-rate={wasOn.rate}>
+          {money(annual(wasOn))} a year · {wasOn.basis}
+        </Pill>
+      </span>
+    {/if}
+    {#if askErr}<span class="text-muted" id="pd-askerr">{askErr}</span>{/if}
+  </div>
+
+  <!-- ─── the history ─────────────────────────────────────────────────── -->
+
+  <SectionHeader title="Pay history" level={2} />
+
+  <Table columns={columns} rows={history} striped compact>
+    {#snippet row(w)}
+      <tr data-window={w.id} data-open={w.effectiveTo ? null : 'true'}>
+        <td class="text-right" data-rate={w.rate}>{money(w.rate)}</td>
+        <td>{w.basis}{#if w.basis === 'hourly'} <span class="text-muted">· {w.hoursPerWeek}h/wk</span>{/if}</td>
+        <td>{when(w.effectiveFrom)}</td>
+        <td>
+          {#if w.effectiveTo}{when(w.effectiveTo)}{:else}<Pill tone="success">open</Pill>{/if}
+        </td>
+      </tr>
+    {/snippet}
+  </Table>
+
+  <!-- ─── setting pay ─────────────────────────────────────────────────── -->
+
+  <SectionHeader title="Set pay" level={2} />
+
+  <Alert tone="warning">
+    Leave <strong>From</strong> empty and this is a raise, in force from now.
+    Put a past date in it and the same write is a <strong>correction</strong>:
+    already-paid periods become wrong, and the next pay run carries the
+    difference as adjustment lines. It never edits a payslip that has been
+    issued — every figure on one is <code>@immutable</code>.
+  </Alert>
+
+  <PayWindow
+    bind:record={draft}
+    method="create"
+    only={['basis', 'rate', 'hoursPerWeek', 'effectiveFrom']}
+    onsubmit={setPay}
+    submitLabel="Set pay"
+    submitId="pd-setpay"
+  />
+
+  <!-- ─── their payslips ──────────────────────────────────────────────── -->
+
+  {#if slips.length}
+    <SectionHeader title="Payslips" level={2} />
+    <Table columns={slipColumns} rows={slips} striped compact>
+      {#snippet row(s)}
+        <tr data-payslip={s.id}>
+          <td><Mono size="xs">{s.reference}</Mono></td>
+          <td>{when(s.periodStart)} – {when(s.periodEnd)}</td>
+          <td class="text-right" data-gross={s.gross}>{money(s.gross)}</td>
+          <td class="text-right" data-net={s.net}>{money(s.net)}</td>
+        </tr>
+      {/snippet}
+    </Table>
+  {/if}
+{/if}

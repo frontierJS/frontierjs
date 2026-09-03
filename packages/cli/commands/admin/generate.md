@@ -106,7 +106,13 @@ function toLabel(name) {
 // The template is `fli make:resource`'s. Both are the same file for the same
 // reason, so a divergence here is a bug rather than a variant.
 
-function makeResourceFile(model, service) {
+// `exportName` and `service` are two different strings on purpose and the split
+// is the whole of this signature. A service name is a FILENAME and may be
+// kebab-cased — `shipping-methods` — which is not a JavaScript identifier, so
+// using it for the export writes `export const shipping-methods = …` and the
+// file does not parse. The export is derived from the MODEL, which is
+// PascalCase by invariant 2 and therefore always a legal identifier.
+function makeResourceFile(model, service, exportName) {
   return `<script module>
 // src/resources/${model}.mesa — the Resource layer.
 //
@@ -139,7 +145,7 @@ import { createResource } from '@frontierjs/sierra/junction'
 // regular English plurals were guessed — an irregular (Person -> people) comes
 // out wrong. Fix the string if one did; nothing else changes, because the model
 // is stated rather than inferred.
-export const ${service} = createResource('${service}', {
+export const ${exportName} = createResource('${service}', {
   model: '${model}',
   coerce: true,
   blankToNull: true,
@@ -413,42 +419,113 @@ if (!existsSync(schemaLite)) {
 
 // ─── Models ───────────────────────────────────────────────────────────────────
 
-const scanned = scanModels(readFileSync(schemaLite, 'utf8'))
+// The app's WHOLE seed, and not `schema.lite` alone. `core/app-schema.js` is
+// the one owner of that reading, shared with `fli check` — an app appends a
+// package's fragments IN MEMORY (`authSchemaFragments()`), so the models a
+// file scan cannot see are exactly `User`, `Session` and `Credential`: the ones
+// an admin panel is most about. This command generated a panel with no Users
+// screen in it for its whole life, and said nothing.
+const { appSchemaModels, appServices, serviceForModel } =
+  await import(resolve(global.fliRoot, 'core/app-schema.js'))
+
+const scanned  = appSchemaModels(root)
+const services = appServices(root)
+const bySvc    = serviceForModel(root, services)
 
 if (!scanned.length) {
-  log.error('No models found in schema.lite')
+  log.error('No models found in db/ or in any installed package')
   return
 }
 
+const fromPackage = scanned.filter(m => m.origin !== 'app')
+if (fromPackage.length) {
+  log.info(`Models from packages: ${fromPackage.map(m => `${m.name} (${m.origin})`).join(', ')}`)
+}
+
 const external = scanned.filter(m => m.external).map(m => m.name)
-const usable   = flag.external ? scanned : scanned.filter(m => !m.external)
+
+// ─── What no admin screen can reach ───────────────────────────────────────────
+//
+// A model gated at SYSTEM(8) or LOCKED(9) has no screen, ever. `asSystem()`
+// itself grades 8 and no browser caller exceeds SYSADMIN(7), so a page over one
+// renders, asks, and is refused for as long as the app exists — and these are
+// credential material (`Credential.value`, `Session.token`), so the page would
+// be an editor for password hashes if it did work.
+//
+// They only became visible when this command started reading the whole seed
+// rather than db/schema.lite, so this is not a rule that was always needed. It
+// is the other half of the same change: seeing a package's models means seeing
+// its machinery, and the gate is what tells the two apart.
+const machinery = scanned.filter(m => m.gate !== null && m.gate >= 8)
+const locked    = new Set(machinery.map(m => m.name))
+
+const usable = (flag.external ? scanned : scanned.filter(m => !m.external))
+  .filter(m => !locked.has(m.name))
 
 if (external.length && !flag.external) {
   log.info(`Skipping @@external model(s): ${external.join(', ')}  (--external to include)`)
 }
 
+if (machinery.length) {
+  log.info(`Skipping @@gate(8+) model(s), which no browser caller can reach: ${machinery.map(m => m.name).join(', ')}`)
+}
+
 if (!usable.length) {
-  log.error('Every model in schema.lite is @@external — nothing to generate')
+  log.error('Every model found is @@external — nothing to generate')
   return
 }
 
-// Model names are PascalCase and singular; the service is the regular plural.
-// `model` is passed to createResource explicitly so an irregular can never
-// silently resolve to nothing.
-const allModels = usable.map(({ name }) => ({
-  name,
-  key:           servicePlural(name),
-  label:         toLabel(servicePlural(name)),
-  singularLabel: toLabel(name),
-  pluralLabel:   toLabel(servicePlural(name)).toLowerCase(),
-}))
+// ─── The service name is READ ───────────────────────────────────────────────
+//
+// A service's name is its FILENAME — junction autoloads the directory, so
+// `shipping-methods.service.ts` answers on `/shipping-methods`. No rule applied
+// to `ShippingMethod` produces that string: the plural of a camelCase model is
+// `shippingMethods`, a different URL and, in an app that never declared one, no
+// URL at all.
+//
+// So `servicePlural` is now the FALLBACK for a model with no service yet, and
+// the app's own services directory is the answer wherever it has one. Guessing
+// generated five of `example`'s screens against a service the app does not
+// serve — each one a 404 with the page rendering normally around it.
+let allModels = usable.map(({ name }) => {
+  const key = bySvc.get(name) ?? servicePlural(name)
+  return {
+    name,
+    key,
+    label:         toLabel(key),
+    singularLabel: toLabel(name),
+    pluralLabel:   toLabel(key).toLowerCase(),
+  }
+})
+
+// ─── A model with no service behind it is not generated ───────────────────────
+//
+// It used to be written and then warned about, which is the wrong half: the
+// route renders, `load()` calls a URL the app does not serve, and what a person
+// sees is a broken screen rather than a missing one. The warning still fires at
+// the end, with the `fli make:service` line — but nothing is written.
+//
+// Applied to `allModels` and not to `targets`, because the LAYOUT and the
+// DASHBOARD are built from the full list on purpose (a `--model` run must not
+// drop the sections a previous run added). Filtering only the targets left the
+// nav and the dashboard linking two sections that were never generated — the
+// panel advertising a screen that 404s, which is the same defect one layer up.
+const served   = new Set(services.map(s => s.name))
+const unserved = allModels.filter(m => !served.has(m.key))
+allModels      = allModels.filter(m => served.has(m.key))
+
+if (!allModels.length) {
+  log.error('No model has a Junction service behind it — nothing to generate')
+  for (const m of unserved) echo(`    fli make:service ${m.name}`)
+  return
+}
 
 // ─── Target selection ─────────────────────────────────────────────────────────
 // --model accepts either spelling, any case: `Lead`, `lead` or `leads`.
 
 const want = (arg.model || '').trim().toLowerCase()
 
-const targets = want
+let targets = want
   ? allModels.filter(m => m.name.toLowerCase() === want || m.key.toLowerCase() === want)
   : allModels
 
@@ -518,6 +595,12 @@ const write = (filePath, content, label) => {
 // wrong together.
 const EXPORTS_RESOURCE = /export\s+const\s+([A-Za-z0-9_$]+)\s*=\s*createResource\(\s*['"]([^'"]+)['"]/
 
+// What a generated Resource EXPORTS. Derived from the model rather than from
+// the service, because the service may be kebab-cased and an identifier may
+// not: `servicePlural('ShippingMethod')` is `shippingMethods`, which is a legal
+// name for a binding and not the URL it calls.
+const exportNameFor = (m) => servicePlural(m.name)
+
 const unreadable = []
 
 const resources = allModels.map((m) => {
@@ -529,11 +612,11 @@ const resources = allModels.map((m) => {
       log.dry(`Would write ${`resources/${m.name}.mesa`.padEnd(22)} ${file.replace(root + '/', '')}`)
     } else {
       mkdirSync(resourcesDir, { recursive: true })
-      writeFileSync(file, makeResourceFile(m.name, m.key), 'utf8')
+      writeFileSync(file, makeResourceFile(m.name, m.key, exportNameFor(m)), 'utf8')
       log.success(`${`resources/${m.name}.mesa`.padEnd(22)} ${file.replace(root + '/', '')}`)
       created.push(file.replace(root + '/', ''))
     }
-    return { ...row, name: m.key, existed: false }
+    return { ...row, name: exportNameFor(m), existed: false }
   }
 
   // A Resource file with no createResource export is not one this can import
@@ -588,18 +671,11 @@ for (const m of targets) {
 // A route with no service behind it renders and then fails on load, which reads
 // as a broken page rather than a missing file. Say so here instead.
 
-const serviceDirs = [
-  resolve(context.paths.api, 'src/services'),
-  resolve(context.paths.api, 'services'),
-]
-
-const missing = targets.filter((m) => {
-  const accessor = m.name.charAt(0).toLowerCase() + m.name.slice(1)
-  return !serviceDirs.some(d =>
-    existsSync(resolve(d, `${accessor}.service.ts`)) ||
-    existsSync(resolve(d, `${m.key}.service.ts`))
-  )
-})
+// Asked of the service list rather than by probing two guessed filenames — the
+// probe looked for `shippingMethod.service.ts` and `shippingMethods.service.ts`
+// and never for `shipping-methods.service.ts`, which is the one that exists.
+// These were filtered out of `targets` above, so nothing was written for them.
+const missing = unserved
 
 // ─── Summary ──────────────────────────────────────────────────────────────────
 

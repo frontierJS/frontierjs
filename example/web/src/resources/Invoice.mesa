@@ -1,0 +1,27 @@
+<script module>
+  // web/src/resources/Invoice.mesa — the Resource layer.
+  //
+  // Named for the model, exporting the accessor — see Order.mesa.
+  //
+  // ─── Why this file has no markup half ─────────────────────────────────────
+  //
+  // A resource file carries its model's default form and this model has none to
+  // carry: `Invoice` is `@@gate("1.8.8.8")` and every money column on it is
+  // `@system @immutable`, so the writable set a generated form would render is
+  // empty. That is the point of the model rather than a gap in it — an invoice
+  // is a DOCUMENT (`FJS-D162`), and the way to correct one is a `CreditNote`
+  // beside it.
+  //
+  // ─── detailQuery, and why the detail screen watches it composed ───────────
+  //
+  // `invoices.get()` answers the header AND its lines and credit notes, because
+  // a total with nothing under it is not something anybody can check. A node
+  // holds one shape and a WS push carries the row alone, so the screen asks for
+  // `record(id, { composed: true })` (`FJS-D161`): the node becomes the
+  // TRIGGER, and any announcement about this invoice re-runs the read rather
+  // than replacing a document with its header.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const invoices = createResource('invoices')
+</script>

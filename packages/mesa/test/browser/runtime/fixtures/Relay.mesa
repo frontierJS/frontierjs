@@ -1,0 +1,8 @@
+<script>
+  // Relay.mesa — the second hop. A component that declares nothing and forwards
+  // what it was given, so a spec can ask whether the live view survives being
+  // read inside another component's prop push rather than only at the leaf.
+  import Forward from './Forward.mesa'
+</script>
+
+<Forward {...$attributes} />

@@ -9,8 +9,11 @@ import type { CaravanInstance } from '@frontierjs/caravan'
 
 // ─── Provider interfaces ──────────────────────────────────────────────────────
 // Junction covers: cache, events, scheduler, workers, filestorage, mail, ai
-// Basecamp speaks to 8 more — self-hosted appliances, each a party outside
-// the app in the sense FJS-D06 rules the word.
+// Basecamp speaks to 10 more, each a party outside the app in the sense
+// FJS-D06 rules the word. Eight are self-hosted appliances; two are somebody
+// else's service, and the split matters for one reason — an appliance is
+// something an operator installs and can be pointed at, a hosted service is an
+// account with a bill, so *unconfigured* means different work.
 // (IQueue is gone — replaced by app.jobs via Caravan)
 
 export interface ISecrets {
@@ -40,17 +43,122 @@ export interface IRegistry {
   deleteTag(repo: string, tag: string):                Promise<void>
 }
 
+/**
+ * The git host.
+ *
+ * `listRepos` answers more than a name and a clone URL, and that is the
+ * difference between an interface a screen can render and one it cannot: open
+ * pull requests, the branch's CI verdict and open issues are three separate
+ * calls at every host that has them, so a repository record that does not carry
+ * them makes /git-activity/ a table of names. `ci` is a VERDICT and not a
+ * status string — `unknown` is what a host with no CI answers, and it is not
+ * the same as `pending`.
+ */
 export interface IGit {
   createRepo(name: string, opts?: { description?: string; private?: boolean }): Promise<{ id: number; clone_url: string }>
   deleteRepo(name: string):                             Promise<void>
-  listRepos():                                          Promise<{ name: string; clone_url: string }[]>
+  listRepos():                                          Promise<GitRepo[]>
+  listPullRequests(repo: string):                       Promise<GitPullRequest[]>
   createWebhook(repo: string, url: string, events: string[]): Promise<{ id: number }>
+}
+
+export type CiVerdict = 'passing' | 'failing' | 'pending' | 'unknown'
+
+export interface GitRepo {
+  name:            string
+  clone_url:       string
+  description?:    string
+  defaultBranch?:  string
+  ci:              CiVerdict
+  openPullRequests: number
+  openIssues:      number
+  lastPushedAt?:   string
+}
+
+export interface GitPullRequest {
+  number:     number
+  title:      string
+  author:     string
+  branch:     string
+  ci:         CiVerdict
+  mergeable:  boolean
+  openedAt:   string
 }
 
 export interface IObservability {
   pushMetric(name: string, value: number, labels?: Record<string, string>): Promise<void>
   queryLogs(query: string, from: Date, to: Date):     Promise<unknown[]>
   queryMetrics(query: string, from: Date, to: Date):  Promise<unknown[]>
+}
+
+/**
+ * The edge — DNS and whatever terminates TLS in front of the fleet.
+ *
+ * Basecamp's own `Domain` rows are the hostnames it INTENDS to serve; this is
+ * the other side of that, and the two disagreeing is the thing the screen
+ * exists to show. A record here is the provider's, so it carries the
+ * provider's id and nothing of ours.
+ */
+export interface IEdge {
+  listZones():                                    Promise<EdgeZone[]>
+  listRecords(zoneId: string):                    Promise<EdgeRecord[]>
+  analytics(zoneId: string, from: Date, to: Date): Promise<EdgeAnalytics>
+}
+
+export interface EdgeZone {
+  id:        string
+  name:      string
+  sslMode:   string
+  proxied:   boolean
+  universalSsl?: boolean
+}
+
+export interface EdgeRecord {
+  id:       string
+  type:     string
+  name:     string
+  content:  string
+  proxied:  boolean
+  ttl:      number
+}
+
+export interface EdgeAnalytics {
+  requests:       number
+  cached:         number
+  bandwidthBytes: number
+  threats:        number
+}
+
+/**
+ * What the cloud is charging.
+ *
+ * **Money is minor units plus a currency**, never a float and never a symbol —
+ * the same rule `@money` holds at the Data boundary, for the same reason: a
+ * divisor of 100 is right for the dollar, wrong for the yen and wrong for the
+ * dinar (`@frontierjs/toolbelt/units`). `forServer` takes the
+ * `providerServerId` this app already records, which is the only key the two
+ * sides share — there is no row of ours in the vendor's ledger.
+ */
+export interface ICloudSpend {
+  monthToDate():                          Promise<SpendPeriod>
+  lineItems():                            Promise<SpendLine[]>
+  forServer(providerServerId: string):    Promise<SpendLine | null>
+}
+
+export interface SpendPeriod {
+  currency:        string
+  amountMinor:     number
+  projectedMinor?: number
+  from:            string
+  to:              string
+}
+
+export interface SpendLine {
+  kind:        string      // droplets · backups · volumes · addresses · snapshots
+  label:       string
+  currency:    string
+  amountMinor: number
+  detail?:     string
 }
 
 export interface INetworking {
@@ -80,6 +188,8 @@ export interface BasecampProviders {
   observability: IObservability
   networking:    INetworking
   integrations:  IIntegrations
+  edge:          IEdge
+  cloudSpend:    ICloudSpend
 }
 
 // ─── BasecampApp ───────────────────────────────────────────────────────────────

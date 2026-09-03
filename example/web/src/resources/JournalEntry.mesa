@@ -1,0 +1,26 @@
+<script module>
+  // web/src/resources/JournalEntry.mesa — the Resource layer.
+  //
+  // Named for the model, exporting the accessor — see Order.mesa.
+  //
+  // ─── Why this file has no markup half ─────────────────────────────────────
+  //
+  // `JournalEntry` is `@@gate("5.9.9.9")` — read by staff, and every write is
+  // the system's. There is no `create` any caller can reach and there never
+  // will be one: `api/src/domain/ledger.ts` posts every journal in this application
+  // and is the only thing that does, because a set of lines that does not sum
+  // to zero is not a journal.
+  //
+  // ─── detailQuery, and why the screen watches it composed ──────────────────
+  //
+  // A journal header carries **no amount at all** — the money is entirely in
+  // the lines — so `journalEntries.get()` answers both sides and a screen asks
+  // for `record(id, { composed: true })` (`FJS-D161`). It is `Invoice`'s
+  // argument in its strongest form: an uncomposed node would drop the lines the
+  // first time anything announced the entry, leaving a reference and a date and
+  // nothing anybody could check.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const journalEntries = createResource('journal-entries', { model: 'JournalEntry' })
+</script>

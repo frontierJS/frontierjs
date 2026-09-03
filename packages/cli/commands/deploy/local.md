@@ -142,6 +142,9 @@ const runCmd = [
   // and the health check reports "unreachable" as though the app were broken.
   `--env PORT=3000`,
   `--env NODE_ENV=production`,
+  // Same cap as a real deploy. A test container that runs for a week is the
+  // one nobody is watching the disk for.
+  ...dockerLogArgs(frontierConfig?.deploy),
   tag,
 ].filter(Boolean).join(' ')
 

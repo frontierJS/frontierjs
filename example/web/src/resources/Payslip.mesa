@@ -1,0 +1,26 @@
+<script module>
+  // web/src/resources/Payslip.mesa — the Resource layer.
+  //
+  // Named for the model, exporting the accessor — see Order.mesa.
+  //
+  // ─── Why this file has no markup half ─────────────────────────────────────
+  //
+  // The same reason `Invoice.mesa` has none, one domain along, and here it is
+  // the whole point of the model. Every figure is `@system @immutable`, the
+  // service answers `find` and `get` and nothing else, so the writable set a
+  // generated form would render is empty. A payslip is a DOCUMENT
+  // (`FJS-D162`): it is not corrected, it is superseded by an adjustment line
+  // on a later one (`api/src/domain/payroll`).
+  //
+  // ─── What a payslip's own screen has to show ──────────────────────────────
+  //
+  // The lines, which is where the arithmetic is checkable, and WHICH RUN each
+  // adjustment corrects. `PayslipLine.correctsPayRunId` is the only thing in
+  // the schema that says a row was derived from other rows, so a screen that
+  // did not render it would be showing a figure with no way back to where it
+  // came from.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const payslips = createResource('payslips')
+</script>

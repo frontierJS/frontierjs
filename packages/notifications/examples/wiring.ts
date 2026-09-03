@@ -19,7 +19,7 @@ model Notification {              // PascalCase singular → accessor db.notific
   id          Int       @id
   userId      String              // String, not Int — @frontierjs/auth issues uuid ids
                                   // (use Int only if your own User.id is an Int)
-  type        String              // stable notification class id, e.g. 'PaymentReceived'
+  type        String              // stable notification id, e.g. 'PaymentReceived'
   data        Json                // payload built by toInApp() — varies by type
   contextType String?             // optional: 'Order', 'Project', 'Invoice'
   contextId   Int?                // optional: id of the related record (loose ref, no FK)
@@ -46,6 +46,13 @@ app.configure(mailerPlugin(createResendMailer({
 
 app.configure(notificationsPlugin({
   db,
+
+  // Absent, `notifications/` and `src/notifications/` are probed beside the
+  // entry. State it when the entry is not the app — a test runner and a drive
+  // that imports the app module both make themselves the entry, and a probe
+  // that finds nothing leaves every definition unnamed.
+  notifications: new URL('./notifications', import.meta.url).pathname,
+
   transports: {
     email: { mailer: 'default' },       // uses app.mail
     // slack: new SlackDriver({ ... }) // custom driver example
@@ -64,7 +71,7 @@ after: {
   create: [
     async (ctx) => {
       if (ctx.auth.user?.authMethod === 'created') {
-        await ctx.app.notify(ctx.result.data, new WelcomeUser())
+        await ctx.app.notify(ctx.result.data, welcomeUser())
       }
     }
   ]
@@ -76,7 +83,7 @@ after: {
   create: [
     async (ctx) => {
       const user = await db.asSystem().user.findUnique({ where: { id: ctx.result.data.userId } })
-      await ctx.app.notify(user, new PaymentReceived(ctx.result.data))
+      await ctx.app.notify(user, paymentReceived(ctx.result.data))
     }
   ]
 }

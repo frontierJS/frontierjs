@@ -11,7 +11,7 @@ the diff: a URL that changed without a change you meant to make is a link
 somebody else already published.
 
 ```
-6 routes · 1 layout · target static · trailing slash always
+7 routes · 1 layout · target static · trailing slash always
 ```
 
 ## Publishes
@@ -37,6 +37,7 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/account/` | `src/routes/account/index.mesa` | `src/routes/_module.mesa` | — |
 | `/cart/` | `src/routes/cart/index.mesa` | `src/routes/_module.mesa` | — |
 | `/catalog/` | `src/routes/catalog/index.mesa` | `src/routes/_module.mesa` | — |
+| `/pricing/` | `src/routes/pricing/index.mesa` | `src/routes/_module.mesa` | — |
 | `/products/:slug/` | `src/routes/products/[slug].mesa` | `src/routes/_module.mesa` | `slug` |
 
 ## Declared meta
@@ -51,6 +52,7 @@ this section exists to show.
 - `/account/` — description: `Sign in to see what you have ordered.` · render: `static` · title: `Your account — FrontierJS Supply Co.`
 - `/cart/` — render: `static` · title: `Basket`
 - `/catalog/` — render: `static` · title: `Catalogue`
+- `/pricing/` — description: `What a standing order costs, and what each one includes.` · render: `static` · title: `Pricing — FrontierJS Supply Co.`
 - `/products/:slug/` — render: `static`
 
 ## Layouts
@@ -58,4 +60,4 @@ this section exists to show.
 Every `_module.mesa` reached by a route. One that is here and wraps nothing
 you expected is a directory boundary in the wrong place.
 
-- `src/routes/_module.mesa` — 6 routes: `/`, `/404/`, `/account/`, `/cart/`, `/catalog/`, `/products/:slug/`
+- `src/routes/_module.mesa` — 7 routes: `/`, `/404/`, `/account/`, `/cart/`, `/catalog/`, `/pricing/`, `/products/:slug/`

@@ -27,7 +27,7 @@
 // for stock and it is two sentences long.
 
 import { createBaseService, $ } from '@frontierjs/junction'
-import { levelsFor, move, HOLD_MINUTES, type MovementKind } from '../inventory.ts'
+import { levelsFor, move, HOLD_MINUTES, type MovementKind } from '../domain/shop'
 
 /** The kinds an adjustment may name. `received` has its own method — it takes a
  *  delivery note and is always positive — and `sold` belongs to a checkout, so

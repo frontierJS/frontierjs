@@ -1,0 +1,172 @@
+---
+title: Subscriptions
+---
+<script>
+  // Who is paying, on what cycle, and what state that arrangement is in.
+  //
+  // The status column is a `@@transitions` machine and ALL FOUR moves are
+  // `@system` — the trial converting, the lapse past an invoice's grace, the
+  // recovery when the ledger comes clean, and the cancellation the renewal job
+  // makes when it reaches a period end and finds `cancelAtPeriodEnd` set. So
+  // `transitions(row, level)` answers nothing here, and this is the first
+  // screen in the app whose action buttons are NOT derived from the schema.
+  //
+  // That is worth knowing rather than hiding: what a person presses is
+  // `subscriptions.cancel` / `.resume` over one `@system` column, and a flag is
+  // invisible to `@@transitions` — so the enabled/disabled rule below is
+  // written here, where every other screen reads it off `x-transitions`.
+  import Subscription, { subscriptions } from '@/resources/Subscription.mesa'
+  import { session } from '@/session.js'
+  import { prefs } from '@/prefs.js'
+  import { useStore } from '@frontierjs/sierra/junction'
+  import { page } from '@frontierjs/sierra/router'
+  import { money } from '../../money.js'
+
+  import Alert               from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button              from '@frontierjs/ui/components/forms/Button.mesa'
+  import ConfirmationPopover from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'
+  import Drawer              from '@frontierjs/ui/components/overlay/Drawer.mesa'
+  import Mono                from '@frontierjs/ui/components/display/Mono.mesa'
+  import Pill                from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader       from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Table               from '@frontierjs/ui/components/display/Table.mesa'
+  import { toasts }          from '@frontierjs/ui/stores/toastStore.js'
+
+  const columns = [
+    { key: 'reference',  label: 'Reference' },
+    { key: 'customerId', label: 'Customer' },
+    { key: 'status',     label: 'Status' },
+    { key: 'quantity',   label: 'Seats', align: 'right' },
+    { key: 'renews',     label: 'Renews' },
+    { key: 'actions',    label: '' },
+  ]
+
+  // The tone a state reads in. A UI decision — the STATES are the schema's,
+  // and a value added to the enum lands here as the default rather than
+  // vanishing.
+  const TONE = { trialing: 'info', active: 'success', pastDue: 'warning', cancelled: 'muted' }
+
+  const { get: rows, unsubscribe } = useStore(subscriptions.store)
+  $.onDestroy(unsubscribe)
+
+  $: (session.level, prefs.dense, prefs.currency)
+
+  let error   = null
+  let busy    = null
+  let editing = null
+
+  function load() {
+    subscriptions.load(page.query, { orderBy: '-createdAt', ...page.directives })
+      .catch(e => { error = e.message })
+  }
+  load()
+  $: page.query, page.directives, () => load()
+
+  $: canWrite = subscriptions.can('create', session.level)
+
+  /** Whether this caller may stop or restart a renewal. Both methods write one
+   *  `@system` column through the model's own `update` policy, so `can`
+   *  answers for both — and a row that has already ended is out either way,
+   *  which the service refuses independently. */
+  const canStop = (s) => s.status !== 'cancelled' && subscriptions.can('update', session.level)
+
+  /** Stop renewing, or start again. One handler because they are one write
+   *  with one refusal between them, exactly as the service is. */
+  async function setRenewal(s, on) {
+    busy = s.id
+    try {
+      await subscriptions.service.invoke(on ? 'resume' : 'cancel', s.id)
+      toasts.success(on ? `${s.reference} will renew again` : `${s.reference} stops at its period end`)
+      load()
+    } catch (e) { error = e.message }
+    finally { busy = null }
+  }
+
+  function open()  { editing = subscriptions.make(); error = null }
+  function close() { editing = null }
+
+  const when = iso => iso ? new Date(iso).toLocaleDateString(undefined,
+    { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
+</script>
+
+<SectionHeader title="Subscriptions" level={1}>
+  {#snippet action()}
+    <div class="cluster">
+      <a class="navlink" href="/plans/">Plans</a>
+      <a class="navlink" href="/invoices/">Invoices</a>
+      <Button id="s-new" disabled={!canWrite} onclick={open}>New subscription</Button>
+    </div>
+  {/snippet}
+</SectionHeader>
+
+{#if error}<Alert tone="danger" id="s-error">{error}</Alert>{/if}
+
+<Table {columns} rows={rows()} striped hover compact={prefs.dense}>
+  {#snippet row(s)}
+    <tr data-subscription={s.id} data-reference={s.reference}>
+      <td><a href={'/subscriptions/' + s.id + '/'} data-open><Mono size="xs">{s.reference}</Mono></a></td>
+      <td class="text-muted">#{s.customerId}</td>
+      <td><Pill tone={TONE[s.status] ?? 'muted'} data-status={s.status}>{s.status}</Pill></td>
+      <td class="text-right" data-quantity={s.quantity}>{s.quantity}</td>
+      <td data-renews={s.currentPeriodEnd ?? ''} data-stopping={s.cancelAtPeriodEnd ? '1' : ''}>
+        {when(s.currentPeriodEnd)}
+        {#if s.cancelAtPeriodEnd && s.status !== 'cancelled'}
+          <span class="text-muted text-xs"> · ends, does not renew</span>
+        {/if}
+      </td>
+      <td>
+        <div class="cluster">
+          <Button variant="ghost" href={'/subscriptions/' + s.id + '/'}>Open</Button>
+          {#if canStop(s) && s.cancelAtPeriodEnd}
+            <Button
+              variant="ghost"
+              data-resume={s.reference}
+              disabled={busy === s.id}
+              onclick={() => setRenewal(s, true)}
+            >Resume</Button>
+          {:else if canStop(s)}
+            <!--
+              Stopping is no longer a one-way door — the row keeps running to
+              its period end and Resume above takes it back — but it is still
+              worth confirming, because what it does NOT do is refund or
+              withdraw anything already issued.
+            -->
+            <ConfirmationPopover
+              title="Stop this subscription renewing?"
+              message="It runs to the end of the period that has been paid for and ends there. Anything already invoiced is still owed — a document is not withdrawn by cancelling the arrangement that produced it."
+              confirmLabel="Stop renewing"
+              onconfirm={() => setRenewal(s, false)}
+            >
+              {#snippet trigger()}
+                <Button variant="ghost" tone="danger" data-stop={s.reference} disabled={busy === s.id}>
+                  Stop renewing
+                </Button>
+              {/snippet}
+            </ConfirmationPopover>
+          {/if}
+        </div>
+      </td>
+    </tr>
+  {/snippet}
+</Table>
+
+<Alert tone="muted">
+  All four of this model's moves are <code>@system</code> — the renewal and
+  dunning jobs, not a request. <em>Stop renewing</em> writes
+  <code>cancelAtPeriodEnd</code> instead, and the arrangement ends when the
+  renewal job reaches the period that has already been paid for. So these are
+  the one set of buttons in this app that <code>transitions(row, level)</code>
+  cannot answer for.
+</Alert>
+
+<Drawer open={editing !== null} title="New subscription" side="right" onclose={close}>
+  {#if editing}
+    <Subscription
+      bind:record={editing}
+      method="create"
+      submitId="s-save"
+      oncancel={close}
+      ondone={() => { close(); load() }}
+    />
+  {/if}
+</Drawer>

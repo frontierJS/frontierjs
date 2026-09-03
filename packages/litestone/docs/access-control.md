@@ -56,6 +56,75 @@ cond ? a : b          a value chosen by a condition — see below
 expr1 && expr2        expr1 || expr2  !expr
 ```
 
+### What `auth().x` may name
+
+A claim is checked at startup like any other identifier, and an unknown one is
+refused by name:
+
+```
+Note: 'isStff' is not a claim the principal carries — in @@allow/@@deny
+'auth().isStff == true'.
+  Claims: activatedAt, capabilities, id, isAdmin, isOwner, isStaff (@@auth User),
+          isSystemAdmin, role, verifiedAt
+  A claim resolved per request is declared with createClient({ claims: ['isStff'] }).
+```
+
+It matters because a misspelling is not inert. An absent claim is `NULL`, and
+`NOT (NULL = 1)` excludes **every** caller while the create path's `null ===
+true` excluded **none** — so one typo was a lockout on read and an open door on
+create, and the side that refused read exactly like a policy doing its job.
+
+The set has four sources:
+
+| | |
+| --- | --- |
+| **the framework's eight** | `id` and `capabilities`, plus the six the default gate resolver grades a caller by — `role`, `isAdmin`, `isOwner`, `isSystemAdmin`, `verifiedAt`, `activatedAt`. A standing is not a column: an app whose ladder tops out at `isAdmin` has no such field on `User`, because auth puts it on the session |
+| **the `@@auth` model's columns** | whatever your app carries onto the session out of its own principal row — `isStaff`, `plan` |
+| **`tenancy { claim }`** | the one claim the schema itself declares |
+| **`createClient({ claims: [...] })`** | a claim resolved PER REQUEST — a cart token, an impersonation. It is on no row and in no schema, so nothing can derive it |
+
+```js
+const db = await createClient({
+  path:   './db/schema.lite',
+  claims: ['cartToken'],       // read by `@@allow('read', token == auth().cartToken)`
+})
+```
+
+**It grades only when there is a set to grade against.** A schema declaring no
+`@@auth` and a client passing no `claims` have said nothing, so nothing is
+refused — and that is announced once rather than assumed:
+
+```
+[litestone] auth().isStaff is not graded: this schema declares no @@auth model and
+createClient() was passed no claims. …
+```
+
+Mark your principal model `@@auth` to switch it on. `claims: []` is itself a
+statement — the framework's eight and nothing else — where leaving the option
+off is silence.
+
+### An absent claim is UNKNOWN, in both halves
+
+Read, update and delete compile to SQL; create and post-update evaluate the same
+expression in JS. They agree about a claim the caller does not carry, and the
+answer is SQL's:
+
+| | |
+| --- | --- |
+| `auth().x == 'y'` with `x` absent | **UNKNOWN** — not `false` |
+| `!(auth().x == 'y')` with `x` absent | **UNKNOWN** — `NOT` of unknown is unknown, not true |
+| `auth().x in ['a','b']` with `x` absent | **UNKNOWN** |
+| `auth().x == null` | a **boolean** — this is how the language spells `IS NULL` |
+
+An `@@allow` holds only on TRUE, and an `@@deny` fires on TRUE **and on
+UNKNOWN** — which is the one rule `(allows) AND NOT (denies)` already implies,
+since a WHERE that is NULL keeps no row. So a deny naming a claim an anonymous
+caller does not carry refuses them, on every verb.
+
+`auth().x == null` is the way to write *the caller carries no such claim*, and it
+is exempt for the same reason SQL spells `IS NULL` differently. The same
+exemption applies to a column: `ownerId == null` compiles to `ownerId IS NULL`.
+
 ### `cond ? a : b`
 
 Binds looser than `||` and is **right-associative**, so `a ? x : b ? y : z`
@@ -226,6 +295,51 @@ await userDb.account.findMany({ include: { posts: true } })
 
 The gate is checked before the query runs, so it names the model it refused.
 `asSystem()` bypasses all of it, here as everywhere.
+
+### Delegating to another model — `check(field)`
+
+`check(parent)` says *whatever the parent's policy decides, decide that here*.
+It compiles to a correlated `EXISTS` over the parent's table, so it is exact and
+it costs one subquery; an **absent** foreign key allows, in SQL and in JS alike.
+
+```prisma
+model Deploy {
+  app   App @relation(fields: [appId], references: [id])
+  appId Int
+  @@allow('read', check(app))            // readable if the app is
+  @@allow('update', check(app, 'read'))  // updatable by anyone who may READ the app
+}
+```
+
+It compiles **the parent's row policy and nothing else**, which is the one thing
+about it worth knowing, because the section above sets the opposite expectation:
+an `include` refuses on the parent's `@@gate`, and a delegation cannot see one.
+A gate and a capability grid are enforced a tier above, where no compiled
+predicate reaches, so a parent held **only** by a gate delegates as *no
+restriction at all* — `createClient` warns, naming the model, the operation and
+what the parent is actually protected by.
+
+```prisma
+model Vault { id Int @id  @@gate("7") }        // ← no row policy
+model Doc   { vault Vault @relation(…)  @@allow('read', check(vault)) }
+// [litestone] Doc: … delegates to Vault, whose protection for 'read' is a @@gate
+// and no row policy … places no restriction at all on Doc
+```
+
+Give the parent an `@@allow` for that operation, or say what the child requires
+in its own terms.
+
+**A cycle is refused at startup.** Two models delegating to each other — or a
+self-relation delegating to its own parent — re-enter a model already on the
+path, which compiles to a predicate no row satisfies. That fails closed, which
+is the right direction and is not an answer: the rule then admits only rows
+whose foreign key is `NULL`, so a comment thread reads its roots and nothing
+under them, and a mutual pair reads nothing at all. Both are data-dependent, so
+they look like a filter working. `createClient` names where the loop closed.
+
+A self-relation has no way to express *readable if its parent is* — there is no
+recursion in a compiled predicate — so the answer there is a column every row
+carries, compared directly.
 
 ### Field-level policies
 
@@ -511,8 +625,9 @@ and `.note`.
   is the grant it was written to withhold. An update naming anything else still needs
   `Model.update`, because the rest of the payload is what that grant is about; both
   spellings of a move agree, since `update({ data: { status: 'void' } })` and
-  `transition(id, 'void')` are one move; and a bare update with no keys is an ordinary
-  update. **CREATE keeps both**: `Model.create` is the grant for the row existing at
+  `transition(id, 'void')` are one move — they part company at one row state, the one
+  the move was taking it to, where the first is a no-op and the second is a conflict
+  (`FJS-611`); and a bare update with no keys is an ordinary update. **CREATE keeps both**: `Model.create` is the grant for the row existing at
   all, which is not what a column grant withholds.
 - **The gate still applies, ANDed.** A model that opts in usually wants its gate flat
   at the read floor, or a billing clerk at READER(2) is refused by the ladder before

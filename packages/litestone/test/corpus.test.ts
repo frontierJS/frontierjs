@@ -17,9 +17,12 @@
 // It is therefore also the widest test of the SHIPPED importer: 1,377 models of
 // input nobody here wrote, through the same code an app runs.
 //
-// Only `triggerdev.lite` is committed; the others are fetched (`fixtures/
-// corpus/README.md` says why) and are SKIPPED BY NAME when absent rather than
-// silently not run.
+// Six are committed and two are fetched on demand (`fixtures/corpus/README.md`
+// § What is committed says why, and says that the split is currently practice
+// rather than a ruling). An absent fixture is SKIPPED BY NAME rather than
+// silently not run. `LOCAL` is a third tier for a source that is neither: a
+// private schema converted by hand, which nobody else can regenerate — so its
+// skip says that instead of naming a fetch target that does not exist.
 
 import { describe, test, expect } from 'bun:test'
 import { readFileSync, existsSync, rmSync } from 'node:fs'
@@ -29,8 +32,9 @@ import { Database } from 'bun:sqlite'
 import { parse, createClient, introspect, buildPristine, diffSchemas } from '../src/index.js'
 
 const dir      = new URL('./fixtures/corpus/', import.meta.url).pathname
-const COMMITTED = ['triggerdev']
-const FETCHED   = ['calcom', 'documenso', 'mastodon', 'lago', 'discourse', 'erpnext']
+const COMMITTED = ['triggerdev', 'discourse', 'mastodon', 'lago', 'erpnext', 'hrms']
+const FETCHED   = ['calcom', 'documenso']
+const LOCAL     = ['maidtech']
 
 const read = (name: string) => {
   const p = `${dir}${name}.lite`
@@ -38,11 +42,14 @@ const read = (name: string) => {
 }
 
 describe('the corpus — schemas converted from real applications', () => {
-  for (const name of [...COMMITTED, ...FETCHED]) {
+  for (const name of [...COMMITTED, ...FETCHED, ...LOCAL]) {
     const source = read(name)
 
     if (!source) {
-      test.skip(`${name} — not present; run \`bun test/fixtures/corpus/fetch.mjs ${name}\``, () => {})
+      const how = LOCAL.includes(name)
+        ? 'a private source with no fetch target — convert it by hand'
+        : `run \`bun test/fixtures/corpus/fetch.mjs ${name}\``
+      test.skip(`${name} — not present; ${how}`, () => {})
       continue
     }
 

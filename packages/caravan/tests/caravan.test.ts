@@ -223,11 +223,16 @@ describe('job execution', () => {
     expect(stats.total.cancelled).toBe(0)
   })
 
-  it('marks job failed when no handler is registered', async () => {
+  it('leaves a job it has no handler for pending, and does not fail it', async () => {
+    // *I cannot do this* is not *this cannot be done*: the process that has the
+    // handler may be a different one (`FJS-675`).
     await q.start()
-    await q.dispatch('unknown-job', {})
-    await waitFor(() => q.stats().total.failed === 1)
-    expect(q.stats().total.failed).toBe(1)
+    const id = await q.dispatch('unknown-job', {})
+    await Bun.sleep(300)
+    expect(q.stats().total.failed).toBe(0)
+    const row = q.find(id)
+    expect(row?.status).toBe('pending')
+    expect(row?.attempts).toBe(0)
   })
 
   it('runs multiple jobs concurrently up to concurrency limit', async () => {

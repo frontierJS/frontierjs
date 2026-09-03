@@ -29,19 +29,26 @@ dashboard, and an auth-guarded layout. This is Nova / Filament territory.
 that was wrong as written. It is *codegen*, not derivation — files are emitted and
 then yours — but the gap is narrower than recorded.
 
-**However, it has drifted badly from the current stack** and is very likely
-non-functional as shipped. Four signals, all in
-`packages/cli/commands/admin/generate.md`:
+**Corrected 2026-08-31 — it works, and it is proven by running it.** The four
+signals this section used to list (`.svelte` output, wrong paths, `_layout.svelte`,
+a lowercase-plural model) were spelling and were fixed by `FJS-065`; the session
+store assumption went with them. What kept the paragraph honest for longer than
+it should have is that **nothing had ever executed the command** (`FJS-372`), so
+*is it non-functional* had no answer in either direction, and a stale warning is
+indistinguishable from a live one.
 
-1. It emits **`.svelte` files**, not `.mesa` — 12+ occurrences. Sierra compiles Mesa.
-2. It writes to **`web/src/routes/admin/`**; Sierra's routes live in `src/routes/`.
-3. It generates **`_layout.svelte`**; Sierra's layout convention is `_module.mesa`.
-4. Its docs tell you to add `isAdmin` to your **`users`** model — lowercase plural,
-   which violates the PascalCase-singular rule that is mandatory per `DECISIONS.md`,
-   and would not produce the accessor the generated code expects.
+`example` now generates 33 sections from its own seed, `fli check` is clean over
+the output, and `verify:users` opens the pages in a real browser. Running it is
+what found the four defects that reading it never could (`FJS-625`) — a service
+name **derived** where it is a filename, a serviceless model generated and then
+warned about, a nav linking sections that were never written, and an export name
+taking a kebab-cased string. And the one no amount of repair would have reached:
+it read `db/schema.lite`, so the identity layer an app appends from a package was
+invisible, and the panel had no Users screen in it.
 
-It also assumes a `$session.user.isAdmin` store that does not match Sierra's
-Junction binding (`status`, `getClient`, `login`, `logout`).
+So the Nova / Filament comparison above stands, with the honest caveat that this
+is *codegen* — files are emitted and are then yours. The derived-at-runtime half
+is still `IDEAS/overview.md` 1.1.
 
 **Full-text search exists.** Litestone generates FTS5 virtual tables
 (`packages/litestone/src/core/ddl.js:305`, with parser support for tokenizer

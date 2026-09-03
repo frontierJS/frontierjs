@@ -202,7 +202,7 @@ cross both (a possible second axis — the **Slice** — is under review).
 | 1 — Developer Interface          | CLI, editor tooling, scaffolds                   | `fli` (working) · frontierjs-vscode (stub) |
 | 2 — Database                     | Schema, migrations, ORM, gates                   | **Litestone** (shipped)                 |
 | 3 — Configuration & Secrets      | Env config, secrets, runtime context             | `frontier.config.js` + per-tool configs (unconsolidated) |
-| 4 — Integrations & Messaging     | Outbound third-party connections                 | **Conduit** (shipped, narrow)           |
+| 4 — Integrations                 | Third-party connections                          | **Conduit** (shipped, narrow)           |
 | 5 — Automation & Orchestration   | Jobs, queues, schedules, workflows               | **Caravan** (working) · Orion (planned, absent) |
 | 6 — Authentication               | Identity, sessions, trust resolution             | `@frontierjs/auth` (working)            |
 | 7 — Observability                | Monitoring, logging, environment awareness       | Basecamp (planned, absent) · today: junction telemetry/health/devtools |

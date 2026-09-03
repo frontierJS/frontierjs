@@ -7,6 +7,7 @@ description: Deploy FrontierJS apps to a server via SSH + Docker + nginx
 const { loadFrontierConfig, dockerfileScripts } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
 const { vendorWorkspacePackages, linkedDeps, GENERATED_DIR } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
 const { createMachine } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
+const { dockerLogArgs } = await import(new URL('file://' + global.fliRoot + '/core/docker-logging.js'))
 
 // ─── machineFor ───────────────────────────────────────────────────────────────
 // The one way a step reaches the box. Every command a deploy runs goes through
@@ -429,6 +430,10 @@ fi`)
     // health step then reports as a sick application.
     `--env PORT=3000`,
     `--env NODE_ENV=production`,
+    // Docker's default json-file driver caps nothing, so a chatty container
+    // fills the disk and the database stops writing before anybody reads a log.
+    // `deploy.logs` is the escape for a daemon already pointed somewhere.
+    ...dockerLogArgs(deployConf),
     // What this process states on every response, so a browser holding the
     // previous build can tell (`FJS-D160`). The same value the web build was
     // stamped with — one deploy is one build on both sides of the wire.
@@ -918,6 +923,17 @@ export default {
       path:         '/apps/myapp/db',   // default: {path}/db
       file:         'production.db',    // default: production.db
       keep_backups: 5,                  // default: 5
+    },
+
+    // What the container does with its own stdout. Omit it and the log is
+    // capped at 10m x 5 — Docker's own default caps nothing at all. Set
+    // `logs: false` where the daemon is already pointed at a shipper, or name
+    // a driver to hand over the whole decision.
+    logs: {
+      max_size:  '10m',               // default: 10m
+      max_files: 5,                   // default: 5
+      // driver:  'journald',         // instead of the two above
+      // options: { 'loki-url': '…' },// a named driver's own options
     },
 
     // Per-target overrides — server/user/path only

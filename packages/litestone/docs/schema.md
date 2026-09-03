@@ -343,6 +343,36 @@ place, so the migrator compares the constraint text and rebuilds when it moves.
 Adding one to a populated table is also a **contract** for `fli release:check`:
 the release still serving can write rows the new constraint forbids.
 
+### What a `@@check` cannot say
+
+**It sees one ROW.** *The lines sum to `subtotal`*, *the journal balances*, *the
+counting lines add up to net* each read a child table, and there is no attribute
+for them — deliberately, and the reason is worth knowing before you look for one
+(`FJS-D168`).
+
+The obstacle is not that the rule is hard to write down. It is **when it would be
+evaluated**. A declared check reads the child table, so it can only fire once
+those rows exist; the child carries the parent's id, so the parent is written
+first and the last statement is always a child insert. After every child insert
+the invariant is legitimately false until the final one, and nothing in SQL knows
+which one is final:
+
+| statement | rows in the child table | a declared `sum(lines) = net` |
+| --- | --- | --- |
+| `payslip.create({ net: 45000 })` | 0 | `0 != 45000` → refuse |
+| `payslipLine.createMany([…])` | 7 | would pass — never reached |
+
+**Write it in the function that writes the document, against the values you are
+about to insert.** That runs before the first INSERT rather than after it, names
+the two figures that disagree, and is the shape all three of `example`'s take.
+The one place something else can say *now* is a `@seals` move, which is why a
+sealing model can afford to check at the seal — and a model with no state machine
+has no equivalent moment to borrow.
+
+**What the schema does owe a document is the MOMENT and the FREEZE**, and those
+are declarable: `@seals` on the transition and `@immutable` on the columns, so
+nothing can restate a figure after the assertion passed.
+
 ### Exclusive foreign keys (`@@arc`)
 
 ```
@@ -529,6 +559,8 @@ model Person {
                                  replacing it. Two @@index over the same columns derive one
                                  index name whatever their predicates, and the second is
                                  refused. See docs/performance.md § Partial indexes
+@@id([col1, col2])               the row's identity IS the tuple — see § A key that is a
+                                 tuple below
 @@unique([col1, col2])           composite unique constraint. A NULLABLE member is
                                  refused at parse: two NULLs never compare equal, so rows
                                  that leave it unset are all distinct to the index and the
@@ -538,6 +570,13 @@ model Person {
                                  SQL's own word for what SQLite does, and it changes no
                                  emitted SQL. Single-column @unique over an optional column
                                  is untouched: unique-when-present has one reading
+@@unique([a], where: expr)       …or the other answer to the same question: the constraint
+                                 holds over the rows the predicate admits and says nothing
+                                 about the rest. *At most one OPEN row per parent* is
+                                 `where: effectiveTo == null`, and the nullable column moves
+                                 OUT of the tuple to get there. Not combinable with
+                                 nullsDistinct — a predicate already says which rows are
+                                 constrained. See § Conditional uniqueness below
 @@map("table_name")              custom DB table name
 @@label(fullName)                which column identifies a row to a person — what a
                                  picker SHOWS for a foreign key. FHIR calls it `display`.
@@ -551,6 +590,115 @@ model Person {
 @@strict                         SQLite STRICT mode (default)
 @@noStrict                       opt out of STRICT mode
 ```
+
+### Conditional uniqueness (`@@unique(where:)`)
+
+*At most one open window per employee.* *One current price per plan.* *One
+active membership per person.* Every one of those is uniqueness over SOME rows,
+and it is what effective dating is built on.
+
+```
+model PayWindow {
+  employeeId    Int
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+
+  @@unique([employeeId], where: effectiveTo == null)
+}
+```
+
+**The nullable column moves out of the tuple.** The near miss is
+`@@unique([employeeId, effectiveTo])`, which is refused: `effectiveTo` is null on
+exactly the row that matters and two NULLs never compare equal, so the tuple
+constrains the CLOSED rows and nothing else. `nullsDistinct: true` declares that
+on purpose; `where:` is the other answer, and the two cannot both be given.
+
+**One word, two mechanisms.** A plain `@@unique` is emitted inside `CREATE TABLE`
+as a table constraint. No SQL dialect takes a predicate on one, so this form is a
+standalone `CREATE UNIQUE INDEX … WHERE` — which is worth knowing three times
+over: it migrates by one DROP and one CREATE where a table constraint rebuilds the
+table, it does **not** make a relation one-to-one (a constraint holding over some
+rows does not say *at most one row per parent, always*), and it is read back as an
+index rather than as declared uniqueness.
+
+**It may compare against a value, where `@@index(where:)` may not.** A partial
+index earns its place by being matched, and SQLite has to prove a query implies it
+at PREPARE time; enforcement on INSERT never consults the planner. So
+`where: status == "active"` is a correct constraint that happens to be a useless
+read path, and the same predicate on `@@index` is nothing but a useless read path.
+The literals are inlined into the emitted DDL, because SQLite prohibits a bound
+parameter in a partial index predicate. `now()` and `auth()` are refused by name —
+SQLite accepts a clock there, and a constraint whose coverage moves under a row
+that never moved is a duplicate.
+
+**`@@softDelete`'s clause is not ANDed in.** On an `@@index` it is, because that
+clause is what makes the index reachable on such a model. Here the predicate IS
+the constraint, and ANDing it would free the `@unique` slot a soft-deleted row
+holds — which is the derivation `FJS-204` refused. Uniqueness among live rows is
+`where: deletedAt == null`, written by you.
+
+**Adding one is a contract for `release:check`**, like any row invariant: the
+release still serving knows nothing about it and writes rows the new one forbids.
+Removing one is an expand. A predicate ADDED where there was none is an expand
+(the constraint now covers fewer rows); one REMOVED is a contract; a move between
+two predicates is `unknown`, because whether one implies the other is implication
+between two SQL expressions.
+
+### A key that is a tuple (`@@id`)
+
+Where a row is identified by several columns together — a membership, a join
+table with its own columns, a partitioned table, a reading keyed by
+`(key, action)` — the key is declared once at the model level:
+
+```
+model Membership {
+  orgId  String
+  userId String
+  role   String
+
+  @@id([orgId, userId])
+}
+```
+
+**It is sugar over `@id` on each named field**, and that is what makes it cheap:
+several `@id` fields is a shape the rest of the package already handles, so a
+composite key works through `findUnique({ where: { orgId, userId } })`, a
+relation, an `include`, `@@softDelete` and the migrator with nothing taught to
+any of them. Litestone's own implicit many-to-many join table has been one of
+these since it was written.
+
+**What it adds over marking the fields is the key's column ORDER.** A primary key
+builds an implicit index, and an implicit index is prefix-matched like any other:
+`PRIMARY KEY (orgId, userId)` answers `WHERE orgId = ?` and the swap does not.
+With `@id` on the fields the key order is the *field declaration* order, which is
+a different fact about the model — so there was nowhere to say it, and
+`litestone introspect` read `PRIMARY KEY ("userId","orgId")` off a real table and
+wrote a schema that builds it the other way round, silently
+([FJS-561](../../../ISSUES.md#fjs-561)).
+
+It is also the spelling Prisma, Rails and raw DDL all use, so `litestone import`
+carries the key across instead of inventing `id String @id @default(cuid())`
+plus a `@@unique` — which is a *different* statement, because it admits a second
+identity for the same tuple.
+
+Five things are refused at parse, each because it would be a key that does not
+identify a row:
+
+| Written | Why |
+| --- | --- |
+| `@@id([a, b])` beside `@id` on a field | two answers to *what identifies a row* |
+| `@@id` twice | a row has one identity — name every column in one |
+| a nullable member | SQLite permits a NULL in a primary key on a rowid table, and there is no `nullsDistinct` reading of one. `@@unique([...], nullsDistinct: true)` is the spelling for *unique when present* |
+| a relation field | a primary key is over columns — name the foreign key beside it |
+| an array, or a `@computed` / `@transient` / `@from` / `@derived` field | an array is stored as JSON text, so the key would be over a serialisation; a virtual field is not a stored column at all |
+
+**Changing one is a table rebuild**, order included — there is no `ALTER` that
+reaches a table constraint. See [migrations.md](migrations.md) § *Uniqueness the
+table declares itself*.
+
+A model whose key is a tuple cannot yet be served as a REST resource: junction
+and sierra each carry a single `idField`, and `/{service}/{id}` has one slot. The
+Data realm is complete; the API and UI realms are not.
 
 ### Soft delete
 ```
@@ -834,11 +982,15 @@ model Order {
 - **`@system` on a move is the other way of saying *the engine decides this*, and it is usually the one you want.** It means what `@system` means on a column: the application makes the move, its caller does not, and the application says so on the call — `transition(id, name, { system: true })`, which becomes `system: [field]` on the update underneath, so writing the column directly is refused and permitted by exactly the same rule. The difference from `@gate(8)` is the whole point: the move runs on the CALLER's own client, so the model gate, the row policies and the audit actor all still apply, where `asSystem()` drops all three to make one move. Refused with `TransitionSystemError` (403), which is a separate class from the gate's 403 because no caller at any level can answer it. `transitions(row)` reports `refusedBy: 'system'`, and `x-transitions` carries the flag, so a browser renders no button rather than a disabled one — the one verdict on that side that is not permissive-when-unknown.
 - **The two compose, and they answer different questions.** `@gate(N)` is *how senior must a caller be*; `@system` is *whose decision is this*. `@system @gate(5)` is the person-REQUESTED engine move — somebody presses *sync*, a provider's answer picks the move — which is the shape `@gate(8)` cannot express at all. Declaring `@system` with `@gate(8)` or `@gate(9)` is refused at parse: those admit no caller, which contradicts it. So the filter that separates the two halves of a machine is **every move carrying neither `@gate(8)` nor `@system`** (`FJS-D150`, `IDEAS/permission-sets.md`).
 
-Any move that isn't declared throws `TransitionViolationError`; a declared one the caller can't make throws `TransitionGateError` (which carries `status: 403`). The `WHERE` clause is narrowed to the from-state, so two concurrent writers can't both win — the loser gets a retryable `TransitionConflictError`.
+Any move that isn't declared throws `TransitionViolationError`; a declared one the caller can't make throws `TransitionGateError` (which carries `status: 403`). The `WHERE` clause is narrowed to the from-state, so two concurrent writers can't both win — the loser gets a `TransitionConflictError`.
+
+**`transition(id, name)` and an update carrying the column are the same write and not the same question.** The difference is one row state — the one the move was taking it to. Carrying the value a row already holds is legitimate on an update, because a form round-trips the whole row, so it is a silent no-op; asked for by NAME it means the move did not happen here, and the answer is a `TransitionConflictError`. Two opposite races arrive under that one class and `retryable` separates them, because `isStaleWrite()` reads it: `actual === to` means the move you asked for has already been made, so re-applying can never succeed (`retryable: false`), and any other value means the row simply moved and you should re-read and decide (`retryable: true`). The error carries `expected` (the move's from-states), `actual` (where the row is) and `move`.
+
+**A named move is graded on its caller before its row.** A gate, a capability and `@system` are statements about the caller and the declared move — true whatever the row is doing — so `transition(id, 'refund')` from a caller below the level answers `TransitionGateError` rather than telling them the row is in the wrong state, which would be a refusal confirming state to somebody with no authority over the move. It applies to a named move alone: an ordinary update matching no `(from, to)` pair has identified no move, so there is no gate to consult (`FJS-611`).
 
 > **`@gate` needs a level resolver.** A schema with any gated transition auto-installs `GatePlugin({ getLevel: FrontierGateGetLevel })` if you configure none — a declared gate that silently did nothing would be a fail-open default. But the shipped resolver grades a bare session at `VISITOR(1)`: it wants both `verifiedAt` and `activatedAt` on the user object, and returns `CREATOR(3)` when it gets them. It never returns 4+. Pass your own `getLevel` to `GatePlugin` for anything real.
 
-`updateMany` skips enforcement, deliberately: it's a power tool and the caller takes responsibility. `asSystem()` bypasses it too, and says so on stderr.
+`updateMany` **refuses** a transitions-typed column rather than writing it ungraded — `BulkTransitionError`, 400. A bulk write matches rows without reading them, so there is no from-state to grade, and the skip took the per-move `@gate` and the `@system` marking with it: a level-4 caller could make a `@gate(5)` move, a `@system` move and an undeclared move by asking `updateMany` instead of `update` (`FJS-671`). 400 rather than 403, because the verb is wrong rather than the caller — no level and no grant answers it. `upsertMany`'s `update:` half refuses with it; its insert half is a create, has no from-state, and does not. **Every other column stays bulk-writable in the same call**, which is the power tool kept rather than removed. `asSystem()` writes it and says so on stderr.
 
 #### Asking what's legal
 

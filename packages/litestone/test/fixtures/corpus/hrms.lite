@@ -1,0 +1,4012 @@
+// hrms — the data model of frappe/hrms, expressed in .lite.
+//
+// Derived mechanically from hrms/**/doctype/*/*.json (GPL-3.0) by
+// `litestone import --from frappe`. A CORPUS FIXTURE, not a design:
+// nothing here is a claim about how any of it should be modelled, and every
+// place the conversion made a choice the source did not is recorded in
+// gaps.json. 160 models. Regenerate with fetch.mjs.
+
+enum GoalStatus {
+  Pending
+  "In Progress"
+  Completed
+  Archived
+  Closed
+}
+
+enum ShiftAssignmentToolAction {
+  "Assign Shift"
+  "Assign Shift Schedule"
+  "Process Shift Requests"
+}
+
+enum ShiftAssignmentToolStatus {
+  Active
+  Inactive
+}
+
+enum HolidayListAssignmentApplicableFor {
+  Employee
+  Company
+}
+
+enum AttendanceStatus {
+  Present
+  Absent
+  "On Leave"
+  "Half Day"
+  "Work From Home"
+}
+
+enum AttendanceHalfDayStatus {
+  Present
+  Absent
+}
+
+enum LeaveEncashmentStatus {
+  Draft
+  Unpaid
+  Paid
+  Submitted
+  Cancelled
+}
+
+enum ShiftAssignmentStatus {
+  Active
+  Inactive
+}
+
+enum AppraisalCycleKraEvaluationMethod {
+  "Automated Based on Goal Progress"
+  "Manual Rating"
+}
+
+enum AppraisalCycleStatus {
+  "Not Started"
+  "In Progress"
+  Completed
+}
+
+enum JobOpeningStatus {
+  Open
+  Closed
+}
+
+enum JobOpeningSalaryPer {
+  Month
+  Year
+}
+
+enum ShiftScheduleFrequency {
+  "Every Week"
+  "Every 2 Weeks"
+  "Every 3 Weeks"
+  "Every 4 Weeks"
+}
+
+enum EarnedLeaveScheduleAllocatedVia {
+  Scheduler
+  "Leave Policy Assignment"
+  Manually
+}
+
+enum ShiftTypeDetermineCheckInAndCheckOut {
+  "Alternating entries as IN and OUT during the same shift"
+  "Strictly based on Log Type in Employee Checkin"
+}
+
+enum ShiftTypeWorkingHoursCalculationBasedOn {
+  "First Check-in and Last Check-out"
+  "Every Valid Check-in and Check-out"
+}
+
+enum ShiftTypeColor {
+  Blue
+  Cyan
+  Fuchsia
+  Green
+  Lime
+  Orange
+  Pink
+  Red
+  Violet
+  Yellow
+}
+
+enum AttendanceRequestReason {
+  "Work From Home"
+  "On Duty"
+}
+
+enum FullAndFinalOutstandingStatementStatus {
+  Settled
+  Unsettled
+}
+
+enum InterviewStatus {
+  Pending
+  "Under Review"
+  Cleared
+  Rejected
+  Cancelled
+}
+
+enum TravelRequestTravelType {
+  Domestic
+  International
+}
+
+enum TravelRequestTravelFunding {
+  "Require Full Funding"
+  "Fully Sponsored"
+  "Partially Sponsored, Require Partial Funding"
+}
+
+enum DailyWorkSummaryStatus {
+  Open
+  Sent
+}
+
+enum TravelItineraryModeOfTravel {
+  Flight
+  Train
+  Taxi
+  "Rented Car"
+}
+
+enum TravelItineraryMealPreference {
+  Vegetarian
+  "Non-Vegetarian"
+  "Gluten Free"
+  "Non Diary"
+}
+
+enum EmployeeCheckinLogType {
+  IN
+  OUT
+}
+
+enum JobOfferStatus {
+  "Awaiting Response"
+  Accepted
+  Rejected
+  Cancelled
+}
+
+enum ShiftScheduleAssignmentShiftStatus {
+  Active
+  Inactive
+}
+
+enum LeaveAdjustmentAdjustmentType {
+  Allocate
+  Reduce
+}
+
+enum InterviewFeedbackResult {
+  Cleared
+  Rejected
+}
+
+enum EmployeeSeparationBoardingStatus {
+  Pending
+  "In Process"
+  Completed
+}
+
+enum FullAndFinalAssetStatus {
+  Owned
+  Returned
+}
+
+enum FullAndFinalAssetAction {
+  Return
+  "Recover Cost"
+}
+
+enum JobRequisitionStatus {
+  Pending
+  "Open & Approved"
+  Rejected
+  Filled
+  "On Hold"
+  Cancelled
+}
+
+enum EmployeeAdvanceStatus {
+  Draft
+  Paid
+  "Partially Paid"
+  Unpaid
+  Claimed
+  Returned
+  "Partly Claimed and Returned"
+  Cancelled
+}
+
+enum VehicleServiceType {
+  Inspection
+  Service
+  Change
+}
+
+enum VehicleServiceFrequency {
+  Mileage
+  Monthly
+  Quarterly
+  "Half Yearly"
+  Yearly
+}
+
+enum JobApplicantStatus {
+  Open
+  Replied
+  Shortlisted
+  Rejected
+  Hold
+  Accepted
+}
+
+enum EmployeeGrievanceStatus {
+  Open
+  Investigated
+  Resolved
+  Invalid
+  Cancelled
+}
+
+enum HRSettingsEmpCreatedBy {
+  "Naming Series"
+  "Employee Number"
+  "Full Name"
+}
+
+enum HRSettingsFrequency {
+  Weekly
+  Monthly
+}
+
+enum JobOpeningTemplateSalaryPer {
+  Month
+  Year
+}
+
+enum ShiftRequestStatus {
+  Draft
+  Approved
+  Rejected
+}
+
+enum EmployeeAttendanceToolStatus {
+  Present
+  Absent
+  "Half Day"
+  "Work From Home"
+}
+
+enum EmployeeAttendanceToolHalfDayStatus {
+  Present
+  Absent
+}
+
+enum TrainingEventEmployeeStatus {
+  Open
+  Invited
+  Completed
+  "Feedback Submitted"
+}
+
+enum TrainingEventEmployeeAttendance {
+  Present
+  Absent
+}
+
+enum TrainingProgramStatus {
+  Scheduled
+  Completed
+  Cancelled
+}
+
+enum ExpenseClaimAdvanceReferenceType {
+  "Payment Entry"
+  "Journal Entry"
+}
+
+enum EmployeeReferralStatus {
+  Pending
+  "In Process"
+  Accepted
+  Rejected
+  Cancelled
+}
+
+enum EmployeeReferralReferralPaymentStatus {
+  Unpaid
+  Paid
+}
+
+enum ExitInterviewStatus {
+  Pending
+  Scheduled
+  Completed
+  Cancelled
+}
+
+enum ExitInterviewEmployeeStatus {
+  "Employee Retained"
+  "Exit Confirmed"
+}
+
+enum EmployeeOnboardingBoardingStatus {
+  Pending
+  "In Process"
+  Completed
+}
+
+enum TrainingEventEventStatus {
+  Scheduled
+  Completed
+  Cancelled
+}
+
+enum TrainingEventType {
+  Seminar
+  Theory
+  Workshop
+  Conference
+  Exam
+  Internet
+  "Self-Study"
+}
+
+enum TrainingEventLevel {
+  Beginner
+  Intermediate
+  Advance
+}
+
+enum LeaveControlPanelDatesBasedOn {
+  "Leave Period"
+  "Joining Date"
+  "Custom Range"
+}
+
+enum LeaveApplicationStatus {
+  Open
+  Approved
+  Rejected
+  Cancelled
+}
+
+enum DailyWorkSummaryGroupSendEmailsAt {
+  "00:00"
+  "01:00"
+  "02:00"
+  "03:00"
+  "04:00"
+  "05:00"
+  "06:00"
+  "07:00"
+  "08:00"
+  "09:00"
+  "10:00"
+  "11:00"
+  "12:00"
+  "13:00"
+  "14:00"
+  "15:00"
+  "16:00"
+  "17:00"
+  "18:00"
+  "19:00"
+  "20:00"
+  "21:00"
+  "22:00"
+  "23:00"
+}
+
+enum LeaveTypeEarnedLeaveFrequency {
+  Monthly
+  Quarterly
+  "Half-Yearly"
+  Yearly
+}
+
+enum LeaveTypeRounding {
+  "0.25"
+  "0.5"
+  "1.0"
+}
+
+enum LeaveTypeAllocateOnDay {
+  "First Day"
+  "Last Day"
+  "Date of Joining"
+}
+
+enum LeavePolicyAssignmentAssignmentBasedOn {
+  "Leave Period"
+  "Joining Date"
+}
+
+enum FullAndFinalStatementStatus {
+  Paid
+  Unpaid
+  Cancelled
+}
+
+enum OvertimeTypeOvertimeCalculationMethod {
+  "Salary Component Based"
+  "Fixed Hourly Rate"
+}
+
+enum ExpenseClaimApprovalStatus {
+  Draft
+  Approved
+  Rejected
+  Cancelled
+}
+
+enum ExpenseClaimStatus {
+  Draft
+  Paid
+  Unpaid
+  Rejected
+  Submitted
+  Cancelled
+}
+
+enum SalaryComponentType {
+  Earning
+  Deduction
+  "Employer Contribution"
+}
+
+enum SalaryComponentPayoutMethod {
+  "Accrue and payout at end of payroll period"
+  "Accrue per cycle, pay only on claim"
+  "Allow claim for full benefit amount"
+}
+
+enum GratuityRuleCalculateGratuityAmountBasedOn {
+  "Current Slab"
+  "Sum of all previous slabs"
+}
+
+enum GratuityRuleWorkExperienceCalculationFunction {
+  "Round off Work Experience"
+  "Take Exact Completed Years"
+  Manual
+}
+
+enum GratuityStatus {
+  Draft
+  Unpaid
+  Paid
+  Submitted
+  Cancelled
+}
+
+enum SalarySlipStatus {
+  Draft
+  Submitted
+  Cancelled
+  Withheld
+}
+
+enum SalarySlipPayrollFrequency {
+  Monthly
+  Fortnightly
+  Bimonthly
+  Weekly
+  Daily
+}
+
+enum EmployeeBenefitLedgerTransactionType {
+  Accrual
+  Payout
+}
+
+enum SalaryStructureIsActive {
+  Yes
+  No
+}
+
+enum SalaryStructurePayrollFrequency {
+  Monthly
+  Fortnightly
+  Bimonthly
+  Weekly
+  Daily
+}
+
+enum SalaryStructureIsDefault {
+  Yes
+  No
+}
+
+enum PayrollEntryPayrollFrequency {
+  Monthly
+  Fortnightly
+  Bimonthly
+  Weekly
+  Daily
+}
+
+enum PayrollEntryStatus {
+  Draft
+  Submitted
+  Cancelled
+  Queued
+  Failed
+}
+
+enum PayrollEntryOvertimeStep {
+  Create
+  Submit
+}
+
+enum PayrollSettingsPayrollBasedOn {
+  Leave
+  Attendance
+}
+
+enum PayrollSettingsConsiderUnmarkedAttendanceAs {
+  Present
+  Absent
+}
+
+enum SalaryWithholdingPayrollFrequency {
+  Monthly
+  Fortnightly
+  Bimonthly
+  Weekly
+  Daily
+}
+
+enum SalaryWithholdingStatus {
+  Draft
+  Withheld
+  Released
+  Cancelled
+}
+
+model Goal {
+  id String @id @map("name")
+  employee String
+  startDate DateTime @map("start_date")
+  progress Float?
+  status GoalStatus?
+  description String?
+  lft Int?
+  rgt Int?
+  isGroup Boolean? @map("is_group") @default(false)
+  oldParent String? @map("old_parent")
+  oldParentRef Goal? @relation(fields: [oldParent], references: [id])
+  parentGoal String? @map("parent_goal")
+  parentGoalRef Goal? @relation(fields: [parentGoal], references: [id])
+  kra String?
+  kraRef KRA? @relation(fields: [kra], references: [id])
+  appraisalCycle String? @map("appraisal_cycle")
+  appraisalCycleRef AppraisalCycle? @relation(fields: [appraisalCycle], references: [id])
+  employeeName String? @map("employee_name")
+  user String?
+  endDate DateTime? @map("end_date")
+  goalName String @map("goal_name")
+  company String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model HRTelemetryMilestone {
+  id String @id @map("name")
+  event String @unique
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model ShiftAssignmentTool {
+  id String @id @map("name")
+  action ShiftAssignmentToolAction
+  company String
+  shiftType String? @map("shift_type")
+  shiftTypeRef ShiftType? @relation(fields: [shiftType], references: [id])
+  status ShiftAssignmentToolStatus?
+  startDate DateTime? @map("start_date")
+  endDate DateTime? @map("end_date")
+  branch String?
+  department String?
+  designation String?
+  employmentType String? @map("employment_type")
+  employmentTypeRef EmploymentType? @relation(fields: [employmentType], references: [id])
+  shiftTypeFilter String? @map("shift_type_filter")
+  shiftTypeFilterRef ShiftType? @relation(fields: [shiftTypeFilter], references: [id])
+  approver String?
+  fromDate DateTime? @map("from_date")
+  toDate DateTime? @map("to_date")
+  grade String?
+  gradeRef EmployeeGrade? @relation(fields: [grade], references: [id])
+  shiftLocation String? @map("shift_location")
+  shiftLocationRef ShiftLocation? @relation(fields: [shiftLocation], references: [id])
+  shiftSchedule String? @map("shift_schedule")
+  shiftScheduleRef ShiftSchedule? @relation(fields: [shiftSchedule], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model ExpenseTaxesAndCharges {
+  id String @id @map("name")
+  accountHead String @map("account_head")
+  costCenter String? @map("cost_center")
+  description String
+  rate Float?
+  taxAmount Float? @map("tax_amount")
+  total Float?
+  project String?
+  baseTotal Float? @map("base_total")
+  baseTaxAmount Float? @map("base_tax_amount")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model HolidayListAssignment {
+  id String @id @map("name")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef HolidayListAssignment? @relation(fields: [amendedFrom], references: [id])
+  holidayList String @map("holiday_list")
+  namingSeries String @map("naming_series")
+  employeeName String? @map("employee_name")
+  assignedTo String @map("assigned_to")
+  employeeCompany String? @map("employee_company")
+  applicableFor HolidayListAssignmentApplicableFor @map("applicable_for")
+  holidayListStart DateTime? @map("holiday_list_start")
+  holidayListEnd DateTime? @map("holiday_list_end")
+  fromDate DateTime @map("from_date")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model Attendance {
+  id String @id @map("name")
+  namingSeries String @map("naming_series")
+  employee String
+  employeeName String? @map("employee_name")
+  workingHours Float? @map("working_hours")
+  status AttendanceStatus
+  leaveType String? @map("leave_type")
+  leaveTypeRef LeaveType? @relation(fields: [leaveType], references: [id])
+  leaveApplication String? @map("leave_application")
+  leaveApplicationRef LeaveApplication? @relation(fields: [leaveApplication], references: [id])
+  attendanceDate DateTime @map("attendance_date")
+  company String
+  department String?
+  shift String?
+  shiftRef ShiftType? @relation(fields: [shift], references: [id])
+  attendanceRequest String? @map("attendance_request")
+  attendanceRequestRef AttendanceRequest? @relation(fields: [attendanceRequest], references: [id])
+  amendedFrom String? @map("amended_from")
+  amendedFromRef Attendance? @relation(fields: [amendedFrom], references: [id])
+  lateEntry Boolean? @map("late_entry") @default(false)
+  earlyExit Boolean? @map("early_exit") @default(false)
+  inTime DateTime? @map("in_time")
+  outTime DateTime? @map("out_time")
+  halfDayStatus AttendanceHalfDayStatus? @map("half_day_status")
+  modifyHalfDayStatus Boolean? @map("modify_half_day_status") @default(false)
+  overtimeType String? @map("overtime_type")
+  overtimeTypeRef OvertimeType? @relation(fields: [overtimeType], references: [id])
+  standardWorkingHours Float? @map("standard_working_hours")
+  actualOvertimeDuration Float? @map("actual_overtime_duration")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model StaffingPlanDetail {
+  id String @id @map("name")
+  designation String
+  numberOfPositions Int? @map("number_of_positions")
+  estimatedCostPerPosition Float? @map("estimated_cost_per_position")
+  currentCount Int? @map("current_count")
+  currentOpenings Int? @map("current_openings")
+  vacancies Int?
+  totalEstimatedCost Float? @map("total_estimated_cost")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model LeaveEncashment {
+  id String @id @map("name")
+  leavePeriod String @map("leave_period")
+  leavePeriodRef LeavePeriod @relation(fields: [leavePeriod], references: [id])
+  employee String
+  employeeName String? @map("employee_name")
+  department String?
+  leaveType String @map("leave_type")
+  leaveTypeRef LeaveType @relation(fields: [leaveType], references: [id])
+  leaveAllocation String? @map("leave_allocation")
+  leaveAllocationRef LeaveAllocation? @relation(fields: [leaveAllocation], references: [id])
+  leaveBalance Float? @map("leave_balance")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef LeaveEncashment? @relation(fields: [amendedFrom], references: [id])
+  encashmentAmount Float? @map("encashment_amount")
+  encashmentDate DateTime? @map("encashment_date") @default(now())
+  additionalSalary String? @map("additional_salary")
+  additionalSalaryRef AdditionalSalary? @relation(fields: [additionalSalary], references: [id])
+  currency String
+  company String
+  encashmentDays Float? @map("encashment_days")
+  actualEncashableDays Float? @map("actual_encashable_days")
+  payableAccount String? @map("payable_account")
+  payViaPaymentEntry Boolean? @map("pay_via_payment_entry") @default(false)
+  paidAmount Float? @map("paid_amount") @default(0.0)
+  status LeaveEncashmentStatus?
+  postingDate DateTime? @map("posting_date") @default(now())
+  expenseAccount String? @map("expense_account")
+  costCenter String? @map("cost_center")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model ShiftLocation {
+  id String @id @map("name")
+  locationName String @map("location_name") @unique
+  checkinRadius Int? @map("checkin_radius")
+  longitude Float?
+  geolocation Json?
+  latitude Float?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model EmployeeTransfer {
+  id String @id @map("name")
+  employee String
+  employeeName String? @map("employee_name")
+  transferDate DateTime @map("transfer_date")
+  company String?
+  newCompany String? @map("new_company")
+  department String?
+  reallocateLeaves Boolean? @map("reallocate_leaves") @default(false)
+  createNewEmployeeId Boolean? @map("create_new_employee_id") @default(false)
+  newEmployeeId String? @map("new_employee_id")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef EmployeeTransfer? @relation(fields: [amendedFrom], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model ShiftAssignment {
+  id String @id @map("name")
+  employee String
+  employeeName String? @map("employee_name")
+  department String?
+  shiftType String @map("shift_type")
+  shiftTypeRef ShiftType @relation(fields: [shiftType], references: [id])
+  company String
+  shiftRequest String? @map("shift_request")
+  shiftRequestRef ShiftRequest? @relation(fields: [shiftRequest], references: [id])
+  amendedFrom String? @map("amended_from")
+  amendedFromRef ShiftAssignment? @relation(fields: [amendedFrom], references: [id])
+  startDate DateTime @map("start_date")
+  endDate DateTime? @map("end_date")
+  status ShiftAssignmentStatus?
+  shiftLocation String? @map("shift_location")
+  shiftLocationRef ShiftLocation? @relation(fields: [shiftLocation], references: [id])
+  shiftScheduleAssignment String? @map("shift_schedule_assignment")
+  shiftScheduleAssignmentRef ShiftScheduleAssignment? @relation(fields: [shiftScheduleAssignment], references: [id])
+  overtimeType String? @map("overtime_type")
+  overtimeTypeRef OvertimeType? @relation(fields: [overtimeType], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model AppointmentLetterTemplate {
+  id String @id @map("name")
+  introduction String
+  closingNotes String? @map("closing_notes")
+  templateName String @map("template_name") @unique
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model ExpenseClaimType {
+  id String @id @map("name")
+  expenseType String @map("expense_type") @unique
+  description String?
+  deferredExpenseAccount Boolean? @map("deferred_expense_account") @default(false)
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model EmployeeSkill {
+  id String @id @map("name")
+  skill String
+  skillRef Skill @relation(fields: [skill], references: [id])
+  proficiency Float
+  evaluationDate DateTime? @map("evaluation_date") @default(now())
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model LeaveBlockList {
+  id String @id @map("name")
+  leaveBlockListName String @map("leave_block_list_name") @unique
+  company String
+  appliesToAllDepartments Boolean? @map("applies_to_all_departments") @default(false)
+  leaveType String? @map("leave_type")
+  leaveTypeRef LeaveType? @relation(fields: [leaveType], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model PWANotification {
+  id String @id @map("name")
+  fromUser String? @map("from_user")
+  toUser String? @map("to_user")
+  message String?
+  read Boolean? @default(false)
+  referenceDocumentType String? @map("reference_document_type")
+  referenceDocumentName String? @map("reference_document_name")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model SkillAssessment {
+  id String @id @map("name")
+  skill String
+  skillRef Skill @relation(fields: [skill], references: [id])
+  rating Float
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model Interviewer {
+  id String @id @map("name")
+  user String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model AppraisalCycle {
+  id String @id @map("name")
+  startDate DateTime @map("start_date")
+  endDate DateTime @map("end_date")
+  description String?
+  branch String?
+  department String?
+  designation String?
+  company String
+  cycleName String @map("cycle_name") @unique
+  kraEvaluationMethod AppraisalCycleKraEvaluationMethod? @map("kra_evaluation_method")
+  status AppraisalCycleStatus?
+  finalScoreFormula String? @map("final_score_formula")
+  calculateFinalScoreBasedOnFormula Boolean? @map("calculate_final_score_based_on_formula") @default(false)
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model JobOpening {
+  id String @id @map("name")
+  jobTitle String @map("job_title")
+  company String
+  status JobOpeningStatus?
+  designation String
+  department String?
+  staffingPlan String? @map("staffing_plan")
+  staffingPlanRef StaffingPlan? @relation(fields: [staffingPlan], references: [id])
+  plannedVacancies Int? @map("planned_vacancies")
+  publish Boolean? @default(false)
+  route String? @unique
+  description String?
+  currency String?
+  lowerRange Float? @map("lower_range")
+  upperRange Float? @map("upper_range")
+  jobApplicationRoute String? @map("job_application_route")
+  publishSalaryRange Boolean? @map("publish_salary_range") @default(false)
+  jobRequisition String? @map("job_requisition")
+  jobRequisitionRef JobRequisition? @relation(fields: [jobRequisition], references: [id])
+  vacancies Int?
+  postedOn DateTime? @map("posted_on") @default(now())
+  closesOn DateTime? @map("closes_on")
+  employmentType String? @map("employment_type")
+  employmentTypeRef EmploymentType? @relation(fields: [employmentType], references: [id])
+  location String?
+  closedOn DateTime? @map("closed_on")
+  salaryPer JobOpeningSalaryPer? @map("salary_per")
+  publishApplicationsReceived Boolean? @map("publish_applications_received") @default(true)
+  preventDuplicateApplicant Boolean? @map("prevent_duplicate_applicant") @default(false)
+  jobOpeningTemplate String? @map("job_opening_template")
+  jobOpeningTemplateRef JobOpeningTemplate? @relation(fields: [jobOpeningTemplate], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model ExpenseClaimDetail {
+  id String @id @map("name")
+  expenseDate DateTime? @map("expense_date") @default(now())
+  expenseType String @map("expense_type")
+  expenseTypeRef ExpenseClaimType @relation(fields: [expenseType], references: [id])
+  defaultAccount String? @map("default_account")
+  description String?
+  amount Float
+  sanctionedAmount Float? @map("sanctioned_amount")
+  costCenter String? @map("cost_center")
+  project String?
+  baseAmount Float? @map("base_amount")
+  baseSanctionedAmount Float? @map("base_sanctioned_amount")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model ShiftSchedule {
+  id String @id @map("name")
+  frequency ShiftScheduleFrequency
+  shiftType String @map("shift_type")
+  shiftTypeRef ShiftType @relation(fields: [shiftType], references: [id])
+  amendedFrom String? @map("amended_from")
+  amendedFromRef ShiftSchedule? @relation(fields: [amendedFrom], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model GrievanceType {
+  id String @id @map("name")
+  description String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model EarnedLeaveSchedule {
+  id String @id @map("name")
+  allocationDate DateTime? @map("allocation_date")
+  numberOfLeaves Float? @map("number_of_leaves")
+  isAllocated Boolean? @map("is_allocated") @default(false)
+  failureReason String? @map("failure_reason")
+  allocatedVia EarnedLeaveScheduleAllocatedVia? @map("allocated_via")
+  attempted Boolean? @default(false)
+  failed Boolean? @default(false)
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model EmployeePerformanceFeedback {
+  id String @id @map("name")
+  employeeName String? @map("employee_name")
+  totalScore Float? @map("total_score")
+  feedback String
+  addedOn DateTime @map("added_on") @default(now())
+  employee String
+  appraisal String
+  appraisalRef Appraisal @relation(fields: [appraisal], references: [id])
+  reviewerDesignation String? @map("reviewer_designation")
+  reviewer String
+  reviewerName String? @map("reviewer_name")
+  department String?
+  designation String?
+  appraisalCycle String? @map("appraisal_cycle")
+  appraisalCycleRef AppraisalCycle? @relation(fields: [appraisalCycle], references: [id])
+  user String?
+  amendedFrom String? @map("amended_from")
+  amendedFromRef EmployeePerformanceFeedback? @relation(fields: [amendedFrom], references: [id])
+  company String
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model ShiftType {
+  id String @id @map("name")
+  startTime DateTime @map("start_time")
+  endTime DateTime @map("end_time")
+  holidayList String? @map("holiday_list")
+  determineCheckInAndCheckOut ShiftTypeDetermineCheckInAndCheckOut? @map("determine_check_in_and_check_out")
+  workingHoursCalculationBasedOn ShiftTypeWorkingHoursCalculationBasedOn? @map("working_hours_calculation_based_on")
+  workingHoursThresholdForHalfDay Float? @map("working_hours_threshold_for_half_day")
+  workingHoursThresholdForAbsent Float? @map("working_hours_threshold_for_absent")
+  beginCheckInBeforeShiftStartTime Int? @map("begin_check_in_before_shift_start_time") @default(60)
+  lateEntryGracePeriod Int? @map("late_entry_grace_period")
+  earlyExitGracePeriod Int? @map("early_exit_grace_period")
+  allowCheckOutAfterShiftEndTime Int? @map("allow_check_out_after_shift_end_time") @default(60)
+  enableAutoAttendance Boolean? @map("enable_auto_attendance") @default(false)
+  processAttendanceAfter DateTime? @map("process_attendance_after") @default(now())
+  lastSyncOfCheckin DateTime? @map("last_sync_of_checkin")
+  markAutoAttendanceOnHolidays Boolean? @map("mark_auto_attendance_on_holidays") @default(false)
+  enableLateEntryMarking Boolean? @map("enable_late_entry_marking") @default(false)
+  enableEarlyExitMarking Boolean? @map("enable_early_exit_marking") @default(false)
+  color ShiftTypeColor?
+  autoUpdateLastSync Boolean? @map("auto_update_last_sync") @default(false)
+  allowOvertime Boolean? @map("allow_overtime") @default(false)
+  overtimeType String? @map("overtime_type")
+  overtimeTypeRef OvertimeType? @relation(fields: [overtimeType], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model AttendanceRequest {
+  id String @id @map("name")
+  employee String
+  employeeName String? @map("employee_name")
+  department String?
+  company String
+  fromDate DateTime @map("from_date")
+  toDate DateTime @map("to_date")
+  halfDay Boolean? @map("half_day") @default(false)
+  halfDayDate DateTime? @map("half_day_date")
+  reason AttendanceRequestReason
+  explanation String?
+  amendedFrom String? @map("amended_from")
+  amendedFromRef AttendanceRequest? @relation(fields: [amendedFrom], references: [id])
+  shift String?
+  shiftRef ShiftType? @relation(fields: [shift], references: [id])
+  includeHolidays Boolean? @map("include_holidays") @default(false)
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model EmployeeGrade {
+  id String @id @map("name")
+  defaultSalaryStructure String? @map("default_salary_structure")
+  defaultSalaryStructureRef SalaryStructure? @relation(fields: [defaultSalaryStructure], references: [id])
+  defaultBasePay Float? @map("default_base_pay")
+  currency String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model FullAndFinalOutstandingStatement {
+  id String @id @map("name")
+  status FullAndFinalOutstandingStatementStatus?
+  remark String?
+  referenceDocument String? @map("reference_document")
+  component String
+  account String?
+  amount Float?
+  referenceDocumentType String? @map("reference_document_type")
+  paidViaSalarySlip Boolean? @map("paid_via_salary_slip") @default(false)
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model Interview {
+  id String @id @map("name")
+  jobApplicant String @map("job_applicant")
+  jobApplicantRef JobApplicant @relation(fields: [jobApplicant], references: [id])
+  jobOpening String? @map("job_opening")
+  jobOpeningRef JobOpening? @relation(fields: [jobOpening], references: [id])
+  status InterviewStatus
+  averageRating Float? @map("average_rating")
+  interviewSummary String? @map("interview_summary")
+  resumeLink String? @map("resume_link")
+  expectedAverageRating Float? @map("expected_average_rating")
+  designation String?
+  amendedFrom String? @map("amended_from")
+  amendedFromRef Interview? @relation(fields: [amendedFrom], references: [id])
+  scheduledOn DateTime @map("scheduled_on")
+  reminded Boolean? @default(false)
+  fromTime DateTime @map("from_time")
+  toTime DateTime @map("to_time")
+  interviewType String @map("interview_type")
+  interviewTypeRef InterviewType @relation(fields: [interviewType], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model IdentificationDocumentType {
+  id String @id @map("name")
+  identificationDocumentType String? @map("identification_document_type") @unique
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model LeaveBlockListAllow {
+  id String @id @map("name")
+  allowUser String @map("allow_user")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model JobApplicantSource {
+  id String @id @map("name")
+  sourceName String @map("source_name") @unique
+  details String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model OvertimeSlip {
+  id String @id @map("name")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef OvertimeSlip? @relation(fields: [amendedFrom], references: [id])
+  postingDate DateTime @map("posting_date") @default(now())
+  employee String
+  employeeName String? @map("employee_name")
+  department String?
+  company String
+  totalOvertimeDuration Float? @map("total_overtime_duration")
+  salarySlip String? @map("salary_slip")
+  salarySlipRef SalarySlip? @relation(fields: [salarySlip], references: [id])
+  startDate DateTime @map("start_date")
+  endDate DateTime @map("end_date")
+  payrollEntry String? @map("payroll_entry")
+  payrollEntryRef PayrollEntry? @relation(fields: [payrollEntry], references: [id])
+  submittedViaPayrollEntry Boolean? @map("submitted_via_payroll_entry") @default(false)
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model AppointmentLetter {
+  id String @id @map("name")
+  applicantName String @map("applicant_name")
+  appointmentDate DateTime @map("appointment_date")
+  appointmentLetterTemplate String @map("appointment_letter_template")
+  appointmentLetterTemplateRef AppointmentLetterTemplate @relation(fields: [appointmentLetterTemplate], references: [id])
+  introduction String
+  jobApplicant String @map("job_applicant")
+  jobApplicantRef JobApplicant @relation(fields: [jobApplicant], references: [id])
+  company String
+  closingNotes String? @map("closing_notes")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model CompensatoryLeaveRequest {
+  id String @id @map("name")
+  employee String
+  employeeName String? @map("employee_name")
+  department String?
+  leaveType String? @map("leave_type")
+  leaveTypeRef LeaveType? @relation(fields: [leaveType], references: [id])
+  leaveAllocation String? @map("leave_allocation")
+  leaveAllocationRef LeaveAllocation? @relation(fields: [leaveAllocation], references: [id])
+  workFromDate DateTime @map("work_from_date")
+  workEndDate DateTime @map("work_end_date")
+  halfDay Boolean? @map("half_day") @default(false)
+  halfDayDate DateTime? @map("half_day_date")
+  reason String
+  amendedFrom String? @map("amended_from")
+  amendedFromRef CompensatoryLeaveRequest? @relation(fields: [amendedFrom], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model InterviewDetail {
+  id String @id @map("name")
+  interviewer String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model LeavePolicy {
+  id String @id @map("name")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef LeavePolicy? @relation(fields: [amendedFrom], references: [id])
+  title String
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model TravelRequest {
+  id String @id @map("name")
+  travelType TravelRequestTravelType @map("travel_type")
+  travelFunding TravelRequestTravelFunding? @map("travel_funding")
+  travelProof String? @map("travel_proof")
+  purposeOfTravel String @map("purpose_of_travel")
+  purposeOfTravelRef PurposeOfTravel @relation(fields: [purposeOfTravel], references: [id])
+  detailsOfSponsor String? @map("details_of_sponsor")
+  description String?
+  employee String
+  employeeName String? @map("employee_name")
+  cellNumber String? @map("cell_number")
+  preferedEmail String? @map("prefered_email")
+  dateOfBirth DateTime? @map("date_of_birth")
+  personalIdType String? @map("personal_id_type")
+  personalIdTypeRef IdentificationDocumentType? @relation(fields: [personalIdType], references: [id])
+  personalIdNumber String? @map("personal_id_number")
+  passportNumber String? @map("passport_number")
+  costCenter String? @map("cost_center")
+  nameOfOrganizer String? @map("name_of_organizer")
+  addressOfOrganizer String? @map("address_of_organizer")
+  otherDetails String? @map("other_details")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef TravelRequest? @relation(fields: [amendedFrom], references: [id])
+  company String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model DailyWorkSummary {
+  id String @id @map("name")
+  dailyWorkSummaryGroup String? @map("daily_work_summary_group")
+  dailyWorkSummaryGroupRef DailyWorkSummaryGroup? @relation(fields: [dailyWorkSummaryGroup], references: [id])
+  status DailyWorkSummaryStatus?
+  emailSentTo String? @map("email_sent_to")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model TravelRequestCosting {
+  id String @id @map("name")
+  expenseType String? @map("expense_type")
+  expenseTypeRef ExpenseClaimType? @relation(fields: [expenseType], references: [id])
+  sponsoredAmount Float? @map("sponsored_amount")
+  fundedAmount Float? @map("funded_amount")
+  totalAmount Float? @map("total_amount")
+  comments String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model EmployeeTraining {
+  id String @id @map("name")
+  training String?
+  trainingRef TrainingEvent? @relation(fields: [training], references: [id])
+  trainingDate DateTime? @map("training_date")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model TravelItinerary {
+  id String @id @map("name")
+  travelFrom String? @map("travel_from")
+  travelTo String? @map("travel_to")
+  modeOfTravel TravelItineraryModeOfTravel? @map("mode_of_travel")
+  mealPreference TravelItineraryMealPreference? @map("meal_preference")
+  travelAdvanceRequired Boolean? @map("travel_advance_required") @default(false)
+  advanceAmount String? @map("advance_amount")
+  departureDate DateTime? @map("departure_date")
+  arrivalDate DateTime? @map("arrival_date")
+  lodgingRequired Boolean? @map("lodging_required") @default(false)
+  preferredAreaForLodging String? @map("preferred_area_for_lodging")
+  checkInDate DateTime? @map("check_in_date")
+  checkOutDate DateTime? @map("check_out_date")
+  otherDetails String? @map("other_details")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model EmployeeCheckin {
+  id String @id @map("name")
+  employee String
+  employeeName String? @map("employee_name")
+  logType EmployeeCheckinLogType? @map("log_type")
+  shift String?
+  shiftRef ShiftType? @relation(fields: [shift], references: [id])
+  time DateTime @default(now())
+  deviceId String? @map("device_id")
+  skipAutoAttendance Boolean? @map("skip_auto_attendance") @default(false)
+  attendance String?
+  attendanceRef Attendance? @relation(fields: [attendance], references: [id])
+  shiftStart DateTime? @map("shift_start")
+  shiftEnd DateTime? @map("shift_end")
+  shiftActualStart DateTime? @map("shift_actual_start")
+  shiftActualEnd DateTime? @map("shift_actual_end")
+  geolocation Json?
+  latitude Float?
+  longitude Float?
+  offshift Boolean? @default(false)
+  overtimeType String? @map("overtime_type")
+  overtimeTypeRef OvertimeType? @relation(fields: [overtimeType], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model JobOffer {
+  id String @id @map("name")
+  jobApplicant String @map("job_applicant")
+  jobApplicantRef JobApplicant @relation(fields: [jobApplicant], references: [id])
+  applicantName String @map("applicant_name")
+  applicantEmail String? @map("applicant_email")
+  status JobOfferStatus?
+  offerDate DateTime @map("offer_date")
+  designation String
+  company String
+  selectTerms String? @map("select_terms")
+  terms String?
+  letterHead String? @map("letter_head")
+  selectPrintHeading String? @map("select_print_heading")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef JobOffer? @relation(fields: [amendedFrom], references: [id])
+  jobOfferTermTemplate String? @map("job_offer_term_template")
+  jobOfferTermTemplateRef JobOfferTermTemplate? @relation(fields: [jobOfferTermTemplate], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model ShiftScheduleAssignment {
+  id String @id @map("name")
+  enabled Boolean? @default(true)
+  createShiftsAfter DateTime? @map("create_shifts_after") @default(now())
+  employee String
+  employeeName String? @map("employee_name")
+  company String
+  shiftStatus ShiftScheduleAssignmentShiftStatus? @map("shift_status")
+  shiftSchedule String @map("shift_schedule")
+  shiftScheduleRef ShiftSchedule @relation(fields: [shiftSchedule], references: [id])
+  shiftLocation String? @map("shift_location")
+  shiftLocationRef ShiftLocation? @relation(fields: [shiftLocation], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model LeaveAdjustment {
+  id String @id @map("name")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef LeaveAdjustment? @relation(fields: [amendedFrom], references: [id])
+  employee String
+  employeeName String? @map("employee_name")
+  leaveType String @map("leave_type")
+  leaveTypeRef LeaveType @relation(fields: [leaveType], references: [id])
+  leaveAllocation String @map("leave_allocation")
+  leaveAllocationRef LeaveAllocation @relation(fields: [leaveAllocation], references: [id])
+  fromDate DateTime? @map("from_date")
+  namingSeries String @map("naming_series")
+  toDate DateTime? @map("to_date")
+  allocatedLeaves Float? @map("allocated_leaves")
+  postingDate DateTime @map("posting_date") @default(now())
+  leavesToAdjust Float @map("leaves_to_adjust")
+  adjustmentType LeaveAdjustmentAdjustmentType @map("adjustment_type")
+  leavesAfterAdjustment Float? @map("leaves_after_adjustment")
+  reasonForAdjustment String? @map("reason_for_adjustment")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model InterviewFeedback {
+  id String @id @map("name")
+  interview String
+  interviewRef Interview @relation(fields: [interview], references: [id])
+  interviewer String
+  averageRating Float? @map("average_rating")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef InterviewFeedback? @relation(fields: [amendedFrom], references: [id])
+  feedback String?
+  result InterviewFeedbackResult
+  jobApplicant String? @map("job_applicant")
+  jobApplicantRef JobApplicant? @relation(fields: [jobApplicant], references: [id])
+  interviewType String @map("interview_type")
+  interviewTypeRef InterviewType @relation(fields: [interviewType], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model LeaveBlockListDate {
+  id String @id @map("name")
+  blockDate DateTime @map("block_date")
+  reason String
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model EmployeeOnboardingTemplate {
+  id String @id @map("name")
+  title String
+  company String?
+  department String?
+  designation String?
+  employeeGrade String? @map("employee_grade")
+  employeeGradeRef EmployeeGrade? @relation(fields: [employeeGrade], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model EmployeeSeparation {
+  id String @id @map("name")
+  employee String
+  employeeName String? @map("employee_name")
+  resignationLetterDate DateTime? @map("resignation_letter_date")
+  boardingStatus EmployeeSeparationBoardingStatus? @map("boarding_status")
+  notifyUsersByEmail Boolean? @map("notify_users_by_email") @default(false)
+  employeeSeparationTemplate String? @map("employee_separation_template")
+  employeeSeparationTemplateRef EmployeeSeparationTemplate? @relation(fields: [employeeSeparationTemplate], references: [id])
+  company String
+  project String?
+  department String?
+  designation String?
+  employeeGrade String? @map("employee_grade")
+  employeeGradeRef EmployeeGrade? @relation(fields: [employeeGrade], references: [id])
+  exitInterview String? @map("exit_interview")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef EmployeeSeparation? @relation(fields: [amendedFrom], references: [id])
+  boardingBeginsOn DateTime @map("boarding_begins_on")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model StaffingPlan {
+  id String @id @map("name")
+  company String
+  department String?
+  fromDate DateTime @map("from_date")
+  toDate DateTime @map("to_date")
+  totalEstimatedBudget Float? @map("total_estimated_budget") @default(0.00)
+  amendedFrom String? @map("amended_from")
+  amendedFromRef StaffingPlan? @relation(fields: [amendedFrom], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model FullAndFinalAsset {
+  id String @id @map("name")
+  reference String
+  status FullAndFinalAssetStatus
+  description String?
+  assetName String? @map("asset_name")
+  date DateTime?
+  action FullAndFinalAssetAction
+  cost Float?
+  account String?
+  actualCost Float? @map("actual_cost")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model OvertimeDetails {
+  id String @id @map("name")
+  referenceDocument String? @map("reference_document")
+  referenceDocumentRef Attendance? @relation(fields: [referenceDocument], references: [id])
+  date DateTime
+  overtimeType String @map("overtime_type")
+  overtimeTypeRef OvertimeType @relation(fields: [overtimeType], references: [id])
+  overtimeDuration Float @map("overtime_duration")
+  maximumOvertimeHoursAllowed Float? @map("maximum_overtime_hours_allowed")
+  standardWorkingHours Float @map("standard_working_hours")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model JobRequisition {
+  id String @id @map("name")
+  designation String
+  noOfPositions Int @map("no_of_positions")
+  expectedCompensation Float @map("expected_compensation")
+  status JobRequisitionStatus
+  company String
+  requestedBy String @map("requested_by")
+  requestedByName String? @map("requested_by_name")
+  requestedByDept String? @map("requested_by_dept")
+  requestedByDesignation String? @map("requested_by_designation")
+  postingDate DateTime @map("posting_date") @default(now())
+  expectedBy DateTime? @map("expected_by")
+  completedOn DateTime? @map("completed_on")
+  description String
+  namingSeries String? @map("naming_series")
+  reasonForRequesting String? @map("reason_for_requesting")
+  department String?
+  timeToFill Int? @map("time_to_fill")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model ExpectedSkillSet {
+  id String @id @map("name")
+  skill String
+  skillRef Skill @relation(fields: [skill], references: [id])
+  description String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model EmployeeFeedbackRating {
+  id String @id @map("name")
+  rating Float?
+  criteria String
+  criteriaRef EmployeeFeedbackCriteria @relation(fields: [criteria], references: [id])
+  perWeightage Float @map("per_weightage")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model TrainingFeedback {
+  id String @id @map("name")
+  employee String
+  employeeName String? @map("employee_name")
+  department String?
+  course String?
+  trainingEvent String @map("training_event")
+  trainingEventRef TrainingEvent @relation(fields: [trainingEvent], references: [id])
+  eventName String? @map("event_name")
+  trainerName String? @map("trainer_name")
+  feedback String
+  amendedFrom String? @map("amended_from")
+  amendedFromRef TrainingFeedback? @relation(fields: [amendedFrom], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model Appraisal {
+  id String @id @map("name")
+  namingSeries String @map("naming_series")
+  employee String
+  employeeName String? @map("employee_name")
+  department String?
+  company String
+  designation String?
+  appraisalCycle String @map("appraisal_cycle")
+  appraisalCycleRef AppraisalCycle @relation(fields: [appraisalCycle], references: [id])
+  totalScore Float? @map("total_score")
+  selfScore Float? @map("self_score")
+  avgFeedbackScore Float? @map("avg_feedback_score")
+  employeeImage String? @map("employee_image")
+  appraisalTemplate String? @map("appraisal_template")
+  appraisalTemplateRef AppraisalTemplate? @relation(fields: [appraisalTemplate], references: [id])
+  amendedFrom String? @map("amended_from")
+  amendedFromRef Appraisal? @relation(fields: [amendedFrom], references: [id])
+  reflections String?
+  remarks String?
+  rateGoalsManually Boolean? @map("rate_goals_manually") @default(false)
+  startDate DateTime? @map("start_date")
+  endDate DateTime? @map("end_date")
+  goalScorePercentage Float? @map("goal_score_percentage")
+  finalScore Float? @map("final_score")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model OfferTerm {
+  id String @id @map("name")
+  offerTerm String @map("offer_term") @unique
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model DailyWorkSummaryGroupUser {
+  id String @id @map("name")
+  user String?
+  email String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model EmployeeAdvance {
+  id String @id @map("name")
+  namingSeries String? @map("naming_series")
+  employee String
+  employeeName String? @map("employee_name")
+  postingDate DateTime @map("posting_date") @default(now())
+  department String?
+  purpose String
+  advanceAmount Float @map("advance_amount")
+  claimedAmount Float? @map("claimed_amount")
+  status EmployeeAdvanceStatus?
+  company String
+  amendedFrom String? @map("amended_from")
+  amendedFromRef EmployeeAdvance? @relation(fields: [amendedFrom], references: [id])
+  advanceAccount String? @map("advance_account")
+  modeOfPayment String? @map("mode_of_payment")
+  returnAmount Float? @map("return_amount")
+  repayUnclaimedAmountFromSalary Boolean? @map("repay_unclaimed_amount_from_salary") @default(false)
+  pendingAmount Float? @map("pending_amount")
+  currency String
+  basePaidAmount Float? @map("base_paid_amount")
+  paidAmount Float? @map("paid_amount")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model LeaveLedgerEntry {
+  id String @id @map("name")
+  employee String?
+  employeeName String? @map("employee_name")
+  leaveType String? @map("leave_type")
+  leaveTypeRef LeaveType? @relation(fields: [leaveType], references: [id])
+  amendedFrom String? @map("amended_from")
+  amendedFromRef LeaveLedgerEntry? @relation(fields: [amendedFrom], references: [id])
+  transactionType String? @map("transaction_type")
+  transactionName String? @map("transaction_name")
+  leaves Float?
+  fromDate DateTime? @map("from_date")
+  toDate DateTime? @map("to_date")
+  isCarryForward Boolean? @map("is_carry_forward") @default(false)
+  isExpired Boolean? @map("is_expired") @default(false)
+  isLwp Boolean? @map("is_lwp") @default(false)
+  holidayList String? @map("holiday_list")
+  company String
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model PurposeOfTravel {
+  id String @id @map("name")
+  purposeOfTravel String? @map("purpose_of_travel") @unique
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model VehicleService {
+  id String @id @map("name")
+  serviceItem String @map("service_item")
+  serviceItemRef VehicleServiceItem @relation(fields: [serviceItem], references: [id])
+  type VehicleServiceType
+  frequency VehicleServiceFrequency
+  expenseAmount Float @map("expense_amount")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model EmploymentType {
+  id String @id @map("name")
+  employeeTypeName String @map("employee_type_name") @unique
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model VehicleServiceItem {
+  id String @id @map("name")
+  serviceItem String @map("service_item") @unique
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model JobApplicant {
+  id String @id @map("name")
+  applicantName String @map("applicant_name")
+  emailId String @map("email_id")
+  status JobApplicantStatus
+  jobTitle String? @map("job_title")
+  jobTitleRef JobOpening? @relation(fields: [jobTitle], references: [id])
+  source String?
+  sourceRef JobApplicantSource? @relation(fields: [source], references: [id])
+  sourceName String? @map("source_name")
+  coverLetter String? @map("cover_letter")
+  resumeAttachment String? @map("resume_attachment")
+  notes String?
+  phoneNumber String? @map("phone_number")
+  country String?
+  resumeLink String? @map("resume_link")
+  applicantRating Float? @map("applicant_rating")
+  lowerRange Float? @map("lower_range")
+  upperRange Float? @map("upper_range")
+  currency String?
+  employeeReferral String? @map("employee_referral")
+  employeeReferralRef EmployeeReferral? @relation(fields: [employeeReferral], references: [id])
+  designation String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model EmployeePromotion {
+  id String @id @map("name")
+  employee String
+  employeeName String? @map("employee_name")
+  department String?
+  promotionDate DateTime @map("promotion_date")
+  company String?
+  amendedFrom String? @map("amended_from")
+  amendedFromRef EmployeePromotion? @relation(fields: [amendedFrom], references: [id])
+  salaryCurrency String? @map("salary_currency")
+  currentCtc Float? @map("current_ctc")
+  revisedCtc Float? @map("revised_ctc")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model AppraisalGoal {
+  id String @id @map("name")
+  kra String
+  perWeightage Float @map("per_weightage")
+  score Float?
+  scoreEarned Float? @map("score_earned")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model JobOfferTermTemplate {
+  id String @id @map("name")
+  title String? @unique
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model EmployeeGrievance {
+  id String @id @map("name")
+  grievanceType String @map("grievance_type")
+  grievanceTypeRef GrievanceType @relation(fields: [grievanceType], references: [id])
+  date DateTime
+  status EmployeeGrievanceStatus
+  description String
+  causeOfGrievance String? @map("cause_of_grievance")
+  resolvedBy String? @map("resolved_by")
+  employeeResponsible String? @map("employee_responsible")
+  resolutionDetail String? @map("resolution_detail")
+  resolutionDate DateTime? @map("resolution_date")
+  grievanceAgainst String @map("grievance_against")
+  raisedBy String @map("raised_by")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef EmployeeGrievance? @relation(fields: [amendedFrom], references: [id])
+  designation String?
+  reportsTo String? @map("reports_to")
+  grievanceAgainstParty String @map("grievance_against_party")
+  associatedDocumentType String? @map("associated_document_type")
+  associatedDocument String? @map("associated_document")
+  employeeName String? @map("employee_name")
+  subject String
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model HRSettings {
+  id String @id @map("name")
+  retirementAge String? @map("retirement_age")
+  empCreatedBy HRSettingsEmpCreatedBy? @map("emp_created_by")
+  expenseApproverMandatoryInExpenseClaim Boolean? @map("expense_approver_mandatory_in_expense_claim") @default(true)
+  leaveApproverMandatoryInLeaveApplication Boolean? @map("leave_approver_mandatory_in_leave_application") @default(true)
+  showLeavesOfAllDepartmentMembersInCalendar Boolean? @map("show_leaves_of_all_department_members_in_calendar") @default(false)
+  autoLeaveEncashment Boolean? @map("auto_leave_encashment") @default(false)
+  roleAllowedToCreateBackdatedLeaveApplication String? @map("role_allowed_to_create_backdated_leave_application")
+  sendLeaveNotification Boolean? @map("send_leave_notification") @default(true)
+  leaveApprovalNotificationTemplate String? @map("leave_approval_notification_template")
+  leaveStatusNotificationTemplate String? @map("leave_status_notification_template")
+  standardWorkingHours Float? @map("standard_working_hours")
+  remindBefore DateTime? @map("remind_before")
+  sendHolidayReminders Boolean? @map("send_holiday_reminders") @default(true)
+  sendWorkAnniversaryReminders Boolean? @map("send_work_anniversary_reminders") @default(true)
+  frequency HRSettingsFrequency?
+  sendBirthdayReminders Boolean? @map("send_birthday_reminders") @default(true)
+  sendInterviewReminder Boolean? @map("send_interview_reminder") @default(false)
+  sendInterviewFeedbackReminder Boolean? @map("send_interview_feedback_reminder") @default(false)
+  feedbackReminderNotificationTemplate String? @map("feedback_reminder_notification_template")
+  interviewReminderTemplate String? @map("interview_reminder_template")
+  restrictBackdatedLeaveApplication Boolean? @map("restrict_backdated_leave_application") @default(false)
+  checkVacancies Boolean? @map("check_vacancies") @default(false)
+  exitQuestionnaireWebForm String? @map("exit_questionnaire_web_form")
+  exitQuestionnaireNotificationTemplate String? @map("exit_questionnaire_notification_template")
+  sender String?
+  senderEmail String? @map("sender_email")
+  hiringSender String? @map("hiring_sender")
+  hiringSenderEmail String? @map("hiring_sender_email")
+  allowMultipleShiftAssignments Boolean? @map("allow_multiple_shift_assignments") @default(false)
+  allowEmployeeCheckinFromMobileApp Boolean? @map("allow_employee_checkin_from_mobile_app") @default(true)
+  allowGeolocationTracking Boolean? @map("allow_geolocation_tracking") @default(false)
+  unlinkPaymentOnCancellationOfEmployeeAdvance Boolean? @map("unlink_payment_on_cancellation_of_employee_advance") @default(false)
+  preventSelfLeaveApproval Boolean? @map("prevent_self_leave_approval") @default(false)
+  preventSelfExpenseApproval Boolean? @map("prevent_self_expense_approval") @default(false)
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model KRA {
+  id String @id @map("name")
+  title String @unique
+  description String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model JobOpeningTemplate {
+  id String @id @map("name")
+  department String?
+  employmentType String? @map("employment_type")
+  employmentTypeRef EmploymentType? @relation(fields: [employmentType], references: [id])
+  location String?
+  templateTitle String @map("template_title") @unique
+  description String?
+  designation String?
+  currency String?
+  upperRange Float? @map("upper_range")
+  lowerRange Float? @map("lower_range")
+  salaryPer JobOpeningTemplateSalaryPer? @map("salary_per")
+  publishSalaryRange Boolean? @map("publish_salary_range") @default(false)
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model ShiftRequest {
+  id String @id @map("name")
+  shiftType String @map("shift_type")
+  shiftTypeRef ShiftType @relation(fields: [shiftType], references: [id])
+  employee String
+  employeeName String? @map("employee_name")
+  department String?
+  company String
+  fromDate DateTime @map("from_date")
+  toDate DateTime? @map("to_date")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef ShiftRequest? @relation(fields: [amendedFrom], references: [id])
+  status ShiftRequestStatus
+  approver String
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model JobOfferTerm {
+  id String @id @map("name")
+  offerTerm String @map("offer_term")
+  offerTermRef OfferTerm @relation(fields: [offerTerm], references: [id])
+  value String
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model EmployeeAttendanceTool {
+  id String @id @map("name")
+  date DateTime? @default(now())
+  department String?
+  branch String?
+  company String?
+  status EmployeeAttendanceToolStatus?
+  lateEntry Boolean? @map("late_entry") @default(false)
+  earlyExit Boolean? @map("early_exit") @default(false)
+  shift String?
+  shiftRef ShiftType? @relation(fields: [shift], references: [id])
+  employmentType String? @map("employment_type")
+  employmentTypeRef EmploymentType? @relation(fields: [employmentType], references: [id])
+  designation String?
+  employeeGrade String? @map("employee_grade")
+  employeeGradeRef EmployeeGrade? @relation(fields: [employeeGrade], references: [id])
+  halfDayStatus EmployeeAttendanceToolHalfDayStatus? @map("half_day_status")
+  filterByShift Boolean? @map("filter_by_shift") @default(false)
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model InterviewType {
+  id String @id @map("name")
+  designation String?
+  expectedAverageRating Float? @map("expected_average_rating")
+  description String?
+  interviewTypeName String? @map("interview_type_name") @unique
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model TrainingEventEmployee {
+  id String @id @map("name")
+  employee String?
+  employeeName String? @map("employee_name")
+  department String?
+  status TrainingEventEmployeeStatus?
+  attendance TrainingEventEmployeeAttendance?
+  isMandatory Boolean? @map("is_mandatory") @default(true)
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model TrainingProgram {
+  id String @id @map("name")
+  trainingProgram String @map("training_program") @unique
+  status TrainingProgramStatus?
+  company String
+  trainerName String? @map("trainer_name")
+  trainerEmail String? @map("trainer_email")
+  supplier String?
+  contactNumber String? @map("contact_number")
+  description String
+  amendedFrom String? @map("amended_from")
+  amendedFromRef TrainingProgram? @relation(fields: [amendedFrom], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model AppraisalTemplateGoal {
+  id String @id @map("name")
+  perWeightage Float @map("per_weightage")
+  keyResultArea String @map("key_result_area")
+  keyResultAreaRef KRA @relation(fields: [keyResultArea], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model EmployeeHealthInsurance {
+  id String @id @map("name")
+  healthInsuranceName String @map("health_insurance_name") @unique
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model ExpenseClaimAdvance {
+  id String @id @map("name")
+  employeeAdvance String @map("employee_advance")
+  employeeAdvanceRef EmployeeAdvance @relation(fields: [employeeAdvance], references: [id])
+  postingDate DateTime? @map("posting_date")
+  advancePaid Float? @map("advance_paid")
+  unclaimedAmount Float @map("unclaimed_amount")
+  allocatedAmount Float? @map("allocated_amount")
+  advanceAccount String? @map("advance_account")
+  returnAmount Float? @map("return_amount")
+  baseAdvancePaid Float? @map("base_advance_paid")
+  baseUnclaimedAmount Float? @map("base_unclaimed_amount")
+  baseAllocatedAmount Float? @map("base_allocated_amount")
+  exchangeRate Float? @map("exchange_rate")
+  exchangeGainLoss Float? @map("exchange_gain_loss")
+  paymentEntryReference String? @map("payment_entry_reference")
+  referenceType ExpenseClaimAdvanceReferenceType? @map("reference_type")
+  referenceName String? @map("reference_name")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model EmployeeReferral {
+  id String @id @map("name")
+  firstName String @map("first_name")
+  lastName String @map("last_name")
+  fullName String? @map("full_name")
+  contactNo String? @map("contact_no")
+  currentEmployer String? @map("current_employer")
+  date DateTime
+  status EmployeeReferralStatus
+  currentJobTitle String? @map("current_job_title")
+  resume String?
+  department String?
+  workReferences String? @map("work_references")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef EmployeeReferral? @relation(fields: [amendedFrom], references: [id])
+  forDesignation String @map("for_designation")
+  email String
+  isApplicableForReferralBonus Boolean? @map("is_applicable_for_referral_bonus") @default(true)
+  qualificationReason String? @map("qualification_reason")
+  referrer String
+  referrerName String? @map("referrer_name")
+  resumeLink String? @map("resume_link")
+  referralPaymentStatus EmployeeReferralReferralPaymentStatus? @map("referral_payment_status")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model ExitInterview {
+  id String @id @map("name")
+  employee String
+  employeeName String? @map("employee_name")
+  department String?
+  relievingDate DateTime? @map("relieving_date")
+  company String
+  date DateTime?
+  refDoctype String? @map("ref_doctype")
+  referenceDocumentName String? @map("reference_document_name")
+  dateOfJoining DateTime? @map("date_of_joining")
+  reportsTo String? @map("reports_to")
+  designation String?
+  namingSeries String? @map("naming_series")
+  questionnaireEmailSent Boolean? @map("questionnaire_email_sent") @default(false)
+  email String?
+  status ExitInterviewStatus
+  employeeStatus ExitInterviewEmployeeStatus? @map("employee_status")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef ExitInterview? @relation(fields: [amendedFrom], references: [id])
+  interviewSummary String? @map("interview_summary")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model EmployeeOnboarding {
+  id String @id @map("name")
+  jobApplicant String @map("job_applicant")
+  jobApplicantRef JobApplicant @relation(fields: [jobApplicant], references: [id])
+  jobOffer String @map("job_offer")
+  jobOfferRef JobOffer @relation(fields: [jobOffer], references: [id])
+  employeeName String @map("employee_name")
+  employee String?
+  dateOfJoining DateTime @map("date_of_joining")
+  boardingStatus EmployeeOnboardingBoardingStatus? @map("boarding_status")
+  notifyUsersByEmail Boolean? @map("notify_users_by_email") @default(false)
+  employeeOnboardingTemplate String? @map("employee_onboarding_template")
+  employeeOnboardingTemplateRef EmployeeOnboardingTemplate? @relation(fields: [employeeOnboardingTemplate], references: [id])
+  company String
+  department String?
+  designation String?
+  employeeGrade String? @map("employee_grade")
+  employeeGradeRef EmployeeGrade? @relation(fields: [employeeGrade], references: [id])
+  project String?
+  amendedFrom String? @map("amended_from")
+  amendedFromRef EmployeeOnboarding? @relation(fields: [amendedFrom], references: [id])
+  boardingBeginsOn DateTime @map("boarding_begins_on")
+  holidayList String? @map("holiday_list")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model TrainingEvent {
+  id String @id @map("name")
+  eventName String @map("event_name") @unique
+  trainingProgram String? @map("training_program")
+  trainingProgramRef TrainingProgram? @relation(fields: [trainingProgram], references: [id])
+  eventStatus TrainingEventEventStatus @map("event_status")
+  hasCertificate Boolean? @map("has_certificate") @default(false)
+  type TrainingEventType
+  level TrainingEventLevel?
+  company String?
+  trainerName String? @map("trainer_name")
+  trainerEmail String? @map("trainer_email")
+  supplier String?
+  contactNumber String? @map("contact_number")
+  course String?
+  location String
+  startTime DateTime @map("start_time")
+  endTime DateTime @map("end_time")
+  introduction String
+  amendedFrom String? @map("amended_from")
+  amendedFromRef TrainingEvent? @relation(fields: [amendedFrom], references: [id])
+  employeeEmails String? @map("employee_emails")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model ExpenseClaimAccount {
+  id String @id @map("name")
+  company String?
+  defaultAccount String @map("default_account")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model TrainingResult {
+  id String @id @map("name")
+  trainingEvent String @map("training_event") @unique
+  trainingEventRef TrainingEvent @relation(fields: [trainingEvent], references: [id])
+  amendedFrom String? @map("amended_from")
+  amendedFromRef TrainingResult? @relation(fields: [amendedFrom], references: [id])
+  employeeEmails String? @map("employee_emails")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model AppraisalKRA {
+  id String @id @map("name")
+  kra String
+  kraRef KRA @relation(fields: [kra], references: [id])
+  perWeightage Float @map("per_weightage")
+  goalCompletion Float? @map("goal_completion")
+  goalScore Float? @map("goal_score")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model AppraisalTemplate {
+  id String @id @map("name")
+  description String?
+  templateTitle String @map("template_title") @unique
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model LeavePolicyDetail {
+  id String @id @map("name")
+  leaveType String @map("leave_type")
+  leaveTypeRef LeaveType @relation(fields: [leaveType], references: [id])
+  annualAllocation Float @map("annual_allocation")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model DepartmentApprover {
+  id String @id @map("name")
+  approver String
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model Skill {
+  id String @id @map("name")
+  skillName String? @map("skill_name") @unique
+  description String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model EmployeeSkillMap {
+  id String @id @map("name")
+  employee String? @unique
+  employeeName String? @map("employee_name")
+  designation String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model LeaveAllocation {
+  id String @id @map("name")
+  namingSeries String @map("naming_series")
+  employee String
+  employeeName String? @map("employee_name")
+  department String?
+  leaveType String @map("leave_type")
+  leaveTypeRef LeaveType @relation(fields: [leaveType], references: [id])
+  fromDate DateTime @map("from_date")
+  toDate DateTime @map("to_date")
+  newLeavesAllocated Float? @map("new_leaves_allocated")
+  carryForward Boolean? @map("carry_forward") @default(false)
+  unusedLeaves Float? @map("unused_leaves")
+  totalLeavesAllocated Float @map("total_leaves_allocated")
+  totalLeavesEncashed Float? @map("total_leaves_encashed")
+  compensatoryRequest String? @map("compensatory_request")
+  compensatoryRequestRef CompensatoryLeaveRequest? @relation(fields: [compensatoryRequest], references: [id])
+  leavePeriod String? @map("leave_period")
+  leavePeriodRef LeavePeriod? @relation(fields: [leavePeriod], references: [id])
+  leavePolicy String? @map("leave_policy")
+  leavePolicyRef LeavePolicy? @relation(fields: [leavePolicy], references: [id])
+  expired Boolean? @default(false)
+  amendedFrom String? @map("amended_from")
+  amendedFromRef LeaveAllocation? @relation(fields: [amendedFrom], references: [id])
+  description String?
+  carryForwardedLeavesCount Float? @map("carry_forwarded_leaves_count")
+  leavePolicyAssignment String? @map("leave_policy_assignment")
+  leavePolicyAssignmentRef LeavePolicyAssignment? @relation(fields: [leavePolicyAssignment], references: [id])
+  company String
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model EmployeeSeparationTemplate {
+  id String @id @map("name")
+  title String
+  company String?
+  department String?
+  designation String?
+  employeeGrade String? @map("employee_grade")
+  employeeGradeRef EmployeeGrade? @relation(fields: [employeeGrade], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model EmployeePropertyHistory {
+  id String @id @map("name")
+  property String?
+  current String?
+  new String?
+  fieldname String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model LeaveControlPanel {
+  id String @id @map("name")
+  company String?
+  employmentType String? @map("employment_type")
+  employmentTypeRef EmploymentType? @relation(fields: [employmentType], references: [id])
+  branch String?
+  department String?
+  designation String?
+  employeeGrade String? @map("employee_grade")
+  employeeGradeRef EmployeeGrade? @relation(fields: [employeeGrade], references: [id])
+  fromDate DateTime? @map("from_date") @default(now())
+  toDate DateTime? @map("to_date")
+  leavePolicy String? @map("leave_policy")
+  leavePolicyRef LeavePolicy? @relation(fields: [leavePolicy], references: [id])
+  leaveType String? @map("leave_type")
+  leaveTypeRef LeaveType? @relation(fields: [leaveType], references: [id])
+  carryForward Boolean? @map("carry_forward") @default(true)
+  noOfDays Float? @map("no_of_days")
+  datesBasedOn LeaveControlPanelDatesBasedOn? @map("dates_based_on")
+  leavePeriod String? @map("leave_period")
+  leavePeriodRef LeavePeriod? @relation(fields: [leavePeriod], references: [id])
+  allocateBasedOnLeavePolicy Boolean? @map("allocate_based_on_leave_policy") @default(true)
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model LeaveApplication {
+  id String @id @map("name")
+  namingSeries String @map("naming_series")
+  employee String
+  employeeName String? @map("employee_name")
+  leaveType String @map("leave_type")
+  leaveTypeRef LeaveType @relation(fields: [leaveType], references: [id])
+  department String?
+  leaveBalance Float? @map("leave_balance")
+  fromDate DateTime @map("from_date")
+  toDate DateTime @map("to_date")
+  halfDay Boolean? @map("half_day") @default(false)
+  halfDayDate DateTime? @map("half_day_date")
+  totalLeaveDays Float? @map("total_leave_days")
+  description String?
+  leaveApprover String? @map("leave_approver")
+  leaveApproverName String? @map("leave_approver_name")
+  status LeaveApplicationStatus
+  postingDate DateTime @map("posting_date") @default(now())
+  company String
+  followViaEmail Boolean? @map("follow_via_email") @default(true)
+  salarySlip String? @map("salary_slip")
+  salarySlipRef SalarySlip? @relation(fields: [salarySlip], references: [id])
+  letterHead String? @map("letter_head")
+  color String?
+  amendedFrom String? @map("amended_from")
+  amendedFromRef LeaveApplication? @relation(fields: [amendedFrom], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model VehicleLog {
+  id String @id @map("name")
+  namingSeries String @map("naming_series")
+  licensePlate String @map("license_plate")
+  employee String
+  model String?
+  make String?
+  date DateTime
+  odometer Int
+  fuelQty Float? @map("fuel_qty")
+  price Float?
+  supplier String?
+  invoice String?
+  amendedFrom String? @map("amended_from")
+  amendedFromRef VehicleLog? @relation(fields: [amendedFrom], references: [id])
+  lastOdometer Int @map("last_odometer")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model TrainingResultEmployee {
+  id String @id @map("name")
+  employee String?
+  employeeName String? @map("employee_name")
+  department String?
+  hours Float?
+  grade String?
+  comments String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model DailyWorkSummaryGroup {
+  id String @id @map("name")
+  enabled Boolean? @default(true)
+  sendEmailsAt DailyWorkSummaryGroupSendEmailsAt? @map("send_emails_at")
+  holidayList String? @map("holiday_list")
+  subject String? @default("What did you work on today?")
+  message String? @default("<p>Please share what did you do today. If you reply by midnight, your response will be recorded!</p>")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model LeaveType {
+  id String @id @map("name")
+  leaveTypeName String @map("leave_type_name") @unique
+  maxLeavesAllowed Float? @map("max_leaves_allowed")
+  applicableAfter Int? @map("applicable_after")
+  maxContinuousDaysAllowed Int? @map("max_continuous_days_allowed")
+  isCarryForward Boolean? @map("is_carry_forward") @default(false)
+  isLwp Boolean? @map("is_lwp") @default(false)
+  isOptionalLeave Boolean? @map("is_optional_leave") @default(false)
+  allowNegative Boolean? @map("allow_negative") @default(false)
+  includeHoliday Boolean? @map("include_holiday") @default(false)
+  isCompensatory Boolean? @map("is_compensatory") @default(false)
+  expireCarryForwardedLeavesAfterDays Int? @map("expire_carry_forwarded_leaves_after_days")
+  allowEncashment Boolean? @map("allow_encashment") @default(false)
+  earningComponent String? @map("earning_component")
+  earningComponentRef SalaryComponent? @relation(fields: [earningComponent], references: [id])
+  isEarnedLeave Boolean? @map("is_earned_leave") @default(false)
+  earnedLeaveFrequency LeaveTypeEarnedLeaveFrequency? @map("earned_leave_frequency")
+  rounding LeaveTypeRounding?
+  maximumCarryForwardedLeaves Float? @map("maximum_carry_forwarded_leaves")
+  isPpl Boolean? @map("is_ppl") @default(false)
+  fractionOfDailySalaryPerLeave Float? @map("fraction_of_daily_salary_per_leave")
+  allowOverAllocation Boolean? @map("allow_over_allocation") @default(false)
+  allocateOnDay LeaveTypeAllocateOnDay? @map("allocate_on_day")
+  maxEncashableLeaves Int? @map("max_encashable_leaves")
+  nonEncashableLeaves Int? @map("non_encashable_leaves")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model LeavePeriod {
+  id String @id @map("name")
+  fromDate DateTime @map("from_date")
+  toDate DateTime @map("to_date")
+  isActive Boolean? @map("is_active") @default(false)
+  company String
+  optionalHolidayList String? @map("optional_holiday_list")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model LeavePolicyAssignment {
+  id String @id @map("name")
+  employee String
+  employeeName String? @map("employee_name")
+  leavePolicy String @map("leave_policy")
+  leavePolicyRef LeavePolicy @relation(fields: [leavePolicy], references: [id])
+  assignmentBasedOn LeavePolicyAssignmentAssignmentBasedOn? @map("assignment_based_on")
+  leavePeriod String? @map("leave_period")
+  leavePeriodRef LeavePeriod? @relation(fields: [leavePeriod], references: [id])
+  effectiveFrom DateTime @map("effective_from")
+  effectiveTo DateTime @map("effective_to")
+  company String?
+  amendedFrom String? @map("amended_from")
+  amendedFromRef LeavePolicyAssignment? @relation(fields: [amendedFrom], references: [id])
+  carryForward Boolean? @map("carry_forward") @default(false)
+  leavesAllocated Boolean? @map("leaves_allocated") @default(false)
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model FullAndFinalStatement {
+  id String @id @map("name")
+  employee String
+  employeeName String? @map("employee_name")
+  designation String?
+  status FullAndFinalStatementStatus?
+  department String?
+  amendedFrom String? @map("amended_from")
+  amendedFromRef FullAndFinalStatement? @relation(fields: [amendedFrom], references: [id])
+  relievingDate DateTime? @map("relieving_date")
+  dateOfJoining DateTime? @map("date_of_joining")
+  company String?
+  transactionDate DateTime @map("transaction_date")
+  totalPayableAmount Float? @map("total_payable_amount")
+  totalReceivableAmount Float? @map("total_receivable_amount")
+  totalAssetRecoveryCost Float? @map("total_asset_recovery_cost")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model Appraisee {
+  id String @id @map("name")
+  employee String
+  employeeName String? @map("employee_name")
+  department String?
+  designation String?
+  branch String?
+  appraisalTemplate String? @map("appraisal_template")
+  appraisalTemplateRef AppraisalTemplate? @relation(fields: [appraisalTemplate], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model Interest {
+  id String @id @map("name")
+  interest String @unique
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model OvertimeType {
+  id String @id @map("name")
+  overtimeSalaryComponent String @map("overtime_salary_component")
+  overtimeSalaryComponentRef SalaryComponent @relation(fields: [overtimeSalaryComponent], references: [id])
+  maximumOvertimeHoursAllowed Float? @map("maximum_overtime_hours_allowed")
+  standardMultiplier Float @map("standard_multiplier")
+  applicableForWeekend Boolean @map("applicable_for_weekend") @default(false)
+  weekendMultiplier Float? @map("weekend_multiplier")
+  applicableForPublicHoliday Boolean? @map("applicable_for_public_holiday") @default(false)
+  publicHolidayMultiplier Float? @map("public_holiday_multiplier")
+  hourlyRate Float? @map("hourly_rate")
+  overtimeCalculationMethod OvertimeTypeOvertimeCalculationMethod? @map("overtime_calculation_method")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model OvertimeSalaryComponent {
+  id String @id @map("name")
+  salaryComponent String @map("salary_component")
+  salaryComponentRef SalaryComponent @relation(fields: [salaryComponent], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model AppointmentLetterContent {
+  id String @id @map("name")
+  title String
+  description String
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model EmployeeBoardingActivity {
+  id String @id @map("name")
+  activityName String @map("activity_name")
+  user String?
+  role String?
+  task String?
+  taskWeight Float? @map("task_weight")
+  requiredForEmployeeCreation Boolean? @map("required_for_employee_creation") @default(false)
+  description String?
+  duration Int?
+  beginOn Int? @map("begin_on")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model DesignationSkill {
+  id String @id @map("name")
+  skill String?
+  skillRef Skill? @relation(fields: [skill], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model ExpenseClaim {
+  id String @id @map("name")
+  namingSeries String @map("naming_series")
+  employee String
+  employeeName String? @map("employee_name")
+  department String?
+  expenseApprover String? @map("expense_approver")
+  approvalStatus ExpenseClaimApprovalStatus? @map("approval_status")
+  totalClaimedAmount Float? @map("total_claimed_amount")
+  totalSanctionedAmount Float? @map("total_sanctioned_amount")
+  isPaid Boolean? @map("is_paid") @default(false)
+  postingDate DateTime @map("posting_date") @default(now())
+  vehicleLog String? @map("vehicle_log")
+  vehicleLogRef VehicleLog? @relation(fields: [vehicleLog], references: [id])
+  project String?
+  task String?
+  totalAmountReimbursed Float? @map("total_amount_reimbursed")
+  remark String?
+  company String
+  modeOfPayment String? @map("mode_of_payment")
+  clearanceDate DateTime? @map("clearance_date")
+  payableAccount String? @map("payable_account")
+  costCenter String? @map("cost_center")
+  status ExpenseClaimStatus?
+  amendedFrom String? @map("amended_from")
+  amendedFromRef ExpenseClaim? @relation(fields: [amendedFrom], references: [id])
+  totalAdvanceAmount Float? @map("total_advance_amount")
+  grandTotal Float? @map("grand_total")
+  totalTaxesAndCharges Float? @map("total_taxes_and_charges")
+  deliveryTrip String? @map("delivery_trip")
+  currency String
+  exchangeRate Float @map("exchange_rate")
+  baseTotalSanctionedAmount Float? @map("base_total_sanctioned_amount")
+  baseGrandTotal Float? @map("base_grand_total")
+  baseTotalAdvanceAmount Float? @map("base_total_advance_amount")
+  baseTotalTaxesAndCharges Float? @map("base_total_taxes_and_charges")
+  baseTotalClaimedAmount Float? @map("base_total_claimed_amount")
+  bankOrCashAccount String? @map("bank_or_cash_account")
+  gainLossAccount String? @map("gain_loss_account")
+  totalExchangeGainLoss Float? @map("total_exchange_gain_loss")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model EmployeeFeedbackCriteria {
+  id String @id @map("name")
+  criteria String @unique
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model SalaryDetail {
+  id String @id @map("name")
+  salaryComponent String @map("salary_component")
+  salaryComponentRef SalaryComponent @relation(fields: [salaryComponent], references: [id])
+  abbr String?
+  statisticalComponent Boolean? @map("statistical_component") @default(false)
+  isTaxApplicable Boolean? @map("is_tax_applicable") @default(false)
+  isFlexibleBenefit Boolean? @map("is_flexible_benefit") @default(false)
+  variableBasedOnTaxableSalary Boolean? @map("variable_based_on_taxable_salary") @default(false)
+  dependsOnPaymentDays Boolean? @map("depends_on_payment_days") @default(false)
+  deductFullTaxOnSelectedPayrollDate Boolean? @map("deduct_full_tax_on_selected_payroll_date") @default(false)
+  condition String?
+  amountBasedOnFormula Boolean? @map("amount_based_on_formula") @default(false)
+  formula String?
+  amount Float?
+  doNotIncludeInTotal Boolean? @map("do_not_include_in_total") @default(false)
+  defaultAmount Float? @map("default_amount")
+  additionalAmount Float? @map("additional_amount")
+  taxOnFlexibleBenefit Float? @map("tax_on_flexible_benefit")
+  taxOnAdditionalSalary Float? @map("tax_on_additional_salary")
+  additionalSalary String? @map("additional_salary")
+  additionalSalaryRef AdditionalSalary? @relation(fields: [additionalSalary], references: [id])
+  exemptedFromIncomeTax Boolean? @map("exempted_from_income_tax") @default(false)
+  yearToDate Float? @map("year_to_date")
+  isRecurringAdditionalSalary Boolean? @map("is_recurring_additional_salary") @default(false)
+  doNotIncludeInAccounts Boolean? @map("do_not_include_in_accounts") @default(false)
+  accrualComponent Boolean? @map("accrual_component") @default(false)
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model SalaryComponent {
+  id String @id @map("name")
+  salaryComponent String @map("salary_component") @unique
+  salaryComponentAbbr String @map("salary_component_abbr")
+  type SalaryComponentType
+  isTaxApplicable Boolean? @map("is_tax_applicable") @default(true)
+  dependsOnPaymentDays Boolean? @map("depends_on_payment_days") @default(true)
+  doNotIncludeInTotal Boolean? @map("do_not_include_in_total") @default(false)
+  deductFullTaxOnSelectedPayrollDate Boolean? @map("deduct_full_tax_on_selected_payroll_date") @default(false)
+  disabled Boolean? @default(false)
+  description String?
+  statisticalComponent Boolean? @map("statistical_component") @default(false)
+  isFlexibleBenefit Boolean? @map("is_flexible_benefit") @default(false)
+  maxBenefitAmount Float? @map("max_benefit_amount")
+  variableBasedOnTaxableSalary Boolean? @map("variable_based_on_taxable_salary") @default(false)
+  condition String?
+  amountBasedOnFormula Boolean? @map("amount_based_on_formula") @default(false)
+  formula String?
+  amount Float?
+  roundToTheNearestInteger Boolean? @map("round_to_the_nearest_integer") @default(false)
+  exemptedFromIncomeTax Boolean? @map("exempted_from_income_tax") @default(false)
+  isIncomeTaxComponent Boolean? @map("is_income_tax_component") @default(false)
+  removeIfZeroValued Boolean? @map("remove_if_zero_valued") @default(true)
+  doNotIncludeInAccounts Boolean? @map("do_not_include_in_accounts") @default(false)
+  arrearComponent Boolean? @map("arrear_component") @default(false)
+  accrualComponent Boolean? @map("accrual_component") @default(false)
+  payoutMethod SalaryComponentPayoutMethod? @map("payout_method")
+  finalCycleAccrualPayout Boolean? @map("final_cycle_accrual_payout") @default(false)
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model GratuityRule {
+  id String @id @map("name")
+  disable Boolean? @default(false)
+  calculateGratuityAmountBasedOn GratuityRuleCalculateGratuityAmountBasedOn @map("calculate_gratuity_amount_based_on")
+  workExperienceCalculationFunction GratuityRuleWorkExperienceCalculationFunction? @map("work_experience_calculation_function")
+  totalWorkingDaysPerYear Float? @map("total_working_days_per_year") @default(365)
+  minimumYearForGratuity Int? @map("minimum_year_for_gratuity")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model EmployeeBenefitApplication {
+  id String @id @map("name")
+  employee String
+  employeeName String? @map("employee_name")
+  maxBenefits Float? @map("max_benefits")
+  remainingBenefit Float? @map("remaining_benefit")
+  date DateTime @default(now())
+  payrollPeriod String @map("payroll_period")
+  payrollPeriodRef PayrollPeriod @relation(fields: [payrollPeriod], references: [id])
+  department String?
+  amendedFrom String? @map("amended_from")
+  amendedFromRef EmployeeBenefitApplication? @relation(fields: [amendedFrom], references: [id])
+  totalAmount Float? @map("total_amount")
+  currency String
+  company String
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model EmployeeTaxExemptionSubCategory {
+  id String @id @map("name")
+  exemptionCategory String @map("exemption_category")
+  exemptionCategoryRef EmployeeTaxExemptionCategory @relation(fields: [exemptionCategory], references: [id])
+  maxAmount Float? @map("max_amount")
+  isActive Boolean? @map("is_active") @default(true)
+  description String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model IncomeTaxSlabOtherCharges {
+  id String @id @map("name")
+  description String
+  percent Float
+  minTaxableIncome Float? @map("min_taxable_income")
+  maxTaxableIncome Float? @map("max_taxable_income")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model GratuityRuleSlab {
+  id String @id @map("name")
+  fractionOfApplicableEarnings Float @map("fraction_of_applicable_earnings")
+  fromYear Int @map("from_year") @default(0)
+  toYear Int @map("to_year") @default(0)
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model TaxableSalarySlab {
+  id String @id @map("name")
+  fromAmount Float @map("from_amount") @default(0)
+  toAmount Float? @map("to_amount")
+  percentDeduction Float @map("percent_deduction") @default(0)
+  condition String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model PayrollEmployeeDetail {
+  id String @id @map("name")
+  employee String?
+  employeeName String? @map("employee_name")
+  department String?
+  designation String?
+  isSalaryWithheld Boolean? @map("is_salary_withheld") @default(false)
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model Gratuity {
+  id String @id @map("name")
+  employee String
+  company String
+  postingDate DateTime @map("posting_date")
+  currentWorkExperience Float? @map("current_work_experience") @default(0)
+  amount Float @default(0)
+  status GratuityStatus?
+  expenseAccount String? @map("expense_account")
+  modeOfPayment String? @map("mode_of_payment")
+  gratuityRule String @map("gratuity_rule")
+  gratuityRuleRef GratuityRule @relation(fields: [gratuityRule], references: [id])
+  employeeName String? @map("employee_name")
+  department String?
+  designation String?
+  amendedFrom String? @map("amended_from")
+  amendedFromRef Gratuity? @relation(fields: [amendedFrom], references: [id])
+  paidAmount Float? @map("paid_amount") @default(0)
+  payableAccount String? @map("payable_account")
+  costCenter String? @map("cost_center")
+  payViaSalarySlip Boolean? @map("pay_via_salary_slip") @default(true)
+  payrollDate DateTime? @map("payroll_date")
+  salaryComponent String? @map("salary_component")
+  salaryComponentRef SalaryComponent? @relation(fields: [salaryComponent], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model IncomeTaxSlab {
+  id String @id @map("name")
+  effectiveFrom DateTime @map("effective_from")
+  allowTaxExemption Boolean? @map("allow_tax_exemption") @default(false)
+  amendedFrom String? @map("amended_from")
+  amendedFromRef IncomeTaxSlab? @relation(fields: [amendedFrom], references: [id])
+  disabled Boolean? @default(false)
+  standardTaxExemptionAmount Float? @map("standard_tax_exemption_amount")
+  company String?
+  currency String
+  taxReliefLimit Float? @map("tax_relief_limit")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model EmployeeTaxExemptionCategory {
+  id String @id @map("name")
+  maxAmount Float? @map("max_amount")
+  isActive Boolean? @map("is_active") @default(true)
+  description String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model EmployeeTaxExemptionProofSubmissionDetail {
+  id String @id @map("name")
+  exemptionSubCategory String @map("exemption_sub_category")
+  exemptionSubCategoryRef EmployeeTaxExemptionSubCategory @relation(fields: [exemptionSubCategory], references: [id])
+  exemptionCategory String @map("exemption_category")
+  maxAmount Float @map("max_amount")
+  typeOfProof String @map("type_of_proof")
+  amount Float?
+  attachProof String? @map("attach_proof")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model EmployeeBenefitApplicationDetail {
+  id String @id @map("name")
+  maxBenefitAmount Float @map("max_benefit_amount")
+  amount Float
+  salaryComponent String @map("salary_component")
+  salaryComponentRef SalaryComponent @relation(fields: [salaryComponent], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model AdditionalSalary {
+  id String @id @map("name")
+  namingSeries String @map("naming_series")
+  employee String
+  salaryComponent String @map("salary_component")
+  salaryComponentRef SalaryComponent @relation(fields: [salaryComponent], references: [id])
+  amount Float
+  overwriteSalaryStructureAmount Boolean? @map("overwrite_salary_structure_amount") @default(true)
+  deductFullTaxOnSelectedPayrollDate Boolean? @map("deduct_full_tax_on_selected_payroll_date") @default(false)
+  payrollDate DateTime? @map("payroll_date")
+  employeeName String? @map("employee_name")
+  department String?
+  company String
+  type String?
+  amendedFrom String? @map("amended_from")
+  amendedFromRef AdditionalSalary? @relation(fields: [amendedFrom], references: [id])
+  isRecurring Boolean? @map("is_recurring") @default(false)
+  fromDate DateTime? @map("from_date")
+  toDate DateTime? @map("to_date")
+  refDoctype String? @map("ref_doctype")
+  refDocname String? @map("ref_docname")
+  currency String
+  disabled Boolean? @default(false)
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model SalarySlip {
+  id String @id @map("name")
+  postingDate DateTime @map("posting_date") @default(now())
+  employee String
+  employeeName String @map("employee_name")
+  department String?
+  designation String?
+  branch String?
+  status SalarySlipStatus?
+  journalEntry String? @map("journal_entry")
+  payrollEntry String? @map("payroll_entry")
+  payrollEntryRef PayrollEntry? @relation(fields: [payrollEntry], references: [id])
+  company String
+  letterHead String? @map("letter_head")
+  salarySlipBasedOnTimesheet Boolean? @map("salary_slip_based_on_timesheet") @default(false)
+  startDate DateTime? @map("start_date")
+  endDate DateTime? @map("end_date")
+  salaryStructure String @map("salary_structure")
+  salaryStructureRef SalaryStructure @relation(fields: [salaryStructure], references: [id])
+  payrollFrequency SalarySlipPayrollFrequency? @map("payroll_frequency")
+  totalWorkingDays Float @map("total_working_days")
+  leaveWithoutPay Float? @map("leave_without_pay")
+  paymentDays Float @map("payment_days")
+  totalWorkingHours Float? @map("total_working_hours")
+  hourRate Float? @map("hour_rate")
+  bankName String? @map("bank_name")
+  bankAccountNo String? @map("bank_account_no")
+  deductTaxForUnsubmittedTaxExemptionProof Boolean? @map("deduct_tax_for_unsubmitted_tax_exemption_proof") @default(false)
+  grossPay Float? @map("gross_pay")
+  netPay Float? @map("net_pay")
+  roundedTotal Float? @map("rounded_total")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef SalarySlip? @relation(fields: [amendedFrom], references: [id])
+  modeOfPayment String? @map("mode_of_payment")
+  absentDays Float? @map("absent_days")
+  unmarkedDays Float? @map("unmarked_days")
+  currency String
+  totalDeduction Float? @map("total_deduction")
+  totalInWords String? @map("total_in_words")
+  baseHourRate Float? @map("base_hour_rate")
+  baseGrossPay Float? @map("base_gross_pay")
+  exchangeRate Float @map("exchange_rate") @default(1.0)
+  baseTotalDeduction Float? @map("base_total_deduction")
+  baseNetPay Float? @map("base_net_pay")
+  baseRoundedTotal Float? @map("base_rounded_total")
+  baseTotalInWords String? @map("base_total_in_words")
+  yearToDate Float? @map("year_to_date")
+  monthToDate Float? @map("month_to_date")
+  baseYearToDate Float? @map("base_year_to_date")
+  baseMonthToDate Float? @map("base_month_to_date")
+  grossYearToDate Float? @map("gross_year_to_date")
+  baseGrossYearToDate Float? @map("base_gross_year_to_date")
+  ctc Float?
+  incomeFromOtherSources Float? @map("income_from_other_sources")
+  totalEarnings Float? @map("total_earnings")
+  nonTaxableEarnings Float? @map("non_taxable_earnings")
+  deductionsBeforeTaxCalculation Float? @map("deductions_before_tax_calculation")
+  taxExemptionDeclaration Float? @map("tax_exemption_declaration")
+  standardTaxExemptionAmount Float? @map("standard_tax_exemption_amount")
+  annualTaxableAmount Float? @map("annual_taxable_amount")
+  incomeTaxDeductedTillDate Float? @map("income_tax_deducted_till_date")
+  futureIncomeTaxDeductions Float? @map("future_income_tax_deductions")
+  currentMonthIncomeTax Float? @map("current_month_income_tax")
+  totalIncomeTax Float? @map("total_income_tax")
+  salaryWithholding String? @map("salary_withholding")
+  salaryWithholdingRef SalaryWithholding? @relation(fields: [salaryWithholding], references: [id])
+  salaryWithholdingCycle String? @map("salary_withholding_cycle")
+  currentPayrollPeriod String? @map("current_payroll_period")
+  currentPayrollPeriodRef PayrollPeriod? @relation(fields: [currentPayrollPeriod], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model SalarySlipLeave {
+  id String @id @map("name")
+  leaveType String? @map("leave_type")
+  leaveTypeRef LeaveType? @relation(fields: [leaveType], references: [id])
+  totalAllocatedLeaves Float? @map("total_allocated_leaves")
+  expiredLeaves Float? @map("expired_leaves")
+  usedLeaves Float? @map("used_leaves")
+  pendingLeaves Float? @map("pending_leaves")
+  availableLeaves Float? @map("available_leaves")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model RetentionBonus {
+  id String @id @map("name")
+  company String
+  employee String
+  bonusPaymentDate DateTime @map("bonus_payment_date")
+  bonusAmount Float @map("bonus_amount")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef RetentionBonus? @relation(fields: [amendedFrom], references: [id])
+  employeeName String? @map("employee_name")
+  department String?
+  dateOfJoining String? @map("date_of_joining")
+  salaryComponent String @map("salary_component")
+  salaryComponentRef SalaryComponent @relation(fields: [salaryComponent], references: [id])
+  currency String
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model EmployeeBenefitClaim {
+  id String @id @map("name")
+  employee String
+  employeeName String? @map("employee_name")
+  department String?
+  earningComponent String @map("earning_component")
+  earningComponentRef SalaryComponent @relation(fields: [earningComponent], references: [id])
+  maxAmountEligible Float? @map("max_amount_eligible")
+  claimedAmount Float @map("claimed_amount")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef EmployeeBenefitClaim? @relation(fields: [amendedFrom], references: [id])
+  attachments String?
+  currency String
+  company String
+  payrollDate DateTime @map("payroll_date") @default(now())
+  yearlyBenefit Float? @map("yearly_benefit")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model GratuityApplicableComponent {
+  id String @id @map("name")
+  salaryComponent String @map("salary_component")
+  salaryComponentRef SalaryComponent @relation(fields: [salaryComponent], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model EmployeeIncentive {
+  id String @id @map("name")
+  employee String
+  incentiveAmount Float @map("incentive_amount")
+  payrollDate DateTime @map("payroll_date")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef EmployeeIncentive? @relation(fields: [amendedFrom], references: [id])
+  employeeName String? @map("employee_name")
+  department String?
+  salaryComponent String @map("salary_component")
+  salaryComponentRef SalaryComponent @relation(fields: [salaryComponent], references: [id])
+  currency String
+  company String
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model BulkSalaryStructureAssignment {
+  id String @id @map("name")
+  salaryStructure String @map("salary_structure")
+  salaryStructureRef SalaryStructure @relation(fields: [salaryStructure], references: [id])
+  fromDate DateTime @map("from_date")
+  incomeTaxSlab String? @map("income_tax_slab")
+  incomeTaxSlabRef IncomeTaxSlab? @relation(fields: [incomeTaxSlab], references: [id])
+  payrollPayableAccount String? @map("payroll_payable_account")
+  branch String?
+  department String?
+  designation String?
+  company String
+  employmentType String? @map("employment_type")
+  employmentTypeRef EmploymentType? @relation(fields: [employmentType], references: [id])
+  grade String?
+  gradeRef EmployeeGrade? @relation(fields: [grade], references: [id])
+  currency String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model Arrear {
+  id String @id @map("name")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef Arrear? @relation(fields: [amendedFrom], references: [id])
+  employee String
+  employeeName String? @map("employee_name")
+  company String
+  payrollPeriod String @map("payroll_period")
+  payrollPeriodRef PayrollPeriod @relation(fields: [payrollPeriod], references: [id])
+  payrollDate DateTime @map("payroll_date")
+  arrearStartDate DateTime @map("arrear_start_date")
+  salaryStructure String @map("salary_structure")
+  salaryStructureRef SalaryStructure @relation(fields: [salaryStructure], references: [id])
+  currency String
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model PayrollPeriodDate {
+  id String @id @map("name")
+  startDate DateTime @map("start_date")
+  endDate DateTime @map("end_date")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model EmployeeCostCenter {
+  id String @id @map("name")
+  costCenter String @map("cost_center")
+  percentage Int
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model PayrollCorrection {
+  id String @id @map("name")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef PayrollCorrection? @relation(fields: [amendedFrom], references: [id])
+  employee String
+  employeeName String? @map("employee_name")
+  company String
+  currency String?
+  payrollPeriod String @map("payroll_period")
+  payrollPeriodRef PayrollPeriod @relation(fields: [payrollPeriod], references: [id])
+  monthForLwpReversal String @map("month_for_lwp_reversal")
+  salarySlipReference String @map("salary_slip_reference")
+  salarySlipReferenceRef SalarySlip @relation(fields: [salarySlipReference], references: [id])
+  workingDays Float? @map("working_days")
+  lwpDays Float? @map("lwp_days")
+  daysToReverse Float @map("days_to_reverse")
+  payrollDate DateTime @map("payroll_date")
+  paymentDays Float? @map("payment_days")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model EmployeeBenefitLedger {
+  id String @id @map("name")
+  employee String?
+  employeeName String? @map("employee_name")
+  company String?
+  transactionType EmployeeBenefitLedgerTransactionType? @map("transaction_type")
+  postingDate DateTime? @map("posting_date") @default(now())
+  yearlyBenefit Float? @map("yearly_benefit")
+  payrollPeriod String? @map("payroll_period")
+  payrollPeriodRef PayrollPeriod? @relation(fields: [payrollPeriod], references: [id])
+  remarks String?
+  amount Float?
+  salaryComponent String? @map("salary_component")
+  salaryComponentRef SalaryComponent? @relation(fields: [salaryComponent], references: [id])
+  salarySlip String? @map("salary_slip")
+  salarySlipRef SalarySlip? @relation(fields: [salarySlip], references: [id])
+  flexibleBenefit Boolean? @map("flexible_benefit") @default(false)
+  referenceDoctype String? @map("reference_doctype")
+  referenceDocument String? @map("reference_document")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model SalaryStructureAssignment {
+  id String @id @map("name")
+  employee String
+  employeeName String? @map("employee_name")
+  department String?
+  designation String?
+  salaryStructure String @map("salary_structure")
+  salaryStructureRef SalaryStructure @relation(fields: [salaryStructure], references: [id])
+  fromDate DateTime @map("from_date")
+  company String
+  base Float?
+  annualGrossEarning Float? @map("annual_gross_earning")
+  ctc Float?
+  variable Float?
+  amendedFrom String? @map("amended_from")
+  amendedFromRef SalaryStructureAssignment? @relation(fields: [amendedFrom], references: [id])
+  incomeTaxSlab String? @map("income_tax_slab")
+  incomeTaxSlabRef IncomeTaxSlab? @relation(fields: [incomeTaxSlab], references: [id])
+  currency String
+  payrollPayableAccount String? @map("payroll_payable_account")
+  grade String?
+  gradeRef EmployeeGrade? @relation(fields: [grade], references: [id])
+  taxDeductedTillDate Float? @map("tax_deducted_till_date")
+  taxableEarningsTillDate Float? @map("taxable_earnings_till_date")
+  maxBenefits Float? @map("max_benefits")
+  leaveEncashmentAmountPerDay Float? @map("leave_encashment_amount_per_day")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model PayrollPeriod {
+  id String @id @map("name")
+  company String
+  startDate DateTime @map("start_date")
+  endDate DateTime @map("end_date")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model SalarySlipLoan {
+  id String @id @map("name")
+  loan String
+  loanAccount String? @map("loan_account")
+  interestIncomeAccount String? @map("interest_income_account")
+  principalAmount Float? @map("principal_amount")
+  interestAmount Float? @map("interest_amount")
+  totalPayment Float? @map("total_payment")
+  loanRepaymentEntry String? @map("loan_repayment_entry")
+  loanProduct String? @map("loan_product")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model SalaryStructure {
+  id String @id @map("name")
+  company String
+  letterHead String? @map("letter_head")
+  isActive SalaryStructureIsActive @map("is_active")
+  payrollFrequency SalaryStructurePayrollFrequency? @map("payroll_frequency")
+  isDefault SalaryStructureIsDefault? @map("is_default")
+  salarySlipBasedOnTimesheet Boolean? @map("salary_slip_based_on_timesheet") @default(false)
+  salaryComponent String? @map("salary_component")
+  salaryComponentRef SalaryComponent? @relation(fields: [salaryComponent], references: [id])
+  hourRate Float? @map("hour_rate")
+  leaveEncashmentAmountPerDay Float? @map("leave_encashment_amount_per_day")
+  maxBenefits Float? @map("max_benefits")
+  totalEarning Float? @map("total_earning")
+  totalDeduction Float? @map("total_deduction")
+  netPay Float? @map("net_pay")
+  modeOfPayment String? @map("mode_of_payment")
+  paymentAccount String? @map("payment_account")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef SalaryStructure? @relation(fields: [amendedFrom], references: [id])
+  currency String
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model EmployeeBenefitDetail {
+  id String @id @map("name")
+  salaryComponent String @map("salary_component")
+  salaryComponentRef SalaryComponent @relation(fields: [salaryComponent], references: [id])
+  amount Float
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model SalaryWithholdingCycle {
+  id String @id @map("name")
+  fromDate DateTime @map("from_date")
+  toDate DateTime @map("to_date")
+  isSalaryReleased Boolean? @map("is_salary_released") @default(false)
+  journalEntry String? @map("journal_entry")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model SalaryComponentAccount {
+  id String @id @map("name")
+  company String?
+  account String?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model EmployeeOtherIncome {
+  id String @id @map("name")
+  employee String
+  payrollPeriod String @map("payroll_period")
+  payrollPeriodRef PayrollPeriod @relation(fields: [payrollPeriod], references: [id])
+  company String
+  source String?
+  amount Float
+  employeeName String? @map("employee_name")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef EmployeeOtherIncome? @relation(fields: [amendedFrom], references: [id])
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model PayrollEntry {
+  id String @id @map("name")
+  postingDate DateTime @map("posting_date") @default(now())
+  payrollFrequency PayrollEntryPayrollFrequency? @map("payroll_frequency")
+  company String
+  branch String?
+  department String?
+  designation String?
+  numberOfEmployees Int? @map("number_of_employees")
+  validateAttendance Boolean? @map("validate_attendance") @default(false)
+  salarySlipBasedOnTimesheet Boolean? @map("salary_slip_based_on_timesheet") @default(false)
+  startDate DateTime @map("start_date")
+  endDate DateTime @map("end_date")
+  deductTaxForUnsubmittedTaxExemptionProof Boolean? @map("deduct_tax_for_unsubmitted_tax_exemption_proof") @default(false)
+  costCenter String @map("cost_center")
+  project String?
+  paymentAccount String? @map("payment_account")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef PayrollEntry? @relation(fields: [amendedFrom], references: [id])
+  salarySlipsCreated Boolean? @map("salary_slips_created") @default(false)
+  salarySlipsSubmitted Boolean? @map("salary_slips_submitted") @default(false)
+  bankAccount String? @map("bank_account")
+  currency String
+  exchangeRate Float @map("exchange_rate")
+  payrollPayableAccount String @map("payroll_payable_account")
+  errorMessage String? @map("error_message")
+  status PayrollEntryStatus?
+  grade String?
+  gradeRef EmployeeGrade? @relation(fields: [grade], references: [id])
+  overtimeStep PayrollEntryOvertimeStep? @map("overtime_step")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model PayrollSettings {
+  id String @id @map("name")
+  payrollBasedOn PayrollSettingsPayrollBasedOn? @map("payroll_based_on")
+  maxWorkingHoursAgainstTimesheet Float? @map("max_working_hours_against_timesheet")
+  includeHolidaysInTotalWorkingDays Boolean? @map("include_holidays_in_total_working_days") @default(false)
+  disableRoundedTotal Boolean? @map("disable_rounded_total") @default(false)
+  dailyWagesFractionForHalfDay Float? @map("daily_wages_fraction_for_half_day") @default(0.5)
+  emailSalarySlipToEmployee Boolean? @map("email_salary_slip_to_employee") @default(true)
+  encryptSalarySlipsInEmails Boolean? @map("encrypt_salary_slips_in_emails") @default(false)
+  passwordPolicy String? @map("password_policy")
+  considerUnmarkedAttendanceAs PayrollSettingsConsiderUnmarkedAttendanceAs? @map("consider_unmarked_attendance_as")
+  showLeaveBalancesInSalarySlip Boolean? @map("show_leave_balances_in_salary_slip") @default(false)
+  processPayrollAccountingEntryBasedOnEmployee Boolean? @map("process_payroll_accounting_entry_based_on_employee") @default(false)
+  considerMarkedAttendanceOnHolidays Boolean? @map("consider_marked_attendance_on_holidays") @default(false)
+  sender String?
+  senderEmail String? @map("sender_email")
+  emailTemplate String? @map("email_template")
+  createOvertimeSlip Boolean? @map("create_overtime_slip") @default(false)
+  senderCopy String? @map("sender_copy")
+  mandatoryBenefitApplication Boolean? @map("mandatory_benefit_application") @default(false)
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model SalarySlipTimesheet {
+  id String @id @map("name")
+  timeSheet String @map("time_sheet")
+  workingHours Float? @map("working_hours")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model EmployeeTaxExemptionDeclaration {
+  id String @id @map("name")
+  employee String
+  employeeName String? @map("employee_name")
+  department String?
+  payrollPeriod String @map("payroll_period")
+  payrollPeriodRef PayrollPeriod @relation(fields: [payrollPeriod], references: [id])
+  company String?
+  amendedFrom String? @map("amended_from")
+  amendedFromRef EmployeeTaxExemptionDeclaration? @relation(fields: [amendedFrom], references: [id])
+  totalDeclaredAmount Float? @map("total_declared_amount")
+  totalExemptionAmount Float? @map("total_exemption_amount")
+  currency String
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model PayrollCorrectionChild {
+  id String @id @map("name")
+  salaryComponent String @map("salary_component")
+  salaryComponentRef SalaryComponent @relation(fields: [salaryComponent], references: [id])
+  amount Float
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model SalaryWithholding {
+  id String @id @map("name")
+  employee String
+  employeeName String? @map("employee_name")
+  company String?
+  payrollFrequency SalaryWithholdingPayrollFrequency? @map("payroll_frequency")
+  numberOfWithholdingCycles Int @map("number_of_withholding_cycles")
+  postingDate DateTime @map("posting_date") @default(now())
+  fromDate DateTime @map("from_date")
+  toDate DateTime @map("to_date")
+  dateOfJoining DateTime? @map("date_of_joining")
+  relievingDate DateTime? @map("relieving_date")
+  reasonForWithholdingSalary String? @map("reason_for_withholding_salary")
+  amendedFrom String? @map("amended_from")
+  amendedFromRef SalaryWithholding? @relation(fields: [amendedFrom], references: [id])
+  status SalaryWithholdingStatus?
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}
+
+model EmployeeTaxExemptionDeclarationCategory {
+  id String @id @map("name")
+  exemptionSubCategory String @map("exemption_sub_category")
+  exemptionSubCategoryRef EmployeeTaxExemptionSubCategory @relation(fields: [exemptionSubCategory], references: [id])
+  exemptionCategory String @map("exemption_category")
+  exemptionCategoryRef EmployeeTaxExemptionCategory @relation(fields: [exemptionCategory], references: [id])
+  maxAmount Float @map("max_amount")
+  amount Float
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model EmployeeTaxExemptionProofSubmission {
+  id String @id @map("name")
+  employee String
+  employeeName String? @map("employee_name")
+  department String?
+  submissionDate DateTime @map("submission_date") @default(now())
+  payrollPeriod String @map("payroll_period")
+  payrollPeriodRef PayrollPeriod @relation(fields: [payrollPeriod], references: [id])
+  company String
+  totalActualAmount Float? @map("total_actual_amount")
+  exemptionAmount Float? @map("exemption_amount")
+  attachments String?
+  amendedFrom String? @map("amended_from")
+  amendedFromRef EmployeeTaxExemptionProofSubmission? @relation(fields: [amendedFrom], references: [id])
+  currency String
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+}

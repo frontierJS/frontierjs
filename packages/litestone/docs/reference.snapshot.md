@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Studio's Explore panel, which also places a word into your schema and shows you
 the diff first.
 
-**97 words** — 11 declarations · 60 field attributes · 26 model attributes.
+**101 words** — 11 declarations · 63 field attributes · 27 model attributes.
 
 ## Index
 
@@ -30,15 +30,16 @@ the diff first.
 - *Identify a row* — [`@id`](#id-field) · [`@unique`](#unique-field) · [`@map`](#map-field) · [`@default`](#default-field) · [`@sequence`](#sequence-field)
 - *Reach another row* — [`@relation`](#relation-field) · [`@from`](#from-field) · [`@edge`](#edge-field) · [`@scoped`](#scoped-field)
 - *Compute a value* — [`@computed`](#computed-field) · [`@transient`](#transient-field) · [`@derived`](#derived-field) · [`@generated`](#generated-field) · [`@hardDelete`](#harddelete-field) · [`@keep`](#keep-field)
-- *Hide or lock a value* — [`@omit`](#omit-field) · [`@guarded`](#guarded-field) · [`@system`](#system-field) · [`@capability`](#capability-field) · [`@encrypted`](#encrypted-field) · [`@hashed`](#hashed-field) · [`@secret`](#secret-field) · [`@check`](#check-field)
+- *Hide or lock a value* — [`@omit`](#omit-field) · [`@guarded`](#guarded-field) · [`@system`](#system-field) · [`@immutable`](#immutable-field) · [`@sealed`](#sealed-field) · [`@capability`](#capability-field) · [`@encrypted`](#encrypted-field) · [`@hashed`](#hashed-field) · [`@secret`](#secret-field) · [`@check`](#check-field)
 - *Record who and when* — [`@updatedAt`](#updatedat-field) · [`@updatedBy`](#updatedby-field) · [`@createdBy`](#createdby-field) · [`@version`](#version-field) · [`@keepVersions`](#keepversions-field) · [`@log`](#log-field)
 - *Clean a value on write* — [`@trim`](#trim-field) · [`@lower`](#lower-field) · [`@upper`](#upper-field) · [`@slug`](#slug-field)
 - *Refuse a bad value* — [`@values`](#values-field) · [`@label`](#label-field) · [`@required`](#required-field) · [`@email`](#email-field) · [`@url`](#url-field) · [`@phone`](#phone-field) · [`@markdown`](#markdown-field) · [`@accept`](#accept-field) · [`@date`](#date-field) · [`@datetime`](#datetime-field) · [`@time`](#time-field) · [`@regex`](#regex-field) · [`@length`](#length-field) · [`@startsWith`](#startswith-field) · [`@endsWith`](#endswith-field) · [`@contains`](#contains-field) · [`@lt`](#lt-field) · [`@lte`](#lte-field) · [`@gt`](#gt-field) · [`@gte`](#gte-field) · [`@minItems`](#minitems-field) · [`@maxItems`](#maxitems-field) · [`@uniqueItems`](#uniqueitems-field) · [`@type`](#type-field)
-- *Shape the table* — [`@scale`](#scale-field) · [`@money`](#money-field)
+- *Shape the table* — [`@big`](#big-field) · [`@scale`](#scale-field) · [`@money`](#money-field)
 - *Decide who may* — [`@allow`](#allow-field)
 
 **Model attributes**
 
+- *Identify a row* — [`@@id`](#id-model)
 - *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@check`](#check-model) · [`@@arc`](#arc-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@strict`](#strict-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@softDelete`](#softdelete-model) · [`@@softDeleteCascade`](#softdeletecascade-model) · [`@@hasTemplates`](#hastemplates-model)
 - *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
 - *Wire it to the app* — [`@@auth`](#auth-model) · [`@@log`](#log-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
@@ -509,7 +510,48 @@ model Example {
 ```
 
 - **Deeper** — [modelling.md](modelling.md)
-- **See also** — [`@guarded`](#guarded-field) · [`@transient`](#transient-field)
+- **See also** — [`@guarded`](#guarded-field) · [`@transient`](#transient-field) · [`@immutable`](#immutable-field)
+
+#### `@immutable` <a id="immutable-field"></a>
+
+Written once, at create, and never again by anybody — an update payload naming the column is refused by NAME, whether or not the value differs. What a document is: an invoice's number, the instant it was issued and the total it was issued for. It is the constraint tier, so asSystem() does not drop it, where the gate, the row policies and @guarded all fall away there; a raw UPDATE still bypasses it, as it does a @check. Reaches the client as readOnly in the UPDATE schema alone, so a generated create form still offers the box.
+
+```lite
+model Example {
+  id Int @id
+  issuedAt DateTime @immutable
+}
+```
+
+- **Deeper** — [modelling.md](modelling.md)
+- **See also** — [`@system`](#system-field) · [`@guarded`](#guarded-field) · [`@version`](#version-field)
+
+#### `@sealed` <a id="sealed-field"></a>
+
+On a hasMany field of a model that declares a @seals move: these children are part of the DOCUMENT, so once the parent seals they may not be created, changed or removed. It goes on the side that OWNS the children, because sealing is the parent's event and a child cannot know when its parent's machine moved. Never inferred — every child relation on a sealing model looks sealable and they are not; a payment against an issued invoice is exactly the row that must keep arriving.
+
+```lite
+enum DocState {
+  draft
+  issued
+}
+
+model InvoiceLine {
+  id        Int @id
+  exampleId Int
+  example   Example @relation(fields: [exampleId], references: [id])
+}
+
+model Example {
+  id Int @id
+  state DocState @default(draft)
+  @@transitions(state, issue: draft -> issued @seals)
+  lines InvoiceLine[] @sealed
+}
+```
+
+- **Deeper** — [modelling.md](modelling.md)
+- **See also** — [`@@transitions`](#transitions-model) · [`@immutable`](#immutable-field) · [`@keep`](#keep-field)
 
 #### `@capability` <a id="capability-field"></a>
 
@@ -1067,6 +1109,21 @@ model Example {
 
 ### Shape the table
 
+#### `@big` <a id="big-field"></a>
+
+The column's values use the whole 64 bits. SQLite's INTEGER always did; the CROSSING did not — a value goes out and comes back through a JS number, which stops being exact at 9,007,199,254,740,991, so past it the rounded double is stored and a DIFFERENT number is read back with nothing raised (FJS-643). A @big column is read back and written as a decimal STRING, which is what node-postgres does with int8 and what mysql2's bigNumberStrings is for — a BigInt would be exact and JSON.stringify throws on one, which is every response, every frame and every audit snapshot. Ordering, comparison, MAX, an index and AUTOINCREMENT all stay numeric, because SQLite applies the column's affinity to a text parameter, and arithmetic in application code has to say BigInt(v) first. STRICT already refuses the three ways the value stops being exact — past int64 (which a loose table demotes to REAL), a non-numeric string, and a fraction — so no CHECK is emitted except under @@noStrict, which is the one shape that turned STRICT off. For a snowflake id, a nanosecond timestamp, or a foreign BIGINT that litestone import now maps here. Not with @scale or @money, which bound the column to 2^53 for the opposite reason.
+
+```lite
+model Example {
+  id Int @id
+  externalId Int @big
+}
+```
+
+- **Legal** — on a model's field · on a trait's field
+- **Deeper** — [exact-numbers.md](exact-numbers.md)
+- **See also** — [`@scale`](#scale-field) · [`@money`](#money-field)
+
 #### `@scale` `(<places>)` <a id="scale-field"></a>
 
 The column is an integer and the decimal point sits &lt;places&gt; places in — 1_500_000 at scale 6 is 1.5. Exact where a Float is not: SQLite has no fixed-point type, and the drift lands on multiplication and on comparing two derived numbers, which is what a reorder point or a projected on-hand IS. What a caller sends and reads back is the WHOLE number of minor units; a value with a fraction is refused by name. At most 9 places, or a 64-bit integer runs out of room in front of the point.
@@ -1118,6 +1175,24 @@ model Example {
 
 Two `@@`, and it describes the whole model rather than one of its columns.
 
+### Identify a row
+
+#### `@@id` `([field, …])` <a id="id-model"></a>
+
+The row's identity IS the tuple. Sugar over `@id` on each named field, which is a shape every reader already handles, so a composite key works through `findUnique`, a relation, `include` and the migrator with nothing taught to any of them. What it adds over marking the fields is the key's column ORDER: a primary key builds an implicit index and an implicit index is prefix-matched, so `(orgId, userId)` answers `WHERE orgId = ?` and the swap does not — and field DECLARATION order is a different fact, which is why `litestone introspect` read one key and wrote the other. It is also the spelling Prisma, Rails and SQL all use, so an import carries the key instead of inventing a surrogate. Refused beside a field-level `@id` (two answers to one question), declared twice, and over a nullable field, a relation, an array or a virtual column — a primary key is over columns, and SQLite permits a NULL in one on a rowid table where this does not.
+
+```lite
+model Example {
+  orgId String
+  userId String
+  @@id([orgId, userId])
+}
+```
+
+- **Legal** — in a model
+- **Deeper** — [schema.md](schema.md)
+- **See also** — [`@id`](#id-field) · [`@unique`](#unique-field)
+
 ### Shape the table
 
 #### `@@index` `([field, …])` <a id="index-model"></a>
@@ -1135,9 +1210,9 @@ model Example {
 
 - **Deeper** — [performance.md](performance.md)
 
-#### `@@unique` `([field, …])` <a id="unique-model"></a>
+#### `@@unique` `([field, …][, nullsDistinct: true | where: <expr>])` <a id="unique-model"></a>
 
-A composite unique constraint. Parses to `uniqueIndex`, which is why the written word and the node kind differ.
+A composite unique constraint. Parses to `uniqueIndex`, which is why the written word and the node kind differ. `nullsDistinct: true` says the rows leaving a member unset are deliberately unconstrained — SQL's own word for what SQLite already does, since two NULLs never compare equal. `where:` is the other answer to the same question and is a different thing: it constrains only the rows the predicate admits, which is how *at most one OPEN row per parent* is declared on an effective-dated model. The two cannot both be given. A predicate cannot ride a table constraint in any dialect, so that form parses to `partialUnique` and is emitted as a standalone `CREATE UNIQUE INDEX … WHERE` — one word, two mechanisms, which is also why it migrates by one DROP and one CREATE where the plain form rebuilds the table. The predicate is the `@@allow` expression language and may compare against a value, unlike `@@index(where:)`: enforcement happens on INSERT and never goes through the query planner. `now()` and `auth()` are refused by name — SQLite ACCEPTS a clock in an index predicate, and a constraint whose coverage moves under a row that never moved is a duplicate. The soft-delete clause is NOT ANDed in: uniqueness among live rows is written `where: deletedAt == null`, by the author.
 
 ```lite
 model Example {
@@ -1150,6 +1225,7 @@ model Example {
 
 - **Parses as** — `uniqueIndex`
 - **Deeper** — [performance.md](performance.md)
+- **See also** — [`@@index`](#index-model)
 
 #### `@@check` `("<sql>"[, "<message>"])` <a id="check-model"></a>
 
@@ -1407,9 +1483,9 @@ model Example {
 - **Deeper** — [multi-tenancy.md](multi-tenancy.md)
 - **See also** — [`tenancy`](#tenancy-declaration) · [`@@deny`](#deny-model)
 
-#### `@@transitions` `(<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)], …)` <a id="transitions-model"></a>
+#### `@@transitions` `(<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals], …)` <a id="transitions-model"></a>
 
-A state machine on a CLOSED column — an enum, or a Boolean, which is the two-state machine every schema has (isPrimary, isPublished, isSuspended) and whose two directions are routinely different authorities. Enforced at the Data boundary. A boolean move states its own name, because `-> true` says which value is written and not what a person did. @gate(N) on a move is a floor on top of the model update level, and @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller passes and asSystem() bypasses. Reaches the client as x-transitions keyed by field — on the model, never on the enum $def, because only a model can carry a per-transition gate.
+A state machine on a CLOSED column — an enum, or a Boolean, which is the two-state machine every schema has (isPrimary, isPublished, isSuspended) and whose two directions are routinely different authorities. Enforced at the Data boundary. A boolean move states its own name, because `-> true` says which value is written and not what a person did. @gate(N) on a move is a floor on top of the model update level, and @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller passes and asSystem() bypasses. Reaches the client as x-transitions keyed by field — on the model, never on the enum $def, because only a model can carry a per-transition gate. @seals on a move is the moment the row becomes a DOCUMENT: after it the row's @sealed children may not be created, changed or removed. A seal is an event rather than a state, so the sealed set is computed — everything reachable from the move's target — and nothing restates it.
 
 ```lite
 enum OrderStatus { draft paid shipped cancelled }
@@ -1540,9 +1616,9 @@ entry above says so only when its answer is not the ordinary one.
 
 | position | refuses |
 | --- | --- |
-| on a type's field | `@id`, `@unique`, `@map`, `@relation`, `@generated`, `@from`, `@encrypted`, `@guarded`, `@secret`, `@updatedAt`, `@version`, `@allow`, `@values`, `@scale`, `@money` |
+| on a type's field | `@id`, `@unique`, `@map`, `@relation`, `@generated`, `@from`, `@encrypted`, `@guarded`, `@secret`, `@updatedAt`, `@version`, `@allow`, `@values`, `@scale`, `@money`, `@big` |
 | on a trait's field | `@id` |
-| in a trait | `@map`, `@db`, `@fts` |
+| in a trait | `@id`, `@map`, `@db`, `@fts` |
 | on an enum member | everything except `@label` |
 
 ## Which word hides a value

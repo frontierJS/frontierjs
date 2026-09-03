@@ -192,6 +192,14 @@ ${domainLine}
       keep_backups: 5,
     },
 
+    // Docker's default log driver caps nothing, so a container that logs on
+    // every request fills the disk and the database stops writing first.
+    // Set logs to false if the daemon is already pointed somewhere.
+    logs: {
+      max_size:  '10m',
+      max_files: 5,
+    },
+
     // Per-target overrides (server/user/path only)
     // production: { server: 'prod.your-app.com' },
     // stage:      { server: 'stg.your-app.com' },

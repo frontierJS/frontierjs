@@ -1,0 +1,110 @@
+---
+title: Pricing — FrontierJS Supply Co.
+description: What a standing order costs, and what each one includes.
+render: static
+---
+<!--
+  The price list, prerendered to plain HTML at build time.
+
+  No `publishes:` in the frontmatter, which is a claim: nothing on this page is
+  gated. The build CHECKS it rather than taking it — `Plan` reads at 0, so the
+  page is allowed to exist. See index.meta.js.
+
+  ── The number in the table is the OLD number ────────────────────────────────
+
+  Every price here was written into this file when the site was built, and the
+  shop raises prices without rebuilding — `plans.reprice` closes one window and
+  opens another, and nothing in a file knows that happened. That is not a flaw
+  in prerendering, it is what prerendering IS, and the honest answer is the
+  island: it asks the shop what it charges now and corrects the cells in place.
+
+  It is the same argument the catalogue makes about a product price, one table
+  along, and it is sharper here — a subscription price moves once a year rather
+  than with a sale, so a stale one looks completely plausible for months.
+-->
+<script>
+  import LivePlans from '../../islands/LivePlans.mesa'
+  import { money } from '@/money.js'
+
+  export let data = null
+
+  const plans = data?.plans ?? []
+
+  // What a period is called in a sentence. The INTERVAL is the schema's — a
+  // value added to the enum reads as itself here rather than vanishing.
+  const per = (interval) => interval === 'yearly' ? 'a year' : 'a month'
+</script>
+
+<div class="container stack">
+  <header class="stack">
+    <h1>Standing orders</h1>
+    <p class="text-muted">
+      A shelf restocked on a cycle, billed on the same one. Cancel whenever —
+      anything already invoiced is still owed, and nothing else is.
+    </p>
+  </header>
+
+  <ul class="cards" id="plans">
+    {#each plans as p}
+      <!--
+        `data-baked` is the number this file was built with, kept beside the
+        rendered one so the island can tell *checked and agreed* from *never
+        ran* — which look identical if only a change is recorded.
+      -->
+      <li class="card" data-plan={p.code}>
+        <div class="surface-body stack">
+          <h2 class="h4">{p.name}</h2>
+          <p class="price" data-baked={p.price ?? ''}>
+            {p.price == null ? 'Ask us' : money(p.price)}
+            <span class="text-muted text-sm">{per(p.interval)}</span>
+          </p>
+          {#if p.blurb}<p class="text-sm text-muted">{p.blurb}</p>{/if}
+          <a class="btn" href="/account/">Start with an account</a>
+        </div>
+      </li>
+    {/each}
+  </ul>
+
+  <LivePlans client:load />
+
+  <section class="stack">
+    <h2 class="h4">What happens on the day</h2>
+    <ul class="rows divided">
+      <li>
+        <strong>You are invoiced for the period, in advance.</strong>
+        The document is frozen the moment it is issued — number, dates and every
+        figure on it — so a correction is a credit note beside it and never an
+        edit.
+      </li>
+      <li>
+        <strong>Change the plan mid-cycle and only the difference moves.</strong>
+        The rest of the period is prorated to the day: an upgrade is invoiced,
+        a downgrade is credited.
+      </li>
+      <li>
+        <strong>A price rise does not reach you.</strong>
+        A subscription names the price it was sold at, so what the shop charges
+        new subscribers has nothing to do with what you pay.
+      </li>
+    </ul>
+  </section>
+</div>
+
+<style>
+  /*
+   * A price is the thing this page exists to say, so it is not a muted chip:
+   * the Badge term is a categorical STATUS, which is the wrong vocabulary and
+   * the wrong emphasis for a number somebody came here to read.
+   *
+   * Every value is a token. A `var()` naming one nothing defines drops the
+   * whole DECLARATION rather than producing a wrong value, and nothing reports
+   * it — which is how a page ends up linked, matched and unstyled line by line
+   * (`FJS-545`).
+   */
+  .price {
+    font-size:   var(--text-lg);
+    font-weight: 600;
+    color:       var(--ink);
+    margin:      0;
+  }
+</style>

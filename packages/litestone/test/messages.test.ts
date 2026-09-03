@@ -146,8 +146,36 @@ model Job {
     return db
   }
 
-  test('an illegal move is 409 — it conflicts with the row\'s current state', async () => {
+  // Authorisation before state, which is the order every other layer here reads
+  // in: `ship` is `@gate(5)` and this caller is anonymous, so the answer is
+  // about the CALLER and never about where the row happens to be. Telling
+  // somebody who could not make the move at any level that the row is in the
+  // wrong state for it is a refusal confirming state to a caller with no
+  // authority over the move.
+  //
+  // It applies to a move asked for by NAME and to nothing else: an ordinary
+  // update carrying the column names no move, so no (from, to) pair matches and
+  // there is no gate to consult — naming the move is what makes its gate
+  // askable.
+  test('a gated move is refused as a GATE before the row\'s state is mentioned', async () => {
     const db = await setup()
+    try {
+      await db.job.transition(1, 'ship')          // pending, not paid — and @gate(5)
+      throw new Error('should have refused')
+    } catch (e) {
+      expect((e as Error).name).toBe('TransitionGateError')
+      expect((e as { status?: number }).status).toBe(403)
+    }
+  })
+
+  test('an illegal move is 409 — it conflicts with the row\'s current state', async () => {
+    const { GatePlugin } = await import('../src/index.js')
+    const db = await createClient({
+      db: ':memory:', schema: STATES,
+      plugins: [new GatePlugin({ getLevel: () => 5 })],
+    })
+    autoMigrate(db)
+    await db.job.create({ data: {} })
     try {
       await db.job.transition(1, 'ship')          // pending, not paid
       throw new Error('should have refused')

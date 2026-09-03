@@ -237,4 +237,36 @@ await run('baseline', async () => {
   db.$close()
 })
 
+// ── 12. M7: a field @allow('read') that reads only the caller ───────────────
+// `auth().isAdmin` has one answer for the whole result set; `ownerId == auth().id`
+// has one per row. Both are a single compare through the same interpreter, so the
+// second is a fair stand-in for what the first cost before it was hoisted
+// (`FJS-619`). The bare model is the floor.
+await run('field-allow-hoist', async () => {
+  const model = (extra) => `
+model Doc {
+  id      Int    @id
+  ownerId Int
+  a String${extra} b String${extra} c String${extra} d String${extra}
+}`
+  const rowFree = `  @allow('read', auth().isAdmin)`
+  const perRow  = `  @allow('read', ownerId == auth().id)`
+  const seed = (db) => db.asSystem().doc.createMany({ data: Array.from({ length: 5000 },
+    (_, i) => ({ id: i + 1, ownerId: (i % 50) + 1, a: 'a', b: 'b', c: 'c', d: 'd' })) })
+
+  const walk = async (label, extra, note) => {
+    const db = await createClient({ schema: model(extra), db: ':memory:' })
+    await seed(db)
+    const scoped = extra ? db.$setAuth({ id: 1, isAdmin: true }) : db
+    for (let i = 0; i < 20; i++) await scoped.doc.findMany({ limit: 5000 })   // warm
+    const t0 = performance.now()
+    for (let i = 0; i < 40; i++) await scoped.doc.findMany({ limit: 5000 })
+    report(label, 'us/row', (ms(t0) / (40 * 5000) * 1000).toFixed(3), note)
+    db.$close()
+  }
+  await walk('12. findMany 5k, no field policy',        '',        'floor')
+  await walk('12. findMany 5k, 4x auth-only @allow',    rowFree,   'hoisted — once per caller')
+  await walk('12. findMany 5k, 4x row-dependent @allow', perRow,   'per field per row — the old cost')
+})
+
 console.log('\nDone.')

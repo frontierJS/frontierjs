@@ -158,7 +158,7 @@ export function columnDefaultExpr(field) {
 
 // ─── Column definition ────────────────────────────────────────────────────────
 
-function columnDef(field, schema = null, compositePk = false) {
+function columnDef(field, schema = null, compositePk = false, strict = true) {
   const parts = [`  "${field.name}" ${sqlType(field.type)}`]
 
   // NOT NULL — unless optional, and not for GENERATED/funcCall columns
@@ -220,6 +220,19 @@ function columnDef(field, schema = null, compositePk = false) {
   if (field.attributes.some(a => a.kind === 'scale' || a.kind === 'money'))
     parts.push(`CHECK ("${field.name}" BETWEEN -${EXACT_INT_MAX} AND ${EXACT_INT_MAX})`)
 
+  // @big — and the CHECK is emitted only where STRICT is off, which is the
+  // opposite of the pair above and is a measurement rather than a judgement.
+  // @scale's bound is NARROWER than the column's own, so nothing but a CHECK can
+  // hold it; @big's bound IS the column's own, and STRICT already refuses every
+  // way past it — a value beyond int64 (which SQLite otherwise demotes to REAL
+  // 9.22e+18), a non-numeric string, and a fraction, each measured. So on a
+  // STRICT table the CHECK's message never appears, and a constraint that
+  // cannot fire is worse than none. `@@noStrict` is the one shape that turned
+  // that off, and there it is the only thing standing between a wide column and
+  // a silent REAL.
+  if (!strict && field.attributes.some(a => a.kind === 'big'))
+    parts.push(`CHECK ("${field.name}" IS NULL OR typeof("${field.name}") = 'integer')`)
+
   // CHECK
   const chk = field.attributes.find(a => a.kind === 'check')
   if (chk) parts.push(`CHECK (${chk.expr})`)
@@ -232,10 +245,19 @@ function columnDef(field, schema = null, compositePk = false) {
 function tableConstraints(model, schema, pluralize = false) {
   const lines = []
 
-  // Composite primary key — if more than one @id field
+  // Composite primary key — if more than one @id field.
+  //
+  // The ORDER is `@@id`'s field list where the model declares one, and field
+  // declaration order otherwise. They are two different facts: a primary key
+  // builds an implicit index and an implicit index is prefix-matched, so
+  // `PRIMARY KEY (orgId, userId)` answers `WHERE orgId = ?` and the swap does
+  // not. With field-level `@id` alone there is nowhere to say it, which is what
+  // `@@id` is for (`FJS-561`).
+  const idOrder  = model.attributes.find(a => a.kind === 'id')?.fields
   const pkFields = model.fields.filter(f => f.attributes.find(a => a.kind === 'id'))
   if (pkFields.length > 1) {
-    const cols = pkFields.map(f => `"${f.name}"`).join(', ')
+    const names = idOrder ?? pkFields.map(f => f.name)
+    const cols  = names.map(n => `"${n}"`).join(', ')
     lines.push(`  PRIMARY KEY (${cols})`)
   }
 
@@ -335,7 +357,7 @@ function createTable(model, schema, tableName, pluralize = false) {  // schema n
   const columnFields = model.fields.filter(isStoredField)
 
   const pkCount      = model.fields.filter(f => f.attributes.some(a => a.kind === 'id')).length
-  const colDefs      = columnFields.map(f => columnDef(f, schema, pkCount > 1))
+  const colDefs      = columnFields.map(f => columnDef(f, schema, pkCount > 1, strict))
   const enumChecks   = columnFields.map(f => enumCheck(f, schema)).filter(Boolean)
   const constraints  = tableConstraints(model, schema, pluralize)
   const allDefs      = [...colDefs, ...enumChecks, ...constraints]
@@ -380,6 +402,27 @@ function createIndexes(model, softDelete = false, tableName) {
                 : ` WHERE ${parts.map(p => `(${p})`).join(' AND ')}`
 
     lines.push(`CREATE INDEX IF NOT EXISTS "idx_${tableName}_${attr.fields.join('_')}" ON "${tableName}" (${cols})${where};`)
+  }
+
+  // @@unique([cols], where: …) — a CREATE UNIQUE INDEX, never a table
+  // constraint, because no dialect takes a predicate on one.
+  //
+  // The soft-delete clause is NOT ANDed in, and that is the one line this
+  // feature turns on. On an @@index the AND is an optimisation — the clause is
+  // what makes the index reachable on such a model. On a UNIQUE index the
+  // predicate IS the constraint, so ANDing it is FJS-204's rejected derivation
+  // arriving through the back door: the deleted row stops holding its @unique
+  // slot, and SoftDeletedUniqueError can never fire because the index no longer
+  // covers the row that would raise it. An author who wants uniqueness among
+  // live rows writes `deletedAt == null` themselves, and then they have said it.
+  for (const attr of model.attributes) {
+    if (attr.kind !== 'partialUnique') continue
+    const cols = attr.fields.map(f => `"${f}"`).join(', ')
+    // Same name as an @@index over the same columns would take, which is what
+    // keeps it inside the `idx_<table>_` prefix `ownedIndex` reads — an index
+    // litestone does not recognise as its own is one it never drops. The parser
+    // refuses the collision.
+    lines.push(`CREATE UNIQUE INDEX IF NOT EXISTS "idx_${tableName}_${attr.fields.join('_')}" ON "${tableName}" (${cols}) WHERE ${attr.whereSql};`)
   }
 
   // Auto-generate a partial index on deletedAt itself for soft-delete tables.

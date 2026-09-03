@@ -8,6 +8,20 @@ import type { JobContext, RegisteredHandler, QueueConfig, CaravanTelemetry, Cara
 
 const DEFAULT_RETRY_DELAY = [60_000, 300_000, 1_800_000] // 1m, 5m, 30m
 
+// Once per name per process. A queue shared by a process that has the handler
+// and one that does not is the normal deployment, so the release is routine and
+// a line per job would be the log.
+const warnedNames = new Set<string>()
+
+function warnNoHandler(name: string): void {
+  if (warnedNames.has(name)) return
+  warnedNames.add(name)
+  console.warn(
+    `[Caravan] no handler registered for job '${name}' in this process — the job was ` +
+    `released back to 'pending' for a process that has one. No attempt was consumed.`
+  )
+}
+
 // ─── Single queue worker ──────────────────────────────────────────────────────
 
 export class QueueWorker {
@@ -26,7 +40,19 @@ export class QueueWorker {
   private _timer:       ReturnType<typeof setInterval> | null = null
   private _running:     Set<string> = new Set()   // in-flight job IDs
   private _stopping:    boolean = false
+  // The database this worker holds has been closed. Set before `db.close()`
+  // rather than after: a handler abandoned past the drain deadline is still
+  // running, and its completion write used to reject with `Database has closed`
+  // as an UNHANDLED REJECTION, which takes the process down on the ordinary
+  // SIGTERM path. There is nothing to write once the handle is gone — the row
+  // waits for the lease, which is the only thing that can decide it.
+  private _closed:      boolean = false
   private _drainTimeout: number
+  // Names this process can execute, and the count the claim statement is shaped
+  // for. Recomputed when the handler map's size changes — autoload and a late
+  // `handle()` both grow it.
+  private _claimNames:  string[] = []
+  private _claimFor:    number = -1
   constructor(
     queue:        string,
     config:       QueueConfig,
@@ -80,6 +106,11 @@ export class QueueWorker {
     }
   }
 
+  /** The database is about to close; stop writing to it. */
+  markClosed(): void {
+    this._closed = true
+  }
+
   get inFlight(): number {
     return this._running.size
   }
@@ -87,7 +118,7 @@ export class QueueWorker {
   // ── Poll for work ───────────────────────────────────────────────────────────
 
   private _poll(): void {
-    if (this._stopping) return
+    if (this._stopping || this._closed) return
     const available = this._concurrency - this._running.size
     if (available <= 0) return
 
@@ -99,12 +130,37 @@ export class QueueWorker {
   }
 
   private _claim() {
+    // Only what this process can run. A claim it has no handler for used to
+    // become a terminal failure, so a web process polling beside a worker one
+    // destroyed the worker's work (`FJS-675`).
+    if (this._handlers.size !== this._claimFor) {
+      this._claimNames = [...this._handlers.values()]
+        .filter(h => h.queue === this.queue)
+        .map(h => h.name)
+      this._claimFor = this._handlers.size
+    }
+    if (this._claimNames.length === 0) return null
+
+    const now = Date.now()
+
+    // Read-only, no lock. Without it every poll of every queue opened a write
+    // transaction whether or not anything was pending, which on one shared file
+    // is self-inflicted contention per replica.
+    try {
+      if (!this._stmts.anyPending.get({ queue: this.queue, now })) return null
+    } catch {
+      return null
+    }
+
     // BEGIN IMMEDIATE ensures atomic claim even with multiple in-process pollers
     let job: ReturnType<typeof this._stmts.claimNext.get> = null
 
+    const params: Record<string, unknown> = { queue: this.queue, now, owner: this._owner }
+    this._claimNames.forEach((n, i) => { params['n' + i] = n })
+
     try {
       this._db.exec('BEGIN IMMEDIATE')
-      job = this._stmts.claimNext.get({ queue: this.queue, now: Date.now(), owner: this._owner })
+      job = this._stmts.claimNextNamed(this._claimNames.length).get(params)
       this._db.exec('COMMIT')
     } catch (err) {
       try { this._db.exec('ROLLBACK') } catch {}
@@ -123,16 +179,13 @@ export class QueueWorker {
     const handler = this._handlers.get(record.name)
 
     if (!handler) {
-      // No handler registered — mark failed immediately (no retries possible)
-      this._stmts.markFailed.run({
-        id:     record.id,
-        status: 'failed',
-        run_at: record.run_at,
-        error:  `No handler registered for job '${record.name}'`,
-        now:    Date.now(),
-        owner:  this._owner,
-      })
+      // Give it back rather than failing it. The claim filter above normally
+      // makes this unreachable; a handler registered between the claim and here
+      // is the case that keeps it. The attempt goes back too — a process that
+      // cannot run the work has not tried it.
+      this._release(record)
       this._running.delete(record.id)
+      warnNoHandler(record.name)
       return
     }
 
@@ -195,7 +248,7 @@ export class QueueWorker {
       // 0 changes ALSO means another instance reclaimed this row while the
       // handler ran — the owner guard is what keeps that completion off the
       // attempt that replaced it.
-      const { changes } = this._stmts.markDone.run({ id: record.id, now: doneMs, owner: this._owner })
+      const { changes } = this._write(() => this._stmts.markDone.run({ id: record.id, now: doneMs, owner: this._owner }))
       if (changes > 0) this._telemetry?.emit('caravan.job.done', {
         id:         record.id,
         queue:      record.queue,
@@ -210,14 +263,14 @@ export class QueueWorker {
       const failedAt = Date.now()
       if (attempt >= max) {
         // Out of retries — mark failed (terminal)
-        const { changes } = this._stmts.markFailed.run({
+        const { changes } = this._write(() => this._stmts.markFailed.run({
           id:     record.id,
           status: 'failed',
           run_at: record.run_at,
           error,
           now:    failedAt,
           owner:  this._owner,
-        })
+        }))
         if (changes > 0) this._telemetry?.emit('caravan.job.failed', {
           id:         record.id,
           queue:      record.queue,
@@ -236,14 +289,14 @@ export class QueueWorker {
         const delayMs = delays[Math.min(attempt - 1, delays.length - 1)]
         const runAt   = failedAt + delayMs
 
-        const { changes } = this._stmts.markFailed.run({
+        const { changes } = this._write(() => this._stmts.markFailed.run({
           id:     record.id,
           status: 'pending',
           run_at: runAt,
           error,
           now:    failedAt,
           owner:  this._owner,
-        })
+        }))
         if (changes > 0) this._telemetry?.emit('caravan.job.failed', {
           id:         record.id,
           queue:      record.queue,
@@ -257,7 +310,26 @@ export class QueueWorker {
       }
     } finally {
       this._running.delete(record.id)
+      // Claim the next job now rather than at the next tick. Throughput was
+      // exactly `concurrency / pollInterval` — 2 jobs a second at the defaults,
+      // 99% of it sleeping with capacity free and work queued. The interval is
+      // the backstop for work that ARRIVES while nothing is running.
+      this._poll()
     }
+  }
+
+  /**
+   * A write whose handle may have gone. `stop()` marks the worker closed before
+   * closing the database, and a handler abandoned past the drain deadline still
+   * settles afterwards — its write has nowhere to land and must not reject.
+   */
+  private _write(fn: () => { changes: number }): { changes: number } {
+    if (this._closed) return { changes: 0 }
+    try { return fn() } catch { return { changes: 0 } }
+  }
+
+  private _release(record: { id: string }): void {
+    this._write(() => this._stmts.releaseClaim.run({ id: record.id, owner: this._owner }))
   }
 
   // ── The bound on one attempt ────────────────────────────────────────────────
@@ -367,6 +439,11 @@ export class WorkerPool {
 
   async stop(): Promise<void> {
     await Promise.all([...this._workers.values()].map(w => w.stop()))
+  }
+
+  /** Tell every worker the database is about to close. */
+  markClosed(): void {
+    for (const w of this._workers.values()) w.markClosed()
   }
 
   /**

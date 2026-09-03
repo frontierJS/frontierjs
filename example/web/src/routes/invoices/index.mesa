@@ -1,0 +1,95 @@
+---
+title: Invoices
+---
+<script>
+  // The documents.
+  //
+  // Nothing on this screen edits anything, and that is the model rather than a
+  // decision here: `Invoice` is `@@gate("1.8.8.8")` and every money column on
+  // it is `@system @immutable`, so the writable set is empty and there is no
+  // form to generate (`FJS-D162`). What a person may do to an invoice is
+  // settle it or void it, and both are named moves on its own screen.
+  import { invoices } from '@/resources/Invoice.mesa'
+  import { session } from '@/session.js'
+  import { prefs } from '@/prefs.js'
+  import { useStore } from '@frontierjs/sierra/junction'
+  import { page } from '@frontierjs/sierra/router'
+  import { money } from '../../money.js'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Mono          from '@frontierjs/ui/components/display/Mono.mesa'
+  import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+
+  const columns = [
+    { key: 'number',     label: 'Number' },
+    { key: 'status',     label: 'Status' },
+    { key: 'customerId', label: 'Customer' },
+    { key: 'total',      label: 'Total', align: 'right' },
+    { key: 'issuedAt',   label: 'Issued' },
+    { key: 'dueAt',      label: 'Due' },
+    { key: 'actions',    label: '' },
+  ]
+
+  const TONE = { issued: 'warning', paid: 'success', void: 'muted' }
+
+  const { get: rows, unsubscribe } = useStore(invoices.store)
+  $.onDestroy(unsubscribe)
+
+  $: (session.level, prefs.dense, prefs.currency)
+
+  let error = null
+
+  function load() {
+    invoices.load(page.query, { orderBy: '-issuedAt', ...page.directives })
+      .catch(e => { error = e.message })
+  }
+  load()
+  $: page.query, page.directives, () => load()
+
+  const when = iso => iso ? new Date(iso).toLocaleDateString(undefined,
+    { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
+
+  // Overdue is not a status and must not be: it is `dueAt` against the clock,
+  // so it is true from one moment onward with nothing writing a row. A column
+  // for it would be a value that goes stale while nobody is looking.
+  const overdue = (inv) => inv.status === 'issued' && new Date(inv.dueAt) < new Date()
+</script>
+
+<SectionHeader title="Invoices" level={1}>
+  {#snippet action()}
+    <div class="cluster">
+      <a class="navlink" href="/plans/">Plans</a>
+      <a class="navlink" href="/subscriptions/">Subscriptions</a>
+    </div>
+  {/snippet}
+</SectionHeader>
+
+{#if error}<Alert tone="danger" id="i-error">{error}</Alert>{/if}
+
+<Table {columns} rows={rows()} striped hover compact={prefs.dense}>
+  {#snippet row(inv)}
+    <tr data-invoice={inv.id} data-number={inv.number}>
+      <td><a href={'/invoices/' + inv.id + '/'} data-open><Mono size="xs">{inv.number}</Mono></a></td>
+      <td>
+        <Pill tone={TONE[inv.status] ?? 'muted'} data-status={inv.status}>{inv.status}</Pill>
+        {#if overdue(inv)}<Pill tone="danger" data-overdue="true">overdue</Pill>{/if}
+      </td>
+      <td class="text-muted">#{inv.customerId}</td>
+      <td class="text-right" data-total={inv.total}>{money(inv.total)}</td>
+      <td class="text-muted">{when(inv.issuedAt)}</td>
+      <td class="text-muted">{when(inv.dueAt)}</td>
+      <td><Button variant="ghost" href={'/invoices/' + inv.id + '/'}>Open</Button></td>
+    </tr>
+  {/snippet}
+</Table>
+
+<Alert tone="muted">
+  <strong>overdue</strong> is not a status. It is <code>dueAt</code> against the
+  clock — true from one moment onward with nothing writing a row — which is also
+  the only thing dunning counts: <em>how long has this been unpaid</em> is
+  <code>now − dueAt</code> on the oldest unpaid invoice, so no counter is kept
+  anywhere and no counter can disagree with the rows.
+</Alert>

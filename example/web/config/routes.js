@@ -43,6 +43,27 @@ export const tree = {
       children: [],
     },
   {
+      id: "invoices",
+      path: "/invoices/",
+      file: "src/routes/invoices/index.mesa",
+      companion: null,
+      layout: "src/routes/_module.mesa",
+      meta: {"siteName":"Kitchen sink","title":"Invoices","isIndex":true},
+      params: [],
+      children: [
+      {
+          id: "invoices.[id]",
+          path: "/invoices/:id/",
+          file: "src/routes/invoices/[id].mesa",
+          companion: null,
+          layout: "src/routes/_module.mesa",
+          meta: {"siteName":"Kitchen sink","title":"Invoice","dynamic":true},
+          params: ["id"],
+          children: [],
+        }
+      ],
+    },
+  {
       id: "orders",
       path: "/orders/",
       file: "src/routes/orders/index.mesa",
@@ -68,6 +89,69 @@ export const tree = {
           companion: null,
           layout: "src/routes/_module.mesa",
           meta: {"siteName":"Kitchen sink","title":"Order","dynamic":true},
+          params: ["id"],
+          children: [],
+        }
+      ],
+    },
+  {
+      id: "payroll",
+      path: "/payroll/",
+      file: "src/routes/payroll/index.mesa",
+      companion: null,
+      layout: "src/routes/_module.mesa",
+      meta: {"siteName":"Kitchen sink","title":"Payroll","isIndex":true},
+      params: [],
+      children: [
+      {
+          id: "payroll.[id]",
+          path: "/payroll/:id/",
+          file: "src/routes/payroll/[id].mesa",
+          companion: null,
+          layout: "src/routes/_module.mesa",
+          meta: {"siteName":"Kitchen sink","title":"Pay run","dynamic":true},
+          params: ["id"],
+          children: [],
+        }
+      ],
+    },
+  {
+      id: "people",
+      path: "/people/",
+      file: "src/routes/people/index.mesa",
+      companion: null,
+      layout: "src/routes/_module.mesa",
+      meta: {"siteName":"Kitchen sink","title":"People","isIndex":true},
+      params: [],
+      children: [
+      {
+          id: "people.[id]",
+          path: "/people/:id/",
+          file: "src/routes/people/[id].mesa",
+          companion: null,
+          layout: "src/routes/_module.mesa",
+          meta: {"siteName":"Kitchen sink","title":"Person","dynamic":true},
+          params: ["id"],
+          children: [],
+        }
+      ],
+    },
+  {
+      id: "plans",
+      path: "/plans/",
+      file: "src/routes/plans/index.mesa",
+      companion: null,
+      layout: "src/routes/_module.mesa",
+      meta: {"siteName":"Kitchen sink","title":"Plans","isIndex":true},
+      params: [],
+      children: [
+      {
+          id: "plans.[id]",
+          path: "/plans/:id/",
+          file: "src/routes/plans/[id].mesa",
+          companion: null,
+          layout: "src/routes/_module.mesa",
+          meta: {"siteName":"Kitchen sink","title":"Plan","dynamic":true},
           params: ["id"],
           children: [],
         }
@@ -112,6 +196,48 @@ export const tree = {
       layout: "src/routes/_module.mesa",
       meta: {"siteName":"Kitchen sink","title":"Settings","isIndex":true},
       params: [],
+      children: [
+      {
+          id: "settings.fields",
+          path: "/settings/fields/",
+          file: "src/routes/settings/fields.mesa",
+          companion: null,
+          layout: "src/routes/_module.mesa",
+          meta: {"siteName":"Kitchen sink","title":"Customer fields"},
+          params: [],
+          children: [],
+        }
+      ],
+    },
+  {
+      id: "subscriptions",
+      path: "/subscriptions/",
+      file: "src/routes/subscriptions/index.mesa",
+      companion: null,
+      layout: "src/routes/_module.mesa",
+      meta: {"siteName":"Kitchen sink","title":"Subscriptions","isIndex":true},
+      params: [],
+      children: [
+      {
+          id: "subscriptions.[id]",
+          path: "/subscriptions/:id/",
+          file: "src/routes/subscriptions/[id].mesa",
+          companion: null,
+          layout: "src/routes/_module.mesa",
+          meta: {"siteName":"Kitchen sink","title":"Subscription","dynamic":true},
+          params: ["id"],
+          children: [],
+        }
+      ],
+    },
+  {
+      id: "users",
+      path: "/users/",
+      file: "src/routes/users/index.mesa",
+      companion: null,
+      layout: "src/routes/_module.mesa",
+      meta: {"siteName":"Kitchen sink","title":"Users","isIndex":true},
+      params: [],
       children: [],
     }
   ],
@@ -123,13 +249,25 @@ export const components = {
   'cart': () => import('../src/routes/cart/index.mesa'),
   'customers': () => import('../src/routes/customers/index.mesa'),
   'inventory': () => import('../src/routes/inventory/index.mesa'),
+  'invoices': () => import('../src/routes/invoices/index.mesa'),
+  'invoices.[id]': () => import('../src/routes/invoices/[id].mesa'),
   'orders': () => import('../src/routes/orders/index.mesa'),
   'orders.create': () => import('../src/routes/orders/create.mesa'),
   'orders.[id]': () => import('../src/routes/orders/[id].mesa'),
+  'payroll': () => import('../src/routes/payroll/index.mesa'),
+  'payroll.[id]': () => import('../src/routes/payroll/[id].mesa'),
+  'people': () => import('../src/routes/people/index.mesa'),
+  'people.[id]': () => import('../src/routes/people/[id].mesa'),
+  'plans': () => import('../src/routes/plans/index.mesa'),
+  'plans.[id]': () => import('../src/routes/plans/[id].mesa'),
   'products': () => import('../src/routes/products/index.mesa'),
   'products.create': () => import('../src/routes/products/create.mesa'),
   'products.[id]': () => import('../src/routes/products/[id].mesa'),
   'settings': () => import('../src/routes/settings/index.mesa'),
+  'settings.fields': () => import('../src/routes/settings/fields.mesa'),
+  'subscriptions': () => import('../src/routes/subscriptions/index.mesa'),
+  'subscriptions.[id]': () => import('../src/routes/subscriptions/[id].mesa'),
+  'users': () => import('../src/routes/users/index.mesa'),
 }
 
 
@@ -153,13 +291,25 @@ export const all = [
   "/cart/",
   "/customers/",
   "/inventory/",
+  "/invoices/",
+  "/invoices/:id/",
   "/orders/",
   "/orders/create/",
   "/orders/:id/",
+  "/payroll/",
+  "/payroll/:id/",
+  "/people/",
+  "/people/:id/",
+  "/plans/",
+  "/plans/:id/",
   "/products/",
   "/products/create/",
   "/products/:id/",
-  "/settings/"
+  "/settings/",
+  "/settings/fields/",
+  "/subscriptions/",
+  "/subscriptions/:id/",
+  "/users/"
 ]
 
 export const published = [
@@ -167,13 +317,25 @@ export const published = [
   "/cart/",
   "/customers/",
   "/inventory/",
+  "/invoices/",
+  "/invoices/:id/",
   "/orders/",
   "/orders/create/",
   "/orders/:id/",
+  "/payroll/",
+  "/payroll/:id/",
+  "/people/",
+  "/people/:id/",
+  "/plans/",
+  "/plans/:id/",
   "/products/",
   "/products/create/",
   "/products/:id/",
-  "/settings/"
+  "/settings/",
+  "/settings/fields/",
+  "/subscriptions/",
+  "/subscriptions/:id/",
+  "/users/"
 ]
 
 export const indexed = [
@@ -181,11 +343,18 @@ export const indexed = [
   "/cart/",
   "/customers/",
   "/inventory/",
+  "/invoices/",
   "/orders/",
   "/orders/create/",
+  "/payroll/",
+  "/people/",
+  "/plans/",
   "/products/",
   "/products/create/",
-  "/settings/"
+  "/settings/",
+  "/settings/fields/",
+  "/subscriptions/",
+  "/users/"
 ]
 
 export const redirects = []

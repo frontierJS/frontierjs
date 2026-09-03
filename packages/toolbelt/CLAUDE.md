@@ -159,6 +159,26 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
   The smallest thing a split can hand out is one of whatever `amount` is counted
   in, which the caller decided by holding an integer. `FJS-D154` was filed with
   a third parameter and it did not survive being written.
+- **The canonical string is six lines and the query is the third.** Method,
+  path, query, timestamp, nonce, body hash — joined with newlines, so no part
+  may contain one. The query is the one line allowed to be EMPTY: a request with
+  no parameters signs an empty line rather than omitting one, or a query could
+  be smuggled into the path. It is canonicalised — pairs sorted by key then
+  value, RFC 3986 encoded (`encodeURIComponent` leaves `!'()*` alone and the RFC
+  reserves them) — because nothing preserves parameter order across a proxy or a
+  client library, and an order-sensitive signature fails intermittently and
+  reads as a clock problem.
+- **The version rides in the signature VALUE, `v2-sha256=…`.** A v1 signature is
+  refused by name before the digest is compared. Both halves matter: every
+  already-deployed signer emits v1, and *signature does not match* is the same
+  sentence a wrong secret produces, which is the wrong half to spend an outage
+  on. Changing the canonical string means bumping `SIGNATURE_VERSION` and the
+  two prefixes beside it — a change that only alters the string is a fleet-wide
+  401 nobody can diagnose.
+- **`canonicalQuery` checks `Array.isArray` BEFORE `.entries()`.** An Array has
+  an `entries()` of its own and it answers index/value pairs, so a list of pairs
+  canonicalises as `0=to%2Calice` — a well-formed string that agrees with
+  nothing.
 - **`createStore` is NOT here and must not arrive.** `FJS-D16` named it to move
   and the ruling is amended: a store is state. Admitting one costs the standing
   that lets litestone and mesa import this package at all.

@@ -245,6 +245,25 @@ function buildCompiledSchema(schema: Schema, opts: SchemaOptions = {}): Compiled
         }
       }
 
+      // A key that is a PATH into a declared field — `settings.commute` — is
+      // carried rather than stripped, so the Data boundary is the one that
+      // answers it (FJS-658). The strip is mass-assignment protection and is
+      // right about a key with nothing behind it; this one names a field the
+      // schema declares, which is a caller who meant something, and stripping
+      // it made the request a 200 that changed nothing.
+      //
+      // Carried and not refused HERE because litestone already refuses it by
+      // name and knows the column's type, so its sentence can say whether the
+      // target is a document or a scalar. Two boundaries writing that sentence
+      // is how the two come to disagree. The value is never a column — the
+      // Data boundary throws on the key before any write — so carrying it past
+      // validation grants nothing.
+      for (const key of Object.keys(input as Record<string, unknown>)) {
+        if (key in schema || key in data) continue
+        const dot = key.indexOf('.')
+        if (dot > 0 && key.slice(0, dot) in schema) data[key] = (input as Record<string, unknown>)[key]
+      }
+
       return { valid: errors.length === 0, data, errors }
     },
 

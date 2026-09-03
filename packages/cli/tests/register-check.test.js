@@ -44,6 +44,14 @@ beforeAll(() => {
     '| <a id="fjs-020"></a>FJS-020 | cli | **Reused id, first.** | open | 2026-08-17 | — |',
     '| <a id="fjs-020"></a>FJS-020 | ui | **Reused id, second.** | open | 2026-08-17 | — |',
     '| <a id="fjs-021"></a>FJS-021 | cli | **Done, and still here.** | closed | 2026-08-17 | — |',
+    // Three shapes that do not line up with the header above them, and two that
+    // do. The header is the declaration; a row is graded against it and never
+    // against a count written into the rule.
+    '| <a id="fjs-030"></a>FJS-030 | cli | **One cell too many.** | open | 2026-08-17 | — | dropped when rendered |',
+    '| <a id="fjs-031"></a>FJS-031 | cli | **Too narrow to reach its date.** | open |',
+    '| <a id="fjs-032"></a>FJS-032 | cli — **A closed-shaped row in an open table.** | 2026-08-17 | how it was fixed |',
+    '| <a id="fjs-033"></a>FJS-033 | cli | **An escaped \\| pipe is not a cell.** | open | 2026-08-17 | — |',
+    '| <a id="fjs-034"></a>FJS-034 | cli | **A blank date is a state, not a shape.** | open | — | — |',
     '',
     '## Decisions awaiting a ruling',
     '| Id | Pkg | Question | Detail |',
@@ -134,6 +142,42 @@ describe('errors', () => {
     const result = runRegisterCheck({ root: ROOT, today: TODAY })
     expect(of(result, 'unknown-status').some(h => h.id === 'FJS-021')).toBe(false)
     expect(of(result, 'closed-in-open').some(h => h.id === 'FJS-010')).toBe(false)
+  })
+
+  test('a row that does not line up with its table, in both directions', () => {
+    // Two failures, one rule, because both are *the row disagrees with its
+    // header* and both are silent. Wider: markdown DROPS every cell past the
+    // header's width, which in this repo's § Closed took the citations off 137
+    // rows while they sat in the file. Narrower or misplaced: the reader infers
+    // a row's shape from its cell COUNT, so a four-cell row in a six-column
+    // table was read as a decision-shaped one and given a status nobody wrote —
+    // which is what let four closed rows sit in § S3 where `closed-in-open`
+    // could not see them, and two open rows sit in § Closed uncounted.
+    const hits = of(runRegisterCheck({ root: ROOT, today: TODAY }), 'row-shape')
+    expect(hits.map(h => h.id).sort()).toEqual(['FJS-030', 'FJS-031', 'FJS-032'])
+
+    const wide = hits.find(h => h.id === 'FJS-030')
+    expect(wide.message).toContain('7 cells where its table declares 6')
+    expect(wide.detail).toContain('dropped when the file is rendered')
+
+    // Narrower is the other failure and gets the other remedy — the row came
+    // from a different table, so it moves rather than being rewritten.
+    expect(hits.find(h => h.id === 'FJS-031').detail).toContain('another table')
+    expect(hits.find(h => h.id === 'FJS-032').detail).toContain('column 5 should hold the date')
+  })
+
+  test('an escaped pipe, a blank date and a BAD date are not shape problems', () => {
+    // Three negative controls, and the third is the one that shaped the rule.
+    // `\\|` is prose and splits nothing. A blank date is a legitimate state — a
+    // row filed before anybody ran it. And a date cell reading "last tuesday"
+    // is a bad VALUE in the right column, which `malformed-date` already owns:
+    // grading it here would report one mistake twice and point at the wrong fix.
+    const result = runRegisterCheck({ root: ROOT, today: TODAY })
+    const ids    = of(result, 'row-shape').map(h => h.id)
+    expect(ids).not.toContain('FJS-033')
+    expect(ids).not.toContain('FJS-034')
+    expect(ids).not.toContain('FJS-011')
+    expect(of(result, 'malformed-date').map(h => h.id)).toContain('FJS-011')
   })
 
   test('every error is levelled as one', () => {

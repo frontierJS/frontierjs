@@ -1,0 +1,297 @@
+---
+title: Pay run
+---
+<script>
+  // One period: who was paid, what it cost, and what the books say about it.
+  //
+  // ─── Three reads and each is a different shape ────────────────────────────
+  //
+  //   the RUN       `record(id)`                     a row that moves
+  //   a PAYSLIP     `record(id, { composed: true })` a header AND its lines
+  //   the JOURNAL   `record(id, { composed: true })` a header with NO amount
+  //
+  // The last two are `FJS-D161`'s case and the journal is the sharper of them:
+  // a journal header carries no money at all — it is entirely in the lines — so
+  // an uncomposed node would drop them the first time anything announced the
+  // entry, leaving a screen showing a reference and a date and nothing anybody
+  // could check.
+  //
+  // ─── What a payslip's lines have to show ──────────────────────────────────
+  //
+  // Which run each ADJUSTMENT corrects. `PayslipLine.correctsPayRunId` is the
+  // only thing in this schema that says a row was derived from other rows
+  // (`api/src/domain/payroll`), so a line that just said *Back pay* would be a
+  // figure with no way back to where it came from.
+  import { payRuns }       from '@/resources/PayRun.mesa'
+  import { payslips }      from '@/resources/Payslip.mesa'
+  import { journalEntries } from '@/resources/JournalEntry.mesa'
+  import { employees }     from '@/resources/Employee.mesa'
+  import { session } from '@/session.js'
+  import { page } from '@frontierjs/sierra/router'
+  import { money } from '../../money.js'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Badge         from '@frontierjs/ui/components/display/Badge.mesa'
+  import Breadcrumbs   from '@frontierjs/ui/components/display/Breadcrumbs.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Drawer        from '@frontierjs/ui/components/overlay/Drawer.mesa'
+  import Mono          from '@frontierjs/ui/components/display/Mono.mesa'
+  import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Skeleton      from '@frontierjs/ui/components/feedback/Skeleton.mesa'
+  import StatCard      from '@frontierjs/ui/components/display/StatCard.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+
+  $: (page.params, session.level)
+
+  let run     = null
+  let row     = null
+  let unwatch = null
+  let slips   = []
+  let people  = new Map()
+  let entry   = null
+  let entryRow = null
+  let unwatchEntry = null
+  let error   = null
+
+  // The payslip a person opened, composed.
+  let opened   = null
+  let openedRow = null
+  let unwatchOpen = null
+  let runNames = new Map()     // payRunId → reference, for the adjustment lines
+
+  const TONE = { draft: 'muted', calculated: 'info', approved: 'warning', paid: 'success' }
+
+  const slipColumns = [
+    { key: 'reference',  label: 'Payslip' },
+    { key: 'employee',   label: 'Employee' },
+    { key: 'gross',      label: 'Gross',      align: 'right' },
+    { key: 'deductions', label: 'Deductions', align: 'right' },
+    { key: 'net',        label: 'Net',        align: 'right' },
+    { key: 'sent',       label: 'Sent' },
+  ]
+
+  const lineColumns = [
+    { key: 'description', label: 'Line' },
+    { key: 'amount',      label: 'Amount', align: 'right' },
+    { key: 'counts',      label: '' },
+  ]
+
+  const journalColumns = [
+    { key: 'account', label: 'Account' },
+    { key: 'debit',   label: 'Debit',  align: 'right' },
+    { key: 'credit',  label: 'Credit', align: 'right' },
+  ]
+
+  function watch() {
+    row?.release()
+    row = payRuns.record(page.params.id)
+    unwatch = row.subscribe(v => { run = v })
+    return row.ready
+  }
+
+  async function loadSlips() {
+    const list = await payslips.service.find(
+      { payRunId: Number(page.params.id) }, { orderBy: 'reference', limit: 500 })
+    slips = list?.data ?? []
+
+    if (!slips.length) { people = new Map(); return }
+    // One request for the names, not one per payslip. A payslip names an
+    // employee id and nobody recognises an id.
+    try {
+      const staff = await employees.service.find(
+        { id: { in: [...new Set(slips.map(s => s.employeeId))] } }, { limit: 500 })
+      const named = new Map()
+      for (const e of staff?.data ?? []) named.set(e.id, e)
+      people = named
+    } catch { people = new Map() }
+  }
+
+  /** The journal, watched composed — the header carries no amount at all. */
+  async function loadJournal() {
+    unwatchEntry?.(); entryRow?.release()
+    entryRow = null; entry = null
+    const list = await journalEntries.service.find(
+      { payRunId: Number(page.params.id) }, { limit: 1 })
+    const found = list?.data?.[0]
+    if (!found) return
+    entryRow = journalEntries.record(found.id, { composed: true })
+    unwatchEntry = entryRow.subscribe(v => { entry = v })
+    await entryRow.ready
+  }
+
+  async function boot() {
+    error = null
+    try { await watch(); await Promise.all([loadSlips(), loadJournal()]) }
+    catch (e) { error = e.message }
+  }
+  boot()
+  $: page.params.id, () => boot()
+  $.onDestroy(() => {
+    unwatch?.(); row?.release()
+    unwatchEntry?.(); entryRow?.release()
+    unwatchOpen?.(); openedRow?.release()
+  })
+
+  /** Open one payslip, composed — a header and the lines that add up to it. */
+  async function openSlip(s) {
+    unwatchOpen?.(); openedRow?.release()
+    opened = null
+    openedRow = payslips.record(s.id, { composed: true })
+    unwatchOpen = openedRow.subscribe(v => { opened = v })
+    await openedRow.ready
+
+    // Name the runs the adjustment lines correct. An id is not an answer.
+    const ids = [...new Set((opened?.lines ?? [])
+      .map(l => l.correctsPayRunId).filter(Boolean))]
+    if (!ids.length) { runNames = new Map(); return }
+    try {
+      const list = await payRuns.service.find({ id: { in: ids } }, { limit: 100 })
+      const named = new Map()
+      for (const r of list?.data ?? []) named.set(r.id, r.reference)
+      runNames = named
+    } catch { runNames = new Map() }
+  }
+
+  function closeSlip() {
+    unwatchOpen?.(); openedRow?.release()
+    openedRow = null; opened = null
+  }
+
+  $: totals = slips.reduce((t, s) => ({
+    gross:      t.gross      + s.gross,
+    deductions: t.deductions + s.deductions,
+    net:        t.net        + s.net,
+    employer:   t.employer   + s.employerCost,
+  }), { gross: 0, deductions: 0, net: 0, employer: 0 })
+
+  const when = iso => iso ? new Date(iso).toLocaleDateString(undefined,
+    { year: 'numeric', month: 'short', day: 'numeric' }) : null
+</script>
+
+<Breadcrumbs items={[{ label: 'Payroll', href: '/payroll/' }, { label: run?.reference ?? '…' }]} />
+
+{#if error}<Alert tone="danger" id="rd-error">{error}</Alert>{/if}
+
+{#if !run}
+  <Skeleton lines={4} />
+{:else}
+  <SectionHeader title={run.reference} level={1}>
+    {#snippet action()}
+      <div class="cluster">
+        <Pill tone={TONE[run.status] ?? 'muted'} data-status={run.status}>{run.status}</Pill>
+        <Badge tone="muted">{when(run.periodStart)} – {when(run.periodEnd)}</Badge>
+        {#if run.approvedBy}<Badge tone="info" data-approved>approved by {run.approvedBy}</Badge>{/if}
+      </div>
+    {/snippet}
+  </SectionHeader>
+
+  <div class="cluster">
+    <StatCard label="People"        value={String(slips.length)} id="rd-count" />
+    <StatCard label="Gross"         value={money(totals.gross)}      id="rd-gross" />
+    <StatCard label="Deductions"    value={money(totals.deductions)} id="rd-deductions" />
+    <StatCard label="Net"           value={money(totals.net)}        id="rd-net" />
+    <StatCard label="Employer cost" value={money(totals.employer)}   id="rd-employer" />
+  </div>
+
+  <Alert tone="muted">
+    Employer NI and the employer's pension are on every payslip and are
+    <strong>not</strong> deductions from the person — so they are counted here
+    and are not in the net. That is the reason the cross-row invariant this
+    domain has to hold reads <em>the lines that <strong>count</strong> sum to
+    net</em>, and needs a predicate over the child rather than a plain
+    aggregate.
+  </Alert>
+
+  <SectionHeader title="Payslips" level={2} />
+
+  <Table columns={slipColumns} rows={slips} striped hover compact>
+    {#snippet row(s)}
+      <tr data-payslip={s.id} data-employee={s.employeeId}>
+        <td>
+          <a href="#" data-open onclick={(e) => { e.preventDefault(); openSlip(s) }}>
+            <Mono size="xs">{s.reference}</Mono>
+          </a>
+        </td>
+        <td>{people.get(s.employeeId)?.name ?? '#' + s.employeeId}</td>
+        <td class="text-right" data-gross={s.gross}>{money(s.gross)}</td>
+        <td class="text-right" data-deductions={s.deductions}>{money(s.deductions)}</td>
+        <td class="text-right" data-net={s.net}>{money(s.net)}</td>
+        <td>
+          {#if s.sentAt}<Pill tone="success" data-sent>{when(s.sentAt)}</Pill>
+          {:else}<span class="text-muted">—</span>{/if}
+        </td>
+      </tr>
+    {/snippet}
+  </Table>
+
+  {#if entry}
+    <SectionHeader title="The books" level={2}>
+      {#snippet action()}
+        <Mono size="xs" data-journal={entry.reference}>{entry.reference}</Mono>
+      {/snippet}
+    </SectionHeader>
+
+    <Table columns={journalColumns} rows={entry.lines ?? []} striped compact>
+      {#snippet row(l)}
+        <tr data-account={l.account}>
+          <td>{l.account}</td>
+          <td class="text-right" data-debit={l.amount > 0 ? l.amount : ''}>
+            {#if l.amount > 0}{money(l.amount)}{/if}
+          </td>
+          <td class="text-right" data-credit={l.amount < 0 ? -l.amount : ''}>
+            {#if l.amount < 0}{money(-l.amount)}{/if}
+          </td>
+        </tr>
+      {/snippet}
+    </Table>
+
+    <Alert tone="muted">
+      One journal for the whole run and not one per person, because the books
+      record a payroll rather than a person — the per-person document is the
+      payslip. It balances by identity rather than by arithmetic luck:
+      <code>net = gross − tax − pension</code> and
+      <code>employer cost = employer pension + employer NI</code>, so the single
+      debit is exactly the sum of the credits.
+    </Alert>
+  {/if}
+{/if}
+
+<Drawer open={opened !== null} title={opened?.reference ?? 'Payslip'} side="right" onclose={closeSlip}>
+  {#if opened}
+    <div class="cluster">
+      <StatCard label="Gross"      value={money(opened.gross)} />
+      <StatCard label="Deductions" value={money(opened.deductions)} />
+      <StatCard label="Net"        value={money(opened.net)} id="ps-net" />
+    </div>
+
+    <Table columns={lineColumns} rows={opened.lines ?? []} striped compact>
+      {#snippet row(l)}
+        <tr data-line={l.id} data-kind={l.kind}
+            data-corrects={l.correctsPayRunId ?? ''}>
+          <td>
+            {l.description}
+            <!-- The provenance, and it is the only kind this schema can state. -->
+            {#if l.correctsPayRunId}
+              <Badge tone="warning" data-adjustment>
+                corrects {runNames.get(l.correctsPayRunId) ?? '#' + l.correctsPayRunId}
+              </Badge>
+            {/if}
+          </td>
+          <td class="text-right" data-amount={l.amount}>{money(l.amount)}</td>
+          <td>
+            {#if !l.counts}<Badge tone="muted">employer</Badge>{/if}
+          </td>
+        </tr>
+      {/snippet}
+    </Table>
+
+    <Alert tone="muted">
+      A line marked <strong>corrects</strong> was computed from a period that
+      has already been paid. The payslip it puts right is not edited — every
+      figure on one is <code>@immutable</code> — so the difference is carried
+      here instead, and the link back is the only thing in the schema that says
+      this row was derived from those rows.
+    </Alert>
+  {/if}
+</Drawer>

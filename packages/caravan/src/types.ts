@@ -305,6 +305,18 @@ export interface CaravanOptions {
    * because `bun:sqlite` is synchronous.
    */
   busyTimeout?:  number
+
+  /**
+   * `PRAGMA synchronous` on the jobs database. Default: 'NORMAL'.
+   *
+   * With WAL, NORMAL fsyncs at a checkpoint rather than at every commit — 43x
+   * dispatch throughput, and a dispatch inside an HTTP handler stops blocking
+   * the event loop on an fsync. It loses committed rows only on POWER LOSS, not
+   * on a process crash; a lost claim is a running row whose owner stops
+   * heartbeating, which the lease sweep recovers by design. 'FULL' is for a
+   * deployment that would rather pay the fsync.
+   */
+  synchronous?:  'NORMAL' | 'FULL'
   /**
    * Named queue configuration. The 'default' queue always exists.
    * @example { critical: { concurrency: 5 }, email: { concurrency: 1 } }
@@ -336,10 +348,25 @@ export interface CaravanOptions {
   cleanupAfter?: number
   /**
    * Mount admin HTTP endpoints when used as a Junction plugin.
-   * GET  /jobs, GET /jobs/:id, POST /jobs/:id/retry, POST /jobs/:id/cancel
-   * Default: false
+   * GET  /jobs, GET /jobs/{id}, POST /jobs/{id}/retry, POST /jobs/{id}/cancel,
+   * POST /jobs/run/{name}. Default: false
+   *
+   * These are raw routes: no gate, no row policy, no session hook is on the
+   * path, and `run/{name}` executes a registered handler with the app's own
+   * standing. Under `NODE_ENV=production` they are NOT mounted unless
+   * `authorize` is given — a function handed the transport ctx, so an app
+   * composes it with its own session and gate. `secret` is a development
+   * shortcut compared constant-time against `x-caravan-secret`, and is refused
+   * in production.
+   *
+   * `GET /jobs` redacts each job's `data` unless the request asks for it with
+   * `?data=1`: a payload is whatever a caller passed to `dispatch()`.
    */
-  admin?: boolean | { path?: string; secret?: string }
+  admin?: boolean | {
+    path?:      string
+    secret?:    string
+    authorize?: (ctx: unknown) => boolean | Promise<boolean>
+  }
 
   /**
    * How often this instance says it is alive, in ms. Default: 5_000.

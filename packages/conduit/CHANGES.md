@@ -1,5 +1,49 @@
 # Changes — @frontierjs/conduit
 
+## 2026-09-02 — a redirect is an answer, not a hop; and the HMAC signs the query
+
+`FJS-679`, `FJS-678`. 252 tests, 0 fail. Typecheck clean.
+
+**Every fetch is `redirect: 'manual'` now.** It never was, and the default
+belonged to the runtime: `fetch` follows a 3xx and re-sends every header it was
+given except `Authorization`. Measured against two hosts — host A answers 302 to
+host B — an `api_key` target handed B its key, an `hmac` target handed B a valid
+signature, and a 302 on a POST arrived at B as a GET still carrying the
+`Idempotency-Key`, which is the token that makes a retry safe going to an
+address the descriptor never named. A bearer target was the one shape that was
+safe, by accident, because that is the header the runtime happens to strip.
+
+A 3xx is its own result kind, `redirected`, carrying `meta.status` and the
+resolved `meta.headers.location`. Its own kind rather than a `server_error`,
+because the three things that word decides all disagree here: it is not
+retryable — the same request gets the same 3xx — it says nothing about the
+target's health, so it must not count toward the breaker (five of them under
+`server_error` opened it and every later send shed as `circuit_open` against a
+target answering correctly), and the caller has something to act on.
+
+`follow_redirects: 'never' | 'same-origin'` on the descriptor, default `never`.
+`same-origin` follows at most 5 hops, on GET/HEAD only unless the status is
+307/308 — 301/302/303 permit a method rewrite and this transport rewrites
+nothing — and never across an origin, which is where the credential leaks. It is
+**refused at `register()` beside `hmac` or `api_key`**: a followed hop rebuilds
+its headers for the new address, and that is either a signature bound to a path
+and query that are no longer the ones being requested, or a key sent somewhere
+the descriptor never named. Neither is something a per-request decision can make
+safe, so it is a construction-time refusal rather than a runtime branch.
+
+`follow_redirects` is in the SQLite store's `EXTRA_KEYS`, and there is a test for
+the round trip. A descriptor field absent from that list is dropped on write with
+nothing said (`FJS-657`): the target keeps working and quietly stops following
+after the first restart.
+
+**The HMAC signs the query** (`FJS-678`). `buildAuthHeaders` takes a `query`
+beside its `path` and the http transport passes `url.search`, so a captured
+signed GET can no longer be replayed against different parameters. The websocket
+transport signs its upgrade URL's query for the same reason — a verifier
+recomputing from the raw URL would otherwise build a different string than this
+side did and refuse every connection to an address carrying one. The signature
+value is `v2-sha256=…`; an old signer against a new verifier is refused by name.
+
 ## 2026-08-27 — a target declares how its bodies are encoded
 
 `FJS-556`. 204 tests, 0 fail. Typecheck clean.
@@ -131,3 +175,37 @@ and a body that does not parse is still a failure: nothing said what it was.
 Found wiring basecamp's notification channels through the outbound boundary,
 where the test delivery arrived at the sink and was reported as an error.
 1 test; 193 pass.
+
+## Unreleased
+
+**The header merge was case-sensitive and header names are not** (`FJS-656`). A
+caller spelling `authorization` where `buildAuthHeaders` writes `Authorization`
+produced two object keys and `fetch` joined them — `Bearer FORGED, Bearer REAL`
+on the wire, across bearer, api_key and hmac alike, and `content-type` with it.
+`mergeHeaders` in `base.ts` is the one owner now and lowercases every key.
+
+**A response's headers reach the caller** (`FJS-648`). `meta.headers`, on success
+and on failure. `Link`, `ETag` and `X-Total-Count` were read and discarded, so a
+target that paginates by header could not be walked past page one.
+
+**A 304 is a success** (`FJS-649`) — `data: null`, `meta.status: 304`. It was a
+`server_error`, so a conditional request failed in the only way it can succeed.
+
+**`rate_limited` is its own error kind** (`FJS-650`), carrying a parsed
+`retry_after_ms` that the retry ladder waits instead of its own backoff, and out
+of the circuit breaker's fault set — a 429 says the target is healthy.
+
+**`encoding: 'binary'`** (`FJS-651`). Bytes pass through untouched; bytes under
+`json`/`form` and a structure under `binary` are both refused by name.
+`@frontierjs/toolbelt/signature` hashes bytes now, so a signed binary request
+signs what was sent.
+
+**`headers` on a target** (`FJS-652`) — a pinned API version, a required
+`User-Agent`. Below the caller's, below auth.
+
+**The SQLite registry keeps the optional fields** (`FJS-657`). It had never
+stored `encoding`, so a restart turned a `form` target back into a JSON one.
+
+**The default signature prefix is `X-Fjs`, was `X-Hub`** — a leftover from when
+this package was one app's fleet arm. Every in-tree user took the default, so the
+rename is atomic; `@frontierjs/toolbelt/signature` owns it.

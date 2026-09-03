@@ -150,7 +150,7 @@
 // deliberately does not pass one.
 database main { path env("DATABASE_URL", "./db/basecamp.db") }
 
-database audit { path "./db/audit/" driver logger retention 90d }
+database audit { path env("AUDIT_PATH", "./db/audit/") driver logger retention 90d }
 
 // ============================================================
 // TENANCY
@@ -394,6 +394,14 @@ model User {
   // @@tenant(none) — identity spans workspaces — a person is one person in all of
   // them, and `@frontierjs/auth` owns this model
   @@tenant(none)
+
+  // The principal `auth()` reads. Declaring it is what makes a claim GRADED:
+  // without it `auth().isSystemAdmn` parses, builds, and then denies every
+  // reader on the SQL side while allowing every writer on the JS side
+  // (`FJS-666`). `workspaceId` is the tenancy claim and is known from the
+  // `tenancy { }` block; the standing this app grades on is `isSystemAdmin`,
+  // which is a column right here.
+  @@auth
 }
 
 // ── The credential machinery, imported ──────────────────────────────────────
@@ -641,7 +649,12 @@ model Invitation {
   email        String        @trim @email @lower @length(6, 200)
   role         WorkspaceRole @default(developer)
 
-  token        String        @unique @guarded(all)
+  // `global` because a token is the credential itself: it is looked up BY its
+  // value, before anybody knows which workspace the invitation belongs to, so
+  // it has to be unique across the installation rather than within a tenant.
+  // The other 22 uniques on scoped models here are per-tenant and say so by
+  // carrying `workspaceId` or a key that reaches it.
+  token        String        @unique(global) @guarded(all)
   expiresAt    DateTime
 
   invitedBy    String?

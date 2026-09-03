@@ -160,4 +160,28 @@ export async function run(t) {
   await t.clickAt('#forced-save')
   await t.eventually(`document.querySelector('#saved').textContent`, '1',
     'and a submit button inside it submits')
+
+  /* ── a form with nothing to fill in (FJS-607) ─────────────────────────── */
+
+  // `slot=` is an attribute on an ELEMENT, so wrapping a slotted child in
+  // `{#if}` puts the BLOCK in the default slot: `$slots.default` is truthy,
+  // generation turns off, and the form renders with no controls in it. The
+  // failure is total and silent, and it looks like a component that failed to
+  // load.
+  //
+  // The first two rows PIN the behaviour rather than assert it is right —
+  // whether a block whose every branch is slotted counts as default content is
+  // a Mesa question about `$slots`, and settling it turns these red on purpose.
+  // The third is what shipped: the form can see the pair — it generated nothing
+  // AND nothing a person can type into is inside it — and says so.
+  t.is(await t.evaluate(`
+    return document.querySelectorAll('#conditional-actions input, #conditional-actions select, #conditional-actions textarea').length;
+  `), 0, 'a slot= child inside {#if} turns generation off — no control is rendered')
+  t.ok(await t.evaluate(`
+    return document.querySelector('#conditional-actions #cond-save') !== null;
+  `), 'while the button itself renders, which is what makes it read as a working form')
+
+  const empty = await t.evaluate(`return window.kitWarnings.filter(w => w.includes('no fields were rendered'));`)
+  t.ok(empty.length === 1 && empty[0].includes('title'),
+    'and the form reports it, naming the fields the resource offered')
 }

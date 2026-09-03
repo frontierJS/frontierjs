@@ -178,12 +178,13 @@ try {
 
   // ── 5. dispatching the same move twice books one courier ───────────────
   //
-  // `unique` is keyed to the order. Shipping a shipped order is a NO-OP at the
-  // Data boundary — the row is already at the target state, so unlike `cancel`
-  // from `shipped` it does not 409 — and the action therefore reaches its
-  // dispatch a second time. A duplicate booking is a real parcel, so the queue
-  // has to be the thing that refuses, and that is worth asserting rather than
-  // assuming: it used to answer `500 UNIQUE constraint failed: jobs.unique_key`.
+  // Shipping a shipped order is refused at the Data boundary: since `FJS-611` a
+  // move asked for BY NAME onto the state the row already holds is a
+  // `TransitionConflictError` (409, `retryable: false`), because arriving there
+  // means the move did not happen here. So the dispatch is never reached, and
+  // the booking count is held at zero by the state machine rather than by the
+  // queue. A duplicate booking is a real parcel, so it is still worth counting
+  // — what changed is WHICH mechanism is being asked.
   // Counted as a DELTA, not as a total. jobs.db outlives db/shop.db across runs
   // and SQLite reuses row ids, so `book-courier:5` names this run's order and
   // also whichever order held id 5 last time — an absolute count reports the
@@ -396,7 +397,12 @@ if (process.exitCode) process.exit(1)
 const expected = {
   'admin.list': { status: 200, isArray: true },
   'cron.registered': {
-    names: ['release-holds', 'retention', 'sweep-abandoned'],
+    // Every schedule, by name. Two of these are billing's — a subscription
+    // renews on a clock and an unpaid one is chased on another — and they
+    // are here for the same reason as the other three: a schedule that
+    // stops being registered is nothing happening.
+    names: ['dun-subscriptions', 'release-holds', 'renew-subscriptions',
+            'retention', 'sweep-abandoned'],
     cron:  '0 3 * * *',
     holds: '*/5 * * * *',
     // 04:00, after the 03:00 sweep: a run that cancels an order has already
@@ -419,13 +425,22 @@ const expected = {
     accepted: 200, finished: 'done', left: 1, leftIsFresh: true, othersKept: true,
   },
 
-  // Shipping a shipped order is a no-op at the Data boundary (the row is
-  // already at the target state), so the SECOND ship answers 200 and the only
-  // thing that must not happen twice is the courier booking. `unique` is what
-  // stops it — and it 500'd with `UNIQUE constraint failed: jobs.unique_key`
-  // until caravan's dedupe was fixed to match a key in any state, not only a
-  // pending one.
-  'ship.twice': { status: 200, newBookings: 0 },
+  // Shipping a shipped order is a `TransitionConflictError` — 409, not the 200
+  // this asserted for most of its life. `FJS-611` is the change: a move asked
+  // for BY NAME is not an update that happens to carry the column, so arriving
+  // at the state the row already holds means the move did not happen HERE, and
+  // the early return that used to call it a no-op was also skipping the gate,
+  // the capability and `@system`.
+  //
+  // What that costs this assertion is worth saying rather than leaving to be
+  // rediscovered: `newBookings: 0` is now guaranteed by the TRANSITION, which
+  // refuses before anything is dispatched, and no longer by caravan's `unique`.
+  // The end-to-end crossing it used to prove is not reachable through a named
+  // move any more. Caravan's own suite holds the dedupe — four cases in
+  // `packages/caravan/tests/caravan.test.ts`, including a second dispatch while
+  // the first is still queued — so nothing is uncovered; it is covered one
+  // layer down instead of two layers up.
+  'ship.twice': { status: 409, newBookings: 0 },
 
   // One announcement for one payment, queued under the outbox row's own id.
   'outbox.announcementQueued': { count: 1, idIsRowId: true, uniqueKey: null },

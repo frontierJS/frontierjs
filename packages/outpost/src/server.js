@@ -83,6 +83,19 @@ export function createOutpostServer(config, {
       return { exit_code: 0, stdout: `step '${body.step ?? 'unnamed'}' needs no work on this machine`, stderr: '' }
     },
 
+    // POST, and the parameters ride in the body like every other route here.
+    // It was a security property before `FJS-678`: the canonical string covered
+    // the method, the path and a hash of the body and nothing else, so a
+    // `GET /logs?app_id=…` let a caller swap the container name under a
+    // signature that was otherwise valid. The query is signed now; the body
+    // stays the shape, because a route reached both ways is two canonical
+    // strings for one request.
+    'POST /logs': (body) => docker.logs({
+      appId: body.app_id ?? body.deployment_id,
+      tail:  body.tail,
+      since: body.since,
+    }),
+
     'POST /system/prune':  (body) => inspector.prune({ targets: body.targets, keepImages: body.keep_images })
       .then(async result => ({ ...result, usage: await inspector.disk() })),
     'POST /volumes/prune': (body) => inspector.pruneVolumes(body.names ?? []),
@@ -100,7 +113,10 @@ export function createOutpostServer(config, {
 
     const body    = await req.text()
     const checked = await verifyRequest({
-      secret: config.secret, method: req.method, path, body, headers: req.headers,
+      // Recomputed from the RAW request URL: the query is part of the canonical
+      // string since `FJS-678`, and reading a path the router already stripped
+      // would sign a different request than the one that arrived.
+      secret: config.secret, method: req.method, path, query: url.search, body, headers: req.headers,
       // This machine's clock, stated: the kit takes no ambient state.
       toleranceSeconds: TOLERANCE_S, now: Math.floor(Date.now() / 1000), seenNonce,
     })

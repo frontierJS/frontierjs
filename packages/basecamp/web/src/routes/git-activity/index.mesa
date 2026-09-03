@@ -1,0 +1,118 @@
+---
+title: Git activity
+---
+<script>
+  // The mock's GitActivityView.
+  //
+  // Unlike the edge and the cloud bill, this one has an interface waiting for
+  // it: `IGit` in api/src/basecamp.types.ts, with Forgejo as the intended
+  // adapter and a Stub in front of it today. So the honest thing this screen
+  // can do now is REPORT that, off the portal — the same read
+  // /admin/adapters/ makes, so there is one answer to "is git wired" rather
+  // than two that can disagree.
+  //
+  // What the mock drew and what would fill the skeletons: repositories with
+  // open pull requests, CI status per branch, issue counts. `IGit` carries all
+  // three now — a repository record answers `ci`, `openPullRequests` and
+  // `openIssues`, and `listPullRequests(repo)` is the second call — so what is
+  // left is an adapter and a service, not an interface. The callout says which.
+  import { session } from '../../session.js'
+  import { portal } from '../../resources/Portal.mesa'
+
+  import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout  from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card     from '@frontierjs/ui/components/layout/Card.mesa'
+  import Pill     from '@frontierjs/ui/components/display/Pill.mesa'
+  import Skeleton from '@frontierjs/ui/components/feedback/Skeleton.mesa'
+
+  $: session.workspaceId
+
+  let entry   = null
+  let error   = null
+  let loading = true
+
+  async function load() {
+    error = null; loading = true
+    try {
+      // `get` pings; `find` does not. One adapter, so the ping is worth the
+      // wait — this screen exists to say whether it is there.
+      entry = await portal.service.get('git')
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  const TONE = { healthy: 'success', unconfigured: 'muted', unreachable: 'danger', degraded: 'warning' }
+</script>
+
+{#if error}
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if loading}
+  <div aria-busy="true" class="stack">
+    <Skeleton variant="text" width="12rem" />
+    <Skeleton height="16rem" />
+  </div>
+{:else if entry}
+  <Card>
+    <div class="section-header">
+      <h2 class="h4">{entry.name}</h2>
+      <Pill tone={TONE[entry.status] ?? 'muted'} id="git-status">{entry.status}</Pill>
+    </div>
+    <dl class="facts">
+      <dt>Adapter</dt><dd><code>{entry.adapter}</code></dd>
+      <dt>URL</dt><dd><code>{entry.url ?? 'not set'}</code></dd>
+    </dl>
+    <div class="cluster">
+      <Button variant="ghost" href="/admin/adapters/">All adapters</Button>
+    </div>
+  </Card>
+
+  {#if entry.configured}
+    <Callout tone="warning" title="Wired, and not read yet">
+      <p class="text-body">
+        <code>{entry.adapter}</code> is configured and <code>IGit</code> carries what this table
+        needs — <code>ci</code>, <code>openPullRequests</code> and <code>openIssues</code> per
+        repository, plus <code>listPullRequests</code>. What is missing is a service in front of
+        it, which is a read to design rather than a variable to set.
+      </p>
+    </Callout>
+  {:else}
+    <Callout tone="muted" title="Nothing is being asked">
+      <p class="text-body">
+        Git hosting is a stub until <code>providers.git.url</code> is set. Unconfigured is
+        not an error — this app runs without a git host, and the screens that would use one
+        say so rather than showing an empty list that reads like a git host with no repos.
+        <a href="/admin/adapters/">All adapters</a>.
+      </p>
+    </Callout>
+  {/if}
+
+  <Card>
+    <h2 class="h4">Repositories</h2>
+    <div aria-busy="true" class="stack" aria-label="Repositories, not connected">
+      <div class="tiles" style="--tile-min: 12rem">
+        <Skeleton variant="stat" />
+        <Skeleton variant="stat" />
+        <Skeleton variant="stat" />
+        <Skeleton variant="stat" />
+      </div>
+      <Skeleton variant="text" width="70%" />
+      <Skeleton variant="text" width="58%" />
+      <Skeleton variant="text" width="64%" />
+    </div>
+    <p class="text-sm text-muted">
+      Repositories, open pull requests, CI status and open issues. Each one is the host's
+      answer — none of it is stored here, because a mirror of somebody else's branch state
+      is stale the moment it is written.
+    </p>
+  </Card>
+{/if}

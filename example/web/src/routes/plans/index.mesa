@@ -1,0 +1,121 @@
+---
+title: Plans
+---
+<script>
+  // What the shop sells on a cycle.
+  //
+  // The column that makes this screen worth reading is `currentPrice`, and it
+  // is not a column anybody wrote: `@from(PlanVersion, max: price, where:
+  // "effectiveTo IS NULL")` on the model, so the open window's price arrives
+  // with the plan as a subquery. A list of plans and their prices is ONE
+  // request, and nothing here joins two tables to build one row.
+  //
+  // A price is not editable from this screen and cannot be — see Plan.mesa.
+  // Changing what a plan costs is a plan's own screen, because it is a write to
+  // a different table.
+  import Plan, { plans } from '@/resources/Plan.mesa'
+  import { session } from '@/session.js'
+  import { prefs } from '@/prefs.js'
+  import { useStore } from '@frontierjs/sierra/junction'
+  import { page, goto } from '@frontierjs/sierra/router'
+  import { money } from '../../money.js'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Badge         from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Drawer        from '@frontierjs/ui/components/overlay/Drawer.mesa'
+  import Mono          from '@frontierjs/ui/components/display/Mono.mesa'
+  import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+
+  const columns = [
+    { key: 'code',         label: 'Code' },
+    { key: 'name',         label: 'Name' },
+    { key: 'interval',     label: 'Billed' },
+    { key: 'currentPrice', label: 'Price now', align: 'right' },
+    { key: 'active',       label: 'Offered' },
+    { key: 'actions',      label: '' },
+  ]
+
+  const { get: rows, unsubscribe } = useStore(plans.store)
+  $.onDestroy(unsubscribe)
+
+  $: (session.level, prefs.dense, prefs.currency)
+
+  let error   = null
+  let editing = null      // the plan being created, or null
+
+  function load() {
+    plans.load(page.query, { orderBy: 'code', ...page.directives })
+      .catch(e => { error = e.message })
+  }
+  load()
+  $: page.query, page.directives, () => load()
+
+  // An affordance. The API grades the call again, and the number comes off the
+  // schema's own gate rather than being typed here.
+  $: canWrite = plans.can('create', session.level)
+
+  function open()  { editing = plans.make(); error = null }
+  function close() { editing = null }
+</script>
+
+<SectionHeader title="Plans" level={1}>
+  {#snippet action()}
+    <div class="cluster">
+      <a class="navlink" href="/subscriptions/">Subscriptions</a>
+      <a class="navlink" href="/invoices/">Invoices</a>
+      <Button id="p-new" disabled={!canWrite} onclick={open}>New plan</Button>
+    </div>
+  {/snippet}
+</SectionHeader>
+
+{#if error}<Alert tone="danger" id="p-error">{error}</Alert>{/if}
+
+<Table {columns} rows={rows()} striped hover compact={prefs.dense}>
+  {#snippet row(p)}
+    <tr data-plan={p.id} data-code={p.code}>
+      <td><Mono size="xs">{p.code}</Mono></td>
+      <td>
+        <a href={'/plans/' + p.id + '/'} data-open>{p.name}</a>
+        {#if p.description}<div class="text-muted text-sm">{p.description}</div>{/if}
+      </td>
+      <td><Badge tone="muted">{p.interval}</Badge></td>
+      <!--
+        `currentPrice` is null for a plan whose windows are all closed — a plan
+        with nothing on offer. A dash rather than a zero: nothing is not free.
+      -->
+      <td class="text-right" data-price={p.currentPrice ?? ''}>
+        {p.currentPrice == null ? '—' : money(p.currentPrice)}
+      </td>
+      <td><Pill tone={p.active ? 'success' : 'muted'} data-active={String(p.active)}>
+        {p.active ? 'on sale' : 'retired'}
+      </Pill></td>
+      <td><Button variant="ghost" href={'/plans/' + p.id + '/'}>Open</Button></td>
+    </tr>
+  {/snippet}
+</Table>
+
+<Alert tone="muted">
+  <code>currentPrice</code> is <code>@from(PlanVersion, max: price, where: "effectiveTo IS NULL")</code> —
+  the open window's price, read as a subquery. Retiring a plan is
+  <code>active</code>; it does not delete the versions past subscriptions point at.
+</Alert>
+
+<Drawer open={editing !== null} title="New plan" side="right" onclose={close}>
+  {#if editing}
+    <!--
+      `<Plan />` is the markup half of resources/Plan.mesa. No field list here,
+      and no price box — a price is a `PlanVersion` row, so this creates a plan
+      with nothing on offer and the plan's own screen opens the first window.
+    -->
+    <Plan
+      bind:record={editing}
+      method="create"
+      submitId="p-save"
+      oncancel={close}
+      ondone={(r) => { close(); load(); if (r?.id) goto('/plans/' + r.id + '/') }}
+    />
+  {/if}
+</Drawer>

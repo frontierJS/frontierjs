@@ -11,7 +11,7 @@ without a schema change you meant to make is a shipped security bug.
 
 ```
 46 models · 46 gated · 0 unrestricted
-35 with row policies · 8 with protected fields · 19 gated transitions
+35 with row policies · 8 with protected fields · 19 declared moves · 5 @system · 0 @seals
 ```
 
 ## Gates
@@ -420,27 +420,46 @@ rather than refusing the row.
 A move a caller may not make is refused even where `@@gate` allows the update.
 An ungated move needs only the model's update level.
 
-| Model | Field | Move | From → To | Level |
-| --- | --- | --- | --- | --- |
-| `Deployment` | `status` | `build` | pending → building | — |
-| `Deployment` | `status` | `push` | building → pushing | — |
-| `Deployment` | `status` | `release` | pushing → deploying | — |
-| `Deployment` | `status` | `succeed` | building, pushing, deploying → success | — |
-| `Deployment` | `status` | `fail` | pending, building, pushing, deploying → failed | — |
-| `Deployment` | `status` | `cancel` | pending, building, pushing, deploying → cancelled | — |
-| `Deployment` | `status` | `rollback` | success → rolled_back | 5 ADMINISTRATOR |
-| `Job` | `status` | `start` | pending, failed → running | — |
-| `Job` | `status` | `idle` | running → pending | — |
-| `Job` | `status` | `fail` | running → failed | — |
-| `Job` | `status` | `cancel` | pending, running, failed → cancelled | — |
-| `Server` | `status` | `reboot` | online, unreachable → pending | — |
-| `Server` | `status` | `drain` | online → draining | 5 ADMINISTRATOR |
-| `Server` | `status` | `undrain` | draining → online | 5 ADMINISTRATOR |
-| `Server` | `status` | `checkIn` | pending, installing, unreachable → online | — |
-| `Server` | `status` | `reportRunning` | pending, provisioning, installing, ready, unreachable, stopped → online | 5 ADMINISTRATOR |
-| `Server` | `status` | `reportStopped` | pending, provisioning, installing, ready, online, unreachable, draining → stopped | 5 ADMINISTRATOR |
-| `Server` | `status` | `reportRebuilding` | pending, installing, ready, online, unreachable, draining, stopped → provisioning | 5 ADMINISTRATOR |
-| `Server` | `status` | `reportDestroyed` | pending, provisioning, installing, ready, online, unreachable, draining, stopped → destroyed | 5 ADMINISTRATOR |
+**Every verb, and a bulk write is refused rather than exempted.** `updateMany`
+matches rows without reading them, so there is no from-state to grade — it
+therefore declines a transitions-typed column by name (`BulkTransitionError`,
+400) instead of writing it ungraded. Every other column on the model stays
+bulk-writable in the same call. `asSystem()` still writes it, and says so.
+
+**Made by** is the widest thing a state machine can say. `caller` is an ordinary
+move, graded by the level beside it; `application` is `@system` — the move is the
+code's, so no caller reaches it at any level and it is made by naming it on the
+write. The two columns are separate because they compose: `application` at level 5
+is a move the engine decides on behalf of a caller who must still be senior enough
+to ask for it.
+
+**Seals** is the third and it grades nobody. `@seals` says the row becomes a
+DOCUMENT at this move: after it the model's `@immutable` columns and its `@sealed`
+children are frozen for everybody, `asSystem()` included — so it belongs here
+rather than in a level, and a move gaining one takes writes away from every
+caller at once. Everything reachable from the target seals with it.
+
+| Model | Field | Move | From → To | Made by | Level | Seals |
+| --- | --- | --- | --- | --- | --- | --- |
+| `Deployment` | `status` | `build` | pending → building | caller | — | — |
+| `Deployment` | `status` | `push` | building → pushing | caller | — | — |
+| `Deployment` | `status` | `release` | pushing → deploying | caller | — | — |
+| `Deployment` | `status` | `succeed` | building, pushing, deploying → success | caller | — | — |
+| `Deployment` | `status` | `fail` | pending, building, pushing, deploying → failed | caller | — | — |
+| `Deployment` | `status` | `cancel` | pending, building, pushing, deploying → cancelled | caller | — | — |
+| `Deployment` | `status` | `rollback` | success → rolled_back | caller | 5 ADMINISTRATOR | — |
+| `Job` | `status` | `start` | pending, failed → running | caller | — | — |
+| `Job` | `status` | `idle` | running → pending | caller | — | — |
+| `Job` | `status` | `fail` | running → failed | caller | — | — |
+| `Job` | `status` | `cancel` | pending, running, failed → cancelled | caller | — | — |
+| `Server` | `status` | `reboot` | online, unreachable → pending | caller | — | — |
+| `Server` | `status` | `drain` | online → draining | caller | 5 ADMINISTRATOR | — |
+| `Server` | `status` | `undrain` | draining → online | caller | 5 ADMINISTRATOR | — |
+| `Server` | `status` | `checkIn` | pending, installing, unreachable → online | **application** | — | — |
+| `Server` | `status` | `reportRunning` | pending, provisioning, installing, ready, unreachable, stopped → online | **application** | 5 ADMINISTRATOR | — |
+| `Server` | `status` | `reportStopped` | pending, provisioning, installing, ready, online, unreachable, draining → stopped | **application** | 5 ADMINISTRATOR | — |
+| `Server` | `status` | `reportRebuilding` | pending, installing, ready, online, unreachable, draining, stopped → provisioning | **application** | 5 ADMINISTRATOR | — |
+| `Server` | `status` | `reportDestroyed` | pending, provisioning, installing, ready, online, unreachable, draining, stopped → destroyed | **application** | 5 ADMINISTRATOR | — |
 
 ## Capabilities
 

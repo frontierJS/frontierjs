@@ -15,5 +15,5 @@ context.exec({
   command: `sqlite3 ${dbPath}/development.db 'UPDATE actions SET pausedAt = createdAt'`,
   dry: flag.dry
 })
-log.success('Local DB restored from backup')
+if (!flag.dry) log.success('Local DB restored from backup')
 ```

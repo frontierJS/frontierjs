@@ -33,9 +33,19 @@ export interface DevtoolsOptions {
    * from memory: an app-derived number would move with the app.
    */
   port?:       number
+  /**
+   * Default `127.0.0.1`. The console serves request logs, request PARAMS, the
+   * event stream, a live WS feed and a POST that runs a job by name, and it
+   * used to bind every interface whenever `NODE_ENV` was not exactly
+   * `production` — which is unset, `staging` and `test` (`FJS-691`). Loopback
+   * is the safe default everywhere; binding anywhere else REQUIRES `auth`,
+   * regardless of `NODE_ENV`, because the environment variable was never the
+   * thing that made it reachable.
+   */
+  hostname?:   string
   maxEntries?: number      // ring buffer size, default 200
-  // Auth gate — called for every HTTP + WS request.
-  // In dev (NODE_ENV !== 'production') this is skipped automatically.
+  // Auth gate — called for every HTTP + WS request. Required whenever
+  // `hostname` is not a loopback address; the server refuses to bind otherwise.
   auth?:       (req: Request) => boolean | Promise<boolean>
   // Field names whose values should be replaced with '***' in captured params.
   redact?:     string[]
@@ -152,13 +162,38 @@ class RingBuffer<T> {
   all(): T[] { return [...this.buf] }
 }
 
+// Loopback by NAME, because that is what a person writes. `::` and `0.0.0.0`
+// are the wildcards and are deliberately absent: they are every interface.
+const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
+
+// ─── Cross-site refusal ───────────────────────────────────────────────────
+//
+// A `text/plain` POST is a SIMPLE request: no preflight, so a page on any
+// origin could run a job by name on a console listening beside it, and the
+// browser would send it happily. Measured: `POST /api/jobs/run/send-invoices`
+// from `Origin: https://evil` answered `{"ok":true,"id":"d1"}` (`FJS-691`).
+//
+// `Sec-Fetch-Site` is the modern answer and `Origin` the fallback; a request
+// carrying NEITHER is not a browser and is left alone, which is what keeps
+// `curl` and the drives working. Same rule on the WS upgrade, which has no
+// preflight at all.
+function crossSite(req: Request, selfOrigins: string[]): boolean {
+  const fetchSite = req.headers.get('sec-fetch-site')
+  if (fetchSite) return fetchSite !== 'same-origin' && fetchSite !== 'same-site' && fetchSite !== 'none'
+  const origin = req.headers.get('origin')
+  if (!origin) return false
+  return !selfOrigins.includes(origin)
+}
+
 // ─── Plugin ───────────────────────────────────────────────────────────────────
 
 export function devtools(opts: DevtoolsOptions = {}) {
   const port       = opts.port       ?? 8503
+  const hostname   = opts.hostname   ?? '127.0.0.1'
   const maxEntries = opts.maxEntries ?? 200
   const redactKeys = [...DEFAULT_REDACT, ...(opts.redact ?? [])].map(k => k.toLowerCase())
   const isProd     = process.env.NODE_ENV === 'production'
+  const isLoopback = LOOPBACK.has(hostname)
 
   const requests:    RingBuffer<RequestEntry>    = new RingBuffer(maxEntries)
   const events:      RingBuffer<EventEntry>      = new RingBuffer(200)
@@ -312,11 +347,27 @@ export function devtools(opts: DevtoolsOptions = {}) {
       // event stream, live WS feed) must never be served without an auth
       // gate. If no `auth` option was configured, refuse to bind at all
       // rather than silently serving unauthenticated.
+      // Two refusals and they are not the same one. Production with no gate is
+      // the old rule and stands. Binding OFF LOOPBACK with no gate is the one
+      // that was missing: `NODE_ENV` is not what makes this reachable, an
+      // interface is, and an unset variable is the common case rather than the
+      // odd one (`FJS-691`).
       if (isProd && !opts.auth) {
         app._devtools = { status: 'refused', reason: 'production, no auth gate' }
         console.warn(
           '[Junction devtools] NODE_ENV=production and no `auth` option configured — ' +
           'devtools admin server NOT started. Pass devtools({ auth: async (req) => boolean }) to enable it in production.'
+        )
+        return
+      }
+      if (!isLoopback && !opts.auth) {
+        const why = `hostname '${hostname}' is not loopback and no auth gate is configured`
+        app._devtools = { status: 'refused', reason: why }
+        console.warn(
+          `[Junction devtools] ${why} — devtools admin server NOT started. The console serves ` +
+          'request params, a live event feed and a POST that runs a job by name; on a reachable ' +
+          'interface that needs a gate. Pass devtools({ auth: async (req) => boolean }), or drop ' +
+          '`hostname` to bind 127.0.0.1.'
         )
         return
       }
@@ -331,8 +382,14 @@ export function devtools(opts: DevtoolsOptions = {}) {
       // process nobody meant to be talking to (`FJS-420`). Measured: a drive
       // asserted against the last run's queue and reported half its checks red.
       try {
+      const selfOrigins = [`http://${hostname}:${port}`, `http://localhost:${port}`, `http://127.0.0.1:${port}`]
+
       adminServer = Bun.serve({
         port,
+        // Stated rather than defaulted. Bun binds `0.0.0.0` when this is
+        // omitted, so the console was on every interface of every machine that
+        // ran it (`FJS-691`).
+        hostname,
 
         async fetch(req, server) {
           // Auth gate — when an auth fn is configured it applies in EVERY
@@ -354,9 +411,18 @@ export function devtools(opts: DevtoolsOptions = {}) {
           // `undefined as unknown as Response`, which is a lie to both the type
           // system and Bun. Answering 400 is what a client can act on.
           if (req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
+            // A WS upgrade has no preflight, so the only thing standing between
+            // a page on another origin and the live request feed is this.
+            if (crossSite(req, selfOrigins)) return new Response('Forbidden', { status: 403 })
             if (server.upgrade(req, { data: undefined })) return undefined as unknown as Response
             return new Response('WebSocket upgrade failed', { status: 400 })
           }
+
+          // Everything that ACTS is a POST, and a `text/plain` POST needs no
+          // preflight — so a cross-site one reaches here with the browser's
+          // blessing unless it is refused by name.
+          if (req.method !== 'GET' && req.method !== 'HEAD' && crossSite(req, selfOrigins))
+            return new Response('Forbidden', { status: 403 })
 
           // REST state snapshot
           if (url.pathname === '/api/state') {
@@ -490,7 +556,7 @@ export function devtools(opts: DevtoolsOptions = {}) {
       // server is not on the router it is derived from. Reported there rather
       // than only here, where a line printed mid-boot scrolls away above it —
       // and where an app with the console switched OFF said nothing at all.
-      app._devtools = { status: 'on', url: `http://localhost:${adminServer.port}` }
+      app._devtools = { status: 'on', url: `http://${isLoopback ? 'localhost' : hostname}:${adminServer.port}` }
       } catch (err) {
         const e = err as { code?: string }
         const why = e?.code === 'EADDRINUSE'

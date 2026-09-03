@@ -808,6 +808,46 @@ check('…nor in what the API answers for the domain',
     }}).then(r => r.text()).then(t => t.includes(${JSON.stringify(CERT_CANARY)}))`),
   false)
 
+// ── 9c. The container log ────────────────────────────────────────────
+// The tab that could not exist: this screen carried a comment saying it was
+// absent because *nothing stores or streams a log line*, which was true of the
+// whole fleet rather than of this screen. The Outpost answers `POST /logs` now
+// and `apps.logs` asks it through the same executor a release goes through.
+//
+// What is asserted here is the path that needs NO machine, and it is the one an
+// operator hits first: this app is placed nowhere, so there is nothing to read
+// and the screen has to SAY so. An empty pre element and a fleet that cannot be
+// reached look identical, which is the whole reason `reason` is carried back.
+await evaluate(`[...document.querySelectorAll('#app-tabs button')].find(b => b.textContent.trim() === 'logs').click()`)
+await sleep(600)
+check('the app screen has a logs tab',
+  await evaluate(`!!document.getElementById('app-logs-load')`), true)
+check('…which reads nothing until asked',
+  await evaluate(`!!document.getElementById('app-logs-stdout')`), false)
+
+await evaluate(`document.getElementById('app-logs-load').click()`)
+// Not matched against the sentence: `resolveExecutor` has three reasons a
+// release cannot be carried (placed nowhere, no server that can take one, no
+// outpost registered) and which one this fixture hits is a property of the seed
+// rather than of the screen. What the screen owes is that it names ONE of them
+// instead of rendering an empty pre — a blank log and an unreachable fleet look
+// identical, which is why `reason` is carried back at all.
+check('an app with nothing to read says why, rather than showing an empty log',
+  await waitFor(`
+    (document.getElementById('app-logs-none')?.textContent ?? '')
+    + (document.getElementById('screen-error')?.textContent ?? '')`,
+    t => t.trim().length > 0),
+  t => t.trim().length > 0)
+check('…and renders no log body when there is none',
+  await evaluate(`!!document.getElementById('app-logs-stdout') || !!document.getElementById('app-logs-stderr')`),
+  false)
+
+// Back to where the next section starts. The tabs are one screen's panels
+// rather than four routes, so a section that leaves the wrong one showing takes
+// the next one's controls off the page with it — which is how this was found.
+await evaluate(`[...document.querySelectorAll('#app-tabs button')].find(b => b.textContent.trim() === 'domains').click()`)
+await sleep(600)
+
 // The primary cannot be deleted while it is the only route to the app.
 await click('Delete')
 await sleep(1200)

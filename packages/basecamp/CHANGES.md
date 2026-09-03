@@ -1,5 +1,68 @@
 # Changes — Basecamp
 
+## 2026-09-01 — the config is found from any directory
+
+`createApp({ configPath })` is stated, anchored to `api/src/app.ts` itself, and
+`api/config/junction.config.js` anchors its own `jobsDir` the same way.
+
+**The default is `./api/config` resolved against the process CWD**, so this app
+read its own config only when the command was typed at the package root. From
+anywhere else it looked for `api/api/config`, found nothing, and booted on
+junction's defaults — taking the declared CORS origins with it and replacing
+them with `*`. That is `FJS-430` from the other direction: the file exists now,
+and it was still possible to not read it. Nothing about a boot from the package
+root changes; the three committed snapshots regenerate byte-identical.
+
+**The database is deliberately NOT anchored.** `api/src/core/db.ts` explains why
+and now explains it accurately: `database audit` does have an env var
+(`AUDIT_PATH`) and nothing sets it, so the CWD is still what isolates the trail
+— which `db/test/seed.test.ts` depends on and `web/test/verify-screens.mjs`
+does not do, so that drive's audit rows land in the developer's own `db/audit/`.
+Filed as `FJS-633`, and it is what keeps this app's three API snapshots at the
+package root while `example`'s four moved into `api/`.
+
+## 2026-08-30 — the last six screens, and the two adapters that had no boundary
+
+`FJS-153` closed. 211 db tests, `verify:screens` 26 → 66 checks, typecheck at
+baseline.
+
+**The six the mock still had are built** — `/infra-graph/`, `/onboarding/`,
+`/dns/`, `/cloud-spend/`, `/git-activity/`, `/observability/`. Two of them are
+reads this app can already answer and four are a statement about a third party,
+and the split is the whole of what was decided. `docs/SCREENS.md` § Phase 14
+carries the argument.
+
+**`infra` is a service over no model** — `graph` and `onboarding`, two
+projections assembled from several tables where storing either would be a second
+answer that goes stale. A browser cannot substitute for it: `apps.find` answers
+the environment and the domains, and WHERE an app runs is only on `apps.get`,
+one request per app. Three of the six onboarding counts go through `asSystem()`
+because `Secret` and `Invitation` are `@@gate("5")` and `WorkspaceMember` reads
+only the caller's own rows — so a developer asking *does this workspace have an
+SSH key* got a refusal rather than a zero, on the screen whose whole audience is
+somebody who just arrived.
+
+**Two providers that did not exist now do.** `IEdge` (zones, records, edge
+analytics) and `ICloudSpend` (month to date, line items, per-server) are
+declared with stubs behind them, and `IGit` grew what `/git-activity/` needs —
+`ci`, `openPullRequests`, `openIssues` per repository plus `listPullRequests`,
+where it answered a name and a clone URL before. Money crosses that boundary as
+MINOR UNITS plus a currency, never a float: the divisor is the currency's, and
+`/ 100` is wrong for the yen.
+
+**The portal now reports ten in two kinds.** `hosted` on the entry separates an
+appliance an operator installs and points a URL at from somebody else's service
+reached with a token, because *unconfigured* means different work for each.
+`/admin/adapters/` renders the two groups off that flag, and it is what let the
+four adapter screens stop hardcoding their own status: each asks the portal for
+its one adapter, so the words on the page change the day one is wired rather
+than the day somebody remembers to edit them.
+
+**A resource with no model can say so** — `createResource(name, { model: null })`,
+shipped in sierra. Three here (`portal`, `hub`, `infra`) warned on every boot
+about a model name that was never going to resolve, which is how a real warning
+gets skimmed past.
+
 ## 2026-08-26 — capabilities adopted, and the never-escalate guard grew its second axis
 
 `IDEAS/permission-sets.md` step 7 · `FJS-529` closed. Typecheck at baseline.

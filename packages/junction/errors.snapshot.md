@@ -105,12 +105,14 @@ something that will never work, or not to retry something that would.
 | Litestone class | Declares | Becomes | Status | Retryable | Payload |
 | --- | --- | --- | --- | --- | --- |
 | `AccessDeniedError` | code `ACCESS_DENIED` | `Forbidden` | 403 | — | — |
+| `BulkTransitionError` | status 400 · retryable false | `BadRequest` | 400 | false | — |
 | `CapabilityNotDeclaredError` | status 400 · retryable false | `BadRequest` | 400 | false | — |
 | `LockExpiredError` | status 409 · retryable false | `Conflict` | 409 | false | — |
 | `LockNotAcquiredError` | status 409 · retryable true | `Conflict` | 409 | true | — |
 | `LockReleasedByOtherError` | status 409 · retryable false | `Conflict` | 409 | false | — |
+| `SealedDocumentError` | status 409 · retryable false | `Conflict` | 409 | false | `model`, `parent`, `parentId`, `state`, `relation` |
 | `SoftDeletedUniqueError` | status 409 · retryable false | `Conflict` | 409 | false | — |
-| `TransitionConflictError` | status 409 · retryable true | `Conflict` | 409 | true | — |
+| `TransitionConflictError` | status 409 · retryable true | `Conflict` | 409 | true | `model`, `field`, `expected`, `actual`, `move`, `to` |
 | `TransitionGateError` | status 403 · retryable false | `Forbidden` | 403 | false | — |
 | `TransitionNotFoundError` | status 400 · retryable false | `BadRequest` | 400 | false | — |
 | `TransitionSystemError` | status 403 · retryable false | `Forbidden` | 403 | false | — |

@@ -18,6 +18,11 @@
  *  identity and Basecamp refuses to record it, so this refuses to report it. */
 const DIGEST = /^sha256:[0-9a-f]{64}$/
 
+// The most lines `POST /logs` will read off a container in one answer. A cap
+// rather than a default, because the caller is on another machine and the cost
+// of an unbounded read is paid here.
+const MAX_LOG_LINES = 5000
+
 export function isDigest(value) {
   return typeof value === 'string' && DIGEST.test(value)
 }
@@ -40,6 +45,23 @@ export async function spawnRun(argv, { timeoutMs = 600_000, cwd } = {}) {
   if (timer) clearTimeout(timer)
 
   return { exitCode, stdout, stderr }
+}
+
+// ─── logArgs ─────────────────────────────────────────────────────────────────
+// The `--log-*` flags for a started container. Mirrors the CLI's
+// `core/docker-logging.js`; see the note at its call site for why it is a copy.
+function logArgs(logs) {
+  if (logs === false) return []
+  if (logs?.driver) {
+    const out = ['--log-driver', String(logs.driver)]
+    for (const [k, v] of Object.entries(logs.options ?? {})) out.push('--log-opt', `${k}=${v}`)
+    return out
+  }
+  return [
+    '--log-driver', 'json-file',
+    '--log-opt', `max-size=${logs?.max_size ?? '10m'}`,
+    '--log-opt', `max-file=${logs?.max_files ?? 5}`,
+  ]
 }
 
 export function createDocker({ run = spawnRun, workDir = '/var/lib/outpost/apps' } = {}) {
@@ -112,6 +134,18 @@ export function createDocker({ run = spawnRun, workDir = '/var/lib/outpost/apps'
       await run(['docker', 'rm', '-f', name]).catch(() => {})
 
       const argv = ['run', '-d', '--name', name, '--restart', 'unless-stopped']
+      // Docker's default json-file driver caps nothing, so an app that logs per
+      // request fills the machine's disk and stops every OTHER app on it — which
+      // is the fleet version of the failure and the reason this is not left to
+      // whoever calls /deploy. `config.logs: false` is for a daemon already
+      // pointed at a shipper; a named driver takes its own options, since
+      // max-size is json-file's spelling and journald refuses it.
+      //
+      // Same defaults as the CLI's `core/docker-logging.js`, restated rather
+      // than imported: outpost is a plain Bun service and depends on no
+      // framework package. Two copies of three constants, and the alternative
+      // is a dependency edge from a machine agent to the CLI.
+      argv.push(...logArgs(config.logs))
       for (const [key, value] of Object.entries(config.env ?? {})) argv.push('-e', `${key}=${value}`)
       if (port) argv.push('-p', `${port}:${config.containerPort ?? port}`)
       // Addressed by digest where one is known — the tag is a name and two
@@ -120,6 +154,50 @@ export function createDocker({ run = spawnRun, workDir = '/var/lib/outpost/apps'
 
       const containerId = await docker(argv)
       return { containerId, digest: digest ?? await digestOf(image) }
+    },
+
+    /**
+     * The container's log, back to the operator.
+     *
+     * The gap this closes is `basecamp/web/src/routes/apps/[id]/index.mesa`,
+     * which carries a comment saying its logs tab is absent because *nothing
+     * stores or streams a log line* — true of the whole fleet, not of that
+     * screen. `fli deploy:logs` answers the same question over ssh for one app
+     * an operator is already sitting next to; this answers it for a fleet from
+     * a console.
+     *
+     * **Bounded, and the bound is not advice.** `docker logs` on a container
+     * that has been up for a month is however many gigabytes the driver kept,
+     * read into this process's memory by the runner before anything can trim
+     * it — so `tail` is clamped rather than defaulted, and the clamp is here
+     * rather than in the caller, which is on another machine.
+     *
+     * stdout and stderr come back separately because that is how the container
+     * wrote them and joining them here would invent an interleaving that is not
+     * the one that happened.
+     */
+    async logs({ appId, tail = 200, since = null } = {}) {
+      const name  = `fjs-${appId}`
+      // A caller-supplied count reaches an argv array rather than a shell, so
+      // this is a resource bound and not an injection guard.
+      const lines = Math.min(Math.max(Number.parseInt(tail, 10) || 200, 1), MAX_LOG_LINES)
+      const argv  = ['docker', 'logs', '--tail', String(lines)]
+      // Docker's own vocabulary — an RFC3339 stamp or a duration like `10m`.
+      // Anything else is refused BY DOCKER, whose message is more use than a
+      // second grammar maintained here.
+      if (since != null && String(since).trim() !== '') argv.push('--since', String(since))
+      argv.push(name)
+
+      const result = await run(argv)
+      // A container that is not there is a 404-shaped answer rather than a
+      // failure: basecamp asks this about an app it believes is deployed, and
+      // *no such container* is the useful sentence.
+      if (result.exitCode !== 0 && /No such container/i.test(result.stderr ?? ''))
+        return { running: false, tail: lines, since, stdout: '', stderr: '', error: 'no such container' }
+      if (result.exitCode !== 0)
+        throw new Error(result.stderr?.trim() || `docker logs exited ${result.exitCode}`)
+
+      return { running: true, tail: lines, since, stdout: result.stdout ?? '', stderr: result.stderr ?? '' }
     },
 
     async stop({ appId }) {

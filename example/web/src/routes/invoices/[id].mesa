@@ -1,0 +1,223 @@
+---
+title: Invoice
+---
+<script>
+  // The document.
+  //
+  // ─── Why this one is watched COMPOSED ─────────────────────────────────────
+  //
+  // A statement is a header AND its lines — a total with nothing under it is
+  // not something anybody can check — so `invoices.get()` answers the row plus
+  // its lines and credit notes. A node holds ONE shape and a WS push carries
+  // the row alone, so an ordinary `record(id)` here would show the document
+  // once and then replace it with its header the first time anything announced
+  // this invoice (`FJS-D161`). `{ composed: true }` makes the node the TRIGGER
+  // instead: a push re-runs the read.
+  //
+  // That is not hypothetical on this screen. Settling is a webhook — the
+  // provider says the money arrived, from outside every browser — so the row
+  // moves under whoever is looking at it, which is exactly when a detail screen
+  // must not be a snapshot (`FJS-518`).
+  //
+  // ─── Why nothing here is editable ─────────────────────────────────────────
+  //
+  // Every money column is `@system @immutable` and so are the number, the two
+  // period ends, the issue date and the due date. `asSystem()` does not drop
+  // `@immutable` (`FJS-D162`), which matters more here than anywhere else in
+  // the schema: the caller that writes invoices IS the system, because the
+  // renewal job has no session. The correction is a credit note beside the row.
+  import { invoices } from '@/resources/Invoice.mesa'
+  import { subscriptions } from '@/resources/Subscription.mesa'
+  import { session } from '@/session.js'
+  import { page } from '@frontierjs/sierra/router'
+  import { money } from '../../money.js'
+
+  import Alert               from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Breadcrumbs         from '@frontierjs/ui/components/display/Breadcrumbs.mesa'
+  import Button              from '@frontierjs/ui/components/forms/Button.mesa'
+  import ConfirmationPopover from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'
+  import Mono                from '@frontierjs/ui/components/display/Mono.mesa'
+  import Pill                from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader       from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Skeleton            from '@frontierjs/ui/components/feedback/Skeleton.mesa'
+  import StatCard            from '@frontierjs/ui/components/display/StatCard.mesa'
+  import Table               from '@frontierjs/ui/components/display/Table.mesa'
+  import { toasts }          from '@frontierjs/ui/stores/toastStore.js'
+
+  $: (page.params, session.level)
+
+  let invoice = null
+  let row     = null
+  let unwatch = null
+  let error   = null
+  let busy    = false
+
+  const TONE = { issued: 'warning', paid: 'success', void: 'muted' }
+
+  const columns = [
+    { key: 'description', label: 'Item' },
+    { key: 'period',      label: 'For' },
+    { key: 'quantity',    label: 'Qty',  align: 'right' },
+    { key: 'unitAmount',  label: 'Unit', align: 'right' },
+    { key: 'amount',      label: 'Amount', align: 'right' },
+  ]
+
+  function watch() {
+    row?.release()
+    row = invoices.record(page.params.id, { composed: true })
+    unwatch = row.subscribe(v => { invoice = v })
+    return row.ready
+  }
+
+  function boot() {
+    error = null
+    watch().catch(e => { error = e.message })
+  }
+  boot()
+  $: page.params.id, () => boot()
+  $.onDestroy(() => { unwatch?.(); row?.release() })
+
+  // What may be asked for on this row, off the schema. `settle` is `@system` —
+  // a caller asking to be marked paid is not a request a shop can honour — so
+  // it is refused here by `refusedBy: 'system'` and is not in this list; the
+  // staff button below is the service method beside it, for the bank transfer
+  // somebody reconciled by hand.
+  $: moves = invoice ? invoices.transitions(invoice, session.level).filter(m => m.allowed) : []
+
+  // `void` is `@gate(5)`; `settle` has no gate of its own, so the model's own
+  // write level is what answers.
+  $: canSettle = invoice?.status === 'issued' && invoices.can('update', session.level)
+
+  async function act(name) {
+    busy = true
+    try {
+      await invoices.service.invoke(name, invoice.id)
+      toasts.success(name === 'settle' ? 'Marked paid' : 'Voided')
+    } catch (e) {
+      error = e.message
+    } finally { busy = false }
+  }
+
+  const when = iso => iso ? new Date(iso).toLocaleDateString(undefined,
+    { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
+
+  $: credited = (invoice?.creditNotes ?? []).reduce((n, c) => n + c.amount, 0)
+  $: overdue  = invoice?.status === 'issued' && new Date(invoice.dueAt) < new Date()
+</script>
+
+<Breadcrumbs items={[
+  { label: 'Invoices', href: '/invoices/' },
+  { label: invoice ? invoice.number : 'Loading…' },
+]} />
+
+{#if error && !invoice}
+  <Alert tone="danger" id="id-error">{error}</Alert>
+{:else if !invoice}
+  <div class="stack">
+    <Skeleton variant="text" width="40%" />
+    <Skeleton variant="card" />
+  </div>
+{:else}
+  <SectionHeader title={invoice.number} level={1} sub={'invoice #' + invoice.id}>
+    {#snippet action()}
+      <div class="cluster">
+        {#if canSettle}
+          <Button id="id-settle" variant="outlined" disabled={busy} onclick={() => act('settle')}>
+            Mark paid
+          </Button>
+        {/if}
+        {#each moves as move}
+          <ConfirmationPopover
+            title="Void this invoice?"
+            message="It stays exactly as it was issued and stops being owed. Every figure on it is frozen, so this changes the status and nothing else."
+            confirmLabel="Void"
+            onconfirm={() => act(move.name)}
+          >
+            {#snippet trigger()}
+              <Button variant="ghost" tone="danger" data-move={move.name} disabled={busy}>{move.name}</Button>
+            {/snippet}
+          </ConfirmationPopover>
+        {/each}
+      </div>
+    {/snippet}
+  </SectionHeader>
+
+  {#if error}<Alert tone="danger" id="id-error">{error}</Alert>{/if}
+
+  <div class="tiles" style="--tile-min: 12rem">
+    <StatCard label="Status" value={invoice.status} id="id-status"
+              tone={invoice.status === 'void' ? 'muted' : invoice.status === 'paid' ? 'success' : ''} />
+    <StatCard label="Total"  value={money(invoice.total)} id="id-total" />
+    <StatCard label="Issued" value={when(invoice.issuedAt)} />
+    <StatCard label="Due"    value={when(invoice.dueAt)} id="id-due" />
+    {#if invoice.paidAt}<StatCard label="Paid" value={when(invoice.paidAt)} id="id-paid" />{/if}
+  </div>
+
+  {#if overdue}
+    <Alert tone="danger" id="id-overdue">
+      Past its terms. Dunning reads <code>now − dueAt</code> on the oldest
+      unpaid invoice, so this row is the clock.
+    </Alert>
+  {/if}
+
+  <p class="text-muted">
+    For {when(invoice.periodStart)} – {when(invoice.periodEnd)}
+    {#if invoice.subscriptionId}
+      · <a href={'/subscriptions/' + invoice.subscriptionId + '/'} data-subscription>subscription</a>
+    {/if}
+  </p>
+
+  <SectionHeader title="Lines" level={2} />
+
+  <Table {columns} rows={invoice.lines ?? []} striped compact>
+    {#snippet row(l)}
+      <tr data-line={l.id}>
+        <td>{l.description}</td>
+        <!--
+          A line's own window, where it is narrower than the invoice's — a plan
+          change on day 19 makes two lines out of one period. Null on an
+          ordinary full-period line, which is most of them.
+        -->
+        <td class="text-muted">{l.periodStart ? when(l.periodStart) + ' – ' + when(l.periodEnd) : '—'}</td>
+        <td class="text-right">{l.quantity}</td>
+        <td class="text-right">{money(l.unitAmount)}</td>
+        <td class="text-right" data-amount={l.amount}>{money(l.amount)}</td>
+      </tr>
+    {/snippet}
+  </Table>
+
+  <!--
+    The receipt identity, rendered. `total = subtotal + tax` is a `@@check` in
+    the schema — a row invariant SQLite holds against a migration, a seed and
+    `asSystem()` alike — and the lines summing to `subtotal` is the half no
+    `@@check` can see, because it reads a child table. Showing both here is the
+    cheapest place that difference is ever visible.
+  -->
+  <dl class="facts" id="id-totals">
+    <dt>Subtotal</dt><dd data-subtotal={invoice.subtotal}>{money(invoice.subtotal)}</dd>
+    <dt>Tax</dt><dd data-tax={invoice.tax}>{money(invoice.tax)}</dd>
+    <dt>Total</dt><dd data-total={invoice.total}><strong>{money(invoice.total)}</strong></dd>
+    {#if credited}
+      <dt>Credited</dt><dd data-credited={credited}>−{money(credited)}</dd>
+    {/if}
+  </dl>
+
+  {#if (invoice.creditNotes ?? []).length}
+    <SectionHeader title="Credit notes" level={2} />
+    <ul class="rows divided" id="id-credits">
+      {#each invoice.creditNotes as c}
+        <li data-credit={c.id}>
+          <Mono size="xs">{c.number}</Mono> — {money(c.amount)}
+          <span class="text-muted">{c.reason}</span>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+
+  <Alert tone="muted">
+    Nothing on this page can be edited and nothing here decides that: every
+    money column, the number, the periods and both dates are
+    <code>@immutable</code>, which <code>asSystem()</code> does not drop. The
+    correction is the credit note beside the row.
+  </Alert>
+{/if}

@@ -61,13 +61,33 @@ all three.
 
 | | `create` (default) | `update` | `full` |
 |---|---|---|---|
-| `@id` | omitted — server-assigned | present | present |
+| `@id` | omitted **only where the server assigns it** — see below | present | present |
 | `required[]` | non-optional fields with no `@default` | *absent — a patch is partial* | same as create |
 | `@version` | omitted | `readOnly` | `readOnly` |
 | `@computed` / `@generated` / `@from` | omitted | omitted | `readOnly` |
 | `@transient` | `writeOnly` — and in `required[]` when non-optional | `writeOnly` | omitted — no read answers it |
 | `createdAt` / `updatedAt` | only with `includeTimestamps` | same | same |
 | `deletedAt` | only with `includeDeletedAt` | same | same |
+
+### Which `@id` is omitted from `create`
+
+Only the ones the server fills. `isServerAssignedId` in `core/ids.js` is the one
+owner of that question — the required pre-flight in `core/client.js` asks it too,
+and for as long as they each answered it themselves they disagreed (`FJS-608`).
+
+| The key | `create` | Because |
+|---|---|---|
+| a lone `Int @id` | omitted | SQLite's rowid alias — it auto-assigns with no default declared |
+| `@default(autoincrement())` · `@default(uuid()/ulid()/cuid()/nanoid())` · a literal `@default` | omitted | filled here, or by SQLite |
+| `String @id` with no default — a slug, a stock keeping unit, an external identifier | **present, and in `required[]`** | nobody but the caller can produce it |
+| every member of a composite `@@id([a, b])` | **present, and in `required[]`** | a composite key is never a rowid alias, whatever the column types |
+
+**The symptom of getting this wrong is the opposite of a rejection.** Junction
+STRIPS what the create schema does not declare rather than refusing it, so a key
+missing from the schema was removed from the payload in silence and the refusal
+came from the Data boundary one layer down: `POST /memberships {orgId, userId,
+role}` answered **400 `orgId is required, userId is required`** — naming the two
+fields the request had just sent.
 
 There is **no `includeComputed` option**, despite the name appearing in older
 notes and in the CLI's own option object — the generator never destructured it,
@@ -88,7 +108,7 @@ validate.
   "$defs": {
     "Article": { "type": "object", "title": "Article", "properties": {…} },
     "Comment": {…},
-    "Status":  { "type": "string", "enum": ["draft","published","archived"], "title": "Status" },
+    "Status":  { "type": "string", "enum": ["draft","published","archived","settled"], "title": "Status" },
     "Address": { "type": "object", "title": "Address", "properties": {…}, "required": ["line1","city"] },
     "FileRef": { "type": "object", "x-litestone-file": true, … }
   }
@@ -157,7 +177,7 @@ before you build on one** — several are emitted and nothing yet reads them.
 | `x-messages` | field | `{ ruleName: msg, keyword: msg }` — the same authored string under both aliases | junction `schema.ts`, sierra `field-rules.js` |
 | `x-relations` | model | `[{field, model, type: 'belongsTo'\|'hasMany'\|'m2m', fields, references, onDelete, optional}]` | sierra `field-rules.js`, `resource.js`, `fli` |
 | `x-gate` | model | `{read, create, update, delete}` — the `@@gate` levels, 0–9 | sierra `field-rules.js` (affordance), static-safety |
-| `x-transitions` | model | `{ field: { name: {from: [], to, gate: N\|null} } }` | sierra `field-rules.js`, `example`'s orders screen |
+| `x-transitions` | model | `{ field: { name: {from: [], to, gate: N\|null, system: bool} } }` | sierra `field-rules.js`, `example`'s orders screen |
 | `x-capabilities` | model | `{operations, moves, columns}` — action → the capability NAME it requires | affordance; a screen deciding which buttons a grant-holder could press |
 | `x-version` | model | the `@version` column's name, so a client knows what to round-trip | sierra `field-rules.js` |
 | `x-label-field` | model | the `@@label(field)` column's name — which column identifies a row to a person | sierra `field-rules.js`, `resource.js` |
@@ -267,6 +287,14 @@ into a picker instead of a number spinner.
 - **`x-transitions` is on the model, never on the enum `$def`.** Only a model can
   carry a per-transition `@gate`, and two sources would drift the moment one
   model narrowed the machine.
+- **`system` is beside `gate`, not folded into it, and is always present.** They
+  compose — `@system @gate(5)` is a move the application makes on behalf of a
+  caller senior enough to ask — so a reader tests a boolean rather than telling
+  `false` from absent. It is the ONE affordance here that is not permissive when
+  unknown: a `@system` move needs no level and no policy to be refused, because
+  a browser is never the application, so `transitionsAt` answers `allowed: false`
+  with `refusedBy: 'system'` and a screen renders no button rather than a
+  disabled one.
 - **`x-version` is emitted in `create` mode too**, even though the column is not —
   it is structural metadata about the model, not a field listing.
 - **So is `x-label-field`, and it routinely names a column no mode lists.** Which
@@ -302,7 +330,7 @@ least once, which no app in the repo does — `example` has no `File`, `@from`,
 `@version` or `Bytes` field, and `basecamp` has no `@@gate`:
 
 ```
-enum Status { draft published archived }
+enum Status { draft published archived settled }
 
 type Address {
   line1 String @length(1, 80)
@@ -333,7 +361,7 @@ model Article {
   updatedAt DateTime @updatedAt
   @@gate("2.4.4.6")
   @@allow('read', status == 'published')
-  @@transitions(status, publish: draft -> published, archive: published -> archived @gate(5))
+  @@transitions(status, publish: draft -> published, archive: published -> archived @gate(5), settle: published -> settled @system)
 }
 ```
 
@@ -354,8 +382,9 @@ and the model-level annotations, identical in all three modes:
 "x-gate": { "read": 2, "create": 4, "update": 4, "delete": 6 },
 "x-transitions": {
   "status": {
-    "publish": { "from": ["draft"],     "to": "published", "gate": null },
-    "archive": { "from": ["published"], "to": "archived",  "gate": 5 }
+    "publish": { "from": ["draft"],     "to": "published", "gate": null, "system": false },
+    "archive": { "from": ["published"], "to": "archived",  "gate": 5,    "system": false },
+    "settle":  { "from": ["published"], "to": "settled",   "gate": null, "system": true  }
   }
 },
 "x-relations": [

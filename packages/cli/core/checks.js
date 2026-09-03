@@ -46,8 +46,10 @@ import { singularize } from '@frontierjs/toolbelt/inflect'
 // module's surface and its callers should not have to care.
 export { findApps } from './runnables.js'
 import { runnables }              from './runnables.js'
+import { appSchemaModels, shippedSchemas } from './app-schema.js'
 import { readProofs, resolveRun } from './proofs.js'
 import { readPreambles, resolveNeeds } from './preflight.js'
+import { declaredLogDatabases }        from './db-preflight.js'
 import { hostCollisions }              from './proxy.js'
 import { docWordUnknown, docCitesDead, docClaimsCount, docInvariantRef,
          COUNTABLES, checkRulesCountable } from './doc-audit.js'
@@ -107,12 +109,16 @@ export const RULES = [
     title: 'publishes: 0 silences the proof rather than raising a bar' },
   { id: 'package-model-drift',  scope: 'app',  severity: 'warn',  invariant: null,
     title: "a copied model still agrees with the package that ships it" },
+  { id: 'schema-in-memory',     scope: 'app',  severity: 'warn',  invariant: null,
+    title: 'every model the app runs is one the committed artefacts describe' },
   { id: 'transition-methods',   scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a declared move and the code that makes it still name each other' },
   { id: 'capability-ladder',    scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a model graded by capability is not also graded by ladder' },
   { id: 'polymorphic-subject',  scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a polymorphic pair names which models it can point at' },
+  { id: 'log-db-unbound',       scope: 'app',  severity: 'warn',  invariant: null,
+    title: 'a jsonl/logger database the deploy can point at the volume' },
   { id: 'css-token-undefined',  scope: 'app',  severity: 'error', invariant: 13,
     title: 'a styled value names a token the stylesheets define' },
   { id: 'package-root-md',      scope: 'repo', severity: 'warn',  invariant: 17,
@@ -1156,7 +1162,7 @@ const CHECKS = {
     const files = scripts(root, 'api').filter(p => /\.service\.[cm]?[jt]s$/.test(basename(p)))
     if (!files.length) return { skipped: 'no *.service.* under api/' }
 
-    const { resolves, pascalOf, modelNamed } = modelResolver(schema)
+    const { resolves, pascalOf, modelNamed } = modelResolver(schema, root)
 
     const findings = []
     for (const path of files) {
@@ -1228,7 +1234,7 @@ const CHECKS = {
     const files = sources(root, ['.mesa', ...SCRIPT_EXT], 'web', 'widgets', 'site', 'extension')
     if (!files.length) return { skipped: 'no client surface' }
 
-    const { resolves, pascalOf, modelNamed } = modelResolver(schema)
+    const { resolves, pascalOf, modelNamed } = modelResolver(schema, root)
     const findings = []
 
     for (const path of files) {
@@ -1643,6 +1649,67 @@ const CHECKS = {
   //
   // Only for a surface whose routes actually READ: a site with no companion
   // pulls no data, so there is nothing to observe and no client to want.
+  // ─── log-db-unbound ────────────────────────────────────────────────────────
+  // A `driver jsonl` / `driver logger` database is a DIRECTORY beside the app,
+  // and the deploy mounts one volume at `/db` while the app root is `/app`. So
+  // a declared `./db/audit/` is written inside the container and goes with it on
+  // the next swap — silently, because the app works perfectly without its own
+  // audit trail and nothing reads the directory afterwards.
+  //
+  // `core/db-preflight.js` skips these deliberately (no rows means nothing about
+  // a directory of jsonl), which is correct there and is why nothing looks here.
+  //
+  // A warning rather than an error, and the two findings differ in how sure they
+  // are: a path with no `env()` at all CANNOT be redirected without editing the
+  // schema, which is certain from the tree; a path with one that no key file
+  // declares is a variable the deploy's own env check will not require, which is
+  // strong evidence and not proof — the server may bind it anyway.
+  'log-db-unbound': ({ root }) => {
+    if (!existsSync(join(root, 'db', 'schema.lite'))) return { skipped: 'not an app root' }
+
+    const logDbs = declaredLogDatabases(join(root, 'db'))
+    if (!logDbs.length) return { skipped: 'no jsonl or logger database declared' }
+
+    // No deploy block is no volume, so there is nothing for a path to be outside
+    // of. An app run from a directory keeps its trail wherever it declared it.
+    const conf = ['frontier.config.js', 'frontier.config.mjs']
+      .map(f => join(root, f)).find(f => existsSync(f))
+    if (!conf || !/\bdeploy\s*:/.test(readFileSync(conf, 'utf8')))
+      return { skipped: 'no deploy block — nothing mounts a volume' }
+
+    // What the deploy's own env check reads. A key here is one the pipeline
+    // will refuse to deploy without, which is what "bound" means from a laptop.
+    const declared = new Set()
+    for (const f of ['.env.example', '.env.keys']) {
+      const p = join(root, f)
+      if (!existsSync(p)) continue
+      for (const line of readFileSync(p, 'utf8').split('\n')) {
+        const key = line.trim().split('=')[0].trim()
+        if (key && !key.startsWith('#')) declared.add(key)
+      }
+    }
+
+    const findings = []
+    for (const db of logDbs) {
+      const where = `db/schema.lite`
+      if (!db.envVar) {
+        findings.push({ file: where, message:
+          `database '${db.name}' is 'driver ${db.driver}' with a literal path (${db.path ?? 'unset'}), so it ` +
+          `cannot be pointed at the mounted volume without editing the schema — the deploy writes it inside ` +
+          `the container and the next swap takes it. Write it as ` +
+          `\`path env("${db.name.toUpperCase()}_PATH", "${db.path ?? './db/' + db.name + '/'}")\` and bind that ` +
+          `variable to a path under the volume.` })
+      } else if (!declared.has(db.envVar)) {
+        findings.push({ file: where, message:
+          `database '${db.name}' falls back to ${db.path} unless ${db.envVar} is set, and nothing in this app ` +
+          `declares ${db.envVar} — no .env.example, no .env.keys — so a deploy has no way to know it is ` +
+          `needed and the trail is written inside the container, which the next swap takes. Declare ` +
+          `${db.envVar} and point it under the volume the deploy mounts.` })
+      }
+    }
+    return { findings }
+  },
+
   'static-publish-db': ({ root }) => {
     if (!schemaFile(root)) return { skipped: 'no db/schema.lite — no gates to prove' }
     const surfaces = staticSurfaces(root)
@@ -2043,6 +2110,73 @@ const CHECKS = {
     return { findings }
   },
 
+  // ── schema-in-memory ───────────────────────────────────────────────────────
+  //
+  // Every schema tool takes a PATH. An app that assembles its schema in memory —
+  // appending a package's shipped fragment to the file's text at boot — runs
+  // models no tool can read, and the four committed artefacts then describe a
+  // schema that is not the one running.
+  //
+  // It is not a documentation gap. `release:check` compares release SURFACES, so
+  // a contract on a model absent from both is graded EXPAND and the deploy reads
+  // as reversible; `access --from --strict` cannot see a `@@gate` move on one.
+  // Measured on `example`: 39 models ran and 32 were in `access.snapshot.md`,
+  // `release.snapshot.md`, `ddl.snapshot.sql` and `jsonschema.snapshot.md` — the
+  // identity model and the credential store among the seven (`FJS-626`). The
+  // `snapshots` CI phase passed throughout, because it re-runs the same command
+  // from the same directory and gets the same incomplete answer.
+  //
+  // **It carries no list of fragment-exporting function names.** A list goes
+  // stale the first time a package adds one, and the signal that matters is not
+  // which function was called: it is that the app DEPENDS on a package shipping
+  // models and its schema file reaches none of them. That is decidable from the
+  // file and the dependency alone.
+  //
+  // A warning rather than an error, because an app may legitimately not use a
+  // package's schema at all — which is why the finding requires the app's own
+  // source to import the package before it fires.
+  'schema-in-memory': ({ root }) => {
+    const schema = schemaFile(root)
+    if (!schema) return { skipped: 'no db/schema.lite' }
+
+    const findings = []
+    for (const file of scripts(root, 'api', 'db')) {
+      // A test states its own schema inline and that is how a test is written —
+      // it says nothing about what the app runs, which is the only thing this
+      // rule is about. Found by running the rule over basecamp, where the only
+      // finding was `db/test/schema.test.ts`.
+      if (/(^|[\\/])(tests?)[\\/]|\.(test|spec)\.[cm]?[jt]sx?$/.test(relative(root, file))) continue
+      // `readCode` blanks comments to spaces, so every offset still names the
+      // real bytes — and this file's own prose describes the hazard it checks
+      // for, which is exactly what a raw read would match on.
+      const text = readCode(file)
+      if (!text) continue
+
+      for (const m of text.matchAll(/\b(createClient|createTenantRegistry)\s*\(/g)) {
+        const body = spanFrom(text, m.index + m[0].length - 1)
+        if (!/(^|[\s{,])schema\s*:/.test(body)) continue
+
+        findings.push({
+          file,
+          line: text.slice(0, m.index).split('\n').length,
+          message: `${m[1]} is handed a \`schema:\` string while db/schema.lite exists. Whatever that ` +
+            `string adds to the file — a package's shipped fragment, an \`extend model\`, a second ` +
+            `database block — the app RUNS it and no tool can READ it: \`litestone access\`, \`release\`, ` +
+            `\`ddl\` and \`jsonschema\` each take a PATH, so all four committed artefacts describe a ` +
+            `schema that is not the one serving, and the snapshots CI phase passes because it re-runs the ` +
+            `same command from the same directory and gets the same incomplete answer. The cost is not ` +
+            `documentation: \`release:check\` compares release surfaces, so a contract on a model absent ` +
+            `from both grades as an EXPAND and the deploy reads as reversible. Hand it \`path:\` alone — ` +
+            `litestone reads a path with \`parseFile\`, which resolves \`import\` — and put what the ` +
+            `string added into the file (\`fli auth:install\` and \`fli outbox:install\` write the import ` +
+            `lines; an \`extend model\` goes in a sibling .lite the schema imports).`,
+        })
+      }
+    }
+
+    return { findings }
+  },
+
   'package-model-drift': ({ root }) => {
     const schema = schemaFile(root)
     if (!schema) return { skipped: 'no db/schema.lite' }
@@ -2224,7 +2358,13 @@ const CHECKS = {
     if (!pkgs.length) return { skipped: 'no packages/' }
 
     const STANDARD = ['README.md', 'CLAUDE.md', 'PROJECT_STATE.md', 'CHANGES.md']
-    const allowed  = new Set(STANDARD)
+
+    // AGENTS.md is permitted and not required. It is the same KIND of thing as
+    // CLAUDE.md — a root-level document whose whole value is being findable at
+    // the root, under the name other tools have converged on — but it is written
+    // for a consumer of the package rather than a contributor to it, so a package
+    // nobody writes against does not owe one. Ruled 2026-08-30, DECISIONS.md.
+    const allowed  = new Set([...STANDARD, 'AGENTS.md'])
 
     // A `*.snapshot.md` is generated and gated, not documentation — nobody is
     // asked to hold it in their head, and it cannot move: CI reruns each
@@ -2613,28 +2753,6 @@ function shippedTokens(root) {
   return out
 }
 
-function shippedSchemas(root) {
-  const out = []
-  let pkg
-  try { pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) } catch { return out }
-
-  const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })
-  for (const name of deps) {
-    const dir = join(root, 'node_modules', name)
-    let manifest
-    try { manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) } catch { continue }
-
-    for (const target of Object.values(manifest.exports ?? {})) {
-      // Only the plain-string form. A conditional export ({ import, require })
-      // is how JavaScript is published and is not how a schema fragment is.
-      if (typeof target !== 'string' || !target.endsWith('.lite')) continue
-      const file = join(dir, target)
-      if (!existsSync(file)) continue
-      out.push({ pkg: name, file, text: readFileSync(file, 'utf8') })
-    }
-  }
-  return out
-}
 
 // model name → { line, columns: Map<name, everything after it>, columnLines }
 //
@@ -2744,8 +2862,14 @@ function frontmatter(path) {
  * and `product-variants` never can, which is exactly the case that has to be
  * stated rather than derived.
  */
-function modelResolver(schema) {
-  const known = new Map(models(schema).map(m => [m.name.toLowerCase(), m.name]))
+function modelResolver(schema, root) {
+  // The app's WHOLE seed, not db/schema.lite — `core/app-schema.js` says why,
+  // and is the one owner both this and `fli admin:generate` read. `@@external`
+  // is exempt from invariant 2, so it is dropped here as `models()` drops it.
+  const known = new Map(
+    (root ? appSchemaModels(root) : models(schema))
+      .filter(m => !m.external)
+      .map(m => [m.name.toLowerCase(), m.name]))
 
   const resolves = (name) => {
     const clean = name.replace(/Service$/i, '')

@@ -9,7 +9,7 @@
 
 import { createClient, parse, generateDDLForDatabase } from '@frontierjs/litestone'
 import { splitStatements } from '@frontierjs/litestone/migrate'
-import { createTestApp, channels } from '@frontierjs/junction'
+import { createTestApp, channels, mailerPlugin } from '@frontierjs/junction'
 import { Database } from 'bun:sqlite'
 // Relative, not '@frontierjs/litestone/testing': bun resolves workspace:* to a
 // COPY under node_modules/.bun, so the package spec tests a stale reaper.
@@ -53,6 +53,9 @@ export async function makeApp(opts: {
   transports?: Record<string, unknown>
   /** Omit the mailer entirely, to exercise the missing-mailer path. */
   noMailer?: boolean
+  /** Where `*.notification.ts` live. Absent, the plugin probes from the entry —
+   *  which under a test runner is the TEST FILE, so it finds nothing. */
+  notifications?: string | false
 } = {}): Promise<Harness> {
   const dir = tempDir('fjs-notif-')
   const dbPath = join(dir, 'n.db')
@@ -72,8 +75,29 @@ export async function makeApp(opts: {
   const sent: OutgoingMail[] = []
   const app: any = await createTestApp()
   app.configure(channels())
-  if (!opts.noMailer) app.mail = { send: async (m: OutgoingMail) => { sent.push(m) } }
-  app.configure(notificationsPlugin({ db, transports: opts.transports as never }))
+  // CONFIGURED, not assigned. `app.mail = {...}` set the property without the
+  // plugin, so `requires: ['mailer']` — which notificationsPlugin declares and
+  // junction checks at startup against presence AND configure order — had
+  // nothing to find. It never fired because this harness stopped at configure()
+  // and no boot phase ran; an app wired this way is refused at start().
+  if (!opts.noMailer) {
+    // `mailerPlugin` takes the whole IMail — a `send` answering void satisfied
+    // `app.mail = …` by assignment and fails the interface by name.
+    const send = async (m: OutgoingMail) => { sent.push(m); return { id: String(sent.length), message: 'captured' } }
+    app.configure(mailerPlugin({ send, batch: (ms: OutgoingMail[]) => Promise.all(ms.map(send)) }))
+  }
+  app.configure(notificationsPlugin({
+    db,
+    notifications: opts.notifications,
+    transports:    opts.transports as never,
+  }))
+
+  // The harness stopped at configure() for its whole life, so no plugin's
+  // boot() had ever run here — an app that is configured and never started.
+  // register() is where drivers land, which is why the fan-out tests passed;
+  // anything a plugin does at boot was invisible. Idempotent, and it skips
+  // every phase that needs a port.
+  await app._startForTest()
 
   // asSystem() is untyped at this boundary (notifications duck-types the
   // Litestone client rather than importing it) — name the one accessor used.

@@ -27,12 +27,19 @@
  */
 
 /** How a target's request bodies are encoded. */
-export type BodyEncoding = 'json' | 'form'
+export type BodyEncoding = 'json' | 'form' | 'binary'
 
 export const CONTENT_TYPE: Record<BodyEncoding, string> = {
   json: 'application/json',
   form: 'application/x-www-form-urlencoded',
+  // A binary target's content-type is per FILE, not per target — a PNG and a
+  // PDF go to the same endpoint — so the caller states it in `req.headers` and
+  // this is only the floor for one that does not.
+  binary: 'application/octet-stream',
 }
+
+/** What a body becomes on the wire: text for json/form, bytes for binary. */
+export type EncodedBody = string | Uint8Array
 
 // Depth and breadth caps, so a cyclic-ish or hostile structure cannot make the
 // encoder run away. JSON.stringify throws on a cycle; this one would not.
@@ -95,12 +102,48 @@ function walk(out: Array<[string, string]>, prefix: string, value: unknown, dept
   out.push([prefix, value === null ? '' : String(value)])
 }
 
-/** The encoded body, or `undefined` where there is nothing to send. */
-export function encodeBody(body: unknown, encoding: BodyEncoding): string {
+/**
+ * The encoded body.
+ *
+ * `binary` passes the caller's bytes through untouched, which is the only thing
+ * it can honestly do: an upload endpoint taking raw bytes with a `Content-Type`
+ * and a `Content-Length` is ordinary — Basecamp's `POST /attachments.json`, and
+ * most object storage — and until this existed a `Uint8Array` fell through to
+ * `JSON.stringify` and went out as `{"0":137,"1":80,…}` under
+ * `application/json`, confidently, with nothing said (`FJS-651`).
+ *
+ * A non-binary encoding handed bytes is refused rather than serialised, for the
+ * same reason: there is no correct string for them, so guessing produces a
+ * plausible request that is wrong.
+ */
+export function encodeBody(body: unknown, encoding: BodyEncoding): EncodedBody {
+  if (encoding === 'binary') {
+    if (body instanceof Uint8Array)  return body
+    if (body instanceof ArrayBuffer) return new Uint8Array(body)
+    if (typeof body === 'string')    return body
+    throw new TypeError(
+      `binary encoding needs a Uint8Array, an ArrayBuffer or a string, got ${describe(body)}. ` +
+      `A structure has no byte representation this layer can invent.`
+    )
+  }
+
+  if (body instanceof Uint8Array || body instanceof ArrayBuffer) {
+    throw new TypeError(
+      `a binary body cannot be sent under '${encoding}' encoding — it would be ` +
+      `serialised as an object of byte indices. Declare encoding: 'binary' on the target.`
+    )
+  }
+
   if (encoding === 'form') {
     return formPairs(body)
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
       .join('&')
   }
   return JSON.stringify(body)
+}
+
+function describe(v: unknown): string {
+  if (v === null) return 'null'
+  if (Array.isArray(v)) return 'an array'
+  return typeof v === 'object' ? `a ${v!.constructor?.name ?? 'object'}` : typeof v
 }

@@ -55,7 +55,7 @@
 
 import path          from 'path'
 import { readFile, writeFile, unlink, mkdir } from 'fs/promises'
-import { existsSync }  from 'fs'
+import { existsSync, unlinkSync, readdirSync, statSync } from 'fs'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { compileSource } from './compiler.js'
 import { initRenderer, renderToHTML } from './render.js'
@@ -161,6 +161,75 @@ function makeTmpPath(filePath, tmpDir) {
 
 async function cleanTempFiles(paths) {
   await Promise.all(paths.map(p => unlink(p).catch(() => {})))
+  for (const p of paths) _liveTemp.delete(p)
+}
+
+// ── Temp-module lifetime ──────────────────────────────────────────────────────
+// renderComponent's `finally` blocks clean up on every path this process gets
+// to run. Two it does not. A caller may ABANDON the render: sierra's prerender
+// races it against a timeout with Promise.race, so a component that hangs at
+// import leaves a promise that never settles and a `finally` that never runs,
+// while the build reports the route skipped and exits. And a process that dies
+// takes the pending cleanup with it. Either way a .mjs is stranded in whatever
+// tmpDir was in use — by default this package's own root, where `bun run ci`'s
+// hygiene phase reports it as an ignored source file, for everyone, until
+// somebody deletes it by hand.
+const _liveTemp = new Set()
+let _exitSweepInstalled = false
+
+/** Synchronous — an 'exit' listener may not await. */
+function sweepLiveTemp() {
+  for (const p of _liveTemp) { try { unlinkSync(p) } catch { /* already gone */ } }
+  _liveTemp.clear()
+}
+
+function signalSweep(sig) {
+  return function handler() {
+    sweepLiveTemp()
+    // Node's default for a signal is to exit WITHOUT firing 'exit', and merely
+    // having a listener suppresses that default — so Ctrl-C on a build would
+    // stop working. Re-raise to restore it, but only when nothing else is
+    // listening: an app with its own shutdown handler owns the decision, and
+    // re-raising would run that handler a second time.
+    if (process.listenerCount(sig) > 1) return
+    process.removeListener(sig, handler)
+    process.kill(process.pid, sig)
+  }
+}
+
+function installExitSweep() {
+  if (_exitSweepInstalled) return
+  _exitSweepInstalled = true
+  // Covers a normal end, an explicit process.exit(), and the exit Node takes
+  // after an uncaught throw. Not SIGKILL — nothing covers SIGKILL, which is
+  // what the stale sweep below is for.
+  process.on('exit', sweepLiveTemp)
+  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, signalSweep(sig))
+}
+
+const STALE_TEMP_MS = 60 * 60 * 1000
+const _sweptDirs = new Set()
+
+/**
+ * Remove temp modules a previous process left behind.
+ *
+ * The exit sweep cannot run after SIGKILL or a hard crash, so leftovers
+ * accumulate in the default tmpDir — this package's root — and are reported by
+ * CI rather than by anything the person who produced them was looking at.
+ * Age-gated so a concurrent render's file is never taken: nothing here holds a
+ * temp module for an hour, and sierra bounds a render at seconds.
+ */
+function sweepStaleTemp(dir) {
+  if (!dir || _sweptDirs.has(dir)) return
+  _sweptDirs.add(dir)
+  const cutoff = Date.now() - STALE_TEMP_MS
+  let entries
+  try { entries = readdirSync(dir) } catch { return }
+  for (const name of entries) {
+    if (!name.startsWith(_tmpPrefix) || !name.endsWith('.mjs')) continue
+    const full = path.join(dir, name)
+    try { if (statSync(full).mtimeMs < cutoff) unlinkSync(full) } catch { /* raced */ }
+  }
 }
 
 // ── Import specifier regex ────────────────────────────────────────────────────
@@ -380,8 +449,10 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
   // `modules` is captured above before import rewriting, so what it holds is the
   // original source either way.
   if (!opts.noEmit) {
+    installExitSweep()
     await writeFile(tmpPath, js)
     tempFiles.push(tmpPath)
+    _liveTemp.add(tmpPath)
   }
 
   return { tmpPath, css, tempFiles, modules, islands, styles }
@@ -686,6 +757,7 @@ export async function renderComponent(source, options = {}) {
   const _descope = target === 'email' || target === 'fragment'
   const _tmpDir = tmpDir ?? await defaultTmpDir()
   if (tmpDir) await mkdir(tmpDir, { recursive: true }).catch(() => {})
+  sweepStaleTemp(_tmpDir)
 
   // ── JS target — compile only, no rendering ────────────────────────────────
   if (target === 'js') {

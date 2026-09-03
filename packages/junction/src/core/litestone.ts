@@ -33,7 +33,7 @@ import type { HookMap } from './hooks.ts'
 import { NotFound, BadRequest, Unauthorized, Forbidden } from './errors.ts'
 import type { ServiceContext, QueryDirectives } from './context.ts'
 import { clampPage } from './directives.ts'
-import { announcingService, freezeUser, requestMeta } from './context.ts'
+import { announcingService, freezeUser, requestMeta, currentCall } from './context.ts'
 import { toBulkFailure, partitionBulk, BULK_FAILURES, type BulkFailure } from './envelope.ts'
 import { singularize } from '@frontierjs/toolbelt/inflect'
 import { normalizeOrderBy, type SortParam } from './sort.ts'
@@ -551,21 +551,15 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
         ? baseDb.$setAuth(toDataPrincipal(ctx.auth.user))
         : baseDb
 
-      const telemetry = ctx.app?.telemetry
-
-      if (telemetry && ctx.telemetryId && typeof scopedDb.$tapQuery === 'function') {
-        const stop = scopedDb.$tapQuery((event: LitestoneQueryEvent) => {
-          telemetry.emit('litestone.query', {
-            ...event,
-            telemetryId: ctx.telemetryId,
-            isSystem:    !ctx.auth.user,
-          })
-        })
-
-        if (!ctx._cleanups) ctx._cleanups = []
-        ctx._cleanups.push(stop)
-      }
-
+      // The query tap is NOT installed here. `$tapQuery` lives on the ROOT
+      // client only, and reading it off a `$setAuth` proxy is not a miss — a
+      // Litestone client THROWS on an unknown property, so
+      // `typeof scopedDb.$tapQuery` was a throwing expression that turned every
+      // AUTHENTICATED call into a 500 the moment anything registered a
+      // telemetry listener, which the devtools console does four times
+      // (`FJS-673`). Anonymous callers hold the root client and were fine, so
+      // 1733 green tests never crossed the two. `installQueryTelemetry` taps
+      // the root once and reads the call in scope for attribution.
       ctx.locals[SCOPED_KEY] = scopedDb
     }
 
@@ -663,6 +657,21 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
    */
   function writeWhere(q: { withDeleted?: boolean }): Record<string, unknown> {
     return q.withDeleted ? {} : softDeleteFilter()
+  }
+
+  /**
+   * The `@system` columns a hook on this call said the APPLICATION is supplying.
+   *
+   * `ctx.system.add('slots')` in a hook; `system: [...]` on the litestone call,
+   * which keeps the gate, the row policies, soft-delete and the audit actor
+   * where `asSystem()` drops all four (`FJS-644`). Absent on a call that named
+   * none, so nothing reaches the boundary that did not have to.
+   *
+   * One reader per write ARG — five of them, enumerated because the argument
+   * objects are built differently. What is not enumerated is the rule.
+   */
+  function systemFields(ctx: ServiceContext): string[] | undefined {
+    return ctx.system?.size ? [...ctx.system] : undefined
   }
 
   /**
@@ -897,6 +906,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
         //   • It fixes a documented wart in passing: createMany returns
         //     { count } and no records, so bulk create could never echo
         //     stamped fields (ids, defaults, @slug). Now it can.
+        const sys = systemFields(ctx)
         const created:  unknown[] = []
         // Seeded with anything the validation hooks already rejected, so a
         // response reports EVERY failed row, not just the ones that reached
@@ -906,7 +916,10 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
 
         for (const row of ctx.data) {
           try {
-            created.push(await table.create({ data: row as Record<string, unknown> }))
+            created.push(await table.create({
+              data: row as Record<string, unknown>,
+              ...(sys ? { system: sys } : {}),
+            }))
           } catch (err) {
             failures.push(toBulkFailure(row, err))
           }
@@ -919,13 +932,18 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       const args: Record<string, unknown> = { data: ctx.data }
       if (q.select)  args.select  = q.select
       if (q.include) args.include = q.include
+      const sysCreate = systemFields(ctx)
+      if (sysCreate) args.system = sysCreate
 
       return table.create(args)
     },
 
-    // update() — full-replace sibling of patch() (Feathers semantics:
-    // update replaces the record, patch merges into it). Id-required —
-    // there is deliberately no bulk update.
+    // update() — patch with an id REQUIRED, and no bulk path (`FJS-D179`).
+    //
+    // Not Feathers' full replace. The write is litestone's `table.update`, which
+    // merges: a PUT stating only `title` leaves every column it did not name
+    // where it was. What the id buys is that a REST client's PUT can never
+    // become a bulk write, which patch's query path legitimately is.
     async update(ctx: ServiceContext): Promise<unknown> {
       if (!ctx.data) throw new BadRequest('Request body is required')
       if (!ctx.id)   throw new BadRequest('update() requires an id — use patch() for query-based writes')
@@ -946,6 +964,8 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       if (q.select)      args.select      = q.select
       if (q.include)     args.include     = q.include
       if (q.withDeleted) args.withDeleted = true
+      const sys = systemFields(ctx)
+      if (sys) args.system = sys
       const updated = await table.update(args)
       if (!updated) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} not found`)
       return updated
@@ -969,6 +989,8 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
         if (q.select)      args.select      = q.select
         if (q.include)     args.include     = q.include
         if (q.withDeleted) args.withDeleted = true
+        const sys = systemFields(ctx)
+        if (sys) args.system = sys
         const updated = await table.update(args)
         if (!updated) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} not found`)
         return updated
@@ -992,10 +1014,12 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       // apply litestone's own soft-delete filter, so widening the WHERE here
       // alone would match nothing and read as the directive being ignored.
       const where = { ...q.where, ...softDeleteFilter() }
+      const sysPatch = systemFields(ctx)
       return bulkByRow(ctx, 'patch', table, where, (id, version) =>
         table.update({
           where: { [idField]: id },
           data:  { ...(ctx.data as Record<string, unknown>), ...version },
+          ...(sysPatch ? { system: sysPatch } : {}),
         })
       )
     },
@@ -1970,6 +1994,22 @@ function _gateLevels(
 }
 
 /**
+ * The model's declared READ gate, or null where it declares none.
+ *
+ * The coarse half of who may see a row, and the only half that can be answered
+ * about a payload that carries no row: a bulk write announces a COUNT
+ * (`FJS-D34`), so there is nothing for `$readAs` to grade and a broadcast of
+ * *something you cannot read changed* is still an existence oracle over a gated
+ * model. Graded here rather than at the Data boundary because litestone exposes
+ * no gate-only entry point; it is the same `@@gate` reading `gateAuth` already
+ * runs, against `sessionGateLevel`, which is the hand copy the Bridge index
+ * names — change one and ask whether the other needs it.
+ */
+export function readGateLevel(client: unknown, accessor: string): number | null {
+  return _gateLevels(client, accessor)?.read ?? null
+}
+
+/**
  * before-hook rejecting anonymous requests when the model's @@gate requires a
  * level above STRANGER for this operation.
  *
@@ -2750,6 +2790,134 @@ function modelAccessorMatches(modelName: string, accessor: string): boolean {
 //     has no ServiceContext to give it. The bus still fires; the socket
 //     broadcast is skipped with one warning per service, because inventing a
 //     ctx would hand the app's own resolver a principal nobody authenticated.
+// ─── registerAuditMetrics ─────────────────────────────────────────────────
+// Put *is the audit trail still being written* on /metrics.
+//
+// `fireLog` is fire-and-forget by design — the row is a side effect of a write
+// that already succeeded and must never fail it — so a trail that has stopped
+// recording produces one warning on stderr and then nothing at all, which is
+// indistinguishable from an app doing no work. That is the same silence
+// `FJS-327` and `FJS-328` were about, one realm over, and the answer there was
+// the same: make the absence countable.
+//
+// Registered rather than polled, and SYNCHRONOUS because `registerMetricsSource`
+// takes `fn()` directly — `$logStats()` reads a plain object, so the scrape
+// costs nothing and cannot await inside a metrics response.
+//
+// Silent where the client is not a Litestone one or predates the counters:
+// metrics must never be the reason an app does not boot.
+export function registerAuditMetrics(app: unknown, db: unknown): void {
+  const register = (app as { registerMetricsSource?: (n: string, f: () => unknown) => void })?.registerMetricsSource
+  if (typeof register !== 'function') return
+
+  let stats: (() => unknown) | undefined
+  // Probed inside a try — a Litestone client throws on an unknown property.
+  try { stats = (db as { $logStats?: () => unknown }).$logStats } catch { return }
+  if (typeof stats !== 'function') return
+
+  register.call(app, 'audit', () => stats())
+}
+
+// ─── installLogContext ────────────────────────────────────────────────────
+// Tell the Data boundary WHERE a write came from, so an audit row can be
+// joined to the request that caused it.
+//
+// The trail already recorded who (`actorId`) and what (`model`, `records`,
+// `before`/`after`) and nothing at all about the request — no correlation id,
+// no ip, no user agent, no tenant — so a log line and the audit row from the
+// same request could not be joined by anything. Every audit package in the
+// field records ip/user-agent/url; none of them records a correlation id,
+// which is the one that makes the rest worth having.
+//
+// **The direction is forced and is the whole reason this is a closure.**
+// Litestone cannot import junction (Invariant 1) and must not learn that a
+// request exists; junction hands down a function over its OWN stores and
+// litestone calls it when it builds an entry. Same shape as `createClient({
+// now })`, and the same reason: the answer changes per call, so it is asked
+// for rather than read once.
+//
+// `source` stands where laravel-auditing puts `url`. A URL is the wrong shape
+// here — the same write arrives over HTTP, over a socket frame that has no URL,
+// and from a job with no request at all, while `orders.pay` is one answer for
+// all three, and `origin` beside it says which of the three it was.
+//
+// Silent where the client is not a Litestone one, or is too old to have the
+// setter: this adds columns to a trail and must never be the reason an app
+// does not boot.
+export function installLogContext(db: unknown): (() => void) | null {
+  let install: ((fn: unknown) => () => void) | undefined
+  // Probed inside a try — a Litestone client throws on an unknown property
+  // rather than answering undefined.
+  try { install = (db as { $logContext?: (fn: unknown) => () => void }).$logContext } catch { return null }
+  if (typeof install !== 'function') return null
+
+  return install(() => {
+    const meta = requestMeta()
+    const call = currentCall()
+    // A write with no request behind it — a job, a seed, a migration — answers
+    // nulls rather than nothing, so the columns are consistently present.
+    return {
+      correlationId: meta?.correlationId ?? null,
+      source:        call?.service ? `${call.service}.${call.method ?? '?'}` : null,
+      origin:        meta?.origin ?? null,
+      ip:            meta?.client?.ip ?? null,
+      userAgent:     meta?.client?.userAgent ?? null,
+      // The call's resolved tenant first: `withTenantDb` puts it on locals, and
+      // that is the one the rows were actually written under. `meta.tenant` is
+      // the other direction — work that STATED its tenant with no request.
+      tenant:        (call?.locals?.tenantId as string | undefined) ?? meta?.tenant ?? null,
+    }
+  })
+}
+
+// ─── installQueryTelemetry ────────────────────────────────────────────────
+//
+// Every query the Data boundary runs, on the telemetry bus, attributed to the
+// call it happened inside.
+//
+// **It is installed ONCE on the root client and never per request.** `$tapQuery`
+// is a root-client member: a `$setAuth` proxy does not carry it, and a Litestone
+// client THROWS on an unknown property rather than answering `undefined`
+// (Invariant: `'x' in db`, never `typeof db.x`). The per-request version read
+// `typeof scopedDb.$tapQuery` inside `getTable`, so registering ONE telemetry
+// listener anywhere turned every AUTHENTICATED service call into a 500 while
+// anonymous ones — which hold the root client — kept working (`FJS-673`). The
+// devtools console registers four listeners, so opening it in dev killed the
+// app for every signed-in user.
+//
+// Attribution comes from the call in scope rather than from a captured `ctx`,
+// which is what makes one tap correct for every concurrent request: the ALS
+// store is the only thing that knows which call a query belongs to, and a
+// per-request tap on a shared client would have misattributed every one of them.
+//
+// Observer tier — a throw in a listener is the telemetry bus's problem and must
+// never reach the query that was being measured.
+export function installQueryTelemetry(
+  app: { telemetry?: { emit: (event: string, data: unknown) => void; hasListeners?: () => boolean } },
+  db:  unknown
+): (() => void) | null {
+  const telemetry = app?.telemetry
+  if (!telemetry) return null
+
+  let tap: ((fn: (e: LitestoneQueryEvent) => void) => () => void) | undefined
+  try {
+    const c = db as { $tapQuery?: unknown }
+    if (c && typeof c === 'object' && '$tapQuery' in c && typeof c.$tapQuery === 'function')
+      tap = c.$tapQuery as typeof tap
+  } catch { /* not a Litestone client, or one predating $tapQuery */ }
+  if (!tap) return null
+
+  return tap((event: LitestoneQueryEvent) => {
+    if (typeof telemetry.hasListeners === 'function' && !telemetry.hasListeners()) return
+    const call = currentCall()
+    telemetry.emit('litestone.query', {
+      ...event,
+      telemetryId: call?.telemetryId ?? null,
+      isSystem:    !call?.auth?.user,
+    })
+  })
+}
+
 export function announceDataWrites(
   app: {
     services: { list: () => string[]; get: (n: string) => unknown }
@@ -2822,8 +2990,24 @@ export function announceDataWrites(
     return index.get(key) ?? index.get(singularize(key).toLowerCase())
   }
 
-  const sendToChannel = (name: string, event: string, payload: unknown): void => {
-    const svc = app.services.get(name) as { channel?: unknown } | undefined
+  // ── A background write is graded exactly as a published one is ──────────
+  //
+  // `publish()` grades every recipient against the schema (`FJS-D175`); this
+  // path did not, so every write that went through no service call — a job, a
+  // webhook, a cron, a bulk write, `asSystem()` anywhere — put whole rows on
+  // every subscribed socket. Measured on a policied `Order`: the service path
+  // reached 0 of 100 anonymous sockets and `asSystem().create` reached 100 of
+  // 100 (`FJS-672`).
+  //
+  // The rule is not re-implemented here: the channel manager owns the fan-out
+  // and the cohorts and litestone owns who may read. What this side has to
+  // supply is the two facts a `ServiceContext` would have carried — the client
+  // the rule lives on, and WHICH model the payload is a row of. The accessor is
+  // the service's declared `model:` first and its name only as a fallback, so a
+  // service whose name maps to no model still grades rather than refusing
+  // everybody (`FJS-700`).
+  const sendToChannel = (name: string, event: string, payload: unknown, mode: 'row' | 'gate' = 'row'): void => {
+    const svc = app.services.get(name) as { channel?: unknown; model?: string } | undefined
     const decl = svc?.channel
     if (decl === undefined || decl === false) return
     if (typeof decl !== 'string') {
@@ -2838,8 +3022,23 @@ export function announceDataWrites(
       }
       return
     }
-    const manager = app.channels as
-      { channel?: (n: string) => { send?: (event: string, data: unknown) => void } } | undefined
+    const manager = app.channels as {
+      channel?:    (n: string) => { send?: (event: string, data: unknown) => void }
+      sendGraded?: (
+        channelId: string, event: string, payload: unknown,
+        src: { db: unknown; accessor: string; label?: string }, mode?: 'row' | 'gate'
+      ) => Promise<void>
+    } | undefined
+    if (typeof manager?.sendGraded === 'function') {
+      // Duck-typed like every other reach into the manager here, so a channel
+      // implementation predating grading still receives the announcement.
+      manager.sendGraded(decl, `${name} ${event}`, payload, {
+        db:       db,
+        accessor: svc?.model ?? name,
+        label:    name,
+      }, mode).catch(() => { /* a dead socket is not a background job's problem */ })
+      return
+    }
     const ch = manager?.channel?.(decl)
     if (!ch?.send) return
     try { ch.send(`${name} ${event}`, payload) }
@@ -2872,7 +3071,7 @@ export function announceDataWrites(
       if (record === null || record === undefined) {
         const detail = { model: e.model, operation: e.transition, count: e.count ?? 1 }
         app.events?.emit(`${name}:changed`, detail)
-        sendToChannel(name, 'changed', detail)
+        sendToChannel(name, 'changed', detail, 'gate')
         return
       }
       app.events?.emit(`${name}:${e.transition}`, record)
@@ -2917,7 +3116,7 @@ export function announceDataWrites(
       // `where` stops at the bus, which is in-process. A channel goes to every
       // subscribed browser and a filter is made of the caller's own values —
       // `deleteMany({ where: { resetToken } })` would put one on the wire.
-      sendToChannel(name, 'changed', detail)
+      sendToChannel(name, 'changed', detail, 'gate')
       return
     }
 
@@ -2961,6 +3160,18 @@ export interface TenantRegistryLike {
   tenantFor?: (from: { host?: string | null; headers?: Record<string, unknown> | null; principal?: unknown }) => string | null
   get:        (id: string) => Promise<LitestoneClient>
   exists?:    (id: string) => boolean
+  /**
+   * Pin a pooled client for the length of this request; the returned function
+   * releases it. Optional, because the registry is duck-typed across the
+   * dependency boundary and an older litestone has no pool lease.
+   *
+   * Without it the pool cannot tell a client a request is holding from one
+   * nobody has, so it must never close what it evicted and the handles come
+   * back only on a collection that file-descriptor pressure does not trigger
+   * (`FJS-640`). A request IS the unit of work here, so this is the one place
+   * that answer is already known.
+   */
+  retain?:    (id: string) => () => void
 }
 
 declare module './context.ts' {
@@ -3052,6 +3263,14 @@ function tapTenantWrites(app: unknown, client: unknown): void {
   if (!app || typeof app !== 'object') return
   _tapped.add(client as object)
   announceDataWrites(app as Parameters<typeof announceDataWrites>[0], client)
+  // The audit trail's provenance, on the same *once per tenant client* seam and
+  // for the same reason: under `strategy database` there is no one app client
+  // to install it on, and a per-tenant trail with no correlation id is the same
+  // hole one strategy over.
+  installLogContext(client)
+  // Same seam, same reason: `$tapQuery` is a root-client member and there is no
+  // one app client to tap under `strategy database`.
+  installQueryTelemetry(app as Parameters<typeof installQueryTelemetry>[0], client)
 }
 
 /**
@@ -3105,34 +3324,45 @@ export function withTenantDb(registry: TenantRegistryLike, principal?: Principal
       throw err
     }
 
-    // The tap goes on the TENANT's client, not on a scoped view of it: a
-    // scoped client is a proxy built per call, and tapping one would announce
-    // for the length of that call and no longer.
-    tapTenantWrites((ctx as { app?: unknown }).app, client)
+    // Hold the pool's lease for exactly as long as this request uses the
+    // client. The pool may evict it under us at any point — that is what a
+    // pool at capacity does — and the lease is what makes eviction defer the
+    // close instead of tearing the connection out mid-request. Released in the
+    // `finally` below, on the error path too.
+    const release = registry.retain?.(id) ?? (() => {})
 
-    ctx.locals.tenantId = id
-    ctx.locals.db = dataPrincipal && typeof client?.$setAuth === 'function'
-      ? client.$setAuth(dataPrincipal)
-      : client
+    try {
+      // The tap goes on the TENANT's client, not on a scoped view of it: a
+      // scoped client is a proxy built per call, and tapping one would announce
+      // for the length of that call and no longer.
+      tapTenantWrites((ctx as { app?: unknown }).app, client)
 
-    // A standing is orthogonal to WHICH DATABASE the tenant lives in — an app
-    // on this strategy can still want a per-request level — so the resolver
-    // runs here too, against the tenant's own client. Wiring it to one strategy
-    // would make `createApp({ tenants, principal })` silently do nothing.
-    //
-    // For a GUEST as well as for a session, exactly as `withLitestoneDb` does
-    // twenty lines up. These two hooks are one seam wearing two names, and this
-    // one kept the older half of it: a resolver that runs only for a caller who
-    // already has a principal cannot serve the population it exists for. In
-    // `example` that is a shopper with no account — the cart token is a claim
-    // and nothing else can carry it — so every basket call answered 404 under
-    // `strategy database` and only under it (`FJS-490`).
-    if (principal)
-      applyClaims(ctx, client, await principal(ctx, ctx.auth?.user ?? null))
+      ctx.locals.tenantId = id
+      ctx.locals.db = dataPrincipal && typeof client?.$setAuth === 'function'
+        ? client.$setAuth(dataPrincipal)
+        : client
 
-    await warmTenantConfig(ctx)
+      // A standing is orthogonal to WHICH DATABASE the tenant lives in — an app
+      // on this strategy can still want a per-request level — so the resolver
+      // runs here too, against the tenant's own client. Wiring it to one strategy
+      // would make `createApp({ tenants, principal })` silently do nothing.
+      //
+      // For a GUEST as well as for a session, exactly as `withLitestoneDb` does
+      // twenty lines up. These two hooks are one seam wearing two names, and this
+      // one kept the older half of it: a resolver that runs only for a caller who
+      // already has a principal cannot serve the population it exists for. In
+      // `example` that is a shopper with no account — the cart token is a claim
+      // and nothing else can carry it — so every basket call answered 404 under
+      // `strategy database` and only under it (`FJS-490`).
+      if (principal)
+        applyClaims(ctx, client, await principal(ctx, ctx.auth?.user ?? null))
 
-    await next()
+      await warmTenantConfig(ctx)
+
+      await next()
+    } finally {
+      release()
+    }
   }
 }
 

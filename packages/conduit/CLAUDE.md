@@ -1,8 +1,36 @@
 # conduit — package map
 
-**The outbound boundary.** Every call that leaves the process goes through a
-*declared target* — `app.conduit.send()`. v0.1.0, deliberately narrow.
-`bun run test` (bun).
+**The third parties an app integrates with, declared in one place.** A
+counterparty is named once — with what credential, under what policy — and
+`app.conduit.send()` is how a call to it leaves the process. v0.1.2, deliberately
+narrow. `bun run test` (bun).
+
+**Outbound is what ships; the relationship is the noun.** *Talk to* is a
+relationship rather than a dialing direction — a vendor holds two of our secrets
+and dials us about as often as we dial it — so the receiving end is conduit's too
+and is **not built** (`IDEAS/inbound-integrations.md`). What is NOT conduit's is a
+counterparty signing with FrontierJS's *own* scheme, which is junction's, and a
+machine caller becoming a principal, which is junction's auth door (`FJS-371`).
+The test is *whose scheme is it*.
+
+**It is not a wall.** Nothing enforces the declaration — there is no check for a
+raw `fetch`, and junction's `ai` and `mail` batteries each dial out directly on
+purpose, because a contract with a working default is what keeps this package
+optional (`IMail` + `createResendMailer`; basecamp's `core/mailer.ts` is the same
+contract backed by conduit, and junction's email CAMPAIGN tier requires conduit by
+name). Conduit is where an outbound call belongs, not a boundary around the
+process.
+
+**Two jobs, and they are not the same job.** A `provider` target over `http` or
+`unix` is a third party — Stripe, an object store, a vendor's REST API — and the
+transport is generic. A `websocket` target is an **FJS-to-FJS control-plane
+link**: the transport speaks conduit's own frame envelope
+(`{ id, type: 'request' | 'response' | 'stream_chunk' | …, method, path, body, seq }`)
+and the far side must implement it, which in practice means an
+`@frontierjs/outpost`. So `kind: 'outpost' | 'local'` and `protocol: 'websocket'`
+are one feature, not three, and **a third-party WebSocket API is not reachable
+through this package**. Streaming is that half's alone — `stream()` over `http`
+and `unix` answers `not_implemented`.
 
 ---
 
@@ -27,6 +55,31 @@ src/
 
 ## What bites here
 
+- **A 3xx is an answer here, not a hop.** Every fetch is `redirect: 'manual'`
+  and a redirect comes back as its own kind, `redirected` — non-retryable, not a
+  breaker fault, with the resolved `location` and the status on `meta`. The
+  default was the runtime's, and the runtime re-sends every header but
+  `Authorization`: an `api_key` target handed its key to whatever host the 3xx
+  named, an `hmac` target handed over a valid signature, and a 302 on a POST
+  arrived at the new host as a GET still carrying the `Idempotency-Key` — so a
+  bearer target was the one shape that was safe, by accident (`FJS-679`).
+  `follow_redirects: 'same-origin'` opts back in for the cases that need it: at
+  most 5 hops, GET/HEAD only unless the status is 307/308, never across an
+  origin, and **refused at `register()` beside `hmac` or `api_key`**, because a
+  followed hop rebuilds its headers for an address the descriptor never named. A
+  descriptor field is also invisible to the SQLite registry unless it is in
+  `EXTRA_KEYS` — it round-trips in memory, survives no restart, and says nothing
+  (`FJS-657`).
+- **The HMAC signs the query, and the version is in the signature value.** The
+  canonical string is six lines and the third is the query: pairs sorted, RFC
+  3986 encoded, empty when there is none. It signed the pathname alone until
+  `FJS-678`, so a captured `GET /transfer?to=alice` verified unchanged against
+  `?to=mallory` and a receiver could not include the query even if it wanted to.
+  The value is `v2-sha256=…`; a v1 signature is refused **by name** rather than
+  as a mismatch, because *signature does not match* is the same sentence a wrong
+  secret produces and every already-deployed Outpost signs v1. A verifier must
+  recompute from the RAW request URL — a path the router already stripped is a
+  different request.
 - **A target is declared, not constructed at the call site.** That is the whole
   point of the package: one place lists what this process may talk to, with what
   credential, under what policy.
@@ -55,7 +108,7 @@ src/
   the mechanism — encoding, auth types, error mapping, idempotency. A connector
   owns the vendor's paths, payload shapes and webhook signature scheme, and gets
   its own package once a second one exists to design the interface against. The
-  first is `example/api/src/core/stripe.ts`.
+  first is `example/api/src/providers/stripe/index.ts`.
 - **The credential must really resolve.** `example`'s drive posts to a dev mail
   sink on :8111 precisely so the request leaves the process carrying a resolved
   credential and can really answer 500 — an outbound path that is only ever

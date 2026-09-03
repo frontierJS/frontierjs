@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-17 models · 17 gated · 0 unrestricted
-6 with row policies · 6 with protected fields · 4 gated transitions
+39 models · 39 gated · 0 unrestricted
+13 with row policies · 21 with protected fields · 15 declared moves · 8 @system · 1 @seals
 ```
 
 ## Gates
@@ -24,20 +24,42 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `Cart` | 0 STRANGER | 0 STRANGER | 0 STRANGER | 5 ADMINISTRATOR |
 | `CartLine` | 0 STRANGER | 0 STRANGER | 0 STRANGER | 0 STRANGER |
 | `Colour` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `Credential` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `CreditNote` | 1 VISITOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Customer` | 1 VISITOR | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `CustomField` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Discount` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `Employee` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `InventoryMovement` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 9 LOCKED | 9 LOCKED |
+| `Invoice` | 1 VISITOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `InvoiceLine` | 1 VISITOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `JournalEntry` | 5 ADMINISTRATOR | 8 SYSTEM | 9 LOCKED | 9 LOCKED |
+| `JournalLine` | 5 ADMINISTRATOR | 8 SYSTEM | 9 LOCKED | 9 LOCKED |
 | `Notification` | 0 STRANGER | 8 SYSTEM | 4 USER | 8 SYSTEM |
+| `OauthFlow` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Order` | 1 VISITOR | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `OrderLine` | 1 VISITOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
-| `Payment` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 9 LOCKED |
+| `OutboxMessage` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `Payment` | 1 VISITOR | 8 SYSTEM | 8 SYSTEM | 9 LOCKED |
 | `PaymentEvent` | 5 ADMINISTRATOR | 8 SYSTEM | 9 LOCKED | 9 LOCKED |
+| `PaymentMethod` | 1 VISITOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `PayRate` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `PayRun` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `Payslip` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM |
+| `PayslipLine` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 9 LOCKED | 8 SYSTEM |
+| `PayWindow` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `Plan` | 0 STRANGER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `PlanVersion` | 0 STRANGER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Product` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `ProductImage` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `ProductVariant` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `Session` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `ShippingMethod` | 0 STRANGER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `StockReservation` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `Subscription` | 1 VISITOR | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `TaxRate` | 0 STRANGER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `User` | 4 USER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `Verification` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 
 ## Row policies
 
@@ -57,7 +79,22 @@ An operation with no `@@allow` is unrestricted at this layer.
 - allow **update** — `token == auth().cartToken`
 - allow **delete** — `token == auth().cartToken`
 
+### `CreditNote`
+
+- allow **read** — `auth().isStaff`
+- allow **read** — `userId == auth().id`
+
 ### `Customer`
+
+- allow **read** — `auth().isStaff`
+- allow **read** — `userId == auth().id`
+
+### `Invoice`
+
+- allow **read** — `auth().isStaff`
+- allow **read** — `userId == auth().id`
+
+### `InvoiceLine`
 
 - allow **read** — `auth().isStaff`
 - allow **read** — `userId == auth().id`
@@ -77,6 +114,29 @@ An operation with no `@@allow` is unrestricted at this layer.
 - allow **read** — `auth().isStaff`
 - allow **read** — `userId == auth().id`
 
+### `Payment`
+
+- allow **read** — `auth().isStaff`
+- allow **read** — `userId == auth().id`
+
+### `PaymentMethod`
+
+- allow **read** — `auth().isStaff`
+- allow **read** — `userId == auth().id`
+
+### `Subscription`
+
+- allow **read** — `auth().isStaff`
+- allow **read** — `userId == auth().id`
+- allow **update** — `auth().isStaff`
+- allow **update** — `userId == auth().id`
+
+### `User`
+
+- allow **read** — `id == auth().id || auth().isStaff`
+- allow **create** — `auth().isAdmin`
+- allow **update** — `id == auth().id || auth().isAdmin`
+
 ## Protected fields
 
 `@guarded` needs a system context. `@encrypted`/`@secret` are ciphertext at rest
@@ -91,9 +151,24 @@ rather than refusing the row.
 | `Cart` | `handoffCode` | `@guarded` |
 | `Cart` | `handoffExpires` | `@guarded` |
 | `CartLine` | `unitPrice` | `@system` |
+| `Credential` | `value` | `@guarded(all)` |
+| `Credential` | `accessToken` | `@secret` |
+| `Credential` | `refreshToken` | `@secret` |
+| `CreditNote` | `userId` | `@system` |
 | `Customer` | `notes` | `@allow('read', auth().role == 'admin')` |
 | `Customer` | `userId` | `@system` |
+| `Customer` | `slots` | `@system` |
+| `CustomField` | `slot` | `@system` |
 | `Discount` | `redemptions` | `@system` |
+| `Invoice` | `subtotal` | `@system` |
+| `Invoice` | `tax` | `@system` |
+| `Invoice` | `total` | `@system` |
+| `Invoice` | `paidAt` | `@system` |
+| `Invoice` | `userId` | `@system` |
+| `InvoiceLine` | `userId` | `@system` |
+| `JournalEntry` | `postedAt` | `@system` |
+| `OauthFlow` | `state` | `@guarded(all)` |
+| `OauthFlow` | `verifier` | `@guarded(all)` |
 | `Order` | `subtotal` | `@system` |
 | `Order` | `discountCode` | `@system` |
 | `Order` | `discountLabel` | `@system` |
@@ -106,18 +181,78 @@ rather than refusing the row.
 | `Order` | `trackingCode` | `@system` |
 | `Order` | `userId` | `@system` |
 | `OrderLine` | `userId` | `@system` |
+| `Payment` | `actionUrl` | `@system` |
+| `Payment` | `userId` | `@system` |
+| `PaymentMethod` | `providerRef` | `@guarded` |
+| `PaymentMethod` | `isDefault` | `@system` |
+| `PaymentMethod` | `userId` | `@system` |
+| `PayRun` | `headcount` | `@system` |
+| `PayRun` | `approvedBy` | `@system` |
+| `PayRun` | `approvedAt` | `@system` |
+| `PayRun` | `paidAt` | `@system` |
+| `Payslip` | `gross` | `@system` |
+| `Payslip` | `deductions` | `@system` |
+| `Payslip` | `net` | `@system` |
+| `Payslip` | `employerCost` | `@system` |
+| `Payslip` | `sentAt` | `@system` |
+| `Session` | `token` | `@guarded(all)` |
+| `Subscription` | `currentPeriodStart` | `@system` |
+| `Subscription` | `currentPeriodEnd` | `@system` |
+| `Subscription` | `cancelledAt` | `@system` |
+| `Subscription` | `cancelAtPeriodEnd` | `@system` |
+| `Subscription` | `userId` | `@system` |
+| `User` | `emailVerified` | `@allow('write', auth().isAdmin)` |
+| `User` | `role` | `@allow('write', auth().isAdmin)` |
+| `User` | `isStaff` | `@allow('write', auth().isAdmin)` |
+| `Verification` | `value` | `@guarded(all)` |
 
 ## State transitions
 
 A move a caller may not make is refused even where `@@gate` allows the update.
 An ungated move needs only the model's update level.
 
-| Model | Field | Move | From → To | Level |
-| --- | --- | --- | --- | --- |
-| `Order` | `status` | `pay` | pending → paid | — |
-| `Order` | `status` | `ship` | paid → shipped | — |
-| `Order` | `status` | `refund` | paid → refunded | 5 ADMINISTRATOR |
-| `Order` | `status` | `cancel` | pending, paid → cancelled | — |
+**Every verb, and a bulk write is refused rather than exempted.** `updateMany`
+matches rows without reading them, so there is no from-state to grade — it
+therefore declines a transitions-typed column by name (`BulkTransitionError`,
+400) instead of writing it ungraded. Every other column on the model stays
+bulk-writable in the same call. `asSystem()` still writes it, and says so.
+
+**Made by** is the widest thing a state machine can say. `caller` is an ordinary
+move, graded by the level beside it; `application` is `@system` — the move is the
+code's, so no caller reaches it at any level and it is made by naming it on the
+write. The two columns are separate because they compose: `application` at level 5
+is a move the engine decides on behalf of a caller who must still be senior enough
+to ask for it.
+
+**Seals** is the third and it grades nobody. `@seals` says the row becomes a
+DOCUMENT at this move: after it the model's `@immutable` columns and its `@sealed`
+children are frozen for everybody, `asSystem()` included — so it belongs here
+rather than in a level, and a move gaining one takes writes away from every
+caller at once. Everything reachable from the target seals with it.
+
+| Model | Field | Move | From → To | Made by | Level | Seals |
+| --- | --- | --- | --- | --- | --- | --- |
+| `Invoice` | `status` | `issue` | draft → issued | **application** | — | **yes** |
+| `Invoice` | `status` | `settle` | issued → paid | **application** | — | — |
+| `Invoice` | `status` | `void` | issued → void | caller | 5 ADMINISTRATOR | — |
+| `Order` | `status` | `pay` | pending → paid | caller | — | — |
+| `Order` | `status` | `ship` | paid → shipped | caller | — | — |
+| `Order` | `status` | `refund` | paid → refunded | caller | 5 ADMINISTRATOR | — |
+| `Order` | `status` | `cancel` | pending, paid → cancelled | caller | — | — |
+| `PayRun` | `status` | `calculate` | draft → calculated | **application** | — | — |
+| `PayRun` | `status` | `revert` | calculated → draft | caller | — | — |
+| `PayRun` | `status` | `approve` | calculated → approved | caller | 5 ADMINISTRATOR | — |
+| `PayRun` | `status` | `pay` | approved → paid | **application** | — | — |
+| `Subscription` | `status` | `activate` | trialing → active | **application** | — | — |
+| `Subscription` | `status` | `lapse` | active → pastDue | **application** | — | — |
+| `Subscription` | `status` | `recover` | pastDue → active | **application** | — | — |
+| `Subscription` | `status` | `cancel` | trialing, active, pastDue → cancelled | **application** | — | — |
+
+`@sealed` names the children a document is MADE of — the other half of `@seals`,
+and explicit rather than inferred, because a sealing model routinely has children
+that must go on arriving after it is issued.
+
+- `Invoice` seals `lines` (`InvoiceLine`)
 
 ## Levels
 

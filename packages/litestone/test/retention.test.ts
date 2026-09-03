@@ -149,18 +149,22 @@ describe('the jsonl half', () => {
   })
 
   // The compaction rewrites the file, so every byte offset the companion index
-  // holds is wrong — it is deleted and, the comment said, "rebuilt lazily".
-  // Nothing rebuilt it. SQLite marks a connection readonly when its file is
-  // unlinked underneath, so the next append threw `SQLITE_READONLY_DBMOVED`
-  // from inside the driver, on the audit path, which is fire-and-forget: the
-  // request that caused it answered 201 and the process died a tick later
-  // (`FJS-540`). The sweep only removes anything once the oldest row is past
-  // the window, so it is a crash on the first night after a deployment's
-  // retention period elapses, with nothing in the request log.
+  // holds is wrong. It used to answer that by DELETING the index — and SQLite
+  // marks a connection readonly when its file is unlinked underneath, so the
+  // next append threw `SQLITE_READONLY_DBMOVED` from inside the driver, on the
+  // audit path, which is fire-and-forget: the request that caused it answered
+  // 201 and the process died a tick later (`FJS-540`).
   //
-  // The test above cannot see it because it never writes again afterwards,
-  // which is the whole of why this one sits beside it rather than inside it.
-  test('the driver keeps working after a sweep has deleted its index', async () => {
+  // **It rebuilds the index instead now** (`FJS-665`), which removes that crash
+  // at its root rather than recovering from it — and is the precondition for the
+  // index being in WAL at all, since an unlink there leaves `-wal` and `-shm`
+  // behind and the next write answers `ok` into an inode with no directory
+  // entry. So this test asserts the opposite of what it used to: the file is
+  // still there, and it holds the offsets of the rows that SURVIVED.
+  //
+  // The reopen guard `FJS-540` added stays and is asserted below, because
+  // nothing stops a hand-written probe or an older build removing the file.
+  test('a sweep rebuilds the index rather than deleting it', async () => {
     const dir = tmp()
     const src = `
       database main { path "${join(tmp(), 'app.db')}" }
@@ -178,15 +182,23 @@ describe('the jsonl half', () => {
 
     const file  = sys.$retain().find((r: { model: string }) => r.model === 'Entry')!.table as string
     const index = file + '.index.db'
-    expect(existsSync(index)).toBe(false)   // the compaction took it
+    expect(existsSync(index)).toBe(true)    // the compaction kept it
+
+    // The survivor is findable THROUGH the index, which is the half that says
+    // the offsets were rebuilt rather than merely left alone: the rewrite moved
+    // 'fresh' to byte 0, and an index still holding its old offset would read a
+    // different line or none.
+    expect(await bodies(sys, 'entry')).toEqual(['fresh'])
 
     // The write that used to kill the process.
     await sys.entry.create({ data: { body: 'after', createdAt: ago(0) } })
-    expect(existsSync(index)).toBe(true)    // …and put it back
-
-    // Both halves still answer: the row written after the sweep, and the one
-    // that survived it. A reopen that lost the survivors would be a different
-    // bug wearing this one's fix.
+    expect(existsSync(index)).toBe(true)
     expect(await bodies(sys, 'entry')).toEqual(['after', 'fresh'])
+
+    // `FJS-540`'s guard, still standing: the driver notices an index removed
+    // under it and opens a new one rather than throwing READONLY_DBMOVED.
+    rmSync(index, { force: true })
+    await sys.entry.create({ data: { body: 'later', createdAt: ago(0) } })
+    expect(existsSync(index)).toBe(true)
   })
 })

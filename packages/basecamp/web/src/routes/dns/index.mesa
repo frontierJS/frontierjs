@@ -1,0 +1,206 @@
+---
+title: DNS & edge
+---
+<script>
+  // Where the mock's CloudflareView goes.
+  //
+  // The mock was a vendor screen: a zone, its DNS records, its SSL chain and
+  // 24 hours of its analytics, all from a constant. Two of those four are this
+  // app's own record and are real here — a `Domain` row IS the hostname, its
+  // certificate and whether it is proxied, and no vendor has to be asked to
+  // draw it. The other two belong to whoever serves the edge, and this app has
+  // no adapter for one: there is no Cloudflare in api/src/providers/index.ts,
+  // and inventing an account name in the UI is how a screen ends up lying.
+  //
+  // So the vendor half is a skeleton with the reason beside it rather than a
+  // plausible number, and the screen is named for the job rather than for the
+  // vendor the mock happened to draw — the day an adapter lands it will be one
+  // of several, and a screen called Cloudflare could only ever hold one.
+  import { session } from '../../session.js'
+  import { domains } from '../../resources/Domain.mesa'
+  import { apps } from '../../resources/App.mesa'
+  import { portal } from '../../resources/Portal.mesa'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Skeleton   from '@frontierjs/ui/components/feedback/Skeleton.mesa'
+  import Table      from '@frontierjs/ui/components/display/Table.mesa'
+
+  $: session.workspaceId
+
+  let rows    = []
+  let appById = new Map()
+  let edge    = null
+  let error   = null
+  let loading = true
+
+  async function load() {
+    error = null; loading = true
+    try {
+      // Both lists, because a hostname with no app name beside it is an id in
+      // a column nobody can act on. `domains.find` answers the app's id and
+      // not its name — the include is on the app's own detail read.
+      const [dom, app, adapter] = await Promise.all([
+        domains.service.find({}, { limit: 200 }),
+        apps.service.find({}, { limit: 200 }),
+        // `get` pings. A failure here must not take the hostname table with
+        // it — the app's own rows are readable whether or not a vendor is.
+        portal.service.get('edge').catch(() => null),
+      ])
+      rows    = dom.data
+      appById = new Map(app.data.map(a => [a.id, a]))
+      edge    = adapter
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  // The service decorates every row with cert_status — one definition, in
+  // api/src/services/domains/domains.service.ts, so this screen and the notice
+  // rules cannot disagree about what "expiring" means.
+  const CERT_TONE = { active: 'success', expiring_soon: 'warning', expired: 'danger', none: 'muted' }
+  const TONE      = { healthy: 'success', unconfigured: 'muted', unreachable: 'danger', degraded: 'warning' }
+
+  $: proxied  = rows.filter(r => r.proxied).length
+  $: expiring = rows.filter(r => r.cert_status === 'expiring_soon').length
+  $: expired  = rows.filter(r => r.cert_status === 'expired').length
+
+  const COLUMNS = [
+    { key: 'hostname', label: 'Hostname' },
+    { key: 'app',      label: 'App' },
+    { key: 'cert',     label: 'Certificate' },
+    { key: 'ssl',      label: 'SSL mode' },
+    { key: 'edge',     label: 'Edge' },
+  ]
+</script>
+
+{#if error}
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if loading}
+  <div aria-busy="true" class="stack">
+    <Skeleton variant="text" width="12rem" />
+    <Skeleton height="16rem" />
+  </div>
+{:else}
+  <div class="tiles" style="--tile-min: 12rem" id="dns-tiles">
+    <article class="tile">
+      <div class="tile-label">Hostnames</div>
+      <div class="tile-value">{rows.length}</div>
+    </article>
+    <article class="tile">
+      <div class="tile-label">Proxied</div>
+      <div class="tile-value">{proxied}</div>
+      <div class="tile-delta muted">of {rows.length}</div>
+    </article>
+    <article class="tile">
+      <div class="tile-label">Expiring soon</div>
+      <div class="tile-value">{expiring}</div>
+      <div class="tile-delta {expiring ? 'warning' : 'muted'}">within 30 days</div>
+    </article>
+    <article class="tile">
+      <div class="tile-label">Expired</div>
+      <div class="tile-value">{expired}</div>
+      <div class="tile-delta {expired ? 'danger' : 'muted'}">serving a warning</div>
+    </article>
+  </div>
+
+  <Card>
+    <h2 class="h4">Hostnames this workspace serves</h2>
+    {#if rows.length === 0}
+      <EmptyState
+        compact
+        title="No hostnames yet"
+        description="A domain is added on an app, where the certificate and the primary flag live with it."
+      >
+        {#snippet action()}
+          <Button variant="outlined" href="/projects/">Open a project</Button>
+        {/snippet}
+      </EmptyState>
+    {:else}
+      <Table id="dns-rows" columns={COLUMNS} rows={rows} striped>
+        {#snippet row(d)}
+          <tr>
+            <td>
+              <code>{d.hostname}</code>
+              {#if d.isPrimary}<Badge tone="success">primary</Badge>{/if}
+              {#if d.redirectTo}<Badge tone="muted">&rarr; {d.redirectTo}</Badge>{/if}
+            </td>
+            <td>
+              {#if appById.get(d.appId)}
+                <a href={`/apps/${d.appId}/`}>{appById.get(d.appId).name}</a>
+              {:else}
+                <span class="text-muted">—</span>
+              {/if}
+            </td>
+            <td>
+              <Pill tone={CERT_TONE[d.cert_status] ?? 'muted'}>{d.cert_status}</Pill>
+              {#if d.cert_days_remaining !== null && d.cert_days_remaining !== undefined}
+                <span class="text-sm text-muted">{d.cert_days_remaining}d</span>
+              {/if}
+            </td>
+            <td><code>{d.sslMode}</code></td>
+            <td>{d.proxied ? 'proxied' : 'direct'} · :{d.port}</td>
+          </tr>
+        {/snippet}
+      </Table>
+    {/if}
+  </Card>
+
+  <Card>
+    <div class="section-header">
+      <h2 class="h4">From the edge provider</h2>
+      <Pill tone={TONE[edge?.status] ?? 'muted'} id="edge-status">{edge?.status ?? 'unknown'}</Pill>
+    </div>
+
+    {#if edge?.configured}
+      <Callout tone="warning" title="Wired, and not read yet">
+        <p class="text-body">
+          <code>{edge.adapter}</code> is configured. No service exposes <code>IEdge</code> yet, so
+          the zone's records and its analytics are still not being asked for — that is a service to
+          write, not a variable to set.
+        </p>
+      </Callout>
+    {:else}
+      <Callout tone="muted" title="Nothing is being asked">
+        <p class="text-body">
+          Requests, cache hit rate, bandwidth, threats blocked and the zone's own DNS records are
+          the provider's numbers, not this app's. <code>IEdge</code> is declared with a stub behind
+          it — wiring one is a <code>@frontierjs/conduit</code> target and its API token as a
+          <a href="/secrets/">Secret</a>, like every other machine credential here, and then a
+          service in front of it.
+        </p>
+        <p class="text-body">
+          Until then these boxes stay empty rather than showing a figure nobody measured.
+          <a href="/admin/adapters/">All adapters</a>.
+        </p>
+      </Callout>
+    {/if}
+
+    <div class="tiles" style="--tile-min: 12rem" aria-busy="true" aria-label="Edge analytics, not connected">
+      <Skeleton variant="stat" />
+      <Skeleton variant="stat" />
+      <Skeleton variant="stat" />
+      <Skeleton variant="stat" />
+    </div>
+
+    <h3 class="h5">Zone DNS records</h3>
+    <div aria-busy="true" class="stack">
+      <Skeleton variant="text" width="70%" />
+      <Skeleton variant="text" width="55%" />
+      <Skeleton variant="text" width="62%" />
+    </div>
+  </Card>
+{/if}

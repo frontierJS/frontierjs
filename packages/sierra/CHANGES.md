@@ -1,5 +1,21 @@
 # Changes — @frontierjs/sierra
 
+## 2026-08-30 — a service with no model can say so
+
+`createResource(name, { model: null })`. 1141 tests, 0 fail.
+
+A resource over a service with no model — a status read over configuration, a
+cross-tenant tier, a projection assembled from several tables — resolved
+nothing in the schema registry and warned about it on every boot. The warning is
+right about the ordinary case (a misspelt model name is silent otherwise) and
+wrong about this one, and there was no way to tell them apart: basecamp has
+three such resources, so its console carried three of these warnings forever and
+every reader learned to skim past the one that means something.
+
+`model: null` is the declaration rather than a mute — the resolver is skipped
+and the warning with it. Everything else is unchanged: no schema means no field
+rules, so coerce, blank-strip and validate stay inert exactly as before.
+
 ## 2026-08-29 — `record()` takes options, and honours `detailQuery`
 
 1141 tests, 0 fail. Two changes behind

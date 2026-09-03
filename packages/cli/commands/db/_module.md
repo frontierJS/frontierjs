@@ -135,7 +135,7 @@ fli db:studio      — open Litestone Studio in the browser
 fli db:explain     — what a .lite word is (aliased `fli explain`; needs no schema)
 fli db:advise      — what this schema says wrong, and what it never said at all
 fli db:seed        — run db/seeders/seed.ts
-fli db:jsonschema  — generate JSON Schema from schema.lite → db/schema.json
+fli db:jsonschema  — generate JSON Schema from schema.lite → db/.json/schema.json
 fli db:backup      — back up the database file
 fli db             — open an interactive SQLite REPL
 ```

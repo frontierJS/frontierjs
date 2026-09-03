@@ -1,0 +1,104 @@
+<!--
+  What the shop charges for a standing order RIGHT NOW.
+
+  The page beside this was written when the site was built, and a shop raises
+  its prices without rebuilding — `plans.reprice` closes the open window and
+  opens the next one, and nothing in a file knows that happened. So this asks.
+
+  It is the same argument `LivePrices.mesa` makes about a product, and it is
+  sharper here: a subscription price moves once a year rather than with a sale,
+  so a stale one stays completely plausible for months.
+
+  ── Why it corrects cells rather than rendering the list ───────────────────
+
+  Two prices on one screen is worse than one wrong price, so the number stays
+  where the reader is already looking and this renders only the STATUS: how many
+  moved, or that the shop could not be reached. Reaching into the page's DOM is
+  deliberate — those cells belong to a prerendered page that no longer has a
+  component behind it, so a component cannot be handed them, and pretending to
+  own the list would mean rendering it twice.
+
+  ── Anonymous, and that is the check ───────────────────────────────────────
+
+  `Plan` is `@@gate("0.5.5.5")`, which is why this page is allowed to be public
+  at all. So there is no token here and the fallback on a refusal is the baked
+  number rather than an error dialog: the file is still true, it is only old.
+-->
+<script>
+  import { createJunctionClient } from '@frontierjs/junction/client'
+  import { clientOptions }        from '@/api.js'
+  import { money }                from '@/money.js'
+
+  let state = 'loading'   // loading | agreed | corrected | offline
+  let moved = []
+
+  $.onMount(async () => {
+    // Built in $.onMount and not at module scope: an island's body also runs
+    // during the static render, where there is no window, no fetch origin and
+    // no document to correct. `$.onMount` is a no-op on the server, which is
+    // what makes that safe rather than merely lucky.
+    try {
+      const client = createJunctionClient(clientOptions)
+
+      // Every plan still on sale, with its open window's price — `currentPrice`
+      // is `@from` on the model, so this is ONE request and no join.
+      const list = await client.service('plans').find({ active: true }, { limit: 50 })
+      const rows = list?.data ?? []
+
+      const seen = []
+      for (const row of rows) {
+        const card = document.querySelector(`[data-plan="${row.code}"] .price`)
+        if (!card) continue
+
+        const baked = card.dataset.baked === '' ? null : Number(card.dataset.baked)
+        const now   = row.currentPrice == null ? null : Number(row.currentPrice)
+
+        if (now !== baked) {
+          // The interval note is a child span the page rendered; replacing the
+          // whole cell's text would take it with it, so only the number moves.
+          const label = card.querySelector('span')
+          card.textContent = now == null ? 'Ask us' : money(now)
+          if (label) card.appendChild(label)
+          card.dataset.live = now == null ? '' : String(now)
+          card.classList.add('price-moved')
+          seen.push({ code: row.code, from: baked, to: now })
+        } else {
+          // Marked either way, so a drive can tell "checked and agreed" from
+          // "never ran" — which look identical if only a change is recorded.
+          card.dataset.live = now == null ? '' : String(now)
+        }
+      }
+
+      moved = seen
+      state = seen.length ? 'corrected' : 'agreed'
+    } catch {
+      state = 'offline'
+    }
+  })
+</script>
+
+<p class="text-sm" id="live-plans">
+  {#if state === 'loading'}
+    <span class="text-muted" id="live-plans-state">Checking today’s prices…</span>
+  {:else if state === 'offline'}
+    <span class="text-muted" id="live-plans-state">
+      Prices above are as of the last build; the shop could not be reached.
+    </span>
+  {:else if state === 'corrected'}
+    <span class="text-warning" id="live-plans-state">
+      <strong id="live-plans-moved">{moved.length}</strong>
+      {moved.length === 1 ? 'price has' : 'prices have'} changed since this page was built.
+    </span>
+  {:else}
+    <span class="text-muted" id="live-plans-state">Prices confirmed with the shop.</span>
+  {/if}
+</p>
+
+<style>
+  /* Set on a cell this island rewrote, so a correction is visible rather than
+     silent. `:global` because the cell belongs to the page, not to this
+     component — a scoped selector would hash and match nothing. */
+  :global(.price-moved) {
+    font-weight: 700;
+  }
+</style>

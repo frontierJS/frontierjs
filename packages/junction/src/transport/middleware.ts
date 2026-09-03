@@ -13,7 +13,7 @@
 import type { MiddlewareFn, TransportContext } from './types.ts'
 import type { App }                            from '../core/app.ts'
 import { Forbidden }                            from '../core/errors.ts'
-import { clientIp }                             from '../core/context.ts'
+import { clientIp, requestMeta }                from '../core/context.ts'
 import {
   createRateLimiter,
   refuseLegacyRateLimitOptions,
@@ -123,6 +123,22 @@ export function cors(opts: CorsOptions) {
     maxAge      = 86400
   } = opts
 
+  // `*` and credentials together is not a wider CORS policy, it is no policy:
+  // the browser refuses the literal `*` alongside `Access-Control-Allow-
+  // Credentials`, so the middleware reflected whatever `Origin` arrived and
+  // answered `true` beside it — every origin on the internet reading a
+  // cookie-authenticated response (`FJS-689`). Refused at CONSTRUCTION rather
+  // than per request: a guard that fires on the attacker's request and not on
+  // the developer's is one nobody sees until it is being used.
+  if (credentials && (origins === '*' || (Array.isArray(origins) && origins.includes('*')))) {
+    throw new TypeError(
+      `[Junction] cors(): origins '*' cannot be combined with credentials: true — ` +
+      `a credentialed response reflects the caller's own Origin back, so the ` +
+      `wildcard grants every site read access to an authenticated response. ` +
+      `List the origins that may hold a session, or drop credentials.`
+    )
+  }
+
   const methodStr  = methods.join(', ')
   // Junction's OWN protocol headers are added to whatever the app declared,
   // never replaced by it, because the browser client sends them unasked:
@@ -148,12 +164,20 @@ export function cors(opts: CorsOptions) {
   const middleware: MiddlewareFn = async (ctx, next) => {
     const origin = ctx.headers['origin'] ?? ''
 
+    // With credentials on there is no wildcard to fall back to: a request with
+    // no Origin is not cross-origin, and answering `*` beside
+    // `allow-credentials: true` is a header pair every browser rejects anyway.
+    if (credentials && !origin) { await next(); return }
+
     if (isAllowed(origin)) {
       ;(ctx).__cors = {
         'access-control-allow-origin':      origin || '*',
         'access-control-allow-methods':     methodStr,
         'access-control-allow-headers':     headerStr,
         'access-control-max-age':           String(maxAge),
+        // A reflected origin makes the response origin-dependent; without this
+        // a shared cache hands one site's ACAO to the next caller.
+        ...(origin ? { 'vary': 'Origin' } : {}),
         ...(credentials ? { 'access-control-allow-credentials': 'true' } : {})
       }
     }
@@ -308,41 +332,41 @@ export interface RequestLoggerOptions {
 
 export function requestLogger(opts: RequestLoggerOptions = {}) {
 
-  const {
-    level  = 'info',
-    format = 'common',
-    skip,
-  } = opts
+  const { level = 'info', format = 'common', skip } = opts
 
-  const middleware: MiddlewareFn = async (ctx, next) => {
-    if (skip?.(ctx)) { await next(); return }
+  // The middleware is built INSIDE the plugin, because it needs the app's
+  // logger and the factory does not have one yet. It used to write straight to
+  // `console[level]`, so the one line per request an operator actually greps
+  // had no namespace, no correlation id and no level filter — and under
+  // `format: 'json'` it was a second JSON shape beside the logger's own.
+  //
+  // `format` is kept and now means what it says: `json` puts the fields on the
+  // entry, `common` puts the familiar one-line string in the message and the
+  // fields beside it. Either way it goes through the app's writers.
+  return function requestLoggerPlugin(app: App): void {
+    const log = app.logger.child('http')
 
-    const start = Date.now()
+    const middleware: MiddlewareFn = async (ctx, next) => {
+      if (skip?.(ctx)) { await next(); return }
 
-    try {
-      await next()
-    } finally {
-      const ms     = Date.now() - start
-      const status = ctx.__status ?? 200
+      const start = Date.now()
+      try {
+        await next()
+      } finally {
+        const ms     = Date.now() - start
+        const status = ctx.__status ?? 200
+        // The id the rest of the request's lines carry. Read from the store
+        // rather than from ctx, because `enterRequest` is the one owner of it
+        // and a second reading of `x-request-id` here is a second answer.
+        const correlationId = requestMeta()?.correlationId
 
-      if (format === 'json') {
-        console[level](JSON.stringify({
-          method: ctx.method,
-          path:   ctx.path,
-          status,
-          ms,
-          ip:     ctx.ip,
-          time:   new Date().toISOString()
-        }))
-      } else {
-        console[level](
-          `${ctx.method} ${ctx.path} ${status} ${ms}ms - ${ctx.ip}`
-        )
+        const data = { method: ctx.method, path: ctx.path, status, ms, ip: ctx.ip, correlationId }
+
+        if (format === 'json') log[level]('request', data)
+        else log[level](`${ctx.method} ${ctx.path} ${status} ${ms}ms - ${ctx.ip}`, { correlationId })
       }
     }
-  }
 
-  return function requestLoggerPlugin(app: App): void {
     patchRouterWithMiddleware(app, middleware)
   }
 }

@@ -13,8 +13,9 @@
   import { createResource } from '@frontierjs/sierra/junction'
 
   // Portal has NO model — it reports on the eight self-hosted appliances,
-  // which are configuration, not rows. modelNameFor('portal') misses and
-  // Sierra warns, then degrades to a bare make(). That is correct here:
-  // there is nothing in db/schema.lite for it to derive from.
-  export const portal = createResource('portal', {})
+  // which are configuration, not rows. `model: null` is how that is said:
+  // there is nothing in db/schema.lite to derive from, and a resource that
+  // declares it is not the same as one whose model name is misspelt, which is
+  // what Sierra's "no schema found" warning is for.
+  export const portal = createResource('portal', { model: null })
 </script>

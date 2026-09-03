@@ -224,6 +224,10 @@
   // form does. Keyed by field, replaced rather than mutated — that is what
   // makes the <Select> repopulate. $.onMount, so a prerendered form fetches
   // nothing at build time.
+  // The <form> itself, for the one question that can only be asked of the DOM:
+  // did anything a person can type into end up inside it (see § onMount).
+  let formEl = undefined
+
   let pickers = {}
   // Why a picker's rows are not there, where they could not be fetched.
   // `resource.options()` answers `error`, and dropping it makes *there are
@@ -499,6 +503,40 @@
   $.onMount(() => {
     onready?.({ submit, reset, clearErrors })
 
+    // ── a form with nothing to fill in ───────────────────────────────────
+    //
+    // Generation is off when the caller passed children, and `slot=` is an
+    // attribute on an ELEMENT — so `{#if ready}<Button slot="actions" />{/if}`
+    // puts the BLOCK in the default slot, `$slots.default` is truthy, and this
+    // component reads a caller who wrote the form themselves. Every field
+    // disappears, the form still submits, and the page looks like a component
+    // that failed to load (`FJS-607`). The same thing happens to a slot whose
+    // only child is an HTML comment.
+    //
+    // Whether a BLOCK whose every branch is slotted should count as default
+    // content is a Mesa question about `$slots` and is not settled here. What
+    // is decidable here is the pair: this form generated nothing AND nothing a
+    // person can type into is inside it, over a resource that had fields to
+    // offer. That is not a legitimate form under any reading.
+    //
+    // Asked of the DOM because it is the only place the answer is: children
+    // arrive as opaque content, so counting them says nothing about whether any
+    // of them is a control.
+    if (!rendered.length) {
+      const controls = formEl?.querySelectorAll('input, select, textarea, [contenteditable="true"]')
+      const offered  = resource?.formFields?.({ only, except })?.filter(f => f.control) ?? []
+      if (!controls?.length && offered.length) {
+        const model = resource?.context?.model ?? 'this resource'
+        console.warn(
+          `[Form] no fields were rendered and no control was passed, but ${model} offers ` +
+          `${offered.length} (${offered.slice(0, 4).map(f => f.name).join(', ')}${offered.length > 4 ? ', …' : ''}). ` +
+          'Generation is off because this form was passed children: a `slot=` child inside `{#if}` ' +
+          'puts the BLOCK in the default slot, which reads as a hand-written form. Render the ' +
+          'slotted children unconditionally, or state `auto` to force either way.',
+        )
+      }
+    }
+
     // Rows are fetched for a SCHEMA FACT — a foreign key, or a declared value
     // set — not for the control named `picker`. The relation is the fact and
     // the control is a choice made over it, so a contributed combobox over
@@ -531,6 +569,7 @@
 </script>
 
 <form
+  bind:this={formEl}
   class={cx('stack')}
   novalidate={novalidate || null}
   aria-busy={submitting || null}

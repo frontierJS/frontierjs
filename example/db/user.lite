@@ -36,3 +36,50 @@
 extend model User {
   isStaff Boolean @default(false) @allow('write', auth().isAdmin)
 }
+
+// ─── Who may read the roster ──────────────────────────────────────────────
+//
+// auth ships `User` at `@@gate("4.4.4.5")` and NO read policy, which is the
+// right default for an app whose only people are its own staff: read at USER(4)
+// so an app's own screens can list them.
+//
+// This shop is not that app. A shopper registers on the public storefront and
+// grades USER(4) exactly as a member of staff does — that is the whole point of
+// `isStaff` — so the shipped default hands every shopper the roster: every
+// address, every role, every colleague. A gate cannot say this, because a gate
+// is per MODEL and the difference here is per ROW.
+//
+// So the policy is the second half of the same sentence `isStaff` started. A
+// person always reads their own row, which is what the account screen needs;
+// staff read everybody, which is what the users screen needs. Nobody else reads
+// anything, and they read it as an EMPTY LIST with a 200 — a policy filters
+// where a gate refuses (Invariant 6).
+//
+// It costs auth nothing: every write this package makes goes through
+// asSystem(), which is above the ladder and above this.
+extend model User {
+  @@allow('read', id == auth().id || auth().isStaff)
+
+  // ─── Who may add somebody ───────────────────────────────────────────────
+  //
+  // auth ships create at USER(4), which is right for the model it ships: the
+  // only thing that reaches it is `POST /auth/register`, and registration by
+  // definition happens before anybody is anybody. Once an app puts a `users`
+  // service on the same model there is a SECOND door, and at 4 every signed-in
+  // shopper could walk through it — inventing accounts on a shop they merely
+  // buy from.
+  //
+  // The gate cannot say so, and not for a subtle reason: `@@gate` is
+  // single-valued, so an `extend model` may not restate it (the parser refuses
+  // a second answer by name). A policy is the mechanism that IS repeatable, and
+  // create is the one operation where a policy throws rather than filters —
+  // there is no stored row to hide, the payload IS the row. So a shopper gets a
+  // 403 that names the model, which is the correct answer to *may I* and is
+  // exactly what a filtered empty list would fail to say.
+  //
+  // It costs registration nothing. Every write @frontierjs/auth makes goes
+  // through `asSystem()`, which is above the ladder and above this — so
+  // `/auth/register` and `db/seed.ts` are unaffected, and the only caller this
+  // grades is a request to the app's own `users` service.
+  @@allow('create', auth().isAdmin)
+}

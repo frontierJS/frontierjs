@@ -15,10 +15,35 @@ const CREATE_TABLE = `
     protocol        TEXT NOT NULL,
     address         TEXT NOT NULL,
     auth            TEXT NOT NULL,
+    extra           TEXT,
     registered_at   INTEGER NOT NULL,
     last_seen_at    INTEGER
   )
 `
+
+// The descriptor's optional fields, carried as one JSON column.
+//
+// One column rather than one per field, because every one of these is optional
+// and a column each means a migration each — and the first two got here by
+// being forgotten: `encoding` shipped for `FJS-556` and was never added to this
+// store, so a target declared `form` came back `json` after a restart and every
+// body went out as JSON again, which is the defect that feature exists to fix,
+// resurrected by persistence alone. A registry that drops what it is given is
+// worse than one that refuses it.
+// A descriptor field absent from this list is dropped on write with nothing
+// said — the row round-trips, the target works, and the field it was declared
+// with is simply not there after a restart (`FJS-657`).
+const EXTRA_KEYS = ['encoding', 'headers', 'follow_redirects'] as const
+
+// `CREATE TABLE IF NOT EXISTS` does nothing to a table that already exists, so a
+// registry written before this column simply lacks it. Added idempotently rather
+// than versioned: there is one column, its absence is decidable from PRAGMA, and
+// a migration framework for a single optional blob is more machinery than fact.
+function ensureExtraColumn(db: Database): void {
+  const cols = db.query(`PRAGMA table_info(conduit_targets)`).all() as Array<{ name: string }>
+  if (cols.some(c => c.name === 'extra')) return
+  db.run(`ALTER TABLE conduit_targets ADD COLUMN extra TEXT`)
+}
 
 // bun:sqlite is synchronous. The ConduitStore interface is async so that a
 // networked registry is implementable — these methods satisfy it without
@@ -35,6 +60,7 @@ export function createSQLiteStore(db: Database): ConduitStore {
 
   async function init() {
     db.run(CREATE_TABLE)
+    ensureExtraColumn(db)
   }
 
   async function get(id: string): Promise<TargetDescriptor | null> {
@@ -49,13 +75,14 @@ export function createSQLiteStore(db: Database): ConduitStore {
     // registered_at is intentionally excluded from the UPDATE clause —
     // we never overwrite the original registration timestamp on heartbeat.
     run(`
-      INSERT INTO conduit_targets (id, kind, protocol, address, auth, registered_at, last_seen_at)
-      VALUES ($id, $kind, $protocol, $address, $auth, $registered_at, $last_seen_at)
+      INSERT INTO conduit_targets (id, kind, protocol, address, auth, extra, registered_at, last_seen_at)
+      VALUES ($id, $kind, $protocol, $address, $auth, $extra, $registered_at, $last_seen_at)
       ON CONFLICT(id) DO UPDATE SET
         kind         = excluded.kind,
         protocol     = excluded.protocol,
         address      = excluded.address,
         auth         = excluded.auth,
+        extra        = excluded.extra,
         last_seen_at = excluded.last_seen_at
     `, {
       $id:            descriptor.id,
@@ -63,6 +90,7 @@ export function createSQLiteStore(db: Database): ConduitStore {
       $protocol:      descriptor.protocol,
       $address:       descriptor.address,
       $auth:          JSON.stringify(descriptor.auth),
+      $extra:         serializeExtra(descriptor),
       $registered_at: descriptor.registered_at,
       $last_seen_at:  descriptor.last_seen_at
     })
@@ -96,9 +124,21 @@ interface RawRow {
   kind:          string
   protocol:      string
   address:       string
-  auth:          string   // JSON string
+  auth:          string          // JSON string
+  extra:         string | null   // JSON string — the optional fields, see EXTRA_KEYS
   registered_at: number
   last_seen_at:  number | null
+}
+
+// `null` rather than '{}' when there is nothing to carry, so a row says plainly
+// that the descriptor declared none of them.
+function serializeExtra(descriptor: TargetDescriptor): string | null {
+  const extra: Record<string, unknown> = {}
+  for (const key of EXTRA_KEYS) {
+    const value = descriptor[key]
+    if (value !== undefined) extra[key] = value
+  }
+  return Object.keys(extra).length ? JSON.stringify(extra) : null
 }
 
 function deserialize(row: RawRow): TargetDescriptor {
@@ -108,7 +148,25 @@ function deserialize(row: RawRow): TargetDescriptor {
     protocol:      row.protocol      as TargetDescriptor['protocol'],
     address:       row.address,
     auth:          JSON.parse(row.auth),
+    // A row written before the column exists reads null; a row whose JSON is
+    // unreadable is treated the same way, because a registry that throws on
+    // read takes every OTHER target down with the one that is corrupt.
+    ...parseExtra(row.extra),
     registered_at: row.registered_at,
     last_seen_at:  row.last_seen_at
+  }
+}
+
+function parseExtra(raw: string | null): Partial<TargetDescriptor> {
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const out: Record<string, unknown> = {}
+    for (const key of EXTRA_KEYS) {
+      if (parsed[key] !== undefined) out[key] = parsed[key]
+    }
+    return out as Partial<TargetDescriptor>
+  } catch {
+    return {}
   }
 }

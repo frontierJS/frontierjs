@@ -144,6 +144,8 @@ import { parseGateString } from './plugins/gate.js'
 import { TIME_PATTERNS } from './core/validate.js'
 import { dependsOnClock } from './core/policy.js'
 import { capabilitiesForModel } from './core/capabilities.js'
+import { isServerAssignedId } from './core/ids.js'
+import { sealedStates } from './core/seal.js'
 
 export function generateJsonSchema(schema, options = {}) {
   const {
@@ -353,9 +355,16 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     // Skip timestamp fields unless opted in
     if ((field.name === 'createdAt' || field.name === 'updatedAt') && !includeTimestamps) continue
 
-    // Skip @id in create mode (server-assigned)
+    // Skip @id in create mode only where the SERVER assigns it — an
+    // autoincrementing rowid alias, or a declared default. A key the caller must
+    // supply (a slug, an external identifier, any member of a composite key) is
+    // offered like any other column, because nobody else can produce it: this
+    // excluded every `@id`, so with `additionalProperties: false` beside it a
+    // create carrying the key was refused and a generated form had no box to
+    // type it into (`FJS-608`). `isServerAssignedId` is the one owner — the
+    // required pre-flight in client.js asks the same question.
     const isId = field.attributes.find(a => a.kind === 'id')
-    if (isId && mode === 'create') continue
+    if (isId && mode === 'create' && isServerAssignedId(field, model)) continue
 
     // @guarded(all) / @secret fields — excluded for client audience entirely
     const isGuardedAll = field.attributes.some(a => a.kind === 'guarded' && a.level === 'all')
@@ -421,6 +430,28 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       fieldSchema['x-litestone-kind'] = tenancyStamped ? 'tenancy' : 'system'
     }
 
+    // @immutable — readOnly in the UPDATE schema and writable in every other
+    // mode, which is the one keyword pair that says *written once*. A create
+    // form must still offer the box: this is the only column kind here whose
+    // answer differs by mode, and emitting it readOnly in create would make the
+    // model uncreatable through a generated form.
+    if (mode === 'update' && field.attributes.some(a => a.kind === 'immutable')) {
+      // On a SEALING model the freeze has a moment, so `readOnly` is the wrong
+      // answer for a row that is still a draft — and no schema can tell the two
+      // apart, because the difference is in the ROW. The keyword is withheld and
+      // the consumer is told what to read instead: the state column, and the set
+      // of values that means sealed.
+      const seal = sealedStates(model.attributes?.find(
+        a => a.kind === 'transitions' && sealedStates(a)))
+      if (seal) {
+        fieldSchema['x-litestone-kind']  = 'immutable-until-seal'
+        fieldSchema['x-litestone-seal']  = { field: seal.field, states: [...seal.states] }
+      } else {
+        fieldSchema.readOnly = true
+        fieldSchema['x-litestone-kind'] = 'immutable'
+      }
+    }
+
     // @transient — accepted on the wire, stored nowhere. The write-mode-only
     // half is decided above; this is what says so to a consumer, which is how a
     // generated form knows to offer a control for a value no read answers.
@@ -470,7 +501,7 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       // create was refused with "the button does nothing" (FJS-095).
       if (isSystemWritten) {
         // nothing — the application fills it
-      } else if (!field.type.optional && !hasDefault && !isId) {
+      } else if (!field.type.optional && !hasDefault && (!isId || !isServerAssignedId(field, model))) {
         // A required @transient field lands here like any other, and this is
         // the only layer that can hold the rule: there is no column, so no
         // NOT NULL catches a caller who omitted it.
@@ -807,6 +838,18 @@ function applyValidators(schema, attributes) {
       // render 1299 as 12.99 without being told a second time.
       case 'scale':
         schema['x-scale'] = attr.places
+        break
+      // `@big` is the one attribute that changes its field's JSON TYPE, and it
+      // has to: the column's values do not fit a JSON number, which is the
+      // double. So the wire carries digits — `type: 'string'` with a pattern —
+      // which is what the column reads back as, so a client round-tripping a
+      // row sends back exactly what it was handed. `x-big` is the marker a
+      // control resolver keys on, since `type: 'string'` alone would offer a
+      // plain text box for a value that is a whole number.
+      case 'big':
+        schema.type    = 'string'
+        schema.pattern = '^-?\\d+$'
+        schema['x-big'] = true
         break
       case 'money':
         // Three shapes and a reader has to tell them apart: a stated currency,

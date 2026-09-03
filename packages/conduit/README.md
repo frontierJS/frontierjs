@@ -1,19 +1,22 @@
 # @frontierjs/conduit
 
-Outbound transport layer for FrontierJS Junction apps.
+**The third parties your app integrates with, declared in one place.**
 
-Junction handles everything inbound — routing, hooks, WebSocket channels, auth. Conduit handles the other direction: **any request your app needs to make to something outside itself**. Provider APIs, remote outposts, local sidecars — you register a destination once, then call it by name from anywhere in your app.
+A counterparty is named once — its address, which credential authorises it, how its bodies are encoded, what happens when it is slow or down — and every call to it goes through that name. Provider APIs, remote outposts, local sidecars.
 
 ```
-Browser / API  ──►  Junction (inbound)
-                         │
                     app.conduit
                          │
               ┌──────────┴──────────┐
-        outpost:srv-abc        provider:hetzner
+       provider:stripe        outpost:srv-abc
               │                     │
-        hub-outpost:7700        api.hetzner.cloud
+        a third party         an FJS machine
+     (http · generic)      (websocket · our own protocol)
 ```
+
+**What ships is the outbound end.** *Integrating with* is a relationship rather than a direction — a vendor holds two of your secrets and dials you about as often as you dial it — so the receiving end belongs here too and is **not built yet**; see `IDEAS/inbound-integrations.md` for the shape and for the two things that are deliberately *not* conduit's (a counterparty signing with FrontierJS's own scheme, and a machine caller becoming a principal — both junction's).
+
+**Conduit is optional and is not a wall.** Nothing stops a raw `fetch`, and junction's own `IMail` and `IAIModel` ship working defaults that dial out directly so an app that never installs this package still sends mail. What conduit gives a call is the ring around it: a resolved credential, retry with a deadline, a circuit breaker, observers, and a line in `/metrics`. An app that has conduit can back those same contracts with it — `packages/basecamp/api/src/core/mailer.ts` is `IMail` over `app.conduit`, and junction's email campaign tier requires conduit by name.
 
 ---
 
@@ -78,11 +81,12 @@ A **target** is a named remote endpoint. Every call goes through a target — yo
 
 ```ts
 interface TargetDescriptor {
-  id:            string      // "provider:hetzner" | "outpost:srv-abc"
+  id:            string      // "provider:stripe" | "outpost:srv-abc"
   kind:          'provider' | 'outpost' | 'local'
   protocol:      'http' | 'websocket' | 'unix'
   address:       string      // base URL or socket path
   auth:          TargetAuth
+  encoding?:     'json' | 'form'   // how bodies go on the wire; default 'json'
   registered_at: number      // unix ms
   last_seen_at:  number | null
 }
@@ -111,12 +115,12 @@ The signature covers a canonical string, not just the body:
 <METHOD>\n<path>\n<timestamp>\n<nonce>\n<sha256-hex of body>
 ```
 
-emitted as three headers (prefix configurable via `header_prefix`, default `X-Hub`):
+emitted as three headers (prefix configurable via `header_prefix`, default `X-Fjs`):
 
 ```
-X-Hub-Signature: sha256=<hex>
-X-Hub-Timestamp: <unix seconds>
-X-Hub-Nonce:     <uuid>
+X-Fjs-Signature: sha256=<hex>
+X-Fjs-Timestamp: <unix seconds>
+X-Fjs-Nonce:     <uuid>
 ```
 
 This binds each signature to one method and one path, so a captured signature cannot be replayed against a different endpoint on the same target, and the timestamp and nonce let the receiver reject stale or repeated requests. Requests with no body sign the hash of the empty string, so `POST /reboot` and `DELETE /servers/42` are signed like anything else.
@@ -128,6 +132,26 @@ This binds each signature to one method and one path, so a captured signature ca
 Credentials go on the **upgrade request**, using Bun's `headers` option on the `WebSocket` constructor. For an `hmac` target the upgrade is signed with method `CONNECT` and the address path.
 
 This authenticates the *connection*. There is no per-frame signature — anything able to write to an established socket can issue any command on it. If you need per-command authentication, terminate the socket per operation or add frame signing on both ends.
+
+### Body encoding
+
+A target declares how its request bodies go on the wire — it is a fact about who is on the other end, not about one call.
+
+| `encoding` | content-type | for |
+|---|---|---|
+| `json` (default) | `application/json` | most REST APIs |
+| `form` | `application/x-www-form-urlencoded` | Stripe, PayPal, Twilio, every OAuth token endpoint |
+| `binary` | `application/octet-stream`, or whatever the caller states | raw uploads — an attachment endpoint, object storage |
+
+Under `binary` the body is a `Uint8Array` or `ArrayBuffer` and is passed through untouched; the content-type belongs to the caller, because it is per file rather than per target. Bytes under `json` or `form` are **refused** rather than serialised — `JSON.stringify` turns a PNG into `{"0":137,"1":80,…}` and sends it confidently.
+
+The encoded body is the same value the HMAC signer hashes, so an encoder anywhere else signs bytes the transport did not send.
+
+### Constant headers
+
+`headers` on a target is sent with every request to it — a pinned API version, a required `User-Agent`. It sits below `req.headers`, so a caller can still override one, and below the auth headers, which nothing may displace.
+
+Header precedence is **case-insensitive**: `authorization` from a caller and `Authorization` from the target's auth are the same header, and the auth one wins. (A plain object merge kept both and `fetch` joined them with a comma.)
 
 ### Credentials
 
@@ -168,8 +192,8 @@ Transports resolve once per attempt, so a retried request calls the resolver up 
 
 | protocol    | status | used for |
 |-------------|--------|----------|
-| `http`      | ✅ v1  | Provider REST APIs, remote outposts |
-| `websocket` | ✅ v1  | Persistent outpost connections with reconnect |
+| `http`      | ✅ v1  | Third-party REST APIs, remote outposts |
+| `websocket` | ✅ v1  | FJS-to-FJS control-plane links — Conduit's own frame envelope, reconnecting. Not a generic WS client |
 | `unix`      | ✅ v1  | Local sidecar processes |
 | `ssh`       | 🔜 future | — |
 | `nats`      | 🔜 future | — |
@@ -188,9 +212,16 @@ if (result.error) {
 } else {
   // result.data          — parsed JSON response
   // result.meta.status   — HTTP status code
+  // result.meta.headers  — the response's headers, lowercased
   // result.meta.duration_ms
 }
 ```
+
+`meta.headers` is where the answers a caller cannot get any other way live — RFC 5988 `Link` for the next page, `ETag`/`Last-Modified` for a conditional request, `X-Total-Count`. It is present on failures too (a 429's `Retry-After`, a 5xx's request id) and absent only when nothing was sent.
+
+**A `304 Not Modified` is a success**, not an error: `data` is `null`, `meta.status` is 304, and the validator headers come back. Send `If-None-Match` off the previous response's `ETag` and serve your own copy when you get one.
+
+`meta.duration_ms` is the **last attempt**, not the whole call — `conduit.stats()` measures the call including every retry.
 
 This holds for bad input too: a body that will not serialise (a cyclic object, a `BigInt`) returns `invalid_request` rather than throwing out of `send()`.
 
@@ -201,7 +232,8 @@ This holds for bad input too: a body that will not serialise (a cyclic object, a
 | `invalid_request` | no | body would not serialise, response exceeded `max_response_bytes`, or the method is not a valid HTTP verb |
 | `timeout` | yes | exceeded `timeout_ms`, including during the response body read |
 | `connection_failed` | yes | could not reach the target, or the conduit has been destroyed |
-| `server_error` | 5xx and 429 yes, 4xx no | the target responded with an error status |
+| `rate_limited` | yes | 429, or a 503 that named a `Retry-After`. Carries `retry_after_ms`, which the retry ladder waits instead of its own backoff, and **does not count toward the circuit breaker** — a rate limit says the target is healthy and we are asking too fast |
+| `server_error` | 5xx yes, 4xx no | the target responded with an error status |
 | `not_implemented` | no | the target's protocol has no transport yet (`ssh`, `nats`) |
 | `circuit_open` | no | the target's breaker is open — nothing was sent |
 | `overloaded` | no | the target's concurrency cap is full — nothing was sent |
@@ -641,11 +673,17 @@ const { conduit } = await createTestConduit(
 
 ## What Conduit is not
 
-**Not a queue.** `send()` is synchronous — you call it and await the result. Retry on failure, durability across restarts, and job scheduling belong in a separate queue layer that *uses* Conduit after dequeuing a job.
+**Not a queue.** `send()` is synchronous — you call it and await the result. Retry on failure, durability across restarts, and job scheduling belong in a separate queue layer that *uses* Conduit after dequeuing a job. In FrontierJS that layer is `@frontierjs/caravan`, and the durable handoff into it is junction's `ctx.enqueue`.
 
-**Not a service mesh.** Conduit carries Hub control-plane commands (deploy, pull, stop, sync). It does not proxy application traffic between services.
+**Not a service mesh.** It does not proxy application traffic between services.
 
-**Not part of Junction core.** If you build a product on Junction that has no outbound infrastructure needs, don't install this package.
+**Not a generic WebSocket client.** A `websocket` target speaks Conduit's own frame envelope and the far side has to implement it — in practice an `@frontierjs/outpost`. A third-party socket API is not reachable through this package, and streaming is that half's alone: `stream()` over `http` or `unix` answers `not_implemented`.
+
+**Not a receiver — yet.** Conduit dials; it does not listen. Verifying a webhook is app code today (`example/api/src/providers/stripe/index.ts` is the reference), and `IDEAS/inbound-integrations.md` is where that is going.
+
+**Not a boundary anything enforces.** Declaring a target is how you get the ring around a call, not a rule the framework applies to every outbound byte.
+
+**Not part of Junction core.** If your app talks to no third party, don't install this package.
 
 ---
 

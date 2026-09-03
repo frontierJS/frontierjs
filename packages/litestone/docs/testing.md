@@ -767,8 +767,15 @@ does not grant.
 
 `deriveAccess(schema)` reads the whole declared access surface back out — every
 `@@gate`, `@@allow`, `@@deny`, `@guarded`, `@encrypted`, `@secret`, field `@allow`
-and `@@transitions` gate — and `renderAccessSnapshot()` turns it into one markdown
-file to commit.
+and, per declared move, its `@gate` **and its `@system`** — and
+`renderAccessSnapshot()` turns it into one markdown file to commit.
+
+The two halves of a move are separate columns because they compose. The gate says
+who may ASK; `@system` says the APPLICATION makes it, so no caller reaches it at
+any level and the code makes it by naming the move on the write. `@system @gate(5)`
+is both: a move the engine decides on behalf of a caller senior enough to ask for
+it. Folded into one column, a move gaining `@system` — the widest narrowing a
+state machine can make — produced no diff at all (`FJS-613`).
 
 ```bash
 litestone access            # → access.snapshot.md beside the schema
@@ -785,7 +792,7 @@ error. The snapshot is tens of lines and names exactly which access moved.
 import { deriveAccess, gateLadder } from '@frontierjs/litestone/testing'
 
 const access = deriveAccess(schema)
-access.counts        // { models, gated, unrestricted, policied, protected, transitions }
+access.counts        // { models, gated, unrestricted, policied, protected, transitions, systemMoves }
 access.models        // sorted by name — inserting a model does not shift every row
 
 for (const model of access.models)

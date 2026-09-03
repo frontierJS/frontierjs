@@ -137,8 +137,13 @@ function emitTable(t, tables, gap) {
     // above and never reaches this loop, so a foreign key is the only exemption
     // left to make — see wide-int.js for why that is the line.
     if (col.railsType === 'bigint' && !col.relation &&
-        !namesATable(col.name, (n) => tables.has(n), singularize))
+        !namesATable(col.name, (n) => tables.has(n), singularize)) {
+      // Before `renderColumn(col)`, or the attribute is reported and not
+      // emitted. An array of them is not a @big — the column is JSON text and
+      // JSON's number is the double, so the array keeps its known limit.
+      if (!col.isArray) col.extra.push('@big')
       gap('bigint', t.model, col.name, `t.bigint${col.isArray ? ' array: true' : ''}`, BIGINT_EMITTED)
+    }
 
     out.push(renderColumn(col))
     if (col.relation)
@@ -243,28 +248,42 @@ function emitIndex(raw, t, byColumn, gap) {
     .filter(c => byColumn.has(c)).map(camel)
   if (!names.length) return null
 
-  // A partial index is a different object — `unique … where deleted_at IS NULL`
-  // is uniqueness among LIVE rows, which .lite cannot say, so emitting it whole
-  // would be a stronger constraint than the source has.
+  // `unique … where deleted_at IS NULL` is uniqueness among LIVE rows, which
+  // .lite says as `@@unique([…], where: …)` since FJS-603. The value form is
+  // asked for only on the unique path: a partial index over a bound value is
+  // matched by nothing and the parser refuses it, so carrying one there would
+  // write a schema this parser will not read.
+  //
+  // One the reading cannot express is still dropped WHOLE — emitting it
+  // unconditionally is a stronger constraint than the source declares, and it
+  // refuses rows the source permits.
   const where = raw.match(/where:\s*"((?:[^"\\]|\\.)*)"/)?.[1]
   const unique = /unique:\s*true/.test(raw)
+  const nullableCols = names.filter(n => {
+    const src = [...byColumn.values()].find(c => camel(c.name) === n)
+    return src?.optional
+  })
   let whereLite = null
   if (where) {
-    whereLite = unique ? null : predicateToLite(where, camel)
+    // A nullable member wants `nullsDistinct: true`, which a predicate excludes
+    // — so this one is dropped rather than emitted as a schema the parser
+    // refuses. Anything that writes .lite owes the round trip (FJS-594).
+    const blocked = unique && nullableCols.length && names.length > 1
+    whereLite = blocked ? null : predicateToLite(where, camel, { values: unique })
     gap('partial-index', t.model, names.join(', '), `${unique ? 'unique ' : ''}index where: ${where.slice(0, 60)}`,
-        unique     ? 'DROPPED — emitting it unconditionally would be a stronger constraint than the source declares'
-      : whereLite  ? `emitted whole — where: ${whereLite}`
-                   : 'emitted without the predicate — a plain index answers the same rows and is only larger')
-    if (unique) return null
+        whereLite && unique ? `carried whole — where: ${whereLite}`
+      : whereLite ? `emitted whole — where: ${whereLite}`
+      : blocked   ? `DROPPED — ${nullableCols.join(', ')} is nullable, so the tuple needs nullsDistinct, which a predicate excludes`
+      : unique    ? 'DROPPED — emitting it unconditionally would be a stronger constraint than the source declares'
+                  : 'emitted without the predicate — a plain index answers the same rows and is only larger')
+    if (unique && !whereLite) return null
+    if (unique) return `@@unique([${names.join(', ')}], where: ${whereLite})`
   }
   if (/opclass:|using:\s*:g/.test(raw))
     gap('index-modifier', t.model, names.join(', '), raw.trim().slice(0, 70), 'modifiers stripped')
 
   if (unique) {
-    const nullable = names.filter(n => {
-      const src = [...byColumn.values()].find(c => camel(c.name) === n)
-      return src?.optional
-    })
+    const nullable = nullableCols
     if (nullable.length && names.length > 1) {
       gap('composite-unique-over-nullable', t.model, null,
           `@@unique([${names.join(', ')}]) with ${nullable.join(', ')} nullable`,

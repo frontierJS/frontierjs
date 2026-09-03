@@ -4,7 +4,13 @@ status: partial
 dated: 2026-08-29
 ---
 
-# Idea — partial indexes: `where:` on `@@index`, and why `@@unique` must not have one
+# Idea — partial indexes: `where:` on `@@index`, and the `@@unique` half deferred
+
+**The unique half is argued separately and is BUILT** — `IDEAS/partial-unique.md`
+(argued 2026-08-30, shipped 2026-08-31), which answers § *The split* and
+§ *Option C* below. The short of it: this record's refusal is about a predicate
+the FRAMEWORK derives, and `FJS-603` asks for one the AUTHOR declares. Read the
+two together; where they disagree the later one is the reconciliation.
 
 **Status: PARTIAL — Option A is built (2026-08-29).** `@@index([col], where:
 <expr>)` parses, validates by asking the compiler, and emits; `FJS-576` and
@@ -74,7 +80,15 @@ match the index. A declared predicate has no such guarantee — see § *Reachabi
 **Worth counting before building anything**: of the 251, how many are the
 soft-delete shape? That number is already covered. The remainder is the feature.
 
-## The split — `@@index` yes, `@@unique` no
+## The split — `@@index` yes, `@@unique` deferred
+
+**Reconciled 2026-08-30 by `IDEAS/partial-unique.md`, which recommends the
+unique form.** The three reasons below stand as written about the construct they
+were written about — litestone DERIVING a soft-delete predicate onto a unique
+index — and the reconciliation is that a declared predicate over a domain column
+is a different construct that leaves `FJS-204` untouched. The rule that keeps
+both true is that the soft-delete clause is ANDed into a declared `@@index`
+predicate and must NOT be ANDed into a declared `@@unique` one.
 
 Three reasons, and they compound.
 
@@ -305,6 +319,8 @@ literals so they stay reachable.*
 | **against** | Eight per cent of the corpus for a change in the hot path of every policy and scope query. It needs string escaping for schema-authored strings, and a decision about *scope*: inline everywhere (which rewrites the SQL text of every policy query in every app, for this) or only for index-backed predicates (which means the compiler must know which scope backs which index — new coupling). Reintroduces the advise rule, because a predicate can now be written that is reachable in principle and matched by nothing in practice. |
 
 ### Option C — settle `FJS-204` first
+
+**Taken up: `IDEAS/partial-unique.md`.**
 
 *Decide whether partial UNIQUE is back on the table before spending on the rest.*
 

@@ -1,0 +1,23 @@
+<script module>
+  // web/src/resources/PayRate.mesa — the Resource layer.
+  //
+  // Named for the model, exporting the accessor — see Order.mesa.
+  //
+  // ─── Why this file has no markup half ─────────────────────────────────────
+  //
+  // A resource file carries its model's default form and this one has nothing
+  // a screen in this application asks a person to type. A band table is
+  // reference data with a validity window: `fromAmount`, `toAmount`, `percent`
+  // and `effectiveFrom` are all `@immutable`, so amending a band is the same
+  // close-then-open a pay window needs — a third instance of the arrangement
+  // and the third instance of `FJS-603`.
+  //
+  // The console READS the bands, on the payroll screen, because a payslip line
+  // names the rate that produced it and a number nobody can trace back is a
+  // number nobody can check. Publishing next year's table is a different act
+  // from running a payroll and is out of this phase.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const payRates = createResource('pay-rates', { model: 'PayRate' })
+</script>

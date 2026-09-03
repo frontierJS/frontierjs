@@ -1,4 +1,4 @@
-// api/gate.ts — the one place a session becomes a number.
+// api/src/core/gate.ts — the one place a session becomes a number.
 //
 // Litestone owns the SCALE (0–7). Each app owns the mapping from its own user
 // shape onto it. This file is that mapping, and it is four lines because

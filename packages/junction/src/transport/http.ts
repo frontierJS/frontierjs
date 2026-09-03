@@ -997,7 +997,23 @@ export class HttpTransport {
             host:    ws.data.headers?.host ?? null,
             headers: ws.data.headers ?? null,
           })
-        } catch {}
+        } catch {
+          // A token that was PRESENT and did not verify is a refusal, not
+          // anonymity. Swallowing it connected a revoked, expired or forged
+          // session as a stranger with no error frame and no close, so the
+          // client's own `4001` no-reconnect branch was dead code and the
+          // plugin's doc comment promised an `auth_failed` message nothing ever
+          // sent (`FJS-702`). A socket with NO token is still anonymous —
+          // that is a caller who claimed nothing.
+          //
+          // Closed before `open` runs, so nothing joins a channel and no
+          // `connected` frame goes out. 4001 is application-defined and the
+          // reason rides it, because a bare code reads as a network fault.
+          ws.close(4001, 'auth_failed')
+          this.stats.performance.online--
+          this._sockets.delete(ws)
+          return
+        }
       }
     }
 

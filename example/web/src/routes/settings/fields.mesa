@@ -1,0 +1,101 @@
+---
+title: Customer fields
+---
+<script>
+  // What this shop records about a person, declared by the shop rather than by
+  // the schema.
+  //
+  // The screen is small on purpose — the interesting part is not here, it is
+  // that a row written on this page changes what the customer form on the next
+  // page offers, and what an audience on a discount can be built out of. Three
+  // realms, one row.
+  //
+  // The pool is finite (Customer declares twelve), and a field that misses out
+  // is NOT an error: it stores and displays like any other and only a segment
+  // naming it degrades. So the table shows the slot, and shows its absence,
+  // because *why is this one slower* has to be answerable from the screen.
+  import { customFields } from '../../resources/CustomField.mesa'
+  import { session }      from '@/session.js'
+
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout       from '@frontierjs/ui/components/display/Callout.mesa'
+  import Input         from '@frontierjs/ui/components/forms/Input.mesa'
+  import Field         from '@frontierjs/ui/components/forms/Field.mesa'
+  import Select        from '@frontierjs/ui/components/forms/Select.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Mono          from '@frontierjs/ui/components/display/Mono.mesa'
+  import { toasts }    from '@frontierjs/ui/stores/toastStore.js'
+
+  $: session.level
+
+  let defs   = []
+  let key    = ''
+  let label  = ''
+  let type   = 'text'
+  let error  = null
+  let busy   = false
+
+  async function load() {
+    await customFields.load({}, { orderBy: 'id' })
+    defs = customFields.store.get()
+  }
+
+  async function declare() {
+    error = null
+    busy  = true
+    try {
+      // An ordinary create. The slot is allocated in the service, because it
+      // is `@system` and a caller choosing one could take another field's.
+      const made = await customFields.save({ key, label, type }, { mode: 'create' })
+      // `slot: null` is the pool being full. It is a warning and not a failure,
+      // and it is said here because nothing else in the app can: the field
+      // works everywhere except in an audience.
+      toasts[made.slot ? 'success' : 'warning'](
+        made.slot
+          ? `${made.label} is ready to segment on`
+          : `${made.label} was added, but the pool is full — it cannot be used in an audience`)
+      key = ''; label = ''; type = 'text'
+      await load()
+    } catch (e) {
+      error = customFields.fieldErrors?.(e)?.message ?? e?.message ?? 'Could not add that field'
+    } finally { busy = false }
+  }
+
+  $.onMount(load)
+</script>
+
+<SectionHeader title="Customer fields"
+  description="What this shop records about a person. Declared here, offered on every customer form, and available to build an audience out of." />
+
+{#if error}<Callout tone="danger">{error}</Callout>{/if}
+
+<form class="stack" onsubmit={e => { e.preventDefault(); declare() }}>
+  <Field label="Key" hint="lowercase and underscores — this is what an audience names">
+    <Input bind:value={key} id="cf-key" placeholder="loyalty_tier" required />
+  </Field>
+  <Field label="Label" hint="what a person reads on the form">
+    <Input bind:value={label} id="cf-label" placeholder="Loyalty tier" required />
+  </Field>
+  <Field label="Type">
+    <Select bind:value={type} id="cf-type"
+      options={[{ value: 'text', label: 'Text' }, { value: 'number', label: 'Number' }]} />
+  </Field>
+  <Button type="submit" id="cf-add" disabled={busy}>Add field</Button>
+</form>
+
+<table class="rows divided" id="cf-table">
+  <thead><tr><th>Key</th><th>Label</th><th>Type</th><th>Segmentable</th></tr></thead>
+  <tbody>
+    {#each defs as d (d.id)}
+      <tr data-key={d.key}>
+        <td><Mono>{d.key}</Mono></td>
+        <td>{d.label}</td>
+        <td>{d.type}</td>
+        <td data-slot={d.slot ?? ''}>{d.slot ? 'yes' : 'no — pool full'}</td>
+      </tr>
+    {/each}
+    {#if !defs.length}
+      <tr><td colspan="4">This shop has not declared any fields yet.</td></tr>
+    {/if}
+  </tbody>
+</table>

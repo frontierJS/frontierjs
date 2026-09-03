@@ -7,6 +7,15 @@
 //
 // Note the precedence: `createApp({ config })` beats this file, so a key
 // belongs in exactly one of the two places or the one here is decoration.
+//
+// Every path below is anchored to THIS FILE. A relative one is resolved
+// against the process's working directory, so the queue opened `db/jobs.db`
+// beside whatever directory the command was typed in — a second, empty queue
+// on every run from anywhere but the app root, with nothing said (`FJS-449`'s
+// class). `api/src/app.ts` states `configPath` for the same reason.
+import { fileURLToPath } from 'node:url'
+
+const here = (p) => fileURLToPath(new URL(p, import.meta.url))
 
 export default {
   // ── Caravan — the durable job queue ───────────────────────────────────
@@ -19,8 +28,8 @@ export default {
   // covers them. No secret because this is a demo shop on localhost;
   // `admin: { secret }` is the option that stops it being public.
   caravan: {
-    db:      './db/jobs.db',
-    jobsDir: './api/src/jobs',
+    db:      here('../../db/jobs.db'),
+    jobsDir: here('../src/jobs'),
     admin:   true,
     queues: {
       default:    { concurrency: 2 },

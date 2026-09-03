@@ -48,6 +48,8 @@ export interface IMail {
 // ─── Mail builder ─────────────────────────────────────────────────────────
 // Fluent API — same feel as Total.js mail builder.
 
+import { assertMessageAddresses, assertHeaderValue } from './smtp.ts'
+
 export function createMessage(subject: string, html?: string): MailBuilder {
   return new MailBuilder(subject, html)
 }
@@ -116,6 +118,11 @@ export class MailBuilder {
   build(): MailMessage {
     if (!this._msg.to || (Array.isArray(this._msg.to) && !this._msg.to.length))
       throw new Error('Mail: at least one recipient required')
+    // Refused where a mistake is cheapest to attribute, and again at the wire.
+    // SMTP is line-oriented, so a CRLF in any of these is a command or a header
+    // of the caller's choosing rather than a bad value (`FJS-677`).
+    assertMessageAddresses(this._msg)
+    for (const [k, v] of Object.entries(this._msg.headers ?? {})) assertHeaderValue(v, `headers.${k}`)
     if (!this._msg.subject)
       throw new Error('Mail: subject is required')
     if (!this._msg.html && !this._msg.text)
@@ -232,6 +239,9 @@ export function createSmtpMailer(opts: SmtpMailerOptions): IMail {
   return {
     async send(message: MailMessage): Promise<SendResult> {
       const { sendMail } = await import('./smtp.ts')
+      // The DEFAULTS are what will be sent, so they are what is graded — a
+      // configured `from` reaches the wire exactly as a stated one does.
+      assertMessageAddresses({ ...message, from: message.from ?? defaultFrom, replyTo: message.replyTo ?? defaultReplyTo })
       await sendMail(
         { host, port, user, pass, tls },
         {
@@ -253,14 +263,17 @@ export function createSmtpMailer(opts: SmtpMailerOptions): IMail {
       const { sendMailBatch } = await import('./smtp.ts')
       const results = await sendMailBatch(
         { host, port, user, pass, tls },
-        messages.map(m => ({
+        messages.map(m => {
+          assertMessageAddresses({ ...m, from: m.from ?? defaultFrom, replyTo: m.replyTo ?? defaultReplyTo })
+          return {
           from:    m.from    ?? defaultFrom,
           to:      m.to,
           subject: m.subject,
           html:    m.html,
           text:    m.text,
           replyTo: m.replyTo ?? defaultReplyTo,
-        }))
+          }
+        })
       )
       return results.map(r => r.ok
         ? { id: crypto.randomUUID(), message: 'sent' }

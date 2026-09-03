@@ -121,7 +121,7 @@ const buildMap = () => {
   try { freshJsonSchema(context) } catch (e) {
     log.warn(`Schema generation failed: ${e.message}`)
   }
-  const schema = existsSync(resolve(context.paths.db, 'schema.json'))
+  const schema = existsSync(resolve(context.paths.db, '.json', 'schema.json'))
     ? JSON.parse(readFileSync(resolve(context.paths.db, 'schema.json'), 'utf8'))
     : {}
   // Services come off the committed surface snapshot, never off a scan of

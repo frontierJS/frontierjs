@@ -1,5 +1,137 @@
 # Changes — @frontierjs/mesa
 
+## 2026-09-02 — a temp module does not outlive the process that wrote it
+
+`FJS-664`. 1353 vitest + 107 runtime-browser + 47 vite-browser, 0 fail; sierra
+1143; `example` `build:site` prerenders 18 pages with no stray left in the tree.
+
+`renderComponent` wrote its compiled modules to disk and removed them in a
+`finally`. That covers every path this process gets to run, and two it does not.
+
+A caller may ABANDON the render. Sierra's prerender races one against a timeout
+with `Promise.race`, so a component that hangs at import leaves a promise that
+never settles — the `finally` never runs, the build reports the route skipped,
+finishes, and exits with the file still on disk. And a process that dies
+mid-render takes the pending cleanup with it either way.
+
+Where it lands is what made this everyone's problem rather than the author's.
+A temp module carries `import '@frontierjs/mesa/runtime.js'`, so it has to be
+written somewhere that specifier resolves from — this package's own root. The
+leak therefore falls on a tracked package, and `bun run ci`'s `hygiene` phase
+reports it as an ignored source file. Two sat there for three days, failing CI
+for everyone, produced by a build that had said nothing at the time.
+
+A live set and a synchronous exit sweep. `process.on('exit')` covers a normal
+end, an explicit `process.exit()` and the exit Node takes after an uncaught
+throw. Signals are the other way a build ends and Node's default for one is to
+exit WITHOUT firing `exit`, so SIGINT and SIGTERM sweep and then **re-raise** —
+which is not decoration: merely having a listener suppresses that default, so
+without the re-raise this package would have quietly broken Ctrl-C in every dev
+server that renders a component. It removes its own listener first, and only
+re-raises when nothing else is listening, because an app with its own shutdown
+handler owns the decision and would otherwise run that handler twice. Measured:
+Ctrl-C still exits 130, an app's handler still runs exactly once, its exit code
+still wins.
+
+Nothing covers SIGKILL, which is why the second half exists: leftovers a killed
+process left are swept, once per directory per process, age-gated at an hour.
+The gate is what makes it safe to delete a file this process did not write —
+nothing here holds a temp module for an hour, and sierra bounds a render at
+seconds, so a concurrent render's file is never taken. That half is what removed
+the two.
+
+Both are pinned, and both fail with the fix reverted. The abandonment test runs
+in a child process, because what it asserts is an `exit` handler and no process
+can observe its own.
+
+## 2026-08-30 — `$attributes` is a live view, not a copy
+
+`FJS-612`. 1351 vitest + 107 runtime-browser + 47 vite-browser, 0 fail;
+`@frontierjs/ui` 875 over all 70 components; sierra 1141 + 25.
+
+`restProps` built a plain object once, at component init, out of the props the
+caller passed at mount. Everything reactive around it worked — the parent's
+push effect, the child's `spreadAttributes` effect — so the failure was one
+expression on one element disagreeing with itself: `<Pill data-rate={rate}>`
+answered its FIRST rate for ever while the same `rate` in the component's own
+children tracked. A rendering test cannot see it, because the text is right.
+
+Two halves, and each was load-bearing on its own.
+
+`restProps` returns a Proxy over a signal now, so a read inside an effect
+subscribes and the value it reads is current. Shallow equality on the signal,
+because the object is rebuilt on every push and reference equality would never
+hold — without it every forwarding component wakes on a push that changed
+nothing it holds.
+
+The other half is that the undeclared props had nowhere to arrive. `pushProps`
+walks the child's prop registry, and an attribute the child never declared has
+no signal in it — so it was dropped, and the rest object could not have moved
+even if it had been live. The child registers a sink under `REST_PROPS`, a
+symbol, and the push writes it wholesale: wholesale because a merge can never
+remove a key, so a spread that stops carrying one would leave it on the element.
+`componentApi` skips non-string registry keys, which is what keeps the sink out
+of `bind:this`.
+
+The compiler change follows from writing it wholesale: the sync effect pushes
+the WHOLE props object rather than the reactive half. A declared prop written
+twice is a no-op against its own signal; an undeclared static attribute was
+otherwise lost the first time anything else on the element changed.
+
+**What it cost outside a data attribute** is the reason it is worth this much:
+every component in `@frontierjs/ui` spreads `{...$attributes}` where `{class}`
+goes, so a forwarded `aria-expanded`, `aria-selected`, `aria-current` or `role`
+announced the first state for ever — and a browser drive asserting on
+`[data-status]` inside a list read stale markup, which passes or fails for
+reasons unrelated to what changed.
+
+`test/browser/runtime/forward-attributes` is the assertion, and every row in it
+is a PAIR — the forwarded attribute beside the same expression on a plain
+element — so a fix that froze both would look like a fix that froze neither.
+`example`: `verify:payroll` is the app-level half, where it was found.
+
+## 2026-08-30 — a parenthesised dep list is grouping, and nothing else
+
+`FJS-599`. 1351 vitest + 89 runtime-browser + 47 vite-browser, 0 fail.
+
+A `$:` dep list is a comma expression, so a parenthesised group inside one is
+another `SequenceExpression` rather than a leaf. It reached the collector as a
+single node, whose `memberPath` is null and whose `collectRefs` is the ROOT
+alone — so `$: (a.x, a.y), () => f()` was silently replaced by a watch on the
+whole object. That is wrong on its own: a property change fires no whole-object
+watch, and the handler never runs.
+
+`flattenSeq` and `watchDeps` are the fix, and the assertion is byte-identity
+against the unparenthesised twin rather than a list of expected shapes — parens
+are grouping, so `$: (a.x, a.y), h` must compile to exactly what `$: a.x, a.y, h`
+compiles to, however deeply they nest. The same flattening runs for the bare
+multi-path form and for a `$: { }` group entry.
+
+The second half is in the emitter and is not about parentheses at all. A dep
+whose root is proxied but which carries no dot resolves to `$$watch_<root>`, the
+whole-object signal — and only the bare `$: a` form ever declared one, so
+`$: a.x` beside `$: a, () => f()` emitted a reference to a name nothing declares.
+A `$: { }` group's deps were collected for declaration nowhere at all, so every
+dotted one referenced an undeclared signal and every group with no other watch on
+its root emitted `deps: []`: an entry subscribed to nothing, which never fires
+and says nothing. `watchedPaths` now takes the group deps, and the bare deps
+whose root is ALREADY a proxy root — already, because adding a root is the
+deep-watch opt-in that only `$: a` may trigger.
+
+The module PARSES either way, which is what makes this class expensive:
+Invariant 15's parse check cannot see it, and what is raised is
+`ReferenceError: $$watch_a is not defined` from inside `createEffect` on mount,
+reaching a browser as a dead screen and a console error. `requireWatchSig` is
+the backstop — the set of `$$watch_*` this component declares, checked at both
+emit sites, so an undeclared one is now a compile error and never a shipped
+module.
+
+Thirteen tests, eleven of which fail against the pre-fix compiler. Two of them
+mount a component, because the ReferenceError is raised when the effect RUNS and
+no assertion over the emitted string can see it. The undeclared-signal cases are
+asserted as a property — every `$$watch_*` read is one declared — so a new way
+to reach one fails here too.
+
 ## 2026-08-27 — renderComponent takes an alias table
 
 1338 vitest, 0 fail.

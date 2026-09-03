@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-17 model(s) · 8 enum(s) · 2 database(s) · 1 value set(s)
+39 model(s) · 19 enum(s) · 2 database(s) · 1 value set(s)
 audit → logger · main → sqlite
 ```
 
@@ -22,12 +22,23 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | --- | --- |
 | `Brand` | `frontierjs` · `junction` · `litestone` |
 | `CartStatus` | `abandoned` · `open` · `ordered` |
+| `CustomFieldType` | `number` · `text` |
 | `DiscountKind` | `fixed` · `percent` |
+| `InvoiceStatus` | `draft` · `issued` · `paid` · `void` |
+| `JournalSource` | `payroll` · `sale` |
+| `LedgerAccount` | `discountsAllowed` · `netPayControl` · `niControl` · `payeControl` · `pensionControl` · `receivables` · `sales` · `shippingIncome` · `taxPayable` · `wagesExpense` |
 | `NotificationContext` | `Order` |
 | `OrderStatus` | `cancelled` · `paid` · `pending` · `refunded` · `shipped` |
-| `PaymentStatus` | `failed` · `pending` · `refunded` · `succeeded` |
+| `PayBasis` | `hourly` · `salary` |
+| `PayComponentKind` | `basicPay` · `bonus` · `employeePension` · `employerNI` · `employerPension` · `incomeTax` · `overtime` |
+| `PaymentStatus` | `failed` · `pending` · `refunded` · `requiresAction` · `succeeded` |
+| `PayRunStatus` | `approved` · `calculated` · `draft` · `paid` |
+| `PlanInterval` | `monthly` · `yearly` |
+| `RateKind` | `employeePension` · `employerNI` · `employerPension` · `incomeTax` |
 | `Size` | `l` · `m` · `one` · `s` · `xl` · `xs` · `xxl` |
 | `StockMovementKind` | `adjusted` · `damaged` · `received` · `returned` · `sold` |
+| `SubscriptionStatus` | `active` · `cancelled` · `pastDue` · `trialing` |
+| `VerificationPurpose` | `emailVerify` · `oauthLink` · `passwordReset` |
 
 ## Value sets
 
@@ -102,6 +113,48 @@ table `colour` · db `main` · gate `0.4.4.5`
 | `name` | `String` | no | — | unique · **required on write** |
 | `retired` | `Boolean` | no | `0` | — |
 
+### `Credential`
+
+table `credential` · db `main` · gate `8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `accessToken` | `String` | yes | — | @secret |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `label` | `String` | yes | — | — |
+| `refreshToken` | `String` | yes | — | @secret |
+| `scope` | `String` | yes | — | — |
+| `tokenExpiresAt` | `DateTime` | yes | — | — |
+| `type` | `String` | no | — | **required on write** |
+| `userId` | `String` | no | — | **required on write** |
+| `value` | `String` | no | — | @guarded(all) · **required on write** |
+
+```
+@@index(type, value)
+@@index(userId, type)
+```
+
+### `CreditNote`
+
+table `credit_note` · db `main` · gate `1.8.8.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `amount` | `Int` | no | — | **required on write** |
+| `id` | `Int` | no | — | id |
+| `invoice` | `Invoice` | — | — | relation |
+| `invoiceId` | `Int` | no | — | **required on write** |
+| `issuedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `number` | `String` | no | — | unique · **required on write** |
+| `reason` | `String` | no | — | **required on write** |
+| `userId` | `String` | yes | — | @system |
+
+```
+@@allow('read', auth().isStaff)
+@@allow('read', userId == auth().id)
+```
+
 ### `Customer`
 
 table `customer` · db `main` · gate `1.4.4.5` · @@softDelete
@@ -111,21 +164,52 @@ table `customer` · db `main` · gate `1.4.4.5` · @@softDelete
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deletedAt` | `DateTime` | yes | — | — |
 | `email` | `String` | no | — | unique · **required on write** |
+| `fields` | `Json` | no | `'{}'` | — |
 | `firstName` | `String` | no | — | **required on write** |
 | `fullName` | `String` | yes | — | — |
 | `id` | `Int` | no | — | id |
+| `invoices` | `Invoice[]` | — | — | relation |
 | `lastName` | `String` | no | — | **required on write** |
+| `n1` | `Float` | yes | — | — |
+| `n2` | `Float` | yes | — | — |
+| `n3` | `Float` | yes | — | — |
+| `n4` | `Float` | yes | — | — |
 | `name` | `String` | no | — | **required on write** |
 | `notes` | `String` | yes | — | `@allow(read: auth().role == 'admin')` |
 | `orderCount` | `Int` | — | — | from |
 | `orders` | `Order[]` | — | — | relation |
+| `paymentMethods` | `PaymentMethod[]` | — | — | relation |
+| `slots` | `Json` | no | `'{}'` | @system |
+| `subscriptions` | `Subscription[]` | — | — | relation |
+| `t1` | `String` | yes | — | — |
+| `t2` | `String` | yes | — | — |
+| `t3` | `String` | yes | — | — |
+| `t4` | `String` | yes | — | — |
+| `t5` | `String` | yes | — | — |
+| `t6` | `String` | yes | — | — |
+| `t7` | `String` | yes | — | — |
+| `t8` | `String` | yes | — | — |
 | `userId` | `String` | yes | — | unique · @system |
 | `version` | `Int` | no | `1` | — |
 
 ```
+@@index(t1, t2, t3, t4, n1, n2, t5, t6, t7, t8, n3, n4)
 @@allow('read', auth().isStaff)
 @@allow('read', userId == auth().id)
 ```
+
+### `CustomField`
+
+table `custom_field` · db `main` · gate `5.5.5.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `id` | `Int` | no | — | id |
+| `key` | `String` | no | — | unique · **required on write** |
+| `label` | `String` | no | — | **required on write** |
+| `slot` | `String` | yes | — | unique · @system |
+| `type` | `CustomFieldType` | no | — | **required on write** |
 
 ### `Discount`
 
@@ -134,6 +218,7 @@ table `discount` · db `main` · gate `5.5.5.5`
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `active` | `Boolean` | no | `1` | — |
+| `audience` | `Json` | yes | — | — |
 | `carts` | `Cart[]` | — | — | relation |
 | `code` | `String` | no | — | unique · **required on write** |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
@@ -153,6 +238,24 @@ table `discount` · db `main` · gate `5.5.5.5`
 @@check(startsAt IS NULL OR endsAt IS NULL OR startsAt < endsAt)
 ```
 
+### `Employee`
+
+table `employee` · db `main` · gate `5.5.5.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `email` | `String` | no | — | unique · **required on write** |
+| `endedOn` | `DateTime` | yes | — | — |
+| `id` | `Int` | no | — | id |
+| `name` | `String` | no | — | **required on write** |
+| `pay` | `PayWindow[]` | — | — | relation |
+| `reference` | `String` | no | — | unique · **required on write** |
+| `startedOn` | `DateTime` | no | — | **required on write** |
+
+```
+@@check(endedOn IS NULL OR startedOn < endedOn)
+```
+
 ### `InventoryMovement`
 
 table `inventory_movement` · db `main` · gate `5.5.9.9`
@@ -169,6 +272,101 @@ table `inventory_movement` · db `main` · gate `5.5.9.9`
 | `stockBefore` | `Int` | no | — | **required on write** |
 | `variant` | `ProductVariant` | — | — | relation |
 | `variantId` | `Int` | no | — | **required on write** |
+
+### `Invoice`
+
+table `invoice` · db `main` · gate `1.8.8.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `creditNotes` | `CreditNote[]` | — | — | relation |
+| `customer` | `Customer` | — | — | relation |
+| `customerId` | `Int` | no | — | **required on write** |
+| `dueAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `id` | `Int` | no | — | id |
+| `issuedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `lines` | `InvoiceLine[]` | — | — | relation |
+| `number` | `String` | no | — | unique · **required on write** |
+| `paidAt` | `DateTime` | yes | — | @system |
+| `payments` | `Payment[]` | — | — | relation |
+| `periodEnd` | `DateTime` | no | — | **required on write** |
+| `periodStart` | `DateTime` | no | — | **required on write** |
+| `status` | `InvoiceStatus` | no | `'draft'` | — |
+| `subscription` | `Subscription` | — | — | relation |
+| `subscriptionId` | `Int` | yes | — | — |
+| `subtotal` | `Int` | no | — | @system · **required on write** |
+| `tax` | `Int` | no | `0` | @system |
+| `total` | `Int` | no | — | @system · **required on write** |
+| `userId` | `String` | yes | — | @system |
+
+```
+@@check(total = subtotal + tax)
+@@allow('read', auth().isStaff)
+@@allow('read', userId == auth().id)
+transition status.issue: draft → issued @system @seals
+transition status.settle: issued → paid @system
+transition status.void: issued → void @gate(5)
+relation lines @sealed
+```
+
+### `InvoiceLine`
+
+table `invoice_line` · db `main` · gate `1.8.8.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `amount` | `Int` | no | — | **required on write** |
+| `description` | `String` | no | — | **required on write** |
+| `id` | `Int` | no | — | id |
+| `invoice` | `Invoice` | — | — | relation |
+| `invoiceId` | `Int` | no | — | **required on write** |
+| `periodEnd` | `DateTime` | yes | — | — |
+| `periodStart` | `DateTime` | yes | — | — |
+| `quantity` | `Int` | no | `1` | — |
+| `unitAmount` | `Int` | no | — | **required on write** |
+| `userId` | `String` | yes | — | @system |
+
+```
+@@allow('read', auth().isStaff)
+@@allow('read', userId == auth().id)
+```
+
+### `JournalEntry`
+
+table `journal_entry` · db `main` · gate `5.8.9.9`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `id` | `Int` | no | — | id |
+| `lines` | `JournalLine[]` | — | — | relation |
+| `narrative` | `String` | no | — | **required on write** |
+| `order` | `Order` | — | — | relation |
+| `orderId` | `Int` | yes | — | — |
+| `payRun` | `PayRun` | — | — | relation |
+| `payRunId` | `Int` | yes | — | — |
+| `postedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | @system |
+| `reference` | `String` | no | — | unique · **required on write** |
+| `source` | `JournalSource` | no | — | **required on write** |
+
+```
+@@check((("orderId" IS NOT NULL) + ("payRunId" IS NOT NULL)) = 1)
+```
+
+### `JournalLine`
+
+table `journal_line` · db `main` · gate `5.8.9.9`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `account` | `LedgerAccount` | no | — | **required on write** |
+| `amount` | `Int` | no | — | **required on write** |
+| `entry` | `JournalEntry` | — | — | relation |
+| `entryId` | `Int` | no | — | **required on write** |
+| `id` | `Int` | no | — | id |
+
+```
+@@check(amount != 0)
+```
 
 ### `Notification`
 
@@ -190,6 +388,24 @@ table `notification` · db `main` · gate `0.8.4.8`
 @@allow('update', userId == auth().id)
 ```
 
+### `OauthFlow`
+
+table `oauth_flow` · db `main` · gate `8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `expiresAt` | `DateTime` | no | — | **required on write** |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `provider` | `String` | no | — | **required on write** |
+| `returnTo` | `String` | yes | — | — |
+| `state` | `String` | no | — | unique · @guarded(all) · **required on write** |
+| `verifier` | `String` | no | — | @guarded(all) · **required on write** |
+
+```
+@@index(expiresAt)
+```
+
 ### `Order`
 
 table `order` · db `main` · gate `1.4.4.5` · @@softDelete(cascade)
@@ -204,6 +420,7 @@ table `order` · db `main` · gate `1.4.4.5` · @@softDelete(cascade)
 | `discountCode` | `String` | yes | — | @system |
 | `discountLabel` | `String` | yes | — | @system |
 | `id` | `Int` | no | — | id |
+| `journals` | `JournalEntry[]` | — | — | relation |
 | `lines` | `OrderLine[]` | — | — | relation |
 | `note` | `String` | yes | — | — |
 | `reference` | `String` | no | — | unique · **required on write** |
@@ -255,26 +472,57 @@ table `order_line` · db `main` · gate `1.8.8.8` · @@softDelete
 @@allow('read', userId == auth().id)
 ```
 
-### `Payment`
+### `OutboxMessage`
 
-table `payment` · db `main` · gate `5.8.8.9`
+table `outbox_message` · db `main` · gate `8`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
+| `actorId` | `String` | yes | — | — |
+| `attempts` | `Int` | no | `0` | — |
+| `claimedAt` | `DateTime` | yes | — | — |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `deliveredAt` | `DateTime` | yes | — | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `job` | `String` | no | — | **required on write** |
+| `lastError` | `String` | yes | — | — |
+| `payload` | `Json` | no | — | **required on write** |
+
+```
+@@index(claimedAt)
+@@index(deliveredAt, createdAt)
+```
+
+### `Payment`
+
+table `payment` · db `main` · gate `1.8.8.9`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `actionUrl` | `String` | yes | — | @system |
 | `amount` | `Int` | no | — | **required on write** |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `currency` | `String` | no | `'USD'` | — |
 | `failureReason` | `String` | yes | — | — |
 | `id` | `Int` | no | — | id |
+| `invoice` | `Invoice` | — | — | relation |
+| `invoiceId` | `Int` | yes | — | — |
 | `order` | `Order` | — | — | relation |
-| `orderId` | `Int` | no | — | **required on write** |
+| `orderId` | `Int` | yes | — | — |
+| `paymentMethod` | `PaymentMethod` | — | — | relation |
+| `paymentMethodId` | `Int` | yes | — | — |
 | `providerRef` | `String` | no | — | unique · **required on write** |
 | `refundedAmount` | `Int` | no | `0` | — |
 | `settledAt` | `DateTime` | yes | — | — |
 | `status` | `PaymentStatus` | no | `'pending'` | — |
+| `userId` | `String` | yes | — | @system |
 
 ```
+@@index(invoiceId)
 @@index(orderId)
+@@check((("orderId" IS NOT NULL) + ("invoiceId" IS NOT NULL)) = 1)
+@@allow('read', auth().isStaff)
+@@allow('read', userId == auth().id)
 ```
 
 ### `PaymentEvent`
@@ -288,6 +536,186 @@ table `payment_event` · db `main` · gate `5.8.9.9`
 | `kind` | `String` | no | — | **required on write** |
 | `paymentRef` | `String` | yes | — | — |
 | `receivedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+
+### `PaymentMethod`
+
+table `payment_method` · db `main` · gate `1.8.8.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `brand` | `String` | no | — | **required on write** |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `customer` | `Customer` | — | — | relation |
+| `customerId` | `Int` | no | — | **required on write** |
+| `expMonth` | `Int` | no | — | **required on write** |
+| `expYear` | `Int` | no | — | **required on write** |
+| `id` | `Int` | no | — | id |
+| `isDefault` | `Boolean` | no | `0` | @system |
+| `last4` | `String` | no | — | **required on write** |
+| `payments` | `Payment[]` | — | — | relation |
+| `providerRef` | `String` | no | — | unique · @guarded · **required on write** |
+| `userId` | `String` | yes | — | @system |
+
+```
+@@index(customerId)
+@@allow('read', auth().isStaff)
+@@allow('read', userId == auth().id)
+```
+
+### `PayRate`
+
+table `pay_rate` · db `main` · gate `5.5.5.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `effectiveFrom` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `effectiveTo` | `DateTime` | yes | — | — |
+| `fromAmount` | `Int` | no | `0` | — |
+| `id` | `Int` | no | — | id |
+| `kind` | `RateKind` | no | — | **required on write** |
+| `percent` | `Int` | no | — | **required on write** |
+| `toAmount` | `Int` | yes | — | — |
+
+```
+@@unique(fromAmount, kind), where: "effectiveTo" IS NULL
+@@check(effectiveTo IS NULL OR effectiveFrom < effectiveTo)
+@@check(toAmount IS NULL OR fromAmount < toAmount)
+```
+
+### `PayRun`
+
+table `pay_run` · db `main` · gate `5.5.5.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `approvedAt` | `DateTime` | yes | — | @system |
+| `approvedBy` | `String` | yes | — | @system |
+| `headcount` | `Int` | yes | — | @system |
+| `id` | `Int` | no | — | id |
+| `journals` | `JournalEntry[]` | — | — | relation |
+| `paidAt` | `DateTime` | yes | — | @system |
+| `payDate` | `DateTime` | no | — | **required on write** |
+| `payslips` | `Payslip[]` | — | — | relation |
+| `periodEnd` | `DateTime` | no | — | **required on write** |
+| `periodIndex` | `Int` | no | `0` | — |
+| `periodsPerYear` | `Int` | no | `12` | — |
+| `periodStart` | `DateTime` | no | — | **required on write** |
+| `reference` | `String` | no | — | unique · **required on write** |
+| `status` | `PayRunStatus` | no | `'draft'` | — |
+
+```
+@@check(periodIndex < periodsPerYear)
+@@check(periodStart < periodEnd)
+transition status.approve: calculated → approved @gate(5)
+transition status.calculate: draft → calculated @system
+transition status.pay: approved → paid @system
+transition status.revert: calculated → draft
+```
+
+### `Payslip`
+
+table `payslip` · db `main` · gate `5.5.8.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `deductions` | `Int` | no | — | @system · **required on write** |
+| `employee` | `Employee` | — | — | relation |
+| `employeeId` | `Int` | no | — | **required on write** |
+| `employerCost` | `Int` | no | — | @system · **required on write** |
+| `gross` | `Int` | no | — | @system · **required on write** |
+| `id` | `Int` | no | — | id |
+| `lines` | `PayslipLine[]` | — | — | relation |
+| `net` | `Int` | no | — | @system · **required on write** |
+| `payRun` | `PayRun` | — | — | relation |
+| `payRunId` | `Int` | no | — | **required on write** |
+| `payWindow` | `PayWindow` | — | — | relation |
+| `payWindowId` | `Int` | no | — | **required on write** |
+| `periodEnd` | `DateTime` | no | — | **required on write** |
+| `periodStart` | `DateTime` | no | — | **required on write** |
+| `reference` | `String` | no | — | unique · **required on write** |
+| `sentAt` | `DateTime` | yes | — | @system |
+
+```
+@@unique(employeeId, payRunId)
+@@check(net = gross - deductions)
+```
+
+### `PayslipLine`
+
+table `payslip_line` · db `main` · gate `5.5.9.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `amount` | `Int` | no | — | **required on write** |
+| `correctsPayRun` | `PayRun` | — | — | relation |
+| `correctsPayRunId` | `Int` | yes | — | — |
+| `counts` | `Boolean` | no | `1` | — |
+| `description` | `String` | no | — | **required on write** |
+| `id` | `Int` | no | — | id |
+| `kind` | `PayComponentKind` | no | — | **required on write** |
+| `payslip` | `Payslip` | — | — | relation |
+| `payslipId` | `Int` | no | — | **required on write** |
+| `rate` | `PayRate` | — | — | relation |
+| `rateId` | `Int` | yes | — | — |
+
+```
+@@check(amount != 0)
+```
+
+### `PayWindow`
+
+table `pay_window` · db `main` · gate `5.5.5.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `basis` | `PayBasis` | no | — | **required on write** |
+| `effectiveFrom` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `effectiveTo` | `DateTime` | yes | — | — |
+| `employee` | `Employee` | — | — | relation |
+| `employeeId` | `Int` | no | — | **required on write** |
+| `hoursPerWeek` | `Int` | no | `40` | — |
+| `id` | `Int` | no | — | id |
+| `rate` | `Int` | no | — | **required on write** |
+
+```
+@@unique(employeeId), where: "effectiveTo" IS NULL
+@@check(effectiveTo IS NULL OR effectiveFrom < effectiveTo)
+```
+
+### `Plan`
+
+table `plan` · db `main` · gate `0.5.5.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `active` | `Boolean` | no | `1` | — |
+| `code` | `String` | no | — | unique · **required on write** |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `currentPrice` | `Int` | — | — | from |
+| `description` | `String` | yes | — | — |
+| `id` | `Int` | no | — | id |
+| `interval` | `PlanInterval` | no | `'monthly'` | — |
+| `name` | `String` | no | — | **required on write** |
+| `versions` | `PlanVersion[]` | — | — | relation |
+
+### `PlanVersion`
+
+table `plan_version` · db `main` · gate `0.5.5.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `effectiveFrom` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `effectiveTo` | `DateTime` | yes | — | — |
+| `id` | `Int` | no | — | id |
+| `plan` | `Plan` | — | — | relation |
+| `planId` | `Int` | no | — | **required on write** |
+| `price` | `Int` | no | — | **required on write** |
+| `subscriptions` | `Subscription[]` | — | — | relation |
+
+```
+@@unique(planId), where: "effectiveTo" IS NULL
+@@check(effectiveTo IS NULL OR effectiveFrom < effectiveTo)
+```
 
 ### `Product`
 
@@ -355,6 +783,25 @@ table `product_variant` · db `main` · gate `0.4.4.5` · @@softDelete(cascade)
 @@index(productId)
 ```
 
+### `Session`
+
+table `session` · db `main` · gate `8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `expiresAt` | `DateTime` | no | — | **required on write** |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `ipAddress` | `String` | yes | — | — |
+| `token` | `String` | no | — | unique · @guarded(all) · **required on write** |
+| `userAgent` | `String` | yes | — | — |
+| `userId` | `String` | no | — | **required on write** |
+
+```
+@@index(expiresAt)
+@@index(userId)
+```
+
 ### `ShippingMethod`
 
 table `shipping_method` · db `main` · gate `0.5.5.5`
@@ -391,6 +838,40 @@ table `stock_reservation` · db `main` · gate `5.8.8.8`
 @@index(variantId, expiresAt)
 ```
 
+### `Subscription`
+
+table `subscription` · db `main` · gate `1.4.4.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `cancelAtPeriodEnd` | `Boolean` | no | `0` | @system |
+| `cancelledAt` | `DateTime` | yes | — | @system |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `currentPeriodEnd` | `DateTime` | no | — | @system · **required on write** |
+| `currentPeriodStart` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | @system |
+| `customer` | `Customer` | — | — | relation |
+| `customerId` | `Int` | no | — | **required on write** |
+| `id` | `Int` | no | — | id |
+| `invoices` | `Invoice[]` | — | — | relation |
+| `planVersion` | `PlanVersion` | — | — | relation |
+| `planVersionId` | `Int` | no | — | **required on write** |
+| `quantity` | `Int` | no | `1` | — |
+| `reference` | `String` | no | — | unique · **required on write** |
+| `status` | `SubscriptionStatus` | no | `'trialing'` | — |
+| `trialEndsAt` | `DateTime` | yes | — | — |
+| `userId` | `String` | yes | — | @system |
+
+```
+@@allow('read', auth().isStaff)
+@@allow('read', userId == auth().id)
+@@allow('update', auth().isStaff)
+@@allow('update', userId == auth().id)
+transition status.activate: trialing → active @system
+transition status.cancel: active, pastDue, trialing → cancelled @system
+transition status.lapse: active → pastDue @system
+transition status.recover: pastDue → active @system
+```
+
 ### `TaxRate`
 
 table `tax_rate` · db `main` · gate `0.5.5.5`
@@ -403,3 +884,45 @@ table `tax_rate` · db `main` · gate `0.5.5.5`
 | `label` | `String` | no | — | **required on write** |
 | `rate` | `Float` | no | — | **required on write** |
 | `version` | `Int` | no | `1` | — |
+
+### `User`
+
+table `user` · db `main` · gate `4.4.4.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `accountId` | `String` | yes | — | — |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `email` | `String` | no | — | unique · **required on write** |
+| `emailVerified` | `Boolean` | no | `0` | `@allow(write: auth().isAdmin)` |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `isStaff` | `Boolean` | no | `0` | `@allow(write: auth().isAdmin)` |
+| `name` | `String` | yes | — | — |
+| `role` | `String` | no | `'user'` | `@allow(write: auth().isAdmin)` |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+
+```
+@@allow('create', auth().isAdmin)
+@@allow('read', id == auth().id || auth().isStaff)
+@@allow('update', id == auth().id || auth().isAdmin)
+```
+
+### `Verification`
+
+table `verification` · db `main` · gate `8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `expiresAt` | `DateTime` | no | — | **required on write** |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `identifier` | `String` | no | — | **required on write** |
+| `provider` | `String` | yes | — | — |
+| `purpose` | `VerificationPurpose` | no | — | **required on write** |
+| `subject` | `String` | yes | — | — |
+| `value` | `String` | no | — | unique · @guarded(all) · **required on write** |
+
+```
+@@index(expiresAt)
+@@index(purpose, identifier)
+```

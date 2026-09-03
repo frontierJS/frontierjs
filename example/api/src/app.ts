@@ -22,13 +22,14 @@ import { notificationsPlugin }                  from '@frontierjs/notifications'
 import { mailerPlugin, outbox }                 from '@frontierjs/junction'
 
 import { db, shops, DEFAULT_SHOP, DEV_KEY, STORAGE_ROOT } from './core/db.ts'
-import { perShopAuth }                         from './core/auth.ts'
+import { perShopAuth }                          from './core/auth.ts'
 import { shopGateLevel, SYSTEM }                from './core/gate.ts'
-import { cartClaim, CART_HEADER }               from './core/cart-claim.ts'
-import { IDP_URL }                              from './core/idp-sink.ts'
-import { createConduitMailer, MAIL_TARGET }     from './core/mailer.ts'
-import { PSP_TARGET, PSP_URL, WEBHOOK_PATH, verifyWebhook } from './core/psp.ts'
-import { stripeTarget, verifyStripeSignature, STRIPE_WEBHOOK_PATH } from './core/stripe.ts'
+import { joinChannels }                         from './core/channels.ts'
+import { cartClaim, CART_HEADER }               from './domain/shop'
+import { IDP_URL }                              from './providers/idp/sink.ts'
+import { createConduitMailer, MAIL_TARGET }     from './providers/mail/mailer.ts'
+import { PSP_TARGET, PSP_URL, WEBHOOK_PATH, verifyWebhook } from './providers/psp/index.ts'
+import { stripeTarget, verifyStripeSignature, STRIPE_WEBHOOK_PATH } from './providers/stripe/index.ts'
 
 // 8110 is dev/be/project-1 — derived, never chosen (packages/cli/core/ports.js).
 // The env override is what lets a drive start an app of its own on the TEST row
@@ -39,10 +40,24 @@ const PORT = Number(process.env.API_PORT ?? 8110)
 // ─── Auth ─────────────────────────────────────────────────────────────────
 //
 // Real auth, not a Map of tokens: password hashing, sessions with expiry,
-// password reset and email verification are all in the package. What is NOT
-// wired here is the mail side — onPasswordResetRequested / onEmailVerification
-// Requested are where a mailer would go, and phase 2 hangs @frontierjs/conduit
-// off exactly those two callbacks.
+// password reset and email verification are all in the package.
+//
+// ─── The mail side, and why its absence was invisible ─────────────────────
+//
+// `requestPasswordReset` MINTS a token and sends nothing. Sending is
+// `onPasswordResetRequested`, a callback the app supplies — auth cannot have an
+// opinion about how an app sends mail — and this app did not supply one, for
+// its whole life, with a comment here saying so.
+//
+// The failure that produces is silent by construction: the route answers **200**
+// either way, deliberately, because it must never reveal whether an address is
+// registered. So *reset works* and *reset mints a row nobody will ever see* are
+// the same response, and no test could tell them apart without reading the
+// outbox. `POST /api/auth/password-reset/request` → 200, outbox empty, measured.
+//
+// It is wired below, and the users screen is what forced it: creating an account
+// makes a `User` and no `Credential`, so the new person can only get in through
+// a link — and the link had nowhere to go.
 
 // ─── Cookie sessions, and why they are a switch ───────────────────────────
 //
@@ -76,6 +91,31 @@ const authOptions = {
     isAdmin: user.role === 'admin',
     isStaff: user.isStaff === true || user.role === 'admin',
   }),
+
+  // ── Where a minted token becomes an email ──────────────────────────────
+  //
+  // A Delegate (`FJS-D06` §1): auth hands over the only copy of the token that
+  // will ever be in plain text — the column is `@guarded(all)` the moment it is
+  // written — and this is the one chance to put it in front of a person.
+  //
+  // `app` is referenced lazily rather than captured: this object is built before
+  // `createApp`, and the callback runs at request time when `app.mail` is long
+  // since configured. A mailer that is absent is a warning and not a throw,
+  // because `verify:oauth` and `verify:tenants` start their own apps without
+  // one and a reset attempt there must not fail the run.
+  onPasswordResetRequested: async (email: string, token: string) => {
+    const link = `${process.env.SHOP_PUBLIC_URL ?? `http://localhost:${PORT}`}/reset?token=${encodeURIComponent(token)}`
+    if (!app?.mail) {
+      console.warn(`[shop] no mailer configured — password-reset link for ${email} was not sent`)
+      return
+    }
+    await app.mail.send({
+      to:      email,
+      subject: 'Set your password',
+      text:    `Somebody asked to set a password for this address at the shop.\n\n${link}\n\n`
+             + `If that was not you, ignore this — nothing has changed.`,
+    })
+  },
 
   // ── Signing in with a provider ──────────────────────────────────────────
   //
@@ -113,6 +153,34 @@ const auth = perShopAuth(shops, DEFAULT_SHOP, authOptions, createLitestoneAuth(d
 // ─── App ──────────────────────────────────────────────────────────────────
 
 const app = createApp({
+  // ── Where the services are, stated rather than probed ──────────────────
+  //
+  // `resolveServicesDir` probes `./services` then `./src/services` beside the
+  // ENTRY file, and under a test runner the entry is the TEST FILE. So a drive
+  // that imports this module to start the app in its own process — which is
+  // what `verify:collect` has to do, because a conduit target is registered in
+  // `boot()` and an unstarted app has none — got an app with four services and
+  // no route for the rest. A missing directory is a silent no-op: the app
+  // boots, `/health` answers, and every service route is a 404.
+  //
+  // An absolute URL rather than a relative path, because a relative one is
+  // resolved against the process's working directory and the whole point is
+  // that this file cannot know what started it.
+  autoload: new URL('./services', import.meta.url).pathname,
+
+  // ── Where the config is, for the same reason ───────────────────────────
+  //
+  // The default is `./api/config` resolved against the CWD, so this app read
+  // its own config only when the command was typed at the app root. From
+  // `api/` it looked for `api/api/config`, found nothing, and booted on
+  // junction's defaults — with `caravan: { admin: true }` never applied, so
+  // the /api/jobs* routes were absent from an app that plainly mounts them
+  // (`FJS-431`'s shape, and the reason `scripts/ci-allowances.json` had to
+  // name a second surface snapshot that disagreed with this one by six
+  // routes). Anchored here, every `junction <tool> --app` runs from wherever
+  // the artefact it writes lives.
+  configPath: new URL('../config', import.meta.url).pathname,
+
   // The FLEET, not one database. `withTenantDb` resolves the shop this request
   // is for and puts that shop's caller-scoped client on `ctx.locals.db`, which
   // is what every service reads through `$.db`. `db` and `tenants` are
@@ -322,7 +390,7 @@ app.configure(outbox({ intervalMs: 1_000 }))
 // CLOSED: `send()` answers `auth_failed`, `retryable: false`, naming the target
 // and the ref and never the value.
 //
-// The address points at api/mail-sink.ts — a dev mail catcher that speaks the
+// The address points at api/src/providers/mail/sink.ts — a dev mail catcher that speaks the
 // provider's shape. Pointing this at api.resend.com is a change of `address`
 // and `ref` here, and nothing else anywhere.
 
@@ -343,7 +411,7 @@ app.configure(conduit({
     // is a value anybody holding it can present, and an HMAC binds the request
     // — method, path, a timestamp, a nonce and a hash of the body — so a
     // captured call cannot be replayed as a different one. The provider
-    // VERIFIES it (api/src/core/psp-sink.ts), which is what stops this being a
+    // VERIFIES it (api/src/providers/psp/sink.ts), which is what stops this being a
     // scheme that looks enforced and enforces nothing (FJS-349).
     //
     // Both sides run `@frontierjs/toolbelt/signature` and neither has an
@@ -385,7 +453,7 @@ process.env.SHOP_PSP_WEBHOOK_SECRET  ??= 'dev-psp-webhook-secret'
 //
 // The defaults are the DEV SINK's, so the example runs with no Stripe account.
 // Real keys go in `.env` (gitignored), and `STRIPE_URL` is the switch that
-// matters: without it the connector still talks to api/src/core/stripe-sink.ts
+// matters: without it the connector still talks to api/src/providers/stripe/sink.ts
 // on :8114 and the real key is never used.
 //
 //   STRIPE_URL=https://api.stripe.com
@@ -407,18 +475,22 @@ process.env.STRIPE_WEBHOOK_SECRET    ??= 'whsec_dev'
 // getting it wrong is a boot failure rather than a send failure an hour later.
 
 app.configure(mailerPlugin(createConduitMailer(app, { from: 'shop@example.test' })))
-app.configure(notificationsPlugin({ db, transports: { email: { mailer: 'default' } } }))
+// `notifications:` is DECLARED and not probed, for the same reason `autoload`
+// above is: the probe is relative to the entry, and two drives import this
+// module directly, which makes the drive file the entry. Probed, they would
+// find no notifications, and an unnamed definition throws on first send.
+app.configure(notificationsPlugin({
+  db,
+  notifications: new URL('./notifications', import.meta.url).pathname,
+  transports:    { email: { mailer: 'default' } },
+}))
 
+// Which channels a connection joins is `core/channels.ts`. It is a decision
+// and not a list: a channel nobody joined broadcasts into nothing, and a
+// channel a connection joined hands it every row published there with no
+// policy applied. Both halves are silent, so they are owned in one place.
 app.configure(channels((a: App) => {
-  a.channels!.on('connection', (session, conn) => {
-    for (const name of ['orders', 'products', 'customers']) a.channel!(name).join(conn)
-    // The inApp driver publishes to `notifications:user:<id>`, so a signed-in
-    // connection joins its own. An anonymous one has nothing to join — which is
-    // also the only reason this is not `for every channel`.
-    const userId = (session as { userId?: string; id?: string } | null)?.userId
-                ?? (session as { id?: string } | null)?.id
-    if (userId) a.channel!(`notifications:user:${userId}`).join(conn)
-  })
+  a.channels!.on('connection', (session, conn) => joinChannels(a, session, conn))
 }))
 
 // ─── The provider talking back ────────────────────────────────────────────
@@ -452,6 +524,9 @@ app.post(WEBHOOK_PATH, async (ctx) => {
   const check = await verifyWebhook({
     method:  ctx.method,
     path:    ctx.path,
+    // The raw search string off the request URL, not `ctx.query` — that one is
+    // parsed, and a signature is over what was sent (`FJS-678`).
+    query:   new URL(ctx.$raw.url).search,
     headers: ctx.headers,
     rawBody: ctx.rawBody,
   })

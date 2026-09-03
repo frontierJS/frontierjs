@@ -1,0 +1,231 @@
+---
+title: Payroll
+---
+<script>
+  // The pay runs, and the bands they are computed from.
+  //
+  // ─── Two of the four moves are nobody's button ────────────────────────────
+  //
+  // `PayRun` declares `calculate`, `revert`, `approve` and `pay`.
+  // `transitions(row, level)` reads `x-transitions` off the schema and answers
+  // at most `revert` and `approve` — the other two are `@system`, so they are
+  // not a request a caller may make and no picker offers them.
+  //
+  // What the screen offers instead is two CUSTOM METHODS, and the difference is
+  // real rather than cosmetic: `calculate` and `pay` each WRITE DOCUMENTS
+  // before they move the row, so a caller who could state the transition
+  // directly would mark a run calculated with no payslips under it or paid with
+  // no journal posted.
+  //
+  // `approve` IS a transition and is deliberately left as one. It is
+  // `@gate(5)`, so a level-4 member of staff sees the button absent here and is
+  // refused by the Data boundary if they send it anyway — the level lives in
+  // the schema rather than in a hook, which is the whole argument for putting
+  // it there.
+  import PayRun, { payRuns } from '@/resources/PayRun.mesa'
+  import { payRates } from '@/resources/PayRate.mesa'
+  import { session } from '@/session.js'
+  import { prefs } from '@/prefs.js'
+  import { useStore } from '@frontierjs/sierra/junction'
+  import { page } from '@frontierjs/sierra/router'
+  import { money } from '../../money.js'
+
+  import Alert               from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button              from '@frontierjs/ui/components/forms/Button.mesa'
+  import ConfirmationPopover from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'
+  import Drawer              from '@frontierjs/ui/components/overlay/Drawer.mesa'
+  import Mono                from '@frontierjs/ui/components/display/Mono.mesa'
+  import Pill                from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader       from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Table               from '@frontierjs/ui/components/display/Table.mesa'
+  import { toasts }          from '@frontierjs/ui/stores/toastStore.js'
+
+  const columns = [
+    { key: 'reference', label: 'Reference' },
+    { key: 'period',    label: 'Period' },
+    { key: 'status',    label: 'Status' },
+    { key: 'headcount', label: 'People', align: 'right' },
+    { key: 'actions',   label: '' },
+  ]
+
+  const rateColumns = [
+    { key: 'kind',    label: 'Kind' },
+    { key: 'band',    label: 'On the slice', align: 'right' },
+    { key: 'percent', label: 'Rate', align: 'right' },
+    { key: 'from',    label: 'In force from' },
+  ]
+
+  // A UI decision, and a value added to the enum lands here as the default
+  // rather than vanishing.
+  const TONE = { draft: 'muted', calculated: 'info', approved: 'warning', paid: 'success' }
+
+  const { get: rows, unsubscribe } = useStore(payRuns.store)
+  $.onDestroy(unsubscribe)
+
+  $: (session.level, prefs.dense, prefs.currency)
+
+  let error  = null
+  let busy   = null
+  let adding = null
+  let bands  = []
+
+  function load() {
+    payRuns.load(page.query, { orderBy: '-periodEnd', ...page.directives })
+      .catch(e => { error = e.message })
+  }
+  load()
+  $: page.query, page.directives, () => load()
+
+  async function loadBands() {
+    try {
+      const list = await payRates.service.find(
+        { effectiveTo: null }, { orderBy: 'kind', limit: 50 })
+      bands = list?.data ?? []
+    } catch { bands = [] }
+  }
+  loadBands()
+
+  /** What this caller may ask for on this row, off the schema. `calculate` and
+   *  `pay` are `@system` and are never in this list. */
+  const movesFor = (r) => payRuns.transitions(r, session.level).filter(m => m.allowed)
+
+  async function run(r, method, said) {
+    busy = r.id
+    error = null
+    try {
+      const result = await payRuns.service.invoke(method, r.id)
+      toasts.success(said(result))
+      load()
+    } catch (e) { error = e.message }
+    finally { busy = null }
+  }
+
+  const calculate = (r) => run(r, 'calculateNow',
+    (x) => `${r.reference} — ${x.payslips} payslip(s), ${money(x.net)} net`)
+  const pay       = (r) => run(r, 'pay',
+    (x) => `${r.reference} paid — journal ${x.journal}`)
+  const revert    = (r) => run(r, 'revert',
+    (x) => `${r.reference} back to draft, ${x.removed} payslip(s) removed`)
+
+  /** A declared move, sent as an ordinary patch. `approve` is `@gate(5)` and
+   *  nothing here grades it — the button is absent below 5 as an affordance,
+   *  and the Data boundary refuses it regardless (Invariant 6). */
+  async function move(r, name) {
+    busy = r.id
+    error = null
+    try {
+      await payRuns.service.patch(r.id, { status: name === 'approve' ? 'approved' : 'draft' })
+      toasts.success(`${r.reference} ${name}d`)
+      load()
+    } catch (e) { error = e.message }
+    finally { busy = null }
+  }
+
+  function newRun() { adding = payRuns.make(); error = null }
+  function close()  { adding = null }
+
+  const when = iso => iso ? new Date(iso).toLocaleDateString(undefined,
+    { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
+
+  /** A band applies to the SLICE between two thresholds, never to the whole —
+   *  which is the thing a payroll gets wrong first, so the column says it. */
+  const slice = (b) => b.toAmount
+    ? `${money(b.fromAmount)} – ${money(b.toAmount)}`
+    : `over ${money(b.fromAmount)}`
+</script>
+
+<SectionHeader title="Payroll" level={1}>
+  {#snippet action()}
+    <div class="cluster">
+      <a class="navlink" href="/people/">People</a>
+      <Button id="r-new" onclick={newRun}>New pay run</Button>
+    </div>
+  {/snippet}
+</SectionHeader>
+
+{#if error}<Alert tone="danger" id="r-error">{error}</Alert>{/if}
+
+<Table {columns} rows={rows()} striped hover compact={prefs.dense}>
+  {#snippet row(r)}
+    <tr data-run={r.id} data-reference={r.reference}>
+      <td><a href={'/payroll/' + r.id + '/'} data-open><Mono size="xs">{r.reference}</Mono></a></td>
+      <td>{when(r.periodStart)} – {when(r.periodEnd)}</td>
+      <td data-run-status={r.status}><Pill tone={TONE[r.status] ?? 'muted'} data-status={r.status}>{r.status}</Pill></td>
+      <td class="text-right" data-headcount={r.headcount ?? ''}>{r.headcount ?? '—'}</td>
+      <td>
+        <div class="cluster">
+          <Button variant="ghost" href={'/payroll/' + r.id + '/'}>Open</Button>
+
+          <!-- The two that write documents. Custom methods, not transitions. -->
+          {#if r.status === 'draft'}
+            <Button variant="ghost" data-act="calculate" disabled={busy === r.id}
+                    onclick={() => calculate(r)}>Calculate</Button>
+          {/if}
+          {#if r.status === 'approved'}
+            <ConfirmationPopover
+              title="Pay this run?"
+              message="It posts one journal for the whole run and queues every payslip to go out. A payslip that has gone out cannot be un-sent."
+              confirmLabel="Pay it"
+              onconfirm={() => pay(r)}
+            >
+              {#snippet trigger()}
+                <Button variant="ghost" tone="success" data-act="pay" disabled={busy === r.id}>Pay</Button>
+              {/snippet}
+            </ConfirmationPopover>
+          {/if}
+
+          <!-- …and whatever the schema says this caller may ask for. -->
+          {#each movesFor(r) as m}
+            {#if m.name === 'revert'}
+              <Button variant="ghost" tone="danger" data-move="revert" disabled={busy === r.id}
+                      onclick={() => revert(r)}>Revert</Button>
+            {:else}
+              <Button variant="ghost" data-move={m.name} disabled={busy === r.id}
+                      onclick={() => move(r, m.name)}>{m.name}</Button>
+            {/if}
+          {/each}
+        </div>
+      </td>
+    </tr>
+  {/snippet}
+</Table>
+
+<Alert tone="muted">
+  <code>calculate</code> and <code>pay</code> are <code>@system</code> moves and
+  are not in the list above — each writes documents before it moves the row, so
+  they are custom methods rather than a transition anybody may state.
+  <code>approve</code> is <code>@gate(5)</code>: below that level the button is
+  simply absent, and sending it anyway is refused at the Data boundary.
+</Alert>
+
+<SectionHeader title="Rate bands in force" level={2} />
+
+<Table columns={rateColumns} rows={bands} striped compact>
+  {#snippet row(b)}
+    <tr data-rate={b.id} data-kind={b.kind}>
+      <td>{b.kind}</td>
+      <td class="text-right">{slice(b)}</td>
+      <td class="text-right" data-percent={b.percent}>{(b.percent / 100).toFixed(2)}%</td>
+      <td>{when(b.effectiveFrom)}</td>
+    </tr>
+  {/snippet}
+</Table>
+
+<Alert tone="muted">
+  A band applies to the <strong>slice</strong> between its two thresholds and
+  never to the whole figure. Every payslip line a band produced names the row
+  that produced it, so a number on a payslip can be traced back to a rate that
+  was in force on the day.
+</Alert>
+
+<Drawer open={adding !== null} title="New pay run" side="right" onclose={close}>
+  {#if adding}
+    <PayRun
+      bind:record={adding}
+      method="create"
+      submitId="r-save"
+      oncancel={close}
+      ondone={() => { close(); load() }}
+    />
+  {/if}
+</Drawer>

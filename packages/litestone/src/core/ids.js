@@ -87,3 +87,42 @@ export const GENERATED_DEFAULTS = {
   cuid:   generateCuid,
   nanoid: generateNanoid,
 }
+
+// ─── who assigns the key ──────────────────────────────────────────────────────
+
+/**
+ * Does the SERVER fill this `@id`, or must the caller supply it?
+ *
+ * Two readers ask, and for as long as they each answered it themselves they
+ * disagreed (`FJS-608`). `jsonschema.js` excluded every `@id` from create mode
+ * as *server-assigned*, so a key the caller must supply was not merely
+ * un-required but ABSENT — and with `additionalProperties: false` beside it,
+ * junction's `autoValidate` then refused a create that carried the key it could
+ * not have known to ask for, and a generated form offered no box to type it in.
+ * `client.js`'s required pre-flight answered a narrower version of the same
+ * question and got the composite case wrong in the other direction.
+ *
+ * Three shapes and only the first two are the server's:
+ *
+ *   `@default(…)`      — filled here for uuid()/ulid()/cuid()/nanoid(), and by
+ *                        SQLite for autoincrement() or a literal.
+ *   a lone `Int @id`   — SQLite's rowid alias, which auto-assigns with no
+ *                        default declared.
+ *   anything else      — a slug, a stock keeping unit, an external system's
+ *                        identifier, or any member of a composite key. Nobody
+ *                        but the caller can produce it.
+ *
+ * **A composite key is never a rowid alias.** `PRIMARY KEY (a, b)` is an
+ * ordinary index whatever the column types, so an `Int` member of one is a
+ * column the caller must supply — where a lone `Int @id` is not. The pre-flight
+ * tested the type and not the key, so a missing member reached SQLite and came
+ * back as a raw `NOT NULL constraint failed` naming a physical table, which is
+ * the error shape every other required field exists to avoid.
+ */
+export function isServerAssignedId(field, model) {
+  if (!field.attributes?.some(a => a.kind === 'id')) return false
+  if (field.attributes.some(a => a.kind === 'default')) return true
+  if (field.type?.name !== 'Int') return false
+  const keyWidth = (model?.fields ?? []).filter(f => f.attributes?.some(a => a.kind === 'id')).length
+  return keyWidth === 1
+}

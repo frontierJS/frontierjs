@@ -29,6 +29,70 @@ export interface SmtpMessage {
   replyTo?: string
 }
 
+// ─── Address and header safety ───────────────────────────────
+//
+// **SMTP is line-oriented and every field here reaches a line.** A `to` of
+// `a@b.test>\r\nRCPT TO:<victim@c.test` is not a bad address, it is a second
+// command: the transaction sends what it is given, so one injected CRLF adds a
+// recipient nobody asked for, and the same character in a `replyTo` adds a
+// header (`Bcc:`) to a message somebody else composed. The subject survived only
+// by accident — `encodeMimeHeader` base64-encodes anything non-printable, so a
+// CRLF there was hidden by an encoding rule that exists for emoji.
+//
+// Refused at BOTH ends: `MailBuilder.build()`/`createSmtpMailer`, where a
+// mistake is cheapest to attribute, and `sendMessage()`, which is the last
+// thing before a socket write and is reachable directly through `sendMail`.
+// One of the two alone is a validator somebody routes around.
+
+const ADDR_MAX = 254   // RFC 5321 §4.5.3.1.3 — path length
+
+/** RFC 5321 addr-spec, conservatively: local@domain, no framing, no controls. */
+export function assertAddress(addr: unknown, field: string): string {
+  if (typeof addr !== 'string' || !addr)
+    throw new SmtpError(`Mail: ${field} must be a non-empty address string`)
+  if (addr.length > ADDR_MAX)
+    throw new SmtpError(`Mail: ${field} is longer than ${ADDR_MAX} characters`)
+  // Named first, because "does not match the pattern" about a CRLF is the least
+  // useful sentence at the moment somebody is looking at an injection.
+  if (/[\r\n]/.test(addr))
+    throw new SmtpError(`Mail: ${field} contains a line break — SMTP is line-oriented and this would inject a command`)
+  if (/[\x00-\x1f\x7f]/.test(addr))
+    throw new SmtpError(`Mail: ${field} contains a control character`)
+  if (/[<>\s,;]/.test(addr))
+    throw new SmtpError(`Mail: ${field} must be a bare address — no display name, angle brackets, whitespace or separators`)
+  const at = addr.lastIndexOf('@')
+  if (at <= 0 || at === addr.length - 1)
+    throw new SmtpError(`Mail: ${field} is not an address (expected local@domain, got '${addr}')`)
+  const domain = addr.slice(at + 1)
+  if (!/^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$/.test(domain)
+      && !/^\[[0-9A-Fa-f:.]+\]$/.test(domain))
+    throw new SmtpError(`Mail: ${field} has an invalid domain ('${domain}')`)
+  return addr
+}
+
+/** A header VALUE that cannot become a second header. */
+export function assertHeaderValue(value: unknown, field: string): string {
+  const v = String(value ?? '')
+  if (/[\r\n]/.test(v))
+    throw new SmtpError(`Mail: ${field} contains a line break — a header value cannot span lines`)
+  if (/[\x00\x0b\x0c]/.test(v))
+    throw new SmtpError(`Mail: ${field} contains a control character`)
+  return v
+}
+
+/** Every address on a message, at whichever end is asking. */
+export function assertMessageAddresses(msg: {
+  from?: unknown; to?: unknown; cc?: unknown; bcc?: unknown; replyTo?: unknown; subject?: unknown
+}): void {
+  if (msg.from !== undefined) assertAddress(msg.from, 'from')
+  const list = (v: unknown): unknown[] => v === undefined || v === null ? [] : Array.isArray(v) ? v : [v]
+  for (const a of list(msg.to))  assertAddress(a, 'to')
+  for (const a of list(msg.cc))  assertAddress(a, 'cc')
+  for (const a of list(msg.bcc)) assertAddress(a, 'bcc')
+  if (msg.replyTo !== undefined && msg.replyTo !== null) assertAddress(msg.replyTo, 'replyTo')
+  if (msg.subject !== undefined) assertHeaderValue(msg.subject, 'subject')
+}
+
 // ─── Errors ──────────────────────────────────────────────────
 
 export class SmtpError extends Error {
@@ -294,21 +358,32 @@ async function openSession(config: SmtpConfig): Promise<{
   // ── Public session methods ────────────────────────────────
 
   async function sendMessage(msg: SmtpMessage): Promise<void> {
+    // Before ANY socket write. The last gate before the wire, and the only one
+    // `sendMail` alone reaches.
+    assertMessageAddresses(msg)
     const recipients = Array.isArray(msg.to) ? msg.to : [msg.to]
+
+    // A refusal mid-transaction abandons a half-open one — the session is
+    // reusable and the next message would otherwise inherit this one's envelope
+    // (RFC 5321 §4.1.1.5). Every 4xx and 5xx below is fatal for this message.
+    const fatal = async (err: unknown): Promise<never> => {
+      try { await reset() } catch { /* the session is going away regardless */ }
+      throw err
+    }
 
     // MAIL FROM
     const mailFrom = await command(`MAIL FROM:<${msg.from}>`)
-    assertCode(mailFrom, 250, 'MAIL FROM')
+    try { assertCode(mailFrom, 250, 'MAIL FROM') } catch (e) { return fatal(e) }
 
     // RCPT TO — one command per recipient
     for (const addr of recipients) {
       const rcpt = await command(`RCPT TO:<${addr}>`)
-      assertCode(rcpt, 250, `RCPT TO <${addr}>`)
+      try { assertCode(rcpt, 250, `RCPT TO <${addr}>`) } catch (e) { return fatal(e) }
     }
 
     // DATA
     const dataReady = await command('DATA')
-    assertCode(dataReady, 354, 'DATA')
+    try { assertCode(dataReady, 354, 'DATA') } catch (e) { return fatal(e) }
 
     // Construct and send the message body.
     // Dot-stuffing (RFC 5321 §4.5.2): any line beginning with "." must
@@ -356,13 +431,17 @@ function buildMimeMessage(msg: SmtpMessage): string {
   const date     = new Date().toUTCString()
   const boundary = `----=_Part_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
 
+  // Every value goes through the encoder, which REFUSES a line break rather
+  // than encoding it. `From`/`To`/`Reply-To` used to be interpolated raw, so a
+  // CRLF in any of them wrote a header of the caller's choosing into a message
+  // the app composed.
   const baseHeaders = [
-    `From: ${msg.from}`,
-    `To: ${to}`,
+    `From: ${encodeMimeHeader(msg.from)}`,
+    `To: ${encodeMimeHeader(to)}`,
     `Subject: ${encodeMimeHeader(msg.subject)}`,
     `Date: ${date}`,
     `MIME-Version: 1.0`,
-    ...(msg.replyTo ? [`Reply-To: ${msg.replyTo}`] : []),
+    ...(msg.replyTo ? [`Reply-To: ${encodeMimeHeader(msg.replyTo)}`] : []),
   ]
 
   // Multipart/alternative (HTML + plain text)
@@ -413,6 +492,10 @@ function buildMimeMessage(msg: SmtpMessage): string {
 // RFC 2047 encoded-word for non-ASCII header values (e.g. subjects with emoji).
 // Passes ASCII-only values through unchanged — no unnecessary encoding.
 function encodeMimeHeader(value: string): string {
+  // A CRLF is REFUSED and never encoded. Base64ing it looks like it closes the
+  // hole and does not: an encoded-word is decoded by the receiving agent, and
+  // an encoder is the wrong owner of a rule about what may be sent at all.
+  assertHeaderValue(value, 'header')
   if (/^[\x20-\x7E]*$/.test(value)) return value
   const encoded = Buffer.from(value).toString('base64')
   return `=?UTF-8?B?${encoded}?=`

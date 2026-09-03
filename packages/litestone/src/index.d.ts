@@ -173,8 +173,29 @@ export interface LogEntry {
   after:      string | null  // JSON snapshot
   actorId:    number | string | null
   actorType:  string | null
+  /** WHERE the write came from — filled from `logContext`, null without one. */
+  correlationId: string | null
+  source:        string | null   // the call, e.g. 'orders.pay'
+  origin:        string | null   // 'http' | 'websocket' | 'internal'
+  ip:            string | null
+  userAgent:     string | null
+  tenant:        string | null
   meta:       string | null  // JSON
   createdAt:  string
+}
+
+/**
+ * The request an audit entry is being written inside, as the app's API layer
+ * sees it. Every field is optional: a write from a job, a seed or a migration
+ * has no request behind it and the columns are legitimately null.
+ */
+export interface LogRequestContext {
+  correlationId?: string | null
+  source?:        string | null
+  origin?:        string | null
+  ip?:            string | null
+  userAgent?:     string | null
+  tenant?:        string | null
 }
 
 // ─── File ref ─────────────────────────────────────────────────────────────────
@@ -229,6 +250,15 @@ export interface CreateClientOptions {
    * cross-context writes (e.g. cross-tenant moves performed via nested ops).
    */
   allowChildFkOverride?: boolean
+  /**
+   * The claim names this app's principal carries beyond the `@@auth` model's
+   * own columns — a value resolved PER REQUEST, on no row and in no schema
+   * (a cart token, an impersonation). Declaring it is what lets `auth().x` be
+   * graded: a name outside the set is refused at startup rather than compiling
+   * to NULL, which the SQL half reads as "nobody" and the JS half as
+   * "everybody" (`FJS-666`, `FJS-668`). `[]` is a statement; absent is silence.
+   */
+  claims?:        string[]
   /** Plugins — GatePlugin, FileStorage, custom */
   plugins?:       Plugin[]
   /**
@@ -281,6 +311,12 @@ export interface CreateClientOptions {
   onQuery?:    (event: QueryEvent, ctx: LitestoneCtx) => void | Promise<void>
   /** Fires when a @log / @@log entry is written — return extra fields to merge */
   onLog?:      (entry: LogEntry, ctx: LitestoneCtx) => Partial<Pick<LogEntry, 'actorId' | 'actorType' | 'meta'>> | void
+  /**
+   * WHERE a write came from, for the audit trail. Called when an entry is
+   * built, not read once — the answer changes per request. Junction installs
+   * one through `db.$logContext(fn)`; an app without it may pass its own.
+   */
+  logContext?: () => LogRequestContext | null | undefined
   /** ':memory:' forces all SQLite databases to in-memory, jsonl/logger to tmpdir */
   databases?:  ':memory:' | Record<string, { path?: string }>
   /** Per-database access control */
@@ -415,8 +451,10 @@ export interface TableClient<
   restore(args: { where: TWhere }): Promise<TRow[]>
   delete(args: { where: TWhere }): Promise<TRow | null>
   deleteMany(args: { where: TWhere; announce?: AnnounceMode }): Promise<{ count: number }>
-  transition(id: number | string, name: string): Promise<TRow>
-  transitions(idOrRow: number | string | TRow): Promise<Array<{ name: string; field: string; from: string; to: string; gate: number | null; allowed: boolean }>>
+  /** `system: true` makes a move declared `@system` — the gate, the row policies and the audit actor all survive, where asSystem() drops all three. */
+  transition(id: number | string, name: string, opts?: { system?: boolean }): Promise<TRow>
+  /** `refusedBy` says which half said no: a screen renders *not senior enough*, *not this record* and *not you, ever* differently, and neither the status nor a non-null `gate` separates them. */
+  transitions(idOrRow: number | string | TRow): Promise<Array<{ name: string; field: string; from: string; to: string; gate: number | null; system: boolean; allowed: boolean; refusedBy: 'system' | 'gate' | 'policy' | null }>>
   optimizeFts(): void
   findManyAndCount(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; limit?: number; offset?: number; select?: Record<string, boolean> }): Promise<{ rows: TRow[]; total: number }>
   aggregate(args: { _count?: boolean; _sum?: Record<string, boolean>; _avg?: Record<string, boolean>; _min?: Record<string, boolean>; _max?: Record<string, boolean>; where?: TWhere }): Promise<Record<string, unknown>>
@@ -491,6 +529,41 @@ export interface LitestoneClient {
     key: string; reason: 'computed' | 'transient' | 'opaque' | 'unknown'; suggestion: string | null
     sortable: string[]; message: string
   }[]
+  /**
+   * The row as `principal` would have read it, or `null` where they may not
+   * read it at all.
+   *
+   * The fifth sibling of `$checkWhere` / `$checkOrderBy` / `$protectedFields` /
+   * `$capabilitiesFor`, and it takes its subject as an ARGUMENT for the same
+   * reason `$capabilitiesFor` does: the asker holds one client and is answering
+   * about somebody else. Every flavour answers identically for one principal.
+   *
+   * It exists because **a broadcast is not a SELECT**: `@@allow` compiles into a
+   * WHERE, so a row that reaches a caller through a query is filtered by
+   * construction and one that reaches them through a WebSocket frame is not
+   * filtered by anything (`FJS-631`). Junction's channel fan-out is the caller.
+   *
+   * Three questions in the order every layer here reads them — the gate (about
+   * the caller alone, and the whole answer for a stranger), the row policy, then
+   * that principal's field policies. No query: the row is already in hand, so a
+   * `@from` or `@computed` on it is the writer's rather than one derived under
+   * the recipient's own policies. Fails closed — an undecidable policy throws
+   * and a throw refuses.
+   */
+  $readAs(accessor: string, row: unknown, principal: unknown): Promise<Record<string, unknown> | null>
+  /**
+   * Whether `$readAs` can ever answer anything but the row it was given.
+   *
+   * `'open'` for a model whose read gate is 0 with no read policy and no field
+   * policy — a catalogue, which is also the busiest channel an app has, so this
+   * is what keeps grading a broadcast affordable. Read off the SCHEMA, so a
+   * policy added later turns it `'graded'` with nothing to remember.
+   *
+   * An unknown accessor is `'graded'`, which is the opposite of the other
+   * siblings' `{}`/`[]`: there uncertainty means *I cannot judge this*, and here
+   * it is a permission, so it has to fall the other way.
+   */
+  $readGrading(accessor: string): 'open' | 'graded'
   /**
    * The `@@scope` names declared on a model → the predicate as source text.
    *
@@ -915,6 +988,19 @@ export declare class TransitionGateError extends Error {
   retryable:  false
 }
 
+/**
+ * A bulk write named a transitions-typed column. `updateMany` matches rows
+ * without reading them, so there is no from-state to grade against
+ * `@@transitions` — 400 rather than 403, because the verb is wrong rather than
+ * the caller and no level or grant answers it (`FJS-671`).
+ */
+export declare class BulkTransitionError extends Error {
+  model:     string
+  field:     string
+  status:    400
+  retryable: false
+}
+
 export declare class LockNotAcquiredError extends Error {
   key:          string
   currentOwner: string | null
@@ -945,6 +1031,32 @@ export declare class SoftDeletedUniqueError extends Error {
   fields:    string[]
   values:    unknown[]
   id:        unknown
+  status:    409
+  retryable: false
+}
+
+/**
+ * A row that is part of a sealed document. `@seals` on a move says the row
+ * became a document; `@sealed` on a relation says which children it is made of.
+ * After the seal those children may not be created, changed or removed, and the
+ * model's own `@immutable` columns freeze.
+ *
+ * NOT lifted by `asSystem()` — it is the `@immutable` tier, a statement about
+ * what the row IS, where the gate and the row policies are statements about who
+ * is asking.
+ */
+export declare class SealedDocumentError extends Error {
+  model:     string
+  /** The document. Its own name where a frozen COLUMN was refused. */
+  parent:    string | null
+  parentId:  unknown
+  /** The state the document was found at — one of the sealed set. */
+  state:     unknown
+  /** The `@sealed` relation, where a child row was refused. */
+  relation:  string | null
+  operation: 'create' | 'update' | 'remove' | 'delete' | 'freeze' | null
+  /** The `@immutable` columns the payload named, where `operation` is `freeze`. */
+  fields:    string[]
   status:    409
   retryable: false
 }

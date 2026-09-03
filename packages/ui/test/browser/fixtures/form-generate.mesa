@@ -72,6 +72,11 @@
 
   let saved = 0
   const onsubmit = () => { saved++ }
+
+  // Always true. The point is that it is a BLOCK: `slot=` is an attribute on an
+  // element, so an `{#if}` around a slotted child puts the block itself in the
+  // default slot (`FJS-607`).
+  let ready = true
 </script>
 
 <div id="all">
@@ -102,6 +107,18 @@
   <Form resource={RESOURCE} {onsubmit} auto only={['title']}>
     <input id="hand-written" name="hand" />
     {#snippet actions()}<button type="submit" id="forced-save">Save</button>{/snippet}
+  </Form>
+</div>
+
+<div id="conditional-actions">
+  <!-- The shape that turns generation off in silence. Every branch of this
+       block is slotted, so nothing renders into the default position — and
+       `$slots.default` is truthy all the same, which reads as a caller who
+       wrote the form themselves. -->
+  <Form resource={RESOURCE} {onsubmit} only={['title']}>
+    {#if ready}
+      <button type="submit" slot="actions" id="cond-save">Save</button>
+    {/if}
   </Form>
 </div>
 

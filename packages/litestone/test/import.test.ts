@@ -116,15 +116,21 @@ describe('reading a source', () => {
   })
 })
 
-// A Prisma schema carrying one construct of each tier — the surrogate key is
-// `changed`, the dropped index name is `lost`, and the string `type` column is
-// an STI candidate, which is `noted`.
+// A Prisma schema carrying one construct of each tier — the `Decimal` with no
+// precision is `changed` (it becomes a Float, which is the money bug and is
+// silent), the dropped index name is `lost`, and the string `type` column is an
+// STI candidate, which is `noted`.
+//
+// The composite key is here as the CONTROL: `@@id` is the same spelling in both
+// languages, so it reads across and grades nothing (`FJS-561`). It used to be
+// this fixture's `changed` example, back when it was surrogated.
 const PRISMA = `
 model Reading {
   key    String
   action String
   type   String
   taken  Int
+  amount Decimal
   @@id([key, action])
   @@index([taken], map: "idx_reading_taken")
 }
@@ -139,7 +145,7 @@ describe('converting, grading and marking', () => {
   })
 
   test('the three tiers are counted separately', () => {
-    expect(summary.changed).toBe(1)   // the composite primary key
+    expect(summary.changed).toBe(1)   // the Decimal with no precision
     expect(summary.lost).toBe(1)      // the index name
     expect(summary.noted).toBe(1)     // the string `type` column — an STI candidate
     expect(summary.total).toBe(3)
@@ -148,15 +154,22 @@ describe('converting, grading and marking', () => {
 
   test('summarise groups by kind, worst tier first', () => {
     expect(summary.byKind[0].tier).toBe('changed')
-    expect(summary.byKind.map(r => r.kind)).toContain('composite-primary-key')
+    expect(summary.byKind.map(r => r.kind)).toContain('decimal-no-precision')
+  })
+
+  // The composite key is the negative control for the whole grading pass: it is
+  // carried, in the source's own column order, and grades nothing at all.
+  test('a composite primary key reads across and is not a gap', () => {
+    expect(lite).toContain('@@id([key, action])')
+    expect(gaps.map(g => g.kind)).not.toContain('composite-primary-key')
+    expect(lite).not.toContain('cuid()')
   })
 
   // The terminal scrolls away; the file does not.
   test('a changed construct is marked on the line it is about', () => {
     const marked = annotate(lite, gaps)
-    const line   = marked.split('\n').find(l => l.startsWith('model Reading'))
+    const line   = marked.split('\n').find(l => l.trim().startsWith('amount'))
     expect(line).toContain('⚠ imported:')
-    expect(line).toContain('@@id([key, action])')
   })
 
   test('a lost or noted construct is not marked', () => {
@@ -276,8 +289,65 @@ end
     expect(bigints(rb, 'rails')).toEqual(['Status.reblogs_count'])
   })
 
-  test('it grades `changed`, so --strict fails on it', () => {
-    expect(tierOf('bigint')).toBe('changed')
+  // It graded `changed` for as long as the boundary narrowed the value to a
+  // double. `@big` carries all 64 bits (`FJS-643`), so the schema now says what
+  // the source said and what is left is a decision about the JS type.
+  test('it grades `noted` now that the column is carried', () => {
+    expect(tierOf('bigint')).toBe('noted')
+  })
+
+  test('and the attribute is EMITTED, in all three readers', () => {
+    const decl = (source: string, format: string) =>
+      convert({ source, format, label: 'fx' }).lite
+        .split('\n').filter(l => /@big/.test(l)).map(l => l.trim())
+
+    expect(decl(`
+model Ledger {
+  id      BigInt @id @default(autoincrement())
+  ownerId BigInt
+  owner   Owner  @relation(fields: [ownerId], references: [id])
+  balance BigInt
+}
+model Owner { id BigInt @id @default(autoincrement()) }
+`, 'prisma')).toEqual(['balance Int @big'])
+
+    // A key and a foreign key are exempt, so the emitted set is the reported
+    // set — a column carrying an attribute nobody was told about would be the
+    // same defect one direction over.
+    expect(decl(`
+CREATE TABLE public.wallet (
+    id bigint NOT NULL,
+    account_id bigint NOT NULL,
+    balance_cents bigint NOT NULL
+);
+ALTER TABLE ONLY public.wallet ADD CONSTRAINT wallet_pkey PRIMARY KEY (id);
+CREATE TABLE public.accounts (id bigint NOT NULL);
+ALTER TABLE ONLY public.accounts ADD CONSTRAINT accounts_pkey PRIMARY KEY (id);
+`, 'sql').join()).toMatch(/balanceCents Int @map\("balance_cents"\) @big/)
+
+    expect(decl(`
+ActiveRecord::Schema[7.1].define(version: 2024_01_01_000000) do
+  create_table "statuses", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "reblogs_count", default: 0, null: false
+  end
+  create_table "accounts", force: :cascade do |t|
+    t.string "username"
+  end
+  add_foreign_key "statuses", "accounts"
+end
+`, 'rails').join()).toMatch(/^reblogsCount Int .*@big$/)
+  })
+
+  test('and what it emits PARSES, which is the only thing that makes it carried', () => {
+    const { lite } = convert({ source: `
+model Ledger {
+  id      BigInt @id @default(autoincrement())
+  balance BigInt
+}
+`, format: 'prisma', label: 'fx' })
+    expect(lite).toMatch(/@big/)
+    expect(parse(lite).valid).toBe(true)
   })
 })
 

@@ -1,0 +1,44 @@
+<script module>
+  // web/src/resources/Plan.mesa — the Resource layer.
+  //
+  // Named for the model, exporting the accessor — see Order.mesa.
+  //
+  // `Plan` is `@@gate("0.5.5.5")`, so this resource is READ by a caller with no
+  // session at all. That is what makes the storefront's pricing page possible
+  // and it is why `currentPrice` is on the model rather than assembled here: a
+  // `@from(PlanVersion, max: price, where: "effectiveTo IS NULL")` reaches this
+  // client as an ordinary readOnly column, so a list of plans and their prices
+  // is ONE query and never a join a screen writes.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const plans = createResource('plans')
+</script>
+
+<script>
+  // …and the markup half is this model's DEFAULT form (repo Invariant 18).
+  //
+  // What it offers is what `Plan` declares as writable: code, name,
+  // description, interval and active. **The price is not on it and cannot be**
+  // — a price is a `PlanVersion` row with a lifetime, so `currentPrice` is
+  // `@from` and reaches the browser `readOnly`. A form that offered a price box
+  // here would be offering to edit a column that does not exist, and the shape
+  // of that mistake is exactly what effective dating is for.
+  //
+  // Changing what a plan costs is `plans.reprice`, on the plan's own screen.
+  import Form   from '@frontierjs/ui/components/forms/Form.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let record      = undefined   // absent → Form makes one from the schema
+  export let method      = undefined   // Form's auto | create | patch
+  export let submitLabel = 'Save'
+  export let cancelHref  = null        // Cancel navigates…
+  export let oncancel    = null        // …or calls back, for a drawer
+  export let submitId    = undefined   // a drive needs to find the button
+  export let actions     = null        // snippet — replaces the whole button row
+</script>
+
+<Form resource={plans} bind:record={record} {method} {actions} {...$attributes}>
+  <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
+  <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
+</Form>

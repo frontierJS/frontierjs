@@ -2,6 +2,25 @@
 
 import { ValidationError } from './validate.js'
 
+// ─── identifier quoting ───────────────────────────────────────────────────────
+//
+// Invariant 8 — a caller-supplied name never enters a SQL pattern. Two failures
+// if one does, and the second is not the obvious one. A name carrying a `"`
+// closes the quote: `id" = 2) OR ("id` is enough to unbalance the parentheses a
+// row policy is ANDed inside and lift it off the query, which is a scoped
+// client answering somebody else's rows. And SQLite resolves a double-quoted
+// identifier it cannot bind as a STRING LITERAL rather than raising, so a name
+// that merely does not exist compares two constants and answers nothing.
+//
+// Doubling is SQL's own escape. Every identifier this package emits goes
+// through here, whether it came from the schema or from a caller — a helper
+// that only the untrusted sites remember to call is one audit away from a site
+// that forgot.
+
+export function quoteIdent(name) {
+  return `"${String(name).replace(/"/g, '""')}"`
+}
+
 // ─── sql tagged template ──────────────────────────────────────────────────────
 //
 // Safe parameterized raw SQL for use inside where: { $raw: sql`...` }.
@@ -507,7 +526,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
     //      are valid and what types they have.
     const typedJsonInfo = typedJsonMap?.[key]
     if (typedJsonInfo && val !== null && typeof val === 'object' && !Array.isArray(val) && isTypedJsonPath(val)) {
-      const colExpr = `${aliasPrefix}"${key}"`
+      const colExpr = `${aliasPrefix}${quoteIdent(key)}`
       const subClauses = buildTypedJsonClauses(colExpr, val, typedJsonInfo, [], params, typedJsonMap, key)
       if (subClauses.length) clauses.push(subClauses.join(' AND '))
       continue
@@ -517,7 +536,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
     // Subqueries are self-qualifying (they reference `t.` internally), so we
     // never prepend an extra alias prefix to them.
     const isFromExpr = fromExprMap?.[key] != null
-    const col = isFromExpr ? fromExprMap[key] : `${aliasPrefix}"${key}"`
+    const col = isFromExpr ? fromExprMap[key] : `${aliasPrefix}${quoteIdent(key)}`
 
     if (val === null) { clauses.push(`${col} IS NULL`); continue }
 
@@ -800,26 +819,30 @@ export function buildNamedAggExpr(alias, spec, extraParams) {
     if (spec.count === true || spec.count === '*') {
       aggExpr = spec.distinct ? `COUNT(DISTINCT *)` : `COUNT(*)`
     } else {
-      aggExpr = spec.distinct ? `COUNT(DISTINCT "${spec.count}")` : `COUNT("${spec.count}")`
+      aggExpr = spec.distinct ? `COUNT(DISTINCT ${quoteIdent(spec.count)})` : `COUNT(${quoteIdent(spec.count)})`
     }
   } else {
     const sqlFn = fn.toUpperCase()
     aggExpr = spec.distinct
-      ? `${sqlFn}(DISTINCT "${spec[fn]}")`
-      : `${sqlFn}("${spec[fn]}")`
+      ? `${sqlFn}(DISTINCT ${quoteIdent(spec[fn])})`
+      : `${sqlFn}(${quoteIdent(spec[fn])})`
   }
 
-  // FILTER (WHERE ...) clause
+  // FILTER (WHERE ...) clause. The fragment must arrive as a sql`` tag and a
+  // plain string is refused — the same rule `orderBy: { $raw }` already applies,
+  // for the same reason: a string is how an injected one arrives. `query()`
+  // dispatches a caller's own object here (`db.order.query(req.query)` is the
+  // documented shape), so a spec key reaching this line came off the wire.
   let filterClause = ''
   if (spec.filter) {
-    if (isRawClause(spec.filter)) {
-      filterClause = ` FILTER (WHERE ${spec.filter.sql})`
-      extraParams.push(...spec.filter.params)
-    } else if (typeof spec.filter === 'string') {
-      filterClause = ` FILTER (WHERE ${spec.filter})`
-    } else {
-      throw new Error(`Named aggregate "${alias}" filter must be a sql\`\` tag result or plain string`)
-    }
+    if (!isRawClause(spec.filter))
+      throw new ValidationError([{
+        path:    [alias, 'filter'],
+        message: `Named aggregate "${alias}" filter must be a sql\`\` tag result — ` +
+                 `a plain string cannot be bound and is how an injected fragment arrives`,
+      }])
+    filterClause = ` FILTER (WHERE ${spec.filter.sql})`
+    extraParams.push(...spec.filter.params)
   }
 
   return `${aggExpr}${filterClause} AS "__nagg__${alias}"`
@@ -880,7 +903,7 @@ export function buildRelationOrderBy(orderBy, modelName, relationMap, modelToTab
         const d = String(val).toUpperCase()
         if (d !== 'ASC' && d !== 'DESC')
           throw new Error(`orderBy direction must be 'asc' or 'desc', got: ${val}`)
-        entries.push({ flat: true, sql: `"${key}" ${d}` })
+        entries.push({ flat: true, sql: `${quoteIdent(key)} ${d}` })
         continue
       }
       // Flat object config form:  { col: { dir: 'asc', nulls: 'last' } }
@@ -889,7 +912,7 @@ export function buildRelationOrderBy(orderBy, modelName, relationMap, modelToTab
         const d = val.dir.toUpperCase()
         if (d !== 'ASC' && d !== 'DESC')
           throw new Error(`orderBy direction must be 'asc' or 'desc', got: ${val.dir}`)
-        let s = `"${key}" ${d}`
+        let s = `${quoteIdent(key)} ${d}`
         if (val.nulls) {
           const n = val.nulls.toUpperCase()
           if (n !== 'FIRST' && n !== 'LAST')
@@ -1019,7 +1042,7 @@ function _walkRelationOrder(relName, spec, currentModel, currentAlias, relationM
       const d = val.toUpperCase()
       if (d !== 'ASC' && d !== 'DESC')
         throw new Error(`orderBy direction must be 'asc' or 'desc', got: ${val}`)
-      orderParts.push(`${joinAlias}."${key}" ${d}`)
+      orderParts.push(`${joinAlias}.${quoteIdent(key)} ${d}`)
     }
   }
 }

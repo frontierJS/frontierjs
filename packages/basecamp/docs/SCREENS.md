@@ -19,25 +19,39 @@ specification. Sizes are the mock's own line counts — a rough cost, no more.
 
 ## The headline
 
-**35 of 41 views exist. 6 do not.** (12 at the first count on 2026-08-06;
+**41 of 41 views exist.** (6 at the last count; § Phase 14 built those on
+2026-08-30 — the graph, the setup checks, DNS, cloud spend, git activity and
+observability. Four of the six are a screen with a skeleton where a third
+party's numbers would be, which is a different thing from unbuilt: the reason is
+on the page, and two of them read it off the adapter's own ping.)
+
+Before that: (12 at the first count on 2026-08-06;
 Portal and Activity landed the same day — § Phase 2 — then Networking, Alerts
 and Secrets — § Phase 3 — then AppDetail — § Phase 4 — then Channels and Flags
 — § Phase 5 — then API keys — § Phase 6 — then Volumes — § Phase 7 — then
 Dashboards — § Phase 8 — then Recipes and Disk cleanup — § Phase 9 — then the
-four sysadmin screens — § Phase 10, then five more in § Phase 13.) And the 6 left are not blocked on UI work:
+four sysadmin screens — § Phase 10, then five more in § Phase 13.)
 
 | Blocked on | Views |
 | --- | --- |
 | Nothing — models and services existed | 2 ✅ built |
-| A **service** over models that already exist | 6 → **5 built, 1 left** |
-| **New models** in `db/schema.lite` | 16 → **15 built, 1 left** |
-| An **outbound adapter** (a real third party) | 6 → **5 left** |
+| A **service** over models that already exist | 6 ✅ built |
+| **New models** in `db/schema.lite` | 16 ✅ built |
+| An **outbound adapter** (a real third party) | 6 ✅ **screen built, adapter not wired** |
+
+**What "built" means for the last row.** The screen exists, it says what is not
+connected and why, and where a vendor's numbers would go there is a skeleton
+rather than a number. Two of them report the adapter's live state off
+`/portal/`'s own ping, so the word on the page changes the day one is wired.
+What is still owed is adapters — four conduit targets, and a widened `IGit` and
+`IObservability` — and that is API work with no screen in it.
 
 **Phases 11–13 took the whole model-blocked group** — six models, five services,
-seed rows and five screens, in that order. What is left is one derived read
-(`InfraGraphView`), one screen with no model by decision (`OnboardingView`) and
-four that need a real third party. `RegistryView` moved out of the adapter row:
-it is built against a MIRROR, which is a decision Phase 12 records.
+seed rows and five screens, in that order. **Phase 14 took the six that were
+left**: one derived read (`InfraGraphView`), one screen with no model by
+decision (`OnboardingView`) and four that need a real third party.
+`RegistryView` moved out of the adapter row earlier: it is built against a
+MIRROR, which is a decision Phase 12 records.
 
 Eleven distinct views, not twelve: `RegistryView` is in both of the last two
 rows, because whether it needs a model or an adapter depends on whether we
@@ -118,7 +132,7 @@ API. The three left are the cross-workspace and derived reads.
 | --- | --- | --- | --- |
 | `AlertRulesView` + `AlertRuleModal` | 240 + 122 | `AlertRule`, `AlertEvent` | **Built** — `/alerts/`. Still **no evaluator**: nothing measures a threshold, and the screen says so rather than implying otherwise |
 | `NetworkingView` | 354 | `Network`, `ServerNetwork`, `AppNetwork` | **Built** — `/networks/`, including attach/detach over the join table |
-| `InfraGraphView` | 522 | Server, App, Network, Environment | No graph projection endpoint; it is a derived read across five accessors |
+| `InfraGraphView` | 522 | Server, App, Network, Environment | **Built** — `/infra-graph/`, over a new `infra` service. Four node kinds and four edge kinds, each one a row; the layout is derived in the browser because a position is not a fact about the fleet. See § Phase 14 |
 | `SSHKeysView` + `AddKeyModal` | 320 + 104 | `Secret` (`SecretKind.ssh_key`) | **Built** — `/secrets/`, widened past SSH keys to what the model is. `Secret.data` is `@encrypted`, so a read has **no `data` key at all** — proved in the browser and against the database file |
 | `WorkspacesView` (sys) | 62 | `Workspace`, `Account` | **Built** — `/hub/workspaces/`. A cross-workspace read through a NEW service that takes no workspace at all: the alternative was `?scope=hub` on nineteen session-scoped services. Suspension is real and bites in `scopeToWorkspace`. See § Phase 10 |
 | `UsersView` (sys) | 68 | `User`, `WorkspaceMember`, `Credential` | **Built** — `/hub/users/`, written against `asSystem()` from the start because `User` was `@@gate("8")` then; it reads at USER(4) since `FJS-170` and the screen still goes through `asSystem()`, which is what keeps the hub a hub. Suspend/restore, grant/revoke the hub tier, and bot accounts — all three are `asSystem()` writes, because `isSystemAdmin`, `status` and `kind` are `@allow('write', auth().isSystemAdmin)` at the Data boundary. The mock's Invite button is deliberately absent here — inviting a HUMAN belongs to a workspace and lives on the Members screen (`FJS-032`, closed); Impersonate is `FJS-142`. See § Phase 10 |
@@ -143,22 +157,26 @@ None of these exists in `db/schema.lite`.
 | `HubBackupView` | 179 | **Model built 2026-08-25** — `Backup`, `@@tenant(none)`, reusing `RunStatus` rather than restating five words. Outcome columns are SYSTEM-write, like every other *Run here. The schedule lives on `HubConfig`, not here: a cron describes the schedule and a `Backup` row is one thing that already happened. Needs a service, a job and the screen |
 | `HubSettingsView` | 115 | **Model built 2026-08-25** — `HubConfig`, ONE row keyed by a constant, typed columns rather than key/value (a key/value table is a schema this seed does not describe). The mock's four CREDENTIALS are deliberately absent: they are read at boot before any database, rotating one is a deploy, and `Secret` already models credential material. Needs a service and the screen |
 | `SysOverviewView` | 77 | **Built** — `/hub/`, read at request time from the thing that owns each number (Caravan, Conduit, the channel manager, SQLite). One of the mock's tiles does not survive contact with the runtime and says so instead: CPU, which nothing here samples. The event-subscriber count was the other until the bus grew `stats()` (`FJS-143`). See § Phase 10 |
-| `OnboardingView` | 427 | **No model, decided 2026-08-25.** Every one of the mock's six steps is a question the database already answers — does this workspace have a server, an SSH-kind `Secret`, a project, a `Deployment`, a second `WorkspaceMember`. A `done` column would be a second answer that goes stale the moment somebody deletes the thing it recorded. Needs a service method returning the six checks |
+| `OnboardingView` | 427 | **Built** — `/onboarding/`, over `infra.onboarding`. **No model, decided 2026-08-25.** Every one of the mock's six steps is a question the database already answers — does this workspace have a server, an SSH-kind `Secret`, a project, a `Deployment`, a second `WorkspaceMember`. A `done` column would be a second answer that goes stale the moment somebody deletes the thing it recorded. Needs a service method returning the six checks |
 | `UserSettingsView` | 318 | **Preferences built 2026-08-25** — `NotificationPreference`, one row per (person, kind) with a column per transport, `@@tenant(none)` and `@@allow('all', userId == auth().id)`. Profile is `User` (`username`, `displayName`, `avatarUrl` all exist), sessions are auth's `Session`, password is `account.changePassword`. **MFA is still nothing** and is `@frontierjs/auth`'s to model, not this app's. Needs a service and the screen |
 
-### D. Needs an outbound adapter (6)
+### D. Needs an outbound adapter (6) — **screens built 2026-08-30, § Phase 14**
 
 Real third parties. These belong behind `@frontierjs/conduit` as declared
 targets, not `fetch()` in a service — `example/api/src/core/mailer.ts` is the pattern.
 
-| View | Lines | Adapter |
-| --- | --- | --- |
-| `CloudflareView` | 220 | Cloudflare zones, DNS, SSL mode |
-| `DigitalOceanView` | 258 | DO droplets, volumes, floating IPs, **spend** |
-| `GitActivityView` | 304 | Git host — repos, CI status |
-| `ObservabilityView` | 24 | A metrics source. The mock reads `LOGS`; nothing here stores or streams metrics |
-| Provider half of `ProvisionServerView` | — | Already built as a screen, but provisioning is mocked |
-| `RegistryView` | 112 | A container registry (also listed in C — which one depends on whether we mirror or query) |
+Four of them now have a screen that says what is not connected, with a skeleton
+where the vendor's numbers go. Two are named for the job rather than the vendor,
+because whichever provider gains an adapter first is the one that fills them.
+
+| View | Lines | Adapter | Screen |
+| --- | --- | --- | --- |
+| `CloudflareView` | 220 | Cloudflare zones, DNS, SSL mode | **Built** — `/dns/`. The real half is this app's own `Domain` rows: hostname, primary, certificate status, proxied. The zone's records and its analytics are the skeleton |
+| `DigitalOceanView` | 258 | DO droplets, volumes, floating IPs, **spend** | **Built** — `/cloud-spend/`. The real half is the inventory a bill is computed from — machines by provider and region, planned vCPU and RAM, attached disk. There is no DigitalOcean in `providers/index.ts` and no price column anywhere, so the money is the skeleton |
+| `GitActivityView` | 304 | Git host — repos, CI status | **Built** — `/git-activity/`, reporting the adapter's own state off `/portal/`. `IGit.listRepos()` answers a name and a clone URL, so even a wired adapter could not fill the table — widening the interface is the work |
+| `ObservabilityView` | 24 | A metrics source. The mock reads `LOGS`; nothing here stores or streams metrics | **Built** — `/observability/`, the same portal read. `IObservability` declares `queryLogs` and `queryMetrics` and no service exposes either, deliberately: a read here needs a window, a service and a level, which is a service to design rather than a pass-through to ship |
+| Provider half of `ProvisionServerView` | — | Already built as a screen, but provisioning is mocked | — |
+| `RegistryView` | 112 | A container registry (also listed in C — which one depends on whether we mirror or query) | **Built** — § Phase 13, against the mirror |
 
 ### E. Shell chrome, not screens (5) ✅ built 2026-08-06 — § Phase 1
 
@@ -1243,8 +1261,155 @@ The notification rows are stored and **no delivery path consults them**.
 
 ---
 
+## Phase 14 — the last six ✅ done 2026-08-30
+
+The six the mock still had and this app did not. They split two ways and the
+split is what the phase decided, because it is the difference between a screen
+that is missing and a screen whose subject is missing.
+
+| Route | View | Reads |
+| --- | --- | --- |
+| `/infra-graph/` | `InfraGraphView` | `infra.graph` — servers, apps, networks, domains and the three join tables |
+| `/onboarding/` | `OnboardingView` | `infra.onboarding` — six counts |
+| `/dns/` | `CloudflareView` | `domains` + `apps` + `portal.get('edge')` · skeleton for the zone |
+| `/cloud-spend/` | `DigitalOceanView` | `servers` + `volumes.usage` + `portal.get('cloudSpend')` · skeleton for the money |
+| `/git-activity/` | `GitActivityView` | `portal.get('git')` · skeleton for the repositories |
+| `/observability/` | `ObservabilityView` | `portal.get('observability')` · skeleton for metrics and logs |
+
+### One service for two reads, over no model
+
+`infra` is the fourth service here that takes no model, after `hub`, `portal`
+and the health reads. Both of its methods have the property that made a model
+wrong: the answer is assembled from tables the caller can already read, and
+storing it would be a second answer that goes stale. `OnboardingView` had that
+ruled in § Phase 11; a graph projection is the same argument about edges, since
+an `AppServer` row IS the edge.
+
+**What a browser cannot do instead**, which is why this is a service at all:
+`apps.find` answers the environment and the domains, but WHERE an app runs is
+only on `apps.get` — one request per app — and the onboarding read needs counts
+of two models the caller cannot see. One read here is one round trip.
+
+**Three of the six onboarding counts go through `asSystem()`**, and the reason
+is not convenience: `Secret` and `Invitation` are `@@gate("5")`, so a developer
+asking *does this workspace have an SSH key* got a refusal rather than a zero,
+and `WorkspaceMember` reads only the caller's own rows, so *is anybody else
+here* was 1 for everyone. What crosses is a count of rows in the workspace the
+caller is already in — never a row — on the screen a new viewer opens first.
+
+### The layout is in the browser, and there is no drag
+
+A node position is not a fact about the fleet. Storing one means a column that
+is wrong the moment a server is added, and the mock's own answer — drag a node
+and keep the coordinates — is a preference with nowhere to live. So the lanes
+are derived from the node kinds on every render and the only state the screen
+keeps is which kinds are shown and how far it is zoomed. The graph scrolls
+inside its own box, which is a scroll a keyboard and a trackpad already know
+how to do.
+
+Four kinds of edge, and each is a row: a `Domain` pointing at an app, an
+`AppServer` placement, a `ServerNetwork` peering, an `AppNetwork` attachment.
+**What is deliberately not drawn** is on the screen rather than in this file:
+app-to-app dependency (nothing records it), the internet and the CDN in front of
+the fleet (neither is a row), and live traffic (nothing samples it). Those three
+were half the mock's picture.
+
+### A screen for a vendor nobody has connected
+
+The four adapter screens are the ones with a judgement in them. A screen that
+renders an empty table because nothing answered is indistinguishable from one
+whose vendor has nothing to report, so none of them does that:
+
+- **The reason is on the page**, in the same voice the hub overview uses about
+  CPU — what is not measured, and what closing it would take.
+- **All four ask rather than assert.** Each reads its own adapter's state off
+  `/portal/`, which is the read `/admin/adapters/` already makes, so there is one
+  answer to *is this wired* and the word on the page changes the day it is. A
+  screen that hardcoded "not connected" would pass a test on its own text and be
+  wrong later — which two of them did until the `edge` and `cloudSpend`
+  providers were declared.
+- **Two are named for the job, not the vendor.** The mock drew Cloudflare and
+  DigitalOcean; this app has neither in `providers/index.ts` and records a
+  `providerKind` of custom or hetzner. `/dns/` and `/cloud-spend/` are the
+  screens whichever provider gains an adapter first will fill.
+- **Each has a real half.** Hostnames with their certificate status are this
+  app's own rows; so is the fleet a bill would be computed from. The skeleton is
+  only where the vendor's numbers go.
+
+### The two adapters that had no boundary at all
+
+`IGit` and `IObservability` existed with stubs. `edge` and `cloudSpend` did not
+exist in any form, which is why `/dns/` and `/cloud-spend/` first shipped with
+their "no adapter" prose written into the page — the one thing the other two
+screens were built to avoid.
+
+Both are declared now, with stubs, and the portal reports ten providers in two
+groups:
+
+| Provider | Interface | Shape |
+| --- | --- | --- |
+| `edge` | `IEdge` | `listZones` · `listRecords(zone)` · `analytics(zone, from, to)` |
+| `cloudSpend` | `ICloudSpend` | `monthToDate` · `lineItems` · `forServer(providerServerId)` |
+
+Three decisions in that:
+
+- **`hosted` is on the portal entry**, not on the screen. An appliance is
+  installed on a machine and pointed at with a URL; a hosted service is an
+  account with a token. *Unconfigured* means different work for each, so the
+  split is data rather than a heading somebody typed twice.
+- **Money is minor units plus a currency**, the same rule `@money` holds at the
+  Data boundary and for the same reason: the divisor belongs to the currency,
+  and `/ 100` is wrong for the yen by a hundred.
+- **`forServer` takes `providerServerId`**, the only key this app and a vendor's
+  ledger share. There is no row of ours in their billing.
+
+`IGit` was widened at the same time, because the screen's own callout was the
+argument for it: a repository record answers `ci`, `openPullRequests` and
+`openIssues`, and `listPullRequests(repo)` is the second call. What is left for
+all four is an adapter and a service — not an interface.
+
+**The stubs answer empty, never plausible.** A stub zone would put a hostname on
+`/dns/` that this app cannot reach and nobody owns, and zeroed analytics read as
+an outage rather than as an absence — so the screens ask whether the adapter is
+configured *before* they ask it anything.
+
+### What the drive needed before it could assert any of it
+
+`verify:screens` went from 26 checks to 61, and the fixture is the interesting
+part: `db/seed.js` makes servers, apps and placements and no domains or
+networks, so two of the graph's four node kinds and the whole of `/dns/` would
+have been asserted against an empty list — the exact shape that passes with a
+broken query. The drive creates one of each **through the app's own API, from
+the page, with the session it is already holding**, so the rows go through the
+gate, the row policies and the workspace stamp, which is what decides whether
+the screens can read them at all.
+
+The onboarding assertions are written against the ruling rather than the
+rendering: the number of `.step.complete` elements must equal the progress
+element's value, a seeded server must mark its step done, and no button on the
+screen may say *complete*.
+
+### What it found
+
+**Three resources here have no model, and Sierra warned about each on every
+boot.** `portal`, `hub` and now `infra` resolve to nothing in `db/schema.lite`,
+which is correct and was indistinguishable from a misspelt model name — so the
+drive's console check could not pass, and the app that has three of them was
+teaching everyone to read past the one warning that means something.
+`createResource(name, { model: null })` is the declaration that turns it off:
+*this service has no model*, as opposed to *this model was not found*. Shipped
+in `packages/sierra/src/junction/resource.js`.
+
+**A `@@gate("5")` on a count is still a refusal.** The onboarding read was
+written against the caller's own client and threw for anybody below admin — on
+the one screen whose whole audience is somebody who has just arrived.
+
+---
+
 ## Related
 
+- `docs/ADAPTERS.md` — the debt § Phase 14 left: what each of the four adapters
+  costs to wire, the decisions already made, and what goes red when one is
 - `docs/UI_PLAN.md` — how the first screens got built, and what each phase found
 - `docs/UI_HANDOFF.md` — the API contract the screens are written against
 - `docs/VISION.md` — what Basecamp is meant to be

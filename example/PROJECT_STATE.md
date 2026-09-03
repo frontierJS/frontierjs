@@ -12,7 +12,7 @@ Everything below was verified by running it. Where it was not, it says so.
 | | |
 | --- | --- |
 | **Runs** | yes — `bun run api` + `bun run web`, two terminals |
-| **Verified** | **579 assertions across nineteen drives, all passing against one database**: `verify` **42/42** (dev *and* production build), `verify:ui` **35/35**, `verify:values` **14/14**, `verify:live` **17/17**, `verify:jobs` **12/12**, `verify:notify` **9/9**, `verify:pay` **22/22** (the payment provider, both directions signed, refunds included), `verify:site` **39/39** (the prerendered site, in the built output), `verify:catalogue` **35/35** (and the photograph a person uploads, chosen in a real file input), `verify:cart` **32/32** (the basket, and the itemised order it becomes), `verify:money` **94/94** (what a basket costs and why — a discount, a delivery threshold and a tax rate in one arithmetic, the race for the last redemption of a code, and the five `@@check` constraints at both boundaries), `verify:stock` **41/41**, `verify:widget` **37/37**, `verify:tenants` **26/26** (many shops, one file each — and one NAME each, which is not a row), `verify:extension` **13/13** (the shop in a browser toolbar, loaded unpacked into a profile), `verify:account` **18/18** (a shopper with an account, on the static storefront), `verify:revisions` **38/38** (taking a row back, and two people editing one), `verify:shop` **13/13** (buying something on the shop's own storefront — the buy box, the basket across a real navigation, and the checkout, all cross-origin), 0 console errors. **Repeatable** as of 2026-08-26 — the seeder restores what the drive consumes (was single-shot, `FJS-080`), every drive that moves a global list asserts against the SEEDED rows rather than the table, and every drive that creates an order under a fixed `@unique` reference now RELEASES that reference rather than deleting the row again. Three of them did not: `Order` soft-deletes and a soft-deleted row keeps its `@unique` values, so a drive whose cleanup is a DELETE over HTTP leaves the reference held by a row no ordinary read returns, and passes exactly once per database (`FJS-546`). `db:seed` sitting in everyone's preamble is why nobody saw it — and two flakes were only reachable once the drives could run twice at all (`FJS-547`) |
+| **Verified** | **938 assertions across twenty-seven drives, all passing against one database**: `verify` **56/56** (dev *and* production build, and the only place a person types money that is not a product price), `verify:ui` **35/35**, `verify:values` **14/14**, `verify:live` **17/17**, `verify:jobs` **12/12**, `verify:notify` **9/9**, `verify:pay` **22/22** (the payment provider, both directions signed, refunds included), `verify:site` **45/45** (the prerendered site, in the built output, and the price list whose baked prices an island corrects), `verify:catalogue` **35/35** (and the photograph a person uploads, chosen in a real file input), `verify:cart` **32/32** (the basket, and the itemised order it becomes), `verify:money` **107/107** (what a basket costs and why — a discount, a delivery threshold and a tax rate in one arithmetic, the race for the last redemption of a code, the five `@@check` constraints at both boundaries, and since the ledger landed the same sale read out of the BOOKS: one balanced journal per checkout whose five accounts reconstruct the receipt, and the two refusals that make it append-only — staff may neither restate nor delete an entry), `verify:stock` **41/41**, `verify:widget` **37/37**, `verify:tenants` **26/26** (many shops, one file each — and one NAME each, which is not a row), `verify:extension` **13/13** (the shop in a browser toolbar, loaded unpacked into a profile), `verify:account` **27/27** (a shopper with an account, on the static storefront — their orders, their subscriptions and their invoices, and the one move the schema lets them make), `verify:revisions` **38/38** (taking a row back, and two people editing one), `verify:users` **29/29** (user management — the roster read through a policy rather than refused by a gate, a field write declining in silence beside an admin's identical payload, a create policy that REFUSES where a read filters, and an account made whose invitation had to reach the outbox because the row alone cannot sign in), `verify:shop` **13/13** (buying something on the shop's own storefront — the buy box, the basket across a real navigation, and the checkout, all cross-origin), `verify:billing` **33/33** (a cycle renewing on a clock the drive stands at, and a dunning deadline that keeps no counter), `verify:proration` **21/21** (a change mid-cycle, every assertion a SUM — six seats at 9.99 with 19 days left splits into six lines that are each plausible and are two minor units short of what was taken), `verify:employment` **61/61** (what was true on the 12th — the as-at read written by hand, a raise that must not move a past answer, the band walk with the classic wrong answer as its negative control, and the constraint `FJS-603` closed, asserted in both tables: a second OPEN window is refused by the TABLE — through `asSystem()` and through a raw INSERT, which is what separates a rule the database holds from one a service does — while every CLOSED window is untouched, which is why the predicate is the constraint), `verify:payrun` **41/41** (one period, everybody, and the two documents — a YEAR split across periods so twelve months sum to it exactly, a cross-row invariant carrying a predicate over its child because the employer's contributions do not count toward net, and a past period reprinted identically after the salary underneath it doubled), `verify:batch` **33/33** (a pay run interrupted and resumed — one idempotent unit of work per person, only the missing payslips made, and the finish asserted against the LEDGER rather than a job count, because a job count is what a double-payment bug agrees with; plus the two jobs that choose opposite dispatch keys, `unique` for resumable work and the id for what cannot be un-sent), `verify:retro` **56/56** (a raise backdated across three already-paid periods — every closed payslip byte-identical afterwards, which `@immutable` enforces; the arrears landing as lines on a later one, named to the run each corrects; the same arrears once across a revert and again after a second backdate that corrects only the remainder; and the superseded belief found where it actually survives, in the audit log), `verify:payroll` **63/63** (the console — the roster, a salary typed in dollars into a column that holds cents, a date box that turns the same write from a raise into a correction, the as-at read answered by the server, a run calculated, approved and paid with its journal balancing on screen, and the adjustment lines badged with the run each one corrects; plus the ladder finding — payroll reads at 5, so a level below sees no screen at all and the per-transition gate never gets a chance to matter), `verify:collect` **28/28** (one call out, one signed event back, a decline as a domain answer, an event arriving out of order — and the only end-to-end run of the cycle: sweep → renew → issue → collect → present → paid, four handoffs through the real queue), 0 console errors. **Repeatable** as of 2026-08-26 — the seeder restores what the drive consumes (was single-shot, `FJS-080`), every drive that moves a global list asserts against the SEEDED rows rather than the table, and every drive that creates an order under a fixed `@unique` reference now RELEASES that reference rather than deleting the row again. Three of them did not: `Order` soft-deletes and a soft-deleted row keeps its `@unique` values, so a drive whose cleanup is a DELETE over HTTP leaves the reference held by a row no ordinary read returns, and passes exactly once per database (`FJS-546`). `db:seed` sitting in everyone's preamble is why nobody saw it — and two flakes were only reachable once the drives could run twice at all (`FJS-547`) |
 | **Builds** | yes — `bun run build` → `web/dist/client/` + robots.txt + sitemap (5 URLs). The built page is now driven too; until 2026-08-04 it loaded no JavaScript at all. `bun run build:site` → `site/dist/`, the prerendered public site, driven by `verify:site` |
 | **Phase** | 1 (spine), **all of 2** (state machine + live updates), **deferred work** (caravan), **outbound + notifications** (conduit, notifications), **static + islands** (the public catalogue, proven interactive in the built output), the `@frontierjs/ui` re-skin, the four screens that drive the kit's behavioural components, and the shop: a catalogue with variants and photographs, a basket a stranger owns, a currency toggle, **inventory with reservations**, **an order that records what was bought**, and a **`widgets/` surface** whose buy button runs on a page the shop does not own |
 | **Committed** | **no.** `example/` is untracked; the package changes it drove are unstaged |
@@ -37,6 +37,31 @@ README's *Verified* section — not a claim.
   rides `x-cart-token` over HTTP and over the socket alike. `verify:cart` adds
   to a basket with the connection live, so the header is proven to have crossed
   a WebSocket frame and not just a request.
+- **Somebody is billed every month, at the price they were sold at.** A `Plan`
+  is what is on offer and a `PlanVersion` is what it cost over a WINDOW, so
+  raising a price is closing one window and opening the next — never a PATCH,
+  because `price` and `effectiveFrom` are `@immutable` and `asSystem()` does
+  not drop that. `Subscription` names a version rather than a plan, so a
+  reprice moves nobody, and the console asserts exactly that: the new window
+  has no subscribers and an older one still does. An `Invoice` is a DOCUMENT —
+  every figure, the number and both dates frozen at the moment it is issued —
+  and the correction is a `CreditNote` beside it, which is what lets the
+  renewal job run as the system without being able to restate a total. **The
+  moment is now DECLARED** (`FJS-D167`): `issue: draft -> issued @seals` says
+  when, `lines InvoiceLine[] @sealed` says which children go with it, and
+  `issueInvoice` writes a header, adds its lines and then seals. `draft` had
+  been removed from this schema because `@immutable` froze at CREATE — the
+  language shaping the domain — and what the seal buys is not a visible draft
+  state but the two operations `@immutable` could not reach: after it, nothing
+  in this app, `asSystem()` included, can add a line to an invoice or take one
+  away. `payments` deliberately carries no `@sealed`, because a payment against
+  an issued invoice is exactly the row that must keep arriving.
+- **A price is typed in dollars and stored in cents, on a form that names no
+  field.** `PlanVersion.price` is `@money(USD)`, and `web/src/money-control.js`
+  resolves a control off `x-money` on the RULE — not off a column name — so the
+  box, its step and its two conversions come from the schema. `verify` types
+  `31.50` into a browser and then asks the database, which answers 3150.
+
 - **A buy button runs on a page the shop does not own.** `widgets/` is a third
   surface beside `api/` and `web/` — its own Vite root, its own host pages, its
   own static release. One `.mesa` becomes one self-contained IIFE mounted in a
@@ -101,7 +126,7 @@ README's *Verified* section — not a claim.
   nothing passes including `asSystem()`, and that is what append-only is spelled
   with.
 - **Every money column is `@money(USD)`, so what is stored is a whole number of
-  CENTS.** Seventeen columns across seven models, and the identity on `Order` is
+  CENTS.** Twenty-three columns across twelve models, and the identity on `Order` is
   an EQUALITY because of it — `subtotal − discount + shipping + tax = total`
   used to be a `@@check` carrying a half-penny tolerance, which is what two
   binary floats need to agree that they are equal. `pricing.ts` does two
@@ -246,6 +271,9 @@ example/
 │                             2 demo users. A SCRIPT — nothing imports it
 ├── api/
 │   ├── index.ts            ← the entry. start(), the dev mail sink, and nothing else
+│   ├── *.snapshot.md       ← surface · jobs · principal · notifications. Four
+│   │                         committed artefacts about THIS surface, generated
+│   │                         from here and rechecked from here by CI
 │   ├── config/             ← junction.config.js — caravan, and where the services are
 │   └── src/
 │       ├── app.ts          ← createApp, auth plugin (+ its three services), caravan, channels.
@@ -254,11 +282,11 @@ example/
 │       │                     schema fragments rather than pasting a copy
 │       ├── core/gate.ts    ← the ONE place a session becomes a number
 │       ├── jobs/           ← book-courier, announce-payment, sweep-abandoned (its own cron) — all autoloaded
-│       ├── core/mailer.ts      ← IMail over app.conduit.send() — the provider is a TARGET
-│       ├── core/mail-sink.ts   ← the dev mail catcher on :8111, provider-shaped
+│       ├── providers/mail/mailer.ts      ← IMail over app.conduit.send() — the provider is a TARGET
+│       ├── providers/mail/sink.ts   ← the dev mail catcher on :8111, provider-shaped
 │       │                          plus the inbox it serves at /
-│       ├── core/stripe.ts      ← the Stripe connection, both directions
-│       ├── core/stripe-sink.ts ← Stripe standing in for Stripe, on :8114
+│       ├── providers/stripe/index.ts      ← the Stripe connection, both directions
+│       ├── providers/stripe/sink.ts ← Stripe standing in for Stripe, on :8114
 │       ├── notifications/  ← OrderPaid (staff, inApp) + OrderConfirmation (customer, email)
 │       ├── emails/         ← order-confirmation.mesa — the body, in the email
 │       │                     realm + preview.mjs (`bun run email:preview`)
@@ -608,9 +636,18 @@ Out of scope by design: jetty (a different container) and the VS Code extension.
 - **Two processes.** With the API down, Vite answers `/api`
   with an empty-bodied 502 and the app says which process is missing rather than
   rendering plausible empty tables.
-- **`bun run reset`** deletes the database and runs `bun run db:seed`. A boot no
-  longer seeds — the seed is a script, so nothing writes to the database by
-  being imported.
+- **`bun run reset`** deletes everything derived and runs `bun run db:seed`. A
+  boot no longer seeds — the seed is a script, so nothing writes to the database
+  by being imported.
+
+  **It clears `db/public/` too, and that one is about size rather than
+  correctness.** Object storage for `File` columns is content-addressed, so every
+  seed run uploads the same eight images from `db/seed-media/` under fresh keys
+  and nothing removed the old ones. Measured before it was added to the list:
+  **3,871 files and 817MB on disk against 19 rows the shop actually
+  references** — 99.5% orphaned, accumulated over roughly two hundred seed runs.
+  Nothing was broken by it; it was 800MB of dead bytes in every working tree,
+  and a fresh clone earned its own within a week of running the drives.
   Do this if a run leaves the data changed — `verify` itself is idempotent.
 
   **It deletes `db/jobs.db` too, and that is not tidiness.** The queue is a

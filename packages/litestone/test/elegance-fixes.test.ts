@@ -80,15 +80,19 @@ describe('where-field validation', () => {
   const origWarn = console.warn
   afterEach(() => { console.warn = origWarn })
 
-  it('warns (not throws) on an unknown where-field in a read, and still executes', async () => {
+  it('rejects an unknown where-field in a read, and keeps the did-you-mean hint', async () => {
     const db = await fresh()
     await db.asSystem().lead.create({ data: { name: 'Acme' } })
     const warnings: string[] = []
     console.warn = (msg: string) => { warnings.push(String(msg)) }
 
-    const rows = await db.lead.findMany({ where: { nam: 'Acme' } })
-    expect(Array.isArray(rows)).toBe(true)
-    expect(warnings.some(w => w.includes(`Unknown field 'nam'`) && w.includes('name'))).toBe(true)
+    // It warned and executed, on the reading that a typo'd read filter was
+    // merely empty. It was not empty, it was WRONG: SQLite reads the
+    // unresolvable quoted identifier as a string literal, so the query asked
+    // `'nam' = 'Acme'` and answered no rows (`FJS-D169`).
+    await expect(db.lead.findMany({ where: { nam: 'Acme' } }))
+      .rejects.toThrow(/Unknown field 'nam'.*Did you mean: name/)
+    expect(warnings).toHaveLength(0)
   })
 
   it('rejects an unknown where-field on a write', async () => {

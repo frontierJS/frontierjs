@@ -1,0 +1,223 @@
+---
+title: Cloud spend
+---
+<script>
+  // Where the mock's DigitalOceanView goes.
+  //
+  // The mock priced a DigitalOcean account: droplets, backups, block volumes,
+  // floating IPs and snapshots, month-to-date against a projection. Not one of
+  // those five numbers is in this database, and the reason is structural
+  // rather than an oversight — a price belongs to an account at a vendor, and
+  // this app records a `providerKind` of custom or hetzner with no credential
+  // behind either. There is no DigitalOcean here at all.
+  //
+  // What IS here is the inventory a bill is computed FROM, and that half is
+  // real: how many machines, in which regions, under which provider, with how
+  // much disk attached. The money is a skeleton, and whether an adapter exists
+  // is ASKED — `ICloudSpend` is declared with a stub behind it and `/portal/`
+  // reports which, the same read /admin/adapters/ makes.
+  //
+  // Named for the job rather than the vendor, for the same reason /dns/ is:
+  // whichever provider gains an adapter first, this is the screen it fills.
+  import { session } from '../../session.js'
+  import { servers } from '../../resources/Server.mesa'
+  import { volumes } from '../../resources/Volume.mesa'
+  import { portal } from '../../resources/Portal.mesa'
+  import { formatBytes as size } from '@frontierjs/toolbelt/units'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Skeleton   from '@frontierjs/ui/components/feedback/Skeleton.mesa'
+  import Table      from '@frontierjs/ui/components/display/Table.mesa'
+
+  $: session.workspaceId
+
+  let fleet   = []
+  let usage   = null
+  let spend   = null
+  let error   = null
+  let loading = true
+
+  async function load() {
+    error = null; loading = true
+    try {
+      const [srv, use, adapter] = await Promise.all([
+        servers.service.find({}, { limit: 200 }),
+        // The fleet's disk totals, asked of the thing that owns them. The
+        // volumes screen asks the same method — one answer, two readers.
+        volumes.service.invoke('usage', null).catch(() => null),
+        // `get` pings. A failure must not take the inventory with it — the
+        // fleet is this app's own rows either way.
+        portal.service.get('cloudSpend').catch(() => null),
+      ])
+      fleet = srv.data
+      usage = use
+      spend = adapter
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  // Grouped here rather than in a service: this is one read of a list the
+  // screen already has, and a `groupBy` endpoint for it would be an API
+  // nothing else could use.
+  function tally(rows, key) {
+    const out = new Map()
+    for (const r of rows) out.set(r[key], (out.get(r[key]) ?? 0) + 1)
+    return [...out.entries()].sort((a, b) => b[1] - a[1])
+  }
+
+  $: byProvider = tally(fleet, 'providerKind')
+  $: byRegion   = tally(fleet, 'region')
+  $: vcpu       = fleet.reduce((n, s) => n + (s.plan?.vcpu ?? 0), 0)
+  $: ram        = fleet.reduce((n, s) => n + (s.plan?.ramGb ?? 0), 0)
+
+  const COLUMNS = [
+    { key: 'name',     label: 'Server' },
+    { key: 'provider', label: 'Provider' },
+    { key: 'region',   label: 'Region' },
+    { key: 'plan',     label: 'Plan' },
+    { key: 'status',   label: 'Status' },
+  ]
+
+  const TONE = { healthy: 'success', unconfigured: 'muted', unreachable: 'danger', degraded: 'warning' }
+
+  const STATUS_TONE = {
+    online: 'success', ready: 'success',
+    draining: 'warning', provisioning: 'warning', installing: 'warning', pending: 'warning',
+    unreachable: 'danger', destroyed: 'danger', stopped: 'muted',
+  }
+</script>
+
+{#if error}
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if loading}
+  <div aria-busy="true" class="stack">
+    <Skeleton variant="text" width="12rem" />
+    <Skeleton height="16rem" />
+  </div>
+{:else}
+  <Card>
+    <div class="section-header">
+      <h2 class="h4">What it would be billed for</h2>
+      <Pill tone={TONE[spend?.status] ?? 'muted'} id="spend-status">{spend?.status ?? 'unknown'}</Pill>
+    </div>
+
+    {#if spend?.configured}
+      <Callout tone="warning" title="Wired, and not read yet">
+        <p class="text-body">
+          <code>{spend.adapter}</code> is configured. No service exposes
+          <code>ICloudSpend</code> yet, so nothing is asking it — and the join it needs is
+          <code>providerServerId</code>, the only key this app and the vendor's ledger share.
+        </p>
+      </Callout>
+    {:else}
+      <Callout tone="muted" title="No money is shown here, and none is known">
+        <p class="text-body">
+          A cost is an account's, not a fleet's. This app records a
+          <code>providerKind</code> per server and holds no credential for any of them, so
+          month-to-date, a projection and a per-line breakdown would each be a number
+          invented in the browser.
+        </p>
+        <p class="text-body">
+          <code>ICloudSpend</code> is declared with a stub behind it. Wiring one is a
+          <code>@frontierjs/conduit</code> target per provider, its API token as a
+          <a href="/secrets/">Secret</a>, and a service mapping a
+          <code>providerServerId</code> onto the vendor's own billing line — which is what
+          makes the two halves join at all. <a href="/admin/adapters/">All adapters</a>.
+        </p>
+      </Callout>
+    {/if}
+
+    <div class="tiles" style="--tile-min: 12rem" aria-busy="true" aria-label="Spend, not connected">
+      <Skeleton variant="stat" />
+      <Skeleton variant="stat" />
+      <Skeleton variant="stat" />
+      <Skeleton variant="stat" />
+    </div>
+  </Card>
+
+  <div class="tiles" style="--tile-min: 12rem" id="spend-inventory">
+    <article class="tile">
+      <div class="tile-label">Servers</div>
+      <div class="tile-value">{fleet.length}</div>
+      <div class="tile-delta muted">{fleet.filter(s => s.status === 'online').length} online</div>
+    </article>
+    <article class="tile">
+      <div class="tile-label">vCPU</div>
+      <div class="tile-value">{vcpu}</div>
+      <div class="tile-delta muted">as planned</div>
+    </article>
+    <article class="tile">
+      <div class="tile-label">Memory</div>
+      <div class="tile-value">{ram} GB</div>
+      <div class="tile-delta muted">as planned</div>
+    </article>
+    <article class="tile">
+      <div class="tile-label">Attached disk</div>
+      <div class="tile-value">{usage ? size(usage.totalBytes ?? 0) : '—'}</div>
+      <div class="tile-delta muted">{usage ? `${usage.volumes ?? 0} volumes` : 'no report'}</div>
+    </article>
+  </div>
+
+  <div class="split" style:align-items="start" style:gap="1rem">
+    <Card>
+      <h2 class="h4">By provider</h2>
+      <dl class="facts" id="spend-by-provider">
+        {#each byProvider as [name, count]}
+          <dt><code>{name}</code></dt><dd>{count}</dd>
+        {/each}
+      </dl>
+    </Card>
+    <Card>
+      <h2 class="h4">By region</h2>
+      <dl class="facts" id="spend-by-region">
+        {#each byRegion as [name, count]}
+          <dt><code>{name}</code></dt><dd>{count}</dd>
+        {/each}
+      </dl>
+    </Card>
+  </div>
+
+  <Card>
+    <h2 class="h4">The fleet</h2>
+    {#if fleet.length === 0}
+      <EmptyState
+        compact
+        title="No servers yet"
+        description="Nothing is being paid for, which is the one honest number on this screen."
+      >
+        {#snippet action()}
+          <Button variant="primary" href="/servers/create/">Add a server</Button>
+        {/snippet}
+      </EmptyState>
+    {:else}
+      <Table id="spend-rows" columns={COLUMNS} rows={fleet} striped>
+        {#snippet row(s)}
+          <tr>
+            <td><a href={`/servers/${s.id}/`}>{s.name}</a></td>
+            <td><code>{s.providerKind}</code></td>
+            <td>{s.region}</td>
+            <td class="text-sm text-muted">
+              {s.plan?.vcpu ?? '—'} vCPU · {s.plan?.ramGb ?? '—'} GB · {s.plan?.diskGb ?? '—'} GB
+            </td>
+            <td><Badge tone={STATUS_TONE[s.status] ?? 'muted'}>{s.status}</Badge></td>
+          </tr>
+        {/snippet}
+      </Table>
+    {/if}
+  </Card>
+{/if}

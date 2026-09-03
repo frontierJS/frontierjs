@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-32 definitions · 24 models · 8 enums · 0 other
+70 definitions · 51 models · 19 enums · 0 other
 ```
 
 ## Definitions
@@ -25,35 +25,73 @@ disappears from here is a reference that resolves to nothing in a browser.
 
 | Name | Kind |
 | --- | --- |
+| `Credential` | model |
+| `Session` | model |
+| `Verification` | model |
+| `OauthFlow` | model |
+| `OutboxMessage` | model |
 | `Product` | model |
 | `Colour` | model |
 | `ProductVariant` | model |
 | `ProductImage` | model |
 | `Customer` | model |
+| `CustomField` | model |
 | `Discount` | model |
 | `ShippingMethod` | model |
 | `TaxRate` | model |
 | `Order` | model |
 | `OrderLine` | model |
+| `PaymentMethod` | model |
 | `Payment` | model |
 | `PaymentEvent` | model |
+| `Plan` | model |
+| `PlanVersion` | model |
+| `Subscription` | model |
+| `Invoice` | model |
+| `InvoiceLine` | model |
+| `CreditNote` | model |
 | `Cart` | model |
 | `CartLine` | model |
 | `StockReservation` | model |
 | `InventoryMovement` | model |
+| `JournalEntry` | model |
+| `JournalLine` | model |
+| `Employee` | model |
+| `PayWindow` | model |
+| `PayRate` | model |
+| `PayRun` | model |
+| `Payslip` | model |
+| `PayslipLine` | model |
 | `Notification` | model |
+| `User` | model |
+| `VerificationPurpose` | enum |
 | `Brand` | enum |
 | `Size` | enum |
+| `CustomFieldType` | enum |
 | `DiscountKind` | enum |
 | `OrderStatus` | enum |
 | `PaymentStatus` | enum |
+| `PlanInterval` | enum |
+| `SubscriptionStatus` | enum |
+| `InvoiceStatus` | enum |
 | `CartStatus` | enum |
 | `StockMovementKind` | enum |
+| `LedgerAccount` | enum |
+| `JournalSource` | enum |
+| `PayBasis` | enum |
+| `RateKind` | enum |
+| `PayRunStatus` | enum |
+| `PayComponentKind` | enum |
 | `NotificationContext` | enum |
+| `SegmentQuery` | model |
 | `TrackingUpdate` | model |
+| `PlanChange` | model |
+| `PlanPrice` | model |
 | `DiscountCode` | model |
 | `ShippingChoice` | model |
 | `CheckoutDetails` | model |
+| `EmploymentPay` | model |
+| `AsAtQuery` | model |
 | `StockReceipt` | model |
 | `StockAdjustment` | model |
 | `FileRef` | model |
@@ -63,13 +101,24 @@ disappears from here is a reference that resolves to nothing in a browser.
 A value removed here is a row already in the database that no longer
 validates, and a select that silently drops an option.
 
+- `VerificationPurpose` — `passwordReset`, `emailVerify`, `oauthLink`
 - `Brand` — `frontierjs`, `junction`, `litestone`
 - `Size` — `one`, `xs`, `s`, `m`, `l`, `xl`, `xxl`
+- `CustomFieldType` — `text`, `number`
 - `DiscountKind` — `percent`, `fixed`
 - `OrderStatus` — `pending`, `paid`, `shipped`, `refunded`, `cancelled`
-- `PaymentStatus` — `pending`, `succeeded`, `failed`, `refunded`
+- `PaymentStatus` — `pending`, `requiresAction`, `succeeded`, `failed`, `refunded`
+- `PlanInterval` — `monthly`, `yearly`
+- `SubscriptionStatus` — `trialing`, `active`, `pastDue`, `cancelled`
+- `InvoiceStatus` — `draft`, `issued`, `paid`, `void`
 - `CartStatus` — `open`, `ordered`, `abandoned`
 - `StockMovementKind` — `received`, `sold`, `returned`, `adjusted`, `damaged`
+- `LedgerAccount` — `receivables`, `discountsAllowed`, `sales`, `shippingIncome`, `taxPayable`, `wagesExpense`, `payeControl`, `pensionControl`, `niControl`, `netPayControl`
+- `JournalSource` — `sale`, `payroll`
+- `PayBasis` — `salary`, `hourly`
+- `RateKind` — `incomeTax`, `employeePension`, `employerPension`, `employerNI`
+- `PayRunStatus` — `draft`, `calculated`, `approved`, `paid`
+- `PayComponentKind` — `basicPay`, `overtime`, `bonus`, `incomeTax`, `employeePension`, `employerPension`, `employerNI`
 - `NotificationContext` — `Order`
 
 ## Models
@@ -77,6 +126,80 @@ validates, and a select that silently drops an option.
 `Required` is the full-mode requirement. `Rules` are the keywords a validator
 branches on plus any `x-` extension carried on the field; `Messages` are the
 rule names `x-messages` answers for, which is what a failure is allowed to say.
+
+### `Credential`
+
+- gate `read:8 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `userId` | `string` | yes | — | — | — |
+| `type` | `string` | yes | — | — | — |
+| `label` | `string`? | — | — | — | — |
+| `tokenExpiresAt` | `string`? | — | — | `format: "date-time"` | — |
+| `scope` | `string`? | — | — | — | — |
+
+**On create**: required — `userId`, `type` · not accepted — `id`
+
+### `Session`
+
+- gate `read:8 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `userId` | `string` | yes | — | — | — |
+| `expiresAt` | `string` | yes | — | `format: "date-time"` | — |
+| `ipAddress` | `string`? | — | — | — | — |
+| `userAgent` | `string`? | — | — | — | — |
+
+**On create**: required — `userId`, `expiresAt` · not accepted — `id`
+
+### `Verification`
+
+- gate `read:8 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `purpose` | `VerificationPurpose` | yes | — | — | — |
+| `identifier` | `string` | yes | — | — | — |
+| `provider` | `string`? | — | — | — | — |
+| `subject` | `string`? | — | — | — | — |
+| `expiresAt` | `string` | yes | — | `format: "date-time"` | — |
+
+**On create**: required — `purpose`, `identifier`, `expiresAt` · not accepted — `id`
+
+### `OauthFlow`
+
+- gate `read:8 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `provider` | `string` | yes | — | — | — |
+| `returnTo` | `string`? | — | — | — | — |
+| `expiresAt` | `string` | yes | — | `format: "date-time"` | — |
+
+**On create**: required — `provider`, `expiresAt` · not accepted — `id`
+
+### `OutboxMessage`
+
+- gate `read:8 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `job` | `string` | yes | — | — | — |
+| `payload` | `json` | yes | — | — | — |
+| `actorId` | `string`? | — | — | — | — |
+| `claimedAt` | `string`? | — | — | `format: "date-time"` | — |
+| `deliveredAt` | `string`? | — | — | `format: "date-time"` | — |
+| `attempts` | `integer` = `0` | — | — | — | — |
+| `lastError` | `string`? | — | — | — | — |
+
+**On create**: required — `job`, `payload` · not accepted — `id`
 
 ### `Product`
 
@@ -156,6 +279,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 - gate `read:1 create:4 update:4 delete:5` · version field `version` · closed (`additionalProperties: false`)
 - relation `orders` — hasMany `Order`
+- relation `subscriptions` — hasMany `Subscription`
+- relation `invoices` — hasMany `Invoice`
+- relation `paymentMethods` — hasMany `PaymentMethod`
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -168,9 +294,37 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `notes` | `string`? | — | — | `x-litestone-read-policy` | — |
 | `userId` | `string`? | — | — | `x-litestone-kind` | — |
 | `orderCount` | `integer` | — | — | `x-litestone-from` `x-litestone-kind` | — |
+| `fields` | `json` = `{}` | — | — | — | — |
+| `slots` | `json` = `{}` | — | — | `x-litestone-kind` | — |
+| `t1` | `string`? | — | — | `x-litestone-kind` | — |
+| `t2` | `string`? | — | — | `x-litestone-kind` | — |
+| `t3` | `string`? | — | — | `x-litestone-kind` | — |
+| `t4` | `string`? | — | — | `x-litestone-kind` | — |
+| `t5` | `string`? | — | — | `x-litestone-kind` | — |
+| `t6` | `string`? | — | — | `x-litestone-kind` | — |
+| `t7` | `string`? | — | — | `x-litestone-kind` | — |
+| `t8` | `string`? | — | — | `x-litestone-kind` | — |
+| `n1` | `number`? | — | — | `x-litestone-kind` | — |
+| `n2` | `number`? | — | — | `x-litestone-kind` | — |
+| `n3` | `number`? | — | — | `x-litestone-kind` | — |
+| `n4` | `number`? | — | — | `x-litestone-kind` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `name`, `firstName`, `lastName`, `email` · not accepted — `id`, `fullName`, `orderCount`, `version`
+**On create**: required — `name`, `firstName`, `lastName`, `email` · not accepted — `id`, `fullName`, `orderCount`, `t1`, `t2`, `t3`, `t4`, `t5`, `t6`, `t7`, `t8`, `n1`, `n2`, `n3`, `n4`, `version`
+
+### `CustomField`
+
+- gate `read:5 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `key` | `string` | yes | — | `pattern: "^[a-z][a-z0-9_]*$"` `minLength: 1` `maxLength: 40` | — |
+| `label` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
+| `type` | `CustomFieldType` | yes | — | — | — |
+| `slot` | `string`? | — | — | `x-litestone-kind` | — |
+
+**On create**: required — `key`, `label`, `type` · not accepted — `id`
 
 ### `Discount`
 
@@ -185,6 +339,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `kind` | `DiscountKind` = `"percent"` | — | Kind | — | — |
 | `value` | `integer` | yes | Value | `minimum: 0` `x-scale` | — |
 | `minSubtotal` | `integer` = `0` | — | Minimum spend | `minimum: 0` `x-money` | — |
+| `audience` | `json`? | — | Audience | — | — |
 | `startsAt` | `string`? | — | Starts | `format: "date-time"` | — |
 | `endsAt` | `string`? | — | Ends | `format: "date-time"` | — |
 | `maxRedemptions` | `integer`? | — | Redemption limit | `minimum: 1` | — |
@@ -231,6 +386,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - gate `read:1 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
 - relation `customer` — belongsTo `Customer` via `customerId` · on delete Cascade
 - relation `lines` — hasMany `OrderLine`
+- relation `journals` — hasMany `JournalEntry`
 - transitions on `status` — `pay`: pending → paid · `ship`: paid → shipped · `refund`: paid → refunded @5 · `cancel`: pending|paid → cancelled
 
 | Field | Type | Required | Label | Rules | Messages |
@@ -275,10 +431,32 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 **On create**: required — `orderId`, `variantId`, `sku`, `description`, `quantity`, `unitPrice`, `lineTotal` · not accepted — `id`
 
+### `PaymentMethod`
+
+- gate `read:1 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `customer` — belongsTo `Customer` via `customerId` · on delete Restrict
+- relation `payments` — hasMany `Payment`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `customerId` | `integer` | yes | — | — | — |
+| `providerRef` | `string` | yes | — | `minLength: 3` `maxLength: 64` | — |
+| `brand` | `string` | yes | Brand | `minLength: 1` `maxLength: 20` | — |
+| `last4` | `string` | yes | Last four | `minLength: 4` `maxLength: 4` | — |
+| `expMonth` | `integer` | yes | Expiry month | `minimum: 1` `maximum: 12` | — |
+| `expYear` | `integer` | yes | Expiry year | `minimum: 2000` `maximum: 2100` | — |
+| `isDefault` | `boolean` = `false` | — | Default | `x-litestone-kind` | — |
+| `userId` | `string`? | — | — | `x-litestone-kind` | — |
+
+**On create**: required — `customerId`, `brand`, `last4`, `expMonth`, `expYear` · not accepted — `id`, `providerRef`
+
 ### `Payment`
 
-- gate `read:5 create:8 update:8 delete:9` · closed (`additionalProperties: false`)
-- relation `order` — belongsTo `Order` via `orderId` · on delete Cascade
+- gate `read:1 create:8 update:8 delete:9` · closed (`additionalProperties: false`)
+- relation `order` — belongsTo `Order` via `orderId` · on delete Cascade · optional
+- relation `invoice` — belongsTo `Invoice` via `invoiceId` · on delete Cascade · optional
+- relation `paymentMethod` — belongsTo `PaymentMethod` via `paymentMethodId` · on delete Restrict · optional
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -287,12 +465,16 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `status` | `PaymentStatus` = `"pending"` | — | — | — | — |
 | `amount` | `integer` | yes | — | `minimum: 0` `x-money` | — |
 | `currency` | `string` = `"USD"` | — | — | `minLength: 3` `maxLength: 3` | — |
-| `orderId` | `integer` | yes | Order | — | — |
+| `orderId` | `integer`? | — | Order | — | — |
+| `invoiceId` | `integer`? | — | Invoice | — | — |
+| `paymentMethodId` | `integer`? | — | Instrument | — | — |
 | `refundedAmount` | `integer` = `0` | — | — | `minimum: 0` `x-money` | — |
 | `failureReason` | `string`? | — | — | `minLength: 0` `maxLength: 200` | — |
+| `actionUrl` | `string`? | — | — | `minLength: 0` `maxLength: 300` `x-litestone-kind` | — |
+| `userId` | `string`? | — | — | `x-litestone-kind` | — |
 | `settledAt` | `string`? | — | — | `format: "date-time"` | — |
 
-**On create**: required — `providerRef`, `amount`, `orderId` · not accepted — `id`
+**On create**: required — `providerRef`, `amount` · not accepted — `id`
 
 ### `PaymentEvent`
 
@@ -307,6 +489,129 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `receivedAt` | `string` | — | — | `format: "date-time"` | — |
 
 **On create**: required — `eventId`, `kind` · not accepted — `id`
+
+### `Plan`
+
+- gate `read:0 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+- relation `versions` — hasMany `PlanVersion`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `code` | `string` | yes | Code | `minLength: 2` `maxLength: 40` | — |
+| `name` | `string` | yes | Name | `minLength: 2` `maxLength: 80` | — |
+| `description` | `string`? | — | — | `minLength: 0` `maxLength: 400` | — |
+| `interval` | `PlanInterval` = `"monthly"` | — | — | — | — |
+| `active` | `boolean` = `true` | — | — | — | — |
+| `currentPrice` | `integer`? | — | — | `x-litestone-from` `x-litestone-kind` | — |
+
+**On create**: required — `code`, `name` · not accepted — `id`, `currentPrice`
+
+### `PlanVersion`
+
+- gate `read:0 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+- relation `plan` — belongsTo `Plan` via `planId` · on delete Restrict
+- relation `subscriptions` — hasMany `Subscription`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `planId` | `integer` | yes | — | — | — |
+| `price` | `integer` | yes | Price | `minimum: 0` `x-money` | — |
+| `effectiveFrom` | `string` | — | — | `format: "date-time"` | — |
+| `effectiveTo` | `string`? | — | — | `format: "date-time"` | — |
+
+**On create**: required — `planId`, `price` · not accepted — `id`
+
+### `Subscription`
+
+- gate `read:1 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
+- relation `customer` — belongsTo `Customer` via `customerId` · on delete Restrict
+- relation `planVersion` — belongsTo `PlanVersion` via `planVersionId` · on delete Restrict
+- relation `invoices` — hasMany `Invoice`
+- transitions on `status` — `activate`: trialing → active @system · `lapse`: active → pastDue @system · `recover`: pastDue → active @system · `cancel`: trialing|active|pastDue → cancelled @system
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `reference` | `string` | yes | Reference | `minLength: 3` `maxLength: 20` | — |
+| `customerId` | `integer` | yes | — | — | — |
+| `planVersionId` | `integer` | yes | — | — | — |
+| `status` | `SubscriptionStatus` = `"trialing"` | — | — | — | — |
+| `quantity` | `integer` = `1` | — | Quantity | `minimum: 1` | — |
+| `currentPeriodStart` | `string` | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `currentPeriodEnd` | `string` | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `trialEndsAt` | `string`? | — | — | `format: "date-time"` | — |
+| `cancelledAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `cancelAtPeriodEnd` | `boolean` = `false` | — | Cancels at period end | `x-litestone-kind` | — |
+| `userId` | `string`? | — | — | `x-litestone-kind` | — |
+
+**On create**: required — `reference`, `customerId`, `planVersionId` · not accepted — `id`
+
+### `Invoice`
+
+- gate `read:1 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `customer` — belongsTo `Customer` via `customerId` · on delete Restrict
+- relation `subscription` — belongsTo `Subscription` via `subscriptionId` · on delete Restrict · optional
+- relation `lines` — hasMany `InvoiceLine`
+- relation `creditNotes` — hasMany `CreditNote`
+- relation `payments` — hasMany `Payment`
+- transitions on `status` — `issue`: draft → issued @system · `settle`: issued → paid @system · `void`: issued → void @5
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `number` | `string` | yes | Number | `minLength: 3` `maxLength: 30` | — |
+| `status` | `InvoiceStatus` = `"draft"` | — | — | — | — |
+| `customerId` | `integer` | yes | — | — | — |
+| `subscriptionId` | `integer`? | — | — | — | — |
+| `subtotal` | `integer` | — | Subtotal | `minimum: 0` `x-litestone-kind` `x-money` | — |
+| `tax` | `integer` = `0` | — | Tax | `minimum: 0` `x-litestone-kind` `x-money` | — |
+| `total` | `integer` | — | Total | `minimum: 0` `x-litestone-kind` `x-money` | — |
+| `periodStart` | `string` | yes | — | `format: "date-time"` | — |
+| `periodEnd` | `string` | yes | — | `format: "date-time"` | — |
+| `issuedAt` | `string` | — | — | `format: "date-time"` | — |
+| `dueAt` | `string` | — | — | `format: "date-time"` | — |
+| `paidAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `userId` | `string`? | — | — | `x-litestone-kind` | — |
+
+**On create**: required — `number`, `customerId`, `periodStart`, `periodEnd` · not accepted — `id`
+
+### `InvoiceLine`
+
+- gate `read:1 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `invoice` — belongsTo `Invoice` via `invoiceId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `invoiceId` | `integer` | yes | — | — | — |
+| `description` | `string` | yes | Description | `minLength: 1` `maxLength: 120` | — |
+| `quantity` | `integer` = `1` | — | — | `minimum: 1` | — |
+| `unitAmount` | `integer` | yes | Unit price | `x-money` | — |
+| `amount` | `integer` | yes | Amount | `x-money` | — |
+| `periodStart` | `string`? | — | — | `format: "date-time"` | — |
+| `periodEnd` | `string`? | — | — | `format: "date-time"` | — |
+| `userId` | `string`? | — | — | `x-litestone-kind` | — |
+
+**On create**: required — `invoiceId`, `description`, `unitAmount`, `amount` · not accepted — `id`
+
+### `CreditNote`
+
+- gate `read:1 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `invoice` — belongsTo `Invoice` via `invoiceId` · on delete Restrict
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `number` | `string` | yes | Number | `minLength: 3` `maxLength: 30` | — |
+| `invoiceId` | `integer` | yes | — | — | — |
+| `amount` | `integer` | yes | Amount | `exclusiveMinimum: 0` `x-money` | — |
+| `reason` | `string` | yes | Reason | `minLength: 3` `maxLength: 200` | — |
+| `issuedAt` | `string` | — | — | `format: "date-time"` | — |
+| `userId` | `string`? | — | — | `x-litestone-kind` | — |
+
+**On create**: required — `number`, `invoiceId`, `amount`, `reason` · not accepted — `id`
 
 ### `Cart`
 
@@ -380,6 +685,157 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 **On create**: required — `variantId`, `kind`, `quantity`, `stockBefore`, `stockAfter` · not accepted — `id`
 
+### `JournalEntry`
+
+- gate `read:5 create:8 update:9 delete:9` · closed (`additionalProperties: false`)
+- relation `order` — belongsTo `Order` via `orderId` · on delete Restrict · optional
+- relation `payRun` — belongsTo `PayRun` via `payRunId` · on delete Restrict · optional
+- relation `lines` — hasMany `JournalLine`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `reference` | `string` | yes | Reference | `minLength: 3` `maxLength: 40` | — |
+| `narrative` | `string` | yes | Narrative | `minLength: 3` `maxLength: 200` | — |
+| `postedAt` | `string` | — | Posted | `format: "date-time"` `x-litestone-kind` | — |
+| `source` | `JournalSource` | yes | Source | — | — |
+| `orderId` | `integer`? | — | Order | — | — |
+| `payRunId` | `integer`? | — | Pay run | — | — |
+
+**On create**: required — `reference`, `narrative`, `source` · not accepted — `id`
+
+### `JournalLine`
+
+- gate `read:5 create:8 update:9 delete:9` · closed (`additionalProperties: false`)
+- relation `entry` — belongsTo `JournalEntry` via `entryId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `entryId` | `integer` | yes | Entry | — | — |
+| `account` | `LedgerAccount` | yes | Account | — | — |
+| `amount` | `integer` | yes | Amount | `x-money` | — |
+
+**On create**: required — `entryId`, `account`, `amount` · not accepted — `id`
+
+### `Employee`
+
+- gate `read:5 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+- relation `pay` — hasMany `PayWindow`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `reference` | `string` | yes | Reference | `minLength: 3` `maxLength: 20` | — |
+| `name` | `string` | yes | Name | `minLength: 2` `maxLength: 80` | — |
+| `email` | `string` | yes | Email | — | — |
+| `startedOn` | `string` | yes | Started | `format: "date-time"` | — |
+| `endedOn` | `string`? | — | Left | `format: "date-time"` | — |
+
+**On create**: required — `reference`, `name`, `email`, `startedOn` · not accepted — `id`
+
+### `PayWindow`
+
+- gate `read:5 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+- relation `employee` — belongsTo `Employee` via `employeeId` · on delete Restrict
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `employeeId` | `integer` | yes | Employee | — | — |
+| `basis` | `PayBasis` | yes | Basis | — | — |
+| `rate` | `integer` | yes | Rate | `minimum: 0` `x-money` | — |
+| `hoursPerWeek` | `integer` = `40` | — | Hours a week | `minimum: 0` `maximum: 168` | — |
+| `effectiveFrom` | `string` | — | From | `format: "date-time"` | — |
+| `effectiveTo` | `string`? | — | To | `format: "date-time"` | — |
+
+**On create**: required — `employeeId`, `basis`, `rate` · not accepted — `id`
+
+### `PayRate`
+
+- gate `read:5 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `kind` | `RateKind` | yes | Kind | — | — |
+| `fromAmount` | `integer` = `0` | — | From | `minimum: 0` `x-money` | — |
+| `toAmount` | `integer`? | — | To | `minimum: 0` `x-money` | — |
+| `percent` | `integer` | yes | Percent | `minimum: 0` `maximum: 10000` `x-scale` | — |
+| `effectiveFrom` | `string` | — | From date | `format: "date-time"` | — |
+| `effectiveTo` | `string`? | — | To date | `format: "date-time"` | — |
+
+**On create**: required — `kind`, `percent` · not accepted — `id`
+
+### `PayRun`
+
+- gate `read:5 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+- relation `payslips` — hasMany `Payslip`
+- relation `journals` — hasMany `JournalEntry`
+- transitions on `status` — `calculate`: draft → calculated @system · `revert`: calculated → draft · `approve`: calculated → approved @5 · `pay`: approved → paid @system
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `reference` | `string` | yes | Reference | `minLength: 3` `maxLength: 30` | — |
+| `periodStart` | `string` | yes | From | `format: "date-time"` | — |
+| `periodEnd` | `string` | yes | To | `format: "date-time"` | — |
+| `payDate` | `string` | yes | Pay date | `format: "date-time"` | — |
+| `periodsPerYear` | `integer` = `12` | — | Periods a year | `minimum: 1` `maximum: 53` | — |
+| `periodIndex` | `integer` = `0` | — | Period | `minimum: 0` `maximum: 52` | — |
+| `status` | `PayRunStatus` = `"draft"` | — | — | — | — |
+| `headcount` | `integer`? | — | Headcount | `x-litestone-kind` | — |
+| `approvedBy` | `string`? | — | Approved by | `x-litestone-kind` | — |
+| `approvedAt` | `string`? | — | Approved | `format: "date-time"` `x-litestone-kind` | — |
+| `paidAt` | `string`? | — | Paid | `format: "date-time"` `x-litestone-kind` | — |
+
+**On create**: required — `reference`, `periodStart`, `periodEnd`, `payDate` · not accepted — `id`
+
+### `Payslip`
+
+- gate `read:5 create:5 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `payRun` — belongsTo `PayRun` via `payRunId` · on delete Cascade
+- relation `employee` — belongsTo `Employee` via `employeeId` · on delete Restrict
+- relation `payWindow` — belongsTo `PayWindow` via `payWindowId` · on delete Restrict
+- relation `lines` — hasMany `PayslipLine`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `reference` | `string` | yes | Reference | `minLength: 3` `maxLength: 40` | — |
+| `payRunId` | `integer` | yes | Pay run | — | — |
+| `employeeId` | `integer` | yes | Employee | — | — |
+| `payWindowId` | `integer` | yes | Pay window | — | — |
+| `periodStart` | `string` | yes | From | `format: "date-time"` | — |
+| `periodEnd` | `string` | yes | To | `format: "date-time"` | — |
+| `gross` | `integer` | — | Gross | `minimum: 0` `x-litestone-kind` `x-money` | — |
+| `deductions` | `integer` | — | Deductions | `minimum: 0` `x-litestone-kind` `x-money` | — |
+| `net` | `integer` | — | Net | `minimum: 0` `x-litestone-kind` `x-money` | — |
+| `employerCost` | `integer` | — | Employer cost | `minimum: 0` `x-litestone-kind` `x-money` | — |
+| `sentAt` | `string`? | — | Sent | `format: "date-time"` `x-litestone-kind` | — |
+
+**On create**: required — `reference`, `payRunId`, `employeeId`, `payWindowId`, `periodStart`, `periodEnd` · not accepted — `id`
+
+### `PayslipLine`
+
+- gate `read:5 create:5 update:9 delete:8` · closed (`additionalProperties: false`)
+- relation `payslip` — belongsTo `Payslip` via `payslipId` · on delete Cascade
+- relation `rate` — belongsTo `PayRate` via `rateId` · on delete Restrict · optional
+- relation `correctsPayRun` — belongsTo `PayRun` via `correctsPayRunId` · on delete Restrict · optional
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `payslipId` | `integer` | yes | Payslip | — | — |
+| `kind` | `PayComponentKind` | yes | Kind | — | — |
+| `description` | `string` | yes | Description | `minLength: 2` `maxLength: 120` | — |
+| `amount` | `integer` | yes | Amount | `x-money` | — |
+| `counts` | `boolean` = `true` | — | Counts toward net | — | — |
+| `rateId` | `integer`? | — | Rate | — | — |
+| `correctsPayRunId` | `integer`? | — | Corrects | — | — |
+
+**On create**: required — `payslipId`, `kind`, `description`, `amount` · not accepted — `id`
+
 ### `Notification`
 
 - gate `read:0 create:8 update:4 delete:8` · closed (`additionalProperties: false`)
@@ -396,6 +852,33 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 **On create**: required — `userId`, `type`, `data` · not accepted — `id`
 
+### `User`
+
+- gate `read:4 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `email` | `string` | yes | — | `format: "email"` | — |
+| `name` | `string`? | — | — | — | — |
+| `emailVerified` | `boolean` = `false` | — | — | — | — |
+| `role` | `string` = `"user"` | — | — | — | — |
+| `accountId` | `string`? | — | — | — | — |
+| `isStaff` | `boolean` = `false` | — | — | — | — |
+
+**On create**: required — `email` · not accepted — `id`
+
+### `SegmentQuery`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `terms` | `json` | yes | — | — | — |
+| `limit` | `integer`? | — | — | `minimum: 1` `maximum: 500` | — |
+
+**On create**: required — `terms`
+
 ### `TrackingUpdate`
 
 - closed (`additionalProperties: false`)
@@ -405,6 +888,27 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `trackingCode` | `string` | yes | Tracking | `minLength: 4` `maxLength: 40` | `length` `maxLength` `minLength` |
 
 **On create**: required — `trackingCode`
+
+### `PlanChange`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `planVersionId` | `integer`? | — | Plan | — | — |
+| `quantity` | `integer`? | — | Quantity | `minimum: 1` | — |
+
+**On create**: required — nothing
+
+### `PlanPrice`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `price` | `integer` | yes | Price | `minimum: 0` | — |
+
+**On create**: required — `price`
 
 ### `DiscountCode`
 
@@ -437,6 +941,29 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `note` | `string`? | — | Order note | `minLength: 0` `maxLength: 500` | — |
 
 **On create**: required — `email`, `name`
+
+### `EmploymentPay`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `basis` | `PayBasis` | yes | Basis | — | — |
+| `rate` | `integer` | yes | Rate | `minimum: 0` | — |
+| `hoursPerWeek` | `integer` = `40` | yes | Hours a week | `minimum: 0` `maximum: 168` | — |
+| `effectiveFrom` | `string`? | — | From | `format: "date-time"` | — |
+
+**On create**: required — `basis`, `rate`, `hoursPerWeek`
+
+### `AsAtQuery`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `at` | `string` | yes | As at | `format: "date-time"` | — |
+
+**On create**: required — `at`
 
 ### `StockReceipt`
 

@@ -87,6 +87,15 @@ Nothing above needs a new package before it is attempted. Each step should be do
 hard way first, because a gap argued from a page is a guess and a gap met at a terminal
 is a specification.
 
+**Sequenced 2026-08-30 as `payroll.md`.** Billing shipped first as planned, and the
+wall count it left is **one and a half of five** rather than the two predicted here:
+`@immutable` stands, the cross-row invariant was argued and left without a grammar
+(`FJS-D162`), and effective dating has a pattern and a ruling (`FJS-D164`) but no
+`@@effective`; *one open window per parent* is declarable since `FJS-603` closed. The
+plan takes the ledger early and narrow — the sale that already exists posting a
+balanced journal — because the cross-row invariant is the sharpest gap on this list
+and the cheapest place to meet it is the smallest one.
+
 ---
 
 ## Candidate B — a clinical record system
@@ -160,8 +169,11 @@ deliberately left rounding mode and the leftover penny to the application withou
 saying where in the application they live. Ruled as `FJS-D154`: a pure
 `allocate(amount, ratios, scale)` in toolbelt, largest-remainder, half away from
 zero and overridable, with no value object and nothing handed out by the seed.
-What is owed before the first model is the function itself, which does not exist
-yet.
+The function shipped with the ruling —
+`allocate(amount, ratios)` and `roundMinor(value, { mode })` in
+`@frontierjs/toolbelt/units` — and has no caller yet; proration is the one that
+arrives. **The sequencing is `billing.md`**, eight phases from where it lives to
+the slice.
 
 **Risk is low and bounded.** Roughly ten models. No regulator. Getting it wrong costs a
 credit note, not a tribunal. And the failure modes are already documented by other
@@ -203,7 +215,9 @@ arrives twice out of order.
    every gap it hits is a gap A will hit again. If the cross-row invariant and the
    immutable-document questions get rulings here, payroll starts with two of its five
    walls already standing.
-2. **A, payroll** — folded into `example/`, below.
+2. **A, payroll** — folded into `example/`, below. **The sequencing is
+   `payroll.md`**, nine phases from the corpus port to the drives, with the
+   ledger taken early and narrow and a stated size budget of eight models.
 3. **B, clinical** — a *separate* app, not folded into anything. Its whole value is
    that permission is the product, and grafting it onto a shop would make it a feature.
 
@@ -211,7 +225,7 @@ arrives twice out of order.
 
 ## Where A lives — `example/` stops being a shop
 
-**Decision taken 2026-08-29 (record it in `DECISIONS.md` when the first model lands).**
+**Decision taken 2026-08-29; recorded 2026-08-30 as `FJS-D166`.**
 Payroll goes into `example/` rather than into a fourth app.
 
 The objection is obvious: `example/` is a Shopify-shaped thing, and payroll is not

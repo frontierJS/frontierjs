@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { writeFile, unlink, mkdir, readdir } from 'fs/promises'
+import { writeFile, unlink, mkdir, readdir, utimes } from 'fs/promises'
 import { existsSync, rmSync } from 'fs'
 import path from 'path'
 import { renderComponent, renderFile } from '../src/render-component.js'
@@ -560,5 +560,78 @@ describe('renderComponent — options.alias', () => {
       alias: { '@': ALIAS_DIR, '@acme': '/nowhere' },
     })
     expect(out.html).toContain('$1')
+  })
+})
+
+// ─── Temp modules must not outlive the process that wrote them ───────────────
+//
+// The `finally` blocks in renderComponent cover every path this process gets to
+// run, and two it does not: a caller that ABANDONS the render — sierra's
+// prerender races it against a timeout with Promise.race, so a component that
+// hangs at import leaves a promise that never settles — and a process that dies
+// with a render in flight. Both stranded a .mjs in the default tmpDir, which is
+// this package's own root, where `bun run ci`'s hygiene phase reports it as an
+// ignored source file until somebody deletes it by hand. Two sat there for
+// three days.
+//
+// The abandonment case runs in a CHILD PROCESS because what it asserts is an
+// 'exit' handler, which cannot be observed from inside the process that has it.
+
+describe('renderComponent — temp module lifetime', () => {
+  const ROOT = path.join(process.cwd(), `_tmp_life_${process.pid}`)
+
+  beforeAll(async () => { await mkdir(ROOT, { recursive: true }) })
+  afterAll(() => { rmSync(ROOT, { recursive: true, force: true }) })
+
+  it('cleans up a render the caller abandoned', async () => {
+    const { execFile } = await import('child_process')
+    const { promisify } = await import('util')
+
+    const scratch = path.join(ROOT, 'abandoned')
+    await mkdir(scratch, { recursive: true })
+    const renderer = path.join(process.cwd(), 'src', 'render-component.js')
+
+    // A component that never finishes importing, raced against a clock — the
+    // shape of prerender.js's `bounded()`. The render is still pending when the
+    // process exits.
+    const script = [
+      `import { renderComponent } from ${JSON.stringify(renderer)}`,
+      `const src = '<script module>\\nawait new Promise(() => {})\\n</` + `script>\\n<p>x</p>'`,
+      `const work = renderComponent(src, {`,
+      `  filename: ${JSON.stringify(path.join(scratch, 'Hang.mesa'))},`,
+      `  tmpDir: ${JSON.stringify(scratch)}, target: 'html',`,
+      `})`,
+      `const clock = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 300))`,
+      `try { await Promise.race([work, clock]) } catch { /* the build reports the route skipped */ }`,
+    ].join('\n')
+
+    const probe = path.join(ROOT, 'abandon-probe.mjs')
+    await writeFile(probe, script)
+    await promisify(execFile)(process.execPath, [probe], { cwd: ROOT })
+
+    const left = (await readdir(scratch)).filter((f) => f.startsWith('__mesa_render_'))
+    expect(left).toEqual([])
+  })
+
+  it('sweeps a leftover a killed process left, and spares one still in use', async () => {
+    // Nothing covers SIGKILL, so leftovers accumulate in the default tmpDir and
+    // are reported by CI rather than by anyone who was looking. The sweep is
+    // age-gated: a concurrent render's file is minutes old at most.
+    const scratch = path.join(ROOT, 'stale')
+    await mkdir(scratch, { recursive: true })
+
+    const stale = path.join(scratch, '__mesa_render_Killed.mesa_1_aaa.mjs')
+    const live  = path.join(scratch, '__mesa_render_Running.mesa_2_bbb.mjs')
+    await writeFile(stale, '// from a process that was killed')
+    await writeFile(live,  '// from a render happening right now')
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+    await utimes(stale, twoDaysAgo, twoDaysAgo)
+
+    await renderComponent('<p>ok</p>', {
+      filename: path.join(scratch, 'Ok.mesa'), tmpDir: scratch, target: 'fragment',
+    })
+
+    expect(existsSync(stale)).toBe(false)
+    expect(existsSync(live)).toBe(true)
   })
 })

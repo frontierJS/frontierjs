@@ -52,8 +52,8 @@ process.env.MAIL_SINK_URL = 'http://localhost:9/unused'
 process.env.PSP_URL       = 'http://localhost:9/unused'
 
 const { default: app }       = await import('../../api/src/app.ts')
-const { startStripeSink }    = await import('../../api/src/core/stripe-sink.ts')
-const stripe                 = await import('../../api/src/core/stripe.ts')
+const { startStripeSink }    = await import('../../api/src/providers/stripe/sink.ts')
+const stripe                 = await import('../../api/src/providers/stripe/index.ts')
 
 const got = {}
 const t = (key, value) => { got[key] = value }

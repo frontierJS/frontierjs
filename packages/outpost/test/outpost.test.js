@@ -222,6 +222,120 @@ describe('what the machine is asked to do', () => {
   })
 })
 
+describe('reading a container log', () => {
+
+  // The gap this closes is basecamp's own screen, which says its logs tab is
+  // absent because *nothing stores or streams a log line*. `fli deploy:logs`
+  // answers this over ssh for one app; this answers it for a fleet.
+
+  const serverWith = (fake) => createOutpostServer(CONFIG, {
+    docker:    createDocker({ run: fake.run, workDir: CONFIG.workDir }),
+    inspector: createInspector({ run: fake.run }),
+  })
+
+  test('it asks the machine for that app’s container, bounded', async () => {
+    const fake = fakeRunner({ 'docker logs': { stdout: 'listening on 3000\n' } })
+    const res  = await send(serverWith(fake), 'POST', '/logs', { app_id: 'app-1', tail: 50 })
+    expect(res.status).toBe(200)
+
+    const argv = fake.calls.find(c => c[1] === 'logs')
+    expect(argv).toEqual(['docker', 'logs', '--tail', '50', 'fjs-app-1'])
+    expect((await res.json()).stdout).toContain('listening on 3000')
+  })
+
+  test('`tail` is CLAMPED, not merely defaulted', async () => {
+    // The caller is on another machine and the cost of an unbounded read is
+    // paid here: the runner reads the whole stream into this process before
+    // anything can trim it.
+    const fake = fakeRunner({ 'docker logs': { stdout: '' } })
+    await send(serverWith(fake), 'POST', '/logs', { app_id: 'app-1', tail: 10_000_000 })
+    expect(fake.calls.find(c => c[1] === 'logs')).toEqual(['docker', 'logs', '--tail', '5000', 'fjs-app-1'])
+
+    const fake2 = fakeRunner({ 'docker logs': { stdout: '' } })
+    await send(serverWith(fake2), 'POST', '/logs', { app_id: 'app-1', tail: 'not-a-number' })
+    expect(fake2.calls.find(c => c[1] === 'logs')).toEqual(['docker', 'logs', '--tail', '200', 'fjs-app-1'])
+  })
+
+  test('`since` is passed through, and absent when not asked for', async () => {
+    const fake = fakeRunner({ 'docker logs': { stdout: '' } })
+    await send(serverWith(fake), 'POST', '/logs', { app_id: 'app-1', since: '10m' })
+    expect(fake.calls.find(c => c[1] === 'logs')).toContain('--since')
+
+    const fake2 = fakeRunner({ 'docker logs': { stdout: '' } })
+    await send(serverWith(fake2), 'POST', '/logs', { app_id: 'app-1' })
+    expect(fake2.calls.find(c => c[1] === 'logs')).not.toContain('--since')
+  })
+
+  test('a container that is not there answers, rather than failing', async () => {
+    // Basecamp asks this about an app it BELIEVES is deployed, so *no such
+    // container* is the useful sentence and a 500 is not.
+    const fake = fakeRunner({ 'docker logs': { exitCode: 1, stderr: 'Error: No such container: fjs-app-9' } })
+    const res  = await send(serverWith(fake), 'POST', '/logs', { app_id: 'app-9' })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.running).toBe(false)
+    expect(body.error).toBe('no such container')
+  })
+
+  test('any other docker failure is still a failure', async () => {
+    // The negative control for the row above: swallowing every non-zero exit
+    // would make a broken daemon look like an app with no logs.
+    const fake = fakeRunner({ 'docker logs': { exitCode: 1, stderr: 'permission denied on /var/run/docker.sock' } })
+    const res  = await send(serverWith(fake), 'POST', '/logs', { app_id: 'app-1' })
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toMatch(/permission denied/)
+  })
+
+  test('stdout and stderr stay apart', async () => {
+    // That is how the container wrote them; joining them here would invent an
+    // interleaving that is not the one that happened.
+    const fake = fakeRunner({ 'docker logs': { stdout: 'ok\n', stderr: 'boom\n' } })
+    const body = await (await send(serverWith(fake), 'POST', '/logs', { app_id: 'app-1' })).json()
+    expect(body.stdout).toBe('ok\n')
+    expect(body.stderr).toBe('boom\n')
+  })
+
+  test('it takes a signature like every other route', async () => {
+    const fake = fakeRunner({ 'docker logs': { stdout: '' } })
+    const res  = await send(serverWith(fake), 'POST', '/logs', { app_id: 'app-1' }, { secret: null })
+    expect(res.status).toBe(401)
+    // Nothing reached the machine.
+    expect(fake.calls.find(c => c[1] === 'logs')).toBeUndefined()
+  })
+
+  test('the signature covers the query string (FJS-678)', async () => {
+    // Signed for `/logs` and sent to `/logs?app_id=other`. Until `FJS-678` the
+    // canonical string stopped at the pathname, so this was accepted and the
+    // only thing standing between a caller and another app's containers was
+    // that the parameters happened to ride in the signed body.
+    const fake = fakeRunner({ 'docker logs': { stdout: '' } })
+    const res  = await send(serverWith(fake), 'POST', '/logs?app_id=other', { app_id: 'app-1' }, { signPath: '/logs' })
+    expect(res.status).toBe(401)
+    expect(fake.calls.find(c => c[1] === 'logs')).toBeUndefined()
+  })
+
+  test('a query signed with the request is accepted', async () => {
+    const fake = fakeRunner({ 'docker logs': { stdout: '' } })
+    const res  = await send(serverWith(fake), 'POST', '/logs?app_id=app-1', { app_id: 'app-1' })
+    expect(res.status).toBe(200)
+  })
+
+  test('a version-1 signature is refused by name', async () => {
+    // Every Outpost deployed before this signs v1. Refused as a mismatch it
+    // reads exactly like a wrong secret, which is the wrong half to look at.
+    const fake    = fakeRunner({ 'docker logs': { stdout: '' } })
+    const payload = JSON.stringify({ app_id: 'app-1' })
+    const headers = new Headers({ 'content-type': 'application/json' })
+    for (const [k, v] of Object.entries(await sign({ secret: CONFIG.secret, method: 'POST', path: '/logs', body: payload })))
+      headers.set(k, k.toLowerCase() === 'x-fjs-signature' ? v.replace(/^v2-/, '') : v)
+
+    const res = await serverWith(fake).handle(new Request('http://outpost.test/logs', {
+      method: 'POST', headers, body: payload,
+    }))
+    expect(res.status).toBe(401)
+  })
+})
+
 describe('what this machine tells basecamp', () => {
 
   function reporterWith(answers = {}) {
@@ -244,7 +358,7 @@ describe('what this machine tells basecamp', () => {
     // Until this lands, basecamp has no address for the machine and refuses
     // every release for it.
     expect(call.body.outpost_url).toBe('http://outpost.test:7180')
-    expect(call.init.headers['X-Hub-Signature']).toMatch(/^sha256=[0-9a-f]{64}$/)
+    expect(call.init.headers['X-Fjs-Signature']).toMatch(/^v2-sha256=[0-9a-f]{64}$/)
   })
 
   test('the signature is over the bytes actually sent', async () => {

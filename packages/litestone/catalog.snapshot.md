@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**97 words** — 11 declarations · 60 field attributes · 26 model attributes.
+**101 words** — 11 declarations · 63 field attributes · 27 model attributes.
 
 ## Declarations
 
@@ -50,6 +50,8 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@omit` | Hide or lock a value | [(all)] |  | level: all |  |
 | `@guarded` | Hide or lock a value | [(all)] | on a model's field · on a trait's field |  |  |
 | `@system` | Hide or lock a value |  |  |  |  |
+| `@immutable` | Hide or lock a value |  |  |  |  |
+| `@sealed` | Hide or lock a value |  |  |  |  |
 | `@capability` | Hide or lock a value |  |  |  |  |
 | `@encrypted` | Hide or lock a value |  | on a model's field · on a trait's field |  |  |
 | `@hashed` | Hide or lock a value |  |  |  |  |
@@ -60,6 +62,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@updatedBy` | Record who and when | [(<authField>)] |  |  |  |
 | `@createdBy` | Record who and when | [(<authField>)] |  |  |  |
 | `@version` | Record who and when |  | on a model's field · on a trait's field |  |  |
+| `@big` | Shape the table |  | on a model's field · on a trait's field |  |  |
 | `@scale` | Shape the table | (<places>) | on a model's field · on a trait's field |  |  |
 | `@money` | Shape the table | [(<CURRENCY>)] \| [(field: <column>)] | on a model's field · on a trait's field |  |  |
 | `@keepVersions` | Record who and when |  |  |  |  |
@@ -98,7 +101,8 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | word | group | arity | legal | accepts | notes |
 | --- | --- | --- | --- | --- | --- |
 | `@@index` | Shape the table | ([field, …]) |  |  |  |
-| `@@unique` | Shape the table | ([field, …]) |  |  | parses as `uniqueIndex` |
+| `@@id` | Identify a row | ([field, …]) | in a model |  |  |
+| `@@unique` | Shape the table | ([field, …][, nullsDistinct: true \| where: <expr>]) |  |  | parses as `uniqueIndex` |
 | `@@check` | Shape the table | ("<sql>"[, "<message>"]) |  |  |  |
 | `@@arc` | Shape the table | ([field, …][, optional: true]) |  |  |  |
 | `@@map` | Shape the table | ("table_name") | in a model |  |  |
@@ -116,7 +120,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@deny` | Decide who may | ('read'\|…, <expression>[, message]) |  |  |  |
 | `@@scope` | Decide who may | (<name>, <expression>) |  |  |  |
 | `@@tenant` | Decide who may | (<column> \| none \| via: parent) |  | mode: none |  |
-| `@@transitions` | Decide who may | (<field>, [<name>:] <from>\|[<from>,…] -> <to> [@gate(N)], …) |  |  |  |
+| `@@transitions` | Decide who may | (<field>, [<name>:] <from>\|[<from>,…] -> <to> [@gate(N)] [@system] [@seals], …) |  |  |  |
 | `@@auth` | Wire it to the app |  |  |  |  |
 | `@@log` | Wire it to the app | (<database>[, reads: false][, writes: false]) |  |  |  |
 | `@@db` | Wire it to the app | (<database>) | in a model |  |  |
@@ -131,9 +135,9 @@ A blank `legal` column above means the ordinary answer for that level.
 
 | position | refuses |
 | --- | --- |
-| on a type's field | `id`, `unique`, `map`, `relation`, `generated`, `from`, `encrypted`, `guarded`, `secret`, `updatedAt`, `version`, `allow`, `values`, `scale`, `money` |
+| on a type's field | `id`, `unique`, `map`, `relation`, `generated`, `from`, `encrypted`, `guarded`, `secret`, `updatedAt`, `version`, `allow`, `values`, `scale`, `money`, `big` |
 | on a trait's field | `id` |
-| in a trait | `map`, `db`, `fts` |
+| in a trait | `id`, `map`, `db`, `fts` |
 | on an enum member | everything except `@label` |
 
 ## The visibility table

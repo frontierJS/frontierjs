@@ -39,10 +39,18 @@ title: Adapters
   }
 
   const TONE = { healthy: 'success', unconfigured: 'muted', unreachable: 'danger', degraded: 'warning' }
+
+  // Two groups, because *unconfigured* means different work for each: an
+  // appliance is installed on a machine and pointed at with a URL, a hosted
+  // service is an account somebody opens and a token this app holds. The
+  // service says which is which — a list here would be a second answer.
+  $: appliances = rows.filter(r => !r.hosted)
+  $: hosted     = rows.filter(r => r.hosted)
 </script>
 
 <p class="text-body">
-  The eight self-hosted appliances Basecamp expects to operate. <strong>Unconfigured</strong> means the adapter is a stub until its environment variables are set — it is not an error.
+  Every party this app speaks to. <strong>Unconfigured</strong> means the adapter is a stub until it is given
+  what it needs — it is not an error, and an app can run with none of them.
 </p>
 
 {#if error}
@@ -54,8 +62,10 @@ title: Adapters
 {#if loading}
   <p class="text-sm text-muted">Loading…</p>
 {:else}
+  <h2 class="h4">Self-hosted appliances</h2>
+  <p class="text-sm text-muted">Installed on a machine you operate. Set its URL to wire it.</p>
   <div class="tiles" style="--tile-min: 17rem" id="adapter-tiles">
-    {#each rows as entry}
+    {#each appliances as entry}
       <article class="card stack">
         <div class="cluster">
           <h2 class="h4">{entry.name}</h2>
@@ -64,6 +74,32 @@ title: Adapters
         <p class="text-sm text-muted">{entry.description}</p>
         <dl class="facts">
           <dt>URL</dt><dd><code>{entry.url ?? 'not set'}</code></dd>
+        </dl>
+        <div class="cluster">
+          <Button variant="ghost" disabled={busy === entry.id} onclick={() => ping(entry)}>
+            {busy === entry.id ? 'Checking…' : 'Check now'}
+          </Button>
+        </div>
+      </article>
+    {/each}
+  </div>
+
+  <h2 class="h4">Hosted services</h2>
+  <p class="text-sm text-muted">
+    Somebody else's service, reached with a credential. Wiring one is a
+    <code>@frontierjs/conduit</code> target plus its token as a <a href="/secrets/">Secret</a> —
+    there is no URL to open and no <code>url</code> to show.
+  </p>
+  <div class="tiles" style="--tile-min: 17rem" id="hosted-tiles">
+    {#each hosted as entry}
+      <article class="card stack">
+        <div class="cluster">
+          <h3 class="h5">{entry.name}</h3>
+          <span class="pill {TONE[entry.status] ?? ''}">{entry.status}</span>
+        </div>
+        <p class="text-sm text-muted">{entry.description}</p>
+        <dl class="facts">
+          <dt>Credential</dt><dd><code>{entry.configured ? 'set' : 'not set'}</code></dd>
         </dl>
         <div class="cluster">
           <Button variant="ghost" disabled={busy === entry.id} onclick={() => ping(entry)}>

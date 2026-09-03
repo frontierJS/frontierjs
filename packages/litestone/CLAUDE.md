@@ -48,6 +48,7 @@ src/
 
   drivers/
     jsonl.js       — JSONL append-only driver for logs/audit databases
+    jsonl-index.js — the SQLite sidecar beside a .jsonl, and the LOCK on that file
 
   import/          — a foreign schema → .lite. Four readers (prisma, rails, sql,
                      frappe) + the tier table that grades what the reading could
@@ -196,6 +197,13 @@ Type?      — optional (nullable)
 ```
 @id                              primary key (auto-increment for Int)
 @unique                          UNIQUE constraint
+@unique(global)                  …and under `tenancy { strategy row }`, one that is deliberately
+                                 unique across the WHOLE INSTALLATION rather than per tenant. Only
+                                 meaningful there, and only to silence the warning: a unique on a
+                                 tenant-scoped model whose columns carry neither the tenant column
+                                 nor a key reaching a scoped model is reported, because two tenants
+                                 then cannot hold the same value and the refusal names it to the
+                                 second. A token or a public subdomain is legitimately global
 @default(value)                  literal, now(), uuid(), ulid(), cuid(), nanoid()
 @default(auth().field)           stamp from ctx.auth at write time (runtime-only)
 @default(fieldName)              copy sibling field value on create
@@ -218,6 +226,11 @@ Type?      — optional (nullable)
 @money(USD)                      @scale with the places DERIVED from the currency
 @money(field: currency)          the code is on the row; no static scale
 @money                           the app's default currency
+@big                             the OPPOSITE end: an Int whose values use all 64
+                                 bits, crossing as a STRING of digits in and out.
+                                 Storage stays INTEGER, so ordering, a range
+                                 filter, an index and AUTOINCREMENT are numeric.
+                                 Refused beside @scale/@money — see SQLite gotchas
 @version                         optimistic concurrency. Int, non-optional, one per
                                  model. Bumped on every write; `update()` REQUIRES
                                  the version it read in `data` and throws
@@ -330,6 +343,12 @@ declared. One authored string, all three realms.
 @@softDelete(cascade)            soft delete + cascade to FK children that also have @@softDelete
 @@fts([field1, field2])          FTS5 full-text search virtual table
 @@index([col1, col2])            composite index
+@@id([col1, col2])               the row's identity IS the tuple. Sugar over `@id` on each
+                                 named field, so every reader already handles it — what it
+                                 adds is the key's column ORDER, which is prefix-matched and
+                                 which field declaration order is a different fact about.
+                                 Refused beside a field-level @id, and over a nullable field,
+                                 a relation, an array or a virtual column
 @@unique([col1, col2])           composite unique constraint. A nullable member is a PARSE
                                  ERROR — two NULLs never compare equal, so the rows that
                                  leave it unset are all distinct to the index
@@ -337,6 +356,19 @@ declared. One authored string, all three realms.
                                  …and this is how a schema says it meant that. SQL's own
                                  word for SQLite's behaviour; emits identical DDL. Single
                                  @unique over an optional column is untouched
+@@unique([a, b], global: true)   the tuple form of @unique(global) — see it above
+@@unique([a], where: expr)       conditional uniqueness — the constraint holds over the rows
+                                 the predicate admits and says nothing about the rest. *At
+                                 most one OPEN row per parent* is `where: effectiveTo == null`.
+                                 A predicate cannot ride a table constraint, so this parses to
+                                 `partialUnique` and emits a standalone CREATE UNIQUE INDEX;
+                                 it migrates by one DROP and one CREATE where the plain form
+                                 rebuilds the table, and it does NOT satisfy a one-to-one.
+                                 May compare against a VALUE, which @@index(where:) refuses —
+                                 enforcement never consults the planner — and the literals are
+                                 inlined, because SQLite prohibits a bound parameter there.
+                                 `now()`/`auth()` refused by name. Not combinable with
+                                 nullsDistinct. @@softDelete's clause is NOT ANDed in
 @@strict                         SQLite STRICT mode (on by default)
 @@noStrict                       disable STRICT mode
 @@gate("R.C.U.D")                level-based access control (see GatePlugin)
@@ -610,6 +642,25 @@ db.$capabilitiesFor(user)
                            // migration that did not run. Accepts a principal or the
                            // bare list, since the union of somebody's roles exists
                            // before a principal does
+db.$readAs('order', row, principal)
+                           // the row as that principal would have read it, or
+                           // null. FIFTH sibling, and the one that exists
+                           // because a BROADCAST IS NOT A SELECT: @@allow
+                           // compiles into a WHERE, so a row reaching a caller
+                           // through a query is filtered by construction and
+                           // one reaching them through a WS frame was filtered
+                           // by nothing (FJS-631). Gate, then row policy, then
+                           // that principal's own field policies. No query —
+                           // the row is in hand, so a @from/@computed on it is
+                           // the writer's. Fails closed: an undecidable policy
+                           // throws and a throw refuses
+db.$readGrading('product') // 'open' | 'graded' — whether $readAs can ever
+                           // answer anything but the row it was given. Gate 0,
+                           // no read policy, no field policy → open, so a
+                           // catalogue costs nothing. An UNKNOWN accessor is
+                           // 'graded': the other siblings answer {} because
+                           // *I cannot judge this* is not *this is wrong*, and
+                           // here it is a permission, so it falls the other way
 db.$protectedFields('secret')
                            // { data: 'encrypted' } — which columns must never be
                            // written down in plain text, and which protection
@@ -669,7 +720,16 @@ auth()                    — current auth object (null if unauthenticated)
 auth().field              — field on auth object
 auth() != null            — authenticated check
 now()                     — current UTC timestamp
-check(field)              — delegates to related model's read policy
+check(field)              — delegates to the related model's ROW POLICY and to
+                            nothing else. A parent held only by a @@gate or a
+                            capability grid delegates as unrestricted — both are
+                            enforced a tier above any compiled predicate — so
+                            createClient warns, naming what the parent is
+                            actually protected by. A cycle (a mutual pair, or a
+                            self-relation checking its own parent) is REFUSED
+                            there: it compiles to a predicate no row satisfies,
+                            which admits only rows whose FK is NULL and reads
+                            like a filter working (`FJS-636`).
 field == value  field != value  field > value  field >= value  field < value  field <= value
 value in list             — membership. The list is ALWAYS the right operand:
                             `auth().id in memberIds` (an array column),
@@ -709,6 +769,54 @@ model User {
 ```
 
 Conflicts with `@guarded` and `@secret` — validation error.
+
+The expression is checked at startup by the same walk `@@allow` and `@@scope`
+run — a column that is not on the model and a claim the principal cannot carry
+are each refused by name, naming the operation and the field (`FJS-667`). It was
+checked by nothing until 2026-09-02, and it fails CLOSED, so a typo stripped the
+column from every row and read as the policy working strictly.
+
+---
+
+## A bulk write and the state machine
+
+`updateMany` and `upsertMany`'s `update:` half **refuse a transitions-typed
+column by name** — `BulkTransitionError`, 400 (`FJS-671`, ruled `FJS-D182`).
+There is no `from` state to grade, because a bulk write matches rows without
+reading them, and the skip took the per-move `@gate` and the `@system` marking
+with it: measured, a level-4 caller made a `@gate(5)` move, a `@system` move and
+an undeclared move through the bulk verb.
+
+400 rather than 403 — no level and no grant answers it, because the VERB is
+wrong rather than the caller. Every other column stays bulk-writable in the same
+call, which is `FJS-044`'s power tool kept rather than overturned; the insert
+half of `upsertMany` is a create, has no from-state, and is untouched.
+`asSystem()` still writes it and warns, because `update()` announces its bypass
+through `emitTransitionEvent` and a bulk write reaches none.
+
+---
+
+## What `auth().x` may name
+
+Refused at client build unless the claim is one of four things (`FJS-666`, ruled
+`FJS-D181`):
+
+  the framework's eight   `id` · `capabilities` · and the six `FrontierGateGetLevel`
+                          reads — `role` `isAdmin` `isOwner` `isSystemAdmin`
+                          `verifiedAt` `activatedAt`. A standing is not a column
+  the `@@auth` model      its own field names, which is what `sessionFields` carries
+  `tenancy { claim }`     the one claim the schema declares
+  `createClient({ claims })`  a claim resolved PER REQUEST — on no row, in no schema
+
+**It grades only when there is a set.** No `@@auth` and no `claims:` means
+nothing to compare against, and that silence is announced once per distinct set
+of names rather than assumed. `claims: []` is a statement; absent is silence.
+
+**An absent claim is UNKNOWN and both interpreters read it that way** (`FJS-668`):
+an `@@allow` holds only on TRUE, an `@@deny` fires on TRUE and UNKNOWN alike,
+which is `(allows) AND NOT (denies)` on both sides. `x == null` is exempt and
+answers a boolean — that is how the language spells `IS NULL`, and it is the
+only way to write *the caller carries no such claim*.
 
 ---
 
@@ -767,6 +875,7 @@ Pass the file path (or inline object) as `computed:` to `createClient`.
 import { create, apply, status, verify, autoMigrate } from '@frontierjs/litestone'
 
 autoMigrate(db)                                          // dev — applies directly, no files
+autoMigrate(db, parsed, { acceptDataLoss: true })        // …including a change that drops a column
 create(db, parseResult, 'add-users', './migrations')     // generate SQL file
 apply(db, './migrations')                                // apply pending files
 status(db, './migrations')
@@ -879,6 +988,23 @@ await storage.download(user.avatar)          // → Buffer
 ## JSONL driver
 
 Append-only log database. No migrations, no schema. Rows appended to `<path>/<model>.jsonl`.
+
+**More than one process writes it, and the companion index's write transaction is
+what serialises them** (`FJS-D180`, `FJS-665`). A byte offset cannot be computed
+before the append or recovered after it, so `create`/`createMany` hold
+`BEGIN IMMEDIATE` on `<path>/<model>.jsonl.index.db` across `stat`+`append`, and
+the index row naming the offset commits with it. A transaction rather than a
+lockfile: the OS drops a dead process's file locks and a lockfile has no answer
+for a writer that dies holding one.
+
+**Two rules the sidecar depends on and neither is optional.** It is in WAL, which
+is what makes taking the lock affordable — measured, 8 writers on a rollback
+journal killed 2 of them and dropped 12 rows with a worst insert of 5,007 ms.
+And **nothing may unlink it**: an unlink leaves `-wal`/`-shm` behind and the next
+write then answers `ok` into an inode with no directory entry, where a rollback
+journal answers `SQLITE_READONLY_DBMOVED`. Compaction rebuilds the index instead,
+holding the lock across its READ as well as its write — locking the write alone
+leaves the window and widens it.
 
 ```
 database logs {
@@ -1185,8 +1311,9 @@ const edges   = generateGateMatrix(schema, 'Post', { levels: 'edges' })  // 2 pe
 const cases   = generateValidationCases(schema, 'User')   // valid + invalid + boundary
 const factory = factoryFrom(schema, 'User', db)
 
-// The declared access surface — gates, policies, protected fields, transition
-// gates. `litestone access` renders it to the committed access.snapshot.md.
+// The declared access surface — gates, policies, protected fields, and per move
+// its gate AND its @system, which are two facts that compose rather than one
+// grade. `litestone access` renders it to the committed access.snapshot.md.
 const access  = deriveAccess(schema)
 ```
 
@@ -1219,7 +1346,20 @@ const tenants = await createTenantRegistry({ path: './db/schema.lite' })  // rea
 const db      = await tenants.get('acme')
 await tenants.query(db => db.user.count())
 await tenants.migrate()
+
+const release = tenants.retain('acme')   // pin for a unit of work
+try { … } finally { release() }
+tenants.poolStats()  // { pooled, leased, retired, overflows, maxOpen }
 ```
+
+**`maxOpen` is how many tenants to keep WARM, not a ceiling** (`FJS-D172`).
+Eviction never closes a client it lent out — `get()` hands one to a request that
+holds it across every await it makes, and closing it left a MIXED client rather
+than a dead one. `retain(id)` is what makes an eviction able to close anything:
+junction's `withTenantDb` pins for the length of a request, so a client whose
+every lease has ended closes at the next eviction, and one from a bare `get()`
+is dropped for bun's finaliser instead. A fan-out inserts COLD into a ring, so
+an admin dashboard does not evict the tenants being served.
 
 **Row tenancy desugars into `@@deny`, never `@@allow`.** Allows are OR'd within
 an operation, so an allow added to a model that already has one WIDENS its reads
@@ -1324,7 +1464,11 @@ Suites cover: parser, DDL, migrations, autoMigrate, client CRUD, soft delete, so
 
 **`busy_timeout` is 5000ms on every connection this package opens, and it is a CROSS-PROCESS device only.** `src/core/pragmas.js` is the one owner — the number was a literal in three files and absent from four others, so whether a database waited under contention was an accident of which file opened it (`FJS-569`). The one with no wait was the `logger` index, which is schema-global and therefore the single file every tenant and every process writes; a second API beside a running one died on its first audit write, in about a millisecond. **Inside one process the timeout is not a safety net, it is a stall** — `bun:sqlite` is synchronous, so a connection waiting on the lock blocks the event loop, and it can deadlock outright: the waiter blocks the loop, the holder's continuation never runs to commit, and the wait can only expire. Measured both ways — 5000ms then failure in one process for an 800ms hold, 1444ms then commit across two. What makes the in-process case fine is `$transaction`'s FIFO lock, which queues two transactions on one client in JavaScript so they never reach the SQLite lock — and what keeps THAT true is **one client per database file per process**, since `createClient` twice on one path is two connections that can deadlock where `$setAuth`/`asSystem`/`$scopedBy` are views over one handle. **The number is `createClient({ busyTimeout })`, precedence option → env (`LITESTONE_BUSY_TIMEOUT`) → 5000**, per database as `{ default, <db> }` because the audit index wants the opposite answer to main — its write is fire-and-forget and its failure swallowed, so `{ audit: 250 }` says *drop the row rather than stall the loop*. A malformed value and a key naming a database the schema does not declare are both refused by name at `createClient`, since a dropped key is a database silently keeping the default. **There is deliberately no `database { }` spelling** (`FJS-D155`): how long to wait for another process is a fact about THIS process, and the same schema is opened by an API answering a person and a queue draining a batch. `docs/concurrency.md` is the whole of it, including the worker-thread answer for a query that is genuinely long — measured, a worker holding the lock for 600ms let the main loop keep ticking and the main thread's write waited 639ms and committed, where the same shape on one thread deadlocks.
 
-**A scaled column's ceiling is 2^53, not int64, and it is now enforced at both ends.** `Int @scale(n)` promises an exact round trip, and the round trip goes through a JS `number` — nothing here sets `safeIntegers`, so `bun:sqlite` answers a `number` on every path, a column read and an aggregate alike. Past 2^53 the rounded double is stored and a DIFFERENT number is read back with nothing raised: `12345678900000001` reads back `…000` and `9007199254740993` reads back `…992`, which is `prisma#20635` — the bug `FJS-D142` cites as the reason `Int @scale` exists at all — reproduced one layer up. The documentation reasoned from the 64-bit column and said nine places leaves nine figures in front of the point; the true answer is **seven**, and two distinct minor-unit values collided into one row value (`FJS-583`). The boundary now refuses a value past `Number.MAX_SAFE_INTEGER` by name, in a different sentence from the fraction refusal because they are different mistakes, and `@scale`/`@money` emit `CHECK ("c" BETWEEN -9007199254740991 AND 9007199254740991)` — a CHECK because four writers never reach the boundary: a migration, a seed, a raw statement and `asSystem()`. `EXACT_INT_MAX` in `validate.js` is the one owner and `ddl.js` imports it. **A plain `Int` is deliberately NOT bounded** — it makes no exactness promise, and bounding every integer column in every app to buy back one is the wrong trade — so a snowflake id kept in an `Int` has the same ceiling and nothing reports it.
+**A scaled column's ceiling is 2^53, not int64, and it is now enforced at both ends.** `Int @scale(n)` promises an exact round trip, and the round trip goes through a JS `number` — nothing here sets `safeIntegers`, so `bun:sqlite` answers a `number` on every path, a column read and an aggregate alike. Past 2^53 the rounded double is stored and a DIFFERENT number is read back with nothing raised: `12345678900000001` reads back `…000` and `9007199254740993` reads back `…992`, which is `prisma#20635` — the bug `FJS-D142` cites as the reason `Int @scale` exists at all — reproduced one layer up. The documentation reasoned from the 64-bit column and said nine places leaves nine figures in front of the point; the true answer is **seven**, and two distinct minor-unit values collided into one row value (`FJS-583`). The boundary now refuses a value past `Number.MAX_SAFE_INTEGER` by name, in a different sentence from the fraction refusal because they are different mistakes, and `@scale`/`@money` emit `CHECK ("c" BETWEEN -9007199254740991 AND 9007199254740991)` — a CHECK because four writers never reach the boundary: a migration, a seed, a raw statement and `asSystem()`. `EXACT_INT_MAX` in `validate.js` is the one owner and `ddl.js` imports it. **A plain `Int` is deliberately NOT bounded** — it makes no exactness promise, and bounding every integer column in every app to buy back one is the wrong trade — so a snowflake id kept in an `Int` has the same ceiling — and `Int @big` is what that column declares instead (`FJS-643`, ruled `FJS-D174`).
+
+**`@big` is `@scale`'s opposite and it emits no CHECK, which is the part that looks inconsistent and is not.** `@scale` narrows the column to the range a JS number carries; `@big` says the values use all 64 bits and pays by crossing as a **string of digits** — a `BigInt` is exact and `JSON.stringify` throws on one, which is every HTTP response, every WS frame and every `before`/`after` audit snapshot. node-postgres answers `int8` the same way; mysql2 has `bigNumberStrings` for it. The type does not vary with the magnitude (`42` reads back `'42'`) or a caller would branch on the size of the value; a JS number is still accepted going IN below 2^53. The column keeps `INTEGER` storage, which is what makes it worth doing over a `TEXT` column of digits — measured, a text parameter takes the column's affinity, so `ORDER BY` puts `100` before `9007…`, a range filter compares numerically, EXPLAIN answers `SEARCH … USING COVERING INDEX (v=?)`, and `AUTOINCREMENT` continues past 2^53. **No CHECK because `STRICT` is on every table this package writes** and already refuses all three ways a wide value stops being exact: past int64 (a loose table stores REAL `9.22e+18`), a non-numeric string, a fraction. A constraint that cannot fire is worse than none; `@@noStrict` is the one shape that earns it, and there it is emitted. The distinction from `@scale` is the bound — `@scale`'s is NARROWER than the column's own, `@big`'s IS the column's own.
+
+**Two traps in implementing it, both measured.** `safeIntegers` is per-STATEMENT and all-or-nothing, so a wide model's statements answer BigInts for `id`, a count and a Boolean's 0/1 as well — and asking at the statement while narrowing in `read`/`readAll` is an enumeration: `count()` answered `0n`, because a statement also serves counts and aggregates that reach a caller through neither. The **statement** narrows what it returns (`wideStmt`/`wideDb` in `client.js`), and `wideDb` unwraps through `$plain` before re-wrapping, because a wide model's `readDb` is handed to the include and `@from` resolvers, which read a DIFFERENT model. For a key the row read does not recognise — `_max__col`, a window's row number — the fallback is the VALUE: one that fits becomes a number, one that does not becomes digits.
 
 **No ILIKE** — use `WHERE LOWER(name) LIKE '%term%'`
 
@@ -1623,6 +1767,18 @@ cell means.
   and orphan rows are visible to everybody. Both directions are pinned in
   `test/tenancy.test.ts` against a real client — a policy that admits everything
   and a policy that is not applied at all look identical from one side.
+- **`$close()` finalises the statement cache, and without that it closes
+  nothing.** bun's `close()` is `sqlite3_close_v2` — it defers the real
+  destruction until the last prepared statement is finalised — and `wrapDb`
+  holds up to 500. Measured: a close with one live statement freed **0 file
+  descriptors**, and finalising that statement freed 3. So for its whole life
+  `$close()` produced a client that answered a cached query off a closed,
+  checkpointed handle and threw on a fresh one, and the tenant pool's eviction
+  paid a 7.97 ms `wal_checkpoint(TRUNCATE)` for a release that never happened
+  (`FJS-640`). Every path now throws `ClientClosedError` naming the file. The
+  read side needs its own call: `conn.readDb` is REPLACED by the read router,
+  so anything reaching for `conn.readDb.close()` is talking to the router and
+  not to the wrapper it closes over.
 - **`$setAuth(user)` RETURNS a scoped client, it does not mutate.** `db.$setAuth(u)`
   then `db.thing.create(…)` grades as anonymous, silently.
 - **A schema declaring any `@@gate` auto-installs `GatePlugin`.** You cannot run
@@ -1687,6 +1843,20 @@ cell means.
   and a new write path has to appear in it. **A write matching no rows announces
   nothing**: a count of zero sending every open tab back to the server is worse
   than saying nothing.
+- **`announce` in the SCHEMA is the other axis — how far an announcement
+  travels, not what shape it takes.** `database main { announce crossProcess }`
+  (default `inProcess`) records each announced write in a table so every other
+  process ON THIS MACHINE sharing the file hands it to its own `$tapEvents`
+  subscribers, marked `foreign: true`, on the same seam — junction cannot tell
+  the two apart (`FJS-D173`). Declared, because it costs **+14 µs on a 25 µs
+  single-row insert** and nothing on a bulk one. The row carries the **id and
+  never the row** — writing the row would put the plaintext of every
+  `@encrypted` and `@guarded` column into a table beside the ciphertext — so the
+  receiver re-reads, which means **the row arrives as it is NOW** rather than as
+  it was when the event fired. Refused on a `jsonl`/`logger` driver by name.
+  Two things it does not promise and both are stated: **one machine**, and
+  **at-most-once across a crash**, since the row is recorded after the write's
+  own transaction commits.
 - **`announce` is the dial on a bulk write, and it is per CALL** — `collection`
   (default, one event, O(1), every list re-asks) · `rows` (one event per row, off
   `RETURNING`) · `none`. `createClient({ announce })` is the floor and a call
@@ -1749,6 +1919,25 @@ cell means.
   `@allow('read', …)` is refused rather than evaluated, because it is a
   predicate over a row. The grid in `test/litestone.test.ts` § *an aggregate
   names a column* is what a new argument has to pass.
+- **`@@unique(where:)` must never get `@@softDelete`'s clause ANDed into it, and
+  `@@index(where:)` must keep getting it.** On an index the AND is an
+  optimisation — the clause is what makes the index reachable on such a model at
+  all. On a UNIQUE index the predicate IS the constraint, so ANDing it is
+  `FJS-204`'s rejected derivation arriving through the back door: the deleted row
+  stops holding its `@unique` slot, and `SoftDeletedUniqueError` can never fire
+  for a partial unique because the index no longer covers the row that would
+  raise it. An author who wants uniqueness among live rows writes
+  `where: deletedAt == null` themselves. `createIndexes` in `ddl.js` is the one
+  place either rule lives, and the two loops are separate for that reason.
+- **A partial unique's predicate has its literals INLINED, and an index's may not
+  have any.** SQLite refuses a bound parameter in a partial index predicate
+  whichever kind it is — `parameters prohibited in partial index WHERE clauses`,
+  raised at migration time — and this compiler binds every value. The index form
+  refuses a value comparison at parse for a different reason (the planner cannot
+  prove a query implies it), so the two rules look like one and are not:
+  `predicateToLite`'s `{ values: true }` is asked for on the unique path alone,
+  because emitting a value comparison as `@@index(where:)` writes a `.lite` this
+  parser refuses (`FJS-594`).
 - **A soft-deleted row KEEPS its `@unique` values, and every write path says so
   the same way.** Ruled rather than fixed: freeing the slot makes `@unique`
   false for any read that includes deleted rows — `findUnique(withDeleted)`
@@ -1843,6 +2032,29 @@ cell means.
   call it**; `test/valuesets.test.ts` § every write path derives that list from
   `client.js` itself rather than restating it, because a seventh added later
   would be silent.
+- **A column that LEAVES the schema is refused by `autoMigrate`, because a rename
+  is a drop plus an add.** `diffColumns` has no rename detection, so
+  `body` → `content` is a drop and an add, the rebuild copies only what the two
+  tables share, and the values went — `state: 'migrated'`, with the row-count
+  guard passing because it counts rows and not values (`FJS-641`). A plain drop
+  was exactly as silent, which is why the rule is *any column drop* rather than
+  the rename-shaped case. `{ acceptDataLoss: true }` is the escape — Prisma's
+  `--accept-data-loss` on the mechanism this is modelled on — and the hash is
+  withheld like the other blocked rules, so it re-announces on every boot. One
+  column out and one in of the same type is reported as a probable rename with
+  the `ALTER TABLE … RENAME COLUMN` to use instead; that guess changes the
+  SENTENCE and never the decision, so being wrong costs a reader nothing. **The
+  file path still applies** and gets a boxed DESTRUCTIVE banner instead: the
+  file IS the review step, which is the whole difference between the two.
+- **A rebuild SQLite refuses answers `state: 'failed'` rather than throwing.**
+  A STRICT table takes no TEXT into an INTEGER column, so `String` → `Int` over a
+  populated table threw `cannot store TEXT value in INTEGER column
+  post__new.body` out of the migrator — at boot, naming a table that exists only
+  inside the migration it died in (`FJS-645`). The transaction had already
+  rolled back either way, so what was missing was the vocabulary. `failed` is a
+  third state and honestly distinct from `blocked`: one is a pre-flight refusal,
+  the other is SQLite declining what was attempted. A view the rebuild
+  invalidates is `failed` too, where it used to throw.
 - **A migration only drops what litestone named.** Triggers: `*_fts_*`,
   `*_updatedAt`. Indexes: `idx_<table>_<fields>`. Anything the app created
   survives an ordinary migration — `introspect()` reads triggers into

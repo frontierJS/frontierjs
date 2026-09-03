@@ -22,6 +22,12 @@ export interface StorageSaveOptions {
   custom?:  Record<string, unknown>
   expires?: Date
   headers?: Record<string, string>
+  /**
+   * Refuse a body larger than this, by name. Absent means no bound — stated
+   * honestly rather than defaulted, because a default here silently truncates
+   * whatever an app was already storing.
+   */
+  maxBytes?: number
 }
 
 export interface StorageReadResult {
@@ -66,6 +72,39 @@ const CONTENT_TYPES: Record<string, string> = {
 
 const RANGE_RE = /^bytes=(\d*)-(\d*)$/
 
+// ─── Serving somebody else's bytes ───────────────────────────────────────
+//
+// The content type is derived from a filename the CALLER supplied, so an
+// upload named `x.svg` is served `image/svg+xml`, which a browser executes as a
+// document on this origin — stored XSS through a file store. Only what is
+// certainly inert renders inline; everything else, SVG explicitly included,
+// goes down as an attachment with `nosniff` beside it so a browser cannot
+// promote it back.
+const INLINE_TYPES = new Set([
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp',
+])
+
+// An id is a PATH SEGMENT, so it is the one input here that can leave the
+// store. `join(root, '../../../../outside/p2' + '.file')` writes two directories
+// above the root and `Bun.file` reads back out of it — measured (`FJS-692`).
+// Refused by NAME rather than sanitised: a silently rewritten id is a file
+// nobody can find again.
+const ID_RE = /^[A-Za-z0-9_-]{1,128}$/
+
+export function assertSafeId(id: unknown): string {
+  if (typeof id !== 'string' || !ID_RE.test(id))
+    throw new Error(
+      `FileStorage: '${String(id)}' is not a valid id. An id is a path segment — ` +
+      'A-Z a-z 0-9 _ - only, 1 to 128 characters.'
+    )
+  return id
+}
+
+// This store is a SECOND owner of file storage: litestone already ships a
+// `FileStorage` with local and S3 drivers, `@accept` and cleanup (Invariant 4).
+// Retiring this one in favour of it is a ruling, not a refactor — see
+// `FJS-692`; until then it is hardened rather than trusted.
+
 // ─── createFileStorage ────────────────────────────────────────────────────
 // One storage instance per named store (e.g. 'uploads', 'avatars').
 // Files are stored under: {root}/{store}/{groupDir}/{id}.file
@@ -85,12 +124,15 @@ export function createFileStorage(name: string, rootDir: string): IFileStorage {
     return id.slice(0, 2).toLowerCase().replace(/[^a-z0-9]/g, '_')
   }
 
+  // Both path builders grade the id, so there is no way to reach the filesystem
+  // from this module without having passed it — a check at the entry points
+  // alone is one somebody adds a method around.
   function filePath(id: string): string {
-    return join(storeDir, groupDir(id), id + '.file')
+    return join(storeDir, groupDir(assertSafeId(id)), id + '.file')
   }
 
   function metaPath(id: string): string {
-    return join(storeDir, groupDir(id), id + '.meta.json')
+    return join(storeDir, groupDir(assertSafeId(id)), id + '.meta.json')
   }
 
   async function readMeta(id: string): Promise<StorageFile | null> {
@@ -110,6 +152,7 @@ export function createFileStorage(name: string, rootDir: string): IFileStorage {
 
     // ── save ───────────────────────────────────────────────────
     async save(id, name, data, opts = {}): Promise<StorageFile> {
+      assertSafeId(id)
       const ext  = extname(name).slice(1).toLowerCase()
       const type = CONTENT_TYPES[ext] ?? 'application/octet-stream'
       const dir  = join(storeDir, groupDir(id))
@@ -120,9 +163,14 @@ export function createFileStorage(name: string, rootDir: string): IFileStorage {
         ? Buffer.from(data, 'utf8')
         : data
 
-      await Bun.write(filePath(id), buf)
-
       const size = buf instanceof ArrayBuffer ? buf.byteLength : (buf as Uint8Array).byteLength
+
+      // Refused BEFORE the write, or the bound is a report about a file that is
+      // already on disk.
+      if (opts.maxBytes != null && size > opts.maxBytes)
+        throw new Error(`FileStorage: '${id}' is ${size} bytes, over the ${opts.maxBytes}-byte limit`)
+
+      await Bun.write(filePath(id), buf)
 
       const meta: StorageFile = {
         id,
@@ -211,6 +259,10 @@ export function createFileStorage(name: string, rootDir: string): IFileStorage {
     // ── toResponse ─────────────────────────────────────────────
     // Serves the file as an HTTP response with range, etag, content-type.
     async toResponse(id, req, download): Promise<Response> {
+      // A bad id is 404 here rather than a throw: this is the HTTP edge, and an
+      // id that cannot name a file is indistinguishable from one that names no
+      // file. The refusal by name still stands one layer in.
+      try { assertSafeId(id) } catch { return new Response('Not Found', { status: 404 }) }
       const result = await this.read(id)
       if (!result) return new Response('Not Found', { status: 404 })
 
@@ -230,10 +282,16 @@ export function createFileStorage(name: string, rootDir: string): IFileStorage {
         'etag':          etag,
         'last-modified': lastModified,
         'accept-ranges': 'bytes',
-        'cache-control': 'private, max-age=3600'
+        'cache-control': 'private, max-age=3600',
+        // The type came off a caller-supplied filename, so sniffing is the one
+        // thing a browser must not do with it.
+        'x-content-type-options': 'nosniff',
       }
 
-      if (download) {
+      // Attachment unless the type is one that cannot execute. SVG is a
+      // document with script in it and is deliberately outside the list.
+      const inline = INLINE_TYPES.has(meta.type)
+      if (download || !inline) {
         const filename = typeof download === 'string' ? download : meta.name
         headers['content-disposition'] = `attachment; filename*=utf-8''${encodeURIComponent(filename)}`
       }
@@ -242,10 +300,23 @@ export function createFileStorage(name: string, rootDir: string): IFileStorage {
       const range = req.headers.get('range')
       if (range) {
         const match = RANGE_RE.exec(range)
-        if (!match) return new Response('Invalid Range', { status: 416 })
+        // An unsatisfiable range is 416 WITH the length, which is what tells a
+        // client where the file actually ends (RFC 9110 §15.5.17). It used to
+        // answer 206 with a negative length for `bytes=50-10` and
+        // `bytes 200-99/100` for a start past the end — a well-formed lie in
+        // both directions (`FJS-692`).
+        const unsatisfiable = () => new Response(null, {
+          status: 416, headers: { 'content-range': `bytes */${size}` },
+        })
+        if (!match || (!match[1] && !match[2])) return unsatisfiable()
 
-        const start = match[1] ? parseInt(match[1], 10) : size - parseInt(match[2], 10)
-        const end   = match[2] ? parseInt(match[2], 10) : size - 1
+        const suffix = !match[1]
+        const start  = suffix ? Math.max(0, size - parseInt(match[2], 10)) : parseInt(match[1], 10)
+        const end    = suffix || !match[2] ? size - 1 : Math.min(parseInt(match[2], 10), size - 1)
+
+        if (!Number.isFinite(start) || !Number.isFinite(end)) return unsatisfiable()
+        if (start >= size || start > end || start < 0)        return unsatisfiable()
+
         const chunk = file.slice(start, end + 1)
 
         return new Response(chunk, {

@@ -88,6 +88,87 @@ export function policyExprToString(node) {
 
 const ALL_OPS = ['read', 'create', 'update', 'post-update', 'delete']
 
+// ─── What a claim is, decided at startup ─────────────────────────────────────
+//
+// A row identifier is refused by name; `auth().x` resolved against nothing, so
+// a typo parsed clean, built clean, and then failed in OPPOSITE directions in
+// the two interpreters — the SQL half's `NOT (NULL = 1)` excludes EVERYONE, the
+// JS half's `null === true` excludes NO ONE. One misspelling is a lockout on
+// read and an open door on create, and neither reads as a mistake (`FJS-666`).
+//
+// The set has four sources and no fifth is possible:
+//
+//   the fixed eight    names this package itself reads off the principal, so no
+//                      app spells them: `id` (`auth()` bare IS the id),
+//                      `capabilities` (the grid, `FJS-D151`), and the six
+//                      `FrontierGateGetLevel` grades a caller by — `role`,
+//                      `isAdmin`, `isOwner`, `isSystemAdmin`, `verifiedAt`,
+//                      `activatedAt` (`src/plugins/gate.js`). A standing is not
+//                      a column: an app whose ladder tops out at `isAdmin` has
+//                      no such field on `User` and auth puts it on the session
+//   the @@auth model   whatever an app puts on the session out of its own
+//                      principal row — `isStaff`, `role`
+//   tenancy { claim }  the one claim the schema itself declares
+//   claims: [...]      a claim resolved PER REQUEST, which is on no row and in
+//                      no schema — a cart token, an impersonation — and is
+//                      therefore the one source that has to be stated
+//
+// The fourth is why this is a client option and not a `.lite` keyword: junction
+// already declares that list (its `principal.snapshot.md` § Claims is generated
+// from the resolver's own `describe()`), so the names come from the one place
+// that has them rather than being restated in a second file that goes stale.
+//
+// It only grades when there IS a set — a schema declaring no `@@auth` and an
+// app passing no `claims` have said nothing to compare against, and inventing a
+// floor there would refuse `auth().isStaff` on every app in the world. That
+// silence is announced once rather than assumed.
+
+const FRAMEWORK_CLAIMS = [
+  'id', 'capabilities',
+  // The standing `FrontierGateGetLevel` reads, in declaration order. Kept here
+  // rather than imported from the plugin because the plugin is optional and
+  // this list is about what a schema may NAME, not about what is installed.
+  'role', 'isAdmin', 'isOwner', 'isSystemAdmin', 'verifiedAt', 'activatedAt',
+]
+
+export function buildClaimSet(schema, declared = null) {
+  const names     = new Map()
+  const authModel = schema?.models?.find(m => (m.attributes ?? []).some(a => a.kind === 'auth')) ?? null
+  const tenantClaim = schema?.tenancy?.claim ?? null
+
+  for (const n of FRAMEWORK_CLAIMS) names.set(n, 'the framework')
+  if (authModel) for (const f of authModel.fields ?? []) names.set(f.name, `@@auth ${authModel.name}`)
+  if (tenantClaim) names.set(tenantClaim, 'tenancy')
+  if (Array.isArray(declared)) for (const n of declared) names.set(n, 'declared')
+
+  return {
+    // Nothing to compare against unless the app said something. `claims: []` is
+    // a statement — the principal carries the framework's two and nothing else —
+    // where absent is silence, so the empty array is deliberately not falsy here.
+    active: !!authModel || Array.isArray(declared),
+    names,
+    has:    (n) => names.has(n),
+    list:   () => [...names].map(([n, src]) => (src === 'the framework' ? n : `${n} (${src})`)).sort(),
+  }
+}
+
+// Every `auth().x` a schema names, for the one-line notice an inactive set owes.
+export function authClaimsUsed(schema) {
+  const used = new Set()
+  const walk = (n) => {
+    if (!n || typeof n !== 'object') return
+    if (n.type === 'auth' && n.field) used.add(n.field)
+    for (const k of ['left', 'right', 'expr', 'cond', 'then', 'else']) if (n[k]) walk(n[k])
+  }
+  for (const model of schema?.models ?? []) {
+    for (const a of model.attributes ?? [])
+      if (a.kind === 'allow' || a.kind === 'deny' || a.kind === 'scope') walk(a.expr)
+    for (const f of model.fields ?? [])
+      for (const a of f.attributes ?? []) if (a.kind === 'fieldAllow') walk(a.expr)
+  }
+  return used
+}
+
 // ─── `in` is checked against the schema, once, at startup ─────────────────────
 //
 // A policy compiles into a WHERE, so a wrong one is an empty screen with a 200
@@ -95,7 +176,7 @@ const ALL_OPS = ['read', 'create', 'update', 'post-update', 'delete']
 // decidable from the schema is therefore decided here, where the answer is a
 // refusal naming the model and the expression, and not on a query nobody has
 // run yet.
-function checkExpr(model, expr, relationMap, what = '@@allow/@@deny') {
+function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = null) {
   const known = (name) => {
     const rel = relationMap?.[model.name]?.[name]
     if (rel) return true
@@ -117,6 +198,18 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny') {
       throw new Error(
         `${model.name}: '${n.name}' is not a field on this model — in ${what} ` +
         `'${policyExprToString(expr)}'. Fields: ${cols.join(', ')}`)
+    }
+    // The same sentence about the OTHER side of the comparison. An absent claim
+    // is `NULL` to the SQL compiler and `null` to the evaluator, and the two
+    // read that opposite ways, so a misspelling is silently enforced backwards
+    // depending on which verb asked (`FJS-666`).
+    if (n.type === 'auth' && n.field && claims?.active && !claims.has(n.field)) {
+      throw new Error(
+        `${model.name}: '${n.field}' is not a claim the principal carries — in ${what} ` +
+        `'${policyExprToString(expr)}'.\n` +
+        `  Claims: ${claims.list().join(', ')}\n` +
+        `  A claim resolved per request is declared with ` +
+        `createClient({ claims: ['${n.field}'] }).`)
     }
     if (n.type !== 'compare') return
     walk(n.left); walk(n.right)
@@ -323,6 +416,34 @@ export function dependsOnClock(node) {
   return ['left', 'right', 'expr', 'cond', 'then', 'else'].some(k => dependsOnClock(node[k]))
 }
 
+// Does this expression read the ROW, or only the caller?
+//
+// A field `@allow('read', auth().isAdmin)` has the same answer for every row in
+// a result set, and it was being asked once per FIELD per ROW through the
+// interpreter (`FJS-619`). Answering it once needs to know which predicates are
+// row-independent, which is a property of the AST alone.
+//
+// **An ALLOW-LIST, and that is the whole of its safety.** A node kind not named
+// here is assumed to read the row, so a kind the language grows later is
+// evaluated per row — slower, and correct — where a deny-list would silently
+// stop stripping a column the day it was added. `field` reads a column and
+// `check` walks a relation FROM the row, so neither is listed.
+//
+// `now` is deliberately absent though it reads no row: a clock-dependent
+// predicate hoisted across a result set would answer one instant for rows read
+// at another, and the case is rare enough that paying per row for it is not
+// worth a second staleness rule (`dependsOnClock` exists for the same reason
+// one table along).
+const ROW_FREE_NODES = new Set(['literal', 'auth', 'and', 'or', 'not', 'compare', 'ternary', 'list'])
+
+export function referencesRow(node) {
+  if (node == null || typeof node !== 'object') return false
+  if (Array.isArray(node)) return node.some(referencesRow)
+  if (!ROW_FREE_NODES.has(node.type)) return true
+  for (const k in node) if (referencesRow(node[k])) return true
+  return false
+}
+
 // ─── @@scope ──────────────────────────────────────────────────────────────────
 // { modelName: { scopeName: expr } }. A name declared twice on one model is a
 // schema error rather than a last-one-wins, because the two would be
@@ -348,7 +469,7 @@ export function compileStatic(node, modelName, schema, relationMap = new Map()) 
   return { sql, params }
 }
 
-export function buildScopeMap(schema, relationMap) {
+export function buildScopeMap(schema, relationMap, claims = null) {
   const map = {}
   for (const model of schema.models) {
     for (const attr of model.attributes) {
@@ -362,7 +483,7 @@ export function buildScopeMap(schema, relationMap) {
       if (attr.raw) { map[model.name][attr.name] = { __raw: attr.raw, mintedBy: attr.mintedBy }; continue }
       // Same startup check @@allow gets: a scope compiles into a WHERE, so a
       // wrong one is an empty screen with a 200.
-      checkExpr(model, attr.expr, relationMap, `@@scope(${attr.name}, …)`)
+      checkExpr(model, attr.expr, relationMap, `@@scope(${attr.name}, …)`, claims)
       map[model.name][attr.name] = attr.expr
     }
   }
@@ -396,13 +517,135 @@ export function compileScope(modelName, name, ctx, scopeMap, policyMap, schema, 
   return { _litestoneRaw: true, sql, params }
 }
 
-export function buildPolicyMap(schema, relationMap) {
+// ─── What a check() delegation reaches, decided once ─────────────────────────
+//
+// `buildFilterSql` runs per query, so the two things wrong with a delegation
+// cannot be said there: a warning on the compiler's path is a warning on every
+// call, and by then the fix is a schema edit nobody is in a position to make.
+// Both are decided by the schema alone, so they are answerable at startup beside
+// every other predicate-that-can-never-mean-what-it-says (FJS-636).
+//
+// **A cycle** — two models each delegating to the other — re-enters a model
+// already on the path and compiles to '0', which is a whitelist that admits
+// nothing. Failing closed is the right direction and it is not an answer: the
+// author wrote *readable if its parent is* and got *only rows with no parent*,
+// which is data-dependent and therefore looks like a filter working.
+//
+// **A target with no rules for the delegated operation** compiles to '1' — no
+// restriction — which is correct where the target is genuinely open and is a
+// hole where its protection lives somewhere a compiled predicate cannot see it.
+// A `@@gate` is enforced in the plugin tier and a capability grid beside it, so
+// `check(vault)` at a `@@gate("7")` vault carries none of that 7 onto the child.
+//
+// Facts only. The two callers word their own sentence, because a refusal and a
+// warning do not say the same thing about the same shape.
+export function delegationProblems(policyMap, schema, relationMap) {
+  const cycles   = []
+  const gateOnly = []
+  const seenCycle = new Set()
+  const seenGate  = new Set()
+
+  const checksIn = (node, out = []) => {
+    if (!node || typeof node !== 'object') return out
+    if (Array.isArray(node)) { for (const n of node) checksIn(n, out); return out }
+    if (node.type === 'check') { out.push(node); return out }
+    for (const v of Object.values(node)) checksIn(v, out)
+    return out
+  }
+
+  const protectionOf = (name) => {
+    const m = schema.models.find(x => x.name === name)
+    const gate = m?.attributes?.some(a => a.kind === 'gate')
+    const caps = m?.attributes?.some(a => a.kind === 'capabilities')
+    return gate && caps ? 'a @@gate and a capability grid' : gate ? 'a @@gate' : caps ? 'a capability grid' : null
+  }
+
+  // The path bounds depth at one entry per model, so this terminates; the budget
+  // is a backstop against a schema whose branching is pathological, and running
+  // out means reporting nothing rather than half of it — the runtime guard still
+  // fails closed, so an unreported cycle is the behaviour that shipped.
+  let budget = 50_000
+
+  const walk = (model, op, path, edges) => {
+    if (budget-- <= 0) return
+    const bucket = policyMap[model]?.[op]
+    if (!bucket) return
+
+    for (const rule of [...bucket.allows, ...bucket.denies]) {
+      for (const node of checksIn(rule.expr)) {
+        const rel = relationMap[model]?.[node.field]
+        // A check() over anything but a to-one relation is refused by checkExpr.
+        if (!rel || rel.kind !== 'belongsTo') continue
+
+        const target   = rel.targetModel
+        const targetOp = node.operation ?? op
+        const edge     = { model, op, field: node.field, target, targetOp }
+
+        // The runtime guard tests the MODEL and not the (model, op) pair, so a
+        // re-entry under a different operation is the same '0'. Detect it the
+        // way it is enforced, or the sentence describes a cycle the compiler
+        // does not take.
+        if (path.has(target)) {
+          // Keyed by the loop's MEMBERS, so the same circle reached from three
+          // different starting models is reported once.
+          const members = [...path].slice([...path].indexOf(target))
+          const key = [...new Set(members)].sort().join('|')
+          if (!seenCycle.has(key)) { seenCycle.add(key); cycles.push({ edges: [...edges, edge], back: target }) }
+          continue
+        }
+
+        if (!policyMap[target]?.[targetOp]) {
+          const by = protectionOf(target)
+          if (by) {
+            const key = `${model}|${op}|${node.field}|${targetOp}`
+            if (!seenGate.has(key)) { seenGate.add(key); gateOnly.push({ ...edge, protectedBy: by }) }
+          }
+          continue
+        }
+
+        walk(target, targetOp, new Set([...path, target]), [...edges, edge])
+      }
+    }
+  }
+
+  for (const model of Object.keys(policyMap))
+    for (const op of Object.keys(policyMap[model]))
+      walk(model, op, new Set([model]), [])
+
+  return { cycles, gateOnly }
+}
+
+// ─── A field policy is checked by the same walk ──────────────────────────────
+//
+// `@@allow` and `@@scope` refuse a name that is not a column; a FIELD `@allow`
+// was checked by nothing, and it is the same expression language compiled by
+// the same compiler (`FJS-D129`). A typo'd column there does not throw and does
+// not leak — it strips the column from every row, which reads as the policy
+// working strictly, so the schema, the build and every test on the refused side
+// agree with the mistake (`FJS-667`).
+//
+// Separate from `buildFieldPolicyMap`, which is in `schema-maps.js` and is a
+// pure schema→shape function with no relation map and no claim set. This is the
+// judgement, and it belongs beside the other two.
+export function checkFieldPolicies(schema, relationMap, claims = null) {
+  for (const model of schema.models ?? []) {
+    for (const field of model.fields ?? []) {
+      for (const attr of field.attributes ?? []) {
+        if (attr.kind !== 'fieldAllow') continue
+        const ops = (attr.operations ?? []).map(o => `'${o}'`).join(', ')
+        checkExpr(model, attr.expr, relationMap, `@allow(${ops}, …) on ${model.name}.${field.name}`, claims)
+      }
+    }
+  }
+}
+
+export function buildPolicyMap(schema, relationMap, claims = null) {
   const map = {}
 
   for (const model of schema.models) {
     for (const attr of model.attributes) {
       if (attr.kind !== 'allow' && attr.kind !== 'deny') continue
-      checkExpr(model, attr.expr, relationMap)
+      checkExpr(model, attr.expr, relationMap, '@@allow/@@deny', claims)
       if (!map[model.name]) map[model.name] = {}
       const bucket = map[model.name]
 
@@ -557,13 +800,13 @@ export function policyVerdict(modelName, row, ctx, policyMap, relationMap, op) {
 
   // Deny first — an explicit deny wins over every allow beside it.
   for (const { expr, message } of denies) {
-    if (evalJs(expr, ctx, row, modelName, policyMap, relationMap, op))
+    if (denyFires(evalJs(expr, ctx, row, modelName, policyMap, relationMap, op)))
       return { ok: false, message, rule: 'deny' }
   }
 
   // An allow list is a whitelist ONLY once it is non-empty. A model with denies
   // and no allows admits everything the denies did not name.
-  if (allows.length && !allows.some(({ expr }) => evalJs(expr, ctx, row, modelName, policyMap, relationMap, op)))
+  if (allows.length && !allows.some(({ expr }) => allowHolds(evalJs(expr, ctx, row, modelName, policyMap, relationMap, op))))
     return { ok: false, message: allows.find(({ message }) => message)?.message, rule: 'allow' }
 
   if (ctx.policyDebug === 'verbose') plog(ctx, op, modelName, '[32mallowed[0m')
@@ -595,7 +838,17 @@ export function checkPostUpdatePolicy(modelName, row, ctx, policyMap, schema, re
 // ─── SQL compiler ─────────────────────────────────────────────────────────────
 
 function buildFilterSql(modelName, op, params, ctx, policyMap, schema, relationMap, visited) {
-  if (visited.has(modelName)) return '1'  // cycle guard — open if recursive
+  // Cycle guard. Two models each holding `@@allow('read', check(other))` are
+  // deny-by-default whitelists on both sides, and re-entry compiling to '1' made
+  // that pair readable by a stranger — measured. There is no sound answer to a
+  // cycle, so it takes the direction every other refusal here takes; a chain
+  // (A → B → C) never reaches this line.
+  //
+  // `delegationProblems` refuses the same shape at startup, so nothing reaching
+  // here got past createClient — this is the floor under a policyMap assembled
+  // some other way, and it is what makes the guard's direction (deny) the one
+  // the refusal describes.
+  if (visited.has(modelName)) return '0'
   const next = new Set([...visited, modelName])
 
   const rules = rulesFor(policyMap, modelName, op, ctx)
@@ -914,13 +1167,46 @@ function evalCheck(node, ctx, data, modelName, policyMap, relationMap, op) {
 // Evaluates a policy expression against a data/row object in JavaScript.
 // Used when there's no WHERE clause available (create) or for post-update checks.
 
+// ─── SQL's three values, in the interpreter that has only two ────────────────
+//
+// The SQL half and the JS half are one policy language and they disagreed about
+// ONE value: absent. `NULL = 1` is NULL, `NOT (NULL)` is NULL, and a WHERE that
+// is NULL keeps no row — so a deny naming a claim the caller does not carry
+// DENIES on read, update and delete. In JS the same expression was `null ===
+// true`, which is `false`, so the deny did not fire and create allowed it
+// (`FJS-668`). Same rule, same caller, opposite answers, decided by which verb
+// asked — which is `FJS-195`'s shape and is why the two halves are one language.
+//
+// So `null` propagates here the way it does in SQLite, and the verdict asks for
+// TRUE rather than for truthiness. It is not the typo case — that is refused at
+// startup now — it is the ordinary one: an anonymous caller, or a claim a
+// resolver only sets on some requests.
+//
+// `truth()` and not `Boolean()` at the edges: the language admits a predicate
+// that is not a boolean (`@@allow('read', auth())`), and SQLite coerces those
+// the same way, so only NULL is special.
+const truth = (v) => (v === null || v === undefined ? null : Boolean(v))
+
+const and3 = (l, r) => (l === false || r === false ? false : l === null || r === null ? null : true)
+const or3  = (l, r) => (l === true  || r === true  ? true  : l === null || r === null ? null : false)
+const not3 = (v)    => (v === null ? null : !v)
+
+// Does this rule fire? An ALLOW is a whitelist and only TRUE admits; a DENY
+// excludes on TRUE and on UNKNOWN alike, because `AND NOT (NULL)` keeps no row.
+export const allowHolds = (v) => truth(v) === true
+export const denyFires  = (v) => truth(v) !== false
+
 export function evalJs(node, ctx, data, modelName, policyMap, relationMap, op = null) {
   const ev = n => evalJs(n, ctx, data, modelName, policyMap, relationMap, op)
 
   switch (node.type) {
-    case 'or':      return ev(node.left) || ev(node.right)
-    case 'and':     return ev(node.left) && ev(node.right)
-    case 'not':     return !ev(node.expr)
+    // Both sides are evaluated: `FALSE AND NULL` is FALSE and `TRUE OR NULL` is
+    // TRUE, so a short circuit would be right, but `NULL AND FALSE` is FALSE and
+    // `NULL OR TRUE` is TRUE, so it would be wrong the other way round. The
+    // language has no side effects, which is what makes evaluating both free.
+    case 'or':      return or3(truth(ev(node.left)), truth(ev(node.right)))
+    case 'and':     return and3(truth(ev(node.left)), truth(ev(node.right)))
+    case 'not':     return not3(truth(ev(node.expr)))
 
     case 'literal': return node.value
 
@@ -963,19 +1249,28 @@ export function evalJs(node, ctx, data, modelName, policyMap, relationMap, op = 
           ? (data?.[relationMap[modelName]?.[left.name]?.kind === 'belongsTo'
               ? relationMap[modelName][left.name].foreignKey : left.name] ?? null)
           : ev(left)
+        // `NULL IN (…)` is NULL in SQL, never false — the value is unknown, so
+        // whether it is in the list is unknown.
+        if (needle === null || needle === undefined) return null
         return listOf(right).includes(needle)
       }
 
-      // auth() == null  /  auth() != null
-      if (left.type === 'auth' && right.type === 'literal' && right.value === null) {
-        const authVal = left.field ? (ctx.auth?.[left.field] ?? null) : ctx.auth
-        return op === '==' ? authVal === null || authVal === undefined
-                           : authVal !== null && authVal !== undefined
-      }
-      if (right.type === 'auth' && left.type === 'literal' && left.value === null) {
-        const authVal = right.field ? (ctx.auth?.[right.field] ?? null) : ctx.auth
-        return op === '==' ? authVal === null || authVal === undefined
-                           : authVal !== null && authVal !== undefined
+      // `x == null` is how this language spells `IS NULL`, and it is the one
+      // comparison that answers a BOOLEAN over an absent value rather than
+      // UNKNOWN — in SQL too, which is why SQL has a second spelling for it.
+      // Without this branch the presence test propagates its own subject and
+      // there is no way to write "the caller carries no such claim" at all.
+      // It reads a FIELD as well as a claim: `ownerId == null` compiles to
+      // `ownerId IS NULL`, and the two halves have to agree about that.
+      const nullTest = (probe, other) =>
+        other.type === 'literal' && other.value === null ? probe : null
+      const probe = nullTest(left, right) ?? nullTest(right, left)
+      if (probe) {
+        const v = probe.type === 'auth'
+          ? (probe.field ? (ctx.auth?.[probe.field] ?? null) : ctx.auth)
+          : ev(probe)
+        const absent = v === null || v === undefined
+        return op === '==' ? absent : !absent
       }
 
       // field == auth() — check FK in data
@@ -997,12 +1292,25 @@ export function evalJs(node, ctx, data, modelName, policyMap, relationMap, op = 
       return compare(ev(left), op, ev(right))
     }
 
+    // The SQL compiler throws on a node it does not know; this answered `true`
+    // and called it conservative. It is the opposite: the two halves compile ONE
+    // language, and the ops they cover are disjoint — read/update/delete go to
+    // SQL, create and post-update come here — so a node added to the grammar and
+    // to the SQL half alone does not fail, it makes every CREATE policy holding
+    // it a silent no-op. That is the shape `check()` already cost once (FJS-282,
+    // a cross-tenant create permitted in silence) and the floor it was fixed on
+    // top of stayed. Refuse, so the gap arrives as the same error from either
+    // half (`FJS-635`).
     default:
-      return true   // unknown node — conservatively allow
+      throw new Error(`Unknown policy AST node type: ${node.type}`)
   }
 }
 
 function compare(L, op, R) {
+  // Every comparison with an absent operand is UNKNOWN, `IS NULL` included —
+  // which is why `auth().x == null` has its own branch above rather than
+  // reaching here: that one is a presence test and this one is a comparison.
+  if (L === null || L === undefined || R === null || R === undefined) return null
   switch (op) {
     case '==': return L === R
     case '!=': return L !== R
@@ -1010,6 +1318,6 @@ function compare(L, op, R) {
     case '>':  return L > R
     case '<=': return L <= R
     case '>=': return L >= R
-    default:   return true
+    default:   throw new Error(`Unknown policy comparison operator: ${op}`)
   }
 }

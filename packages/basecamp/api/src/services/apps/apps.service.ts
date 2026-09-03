@@ -7,6 +7,7 @@
 // Custom methods, addressed the way DECISIONS.md settled — `POST /apps/:id`
 // with `X-Service-Method`, never a path segment:
 //   place · unplace — which machines the app runs on
+//   logs           — what the container is saying, read through the executor
 //
 // The table is `app`, not `service`. The old header here said "table name in
 // DB: service (legacy — kept for migration continuity)"; that name was the
@@ -27,6 +28,7 @@ import { db, findScoped, getScoped, removeScoped, assertSlugFree, deriveSlug, na
 // detail screen received hostnames with no cert_status at all and every one of
 // them rendered as "no certificate" — including the expired ones.
 import { certStatusOf } from '../domains/domains.service.ts'
+import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 
 const WITH_ENV = { environment: true }
@@ -155,6 +157,56 @@ export function createAppsService(app: BasecampApp) {
     // row a caller edits — so the authority check is done here, against the
     // WORKSPACE, and the write goes through asSystem(). The second of the two
     // asSystem() calls in this file's realm; the other is the outpost heartbeat.
+
+    // ─── logs ─────────────────────────────────────────────────────────────
+    // What the container is saying, from a console rather than over ssh.
+    //
+    // The screen this feeds carried a comment saying its logs tab was absent
+    // because *nothing stores or streams a log line* — true of the whole
+    // fleet, not of that screen. `fli deploy:logs` answers the same question
+    // for one app an operator is already sitting next to; this answers it for
+    // a fleet somebody is looking after.
+    //
+    // A READ that leaves the process, so it goes through the executor like
+    // every other machine call rather than reaching for a Conduit target by
+    // hand — which is what keeps *who carries this out* a question with one
+    // answer (`providers/executor.ts`).
+    //
+    // Scoped read first: `getScoped` proves the caller may see this app before
+    // anything is asked of a machine on their behalf. Nothing is written, so
+    // there is no audit event — the trail records writes, and a log read that
+    // filed one would file one per poll.
+    async logs() {
+      const target = await getScoped('app', 'App')
+      const data   = ($.data ?? {}) as Record<string, unknown>
+
+      const executor = await resolveExecutor(app, target.id)
+      // Not a 500: an app that is placed nowhere has no logs to give and that
+      // is a state the operator can act on, which is what `reason` says.
+      if (!isExecutor(executor))
+        return { running: false, reason: executor.reason, stdout: '', stderr: '', serverId: null }
+
+      const reply = await executor.call('/logs', {
+        app_id: target.id,
+        tail:   data.tail,
+        since:  data.since,
+      }, { timeoutMs: 20_000 })
+
+      // The machine's own words. A generic failure here is how an operator ends
+      // up ssh'ing to the box the console exists to replace.
+      if (reply.error) throw new BadRequest(`Could not read logs: ${reply.error.message}`)
+
+      const out = (reply.data ?? {}) as Record<string, unknown>
+      return {
+        running:  out.running ?? false,
+        serverId: executor.serverId,
+        tail:     out.tail  ?? null,
+        since:    out.since ?? null,
+        stdout:   out.stdout ?? '',
+        stderr:   out.stderr ?? '',
+        ...(out.error ? { reason: out.error } : {}),
+      }
+    },
 
     async place() {
       const data     = $.data as Record<string, unknown>

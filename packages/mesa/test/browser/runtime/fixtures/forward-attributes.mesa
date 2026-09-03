@@ -1,0 +1,30 @@
+<script>
+  // forward-attributes.mesa — a dynamic attribute forwarded through
+  // `{...$attributes}` against the same expression on a plain element.
+  //
+  // The pair is the assertion. `$attributes` used to be a copy taken once at
+  // component init, so the forwarded value froze at whatever it was at mount
+  // while the plain element beside it — and the component's own children, the
+  // same expression again — tracked correctly. A spec that only watched the
+  // text passed throughout.
+  import Forward from './Forward.mesa'
+  import Relay   from './Relay.mesa'
+
+  let rate  = 100
+  let extra = true
+
+  // A spread whose KEYS change, which is the case a merge cannot serve: the
+  // key has to leave the element, not merely go null.
+  $: bag = extra ? { 'data-extra': '1' } : {}
+</script>
+
+<Forward id="fwd" tone="danger" data-kind="rate" data-rate={rate} label={String(rate)} {...bag} />
+
+<!-- The control: the same expression on a plain element, which always worked. -->
+<span id="plain" data-rate={rate}>{rate}</span>
+
+<!-- Two hops — a component forwarding what it was itself forwarded. -->
+<Relay id="relayed" data-rate={rate} />
+
+<button type="button" id="bump" on:click={() => { rate += 1 }}>bump</button>
+<button type="button" id="drop" on:click={() => { extra = false }}>drop</button>

@@ -13,6 +13,7 @@
 import { describe, it, expect } from 'bun:test'
 import { parse } from '../src/core/parser.js'
 import { deriveReleaseSurface, renderReleaseSnapshot, classifyPivot, classifyAccess } from '../src/release.js'
+import { renderJsonSchemaSnapshot } from '../src/tools/jsonschema-snapshot.js'
 
 const surface = (text: string) => {
   const parsed = parse(text)
@@ -681,5 +682,84 @@ describe('@@check in the release surface', () => {
     expect(r.verdict).toBe('contract')
     expect(r.counts.contract).toBe(1)
     expect(r.counts.expand).toBe(1)
+  })
+})
+
+// ─── @system on a transition ─────────────────────────────────────────────────
+//
+// The widest narrowing a state machine can make, and for its whole life it
+// produced no diff in any committed artefact (`FJS-613`). `@system` says the
+// APPLICATION makes the move — from *any caller at the update level, subject to
+// the row policies* to *no caller, ever* — and all three surfaces carried the
+// `@gate(n)` alone, so `cancel: … @system` and `cancel: …` rendered identically.
+//
+// The negative control is the measurement the row was filed on: two schemas
+// differing in that one token. Every assertion below fails against the code as
+// it stood, and the FIRST one is the whole of the defect.
+
+describe('@@transitions — @system reaches the artefacts a reviewer reads', () => {
+  const MOVES = (tok: string) => `
+model Sub {
+  id     Int    @id
+  status SubState @default("trialing")
+  @@gate("4.4.4.5")
+  @@transitions(status, cancel: [trialing, active] -> cancelled${tok})
+}
+
+enum SubState { trialing active cancelled }
+`
+  const OPEN = MOVES(''), SYS = MOVES(' @system')
+
+  it('the release surface holds it, so the snapshot two schemas produce differ', () => {
+    expect(renderReleaseSnapshot(surface(OPEN)))
+      .not.toBe(renderReleaseSnapshot(surface(SYS)))
+    expect(renderReleaseSnapshot(surface(SYS))).toContain('@system')
+  })
+
+  // The third artefact, and the one a SCREEN is derived from: `x-transitions`
+  // carried `system` all along, so a client rendered no button — and the
+  // committed document that exists to make a keyword going away a diff dropped
+  // it at render, which is the one place anybody would have noticed.
+  it('the jsonschema snapshot carries it, because a client renders no button for one', () => {
+    const doc = (text: string) =>
+      renderJsonSchemaSnapshot(parse(text).schema, { command: 'litestone jsonschema' })
+    expect(doc(OPEN)).not.toBe(doc(SYS))
+    expect(doc(SYS)).toContain('`cancel`: trialing|active → cancelled @system')
+  })
+
+  it('gaining it narrows, and it is a contract for the deploy', () => {
+    const r = accessOf(OPEN, SYS)
+    expect(r.verdict).toBe('narrows')
+    expect(about(r, 'status.cancel')!.detail).toContain('no caller reaches it at any level')
+    expect(classifyPivot(surface(OPEN), surface(SYS)).verdict).toBe('contract')
+  })
+
+  it('losing it widens — a move the application owned is handed to a caller', () => {
+    const r = accessOf(SYS, OPEN)
+    expect(r.verdict).toBe('widens')
+    expect(about(r, 'status.cancel')!.detail).toContain('no longer @system')
+    expect(classifyPivot(surface(SYS), surface(OPEN)).verdict).toBe('expand')
+  })
+
+  // The two COMPOSE — `@system @gate(5)` is a move the engine decides on behalf
+  // of a caller senior enough to ask — so folding one into the other loses the
+  // distinction exactly where it is hardest to see. basecamp declares four.
+  it('is not the gate: @system @gate(5) is distinguishable from @gate(5) alone', () => {
+    const gated  = MOVES(' @gate(5)')
+    const both   = MOVES(' @system @gate(5)')
+    expect(renderReleaseSnapshot(surface(gated))).not.toBe(renderReleaseSnapshot(surface(both)))
+
+    const r = accessOf(gated, both)
+    expect(r.verdict).toBe('narrows')
+    // The gate did not move, so nothing but the system flag may be reported.
+    expect(r.findings).toHaveLength(1)
+  })
+
+  // A gate change and a system change on one move are two findings, or the
+  // stronger one hides the weaker: raising the gate while making it @system
+  // reads as an ordinary level bump.
+  it('a gate change beside it is reported separately', () => {
+    const r = accessOf(MOVES(''), MOVES(' @system @gate(5)'))
+    expect(r.counts.narrows).toBe(2)
   })
 })

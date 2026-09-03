@@ -309,6 +309,15 @@ export function introspectToLite(db, { camelCase = true } = {}) {
   for (const [tableName, tableData] of Object.entries(schema).sort(byName)) {
     if (tableName === '__views' || !tableData?.columns) continue
     const { columns, indexes, foreignKeys, strict } = tableData
+    // The key's own column ORDER, which the column list cannot carry: `pk` off
+    // `table_xinfo` is a boolean here, so emitting `@id` per column writes the
+    // key in COLUMN order, and a table keyed `("userId","orgId")` came back as a
+    // schema that builds `("orgId","userId")` with nothing said (`FJS-561`).
+    // A primary key builds an implicit index and an implicit index is
+    // prefix-matched, so that is a different key. `uniques` reads it off
+    // `PRAGMA index_list`, in order.
+    const compositePk = (tableData.uniques ?? [])
+      .find(u => u.origin === 'pk' && u.cols.length > 1)?.cols ?? null
     const lostUnique = []
     const modelName = tableNameToModelName(tableName)
 
@@ -386,7 +395,9 @@ export function introspectToLite(db, { camelCase = true } = {}) {
       const optional    = !col.notnull && !col.pk ? '?' : ''
       const attrs       = []
 
-      if (col.pk)                       attrs.push('@id')
+      // A composite key is declared once at the model level instead — the two
+      // spellings are refused together, and only @@id states the order.
+      if (col.pk && !compositePk)       attrs.push('@id')
       if (!col.notnull && !col.pk)      {} // optional suffix handles it
       const def     = renderDefault(col.default, liteType)
       const defAttr = def.attr
@@ -470,6 +481,8 @@ export function introspectToLite(db, { camelCase = true } = {}) {
     // — same rows answered, a bigger structure — so that is safe, and is what
     // happens when the predicate is one `@@index(where:)` cannot hold.
     const nameOf = c => (camelCase ? toCamelCase(c) : c)
+
+    if (compositePk) modelAttrs.push(`  @@id([${compositePk.map(nameOf).join(', ')}])`)
 
     // Litestone derives an index's name from its COLUMNS, so it can hold one
     // index per column list — and a partial index is precisely what makes two

@@ -259,6 +259,12 @@ async function signIn(who, level) {
 const got = {}
 const t = (label, value) => { got[label] = value }
 
+// The price this run raises the PRO plan to, minted below and read by the
+// assertions at the bottom. Declared here because `expected` is built outside
+// the try block that assigns them.
+let repriceCents = null
+let repriceShown = null
+
 try {
   // 1 ─ signed out
   await goto('/')
@@ -830,6 +836,232 @@ try {
     await waitFor(() => !byText('tbody tr', 'ORD-CDP-1'));
     return true;
   `))
+  // ─── The recurring half ────────────────────────────────────────────────
+  //
+  // Three screens, and each asks something no other screen in this app can.
+  //
+  //   /plans/         a price that is a ROW WITH A LIFETIME, and the only form
+  //                   in this app where a person types money that is not a
+  //                   product price
+  //   /subscriptions/ what a change mid-cycle DOES, and which document it wrote
+  //   /invoices/      a composed read — a header and its lines — on a row that
+  //                   moves from outside every browser
+  //
+  // Still at level 5, deliberately: `PlanVersion` is `@@gate("0.5.5.5")`, so
+  // the level-4 section below would refuse the reprice for a reason that has
+  // nothing to do with the form.
+  await goto('/plans/')
+  t('plans.rows', await evaluate(`return await settled('tbody tr[data-plan]');`))
+
+  // `active` is what retires a plan and it is not a delete: the versions stay,
+  // because every past subscription points at one. A retired plan is therefore
+  // still IN this table and reads differently, which is the assertion.
+  t('plans.retired', await evaluate(`
+    const row = document.querySelector('tbody tr[data-code="LEGACY"]');
+    return { present: !!row, active: row?.querySelector('[data-active]')?.dataset.active ?? null };
+  `))
+
+  // The `@money` crossing at rest: what the ROW holds is a whole number of
+  // minor units and what the CELL says is a formatted amount. Both are read off
+  // one element, so a screen that had silently started rendering cents would
+  // fail here rather than merely looking wrong. Structural rather than a fixed
+  // number, because the section below moves this price every run.
+  t('plans.moneyCell', await evaluate(`
+    const cell = document.querySelector('tbody tr[data-code="PRO"] [data-price]');
+    const shown = cell.textContent.trim();
+    return {
+      integerCents: /^\\d+$/.test(cell.dataset.price),
+      formatted:    /^\\$\\d+\\.\\d\\d$/.test(shown),
+      differ:       shown !== cell.dataset.price,
+    };
+  `))
+
+  // ── The money form ──────────────────────────────────────────────────────
+  //
+  // THE assertion this phase owes. `PlanVersion.price` is `@money(USD)`, so the
+  // column holds cents; the box is in dollars because `web/src/money-control.js`
+  // registers a control off `x-money` on the rule. Without it the box is an
+  // integer spinner, and somebody raising a plan to thirty-one fifty types
+  // 31.50, the form sends 31.5, and the shop charges thirty-one CENTS with
+  // every screen agreeing (`FJS-582`).
+  //
+  // Nothing here rounds, divides or names a currency — that is the point. What
+  // is typed is what a person types; what is checked is what the database
+  // holds; the two are two orders of magnitude apart.
+  //
+  // The amount is MINTED PER RUN. `reprice` opens a new window every time it is
+  // called, so a fixed price would fill the one table whose job is to record
+  // change with rows recording none — and the assertions below would stop being
+  // able to tell this run's window from the last one's (`FJS-530`).
+  repriceCents = 3100 + Math.floor(Math.random() * 89) + 1
+  repriceShown = '$' + (repriceCents / 100).toFixed(2)
+
+  const proId = await (async () => {
+    const r = await (await fetch(`${API}/api/plans?code=PRO`)).json()
+    return r.data[0].id
+  })()
+  await goto(`/plans/${proId}/`)
+
+  // Exactly one window is open — `@@unique([planId], where: effectiveTo == null)`
+  // since `FJS-603`, where the tuple over `effectiveTo` was satisfied by every
+  // open row there is. What this asserts is the SCREEN agreeing with it: the
+  // constraint refuses a second open row and says nothing about what a reprice
+  // renders.
+  t('planDetail.openWindows', await evaluate(`
+    await settled('tbody tr[data-version]');
+    return [...document.querySelectorAll('tbody tr[data-version]')]
+      .filter(r => r.dataset.open === 'true').length;
+  `))
+
+  t('planDetail.repriced', await evaluate(`
+    const box = document.querySelector('form [name="price"]');
+    box.value = '${(repriceCents / 100).toFixed(2)}';
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('#pv-save').click();
+    await waitFor(() => document.querySelector('#pv-current')?.textContent.includes('${repriceShown}'));
+    return document.querySelector('#pv-current').textContent.includes('${repriceShown}');
+  `))
+
+  // What the DATABASE holds, asked from node. A screen that formatted correctly
+  // over a wrong stored value would pass the assertion above on its own.
+  t('planDetail.storedCents', await (async () => {
+    const r = await (await fetch(`${API}/api/plans/${proId}`)).json()
+    return r.currentPrice
+  })())
+
+  // …and repricing moved NOBODY. A subscription names the `PlanVersion` it was
+  // sold at, so the window just opened has no subscribers and an older one
+  // still does. That is the whole of what effective dating buys, and it is
+  // invisible in any shop with one price.
+  t('planDetail.newWindowEmpty', await evaluate(`
+    await waitFor(() => [...document.querySelectorAll('tbody tr[data-version]')]
+      .some(r => r.dataset.open === 'true'
+                 && r.querySelector('[data-price]').dataset.price === '${repriceCents}'));
+    const rows = [...document.querySelectorAll('tbody tr[data-version]')];
+    const open = rows.find(r => r.dataset.open === 'true');
+    return {
+      stillOne:      rows.filter(r => r.dataset.open === 'true').length,
+      openHolders:   Number(open.querySelector('[data-holders]').dataset.holders),
+      closedHolders: rows.filter(r => r.dataset.open !== 'true')
+        .reduce((n, r) => n + Number(r.querySelector('[data-holders]').dataset.holders), 0) > 0,
+    };
+  `))
+
+  // ── A change mid-cycle ──────────────────────────────────────────────────
+  await goto('/subscriptions/')
+  t('subs.rows', await evaluate(`return await settled('tbody tr[data-subscription]') > 0;`))
+
+  // Through `ledger()`, because `Subscription` reads at 1: an anonymous fetch
+  // answers an empty list with a 200, which reads as a shop with no
+  // subscriptions rather than as a caller with no session.
+  const subId = await (async () => {
+    const r = await (await ledger('/subscriptions?reference=SUB-3001')).json()
+    return r.data[0].id
+  })()
+  await goto(`/subscriptions/${subId}/`)
+
+  // The subscriber is on a price the plan no longer sells at — true BECAUSE of
+  // the reprice two sections up, so this is the same fact read from the other
+  // end. It is the one thing a screen can say that a `Plan` row cannot.
+  t('subDetail.priceMoved', await evaluate(`
+    // TWO reads reach this: the version this subscriber was sold at, and the
+    // plan's CURRENT price. Waiting for the sold-at tile is waiting for the
+    // first of them — a page holding the version and not the plan renders no
+    // alert, which is indistinguishable from the two prices agreeing.
+    //
+    // Waiting for the plan too does NOT fix it and makes this hang instead: the
+    // plan read never arrives at all on those runs (FJS-632). The id sd-plan is
+    // on the page for measuring that.
+    await waitFor(() => (document.querySelector('#sd-sold-at')?.textContent ?? '').includes('.'));
+    return {
+      alert:     !!document.querySelector('#sd-price-moved'),
+      notTheNew: !document.querySelector('#sd-sold-at').textContent.includes('${repriceShown}'),
+    };
+  `))
+
+  // One more seat, mid-cycle. An upgrade owes money, so the document is an
+  // INVOICE — and which document that is comes out of the schema rather than
+  // out of a branch: `Invoice.subtotal` is `@gte(0)`, so a negative one cannot
+  // exist and a downgrade has to be a credit note.
+  t('subDetail.changePlan', await evaluate(`
+    // The seat box is seeded from the row by that same second read, so an
+    // increment taken before it lands counts up from an empty string — which
+    // is a DOWNGRADE on a two-seat subscription and writes a credit note
+    // instead of an invoice.
+    await waitFor(() => document.querySelector('#cp-seats')?.value);
+    const before = document.querySelectorAll('tbody tr[data-invoice]').length;
+    // The box is seeded from the row, so *one more seat* is read off the
+    // control rather than off a tile whose markup this drive would then own.
+    const seats  = document.querySelector('#cp-seats');
+    seats.value  = String(Number(seats.value) + 1);
+    seats.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('#cp-submit').click();
+    await waitFor(() => document.querySelectorAll('tbody tr[data-invoice]').length > before);
+    return document.querySelectorAll('tbody tr[data-invoice]').length - before;
+  `))
+
+  // ── The document ────────────────────────────────────────────────────────
+  //
+  // `record(id, { composed: true })`. `invoices.get()` answers the header AND
+  // its lines, and a node holds one shape — so an ordinary record view here
+  // would show the document once and replace it with its header the first time
+  // anything announced this invoice (`FJS-D161`).
+  //
+  // The identity is the assertion, twice: `total = subtotal + tax` is a
+  // `@@check` SQLite holds against a migration, a seed and `asSystem()` alike,
+  // and *the lines sum to the subtotal* is the half no `@@check` can see,
+  // because it reads a child table. A screen showing one and not the other is
+  // exactly how a document stops being checkable.
+  // ── Stopping it, and changing your mind ─────────────────────────────────
+  //
+  // The one set of buttons in this app that `transitions(row, level)` cannot
+  // answer for. All four of this model's declared moves are `@system`, so what
+  // a person presses writes `cancelAtPeriodEnd` — a flag, not a state — and the
+  // assertion that matters is what does NOT happen: the status stays `active`,
+  // because the period has been paid for and ending it today would be the
+  // forfeit the flag exists to prevent.
+  t('subDetail.stopRenewing', await evaluate(`
+    document.querySelector('[data-stop]').click();
+    await waitFor(() => document.querySelector('.popover button.danger'));
+    document.querySelector('.popover button.danger').click();
+    await waitFor(() => document.querySelector('#sd-stopping'));
+    return {
+      said:    !!document.querySelector('#sd-stopping'),
+      ends:    document.querySelector('#sd-renews').textContent.includes('Ends'),
+      status:  document.querySelector('#sd-status').textContent.includes('active'),
+      canUndo: !!document.querySelector('[data-resume]'),
+    };
+  `))
+
+  // And back. Nothing has moved in the machine, so there is nothing to undo —
+  // which is the whole reason this is a column and not a fifth status.
+  t('subDetail.resume', await evaluate(`
+    document.querySelector('[data-resume]').click();
+    await waitFor(() => !document.querySelector('#sd-stopping'));
+    return {
+      gone:     !document.querySelector('#sd-stopping'),
+      renews:   document.querySelector('#sd-renews').textContent.includes('Renews'),
+      canStop:  !!document.querySelector('[data-stop]'),
+    };
+  `))
+
+  const invId = await evaluate(`
+    return Number(document.querySelector('tbody tr[data-invoice]').dataset.invoice);
+  `)
+  await goto(`/invoices/${invId}/`)
+
+  t('invoice.composed', await evaluate(`
+    await waitFor(() => document.querySelector('#id-totals'));
+    const lines = [...document.querySelectorAll('tbody tr[data-line] [data-amount]')]
+      .map(td => Number(td.dataset.amount));
+    const n = (key) => Number(document.querySelector('#id-totals [data-' + key + ']').dataset[key]);
+    return {
+      hasLines:    lines.length > 0,
+      linesSum:    lines.reduce((a, b) => a + b, 0) === n('subtotal'),
+      identity:    n('subtotal') + n('tax') === n('total'),
+    };
+  `))
+
   // Sign back in one level down: `refund` carries @gate(5) and every other move
   // carries none, so this is the assertion that the gate is PER MOVE and not the
   // model's. signOut() navigates to '/', so come back before reading the table —
@@ -892,7 +1124,7 @@ rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }
 const expected = {
   'home.heading':        'Kitchen sink',
   'home.signedOutAlert': true,
-  'nav.links':           ['Home', 'Orders', 'New order', 'Products', 'Customers', 'Basket', 'Settings'],
+  'nav.links':           ['Home', 'Orders', 'New order', 'Products', 'Customers', 'Billing', 'Basket', 'Settings'],
   'nav.current':         'Home',
 
   // TEN, not thirteen: the page size is a preference set on /settings/, and the
@@ -1021,9 +1253,42 @@ const expected = {
     { ref: 'ORD-1002', status: 'paid',    moves: ['ship', 'refund(disabled)', 'cancel'] },
     { ref: 'ORD-1003', status: 'shipped', moves: [] },
   ],
+  // ── The recurring half ──────────────────────────────────────────────────
+  //
+  // Five plans, one of them retired: `active: false` is what takes a plan off
+  // sale, and it is not a delete — the versions stay, because every past
+  // subscription names one.
+  'plans.rows':    5,
+  'plans.retired': { present: true, active: 'false' },
+  // What the row holds against what the cell says. Structural because the run
+  // below moves this number.
+  'plans.moneyCell': { integerCents: true, formatted: true, differ: true },
+
+  'planDetail.openWindows': 1,
+  // Typed in dollars, stored in cents. The two assertions are the same fact
+  // read from the screen and from the database — `storedCents` is filled in at
+  // the bottom of the drive because the amount is minted per run.
+  'planDetail.repriced':    true,
+  'planDetail.storedCents': null,      // ← replaced below with repriceCents
+  // A new window, nobody on it, and somebody still on an older one.
+  'planDetail.newWindowEmpty': { stillOne: 1, openHolders: 0, closedHolders: true },
+
+  'subs.rows': true,
+  'subDetail.priceMoved': { alert: true, notTheNew: true },
+  'subDetail.stopRenewing': { said: true, ends: true, status: true, canUndo: true },
+  'subDetail.resume':       { gone: true, renews: true, canStop: true },
+  // Exactly one document, and it is an invoice: an upgrade owes money.
+  'subDetail.changePlan': 1,
+  'invoice.composed': { hasLines: true, linesSum: true, identity: true },
+
   'signOut.ledgerGoes':      true,
   'consoleErrors':           [],
 }
+
+// The one expectation that cannot be a literal: the price is minted per run so
+// that a second run does not fill the price-history table with windows
+// recording no change (`FJS-530`).
+expected['planDetail.storedCents'] = repriceCents
 
 let failed = 0
 for (const [key, want] of Object.entries(expected)) {

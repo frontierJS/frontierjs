@@ -70,6 +70,8 @@
   "files": [
     "src/",
     "README.md",
+    "AGENTS.md",
+    "catalog.snapshot.md",
     "LICENSE"
   ],
   "publishConfig": {

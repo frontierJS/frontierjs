@@ -282,7 +282,7 @@ title: Basket
   </ul>
 
   <!-- ── The money ─────────────────────────────────────────────────────────
-       Every figure below is rendered and none is computed. `api/src/pricing.ts`
+       Every figure below is rendered and none is computed. `api/src/domain/shop`
        rounds each component once and sums the ROUNDED ones, so the column adds
        up to the figure the card is charged — a property that survives exactly
        as long as nothing here re-derives a line of it. -->
@@ -365,7 +365,7 @@ title: Basket
 
   <!-- ── A code ────────────────────────────────────────────────────────────
        Sends a string, never an amount. The refusal is the shop's own sentence,
-       written once in `api/src/pricing.ts` and used by BOTH this box and the
+       written once in `api/src/domain/shop` and used by BOTH this box and the
        checkout — so a code that expires between the two says the same thing in
        both places. -->
   <div class="card stack">

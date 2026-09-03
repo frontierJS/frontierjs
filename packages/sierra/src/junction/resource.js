@@ -372,6 +372,12 @@ const WEAK_LABEL = new Set(['scan', 'fallback'])
  *
  * With no schema resolved there are no rules, so all three are inert — the
  * "no schema found" warning above is the one that matters, not these.
+ *
+ * **`model: null`** turns that warning off, and it is a statement rather than a
+ * mute: this service has no model. A resource over a status read, a
+ * cross-tenant tier or a projection built from several tables has nothing in
+ * the schema to resolve, and saying so is what keeps the warning meaningful
+ * for the resource that is merely misspelt.
  */
 export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   let serviceName, model, optionsQuery, detailQuery, initialHooks, schema, idField, opts
@@ -418,6 +424,15 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   const askedForPipeline =
     opts.validate === true || opts.blankToNull === true || opts.coerce === true
 
+  // `model: null` is a service DECLARING that it has no model — a status read
+  // over configuration, a tier that answers across tenants, a projection
+  // assembled from several tables. It is not the same as a model the rules
+  // failed to find, which is what the warning below exists for, and without a
+  // way to say it every such resource warns on every boot forever: the app
+  // that has three of them teaches everyone to read past the one warning that
+  // means something.
+  const modelless = opts.model === null
+
   // No schema passed — take it from the registry, which Sierra's build fills
   // from db/schema.lite. This is why a resource file names a model and nothing
   // else: hand-writing the field shape here duplicated the .lite file and was
@@ -446,7 +461,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       model  = resolvedName
     }
 
-    if (!schema && hasSchemas()) {
+    if (!schema && hasSchemas() && !modelless) {
       const known   = Object.keys(allSchemas())
       const guess   = suggestModel(model) ?? suggestModel(serviceName)
       const example = guess ?? known[0] ?? 'ModelName'

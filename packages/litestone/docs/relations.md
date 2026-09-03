@@ -173,6 +173,10 @@ const user = await db.user.create({
   }
 })
 
+// `select: false` is honoured and still returns null, but it does NOT skip the
+// RETURNING when there are children: a hasMany create needs the parent's id, so
+// the row is fetched internally and simply not handed back (`FJS-615`).
+
 // update: connect / disconnect on manyToMany
 await db.post.update({
   where: { id: 1 },

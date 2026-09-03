@@ -28,7 +28,12 @@ export abstract class BaseTransport {
 
   // ─── Helpers available to all transports ──────────────────
 
-  protected ok<T>(data: T, status?: number, duration_ms = 0): ConduitResult<T> {
+  protected ok<T>(
+    data: T,
+    status?: number,
+    duration_ms = 0,
+    headers?: Record<string, string>,
+  ): ConduitResult<T> {
     return {
       data,
       error: null,
@@ -36,7 +41,8 @@ export abstract class BaseTransport {
         protocol:    this.protocol,
         target:      this.descriptor.id,
         status,
-        duration_ms
+        duration_ms,
+        ...(headers ? { headers } : {}),
       }
     }
   }
@@ -44,7 +50,10 @@ export abstract class BaseTransport {
   protected fail(
     kind: ConduitError['kind'],
     message: string,
-    opts: Partial<ConduitError> = {}
+    opts: Partial<ConduitError> = {},
+    // A failure carries the response's headers too where there was a response:
+    // `Retry-After` on a 429 and `Link` on a partial page are both read off one.
+    meta: { status?: number; headers?: Record<string, string> } = {},
   ): ConduitResult<never> {
     return {
       data: null,
@@ -54,14 +63,24 @@ export abstract class BaseTransport {
         protocol:  this.protocol,
         message,
         retryable: opts.retryable ?? false,
-        raw:       opts.raw
+        raw:       opts.raw,
+        ...(opts.retry_after_ms !== undefined ? { retry_after_ms: opts.retry_after_ms } : {}),
       },
       meta: {
         protocol:    this.protocol,
         target:      this.descriptor.id,
-        duration_ms: 0
+        duration_ms: 0,
+        ...(meta.status  !== undefined ? { status:  meta.status }  : {}),
+        ...(meta.headers !== undefined ? { headers: meta.headers } : {}),
       }
     }
+  }
+
+  /** A response's headers as a plain lowercased object. */
+  protected readHeaders(res: { headers: Headers }): Record<string, string> {
+    const out: Record<string, string> = {}
+    res.headers.forEach((v, k) => { out[k.toLowerCase()] = v })
+    return out
   }
 
   protected timer() {
@@ -76,11 +95,17 @@ export abstract class BaseTransport {
   protected authContext(req: {
     method?: string
     path?:   string
-    body?:   string
-  }): Required<{ method: string; path: string }> & { body: string } {
+    query?:  string
+    body?:   string | Uint8Array
+  }): Required<{ method: string; path: string; query: string }> & { body: string | Uint8Array } {
     return {
       method: (req.method ?? 'GET').toUpperCase(),
       path:   req.path && req.path !== '' ? req.path : '/',
+      // The search string as it goes on the wire. Empty is a value here, not an
+      // omission: signed as an empty line so a request with no parameters and
+      // one with parameters cannot produce the same canonical string
+      // (`FJS-678`).
+      query:  req.query ?? '',
       body:   req.body ?? '',
     }
   }
@@ -93,10 +118,43 @@ export abstract class BaseTransport {
   // misconfigured target fails closed instead of sending unauthenticated.
   //
   // Async because Web Crypto API (crypto.subtle) is promise-based.
+  /**
+   * Merge header sources so that a later one really does replace an earlier one.
+   *
+   * A plain object spread cannot do this. Object keys are case-SENSITIVE and HTTP
+   * header names are case-INSENSITIVE, so `{...{authorization: caller}, ...{Authorization: ours}}`
+   * keeps both — and `fetch` then joins them with a comma. Measured before this
+   * existed: a caller sending a lowercase `authorization` produced
+   * `Bearer FORGED, Bearer REAL-SECRET` on the wire, which a strict server refuses
+   * and a lenient one reads first-value-wins. Either way the target's credential
+   * stopped protecting the request, which is the exact substitution the call site
+   * says it prevents (`FJS-656`).
+   *
+   * Keys are lowercased, which is what HTTP/2 requires on the wire anyway.
+   */
+  protected mergeHeaders(
+    ...sources: Array<Record<string, string> | undefined>
+  ): Record<string, string> {
+    const out: Record<string, string> = {}
+    for (const source of sources) {
+      if (!source) continue
+      for (const [k, v] of Object.entries(source)) {
+        if (v === undefined || v === null) continue
+        out[k.toLowerCase()] = v
+      }
+    }
+    return out
+  }
+
   protected async buildAuthHeaders(ctx: {
     method?: string
     path?:   string
-    body?:   string
+    /** The raw search string, `?a=1&b=2` — signed since `FJS-678`. */
+    query?:  string
+    // A string for json/form, the raw bytes for binary. `sha256Hex` takes
+    // either — stringifying bytes first would sign something never sent, and
+    // the far side would compute a different digest.
+    body?:   string | Uint8Array
   } = {}): Promise<Record<string, string>> {
     const auth = this.descriptor.auth
 
@@ -108,7 +166,7 @@ export abstract class BaseTransport {
         return { [auth.header]: await this.secret(auth.ref) }
 
       case 'hmac': {
-        const { method, path, body } = this.authContext(ctx)
+        const { method, path, query, body } = this.authContext(ctx)
 
         // The canonical string, the headers and their names all come from
         // `@frontierjs/toolbelt/signature`, which is also what the receiving
@@ -124,8 +182,9 @@ export abstract class BaseTransport {
           secret:    await this.secret(auth.ref),
           method:    method ?? 'GET',
           path:      path ?? '/',
+          query,
           body:      body ?? '',
-          prefix:    auth.header_prefix ?? 'X-Hub',
+          prefix:    auth.header_prefix ?? 'X-Fjs',
           timestamp: Math.floor(Date.now() / 1000),
           nonce:     crypto.randomUUID(),
         })

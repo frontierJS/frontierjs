@@ -96,6 +96,7 @@ try {
 const { sys } = await import('../../api/src/core/db.ts')
 
 const activeProducts = await sys.product.findMany({ where: { active: true }, limit: 500 })
+const activePlans    = await sys.plan.findMany({ where: { active: true }, limit: 50 })
 
 // ─── the server ───────────────────────────────────────────────────────────
 // Sierra's own, which is what `bun run serve:site` and the container run — so
@@ -133,6 +134,11 @@ const other      = activeProducts.find(p => p.slug !== sample.slug)
 const samplePath = join(DIST, 'products', sample.slug, 'index.html')
 const sampleHTML = readFileSync(samplePath, 'utf8')
 const otherHTML  = readFileSync(join(DIST, 'products', other.slug, 'index.html'), 'utf8')
+// The price list as it was BUILT, kept beside the two product pages for the
+// same reason they are: what the file says is half of every stale-price
+// assertion below, and it cannot be read off the page once the island has
+// corrected it.
+const pricingHTML = readFileSync(join(DIST, 'pricing', 'index.html'), 'utf8')
 
 const titleOf = (html) => (html.match(/<title>([^<]*)<\/title>/) ?? [])[1] ?? null
 const descOf  = (html) => (html.match(/<meta name="description" content="([^"]*)">/) ?? [])[1] ?? null
@@ -303,6 +309,17 @@ const victim = (await sys.productVariant.findMany({ where: { productId: sample.i
 const originalPrice = victim.price
 let priceMoved = false
 
+// The plan the pricing page's stale-price half moves. A different table, a
+// different mechanism and a different failure: a subscription price moves once
+// a year rather than with a sale, so a stale one stays completely plausible for
+// months.
+const victimPlan = await sys.plan.findFirst({ where: { code: 'STARTER' } })
+const victimWindow = await sys.planVersion.findFirst({
+  where: { planId: victimPlan.id, effectiveTo: null },
+})
+const originalPlanPrice = victimWindow.price
+let planPriceMoved = false
+
 let failed = 0
 try {
   // ── the product page, as built ───────────────────────────────────────────
@@ -371,6 +388,79 @@ try {
   t('stale.saidSo', await evaluate(`
     await waitFor(() => document.getElementById('live-prices-moved'));
     return Number(document.getElementById('live-prices-moved').textContent.trim());
+  `))
+
+  // ── the price list, and the same argument one table along ────────────────
+  //
+  // Everything above is about a PRODUCT price. This is a plan's, and three
+  // things about it are different enough to be worth their own section.
+  //
+  //   The number is DERIVED. `Plan.currentPrice` is `@from(PlanVersion, max:
+  //   price, where: "effectiveTo IS NULL")`, so what the page bakes is the open
+  //   window's price read as a subquery — not a column anybody wrote.
+  //
+  //   Moving it is not an UPDATE. `PlanVersion.price` is `@immutable`, which
+  //   `asSystem()` does not drop (`FJS-D162`), so this drive cannot edit a
+  //   price even with the system client: it closes the open window and opens
+  //   the next one, which is what `plans.reprice` does and the only thing that
+  //   can move a plan's price at all.
+  //
+  //   The page must not offer what the shop stopped selling. `active: false`
+  //   retires a plan without deleting the versions past subscriptions name.
+  await cmd('Page.navigate', { url: `${ORIGIN}/pricing/` })
+  await evaluate(HARNESS)
+
+  t('pricing.retiredAbsent', {
+    inFile:   !pricingHTML.includes('data-plan="LEGACY"'),
+    inTheDb:  !!(await sys.plan.findFirst({ where: { code: 'LEGACY' } })),
+  })
+
+  // Baked, and counted against the database rather than against a number here.
+  t('pricing.onePerActivePlan', {
+    emitted: (pricingHTML.match(/data-plan="/g) ?? []).length,
+    active:  (await sys.plan.findMany({ where: { active: true }, limit: 50 })).length,
+  })
+
+  t('pricing.agreed', await evaluate(`
+    await waitFor(() => document.getElementById('live-plans-state'));
+    const cards = [...document.querySelectorAll('[data-plan] .price')];
+    await waitFor(() => cards.every(c => c.dataset.live !== undefined));
+    return {
+      cards:   cards.length,
+      checked: cards.every(c => c.dataset.live !== undefined),
+      moved:   cards.filter(c => c.classList.contains('price-moved')).length,
+    };
+  `))
+
+  // …and now the shop raises one, the way the shop actually raises one.
+  const at = new Date().toISOString()
+  const newPlanPrice = originalPlanPrice + toMinor(3, 'USD')
+  await sys.planVersion.update({ where: { id: victimWindow.id }, data: { effectiveTo: at } })
+  await sys.planVersion.create({
+    data: { planId: victimPlan.id, price: newPlanPrice, effectiveFrom: at },
+  })
+  planPriceMoved = true
+
+  await cmd('Page.navigate', { url: `${ORIGIN}/pricing/?stale` })
+  await evaluate(HARNESS)
+
+  t('pricing.fileStillSaysOld', pricingHTML.includes(`data-baked="${originalPlanPrice}"`))
+  t('pricing.corrected', await evaluate(`
+    const card = document.querySelector('[data-plan="${victimPlan.code}"] .price');
+    await waitFor(() => card.dataset.live !== undefined);
+    return {
+      baked:  Number(card.dataset.baked),
+      live:   Number(card.dataset.live),
+      // The interval note is a child the page rendered, and the island puts it
+      // back rather than replacing the whole cell — a correction that ate
+      // "a month" would be a different kind of wrong.
+      keptTheNote: /a month/.test(card.textContent),
+      marked: card.classList.contains('price-moved'),
+    };
+  `))
+  t('pricing.saidSo', await evaluate(`
+    await waitFor(() => document.getElementById('live-plans-moved'));
+    return Number(document.getElementById('live-plans-moved').textContent.trim());
   `))
 
   // ── the catalogue, and its two islands ───────────────────────────────────
@@ -514,6 +604,17 @@ try {
     try { await sys.productVariant.update({ where: { id: victim.id }, data: { price: originalPrice } }) }
     catch (e) { console.error(`\n!! could not restore ${victim.sku} to ${originalPrice}: ${e.message}`) }
   }
+  // The plan's price goes back the only way it can: the window this drive
+  // opened is destroyed and the one it closed is opened again. There is no
+  // update that could put the price back — it is `@immutable`.
+  if (planPriceMoved) {
+    try {
+      await sys.planVersion.deleteMany({
+        where: { planId: victimPlan.id, price: originalPlanPrice + toMinor(3, 'USD') },
+      })
+      await sys.planVersion.update({ where: { id: victimWindow.id }, data: { effectiveTo: null } })
+    } catch (e) { console.error(`\n!! could not restore ${victimPlan.code}'s price window: ${e.message}`) }
+  }
   chrome.kill()
   await server.close()
   try { rmSync(profile, { recursive: true, force: true }) } catch {}
@@ -565,6 +666,22 @@ const expected = {
     marked: true,
   },
   'stale.saidSo':          1,
+
+  // ── the price list ──────────────────────────────────────────────────────
+  // A retired plan is in the DATABASE and not on the page: `active: false`
+  // takes it off sale without deleting the versions past subscriptions name.
+  'pricing.retiredAbsent':     { inFile: true, inTheDb: true },
+  'pricing.onePerActivePlan':  { emitted: activePlans.length, active: activePlans.length },
+  // Every card checked and none of them moved — the build is seconds old.
+  'pricing.agreed':            { cards: activePlans.length, checked: true, moved: 0 },
+  'pricing.fileStillSaysOld':  true,
+  'pricing.corrected':         {
+    baked:       originalPlanPrice,
+    live:        originalPlanPrice + toMinor(3, 'USD'),
+    keptTheNote: true,
+    marked:      true,
+  },
+  'pricing.saidSo':            1,
 
   'catalog.filter':        { count: '2 of 12 products', slugs: ['junction-camp-mug', 'litestone-camp-mug'] },
   'catalog.linksResolve':  { links: 2, allOk: true },

@@ -26,10 +26,20 @@
  *
  *   method   a captured signature cannot be replayed as a different verb
  *   path     …nor against a different endpoint on the same host
+ *   query    …nor against the same endpoint with different parameters. It was
+ *            absent until `FJS-678`: a signed `GET /transfer?to=alice` verified
+ *            unchanged against `?to=mallory`, and a receiver that wanted to
+ *            include the query could not, because the signer had excluded it
  *   timestamp  the receiver rejects anything outside its freshness window
  *   nonce      …and anything it has already seen inside that window
  *   sha256(body)  a bodyless request signs the hash of the empty string, so
  *                 every request is signed the same way
+ *
+ * The version rides in the signature VALUE (`v2-sha256=…`). A v1 signer against
+ * a v2 verifier is refused BY NAME rather than as a mismatch, because every
+ * deployed Outpost verifies the old string and *signature does not match* is
+ * the same sentence a wrong secret produces — hours of looking at the wrong
+ * half.
  *
  * The receiver must recompute this exact string. That is the whole contract,
  * and it is why the parts are joined with a newline rather than concatenated:
@@ -43,25 +53,128 @@ function toHex(bytes) {
   return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-export async function sha256Hex(text) {
-  const digest = await crypto.subtle.digest('SHA-256', ENCODER.encode(text ?? ''))
+/**
+ * Hash a body. Takes a string or the raw bytes.
+ *
+ * Bytes are accepted because a signed request may carry a binary body — an
+ * upload, a protobuf — and there is no lossless way to make one a string first:
+ * `String(bytes)` and `JSON.stringify(bytes)` each hash something that was never
+ * sent, so the far side computes a different digest and the request is refused
+ * as an invalid credential. Passed through untouched; only a string is encoded.
+ */
+export async function sha256Hex(body) {
+  const input = (body instanceof Uint8Array || body instanceof ArrayBuffer)
+    ? body
+    : ENCODER.encode(body ?? '')
+  const digest = await crypto.subtle.digest('SHA-256', input)
   return toHex(new Uint8Array(digest))
+}
+
+/** The scheme label the signature value carries. Bumped when the canonical string changes. */
+export const SIGNATURE_VERSION = 2
+
+const V1_PREFIX = 'sha256='
+const V2_PREFIX = 'v2-sha256='
+
+/**
+ * RFC 3986 percent-encoding.
+ *
+ * `encodeURIComponent` leaves `!'()*` alone, which RFC 3986 reserves — two
+ * sides using different encoders produce different strings for the same
+ * parameter and every request 401s.
+ */
+function rfc3986(value) {
+  return encodeURIComponent(String(value))
+    .replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase())
+}
+
+/**
+ * The query, as both sides must spell it: pairs sorted by key then value,
+ * percent-encoded, joined with `&`. Empty string when there is none.
+ *
+ * Sorted because nothing preserves parameter order across a proxy, a client
+ * library or a redirect, and a signature bound to the order the sender happened
+ * to use is a signature that fails intermittently. Repeated keys are kept —
+ * `?tag=a&tag=b` is two values, and folding them into one loses the second.
+ *
+ * Takes a search string (with or without the leading `?`), a URLSearchParams,
+ * an array of pairs, or a plain object, because a signer holds a URL and a
+ * verifier holds whatever its transport parsed.
+ */
+export function canonicalQuery(query) {
+  if (query === undefined || query === null || query === '') return ''
+
+  let pairs
+  if (typeof query === 'string') {
+    pairs = [...new URLSearchParams(query.replace(/^\?/, ''))]
+  } else if (Array.isArray(query)) {
+    // Before the `.entries()` branch: an Array has one too, and it answers
+    // index/value pairs, so a list of pairs would canonicalise as `0=to,alice`.
+    pairs = query.map(([k, v]) => [k, v])
+  } else if (typeof query.entries === 'function') {
+    pairs = [...query.entries()]
+  } else {
+    // A plain object cannot hold a repeated key, but it can hold an array
+    // under one — which is how a repeated key survives a parse.
+    pairs = []
+    for (const [k, v] of Object.entries(query)) {
+      for (const item of Array.isArray(v) ? v : [v]) {
+        if (item === undefined || item === null) continue
+        pairs.push([k, item])
+      }
+    }
+  }
+
+  return pairs
+    .map(([k, v]) => [rfc3986(k), rfc3986(v ?? '')])
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0))
+    .map(([k, v]) => `${k}=${v}`)
+    .join('&')
+}
+
+/**
+ * Split a path that carries its own query.
+ *
+ * A verifier reads the raw request URL and hands over whatever it holds; a
+ * `path` with a `?` in it and no `query` beside it means the caller has both in
+ * one string. Signing the whole thing as the path would work and would disagree
+ * with a caller who passed them apart, so they are separated here — one owner.
+ */
+function splitTarget(path, query) {
+  const raw = String(path ?? '')
+  const cut = raw.indexOf('?')
+  if (query !== undefined && query !== null) return { path: cut === -1 ? raw : raw.slice(0, cut), query }
+  if (cut === -1) return { path: raw, query: '' }
+  return { path: raw.slice(0, cut), query: raw.slice(cut + 1) }
 }
 
 /**
  * The string both sides run the HMAC over.
  *
- * @param {{method: string, path: string, timestamp: string|number, nonce: string, bodyHash: string}} parts
+ * `query` is the one part allowed to be empty — a request with no parameters
+ * signs an empty line rather than omitting one, so the number of lines is
+ * fixed and a query cannot be smuggled into the path.
+ *
+ * @param {{method: string, path: string, query?: string|object, timestamp: string|number, nonce: string, bodyHash: string}} parts
  * @returns {string}
  */
-export function canonicalRequest({ method, path, timestamp, nonce, bodyHash }) {
-  for (const [name, value] of Object.entries({ method, path, timestamp, nonce, bodyHash })) {
+export function canonicalRequest({ method, path, query, timestamp, nonce, bodyHash }) {
+  const target = splitTarget(path, query)
+
+  for (const [name, value] of Object.entries({ method, path: target.path, timestamp, nonce, bodyHash })) {
     if (value === undefined || value === null || value === '')
       throw new TypeError(`canonicalRequest: ${name} is required`)
     if (String(value).includes('\n'))
       throw new TypeError(`canonicalRequest: ${name} must not contain a newline — it is the separator`)
   }
-  return [String(method).toUpperCase(), path, String(timestamp), nonce, bodyHash].join('\n')
+
+  const canonical = canonicalQuery(target.query)
+  if (canonical.includes('\n'))
+    throw new TypeError('canonicalRequest: query must not contain a newline — it is the separator')
+
+  return [
+    String(method).toUpperCase(), target.path, canonical, String(timestamp), nonce, bodyHash,
+  ].join('\n')
 }
 
 async function hmacHex(secret, message) {
@@ -72,7 +185,8 @@ async function hmacHex(secret, message) {
 
 /**
  * Sign a request. Answers the three headers a receiver needs, under the given
- * prefix (`X-Hub` by default, which is what conduit has always sent).
+ * prefix (`X-Fjs` by default — the framework's own scheme, and the same
+ * abbreviation junction's `x-fjs-build` header already uses).
  *
  * `timestamp` and `nonce` are REQUIRED, not defaulted. Defaulting them would
  * mean reading a clock and generating a uuid in a package whose whole licence to
@@ -81,22 +195,22 @@ async function hmacHex(secret, message) {
  * pair most likely to be wrong.
  *
  * @param {{
- *   secret: string, method: string, path: string, body?: string,
- *   prefix?: string, timestamp: string|number, nonce: string
+ *   secret: string, method: string, path: string, query?: string|object,
+ *   body?: string|Uint8Array, prefix?: string, timestamp: string|number, nonce: string
  * }} opts
  * @returns {Promise<Record<string,string>>}
  */
-export async function signRequest({ secret, method, path, body = '', prefix = 'X-Hub', timestamp, nonce }) {
+export async function signRequest({ secret, method, path, query, body = '', prefix = 'X-Fjs', timestamp, nonce }) {
   if (!secret)    throw new TypeError('signRequest: secret is required')
   if (!timestamp) throw new TypeError('signRequest: timestamp is required — seconds, from the caller\'s clock')
   if (!nonce)     throw new TypeError('signRequest: nonce is required — one per request, from the caller')
 
   const ts  = String(timestamp)
   const sig = await hmacHex(secret, canonicalRequest({
-    method, path, timestamp: ts, nonce, bodyHash: await sha256Hex(body),
+    method, path, query, timestamp: ts, nonce, bodyHash: await sha256Hex(body),
   }))
   return {
-    [`${prefix}-Signature`]: `sha256=${sig}`,
+    [`${prefix}-Signature`]: `${V2_PREFIX}${sig}`,
     [`${prefix}-Timestamp`]: ts,
     [`${prefix}-Nonce`]:     nonce,
   }
@@ -118,7 +232,8 @@ export async function signRequest({ secret, method, path, body = '', prefix = 'X
  * signature was right, one byte at a time.
  *
  * @param {{
- *   secret: string|undefined, method: string, path: string, body?: string,
+ *   secret: string|undefined, method: string, path: string, query?: string|object,
+ *   body?: string|Uint8Array,
  *   headers: Record<string,string>|Headers, prefix?: string,
  *   toleranceSeconds?: number, now: number,
  *   seenNonce?: ((nonce: string) => boolean|Promise<boolean>)|null
@@ -126,7 +241,7 @@ export async function signRequest({ secret, method, path, body = '', prefix = 'X
  * @returns {Promise<{ok: true} | {ok: false, reason: string}>}
  */
 export async function verifyRequest({
-  secret, method, path, body = '', headers, prefix = 'X-Hub', toleranceSeconds = 300,
+  secret, method, path, query, body = '', headers, prefix = 'X-Fjs', toleranceSeconds = 300,
   now, seenNonce = null,
 }) {
   if (!secret) return { ok: false, reason: 'no secret is configured on this side' }
@@ -154,10 +269,20 @@ export async function verifyRequest({
   if (skew > toleranceSeconds)
     return { ok: false, reason: `timestamp is ${skew}s out, tolerance is ${toleranceSeconds}s` }
 
+  // Version before secret. A v1 signer produces a perfectly well-formed digest
+  // of a string this side no longer builds, so without this the answer is
+  // `signature does not match` — the same sentence a wrong secret gives, which
+  // is the wrong half to go looking at while an old Outpost 401s every call.
+  if (!signature.startsWith(V2_PREFIX)) {
+    if (signature.startsWith(V1_PREFIX))
+      return { ok: false, reason: 'signature version 1 is no longer accepted; query is now signed' }
+    return { ok: false, reason: 'signature is not in a version this side understands' }
+  }
+
   const expected = await hmacHex(secret, canonicalRequest({
-    method, path, timestamp, nonce, bodyHash: await sha256Hex(body),
+    method, path, query, timestamp, nonce, bodyHash: await sha256Hex(body),
   }))
-  if (!timingSafeEqual(signature.replace(/^sha256=/, ''), expected))
+  if (!timingSafeEqual(signature.slice(V2_PREFIX.length), expected))
     return { ok: false, reason: 'signature does not match' }
 
   // Last, and only once the signature is known good: a replay check that runs

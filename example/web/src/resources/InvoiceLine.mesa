@@ -1,0 +1,18 @@
+<script module>
+  // web/src/resources/InvoiceLine.mesa — the Resource layer.
+  //
+  // Named for the model, exporting the accessor, `model:` stated for the reason
+  // `OrderLine.mesa` states it: a two-word model is where a resolver
+  // disagreement would be silent (Invariant 2).
+  //
+  // No markup half: every column is `@immutable` and the service declares
+  // `methods: ['find', 'get']`, so there is no form to generate. The screen
+  // does not read through this resource either — the lines arrive composed on
+  // `invoices.get()`. It exists so a screen that wants the lines of several
+  // invoices at once has one, and so the model has the resource file Invariant
+  // 18 asks for.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const invoiceLines = createResource('invoice-lines', { model: 'InvoiceLine' })
+</script>

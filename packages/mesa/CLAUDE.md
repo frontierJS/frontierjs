@@ -136,6 +136,19 @@ defaults to whatever `dev` is, and the path in it is relative to `locRoot`.
   used to be deleted from the output while every reference to it survived, so a
   component calling its own exported function threw `ReferenceError` on first
   interaction — which no render test can see, because SSR dispatches no events.
+- **`$attributes` is a live view, and the prop push carries the WHOLE object
+  because of it.** `restProps` returns a Proxy over a signal, not a copy: a copy
+  taken at init froze every forwarded dynamic attribute at its mount value while
+  the component's own children — the same expression — tracked (`FJS-612`). Two
+  things hold it up and both read as redundant. The sync effect pushes
+  `allProps` rather than the reactive half, because an attribute the child did
+  not declare has no signal to be written twice into and would otherwise be lost
+  the first time anything else on the element moved; and the rest object is
+  rebuilt **wholesale** on each push rather than merged, because a merge can
+  never remove a key, so a spread that stops carrying one would leave it on the
+  element for ever. The sink lives in the prop registry under a SYMBOL, so
+  anything walking that registry for accessors — `componentApi` — must skip
+  non-string keys.
 - **`bind:this` on a COMPONENT is the exported interface; on an ELEMENT it is
   the node.** The component form reads props through the child's own signals, so
   `ref.count` is live and `ref.count = 2` writes it. It used to hand over the

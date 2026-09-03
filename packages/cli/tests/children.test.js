@@ -164,7 +164,14 @@ describe('stopping a launcher reaches what it launched', () => {
   test('the whole process group goes, not just the child', async () => {
     // A shell that starts a grandchild and then waits. Spawned through the
     // real path, so `detached` and the `-pid` kill are the ones under test.
+    const { readFileSync, existsSync, rmSync } = await import('fs')
     const grandchildFile = `/tmp/fli-children-${process.pid}.pid`
+
+    // Cleared first, because the path is keyed on the runner's pid and pids
+    // recycle: a run that failed here left its file, and a later run would read
+    // a stranger's dead pid as its own grandchild.
+    rmSync(grandchildFile, { force: true })
+
     const out = startRow({
       id: 'task:tree', name: 'tree', dir: '.',
       argv: ['bun', 'run', 'test'],
@@ -177,10 +184,19 @@ describe('stopping a launcher reaches what it launched', () => {
     })
     expect(out.ok).toBe(true)
 
-    // Wait for the grandchild to write its pid.
-    const { readFileSync, existsSync, rmSync } = await import('fs')
-    for (let i = 0; i < 40 && !existsSync(grandchildFile); i++) await Bun.sleep(25)
-    const grandchild = Number(readFileSync(grandchildFile, 'utf8').trim())
+    // Wait for the grandchild to write its pid — for the PID, not for the file.
+    // `echo $$ > f` creates the file and then writes to it, so existence is not
+    // the signal: an empty read parses as 0 and fails the assertion below with
+    // nothing saying the shell simply had not got there yet. Under load that
+    // window is wide enough to hit, and it leaves a 0-byte file behind that the
+    // next run with a recycled pid reads instantly.
+    let grandchild = 0
+    for (let i = 0; i < 80 && !grandchild; i++) {
+      grandchild = existsSync(grandchildFile)
+        ? Number(readFileSync(grandchildFile, 'utf8').trim()) || 0
+        : 0
+      if (!grandchild) await Bun.sleep(25)
+    }
     expect(grandchild).toBeGreaterThan(0)
 
     const alive = (pid) => { try { process.kill(pid, 0); return true } catch { return false } }

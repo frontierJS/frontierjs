@@ -44,11 +44,19 @@ const BUILT_IN_TRANSPORTS = new Set(['inApp', 'email'])
 // It wasn't. This is that call, in one place, so the failure mode is a working
 // delivery rather than a silent empty one. Already-built messages have no
 // build() method and pass through untouched.
-function materialise(message: unknown): unknown {
-  if (message && typeof (message as { build?: unknown }).build === 'function') {
-    return (message as { build(): unknown }).build()
+async function materialise(message: unknown): Promise<unknown> {
+  // Awaited, because a formatter may be async — which is what lets a body be
+  // RENDERED where it is read. A class had to hide that behind a static async
+  // factory and a private constructor, since `toEmail()` was synchronous.
+  //
+  // The await is here rather than at the call site so that "format every
+  // transport, validate every transport, then deliver" survives: the loop below
+  // is still eager, it is now eager and asynchronous.
+  const resolved = await message
+  if (resolved && typeof (resolved as { build?: unknown }).build === 'function') {
+    return (resolved as { build(): unknown }).build()
   }
-  return message
+  return resolved
 }
 
 // ─── notify() — package-internal, not exported ───────────────────────────────
@@ -85,7 +93,7 @@ export async function notify(
   // ── Step 1: format once, validate eagerly — fail before any delivery ─────
   const messages = new Map<string, unknown>()
   for (const transport of transports) {
-    const message = materialise(notification.getMessageFor(transport, recipient))
+    const message = await materialise(notification.getMessageFor(transport, recipient))
     if (message === undefined) {
       throw new NotificationTransportNotImplementedError(transport, notificationType)
     }

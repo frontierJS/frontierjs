@@ -1,0 +1,103 @@
+---
+title: Getting started
+---
+<script>
+  // The mock's OnboardingView, with the one change that decided the shape:
+  // there is no `done` column anywhere and there is no button that marks a
+  // step complete.
+  //
+  // The mock kept its six steps in component state and let a click tick one
+  // off, which is a record of somebody having pressed a button rather than of
+  // the work being done — it survives the server being deleted, the key being
+  // revoked and the project being removed. Every step here is a question the
+  // database already answers, asked fresh on load (SCREENS.md § Phase 11 is
+  // the ruling; api/src/services/infra/infra.service.ts is the read).
+  //
+  // So the only thing this screen can do about a step is take you to where the
+  // work happens. Coming back is what completes it.
+  import { session } from '../../session.js'
+  import { infra } from '../../resources/Infra.mesa'
+
+  import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout  from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card     from '@frontierjs/ui/components/layout/Card.mesa'
+  import Skeleton from '@frontierjs/ui/components/feedback/Skeleton.mesa'
+
+  $: session.workspaceId
+
+  let state   = null
+  let error   = null
+  let loading = true
+
+  async function load() {
+    error = null; loading = true
+    try {
+      state = await infra.service.invoke('onboarding', null)
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  // The next thing to do is the first undone step, and it is the only one
+  // marked — a list where every row shouts is a list nobody reads.
+  $: next = state?.steps.find(s => !s.done) ?? null
+  $: pct  = state ? Math.round((state.done / state.total) * 100) : 0
+</script>
+
+{#if error}
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if loading}
+  <div aria-busy="true" class="stack">
+    <Skeleton variant="text" width="12rem" />
+    <Skeleton height="18rem" />
+  </div>
+{:else if state}
+  <Card>
+    <div class="section-header">
+      <h2 class="h4">{state.done} of {state.total} done</h2>
+      <span class="text-sm text-muted">{pct}%</span>
+    </div>
+    <!-- The native element, which announces value and max without being told
+         (css vocabulary § Progress). -->
+    <progress class="progress" id="onboarding-progress" value={state.done} max={state.total}></progress>
+
+    {#if state.done === state.total}
+      <p class="text-body">
+        Everything is set up. <a href="/">The overview</a> is where the fleet lives from here.
+      </p>
+    {/if}
+  </Card>
+
+  <ol class="steps" id="onboarding-steps">
+    {#each state.steps as step (step.id)}
+      <li class={step.done ? 'step complete' : 'step'} aria-current={next?.id === step.id ? 'step' : null}>
+        <span class="step-marker"></span>
+        <span class="step-label">{step.title}</span>
+        <span class="step-hint">{step.detail}</span>
+        {#if !step.done && step.href}
+          <Button variant={next?.id === step.id ? 'primary' : 'ghost'} href={step.href}>Do this</Button>
+        {/if}
+      </li>
+    {/each}
+  </ol>
+
+  <Callout title="Nothing here is stored">
+    <p class="text-body">
+      Each step is a count taken when this screen loaded —
+      {state.counts.servers} servers, {state.counts.sshKeys} SSH keys,
+      {state.counts.projects} projects, {state.counts.deploys} deployments,
+      {state.counts.members} members, {state.counts.invites} invitations.
+      Delete the thing a step recorded and the step goes back to undone, which is
+      what it means.
+    </p>
+  </Callout>
+{/if}

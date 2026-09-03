@@ -188,6 +188,28 @@ describe('readApiSurface', () => {
   test('the hint names the command rather than the file', () => {
     expect(surfaceMissingHint(TMP)).toContain('junction surface')
   })
+
+  // Where it lives. A snapshot belongs in the surface it describes, so `api/`
+  // is the answer and is read first; an app that has not moved it still works,
+  // because the file is written by a command an app already runs.
+  test('reads the snapshot out of api/', () => {
+    mkdirSync(join(TMP, 'api'), { recursive: true })
+    writeFileSync(join(TMP, 'api', 'surface.snapshot.md'), SNAPSHOT)
+    expect(readApiSurface(TMP).services.map(s => s.name)).toEqual(['alerts', 'portal'])
+    rmSync(join(TMP, 'api'), { recursive: true, force: true })
+  })
+
+  // Two copies is the defect, not a supported layout: they are generated from
+  // different working directories and disagree (`scripts/ci-allowances.json`
+  // records a real instance, six routes apart). The one beside the API wins,
+  // and the `snapshots` phase still rechecks both where they exist.
+  test('api/ wins over the app root', () => {
+    writeSnapshot(SNAPSHOT.replace('`alerts`', '`stale`'))
+    mkdirSync(join(TMP, 'api'), { recursive: true })
+    writeFileSync(join(TMP, 'api', 'surface.snapshot.md'), SNAPSHOT)
+    expect(readApiSurface(TMP).services.map(s => s.name)).toEqual(['alerts', 'portal'])
+    rmSync(join(TMP, 'api'), { recursive: true, force: true })
+  })
 })
 
 // ─── extractResourceMeta ──────────────────────────────────────────────────────

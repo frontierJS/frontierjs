@@ -344,7 +344,7 @@ export function add(variantId, quantity = 1) {
  * direction — what a code is worth is a function of this basket at this
  * instant, and a browser that could state it could state the total.
  *
- * A bad code throws the shop's own sentence (`api/src/pricing.ts`
+ * A bad code throws the shop's own sentence (`api/src/domain/shop`
  * `discountProblem`), which `run` puts on `cart.error`. That is the same
  * sentence the checkout will use if the code stops being valid between now and
  * then — one rule, told twice, in the same words.

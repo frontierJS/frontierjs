@@ -53,6 +53,16 @@ export const tree = {
       children: [],
     },
   {
+      id: "pricing",
+      path: "/pricing/",
+      file: "src/routes/pricing/index.mesa",
+      companion: "src/routes/pricing/index.meta.js",
+      layout: "src/routes/_module.mesa",
+      meta: {"title":"Pricing — FrontierJS Supply Co.","description":"What a standing order costs, and what each one includes.","render":"static","isIndex":true},
+      params: [],
+      children: [],
+    },
+  {
       id: "products.[slug]",
       path: "/products/:slug/",
       file: "src/routes/products/[slug].mesa",
@@ -72,32 +82,16 @@ export const components = {
   'account': () => import('../src/routes/account/index.mesa'),
   'cart': () => import('../src/routes/cart/index.mesa'),
   'catalog': () => import('../src/routes/catalog/index.mesa'),
+  'pricing': () => import('../src/routes/pricing/index.mesa'),
   'products.[slug]': () => import('../src/routes/products/[slug].mesa'),
 }
 
-
-function __sierraDevStatic(routeId) {
-  let answered = null
-  return Promise.resolve({
-    async load({ params, url }) {
-      const q = new URLSearchParams({ route: routeId, url, params: JSON.stringify(params ?? {}) })
-      const res = await fetch('/__sierra/static-data?' + q)
-      const body = await res.json()
-      if (!res.ok) throw new Error(body?.error ?? ('static-data ' + res.status))
-      answered = body
-      return body.data
-    },
-    head: () => answered?.head ?? null,
-  })
-}
 
 // Loader factory map — routes with a .meta.js companion
 // Only populated for routes that have a companion file
 export const loaders = {
 
-  'root': () => __sierraDevStatic('root'),
-  'catalog': () => __sierraDevStatic('catalog'),
-  'products.[slug]': () => __sierraDevStatic('products.[slug]'),
+
 }
 
 // Layout factory map — keyed by file path (same as node.layout in the tree).
@@ -114,6 +108,7 @@ export const all = [
   "/account/",
   "/cart/",
   "/catalog/",
+  "/pricing/",
   "/products/:slug/"
 ]
 
@@ -123,6 +118,7 @@ export const published = [
   "/account/",
   "/cart/",
   "/catalog/",
+  "/pricing/",
   "/products/:slug/"
 ]
 
@@ -131,7 +127,8 @@ export const indexed = [
   "/404/",
   "/account/",
   "/cart/",
-  "/catalog/"
+  "/catalog/",
+  "/pricing/"
 ]
 
 export const redirects = []

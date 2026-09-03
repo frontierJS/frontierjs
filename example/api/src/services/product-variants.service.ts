@@ -8,7 +8,7 @@
 // resolves to nothing finds no gate and no schema, so @@gate("0.4.4.5") would
 // permit an anonymous write and autoValidate would check nothing.
 import { createBaseService, $ } from '@frontierjs/junction'
-import { levelsFor } from '../inventory.ts'
+import { levelsFor } from '../domain/shop'
 
 export function createProductVariantsService() {
   return createBaseService({

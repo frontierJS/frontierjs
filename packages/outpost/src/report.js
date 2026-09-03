@@ -39,6 +39,9 @@ export function createReporter(config, { inspector, fetch: doFetch = fetch, log 
         accept:             'application/json',
         'x-service-method': serviceMethod,
         ...(await signRequest({
+        // `path` carries its own query when it has one, which `signRequest`
+        // splits — one canonical string whether a caller holds them apart or
+        // joined (`FJS-678`).
         secret: config.secret, method: 'POST', path, body: payload,
         timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
       })),

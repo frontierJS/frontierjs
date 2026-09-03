@@ -9,5 +9,5 @@ context.exec({
   command: `scp ${server}:${serverPath}/db/backups/${backupFile} ${dbPath}/backups/.`,
   dry: flag.dry
 })
-log.success('Downloaded backup')
+if (!flag.dry) log.success('Downloaded backup')
 ```

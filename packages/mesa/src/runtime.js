@@ -3465,17 +3465,48 @@ export function makeSlots(__block) {
  * @param {object} props     — $option.props
  * @param {string[]} declared — prop names the component declared
  */
+export const REST_PROPS = Symbol.for('mesa.restProps')
+
 export function restProps(props, declared) {
-  const out = {}
-  if (!props) return out
   // `children` is the slot-content channel, not an attribute. A component that
   // receives content it did not declare as a prop would otherwise spread the
   // snippet onto its own root element, and `children` is getter-only on
   // Element — so passing a `{#snippet children}` to a component built around
   // `<slot />` threw from inside spreadAttributes and took the render with it.
   const skip = new Set([...(declared ?? []), 'class', '$class', 'children'])
-  for (const k in props) if (!skip.has(k)) out[k] = props[k]
-  return out
+  const pick = (src) => {
+    const out = {}
+    if (src) for (const k in src) if (!skip.has(k)) out[k] = src[k]
+    return out
+  }
+
+  // Shallow equality, so a push carrying only declared props does not wake
+  // every element spreading this object. The value is rebuilt on every push,
+  // so reference equality would never hold.
+  const same = (a, b) => {
+    const ka = Object.keys(a)
+    return ka.length === Object.keys(b).length && ka.every((k) => Object.is(a[k], b[k]))
+  }
+  const [read, write] = createSignal(pick(props), { equals: same })
+
+  // The sink pushProps writes through. Registered under a symbol so it cannot
+  // collide with a declared prop name, and skipped by every consumer that walks
+  // the registry expecting prop accessors.
+  if (_propRegistry) _propRegistry.set(REST_PROPS, { setRest: (next) => write(pick(next)) })
+
+  // A live view rather than a copy. The copy was taken once at init, so a
+  // forwarded dynamic attribute was frozen at its first value while the
+  // component's own children — the same expression — tracked correctly.
+  return new Proxy({}, {
+    get: (_t, k) => read()[k],
+    has: (_t, k) => k in read(),
+    ownKeys: () => Reflect.ownKeys(read()),
+    getOwnPropertyDescriptor: (_t, k) => {
+      const cur = read()
+      if (!(k in cur)) return undefined
+      return { value: cur[k], enumerable: true, configurable: true, writable: true }
+    },
+  })
 }
 
 /**
@@ -4450,6 +4481,8 @@ export function componentApi(anchor) {
   const api = {}
   if (registry) {
     for (const [name, prop] of registry) {
+      // The rest-props sink is registered here too and is not a prop accessor.
+      if (typeof name !== 'string') continue
       Object.defineProperty(api, name, {
         enumerable: true,
         get: () => prop.get(),
@@ -4495,6 +4528,12 @@ export function pushProps(anchor, newProps) {
   const registry = _componentRegistry.get(anchor)
   if (!registry) return
   batch(() => {
+    // Everything the child did NOT declare is its `$attributes`, and it has no
+    // prop signal to receive it — so without this the undeclared half of a push
+    // was dropped and `$attributes` stayed at its mount-time value for ever.
+    // Written wholesale, which is what lets a key LEAVE a spread.
+    const rest = registry.get(REST_PROPS)
+    if (rest) rest.setRest(newProps)
     for (const name in newProps) {
       const p = registry.get(name)
       if (!p) continue

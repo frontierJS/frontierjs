@@ -80,8 +80,14 @@ export function clampPage(
   const limit  = Number(limitRaw)
   const offset = Number(offsetRaw)
 
+  // Floored as well as ceiled. SQLite reads a negative LIMIT as UNBOUNDED, so
+  // `$limit=-1` served the whole table from an endpoint capped at 100 — the
+  // ceiling was the only bound anybody had written, and it is the bound the
+  // hostile value goes the other way round (`FJS-683`). The bridge refuses a
+  // negative directive by name; this is the floor for every caller that does
+  // not come through it — an internal call, a `paginate()` fallback, a hook.
   return {
-    limit:  Math.min(Number.isFinite(limit) ? limit : defaultLimit, maxLimit),
-    offset: Number.isFinite(offset) ? offset : 0,
+    limit:  Math.max(0, Math.min(Number.isFinite(limit) ? limit : defaultLimit, maxLimit)),
+    offset: Math.max(0, Number.isFinite(offset) ? offset : 0),
   }
 }

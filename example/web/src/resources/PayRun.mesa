@@ -1,0 +1,49 @@
+<script module>
+  // web/src/resources/PayRun.mesa — the Resource layer.
+  //
+  // Named for the model, exporting the accessor — see Order.mesa.
+  //
+  // Four states and four moves, and the split between them is what the screen
+  // reads off `x-transitions` rather than deciding:
+  //
+  //   calculate  draft      -> calculated  @system   the engine writes documents
+  //   revert     calculated -> draft                 an ordinary correction
+  //   approve    calculated -> approved    @gate(5)  a person, moving money
+  //   pay        approved   -> paid        @system   the engine posts the books
+  //
+  // Two of the four are `@system`, so `transitions(row, level)` answers at most
+  // `revert` and `approve` — and the screen offers the other two as CUSTOM
+  // METHODS, because each writes documents before it moves the row and a caller
+  // who could state the transition directly would mark a run calculated with no
+  // payslips under it.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const payRuns = createResource('pay-runs', { model: 'PayRun' })
+</script>
+
+<script>
+  // …and the markup half is this model's DEFAULT form (repo Invariant 18).
+  //
+  // What a person decides about a run is the period and the calendar it sits
+  // in; everything else on the model is `@system` — `headcount` stamped when it
+  // is planned, `approvedBy`, `approvedAt` and `paidAt` stamped as it moves —
+  // so they reach the browser `readOnly` and generation does not offer them.
+  // `status` is the transitions field and belongs to the buttons.
+  import Form   from '@frontierjs/ui/components/forms/Form.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let record      = undefined
+  export let method      = undefined
+  export let submitLabel = 'Save'
+  export let cancelHref  = null
+  export let oncancel    = null
+  export let submitId    = undefined
+  export let actions     = null
+  export let except      = undefined
+</script>
+
+<Form resource={payRuns} bind:record={record} {method} {except} {actions} {...$attributes}>
+  <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
+  <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
+</Form>

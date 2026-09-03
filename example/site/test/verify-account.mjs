@@ -119,7 +119,11 @@ check('and the catalogue still is — the storefront reads it with no session',
 const login = await fetch(`${API}/api/auth/login`, {
   method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(BUYER),
 })
-const buyerToken = (await login.json())?.token
+// Kept, not re-requested: login is rate-limited to 10 per 15 minutes across
+// every drive here, and this one needs the shopper's own id as well as their
+// token.
+const loginBody  = await login.json()
+const buyerToken = loginBody?.token
 if (!buyerToken) { console.error('could not sign the shopper in — login limiter?'); stopAll(); process.exit(1) }
 
 const asBuyer = p => fetch(`${API}/api${p}`, { headers: { authorization: `Bearer ${buyerToken}` } })
@@ -130,6 +134,100 @@ check('a shopper asking for every order gets their own',
 const theirs = await (await asBuyer('/customers')).json()
 check('…and for every customer, only their own record',
       theirs.data.map(c => c.email), [BUYER.email])
+
+// ─── the recurring half, at the boundary ──────────────────────────────────
+//
+// A subscription and an invoice are the shopper's own rows exactly as an order
+// is, and they are gated one notch differently: `@@gate("1.4.4.5")` and
+// `@@gate("1.8.8.8")` both READ at 1, so a stranger is refused by the gate and
+// a shopper is narrowed by the policy. Two mechanisms, one screen.
+const anonSubs  = await fetch(`${API}/api/subscriptions`)
+const anonBills = await fetch(`${API}/api/invoices`)
+check('subscriptions and invoices are not public either',
+      [anonSubs.status, anonBills.status], [401, 401])
+
+// A document for SOMEBODY ELSE, minted for this run, so *only their own* has
+// something to be only-their-own AGAINST. Issued through the same function the
+// renewal job uses — a drive that wrote the columns itself would be a second
+// opinion about what an invoice is.
+const { db } = await import(join(ROOT, 'api/src/core/db.ts'))
+const sys = db.asSystem()
+const { issueInvoice, periodLines } = await import(join(ROOT, 'api/src/domain/billing'))
+const RUN = String(Date.now()).slice(-6)
+const OTHER_INV = `INV-A${RUN}`
+const someoneElse = await sys.customer.findFirst({ where: { email: { not: BUYER.email } } })
+// …and a standing order of this run's OWN, because the drive stops one renewing
+// and then ends it outright to reach the refusal below. Doing that to the
+// seeded `SUB-3001` would leave the shop's only subscription dead for every
+// drive that runs after this one until somebody re-seeds — the fixed-fixture
+// trap (`FJS-530`) wearing a state machine instead of a `@unique`.
+const OWN_SUB  = `SUB-ACC${RUN}`
+const buyerCust = await sys.customer.findFirst({ where: { email: BUYER.email } })
+const anyVersion = await sys.planVersion.findFirst({ where: { effectiveTo: null } })
+await sys.subscription.create({ data: {
+  reference: OWN_SUB, customerId: buyerCust.id, planVersionId: anyVersion.id,
+  status: 'active', quantity: 1, userId: buyerCust.userId,
+  currentPeriodStart: new Date().toISOString(),
+  currentPeriodEnd:   new Date(Date.now() + 30 * 86400_000).toISOString(),
+} })
+await issueInvoice(sys, {
+  number: OTHER_INV, customerId: someoneElse.id, userId: someoneElse.userId,
+  periodStart: new Date().toISOString(),
+  periodEnd:   new Date(Date.now() + 30 * 86400_000).toISOString(),
+  lines: periodLines({ name: 'Pro', quantity: 1, unitAmount: 1900,
+                       periodStart: new Date().toISOString(),
+                       periodEnd:   new Date(Date.now() + 30 * 86400_000).toISOString() }),
+})
+
+// …and one of the SHOPPER's own with a challenge waiting on it. `requiresAction`
+// is the state where the only person who can finish a payment is the one who
+// owns it, so it is the reason `Payment` reads at VISITOR(1) behind two row
+// policies rather than at ADMINISTRATOR(5) — a row only staff could read cannot
+// tell the one person who can act.
+//
+// The payment is written through `asSystem()`, which is the column's own
+// declaration and not a shortcut: what the service adds is the signature, and
+// `verify:collect` is where the provider really sends this event.
+const OWN_INV = `INV-Q${RUN}`
+const ownBill = await issueInvoice(sys, {
+  number: OWN_INV, customerId: buyerCust.id, userId: buyerCust.userId,
+  periodStart: new Date().toISOString(),
+  periodEnd:   new Date(Date.now() + 30 * 86400_000).toISOString(),
+  lines: periodLines({ name: 'Pro', quantity: 1, unitAmount: 1900,
+                       periodStart: new Date().toISOString(),
+                       periodEnd:   new Date(Date.now() + 30 * 86400_000).toISOString() }),
+})
+const CHALLENGE = `http://localhost:8112/challenge/pi_acct${RUN}`
+await sys.payment.create({ data: {
+  providerRef: `pi_acct${RUN}`, invoiceId: ownBill.id, amount: ownBill.total,
+  currency: 'USD', status: 'requiresAction', actionUrl: CHALLENGE,
+  userId: buyerCust.userId,
+} })
+
+const myBills = await (await asBuyer('/invoices')).json()
+check('a shopper asking for every invoice gets only their own',
+      [myBills.data.some(i => i.number === 'INV-3001'),
+       myBills.data.some(i => i.number === OTHER_INV)], [true, false])
+
+// The subscriptions are asserted by SHAPE rather than by a list, because the
+// three billing drives mint one each per run against this same shopper. They
+// clear up after themselves now, and a drive that failed halfway through leaves
+// rows behind either way — an assertion that says *exactly these* would then be
+// reporting the last crash rather than this run.
+const buyerId  = loginBody.user?.userId
+const mySubs   = await (await asBuyer('/subscriptions')).json()
+check('…and every subscription is theirs',
+      [mySubs.data.some(x => x.reference === 'SUB-3001'),
+       mySubs.data.every(x => x.userId === buyerId)], [true, true])
+
+const myPayments = await (await asBuyer('/payments')).json()
+check('a shopper can read the payment their bank is asking about',
+      [myPayments.data.some(p => p.actionUrl === CHALLENGE),
+       myPayments.data.every(p => p.userId === (loginBody.user?.userId))],
+      [true, true])
+
+const anonPayments = await fetch(`${API}/api/payments`)
+check('and a stranger cannot read the ledger at all', anonPayments.status, 401)
 
 // A shopper is USER(4) exactly as staff is. The level does not separate them
 // and was never asked to: `isStaff` does.
@@ -242,6 +340,97 @@ const items = await until(async () => await evaluate(
             return t.length ? t : null })()`))
 check('opening one shows what was in it', items?.length, 2)
 
+// ── the recurring half, on the screen ─────────────────────────────────────
+//
+// Same page, same island, and the whole of what makes it possible is that the
+// storefront has no server: the token is on this origin and the boundary is the
+// shop's. Nothing here filters by who is asking.
+
+const subsOnScreen = await until(async () => await evaluate(
+  `(() => { const els = [...document.querySelectorAll('[data-sub]')]
+            return els.length ? els.map(e => e.dataset.sub) : null })()`))
+check('their standing orders are on it',
+      [subsOnScreen.includes('SUB-3001'), subsOnScreen.includes(OWN_SUB)], [true, true])
+
+const billsOnScreen = await until(async () => await evaluate(
+  `(() => { const els = [...document.querySelectorAll('[data-bill]')]
+            return els.length ? els.map(e => e.dataset.bill) : null })()`))
+check('and their invoices, and not the one issued to somebody else',
+      [billsOnScreen.includes('INV-3001'), billsOnScreen.includes(OTHER_INV)],
+      [true, false])
+
+// Opening one is the COMPOSED read: `invoices.get()` answers the header AND its
+// lines, because a total with nothing under it is not something anybody can
+// check. The list above is a page of headers and carries none of them.
+await evaluate(`(() => { document.querySelector('[data-open-bill="INV-3001"]').click(); return true })()`)
+const billLines = await until(async () => await evaluate(
+  `(() => { const rows = document.querySelectorAll('[data-bill-lines="INV-3001"] tbody tr td:first-child')
+            const t = [...rows].map(r => r.textContent.trim()).filter(x => x && x !== 'Loading…')
+            return t.length ? t : null })()`))
+check('opening an invoice shows the lines the document is made of', billLines?.length, 1)
+
+// ── the bank's question, on the page ──────────────────────────────────────
+//
+// The only thing on this screen a person has to ACT on, and the assertion is
+// where the link GOES: a card network's challenge is hosted by the network, so
+// the button leaves this origin. Putting it on a prerendered storefront would
+// mean a third party's script on the shop's own pages, collecting the one thing
+// the whole arrangement exists to avoid.
+const challenge = await evaluate(`
+  (() => { const box = document.querySelector('[data-action-required]')
+           if (!box) return null
+           const a = box.querySelector('[data-confirm]')
+           return { count: Number(box.dataset.actionRequired), href: a?.getAttribute('href') ?? null } })()`)
+check('the page tells them their bank is asking, and sends them to the provider',
+      [challenge?.count >= 1, challenge?.href], [true, CHALLENGE])
+
+// What a person may do to their own arrangement, and it is NOT a move: all four
+// declared transitions are `@system`, so no request can ask for any of them.
+// `subscriptions.cancel` writes `cancelAtPeriodEnd`, and what lets a shopper do
+// it to their OWN row is `@@allow('update', userId == auth().id)` rather than
+// anything on this page.
+//
+// **The status must not move**, and that is the assertion rather than a detail
+// of it: the period has been paid for, so the arrangement runs to the end of it
+// and a screen that flipped to `cancelled` here would be showing somebody the
+// forfeit the feature exists to prevent.
+await evaluate(`(() => { document.querySelector('[data-cancel=${JSON.stringify(OWN_SUB)}]').click(); return true })()`)
+const stopping = await until(async () => await evaluate(
+  `(() => { const el = document.querySelector('[data-sub=${JSON.stringify(OWN_SUB)}] [data-sub-status]')
+            return el?.dataset.subStopping === '1'
+              ? { status: el.dataset.subStatus, resume: Boolean(document.querySelector('[data-resume=${JSON.stringify(OWN_SUB)}]')) }
+              : null })()`))
+check('stopping their own renewal is theirs to do, and does not end it today',
+      [stopping?.status, stopping?.resume], ['active', true])
+
+// The other direction, which is the whole reason it is a flag and not a state:
+// between pressing and the boundary there is nothing to undo.
+await evaluate(`(() => { document.querySelector('[data-resume=${JSON.stringify(OWN_SUB)}]').click(); return true })()`)
+const resumed = await until(async () => await evaluate(
+  `document.querySelector('[data-sub=${JSON.stringify(OWN_SUB)}] [data-sub-status]')?.dataset.subStopping === '' || null`))
+check('…and changing their mind puts it back', resumed, true)
+
+// Once it HAS ended, resuming is refused — and the refusal is the honest one:
+// coming back is a new arrangement at whatever price is open today, so reviving
+// the row would quietly restore one that is no longer for sale. Ended here
+// through the `@system` transition the renewal job uses, because no request can
+// reach it.
+const ownRow = await sys.subscription.findFirst({ where: { reference: OWN_SUB } })
+await sys.subscription.transition(ownRow.id, 'cancel')
+const revive = await fetch(`${API}/api/subscriptions/${ownRow.id}`, {
+  method:  'POST',
+  headers: { authorization: `Bearer ${buyerToken}`, 'content-type': 'application/json',
+             'x-service-method': 'resume' },
+  body:    '{}',
+})
+check('resuming one that has already ended is refused', revive.status, 409)
+
+// …and the money already owed does not vanish with it. An invoice is a
+// DOCUMENT: cancelling the arrangement that produced it withdraws nothing.
+const afterCancel = await (await asBuyer('/invoices')).json()
+check('the invoices survive the cancellation — a document is not withdrawn',
+      afterCancel.data.some(i => i.number === 'INV-3001'), true)
+
 // ── the origin boundary ───────────────────────────────────────────────────
 //
 // The token is in THIS origin's localStorage. The operations app is a different
@@ -297,6 +486,24 @@ check('…and asking the API directly for every order answers none of them',
 const strangerCust = await (await fetch(`${API}/api/customers`, {
   headers: { authorization: `Bearer ${newToken}` } })).json()
 check('nor any customer — registering is not becoming staff', strangerCust.total, 0)
+
+const strangerBills = await (await fetch(`${API}/api/invoices`, {
+  headers: { authorization: `Bearer ${newToken}` } })).json()
+check('nor any invoice — the gate lets them in and the policy gives them nothing',
+      [strangerBills.total, strangerBills.data.length], [0, 0])
+
+// The document this run issued to somebody else goes with the run. It exists to
+// be the negative control for *only their own*, and leaving one per run in the
+// shop's ledger is the litter the billing drives just learned not to leave.
+try {
+  await sys.invoice.delete({ where: { number: OTHER_INV } })
+  // Takes its payment with it. A `Payment` is `@@gate("5.8.9.9")` on delete —
+  // LOCKED, so `asSystem()` cannot remove one either — and the only way this
+  // row goes is the CASCADE from the invoice that owns it, which is the
+  // schema's answer rather than a trick.
+  await sys.invoice.delete({ where: { number: OWN_INV } })
+  await sys.subscription.delete({ where: { reference: OWN_SUB } })
+} catch (e) { console.error(`\n!! could not clear up ${OTHER_INV} / ${OWN_SUB}: ${e.message}`) }
 
 const noisy = pageErrors.filter(t => t && !/favicon|ERR_FILE_NOT_FOUND/.test(t))
 check('no console errors anywhere in it', noisy, [])

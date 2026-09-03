@@ -12,6 +12,7 @@ import { logger, loadEnv, fliVersion } from './utils.js'
 import { printPlanFromFile } from './prose.js'
 import { buildRegistry, uniqueCommands, getModule } from './registry.js'
 import { loadConfig } from './config.js'
+import { BOOL_ARGV, dropUntypedBooleans } from './runtime.js'
 
 // ─── .fli.json + .env — load both from project root ──────────────────────────
 loadConfig()
@@ -220,11 +221,12 @@ function printHelp(meta, filePath) {
 // Errors thrown here (or from inside Command()) propagate up to bin/fli.js,
 // which prints clean error messages and supports --debug for full stacks.
 export async function run(process) {
-  const argv = minimist(process.argv.slice(2), { boolean: ['help', 'h', 'dry', 'd'] })
+  const argv = minimist(process.argv.slice(2), { boolean: BOOL_ARGV })
   let {
     _: [cmd, ...rawArgs],
     ...flag
   } = argv
+  dropUntypedBooleans(flag, process.argv.slice(2))
   // `fli --version` before anything else — a stranger asking which build they
   // have must not be answered with the usage screen, which is what minimist's
   // empty `_` used to fall through to.

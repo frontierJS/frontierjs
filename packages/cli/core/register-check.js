@@ -50,6 +50,7 @@ export const RULES = [
   { id: 'dead-link',        level: 'error', what: 'a linked path that is not in the tree' },
   { id: 'unknown-status',   level: 'error', what: 'a status outside the register\'s own vocabulary' },
   { id: 'closed-in-open',   level: 'error', what: 'a closed row still sitting in an open section — every count above it is wrong' },
+  { id: 'row-shape',        level: 'error', what: 'a row whose columns do not line up with its table — read into the wrong fields, and any cell past the header\'s width is dropped when rendered' },
   { id: 'unknown-severity', level: 'error', what: 'an open row in a section with no severity' },
   { id: 'malformed-date',   level: 'error', what: 'a date that is not ISO-8601' },
   { id: 'unnamed-ruling',   level: 'warn',  what: 'a ruling with no id — nothing can cite it' },
@@ -128,6 +129,37 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
   // harder to close things in.
 
   for (const row of doc.issues) {
+    // ── does the row line up with the table it is in ──
+    //
+    // Graded before the closed guard, because this is the one rule about a
+    // closed row that is still about TODAY: a row wider than its header has its
+    // last cell dropped when the file is rendered, and for § Closed that cell
+    // is *how*. Asked at the date column alone — the only cell with a shape,
+    // and the only one sitting ahead of every free-text column, so a `|` in a
+    // Detail cannot move it while a column the header does not have moves it by
+    // one.
+    //
+    // Both directions were live when this was written and neither was visible.
+    // Four closed rows sat in § S3 wearing the closed shape, so `closed-in-open`
+    // could not see them — the reader infers a row's shape from its CELL COUNT,
+    // so a four-cell row in a six-column table was read as a decision-shaped one
+    // and given a status nobody wrote. Two open rows sat in § Closed and were
+    // therefore counted as done, which is the more expensive direction: a defect
+    // that is still there and is in nobody's list.
+    if (row.headWidth != null && row.columns !== row.headWidth) {
+      // The header declares the shape and the row disagrees with it. Graded on
+      // the COUNT alone, which is exact — a date cell holding something odd is
+      // `malformed-date`'s, a bad value in the right column.
+      const wider = row.columns > row.headWidth
+      add('row-shape', row,
+        `has ${row.columns} cells where its table declares ${row.headWidth}`,
+        wider
+          ? 'every cell past the header\'s width is dropped when the file is rendered — fold it into the ' +
+            'last declared column, and escape a `|` that is part of the prose'
+          : `it is a row from another table: column ${(row.dateColumn ?? 0) + 1} should hold the date and ` +
+            'the row does not reach it, so the reader gives it a status nobody wrote and no other rule sees it')
+    }
+
     if (row.closed) continue
 
     // `closed` is in ISSUE_STATUS because the READER synthesises it for every row

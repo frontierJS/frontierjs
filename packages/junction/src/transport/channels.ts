@@ -35,6 +35,7 @@
 import { createPresenceTracker } from './presence.ts'
 import { AUTO_EVENT_MAP }       from '../core/service.ts'
 import { unwrapResult }         from '../core/envelope.ts'
+import { resolveAccessor, toDataPrincipal, readGateLevel, sessionGateLevel } from '../core/litestone.ts'
 import { wsSend }               from './send-queue.ts'
 import type { ServiceContext } from './bridge.ts'
 import type { IAuth }          from '../auth/types.ts'
@@ -173,6 +174,157 @@ export class Channel {
   }
 }
 
+// ─── Grading a broadcast ──────────────────────────────────────────────────
+//
+// `FJS-631`. A channel is a named set of connections and joining one was an
+// ungraded GRANT: every row published there reached every member, whatever the
+// schema said about who may read it.
+//
+// **Cohorts, not connections.** Phoenix names the cost of the naive version out
+// loud — intercepting a broadcast means "the broadcast will be encoded N times
+// instead of a single shared encoding across all subscribers" — and measured
+// here the encoding (288 ns) is dearer than the verdict (684 ns) precisely
+// because it is the term that multiplies. Hasura's answer is a cohort: group
+// subscribers by their authorization context and do the work once per group.
+// Two tabs of one person, and every member of staff whose policy is row-free,
+// collapse into one verdict and one frame.
+//
+// **The principal is the cohort key** and it is an object identity rather than
+// a serialisation: `Connection.user` is the session built once at upgrade, so
+// two connections of one person share it, and two DIFFERENT people can never
+// collide the way a hashed key can. A connection with no session is its own
+// cohort, keyed by a sentinel, because every anonymous connection grades
+// identically and there is exactly one right answer for all of them.
+//
+// **A model that can only ever say yes is skipped entirely.** `$readGrading`
+// answers `open` for a model whose read gate is 0 and which declares no read
+// policy and no field policy — a catalogue, which is also the busiest channel
+// an app has. Asked of the SCHEMA rather than declared by the app, so a policy
+// added later turns its channel from open to graded with nothing to remember.
+//
+// **Undecidable is refused.** No model resolved, no client on the context, a
+// payload that is not a row: the fan-out falls back to ungraded delivery ONLY
+// where grading was never applicable, and refuses the recipient wherever it was
+// applicable and could not be answered. Those are different, and conflating
+// them is how a fail-closed check becomes fail-open at the first odd shape.
+const ANON = Symbol('anonymous')
+
+interface Cohort { conns: Connection[]; frame: string }
+
+/** What the rule is asked of, and what it is asked about. */
+export interface GradingSource {
+  /** The client the rule lives on. Any flavour answers identically. */
+  db:       unknown
+  /** The Litestone accessor for the model the payload is a row of. */
+  accessor: string
+  /** For the refuse-all warning. The service name, where there is one. */
+  label?:   string
+}
+
+// A channel that grades to nobody is either a correct refusal or a wiring
+// mistake, and the two look identical from the send side. Warned once per
+// label so a misresolved accessor is visible without a line per broadcast.
+const _refusedAll = new Set<string>()
+
+function warnRefusedAll(label: string, accessor: string, size: number): void {
+  if (_refusedAll.has(label)) return
+  _refusedAll.add(label)
+  console.warn(
+    `[Junction] every one of ${size} subscribers was refused a '${label}' broadcast graded as ` +
+    `'${accessor}'. That is correct where the model is genuinely private, and is what a ` +
+    `misresolved accessor also looks like — check that '${accessor}' is the model this service ` +
+    `writes, declaring model: on the service if it is not.`
+  )
+}
+
+/**
+ * Who, of everyone subscribed, may see this — in cohorts.
+ *
+ * `null` means grading was never APPLICABLE (no Data boundary, no model, a
+ * model that can only say yes) and the caller sends ungraded; an empty array
+ * means it was applicable and refused everybody. Conflating the two is how a
+ * fail-closed check becomes fail-open at the first odd shape.
+ *
+ * `mode` is stated by the caller because the payload cannot say it: a
+ * count-only `changed` announcement is an object like a row is, and handing one
+ * to `$readAs` refuses everybody for a reason that has nothing to do with who
+ * may read. A row is graded by the whole rule; a count by the gate alone.
+ */
+export async function gradeRecipients(
+  targets: Channel[],
+  event:   string,
+  payload: unknown,
+  src:     GradingSource,
+  mode:    'row' | 'gate' = 'row',
+): Promise<Cohort[] | null> {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null
+
+  const db = src.db as { $readAs?: Function; $readGrading?: Function } | undefined
+  // No Data boundary here — an app broadcasting from a raw route, or a test
+  // harness. Nothing to grade against, so nothing is claimed.
+  //
+  // Probed with `in` rather than with `typeof db.$readAs`: a Litestone client
+  // THROWS on an unknown property, so the probe is itself a throwing expression
+  // (`FJS-673` is the same trap one seam over).
+  if (!db || typeof db !== 'object') return null
+  if (!('$readAs' in db) || !('$readGrading' in db)) return null
+  if (typeof db.$readAs !== 'function' || typeof db.$readGrading !== 'function') return null
+
+  const accessor = resolveAccessor(db, src.accessor)
+  if (mode === 'row' && db.$readGrading(accessor) === 'open') return null
+
+  const readLevel = mode === 'gate' ? readGateLevel(db, accessor) : null
+  if (mode === 'gate' && (readLevel == null || readLevel <= 0)) return null
+
+  // One entry per distinct principal across every target channel. A connection
+  // in two of them is graded once and sent once — Feathers' documented hazard
+  // is the opposite ("it will get the data from the FIRST channel that it is
+  // in"), and a set keyed by connection is what removes the ordering question
+  // rather than answering it.
+  const byPrincipal = new Map<unknown, Connection[]>()
+  const seen = new Set<Connection>()
+  let live = 0
+  for (const ch of targets) {
+    for (const conn of ch.connections) {
+      if (conn.socket.readyState !== 1 || seen.has(conn)) continue
+      seen.add(conn)
+      live++
+      const key = conn.user ?? ANON
+      const list = byPrincipal.get(key)
+      if (list) list.push(conn)
+      else byPrincipal.set(key, [conn])
+    }
+  }
+
+  const out: Cohort[] = []
+  for (const [key, conns] of byPrincipal) {
+    if (mode === 'gate') {
+      // The gate alone. Nothing here is a row, so there is no policy to ask and
+      // no field to shape — the question is whether this caller may read the
+      // model at all.
+      if (sessionGateLevel(key === ANON ? null : (key as never)) < (readLevel as number)) continue
+      out.push({ conns, frame: encodeEventFrame(event, payload) })
+      continue
+    }
+    let visible: unknown
+    // `toDataPrincipal` for the reason the Bridge index gives it: a
+    // `SessionContext` puts the id at `userId` and litestone's `auth()` reads
+    // `.id`, so handing the session straight over compares every row policy
+    // against `undefined`. It does not merely refuse — measured on `example`,
+    // `userId == auth().id` was FALSE for the buyer's own order and TRUE for a
+    // guest order whose `userId` is null, so the fix delivered the one row the
+    // recipient may not read and withheld the one they own. The two functions
+    // are one boundary: change either and ask whether the other needs it.
+    try { visible = await db.$readAs(accessor, payload, key === ANON ? null : toDataPrincipal(key)) }
+    catch { continue }                      // undecidable: refuse, never widen
+    if (!visible) continue                  // the gate or a policy said no
+    out.push({ conns, frame: encodeEventFrame(event, visible) })
+  }
+
+  if (live > 0 && out.length === 0 && src.label) warnRefusedAll(src.label, accessor, live)
+  return out
+}
+
 // ─── Channel manager ──────────────────────────────────────────────────────
 
 export function createChannelManager() {
@@ -236,6 +388,30 @@ export function createChannelManager() {
   }
 
   return {
+
+    // Graded send for a write that went through NO service call — the
+    // litestone tap (`announceDataWrites`). The publish() path grades off a
+    // ServiceContext and there is none here, so the two facts grading needs are
+    // handed over instead: the client the rule lives on and the model the
+    // payload is a row of. Without it every write outside its own service — a
+    // job, a webhook, a cron, a bulk write — put whole rows on every subscribed
+    // socket, whatever the schema said (`FJS-672`). Measured: 100 anonymous
+    // sockets, `asSystem().create` on a policied model, 100 of 100 received it.
+    async sendGraded(
+      channelId: string,
+      event:     string,
+      payload:   unknown,
+      src:       GradingSource,
+      mode:      'row' | 'gate' = 'row',
+    ): Promise<void> {
+      const ch = channels.get(channelId)
+      if (!ch) return
+      const graded = await gradeRecipients([ch], event, payload, src, mode)
+      if (!graded) { ch.send(event, payload); return }
+      for (const { conns, frame } of graded)
+        for (const conn of conns)
+          if (conn.socket.readyState === 1) wsSend(conn.socket, frame)
+    },
 
     channel(name: string): Channel {
       const ch = getOrCreate(name)
@@ -385,21 +561,59 @@ export function createChannelManager() {
       // hand-copy of the bridge's logic, which is exactly how two copies drift.
       const payload = unwrapResult(data)
 
-      // Serialize ONCE for all target channels — multi-channel publishes
-      // previously re-stringified the payload per channel, and telemetry
-      // stringified it a second time just to measure its size.
-      const frame = encodeEventFrame(event, payload)
-      for (const ch of targets) ch.sendRaw(frame)
+      // ── Who may see this row ────────────────────────────────────────────
+      //
+      // `@@allow` compiles into a SELECT's WHERE, and a broadcast is not a
+      // SELECT — so a row that reaches a caller through a query is filtered by
+      // construction and one that reaches them through a frame was filtered by
+      // nothing. Measured on `example`: a socket opened with no token received
+      // a whole `Order` row while the same caller was answered 401 on
+      // `GET /api/orders` (`FJS-631`).
+      //
+      // The rule is NOT re-implemented here. `$readAs` answers it at the Data
+      // boundary, where the gate, the row policies and the field policies are
+      // declared; a second reading of any of them is a second answer to who may
+      // read. This owns the fan-out and the cohorts, and nothing else.
+      //
+      // The accessor is the service's DECLARED model first and its name only as
+      // a fallback: grading resolved from the name alone refused everybody, in
+      // silence, for every service whose name maps to no model — `orders2` over
+      // `Order`, a modelless service, any Invariant-19 irregular (`FJS-700`).
+      const svc = ctx.app?.services?.get?.(ctx.service ?? '') as { model?: string } | undefined
+      const graded = await gradeRecipients(targets, event, payload, {
+        db:       (ctx as { locals?: { db?: unknown } }).locals?.db,
+        accessor: svc?.model ?? (ctx as { service?: string }).service ?? '',
+        label:    (ctx as { service?: string }).service,
+      })
+      if (graded) {
+        for (const { conns, frame } of graded)
+          for (const conn of conns)
+            if (conn.socket.readyState === 1) wsSend(conn.socket, frame)
+      } else {
+        // Serialize ONCE for all target channels — multi-channel publishes
+        // previously re-stringified the payload per channel, and telemetry
+        // stringified it a second time just to measure its size.
+        const frame = encodeEventFrame(event, payload)
+        for (const ch of targets) ch.sendRaw(frame)
+      }
 
       // ── Telemetry ──────────────────────────────────────────────
       const telemetry = ctx.app?.telemetry
       if (telemetry && (typeof telemetry.hasListeners !== 'function' || telemetry.hasListeners())) {
-        const recipientCount = targets.reduce((n, ch) => n + ch.length, 0)
+        // The count is who was SENT to, not who was in the channel — a graded
+        // publish is the one thing here whose two numbers differ, and the gap
+        // between them is the whole point of it.
+        const inChannel = targets.reduce((n, ch) => n + ch.length, 0)
+        const recipientCount = graded
+          ? graded.reduce((n, g) => n + g.conns.length, 0)
+          : inChannel
         telemetry.emit('junction.channel.publish', {
           channel:        targets.map(ch => ch.name ?? '?').join(','),
           event,
           recipientCount,
-          payloadSize:    frame.length,   // frame ≈ payload size; no re-serialization
+          refusedCount:   inChannel - recipientCount,
+          graded:         !!graded,
+          payloadSize:    graded ? (graded[0]?.frame.length ?? 0) : encodeEventFrame(event, payload).length,
         })
       }
     },
@@ -480,7 +694,8 @@ export function createChannelManager() {
 // Auth flow:
 //   Client connects to ws://host/ws?token=<session_or_api_key>
 //   _wsOpen resolves the token asynchronously before joining channels.
-//   Invalid tokens get an 'auth_failed' message and are closed.
+//   A token that is present and does not verify closes the socket with 4001
+//   ('auth_failed') before any channel is joined — the client does not reconnect.
 //   No token → joins only the 'anonymous' channel.
 
 export type ChannelSetupFn = (app: App & { channels: ReturnType<typeof createChannelManager> }) => void

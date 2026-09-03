@@ -116,6 +116,27 @@ describe('controlFor — the one place a type becomes a control', () => {
     expect(controlFor({ type: 'integer' })).toEqual({ control: 'input', step: 1 })
   })
 
+  test('a @big column is a text box that a phone gives a numeric keypad', () => {
+    // `@big` reaches here as `type: 'string'`, because the column's values do
+    // not fit a JSON number (`FJS-643`). With nothing else on the rule that is
+    // a plain text box for a whole number, so `x-big` is what picks the
+    // control — and `type` stays TEXT deliberately: `type="number"` binds
+    // through a JS number and would round the value back in the browser, which
+    // is the defect the attribute exists to close arriving one layer out.
+    expect(controlFor({ type: 'string', pattern: '^-?\\d+$', 'x-big': true }))
+      .toEqual({ control: 'input', type: 'text', inputMode: 'numeric', pattern: '^-?\\d+$' })
+    // The control: the same string rule without it.
+    expect(controlFor({ type: 'string' })).toEqual({ control: 'input' })
+  })
+
+  test('x-big survives buildFieldRules, or the row above never sees it', () => {
+    const r = buildFieldRules({
+      properties: { externalId: { type: 'string', pattern: '^-?\\d+$', 'x-big': true } },
+      required: [],
+    })
+    expect(r.externalId['x-big']).toBe(true)
+  })
+
   test('@markdown is a textarea — a declaration, not a guess about length', () => {
     expect(controlFor(rules().body).control).toBe('textarea')
     // An ordinary unbounded string is NOT promoted. Nothing declared it long.

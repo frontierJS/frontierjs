@@ -41,6 +41,14 @@ const _CARRIED = [
   // object with eight properties apart from a shape somebody declared — and
   // the control table has to answer differently for the two.
   'x-litestone-file',
+  // `@immutable` on a model that declares a `@seals` move. There is no
+  // `readOnly` beside it, deliberately: the column is writable while the row is
+  // a draft and frozen once it seals, and that difference lives in the ROW —
+  // no schema can answer it. So the seal is carried as the two things a
+  // consumer needs to answer it itself: the state column, and the values that
+  // mean sealed. A form with a record resolves readOnly off `record[field]`; a
+  // create form has no record and must not, since a row being made is a draft.
+  'x-litestone-seal',
   // `@accept("image/png, …")` — the MIME list the Data boundary will admit. It
   // is carried so the picker can offer the same list the server enforces: the
   // refusal is real either way (`FileStorage` checks it before a byte is
@@ -67,6 +75,15 @@ const _CARRIED = [
   // lets that decision be made off the declaration rather than off a column
   // name ending in `Cents`.
   'x-money', 'x-scale',
+  // `x-big` is `@big`: a 64-bit integer column whose value crosses as a STRING
+  // of digits, because past 2^53 a JS number cannot carry it (`FJS-643`). It is
+  // carried for `x-time`'s reason and it is the sharpest case of all — the
+  // field's declared type IS `string`, so with nothing else on the rule a
+  // generated form offers a plain text box for a whole number: no numeric
+  // keypad on a phone, no browser-side format refusal, and a person may type a
+  // word. The pattern beside it is the enforcement; this is what picks a
+  // control that knows the value is a number it may not treat as one.
+  'x-big',
 ]
 
 /**
@@ -478,6 +495,14 @@ function _builtinControl(rule) {
 
     case 'string': {
       if (rule.contentMediaType === _MARKDOWN) return { control: 'textarea' }
+      // `@big`. Asked before every other string row because it is the one whose
+      // JSON type does not describe the value: the column is an integer and the
+      // string is only how it travels. `inputMode` is what a phone reads for
+      // the keypad, and `type` stays text deliberately — `type="number"` binds
+      // through a JS number and would round the value back at the browser,
+      // which is the defect this attribute exists to close, arriving one layer
+      // further out.
+      if (rule['x-big']) return { control: 'input', type: 'text', inputMode: 'numeric', pattern: rule.pattern }
       // A date has no zone, so `<input type="date">` round-trips it and the
       // plain input is right. A date-time DOES have one and `datetime-local`
       // has none — it accepts and emits a wall clock — so the two have to be
@@ -1195,6 +1220,29 @@ export function normalizeBlanks(fields, data) {
 }
 
 // ── The columns the SERVER owns ───────────────────────────────────────────────
+
+/**
+ * Is this column frozen FOR THIS ROW?
+ *
+ * `@immutable` on a model that declares a `@seals` move freezes at the seal
+ * rather than at create, so the answer is in the record and not in the schema —
+ * which is why the field carries no `readOnly` and carries `x-litestone-seal`
+ * instead. One owner, because a form, a control and a write pipeline would each
+ * otherwise decide it and the three would disagree about a state two hops from
+ * the seal.
+ *
+ * **No record means NOT frozen**, deliberately: a create form is making a draft,
+ * and refusing an affordance the server decides anyway is how a working app ends
+ * up with a box nobody can type in.
+ *
+ * @param {object} rule     a field rule from buildFieldRules
+ * @param {object} [record] the row being edited
+ */
+export function sealedFor(rule, record) {
+  const seal = rule?.['x-litestone-seal']
+  if (!seal || !record) return false
+  return seal.states.includes(record[seal.field])
+}
 
 /**
  * Drop the fields a caller may not write from a create or patch payload.

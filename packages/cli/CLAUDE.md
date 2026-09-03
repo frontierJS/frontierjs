@@ -643,6 +643,19 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   This package's own `tests/pipe.test.js` pinned `FJS-379` and had never
   executed. **A new test file here has to be added to the `test` script** — the
   runner does not walk the directory, which is the shape the rule exists for.
+- **`register-check.js` grades a register row against its own table's HEADER,
+  never against a shape written into the rule.** `registers.js` infers a row's
+  shape from its cell COUNT, so a row with fewer columns than its table falls to
+  the decision-shaped branch and is handed a status nobody wrote — which is how
+  four closed rows sat in an open section where `closed-in-open` could not see
+  them, and two open defects sat in § Closed uncounted. A row with MORE columns
+  is the other half and it is markdown's: **the excess is dropped at render
+  time**, measured with a renderer, so 137 closed rows displayed no citations
+  while the links sat in the file. `row-shape` compares counts and nothing else.
+  The first version probed the DATE column instead and had to be withdrawn: it
+  also fired on a cell reading *last tuesday*, which is a bad value in the right
+  column and is `malformed-date`'s — one mistake reported twice, pointing at the
+  wrong fix. Every real case disagreed on width too, so width alone is exact.
 - **A rule belongs there only if it is SILENT when broken.** A violation that
   already raises an error belongs in the thing that raises it. `--list` prints
   the table with the invariant each rule comes from.

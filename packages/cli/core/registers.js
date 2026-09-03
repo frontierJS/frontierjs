@@ -50,11 +50,19 @@ export const REGISTERS_VERSION = 1
 export const ISSUE_STATUS = ['open', 'stale?', 'contested', 'ruled', 'needs a ruling', 'closed']
 export const SEVERITY     = ['S1', 'S2', 'S3', 'S4']
 
-// `idea` nothing built · `partial` some of it ships and the rest is the design
+// `idea` nothing built · 'proposal' idea has been designed and just not started  · `partial` some of it ships and the rest is the design
 // · `shipped` built, kept for the argument · `argued` reasoned and not adopted
-// · `assessment` a reading of the tree rather than a proposal · `index` derived
+// · `assessment` a reading of the tree rather than a idea · `index` derived
 // from the others.
-export const IDEA_STATUS = ['idea', 'partial', 'shipped', 'argued', 'assessment', 'index']
+export const IDEA_STATUS = [
+  'idea',
+  'proposal',
+  'partial',
+  'shipped',
+  'argued',
+  'assessment',
+  'index'
+]
 
 // ─── the document ─────────────────────────────────────────────────────────────
 
@@ -143,6 +151,15 @@ function readIssues(root) {
     let section   = null
     let lineNo    = 0
     let fence     = false
+    // Which column of the table in hand holds the DATE, read off that table's
+    // own header rather than assumed — the open tables and § Closed put it in
+    // different places, and the header is where each says so. `null` until a
+    // header has been seen, so a stray row above one is not graded.
+    let dateColumn = null
+    // How wide the table in hand is. A row with MORE cells than this renders
+    // truncated — the excess is dropped, silently, which for § Closed took the
+    // citations off 137 rows.
+    let headWidth  = null
 
     for (const line of src.split('\n')) {
       lineNo++
@@ -151,7 +168,19 @@ function readIssues(root) {
       if (fence) continue
 
       const heading = line.match(/^##\s+(.+?)\s*$/)
-      if (heading) { section = heading[1]; continue }
+      if (heading) { section = heading[1]; dateColumn = null; headWidth = null; continue }
+
+      // A table header. Every issue table names its date column, and which one
+      // it is IS the table's shape: `Verified` while a row is open, `Closed`
+      // once it is not.
+      if (/^\|\s*Id\s*\|/i.test(line)) {
+        const head = splitRow(line).map(c => c.toLowerCase())
+        const at   = head.findIndex(c => c === 'verified' || c === 'closed')
+        dateColumn = at === -1 ? null : at
+        headWidth  = head.length
+        continue
+      }
+
       if (!ISSUE_ROW.test(line)) continue
 
       const cells = splitRow(line)
@@ -190,6 +219,15 @@ function readIssues(root) {
         file:     relative(root, file),
         line:     lineNo,
         anchor:   anchorIn(cells[0]),
+        // Does this row line up with the table it is in? The header declares the
+        // shape and these three answer it. Both failures are silent: a row
+        // NARROWER than its header is a row from another table, and the reader
+        // below infers a shape from the cell count and hands it a status nobody
+        // wrote; a row WIDER has every excess cell dropped when the file is
+        // rendered, which for § Closed is where the citations live.
+        dateColumn,
+        headWidth,
+        columns:  cells.length,
       })
     }
   }

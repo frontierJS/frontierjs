@@ -1,0 +1,351 @@
+---
+title: Subscription
+---
+<script>
+  // One arrangement: what it costs, what it has been charged, and the two
+  // things a person may do to it.
+  //
+  // ─── Why changing the plan is a form and not a picker ─────────────────────
+  //
+  // Moving somebody mid-cycle settles the money for the rest of the period at
+  // the same moment, and WHICH document that is comes out of the schema rather
+  // than out of a branch: `Invoice.subtotal` is `@gte(0)`, so an upgrade owes
+  // money and is an invoice, and a downgrade is owed money and is a credit
+  // note. `api/src/domain/billing` owns the arithmetic and `subscriptions.changePlan`
+  // names the call — this screen states the intent and renders what came back.
+  //
+  // It is a hand-written form because there is no model behind it: the payload
+  // is `type PlanChange` in db/schema.lite, which the service names as its
+  // `input:`, so the 400 a bad quantity produces is worded by the seed and
+  // lands under the control that caused it.
+  import { subscriptions } from '@/resources/Subscription.mesa'
+  import { plans }         from '@/resources/Plan.mesa'
+  import { planVersions }  from '@/resources/PlanVersion.mesa'
+  import { invoices }      from '@/resources/Invoice.mesa'
+  import { session } from '@/session.js'
+  import { page } from '@frontierjs/sierra/router'
+  import { money } from '../../money.js'
+
+  import Alert               from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Breadcrumbs         from '@frontierjs/ui/components/display/Breadcrumbs.mesa'
+  import Button              from '@frontierjs/ui/components/forms/Button.mesa'
+  import ConfirmationPopover from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'
+  import Mono                from '@frontierjs/ui/components/display/Mono.mesa'
+  import NumberInput         from '@frontierjs/ui/components/forms/NumberInput.mesa'
+  import Pill                from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader       from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Select              from '@frontierjs/ui/components/forms/Select.mesa'
+  import Skeleton            from '@frontierjs/ui/components/feedback/Skeleton.mesa'
+  import StatCard            from '@frontierjs/ui/components/display/StatCard.mesa'
+  import Steps               from '@frontierjs/ui/components/display/Steps.mesa'
+  import Table               from '@frontierjs/ui/components/display/Table.mesa'
+  import { toasts }          from '@frontierjs/ui/stores/toastStore.js'
+
+  $: (page.params, session.level)
+
+  let sub      = null
+  let row      = null
+  let unwatch  = null
+  let version  = null     // the PlanVersion this subscription was sold at
+  let verRow   = null
+  let unwatchVer = null
+  let plan     = null
+  let planRow  = null
+  let unwatchPlan = null
+  let bills    = []
+  let options  = []       // every open price, as a Select
+  let error    = null
+  let busy     = false
+
+  // The form. Seeded from the row so *change only the seat count* is one edit
+  // rather than two, and `changePlan` refuses a payload naming neither.
+  let toVersion = null
+  let toSeats   = null
+  let fields    = {}      // per-control messages, from the service's 400
+
+  const TONE = { trialing: 'info', active: 'success', pastDue: 'warning', cancelled: 'muted' }
+
+  // The lifecycle as the schema states it. `cancelled` is off the ladder for
+  // the reason `Order`'s screen leaves `cancelled` off its own: it is not
+  // further along, it is somewhere else.
+  const lifecycle = subscriptions.fields.status.enum
+    .filter(s => s !== 'cancelled')
+    .map(s => ({ id: s, label: s }))
+
+  const columns = [
+    { key: 'number', label: 'Number' },
+    { key: 'status', label: 'Status' },
+    { key: 'period', label: 'Period' },
+    { key: 'total',  label: 'Total', align: 'right' },
+    { key: 'due',    label: 'Due' },
+  ]
+
+  /** The subscription, watched. A renewal is a job — it writes from outside
+   *  every screen — so this row moves under whoever is looking at it, and a
+   *  `service.get()` here would go stale exactly when the app is working
+   *  (`FJS-518`). */
+  function watch() {
+    row?.release()
+    row = subscriptions.record(page.params.id)
+    unwatch = row.subscribe(v => { sub = v })
+    return row.ready
+  }
+
+  /** The price this subscription was sold at, and the plan it belongs to — both
+   *  WATCHED and both re-keyed, because which version this is changes under the
+   *  screen whenever `changePlan` runs, where the subscription itself does not
+   *  move. A `service.get()` here is a plain object no announcement reaches, so
+   *  a plan retired or renamed in another tab would leave this screen saying
+   *  the old thing with nothing said (`FJS-518`). */
+  function watchVersion(id) {
+    if (id == null) { unwatchVer?.(); verRow?.release(); unwatchVer = verRow = null; version = null; return }
+    if (verRow && String(verRow.id) === String(id)) return verRow.ready
+    unwatchVer?.(); verRow?.release()
+    verRow = planVersions.record(id)
+    unwatchVer = verRow.subscribe(v => { version = v })
+    return verRow.ready
+  }
+
+  function watchPlan(id) {
+    if (id == null) { unwatchPlan?.(); planRow?.release(); unwatchPlan = planRow = null; plan = null; return }
+    if (planRow && String(planRow.id) === String(id)) return planRow.ready
+    unwatchPlan?.(); planRow?.release()
+    planRow = plans.record(id)
+    unwatchPlan = planRow.subscribe(v => { plan = v })
+    return planRow.ready
+  }
+
+  async function loadRest() {
+    if (!sub) return
+    await watchVersion(sub.planVersionId)
+
+    const list = await invoices.service.find({ subscriptionId: sub.id }, { orderBy: '-issuedAt', limit: 50 })
+    bills = list?.data ?? []
+
+    // What may be moved TO: the open window of every plan still on sale. A
+    // closed window is a price nobody may be sold at any more, which is what
+    // effective dating means — so it is not in the list, and the version the
+    // subscriber is already on is not either unless it is still open.
+    const [ps, vs] = await Promise.all([
+      plans.service.find({ active: true }, { orderBy: 'code', limit: 100 }),
+      planVersions.service.find({ effectiveTo: null }, { limit: 100 }),
+    ])
+    const byId = new Map((ps?.data ?? []).map(p => [p.id, p]))
+    options = (vs?.data ?? [])
+      .filter(v => byId.has(v.planId))
+      .map(v => ({ value: v.id, label: `${byId.get(v.planId).name} — ${money(v.price)} / ${byId.get(v.planId).interval}` }))
+
+    toSeats ??= sub.quantity
+  }
+
+  async function boot() {
+    error = null
+    try { await watch(); await loadRest() }
+    catch (e) { error = e.message }
+  }
+  boot()
+  $: page.params.id, () => boot()
+  $.onDestroy(() => {
+    unwatch?.();     row?.release()
+    unwatchVer?.();  verRow?.release()
+    unwatchPlan?.(); planRow?.release()
+  })
+
+  // All four declared moves are `@system`, so this answers nothing — it is kept
+  // as the honest statement of that rather than deleted, and the header below
+  // renders it beside the two buttons that are NOT derived.
+  // The plan is reached THROUGH the version, so it is watched off `version`
+  // rather than resolved once inside `loadRest`. Reading `version.planId` on
+  // the line after `await watchVersion(…)` is a race the screen loses outright.
+  //
+  // This form does not hold either, and `FJS-632` is that: measured across
+  // seven runs, `plan` stays null about one run in three and the *this plan now
+  // sells at* alert never appears. Re-keying directly from the version's own
+  // subscribe callback was tried and did not move the rate.
+  $: version, () => watchPlan(version?.planId ?? null)
+
+  $: moves = sub ? subscriptions.transitions(sub, session.level).filter(m => m.allowed) : []
+
+  /** Whether this caller may stop or restart the renewal. Both methods write one
+   *  `@system` column through the model's own `update` policy, so one answer
+   *  covers both — and a row that has already ended is out either way, which the
+   *  service refuses independently. Spelt as `canStop(s)` to match the list
+   *  screen's, so the two cannot drift into different rules. */
+  const canStop = (s) => Boolean(s) && s.status !== 'cancelled'
+                         && subscriptions.can('update', session.level)
+
+  async function changePlan(e) {
+    e.preventDefault()
+    error = null; fields = {}; busy = true
+    try {
+      // Only what changed. Sending the current values back would be asking for
+      // a proration of nothing, which is a document recording that a customer
+      // was charged nothing — a different claim from having made no charge.
+      const body = {}
+      if (toVersion && Number(toVersion) !== sub.planVersionId) body.planVersionId = Number(toVersion)
+      if (toSeats   && Number(toSeats)   !== sub.quantity)      body.quantity      = Number(toSeats)
+      if (!Object.keys(body).length) { error = 'Nothing to change'; return }
+
+      const result = await subscriptions.service.invoke('changePlan', sub.id, body)
+      // WHICH document was written is the schema's answer, so the sentence
+      // reads it off the result rather than deciding it here.
+      const doc = result?.kind === 'invoice'     ? `invoice ${result.number}`
+                : result?.kind === 'credit-note' ? `credit note ${result.number}`
+                : 'nothing to settle'
+      toasts.success(`Changed — ${doc}`)
+      toVersion = null
+      // The row itself moved (plan version, quantity) and so did what hangs off
+      // it, so both halves are re-read: the record view for the row, and
+      // `loadRest` for the version, the plan and the invoices this change has
+      // probably just added one to.
+      await Promise.all([row.refresh(), loadRest()])
+    } catch (err) {
+      const mapped = subscriptions.fieldErrors(err)
+      fields = mapped.fields ?? {}
+      error  = mapped.message ?? err.message
+    } finally { busy = false }
+  }
+
+  /** Stop renewing, or start again — one write over one `@system` column, with
+   *  the state refusal in the service rather than restated here. The record
+   *  view is refreshed because the flag is a column on the row this screen is
+   *  watching, and a `@system` write announces like any other. */
+  async function setRenewal(on) {
+    busy = true
+    try {
+      await subscriptions.service.invoke(on ? 'resume' : 'cancel', sub.id)
+      toasts.success(on ? 'It will renew again' : 'It stops at the end of this period')
+      await row.refresh()
+    } catch (e) { error = e.message }
+    finally { busy = false }
+  }
+
+  const when = iso => iso ? new Date(iso).toLocaleDateString(undefined,
+    { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
+</script>
+
+<Breadcrumbs items={[
+  { label: 'Subscriptions', href: '/subscriptions/' },
+  { label: sub ? sub.reference : 'Loading…' },
+]} />
+
+{#if error && !sub}
+  <Alert tone="danger" id="sd-error">{error}</Alert>
+{:else if !sub}
+  <div class="stack">
+    <Skeleton variant="text" width="40%" />
+    <Skeleton variant="card" />
+  </div>
+{:else}
+  <SectionHeader title={sub.reference} level={1} sub={'subscription #' + sub.id}>
+    {#snippet action()}
+      <div class="cluster">
+        {#each moves as move}
+          <Button variant="outlined" data-move={move.name} disabled={busy}>{move.name}</Button>
+        {/each}
+        {#if canStop(sub) && sub.cancelAtPeriodEnd}
+          <Button variant="outlined" data-resume="1" disabled={busy} onclick={() => setRenewal(true)}>
+            Resume
+          </Button>
+        {:else if canStop(sub)}
+          <ConfirmationPopover
+            title="Stop this subscription renewing?"
+            message="It runs to the end of the period that has been paid for and ends there. Anything already invoiced is still owed."
+            confirmLabel="Stop renewing"
+            onconfirm={() => setRenewal(false)}
+          >
+            {#snippet trigger()}
+              <Button variant="outlined" tone="danger" data-stop="1" disabled={busy}>Stop renewing</Button>
+            {/snippet}
+          </ConfirmationPopover>
+        {/if}
+      </div>
+    {/snippet}
+  </SectionHeader>
+
+  {#if error}<Alert tone="danger" id="sd-error">{error}</Alert>{/if}
+
+  <Steps steps={lifecycle} currentStep={sub.status} label="Subscription lifecycle" />
+
+  <div class="tiles" style="--tile-min: 12rem">
+    <StatCard label="Status" value={sub.status} tone={sub.status === 'cancelled' ? 'danger' : ''} id="sd-status" />
+    <!--
+      Carries an id because it is the only thing on the page that says whether
+      the PLAN read has landed. The alert below compares two independent
+      `record()` subscriptions — this one and the version — and until both are
+      in it renders nothing, which is indistinguishable from the prices
+      agreeing. The fallback starts with `#`, so a name here means loaded.
+    -->
+    <StatCard label="Plan"   value={plan ? plan.name : '#' + sub.planVersionId} id="sd-plan" />
+    <!--
+      The price the subscriber is ON, which is not the plan's price now. That
+      difference is the whole of what `PlanVersion` is for, so it is a tile
+      rather than a footnote.
+    -->
+    <StatCard label="Sold at" value={version ? money(version.price) : '—'} id="sd-sold-at" />
+    <StatCard label="Seats"  value={String(sub.quantity)} id="sd-seats" />
+    <StatCard label={sub.cancelAtPeriodEnd ? 'Ends' : 'Renews'}
+              value={when(sub.currentPeriodEnd)}
+              tone={sub.cancelAtPeriodEnd ? 'warning' : ''} id="sd-renews" />
+  </div>
+
+  <!--
+    The flag is not a status, so nothing about `sub.status` says this is going
+    to happen. The row reads `active` right up to the boundary, which is
+    correct — it IS active, and somebody looking at the screen still has to be
+    told what happens next.
+  -->
+  {#if sub.cancelAtPeriodEnd && sub.status !== 'cancelled'}
+    <Alert tone="warning" id="sd-stopping">
+      This subscription stops on <strong>{when(sub.currentPeriodEnd)}</strong>
+      and will not be invoiced again. It is still active until then — the period
+      has been paid for.
+    </Alert>
+  {/if}
+
+  {#if plan && version && plan.currentPrice != null && plan.currentPrice !== version.price}
+    <Alert tone="info" id="sd-price-moved">
+      This subscription is on <strong>{money(version.price)}</strong>; the plan
+      now sells at <strong>{money(plan.currentPrice)}</strong>. Repricing a plan
+      moves nobody — a subscription names the <code>PlanVersion</code> it was
+      sold at.
+    </Alert>
+  {/if}
+
+  {#if sub.status !== 'cancelled'}
+    <SectionHeader title="Change plan or seats" level={2} />
+
+    <form class="card stack" id="change-form" onsubmit={changePlan} novalidate>
+      <p class="text-sm text-muted">
+        Takes effect now. The rest of this period is prorated and settled at the
+        same moment — an upgrade writes an invoice, a downgrade a credit note.
+      </p>
+
+      <Select id="cp-version" name="planVersionId" label="Move to"
+              options={options} bind:value={toVersion}
+              placeholder="Keep the current plan"
+              error={fields.planVersionId} />
+      <NumberInput id="cp-seats" name="quantity" label="Seats" min={1}
+                   bind:value={toSeats} error={fields.quantity} />
+
+      <Button id="cp-submit" type="submit" variant="primary" disabled={busy} loading={busy}>
+        Change
+      </Button>
+    </form>
+  {/if}
+
+  <SectionHeader title="Invoices" level={2} />
+
+  <Table {columns} rows={bills} striped compact>
+    {#snippet row(inv)}
+      <tr data-invoice={inv.id} data-number={inv.number}>
+        <td><a href={'/invoices/' + inv.id + '/'}><Mono size="xs">{inv.number}</Mono></a></td>
+        <td><Pill tone={inv.status === 'paid' ? 'success' : inv.status === 'void' ? 'muted' : 'warning'}
+                  data-status={inv.status}>{inv.status}</Pill></td>
+        <td class="text-muted">{when(inv.periodStart)} – {when(inv.periodEnd)}</td>
+        <td class="text-right" data-total={inv.total}>{money(inv.total)}</td>
+        <td class="text-muted">{when(inv.dueAt)}</td>
+      </tr>
+    {/snippet}
+  </Table>
+{/if}

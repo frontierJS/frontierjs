@@ -1,0 +1,15 @@
+<script module>
+  // web/src/resources/CreditNote.mesa — the Resource layer.
+  //
+  // Named for the model, exporting the accessor, `model:` stated for
+  // `OrderLine.mesa`'s reason.
+  //
+  // No markup half. A credit note is written by the application — a downgrade
+  // mid-cycle is one, and `api/src/domain/billing` is the only thing that issues
+  // them — so `credit-notes` declares `methods: ['find', 'get']` and there is
+  // nothing to generate a form over.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const creditNotes = createResource('credit-notes', { model: 'CreditNote' })
+</script>

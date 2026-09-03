@@ -13,8 +13,9 @@
  * that should be clean is paired with one that must not be.
  */
 
-import { describe, test, expect } from 'bun:test'
+import { describe, test, it, expect } from 'bun:test'
 import { createTestEnv } from '../src/testing.js'
+import { parse } from '../src/core/parser.js'
 
 const CLEAN = `
   tenancy { strategy row  column workspaceId  claim workspaceId }
@@ -194,5 +195,81 @@ describe('verifyTenantIsolation', () => {
     // And the delegated model leaks too, which is the half verifyRowPolicies
     // reports as not-graded rather than answering.
     expect(leaks(of(rows, 'Widget')).length).toBeGreaterThan(0)
+  })
+})
+
+// ─── the write side: a unique that is not per tenant ─────────────────────────
+//
+// `verifyTenantIsolation` above executes the READ crossing. A `@unique` is the
+// same boundary from the write side and the desugar never touched it, so on a
+// scoped model an ordinary `slug String @unique` is unique across the whole
+// installation: two tenants cannot both hold "launch", and the second is
+// refused by a message naming the value — telling them a row they may not read
+// exists (`FJS-639`).
+//
+// Every case here is a PAIR with a correct schema that must stay silent. A rule
+// that fires on a correct app is a rule people switch off, and the naive form
+// of this one — *the constraint must name the tenant column* — reports ten of
+// basecamp's twenty-three, every one of them right.
+describe('a unique that is not per tenant', () => {
+  const T = 'tenancy { strategy row  column workspaceId  claim workspaceId }\n' +
+            'model Workspace { id Int @id  name String  @@tenant(none) }\n'
+  const warn = (src: string) => {
+    const r = parse(T + src)
+    expect(r.valid).toBe(true)
+    return (r.warnings ?? []).filter(w => w.includes('unique constraint'))
+  }
+
+  it('names a bare @unique on a scoped model, and says all three ways out', () => {
+    const w = warn('model Post { id Int @id  workspaceId Int  slug String @unique }')
+    expect(w).toHaveLength(1)
+    expect(w[0]).toContain('Post.slug')
+    expect(w[0]).toContain('workspaceId')          // add the column
+    expect(w[0]).toContain('reaching a scoped model')  // or a scoped parent
+    expect(w[0]).toContain('global')               // or say you meant it
+  })
+
+  it('is silent when the tuple carries the tenant column', () => {
+    expect(warn('model Post { id Int @id  workspaceId Int  slug String\n' +
+                '  @@unique([workspaceId, slug]) }')).toHaveLength(0)
+  })
+
+  // The half a non-transitive rule gets wrong: a Volume is per-tenant because a
+  // Server is, and the constraint names no tenant column at all.
+  it('is silent when the tuple reaches a scoped parent', () => {
+    expect(warn(`model Server { id Int @id  workspaceId Int  volumes Volume[] }
+model Volume { id Int @id  serverId Int  name String
+  server Server @relation(fields: [serverId], references: [id])
+  @@unique([serverId, name]) }`)).toHaveLength(0)
+  })
+
+  // …and transitively, which is what the scoping fixpoint buys: App is scoped
+  // through Environment through Project, and none of the three names a column
+  // on the constraint.
+  it('is silent through a GRANDPARENT', () => {
+    expect(warn(`model Project     { id Int @id  workspaceId Int  envs Environment[] }
+model Environment { id Int @id  projectId Int  apps App[]
+  project Project @relation(fields: [projectId], references: [id]) }
+model App         { id Int @id  environmentId Int  slug String
+  env Environment @relation(fields: [environmentId], references: [id])
+  @@unique([environmentId, slug]) }`)).toHaveLength(0)
+  })
+
+  it('is silenced by saying it was meant — both spellings', () => {
+    expect(warn('model Invitation { id Int @id  workspaceId Int  token String @unique(global) }')).toHaveLength(0)
+    expect(warn('model Site { id Int @id  workspaceId Int  host String\n' +
+                '  @@unique([host], global: true) }')).toHaveLength(0)
+  })
+
+  it('says nothing about a model that spans tenants on purpose', () => {
+    expect(warn('model Plan { id Int @id  code String @unique  @@tenant(none) }')).toHaveLength(0)
+  })
+
+  // A modifier that parsed as nothing would be a schema saying less than its
+  // author wrote — the failure `@unique(global)` exists to prevent.
+  it('refuses a mis-spelled modifier by name', () => {
+    const r = parse(T + 'model P { id Int @id  workspaceId Int  s String @unique(globl) }')
+    expect(r.valid).toBe(false)
+    expect(r.errors.join()).toMatch(/unknown argument 'globl'.*only one is 'global'/)
   })
 })

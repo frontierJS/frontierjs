@@ -163,26 +163,30 @@ describe('dispatch', () => {
     expect((err as Error).message).toContain("'nope'")
   })
 
-  test('an action attached AFTER construction still dispatches, and warns once', async () => {
-    // Never a supported shape, but nothing refused it either, and a silent 404
-    // is the worst way to find that out. The warn is the transition.
+  test('an action attached AFTER construction does not dispatch (FJS-690)', async () => {
+    // The table is the whole answer. While an own key was a fallback,
+    // `X-Service-Method` was an allow-list written as a block-list — six CRUD
+    // names refused and every other own function callable, `_create` and
+    // `pipelines` included.
     const svc = createService({ name: 'things', model: 'thing' })
     ;(svc as unknown as Record<string, unknown>).late = noop
 
-    const seen: string[] = []
-    const original = console.warn
-    console.warn = (...a: unknown[]) => { seen.push(a.join(' ')) }
-    try {
-      const c = ctx({ service: 'things', method: 'late' })
-      await callService(svc, c)
-      expect(resultData(c.result)).toEqual({ ok: true })
-      await callService(svc, ctx({ service: 'things', method: 'late' }))
-    } finally {
-      console.warn = original
-    }
+    const err = await callService(svc, ctx({ service: 'things', method: 'late' })).catch(e => e)
+    expect((err as { code?: number }).code).toBe(404)
+    expect((err as Error).message).toContain("'late'")
+  })
 
-    expect(seen).toHaveLength(1)
-    expect(seen[0]).toContain("'late'")
+  test('the internals are not methods (FJS-690)', async () => {
+    // Each of these resolved to a function before the table became the only
+    // answer: two skip the derived hooks, two describe the service, and the
+    // last two are Object.prototype's, reached because the table is an object
+    // literal and bare indexing walks the prototype chain.
+    const svc = createService({ name: 'things', model: 'thing', reboot: noop })
+    for (const method of ['_create', '_find', 'describe', 'pipelines', 'hooks', 'constructor', 'toString', '__proto__']) {
+      const err = await callService(svc, ctx({ service: 'things', method })).catch(e => e)
+      expect([404, 405]).toContain((err as { code?: number }).code ?? 0)
+      expect((err as Error).message).toContain(method)
+    }
   })
 })
 

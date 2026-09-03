@@ -322,12 +322,36 @@ function createAgainstHistory(parseResult, dbName, label, dir, { pluralize = fal
   const name    = nextMigrationName(dir, label)
   const summary = summariseDiff(diffResult)
 
+  // A dropped column is one line of the diff summary, sitting among the adds
+  // and the index changes, and it is the only line that destroys something. The
+  // file IS the review step here — that is the whole difference between this
+  // and `autoMigrate`, which refuses outright — so the review is owed a banner
+  // it cannot skim past rather than a `- col body` at the same weight as
+  // everything else (`FJS-641`).
+  const loss   = describeDataLoss(diffResult.tableDiffs)
+  const rename = loss.find(l => l.renameTo)
+  const banner = loss.length ? [
+    `-- ╔${'═'.repeat(74)}╗`,
+    `-- ║ DESTRUCTIVE — applying this deletes the values in these columns:`,
+    ...loss.map(l => `-- ║     ${lossLine(l)}`),
+    `-- ║`,
+    ...(rename ? [
+      `-- ║ To keep them, replace the rebuild below with a rename:`,
+      `-- ║     ALTER TABLE "${rename.table}" RENAME COLUMN "${rename.columns[0]}" TO "${rename.renameTo}";`,
+    ] : [
+      `-- ║ To keep them, copy the values somewhere before the old table is dropped.`,
+    ]),
+    `-- ╚${'═'.repeat(74)}╝`,
+  ].join('\n') : ''
+
   const header = [
     `-- Litestone migration${dbName === 'main' ? '' : ` (database: ${dbName})`}`,
     `-- Created:   ${new Date().toISOString()}`,
     `-- Changes:`,
     summary.split('\n').map(l => `--   ${l}`).join('\n'),
-    ``, ``,
+    ``,
+    banner,
+    ``,
   ].join('\n')
 
   mkdirSync(resolve(dir), { recursive: true })
@@ -412,13 +436,69 @@ export function migrationStatements(filePath) {
   return executableStatements(loadMigrationSql(filePath).stmts)
 }
 
-function runInTransaction(rawDb, stmts, record = null) {
+// Step 11 of SQLite's own 12-step ALTER procedure, and it was the missing one.
+// A rebuild copies the rows the two tables share and runs with foreign_keys OFF
+// throughout, so a copy that drops a parent row — or a column that becomes a
+// relation over values that never pointed anywhere — commits orphans that the
+// engine will never raise on its own: SQLite checks a foreign key when the CHILD
+// row is written, so a violation created underneath a row surfaces at the next
+// unrelated update of it, months later, as a refusal about a row somebody was
+// only renaming. Measured on a real rebuild before this ran (`FJS-637`).
+//
+// Checked inside the transaction, so the answer is the state that is about to
+// commit and a failure takes the whole migration back. It reports the database
+// rather than the migration's own tables on purpose: rebuilding a PARENT is what
+// orphans rows in a child the migration never names — which is also why it
+// cannot be scoped to the tables this migration mentions.
+//
+// It is scoped by KIND instead. `PRAGMA foreign_key_check` walks every foreign
+// key of every row, which on a 900-model schema is seconds — too much to spend
+// on every boot of an app whose migration only added a column. Only a statement
+// that moves or removes ROWS can leave an orphan behind: an ADD COLUMN, a
+// CREATE INDEX or a DROP TRIGGER cannot, and a rebuild is exactly an
+// `INSERT INTO … SELECT` followed by a `DROP TABLE` and a rename.
+const ROW_MOVING = /^\s*(INSERT\s+INTO|DELETE\s+FROM|DROP\s+TABLE|ALTER\s+TABLE\s+.*\bRENAME\b)/i
+
+function couldOrphan(stmts) {
+  return stmts.some(s => ROW_MOVING.test(s))
+}
+
+function assertNoOrphans(rawDb) {
+  const rows = rawDb.query('PRAGMA foreign_key_check').all()
+  if (!rows.length) return
+  const shown = rows.slice(0, 5)
+    .map(r => `  "${r.table}" rowid ${r.rowid} → "${r.parent}" (fk ${r.fkid})`)
+    .join('\n')
+  const more = rows.length > shown.split('\n').length ? `\n  …and ${rows.length - 5} more` : ''
+  throw new Error(
+    `Migration left ${rows.length} foreign key violation(s) and was rolled back:\n${shown}${more}\n` +
+    `A rebuild copies only the columns the old and new tables share, so a row whose parent ` +
+    `was not carried over is orphaned. Repair the rows, or carry the parent, then migrate again.`,
+  )
+}
+
+/**
+ * Apply `stmts` atomically. Answers `true` when they ran and `false` when
+ * `guard` declined after the write lock was taken.
+ *
+ * **`BEGIN IMMEDIATE`, not `BEGIN`.** A deferred transaction takes no write
+ * lock until its first write, so two processes booting against one file both
+ * read, both decide the same migration is needed, and the loser applies
+ * statements the winner has already applied — `duplicate column name`, measured
+ * in 5 of 10 runs (`FJS-642`). Taking the lock up front serialises them; the
+ * `guard` is what makes the loser notice, because a lock alone only makes it
+ * wait its turn to do the wrong thing.
+ */
+function runInTransaction(rawDb, stmts, record = null, guard = null) {
   rawDb.run('PRAGMA foreign_keys = OFF')
-  rawDb.run('BEGIN')
+  rawDb.run('BEGIN IMMEDIATE')
   try {
+    if (guard && guard() === false) { rawDb.run('ROLLBACK'); return false }
     for (const stmt of stmts) rawDb.run(stmt + ';')
     if (record) record()
+    if (couldOrphan(stmts)) assertNoOrphans(rawDb)
     rawDb.run('COMMIT')
+    return true
   } catch (e) {
     try { rawDb.run('ROLLBACK') } catch { /* no open txn — nothing to roll back */ }
     throw e
@@ -644,7 +724,41 @@ function writeAutoHash(rawDb, hash) {
   } catch { /* advisory — a read-only DB just skips the fast path next time */ }
 }
 
-export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force = false } = {}) {
+// A column that leaves the schema takes its values with it, and a RENAME is a
+// drop plus an add — `diffColumns` is a name-set diff with no rename detection,
+// so the rebuild copies the columns the two tables share and the old table goes.
+// Measured: `body String?` → `content String?` on a populated database answered
+// `state: 'migrated', applied: 7` and the data was gone. The row-count guard
+// passed, because it counts rows and not values (`FJS-641`).
+//
+// Graded per table so the message can ask the question that is usually the
+// right one. One column out and one in, of the same type, is a rename far more
+// often than it is a coincidence — and the heuristic only ever changes the
+// SENTENCE, never the decision, so a wrong guess costs a reader nothing.
+// Answers the FACTS and never the advice: the two callers are a refusal and a
+// banner inside the very file the refusal tells you to write, so a shared
+// sentence is wrong in one of them whichever way it is worded.
+function describeDataLoss(tableDiffs) {
+  const out = []
+  for (const d of tableDiffs) {
+    const dropped = d.cols?.dropped ?? []
+    if (!dropped.length) continue
+    const added = d.cols?.added ?? []
+    out.push({
+      table:    d.name,
+      columns:  dropped.map(c => c.name),
+      renameTo: dropped.length === 1 && added.length === 1 && dropped[0].type === added[0].type
+        ? added[0].name
+        : null,
+    })
+  }
+  return out
+}
+
+const lossLine = (l) => `${l.table}.${l.columns.join(', ')}` +
+  (l.renameTo ? ` (renamed to "${l.renameTo}"?)` : '')
+
+export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force = false, acceptDataLoss = false } = {}) {
   // Accept either a parseResult or pull it from db.$schema
   const parseResult = parseResultOrSchema ?? { schema: db.$schema, valid: true, errors: [] }
 
@@ -720,16 +834,36 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
       // with no DEFAULT has no value for existing rows. Refuse loudly instead
       // of applying commented-out SQL and marking the db in-sync — the hash is
       // NOT written, so this surfaces on every startup until the schema is fixed.
+      //
+      // BOTH paths, and for a long time only the rebuild one. A plain column
+      // add does not need a rebuild, so `blockedAdds` was collected by the diff
+      // and read by nobody: `generateMigrationSQL` wrote the ALTER out as a
+      // COMMENT, `executableStatements` correctly ran none of it, and this
+      // reported `state: 'migrated', applied: 0` — with the reason visible only
+      // inside a SQL string the caller usually discards. The application then
+      // ran against a table missing a column its own seed declares, and every
+      // write of that column was stripped by mass-assignment protection, so a
+      // required field read back `undefined` with nothing anywhere saying why
+      // (`FJS-604`).
       const blockedCols = diffResult.tableDiffs.flatMap(d =>
-        d.needsRebuild
-          ? (d.cols?.added ?? []).filter(c => c.notnull && c.default == null).map(c => `${d.name}.${c.name}`)
-          : [])
+        (d.needsRebuild
+          ? (d.cols?.added ?? []).filter(c => c.notnull && c.default == null)
+          : (d.blockedAdds ?? [])
+        ).map(c => `${d.name}.${c.name}`))
       if (blockedCols.length) {
-        results[dbName] = {
-          state:  'blocked',
-          reason: `rebuild adds NOT NULL column(s) with no DEFAULT: ${blockedCols.join(', ')} — ` +
-                  `add a @default() or make the field optional (?)`,
-        }
+        const reason = `adds NOT NULL column(s) with no DEFAULT: ${blockedCols.join(', ')} — ` +
+                       `add a @default() or make the field optional (?)`
+        // Announced as well as returned. The state is honest and the hash is
+        // not written, so it surfaces on every startup — but only to a caller
+        // that reads the result, and the app that found this discards it, as
+        // most do. A schema and a table that disagree is exactly the class the
+        // directory announcement in `db-path.js` exists for.
+        console.warn(
+          `[litestone] Migration BLOCKED for database "${dbName}" — the schema and the table now disagree.\n` +
+          `            ${reason}\n` +
+          `            Nothing was applied and nothing else in this migration ran; a write to a blocked ` +
+          `column is silently dropped, so the value reads back as undefined.`)
+        results[dbName] = { state: 'blocked', reason }
         continue
       }
 
@@ -753,12 +887,70 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
         continue
       }
 
+      // The third blocked rule, and the one with the worst consequence: a
+      // column leaving the schema takes its values with it, and nothing said so.
+      // `acceptDataLoss: true` is the caller stating it — Prisma's `db push`
+      // demands `--accept-data-loss` for exactly this shape, and this mechanism
+      // is modelled on it. The hash is withheld like the other two, so a schema
+      // left this way re-announces on every boot rather than going quiet.
+      const dataLoss = describeDataLoss(diffResult.tableDiffs)
+      if (dataLoss.length && !acceptDataLoss) {
+        const rename = dataLoss.find(l => l.renameTo)
+        const reason = `drops column(s) and the values in them: ${dataLoss.map(lossLine).join('; ')}`
+        console.warn(
+          `[litestone] Migration BLOCKED for database "${dbName}" — it would destroy data.\n` +
+          `            ${reason}\n` +
+          (rename
+            ? `            A rename is a drop plus an add here, so keep the values with a file migration:\n` +
+              `            ALTER TABLE "${rename.table}" RENAME COLUMN "${rename.columns[0]}" TO "${rename.renameTo}"\n`
+            : '') +
+          `            Nothing was applied. Pass { acceptDataLoss: true } to autoMigrate() to say the ` +
+          `loss is intended.`)
+        results[dbName] = { state: 'blocked', reason, dataLoss }
+        continue
+      }
+
       const sql   = generateMigrationSQL(diffResult, parseResult, { pluralize })
       const stmts = executableStatements(splitStatements(sql))
 
-      runInTransaction(rawDb, stmts)
+      // A rebuild copies every surviving value through `INSERT … SELECT`, and
+      // SQLite is entitled to refuse one: a STRICT table takes no TEXT into an
+      // INTEGER column, so `String` → `Int` over a populated table threw
+      // `SQLITE_CONSTRAINT_DATATYPE` out of here and killed the app at boot,
+      // naming a temporary table nobody wrote (`FJS-645`). The transaction has
+      // already rolled back, so the database is untouched — what was missing is
+      // that the caller was told in the vocabulary of the other two refusals
+      // rather than in SQLite's.
+      let ran
+      try {
+        // The hash is stamped INSIDE this transaction, and re-read inside it
+        // too. Written after the commit, there is a window where the winner has
+        // applied its statements and not yet said so, and a second replica that
+        // takes the lock in that window applies them again. Both halves have to
+        // be in the transaction or the guard is guessing.
+        ran = runInTransaction(rawDb, stmts,
+          () => writeAutoHash(rawDb, ddlHash),
+          () => readAutoHash(rawDb) !== ddlHash)
+      } catch (err) {
+        const reason = `SQLite refused the rebuild: ${err?.message ?? err}`
+        console.warn(
+          `[litestone] Migration FAILED for database "${dbName}" — nothing was applied and the ` +
+          `database is unchanged.\n            ${reason}\n` +
+          `            A type change is the usual cause: the existing values have to satisfy the new ` +
+          `column, so convert them in a file migration first.`)
+        results[dbName] = { state: 'failed', reason, error: err }
+        continue
+      }
 
-      writeAutoHash(rawDb, ddlHash)
+      // The guard declined: another process migrated this database while this
+      // one was diffing. Nothing was applied because nothing was left to apply,
+      // which is `in-sync` and not a failure — a second replica booting is the
+      // normal shape, not an error condition.
+      if (!ran) {
+        results[dbName] = { state: 'in-sync', applied: 0, note: 'another process migrated it first' }
+        continue
+      }
+
       results[dbName] = { state: 'migrated', applied: stmts.length, sql }
       // Auto-ANALYZE (bounded) — see migrations.apply() for rationale.
       try { rawDb.run('PRAGMA analysis_limit=400'); rawDb.run('ANALYZE') } catch { /* advisory */ }

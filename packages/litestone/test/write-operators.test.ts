@@ -148,3 +148,81 @@ describe('what is refused, and why', () => {
     expect(m).toMatch(/push on an array one/)
   })
 })
+
+// ─── the field write policy, and the half the operators went round ──────────
+//
+// `FJS-D129` says a field @allow('write', …) is the WHEN of
+// `SET col = CASE WHEN … THEN ? ELSE col END`, so the predicate reads the
+// STORED row and a caller who may not write the column leaves it as it was.
+// An operator was spliced into the SET clause whole and never reached that
+// wrapper, so the grid held for `{ views: 5 }` and not for
+// `{ views: { increment: 5 } }` — measured, and both directions of it
+// (FJS-659).
+//
+// Every refusal here is PAIRED with the same call by a caller who may make it.
+// A guard that refuses everybody is indistinguishable from a working one when
+// you only ask the refused side (FJS-351).
+describe('an operator on a column carrying @allow(write)', () => {
+  const POLICED = `
+    model Post {
+      id    Int      @id
+      title String
+      views Int      @default(0)  @allow('write', auth().role == 'admin')
+      tags  String[] @default([]) @allow('write', auth().role == 'admin')
+      @@gate("0.0.0.0")
+    }
+  `
+  let root: any, user: any, admin: any
+  const stored = () => root.asSystem().post.findUnique({ where: { id: 1 } })
+
+  beforeEach(async () => {
+    root  = await createClient({ db: ':memory:', schema: POLICED })
+    await root.asSystem().post.create({ data: { id: 1, title: 't', views: 10, tags: ['a'] } })
+    user  = root.$setAuth({ id: 'u1', role: 'user'  })
+    admin = root.$setAuth({ id: 'u2', role: 'admin' })
+  })
+
+  test('increment is declined for a caller who may not write the column', async () => {
+    await user.post.update({ where: { id: 1 }, data: { views: { increment: 5 } } })
+    expect((await stored()).views).toBe(10)
+
+    await admin.post.update({ where: { id: 1 }, data: { views: { increment: 5 } } })
+    expect((await stored()).views).toBe(15)
+  })
+
+  test('push is declined the same way', async () => {
+    await user.post.update({ where: { id: 1 }, data: { tags: { push: 'hacked' } } })
+    expect((await stored()).tags).toEqual(['a'])
+
+    await admin.post.update({ where: { id: 1 }, data: { tags: { push: 'ok' } } })
+    expect((await stored()).tags).toEqual(['a', 'ok'])
+  })
+
+  // The decline is SILENT, exactly as a plain value write on the same column
+  // is — that is the field-policy contract and not something new here. Asserted
+  // so a later change to a throw is a decision rather than a surprise.
+  test('the decline is silent, and matches what a plain value write does', async () => {
+    await user.post.update({ where: { id: 1 }, data: { views: 999 } })
+    expect((await stored()).views).toBe(10)
+    await user.post.update({ where: { id: 1 }, data: { views: { increment: 1 } } })
+    expect((await stored()).views).toBe(10)
+  })
+
+  // The negative control for the whole block: an unpoliced column in the same
+  // payload still moves, or the assertions above would pass against a fix that
+  // simply stopped applying operators.
+  test('an unpoliced column in the same write still moves', async () => {
+    await user.post.update({ where: { id: 1 }, data: { title: 'changed', views: { increment: 3 } } })
+    const r = await stored()
+    expect([r.title, r.views]).toEqual(['changed', 10])
+  })
+
+  test('updateMany reads the predicate too', async () => {
+    await root.asSystem().post.create({ data: { id: 2, title: 'u', views: 20, tags: [] } })
+    await user.post.updateMany({ where: {}, data: { views: { increment: 1 } } })
+    expect([(await stored()).views, (await root.asSystem().post.findUnique({ where: { id: 2 } })).views]).toEqual([10, 20])
+
+    await admin.post.updateMany({ where: {}, data: { views: { increment: 1 } } })
+    expect([(await stored()).views, (await root.asSystem().post.findUnique({ where: { id: 2 } })).views]).toEqual([11, 21])
+  })
+})

@@ -4,7 +4,8 @@
 // Nothing below the bridge touches the service layer.
 
 import type { TransportContext } from './types.ts'
-import { toFrameworkError, FrameworkError } from '../core/errors.ts'
+import { toFrameworkError, FrameworkError, BadRequest, sanitizeError } from '../core/errors.ts'
+import { accessorCandidates } from '../core/litestone.ts'
 
 // ─── Context types — moved to core (core/context.ts) ─────────────────────
 // The service layer's vocabulary (ServiceContext, ServiceResult, hook and
@@ -117,6 +118,8 @@ export const bridge = {
       directives: QueryDirectives
     }
 
+    refuseNegativeWindow(directives)
+
     // ── Build ctx.data — merge body + multipart files ──────────────────
     const data = (() => {
       // An ARRAY body is a bulk write and must survive as an array.
@@ -194,7 +197,7 @@ export const bridge = {
    *   false     → unwrap everything, lists included (bare array)
    */
   toResponse(ctx: ServiceContext, rawWrap?: boolean): Response {
-    if (ctx.error) return errorResponse(ctx.error)
+    if (ctx.error) return errorResponse(ctx.error, ctx)
 
     const result = ctx.result
 
@@ -278,6 +281,68 @@ export const bridge = {
 
 }
 
+// ─── What may be said about a failure ─────────────────────────────────────
+//
+// The rule is `sanitizeError`'s; this is the half that only the transport can
+// answer — WHICH model this call was about, so the Data boundary can be asked
+// which of its columns must never be written down. `accessorCandidates` is the
+// one owner of `orders` ⇄ `Order` (Invariant 2), and `$protectedFields`
+// answers `{}` for an accessor it does not know, so a service over no model
+// costs one empty lookup.
+function boundaryOptions(ctx?: ServiceContext) {
+  const app = ctx?.app as {
+    config?: { debug?: boolean }
+    logger?: { error?: (m: string, meta?: unknown) => void }
+  } | undefined
+
+  return {
+    protectedFields: protectedFieldsFor(ctx),
+    correlationId:   requestMeta()?.correlationId,
+    debug:           app?.config?.debug,
+    logger:          app?.logger ?? null,
+  }
+}
+
+function protectedFieldsFor(ctx?: ServiceContext): Record<string, string> {
+  const db = ctx?.locals?.db as { $protectedFields?: (a: string) => Record<string, string> } | undefined
+  if (typeof db?.$protectedFields !== 'function') return {}
+
+  const out: Record<string, string> = {}
+  for (const name of [ctx?.model, ctx?.service]) {
+    if (!name) continue
+    for (const accessor of accessorCandidates(name)) {
+      try { Object.assign(out, db.$protectedFields(accessor)) } catch { /* an unknown accessor is not a failure */ }
+    }
+  }
+  return out
+}
+
+// ─── A window that cannot be served ───────────────────────────────────────
+//
+// A negative `$limit` reaches SQLite as `LIMIT -1`, which SQLite reads as NO
+// limit — so the one directive a paginated endpoint exists to bound became the
+// way past the bound, unauthenticated (`FJS-683`). `clampPage` floors it now,
+// but a clamp answers a caller who stated something impossible with silence.
+// Refused by NAME here, where the `$` convention is already owned, in the same
+// shape `$checkWhere` refuses a filter key it cannot honour.
+//
+// Only a stated negative is refused. A non-numeric `$limit` keeps its existing
+// fallback to the default: text is a caller who wrote nothing usable, where a
+// negative number is a caller who wrote something and meant it.
+function refuseNegativeWindow(directives: QueryDirectives): void {
+  for (const name of ['limit', 'offset'] as const) {
+    const value = directives[name]
+    if (value === undefined || value === null) continue
+    const n = Number(value)
+    if (Number.isFinite(n) && n < 0) {
+      throw new BadRequest(
+        `$${name} must be zero or greater (got ${n}).`,
+        { directive: `$${name}`, value: n }
+      )
+    }
+  }
+}
+
 // ─── Response helpers ─────────────────────────────────────────────────────
 
 const JSON_HEADERS = {
@@ -293,8 +358,8 @@ export function jsonResponse(data: unknown, status = 200): Response {
   })
 }
 
-export function errorResponse(err: unknown): Response {
-  const fe     = toFrameworkError(err)
+export function errorResponse(err: unknown, ctx?: ServiceContext): Response {
+  const fe     = sanitizeError(toFrameworkError(err), boundaryOptions(ctx))
   const status = fe.code ?? 500
 
   return new Response(JSON.stringify(fe.toJSON()), {

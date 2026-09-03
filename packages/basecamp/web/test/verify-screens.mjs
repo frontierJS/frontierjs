@@ -1,5 +1,10 @@
 #!/usr/bin/env node
-// web/test/verify-screens.mjs — the five screens Phase 13 added, in a browser.
+// web/test/verify-screens.mjs — the screens Phases 13 and 14 added, in a browser.
+//
+// Five from Phase 13 (blueprints, registry, hub backups, hub settings, the
+// caller's own settings) plus the audit window, and the six from Phase 14 that
+// closed the mock: the graph, the setup checks, DNS, cloud spend, git activity
+// and observability.
 //
 //   bun web/test/verify-screens.mjs
 //
@@ -56,7 +61,7 @@ function fail(msg) { console.error(`\n✗ ${msg}\n`); cleanup().then(() => proce
 const SCRATCH = mkdtempSync(join(tmpdir(), 'basecamp-screens-'))
 const DB      = join(SCRATCH, 'basecamp.db')
 
-console.log('\nBasecamp — the five screens\n')
+console.log('\nBasecamp — the screens\n')
 console.log(`  seeding ${DB}`)
 
 const seed = spawn('bun', ['db/seed.js'], {
@@ -450,9 +455,186 @@ try {
   check('every fixture row is in it', all.filter(t => t.startsWith('w-')).length === 60,
     `${all.filter(t => t.startsWith('w-')).length} of 60`)
 
+  // ─── The six screens that closed the mock ──────────────────────────────
+  //
+  // Two of them read the database (the graph, the setup checks) and four are
+  // mostly a statement about what is NOT wired. The first two are asserted
+  // against rows; the other four are asserted on the one thing that can be
+  // wrong about them — that the skeleton is there and the reason beside it is
+  // the adapter's real state rather than a sentence somebody typed.
+
+  /** A write through the app's own API, from the page, with the session it is
+   *  already holding. A subprocess against the database would not go through
+   *  the gate, the row policies or the workspace stamp — and those are what
+   *  decides whether these rows are the ones the screens can read. */
+  async function apiPost(path, payload) {
+    return evaluate(`
+      fetch(${JSON.stringify(path)}, {
+        method: 'POST',
+        headers: {
+          'content-type':   'application/json',
+          accept:           'application/json',
+          authorization:    'Bearer ' + localStorage.getItem('basecamp_token'),
+          'x-workspace-id': localStorage.getItem('basecamp_workspace'),
+        },
+        body: JSON.stringify(${JSON.stringify(payload)}),
+      }).then(async r => ({ status: r.status, body: await r.json().catch(() => null) }))`)
+  }
+
+  // db/seed.js makes servers, apps and placements and no domains or networks,
+  // so two of the graph's four node kinds and the whole of /dns/ would be
+  // asserted against an empty list — which is exactly the shape that passes
+  // with a broken query. One of each is created here.
+  const appList = await evaluate(`
+    fetch('/apps', { headers: {
+      accept: 'application/json',
+      authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
+      'x-workspace-id': localStorage.getItem('basecamp_workspace'),
+    }}).then(r => r.json())`)
+  const firstApp = appList?.data?.[0]
+  check('the seeded workspace has an app to hang a hostname on', !!firstApp,
+    JSON.stringify(appList)?.slice(0, 120))
+
+  const madeDomain = await apiPost('/domains', {
+    appId: firstApp.id, hostname: 'drive.example.test', isPrimary: false,
+  })
+  check('a hostname was created for the drive', madeDomain.status < 300, JSON.stringify(madeDomain).slice(0, 200))
+
+  const madeNetwork = await apiPost('/networks', {
+    name: 'Drive mesh', slug: 'drive-mesh', cidr: '10.9.0.0/16',
+  })
+  check('and a network', madeNetwork.status < 300, JSON.stringify(madeNetwork).slice(0, 200))
+
+  // ── /onboarding/ ───────────────────────────────────────────────────────
+  console.log('\n  /onboarding/ — six checks, nothing stored')
+  await goto('/onboarding/')
+  await until(`document.querySelectorAll('#onboarding-steps .step').length`, n => n > 0,
+    'the step list never rendered')
+
+  const stepCount = await evaluate(`document.querySelectorAll('#onboarding-steps .step').length`)
+  check('six steps', stepCount === 6, `saw ${stepCount}`)
+
+  const progress = await evaluate(`(() => {
+    const el = document.getElementById('onboarding-progress')
+    return el ? { value: el.value, max: el.max } : null })()`)
+  check('the progress element carries the real numbers', progress?.max === 6 && progress.value > 0,
+    JSON.stringify(progress))
+
+  const complete = await evaluate(`document.querySelectorAll('#onboarding-steps .step.complete').length`)
+  check('and it agrees with the steps marked complete', complete === progress.value,
+    `${complete} complete, progress says ${progress.value}`)
+
+  // The whole argument of this screen: a step is done because a row exists, so
+  // the seeded fleet's steps are done and the ones with no rows are not. If a
+  // `done` flag ever creeps back in, this is what stops agreeing.
+  const bodyText = await body()
+  check('a seeded server marks its step done',
+    await evaluate(`[...document.querySelectorAll('#onboarding-steps .step')]
+      .some(li => li.classList.contains('complete') && li.textContent.includes('server'))`))
+  check('the counts the answers came from are on the page',
+    /servers,/.test(bodyText) && /invitations/.test(bodyText))
+  check('and no button claims to complete a step',
+    !(await evaluate(`[...document.querySelectorAll('#onboarding-steps button')]
+      .some(b => /complete|done|mark/i.test(b.textContent))`)))
+
+  // ── /infra-graph/ ──────────────────────────────────────────────────────
+  console.log('\n  /infra-graph/ — the fleet, drawn from rows')
+  await goto('/infra-graph/')
+  await until(`document.querySelectorAll('#infra-graph g').length`, n => n > 0,
+    'the graph never drew a node')
+
+  const drawn = await evaluate(`document.querySelectorAll('#infra-graph g').length`)
+  const lines = await evaluate(`document.querySelectorAll('#infra-graph line').length`)
+  check('nodes are drawn', drawn > 0, `${drawn} nodes`)
+  check('and the edges between them', lines > 0, `${lines} edges`)
+
+  const summary = await text('#graph-summary')
+  check('the summary counts what is on the canvas',
+    summary.includes(`${drawn} nodes`) && summary.includes(`${lines} edges`), summary)
+
+  // The two kinds the fixture created — both are on the canvas, which is the
+  // only proof the edge kinds beyond `host` are wired at all.
+  const labels = await evaluate(`[...document.querySelectorAll('#infra-graph text')].map(t => t.textContent)`)
+  check('the created hostname is a node', labels.some(l => l.includes('drive.example.test')), labels.slice(0, 8).join(' | '))
+  check('and the created network', labels.some(l => l.includes('Drive mesh')), labels.slice(0, 8).join(' | '))
+
+  // A filter takes a lane out of the projection rather than hiding it with CSS
+  // — the node count has to fall.
+  await evaluate(`[...document.querySelectorAll('#graph-filters button')]
+    .find(b => b.textContent.trim().startsWith('Networks')).click()`)
+  await until(`document.querySelectorAll('#infra-graph g').length`, n => n < drawn,
+    'turning a kind off removed no nodes')
+  ok('turning a kind off removes its nodes')
+
+  // ── /dns/ ──────────────────────────────────────────────────────────────
+  console.log('\n  /dns/ — hostnames and certificates')
+  await goto('/dns/')
+  await until(`document.querySelectorAll('#dns-rows tbody tr').length`, n => n > 0,
+    'the hostname table never rendered a row')
+  const dns = await text('#dns-rows')
+  check('the created hostname is listed', dns.includes('drive.example.test'), dns.slice(0, 120))
+  check('with the app it points at resolved to a name', dns.includes(firstApp.name), dns.slice(0, 200))
+  check('and a certificate status rather than a blank cell', dns.includes('none'), dns.slice(0, 200))
+  check('the vendor half is a skeleton, not a number',
+    await evaluate(`document.querySelectorAll('[aria-busy="true"] .skeleton').length`) > 0)
+  // The word comes from the portal's ping, not from the page. `IEdge` is
+  // declared with a stub behind it, so it must read unconfigured here — and
+  // must stop reading it the day an adapter is wired.
+  check('and the edge adapter reports its real state', (await text('#edge-status')).trim() === 'unconfigured',
+    await text('#edge-status'))
+
+  // ── /cloud-spend/ ──────────────────────────────────────────────────────
+  console.log('\n  /cloud-spend/ — the inventory a bill would cover')
+  await goto('/cloud-spend/')
+  await until(`document.querySelectorAll('#spend-rows tbody tr').length`, n => n > 0,
+    'the fleet table never rendered')
+  const fleetRows = await evaluate(`document.querySelectorAll('#spend-rows tbody tr').length`)
+  const providerTotal = await evaluate(`[...document.querySelectorAll('#spend-by-provider dd')]
+    .reduce((n, dd) => n + Number(dd.textContent), 0)`)
+  check('the provider tally sums to the fleet', providerTotal === fleetRows,
+    `${providerTotal} tallied, ${fleetRows} rows`)
+  check('and the money is a skeleton',
+    await evaluate(`document.querySelectorAll('[aria-busy="true"] .skeleton').length`) > 0)
+  check('with the spend adapter reporting its real state',
+    (await text('#spend-status')).trim() === 'unconfigured', await text('#spend-status'))
+  check('with no currency figure anywhere on it', !/[$£€]\s?\d/.test(await body()))
+
+  // ── /git-activity/ and /observability/ ─────────────────────────────────
+  // Both report an adapter the test environment does not configure, and the
+  // word they print comes from the portal's own ping — the same read
+  // /admin/adapters/ makes. A screen that hardcoded "not connected" would pass
+  // an assertion on the text and be wrong the day one is wired.
+  for (const [path, id, label] of [
+    ['/git-activity/',   'git-status',           'git activity'],
+    ['/observability/',  'observability-status', 'observability'],
+  ]) {
+    console.log(`\n  ${path}`)
+    await goto(path)
+    await until(`!!document.getElementById(${JSON.stringify(id)})`, v => v, `${label} never reported a status`)
+    const status = await text(`#${id}`)
+    check(`${label} reports the adapter's real state`, status.trim() === 'unconfigured', status)
+    check('and shows a skeleton where the data would be',
+      await evaluate(`document.querySelectorAll('[aria-busy="true"] .skeleton').length`) > 0)
+  }
+
+  // ── /admin/adapters/ ───────────────────────────────────────────────────
+  // Ten providers in two groups. The split is the SERVICE's (`hosted`), so an
+  // adapter added to one list cannot go missing from the other.
+  console.log('\n  /admin/adapters/ — ten, in two kinds')
+  await goto('/admin/adapters/')
+  await until(`document.querySelectorAll('#adapter-tiles .card').length`, n => n > 0,
+    'the appliance grid never rendered')
+  const appliances = await evaluate(`document.querySelectorAll('#adapter-tiles .card').length`)
+  const hostedN    = await evaluate(`document.querySelectorAll('#hosted-tiles .card').length`)
+  check('eight self-hosted appliances', appliances === 8, `saw ${appliances}`)
+  check('and two hosted services', hostedN === 2, `saw ${hostedN}`)
+  const hostedText = await text('#hosted-tiles')
+  check('the hosted pair are the two the screens ask about',
+    hostedText.includes('Edge & DNS') && hostedText.includes('Cloud spend'), hostedText.slice(0, 120))
+
   // ─── The console ───────────────────────────────────────────────────────
   console.log('\n  the console')
-  check('no console errors or warnings across five screens',
+  check('no console errors or warnings across every screen',
     consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '))
 
 } catch (e) {

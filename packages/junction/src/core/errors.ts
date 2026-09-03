@@ -274,3 +274,102 @@ export function fromStatusCode(code: number, message?: string): FrameworkError {
   if (Number.isInteger(code) && code >= 400 && code <= 599) err.code = code
   return err
 }
+
+// ─── The wire's own sanitiser ─────────────────────────────────────────────
+//
+// `toFrameworkError` answers what the error IS. This answers what may be SAID
+// about it to whoever is on the other end of the socket, and the two are not
+// the same question once the app is in production (`FJS-686`).
+//
+// Two leaks, both measured against a real app with `NODE_ENV=production`:
+//
+//   · the `message` of a 500 was the raw exception text, so a bun:sqlite
+//     failure put table names and the absolute path of the database file on
+//     the wire, and a native TypeError put a line of source there. Nothing an
+//     unauthenticated caller may know, and the caller can do nothing with it
+//     either — the sentence a 500 owes is the one that lets somebody REPORT it,
+//     which is the correlation id.
+//   · `data` reached the wire whole, and `data` is adopted from the original
+//     error, so a domain error that helpfully attached the row it refused sent
+//     that row's `@secret` column out with it.
+//
+// The redaction list is the SCHEMA's, asked of the client through
+// `$protectedFields` — Invariant 7's rule, one owner. A hand-written list of
+// column names goes stale the first time somebody adds a `@secret`, which is
+// exactly the failure the Data realm already solved for its own audit trail.
+
+export interface SanitizeOptions {
+  /** From `db.$protectedFields(accessor)` — field name → which protection. */
+  protectedFields?: Record<string, string>
+  /** The id the caller quotes when they report this. */
+  correlationId?:   string
+  /** True where the original sentence may still be said — a dev machine. */
+  debug?:           boolean
+  /** Where the original goes instead. `app.logger` / `$.log`. */
+  logger?:          { error?: (msg: string, meta?: unknown) => void } | null
+}
+
+/**
+ * A copy of `value` with every key the schema calls protected replaced.
+ *
+ * Only keys that ARE protected fields — `VersionConflictError` declares a
+ * plain object of two revision numbers as its payload and it must survive
+ * untouched, or a browser loses the one thing that separates *reload* from
+ * *overwrite*. Cycles are answered rather than followed: an error payload that
+ * points at itself is not worth a stack overflow inside the error boundary.
+ */
+export function redactProtected(
+  value:  unknown,
+  fields: Record<string, string>,
+  seen:   WeakSet<object> = new WeakSet()
+): unknown {
+  if (!value || typeof value !== 'object') return value
+  if (seen.has(value as object)) return '[circular]'
+  seen.add(value as object)
+
+  if (Array.isArray(value)) return value.map(v => redactProtected(v, fields, seen))
+
+  const proto = Object.getPrototypeOf(value)
+  if (proto !== Object.prototype && proto !== null) return value
+
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    out[k] = fields[k] ? '[redacted]' : redactProtected(v, fields, seen)
+  }
+  return out
+}
+
+/** Is this app allowed to say what actually went wrong? */
+function inDebug(debug: boolean | undefined): boolean {
+  if (typeof debug === 'boolean' && debug) return true
+  // Absent a stated flag the environment decides, and only the literal
+  // 'production' closes it — the same reading the rest of the stack uses.
+  return (globalThis as { process?: { env?: Record<string, string | undefined> } })
+    .process?.env?.NODE_ENV !== 'production'
+}
+
+export function sanitizeError(fe: FrameworkError, opts: SanitizeOptions = {}): FrameworkError {
+  const fields = opts.protectedFields
+  if (fields && Object.keys(fields).length && fe.data != null) {
+    fe.data = redactProtected(fe.data, fields)
+  }
+
+  const status = fe.code ?? 500
+  if (status < 500 || inDebug(opts.debug)) return fe
+
+  // The original still has to reach somebody, and the somebody is the operator.
+  // Logged with the id the caller is being given, because a generic sentence
+  // with no join back to the line that produced it is a support ticket nobody
+  // can act on.
+  try {
+    opts.logger?.error?.(`[Junction] ${fe.name}: ${fe.message}`, {
+      correlationId: opts.correlationId,
+      stack:         fe.stack,
+    })
+  } catch { /* a broken logger must not become the response */ }
+
+  fe.message = opts.correlationId
+    ? `Internal Server Error (correlation id: ${opts.correlationId})`
+    : 'Internal Server Error'
+  return fe
+}

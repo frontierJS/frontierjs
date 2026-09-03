@@ -9,5 +9,5 @@ optional: true
 const { server, serverPath, apiPath } = context.config
 context.exec({ command: `scp ${server}:${serverPath}/api/attom.db ${apiPath}/.`, dry: flag.dry })
 context.exec({ command: `scp ${server}:${serverPath}/api/ss.db ${apiPath}/.`, dry: flag.dry })
-log.success('Extra DBs downloaded')
+if (!flag.dry) log.success('Extra DBs downloaded')
 ```

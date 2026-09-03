@@ -21,7 +21,7 @@
 import { defineJob }  from '@frontierjs/caravan'
 import type { JobContext } from '@frontierjs/caravan'
 import { db }         from '../core/db.ts'
-import { releaseExpired } from '../inventory.ts'
+import { releaseExpired } from '../domain/shop'
 
 /**
  * Drop every hold that ran out before `before` — an ISO-8601 instant,

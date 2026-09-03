@@ -1,5 +1,244 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-02 — `-d` is `--dry`
+
+`FJS-653`. 1566 pass (7 new).
+
+`fli db:import -d` ran the real import against production.
+
+`run()` parses with `boolean: ['help', 'h', 'dry', 'd']`, so minimist emits a
+value for every one of those names whether or not it was typed: `-d` arrives as
+`{ d: true, dry: false }`. `getConfig`'s short-char promotion reads a DEFINED
+long name as *the long name was given* and drops the short one, so `flag.dry`
+stayed false and all five steps executed their `context.exec`. `--dry` was never
+affected, which is why nothing here could see it.
+
+Fixed at the parse rather than at the promotion — treating `false` as unset in
+`getConfig` would make `--no-dry -d` mean two things. `dropUntypedBooleans`
+compares minimist's output against the argv actually typed and deletes the
+defaults nobody asked for; the promotion keeps its one meaning. It lives beside
+`defaultFlags` in `runtime.js`, which is where the flag vocabulary already is.
+
+**Two more were underneath, in the command.** `if (!server) { log.error(…);
+return }` is a bare return, and a bare return does not stop `_steps/` — the run
+went on to build `ssh undefined "…"` and `rm -f undefined/development.db*` with
+the guard already printed. It sets `context.config.abort` now. A refusal raised
+before any step has run also blamed `01-prepare`, which never ran; `refusedBy`
+starts at *the command* when the body has already refused. And three steps
+logged `Downloaded backup` / `Local DB restored from backup` under `--dry` — a
+success line for something that did not happen.
+
+## 2026-09-02 — a register row is graded against its own table's header
+
+`FJS-647`. 1594 pass (2 new).
+
+`register:check` could not see a row that disagreed with the table it was in,
+and it went wrong in both directions at once.
+
+**Narrower.** `registers.js` infers a row's shape from its CELL COUNT, so a
+four-cell row in a six-column table fell to the decision-shaped branch and was
+handed a status nobody wrote. Four closed rows sat in § S3 that way, invisible
+to `closed-in-open`, and two rows that are still OPEN sat in § Closed where
+every count read them as done.
+
+**Wider.** Markdown drops every cell past the header's width — measured with a
+renderer rather than reasoned from the spec. For § Closed that cell is *How*, so
+137 rows displayed no citations at all while the links sat in the file.
+
+`row-shape` grades the count against `headWidth`, read off the header rather
+than written into the rule. The first probe was the DATE column and it was
+wrong: it fired on a cell reading *last tuesday*, which is a bad value in the
+right column and belongs to `malformed-date` — one mistake reported twice,
+pointing at the wrong fix. Every real case disagreed on width as well, so width
+alone is both sufficient and exact. 181 findings against the pre-fix file out of
+git, 0 after.
+
+## 2026-09-01 — the API's snapshots are read out of `api/`
+
+`readApiSurface` looks for `surface.snapshot.md` in **`api/` first and the app
+root second** (`commands/project/_module.md`). `project:view` and `project:map`
+are the callers; both are unchanged.
+
+**A snapshot belongs in the surface it describes.** `db/` holds the Data
+realm's four, `web/` and `site/` hold their route tables, and everything in
+`surface.snapshot.md` — the services, the mounted routes, the hook chain, the
+plugins — is a fact about `api/`. The four that junction writes were the only
+ones sitting at the app root, and `example` has moved them.
+
+**The app root stays a candidate rather than being dropped.** The file is
+written by a command an app already runs, so an app that has not moved it is
+not broken; and an app whose API is not in `api/` is a shape this cannot rule
+out. First hit wins, and an app holding BOTH reads the one beside its API —
+two copies of one surface is itself the defect `scripts/ci-allowances.json`
+records, where a root-generated copy disagreed with the real one by six routes.
+
+The hint names both places it looked, because *no snapshot* and *a snapshot
+somewhere else* read identically otherwise.
+
+## 2026-09-01 — the derived JSON Schema has one home, and it is not committed
+
+`db/schema.json` moves to **`db/.json/schema.json`**, is gitignored, and has one
+owner: `core/derived-paths.js`.
+
+**It was a committed artefact that nothing gated.** It carries no `generated
+by:` header and is not named `*.snapshot.*`, so the CI snapshots phase never
+looked at it — while `db/jsonschema.snapshot.md` sitting beside it holds the
+same information in the form that IS rechecked. A second copy that everything
+can outdate and nothing grades. It happened to be current when this was
+written, which is the only reason it had not already gone wrong.
+
+**Four commands touched the path and each held its own literal**: `db:push`
+regenerates it after applying a change, `db:jsonschema` writes it on demand,
+`validate` regenerates it AND reads it back, and `project:view` tests whether it
+is there. `validate` is the one where a divergence is worst — it would have
+regenerated one file and validated another, which is a clean pass over a schema
+nobody looked at.
+
+**`litestone jsonschema` now creates its output directory.** `--out` is treated
+as a directory only when that directory already EXISTS, so `--out <db>/.json`
+writes a file literally named `.json` on a fresh clone, and a nested path fails
+with ENOENT naming the FILE rather than the missing parent. The path is stated
+as `…/.json/schema.json` for that reason and `mkdirSync` covers the rest.
+
+The dot-directory is this repo's existing mark for a derived thing that is not
+committed — the same one `api/src/emails/.preview/` wears.
+
+## 2026-08-31 — `schema-in-memory` — the app runs models the committed artefacts cannot see
+
+`FJS-626` — the half the entry below opened and could not take. That one taught
+`fli check` and `fli admin:generate` to MERGE what a package ships, which is the
+right answer for a CLI reading an app from outside. It cannot help litestone's
+own four artefacts, because those are generated FROM the schema and an app that
+assembles one in memory has no file for them to read. So this closes it from the
+other end: the app puts the models in the file, and a rule catches the next app
+that does not.
+
+193 checks tests pass; `fli check` clean on `example`, one fewer finding on
+`basecamp` after the test-file control.
+
+Every schema tool takes a PATH. An app that appends a package's shipped fragment
+to its schema text at boot runs models no tool can read, and `access.snapshot.md`,
+`release.snapshot.md`, `ddl.snapshot.sql` and `jsonschema.snapshot.md` then all
+describe a schema that is not the one serving. Measured on `example`: 39 models
+ran, 32 were in each artefact, and the seven missing were the identity model and
+the credential store.
+
+**The cost is the deploy gate.** `release:check` compares release surfaces, so a
+contract on `Session` was in neither and graded EXPAND — the deploy read as
+reversible. The `snapshots` phase passed the whole time, because it re-runs the
+same command from the same directory and gets the same incomplete answer.
+
+**It carries no list of fragment-exporting function names**, and two rejected
+drafts are why that matters. The first compared each dependency's shipped models
+against the ones the schema file reaches, and reported junction's `BackfillRun` —
+a feature `example` does not use, and a dependency imported for `createApp` says
+nothing about whether its models are wanted. The second fired on basecamp's
+`db/test/schema.test.ts`, where an inline schema is simply how a test is written.
+What survives is the call itself: `createClient`/`createTenantRegistry` handed a
+`schema:` string while `db/schema.lite` exists. Both rejected shapes are controls
+in the suite, beside a comment mentioning the hazard — this rule's own prose
+describes what it matches on, so it reads through `readCode`.
+
+`tests/checks.test.js` § `schema-in-memory` (6) · [checks.js](packages/cli/core/checks.js)
+
+## 2026-08-31 — the schema a tool reads is not the schema an app runs
+
+1549 + 35 tests, 0 fail. Closes [`FJS-625`](../../ISSUES.md#fjs-625); opens
+[`FJS-626`](../../ISSUES.md#fjs-626) for the half that cannot take this fix.
+
+**An app's seed is not `db/schema.lite`.** It is that file, plus fragments a
+package ships and the app appends in memory (`authSchemaFragments()`,
+`outboxSchemaFragment()`), plus `extend model` in files of its own. Every tool
+here read the first and called it the answer, so the models none of them could
+see were exactly `User`, `Session` and `Credential` — the identity layer.
+
+Two readers, failing in opposite directions, which is why neither had been
+noticed. **`fli check`'s `service-model` failed closed**: a correct
+`users.service.ts` stating `model: 'User'` was reported as naming a model that
+does not exist. A rule that fires on a correct app is a rule people baseline.
+**`fli admin:generate` failed open** and had since it was written: it generated
+a complete admin panel with no Users screen in it, silently.
+
+`core/app-schema.js` is the one owner now — `appSchemaModels`, `appServices`,
+`serviceForModel` — read by both, for the reason two implementations of one rule
+are always the wrong number. A dependency's `.lite` files are found through its
+own `exports` map and never a guessed path, which is the rule
+`package-model-drift` already followed and the one litestone's own resolver
+follows.
+
+**The cost is stated rather than hidden**: a service naming a package model the
+app never actually assembled now resolves instead of being reported. That is
+the fail-open direction the rule exists to close, and it is accepted because the
+alternative is a false error on the documented in-memory install — the shape
+both apps in this repo use.
+
+### What running the generator found
+
+`FJS-372` says no test in this repo executes a generator. `example`'s new
+`verify:users` drive does, and then opens the pages in a browser. Three defects
+in the first ninety minutes, none of which a reading would have caught:
+
+**A service name is a FILENAME and was being derived.** junction autoloads the
+directory, so `shipping-methods.service.ts` answers on `/shipping-methods` —
+and `servicePlural('ShippingMethod')` is `shippingMethods`. Five of `example`'s
+generated screens called a URL the app does not serve: a 404 with the page
+rendering normally around it. The services directory is read now; the
+derivation is the fallback for a model that has none.
+
+**A model with no service was generated and then warned about**, which is the
+wrong half — the route rendered and `load()` failed. Nothing is written for one
+now. Filtering it out of the TARGETS alone was not enough, and that is the part
+worth remembering: the layout and the dashboard are built from the full model
+list on purpose, so that a `--model` run does not drop the sections an earlier
+run added. The nav went on linking two sections that had never been generated —
+the panel advertising a screen that 404s, the same defect one layer up.
+
+**The export name took the service string.** `export const shipping-methods =
+createResource(…)` does not parse. Kebab could not reach the export before this
+change, so it is a defect this change introduced and the first end-to-end run
+caught — which is the argument for the drive in one line.
+
+**Also settled: `@@gate(8+)` models are skipped by name.** Reading the whole
+seed means seeing a package's machinery. `asSystem()` itself grades 8, so a page
+over `Credential` would ask forever, and would be an editor for password hashes
+if it did not. What separates machinery from domain is the gate, and the gate is
+in the schema — so the rule reads it rather than carrying a list of names.
+
+## 2026-08-31 — a log nobody can read back
+
+1549 + 35 tests, 0 fail. Closes [`FJS-622`](../../ISSUES.md#fjs-622) and
+[`FJS-623`](../../ISSUES.md#fjs-623).
+
+**The vhost `deploy:setup` writes declared no `access_log`.** A server block
+without one falls back to nginx's machine-wide default, which is a working
+config, a green `nginx -t` and a serving site — the only symptom is that the
+file cannot be read back, because nothing in a line says which app took the
+request. On a box with two apps, which is the normal case for a fleet machine,
+neither one's traffic is attributable.
+
+The path now carries the app id, and **the directory is load-bearing**:
+`/var/log/nginx/*.log` is the glob the packaged logrotate rule already rotates,
+so the files are bounded by a rule that is on the machine rather than by one we
+would have to write. Anywhere else and this would have been
+[`FJS-616`](../../ISSUES.md#fjs-616) one layer up while looking like a fix.
+`combined` is stated rather than defaulted because it is the format an analyser
+reads unasked; a custom `log_format` cannot be declared here at all, being
+http-level only.
+
+Found designing `IDEAS/traffic-analysis.md` against CapRover's GoAccess
+integration, which needs exactly the per-app log this was not writing — so the
+gap was a precondition rather than a phase, and went in ahead of the design.
+
+**A test waited for a file to exist when it needed the pid inside it.**
+`children.test.js` spawns a shell that writes its pid with `echo $$ > f`;
+`echo` creates the file before it writes, so `existsSync` is the wrong signal
+and an empty read parses as `0`. It fired on the full suite and passed in
+isolation — the signature that reads as somebody else's change breaking it —
+and only the success path removed the file, so `/tmp` held nine of them
+including a **0-byte one**: the failure state on disk, waiting for a run whose
+pid recycled onto the same number. Now waits for a parseable pid and clears the
+path before the spawn as well as after.
+
 ## 2026-08-29 — a refusal is not a success
 
 1531 + 35 tests, 0 fail; `deployJournalCycle` 12/12. Closes

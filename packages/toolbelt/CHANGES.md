@@ -1,5 +1,74 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-09-02 — the signature covers the query, and the signature says which version it is
+
+`FJS-678`. 277 tests, 0 fail. Typecheck clean.
+
+The canonical string was method, path, timestamp, nonce and a hash of the body.
+A GET carries its parameters in the URL and nowhere else, so that string bound
+nothing about what was asked for: a captured `GET /transfer?to=alice` verified
+unchanged against `?to=mallory`, and the receiver could not include the query
+even if it wanted to, because the signer had excluded it. Measured against
+conduit's own transport — a signed `?amount=1&to=alice` and the replay
+`?amount=1000000&to=mallory` produce one signature and one `ok: true`.
+
+The same kit signs every Outpost call, where `POST /exec` runs a shell command
+and `/volumes/*` takes a `force`. The Outpost's own test suite had a case named
+*the signature does not cover a query string, which is why this is a POST* —
+the gap was known, and the answer to it was a convention about which routes are
+written as POSTs rather than a property of the scheme.
+
+**The canonical string is six lines now and the query is the third.** It is the
+one line allowed to be EMPTY: a request with no parameters signs an empty line
+rather than omitting one, so the line count is fixed and a query cannot be
+smuggled into the path. `canonicalQuery` is exported because both sides have to
+spell it identically — pairs sorted by key then value, RFC 3986 percent-encoded,
+joined `&`. Sorted because nothing preserves parameter order across a proxy or a
+client library, and a signature bound to the sender's order fails intermittently
+and reads as a clock problem. Encoded to the RFC rather than with
+`encodeURIComponent`, which leaves `!'()*` alone while the RFC reserves them:
+two sides with different encoders 401 every request carrying one of the five.
+
+It takes a search string, a `URLSearchParams`, an array of pairs or a plain
+object, because a signer holds a URL and a verifier holds whatever its transport
+parsed. `Array.isArray` is tested BEFORE `.entries()` — an Array has one of its
+own and it answers index/value pairs, so a list of pairs would canonicalise as
+`0=to%2Calice`, a well-formed string that agrees with nothing. A `path` carrying
+its own `?` is split rather than signed whole, so a verifier reading a raw
+request URL and a signer holding the two apart reach the same string.
+
+**The version rides in the signature VALUE: `v2-sha256=…`, was `sha256=`.** A
+version is not decoration here. Every already-deployed Outpost signs v1 and
+computes a perfectly well-formed digest of a string this side no longer builds,
+so without a marker the answer is `signature does not match` — the same sentence
+a wrong secret gives, which is the wrong half to spend an outage on. A v1
+signature is now refused before the digest is compared, by name: *signature
+version 1 is no longer accepted; query is now signed*. Changing the canonical
+string again means bumping `SIGNATURE_VERSION` and the two prefixes beside it.
+
+Every in-tree signer and verifier moved together — conduit's http and websocket
+transports, junction's webhooks plugin, the Outpost's server and reporter,
+basecamp's `requireOutpostSignature`, and the example shop's PSP sink and
+webhook route. A verifier recomputes from the RAW request URL, never from a path
+the router already stripped and never from a parsed query bag: a signature is
+over the bytes the sender put on the wire, and a re-serialisation of a parse is
+a different string.
+
+## 2026-09-02 — the signature kit signs bytes, and its default prefix is `X-Fjs`
+
+`sha256Hex` takes a `Uint8Array` or an `ArrayBuffer` as well as a string. A
+signed request may carry a binary body — an upload, a protobuf — and there is no
+lossless way to make one a string first: `String(bytes)` and
+`JSON.stringify(bytes)` each hash something that was never sent, so the far side
+computes a different digest and refuses the request as an invalid credential.
+Conduit's `encoding: 'binary'` is the first caller (`FJS-651`).
+
+**The default header prefix is `X-Fjs`, was `X-Hub`** — a leftover from when
+conduit was one app's fleet arm, and the same abbreviation junction's
+`x-fjs-build` header already uses. Every in-tree user took the default (conduit's
+hmac targets, basecamp's verifier, the Outpost's server and reporter), so the
+rename is atomic and nothing published depends on the literal.
+
 ## 2026-08-30 — `roundMinor` and `allocate`, the half `@money` left to the app (`FJS-D154`)
 
 `FJS-D142` made storage exact and said nothing about rounding mode or about
@@ -26,7 +95,7 @@ somebody thought of is still a receipt that does not add up.
 function over `(amount, ratios, scale)` and the third argument did not survive
 being written: the smallest thing a split can hand out is one of whatever
 `amount` is counted in, and a caller holding an integer has already decided
-that. `example/api/src/pricing.ts` keeps its `roundCents` name as an alias of
+that. `example/api/src/domain/shop/pricing.ts` keeps its `roundCents` name as an alias of
 `roundMinor`.
 
 ## 2026-08-29 — `fromMinor` / `toMinor`, beside the scale they read

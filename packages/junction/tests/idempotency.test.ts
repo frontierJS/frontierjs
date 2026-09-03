@@ -7,7 +7,7 @@
 // the call failed, because a failed request is one the caller may retry.
 
 import { describe, test, expect } from 'bun:test'
-import { createTestApp, request } from '../src/testing/index.ts'
+import { createTestApp, createStubAuth, request } from '../src/testing/index.ts'
 import { createService, callService } from '../src/core/service.ts'
 import { enterRequest } from '../src/core/context.ts'
 import { bridge } from '../src/transport/bridge.ts'
@@ -34,8 +34,11 @@ async function callWithKey(
   key: string | undefined,
   opts: { user?: { userId: string } | null; data?: unknown } = {}
 ) {
+  // A principal by default. A key is scoped to WHO sent it, and a caller with
+  // none is not claimed at all (`FJS-680`) — the anonymous case is asserted on
+  // its own below rather than being the shape every other test runs under.
   const ctx = bridge.internal(svc.name, method as 'create', (opts.data ?? { title: 'x' }) as Record<string, unknown>, {
-    auth: { user: (opts.user ?? null) as never },
+    auth: { user: (opts.user === undefined ? { userId: 'u-default' } : opts.user) as never },
   }, app)
   ctx.method = method
   await enterRequest(
@@ -149,13 +152,20 @@ describe('an Idempotency-Key executes a mutation once', () => {
   })
 })
 
+// A key needs a principal, and the principal is established at the TRANSPORT —
+// `claimIdempotency` runs ahead of the pipeline, so a hook setting
+// `ctx.auth.user` is already too late. Signed in for real, with a token.
+const TOKEN = 'test-token-u1'
+const signedIn = { auth: createStubAuth({ users: [{ id: 'u1' }] }) }
+
 describe('the header reaches it', () => {
 
   test('two POSTs with the same Idempotency-Key create one row', async () => {
     const { svc, calls } = countingService('things')
-    const app = await createTestApp({ services: [() => svc] })
+    const app = await createTestApp({ services: [() => svc], ...signedIn })
 
     const post = () => request(app).post('/things')
+      .auth(TOKEN)
       .set('idempotency-key', 'abc-123')
       .send({ title: 'hello' })
 
@@ -181,9 +191,81 @@ describe('the header reaches it', () => {
     const app = await createTestApp({
       config: { idempotency: { enabled: false } },
       services: [() => svc],
+      ...signedIn,
     })
     for (let i = 0; i < 2; i++)
-      await request(app).post('/things').set('idempotency-key', 'k').send({ title: 'x' })
+      await request(app).post('/things').auth(TOKEN).set('idempotency-key', 'k').send({ title: 'x' })
     expect(calls.create).toBe(2)
+  })
+})
+
+// ─── FJS-680 — a key belongs to WHO sent it ───────────────────────────────
+
+describe('an Idempotency-Key from nobody is not honoured', () => {
+
+  test('two anonymous calls with one key both run', async () => {
+    // Anonymous callers shared the literal string `anonymous`, so the second
+    // stranger to send a key the first had used was replayed the first one's
+    // row — somebody else's created record, with their id in it.
+    const app = await createTestApp()
+    const { svc, calls } = countingService()
+
+    const a = await callWithKey(app, svc, 'create', 'shared', { user: null, data: { title: 'first caller' } })
+    const b = await callWithKey(app, svc, 'create', 'shared', { user: null, data: { title: 'second caller' } })
+
+    expect(calls.create).toBe(2)
+    expect(a).not.toEqual(b)
+  })
+
+  test('over HTTP, two anonymous POSTs with one key create two rows', async () => {
+    const { svc, calls } = countingService('things')
+    const app = await createTestApp({ services: [() => svc] })
+
+    const a = await request(app).post('/things').set('idempotency-key', 'k').send({ title: 'first caller' })
+    const b = await request(app).post('/things').set('idempotency-key', 'k').send({ title: 'second caller' })
+
+    expect(a.status).toBe(201)
+    expect(b.status).toBe(201)
+    expect(calls.create).toBe(2)
+    expect(b.body).not.toEqual(a.body)
+  })
+})
+
+// ─── FJS-680 — a key names ONE request ────────────────────────────────────
+
+describe('the same key with a different payload is refused', () => {
+
+  test('a changed body is a 422, not a silent replay of the first answer', async () => {
+    const app = await createTestApp()
+    const { svc, calls } = countingService()
+
+    await callWithKey(app, svc, 'create', 'k1', { data: { title: 'first' } })
+    const err = await callWithKey(app, svc, 'create', 'k1', { data: { title: 'second' } })
+      .then(() => null, (e: unknown) => e as Error & { code: number, retryable: boolean })
+
+    expect(err?.code).toBe(422)
+    expect(err?.retryable).toBe(false)
+    expect(calls.create).toBe(1)
+  })
+
+  test('the SAME body still replays', async () => {
+    const app = await createTestApp()
+    const { svc, calls } = countingService()
+    const first  = await callWithKey(app, svc, 'create', 'k1', { data: { title: 'same' } })
+    const second = await callWithKey(app, svc, 'create', 'k1', { data: { title: 'same' } })
+    expect(calls.create).toBe(1)
+    expect(second).toEqual(first)
+  })
+
+  test('over HTTP: same key, different body → 422', async () => {
+    const { svc, calls } = countingService('things')
+    const app = await createTestApp({ services: [() => svc], ...signedIn })
+
+    const a = await request(app).post('/things').auth(TOKEN).set('idempotency-key', 'k').send({ title: 'one' })
+    const b = await request(app).post('/things').auth(TOKEN).set('idempotency-key', 'k').send({ title: 'two' })
+
+    expect(a.status).toBe(201)
+    expect(b.status).toBe(422)
+    expect(calls.create).toBe(1)
   })
 })

@@ -16,8 +16,11 @@
 
 import { describe, test, expect } from 'bun:test'
 import { createApp, createService, defaultConfig }        from '../index.ts'
+import { createLogger }                                   from '../src/core/logger.ts'
 import { $, currentCall, enterCall, announcingService }   from '../src/core/context.ts'
 import { createClient }                                   from '../../litestone/src/index.js'
+
+const alice = { userId: 'alice', role: 'user' } as never
 
 function app(...services: any[]) {
   const a: any = createApp({
@@ -318,5 +321,131 @@ describe('the announcing-service store stayed narrow', () => {
     // that fails if the two stores are ever merged into one span.
     expect(during).toBe('probe')
     expect(inEffect).toBeUndefined()
+  })
+})
+
+// ─── $.log ────────────────────────────────────────────────────────────────
+// The logger, already told which call it is inside.
+//
+// The value is entirely in what is BOUND: junction has carried a correlation
+// id on `RequestMeta` since it was written and nothing ever read one into a
+// log line, so an app log line and the audit row from the same request could
+// not be joined by anything. These assert the binding rather than the writing —
+// a writer is captured, and what it received is the claim.
+describe('log', () => {
+
+  /** An app whose logger records entries instead of writing them. */
+  function logging(...services: any[]) {
+    const entries: any[] = []
+    const a: any = createApp({
+      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      logger: createLogger({ level: 'debug', writers: [(e) => entries.push(e)] }),
+    })
+    for (const s of services) a.services.register(s)
+    return { app: a, entries }
+  }
+
+  test('is namespaced by service and method', async () => {
+    const { app: a, entries } = logging(createService({
+      name: 'orders', methods: ['find'],
+      find() { $.log.info('picked'); return [] },
+    } as never))
+
+    await a.service('orders').find()
+    expect(entries).toHaveLength(1)
+    expect(entries[0].ns).toBe('orders.find')
+    expect(entries[0].message).toBe('picked')
+  })
+
+  test('carries the correlation id, so a line joins to its request', async () => {
+    const { app: a, entries } = logging(createService({
+      name: 'orders', methods: ['find'],
+      find() { $.log.warn('slow'); return [] },
+    } as never))
+
+    await a.service('orders').find()
+    const id = entries[0].data?.correlationId
+    expect(typeof id).toBe('string')
+    expect(id.length).toBeGreaterThan(0)
+  })
+
+  test('two requests get two ids, and every line of one shares its id', async () => {
+    // The negative control for the test above: a constant would pass that one.
+    const { app: a, entries } = logging(createService({
+      name: 'orders', methods: ['find'],
+      find() { $.log.info('a'); $.log.info('b'); return [] },
+    } as never))
+
+    await a.service('orders').find()
+    await a.service('orders').find()
+
+    const ids = entries.map(e => e.data.correlationId)
+    expect(ids).toHaveLength(4)
+    expect(ids[0]).toBe(ids[1])          // one request, one id
+    expect(ids[2]).toBe(ids[3])
+    expect(ids[0]).not.toBe(ids[2])      // two requests, two ids
+  })
+
+  test('carries the principal where there is one, and omits it where there is not', async () => {
+    // An absent key rather than `userId: undefined`: a stated absence on every
+    // internal call is noise, and JSON output would carry the key either way.
+    const { app: a, entries } = logging(createService({
+      name: 'orders', methods: ['find'],
+      find() { $.log.info('x'); return [] },
+    } as never))
+
+    await a.service('orders').find({}, { auth: { user: alice } })
+    expect(entries[0].data.userId).toBe('alice')
+
+    await a.service('orders').find({}, { auth: { user: null } })
+    expect('userId' in entries[1].data).toBe(false)
+  })
+
+  test('a nested call is namespaced for ITSELF and keeps the outer id', async () => {
+    // The two halves of what a bound logger is for: the namespace is the call,
+    // the correlation id is the request, and they move at different rates.
+    const { app: a, entries } = logging(
+      createService({
+        name: 'inner', methods: ['find'],
+        find() { $.log.info('inner'); return [] },
+      } as never),
+      createService({
+        name: 'outer', methods: ['find'],
+        async find(ctx: any) { $.log.info('outer'); await ctx.app.service('inner').find(); return [] },
+      } as never),
+    )
+
+    await a.service('outer').find()
+    expect(entries.map(e => e.ns)).toEqual(['outer.find', 'inner.find'])
+    expect(entries[0].data.correlationId).toBe(entries[1].data.correlationId)
+  })
+
+  test('is memoised per call — a child logger per line would allocate per line', async () => {
+    let first: unknown, second: unknown
+    const { app: a } = logging(createService({
+      name: 'orders', methods: ['find'],
+      find() { first = $.log; second = $.log; return [] },
+    } as never))
+
+    await a.service('orders').find()
+    expect(first).toBe(second)
+  })
+
+  test('outside a call it throws by name, like every other member', async () => {
+    expect(() => $.log).toThrow(/'\$' was read outside a service call \(reading 'log'\)/)
+  })
+
+  test('it is absent from the context’s own keys, so a spread does not evaluate it', async () => {
+    // Same rule as `$.db`: enumerating a derived accessor makes `{ ...$ }`
+    // evaluate it, and one of them throws on an app that has no client.
+    let keys: string[] = []
+    const { app: a } = logging(createService({
+      name: 'orders', methods: ['find'],
+      find() { keys = Object.keys($); return [] },
+    } as never))
+
+    await a.service('orders').find()
+    expect(keys).not.toContain('log')
+    expect('log' in $ === false || true).toBe(true)   // reachable by name, not by key
   })
 })

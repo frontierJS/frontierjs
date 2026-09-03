@@ -23,6 +23,7 @@
     <nav class="topbar-nav" aria-label="Storefront">
       <a href="/">Home</a>
       <a href="/catalog/">Catalogue</a>
+      <a href="/pricing/">Pricing</a>
       <a href="/account/">Account</a>
       <!--
         A plain link, and no count on it.

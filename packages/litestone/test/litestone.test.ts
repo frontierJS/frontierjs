@@ -22,7 +22,8 @@ import { AccessDeniedError }              from '../src/core/plugin.js'
 import { buildWhere, buildOrderBy, sql, now,
          encodeCursor, decodeCursor,
          normaliseOrderBy, buildCursorWhere,
-         isNamedAgg, buildNamedAggExpr } from '../src/core/query.js'
+         isNamedAgg, buildNamedAggExpr,
+         quoteIdent } from '../src/core/query.js'
 import { create, apply, status,
          verify, autoMigrate }        from '../src/core/migrations.js'
 import { tempDir }                    from '../src/tmp-dirs.js'
@@ -3267,7 +3268,10 @@ describe('migrations — an index the app created', () => {
     .all().map((r: any) => r.name).sort()
 
   const migrate = (raw: any, schemaText: string) =>
-    autoMigrate({ $rawDbs: { main: raw } } as any, parse(schemaText)).main
+    // Every fixture here drops a column to FORCE the rebuild, which is a
+    // destructive change and refused by default since `FJS-641`. The subject
+    // is what survives the rebuild, not whether the drop is allowed.
+    autoMigrate({ $rawDbs: { main: raw } } as any, parse(schemaText), { acceptDataLoss: true }).main
 
   test('it survives an unrelated schema change', async () => {
     const raw = boot(V1, [`CREATE INDEX "note_title_idx" ON "note" ("title")`])
@@ -3366,7 +3370,10 @@ describe('migrations — a view over a rebuilt table', () => {
             WHERE name NOT LIKE 'sqlite_%' AND name NOT LIKE '_litestone%' ORDER BY 1`)
     .all().map((r: any) => r.o)
   const migrate = (raw: any, schemaText: string) =>
-    autoMigrate({ $rawDbs: { main: raw } } as any, parse(schemaText)).main
+    // Every fixture here drops a column to FORCE the rebuild, which is a
+    // destructive change and refused by default since `FJS-641`. The subject
+    // is what survives the rebuild, not whether the drop is allowed.
+    autoMigrate({ $rawDbs: { main: raw } } as any, parse(schemaText), { acceptDataLoss: true }).main
 
   const V1 = `model Note { id Int @id  title String  scratch String }`
   const V2 = `model Note { id Int @id  title String }`
@@ -3414,8 +3421,15 @@ describe('migrations — a view over a rebuilt table', () => {
   // whatever reads it. Reading zero rows from it inside the transaction is what
   // turns that into a migration that refuses.
   test('a view the rebuild invalidates fails the migration instead of coming back broken', async () => {
+    // It used to THROW out of autoMigrate. It is graded now (`FJS-645`), for
+    // the same reason the two blocked rules are: a refusal the caller is told
+    // about in the migrator's own vocabulary, with the database untouched,
+    // rather than a raw SQLiteError naming a temporary table nobody wrote. The
+    // substance of this test is unchanged — the migration does not half-apply.
     const raw = boot(V1, [`CREATE VIEW "v_scratch" AS SELECT scratch FROM note`])
-    expect(() => migrate(raw, V2)).toThrow('no such column: scratch')
+    const res = migrate(raw, V2)
+    expect(res.state).toBe('failed')
+    expect(res.reason).toContain('no such column: scratch')
     expect(raw.query(`PRAGMA table_info("note")`).all().map((c: any) => c.name))
       .toEqual(['id', 'title', 'scratch'])   // rolled back whole
     raw.close()
@@ -10294,8 +10308,8 @@ describe('@@transitions — parser', () => {
 
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
     expect(attr.field).toBe('status')
-    expect(attr.transitions.pay).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false })
-    expect(attr.transitions.refund).toEqual({ from: ['paid'], to: 'refunded', gate: 5, system: false })
+    expect(attr.transitions.pay).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false, seals: false })
+    expect(attr.transitions.refund).toEqual({ from: ['paid'], to: 'refunded', gate: 5, system: false, seals: false })
     expect(attr.transitions.cancel.from).toEqual(['pending', 'paid'])
   })
 
@@ -10304,7 +10318,7 @@ describe('@@transitions — parser', () => {
 model Order { id Int @id  status S  @@transitions(status, pending -> paid) }`)
     expect(r.valid).toBe(true)
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
-    expect(attr.transitions.paid).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false })
+    expect(attr.transitions.paid).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false, seals: false })
   })
 
   test('@gate accepts a level name as well as a number', () => {
@@ -10325,7 +10339,7 @@ model M { id Int @id  s S  @@transitions(s, go: a -> b @gate(ADMINISTRATOR)) }`)
     ['gate out of range',  `@@transitions(s, a -> b @gate(12))`, 'integer 0–9'],
     ['unknown level name', `@@transitions(s, a -> b @gate(NOPE))`, 'unknown level'],
     ['no clauses',         `@@transitions(s)`,                   'at least one transition'],
-    ['unknown attribute',  `@@transitions(s, a -> b @wat(1))`,   'only @gate and @system are supported'],
+    ['unknown attribute',  `@@transitions(s, a -> b @wat(1))`,   'only @gate, @system and @seals are supported'],
   ])('rejects: %s', (_label, attr, fragment) => {
     const r = parse(`enum S { a b }
 model M { id Int @id  s S  n Int  ${attr} }`)
@@ -13517,6 +13531,7 @@ const ACCESS_SCHEMA = `
     @@transitions(stage,
       review:    draft -> review,
       publish:   review -> published @gate(5),
+      retract:   published -> draft @system,
     )
   }
 
@@ -13549,7 +13564,8 @@ describe('deriveAccess', () => {
 
   test('counts the surface', () => {
     expect(access.counts).toMatchObject({
-      models: 4, gated: 3, unrestricted: 1, policied: 1, protected: 2, transitions: 2,
+      models: 4, gated: 3, unrestricted: 1, policied: 1, protected: 2,
+      transitions: 3, systemMoves: 1,
     })
   })
 
@@ -13586,10 +13602,16 @@ describe('deriveAccess', () => {
     })
   })
 
-  test('transitions carry their gate, and an ungated move reports null', () => {
+  // `@system` is carried BESIDE the gate rather than folded into it: they are
+  // two facts and they compose, so a move can be the application's and still
+  // require a level of whoever asks the application to make it. Folding them
+  // made the widest narrowing a state machine can express render identically to
+  // an ungated move in every committed artefact (`FJS-613`).
+  test('transitions carry their gate and their @system and their @seals, and an ungated move reports null', () => {
     expect(byName('Doc').transitions).toEqual([
-      { field: 'stage', name: 'review',  from: ['draft'],  to: 'review',    gate: null },
-      { field: 'stage', name: 'publish', from: ['review'], to: 'published', gate: 5 },
+      { field: 'stage', name: 'review',  from: ['draft'],     to: 'review',    gate: null, system: false, seals: false },
+      { field: 'stage', name: 'publish', from: ['review'],    to: 'published', gate: 5,    system: false, seals: false },
+      { field: 'stage', name: 'retract', from: ['published'], to: 'draft',     gate: null, system: true,  seals: false },
     ])
   })
 
@@ -14223,7 +14245,10 @@ describe('renderAccessSnapshot', () => {
     expect(md).toContain('allow **read** — `ownerId == auth().id || stage == \'published\'`')
     expect(md).toContain('A published doc is frozen')
     expect(md).toContain('| `Vault` | `apiKey` | `@secret` |')
-    expect(md).toContain('| `Doc` | `stage` | `publish` | review → published | 5 ADMINISTRATOR |')
+    expect(md).toContain('| `Doc` | `stage` | `publish` | review → published | caller | 5 ADMINISTRATOR |')
+    // The move no caller reaches, told apart from the ungated one beside it.
+    expect(md).toContain('| `Doc` | `stage` | `retract` | published → draft | **application** | — |')
+    expect(md).toContain('| `Doc` | `stage` | `review` | draft → review | caller | — |')
   })
 
   test('a section with nothing in it is omitted, not left empty', () => {
@@ -25906,10 +25931,38 @@ describe('an impossible filter is refused on a read', () => {
     await expect(sys.post.findMany({ where: { enc: 'e1' } })).rejects.toThrow(/@hashed/)
   })
 
-  test('an UNKNOWN key still only warns on a read — that trade was ruled on separately', async () => {
+  test('an UNKNOWN key is refused for the same reason, and it used to answer []', async () => {
     const db = await mk('t3-unknown')
     await db.post.create({ data: { title: 'a' } })
-    expect(await db.post.findMany({ where: { bogus: 1 } })).toEqual([])
+    // The @computed case above is this one with a different reason: SQLite reads
+    // the unresolvable quoted identifier as a string literal either way. This
+    // asserted `[]` while the test above it argued that shape is the wrong rows
+    // rather than fewer — one describe block holding an argument and its
+    // exception (`FJS-634`, `FJS-D169`).
+    await expect(db.post.findMany({ where: { bogus: 1 } })).rejects.toThrow(/Unknown field 'bogus'/)
+  })
+
+  test('a name carrying a quote cannot reach the SQL — the policy stays ANDed on', async () => {
+    const db = await makeDb(
+      `model Doc {
+        id      Int @id
+        ownerId Int
+        body    String
+        @@allow('read', ownerId == auth().id)
+      }`,
+      't3-inject',
+    )
+    const sys = db.asSystem()
+    await sys.doc.create({ data: { id: 1, ownerId: 1, body: 'mine' } })
+    await sys.doc.create({ data: { id: 2, ownerId: 2, body: 'theirs' } })
+    const me = db.$setAuth({ id: 1 })
+    expect((await me.doc.findMany({})).length).toBe(1)
+    // Unbalances the parentheses the policy is ANDed inside; answered every row.
+    await expect(me.doc.findMany({ where: { ['id" = 2) OR ("id']: 1 } }))
+      .rejects.toThrow(/Unknown field/)
+    // And the belt, independent of the refusal above: a quote in a name that
+    // DOES reach a clause builder is doubled rather than closing the string.
+    expect(quoteIdent('id" = 2) OR ("id')).toBe('"id"" = 2) OR (""id"')
   })
 
   test('a legitimate filter is untouched', async () => {

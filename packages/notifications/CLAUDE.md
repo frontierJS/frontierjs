@@ -1,6 +1,6 @@
 # notifications — package map
 
-**A vertical slice, not a layer.** A Notification class fans out to an in-app
+**A vertical slice, not a layer.** A notification fans out to an in-app
 record, a WebSocket event and an email — `app.notify`. It sits on Junction,
 Litestone, conduit and (for email bodies) mesa/email-kit. `bun run test` (bun).
 
@@ -14,7 +14,9 @@ No `src/` — the files are at the package root, which is what `exports` and
 ```
 index.ts          public API + the AppNotify augmentation
 notify.ts         app.notify — the fan-out
-notification.ts   the Notification base class
+define.ts         defineNotification — a notification with no class
+loader.ts         where *.notification.ts live, and the file-name-is-the-type rule
+notification.ts   the Notification base class (the older shape; still supported)
 builders.ts       message builders (an email body may also be a rendered template)
 types.ts          Transport, Recipient, driver and payload types
 plugin.ts         the Junction plugin — register / boot / shutdown
@@ -24,7 +26,8 @@ drivers/
   inapp.ts        writes the record, publishes on app.channel()
   email.ts        renders lines → text/html, hands off to the mailer
 examples/         wiring.ts + two notifications + Notification.mesa
-tests/            harness.ts, fanout.test.ts, hook.test.ts, email-render.test.ts
+tests/            harness.ts, fanout.test.ts, hook.test.ts, email-render.test.ts,
+                  define.test.ts + fixtures/notifications/
 ```
 
 ---
@@ -58,8 +61,44 @@ the transport that needs no account.
   twice.
 - **"You see only your own" needs two accounts to demonstrate**; one signed-in
   user cannot show it. `example`'s drive signs in twice for that reason.
+- **The type is a FILE NAME, and it is persisted data.** `defineNotification`
+  states none; the loader stamps `OrderPaid.notification.ts` as `OrderPaid`,
+  verbatim, and that string is written to `notifications.type` and read by the
+  browser to choose a renderer. So renaming the file renames the type and the
+  rows already written keep the old one — `type:` on the definition is the way
+  to hold it still, and a divergence is warned about rather than accepted in
+  silence, because a deliberate rename and a typo look identical from here.
+- **A definition the loader never saw throws on first send.** It is the one
+  failure mode this shape adds: an unnamed notification would otherwise write
+  rows under `undefined`, which nothing can ever read back. Two ways in — a file
+  outside the notifications directory, or an app whose entry is not what the
+  probe assumed, which is every test runner and every drive that imports the app
+  module. `example` therefore DECLARES `notifications:` rather than being probed
+  for, exactly as it declares `autoload`.
+- **`app.notifications` is READ-ONLY at runtime, not only in the types.**
+  `Object.freeze` does nothing to a Map's internal slots — the first probe of
+  this passed `Object.isFrozen` and then accepted a `set()` on the next line —
+  so `set`, `delete` and `clear` are replaced with throws naming why. What a
+  build can send is decided at boot by the files in its notifications
+  directory; a type added after that makes the app disagree with its own
+  snapshot and with every reader of it.
+- **The registry has a committed artefact and needs one.** `junction
+  notifications --app <module>` writes `notifications.snapshot.md`, and the
+  `snapshots` CI phase rechecks it — a registry nothing commits is `FJS-327`'s
+  shape. It is generated from JUNCTION, duck-typing `app.notifications` exactly
+  as `junction jobs` duck-types `app.jobs`: this package must not become a
+  dependency of that one.
+- **`app.notify` reads three members and never asks which shape produced them** —
+  `notificationType`, `via(recipient)`, `getMessageFor(transport, recipient)`.
+  That is why the class and `defineNotification` coexist with no adapter, and
+  why a plain object satisfying those three has always worked.
 
 ## Proving a change
 
 `bun run test`, then `example`: `bun run verify:notify` — mail at a real server,
 plus the in-app rows each caller can and cannot see.
+
+For a change to `define.ts` or `loader.ts`, `verify:notify` alone is not enough:
+it sends through an app whose notifications directory is DECLARED. `verify:pay`
+and `verify:collect` import `api/src/app.ts` directly, which makes the drive
+file the entry — the shape a probe gets wrong.

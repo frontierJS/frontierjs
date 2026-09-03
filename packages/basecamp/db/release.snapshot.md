@@ -1224,13 +1224,13 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 @@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
-transition status.checkIn: installing, pending, unreachable → online
+transition status.checkIn: installing, pending, unreachable → online @system
 transition status.drain: online → draining @gate(5)
 transition status.reboot: online, unreachable → pending
-transition status.reportDestroyed: draining, installing, online, pending, provisioning, ready, stopped, unreachable → destroyed @gate(5)
-transition status.reportRebuilding: draining, installing, online, pending, ready, stopped, unreachable → provisioning @gate(5)
-transition status.reportRunning: installing, pending, provisioning, ready, stopped, unreachable → online @gate(5)
-transition status.reportStopped: draining, installing, online, pending, provisioning, ready, unreachable → stopped @gate(5)
+transition status.reportDestroyed: draining, installing, online, pending, provisioning, ready, stopped, unreachable → destroyed @system @gate(5)
+transition status.reportRebuilding: draining, installing, online, pending, ready, stopped, unreachable → provisioning @system @gate(5)
+transition status.reportRunning: installing, pending, provisioning, ready, stopped, unreachable → online @system @gate(5)
+transition status.reportStopped: draining, installing, online, pending, provisioning, ready, unreachable → stopped @system @gate(5)
 transition status.undrain: draining → online @gate(5)
 ```
 

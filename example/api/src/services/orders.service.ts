@@ -11,8 +11,8 @@ import bookCourier from '../jobs/book-courier.job.ts'
 // The one owner of "this order has been paid for" — shared with
 // `payments.record`, which reaches it from a provider's webhook. It reads `$`,
 // so it runs inside THIS call's transaction with THIS caller's principal.
-import { settleOrder, refundOrder } from '../core/settle.ts'
-import { checkoutCodeFor }          from '../core/checkout-code.ts'
+import { settleOrder, refundOrder } from '../domain/shop'
+import { checkoutCodeFor }          from '../domain/shop'
 
 // Orders declare @@transitions, and Litestone enforces the machine at the Data
 // boundary. What this file adds is a way to ASK for a move by name.
@@ -67,7 +67,7 @@ const move = (name: string) => async () =>
  * thing because both call the same function, which is the only arrangement
  * where they cannot drift.
  *
- * What that function does and why is api/src/core/settle.ts. The one thing
+ * What that function does and why is api/src/domain/shop. The one thing
  * that belongs here is the reason `transactional:` is declared below: the
  * announcement it queues is an OUTBOX row, and `$.enqueue` refuses outside a
  * transaction.

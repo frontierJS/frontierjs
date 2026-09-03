@@ -21,6 +21,7 @@ ever touches it.
 | plain field           | yes    | yes              | yes    | yes   | yes       | the caller |
 | `@default(…)`         | yes    | yes — a stated value wins | yes | yes | yes  | SQLite, on insert |
 | `@system`             | yes    | no — the app names it on the write | yes | yes | yes | the application |
+| `@immutable`          | yes    | **at create only** — every later write is refused, `asSystem()` included | yes | yes | yes | the caller, once |
 | `@guarded`            | yes    | `asSystem()` only | `asSystem()` only | `asSystem()` only | no | the application |
 | `@generated("…")` / ``@generated(`…`)`` | yes | no        | yes    | yes   | yes       | SQLite — per read (`VIRTUAL`) or per write (`STORED`) |
 | `@derived(expr)`      | no     | no               | yes    | yes   | yes       | SQLite, in the SELECT |
@@ -59,6 +60,102 @@ to bind.
 and writable only through `asSystem()`. They are not tiers of the same thing —
 `@system` is for a value a screen must show and a caller must not forge, and
 `@guarded` is for one nothing outside the app has any business seeing.
+
+**Does it stop being writable once it exists?** Then it is `@immutable`, and it
+is the only entry in the table above whose answer changes with the row's age
+rather than with who is asking. A document is the case — an invoice's number,
+the instant it was issued, the total it was issued for — where a correction is a
+new row that supersedes the old one and never an edit.
+
+Three things about it are worth knowing before reaching for it, and each is a
+consequence of the same fact, that **nothing in this language can see the stored
+row beside the incoming one**:
+
+- **It refuses the KEY, not the value.** An update naming the column is refused
+  whether or not the number differs, so a form that fetches a row and sends it
+  back whole must drop the column rather than round-trip it. Sierra's write
+  pipeline already does — `@immutable` reaches the client as `readOnly` **in the
+  update schema alone**, so a generated create form still offers the box.
+- **`asSystem()` does not drop it.** It sits with `@check`, `@@check` and
+  `@@arc` rather than with the gate, the row policies and `@guarded`. That is
+  the point of it: a renewal job and a payment settler both run as system, so a
+  rule they may drop is a rule absent from every caller that actually writes an
+  invoice. A raw `UPDATE` still bypasses it, exactly as it bypasses a `@check`.
+- **It says nothing about DELETE**, and nothing about the row as a whole. To
+  freeze a row when it reaches a state, freeze its columns and let
+  `@@transitions` own the state column — which is the shape the ruling took
+  rather than a row-level attribute, because a document that may not move is not
+  a document, it is a log line.
+
+Refused at parse beside `@version` and `@updatedAt`, which the engine writes on
+every update: a column cannot be both. See [`FJS-D162`](../../../DECISIONS.md#fjs-d162).
+
+### `@seals` — the moment a row becomes a document
+
+`@immutable` freezes at CREATE, and that is the wrong moment for most real
+documents: an invoice is assembled line by line and becomes a statement when it
+is issued. Written with `@immutable` alone the only way to build one is to write
+it whole, which is why the shape kept appearing without a `draft` state at all.
+
+`@seals` on a move says the row becomes a document there, and `@sealed` on a
+hasMany relation says which children it is made of:
+
+```lite
+model Invoice {
+  id     Int      @id
+  state  DocState @default(draft)
+  number String   @immutable
+  total  Int      @immutable
+  lines  InvoiceLine[] @sealed      // ← which children the document is made of
+  payments Payment[]                // ← and which go on arriving after it
+
+  @@transitions(state,
+    issue:  draft  -> issued @seals @gate(5),   // ← when it seals
+    settle: issued -> paid @system,
+    void:   issued -> void)
+}
+```
+
+Four things follow, and each of them is the reason it is spelled this way:
+
+- **The sealed set is COMPUTED, never listed.** It is everything reachable from
+  a `@seals` move's target, so `paid` and `void` are sealed without anything
+  restating them, and a move added later to the tail of the machine is sealed by
+  arriving. A machine that comes back OUT of a sealed state is refused at parse:
+  a document that unseals is not a document.
+- **`@immutable` on a sealing model means *frozen at the seal*.** Its columns are
+  ordinary while the row is a draft and refused afterwards. Scoped by the
+  declaration — a model with no `@seals` move keeps the create-time meaning
+  exactly — and the refusal moves out of the payload into the WHERE, because the
+  answer is now in the ROW. So it reaches the client as
+  `x-litestone-kind: 'immutable-until-seal'` with the state column and the sealed
+  set beside it, rather than as `readOnly`: no schema can answer it, and a form
+  resolves it off the record it is editing.
+- **`@sealed` is explicit and is never inferred.** Every child relation on a
+  sealing model looks sealable and they are not — a payment against an issued
+  invoice is exactly the row that must keep arriving.
+- **`asSystem()` does not lift it**, exactly as it does not lift `@immutable`.
+  This is the one place it parts company with `@@transitions`, which `asSystem()`
+  bypasses entirely: a gate is about who is asking and a seal is about what the
+  row IS.
+- **It says nothing about deleting the document itself**, for the reason
+  `@immutable` says nothing about DELETE: whether an issued invoice may be
+  removed is a question about who may remove it, which is `@@gate`'s. `@sealed`
+  governs the children a document is MADE of, and the sealing row's own
+  existence is the gate's — `@@gate("1.8.8.8")` on the model is what says *and
+  nobody deletes one*.
+
+A refused write raises `SealedDocumentError` — a 409, `retryable: false` — which
+names the document, the state it was found at and the relation or the columns.
+The guard rides the WHERE like the transition compare-and-swap and the `@version`
+check, so a refusal is zero rows changed; the sentence comes from a follow-up
+read that runs only on that path, and only after the move and the revision have
+each had their say.
+
+Both halves are in `db/access.snapshot.md` (a **Seals** column beside **Made
+by**, and the relation list under it) and in the release surface, where gaining
+either is a **contract**: an N-1 release that writes a line onto an issued
+invoice stops working the moment the deploy lands.
 
 **Is it derived from other values?** Then the deciding question is **where
 SQLite has to be able to see it**, and the answers are genuinely different

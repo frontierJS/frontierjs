@@ -362,7 +362,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `volumes` — hasMany `Volume`
 - relation `appServers` — hasMany `AppServer`
 - relation `serverNetworks` — hasMany `ServerNetwork`
-- transitions on `status` — `reboot`: online|unreachable → pending · `drain`: online → draining @5 · `undrain`: draining → online @5 · `checkIn`: pending|installing|unreachable → online · `reportRunning`: pending|provisioning|installing|ready|unreachable|stopped → online @5 · `reportStopped`: pending|provisioning|installing|ready|online|unreachable|draining → stopped @5 · `reportRebuilding`: pending|installing|ready|online|unreachable|draining|stopped → provisioning @5 · `reportDestroyed`: pending|provisioning|installing|ready|online|unreachable|draining|stopped → destroyed @5
+- transitions on `status` — `reboot`: online|unreachable → pending · `drain`: online → draining @5 · `undrain`: draining → online @5 · `checkIn`: pending|installing|unreachable → online @system · `reportRunning`: pending|provisioning|installing|ready|unreachable|stopped → online @system @5 · `reportStopped`: pending|provisioning|installing|ready|online|unreachable|draining → stopped @system @5 · `reportRebuilding`: pending|installing|ready|online|unreachable|draining|stopped → provisioning @system @5 · `reportDestroyed`: pending|provisioning|installing|ready|online|unreachable|draining|stopped → destroyed @system @5
 - capabilities — `Server.create` · `Server.update` · `Server.delete` · `Server.reboot` · `Server.drain` · `Server.undrain` · read is not graded
 
 | Field | Type | Required | Label | Rules | Messages |
@@ -415,10 +415,10 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
-| `nonce` | `string` | — | — | — | — |
+| `nonce` | `string` | yes | — | — | — |
 | `seenAt` | `string` | — | — | `format: "date-time"` | — |
 
-**On create**: required — nothing · not accepted — `nonce`
+**On create**: required — `nonce`
 
 ### `Volume`
 

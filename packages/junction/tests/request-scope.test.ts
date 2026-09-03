@@ -77,6 +77,43 @@ beforeAll(async () => {
 
 afterAll(async () => { await app?.stop() })
 
+// ─── one correlation id ───────────────────────────────────────────────────
+// Junction has two spellings of "which request is this" — `ctx.requestId`, set
+// by the `correlationId()` middleware, and `RequestMeta.correlationId`, minted
+// by `enterRequest`. Two ids for one request would make an app log line and the
+// audit row from the same request unjoinable, which is the exact failure the
+// provenance columns exist to close.
+//
+// They agree because both transport entry points read
+// `x-request-id ?? ctx.requestId` — the store DEFERS to the middleware rather
+// than minting beside it. Pinned here because nothing said so, and because the
+// deferral is one `??` in two files: delete it and every reader still works,
+// separately, on different ids.
+describe('the correlation id has one value per request', () => {
+
+  test('a stated x-request-id is what the store carries', async () => {
+    seen = undefined
+    const res = await fetch(`${BASE}/probe`, { headers: { 'x-request-id': 'stated-1' } })
+    expect(res.status).toBe(200)
+    expect(seen!.correlationId).toBe('stated-1')
+  })
+
+  test('with no header, one id is minted and it is stable across the request', async () => {
+    seen = undefined
+    const res = await fetch(`${BASE}/probe`)
+    expect(res.status).toBe(200)
+    const id = seen!.correlationId
+    expect(typeof id).toBe('string')
+    expect(id.length).toBeGreaterThan(0)
+
+    // The negative control: a second request must not reuse it. A constant or a
+    // per-process id would satisfy every other assertion here.
+    seen = undefined
+    await fetch(`${BASE}/probe`)
+    expect(seen!.correlationId).not.toBe(id)
+  })
+})
+
 describe('every entry point opens the request scope', () => {
 
   test('HTTP — the store is open, and carries who and where', async () => {

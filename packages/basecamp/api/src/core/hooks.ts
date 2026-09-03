@@ -498,6 +498,12 @@ async function rememberNonce(app: BasecampApp, nonce: string, windowMs: number):
   }
 }
 
+/** The raw search string of a request URL, `''` when there is none or it will not parse. */
+function searchOf(url: string | undefined): string {
+  if (!url) return ''
+  try { return new URL(url).search } catch { return '' }
+}
+
 export function requireOutpostSignature(app: BasecampApp, { only = [] }: { only?: string[] } = {}): Hook {
   const guarded = new Set(only)
   const TOLERANCE_S = 300
@@ -511,7 +517,15 @@ export function requireOutpostSignature(app: BasecampApp, { only = [] }: { only?
     // which this hook would report, correctly and uselessly, as *no secret is
     // configured on this side*.
     const secret = env.OUTPOST_SECRET
-    const raw    = (ctx as { $raw?: { rawBody?: string; headers?: Record<string, string>; method?: string; path?: string } }).$raw
+    const raw    = (ctx as {
+      $raw?: {
+        rawBody?: string
+        headers?: Record<string, string>
+        method?:  string
+        path?:    string
+        $raw?:    { url?: string }
+      }
+    }).$raw
 
     // Fail closed, and say which half is missing. An in-process call has no
     // `$raw` at all — the jobs call these methods through the app — so this
@@ -524,6 +538,11 @@ export function requireOutpostSignature(app: BasecampApp, { only = [] }: { only?
       secret,
       method:    raw.method ?? 'POST',
       path:      raw.path ?? '',
+      // The query is part of the canonical string since `FJS-678`, and it is
+      // read off the RAW url rather than off `ctx.$raw.query`, which is the
+      // PARSED bag — a signature is over the bytes the sender put on the wire,
+      // and a re-serialisation of a parsed query is a different string.
+      query:     searchOf(raw.$raw?.url),
       body:      raw.rawBody ?? '',
       headers:   raw.headers ?? {},
       toleranceSeconds: TOLERANCE_S,

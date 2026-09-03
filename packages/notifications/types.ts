@@ -147,6 +147,21 @@ export interface App {
 
 export interface NotificationsPluginOptions {
   db:          unknown          // Litestone client
+
+  /**
+   * Where this app's `*.notification.ts` files are.
+   *
+   * Absent, two candidates are probed beside the entry — `notifications/` and
+   * `src/notifications/` — which is the flat layout and the scaffolded one. A
+   * stated path is never probed around: a relative path resolved against the
+   * wrong working directory lands on nothing and is indistinguishable from an
+   * app that declares none, so a miss throws naming what it looked at.
+   *
+   * `false` turns loading off. Definitions then have to state `type:`, because
+   * nothing will have named them.
+   */
+  notifications?: string | false
+
   transports?: {
     email?:    { mailer?: string }
     sms?:      { provider?: string }

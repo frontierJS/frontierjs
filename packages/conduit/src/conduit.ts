@@ -327,6 +327,19 @@ export function createConduit(
   }
 
   async function register(descriptor: TargetDescriptor): Promise<void> {
+    // Refused here rather than handled in the transport. A followed hop rebuilds
+    // its headers for the new address, and for these two auth types that is
+    // either a signature bound to a path and query that are no longer the ones
+    // being requested, or a key sent to an address the descriptor never named
+    // (`FJS-679`). Neither is something a per-request decision can make safe.
+    if (descriptor.follow_redirects === 'same-origin'
+        && (descriptor.auth.type === 'hmac' || descriptor.auth.type === 'api_key')) {
+      throw new TypeError(
+        `Target '${descriptor.id}': follow_redirects 'same-origin' cannot be combined with `
+        + `auth type '${descriptor.auth.type}' — a followed redirect re-sends the credential.`,
+      )
+    }
+
     await put(descriptor)
     router.evict(descriptor.id)   // evict stale pooled connection
     safe('onRegistered', () => observers.onRegistered?.(descriptor))

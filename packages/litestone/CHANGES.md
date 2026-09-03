@@ -1,5 +1,1425 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-02 — `$merge`: changing one key of a document
+
+`FJS-D176`. 3993 pass (30 new).
+
+```js
+await db.account.update({ where: { id }, data: {
+  settings: { $merge: { commute: { source: 'bus' } } },   // json_patch(settings, ?)
+} })
+```
+
+The sixth atomic operator, and the first that wears a `$`. The other five are
+read off a plain key because *the declared type decides* and a numeric column
+cannot hold an object; a `Json` column can, so a document's own key could be
+spelled `merge`. (The same ambiguity is why `{ doc: { increment: 1 } }` on a
+`Json` column stores `{"increment":1}` — correct, and a trap.)
+
+**The grading rule is not the obvious one, and the obvious one is unsound.**
+The first design said: validate the patch's present keys against `T`, refuse a
+`null` on a required key, done. Measured against real `json_patch` and
+litestone's own validator over 68 (stored × patch) pairs — **2 counterexamples**,
+both the same mechanism:
+
+```
+{"a":null}     + {"a":{"x":1}}  =  {"a":{"x":1}}       ← REPLACED
+{"a":{"x":1}}  + {"a":{"y":2}}  =  {"a":{"x":1,"y":2}}  ← merged
+```
+
+RFC 7396 replaces rather than merges when the target is absent or null, so a
+patch aimed at an OPTIONAL field is a create however partial it looks, and that
+type's required keys are not optional after all. Validating the patch alone
+cannot see it: a missing required key and a partial patch are the same thing.
+
+The repair needs no read of the row:
+
+> Grade a patch as **partial** where the target is guaranteed present, and as a
+> **create** where it may be absent. A required field is present in every valid
+> parent, by induction from the column's own type; an optional one may be null.
+
+Re-run over 90 pairs at three levels of nesting: **0 unsound**, 3 conservative
+refusals — all of them a partial patch into an optional nested object that
+happened to be there, which the rule cannot know without the read it exists to
+avoid. The refusal says so rather than answering a bare *is required*. The same
+rule applies to the column itself: `Json? @type(T)` is graded as a create,
+`Json @type(T)` as a partial.
+
+An **undescribed** `Json` column is not graded at all — it declares no shape, so
+there is no invariant a merge could break. That is where the feature has users
+today: `@type(` is bound to zero fields in this repo while `advise` reports 24
+undescribed `Json` columns on basecamp alone.
+
+Refused by name: on `create` / `createMany` / `upsert` / `upsertMany` (nothing
+to merge into — and `createMany` was not calling `extractWriteOps` at all, so
+`$merge` was being stored as the document there); on a column that is not
+`Json`; on `@encrypted`/`@secret`, where the stored text is ciphertext; on a
+patch that is not an object; and mixed with any other key.
+
+It is an ordinary write in every other respect — the gate, the row policies, the
+field write predicate, `@version`, the audit row and `@@log`'s before/after
+snapshots all apply, and it **announces the merged row**, which is the one thing
+`asSystem().sql json_set(…)` cannot do: that workaround is already atomic and
+race-free, and it reaches no open tab.
+
+`validateTypedJson` grew a `mode`, defaulting to `full`, so every existing
+caller is unchanged.
+
+
+## 2026-09-02 — a bulk write cannot reach around the state machine
+
+`FJS-671`, ruled `FJS-D182`. 3993 pass (8 new), typecheck clean.
+
+`F16` of the foundation audit. `updateMany` matches rows with a WHERE and never
+reads them, so there is no `from` state to grade — and the skip took the whole
+ladder with it. Measured, one level-4 caller holding no capability: a `@gate(5)`
+move refused as `TransitionGateError` through `update()` and **allowed** through
+`updateMany`; a `@system` move refused as `TransitionSystemError` and
+**allowed**; a move the schema does not declare at all, **allowed**.
+
+**Measuring corrected the precedent.** `FJS-044` did not rule the skip
+acceptable — it fixed it one layer up, and junction's `bulkByRow` still writes
+one row at a time through `update()`, so the HTTP surface was never exposed. The
+reachable path is a hand-written service, job or script calling
+`db.model.updateMany` with a caller-supplied payload.
+
+What that fix could not weigh is the capability grid and `access.snapshot.md`,
+both later. The snapshot said *a move a caller may not make is refused even
+where `@@gate` allows the update* and printed the move gates with no per-verb
+qualification, so **the artefact a reviewer grades an access change with
+certified enforcement one verb did not apply**. It now states the refusal.
+
+`BulkTransitionError` is **400** rather than 403 — no level answers it and no
+grant answers it, because the verb is wrong rather than the caller — naming the
+field and both ways forward. `upsertMany`'s `update:` half is the same ungraded
+write and refuses with it; its insert half is a create, has no from-state, and
+does not. **The power tool survives**: every other column on the model is
+bulk-writable in the same call, which is `FJS-044`'s reasoning kept rather than
+overturned.
+
+`asSystem()` still writes it and now says so — `update()` announces its bypass
+through `emitTransitionEvent`, which a bulk write never reaches, so the system
+path would otherwise have been the one silent bypass of the two.
+
+## 2026-09-02 — a claim is graded, and an absent one means one thing
+
+`FJS-666`, `FJS-667`, `FJS-668`, ruled `FJS-D181`. 3963 pass (22 new), typecheck
+clean.
+
+`F11` of the foundation audit. Every identifier on the ROW side of a policy is
+refused by name at startup; the identifier on the AUTH side of the same
+comparison was checked by nothing, ever.
+
+**A misspelled claim built clean and then enforced itself backwards, in two
+directions at once.** `@@auth User { suspended }` with
+`@@deny('update'|'create', auth().suspnded == true)` builds with no error and no
+warning. The SQL half then denies the update for EVERY caller — `NOT (NULL = 1)`
+is NULL and a WHERE that is NULL keeps no row — while the JS half allows the
+create for every caller, the suspended one included. One typo, a lockout and an
+open door, and the refused side reads like the policy working strictly.
+
+`buildClaimSet` is the answer, from four sources and no fifth: the **eight names
+this package itself reads** (`id`, `capabilities`, and the six
+`FrontierGateGetLevel` grades a caller by — a standing is not a column, so an
+app whose ladder tops out at `isAdmin` has no such field on `User`), the
+**`@@auth` model's own columns**, the **`tenancy { claim }`**, and
+**`createClient({ claims: [...] })`** for a value resolved per request, which is
+on no row and in no schema. That last is why it is a client option rather than a
+`.lite` keyword: junction already declares that list and generates
+`principal.snapshot.md` § Claims from the resolver's own `describe()`.
+
+It grades only when there IS a set — a schema with no `@@auth` and an app
+passing no `claims` have said nothing to compare against — and that silence is
+announced once per distinct set of names rather than assumed. `claims: []` is a
+statement where absent is silence.
+
+**A field-level `@allow` was checked by nothing at all** (`FJS-667`) — not for a
+claim and not for a column, though it is the same expression language compiled
+by the same compiler. `secret String @allow('read', ownerIdd == 1)` builds, and
+every row comes back with `secret` gone: it fails CLOSED, which is why it
+survived, because the schema, the build and every assertion on the refused side
+agree with the mistake. `checkFieldPolicies` runs the same walk.
+
+**And an absent claim now means one thing rather than two** (`FJS-668`). With
+the typo refused at startup what is left is the ordinary case: a correctly
+spelled, declared claim this caller does not carry. `evalJs` propagates NULL the
+way SQLite does — `and3`/`or3`/`not3`, a comparison with an absent operand,
+`NULL IN (…)` — and the verdict asks for TRUE rather than truthiness, so an
+allow holds only on TRUE and a deny fires on TRUE and UNKNOWN alike. That is
+`(allows) AND NOT (denies)` read on both sides. `x == null` keeps its own branch
+and answers a boolean, generalised off `auth()` onto any operand: it is how this
+language spells `IS NULL`, and `ownerId == null` compiles to `ownerId IS NULL`.
+What actually moved is the deny side and `!` — an allow list was already
+fail-closed — and the tests say so rather than claiming more.
+
+Both apps adopted `@@auth`, which is what makes the check live where the bug
+was; `example` declares `cartToken`, the one claim a caller with no session
+carries.
+
+## 2026-09-02 — the audit trail survives a second process
+
+`FJS-665`, ruled `FJS-D180`. 3941 pass (9 new), typecheck clean.
+
+`F8` of the foundation audit, and the one of its eight findings that had no id.
+A `driver logger` database is schema-global and its auto-model carries three
+`@@index` attributes, so every trail in every app is on the indexed path — and
+`docs/concurrency.md` recommends running a second process.
+
+**Three defects, measured on the shipped code.**
+
+`statSync(f).size` then `appendFileSync` is two syscalls, so a second process
+appending between them made the recorded offset name the other writer's line —
+**1,999 of 8,000, one in four**, with no artificial delay. An indexed read then
+answers the wrong record with no error.
+
+The sidecar was a rollback-journal database every process writes. Eight
+concurrent writers **killed 2 of 8** on the `CREATE TABLE` that ran on every open
+and **dropped 12 rows**, worst insert **5,007 ms** of blocked event loop. Under
+WAL the same run is 0 killed, 0 dropped, worst 79 ms, mean 0.03–0.27 ms.
+
+Compaction was `readFileSync` → filter → `writeFileSync` over the same path with
+nothing excluding a writer, inside every `createClient`. One 681 ms compaction
+against one appender **destroyed 4,637 rows** — a contiguous hole with the first
+and last present, so nothing reported anything.
+
+**One fix: the index database's write transaction is the file's lock.** A
+transaction rather than a lockfile because a lockfile has no answer for a writer
+that dies holding it, and the OS already drops a dead process's file locks. The
+lock covers `stat`+`append` and the index row that names the offset, so the two
+commit together; and it covers compaction's READ as well as its write — locking
+the write alone leaves the window and makes it wider, measured at a 297-row gap.
+
+**The order is the ruling.** Compaction stops unlinking the index first, because
+after an unlink a live process's next write answers `SQLITE_READONLY_DBMOVED`
+under a rollback journal — a loud crash, `FJS-540` — and answers **`ok` under
+WAL**, silently writing into an inode with no directory entry. WAL turns a crash
+into a lie, so it could not go first.
+
+Two more that fell out. An index created beside an EXISTING trail was left empty
+— `drifted` is false when there is no table at all — so every indexed read
+answered nothing, which reads as an empty log and is the state a trail reached the
+first night its retention elapsed. And the WAL migration is attempted with a 50 ms
+wait and its failure swallowed: `journal_mode` is persistent, so opening an older
+index IS the migration, and against a live reader it otherwise waited the full
+`busy_timeout` and threw at boot (5,008 ms, measured).
+
+`src/drivers/jsonl-index.js` is the new one owner of the sidecar, because
+compaction rewrites every row of the index and the driver writes them one at a
+time — two callers that may not disagree about what a row is. The nine tests
+spawn real processes: the window is between two adjacent syscalls and nothing
+inside one event loop can sit in it.
+
+## 2026-09-02 — a field write policy the atomic operators went round, and a write key that is a path
+
+`FJS-661` and `FJS-658`. 3930 pass (17 new).
+
+**`FJS-661` is an access-control bypass and was measured before it was fixed.**
+`FJS-D129` says a field `@allow('write', …)` is the WHEN of
+`SET col = CASE WHEN … THEN ? ELSE col END`, evaluated against the STORED row.
+`setFragment` is the one owner of that wrapper and an atomic operator never
+reached it: `extractWriteOps` emitted a finished assignment which `update` and
+`updateMany` spliced into the SET clause whole.
+
+```js
+// views Int @allow('write', auth().role == 'admin')
+await user.post.update({ where, data: { views: 999 } })            // declined — 10
+await user.post.update({ where, data: { views: { increment: 5 } } })  // was 15
+await user.post.update({ where, data: { tags:  { push: 'x' } } })     // was appended
+```
+
+An op now carries `{ col, expr, params }` rather than SQL, and `setFragmentExpr`
+is the same predicate with an expression in the THEN instead of a parameter;
+`setFragment` is one line of it, so there is one wrapper and not two.
+
+**No test could see it, and the reason is worth keeping.** `write-operators.test.ts`
+builds its client with `asSystem()`, which drops every field policy by design;
+`field-predicate.test.ts` writes values. Each file is right about its own
+subject and the crossing is in neither. Every new refusal is paired with the
+same call by an admin and with an unpoliced column in the same payload —
+a fix that stopped applying operators altogether passes every assertion made
+from the refused side (`FJS-351`).
+
+**`FJS-658`** — `{ 'settings.commute': … }` was stripped in silence, so a write
+naming a real column with a real path was a 200 that changed nothing. The strip
+already draws this line for a virtual column (*stripping an UNKNOWN key silently
+is the mass-assignment protection; stripping a key the model declares but cannot
+store is a different thing wearing the same clothes*) and a path was landing in
+the first category. It is refused by name now, with the sentence chosen by the
+column's TYPE, which is the only reason the refusal belongs here rather than one
+layer up:
+
+```
+"settings.commute" reads as a path into "settings", and a write takes the whole
+document — there is no path syntax on this side (a where has one). Read the row,
+change "commute", and write "settings" back; nothing here merges into a stored value.
+
+"name.first" reads as a path into "name", which is String and has no "first"
+inside it. Write "name" itself.
+```
+
+The strip it is **not** is half the test file: an unknown key, and a dotted key
+whose head is not a field, are both still dropped in silence. Whether a path
+should be writable at all is `FJS-D176` and is deliberately unanswered.
+
+
+## 2026-09-02 — `$readAs`: what would this person have seen of this row
+
+`FJS-631`, ruled `FJS-D175`. 3913 pass (14 new).
+
+`@@allow` compiles into a SELECT's WHERE, so a row that reaches a caller through
+a query is filtered by construction and a row that reaches them any other way is
+filtered by nothing. Junction owns the fan-out of a broadcast and cannot own the
+rule — the gate, the row policies and the field policies are declared here.
+
+```js
+await db.$readAs('order', row, principal)   // → the row as they'd have read it, or null
+db.$readGrading('product')                  // → 'open' | 'graded'
+```
+
+The fifth `$`-sibling, and it takes its subject as an ARGUMENT for
+`$capabilitiesFor`'s reason: the asker holds one client and is answering about
+somebody else. Every flavour answers identically for the same principal.
+
+Three questions in the order every other layer here reads them — the **gate**
+(about the caller alone, an integer comparison, and the whole answer for a
+stranger), the **row policy** (`policyVerdict`, in JS against the row in hand,
+no query), then the **field policies** (what of the row they may see). It fails
+closed: `policyVerdict` throws on an undecidable policy and at a boundary an
+undecidable policy must refuse.
+
+**Shaping a row that has already been read is safe**, which is what makes it
+affordable: `applyFieldPolicyTo` strips `@encrypted`, `@guarded` and `@hashed`
+for any non-system context, so the decrypt branch cannot run for a recipient.
+What it gives up is stated — the row is not re-read, so a `@from` or `@computed`
+value is the writer's rather than one derived under the recipient's policies.
+
+`$readGrading` is the half that keeps it cheap: `open` for a model whose read
+gate is 0 with no read policy and no field policy, so a catalogue — the busiest
+channel an app has — is skipped entirely. Read off the schema, so a policy added
+later turns it graded with nothing to remember. An unknown accessor is `graded`,
+which is the opposite of the other siblings' `{}`/`[]`: there uncertainty means
+*I cannot judge this*, here it is a permission and has to fall the other way.
+
+`GatePlugin` publishes `ctx.gateFor(model, op)` beside `ctx.levelFor`, so the
+declared level is read off the plugin's own map — `levelPasses` stays the one
+comparison, because 8 and 9 are sentinels rather than rungs and a `>=` spelled
+elsewhere reads LOCKED as a high level.
+
+## 2026-09-02 — `Int @big`: a column whose values use all 64 bits
+
+`FJS-643`. Ruled as `FJS-D174`. 3894 pass (31 new).
+
+SQLite's `INTEGER` is 64-bit and `safeIntegers` appeared nowhere in `src/`, so
+`bun:sqlite` answered a JS `number` on every path — and a value past 2^53 was
+read back as a **different number, of a value the database was holding
+correctly**. Measured both ways: a raw-SQL write of `9007199254740993` stores
+exactly (`CAST AS TEXT` confirms) and the ORM read back `…992`. The write and
+the read were each self-consistent, which is why nothing could see it. It
+arrives by two ordinary routes — a snowflake id, and `litestone import` mapping
+a foreign `BIGINT`.
+
+```prisma
+model WebhookEvent {
+  id         Int @id @default(autoincrement())
+  externalId Int @big     // '1420070400000000000' — digits, in and out
+}
+```
+
+**A `@big` column is read back and written as a string of digits**, not a
+`BigInt`, because `JSON.stringify` throws on one — that is every HTTP response,
+every WebSocket frame and every `before`/`after` audit snapshot. node-postgres
+answers `int8` the same way and mysql2 has `bigNumberStrings` for it. The type
+does not depend on the magnitude (`42` reads back `'42'`), or a caller would
+have to branch on the size of the value; a JS number is still accepted going in
+below 2^53. Arithmetic says `BigInt(v)` first, which is honest about a value
+that does not fit a number.
+
+**The column keeps `INTEGER` storage, and that is what makes it worth doing.**
+Holding digits in `TEXT` was the standing advice and loses everything SQLite
+does with a number. Measured, all of it survives: `ORDER BY` puts `100` before
+`9007…` where text puts it after, a range filter compares numerically, EXPLAIN
+answers `SEARCH … USING COVERING INDEX (v=?)`, and `AUTOINCREMENT` continues
+correctly past 2^53 — because SQLite applies the column's affinity to a text
+parameter.
+
+**Three measurements changed the design after it was written.**
+
+Global `safeIntegers` — the issue's own second candidate — costs **+68 %** on
+every read for every app (1884 → 3171 µs over 5,000 rows) as well as breaking
+every JSON boundary, so it is refused.
+
+The first cut emitted `CHECK (typeof(col) = 'integer')` by analogy with
+`@scale`. litestone emits `STRICT` on every table, and STRICT already refuses
+all three ways a wide value stops being exact — past int64 (which a loose table
+demotes to REAL `9.22e+18`), a non-numeric string, a fraction. A constraint that
+cannot fire is worse than none, so it is emitted only under `@@noStrict`. The
+distinction is the bound: `@scale`'s is NARROWER than the column's own, `@big`'s
+IS the column's own.
+
+And asking for BigInts at the statement while narrowing in the row read is an
+enumeration: `count()` on a wide model answered `0n`, because a statement also
+serves counts, aggregates and existence probes that reach a caller through
+neither `read` nor `readAll`. The statement narrows what it returns instead.
+
+`@big` is refused on a Float, a String, an array (a JSON column, whose number is
+the double), and beside `@scale` or `@money`, which bound the column to ±2^53
+for the opposite reason.
+
+**`litestone import` carries a wide column now** rather than narrowing it, which
+moves `bigint` from `changed` to `noted`. Keys and foreign keys keep the
+existing structural exemption — without it a Rails import turns every id in the
+app into a string.
+
+On the wire it is `{ "type": "string", "pattern": "^-?\\d+$", "x-big": true }` —
+the one attribute that changes its field's JSON type, because the column's
+values do not fit a JSON number either. `x-big` picks the control:
+`type="number"` would bind through a JS number and round the value back in the
+browser.
+
+## 2026-09-02 — a write is announced past this process, when the database says so
+
+`FJS-642`, `FJS-654`, `FJS-655`. Ruled as `FJS-D173`. 3863 pass (14 new).
+
+`$tapEvents` was a callback list on one client, so a second process announced
+nothing to the first — and `docs/concurrency.md` recommended running one. Not a
+gap in a mechanism: SQLite has no central server, so `sqlite3_update_hook`, the
+pre-update hook and the sessions API are in-process by construction. Every real
+system solving this records instead; Rails 8 ships Solid Cable, a messages table
+polled at 100 ms, as its Redis-free default.
+
+```prisma
+database main {
+  path     "./db/app.db"
+  announce crossProcess     // default: inProcess
+}
+```
+
+Each announced write records a row, and every other process on the machine hands
+it to its own `$tapEvents` subscribers **on the same seam**, marked
+`foreign: true` — so Junction's `announceDataWrites` needed no change and cannot
+tell a foreign event from a local one.
+
+Declared rather than default, because it costs **+14 µs on a 25 µs single-row
+insert** and nothing on a bulk one (`changed` already carries a count, `FJS-D34`).
+The row carries the **id and never the row**: writing the row would put the
+plaintext of every `@encrypted` and `@guarded` column into a table beside the
+ciphertext. The receiving process re-reads, which also makes the row the shape
+its own reads produce — so a create delivered after a later update carries the
+later values, which is the wanted answer for a live store and is stated.
+
+Measured rather than assumed: `fs.watch` woke on 5 of 5 foreign commits at a
+median **0.7 ms** against 50 ms for a 100 ms poll; `PRAGMA data_version` is
+2.5 µs prepared, does not move for a connection's own commits, is a MARKER
+rather than a counter (50 foreign transactions move it by 1), and is frozen
+inside a read transaction — so it is the backstop poll's gate and nothing opens
+a transaction around it.
+
+**The flake found the real bug.** Draining advanced the cursor to `MAX(id)` to
+get past its own rows, which also skipped a foreign row committed between the
+two queries — 6 failures in 8 runs, and exactly the silent staleness this layer
+exists to remove. The cursor now only moves over a row it actually looked at.
+
+Two defects fell out of the boot race and are their own entries. A migration
+race left the losing replica reporting `failed — duplicate column name` in 5 of
+10 simultaneous boots (`FJS-654`): `autoMigrate` used a deferred `BEGIN`, so both
+processes read and both applied. `BEGIN IMMEDIATE` serialises them and a guard is
+what makes the loser notice — a lock alone only makes it wait its turn to do the
+wrong thing — with the hash stamped and re-read inside that transaction. And
+underneath it, `createClient` threw `SQLITE_BUSY_RECOVERY` in 1 of 10 boots
+(`FJS-655`), because `PRAGMA journal_mode = WAL` takes a brief exclusive lock and
+ran six lines before the busy timeout was applied. 30/30 clean now.
+
+Stated rather than approximated: **one machine**, and **at-most-once across a
+crash** — the row is recorded after the write's own transaction commits, the
+same trade `ctx.afterCommit` makes one realm over.
+
+## 2026-09-02 — what a `check()` delegation reaches is decided at startup
+
+`FJS-636`. litestone 3849 pass (11 new).
+
+`check(parent)` compiles to a correlated EXISTS over the TARGET'S POLICY, and
+two shapes make it mean something other than what it reads as. Both were
+decidable only where the compiler runs, which is per query — too often to warn
+from, and too late for a fix that is a schema edit. `delegationProblems` answers
+both once at `createClient`, in the block that already refuses a predicate no row
+can satisfy.
+
+**A cycle is refused.** Re-entry compiles to `'0'`, which is the direction
+`FJS-634` fixed and the right one; failing closed is still not an answer. What
+the author wrote is *readable if its parent is*, and what they got is *only rows
+whose foreign key is NULL* — measured, a mutual pair reads 0 of 1 and a
+self-relation thread reads only its roots. Data-dependent, so it looks like a
+filter doing its job. The refusal names where the loop closed, and a
+self-relation gets different advice: *point one side at its own columns* is not
+available to a model delegating to itself, and there is no recursion here to
+have meant.
+
+**A target with no policy for the delegated operation is warned about.** It
+compiles to `'1'` — correct where the parent is genuinely open, a hole where the
+parent is held by a `@@gate` or a capability grid, both of which live a tier
+above any compiled predicate. Measured: an anonymous caller reads a `Doc` whose
+`@@gate("7")` vault it delegates to. A warning and not a refusal, because it is
+a hole rather than an impossibility and the policy tier may be open there on
+purpose; the test asserts that read alongside the sentence, so the two cannot
+drift. Silent on an unprotected target — an open parent is not the subject — and
+silent across all 67 existing test files and both app schemas.
+
+## 2026-09-02 — `autoMigrate` refuses a change that would destroy data, and a rebuild SQLite declines is graded rather than thrown
+
+`FJS-641`, `FJS-645` and `FJS-646`. litestone 3838 pass (11 new).
+
+`diffColumns` is a name-set diff with no rename detection, so a rename is a drop
+plus an add: the rebuild copies the columns the two tables share and the old
+table goes. Measured across four shapes, which is what set the scope —
+
+| change | before | now |
+| --- | --- | --- |
+| rename `body` → `content` | `migrated`, value gone | `blocked`, and it asks whether you meant a rename |
+| drop `body` | `migrated`, value gone | `blocked` |
+| retype `String` → `Int` | raw `SQLiteError` out of the migrator | `failed`, with SQLite's sentence as the reason |
+| add a column | `migrated` | unchanged |
+
+— because a plain drop was exactly as silent as a rename. The hole was never
+rename-shaped, so anything narrower than *any column drop* would have left half
+of it open. The row-count guard passed throughout: it counts rows, not values.
+
+**`{ acceptDataLoss: true }` is the escape**, which is what Prisma's `db push`
+demands for the same shape. The refusal uses the `blocked` machinery two rules
+already share — reason returned, `console.warn`, and the hash withheld, so a
+schema left this way re-announces on every boot instead of going quiet.
+
+**The rename heuristic changes the sentence and never the decision.** One column
+out, one in, same type, so a wrong guess costs a reader nothing — and the
+commonest case now arrives as *did you mean to rename it to "content"?* with the
+`ALTER TABLE … RENAME COLUMN` to use instead.
+
+**The file path still applies and gains a banner.** `create()` already wrote
+`- col body` into the header at the same weight as every other line of the diff;
+it is now a boxed DESTRUCTIVE block naming the columns whose values go. The file
+is the review step, which is the whole difference between it and `autoMigrate`.
+`describeDataLoss` answers facts and not advice, because its two callers are a
+refusal and a banner inside the very file that refusal tells you to write.
+
+**`litestone db push` was printing a green tick over its own refusal** and is
+the third id here (`FJS-646`). It branched on `skipped`, `in-sync` and
+`migrated` and nothing else, so a `blocked` result printed nothing, fell through
+to `✓ DB is already in sync with schema`, and exited 0 — true since the first
+blocked rule shipped, and surfaced only because this change made it reachable by
+any column drop. It now names the reason, reads `✗  DB not pushed`, exits **1**,
+and takes `--accept-data-loss`.
+
+**`state: 'failed'` is new**, and honestly distinct from `blocked`: one is a
+pre-flight refusal, the other is SQLite declining what was attempted. A caller
+switching on `'migrated'` treats both correctly. One existing contract moved
+with it — a view the rebuild invalidates used to throw and is now `failed`,
+which keeps *the migration does not half-apply* and drops *it throws*.
+
+
+## 2026-09-02 — the tenant pool stops closing what it lent out, and `$close()` starts actually closing
+
+`FJS-640`, ruled `FJS-D172`. litestone 3829 pass (7 new), junction 1692 pass,
+typecheck clean.
+
+`LRUPool.set` at capacity called `$close()` on the evicted entry — no lease, no
+refcount — while `get()` hands a client to a request that holds it across every
+await it makes. Measuring it first turned one defect into three.
+
+**A closed client was not dead, it was mixed, deterministically.** After
+`$close()`, `count()` off a cached statement answered `1` while `findMany()` and
+`create()` threw. bun's `close()` is `sqlite3_close_v2`: it defers destruction
+until the last prepared statement is finalised, and `wrapDb` holds up to 500 and
+finalised none. A request failed only if it took a branch it had not taken
+before, which is why this read as random rather than as a bug.
+
+**So the eager close freed nothing.** Measured: a close with one live statement
+freed **0 file descriptors**, and finalising that statement freed 3. The pool was
+paying a synchronous `wal_checkpoint(TRUNCATE)` — **7.97 ms against 0.008 ms for
+a pool hit, 991×, on the request path** — for a release that did not happen, and
+`maxOpen` has never bounded a connection in any process that ran one query per
+tenant. At 5 fds per client the default of 100 is ~500 fds, over macOS's own
+default, so it was not defending an OS limit either.
+
+**What changed.** Eviction drops rather than closes, and `maxOpen` is a target
+for how many tenants to keep warm. A lease makes the common case deterministic:
+`tenants.retain(id)` returns the release, junction's `withTenantDb` pins for the
+length of a request, and an eviction whose every lease has ended closes
+immediately. A client from a bare `get()` was never leased, so it is dropped and
+bun's finaliser closes it when the last holder lets go. `tenants.query` inserts
+COLD into a ring sized to its concurrency and capped at half the pool, so an
+admin dashboard no longer evicts the tenants being served. `poolStats()` reports
+`{ pooled, leased, retired, overflows, maxOpen }`, and the warning fires only
+when every slot was pinned — the one condition an operator can act on, and the
+only one that cannot be GC lag.
+
+**`$close()` is definitive.** It finalises the statement cache, which is what
+makes it release anything, and every path afterwards throws `ClientClosedError`
+naming the file. The read side needed its own fix: `conn.readDb` is replaced by
+the read router, which had no `close`, so the read wrapper was reachable from
+nowhere and kept answering.
+
+Same churn, leased against unleased: 140 fds outstanding against 240, and 60
+uncollected clients against 110.
+
+
+## 2026-09-01 — a `@unique` under row tenancy is reported when it is not per tenant, and `@unique(global)` is how you say you meant it
+
+`FJS-639`. litestone 3822 pass (7 new), basecamp 211 pass.
+
+The row-tenancy desugar guards READS — two `@@deny` rules and a stamp — and never
+touched the model's uniques. So `slug String @unique` on a scoped model is unique
+across the whole installation: two tenants cannot both hold `"launch"`, and the
+second is refused by a `UniqueConflictError` carrying the value, which tells them
+a row they may not read exists. `docs/access-control.md` says a refusal must
+never do that.
+
+**Measuring it before fixing it changed both the fix and the severity.** Graded
+against `basecamp` — the only `strategy row` app there is — **all 23 uniques on
+tenant-scoped models were already correct**: 12 carry `workspaceId`, 10 more
+reach a scoped parent (transitively, `App` → `Environment` → `Project`), and the
+last is a `@guarded` token that is global on purpose. So the hole is latent
+rather than live, and the two obvious fixes are both wrong: auto-prefixing the
+tenant column rewrites 22 correct declarations and breaks the token, and the
+naive *the constraint must name the tenant column* rule reports **ten correct
+declarations** — which is how a rule gets baselined and stops running.
+
+So the test is **transitive**: per-tenant if the columns carry the tenant column
+**or** a key reaching a model that is itself scoped. It reads the `scopedSet`
+fixpoint the tenancy walk already computes, so a grandchild costs nothing.
+
+A **warning**, not an error, because the global reading is legitimate — and it
+names all three ways out, the way the `@@softDelete` cascade footgun does, since
+forgetting the column and meaning it look identical from here. The way to say you
+meant it is `@unique(global)` / `@@unique([…], global: true)`; a mis-spelled
+modifier is refused by name, because one that parsed as nothing would be a schema
+saying less than its author wrote. It changes no DDL and reaches no snapshot,
+correctly — it is a statement to the parser and the reader.
+
+**It paid for itself on its first run**, reporting exactly one declaration in
+basecamp: `Invitation.token`, now `@unique(global)`, which says out loud that a
+credential is looked up BY its value before anybody knows whose it is.
+
+Prior art is one step stricter for a reason that does not apply here: Citus and
+MongoDB sharding both REFUSE a unique constraint that omits the distribution key,
+because across shards they physically cannot enforce it. On one SQLite file it is
+enforceable and merely usually unwanted, so refusing would be borrowing a
+constraint from a problem this engine does not have.
+
+## 2026-09-01 — the coordination layer: every write takes the lock, every announcement waits for the commit
+
+`FJS-638`, and it is one design rather than five fixes. litestone 3815 pass,
+junction 1692, sierra `test:safety` 5/5, caravan 188, auth 244.
+
+`FJS-237` built the FIFO write lock and the AsyncLocalStorage ownership that
+tells a genuine nesting from a concurrent caller — and only `$transaction`,
+`createMany` and `upsertMany` ever acquired them. Everything else ran bare on the
+shared write connection. Four measured consequences, all closed here.
+
+**Reads consulted a global counter.** `makeReadRouter` picked its connection off
+`txState.depth`, so while ANY transaction was open anywhere, every read in the
+process went to the write connection and saw uncommitted rows — a dirty read
+across callers, dressed as a visibility fix for the holder. It asks `ownsTx()`
+now: the same question `wrapExclusive` asks to spot a nesting, so the two cannot
+disagree about who is inside.
+
+**Every write verb now runs its database region through the lock.** `create` and
+`update` through `exclusive`, because their nested writes are themselves table
+calls and the body has to be async; `remove`, `delete`, `restore` and the three
+bulk verbs through the cheaper sync-body `wrapExclusive`. Only the DB region, not
+the whole method — a plugin's `beforeCreate` may do network I/O and must not hold
+the write lock. What this closes: a bare `create` arriving during a stranger's
+transaction was silently enrolled in it, returned the row as a success, and was
+erased by that stranger's rollback.
+
+**A nested write is atomic.** `create({ data: { kids: { create: [...] } } })` was
+a parent insert plus sequential child inserts with no transaction, so a child
+violating a `@unique` left the parent committed — and a `@sequence` model kept
+the counter bump its failed insert had already made, which is the same defect
+`createMany` fixed for the bulk path and left in the single one.
+
+**The post-update policy check rolls back for real.** It was a compensating
+`UPDATE` writing the before-snapshot back, under a comment claiming it ran inside
+a transaction. That is visible to concurrent readers in the window, permanent if
+the process dies between the two, and clobbers any concurrent write that landed
+in between. Inside a real transaction the throw IS the rollback, so the
+compensating write is gone.
+
+**An announcement now means committed** (`FJS-D170`). Events are held on the
+transaction and flushed after `COMMIT`, dropped on rollback, with a mark taken at
+`begin` so a SAVEPOINT rollback drops exactly the events queued since it. Held at
+`fireEvent`, the one funnel every announcement already passes through, so no call
+site is asked to remember. Before this, a create inside a transaction that rolled
+back still reached `$tapEvents` → junction's `announceDataWrites` → every open
+tab, and nothing retracted it.
+
+**One contract moved, and it is ruled rather than absorbed** (`FJS-D171`).
+Serialising writes makes the in-process transition race impossible, so the loser
+of two concurrent named moves now gets the `TransitionViolationError` that the
+same two moves in sequence always gave. The old `TransitionConflictError`
+`retryable: true` was an artefact of both callers evaluating against `draft`
+before either committed — the same end state answered two different classes
+depending on who won by a microsecond. *Somebody moved this under me* is earned
+by a declared precondition everywhere it exists (HTTP's `If-Match` → 412,
+Hibernate and EF Core's version column, Postgres's `40001`), and litestone's
+precondition is `@version`. The engine-detected race survives across processes,
+where the compare-and-swap is the only authority.
+
+**Cost, measured A/B on one machine at one moment**: ~60 → ~74 µs/op on the
+fastest possible write — an empty model, no policies, `select: false`, which is
+the largest that ratio ever gets. A first measurement of 117 µs/op was
+contaminated by a benchmark still running in the background, which is worth
+recording: the machinery itself (promise lock, ALS, `BEGIN IMMEDIATE`/`COMMIT`)
+measures ~5% against a bare insert.
+
+**`FJS-637`'s check is now scoped by kind.** `PRAGMA foreign_key_check` walks
+every foreign key of every row, which on the 900-model erpnext corpus schema
+timed a test out — so it runs only after a migration containing a statement that
+can actually move or remove rows (`INSERT INTO`, `DELETE FROM`, `DROP TABLE`, a
+rename). An `ADD COLUMN` or a `CREATE INDEX` cannot orphan anything.
+
+## 2026-09-01 — four fail-open holes closed: the `where` key, the JS policy floor, the `check()` cycle, and the rebuild's missing FK check
+
+3815 pass, 0 fail; junction 1692 pass, sierra `test:safety` 5/5. Out of a
+six-pass design audit — `IDEAS/provable-enforcement.md` records what the audit
+concluded about the shape of these, which is that every one of them sits in a
+blind spot of the verification organ this package already ships.
+
+**`FJS-634` — a crafted `where` KEY was injection, and an ordinary typo was a
+wrong answer.** `checkWhereKeys` warned rather than threw for an unknown key on a
+read (`FJS-D57`) and the key then reached `buildWhere`, interpolated as
+`"${key}"` with nothing escaped. Measured: `id" = 2) OR ("id` closes the quote,
+unbalances the parentheses the row policy is ANDed inside, and hands a caller
+scoped to owner 1 **every row in the table** — one line on stderr, status 200.
+And the ordinary case was never the harmless one the ruling assumed: SQLite reads
+a double-quoted identifier it cannot bind as a STRING LITERAL, so
+`{ ownerIdd: 1 }` compares two constants and answers **no rows**, which is *the
+wrong rows rather than fewer* — the exact sentence the same function already uses
+to justify throwing for a `@computed` key two reasons down.
+
+Both throw now, with the did-you-mean hint moved into the error
+(`FJS-D169` reverses `FJS-D57`'s read half; the write half stands). Beside the
+chokepoint there is now a belt: **`quoteIdent` in `query.js` is the one owner of
+putting a name into a pattern** and doubles a `"`, used at every caller-facing
+clause site — Invariant 8 is about the pattern, not about one entry point.
+
+The second door was the same class: a named aggregate's `filter` accepted a plain
+STRING and emitted it verbatim, reachable through `db.order.query(req.query)`,
+which the docs advertise. It takes a `` sql`` `` tag only, the rule
+`orderBy: { $raw }` already applies for the reason stated there — *a plain string
+is how an injected one arrives*. `$checkWhere` is untouched: a boundary that can
+answer 400 still asks without throwing.
+
+**`FJS-635` — the policy interpreter that grades CREATE failed open.**
+`compileSql` throws on an unknown AST node; `evalJs` returned `true` and its
+comment called that conservative. The two halves cover **disjoint operations** —
+read/update/delete compile to SQL, create and post-update evaluate in JS — so a
+node added to the grammar and to the SQL half alone does not fail anywhere: it
+makes every `@@allow('create', …)` holding it a silent no-op, on the one check
+where the payload IS the row and there is nothing to filter. This package had
+already paid for the shape once and repaired only the instance (`FJS-282`,
+`check()` permitting a cross-tenant create in silence); the floor underneath it
+stayed. Both defaults throw now, `compare()`'s unknown operator included.
+
+**`FJS-636` — a `check()` cycle compiled to allow-all.** Two models each holding
+`@@allow('read', check(other))` are deny-by-default whitelists on both sides, and
+the cycle guard's `return '1'` — its own comment said *open if recursive* — let
+an anonymous caller read both. It returns `'0'` now, the direction every other
+refusal here takes. A chain never reaches that line; the one shape this narrows
+rather than fixes is a self-relation checking its own parent, which no schema
+here writes. Deciding it at STARTUP is the better answer and stays open as
+`FJS-636`, because this runs per query and cannot be the thing that says so.
+
+**`FJS-637` — a rebuild committed foreign-key orphans.** Every migration runs
+under `PRAGMA foreign_keys = OFF` and nothing ran `PRAGMA foreign_key_check`
+before `COMMIT` — step 11 of SQLite's own 12-step ALTER procedure, and the one
+that was missing. Measured: a plain `postId Int` holding 999 with no matching
+row, given a `@relation` and migrated, answered `migrated` and left the violation
+**permanently**, because SQLite checks a foreign key when the CHILD row is
+written — so it surfaces at the next unrelated update of that row, months later,
+as a refusal about a row somebody was only renaming. Checked inside the
+transaction now, over the whole database rather than the migration's own tables
+(rebuilding a PARENT is what orphans rows in a child the migration never names);
+a failure rolls the migration back and names table, rowid and parent for the
+first five. The row-count guard is untouched and never covered this — it counts
+rows, not references.
+
+**Filed and not fixed**, each measured: `FJS-638` (single-row writes and all
+reads bypass the transaction lock — dirty reads, ghost writes, torn nested
+creates, and rolled-back rows announced to every tab), `FJS-639` (`strategy row`
+leaves every `@unique` global across tenants, and the refusal names the value to
+the wrong tenant), `FJS-640` (the tenant pool closes clients it has lent out),
+`FJS-641` (a column rename is silent data loss under `autoMigrate`), `FJS-642`
+(the live layer is in-process, so a second process announces nothing — needs a
+ruling), `FJS-643` (a plain `Int` past 2^53 corrupts on READ of a correctly
+stored value).
+
+## 2026-09-01 — `jsonschema --out` creates the directory it was told to write into
+
+3814 pass, 0 fail.
+
+`--out` is read as a directory only when that directory ALREADY EXISTS —
+otherwise it is a file path — so `--out db/.json` writes a file literally named
+`.json` on a fresh clone, and `--out db/.json/schema.json` failed with ENOENT
+naming the FILE, which reads as a permissions problem rather than a missing
+parent. Both branches (`--all-modes` and the single write) now `mkdirSync` the
+parent first. The behaviour that could not be fixed here is the directory
+ambiguity itself: it is load-bearing for callers passing an existing directory,
+so the recommended spelling states the filename.
+
+## 2026-08-31 — `@seals` — a document seals on a MOVE, and its children seal with it
+
+`FJS-D167`, answering the half `FJS-D162` left open. 3814 pass, 0 fail; junction
+1692 pass, sierra 1141 pass.
+
+`@immutable` freezes at CREATE, and that is the wrong moment for a document an
+app assembles line by line — which is why `IDEAS/billing.md` had already removed
+`draft` from the invoice rather than fight it. Two new attributes: `@seals` on a
+transition, beside `@gate` and `@system`, and `@sealed` on a hasMany relation.
+
+```lite
+model Invoice {
+  number String   @immutable
+  total  Int      @immutable
+  lines  InvoiceLine[] @sealed      // which children the document is made of
+  payments Payment[]                // and which go on arriving after it
+  @@transitions(state,
+    issue:  draft  -> issued @seals @gate(5),
+    settle: issued -> paid @system,
+    void:   issued -> void)
+}
+```
+
+**Measured before anything was written.** Every writable column on `example`'s
+`InvoiceLine` is already `@immutable`, so the gap was two operations and only
+two — `create` and `delete` on the child, the pair `@immutable` cannot reach.
+
+**The sealed set is a CLOSURE, not a target.** Everything reachable from a
+`@seals` move's target, so `paid` and `void` seal without being restated and a
+move appended later seals by arriving. A one-hop reading passes every behavioural
+assertion and leaves the document editable in two of its three terminal states,
+which is why `test/seal-parse.test.ts` asserts the set rather than the syntax.
+`src/core/seal.js` is the one owner — three readers ask it.
+
+**Three parse refusals, and two of them are the same mistake told apart.** A
+reopen move makes one value mean sealed and unsealed. A second `@seals` from an
+already-sealed state seals nothing and says it does — distinguished by computing
+the closure the OTHER seals produce, so the message names the seal that got there
+first. And a `@seals` with nothing to seal is a typo rather than a no-op: the
+move parses, the artefacts render it, and no write is ever refused.
+
+**The guard is a PREDICATE, composed like the two beside it.** It rides the WHERE
+next to the transition compare-and-swap and the `@version` check, so a refused
+write is zero rows changed — which already meant five things. An insert has no
+WHERE, so a guarded create is `INSERT … SELECT … WHERE NOT EXISTS (…)`; the
+parent is aliased everywhere it appears, because the caller's own where is
+unqualified and a self-referential `@sealed` relation is the same table twice.
+Nine write paths carry it and each is paired in the tests with the same call
+against a draft parent — a guard that refuses everything looks identical from the
+refused side (`FJS-351`).
+
+**The sentence comes from a follow-up read on the failure path only**, and it runs
+LAST: a caller refused by a policy is told that, not told the document is sealed.
+`SealedDocumentError`, 409, `retryable: false`, naming the document, the state and
+the relation or the columns.
+
+**`asSystem()` does not lift it**, which is where it parts company with
+`@@transitions`, which `asSystem()` bypasses entirely. A gate is about who is
+asking; a seal is about what the row IS.
+
+**`@immutable` changes meaning on a sealing model** — *frozen at the seal* — and
+that is the one shipped behaviour this touches. Scoped by the declaration, so a
+model with no `@seals` move keeps the create-time meaning and its
+`ValidationError` exactly. The guard applies only where the payload names a
+frozen column: narrowing every update would refuse `settle: issued -> paid`, a
+move the machine declares out of a state the seal itself put the row in. Two back
+doors were closed with it — `updateMany`, and `upsert`'s ON CONFLICT fast path,
+which cannot carry a state guard and now falls through to create + update.
+
+**It stops being `readOnly` in the update schema**, because no schema can answer
+a question whose answer is in the row. `x-litestone-kind: 'immutable-until-seal'`
+carries the state column and the sealed set instead; sierra's `sealedFor(rule,
+record)` is the one owner of resolving it, and a create form has no record and is
+correctly never frozen.
+
+**A bulk write filters rather than throwing**, as it already does for a row policy
+and as `updateMany` already does for a transition. The count change is scoped to
+sealing models, or `ON CONFLICT DO NOTHING` would silently stop counting.
+
+Both halves are in `access.snapshot.md` (a **Seals** column beside **Made by**,
+and the relation list under it) and in the release surface, where gaining either
+is a **contract** — an N-1 release that writes a line onto an issued invoice stops
+working the moment the deploy lands.
+
+What this does NOT build: the cross-row check at the seal. `@seals` hands it its
+moment for free, which is the point of the shape, but it is its own feature.
+
+`test/seal-parse.test.ts` (19) · `test/seal-guards.test.ts` (33) ·
+`test/seal-immutable.test.ts` (14) · `test/seal-artefacts.test.ts` (14) ·
+`src/core/seal.js` · `docs/modelling.md` § `@seals`
+
+## 2026-08-31 — a caller-only field read predicate is answered once, not per row
+
+`FJS-619`. 3731 pass, 0 fail; typecheck clean.
+
+The audit's **M7**, its worst per-row cost, and the one place a read policy is
+still answered in JS: `FJS-D129` compiles a field read predicate into the WHERE so
+a caller cannot FILTER by a column they may not read, but which columns come back
+ON a returned row is a per-row strip. `@allow('read', auth().isAdmin)` has one
+answer for a whole result set and was asked once per field per row through the
+expression interpreter.
+
+**The classifier is an allow-list and that is the whole of its safety.**
+`referencesRow` names the kinds that read only the caller — `literal`, `auth`,
+`and`, `or`, `not`, `compare`, `ternary`, `list` — and everything else is assumed
+to read the row: `field`, `check`, and any kind the language grows later, which is
+then evaluated per row, slower and correct. A deny-list would silently stop
+stripping a column the day a kind was added.
+
+**`now()` is refused though it reads no row.** Hoisting a clock-dependent
+predicate across a page answers one instant for rows read at another, and the case
+is too rare to be worth a second staleness rule.
+
+Two caches, because the two facts have different lifetimes: row-freeness is a
+property of the AST and is global; the ANSWER depends on the caller and hangs on
+the context, keyed by `ctx.auth` so a context that ever reassigned it invalidates
+rather than going stale.
+
+Measured, 5,000 rows × 4 protected columns, three interleaved runs on one machine:
+
+| | µs/row |
+| --- | --- |
+| no field policy (floor) | 0.61 – 0.67 |
+| 4× caller-only `@allow`, hoisted | 0.77 – 0.84 |
+| 4× row-dependent `@allow`, per row | 1.11 – 1.21 |
+
+About **30% off the read**, and ~70% of the gap to a model with no field policy.
+`bench/audit-bench.mjs` case 12.
+
+12 tests, and almost all of them are about the hoist NOT applying. A wrong hoist is
+silent in the worst way — every row takes the FIRST row's answer, so a list looks
+right whenever its rows agree — so every case reads a page whose rows disagree,
+including a mixed expression with one caller-only branch beside a row-reading one,
+and two `@allow` on one field of which only one reads the row.
+
+Filed alongside it: `FJS-620` (four more audit findings in no register) and
+`FJS-621` (everything measured is the write path; every expensive-by-shape feature
+is on the read path).
+
+## 2026-08-31 — a nested write survives `select: false`
+
+`FJS-615`. 3708 pass, 0 fail.
+
+`extractNestedWrites` returns `{ scalar, nested }` and `nested` is an OBJECT, so
+`nested.length` is `undefined`. Three separate guards asked it that question and
+all three read *there are no nested writes*. It is not a typo three times:
+`.length` on an object is silently falsy rather than an error, which is what lets
+one wrong spelling be written three times and never fail.
+
+**`create({ select: false, data: { …, lines: { create: [...] } } })` wrote the
+parent and dropped every child**, returned `null`, said nothing — the skip-RETURNING
+branch leaves no parent id to attach children to. `update` carried the same guard
+and the same hole, but only where the payload ALSO holds a scalar column: a
+nested-only payload sets no columns, misses that branch entirely and worked by
+accident, which is why the create case went unnoticed. The `upsert` fast path's two
+`break fastPath` guards never fired either, so a legitimate nested write reached the
+column validator and was refused as `lines: must be an array` — loud, and about the
+wrong thing.
+
+Fixed at the SHAPE rather than at the three call sites: `extractNestedWrites` now
+answers a `hasNested` boolean and `nested.length` appears nowhere.
+
+**`select: false` keeps its contract.** RETURNING is still used when children need
+the parent's id — that is this method's need, not a change to what the caller asked
+for — and `null` is still what comes back. The announcement keeps the row, because
+it has one: `null` there means the RETURNING was skipped, which is now a different
+fact.
+
+Eight tests in `test/nested-write-guards.test.ts`, five measurements and three
+controls. The controls are the point — the guards exist to keep a real saving on
+the ordinary call, so a fix that simply stopped taking the fast path everywhere
+would pass every other assertion and be worth nothing.
+
+Found reading `create`'s fast path while pricing `FJS-D162`'s frozen-aggregate
+option, which rests on nested create being sound.
+
+## 2026-08-31 — a move asked for BY NAME is a different question
+
+`FJS-611`. 3700 pass, 0 fail; junction 1672, sierra 1141, typecheck clean;
+`example` green across `verify:batch` (33), `verify:payrun` (41),
+`verify:employment` (61), `verify:retro` (56), `verify:billing` (29),
+`verify:pay` (24), `verify:collect` (49) and `verify:stripe` (12).
+
+**The row's diagnosis was wrong and what was there is worse.** `transition()` is
+not read-then-write: the UPDATE has always carried `AND status = <from>`, so four
+concurrent movers give one winner and three conflicts, measured. What was missing
+is the difference between the two calls that reach that code:
+
+- `update({ data: { status } })` carries a COLUMN, and carrying the value the row
+  already holds is legitimate — a form round-trips the whole row.
+- `transition(id, 'calculate')` asks for a MOVE, and the same row state means the
+  opposite: it did not happen here.
+
+`transition()` desugars into `update()`, so all that arrived was a column and a
+value, and the early return on `currentValue === newValue` answered the first
+question to both. **It took the gate, the capability and `@system` with it**, so a
+`@gate(5)` move and a `@system` move were both makeable by any caller who could
+update the model as long as the row was already at the target. Both succeeded,
+measured — which makes half of this an access defect rather than an answer one.
+
+**`$transaction` was the documented mitigation and it made things worse.**
+Serialising the callers means each re-reads *after* the winner committed, which is
+precisely the state the early return called a no-op: four concurrent transactions,
+four successes. It now gives one winner and three conflicts like everything else.
+
+`transition()` passes `_move` — the one thing it knows and `update()` cannot
+derive. A named move resolves by NAME rather than by matching `(from, to)`, and:
+
+- the row already at `to` → `TransitionConflictError`, `retryable: false`
+- the row anywhere else → `TransitionViolationError`, as before
+- the row at a legal `from` → the compare-and-swap, as before
+
+**`retryable` now separates two opposite races under one class.** Losing to a
+DIFFERENT move stays `retryable: true` — re-read and decide. The move you asked
+for having already been made is `false`, because re-applying can never succeed and
+`isStaleWrite()` would otherwise loop a worker against a settled row. The error
+carries `expected` (the move's from-states), `actual` (where the row is) and
+`move`, and declares them as `data` for the reason `VersionConflictError` does:
+instance properties do not cross junction's error boundary, so without it `actual`
+never reaches the browser and sierra's `toConflict()` has nothing to read.
+
+**A named move is graded on its CALLER before its row**, which is the order every
+other layer here reads in. A gate, a capability and `@system` are statements about
+the caller and the declared move, true whatever the row is doing, so somebody who
+could never make the move is told that rather than being told where the row is —
+a refusal confirming state to a caller with no authority over the move. It applies
+to a named move alone: an ordinary update matching no `(from, to)` pair has
+identified no move, so there is no gate to consult. **Naming the move is what
+makes its gate askable**, and that is the statable rule rather than an asymmetry.
+
+The three grading rules moved into one `gradeMove` shared by both paths, or they
+would be two answers to one question the first time either learned something.
+
+Ten tests in `test/transition-race.test.ts`, five of them measurements of the code
+as it stood. The negative controls are the point: the four-concurrent case already
+passed and is kept, so a green suite cannot claim credit for the CAS; the ordinary
+update round-tripping an unchanged column is still a silent no-op; and `asSystem()`
+still bypasses all of it.
+
+`example`'s `completeIfDone` and `verify:batch` each credited a mechanism that was
+not operating — the transaction, and the state machine. Both run on `asSystem()`,
+which bypasses `@@transitions`, so what actually held them is the `status` READ
+inside `BEGIN IMMEDIATE`. Comments corrected; the boundary now backs them up for
+an ordinary caller.
+
+## 2026-08-31 — `@system` on a transition reaches the artefacts a reviewer reads
+
+`FJS-613`. 3689 pass, 0 fail; typecheck clean. Regenerating the three committed
+snapshots in `example` and `basecamp` surfaced **twelve `@system` moves** that had
+been invisible in every one of them.
+
+`@@transitions(status, cancel: … @system)` is the strongest answer a state machine
+can give to *who may make this move* — from *any caller at the update level,
+subject to the row policies* to *no caller, ever, the application included*. It was
+parsed, enforced, carried to the browser in `x-transitions` and rendered as a
+refusal by `transitionsAt`. And it appeared in **none** of the three files that
+exist so a change to who may do what is a review artefact: `access.snapshot.md`
+dropped it at derive, `release.snapshot.md` inherited that hole, and
+`jsonschema.snapshot.md` had the fact in the document and dropped it at render.
+Measured by generating each from two schemas differing in that one token: the
+output differed in the filename in its own header and nowhere else.
+
+**Two columns, because the two facts compose.** `@gate` says who may ASK;
+`@system` says the APPLICATION makes it. `@system @gate(5)` is both — a move the
+engine decides on behalf of a caller who must still be senior enough to ask for it,
+which basecamp declares four times on `Server`. So the access snapshot grows a
+**Made by** column (`caller` / `application`) beside the level rather than folding
+one into the other, and folding is exactly what would lose the distinction on the
+four rows where it is hardest to see.
+
+**The deploy grade follows the same reading.** Gaining `@system` is a CONTRACT and
+`narrows`; losing it is an EXPAND and `widens` — an N-1 caller still asking for a
+move that has become the application's is refused, and a move the application
+owned is handed to whoever holds the level. It is graded on its own axis and never
+through the gate, so a change that raises the gate AND makes the move `@system`
+reports two findings rather than reading as an ordinary level bump.
+
+Also: `db.<model>.transitions()` had no `system` or `refusedBy` in its declared
+type and `transition()` no `{ system: true }`, though the runtime has answered all
+three since the feature shipped.
+
+Six tests in `test/release.test.ts` — one per artefact, the two directions, the
+composing case, and the two-findings case — plus `@system` added to
+`litestone.test.ts`'s shared access fixture, so the derive and the render carry it
+rather than testing it beside themselves. Every one fails against the code as it
+stood, and the first is the whole of the defect.
+
+## 2026-08-31 — `@@unique(where:)`: conditional uniqueness
+
+`FJS-603`. 3683 pass, 0 fail; `example` green across `verify:employment` (61),
+`verify:payrun`, `verify:retro`, `verify:batch`, `verify:payroll`, `verify:billing`
+and `verify`.
+
+*At most one OPEN row per parent* — the constraint effective dating is built on —
+had no spelling. `@@index([cols], where: …)` existed; `@@unique` took no
+predicate, so the near miss `@@unique([planId, effectiveTo])` was refused BY NAME
+and the refusal offered `nullsDistinct: true`, which is the correct declaration
+of the OPPOSITE. Three models in `example` declared it and enforced the rule they
+wanted in a service.
+
+**One word, two node kinds.** A plain `@@unique` rides inside `CREATE TABLE` as
+`UNIQUE (a, b)`; no dialect takes a predicate on a table constraint, so the
+predicate form parses to `partialUnique` and is emitted as a standalone
+`CREATE UNIQUE INDEX … WHERE`. That is what makes every downstream reader correct
+without being edited: the table emitter cannot pick one up, a one-to-one relation
+cannot be satisfied by a constraint holding over only some rows, and `advise`'s
+foreign-key coverage does not count an index that covers some of the rows. Django
+makes the same split under the same word. The two also migrate differently — one
+DROP and one CREATE where a table constraint rebuilds the table.
+
+**The line the feature turns on is a removal.** `createIndexes` ANDs
+`@@softDelete`'s `"deletedAt" IS NULL` into a declared `@@index(where:)`, because
+there the clause is what makes the index reachable. It must NOT be ANDed into a
+declared `@@unique(where:)`: on a unique index the predicate IS the constraint, so
+ANDing it is `FJS-204`'s rejected derivation arriving through the back door — the
+deleted row stops holding its `@unique` slot and `SoftDeletedUniqueError` can
+never fire, because the index no longer covers the row that would raise it.
+Uniqueness among live rows is written `where: deletedAt == null`, by the author.
+
+**The grammar is wider than `@@index`'s and the reason the record predicted was
+wrong.** A partial index earns its place by being MATCHED, so a predicate the
+caller's own filter cannot reproduce is refused; enforcement on INSERT never
+consults the planner, so `where: status == "active"` is a correct constraint that
+happens to be a useless read path. But SQLite refuses a **bound parameter** in a
+partial index predicate whether or not it is unique, and this compiler binds every
+value — measured, `parameters prohibited in partial index WHERE clauses`, at
+migration time against a table the author is no longer looking at. The literals
+are inlined instead, which is safe because they are the schema's own and never a
+caller's. `now()` and `auth()` are still refused by name, and `now()` for a
+sharper reason here: SQLite ACCEPTS a clock in an index predicate, so a constraint
+whose coverage moves under a row that never moved is a duplicate and nothing below
+would refuse it.
+
+**`release.js` carries the predicate**, which was the one correctness hole:
+`describeModel` keyed a unique on its sorted column list alone, so narrowing or
+widening one graded as no change. Gaining a predicate is an EXPAND, losing one is
+a CONTRACT, and a move between two non-empty predicates is UNKNOWN — whether one
+implies the other is implication between two SQL expressions, and a text
+comparison answering it would be a deploy verdict made by a regex.
+
+**The importer carries it now** where the reading can express it, and drops it
+WHOLE where it cannot — a stronger constraint than the source declares refuses
+rows the source permits. `predicateToLite` grew the value form under a flag, asked
+for on the unique path alone: a partial index over a bound value is refused at
+parse, so carrying one there would write a `.lite` this parser will not read
+(`FJS-594`). A tuple with a nullable member is still dropped, for the same reason
+— it wants `nullsDistinct: true`, and a predicate excludes it.
+
+**The nullable-composite refusal names both answers now**, with the column list
+CHANGED in the suggestion: the nullable column moves out of the tuple and into the
+predicate, which is the whole of what separates *those rows are deliberately
+unconstrained* from *at most one of them exists*.
+
+## 2026-08-30 — a key the caller supplies (`FJS-608`)
+
+`generateJsonSchema(…, { mode: 'create' })` excluded **every** `@id` as
+*server-assigned*. For a model keyed by anything the server does not generate,
+the key was therefore not merely un-required but absent from the schema
+junction's `autoValidate` compiles.
+
+**The symptom is the opposite of a rejection, which is what made it hard to
+read.** Junction strips what the create schema does not declare rather than
+refusing it, so the key was removed from the payload in silence and the refusal
+came from the Data boundary one layer down. Measured through a real service
+against the pre-fix emitter:
+
+```
+POST /memberships  { orgId: 'acme', userId: 'ada', role: 'admin' }
+→ 400  Validation failed — orgId: orgId is required, userId: userId is required
+```
+
+Naming the two fields the request had just sent.
+
+**It is not about composite keys**, which is only how it was found. A single
+`code String @id` — a slug, a stock keeping unit, an external system's
+identifier — behaved identically. Every `@id` was treated as though it were
+`Int @id @default(autoincrement())`, the one case where excluding it is right.
+
+### Two readers, one question, no owner
+
+`jsonschema.js` excluded every `@id`. `client.js`'s required pre-flight skipped
+`attrs.some(a => a.kind === 'id') && f.type.name === 'Int'` — the **type**, not
+the key — so an `Int` member of a composite `@@id` was taken for a rowid alias,
+and a create omitting it reached SQLite and came back as a raw
+`NOT NULL constraint failed` naming a physical table: the error shape every
+required field exists to avoid.
+
+`isServerAssignedId(field, model)` in `core/ids.js` is the one owner now, and
+both call it:
+
+| The key | `create` | Because |
+|---|---|---|
+| a lone `Int @id` | omitted | SQLite's rowid alias — it auto-assigns with nothing declared |
+| any declared `@default` | omitted | filled here, or by SQLite |
+| `String @id` with no default | **present, and required** | nobody but the caller can produce it |
+| every member of `@@id([a, b])` | **present, and required** | a composite key is never a rowid alias, whatever the column types |
+
+Update mode is untouched: there the key is in the `where`, not the payload, and
+it was already emitted as an ordinary property.
+
+### What it moved in this repo
+
+Two lines, on the one model here with a caller-supplied key — basecamp's
+`OutpostNonce`. Its committed `jsonschema.snapshot.md` had been spelling the
+defect out in its own words the whole time:
+
+```diff
+-**On create**: required — nothing · not accepted — `nonce`
++**On create**: required — `nonce`
+```
+
+### What is asserted
+
+12 tests in litestone — a grid of seven key shapes, each one **run** rather than
+read off the helper, plus the property that the schema's `required` and the
+client's refusal agree for every shape. Five in junction, which is the layer
+litestone's own suite cannot reach: there the schema is a document, here it is
+compiled into a validator standing between an HTTP body and a row. That file's
+negative control is that omitting the key is still a 400 naming it, so it cannot
+pass against a schema that stopped validating.
+
+## 2026-08-30 — `@@id([a, b])`, and the key order that had nowhere to live (`FJS-561`)
+
+The register said a composite primary key was *not expressible*, and that a table
+whose key is its pair *takes a surrogate id plus `@@unique`*. Both were wrong.
+Two `@id` fields have always parsed clean and emitted
+`PRIMARY KEY ("orgId", "userId")`, carrying `create`, `findUnique` over both
+columns, `update`, `remove`, `restore`, `include` and `findManyCursor`, with a
+duplicate refused by name. The implicit many-to-many join table this package
+generates has been exactly that shape since it was written.
+
+**So the question was never whether to support composite keys. It was whether to
+give the model-level word a grammar** — and the answer is yes for a reason the
+register did not have.
+
+### What `@@id` adds is the ORDER
+
+A primary key builds an implicit index, and an implicit index is prefix-matched
+like any other: `PRIMARY KEY (orgId, userId)` answers `WHERE orgId = ?` and the
+swap does not. With `@id` on the fields, the key's column order is the *field
+declaration* order — a different fact about the model, and one nothing could
+override.
+
+That is not theoretical. `litestone introspect` read
+`PRIMARY KEY ("userId","orgId")` off a real table, emitted `@id` on each column
+in column order, and wrote a schema that builds the key the other way round with
+nothing said. Silent until now; visible from now on, because `FJS-596` made a
+reordered key migrate — so the schema it wrote asked for a table rebuild that
+would have installed the wrong key.
+
+### Shipped as sugar, deliberately
+
+The parser marks each named field `@id` and leaves the attribute on the model,
+where exactly one caller reads it — `tableConstraints`, for the order. Nothing
+downstream learned a new shape, because several `@id` fields is a shape every
+reader already handled.
+
+Five refusals, each one a key that would not identify a row:
+
+| Written | Why |
+| --- | --- |
+| `@@id` beside a field-level `@id` | two answers to *what identifies a row* |
+| `@@id` twice | a row has one identity |
+| a nullable member | SQLite permits a NULL in a primary key on a rowid table, and there is no `nullsDistinct` reading of one |
+| a relation field | a primary key is over columns — name the foreign key |
+| an array, or `@computed` / `@transient` / `@from` / `@derived` | not a stored column; an array is a JSON serialisation |
+
+**A guard that had never fired is now live.** `TRAIT_FORBIDDEN_MODEL_ATTRS` has
+named `'id'` since traits were written, with the message *`@@id` is not allowed
+in a trait (host-model concern)* — unreachable, because `parseModelAttribute`
+refused the word first. `docs/traits.md` and `PROJECT_STATE.md` described it as
+real, and are now accurate rather than deleted.
+
+### The import cost is paid
+
+All three readers that can see a composite key carry it instead of inventing
+`id String @id @default(cuid())` plus a `@@unique`, which is a *different*
+statement — it admits a second identity for the same tuple. The corpus,
+regenerated through the shipped readers, turns the register's own measurement
+into carried keys:
+
+| | before | after |
+| --- | --- | --- |
+| `composite-primary-key` gaps | 7 | **0** |
+| `@@id` declarations | 0 | **7** — Cal.com 4, Trigger.dev 2, Documenso 1 |
+
+The tier keeps the kind for the one case that genuinely cannot be carried: a
+source key with a **nullable** member, where the surrogate is the honest reading
+and stays graded.
+
+### What is asserted
+
+18 tests in `test/composite-id.test.ts`. The sharpest is a **fixed point** rather
+than a string — introspect the table, build a database from the output,
+introspect again, same text — with the negative control beside it that the schema
+it wrote migrates nothing against the database it came from.
+
+**Still open**: a model keyed by a tuple cannot be served as a REST resource —
+junction and sierra each carry a single `idField`, and `/{service}/{id}` has one
+slot. And a caller-supplied primary key is absent from the create-mode JSON
+Schema entirely, which is `FJS-608` and is not about composite keys at all.
+
+## 2026-08-30 — a UNIQUE the table declares was in no diff at all (`FJS-596`)
+
+Filed as *a reordered `@@unique` migrates nothing*, and the reorder was the small
+half. `@unique` on a column and `@@unique([a, b])` are both emitted **inside**
+`CREATE TABLE`; SQLite builds an implicit index for each, and an implicit index
+has NULL `sql` in `sqlite_master` — which is exactly what the index read filters
+on. So none of it was ever compared. Measured before anything was written:
+
+| | |
+| --- | --- |
+| add a `@@unique` or a `@unique` | no `tableDiff` at all |
+| remove one | no `tableDiff` at all |
+| reorder a composite one | no `tableDiff` at all |
+| reorder a composite primary key (two or more `@id` fields) | no `tableDiff` at all |
+
+**The first two are correctness, not performance.** `UniqueConflictError` and
+`SoftDeletedUniqueError` are this package's words for a constraint the *database*
+holds, so a constraint that never reached the database is one that never fires
+and the duplicate lands. The mirror is as bad the other way: a removed one left
+the live table refusing writes the schema allows, in SQLite's own sentence about
+a table nobody named. The two reorderings are `FJS-592`'s performance fact one
+constraint kind along — the implicit index is prefix-matched like any other.
+
+**Read off `PRAGMA index_list`, not parsed out of the CREATE text.** There is a
+pragma here and it answers the column order directly, the same reason `generated`
+comes from `table_xinfo` and a CHECK does not. `origin` does the separating, and
+each of the three values earns its place:
+
+- **`u`** — a UNIQUE constraint in either spelling, so `email String @unique` and
+  `@@unique([email])` compare **equal**: SQLite builds the same implicit index for
+  both, and swapping one for the other is not a change to the database.
+- **`pk`** — a composite primary key, whose column order was invisible for exactly
+  the same reason and is prefix-matched exactly the same way.
+- **`c`** — an explicit `CREATE UNIQUE INDEX`, filtered out. Read here it would be
+  seen by both readers and each would report the other's as missing; and an index
+  the *app* made is `foreign` to `diffIndexes`, which deliberately leaves it
+  alone, so this would rebuild a table to remove a constraint litestone never
+  declared.
+
+**The decision the issue left open was settled by measuring it**, the way FJS-592
+was. Each real database in this repo diffed against its own schema with the
+change in — `example/db/shops/flagship.db` and `packages/basecamp/db/basecamp.db`
+— both **zero churn**, and no table added to any diff. Not luck: the emitter
+writes declaration order, so for any database litestone created the live order
+already IS the pristine order, and the only schema that migrates is one whose
+declaration genuinely moved.
+
+The cost where it does fire is a **full rebuild** — no `ALTER` reaches a table
+constraint, which is why the cheap half shipped alone in FJS-592 — and a rebuild
+that adds uniqueness fails on the copy where the rows already violate it, inside
+the transaction, so it rolls back.
+
+Eight tests in `test/index-predicates.test.ts`, three of them negative controls:
+the same order migrates nothing, the spelling swap migrates nothing, and an
+explicit `CREATE UNIQUE INDEX` is not read here at all.
+
+## 2026-08-30 — `AGENTS.md`, and the tarball that carried neither it nor the catalogue
+
+A compressed reference for writing a `.lite` schema from an installed copy of
+this package, under the name other tools converged on (`FJS-D163`). It carries
+the judgement half — which access word to reach for, the eight scalar types and
+the four that are refused, the shapes where a legal spelling means something
+else — and deliberately does **not** restate the language: `catalog.snapshot.md`
+is generated from the parser's own switch arms and gated by CI, so a hand-written
+word list beside it is a second answer that goes stale.
+
+**`files:` was `["src/", "README.md", "LICENSE"]`**, which is the half that makes
+the file real. `docs/` and every snapshot stopped at the workspace edge, so an
+agent working in an installed app had the 2,452-line README and nothing else —
+no catalogue, no per-word reference, no access-control page. `AGENTS.md` and
+`catalog.snapshot.md` now ship. `litestone explain <word>` already worked there,
+since `src/tools/` was always packed; nothing pointed at it.
+
+Every refusal the new file claims was executed against the parser rather than
+read out of a document — the four renamed types, `Decimal`, a `Float[]`,
+`@@id([a, b])`, `@guarded(5)`, `@@softDeleteCascade`, `@@index([deletedAt])`
+beside `@@softDelete`, and the optional-column `@@unique` in both directions.
+
+## 2026-08-30 — what a migration does when it cannot do the thing (`FJS-604`, `FJS-605`)
+
+Two defects on one seam, both silent, both found adding a single column to an
+application that already had rows.
+
+**A blocked column reported success.** `autoMigrate` checked its blocked list on
+the REBUILD path only. A plain column add needs no rebuild, so a `NOT NULL`
+column with no default was collected as `blockedAdds`, written out by the
+generator as a commented `-- ALTER … -- BLOCKED`, correctly executed by nobody,
+and reported as `{ state: 'migrated', applied: 0 }` — which is indistinguishable
+from a schema with nothing to do. The application then ran against a table
+missing a column its own seed declares, mass-assignment protection stripped
+every write of it, and a required field read back `undefined`. Both paths are
+graded now, and it **announces** as well as returning `blocked`: the caller that
+found this discards the result, as most do.
+
+It blocks whether or not the table holds rows, deliberately. Migrating an empty
+table and refusing a populated one migrates on every developer's machine and
+blocks at the deploy.
+
+**An expression default threw a raw SQLite error at boot.** SQLite takes an
+expression default in `CREATE TABLE` and refuses one in `ALTER TABLE ADD
+COLUMN`, where it wants a constant — and `@default(now())` emits
+`DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`. The diff called it a simple
+add, so the ALTER was generated and `near "(": syntax error` came out of
+`autoMigrate`, at the line an app calls on first open, naming no column and no
+table. It is a rebuild now, which the rebuild path already handled correctly:
+the copy omits added columns, so the new table's own DEFAULT fills every
+existing row.
+
+The classifier tests for a LITERAL rather than for a leading paren. What it
+compares is SQLite's reading of the pristine database, which does not always
+keep the parens the emitter wrote — so the narrow test passed the check and
+threw at the ALTER anyway.
+
+Both are shared with the migration-FILE path, which goes through the same
+`diffSchemas`. Four tests, and the negative control is that an ordinary constant
+default still takes the cheap ALTER: treating every default as an expression
+would rebuild every table that gains a column, and take the app's own indexes
+and triggers with it (`FJS-183`).
+
+## 2026-08-30 — `@immutable`: a column written once (`FJS-D162`)
+
+What a DOCUMENT is. An invoice's number, the instant it was issued and the total
+it was issued for are a statement about a moment, and the only honest correction
+is a credit note beside it rather than an edit.
+
+`@immutable` on a column refuses any UPDATE payload naming it. Three things
+about it are consequences of one fact — **nothing in this language can see the
+stored row beside the incoming one** — and each is deliberate:
+
+- **It grades the KEY, not the value.** The same number sent back is refused
+  too, so a form that fetches a row and returns it whole must drop the column.
+  It reaches the client as `readOnly` **in the update schema alone**, which is
+  the only column kind here whose answer differs by mode: a create form still
+  offers the box, or the model is uncreatable through anything generated.
+- **`asSystem()` does not drop it.** It joins `@check`, `@@check` and `@@arc` on
+  the short list the system client cannot bypass, against the gate, the row
+  policies and `@guarded`, which it can. That is the whole point: a renewal job
+  and a payment settler both run as system, so a rule they may drop is absent
+  from every caller that actually writes an invoice. A raw `UPDATE` still
+  bypasses it, as it does a `@check`.
+- **It says nothing about DELETE, and nothing about the row.** To freeze a row
+  when it reaches a state, freeze its columns and let `@@transitions` own the
+  state column — a document that may not move is not a document, it is a log
+  line.
+
+Refused at parse beside `@version` and `@updatedAt`, which the engine writes on
+every update, and on any field with no column to freeze. The write path defaults
+to enforcing, so an entry point that forgets to declare itself a create refuses
+rather than lets through — `@guarded`'s own reasoning.
+
+11 tests, and the one that matters is *the same value is refused too*: a rule
+that compared would pass every other case in the file.
+
 ## 2026-08-30 — an unknown option was dropped in silence while an unknown property threw
 
 A client THROWS on an unknown property, by design, so a typo'd accessor is loud.

@@ -18,7 +18,7 @@ import { parseGateString, GatePlugin }  from './plugins/gate.js'
 import { AccessDeniedError }        from './core/plugin.js'
 import { levelLabel, REACHABLE_LEVELS, deriveAccess, gateLadder, expectedVerdict } from './access.js'
 import { DEFAULT_MESSAGES, validateField } from './core/validate.js'
-import { buildPolicyMap, evalJs }   from './core/policy.js'
+import { buildPolicyMap, evalJs, allowHolds, denyFires } from './core/policy.js'
 import { fakeFor, fakeEmail }       from './fake.js'
 import { capabilityNames }          from './core/capabilities.js'
 import { Factory }                  from './seeder.js'
@@ -2618,11 +2618,15 @@ function _fitsFieldRules(def, value) {
 function _policyAdmits(rules, ctx, row, modelName, policyMap) {
   const denies = rules.filter(r => r.kind === 'deny')
   const allows = rules.filter(r => r.kind === 'allow')
-  const ev = (r) => Boolean(evalJs(r.expr, ctx, row, modelName, policyMap, {}))
+  // The two rule kinds read an UNKNOWN oppositely and it is the same asymmetry
+  // the compiled WHERE has: `AND NOT (NULL)` keeps no row, `(NULL)` admits none
+  // (`FJS-668`). Asking `Boolean()` for both makes this verifier disagree with
+  // the SQL it exists to grade.
+  const val = (r) => evalJs(r.expr, ctx, row, modelName, policyMap, {})
 
-  if (denies.some(ev)) return false
+  if (denies.some(r => denyFires(val(r)))) return false
   if (!allows.length)  return true
-  return allows.some(ev)
+  return allows.some(r => allowHolds(val(r)))
 }
 
 // ─── tenancy ──────────────────────────────────────────────────────────────────

@@ -7,7 +7,7 @@ title: App
   // could create one from an Environment and then never look at it again.
   //
   // The mock has seven tabs (http, configs, deploy, build, logs, log-analysis,
-  // advanced). Four of them are backed by something real and are here. The
+  // advanced). Five of them are backed by something real and are here. The
   // other three are named at the bottom of this file as gaps rather than
   // rendered as empty boxes — a tab that always says "no data" reads as a
   // broken screen, not as an honest one.
@@ -138,6 +138,31 @@ title: App
     }
   }
 
+  // ─── Logs ───────────────────────────────────────────────────────────────
+  // Read on DEMAND and never on a timer. A console that polls every app's
+  // container is a fleet-wide `docker logs` on a loop, and the operator asking
+  // is the signal — `fli deploy:logs --follow` is the other shape and it holds
+  // one ssh connection open on purpose.
+  let logs      = null
+  let logsBusy  = false
+  let logsTail  = 200
+  let logsSince = ''
+
+  async function loadLogs() {
+    error = null; logsBusy = true
+    try {
+      logs = await apps.service.invoke('logs', app.id,
+        { tail: logsTail, ...(logsSince ? { since: logsSince } : {}) })
+    } catch (e) {
+      // The machine's own sentence. A generic failure here is how somebody ends
+      // up ssh'ing to the box this screen exists to replace.
+      error = e.message
+      logs  = null
+    } finally {
+      logsBusy = false
+    }
+  }
+
   // Placement — POST /apps/:id with X-Service-Method. The row it writes is
   // `@@gate("2.8")`, so the service does it through asSystem() after checking
   // the caller against the workspace; nothing here needs to know that.
@@ -194,7 +219,7 @@ title: App
   const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
 
   // Only the tabs with something behind them. See the note at the foot.
-  const TABS = ['overview', 'domains', 'config', 'releases']
+  const TABS = ['overview', 'domains', 'config', 'releases', 'logs']
   const APP_RELEASES_COLUMNS = [
     { key: 'queued',  label: 'Queued' },
     { key: 'status',  label: 'Status' },
@@ -421,6 +446,51 @@ title: App
       </Table>
     {/if}
   {/if}
+
+  {#if tab === 'logs'}
+    <Card>
+      <h2 class="h4">Container log</h2>
+      <p class="text-sm text-muted">
+        Read from the machine when you ask, through the same executor a release goes through.
+        Nothing is stored here — this is the container's own log, bounded by the lines you ask for.
+      </p>
+      <div class="cluster" id="app-logs-controls">
+        <Input type="number" label="Lines" bind:value={logsTail} id="app-logs-tail" />
+        <Input label="Since" placeholder="10m, 1h, or a timestamp" bind:value={logsSince} id="app-logs-since" />
+        <Button onclick={loadLogs} disabled={logsBusy} id="app-logs-load">
+          {logsBusy ? 'Reading…' : 'Read log'}
+        </Button>
+      </div>
+    </Card>
+
+    {#if logs && logs.reason}
+      <!-- Placed nowhere, or the container is gone. Both are states an operator
+           can act on, so they are said rather than rendered as an empty box. -->
+      <EmptyState title="No log to read" id="app-logs-none">{logs.reason}</EmptyState>
+    {/if}
+
+    {#if logs && logs.stdout}
+      <Card>
+        <h3 class="h5">stdout</h3>
+        <pre class="scroll-x" id="app-logs-stdout"><code>{logs.stdout}</code></pre>
+      </Card>
+    {/if}
+
+    {#if logs && logs.stderr}
+      <!-- Kept apart from stdout, because that is how the container wrote them:
+           joining them here would invent an interleaving that never happened. -->
+      <Card>
+        <h3 class="h5">stderr</h3>
+        <pre class="scroll-x" id="app-logs-stderr"><code>{logs.stderr}</code></pre>
+      </Card>
+    {/if}
+
+    {#if logs && logs.running && !logs.stdout && !logs.stderr}
+      <EmptyState title="Nothing in the window" id="app-logs-empty">
+        The container is running and wrote nothing in the range you asked for.
+      </EmptyState>
+    {/if}
+  {/if}
 {:else}
   <!--
     A screen whose record is gone still needs a heading. Without this branch the
@@ -440,8 +510,10 @@ title: App
 <!--
   The mock's other three tabs, and why they are not here:
 
-    logs / log-analysis — nothing stores or streams a log line. That is an
-      observability adapter (docs/SCREENS.md § D), not a screen.
+    log-analysis — nothing STORES a log line, so there is nothing to analyse.
+      The `logs` tab reads the container's own log on demand through the
+      Outpost; retention, search across apps and anything resembling a query
+      are an observability adapter (docs/SCREENS.md § D), not a screen.
     build — build output and history need a build record; `Deployment` carries
       `builtImage` and no log, so "Build history" would be the releases table
       under a second name.

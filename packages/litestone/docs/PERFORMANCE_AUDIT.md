@@ -37,6 +37,15 @@
 >
 > **The "still open" list at the end of the fixes section is now `FJS-112`** —
 > it had no id, so per `ISSUES.md`'s own rule nothing in it was open.
+>
+> **2026-08-31**: `FJS-112` is about the METHOD — no owner, no gate, no committed
+> baselines — and the list it names in passing does not cover the medium findings.
+> `FJS-620` is the pointer that makes **M4, M5, M11 and M12** open; `FJS-621` is
+> the gap this file cannot see from where it stands, which is that both this audit
+> and `IDEAS/speed-and-footprint.md` measure the WRITE path while every
+> expensive-by-shape feature — nested policy subqueries, per-query policy
+> recompilation, `@from`, row cloning, `@computed` — is on the READ path.
+> **M7 is fixed** (`FJS-619`).
 
 ---
 
@@ -207,7 +216,7 @@ Each shard worker does `copyFileSync` of the entire multi-tenant intermediate DB
 
 **M6. Read-path row cloning** (`client.js:1834–1888`; `query.js:766–794, 914–923`) — a row can be shallow-cloned up to 4 times (bool/JSON coercion → `@from` deserialize → computed → field policy), and `trimToSelect` iterates all row keys rather than the (smaller) selected set. Rows come fresh from the driver, so a single owned clone mutated in place by all stages is safe. Matters on large result sets (GC pressure); the no-feature fast path is already zero-copy.
 
-**M7. Field-level `@allow('read')` evaluated per field per row via the expression interpreter** (`client.js:1785–1789`) — compile each expression to a closure at table-build time, and hoist auth-only expressions (no row references) to once per query.
+**M7. Field-level `@allow('read')` evaluated per field per row via the expression interpreter** (`client.js:1785–1789`) — compile each expression to a closure at table-build time, and hoist auth-only expressions (no row references) to once per query. **FIXED 2026-08-31 (`FJS-619`)** — the hoist half. `referencesRow` in `policy.js` is an allow-list of caller-only node kinds, so anything it has not heard of is still evaluated per row; `now()` is refused deliberately. Measured on 5k rows × 4 protected columns, three interleaved runs: **1.11–1.21 → 0.77–0.84 µs/row** against a 0.61–0.67 floor. `bench/audit-bench.mjs` case 12. The closure-compilation half is **STILL OPEN** and is what the row-dependent path would need.
 
 **M8. FileStorage/ExternalRef update path** (`plugins/file.js:227–274`; `plugins/external-ref.js:228–277`) — a dynamic `await import('../core/query.js')` inside the per-field loop plus one `SELECT "<field>"` per file field per update; one combined SELECT and a static import suffice. Also: replaced `File[]` old-version cleanup is awaited sequentially in `onAfterWrite` (one S3 round trip at a time) while `onAfterDelete` correctly uses `Promise.all`; and `readValue` buffers whole files in memory (no streaming/multipart in the S3 provider — a 2 GB download costs 2 GB of heap per concurrent request).
 

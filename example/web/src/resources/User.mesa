@@ -1,0 +1,45 @@
+<script module>
+  // web/src/resources/User.mesa — the Resource layer.
+  //
+  // The one Resource in this app over a model the app did not write. `User` is
+  // @frontierjs/auth's, so `model:` has to be stated: the service is `users`
+  // and the singular of that is `user`, which resolves — but stating it is what
+  // makes the file survive somebody renaming the service, and it is what every
+  // other resource here does with an irregular.
+  //
+  // Nothing below restates the schema. `emailVerified`, `role` and `isStaff`
+  // each carry `@allow('write', auth().isAdmin)` in the seed, and none of that
+  // is written here or on the screen — the boundary answers it.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const users = createResource('users', { model: 'User' })
+</script>
+
+<script>
+  // …and the markup half is this model's DEFAULT form (repo Invariant 18).
+  //
+  // Every writable column of `User`, in schema order, with the control its type
+  // implies. `id` and `createdAt` are not offered because they are not
+  // writable; `isStaff`, `role` and `emailVerified` ARE offered to everybody,
+  // and that is correct rather than lax: `x-gate` and a field policy reach the
+  // client as affordances only, and this app has one form for two audiences.
+  // What stops a shopper promoting themselves is the predicate compiled into
+  // the UPDATE, not a hidden control — see the note on the users screen about
+  // what that refusal looks like.
+  import Form   from '@frontierjs/ui/components/forms/Form.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let record      = undefined
+  export let method      = undefined
+  export let submitLabel = 'Save'
+  export let cancelHref  = null
+  export let oncancel    = null
+  export let submitId    = undefined
+  export let actions     = null
+</script>
+
+<Form resource={users} bind:record={record} {method} {actions} {...$attributes}>
+  <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
+  <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
+</Form>

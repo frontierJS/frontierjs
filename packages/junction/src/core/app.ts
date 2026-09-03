@@ -4,11 +4,11 @@
 // Plugin system: Option C hybrid — simple fn or full lifecycle object.
 
 import { HttpTransport }            from '../transport/http.ts'
-import { bridge } from '../transport/bridge.ts'
+import { bridge, errorResponse } from '../transport/bridge.ts'
 import { freezeUser, enterRequest, requestMeta, currentCall, resolvePrincipal, inheritedClient, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions } from './context.ts'
 import { ServiceRegistry, callService } from './service.ts'
 import { unwrapResult } from './envelope.ts'
-import { withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, announceDataWrites, PRINCIPAL_RESOLVER, TENANT_REGISTRY } from './litestone.ts'
+import { withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, announceDataWrites, installLogContext, installQueryTelemetry, registerAuditMetrics, PRINCIPAL_RESOLVER, TENANT_REGISTRY } from './litestone.ts'
 import { configFor, createTenantConfigStore } from './config-scope.ts'
 import type { TenantConfigOptions, TenantConfigStore } from './config-scope.ts'
 import { createEventBus }           from '../events/index.ts'
@@ -819,7 +819,10 @@ export function createApp(opts: AppOptions = {}): App {
       : null,
     powered:     config.http.powered,
     onError:     (err) => {
-      console.error('[HTTP Error]', err)
+      // Through the app's logger, not console: in production the logger is
+      // JSON and this was the one thing in the stream that was not, so the
+      // errors were the lines a log query could not reach.
+      logger.error('http error', err)
       events.emit('error', err)
     }
   })
@@ -1261,7 +1264,7 @@ export function createApp(opts: AppOptions = {}): App {
               `configure() does not await register() — move async setup into boot().`
             )
             ;(result as Promise<unknown>).catch(err => {
-              console.error(`[Junction] Plugin '${p.name}' register() rejected:`, err)
+              logger.error(`plugin '${p.name}' register() rejected`, err as Error)
               _registerFailures.push({ plugin: p.name, err })
             })
           }
@@ -1363,7 +1366,7 @@ export function createApp(opts: AppOptions = {}): App {
         try {
           await plugin.shutdown?.(app)
         } catch (err) {
-          console.error(`Plugin "${plugin.name}" shutdown error:`, err)
+          logger.error(`plugin '${plugin.name}' shutdown failed`, err as Error)
         }
       }
 
@@ -1424,6 +1427,11 @@ export function createApp(opts: AppOptions = {}): App {
     if (opts.principal) Object.defineProperty(app, PRINCIPAL_RESOLVER, { value: opts.principal })
   } else if (db && typeof (db as { $setAuth?: unknown }).$setAuth === 'function') {
     app.hooks({ around: { all: [withLitestoneDb(db as never, opts.principal)] } })
+    // Where a write came from, for the audit trail. Not a decision either: the
+    // trail recorded who and what and nothing about the request, so an audit
+    // row and the log lines from the same request could not be joined.
+    installLogContext(db)
+    registerAuditMetrics(app, db)
     if (opts.principal) Object.defineProperty(app, PRINCIPAL_RESOLVER, { value: opts.principal })
     // Row tenancy scopes with policies rather than with a second database, so
     // there is nothing to swap — the failure mode is the opposite one, a
@@ -1443,6 +1451,10 @@ export function createApp(opts: AppOptions = {}): App {
     // (FJS-010). Not installed for a tenant registry: there the client is per
     // request rather than per app, so there is no single client to tap.
     announceDataWrites(app, db)
+    // Every query on the telemetry bus, tapped once on the root client. It used
+    // to be installed per request off `ctx.locals.db`, which is a `$setAuth`
+    // proxy for a signed-in caller and throws on the probe (`FJS-673`).
+    installQueryTelemetry(app, db)
   }
 
 
@@ -1632,7 +1644,7 @@ export function createApp(opts: AppOptions = {}): App {
           try {
             await plugin.ready?.(app)
           } catch (err) {
-            console.error(`Plugin "${plugin.name}" ready error:`, err)
+            logger.error(`plugin '${plugin.name}' ready failed`, err as Error)
           }
         }
       }},
@@ -1853,8 +1865,12 @@ export function registerServiceRoutes(app: App): void {
         return bridge.toResponse(svcCtx, wrap)
       })
     } catch (err) {
-      const fe = toFrameworkError(err)
-      return ctx.json(fe.toJSON(), fe.code)
+      // Through `errorResponse` with the service context, so a 500 is graded by
+      // the same rule the other exit is: a generic sentence plus the
+      // correlation id in production, and every protected column in the
+      // payload replaced (`FJS-686`). Building the body here instead was the
+      // second answer, and it was the one every service failure took.
+      return errorResponse(err, svcCtx)
     }
   }
 

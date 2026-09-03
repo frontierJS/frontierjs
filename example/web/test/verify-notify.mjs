@@ -7,7 +7,7 @@
  *   the staff      a row, through @frontierjs/notifications' inApp channel
  *
  * Both happen on the queue, after the response. The mail provider is
- * api/mail-sink.ts — a dev catcher on :8111 speaking the shape a provider REST
+ * api/src/providers/mail/sink.ts — a dev catcher on :8111 speaking the shape a provider REST
  * API speaks, so the request really leaves the process, really carries a
  * resolved credential, and can really answer 500.
  *

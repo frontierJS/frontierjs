@@ -1,5 +1,88 @@
 # Changes — @frontierjs/caravan
 
+## 2026-09-02 — the seven things two processes on one jobs.db could not survive
+
+FJS-674, FJS-675, FJS-676, FJS-695, FJS-696, FJS-697, FJS-699. 203 pass (15
+new), typecheck clean.
+
+An audit put four processes on one jobs.db and asked what happened. Six of the
+seven answers were only reachable from more than one process, and the tests
+added for them spawn real `bun` subprocesses for that reason: a cold-start lock,
+a unique-key race and a claim by a process with no handler are all things a
+single in-process test agrees with itself about.
+
+**The admin surface was remote job execution.** `admin: true` mounts raw
+`app.get`/`app.post` routes on the app's own API prefix, so no `@@gate`, no row
+policy and no session hook is on the path by construction — and
+`POST /jobs/run/{name}` executes any registered handler with the app's own
+standing. Measured with `NODE_ENV=production`: a stranger's
+`POST /api/jobs/run/nightly-sweep` answered `200 {"ok":true}` with the handler
+running as SYSTEM, and `GET /api/jobs` returned every payload in plaintext —
+reset tokens, addresses, provider keys. It fails closed now, the way junction's
+own `devtools()` in the same repo already did: `admin: { authorize: (ctx) =>
+boolean }` is a function handed the transport ctx, so an app composes it with
+its own session and gate; `{ secret }` stays as a development shortcut,
+compared constant-time and refused in production; and `data` is `[redacted]` in
+the list unless the request asks for it with `?data=1`.
+
+**A process that could not run a job destroyed it.** No handler for the name
+meant `markFailed`, terminal, `maxAttempts` bypassed — so a web process polling
+beside a worker one, or the old replica of a rolling deploy, marked all five of
+the worker's jobs `failed "No handler registered"` 400ms before the worker
+started. *I cannot do this* and *this cannot be done* are different answers. The
+claim now binds the registered names, so a process never claims what it cannot
+run, and the release (back to `pending`, the attempt given back, one warn per
+name per process) is the backstop for a handler registered between the claim and
+the execute.
+
+**A fresh volume was a coin toss.** SQLite invokes no busy handler for a
+journal-mode change, so `busyTimeout` cannot cover it: four processes opening a
+jobs.db that does not exist yet — first boot of the deployment this package
+advertises — threw `database is locked` on **36 of 40** starts. Both the read
+and the change are inside a bounded retry, and so is the schema block, which is
+the same race one statement later; the mode is asked first because a database
+already in WAL needs no lock to say so. Twelve cold starts across three rounds,
+zero throws.
+
+**`PRAGMA synchronous` was never set, so every row cost an fsync.** Same code
+path, one pragma: FULL inserted 2000 jobs in 5913ms and NORMAL in 136ms — 43×
+dispatch, 24× claim, and a `dispatch()` inside an HTTP handler stops blocking
+that process's event loop on the disk. NORMAL is the default now, with
+`synchronous: 'FULL'` for a deployment that would rather pay it. What it trades
+is stated where it is set: WAL+NORMAL loses committed rows on POWER LOSS and not
+on a process crash, and a lost claim is a running row whose owner stops
+heartbeating, which the lease sweep already recovers by design.
+
+**Throughput was exactly `concurrency / pollInterval`** — 2 jobs a second at the
+defaults — because a worker never re-polled when a job finished, so a queue with
+capacity free and work queued slept the interval out. `_execute` polls from its
+own `finally` and the interval becomes the backstop for work that ARRIVES.
+100 empty jobs at a 1s poll and concurrency 2 took 50s and now take under one.
+
+**A timer could take the process down, and an idle queue took a write lock 3
+times a second.** `sweepOwners` threw `database is locked` out of a
+`setInterval` — an uncaughtException — and the heartbeat it missed on the way
+out is exactly what makes another instance reclaim this one's running rows.
+Every timer callback catches its own throw now. `_claim` asks a read-only
+question before `BEGIN IMMEDIATE`, because an empty poll of every queue was
+opening a write transaction with nothing to do: measured at 0 write
+transactions across ~90 idle polls, against 3/s before. And `stop()` marks the
+workers closed BEFORE closing the database — past `drainTimeout` the handler is
+still running, and its completion write used to reject with
+`Database has closed` as an unhandled rejection on the ordinary SIGTERM path —
+while the hourly cleanup sweep is held and cleared where the heartbeat is, since
+a `const` local to `start()` went on firing against that closed handle and a
+restart added a second one.
+
+**`dispatch({ unique })` 500'd under the shape it exists for.**
+`findByUniqueKey` then insert is check-then-act across processes, and the catch
+recovered only a primary-key collision, so three processes racing one key each
+surfaced a raw `UNIQUE constraint failed: jobs.unique_key` out of an HTTP
+request. The partial index is what decides the race, so the loser asks it who
+won; a key freed by the winner going terminal in between is one retried insert.
+900 dispatches of one key from three processes: 0 throws, 1 row, and all three
+processes were told the same id.
+
 ## 2026-08-29 — `busyTimeout` on the jobs database
 
 `createCaravan({ busyTimeout })`, also settable from `junction.config.js`'s

@@ -160,6 +160,33 @@ enum Size { one xs s m l xl xxl }
 /// That split is why `sku`, `price` and `barcode` are NOT on this model. They
 /// were, while every product was one buyable thing — and the moment one design
 /// carried four colourways, a price on the family had no answer.
+
+// ─── What this shop did not write ─────────────────────────────────────────
+//
+// `@frontierjs/auth`'s machinery — Credential, Session, Verification, OauthFlow,
+// all `@@gate("8")` — and junction's OutboxMessage. Imported rather than pasted
+// so a package upgrade reaches this app, and imported rather than APPENDED IN
+// MEMORY so that the four committed artefacts describe the schema that actually
+// runs (`FJS-626`). They did not, for as long as the API assembled its own: 39
+// models ran and 32 were in `access.snapshot.md`, `release.snapshot.md`,
+// `ddl.snapshot.sql` and `jsonschema.snapshot.md` — the identity model and the
+// credential store among the seven that were missing. `release:check` grades
+// what it can see, so a contract on `Session` read as an expand.
+//
+// `User` itself is BELOW, pasted, because it is the one auth model an app owns:
+// columns get added to it, relations point at it, and its gate and policies are
+// this shop's to change. That is the split `fli auth:install` writes.
+//
+// `./user.lite` is what this shop SAYS about it, and it is an import now rather
+// than a third string the API concatenates. It could not be one while `User`
+// arrived in memory — the browser build reads this file alone, where an
+// `extend model User` naming no model is refused and takes the whole schema
+// registry down with it. `User` being here is what makes it resolvable by both
+// readers, which is the workaround dissolving rather than being worked around.
+import "@frontierjs/auth/schema.lite"
+import "@frontierjs/junction/outbox.lite"
+import "./user.lite"
+
 model Product {
   id   Int    @id
   name String @length(1, 80) @unique
@@ -427,6 +454,17 @@ model Customer {
   /// that the children were left live — which is what forgetting the cascade
   /// looks like, and here it is the intention.
   orders      Order[]    @keep
+
+  /// Same word, same argument, and it is stronger here: a subscription is a
+  /// standing arrangement and an invoice is a receipt, so neither may be
+  /// destroyed or hidden because the person asked to be forgotten.
+  subscriptions Subscription[] @keep
+  invoices      Invoice[]      @keep
+
+  /// The cards on file. `@keep` like the rest: a customer who leaves stops
+  /// being listed and the instruments stay attached to the payments they made,
+  /// which is what a `Payment` naming one needs in order to stay readable.
+  paymentMethods PaymentMethod[] @keep
   createdAt   DateTime   @default(now())
   
   /// How many orders this person has, answered by SQLite on the row.
@@ -437,6 +475,74 @@ model Customer {
   /// A `@from` reads its target the way the target is read, so this counts LIVE
   /// orders — an order removed on its own does come off it.
   orderCount  Int        @from(Order, count: true)
+
+  /// ─── What this shop decided a customer HAS ──────────────────────────────
+  ///
+  /// Every shop on this deployment sells something different, so *what you
+  /// record about a buyer* is the shop's question and not the framework's. One
+  /// sells to businesses and wants a VAT number; one runs a loyalty scheme and
+  /// wants a tier. Neither can be a column: a column is a migration, and a
+  /// migration is a deploy, and `migrate.js` drops any column this file does
+  /// not declare — so a shop that added its own would lose it on the next boot.
+  ///
+  /// `fields` is what a person reads and edits. It is an ordinary blob, so it
+  /// can hold anything and can be filtered on by nothing: litestone's query
+  /// builder emits no `json_extract`, which is correct and is the whole problem
+  /// — an audience nobody can select is a field nobody can use.
+  fields      Json       @default("{}")
+
+  /// The same values re-keyed onto the pool below, written by
+  /// `api/src/domain/shop/custom-fields.ts` on every save and read by nobody.
+  ///
+  /// `@system` because the argument for locking it is entirely about the WRITE:
+  /// a caller who could set it directly could put a value in a slot that no
+  /// `CustomField` row claims, and then a segment would select rows on a field
+  /// the shop never declared. There is nothing to hide — every value in here is
+  /// a value of `fields`, one key along, and `fields` is read by anyone who may
+  /// read the customer.
+  ///
+  /// It was `@guarded(all)` and that was the wrong half of the pair: `@guarded`
+  /// locks BOTH directions and has no hatch, so the hook that derives this
+  /// column was refused for naming it and every customer create over HTTP was a
+  /// 403 (`FJS-644`). `@system` is the one that means *the application writes
+  /// this and the caller does not*, and its hatch is a statement: the hook says
+  /// `ctx.system.add('slots')`, which keeps the gate, both row policies,
+  /// `@@softDelete` and the audit actor where `asSystem()` would drop all four.
+  slots       Json       @default("{}") @system
+
+  /// ─── The pool ───────────────────────────────────────────────────────────
+  ///
+  /// Twelve promoted columns. A `CustomField` row binds a shop's own key to one
+  /// of them, so the divergence between two shops is in the BINDING, which is a
+  /// row, and never in this file, which is the schema. That is what lets one
+  /// migrator serve every shop.
+  ///
+  /// GENERATED ALWAYS AS ... VIRTUAL, so they store nothing and the table does
+  /// not grow. Measured at 200k rows: a slot costs no storage (68 → 74 MB from
+  /// 10 slots to 200, and that spread is the index) and slows no read (0.3–0.9
+  /// ms at every pool size). What it costs is WRITES — SQLite parses the whole
+  /// table definition per statement, about 0.25 µs per row per column, so ten
+  /// slots is 12.6 µs an insert and two hundred is 62 µs.
+  ///
+  /// **An unused slot is a tax on every write to this table, paid by every shop
+  /// including the ones that declared nothing.** So the number comes from this
+  /// model's write rate and nothing else. A customer row is written once at
+  /// checkout and rarely after, which would justify forty; it is twelve because
+  /// this is also the app people read to learn the pattern, and a cap you can
+  /// reach is a cap you can see working. `verify:custom-fields` declares the
+  /// thirteenth on purpose.
+  t1 String? @generated("json_extract({slots}, '$.t1')")
+  t2 String? @generated("json_extract({slots}, '$.t2')")
+  t3 String? @generated("json_extract({slots}, '$.t3')")
+  t4 String? @generated("json_extract({slots}, '$.t4')")
+  t5 String? @generated("json_extract({slots}, '$.t5')")
+  t6 String? @generated("json_extract({slots}, '$.t6')")
+  t7 String? @generated("json_extract({slots}, '$.t7')")
+  t8 String? @generated("json_extract({slots}, '$.t8')")
+  n1 Float?  @generated("json_extract({slots}, '$.n1')")
+  n2 Float?  @generated("json_extract({slots}, '$.n2')")
+  n3 Float?  @generated("json_extract({slots}, '$.n3')")
+  n4 Float?  @generated("json_extract({slots}, '$.n4')")
   
   /// ─── Removal, and why the orders do not go with it ──────────────────────
   ///
@@ -474,6 +580,17 @@ model Customer {
   /// 1 rather than 4 because a shopper who has registered and not yet clicked
   /// the link in their email is VISITOR(1), and their own order history is
   /// exactly the thing they should be able to see while they wait.
+  /// ONE composite over the pool, and the obvious shape is the wrong one.
+  /// Measured at 200k rows on a three-term segment: twelve single-column
+  /// indexes give 139 ms, because SQLite picks ONE of them and filters the rest
+  /// — the same sentence that makes Salesforce's index-sidecar design slower
+  /// than the scan it replaces. This is 2.7 ms.
+  ///
+  /// So allocation ORDER is load-bearing: a leading prefix is what serves a
+  /// one-term or two-term segment, and `allocateSlot` hands out t1 before t2 so
+  /// the field a shop declares first lands leftmost.
+  @@index([t1, t2, t3, t4, n1, n2, t5, t6, t7, t8, n3, n4])
+
   @@gate("1.4.4.5")
   
   /// Staff read every customer. `isStaff` is a column on User and NOT a level:
@@ -488,6 +605,58 @@ model Customer {
   @@softDelete
   
   @@log(audit)
+}
+
+/// What a shop may record about a person, and the type it is.
+///
+/// The declaration is a ROW, so a shop makes one at three o'clock on a Tuesday
+/// and no deploy happens. Being a model rather than a blob is the whole point:
+/// it gets a gate, a policy, a generated form, a `@@check` and an audit entry,
+/// which is the list a JSON blob of field definitions would have had none of.
+enum CustomFieldType { text number }
+
+/// The payload `customers.segment` accepts. `input:` on a `methods:` entry
+/// names it, so a non-CRUD method gets the same 400 a CRUD one does — worded
+/// by the seed and rendered by `<Form>` — where before it took `ctx.data` on
+/// trust. Declaring a field needs no type of its own: that is `CustomField`'s
+/// own create, so the model's rules already validate it.
+type SegmentQuery {
+  terms Json
+  limit Int? @gte(1) @lte(500)
+}
+
+model CustomField {
+  id     Int             @id
+  /// The shop's own name for it, as it appears in a segment and on a form.
+  /// Lowercase and underscored because it is an identifier a person types into
+  /// a query builder, and `@lower` means two shops cannot disagree with
+  /// themselves about `VAT_Number` and `vat_number`.
+  key    String          @unique @lower @length(1, 40) @regex("^[a-z][a-z0-9_]*$")
+  label  String          @length(1, 80)
+  type   CustomFieldType
+
+  /// Which pooled column carries it, or null when the pool for its type is
+  /// full. Null is an ANSWER and not a failure: the field still stores and
+  /// still displays, and only a segment naming it degrades to a scan. Refusing
+  /// the declaration instead would tell a shop about an implementation detail
+  /// they cannot see and cannot act on.
+  ///
+  /// `@system` because the application allocates it. A caller choosing their
+  /// own slot could take one another field already holds, and `@unique` is the
+  /// second half of saying so — the two together are why this cannot collide.
+  slot   String?         @unique @system
+
+  /// Frozen once bound. Re-pointing a live field at a different slot would
+  /// leave every existing row's value in the old one, so every segment on it
+  /// would silently match nothing — the failure this whole feature exists to
+  /// prevent, reintroduced by an edit. Changing which slot a field uses is a
+  /// delete and a re-declare, which is honest about what it costs: a rebuild.
+  createdAt DateTime     @default(now())
+
+  /// Staff-only, both directions. Reading the list is how a segment builder
+  /// offers its options, so a shopper has no use for it; writing it changes
+  /// what every customer form on the shop shows.
+  @@gate("5.5.5.5")
 }
 
 // ─── Money ────────────────────────────────────────────────────────────────
@@ -566,6 +735,24 @@ model Discount {
 
   /// The floor this code is worth anything at. Zero means none.
   minSubtotal Int @money(USD) @default(0) @gte(0) @label("Minimum spend")
+
+  /// WHO this code is for, in the shop's own vocabulary — `[{ key, op, value }]`
+  /// over the fields it declared in `CustomField`. Null means everybody.
+  ///
+  /// A blob rather than a relation because the terms are a document: the keys in
+  /// them are rows in another table, so nothing in the schema could describe
+  /// this shape without describing what that shop happens to have declared. It
+  /// is the one place in this file where `Json` is the right answer rather than
+  /// the absence of one.
+  ///
+  /// It is read TWICE and by two different mechanisms, which is the whole point
+  /// of it existing here: `customers.segment` compiles it to a `where` and asks
+  /// SQLite who is in the audience, and `pricing.ts` compiles the same terms and
+  /// asks `matchesQuery` whether ONE basket's customer is. One predicate, two
+  /// readers — the shape `@frontierjs/toolbelt/match` exists for — because a
+  /// list and a checkout answering differently is a code that a shopper can see
+  /// advertised and cannot use.
+  audience Json? @label("Audience")
 
   /// The window. Both nullable — a code with no start is live now, a code with
   /// no end runs until somebody turns it off.
@@ -827,6 +1014,11 @@ model Order {
   /// itemisation torn off — see `model OrderLine` for what that cost.
   lines          OrderLine[]
   
+  /// `@keep`, for the reason `Customer.orders` is: the order can be taken out
+  /// of every list the shop shows, and the books do not move. A soft delete
+  /// that stamped the journal would silently unbalance a period.
+  journals       JournalEntry[] @keep
+  
   createdAt      DateTime     @default(now())
   
   /// ─── Removal ────────────────────────────────────────────────────────────
@@ -1023,7 +1215,13 @@ model OrderLine {
 /// stays `succeeded` and carries the amount that went back — those are two
 /// facts and a fifth enum member would fuse them, so the one question a shop
 /// asks constantly ("is this settled?") would need to name two states.
-enum PaymentStatus { pending succeeded failed refunded }
+/// `requiresAction` is not a decline and not a success — the bank wants the
+/// CARDHOLDER, and no amount of retrying produces one. It is a status rather
+/// than a flag because every reader has to grade it: a collection must not
+/// present again, dunning must not treat it as a card saying no, and a screen
+/// has to send somebody somewhere. That is the opposite of
+/// `Subscription.cancelAtPeriodEnd`, which one job reads and nothing else.
+enum PaymentStatus { pending requiresAction succeeded failed refunded }
 
 /// One attempt to take money for one order.
 ///
@@ -1035,6 +1233,84 @@ enum PaymentStatus { pending succeeded failed refunded }
 /// row. It is not the primary key because a provider id is theirs to change
 /// the shape of, and a foreign key pointing at a string somebody else mints is
 /// a migration waiting to happen.
+/// A card on file — what makes a charge possible with nobody at the keyboard.
+///
+/// ─── Why the shop stores this at all ─────────────────────────────────────
+///
+/// A subscription is charged again next month, at three in the morning, with
+/// nobody there to be asked for a card. So the FIRST charge is a conversation
+/// with a person and every one after it is a token the provider issued once and
+/// the shop presents on its own — which is the whole difference between a shop
+/// that bills and a shop that takes payments.
+///
+/// The shop never sees a card number. `providerRef` is a handle the provider
+/// will honour, and the four columns beside it are what a person needs in order
+/// to recognise which card they are looking at.
+///
+/// ─── The row is not uniformly secret, and that is the point ──────────────
+///
+/// `providerRef` can move money, so it is `@guarded`: the app writes it, the
+/// system reads it, and no response ever carries it. `brand` and `last4` are
+/// the opposite — they exist to be shown, and gating the whole model at 8 to
+/// protect the token would take away the one screen this model is for. The
+/// split is per COLUMN, which is what `@guarded` is and what a model-level gate
+/// can never express.
+model PaymentMethod {
+  id         Int      @id
+
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  customerId Int
+
+  /// The provider's handle for the instrument. `@guarded`, so it is written by
+  /// the app, read by `asSystem()`, and returned to nobody.
+  providerRef String  @unique @length(3, 64) @guarded
+
+  /// What a person reads to tell one card from another. Not a secret, and
+  /// therefore not guarded — the whole reason the protection is per column.
+  brand      String   @length(1, 20) @label("Brand")
+  last4      String   @length(4, 4)  @label("Last four")
+  expMonth   Int      @gte(1) @lte(12) @label("Expiry month")
+  expYear    Int      @gte(2000) @lte(2100) @label("Expiry year")
+
+  /// Which one a renewal reaches for.
+  ///
+  /// **`FJS-603`'s second instance, and the one it did NOT close.** *At most one
+  /// default per customer* is `@@unique([customerId], where: isDefault == true)`
+  /// and the predicate is well inside what the attribute takes — but an index is
+  /// named for its COLUMNS and this model already declares `@@index([customerId])`
+  /// for the ordinary lookup, so the two derive one name and the parser refuses
+  /// the pair. The partial unique cannot replace the plain index either: it
+  /// covers only the default rows, which is exactly why `advise` does not count
+  /// one as coverage. So this stays in the transaction that attaches a card, and
+  /// the limitation is `FJS-614`.
+  isDefault  Boolean  @default(false) @system @label("Default")
+
+  createdAt  DateTime @default(now())
+
+  payments   Payment[]
+
+  /// `Order`'s trick and `Subscription`'s: a row policy compares columns on its
+  /// own model, so *the cards of the customer this account is linked to* has
+  /// nowhere to live but here.
+  userId     String?  @system
+
+  /// Read 1 — a shopper sees their own card, narrowed by the policy below, and
+  /// what they see is a brand and four digits. Every write is 8: an instrument
+  /// is recorded when the PROVIDER says it exists, off a signed event, and no
+  /// person at any standing writes one.
+  ///
+  /// What is deliberately absent is removal by the person who added it, which
+  /// wants rules this pass does not have — which card the default moves to, and
+  /// what happens to a live subscription whose only instrument has gone.
+  @@gate("1.8.8.8")
+  @@allow('read', auth().isStaff)
+  @@allow('read', userId == auth().id)
+
+  @@index([customerId])
+
+  @@log(audit)
+}
+
 model Payment {
   id Int @id
 
@@ -1057,8 +1333,39 @@ model Payment {
   amount   Int    @money(field: currency) @gte(0)
   currency String @default("USD") @length(3, 3) @upper
 
-  orderId Int   @label("Order")
-  order   Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  /// ─── What this payment is FOR ───────────────────────────────────────────
+  ///
+  /// An order or an invoice, exactly one — a shop that sells things and also
+  /// bills for them takes money for two different nouns, and a payment belongs
+  /// to one of them.
+  ///
+  /// `@@arc` and not a `subjectType`/`subjectId` pair. The polymorphic spelling
+  /// is what you reach for when the target set is OPEN, and it costs all three
+  /// of the things a relation gives you: there is no foreign key, so a deleted
+  /// parent leaves a row pointing at nothing; there is no cascade; and there is
+  /// no `include`. Here the set is two and closed, so each member keeps a real
+  /// column with a real FK, and the declaration is what says exactly one of
+  /// them is set. It is a `@@check` underneath, so a migration, a seed and
+  /// `asSystem()` are all held to it.
+  ///
+  /// Both are nullable and neither is meaningful alone, which is the whole
+  /// reason the rule has to be declared rather than left to the services: two
+  /// nullable columns are individually fine and the pair is the invariant.
+  orderId Int?   @label("Order")
+  order   Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  invoiceId Int?     @label("Invoice")
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  /// Which instrument was presented, where one was — null for a payment taken
+  /// with somebody at the keyboard, which is every order in this shop.
+  ///
+  /// `onDelete: Restrict`, because a card coming off file must not take the
+  /// payments it made with it: what the shop charged and what it charged
+  /// against are the same fact, and a payment pointing at nothing is a
+  /// reconciliation somebody does by hand.
+  paymentMethodId Int?           @label("Instrument")
+  paymentMethod   PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
 
   /// How much has gone back, of `amount`. A number rather than a flag because a
   /// refund is not one event: a shop refunds the postage today and the item
@@ -1071,6 +1378,24 @@ model Payment {
   /// failure strings is a mapping that goes stale without ever failing.
   failureReason String? @length(0, 200)
 
+  /// Where the cardholder has to go, when the bank has asked for them.
+  ///
+  /// The provider's own page and never one this shop serves. A challenge is the
+  /// card network's, run by the issuer, and hosting it would put a third party's
+  /// script on this app's origin to collect something the shop has spent every
+  /// other line here arranging not to see.
+  ///
+  /// Not a secret and deliberately not `@guarded`: it has to reach the person,
+  /// it is useless to anybody who cannot answer their bank's challenge, and the
+  /// row policies below are already what decides who may read it.
+  actionUrl String? @length(0, 300) @system
+
+  /// The account this payment belongs to, copied at creation like `Order`'s and
+  /// `Invoice`'s — a row policy compares columns on its own model, so *the
+  /// payments of the customer this account is linked to* has nowhere else to
+  /// live.
+  userId String? @system
+
   createdAt DateTime  @default(now())
   settledAt DateTime?
 
@@ -1078,14 +1403,29 @@ model Payment {
   /// a failed card followed by a good one is two rows, and the history is the
   /// point. The index is what makes "this order's payments" cheap.
   @@index([orderId])
+  @@index([invoiceId])
 
-  /// RCUD. Read 5 — an administrator; a payment names amounts and a provider
-  /// reference. Create and update 8 — SYSTEM, because the only writer is the
-  /// shop recording what a provider said, and a level is not what separates
-  /// those: no PERSON at any standing writes one. Delete 9 — LOCKED. Money
-  /// that was taken cannot stop having been taken, and 9 is how that is spelt
-  /// for every caller including the application itself.
-  @@gate("5.8.8.9")
+  /// Exactly one. Not *at most* one — a payment for nothing is a row nobody can
+  /// reconcile — and not *at least* one, which is the shape that lets a refund
+  /// be applied twice, to two different nouns.
+  @@arc([orderId, invoiceId])
+
+  /// RCUD. Read 1 with the policies below, and it used to be 5.
+  ///
+  /// The change is `requiresAction`: when the bank asks for the cardholder, the
+  /// only person who can finish the payment is the one who owns it, and a row
+  /// only an administrator may read cannot tell them. So a shopper reads their
+  /// own payments and staff read the book — the same pair `Invoice` already
+  /// makes, over the same `userId`.
+  ///
+  /// Create and update 8 — SYSTEM, because the only writer is the shop
+  /// recording what a provider said, and a level is not what separates those:
+  /// no PERSON at any standing writes one. Delete 9 — LOCKED. Money that was
+  /// taken cannot stop having been taken, and 9 is how that is spelt for every
+  /// caller including the application itself.
+  @@gate("1.8.8.9")
+  @@allow('read', auth().isStaff)
+  @@allow('read', userId == auth().id)
   @@log(audit)
 }
 
@@ -1130,6 +1470,359 @@ model PaymentEvent {
   /// than SYSTEM for the two that would edit history: a ledger `asSystem()`
   /// can rewrite is a ledger.
   @@gate("5.8.9.9")
+}
+
+// ─── Subscriptions ────────────────────────────────────────────────────────
+//
+// The shop sells one thing on a recurring basis, and the recurring half is a
+// different domain from the basket above it. Three facts separate them and each
+// one is a model here:
+//
+//   a PRICE that changed must not reprice a subscription sold before it
+//   a DOCUMENT is a statement about a moment, so it does not change
+//   a CORRECTION is a new row that supersedes, never an edit
+//
+// `IDEAS/billing.md` is the plan this is phase 1 of; `FJS-D162` is the ruling
+// the last two sit on.
+
+enum PlanInterval       { monthly yearly }
+enum SubscriptionStatus { trialing active pastDue cancelled }
+
+/// What is on offer. The NAME of a thing you can subscribe to, and nothing
+/// about what it costs — the price is `PlanVersion`, because a price has a
+/// lifetime and a plan does not.
+model Plan {
+  id          Int           @id
+  code        String        @length(2, 40) @unique @upper @label("Code")
+  name        String        @length(2, 80) @label("Name")
+  description String?       @length(0, 400)
+  interval    PlanInterval  @default(monthly)
+  active      Boolean       @default(true)
+  versions    PlanVersion[]
+  createdAt   DateTime      @default(now())
+
+  /// The price a new subscriber would pay today — the one version whose window
+  /// is open. Ordered so *today's* row wins when two windows touch, and read as
+  /// a subquery rather than joined, so the pricing page costs one query.
+  currentPrice Int?         @from(PlanVersion, max: price, where: "effectiveTo IS NULL")
+
+  /// A pricing page is public, exactly as the catalogue is. Editing what a shop
+  /// charges is staff, at the same level as a `Discount`.
+  @@gate("0.5.5.5")
+}
+
+/// What a plan cost, over the window it cost it.
+///
+/// **Effective-dated reference data**, which is the temporal shape this app has
+/// nowhere else: every other historical figure here is COPIED at the moment of
+/// sale (`Order`'s nine columns, `OrderLine`'s unit price) because the thing it
+/// was copied from is expected to move underneath. A subscription cannot copy,
+/// because it is charged again next month and has to charge the same amount —
+/// so the price is a row with a lifetime, and a subscription names the version
+/// it was sold at rather than the plan.
+///
+/// A change of price is a new row: `effectiveTo` on the old one, a new one with
+/// `effectiveFrom` where it ended. Nothing edits a version that has been sold
+/// against, which is what `@immutable` says here.
+model PlanVersion {
+  id            Int         @id
+  plan          Plan        @relation(fields: [planId], references: [id], onDelete: Restrict)
+  planId        Int
+
+  /// Cents, and frozen. A version whose price could be edited is not a version,
+  /// it is the plan with an extra table (`FJS-D162`).
+  price         Int         @money(USD) @gte(0) @immutable @label("Price")
+
+  /// The window. `effectiveTo` null is *still current*, which is the state a
+  /// price is in almost all of its life — and the reason the column is nullable
+  /// rather than dated far in the future, which reads as a decision somebody
+  /// made about 2099.
+  effectiveFrom DateTime    @default(now()) @immutable
+  effectiveTo   DateTime?
+
+  subscriptions Subscription[]
+
+  @@gate("0.5.5.5")
+
+  /// A window that ends before it starts is a row nothing can ever match, and
+  /// the two columns are individually fine — which is what makes this a
+  /// `@@check` and not a field rule.
+  @@check("effectiveTo IS NULL OR effectiveFrom < effectiveTo",
+          "A price window has to end after it starts")
+
+  /// **One OPEN window per plan** — *there is only one current price*, said by
+  /// the database rather than by the service that happens to write it.
+  ///
+  /// The predicate is the constraint: `effectiveTo` is null on exactly the row
+  /// that matters, so a plain tuple over it constrains nothing (two NULLs never
+  /// compare equal) and `nullsDistinct: true` — what this said until `FJS-603`
+  /// closed — is the declaration of the OPPOSITE. `plans.reprice` still closes
+  /// one window and opens the next in a transaction, because the constraint
+  /// refuses the second open row and does not order the two writes.
+  @@unique([planId], where: effectiveTo == null)
+}
+
+/// Somebody paying, on a cycle.
+///
+/// It names a `PlanVersion` and not a `Plan`, which is the whole of the
+/// paragraph on that model: a subscriber keeps the price they signed up at
+/// until something moves them, and *something moved them* is a row change with
+/// a date on it rather than a silent reprice.
+model Subscription {
+  id                 Int                @id
+  reference          String             @length(3, 20) @unique @upper @label("Reference")
+  customer           Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  customerId         Int
+  planVersion        PlanVersion        @relation(fields: [planVersionId], references: [id], onDelete: Restrict)
+  planVersionId      Int
+  status             SubscriptionStatus @default(trialing)
+
+  /// How many of it. Seats, licences, whatever the plan sells — the number
+  /// proration has to split a period's price across when it changes mid-cycle.
+  quantity           Int                @default(1) @gte(1) @label("Quantity")
+
+  /// The cycle. Both are stamped by the renewal job, never by a caller.
+  currentPeriodStart DateTime           @default(now()) @system
+  currentPeriodEnd   DateTime           @system
+  trialEndsAt        DateTime?
+  cancelledAt        DateTime?          @system
+
+  /// Asked to stop — at the boundary, rather than now.
+  ///
+  /// A flag beside `active` and not a fifth status, and the choice is the
+  /// substance. A `cancelling` state would be declared, so the console's button
+  /// set would stay derived from `@@transitions`; it would also double what
+  /// every reader has to grade. `dueForRenewal`, `unpaidInvoices`, the dunning
+  /// read and both row policies above ask ONE question about `status`, and *is
+  /// this live* becoming a set membership is the shape that goes wrong in one
+  /// caller and nowhere else.
+  ///
+  /// So *live* stays one comparison and this decides only what the renewal job
+  /// does when it reaches the period end. The cost is recorded rather than
+  /// argued away: it is invisible to `@@transitions`, so Stop renewing and
+  /// Resume are the first buttons in this app that cannot be derived from what
+  /// the schema declares.
+  ///
+  /// `@system`, because it is set through `subscriptions.cancel` and
+  /// `subscriptions.resume` — which keep the gate and the row policies — and
+  /// never by a caller naming the column on a patch.
+  cancelAtPeriodEnd  Boolean            @default(false) @system @label("Cancels at period end")
+
+  invoices           Invoice[]
+  createdAt          DateTime           @default(now())
+
+  /// `Order`'s trick, and for `Order`'s reason: a row policy compares columns on
+  /// its own model and does not traverse a relation, so *the subscriptions of
+  /// the customer this account is linked to* has nowhere to live but here.
+  userId             String?            @system
+
+  /// Read at 1 and written at 4, like an `Order`: staff manage subscriptions,
+  /// and the one move a subscriber makes for themselves is cancelling, which
+  /// the policy below scopes to their own row.
+  @@gate("1.4.4.5")
+  @@allow('read',   auth().isStaff)
+  @@allow('read',   userId == auth().id)
+  @@allow('update', auth().isStaff)
+  @@allow('update', userId == auth().id)
+
+  /// The moves, and every one of them is the ENGINE's — which is what `@system`
+  /// says, and it is a different sentence from a gate set high (`FJS-D150`): a
+  /// gate is a question about the caller, and *nobody may ask for this, ever*
+  /// answers nothing about who is asking.
+  ///
+  /// `activate` is the trial converting, `lapse` and `recover` are the dunning
+  /// run finding the ledger dirty and clean. **`cancel` joined them**: what a
+  /// person presses is `cancelAtPeriodEnd` above, and the arrangement ends when
+  /// the renewal job reaches the boundary and finds the flag set. Cancelling at
+  /// the instant somebody asks would forfeit the rest of a period they have
+  /// already paid for, which is not what the word means to anybody pressing it.
+  ///
+  /// What this deliberately leaves out is an immediate termination for staff —
+  /// Cashier's `cancelNow()`. Nothing in this app has a caller for one, and a
+  /// move nothing drives is what `fli check`'s `transition-methods` reports.
+  @@transitions(status,
+    activate: trialing            -> active  @system,
+    lapse:    active              -> pastDue @system,
+    recover:  pastDue             -> active  @system,
+    cancel:   [trialing, active, pastDue] -> cancelled @system
+  )
+}
+
+/// What `subscriptions.changePlan` accepts.
+///
+/// A `type` and not a model for `TrackingUpdate`'s reason: there is nothing to
+/// store, and this describes only what may arrive. Both fields are optional and
+/// at least one has to be there — *change nothing* is a request the service
+/// refuses rather than a payload the schema can describe, because a rule about
+/// the RELATIONSHIP between two optional fields is not one a field validator
+/// can hold.
+type PlanChange {
+  planVersionId Int? @label("Plan")
+  quantity      Int? @gte(1) @label("Quantity")
+}
+
+/// What `plans.reprice` accepts — a new price for a plan, in minor units.
+///
+/// The amount is stated and the WINDOW is not: closing the open version at the
+/// instant the new one opens is what the method does, and a caller who could
+/// name either date could leave a plan with two current prices or with none.
+/// The *two current prices* half is the table's since `FJS-603` closed; *or with
+/// none* is still the method's, because no constraint can require a row.
+type PlanPrice {
+  price Int @gte(0) @label("Price")
+}
+
+enum InvoiceStatus { draft issued paid void }
+
+/// A DOCUMENT.
+///
+/// Every money column here is `@immutable` and so is the number and the instant
+/// — which is what `FJS-D162` is about: an invoice states what was charged at a
+/// moment, and the only honest correction is a `CreditNote` beside it. The
+/// freeze holds against `asSystem()`, which matters here more than anywhere
+/// else in this schema, because the caller that writes invoices IS the system:
+/// the renewal job has no session.
+///
+/// **`draft` exists again, and `@seals` is why** (`FJS-D167`). It was removed
+/// because `@immutable` froze a column at CREATE, so a row assembled over
+/// several writes could not hold a frozen total — the language was shaping the
+/// domain rather than describing it. `issue: draft -> issued @seals` says WHEN
+/// this row becomes a statement, and on a sealing model `@immutable` means
+/// frozen at the SEAL: the numbers are ordinary while it is a draft and frozen
+/// for everybody afterwards, `asSystem()` included.
+///
+/// `lines InvoiceLine[] @sealed` is the other half — the children the document
+/// is MADE of, so after the seal no line may be added, changed or removed.
+/// `payments` and `creditNotes` deliberately carry no `@sealed`: a payment
+/// against an issued invoice is exactly the row that must keep arriving, and a
+/// credit note is how a sealed document is corrected.
+///
+/// What is still NOT declared is the invariant that matters most: `subtotal` is
+/// the sum of this invoice's lines, and no `@@check` can see a child table. It
+/// is enforced in `issueInvoice`, which is the only writer — but the seal is now
+/// the MOMENT that check belongs at, which is the half `FJS-D162` left open and
+/// `FJS-D167` supplies without yet spending.
+model Invoice {
+  id             Int             @id
+  number         String          @length(3, 30) @unique @upper @immutable @label("Number")
+  status         InvoiceStatus   @default(draft)
+
+  customer       Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  customerId     Int
+  subscription   Subscription?   @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  subscriptionId Int?
+
+  /// Cents, frozen, and written by the shop. `@system` and `@immutable` are
+  /// two different sentences and the invoice needs both: the first says no
+  /// caller may state a total, the second says nobody may restate one — the
+  /// system included.
+  subtotal       Int             @money(USD) @gte(0) @system @immutable @label("Subtotal")
+  tax            Int             @money(USD) @gte(0) @default(0) @system @immutable @label("Tax")
+  total          Int             @money(USD) @gte(0) @system @immutable @label("Total")
+
+  /// The window this invoice charges for. A proration line's own period is
+  /// narrower and lives on the line.
+  periodStart    DateTime        @immutable
+  periodEnd      DateTime        @immutable
+  issuedAt       DateTime        @default(now()) @immutable
+
+  /// When it has to be paid by, and it is part of the DOCUMENT — an invoice
+  /// that could be given a later due date after it was issued is an invoice
+  /// whose terms moved, which is the thing a statement about a moment cannot
+  /// do. It is also the only anchor dunning needs: *how long has this been
+  /// unpaid* is `now - dueAt` on the oldest unpaid invoice, so no counter has
+  /// to be kept on the subscription and no counter can disagree with the rows.
+  ///
+  /// `@default(now())` is not decoration: a required column with no default
+  /// cannot be added to a populated table, and litestone refuses the migration
+  /// rather than applying half of it (`FJS-604` — it used to report success and
+  /// leave the column missing). The default is also the honest floor — an
+  /// invoice issued with no stated terms is due immediately — and every writer
+  /// states one, because `api/src/billing.ts` mints it from the shop's terms.
+  dueAt          DateTime        @default(now()) @immutable
+
+  paidAt         DateTime?       @system
+
+  lines          InvoiceLine[]   @sealed
+  creditNotes    CreditNote[]
+  payments       Payment[]
+
+  userId         String?         @system
+
+  /// Read at 1, and every write is the system's — an invoice is issued by the
+  /// renewal job and by nothing else. `OrderLine` is the same shape for the
+  /// same reason.
+  @@gate("1.8.8.8")
+  @@allow('read', auth().isStaff)
+  @@allow('read', userId == auth().id)
+
+  /// The one-row half of the receipt identity. The other half — that the lines
+  /// sum to `subtotal` — is the cross-row invariant this language cannot state.
+  @@check("total = subtotal + tax",
+          "An invoice total is its subtotal plus tax")
+
+  /// `issue` is the seal. It is `@system` for the same reason every other write
+  /// here is: an invoice is issued by the renewal job and by nothing else. Its
+  /// gate is the model's own, which for a `@@gate("1.8.8.8")` model is already
+  /// higher than any caller reaches — the `@system` is what says the APPLICATION
+  /// makes it, and the two are separate facts.
+  ///
+  /// `void` and `paid` seal too, and nothing here says so: the sealed set is
+  /// everything reachable from `issued`.
+  @@transitions(status,
+    issue:  draft  -> issued @seals @system,
+    settle: issued -> paid @system,
+    void:   issued -> void @gate(5)
+  )
+}
+
+/// One line of the statement, frozen with it.
+///
+/// `amount` is carried rather than derived from `unitAmount × quantity` for
+/// `OrderLine`'s reason — a proration line is a FRACTION of a period, so the
+/// two genuinely differ and the line has to say what was charged rather than
+/// what multiplies out.
+model InvoiceLine {
+  id          Int      @id
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoiceId   Int
+  description String   @length(1, 120) @immutable @label("Description")
+  quantity    Int      @default(1) @gte(1) @immutable
+  unitAmount  Int      @money(USD) @immutable @label("Unit price")
+  amount      Int      @money(USD) @immutable @label("Amount")
+
+  /// The slice of time this line is for, where it is narrower than the
+  /// invoice's own window — a plan change on day 19 makes two lines out of one
+  /// period. Null on an ordinary full-period line.
+  periodStart DateTime? @immutable
+  periodEnd   DateTime? @immutable
+
+  userId      String?  @system
+
+  @@gate("1.8.8.8")
+  @@allow('read', auth().isStaff)
+  @@allow('read', userId == auth().id)
+}
+
+/// The correction. A row that says an issued invoice was wrong by this much,
+/// beside the invoice rather than inside it.
+///
+/// It is the reason every column on `Invoice` can be frozen: with a credit note
+/// there is no case left where editing one would be the answer.
+model CreditNote {
+  id         Int       @id
+  number     String    @length(3, 30) @unique @upper @immutable @label("Number")
+  invoice    Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  invoiceId  Int
+  amount     Int       @money(USD) @gt(0) @immutable @label("Amount")
+  reason     String    @length(3, 200) @immutable @label("Reason")
+  issuedAt   DateTime  @default(now()) @immutable
+
+  userId     String?   @system
+
+  @@gate("1.8.8.8")
+  @@allow('read', auth().isStaff)
+  @@allow('read', userId == auth().id)
 }
 
 // ─── Basket ───────────────────────────────────────────────────────────────
@@ -1454,6 +2147,649 @@ model InventoryMovement {
   @@gate("5.5.9.9")
 }
 
+/// Which side of the books a journal line lands on.
+///
+/// Five accounts and no more, because phase 1 of `IDEAS/payroll.md` posts one
+/// kind of journal — a sale. The names are the ones a bookkeeper uses, not the
+/// ones this schema would invent, and the set grows when something else starts
+/// posting: a pay run wants wages expense and three control accounts.
+///
+/// A real bureau makes this a TABLE, because a client adds accounts. A shop's
+/// chart is genuinely fixed, an enum emits a table CHECK so a migration and
+/// `asSystem()` are both held to it, and a picker renders it for free.
+enum LedgerAccount {
+  receivables
+  discountsAllowed
+  sales
+  shippingIncome
+  taxPayable
+
+  /// The payroll side, added when a pay run started posting. Four control
+  /// accounts and one expense, which is the whole of what a monthly payroll
+  /// touches: what it cost the business, and the three parties owed out of it.
+  wagesExpense
+  payeControl
+  pensionControl
+  niControl
+  netPayControl
+}
+
+/// What posts a journal. Two by design, which is the argument for one
+/// application rather than two: a business that sells things also employs
+/// people, and the ledger is where the two halves meet.
+enum JournalSource { sale  payroll }
+
+/// A double-entry journal — the second ledger in this app, and the one whose
+/// invariant the language cannot say.
+///
+/// ─── Why it is here at all ────────────────────────────────────────────────
+///
+/// `InventoryMovement` already proves the shape: an append-only tape of signed
+/// movements, where summing is the only thing anybody wants to do with one. A
+/// journal is that tape with an account on it and one extra rule — **the lines
+/// of one entry sum to zero** — and that rule is the wall.
+///
+/// ─── The wall, stated where somebody will meet it ─────────────────────────
+///
+/// *The lines sum to zero* reads a CHILD table. `@@check` sees one row, a
+/// policy cannot aggregate, and a `@from` answers a number rather than refusing
+/// a write. So it is enforced in `api/src/ledger.ts` at the moment an entry is
+/// posted — application code, exactly as `Invoice.subtotal = Σ lines` is
+/// enforced in `api/src/billing.ts`.
+///
+/// Two copies of one missing feature is the evidence a ruling wants.
+/// `FJS-D162` ruled WHERE such an invariant is checked — at the transition, and
+/// the freeze is what makes once enough — and deliberately left what SPELLS it
+/// open. This is the second caller waiting on that spelling.
+///
+/// What the freeze buys here is what it bought the invoice: every column is
+/// `@immutable`, and a journal has no states at all, so *checked once when it
+/// is posted* is the whole of its life. There is no drift to catch.
+model JournalEntry {
+  id         Int           @id
+  
+  reference  String        @length(3, 40) @unique @upper @immutable @label("Reference")
+  narrative  String        @length(3, 200) @immutable @label("Narrative")
+  
+  /// When the books say it happened. `@system` because a caller stating a
+  /// posting date is a caller choosing which period to put revenue in.
+  postedAt   DateTime      @default(now()) @system @immutable @label("Posted")
+  
+  source     JournalSource @immutable @label("Source")
+  
+  /// What it was raised for — and it is an ARC now, which is what phase 1 of
+  /// `IDEAS/payroll.md` said it would become the moment a second thing posted.
+  ///
+  /// Two optional foreign keys of which exactly one is set. That keeps a real
+  /// FK, a real cascade and a real `include` on both sides, where the
+  /// polymorphic `(sourceType, sourceId)` pair keeps none of the three and
+  /// needs a job to sweep what the database will not. This is the application's
+  /// SECOND arc, after `Payment`.
+  orderId    Int?          @immutable @label("Order")
+  order      Order?        @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  
+  payRunId   Int?          @immutable @label("Pay run")
+  payRun     PayRun?       @relation(fields: [payRunId], references: [id], onDelete: Restrict)
+  
+  /// Exactly one. Emitted as a table CHECK, so a migration, a seed and
+  /// `asSystem()` are each held to it — an entry belonging to both or to
+  /// neither is not a thing the books can hold.
+  @@arc([orderId, payRunId])
+  
+  lines      JournalLine[]
+  
+  /// Read by staff · posted by the application · amended by NOTHING.
+  ///
+  /// The three numbers are three different sentences and the last two are the
+  /// interesting ones. `8` on create is `asSystem()`, which is what
+  /// `api/src/ledger.ts` posts with — there is no administrator who raises a
+  /// journal by hand in this shop, so there is no level below that which should
+  /// be able to. `9` on update and delete is LOCKED: not reachable through the
+  /// ORM at all, by any client, the system's included.
+  ///
+  /// That last one is what makes the ledger append-only at the DATA BOUNDARY
+  /// rather than by agreement. `@immutable` already refuses a restatement
+  /// column by column; this refuses the call. Between them there is no code
+  /// path in this application that can change a posted journal, which is the
+  /// property a period close would otherwise have to be built on.
+  @@gate("5.8.9.9")
+  
+  @@log(audit)
+}
+
+/// One side of one journal.
+///
+/// SIGNED, for `InventoryMovement.quantity`'s reason and a second one: with a
+/// debit and a credit COLUMN the balance rule is *sum of one column equals sum
+/// of the other*, and with one signed column it is *the sum is zero*. The
+/// second is the rule a database could one day be asked to hold.
+model JournalLine {
+  id       Int           @id
+  
+  entryId  Int           @label("Entry")
+  entry    JournalEntry  @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  
+  account  LedgerAccount @immutable @label("Account")
+  
+  /// Positive is a debit, negative is a credit. `@money` and not `Float`, for
+  /// the reason `Order`'s receipt identity gives: this column is summed and
+  /// compared to zero, and an exact equality is only sayable over whole minor
+  /// units.
+  amount   Int           @money(USD) @immutable @label("Amount")
+  
+  /// A line worth nothing is a line that should not have been written. It is
+  /// the only part of the balance rule that fits in one row, which is worth
+  /// noticing: what a `@@check` can say here is the trivial half.
+  @@check("amount != 0", "a journal line cannot be for nothing")
+  
+  /// The header's ladder, for the header's reasons. A line that could be
+  /// deleted is a balanced entry that stops balancing.
+  @@gate("5.8.9.9")
+}
+
+/// How somebody is paid. `rate` means a different number under each, which is
+/// what a discriminated amount costs — and it is one column rather than two
+/// nullable ones because a nullable pair needs a rule saying exactly one is
+/// set, and that rule is `@@arc`, which is for foreign keys.
+///
+/// Frappe writes the same single column (`SalaryStructureAssignment.base`) and
+/// leaves the meaning to the structure. This says it in the schema.
+enum PayBasis { salary  hourly }
+
+/// Somebody this shop employs.
+///
+/// A shop is a BUSINESS, and a business that sells things also employs people —
+/// which is why payroll is in this application rather than a fourth one, and
+/// why `JournalEntry` above already exists to receive what a pay run posts.
+///
+/// It costs nothing per shop: `tenancy { strategy database }` gives every shop
+/// its own SQLite file, so each one is a separate legal employer with no column
+/// and no policy doing the separating.
+model Employee {
+  id           Int              @id
+  reference    String           @length(3, 20) @unique @upper @label("Reference")
+  
+  name         String           @length(2, 80) @label("Name")
+  email        String           @unique @lower @label("Email")
+  
+  /// The employment, not the terms. When somebody joined and when they left is
+  /// one fact per person; what they were paid is a history beside it.
+  startedOn    DateTime         @label("Started")
+  endedOn      DateTime?        @label("Left")
+  
+  pay          PayWindow[]
+  
+  /// Read and written by staff. There is no level below 5 with any business
+  /// reading a payroll, and `example`'s ladder puts an administrator there.
+  @@gate("5.5.5.5")
+  
+  @@check("endedOn IS NULL OR startedOn < endedOn",
+          "somebody cannot leave before they started")
+  
+  @@log(audit)
+}
+
+/// What somebody is paid, over the interval it was true for.
+///
+/// Named for the WINDOW rather than for the terms it carries, and the rename
+/// was `fli check`'s: `model EmploymentTerms` reads as a plural, so
+/// `employment-terms` singularises to `EmploymentTerm` and Invariant 2's three
+/// resolvers stop agreeing — a resource file over it would resolve to no model
+/// at all. `PayWindow` is what every comment in `api/src/employment.ts` already
+/// called it.
+///
+/// ─── The third shape, and why this one ────────────────────────────────────
+///
+/// `IDEAS/payroll.md` phase 0 found three effective-dating spellings in real
+/// schemas: a nullable `effectiveTo` pair, a `fromDate` with NO end column
+/// where the window is closed by the next row's start, and a closed interval.
+/// Frappe writes the second.
+///
+/// This writes the first, and deliberately writes it IDENTICALLY to
+/// `PlanVersion` above — same two columns, same nullable open end, same
+/// `nullsDistinct` near-miss, same close-then-open in a transaction. Two
+/// unrelated domains in one application arranging the same four things by hand
+/// is the argument for the language knowing about validity windows, and it is
+/// only an argument if the two are the same arrangement rather than two
+/// dialects (`FJS-D164`).
+///
+/// ─── One open window per employee, and where it is held ───────────────────
+///
+/// `@@unique([employeeId], where: effectiveTo == null)`. It was met here for
+/// the second time as a gap (`FJS-603`) and closed as one: the nullable column
+/// moves OUT of the tuple and into the predicate, which is the difference
+/// between *the open rows are deliberately unconstrained* and *at most one of
+/// them exists*.
+///
+/// `employees.setPay` still checks it, and that is not redundant — it names the
+/// employee and says what to do, where the boundary answers a 409 about a
+/// column. What changed is that the rule now holds against a seed, a migration,
+/// a job and `asSystem()`, none of which go through the service.
+model PayWindow {
+  id            Int          @id
+  
+  employeeId    Int          @immutable @label("Employee")
+  employee      Employee     @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  
+  basis         PayBasis     @immutable @label("Basis")
+  
+  /// Minor units. An ANNUAL salary under `salary`, an hourly rate under
+  /// `hourly` — one column carrying two magnitudes, which is the cost of the
+  /// discriminator and is stated here so nobody sums the column.
+  ///
+  /// `@money` and not `Float`, and payroll is where that matters most: Frappe
+  /// stores `gross_pay`, `net_pay` and `base` as floats, and a rounding error
+  /// in a shop's price is a penny while a rounding error in a payroll is a
+  /// person's wages.
+  rate          Int          @money(USD) @gte(0) @immutable @label("Rate")
+  
+  hoursPerWeek  Int          @default(40) @gte(0) @lte(168) @immutable @label("Hours a week")
+  
+  /// The window. `effectiveFrom` is frozen and `effectiveTo` is not, which is
+  /// the same asymmetry `PlanVersion` has and for the same reason: the start of
+  /// a window is a fact about the past, and closing one is what happens when
+  /// the next is opened.
+  effectiveFrom DateTime     @default(now()) @immutable @label("From")
+  effectiveTo   DateTime?    @label("To")
+  
+  @@gate("5.5.5.5")
+  
+  /// A window that ends before it starts is a row nothing can ever match, and
+  /// the two columns are individually fine — which is what makes this a
+  /// `@@check` and not a field rule. `PlanVersion` carries the same one.
+  @@check("effectiveTo IS NULL OR effectiveFrom < effectiveTo",
+          "a pay window has to end after it starts")
+  
+  /// See the model header. The tuple would have constrained the CLOSED rows,
+  /// which nobody was worried about.
+  @@unique([employeeId], where: effectiveTo == null)
+  
+  @@log(audit)
+}
+
+/// What a `PayRate` band is FOR.
+///
+/// Four, and they are the 80/20 of a payroll: what the state takes, what the
+/// employee puts into a pension, what the employer puts in beside it, and the
+/// employer's own contribution on top. Everything else a real bureau carries —
+/// student loans, salary sacrifice, court orders — is another row of the same
+/// shape rather than another mechanism, which is the argument for one table.
+enum RateKind { incomeTax  employeePension  employerPension  employerNI }
+
+/// A number that was true between two dates, for amounts in a range.
+///
+/// ─── One table, and Frappe's three ────────────────────────────────────────
+///
+/// Frappe spends `Salary Component`, `Income Tax Slab` and `Income Tax Slab
+/// Other Charges` here, and `TaxableSalarySlab` beside them for the bands. They
+/// are one sentence — *this rate applied to this slice, over this interval* —
+/// and splitting it costs a join per question and a second place to forget the
+/// window.
+///
+/// ─── Why it is not a valueset and not an enum ─────────────────────────────
+///
+/// A `valueset` (`FJS-D120`) is a closed set of VALUES a picker offers, and an
+/// enum is a fixed set with no time on it. This is a table whose rows are each
+/// true for an interval, which is `PayWindow`'s shape one table along — and
+/// having the same shape twice, over reference data rather than over a person,
+/// is what makes it evidence rather than a coincidence.
+///
+/// ─── The band ─────────────────────────────────────────────────────────────
+///
+/// `fromAmount` and `toAmount` are ANNUAL and cumulative, so a rate applies to
+/// the slice of income between them and not to the whole. That is what makes a
+/// tax band a band; applying the top rate to the whole salary is the classic
+/// wrong answer, and `api/src/payrates.ts` is the only place the walk is
+/// written. `toAmount` null is *and everything above*, which every real band
+/// table has exactly one of per kind.
+model PayRate {
+  id            Int        @id
+  
+  kind          RateKind   @immutable @label("Kind")
+  
+  /// Minor units, annual. The slice this rate applies to is
+  /// `[fromAmount, toAmount)` — half-open, for `PayWindow`'s reason: a salary
+  /// landing exactly on a threshold must fall in one band and not two.
+  fromAmount    Int        @money(USD) @gte(0) @default(0) @immutable @label("From")
+  toAmount      Int?       @money(USD) @gte(0) @immutable @label("To")
+  
+  /// A PERCENTAGE at two places — 2000 is 20.00% — which is the spelling
+  /// `Discount.value` already uses in this shop. Not `TaxRate.rate`'s fraction,
+  /// and the difference is the domain rather than taste: a `Float` fraction is
+  /// exact enough for a shop's VAT line and is what phase 0 found a real
+  /// payroll storing its wages in. An integer at a stated scale is summable and
+  /// reproducible, which is what a payslip somebody may query has to be.
+  percent       Int        @scale(2) @gte(0) @lte(10000) @immutable @label("Percent")
+  
+  /// The window, spelled exactly as `PayWindow` spells it — third instance of
+  /// the same four columns arranged by hand (`PlanVersion`, `PayWindow`, this),
+  /// and third instance of `FJS-603`: *one open band per (kind, fromAmount)* is
+  /// not declarable.
+  effectiveFrom DateTime   @default(now()) @immutable @label("From date")
+  effectiveTo   DateTime?  @label("To date")
+  
+  /// Read by staff, written by staff. Unlike a pay window this is not about a
+  /// person, so there is no argument for a higher floor — and unlike a product
+  /// price there is no argument for a lower one, since a band table is what a
+  /// payroll is computed from.
+  @@gate("5.5.5.5")
+  
+  @@check("toAmount IS NULL OR fromAmount < toAmount",
+          "a band has to end above where it starts")
+  @@check("effectiveTo IS NULL OR effectiveFrom < effectiveTo",
+          "a rate window has to end after it starts")
+  
+  /// One open band per kind and threshold — the same shape as `PayWindow`, one
+  /// table along, and the reason a band table can be edited without a service
+  /// holding the invariant for it.
+  @@unique([kind, fromAmount], where: effectiveTo == null)
+  
+  @@log(audit)
+}
+
+/// Where a pay run has got to.
+///
+/// Four states and three of the moves are the engine's. The one a PERSON makes
+/// is `approve`, and it is the only place in this application besides a refund
+/// where pressing a button moves real money.
+enum PayRunStatus { draft  calculated  approved  paid }
+
+/// What a payslip line IS.
+///
+/// An enum rather than a table, which is the 80/20 line this whole domain is
+/// drawn at (`IDEAS/payroll.md` § The size budget). Frappe spends three
+/// doctypes here and the third evaluates a Python expression per component,
+/// which is schema-as-data. A real bureau makes this a table; a shop's set is
+/// fixed, an enum emits a table CHECK, and a picker renders it for free.
+enum PayComponentKind {
+  basicPay
+  overtime
+  bonus
+  incomeTax
+  employeePension
+  employerPension
+  employerNI
+}
+
+/// One period's payroll, for everybody employed in it.
+///
+/// ─── The ladder, and why approval is the interesting move ─────────────────
+///
+/// `calculate` and `pay` are `@system` — a job computes and a job posts. What a
+/// person does is APPROVE, and it is `@gate(5)`: this shop's administrator,
+/// one level above the staff member who can raise and recalculate the run. That
+/// separation is the point of the state machine rather than decoration, and it
+/// is the second `@gate(5)` transition in the application after a refund.
+///
+/// `revert` exists because `calculated` has to be undoable — a run computed
+/// against the wrong period is the ordinary mistake, and the alternative to
+/// reverting is deleting payslips, which are documents.
+model PayRun {
+  id          Int          @id
+  reference   String       @length(3, 30) @unique @upper @immutable @label("Reference")
+  
+  /// The period it covers, and the date it is paid on. All three frozen: a run
+  /// whose period could be edited after it was calculated is a run whose
+  /// payslips stop meaning anything.
+  periodStart DateTime     @immutable @label("From")
+  periodEnd   DateTime     @immutable @label("To")
+  payDate     DateTime     @immutable @label("Pay date")
+  
+  /// How many periods this run is one OF. Twelve for monthly, and it is stored
+  /// rather than derived because it is what `allocate` splits an annual figure
+  /// across — a run that guessed would put a rounding difference in a different
+  /// month from the one that owns it.
+  periodsPerYear Int       @default(12) @gte(1) @lte(53) @immutable @label("Periods a year")
+  /// Which one, zero-based. The remainder from the split lands in the periods
+  /// `allocate` gives it to, so this decides whether THIS month carries a
+  /// leftover minor unit.
+  periodIndex Int          @default(0) @gte(0) @lte(52) @immutable @label("Period")
+  
+  status      PayRunStatus @default(draft)
+  
+  /// How many payslips this run is supposed to produce, stamped when it is
+  /// PLANNED and before any of them exist.
+  ///
+  /// It is what makes *is the run finished* decidable by a worker that only
+  /// knows about one employee. Five thousand payslips are five thousand
+  /// separate units of work, so nothing holds the whole run in scope — and
+  /// counting rows against a number stamped up front is the only way a worker
+  /// can tell *the last one* from *one of the middle ones*.
+  ///
+  /// Read as at the period end, like everything else here, so a person hired
+  /// after the run was planned does not silently move the finish line.
+  headcount   Int?         @system @label("Headcount")
+  
+  approvedBy  String?      @system @label("Approved by")
+  approvedAt  DateTime?    @system @label("Approved")
+  paidAt      DateTime?    @system @label("Paid")
+  
+  payslips    Payslip[]
+  journals    JournalEntry[]
+  
+  @@gate("5.5.5.5")
+  
+  @@check("periodStart < periodEnd", "a pay period has to end after it starts")
+  @@check("periodIndex < periodsPerYear", "the period index has to fall inside the year")
+  
+  @@transitions(status,
+    calculate: draft      -> calculated @system,
+    revert:    calculated -> draft,
+    approve:   calculated -> approved   @gate(5),
+    pay:       approved   -> paid       @system
+  )
+  
+  @@log(audit)
+}
+
+/// What one person was paid for one period. A DOCUMENT.
+///
+/// ─── The two invariants, and only one of them is declarable ───────────────
+///
+/// `net = gross - deductions` reads three columns of ONE row, so it is a
+/// `@@check` and the database holds it — against a migration, a seed and
+/// `asSystem()` alike.
+///
+/// *The lines that count sum to the gross and the deductions* reads a CHILD
+/// table, so it is not declarable at all and lives in `api/src/payroll.ts`.
+/// That is the third place in this application enforcing a cross-row invariant
+/// in application code (`Invoice.subtotal`, `JournalEntry`'s balance, this).
+///
+/// **And this one carries the complication phase 0 found in a real payroll**:
+/// the sum is not over every line. `PayslipLine.counts` is false for the
+/// employer's contributions, which appear on the payslip and are not deductions
+/// from the person — so whatever spelling the language grows has to admit a
+/// PREDICATE over the child rather than only an aggregate over it.
+///
+/// ─── Why it names the pay window ──────────────────────────────────────────
+///
+/// `payWindowId` is `FJS-D164` applied: the consumer names the VERSION, never
+/// the parent. A payslip that pointed at the employee would reprint at
+/// whatever they are paid now, which is the exact failure effective dating
+/// exists to prevent.
+model Payslip {
+  id           Int              @id
+  reference    String           @length(3, 40) @unique @upper @immutable @label("Reference")
+  
+  payRunId     Int              @immutable @label("Pay run")
+  payRun       PayRun           @relation(fields: [payRunId], references: [id], onDelete: Cascade)
+  
+  employeeId   Int              @immutable @label("Employee")
+  employee     Employee         @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  
+  /// The terms it was calculated under, not the person's current ones.
+  payWindowId  Int              @immutable @label("Pay window")
+  payWindow    PayWindow        @relation(fields: [payWindowId], references: [id], onDelete: Restrict)
+  
+  periodStart  DateTime         @immutable @label("From")
+  periodEnd    DateTime         @immutable @label("To")
+  
+  /// Every figure `@system` and `@immutable`: written by the calculation, and
+  /// restatable by nothing — the renewal-job argument from `Invoice`, in the
+  /// domain where it matters most.
+  gross        Int              @money(USD) @gte(0) @system @immutable @label("Gross")
+  deductions   Int              @money(USD) @gte(0) @system @immutable @label("Deductions")
+  net          Int              @money(USD) @gte(0) @system @immutable @label("Net")
+  
+  /// What the employer paid ON TOP, and it is deliberately not part of `net`
+  /// or of `deductions`. Employer NI and the employer's pension are a cost to
+  /// the business, never a deduction from the person, and a schema that folded
+  /// them in would have made that mistake for every reader.
+  employerCost Int              @money(USD) @gte(0) @system @immutable @label("Employer cost")
+  
+  /// When it went out, and it is the one column here a job writes AFTER the
+  /// document is frozen — which is why it is `@system` and NOT `@immutable`:
+  /// sending is an act on the payslip rather than part of it.
+  ///
+  /// Its whole job is to make sending idempotent. A payslip that has been sent
+  /// cannot be un-sent, so the send has to be a thing that happens at most
+  /// once, and a stamped column is what a retry reads to find that out.
+  sentAt       DateTime?        @system @label("Sent")
+  
+  lines        PayslipLine[]
+  
+  /// Read and created at 5, and **written only by the system** — `5.5.8.8`.
+  ///
+  /// It was `…9.8` for one phase and that was over-tightened, which
+  /// `FJS-D162` had already said: *a document is the COLUMN tier rather than
+  /// the row tier, because a document still has to MOVE.* Every figure here is
+  /// `@immutable`, so nothing can restate one at any level — and `sentAt` has
+  /// to be stampable by the job that sends it. A `9` on update froze the row
+  /// and took the legitimate write with it.
+  ///
+  /// **Delete at 8 is the other concession, and it is the interesting one.**
+  ///
+  /// `revert: calculated -> draft` exists because a run computed against the
+  /// wrong period is the ordinary mistake, and reverting has to take the
+  /// payslips with it or the recalculation collides on the `@@unique` below.
+  /// So the system must be able to remove one.
+  ///
+  /// **What that gives up is the thing a gate cannot express: a freeze that
+  /// depends on STATE.** A payslip under a draft run was never issued and
+  /// deleting it is ordinary; a payslip under a paid one is a document and
+  /// deleting it is not. `@@gate` is per model, so it cannot tell them apart,
+  /// and the rule lives in `payroll.ts`'s `revertPayRun` — which refuses unless
+  /// the run is `calculated`. That is a fourth cross-row rule in application
+  /// code, and it is `FJS-D162`'s open sub-question met from a new direction:
+  /// what a document may do about DELETE.
+  ///
+  /// `@immutable` is unaffected and still refuses every restatement, so what
+  /// the two 8s buy is removal and one stamp, and nothing else.
+  @@gate("5.5.8.8")
+  
+  /// The declarable half. Three columns of one row, so SQLite holds it.
+  @@check("net = gross - deductions", "a payslip's net has to be its gross less its deductions")
+  
+  /// One payslip per person per run — an ordinary tuple, and the contrast worth
+  /// keeping beside the windows above: neither column is nullable, so this needs
+  /// no predicate. What `@@unique(where:)` buys is the case where the column the
+  /// constraint turns on is null on exactly the rows that matter.
+  @@unique([payRunId, employeeId])
+  
+  @@log(audit)
+}
+
+/// One line of one payslip. SIGNED, and not all of them count.
+///
+/// `amount` is positive for an earning and negative for a deduction, which is
+/// `JournalLine`'s convention and `InventoryMovement`'s before it: a ledger of
+/// totals cannot be summed, and summing is the only thing anybody wants to do
+/// with one.
+///
+/// `counts` is the complication a real payroll has and a designed one does not.
+/// The employer's contributions belong ON the payslip — a person is entitled to
+/// see what their employment costs — and are not deductions from them, so the
+/// invariant is *the lines that count sum to net* rather than *the lines sum to
+/// net*. Frappe spells the same thing `do_not_include_in_total`.
+model PayslipLine {
+  id          Int              @id
+  
+  payslipId   Int              @immutable @label("Payslip")
+  payslip     Payslip          @relation(fields: [payslipId], references: [id], onDelete: Cascade)
+  
+  kind        PayComponentKind @immutable @label("Kind")
+  description String           @length(2, 120) @immutable @label("Description")
+  
+  amount      Int              @money(USD) @immutable @label("Amount")
+  
+  /// Whether it is part of what the person was actually paid. False for the
+  /// employer's own contributions.
+  counts      Boolean          @default(true) @immutable @label("Counts toward net")
+  
+  /// Which band produced it, where one did. Null for basic pay, which comes
+  /// from a pay window rather than from a rate table — so a payslip line can
+  /// always be traced back to the row that decided it.
+  rateId      Int?             @immutable @label("Rate")
+  rate        PayRate?         @relation(fields: [rateId], references: [id], onDelete: Restrict)
+  
+  /// Which CLOSED run this line puts right, where it puts one right.
+  ///
+  /// **This column is the whole of what the language can say about *derived
+  /// from*, and saying it is the finding** (`IDEAS/payroll.md` phase 6). A
+  /// backdated raise makes three already-paid periods wrong; they are corrected
+  /// by arrears lines on a later payslip and never by editing the closed ones,
+  /// which `@immutable` enforces above. So a line exists that was computed from
+  /// rows in another document, and the only trace of that is a foreign key.
+  ///
+  /// What a foreign key does NOT carry: nothing recomputes when the source
+  /// moves, nothing knows the row is stale, and *has this run already been
+  /// corrected* is a query somebody remembered to write rather than a rule.
+  /// Frappe reaches the same answer from the other end — `amendedFrom` is a
+  /// plain self-link on 54 doctypes — which is evidence that a link is the
+  /// state of the art and not that a link is enough.
+  ///
+  /// Null on every ordinary line, which is what separates *what this period
+  /// owed* from *what an earlier one still owes*: the recompute compares
+  /// against a payslip's OWN lines, so an adjustment carried on it cannot be
+  /// mistaken for part of the period it was paid in.
+  correctsPayRunId Int?          @immutable @label("Corrects")
+  correctsPayRun   PayRun?       @relation(fields: [correctsPayRunId], references: [id], onDelete: Restrict)
+  
+  /// The header's ladder with `9` back on update, and the difference is
+  /// deliberate: a payslip has a column something stamps after it is issued and
+  /// a LINE has none, so nothing legitimate ever updates one.
+  @@gate("5.5.9.8")
+  
+  @@check("amount != 0", "a payslip line cannot be for nothing")
+}
+
+/// What `employees.setPay` accepts — a new pay window opening today.
+///
+/// The window is not caller-nameable for `PlanPrice`'s reason: `effectiveFrom`
+/// is the instant the previous window closes, so a caller who could state one
+/// could open a window that overlaps or leaves a gap, and a gap is a date on
+/// which somebody is paid nothing.
+/// `rate` carries no `@money` and cannot: a `type` is a wire shape rather than
+/// a column, and `@money` is a storage decision — the parser refuses it here by
+/// name. The unit is the COLUMN's, which is what the form is generated from
+/// (`PlanPrice` above is the same shape for the same reason).
+type EmploymentPay {
+  basis        PayBasis  @label("Basis")
+  rate         Int       @gte(0) @label("Rate")
+  hoursPerWeek Int       @default(40) @gte(0) @lte(168) @label("Hours a week")
+  
+  /// When the new terms START. Absent means now, which is a raise; stated in
+  /// the past means a BACKDATE, which is a correction to what we believed.
+  ///
+  /// One column for two acts, and that is the honest shape rather than a
+  /// shortcut: the schema holds VALID time — when terms were in force — and
+  /// says nothing about when we learnt them, so *record what is true from now*
+  /// and *correct what we believed about March* are one write to one interval.
+  /// The second axis exists in this application only where a document happened
+  /// to freeze it (`IDEAS/payroll.md` phase 6).
+  effectiveFrom DateTime? @label("From")
+}
+
+/// What `employees.payOn` accepts — the instant to answer as of.
+///
+/// A `type` rather than a bare query parameter because the whole argument of
+/// `employment.ts` is that an as-at read carries an INSTANT and never a
+/// default: a caller who may omit the date is a caller who will one day ask
+/// March's payroll what somebody earns today.
+type AsAtQuery {
+  at DateTime @label("As at")
+}
+
 /// What `inventory.receive` accepts — a delivery arriving at the warehouse.
 ///
 /// A `type` and not a model for the reason `TrackingUpdate` and
@@ -1537,3 +2873,63 @@ model Notification {
 // alone, where auth's `User` does not exist and an extend naming it is refused
 // by name — which empties the schema registry and makes every generated form
 // stop working, with a parse error nobody is looking at as the only clue.
+
+// ─── The identity model ───────────────────────────────────────────────────
+//
+// `@frontierjs/auth`'s `User`, pasted rather than imported, which is the split
+// the package ships: everything an app does next happens to THIS model and to
+// none of the other four — columns get added, relations point at it, and its
+// gate and policies are this shop's to change. `db/user.lite` beside it is what
+// this shop adds: `isStaff`, and who may read the roster.
+//
+// Keep it in step with `packages/auth/db/user.lite`; `fli check`'s
+// `package-model-drift` compares the two and names a column that differs.
+model User {
+  id             String    @id @default(uuid())
+  email          String    @email @unique @lower
+  name           String?   @trim
+  // The two columns a caller must not write about themselves. role is what an
+  // app's own resolver grades on, and marking your own address verified is
+  // skipping the verification. auth().isAdmin is the standing
+  // FrontierGateGetLevel and sessionGateLevel() both read for ADMINISTRATOR(5),
+  // so the level that may delete a person is the level that may set their role
+  // — one idea, not two. asSystem() writes both regardless, which is how this
+  // package sets them.
+  emailVerified  Boolean   @default(false) @allow('write', auth().isAdmin)
+  role           String    @default("user") @allow('write', auth().isAdmin)
+  // The app's own Account, if it has one. STRING, because every id this package
+  // declares is a uuid and an app that followed the scaffold has uuids too — an
+  // Int here could not hold one, which is what made this column unusable for the
+  // one app that reached for it. An app keyed on integers stores the digits;
+  // `SessionContext.accountId` has always been a string either way.
+  accountId      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now()) @updatedAt
+
+  @@db(main)
+  // R.C.U.D. Read, create and update are USER: an app's own screens list its
+  // people, and a signed-in caller edits their own profile. Delete is
+  // ADMINISTRATOR — removing a person is not self-service.
+  //
+  // A GATE IS PER MODEL, NOT PER ROW, so the level alone would say *any
+  // signed-in caller may write any user row*. The policy is what makes it
+  // their own row, and an admin's the exception — the same standing the gate's
+  // delete position names. Together with the two field policies above, this is
+  // the whole shape an app needs: a level for what kind of caller, a policy for
+  // whose row, and a field policy for the columns the level itself is graded
+  // from. A column the caller can write is not a column a level can be graded
+  // from.
+  //
+  // Registration is unaffected: every write this package makes goes through
+  // asSystem(), which is above the ladder. The three models in auth.lite stay
+  // at 8 — they hold the credential material, and that is the case 8 is for.
+  @@gate("4.4.4.5")
+  @@allow('update', id == auth().id || auth().isAdmin)
+  @@log(audit)
+
+  // The principal `auth()` reads. Declaring it is what makes a claim GRADED:
+  // without it `auth().isStff` parses, builds and then denies every reader on
+  // the SQL side while allowing every writer on the JS side (`FJS-666`). The
+  // claims that are on no row — `cartToken` — are declared at `createClient`.
+  @@auth
+}

@@ -575,3 +575,115 @@ describe('asSystem() and row tenancy', () => {
     await expect(sys.note.update({ where: { id: mine.id }, data: { workspaceId: 2 } })).rejects.toThrow()
   })
 })
+
+// ─── the connection pool ─────────────────────────────────────────────────────
+//
+// A pool that closes what it lent out is not a pool (`FJS-640`). The rules
+// these hold, none of which a unit test on one side can see:
+//
+//   1. Eviction never closes a client a request is holding — it used to, and
+//      the result was not a dead client but a MIXED one, because bun's close()
+//      is sqlite3_close_v2 and the statement cache deferred the real close.
+//   2. A LEASE is what makes the common case deterministic: junction pins for
+//      the length of a request, so eviction of a finished one closes now
+//      rather than waiting for a collection that fd pressure does not trigger.
+//   3. A bare get() was never leased, so it is dropped and never closed.
+//   4. A fan-out inserts COLD, or an admin dashboard evicts the tenants being
+//      served.
+
+describe('tenant pool', () => {
+  const POOL_SCHEMA = `
+tenancy { strategy database }
+model Post { id Int @id @default(autoincrement())  title String }
+`
+  const registry = async (maxOpen: number) => {
+    const dir = tmp()
+    return createTenantRegistry({
+      schema: POOL_SCHEMA, resolveFrom: dir, dir,
+      registry: join(dir, 'r.db'), maxOpen,
+    })
+  }
+  const make = async (t: any, n: number) => {
+    for (let i = 0; i < n; i++) {
+      const db = await t.getOrCreate(`t${i}`)
+      await db.post.create({ data: { title: 'x' } })
+    }
+  }
+  // A closed client refuses BY NAME. Asked as "is it closed" rather than "did
+  // it throw", because a throw for any other reason is not this.
+  const isClosed = async (db: any) => {
+    try { await db.post.count(); return false }
+    catch (e: any) { return /client is closed/.test(e.message) }
+  }
+
+  it('does not close a client a lease is holding', async () => {
+    const t = await registry(4)
+    await make(t, 12)
+    const held    = await t.get('t1')
+    const release = t.retain('t1')
+    // Pin every slot, so the pinned entry has to be the victim.
+    const others = []
+    for (let i = 5; i < 9; i++) { await t.get(`t${i}`); others.push(t.retain(`t${i}`)) }
+    await t.get('t11')
+    expect(await isClosed(held)).toBe(false)
+    expect(t.poolStats().overflows).toBeGreaterThan(0)
+    release(); others.forEach(r => r())
+  })
+
+  it('closes a client whose every lease has ended, at the next eviction', async () => {
+    const t = await registry(4)
+    await make(t, 12)
+    const done = await t.get('t1')
+    t.retain('t1')()                    // a request that came and went
+    for (let i = 5; i < 11; i++) await t.get(`t${i}`)
+    expect(await isClosed(done)).toBe(true)
+  })
+
+  it('never closes a client that was never leased', async () => {
+    const t = await registry(4)
+    await make(t, 12)
+    const bare = await t.get('t1')      // an app holding one, with no lease
+    for (let i = 5; i < 11; i++) await t.get(`t${i}`)
+    expect(await isClosed(bare)).toBe(false)
+  })
+
+  it('releasing twice is a no-op, so a finally is safe', async () => {
+    const t = await registry(4)
+    await make(t, 6)
+    const release = t.retain('t1')
+    release(); release()
+    expect(t.poolStats().leased).toBe(0)
+  })
+
+  it('a fan-out does not evict the tenants being served', async () => {
+    const t = await registry(6)
+    await make(t, 40)
+    // Leased and released, so eviction WOULD close these — which is what makes
+    // the assertion mean something. Under a plain LRU a 40-tenant scan through
+    // a 6-slot pool evicts every one of them.
+    const hot = ['t0', 't1', 't2']
+    const held: any[] = []
+    for (const id of hot) { held.push(await t.get(id)); t.retain(id)() }
+    await t.query((db: any) => db.post.count())
+    for (const db of held) expect(await isClosed(db)).toBe(false)
+  })
+
+  it('a fan-out reads every tenant', async () => {
+    const t = await registry(4)
+    await make(t, 20)
+    const rows = await t.query((db: any) => db.post.count())
+    expect(rows.length).toBe(20)
+    expect(rows.every((r: any) => r.result === 1)).toBe(true)
+  })
+
+  it('reports pool state a size cannot', async () => {
+    const t = await registry(4)
+    await make(t, 8)
+    const release = t.retain('t7')
+    const s = t.poolStats()
+    expect(s.maxOpen).toBe(4)
+    expect(s.pooled).toBeLessThanOrEqual(4)
+    expect(s.leased).toBe(1)
+    release()
+  })
+})

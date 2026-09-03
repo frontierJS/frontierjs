@@ -859,13 +859,34 @@ before the rest follow.
    the last two models with no screen; adapters (D) stay last — they need real
    credentials and cost real money.
 
+### Adapters — four screens, each waiting on one (2026-08-30)
+
+**Every boundary is declared and nothing is behind any of them.** `IEdge` and
+`ICloudSpend` were added and `IGit` was widened on 2026-08-30, so all ten
+providers now have an interface, a stub and a portal entry — and `/dns/`,
+`/cloud-spend/`, `/git-activity/` and `/observability/` each report their own
+adapter's state off that portal rather than hardcoding it.
+
+What is left per adapter is the same two steps: a `@frontierjs/conduit` target
+with its token as a `Secret`, then a service in front of it. **No service before
+an adapter** — one returning stub emptiness makes the screen render an empty
+table, which is indistinguishable from a vendor with nothing to report and is the
+exact failure those skeletons exist to avoid.
+
+`docs/ADAPTERS.md` is the pick-up doc: the ten, what each of the four costs, the
+decisions already made (money in minor units, `forServer` keyed on
+`providerServerId`, the job-not-vendor naming, stubs that answer empty) and the
+four drive assertions that go red the day one is wired — which is correct, and
+the fix is a fake vendor on a port of its own, the way `verify:stripe` does it.
+
 ## Verification
 
 | | |
 |---|---|
-| `bun run test` | **144 tests** across 6 files — the data layer (schema, gates, who may write the columns the gate is graded from, encryption, auth compatibility) and the API tier through `@frontierjs/testing`, which is where the standing rules are graded: schema, gates, who may write the columns the gate is graded from, encryption, auth compatibility, the alert-delivery join, what an API key's table may not contain, where a volume's tenancy comes from, that the widget vocabulary is one list rather than two, and that a recipe run keeps the script it ran while the reclaim vocabulary has exactly one home |
+| `bun run test` | **211 tests** across 7 files — the data layer (schema, gates, who may write the columns the gate is graded from, encryption, auth compatibility) and the API tier through `@frontierjs/testing`, which is where the standing rules are graded: schema, gates, who may write the columns the gate is graded from, encryption, auth compatibility, the alert-delivery join, what an API key's table may not contain, where a volume's tenancy comes from, that the widget vocabulary is one list rather than two, and that a recipe run keeps the script it ran while the reclaim vocabulary has exactly one home |
 | `bun run verify` | **302** browser checks across all three realms, incl. an a11y pass on every screen |
 | `bun run verify:build` | the PRODUCTION build — the tags survive comment-stripping, and the page comes up in a real browser |
+| `bun run verify:screens` | **66** browser checks on a database it seeds in a temp directory — the Phase 13 and 14 screens, the audit window, and the adapter states `/admin/adapters/` reports |
 | `bun run db:check` | fails if the migration has drifted from `db/schema.lite` |
 | `bun run typecheck` | 15 diagnostics, at the committed baseline. Was 63 until `db/schema.d.ts` landed — two thirds of the count was rows read out of an untyped Proxy |
 | `bun run db:types` | regenerates `db/schema.d.ts` from the schema (`audience=system`). `bun run test` fails if the committed file is stale |

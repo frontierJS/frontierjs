@@ -59,6 +59,10 @@ const REF  = `ORD-LIVE-${RUN}`
 // The detail screen's own order. Separate because the frame assertion takes a
 // slice of what arrived, and a second order's events would land inside it.
 const REF2 = `ORD-DTL-${RUN}`
+// A third reference, for the recipient-grading section at the end. Minted per
+// run like the other two: `reference` is @unique on a soft-deleting model, so a
+// fixed fixture key passes exactly once per seed (`FJS-530`).
+const REF3 = `ORD-LEAK-${RUN}`
 
 for (const [name, url] of [['api (bun run api)', `${API}/api/health`], ['web (bun run web)', UI]]) {
   try {
@@ -176,6 +180,7 @@ const got = {}
 const t = (label, value) => { got[label] = value }
 let orderId  = null
 let detailId = null
+let leakId   = null
 let auth     = null
 
 try {
@@ -398,13 +403,72 @@ try {
   // negative-controlled: `junction/tests/nodes.test.ts` and
   // `sierra/tests/resource-record.test.js`.
 
+  // ─── Who ELSE received it ───────────────────────────────────────────────
+  //
+  // `FJS-631`. Every assertion above asks whether a broadcast ARRIVED. This one
+  // asks who it arrived at, which for a year had no answer at all: a channel is
+  // a named set of connections and joining one was an ungraded GRANT, so an
+  // anonymous socket received whole `Order` rows — reference, status, subtotal,
+  // tax, total, customerId — while the same caller was answered 401 on
+  // `GET /api/orders`.
+  //
+  // No browser: a raw socket is the only client that can be genuinely
+  // signed OUT here, and every browser drive in this app signs in first, which
+  // is precisely why nothing could see it. `verify:account` asks what a
+  // stranger may read and asks it over HTTP, where the answer was correct.
+  //
+  // Both directions, on ONE publish — a fix that delivers to nobody is
+  // indistinguishable from a fix that works, and the first working version of
+  // this handed the WRONG row to a signed-in recipient while correctly refusing
+  // the anonymous one.
+  {
+    const raw = async (token) => {
+      const ws = new WebSocket(`${API.replace('http', 'ws')}/ws${token ? `?token=${token}` : ''}`)
+      const frames = []
+      await new Promise((res, rej) => {
+        ws.onmessage = e => {
+          const f = JSON.parse(e.data)
+          frames.push(f)
+          if (f.type === 'connected') res()
+        }
+        ws.onerror = rej
+        setTimeout(() => rej(new Error('socket never connected')), 5000)
+      })
+      ws.send(JSON.stringify({ type: 'subscribe', channels: ['orders'] }))
+      await new Promise(r => setTimeout(r, 200))
+      return { ws, orders: () => frames.filter(f => f.event?.startsWith('orders ')).map(f => f.data) }
+    }
+
+    const anon  = await raw(null)
+    const staff = await raw(auth.authorization.replace('Bearer ', ''))
+
+    const made = await (await fetch(`${API}/api/orders`, {
+      method: 'POST', headers: { ...auth, 'content-type': 'application/json' },
+      body: JSON.stringify({ reference: REF3, customerId: 1, total: 1500 }),
+    })).json()
+    leakId = made?.id ?? null
+    await new Promise(r => setTimeout(r, 700))
+    anon.ws.close(); staff.ws.close()
+
+    // The gate, over the same transport, as the control for the frame count.
+    const anonHttp = await fetch(`${API}/api/orders`)
+
+    t('leak.anonymous', {
+      httpStatus: anonHttp.status,
+      frames:     anon.orders().length,
+    })
+    t('leak.staff', {
+      received: staff.orders().some(r => r?.reference === REF3),
+    })
+  }
+
   t('consoleErrors', consoleErrors)
 } catch (e) {
   console.error('\nThe drive threw:', e.message)
   console.error('collected so far:', got)
   process.exitCode = 1
 } finally {
-  for (const id of [orderId, detailId]) {
+  for (const id of [orderId, detailId, leakId]) {
     if (id && auth) await fetch(`${API}/api/orders/${id}`, {
       method: 'DELETE', headers: auth,
     }).catch(() => {})
@@ -463,6 +527,13 @@ const expected = {
   'detail.opened':   { status: 'pending' },
   'http.payDetail':  { status: 200 },
   'detail.sawPay':   { status: 'paid', moved: true, sameDocument: true },
+
+  // `FJS-631`. The anonymous socket receives NO order frame while the same
+  // caller is answered 401 over HTTP — and the staff socket receives the very
+  // same publish, which is what separates a working grader from one that
+  // delivers to nobody.
+  'leak.anonymous':  { httpStatus: 401, frames: 0 },
+  'leak.staff':      { received: true },
 
   'consoleErrors': [],
 }

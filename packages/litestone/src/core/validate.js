@@ -116,6 +116,34 @@ const VALIDATORS = {
   // DIFFERENT number is read back with nothing raised (`FJS-583`). Above int64
   // SQLite itself refuses; between the two there is only this.
   exactRange:  (v)    => Math.abs(typeof v === 'string' ? Number(v) : v) <= EXACT_INT_MAX,
+
+  // The other end of the same axis. `@big` lifts the 2^53 ceiling by carrying
+  // the value as digits rather than as a number, so what it has to refuse is
+  // the three ways a wide value stops being an integer on the way in — a
+  // fraction, digits that are not digits, and a magnitude past what an INTEGER
+  // column holds, which SQLite does not refuse: it silently demotes the column
+  // to REAL and stores 9.22e+18 (measured). The table refuses all three too
+  // (`ddl.js`); this is the half that can say which and why.
+  big:         (v)    => bigDigits(v) != null,
+  bigRange:    (v)    => { const d = bigDigits(v); return d != null && d >= INT64_MIN && d <= INT64_MAX },
+}
+
+// The signed 64-bit range, as BigInt because it does not fit a number — which
+// is the whole subject.
+export const INT64_MAX =  9223372036854775807n
+export const INT64_MIN = -9223372036854775808n
+
+// A `@big` value as an exact integer, or null where it is not one. Three shapes
+// are legitimate and each arrives by a different route: digits (the wire, and
+// what a read hands back), a JS number (application code that knows its values
+// are small), and a BigInt (application code that does not). A float is refused
+// even when it is whole — `1e21` is a number whose integer value is already a
+// guess, and accepting it would put the guess in the column.
+export function bigDigits(v) {
+  if (typeof v === 'bigint') return v
+  if (typeof v === 'number') return Number.isSafeInteger(v) ? BigInt(v) : null
+  if (typeof v === 'string' && /^-?\d+$/.test(v)) return BigInt(v)
+  return null
 }
 
 // What an array column's elements have to be. Only the two kinds SQLite cannot
@@ -155,6 +183,14 @@ export const DEFAULT_MESSAGES = {
   // at 2 places £12.99 is 1299, and at 0 places ¥1235 is 1235.
   scale:       (n) => `must be a whole number of minor units — the column holds ${n} decimal place(s), so 12.99 is 1299`,
   money:       (c) => `must be a whole number of minor units${c ? ` of ${c}` : ''} — 12.99 is 1299`,
+  // A @big column is read back as digits, so the sentence says digits first: a
+  // caller round-tripping a row sends back exactly what it was handed. A number
+  // is still accepted below 2^53 and saying so is the point — the attribute is
+  // for the values that need it, not a new spelling for every integer.
+  big:         () => 'must be a whole number, as a string of digits — a @big column holds values past ' +
+                     `${EXACT_INT_MAX.toLocaleString('en-GB')}, which a JS number cannot carry, so "9007199254740993" and not 9007199254740993`,
+  bigRange:    () => 'must be within the range a 64-bit integer holds ' +
+                     `(${INT64_MIN} to ${INT64_MAX}) — past it SQLite stores the value as a float and it stops being exact`,
   // The range refusal names the bound in MINOR UNITS, because that is what the
   // caller sends, and adds the value it works out to where the places are known.
   // At 2 places the bound is £90bn away and nobody meets it; at 9 it is 9,007,199.
@@ -227,7 +263,29 @@ export function applyTransforms(data, model) {
 // `value` should already be parsed (an object/array, not a JSON string).
 // The path array is built up so error messages point at the right location.
 
-function validateTypedJson(value, typeName, typeMap, strict, path, errors) {
+// `mode` is what the value being graded IS.
+//
+//   'full'    — a whole document. Every required key must be present. This is
+//               every write that states a value, and it is the default.
+//   'partial' — a merge PATCH, where an absent key keeps whatever is stored.
+//   'create'  — a patch that will REPLACE rather than merge, because the target
+//               may be absent. Graded like 'full', and says so: the refusal has
+//               to explain why a partial-looking write was not treated as one,
+//               or it reads as the validator being wrong.
+//
+// The distinction only exists because `$merge` compiles to `json_patch`, and
+// the thing that makes a partial grading SOUND is not obvious: RFC 7396
+// replaces rather than merges when the target at a path is absent or null. So
+// a patch aimed at an OPTIONAL nested field is a create however partial it
+// looks, and the required keys of that type are not optional after all —
+// measured, and it was the counterexample that falsified the first design of
+// this (IDEAS/json-document-writes.md § The claim, verified).
+//
+// The child's mode therefore follows the child's own optionality, and it is
+// decidable here with no read of the stored row: a REQUIRED field is present
+// in every valid parent, by induction from the column's own type, so a patch
+// into it really is partial; an OPTIONAL one may be absent, so it is a create.
+function validateTypedJson(value, typeName, typeMap, strict, path, errors, mode = 'full') {
   const type = typeMap?.get(typeName)
   if (!type) return  // unknown type — should have been caught at parse time
 
@@ -256,14 +314,28 @@ function validateTypedJson(value, typeName, typeMap, strict, path, errors) {
     const fieldValue = value[field.name]
     const fieldPath  = [...path, field.name]
 
-    // Required vs optional
-    if (fieldValue == null) {
+    // Required vs optional. Absent and explicitly-null are one case for a whole
+    // document and two different ones for a patch: absent means *leave it*,
+    // and null means *delete it* — RFC 7396's rule, which is Invariant 9's
+    // word one level down.
+    const present = field.name in value && fieldValue !== undefined
+    if (!present) {
+      if (mode === 'partial') continue
+      // @required("…") carries the wording for this one rule. It does not
+      // create it — the absence of `?` above did — so an @required on an
+      // optional field is a parse error rather than a silently dead message.
+      const custom = field.attributes?.find(a => a.kind === 'required')?.message
+      if (!field.type.optional) errors.push({ path: fieldPath, message: custom ?? (mode === 'create'
+        ? `is required — the value being merged into may not be there, and json_patch replaces rather than merges when it is absent, so this write creates a whole ${typeName} and needs every required key`
+        : 'is required') })
+      continue
+    }
+    if (fieldValue === null) {
       if (!field.type.optional) {
-        // @required("…") carries the wording for this one rule. It does not
-        // create it — the absence of `?` above did — so an @required on an
-        // optional field is a parse error rather than a silently dead message.
         const custom = field.attributes?.find(a => a.kind === 'required')?.message
-        errors.push({ path: fieldPath, message: custom ?? 'is required' })
+        errors.push({ path: fieldPath, message: mode === 'partial'
+          ? (custom ?? `null would delete '${field.name}', and type ${typeName} requires it`)
+          : (custom ?? 'is required') })
       }
       continue
     }
@@ -286,7 +358,13 @@ function validateTypedJson(value, typeName, typeMap, strict, path, errors) {
         // Nested Json @type(Other) — recurse
         const nestedTypeAttr = field.attributes.find(a => a.kind === 'type')
         if (nestedTypeAttr) {
-          validateTypedJson(fieldValue, nestedTypeAttr.name, typeMap, nestedTypeAttr.strict !== false, fieldPath, errors)
+          // A patch stays a patch only into a field guaranteed to be there.
+          // Into an optional one json_patch replaces, so it is a create — and
+          // everything below a create is being created too.
+          const childMode = mode === 'partial'
+            ? (field.type.optional ? 'create' : 'partial')
+            : mode === 'create' ? 'create' : 'full'
+          validateTypedJson(fieldValue, nestedTypeAttr.name, typeMap, nestedTypeAttr.strict !== false, fieldPath, errors, childMode)
         }
       }
     }
@@ -299,6 +377,18 @@ function validateTypedJson(value, typeName, typeMap, strict, path, errors) {
       errors.push({ path: [...path, ...err.path], message: err.message })
     }
   }
+}
+
+/**
+ * Grade a `$merge` patch against a type. `rootMode` is 'partial' where the
+ * column is guaranteed to hold a valid document (a NOT NULL typed column) and
+ * 'full' where it may stand at null, because json_patch replaces a null target
+ * rather than merging into it.
+ */
+export function validateJsonPatch(patch, typeName, typeMap, strict, path, rootMode) {
+  const errors = []
+  validateTypedJson(patch, typeName, typeMap, strict, path, errors, rootMode)
+  return errors
 }
 
 // ─── Field validation ─────────────────────────────────────────────────────────
@@ -354,6 +444,17 @@ export function validateField(fieldName, value, attributes) {
         if (!VALIDATORS[kind](value)) { pass = false; defaultMsg = unit; break }
         if (!VALIDATORS.exactRange(value))
           errors.push({ path: [fieldName], message: DEFAULT_MESSAGES.exactRange(kind === 'scale' ? attr.places : null) })
+        continue
+      }
+
+      // Same two-refusal shape as @scale above and for the same reason: *this is
+      // not a whole number* and *this whole number does not fit* want different
+      // sentences, and the range one is the framework's own refusal about the
+      // column rather than the rule the author wrote about its meaning.
+      case 'big': {
+        if (!VALIDATORS.big(value))      { pass = false; defaultMsg = DEFAULT_MESSAGES.big(); break }
+        if (!VALIDATORS.bigRange(value))
+          errors.push({ path: [fieldName], message: DEFAULT_MESSAGES.bigRange() })
         continue
       }
 
@@ -498,6 +599,10 @@ export function buildValidationMap(schema) {
     // here the model skips the pass entirely and the refusal comes from SQLite
     // naming a physical column.
     'scale','money',
+    // Same reason as the pair above: without it here the model skips the pass
+    // and a caller sending `1.5` to a @big column is refused by the CHECK,
+    // which names a physical column and no way to fix it.
+    'big',
   ])
 
   const map = {}

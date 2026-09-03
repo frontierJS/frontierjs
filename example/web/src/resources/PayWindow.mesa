@@ -1,0 +1,51 @@
+<script module>
+  // web/src/resources/PayWindow.mesa — the Resource layer.
+  //
+  // Named for the model, exporting the accessor — see Order.mesa.
+  //
+  // **The second `PlanVersion` in this application, over an unrelated noun.**
+  // Both are *a value that was true over an interval*: `rate` and
+  // `effectiveFrom` are `@immutable`, so the Data boundary refuses a PATCH
+  // naming either by name, and changing what somebody is paid is not an edit at
+  // all — it is closing the open window and opening the next in one
+  // transaction (`employees.setPay`).
+  //
+  // Two hand-written arrangements of the same four columns is the argument for
+  // `FJS-D164`, and it is only an argument because they are the same
+  // arrangement rather than two dialects.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const payWindows = createResource('pay-windows', { model: 'PayWindow' })
+</script>
+
+<script>
+  // …and the markup half is the form a raise is typed into (Invariant 18).
+  //
+  // A CREATE form over `PayWindow`, narrowed, with the request replaced —
+  // exactly the shape the plan screen uses for `reprice`. `@immutable` reaches
+  // the client as `readOnly` in the UPDATE schema ALONE, so a create form still
+  // offers a rate box and an edit form would not.
+  //
+  // **`rate` is `@money(USD)` and means two different magnitudes** — an annual
+  // salary under `salary`, an hourly rate under `hourly` — which the money
+  // control cannot know and does not need to: it converts cents to dollars
+  // either way, and the discriminator is the box beside it.
+  import Form   from '@frontierjs/ui/components/forms/Form.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let record      = undefined
+  export let method      = undefined
+  export let submitLabel = 'Save'
+  export let cancelHref  = null
+  export let oncancel    = null
+  export let submitId    = undefined
+  export let actions     = null
+  export let only        = undefined
+  export let onsubmit    = undefined
+</script>
+
+<Form resource={payWindows} bind:record={record} {method} {only} {onsubmit} {actions} {...$attributes}>
+  <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
+  <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
+</Form>

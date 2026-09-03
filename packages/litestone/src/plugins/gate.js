@@ -219,6 +219,13 @@ export class GatePlugin extends Plugin {
     // The caller passes its own ctx: asSystem() spreads this ctx into a new
     // object, and _resolver keys its cache on identity.
     ctx.levelFor = (model, forCtx) => this._resolver(forCtx ?? ctx)(model)
+
+    // The DECLARED level beside the caller's own, for the same reason: a second
+    // reading of `@@gate` is how an artefact comes to certify access the plugin
+    // does not grant. `$readAs` is the caller — it grades a row for somebody who
+    // is not this client's principal, so it needs both halves and may spell
+    // neither. `null` where the model declares no gate for that operation.
+    ctx.gateFor = (model, op) => this._accessMap[model]?.[op] ?? null
   }
 
   // ── Resolve level for this request's auth user ──────────────────────────────

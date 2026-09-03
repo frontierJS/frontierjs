@@ -6,7 +6,11 @@
 
 import { isKnownCurrency } from '@frontierjs/toolbelt/units'
 import { expandCapabilityType } from './capabilities.js'
+// One owner for the range a value round-trips through a JS number in — the
+// validator's, so a refusal here and a refusal at the boundary name one number.
+import { EXACT_INT_MAX } from './validate.js'
 import { compileStatic, policyExprToString } from './policy.js'
+import { sealedStates, sealFaults } from './seal.js'
 
 // ─── Tokenizer ────────────────────────────────────────────────────────────────
 
@@ -463,6 +467,7 @@ class Parser {
     let retention   = null
     let maxSize     = null
     let logModel    = null   // 'auto' (implicit) or a model name (user-defined)
+    let announce    = 'inProcess'
 
     while (!this.check(TK.RBRACE)) {
       const key = this.eat(TK.IDENT).value
@@ -495,6 +500,25 @@ class Parser {
           logModel = val
           break
         }
+        // How far a write announcement travels. `inProcess` is a callback list
+        // on this client and reaches nobody else, which is right for one
+        // process and silently wrong for two: a worker's writes reached a
+        // serving process's subscribers never (`FJS-642`). `crossProcess`
+        // records each announcement in the database so every process on this
+        // MACHINE sharing the file sees it.
+        //
+        // The word is `announce` because that is what this package calls the
+        // thing everywhere — `announceDataWrites`, `announceBulk`, the
+        // announcement point. The per-call `announce` option is the other axis,
+        // what SHAPE to announce; this is how far it reaches.
+        case 'announce': {
+          const val = this.eat(TK.IDENT).value
+          if (val !== 'inProcess' && val !== 'crossProcess')
+            throw new ParseError(
+              `database '${name}': announce must be 'inProcess' or 'crossProcess', got '${val}'`, this.peek())
+          announce = val
+          break
+        }
         default:
           throw new ParseError(`database '${name}': unknown property '${key}'`, this.peek())
       }
@@ -506,7 +530,15 @@ class Parser {
     if (!path)
       throw new ParseError(`database '${name}' must declare a 'path'`, this.peek())
 
-    return { name, path, driver, replication, retention, maxSize, logModel }
+    // The mechanism is a table in this database read by another process's
+    // client. A jsonl or logger database is a FILE with no reader and no
+    // transaction, so the declaration could be written and would do nothing.
+    if (announce === 'crossProcess' && driver !== 'sqlite')
+      throw new ParseError(
+        `database '${name}': announce crossProcess needs driver 'sqlite' — a '${driver}' database is a log file, ` +
+        `so there is no table to record an announcement in and no transaction to record it with`, this.peek())
+
+    return { name, path, driver, replication, retention, maxSize, logModel, announce }
   }
 
   // ── Tenancy block ────────────────────────────────────────────────────────────
@@ -992,7 +1024,14 @@ class Parser {
 
     switch (name) {
       case 'id':       return { kind: 'id' }
-      case 'unique':   return { kind: 'unique' }
+      // `@unique` takes no argument but one: `global`, which says the value is
+      // unique across the whole installation and not per tenant. It exists so
+      // the tenancy warning below can be answered rather than lived with — a
+      // token or a public subdomain is legitimately global, and a permanent
+      // warning on a correct schema is what teaches people to stop reading
+      // them. Silent outside `tenancy { strategy row }`, where it is simply
+      // what every unique already is.
+      case 'unique':   return { kind: 'unique', global: this.maybeEatGlobalArg() }
       case 'map':      return { kind: 'map',       name: this.parseParenString() }
       case 'default':  return { kind: 'default',   value: this.parseDefault() }
       case 'relation': return { kind: 'relation',  ...this.parseRelation() }
@@ -1075,6 +1114,18 @@ class Parser {
       // that shape, and it is not rare.
       case 'keep': return { kind: 'keep' }
 
+      // On a hasMany field of a model that declares a @seals move: these
+      // children are part of the DOCUMENT, so once the parent seals they may
+      // not be created, changed or removed. It goes on the LIST side because
+      // sealing is the parent's event — the child has no way to know when its
+      // parent's machine moved, and a marker on the child would have to name a
+      // state, which is the second source of truth @seals exists to avoid.
+      //
+      // Explicit, never inferred: every child relation on a sealing model looks
+      // sealable and they are not. `payments` on an issued invoice is exactly
+      // the row that must keep arriving.
+      case 'sealed': return { kind: 'sealed' }
+
       // ── Field visibility + access control ─────────────────────────────────
       case 'omit': {
         // @omit        → skip lists, include on findUnique
@@ -1116,6 +1167,33 @@ class Parser {
         if (this.check(TK.LPAREN))
           throw new ParseError('@system takes no arguments — it is a lock, not a level', this.peek())
         return { kind: 'system' }
+      }
+
+      // @immutable → written once, at create, and never again by anybody.
+      //
+      // What a DOCUMENT is (`FJS-D162`): an invoice's number, the instant it
+      // was issued and the total it was issued for are a statement about a
+      // moment, and a correction is a credit note rather than an edit.
+      //
+      // It refuses the KEY rather than comparing the value, which is what makes
+      // it cheap and is also the only thing it could do — nothing in this
+      // language can see the stored row beside the incoming one. An update
+      // payload naming the column is refused whether or not the value differs;
+      // *I sent the same number back* is not a defence a rule this shape can
+      // hear, and a form that round-trips a frozen column is a form that would
+      // have overwritten it the day somebody changed the box.
+      //
+      // It is the CONSTRAINT tier: asSystem() does not drop it, where the gate,
+      // the row policies and @guarded all fall away there. A renewal job and a
+      // payment settler both run as system, so a rule they may drop is a rule
+      // absent from every caller that actually writes an invoice.
+      case 'immutable': {
+        if (this.check(TK.LPAREN))
+          throw new ParseError(
+            '@immutable takes no arguments — a column is written once or it is not. ' +
+            'For a row that freezes when it reaches a state, freeze the columns and let ' +
+            '@@transitions own the state column.', this.peek())
+        return { kind: 'immutable' }
       }
       case 'capability': {
         // @capability — writing THIS column is its own capability.
@@ -1268,6 +1346,15 @@ class Parser {
       // wrong (`FJS-D142`).
       case 'scale':     return { kind: 'scale', places: this.parseParenNumber() }
       case 'money':     return this.parseMoney()
+
+      // `@big` — the column holds 64 bits and the VALUE is allowed to use them.
+      // The storage was always 64-bit; what was not was the crossing, which goes
+      // through a JS number and rounds past 2^53 in both directions (`FJS-643`).
+      // So a wide column hands its value over as a decimal STRING, which is what
+      // node-postgres does with int8 and what mysql2's `bigNumberStrings` is
+      // for: a BigInt would be exact and `JSON.stringify` throws on one, which
+      // is every response, every frame and every audit snapshot.
+      case 'big':       return { kind: 'big' }
       case 'updatedBy': {
         // @updatedBy              → stamps ctx.auth.id on every update
         // @updatedBy(auth().field) → stamps ctx.auth[field] on every update
@@ -1705,6 +1792,21 @@ class Parser {
     return val
   }
 
+  // `@unique` and `@unique(global)`. The bare form is by far the common one, so
+  // the parens are optional and their absence is not an error — which is why
+  // this peeks rather than eats. Anything else inside them is refused by name,
+  // because a mis-spelled modifier that parsed as nothing would be a schema
+  // that says less than its author wrote.
+  maybeEatGlobalArg() {
+    if (!this.check(TK.LPAREN)) return false
+    this.eat(TK.LPAREN)
+    const word = this.eat(TK.IDENT).value
+    if (word !== 'global')
+      throw new ParseError(`@unique: unknown argument '${word}' — the only one is 'global'`, this.peek())
+    this.eat(TK.RPAREN)
+    return true
+  }
+
   // ── @@gate argument parser ──────────────────────────────────────────────────
   // Supports two forms:
   //   "2.4.4.6"                                — numeric dotted string (existing)
@@ -2046,6 +2148,35 @@ class Parser {
         this.eat(TK.RPAREN)
         return { kind: 'index', fields, sorts, where }
       }
+      // @@id([orgId, userId]) — the row's identity IS the tuple
+      //
+      // Sugar over marking each named field `@id`, and the desugar is what makes
+      // it cheap: every reader downstream already handles several `@id` fields
+      // (the composite PRIMARY KEY, `findUnique` over both columns, the
+      // `UniqueConflictError` naming them together, the implicit m2m join table,
+      // which has been one of these since it was written), so nothing had to
+      // learn a new shape.
+      //
+      // What it adds over two `@id` fields is the ORDER. A primary key builds an
+      // implicit index and an implicit index is prefix-matched, so
+      // `PRIMARY KEY (orgId, userId)` answers `WHERE orgId = ?` and the swap does
+      // not — and with field-level `@id` alone the key order is the field
+      // DECLARATION order, which is a different thing from the key. That is not
+      // theoretical: `litestone introspect` read `PRIMARY KEY ("userId","orgId")`
+      // off a real table, emitted `@id` on each field in COLUMN order, and the
+      // schema it wrote built the key the other way round with nothing said
+      // (`FJS-561`).
+      //
+      // It is also the spelling every foreign schema uses, so `litestone import`
+      // can carry the key instead of inventing a surrogate and grading the loss.
+      case 'id': {
+        this.eat(TK.LPAREN)
+        const fields = this.parseFieldList()
+        this.eat(TK.RPAREN)
+        if (!fields.length)
+          throw new ParseError(`@@id: expected at least one field`, this.peek())
+        return { kind: 'id', fields }
+      }
       // @@unique([a, b])                        — the tuple identifies a row
       // @@unique([a, b], nullsDistinct: true)   — and rows with a NULL member are
       //                                           deliberately not constrained
@@ -2055,21 +2186,59 @@ class Parser {
       // that is the shape it wants — validate() refuses a nullable member
       // otherwise, because the silent version is a constraint an app believes
       // it has.
+      // @@unique([a, b], where: <expr>)         — …and only over the rows the
+      //                                           predicate admits
+      //
+      // ONE WORD, TWO NODE KINDS, because they are two mechanisms. A plain
+      // @@unique rides inside CREATE TABLE as `UNIQUE (a, b)`; no SQL dialect
+      // takes a predicate on a table constraint, so the partial form is a
+      // standalone `CREATE UNIQUE INDEX … WHERE` and migrates by one DROP and
+      // one CREATE where the other rebuilds the table. Emitting one kind whose
+      // migration cost silently varies with whether an argument is present is
+      // the shape nobody can reason about while writing it — and the split is
+      // what makes every reader below correct without being edited: the table
+      // emitter cannot pick one up, and a one-to-one relation cannot be
+      // satisfied by a constraint that holds over only some rows.
+      //
+      // Django makes the same split under the same word and documents it.
       case 'unique': {
         this.eat(TK.LPAREN)
         const fields = this.parseFieldList()
         let nullsDistinct = false
+        let where = null
+        let global_ = false
         if (this.maybeEat(TK.COMMA)) {
           const argName = this.eat(TK.IDENT).value
-          if (argName !== 'nullsDistinct')
-            throw new ParseError(`@@unique: unknown argument '${argName}' — expected 'nullsDistinct'`, this.peek())
+          if (argName !== 'nullsDistinct' && argName !== 'where' && argName !== 'global')
+            throw new ParseError(`@@unique: unknown argument '${argName}' — expected 'nullsDistinct', 'where' or 'global'`, this.peek())
           this.eat(TK.COLON)
-          if (!this.check(TK.BOOL))
-            throw new ParseError(`@@unique(nullsDistinct: …): expected true or false`, this.peek())
-          nullsDistinct = this.eat(TK.BOOL).value === true
+          if (argName === 'where') {
+            where = this.parsePolicyExpr()
+          } else if (argName === 'global') {
+            if (!this.check(TK.BOOL))
+              throw new ParseError(`@@unique(global: …): expected true or false`, this.peek())
+            global_ = this.eat(TK.BOOL).value === true
+          } else {
+            if (!this.check(TK.BOOL))
+              throw new ParseError(`@@unique(nullsDistinct: …): expected true or false`, this.peek())
+            nullsDistinct = this.eat(TK.BOOL).value === true
+          }
         }
         this.eat(TK.RPAREN)
-        return { kind: 'uniqueIndex', fields, nullsDistinct }
+        // Refused together rather than ranked. `nullsDistinct` says the rows
+        // with a NULL member are deliberately unconstrained and a predicate
+        // decides which rows are constrained at all: a predicate that already
+        // excludes them makes the flag moot, and one that does not is asking
+        // two questions of one declaration. Refuse until somebody produces the
+        // case, which is cheaper than picking a precedence nobody can read off
+        // the line.
+        if (where && nullsDistinct)
+          throw new ParseError(
+            `@@unique: 'where' and 'nullsDistinct' cannot both be given — a predicate already says which rows are ` +
+            `constrained. Put the NULL rows in or out of the predicate instead`, this.peek())
+        return where
+          ? { kind: 'partialUnique', fields, where, global: global_ }
+          : { kind: 'uniqueIndex', fields, nullsDistinct, global: global_ }
       }
       // @@arc([orderId, productId])                  — exactly one is set
       // @@arc([orderId, productId], optional: true)  — at most one is set
@@ -2571,11 +2740,19 @@ class Parser {
       //             call. The move still runs on the caller's own client, so the
       //             gate, the row policies and the audit actor all survive —
       //             which is the whole difference from asSystem().
+      //   @seals    the move is the moment this row becomes a DOCUMENT. After it
+      //             the row's @sealed children may not be created, changed or
+      //             removed, and its @immutable columns freeze. A seal is an
+      //             event rather than a state, which is why it is declared on
+      //             the move rather than as a predicate over the state column —
+      //             a predicate is a second answer to a question @@transitions
+      //             already answers, and the two can disagree.
       //
       // They compose: `@system @gate(5)` is a move the engine decides, on behalf
       // of a caller who must still be senior enough to ask for it.
       let gate   = null
       let system = false
+      let seals  = false
       while (this.check(TK.AT)) {
         this.eat(TK.AT)
         const attr = this.eat(TK.IDENT)
@@ -2601,8 +2778,19 @@ class Parser {
           continue
         }
 
+        if (attr.value === 'seals') {
+          if (seals)
+            throw new ParseError(`@@transitions(${field}) '${name}': @seals stated twice`, attr)
+          if (this.check(TK.LPAREN))
+            throw new ParseError(
+              `@@transitions(${field}) '${name}': @seals takes no argument — WHICH children seal is @sealed on ` +
+              `the relation field, and WHEN is this move.`, attr)
+          seals = true
+          continue
+        }
+
         throw new ParseError(
-          `@@transitions(${field}): unknown transition attribute '@${attr.value}' — only @gate and @system are supported`, attr)
+          `@@transitions(${field}): unknown transition attribute '@${attr.value}' — only @gate, @system and @seals are supported`, attr)
       }
 
       // 8 and 9 are sentinels meaning *no caller reaches this*, which is the
@@ -2616,7 +2804,7 @@ class Parser {
 
       if (name in transitions)
         throw new ParseError(`@@transitions(${field}): duplicate transition name '${name}'`, this.peek())
-      transitions[name] = { from, to, gate, system }
+      transitions[name] = { from, to, gate, system, seals }
     } while (this.maybeEat(TK.COMMA))
 
     this.eat(TK.RPAREN)
@@ -2872,6 +3060,16 @@ function normalisePolicyOps(str, token) {
 // them and `test/catalog.test.ts` binds the two.
 export const ALLOWED_TOKENIZERS   = new Set(['unicode61', 'ascii', 'porter', 'trigram'])
 export const ON_DELETE_ACTIONS    = new Set(['Cascade', 'SetNull', 'Restrict', 'NoAction'])
+// Why a database named by `@@log` is not one a trail can be written to. Two
+// different mistakes with two different fixes, and a single "must use driver
+// logger" told half of them the wrong one.
+function logTargetHint(schema, dbName) {
+  const db = schema.databases.find(d => d.name === dbName)
+  if (db?.driver === 'jsonl')
+    return `'${dbName}' is 'driver jsonl', which is ordinary append-only storage. A trail is 'driver logger', or a SQLite database declaring 'model <Name>'`
+  return `'${dbName}' is 'driver ${db?.driver ?? 'sqlite'}' and declares no log model. Either add 'model <Name>' to it, naming a model assigned to it with @@db(${dbName}), or write the trail to a 'driver logger' database`
+}
+
 export const DATABASE_DRIVERS     = new Set(['sqlite', 'jsonl', 'logger'])
 
 export const TRAIT_FORBIDDEN_FIELD_ATTRS = new Set(['id'])
@@ -3125,8 +3323,10 @@ export const TYPE_FORBIDDEN_FIELD_ATTRS = new Set([
   'id', 'unique', 'map', 'relation', 'generated', 'from',
   'encrypted', 'guarded', 'secret', 'updatedAt', 'version', 'allow', 'deny',
   // Storage facts about a COLUMN. A `type` describes a shape inside a Json
-  // column or a custom method's input, where there is no column to scale.
-  'scale', 'money',
+  // column or a custom method's input, where there is no column to scale — and
+  // no int64 either, since a `type` is carried as JSON and JSON's number is the
+  // double `@big` exists to get around.
+  'scale', 'money', 'big',
   // Not because the SET has no table — it does — but because nothing on this
   // path runs the check. A `type` describes a shape inside a Json column or a
   // custom method's declared input; neither reaches litestone's write path,
@@ -3283,6 +3483,105 @@ function expandHasTemplatesAttributes(schema) {
       comments: [],
     })
   }
+}
+
+// ── @@id expansion ────────────────────────────────────────────────────────────
+// `@@id([orgId, userId])` → `@id` on each named field, in the order named.
+//
+// Pure desugaring, and that is the whole design: several `@id` fields is a shape
+// every reader in this package already handles, so from here on nothing knows
+// the attribute existed. The attribute itself STAYS on the model, read by one
+// caller — `tableConstraints` in ddl.js — because the field list is the only
+// place the key's column ORDER is written down, and field declaration order is
+// a different fact.
+//
+// Refused rather than merged where the two spellings are both present: `@@id`
+// and a field-level `@id` on the same model are two answers to *what identifies
+// a row*, and the merge would silently pick one. That is the same rule
+// REPEATABLE_MODEL_ATTRS applies to a second `@@id`.
+function expandCompositeId(schema) {
+  const errors    = []
+  // A relation is still a `scalar` carrying a model name at this point —
+  // `validate()` is what promotes it — so the type name is what can be asked,
+  // not `type.kind`.
+  const modelNames = new Set(schema.models.map(m => m.name))
+  const enumNames  = new Set((schema.enums ?? []).map(e => e.name))
+  const VIRTUAL    = ['computed', 'transient', 'from', 'derived']
+
+  for (const model of schema.models) {
+    const attrs = model.attributes.filter(a => a.kind === 'id')
+    if (!attrs.length) continue
+    if (attrs.length > 1) {
+      errors.push(
+        `Model '${model.name}': @@id declared ${attrs.length} times — a row has one identity. ` +
+        `Name every column of the key in a single @@id([...]).`)
+      continue
+    }
+    const attr = attrs[0]
+
+    const declared = model.fields.filter(f => f.attributes.some(a => a.kind === 'id'))
+    if (declared.length) {
+      errors.push(
+        `Model '${model.name}': @@id([${attr.fields.join(', ')}]) and @id on '${declared[0].name}' both say what identifies a row — ` +
+        `use one. @@id is the spelling when the key is a tuple, because it states the key's column ORDER; ` +
+        `@id on the field is the spelling for a single-column key.`)
+      continue
+    }
+
+    const seen = new Set()
+    let bad = false
+    for (const name of attr.fields) {
+      if (seen.has(name)) {
+        errors.push(`Model '${model.name}': @@id names '${name}' twice`)
+        bad = true
+        continue
+      }
+      seen.add(name)
+
+      const field = model.fields.find(f => f.name === name)
+      // An unknown name is reported by the generic model-attribute check in
+      // `validate()`, which already says it for every attribute carrying a field
+      // list. Saying it again here would print the same fault twice.
+      if (!field) { bad = true; continue }
+
+      // A primary key is over COLUMNS. Everything below is a field that is not
+      // one, and each fails differently if allowed through: a relation would put
+      // `@id` on a field with no column and emit a key naming nothing; an array
+      // is JSON TEXT, so the key would be over a serialisation; a virtual field
+      // is computed at read time and has nothing to be keyed by.
+      const why =
+        modelNames.has(field.type.name) && !enumNames.has(field.type.name)
+          ? `the relation '${name}' — name the foreign key field instead`
+        : field.type.array
+          ? `the array '${name}' — an array is stored as JSON text, so a key over it is a key over a serialisation`
+        : VIRTUAL.find(k => field.attributes.some(a => a.kind === k))
+          ? `'${name}', which is @${VIRTUAL.find(k => field.attributes.some(a => a.kind === k))} — it is not a stored column`
+        : null
+      if (why) {
+        errors.push(`Model '${model.name}': @@id names ${why}. A primary key is over columns.`)
+        bad = true
+        continue
+      }
+
+      // SQLite lets a PRIMARY KEY column hold NULL on a rowid table, which is
+      // the one place it departs from the standard — so a nullable member is a
+      // key that does not identify anything, silently. Refused for the reason
+      // `@@unique` refuses one (FJS-D130), and more sharply: there is no
+      // `nullsDistinct` reading of a primary key.
+      if (field.type.optional) {
+        errors.push(
+          `Model '${model.name}': @@id names the optional field '${name}' — a primary key member cannot be nullable. ` +
+          `Make it required, or use @@unique([...], nullsDistinct: true) if the tuple is merely unique when present.`)
+        bad = true
+      }
+    }
+    if (bad) continue
+
+    for (const name of attr.fields)
+      model.fields.find(f => f.name === name).attributes.push({ kind: 'id' })
+  }
+
+  return errors
 }
 
 // ── @@createdBy / @@updatedBy expansion ────────────────────────────────────────
@@ -3579,6 +3878,68 @@ function expandTenancy(schema) {
       `tenancy: ${missing.length} model(s) declare no '${t.column}', hold no relation to a model that does, ` +
       `and are NOT scoped to a tenant — ${missing.join(', ')}. Add the column, relate them to a scoped model, ` +
       `or mark each @@tenant(none) to say it spans tenants on purpose.`
+    )
+
+  // ── a unique that is not per tenant ──────────────────────────────────────
+  //
+  // The desugar above guards READS. A `@unique` guards WRITES, and nothing here
+  // touched it — so on a scoped model an ordinary `slug String @unique` is
+  // unique across the whole INSTALLATION: two tenants cannot both hold
+  // "launch", and the second is refused by a message naming the value, which
+  // tells them a row they may not read exists. That is the one thing
+  // `docs/access-control.md` says a refusal must never do.
+  //
+  // The test is TRANSITIVE and has to be, or it fires on correct schemas. A
+  // unique is per-tenant if its columns carry the tenant column OR a foreign
+  // key reaching a model that is itself scoped — `[serverId, name]` is
+  // per-tenant because a Server is. `scopedSet` is the fixpoint above, so a
+  // grandchild resolves for free. Measured against `basecamp` before this was
+  // written: 12 of its 23 name the column, 10 more reach a scoped parent, and
+  // the last is a `@guarded` token that is global on purpose — so the naive
+  // *must name the tenant column* rule would have reported ten correct
+  // declarations and been switched off.
+  //
+  // A warning rather than an error: the global reading is legitimate (a token,
+  // a public subdomain), and `@unique(global)` / `@@unique([…], global: true)`
+  // is how a schema says it meant that. Named all three ways out, the way the
+  // `@@softDelete` cascade footgun does, because forgetting the column and
+  // meaning it look identical from here.
+  const fkColumnsOf = (model) => {
+    const out = new Map()
+    for (const f of model.fields) {
+      if (f.type.array || !modelNames.has(f.type.name)) continue
+      const rel = f.attributes.find(a => a.kind === 'relation' && a.fields)
+      if (!rel) continue
+      for (const col of rel.fields) out.set(col, f.type.name)
+    }
+    return out
+  }
+
+  const crossTenantUniques = []
+  for (const model of schema.models) {
+    if (!scopedSet.has(model.name)) continue
+    const fks    = fkColumnsOf(model)
+    const perTenant = (cols) =>
+      cols.includes(t.column) || cols.some(c => scopedSet.has(fks.get(c)))
+
+    for (const f of model.fields) {
+      const u = f.attributes.find(a => a.kind === 'unique')
+      if (u && !u.global && !perTenant([f.name]))
+        crossTenantUniques.push(`${model.name}.${f.name}`)
+    }
+    for (const a of model.attributes) {
+      if (a.kind !== 'uniqueIndex' && a.kind !== 'partialUnique') continue
+      if (a.global || perTenant(a.fields)) continue
+      crossTenantUniques.push(`${model.name}([${a.fields.join(', ')}])`)
+    }
+  }
+
+  if (crossTenantUniques.length)
+    warnings.push(
+      `tenancy: ${crossTenantUniques.length} unique constraint(s) on tenant-scoped models are unique across ALL ` +
+      `tenants — ${crossTenantUniques.join(', ')}. Two tenants cannot hold the same value, and the refusal names ` +
+      `it to the second. Add '${t.column}' to the constraint, or a key reaching a scoped model, ` +
+      `or mark it global (@unique(global) / @@unique([…], global: true)) to say it spans tenants on purpose.`
     )
 
   if (!scoped.length)
@@ -4134,7 +4495,7 @@ function validate(schema) {
       // Json fields can't be part of indexes (warn, not error)
       if (field.type.name === 'Json') {
         const inIndex = model.attributes.some(a =>
-          (a.kind === 'index' || a.kind === 'uniqueIndex') && a.fields.includes(field.name)
+          (a.kind === 'index' || a.kind === 'uniqueIndex' || a.kind === 'partialUnique') && a.fields.includes(field.name)
         )
         if (inIndex)
           warnings.push(`Model '${model.name}': Json field '${field.name}' used in index — SQLite will index the raw JSON text`)
@@ -4391,6 +4752,15 @@ function validate(schema) {
   const dbNames    = new Set(schema.databases.map(d => d.name))
   const jsonlNames = new Set(schema.databases.filter(d => d.driver === 'jsonl').map(d => d.name))
   const loggerNames = new Set(schema.databases.filter(d => d.driver === 'logger').map(d => d.name))
+  // Where a trail may be written. Two kinds, and the difference is what the
+  // trail can then DO: `driver logger` is a directory of append-only jsonl —
+  // cheap, fleet-shared, and reachable by no join, no policy and no screen —
+  // while a SQLite database with a declared `model` puts the trail in an
+  // ordinary table the app owns, which can be joined to `User`, gated, indexed,
+  // paged with a cursor and replicated by litestream.
+  const logTargets = new Set(schema.databases
+    .filter(d => d.driver === 'logger' || (d.driver !== 'jsonl' && d.logModel))
+    .map(d => d.name))
 
   // Duplicate database names
   const seenDb = new Set()
@@ -4403,9 +4773,14 @@ function validate(schema) {
     // replication not valid on jsonl or logger
     if (db.replication && (db.driver === 'jsonl' || db.driver === 'logger'))
       errors.push(`database '${db.name}': replication is not supported for ${db.driver} databases`)
-    // model key only valid on logger
-    if (db.logModel && db.driver !== 'logger')
-      errors.push(`database '${db.name}': model key is only valid for logger databases`)
+    // `model` names the trail's own table. On a logger database it is optional
+    // — an auto `<db>Logs` is synthesised when it is absent — and on a SQLite
+    // one it is required, because there is nothing to synthesise INTO: a table
+    // the app never declared cannot carry a `@@gate`, an `@@allow`, an index or
+    // a migration, and those are the whole reason to put a trail in SQLite
+    // rather than in a directory of jsonl.
+    if (db.logModel && db.driver === 'jsonl')
+      errors.push(`database '${db.name}': model key is not valid for jsonl databases — it names an audit trail's own table, and a jsonl database that is not 'driver logger' is ordinary storage`)
     // maxSize not valid on logger
     if (db.maxSize && db.driver === 'logger')
       errors.push(`database '${db.name}': maxSize is not valid for logger databases — use retention instead`)
@@ -4457,17 +4832,17 @@ function validate(schema) {
       if (!logAttr) continue
       if (!dbNames.has(logAttr.db))
         errors.push(`Model '${model.name}', field '${field.name}': @log references unknown database '${logAttr.db}'`)
-      else if (!loggerNames.has(logAttr.db))
-        errors.push(`Model '${model.name}', field '${field.name}': @log database '${logAttr.db}' must use driver logger (got '${schema.databases.find(d => d.name === logAttr.db)?.driver}')`)
+      else if (!logTargets.has(logAttr.db))
+        errors.push(`Model '${model.name}', field '${field.name}': @log database '${logAttr.db}' is not an audit trail — ${logTargetHint(schema, logAttr.db)}`)
     }
 
-    // @@log on models — db must be a logger database
+    // @@log on models — the target must be a declared audit trail
     for (const attr of model.attributes) {
       if (attr.kind !== 'log') continue
       if (!dbNames.has(attr.db))
         errors.push(`Model '${model.name}': @@log references unknown database '${attr.db}'`)
-      else if (!loggerNames.has(attr.db))
-        errors.push(`Model '${model.name}': @@log database '${attr.db}' must use driver logger (got '${schema.databases.find(d => d.name === attr.db)?.driver}')`)
+      else if (!logTargets.has(attr.db))
+        errors.push(`Model '${model.name}': @@log database '${attr.db}' is not an audit trail — ${logTargetHint(schema, attr.db)}`)
     }
 
     // @required carries a message for a rule it does not create. On a nullable
@@ -4562,6 +4937,28 @@ function validate(schema) {
         if (field.attributes.some(a => a.kind === kind))
           errors.push(`Model '${model.name}', field '${field.name}': @system has nothing to lock on a @${kind === 'funcCall' ? 'generated' : kind} field — it is derived, so no caller writes it`)
       }
+    }
+  }
+
+  // ── @immutable validation ───────────────────────────────────────────────────
+  //
+  // Every case here is a column the ENGINE writes on update, which is a direct
+  // contradiction: the write cannot both be refused and be made on every save.
+  // Refused at parse rather than at the first update, because a schema that
+  // declares two rules for one column is wrong before any row exists.
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      if (!field.attributes.some(a => a.kind === 'immutable')) continue
+
+      for (const kind of ['updatedAt', 'version'])
+        if (field.attributes.some(a => a.kind === kind))
+          errors.push(`Model '${model.name}', field '${field.name}': @immutable contradicts @${kind} — the engine writes that column on every update, and @immutable says nobody may`)
+
+      // A value with no column is not written by anyone, so freezing it says
+      // nothing and reads as though it did — @system's reasoning exactly.
+      for (const kind of ['computed', 'generated', 'from', 'funcCall', 'derived', 'transient'])
+        if (field.attributes.some(a => a.kind === kind))
+          errors.push(`Model '${model.name}', field '${field.name}': @immutable has nothing to freeze on a @${kind === 'funcCall' ? 'generated' : kind} field — it is not a column a caller writes`)
     }
   }
 
@@ -4673,7 +5070,7 @@ function validate(schema) {
   // bytes repeat and the constraint works; @hashed is the other answer, for a
   // value that only ever has to be matched.
   for (const model of schema.models) {
-    const composites = model.attributes.filter(a => a.kind === 'uniqueIndex' && Array.isArray(a.fields))
+    const composites = model.attributes.filter(a => (a.kind === 'uniqueIndex' || a.kind === 'partialUnique') && Array.isArray(a.fields))
     for (const field of model.fields) {
       const enc = field.attributes.find(a => a.kind === 'encrypted')
       if (!enc || enc.deterministic === true) continue
@@ -4715,14 +5112,21 @@ function validate(schema) {
   for (const model of schema.models) {
     const seenIndexNames = new Map()
     for (const attr of model.attributes) {
-      if (attr.kind !== 'index') continue
+      // A partial @@unique is a CREATE UNIQUE INDEX, so it is in this loop and
+      // in this name space: it derives `idx_<table>_<fields>` like any other,
+      // and two declarations reaching one name is the same collision whichever
+      // attribute wrote them.
+      const partialUnique = attr.kind === 'partialUnique'
+      if (attr.kind !== 'index' && !partialUnique) continue
+      const word = partialUnique ? '@@unique' : '@@index'
 
-      // Two @@index over the same columns derive one name, predicate or not.
+      // Two declarations over the same columns derive one name, predicate or not.
       const derived = attr.fields.join('_')
       if (seenIndexNames.has(derived)) {
+        const first = seenIndexNames.get(derived).kind === 'partialUnique' ? '@@unique' : '@@index'
         errors.push(
-          `Model '${model.name}': two @@index([${attr.fields.join(', ')}]) declarations derive the same index name ` +
-          `'idx_<table>_${derived}', so the second cannot be created. Indexes are named for their columns and not for ` +
+          `Model '${model.name}': ${first}([${attr.fields.join(', ')}]) and ${word}([${attr.fields.join(', ')}]) derive the same ` +
+          `index name 'idx_<table>_${derived}', so the second cannot be created. Indexes are named for their columns and not for ` +
           `their predicate — give them different column lists, or write one predicate covering both`)
         continue
       }
@@ -4741,7 +5145,7 @@ function validate(schema) {
         if (Array.isArray(n.args)) n.args.forEach(walk)
       })(attr.where)
 
-      const where = `@@index([${attr.fields.join(', ')}], where: …)`
+      const where = `${word}([${attr.fields.join(', ')}], where: …)`
       if (named.includes('\0auth')) {
         errors.push(
           `Model '${model.name}': ${where} names auth(), which is a different answer for every caller — ` +
@@ -4749,9 +5153,13 @@ function validate(schema) {
         continue
       }
       if (named.includes('\0now')) {
-        errors.push(
-          `Model '${model.name}': ${where} names now(), which SQLite refuses in an index predicate — ` +
-          `the index would be correct only at the instant it was built. Compare against a stored column instead`)
+        errors.push(partialUnique
+          ? `Model '${model.name}': ${where} names now(), so which rows the constraint covers changes under a row that ` +
+            `never moved — the index silently stops covering rows it once covered, and on a UNIQUE index that is a ` +
+            `duplicate. SQLite ACCEPTS a clock in an index predicate, so nothing below this will refuse it. ` +
+            `Compare against a stored column instead`
+          : `Model '${model.name}': ${where} names now(), which SQLite refuses in an index predicate — ` +
+            `the index would be correct only at the instant it was built. Compare against a stored column instead`)
         continue
       }
       const unknown = named.filter(n => n[0] !== '\0' && !model.fields.some(f => f.name === n))
@@ -4786,6 +5194,44 @@ function validate(schema) {
       // Asked of the compiled SQL rather than of the source, so it stays a
       // statement about emitted bytes: what survives the reduction is what one
       // compiler emits and the other cannot.
+      // ── the two reachability rules, and they are the INDEX's alone ────────
+      //
+      // A partial index earns its place by being MATCHED, and SQLite has to
+      // prove a query implies it when it PREPARES the query — which is why a
+      // predicate the caller's own filter cannot reproduce is a structure
+      // maintained on every write and read by nothing.
+      //
+      // A unique index's job is enforcement on INSERT and enforcement does not
+      // go through the planner at all. `where: status == "active"` is a correct
+      // constraint that happens to be a useless read path, where the same
+      // predicate on @@index is nothing but a useless read path. So the rule
+      // that follows is not a correctness rule here, and applying it would
+      // refuse most of the partial uniques that exist in the wild.
+      if (partialUnique) {
+        // …but SQLite's OWN refusal still applies and is a different rule:
+        // `parameters prohibited in partial index WHERE clauses`. The compiler
+        // binds every value, so a predicate that compares against one arrives
+        // here as `? ` and the CREATE fails at migration time, naming a table
+        // the author is no longer looking at. The literals are inlined instead,
+        // which is what makes `where: status == "active"` — the commonest
+        // partial unique there is — expressible at all.
+        //
+        // Safe because these are the SCHEMA's own literals and never a caller's:
+        // nothing reaches this that a person did not write into the .lite file.
+        // Anything that is not a plain literal is refused rather than guessed at.
+        const bad = compiled.params.find(v =>
+          v !== null && !['string', 'number', 'boolean'].includes(typeof v))
+        if (bad !== undefined) {
+          errors.push(
+            `Model '${model.name}': ${where} compares against a value this cannot write into an index predicate ` +
+            `(${JSON.stringify(bad)}). SQLite prohibits a bound parameter there, so the value has to be a literal ` +
+            `string, number, boolean or null`)
+          continue
+        }
+        attr.whereSql = inlineParams(compiled.sql, compiled.params)
+        continue
+      }
+
       const residue = compiled.sql
         .replace(/"[^"]+"/g, ' ')
         .replace(/\bIS\s+(NOT\s+)?NULL\b/gi, ' ')
@@ -4827,6 +5273,27 @@ function validate(schema) {
     }
   }
 
+  // A compiled predicate's `?` placeholders replaced by their own literals.
+  // Quoted regions are stepped over rather than assumed absent, so a `?` inside
+  // a string the compiler did emit cannot consume a parameter.
+  function inlineParams(sql, params) {
+    let out = '', i = 0, quote = null
+    for (const ch of sql) {
+      if (quote) { out += ch; if (ch === quote) quote = null; continue }
+      if (ch === "'" || ch === '"') { quote = ch; out += ch; continue }
+      if (ch === '?') { out += literalSql(params[i++]); continue }
+      out += ch
+    }
+    return out
+  }
+
+  function literalSql(v) {
+    if (v === null || v === undefined) return 'NULL'
+    if (typeof v === 'boolean') return v ? '1' : '0'
+    if (typeof v === 'number')  return String(v)
+    return `'${String(v).replace(/'/g, "''")}'`
+  }
+
   // ── @@unique over a NULLABLE column ─────────────────────────────────────────
   //
   // Two NULLs never compare equal, so a UNIQUE index admits `(1, NULL, NULL)`
@@ -4840,22 +5307,44 @@ function validate(schema) {
   // shape that surfaced this was `@@unique([product, colour, size])`, where the
   // no-colour/no-size variant is precisely the row a shop lists twice.
   //
-  // A partial index is not the answer, for FJS-204's reason: it makes the
-  // constraint false for any read that includes the NULL rows.
+  // Two answers now, and they are one word apart in English, so the sentence
+  // has to separate them. `nullsDistinct: true` says *the rows that leave it
+  // unset are deliberately unconstrained*; `where:` says *at most one of them
+  // is meant to exist*. The second is what an effective-dated model wants — an
+  // open row is the one with a NULL end — and reaching it means dropping the
+  // nullable column OUT of the tuple and putting it in the predicate, which is
+  // why the suggestion is spelled with the column list changed.
+  //
+  // Making the whole tuple conditional on the NULL member being present is
+  // still not offered: that is FJS-204's derivation, and it makes the
+  // constraint false for any read that includes those rows.
   for (const model of schema.models) {
     for (const c of model.attributes) {
-      if (c.kind !== 'uniqueIndex' || !Array.isArray(c.fields)) continue
+      const partial = c.kind === 'partialUnique'
+      if ((c.kind !== 'uniqueIndex' && !partial) || !Array.isArray(c.fields)) continue
       if (c.fields.length < 2 || c.nullsDistinct) continue
       const nullable = c.fields.filter(name =>
         model.fields.find(f => f.name === name)?.type.optional)
       if (!nullable.length) continue
       const many = nullable.length > 1
+      const rest  = c.fields.filter(n => !nullable.includes(n))
+      const label = `@@unique([${c.fields.join(', ')}]${partial ? ', where: …' : ''})`
+      // Only offered where something is LEFT to be unique over: a tuple whose
+      // every member is optional has no narrower constraint to fall back to.
+      const move  = rest.length
+        ? `@@unique([${rest.join(', ')}], where: ${nullable[0]} == null)`
+        : null
+      const ways = partial
+        ? `Make ${many ? 'them' : 'it'} required with a @default` +
+          (move ? `, or move ${many ? 'them' : 'it'} out of the tuple and into the predicate — ${move} is *at most one ` +
+                  `row with no ${nullable[0]}*, which is usually what a tuple like this was reaching for` : '')
+        : `Make ${many ? 'them' : 'it'} required with a @default; declare ` +
+          `@@unique([${c.fields.join(', ')}], nullsDistinct: true) if those rows are deliberately unconstrained` +
+          (move ? `; or, if at most ONE of them is meant to exist, put the column in a predicate instead — ${move}` : '')
       errors.push(
-        `Model '${model.name}': @@unique([${c.fields.join(', ')}]) cannot be enforced — ` +
+        `Model '${model.name}': ${label} cannot be enforced — ` +
         `${nullable.map(n => `'${n}'`).join(', ')} ${many ? 'are' : 'is'} optional, and two NULLs never compare equal, ` +
-        `so rows that leave ${many ? 'them' : 'it'} unset are all distinct to the index. ` +
-        `Make ${many ? 'them' : 'it'} required with a @default, or declare ` +
-        `@@unique([${c.fields.join(', ')}], nullsDistinct: true) to say those rows are deliberately unconstrained`)
+        `so rows that leave ${many ? 'them' : 'it'} unset are all distinct to the index. ${ways}`)
     }
   }
 
@@ -4950,6 +5439,35 @@ function validate(schema) {
         errors.push(`Model '${model.name}', field '${field.name}': @version cannot be optional — a row with no version cannot be checked`)
       if (field.attributes.some(a => a.kind === 'id'))
         errors.push(`Model '${model.name}', field '${field.name}': @version cannot be the @id — the version changes on every write`)
+    }
+  }
+
+  // ── @big validation ─────────────────────────────────────────────────────────
+  // The declaration says *this column's values use the whole 64 bits*, so every
+  // way of declaring one that cannot hold 64 bits is refused rather than
+  // producing a column that quietly narrows.
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      if (!field.attributes.some(a => a.kind === 'big')) continue
+      const at = `Model '${model.name}', field '${field.name}'`
+
+      // Int, and the type stays true — same rule @scale follows (`FJS-D142`).
+      // SQLite's INTEGER is the only storage class that is 64-bit; a REAL column
+      // is the double this attribute exists to get away from.
+      if (field.type.name !== 'Int')
+        errors.push(`${at}: @big requires an Int field, got ${field.type.name} — only an integer column holds 64 bits`)
+
+      // An array is stored as JSON text, and JSON's number IS the double.
+      if (field.type.array)
+        errors.push(`${at}: @big cannot be an array — an array column is stored as JSON, whose number is the double @big exists to get past. Declare a String[] and hold the digits.`)
+
+      // @scale and @money bound the column to ±2^53 with a CHECK, deliberately,
+      // because their promise is a round trip through a JS number (`FJS-583`).
+      // @big is the opposite statement about the same column.
+      for (const kind of ['scale', 'money']) {
+        if (field.attributes.some(a => a.kind === kind))
+          errors.push(`${at}: @big and @${kind} together — @${kind} bounds the column to ±${EXACT_INT_MAX} so its value round-trips through a JS number, which is the thing @big lifts. State one.`)
+      }
     }
   }
 
@@ -5139,6 +5657,63 @@ function validate(schema) {
     }
   }
 
+  // ── @seals / @sealed validation ─────────────────────────────────────────────
+  // Two attributes, one feature: @seals says WHEN a row becomes a document and
+  // @sealed says which children are part of it. Each is meaningless without the
+  // other half being possible, so every refusal here names the half that is
+  // missing rather than the half that is present.
+  for (const model of schema.models) {
+    const sealedFields = model.fields.filter(f => f.attributes.some(a => a.kind === 'sealed'))
+    const seals = model.attributes.map(sealedStates).find(Boolean) ?? null
+
+    for (const field of sealedFields) {
+      // @sealed is about a set of ROWS that belong to this one. On a scalar
+      // there is no set — the column freezing is what @immutable already says.
+      if (field.type.kind !== 'relation' && field.type.kind !== 'implicitM2M') {
+        errors.push(
+          `Model '${model.name}', field '${field.name}': @sealed is for the children a document is made of, ` +
+          `and '${field.name}' is not a relation. To freeze a column, use @immutable.`)
+        continue
+      }
+      // The belongsTo side names ONE parent, and a child cannot know when its
+      // parent's machine moved. Declared there it would have to name a state,
+      // which is the second source of truth @seals exists to remove.
+      if (field.attributes.some(a => a.kind === 'relation' && a.fields)) {
+        errors.push(
+          `Model '${model.name}', field '${field.name}': @sealed goes on the side that OWNS the children — ` +
+          `sealing is the parent's event. Move it to the '${field.type.name}[]' field on '${field.type.name}'.`)
+        continue
+      }
+      if (!seals)
+        errors.push(
+          `Model '${model.name}', field '${field.name}': @sealed says these children seal with the row, and ` +
+          `nothing seals '${model.name}'. Mark the move that issues it — @@transitions(<field>, <move>: … @seals).`)
+    }
+
+    if (!seals) continue
+
+    // A seal that freezes nothing is a typo, not a no-op: the move parses, the
+    // artefacts render it, and no write is ever refused.
+    const hasImmutable = model.fields.some(f => f.attributes.some(a => a.kind === 'immutable'))
+    if (!sealedFields.length && !hasImmutable)
+      errors.push(
+        `Model '${model.name}': @@transitions(${seals.field}) '${seals.moves[0]}' declares @seals and there is ` +
+        `nothing to seal — '${model.name}' has no @immutable column and no @sealed relation.`)
+
+    // A seal is made from an unsealed state. A from-state that is already
+    // sealed is one of two different mistakes, and which seal put it there is
+    // what tells them apart.
+    for (const fault of sealFaults(model.attributes.find(a => a.kind === 'transitions' && a.field === seals.field))) {
+      errors.push(fault.kind === 'unseals'
+        ? `Model '${model.name}': @@transitions(${seals.field}) '${fault.move}' — '${fault.state}' is both the ` +
+          `state this move seals FROM and one the row can reach afterwards, so the same value means sealed and ` +
+          `unsealed. A document that unseals is not a document: issue a correcting row beside it instead.`
+        : `Model '${model.name}': @@transitions(${seals.field}) '${fault.move}' — the row is already sealed by ` +
+          `'${fault.by}' before this move runs, so @seals on it seals nothing. Drop it: everything reachable ` +
+          `from a seal is sealed already.`)
+    }
+  }
+
   // ── @allow / @@deny validation ──────────────────────────────────────────────
   for (const model of schema.models) {
     for (const attr of model.attributes) {
@@ -5172,8 +5747,8 @@ function validate(schema) {
 
   // ── Logger database validation ────────────────────────────────────────────────
   for (const db of schema.databases) {
-    if (db.driver !== 'logger') continue
-    if (!db.logModel) continue   // auto mode — no model to validate
+    if (db.driver === 'jsonl') continue
+    if (!db.logModel) continue   // logger auto mode — no model to validate
 
     // User-defined mode: logModel must reference a declared model
     if (!modelNames.has(db.logModel))
@@ -5797,6 +6372,7 @@ export function parseFile(filePath) {
 
   // Run the full validator on the merged schema
   expandSecretAttributes(schema)
+  allErrors.push(...expandCompositeId(schema))
   expandHasTemplatesAttributes(schema)
   allErrors.push(...expandAuthorshipAttributes(schema))
   allErrors.push(...expandEdgeAttributes(schema))
@@ -5844,6 +6420,7 @@ export function parse(src) {
     return { schema, valid: false, errors: typeErrors, warnings: [] }
   }
   expandSecretAttributes(schema)
+  const compositeIdErrors = expandCompositeId(schema)
   expandHasTemplatesAttributes(schema)
   const authorshipErrors = expandAuthorshipAttributes(schema)
   const edgeErrors = expandEdgeAttributes(schema)
@@ -5851,6 +6428,6 @@ export function parse(src) {
   resolveTransitions(schema)
   const capabilityErrors = expandCapabilityType(schema)
   const { valid, errors, warnings } = validate(schema)
-  const merged = [...authorshipErrors, ...edgeErrors, ...tenancy.errors, ...capabilityErrors, ...errors]
+  const merged = [...compositeIdErrors, ...authorshipErrors, ...edgeErrors, ...tenancy.errors, ...capabilityErrors, ...errors]
   return { schema, valid: merged.length === 0, errors: merged, warnings: [...tenancy.warnings, ...warnings] }
 }

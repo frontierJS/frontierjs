@@ -184,6 +184,13 @@ export async function buildBasecampApp(
   // answer from either. Nothing to do with the layout: `api/src/services` is
   // where the probe looks anyway (`FJS-458`).
   const servicesDir = new URL('./services', import.meta.url).pathname
+  // The config directory is the same fact and had the same defect. Its default
+  // is `./api/config` resolved against the CWD, so this app read its own config
+  // only when the command was typed at the package root — from `api/`, where
+  // the API's own snapshots now live, it looked for `api/api/config`, found
+  // nothing and booted on junction's defaults, taking the CORS origins with it
+  // (`FJS-430`'s shape, from the other direction).
+  const configDir   = new URL('../config', import.meta.url).pathname
   // `principal:` is what makes this app's tenancy work, and it is the whole of
   // what used to be `withWorkspaceStanding` + `applyStanding` (`FJS-D113`).
   //
@@ -198,7 +205,7 @@ export async function buildBasecampApp(
   // tenancy, emitting `workspaceId` for a caller with no membership scopes them
   // INTO that workspace and every read answers 200.
   const app = createApp({
-    config, auth, db, logger, autoload: servicesDir,
+    config, auth, db, logger, autoload: servicesDir, configPath: configDir,
     principal: membershipClaim({
       tenantFrom:  resolveWorkspaceId,
       model:       'workspaceMember',

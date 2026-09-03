@@ -56,9 +56,9 @@ const OPS = ['read', 'create', 'update', 'delete']
 //   models: [{
 //     name, db, table, external, softDelete, gate, gateSource,
 //     fields:      [{ name, kind, type, optional, unique, id, default, writeRequired, protection, allows, values }],
-//     uniques:     [[col, ...]],   indexes: [[col, ...]],
+//     uniques:     [{ cols: [col, ...], where }],   indexes: [[col, ...]],
 //     policies:    { <op>: { allows: [expr], denies: [expr] } },
-//     transitions: [{ field, name, from, to, gate }],
+//     transitions: [{ field, name, from, to, gate, system }],
 //   }]
 // }
 //
@@ -114,10 +114,17 @@ function describeModel(model, access, pluralize) {
     .map(f => describeField(f, access))
     .sort((a, b) => a.name.localeCompare(b.name))
 
+  // A unique carries its PREDICATE, because on a unique index the predicate is
+  // the constraint: `@@unique([employeeId], where: effectiveTo == null)` and
+  // `@@unique([employeeId])` permit different sets of rows, and a column-list
+  // diff grades the change between them as nothing at all.
+  //
+  // `whereSql` rather than the source text — it is the compiler's own output, so
+  // two spellings of one predicate compare equal and a reformat is not a pivot.
   const uniques = attrs
-    .filter(a => a.kind === 'uniqueIndex')
-    .map(a => [...a.fields].sort())
-    .sort(cmpCols)
+    .filter(a => a.kind === 'uniqueIndex' || a.kind === 'partialUnique')
+    .map(a => ({ cols: [...a.fields].sort(), where: a.whereSql ?? null }))
+    .sort((x, y) => cmpCols(x.cols, y.cols) || String(x.where).localeCompare(String(y.where)))
 
   const indexes = attrs
     .filter(a => a.kind === 'index')
@@ -164,8 +171,12 @@ function describeModel(model, access, pluralize) {
     checks,
     policies,
     transitions: [...(access?.transitions ?? [])]
-      .map(t => ({ field: t.field, name: t.name, from: states(t.from), to: states(t.to), gate: t.gate ?? null }))
+      .map(t => ({ field: t.field, name: t.name, from: states(t.from), to: states(t.to),
+                   gate: t.gate ?? null, system: Boolean(t.system), seals: Boolean(t.seals) }))
       .sort((a, b) => `${a.field}.${a.name}`.localeCompare(`${b.field}.${b.name}`)),
+    // WHICH children a document is made of. On the surface beside the moves,
+    // because the two are one feature and either half alone changes nothing.
+    sealed: [...(access?.sealedRelations ?? [])].map(r => r.field).sort(),
   }
 }
 
@@ -645,10 +656,35 @@ function compareValueBinding(old, field, at, f) {
 }
 
 function compareConstraints(b, m, f) {
-  diffSets(b.uniques.map(k), m.uniques.map(k), {
-    added:   (cols) => add(f, CONTRACT, `model ${m.name}`, `@@unique(${cols}) added — an N-1 write that duplicates an existing pair is now refused`),
-    removed: (cols) => add(f, EXPAND,   `model ${m.name}`, `@@unique(${cols}) removed`),
-  })
+  const at   = `model ${m.name}`
+  const was  = new Map(b.uniques.map(u => [k(u.cols), u]))
+  const now  = new Map(m.uniques.map(u => [k(u.cols), u]))
+
+  // Keyed by the column list alone, which is sound only because the parser
+  // refuses two @@unique over one column list: they would derive one index name.
+  for (const [cols, u] of now) {
+    if (was.has(cols)) continue
+    add(f, CONTRACT, at, `@@unique(${cols})${u.where ? ` where ${u.where}` : ''} added — an N-1 write that duplicates an existing pair is now refused`)
+  }
+  for (const [cols] of was) {
+    if (!now.has(cols)) add(f, EXPAND, at, `@@unique(${cols}) removed`)
+  }
+
+  // The predicate moved under a constraint that stayed. Two of the three
+  // directions are decidable and the third is not, and guessing it is the shape
+  // this file refuses everywhere else: whether `P` implies `Q` is implication
+  // between two SQL expressions, and a text comparison answering it would be a
+  // deploy verdict made by a regex.
+  for (const [cols, u] of now) {
+    const b0 = was.get(cols)
+    if (!b0 || b0.where === u.where) continue
+    if (!b0.where && u.where)
+      add(f, EXPAND, at, `@@unique(${cols}) gained a predicate — it now constrains only the rows matching \`${u.where}\`, so N-1 writes it refused are permitted`)
+    else if (b0.where && !u.where)
+      add(f, CONTRACT, at, `@@unique(${cols}) lost its predicate — it now constrains every row, and N-1 writes rows outside \`${b0.where}\` that duplicate freely`)
+    else
+      add(f, UNKNOWN, at, `@@unique(${cols}) predicate \`${b0.where}\` → \`${u.where}\` — whether the new one admits every row the old one did is implication between two SQL expressions, which nothing here can decide`)
+  }
 
   // An index changes how long a query takes and nothing else about what it
   // answers, so neither direction can break N-1.
@@ -831,6 +867,46 @@ function compareAccess(b, m, f) {
       add(f, (t.gate && (!old.gate || t.gate > old.gate)) ? CONTRACT : EXPAND, at,
           `transition \`${key}\` gate ${old.gate ?? 'none'} → ${t.gate ?? 'none'}`,
           { access: (t.gate && (!old.gate || t.gate > old.gate)) ? NARROWS : WIDENS })
+
+    // `@system` is graded on its own axis and not through the gate, because it
+    // is not a level: gaining it takes the move away from every caller at once,
+    // which is the widest narrowing a state machine can make, and losing it
+    // hands a move the application owned to whoever holds the level. Its
+    // DEPLOY grade follows the same reading — an N-1 caller still asking for a
+    // move that has become the application's is refused.
+    if (Boolean(old.system) !== Boolean(t.system))
+      add(f, t.system ? CONTRACT : EXPAND, at,
+          t.system
+            ? `transition \`${key}\` becomes @system — the application makes it, and no caller reaches it at any level`
+            : `transition \`${key}\` is no longer @system — a caller at the move's level may now ask for it`,
+          { access: t.system ? NARROWS : WIDENS })
+
+    // `@seals` is the widest narrowing on this table and it grades nobody: it
+    // freezes the model's @immutable columns and its @sealed children for
+    // EVERYBODY, asSystem() included, so an N-1 release that writes a line onto
+    // an issued invoice stops working the moment this deploy lands.
+    if (Boolean(old.seals) !== Boolean(t.seals))
+      add(f, t.seals ? CONTRACT : EXPAND, at,
+          t.seals
+            ? `transition \`${key}\` becomes @seals — after it the row is a document, and its @immutable columns and @sealed children are frozen for every caller including asSystem()`
+            : `transition \`${key}\` is no longer @seals — rows past it accept writes again`,
+          { access: t.seals ? NARROWS : WIDENS })
+  }
+
+  // A relation gaining @sealed stops taking rows the moment its parent is past
+  // the seal, and losing it starts taking them again. Same reading as the move.
+  {
+    const wasS = new Set(b.sealed ?? [])
+    const nowS = new Set(m.sealed ?? [])
+    for (const r of nowS)
+      if (!wasS.has(r))
+        add(f, CONTRACT, at,
+            `relation \`${r}\` becomes @sealed — an N-1 release still writes to it on a sealed row`,
+            { access: NARROWS })
+    for (const r of wasS)
+      if (!nowS.has(r))
+        add(f, EXPAND, at, `relation \`${r}\` is no longer @sealed — its rows accept writes on a sealed parent`,
+            { access: WIDENS })
   }
 
   for (const [key, t] of wasT)
@@ -1110,7 +1186,7 @@ export function renderReleaseSnapshot(surface, { source = 'schema.lite' } = {}) 
     }
 
     const extra = []
-    for (const cols of m.uniques) extra.push(`@@unique(${k(cols)})`)
+    for (const u of m.uniques) extra.push(`@@unique(${k(u.cols)})${u.where ? `, where: ${u.where}` : ''}`)
     for (const cols of m.indexes) extra.push(`@@index(${k(cols)})`)
     for (const expr of m.checks ?? []) extra.push(`@@check(${expr})`)
     for (const [op, p] of Object.entries(m.policies).sort()) {
@@ -1118,7 +1194,9 @@ export function renderReleaseSnapshot(surface, { source = 'schema.lite' } = {}) 
       for (const e of p.denies) extra.push(`@@deny('${op}', ${e})`)
     }
     for (const t of m.transitions)
-      extra.push(`transition ${t.field}.${t.name}: ${t.from} → ${t.to}${t.gate ? ` @gate(${t.gate})` : ''}`)
+      extra.push(`transition ${t.field}.${t.name}: ${t.from} → ${t.to}` +
+                 `${t.system ? ' @system' : ''}${t.seals ? ' @seals' : ''}${t.gate ? ` @gate(${t.gate})` : ''}`)
+    for (const r of m.sealed ?? []) extra.push(`relation ${r} @sealed`)
 
     if (extra.length) {
       out.push('```')

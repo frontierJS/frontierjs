@@ -4260,14 +4260,30 @@ describe('cors() preflight and header correctness', () => {
     expect(res.headers['access-control-allow-origin']).toBeUndefined()
   })
 
-  it('wildcard origin allows any origin', async () => {
-    const app = await makeApp('*')
+  it('wildcard origin with credentials is refused at construction (FJS-689)', () => {
+    // The pair reflected the caller's own Origin and answered
+    // `allow-credentials: true` beside it, which is every site on the internet
+    // reading a cookie-authenticated response. Refused where the app is
+    // written, not where it is attacked.
+    expect(() => cors({ origins: '*', credentials: true })).toThrow(/credentials/)
+    expect(() => cors({ origins: ['*', 'http://ok.test'], credentials: true })).toThrow(/credentials/)
+  })
+
+  it('wildcard origin allows any origin without credentials', async () => {
+    const app = await createTestApp({
+      services: [() => createService({
+        name: 'items', model: 'item',
+        async find() { return [] },
+      })],
+    })
+    app.configure(cors({ origins: '*' }))
     const res = await request(app)
       .options('/items')
       .set('origin', 'http://anything.com')
       .set('access-control-request-method', 'GET')
     expect(res.status).toBe(204)
     expect(res.headers['access-control-allow-origin']).toBeTruthy()
+    expect(res.headers['access-control-allow-credentials']).toBeUndefined()
   })
 })
 

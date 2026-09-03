@@ -12,6 +12,46 @@ import { autoMigrate } from '@frontierjs/litestone'
 autoMigrate(db)   // safe to call on every app start in dev
 ```
 
+### It refuses a change that would destroy data
+
+A column that leaves the schema takes its values with it, and `diffColumns` has
+no rename detection — so `body` → `content` is a drop plus an add, the rebuild
+copies only what the two tables share, and the values are gone. It used to
+answer `state: 'migrated'` and say nothing; the row-count guard passed, because
+it counts rows and not values (`FJS-641`).
+
+```js
+autoMigrate(db)                                   // → { main: { state: 'blocked', reason, dataLoss } }
+autoMigrate(db, parsed, { acceptDataLoss: true }) // → { main: { state: 'migrated', ... } }
+```
+
+Any column drop blocks, not just the rename-shaped case: a plain drop was
+exactly as silent, and a rename IS a drop. The hash is withheld, as it is for
+the other blocked rules, so a schema left this way re-announces on every boot
+rather than going quiet. One column out and one in of the same type is reported
+as a probable rename, with the `ALTER TABLE … RENAME COLUMN` to use instead —
+that guess changes the wording and never the decision.
+
+On the CLI it is `litestone db push --accept-data-loss`. Without the flag the
+command names the columns, prints `✗  DB not pushed` and **exits 1**.
+
+**The file path still applies.** `litestone migrate create` writes the migration
+with a boxed `DESTRUCTIVE` banner naming the columns whose values go — the file
+is the review step, which is the whole difference between it and `autoMigrate`.
+
+### A rebuild SQLite refuses is graded, not thrown
+
+A rebuild copies surviving values through `INSERT … SELECT`, and a STRICT table
+takes no TEXT into an INTEGER column — so a `String` → `Int` over a populated
+table used to throw `cannot store TEXT value in INTEGER column post__new.body`
+out of the migrator, at boot, naming a table that exists only inside the
+migration it died in (`FJS-645`). It answers `state: 'failed'` now, with
+SQLite's own sentence as the reason. The transaction had already rolled back
+either way, so the database is untouched.
+
+`failed` is a third state and is honestly distinct from `blocked`: one is a
+pre-flight refusal, the other is SQLite declining what was attempted.
+
 **It is a call and there is no `createClient({ autoMigrate: true })`.** That
 spelling was silently ignored for as long as anyone reached for it — five of
 this package's own test files carried it, and every one of them opens a fresh
@@ -288,6 +328,84 @@ Unlike Prisma, Litestone does not create a shadow database. It builds a pristine
 
 The diff covers tables, columns, indexes, foreign keys, STRICT, views and
 triggers.
+
+### Adding a column, and the two ways it cannot be done
+
+`ALTER TABLE … ADD COLUMN` is the cheap path and SQLite narrows it twice. Both
+narrowings are its rules rather than choices made here, and both used to be
+found at the worst possible moment.
+
+| The column | What happens |
+| --- | --- |
+| optional, or a CONSTANT default | `ALTER TABLE … ADD COLUMN` |
+| an EXPRESSION default — `@default(now())`, `@default(uuid())` where it compiles to SQL | a table rebuild. SQLite takes an expression default in `CREATE TABLE` and refuses one in an `ALTER`, where it wants a constant |
+| `NOT NULL` with no default | **blocked**. There is no value to give the rows that already exist, and SQLite refuses the ALTER outright |
+
+**An expression default therefore costs a rebuild**, which is not free: a rebuild
+is refused where the app made its own index or trigger over the table (§ *Schema
+objects Litestone did not create*), so a table carrying one has to have it moved
+into the schema first. The alternative was worse — the ALTER was emitted anyway
+and threw `near "(": syntax error` out of `autoMigrate`, at the line an app
+calls on first open, naming no column and no table ([FJS-605](../../../ISSUES.md#fjs-605)).
+
+**A blocked column blocks whether or not the table has rows**, and that is
+deliberate. Migrating an empty table and refusing a populated one would migrate
+cleanly on every developer's machine and block at the deploy, which is the one
+place nobody wants to meet it for the first time. `litestone release` grades the
+same change as a **contract** and hands back the plan — expand, backfill,
+contract — for the same reason.
+
+**It is announced as well as returned.** `autoMigrate` answers
+`{ state: 'blocked', reason }` and prints it. It used to answer
+`{ state: 'migrated', applied: 0 }` on the ALTER path, with the reason visible
+only inside a SQL string the caller usually discards: the application then ran
+against a table missing a column its own schema declares, every write of that
+column was stripped by mass-assignment protection, and a required field read
+back `undefined` with nothing anywhere saying why
+([FJS-604](../../../ISSUES.md#fjs-604)).
+
+### Uniqueness the table declares itself
+
+`@unique` on a column and `@@unique([a, b])` are both **table constraints** —
+they are emitted inside `CREATE TABLE`, not as a `CREATE UNIQUE INDEX`. SQLite
+builds an implicit index for each, and an implicit index has no `sql` in
+`sqlite_master`, which is what every index reader here filters on. So for a long
+time none of this was diffed at all:
+
+| Change | Was | Is |
+| --- | --- | --- |
+| add a `@@unique` or a `@unique` | **nothing migrated** — the schema declared a constraint the table did not enforce, and the duplicate landed | a table rebuild |
+| remove one | **nothing migrated** — the table went on refusing writes the schema allows | a table rebuild |
+| reorder a composite one | **nothing migrated** | a table rebuild |
+| the column order of a composite primary key (`@@id([a, b])`) | **nothing migrated** | a table rebuild |
+
+The first two are correctness: `UniqueConflictError` and `SoftDeletedUniqueError`
+are Litestone's words for a constraint the *database* enforces, so a constraint
+that never reached the database is one that never fires. The last two are the
+performance fact [FJS-592](../../../ISSUES.md#fjs-592) settled for `@@index`, one
+constraint kind along — an implicit index is prefix-matched like any other, so
+`(orgId, createdAt)` answers `WHERE orgId = ?` and the swap does not.
+
+**The cost is a rebuild and there is no cheaper path**: no `ALTER` reaches a
+table constraint. Which is why this shipped after the `@@index` half rather than
+with it — that one is a `DROP INDEX` and a `CREATE INDEX`
+([FJS-596](../../../ISSUES.md#fjs-596)).
+
+Two things follow from reading it off `PRAGMA index_list` rather than out of the
+`CREATE` text:
+
+**Moving between the two spellings migrates nothing.** `email String @unique` and
+`@@unique([email])` build the same implicit index, so swapping one for the other
+is not a change to the database and is not reported as one.
+
+**A `CREATE UNIQUE INDEX` you made yourself is not read here.** Only `origin` `u`
+and `pk` are — the constraint-borne ones. An explicit index is `origin` `c` and
+belongs to the index diff, which leaves an index Litestone did not name alone
+(§ *Schema objects Litestone did not create*).
+
+**A rebuild that adds uniqueness fails if the rows already violate it.** The copy
+is an ordinary `INSERT … SELECT`, so SQLite refuses it and the whole migration
+rolls back — loud, and inside the transaction. Clear the duplicates first.
 
 ### `@generated` columns
 

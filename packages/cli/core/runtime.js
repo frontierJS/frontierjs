@@ -728,7 +728,9 @@ export async function Command({ file, arg, flag, emit }) {
       let stepError = null
       // Which step refused. A refusal prints its own reason, so the failure at
       // the end names the step rather than restating it.
-      let refusedBy = null
+      // The command's OWN body can refuse before any step has run, in which
+      // case no step is to blame and naming the first one is a lie.
+      let refusedBy = config.config?.abort && !config.config?.stop ? 'the command' : null
       const notice = (name) => {
         if (!refusedBy && config.config?.abort && !config.config?.stop) refusedBy = name
       }
@@ -844,6 +846,32 @@ function assertNotRefused(config, refusedBy) {
   err.quiet   = true
   err.refusal = true
   throw err
+}
+
+// ─── argv booleans ────────────────────────────────────────────────────────────
+// The names minimist must not read a value into: without the list,
+// `fli x --dry foo` parses as `{ dry: 'foo' }`. The cost is that minimist then
+// DEFAULTS every one of them to false whether or not it was typed.
+export const BOOL_ARGV = ['help', 'h', 'dry', 'd']
+
+// Undo that defaulting. `-d` arrives as `{ d: true, dry: false }`, and
+// getConfig's short-flag promotion reads a DEFINED `dry` as "the long name was
+// given" and drops the short one — so `fli db:import -d` ran the real import
+// against production. Only names actually on the command line survive.
+export function dropUntypedBooleans(flag, args) {
+  const typed = new Set(
+    args
+      .filter(a => a.startsWith('-') && a !== '-' && a !== '--')
+      .flatMap(a => {
+        const name = a.replace(/^--?/, '').split('=')[0]
+        // `-dt` is two short flags; `--dry` is one long one.
+        return a.startsWith('--') ? [name] : name.split('')
+      })
+  )
+  for (const name of BOOL_ARGV) {
+    if (flag[name] === false && !typed.has(name)) delete flag[name]
+  }
+  return flag
 }
 
 // ─── Default flags ────────────────────────────────────────────────────────────

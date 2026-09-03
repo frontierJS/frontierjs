@@ -208,9 +208,13 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
     // Transitions live on the MODEL keyed by field, never on the enum, because
     // only a model can carry a per-transition gate. A move with no gate of its
     // own is graded by the model's `update` gate, so no level is shown for it.
+    // `@system` is shown beside the level rather than instead of it: a client
+    // renders no button at all for one, whatever the level says, so a move
+    // gaining it changes what a screen offers and has to be a diff here.
     for (const [field, moves] of Object.entries(def['x-transitions'] ?? {})) {
       bullets.push(`- transitions on \`${field}\` — ${Object.entries(moves)
-        .map(([move, m]) => `\`${move}\`: ${(m.from ?? []).join('|') || '—'} → ${m.to}${m.gate != null ? ` @${m.gate}` : ''}`)
+        .map(([move, m]) => `\`${move}\`: ${(m.from ?? []).join('|') || '—'} → ${m.to}` +
+                            `${m.system ? ' @system' : ''}${m.gate != null ? ` @${m.gate}` : ''}`)
         .join(' · ')}`)
     }
 

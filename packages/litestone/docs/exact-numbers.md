@@ -1,4 +1,4 @@
-# Exact numbers — `@scale` and `@money`
+# Exact numbers — `@scale`, `@money` and `@big`
 
 `.lite` has `Int` and `Float` and nothing between them, and SQLite has no
 fixed-point type to put there. So an exact quantity — a price, a reorder point,
@@ -75,8 +75,95 @@ row policies and `@@softDelete` and cannot drop a rule that is in the table.
 
 **A plain `Int` is not bounded**, and has the same ceiling. It makes no
 exactness promise, and bounding every integer column in every app to buy back
-one is the wrong trade — but a snowflake id kept in an `Int` is the same hazard,
-and nothing here reports it.
+one is the wrong trade. What a column whose values genuinely go past 2^53 wants
+is the section below, which is the other end of the same axis.
+
+## `Int @big` — the other end: use all 64 bits
+
+`@scale` narrows the column to the range a JS number carries exactly. `@big`
+does the opposite — it says the values use the whole 64 bits SQLite's `INTEGER`
+holds, and pays for it by changing how the value crosses.
+
+```
+model WebhookEvent {
+  id         Int    @id @default(autoincrement())
+  externalId Int    @big     // a snowflake — Discord and Twitter/X passed 2^53 years ago
+  receivedAt DateTime @default(now())
+}
+```
+
+**A `@big` column is read back and written as a string of digits.**
+
+```js
+const e = await db.webhookEvent.create({ data: { externalId: '1420070400000000000' } })
+e.externalId            // '1420070400000000000'  — digits, not a number
+typeof e.externalId     // 'string'
+```
+
+It is a string and not a `BigInt` because **`JSON.stringify` throws on a
+`BigInt`** — which is every HTTP response, every WebSocket frame and every
+`before`/`after` snapshot in an audit trail. node-postgres answers `int8` as a
+string for the same reason, and mysql2 has `bigNumberStrings` for it.
+
+The type does not depend on the size of the value: a `@big` column holding `42`
+still reads back `'42'`, or a caller would have to branch on magnitude. A JS
+number is accepted on the way *in* while it is below 2^53, so ordinary code
+writing small values does not have to quote them.
+
+**Everything SQLite does with the column stays numeric**, which is the reason
+`@big` keeps `INTEGER` storage rather than holding digits in a `TEXT` column:
+
+| | |
+| --- | --- |
+| `where: { externalId: { gt: '900…' } }` | numeric — SQLite applies the column's affinity to a text parameter |
+| `orderBy` | numeric: `100` sorts before `9007…`, where text sorts it after |
+| an index | used — measured, `SEARCH … USING COVERING INDEX (v=?)` |
+| `AUTOINCREMENT` | continues correctly past 2^53 |
+| `_min` / `_max` | exact, and answered as digits |
+
+**Arithmetic in application code has to say so.** `BigInt(row.externalId)` — the
+value does not fit a number, which is the whole premise.
+
+### What it refuses, and where
+
+Three values stop the column being an exact integer, and **`STRICT` already
+refuses all three** — litestone emits `STRICT` on every table:
+
+| written | without `STRICT` | with it |
+| --- | --- | --- |
+| `'9223372036854775808'` (past int64) | stored as REAL `9.22e+18` | refused |
+| `'abc'` | stored as TEXT | refused |
+| `1.5` | stored as REAL | refused |
+
+So `@big` emits **no `CHECK` of its own** on an ordinary table, and that is the
+difference from `@scale`: `@scale`'s bound is *narrower* than the column's, so
+only a `CHECK` can hold it, while `@big`'s bound **is** the column's. The one
+table that turned `STRICT` off is the one that earns the constraint, and there
+it is emitted:
+
+```sql
+-- only under @@noStrict
+"externalId" INTEGER NOT NULL CHECK ("externalId" IS NULL OR typeof("externalId") = 'integer')
+```
+
+The boundary refuses the same three first, with a sentence that says what to
+send instead — the `STRICT` message names a physical column and no way out.
+
+### Not with `@scale` or `@money`
+
+Refused at parse. Those two bound the column to ±2^53 so the value round-trips
+through a JS number; `@big` lifts exactly that. State one.
+
+### `litestone import` maps a foreign `BIGINT` onto it
+
+A Postgres `bigint`, a Rails `t.bigint` or a Prisma `BigInt` becomes
+`Int @big` — for the columns that hold a **supplied value**. A generated key and
+a foreign key are exempt and stay a plain `Int`, because a key counts from one
+and a foreign key holds the values of one; without that exemption a Rails
+import turns every id in the app into a string. The mapping is graded `noted`
+rather than `changed`: the schema now says what the source said, and what is
+left is the decision about the JS type. `src/import/wide-int.js` has the
+measurements.
 
 ## `@money` — the currency declares the scale
 
@@ -147,7 +234,7 @@ does not decide which line of a split bill gets the leftover penny; a rounding
 policy is not a fact about a table. Both live in `@frontierjs/toolbelt/units` as
 pure functions over minor units — `roundMinor(value, { mode })` and
 `allocate(amount, ratios)` — ruled as `FJS-D154`, with no value object and
-nothing handed out by the seed. `example/api/src/pricing.ts` is the worked
+nothing handed out by the seed. `example/api/src/domain/shop/pricing.ts` is the worked
 caller: one rounding for the whole shop, applied at the two multiplications a
 basket cannot avoid — a percentage discount and a tax rate.
 
@@ -178,6 +265,17 @@ column.
 { "type": "integer", "x-money": {} }
 ```
 
+`@big` is the one attribute that changes its field's JSON **type**, because the
+column's values do not fit a JSON number either:
+
+```json
+{ "type": "string", "pattern": "^-?\\d+$", "x-big": true }
+```
+
+`x-big` is what picks the control. Without it a generated form offers a plain
+text box for a whole number — and `type="number"` would be worse, since that
+input binds through a JS number and rounds the value back in the browser.
+
 The scale is **not** resolved into `x-money` for the `field:` form — it is not
 knowable from the schema there, and a number that is right two thirds of the
 time is worse than an absent one.
@@ -188,3 +286,5 @@ time is worse than an absent one.
 - `packages/toolbelt/src/units/units.js` — `formatMoney`, `minorUnits`
 - `DECISIONS.md` § `FJS-D142` — why an attribute rather than a `Decimal` scalar,
   and why the aggregate argument for it was retired after measurement
+- `DECISIONS.md` § `FJS-D174` — why `@big` crosses as a string rather than a
+  `BigInt`, and why global `safeIntegers` was refused

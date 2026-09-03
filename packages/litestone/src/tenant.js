@@ -55,43 +55,168 @@ function assertSafeId(id) {
 
 // ─── LRU connection pool ──────────────────────────────────────────────────────
 // Map preserves insertion order — move to end on access, evict from front.
+//
+// Two rules here are not obvious and both were bugs (`FJS-640`).
+//
+// **Eviction does not close.** A pool that closes what it lent out is not a
+// pool: `get()` hands a client to a request that holds it across every await it
+// makes, and `maxOpen` is reached by traffic rather than by that request
+// finishing. Closing under it used to leave a MIXED client — a cached statement
+// still answering, a fresh one throwing — so requests failed at random above
+// the default of 100 hot tenants. `maxOpen` is therefore a target for how many
+// to keep warm, not a ceiling on open handles.
+//
+// A LEASE is what makes the common case deterministic. junction pins for the
+// length of a request and releases in a `finally`, so eviction can close a
+// client whose every lease has ended, now, rather than waiting for a collection
+// that file-descriptor pressure does not trigger. A client from a bare `get()`
+// was never leased and is dropped instead — bun finalises a Database on GC, so
+// the last holder to let go still closes it.
+//
+// **A fan-out inserts COLD.** `tenants.query` walks every tenant, so through a
+// plain LRU an admin dashboard evicts the tenants being served. A cold entry is
+// the eviction victim before any hot one, which is Postgres's ring buffer for
+// sequential scans and MySQL's midpoint insertion; the ring is sized to the
+// fan-out's concurrency so its in-flight clients stay pooled and everything
+// past them recycles within the ring.
 
 class LRUPool {
-  constructor(maxSize) {
-    this.maxSize = maxSize
-    this.pool    = new Map()  // tenantId → { db, lastAccess }
+  constructor(maxSize, coldKeep = 8) {
+    this.maxSize  = maxSize
+    // The ring is sized to the fan-out's concurrency so its in-flight clients
+    // stay pooled — but never past half the pool, or a scan owns the cache it
+    // was supposed to leave alone. A ring wider than the pool can never fill,
+    // so it never starts recycling and every cold insert evicts a hot entry:
+    // the scan resistance is off, silently, for exactly the small pools that
+    // need it most.
+    this.coldKeep = Math.max(1, Math.min(coldKeep, Math.floor(maxSize / 2)))
+    this.pool     = new Map()  // tenantId → { db, lastAccess, cold, pins, leased }
+    // Retired clients are counted, never held. A FinalizationRegistry holds its
+    // target weakly, so registering one cannot be the reason it stays alive,
+    // and the callback is what lets `stats()` say how many evicted clients are
+    // still outstanding. A count only — nothing branches on it, because a
+    // finaliser is not guaranteed to run.
+    this.retired   = 0
+    this.overflows = 0
+    this.warned    = false
+    this.finaliser = typeof FinalizationRegistry === 'function'
+      ? new FinalizationRegistry(() => { this.retired-- })
+      : null
   }
 
-  get(id) {
+  get(id, { cold = false } = {}) {
     const entry = this.pool.get(id)
     if (!entry) return null
-    // Move to end (most recently used)
-    this.pool.delete(id)
-    this.pool.set(id, entry)
-    entry.lastAccess = Date.now()
+    // A fan-out must neither promote nor reorder: it is walking this pool, and
+    // touching every tenant once would make the scan its own working set.
+    if (!cold) {
+      entry.cold = false
+      this.pool.delete(id)
+      this.pool.set(id, entry)
+      entry.lastAccess = Date.now()
+    }
     return entry.db
   }
 
-  set(id, db) {
-    // Evict LRU if at capacity
-    if (this.pool.size >= this.maxSize && !this.pool.has(id)) {
-      const lruId = this.pool.keys().next().value
-      const lru   = this.pool.get(lruId)
-      try { lru.db.$close() } catch {}
-      this.pool.delete(lruId)
+  set(id, db, { cold = false } = {}) {
+    if (this.pool.size >= this.maxSize && !this.pool.has(id)) this.#evict()
+    this.pool.set(id, { db, lastAccess: Date.now(), cold, pins: 0, leased: false })
+  }
+
+  /**
+   * Pin a pooled client for the duration of a unit of work. Returns the
+   * release; calling it twice is a no-op, so a `finally` is safe on a path
+   * that already released.
+   */
+  retain(id) {
+    const entry = this.pool.get(id)
+    if (!entry) return () => {}
+    entry.pins++
+    entry.leased = true
+    let done = false
+    return () => {
+      if (done) return
+      done = true
+      entry.pins--
+      if (entry.pins === 0 && entry.evicted) this.#close(entry)
     }
-    this.pool.set(id, { db, lastAccess: Date.now() })
+  }
+
+  #victim() {
+    let firstCold = null, colds = 0, firstFree = null, first = null
+    for (const [id, e] of this.pool) {
+      if (first === null) first = id
+      if (e.cold) { colds++; if (firstCold === null) firstCold = id }
+      else if (e.pins === 0 && firstFree === null) firstFree = id
+    }
+    // Recycle within the cold ring once it is full; below that a scan is still
+    // filling its working set and evicting it would make the scan pay twice.
+    // `>=` because the victim is chosen BEFORE the new cold entry goes in, so
+    // `>` would let the ring grow one slot past its size on every insert.
+    if (firstCold !== null && colds >= this.coldKeep) return firstCold
+    return firstFree ?? firstCold ?? first
+  }
+
+  #evict() {
+    const id    = this.#victim()
+    const entry = this.pool.get(id)
+    this.pool.delete(id)
+    if (!entry) return
+    entry.evicted = true
+    // Leased and idle: every holder has let go and the close is safe and now.
+    if (entry.leased && entry.pins === 0) { this.#close(entry); return }
+    // Leased and busy: every slot was in use, so the pool is over its target
+    // for as long as those requests run. This is the one condition an operator
+    // can act on, and the only one that cannot be GC lag — a client waiting to
+    // be collected is not a client anybody is using.
+    if (entry.pins > 0) { this.#overflow(entry.pins); return }
+    // Never leased: nobody told us who holds it, so dropping the reference is
+    // the only safe answer.
+    this.#retire(entry.db)
+  }
+
+  #overflow(pins) {
+    this.overflows++
+    if (this.warned) return
+    this.warned = true
+    console.warn(
+      `[litestone] tenant pool: every one of maxOpen=${this.maxSize} connections was in use, ` +
+      `so a client ${pins} request(s) are still holding was evicted. It stays open until they ` +
+      `finish, so this process is over its target. Raise maxOpen to the concurrent tenant ` +
+      `working set.`,
+    )
+  }
+
+  #close(entry) {
+    try { entry.db.$close() } catch {}
+  }
+
+  // An evicted client nobody leased. Counted for `stats()` and NOT warned
+  // about: the count includes clients that are already garbage and merely
+  // uncollected, so a threshold on it fires on GC lag rather than on pressure,
+  // which is how a warning teaches everyone to ignore it. `#overflow` is the
+  // condition that is really about the pool being too small.
+  #retire(db) {
+    if (!this.finaliser) return
+    this.retired++
+    this.finaliser.register(db, null)
   }
 
   delete(id) {
     const entry = this.pool.get(id)
-    if (entry) {
-      try { entry.db.$close() } catch {}
-      this.pool.delete(id)
-    }
+    if (!entry) return
+    this.pool.delete(id)
+    entry.evicted = true
+    // A dropped tenant is not a closed one. An in-flight request finishes
+    // against a file that has been unlinked, which POSIX is fine with, and the
+    // handle goes when the last holder does.
+    if (entry.pins === 0 && entry.leased) this.#close(entry)
+    else if (!entry.leased) this.#retire(entry.db)
   }
 
   closeAll() {
+    // Shutdown: nothing is in flight, so this is the one place an unconditional
+    // close is right.
     for (const [, entry] of this.pool) {
       try { entry.db.$close() } catch {}
     }
@@ -99,6 +224,16 @@ class LRUPool {
   }
 
   get size() { return this.pool.size }
+
+  stats() {
+    return {
+      pooled:    this.pool.size,
+      leased:    [...this.pool.values()].reduce((n, e) => n + (e.pins > 0 ? 1 : 0), 0),
+      retired:   this.retired,
+      overflows: this.overflows,
+      maxOpen:   this.maxSize,
+    }
+  }
 
   ids() { return [...this.pool.keys()] }
 }
@@ -151,7 +286,7 @@ class TenantRegistry {
     this.#tenancy       = tenancy ?? null
     this.#dir           = dir
     this.#registryDb    = registryDb
-    this.#pool          = new LRUPool(maxOpen)
+    this.#pool          = new LRUPool(maxOpen, this.#defaultConcurrency)
     this.#maxOpen       = maxOpen
     this.#encryptionKey = encryptionKey ?? null
     this.#migrationsDir = migrationsDir ?? null
@@ -220,19 +355,19 @@ class TenantRegistry {
   // evicts an innocent pool entry (thundering herd on deploy restarts).
   #opening = new Map()
 
-  async #open(id) {
-    const cached = this.#pool.get(id)
+  async #open(id, opts) {
+    const cached = this.#pool.get(id, opts)
     if (cached) return cached
 
     const inflight = this.#opening.get(id)
     if (inflight) return inflight
 
-    const promise = this.#doOpen(id).finally(() => this.#opening.delete(id))
+    const promise = this.#doOpen(id, opts).finally(() => this.#opening.delete(id))
     this.#opening.set(id, promise)
     return promise
   }
 
-  async #doOpen(id) {
+  async #doOpen(id, opts) {
     const path = this.#inMemory ? ':memory:' : this.#dbPath(id)
     if (!this.#inMemory && !existsSync(path))
       throw new Error(`Tenant "${id}" does not exist`)
@@ -267,7 +402,7 @@ class TenantRegistry {
       encryptionKey: encKey ?? this.#clientOptions.encryptionKey,
     })
 
-    this.#pool.set(id, db)
+    this.#pool.set(id, db, opts)
     return db
   }
 
@@ -469,7 +604,8 @@ class TenantRegistry {
     })
 
     const results = await this.#fanOut(ids, async (id) => {
-      const db = await this.#open(id)
+      // Cold: a scan over every tenant must not evict the ones being served.
+      const db = await this.#open(id, { cold: true })
       return fn(db, id)
     }, concurrency)
 
@@ -579,6 +715,27 @@ class TenantRegistry {
    * How many connections are currently open.
    */
   get openCount() { return this.#pool.size }
+
+  /**
+   * Pin a client for the length of a unit of work; returns the release.
+   *
+   * The pool never closes a client it lent out, so without this an evicted one
+   * waits on a collection that file-descriptor pressure does not trigger. A
+   * lease says when the work is over, which is what lets eviction close the
+   * client immediately instead. Junction's per-request tenant hook is the
+   * caller; an app holding a client for the length of a call does not need it.
+   *
+   *   const release = tenants.retain(id)
+   *   try { ... } finally { release() }
+   */
+  retain(id) { return this.#pool.retain(id) }
+
+  /**
+   * `{ pooled, retired, maxOpen }` — `retired` is evicted clients something is
+   * still holding, which is the number `openCount` cannot report and the one
+   * that says whether this process is over its target.
+   */
+  poolStats() { return this.#pool.stats() }
 
   // ── Internal fan-out ────────────────────────────────────────────────────────
   // Processes ids in parallel batches of `concurrency`.

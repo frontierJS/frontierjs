@@ -31,9 +31,11 @@ export type TargetAuth =
   | { type: 'api_key'; ref: string; header: string }   // header name is not secret
   // Signs a canonical string over method, path, timestamp, nonce and a
   // hash of the body. `header_prefix` names the three headers this emits
-  // (default 'X-Hub' → X-Hub-Signature, X-Hub-Timestamp, X-Hub-Nonce).
+  // (default 'X-Fjs' → X-Fjs-Signature, X-Fjs-Timestamp, X-Fjs-Nonce).
   | { type: 'hmac';    ref: string; header_prefix?: string }
   | { type: 'none' }
+
+export type FollowRedirects = 'never' | 'same-origin'
 
 export interface TargetDescriptor {
   id:              string
@@ -54,6 +56,39 @@ export interface TargetDescriptor {
   // sent (`FJS-D153`). Response decoding is unaffected and stays content-type
   // driven: a form-encoded API almost always answers JSON.
   encoding?:       BodyEncoding
+
+  // Headers sent on every request to this target.
+  //
+  // Here for `encoding`'s reason: a pinned API version and a required
+  // `User-Agent` are facts about who is on the other end, not about one call.
+  // Spread at the call site instead, they are one omission away from a request
+  // that runs against whatever the account defaults to — and some counterparties
+  // make it worse than drift: Basecamp requires a `User-Agent` naming the
+  // application and blocks traffic without one, so the first call written
+  // without the spread is an outage rather than a difference.
+  //
+  // Precedence: below `req.headers`, so a caller can still override one, and
+  // below the auth headers, which nothing may displace. A name here that
+  // collides with an auth header is therefore ignored rather than merged.
+  headers?:        Record<string, string>
+
+  // What this target's 3xx answers mean.
+  //
+  // 'never' (the default) makes a redirect its own result: nothing is re-sent,
+  // and `meta.headers.location` says where the target pointed. Until `FJS-679`
+  // conduit inherited `fetch`'s redirect-following, which re-sent this target's
+  // `api_key` header and its HMAC signature to whatever host the 3xx named —
+  // `fetch` strips only `Authorization`, so a bearer target was the ONE shape
+  // that was safe. A 302 on a POST also became a GET at the new host, carrying
+  // the `Idempotency-Key`.
+  //
+  // 'same-origin' follows, up to 5 hops, on GET/HEAD only unless the status is
+  // 307/308, and never across an origin. It is refused at register() for an
+  // `hmac` or `api_key` target: the canonical string binds one path and one
+  // query, so a followed hop either re-sends a signature that is no longer
+  // valid for the request being made, or sends a key to an address the
+  // descriptor never named.
+  follow_redirects?: FollowRedirects
 
   registered_at:   number        // unix ms
   last_seen_at:    number | null
@@ -167,6 +202,21 @@ export interface ResponseMeta {
   target:      string
   status?:     number
   duration_ms: number
+
+  // The response's headers, lowercased. Absent when nothing was sent — a
+  // breaker refusal, an unknown target, a body that would not serialise.
+  //
+  // Not a convenience. A large share of the field puts load-bearing answers
+  // here and nowhere else: RFC 5988 `Link` is how GitHub, Basecamp and Shopify
+  // paginate, so without this a caller cannot fetch page two at all; `ETag`
+  // and `Last-Modified` are the input to the conditional request that makes a
+  // 304 possible; `X-Total-Count` is the count. They were read and discarded
+  // for the package's whole life (`FJS-648`).
+  //
+  // The whole map rather than an allow-list: a response header from a target
+  // the app declared is not our secret, and a list would go stale against every
+  // provider that invents one.
+  headers?:    Record<string, string>
 }
 
 // ─── Streaming ──────────────────────────────────────────────
@@ -200,6 +250,14 @@ export type ConduitErrorKind =
   | 'not_implemented'
   | 'server_error'
   | 'stream_error'
+  // The target asked us to slow down — HTTP 429, or 503 carrying `Retry-After`.
+  // Its own kind rather than a `server_error`, because the two disagree on both
+  // counts that matter: this one is always retryable, and it says nothing about
+  // the target's health, so it must not count toward the circuit breaker. Under
+  // `server_error` a provider's rate limit tripped the breaker and every send
+  // after it failed `circuit_open` — load shed by the one status that means
+  // *slow down* rather than *I am broken* (`FJS-650`).
+  | 'rate_limited'
   // The request itself is unusable — a body that will not serialise, a
   // response larger than the configured cap. The caller is at fault, not
   // the network or the target, so these are never retryable.
@@ -210,6 +268,14 @@ export type ConduitErrorKind =
   | 'circuit_open'
   // The per-target concurrency cap is full. Also shed before dispatch.
   | 'overloaded'
+  // The target answered a 3xx and this target does not follow redirects (or
+  // could not follow this one). Its own kind rather than a `server_error`,
+  // because the three things that word decides all disagree here: it is not
+  // retryable — the same request gets the same 3xx — it says nothing about the
+  // target's health, so it must not count toward the breaker, and the caller
+  // has something to act on, which `meta.headers.location` and `meta.status`
+  // carry (`FJS-679`).
+  | 'redirected'
 
 export interface ConduitError {
   kind:      ConduitErrorKind
@@ -218,6 +284,14 @@ export interface ConduitError {
   message:   string
   retryable: boolean
   raw?:      unknown
+
+  // How long the target asked us to wait, in milliseconds — parsed from
+  // `Retry-After`, which is either a count of seconds or an HTTP-date. Set on
+  // `rate_limited` and on any other response that carried the header. The retry
+  // loop honours it in place of its own backoff, capped by the deadline; a
+  // caller handling the error itself gets the same number rather than the
+  // header's two possible spellings.
+  retry_after_ms?: number
 }
 
 // ─── Observers ──────────────────────────────────────────────

@@ -51,7 +51,7 @@ export { policyExprToString }
 //     name, db, external, gate, gateSource, softDelete,
 //     policies: { <op>: { allows: [{expr, message}], denies: [...] } },
 //     fields:   [{ name, protection, allows: [{ operations, expr }] }],
-//     transitions: [{ field, name, from, to, gate }],
+//     transitions: [{ field, name, from, to, gate, system }],
 //     unrestricted: boolean,
 //   }],
 //   levels, counts
@@ -86,6 +86,8 @@ export function deriveAccess(schema) {
     policied:     models.filter(m => Object.keys(m.policies).length > 0).length,
     protected:    models.filter(m => m.fields.length > 0).length,
     transitions:  models.reduce((n, m) => n + m.transitions.length, 0),
+    systemMoves:  models.reduce((n, m) => n + m.transitions.filter(t => t.system).length, 0),
+    sealingMoves: models.reduce((n, m) => n + m.transitions.filter(t => t.seals).length, 0),
   }
 
   return { models, levels: LEVELS, counts }
@@ -126,8 +128,26 @@ function describeModel(model, derivedNames = []) {
   for (const attr of attrs) {
     if (attr.kind !== 'transitions') continue
     for (const [name, t] of Object.entries(attr.transitions ?? {}))
-      transitions.push({ field: attr.field, name, from: t.from, to: t.to, gate: t.gate ?? null })
+      transitions.push({
+        field: attr.field, name, from: t.from, to: t.to,
+        // `@system` is carried beside the gate and not folded into it: they are
+        // two facts and they compose. The gate says who may ASK for the move,
+        // `@system` says the APPLICATION makes it — so `@system @gate(5)` is a
+        // move the engine decides on behalf of a caller senior enough to ask.
+        // `@seals` is the third fact on the same move and it is about neither
+        // the caller nor the code: it says the row becomes a DOCUMENT here, so
+        // after it the model's @immutable columns and its @sealed children are
+        // frozen for everybody, asSystem() included.
+        gate: t.gate ?? null, system: Boolean(t.system), seals: Boolean(t.seals),
+      })
   }
+
+  // The other half of a seal: WHICH children are part of the document. It is a
+  // list of relation names rather than a boolean because the set is explicit —
+  // a sealing model routinely has children that must go on arriving.
+  const sealedRelations = (model.fields ?? [])
+    .filter(f => f.attributes?.some(a => a.kind === 'sealed'))
+    .map(f => ({ field: f.name, model: f.type?.name ?? null }))
 
   const softAttr = attrs.find(a => a.kind === 'softDelete')
 
@@ -155,7 +175,7 @@ function describeModel(model, derivedNames = []) {
     softDelete: softAttr ? (softAttr.cascade ? 'cascade' : true) : false,
     policies,
     fields,
-    transitions,
+    transitions, sealedRelations,
     // Nothing at the Data boundary refuses this model to anyone. Not the same
     // as "public data" — it is "nobody said", which is what the snapshot exists
     // to make visible.
@@ -244,7 +264,7 @@ export function renderAccessSnapshot(access, opts = {}) {
   out.push('without a schema change you meant to make is a shipped security bug.')
   out.push('')
   out.push(`\`\`\`\n${counts.models} models · ${counts.gated} gated · ${counts.unrestricted} unrestricted`)
-  out.push(`${counts.policied} with row policies · ${counts.protected} with protected fields · ${counts.transitions} gated transitions\n\`\`\``)
+  out.push(`${counts.policied} with row policies · ${counts.protected} with protected fields · ${counts.transitions} declared moves · ${counts.systemMoves} @system · ${counts.sealingMoves} @seals\n\`\`\``)
   out.push('')
 
   // ── Unrestricted ──
@@ -328,13 +348,46 @@ export function renderAccessSnapshot(access, opts = {}) {
     out.push('A move a caller may not make is refused even where `@@gate` allows the update.')
     out.push('An ungated move needs only the model\'s update level.')
     out.push('')
-    out.push('| Model | Field | Move | From → To | Level |')
-    out.push('| --- | --- | --- | --- | --- |')
+    // The sentence above was FALSE for one verb and this file is what a
+    // reviewer grades an access change with, so the qualification belongs in
+    // the artefact rather than in a package doc (`FJS-671`).
+    out.push('**Every verb, and a bulk write is refused rather than exempted.** `updateMany`')
+    out.push('matches rows without reading them, so there is no from-state to grade — it')
+    out.push('therefore declines a transitions-typed column by name (`BulkTransitionError`,')
+    out.push('400) instead of writing it ungraded. Every other column on the model stays')
+    out.push('bulk-writable in the same call. `asSystem()` still writes it, and says so.')
+    out.push('')
+    out.push('**Made by** is the widest thing a state machine can say. `caller` is an ordinary')
+    out.push('move, graded by the level beside it; `application` is `@system` — the move is the')
+    out.push('code\'s, so no caller reaches it at any level and it is made by naming it on the')
+    out.push('write. The two columns are separate because they compose: `application` at level 5')
+    out.push('is a move the engine decides on behalf of a caller who must still be senior enough')
+    out.push('to ask for it.')
+    out.push('')
+    out.push('**Seals** is the third and it grades nobody. `@seals` says the row becomes a')
+    out.push('DOCUMENT at this move: after it the model\'s `@immutable` columns and its `@sealed`')
+    out.push('children are frozen for everybody, `asSystem()` included — so it belongs here')
+    out.push('rather than in a level, and a move gaining one takes writes away from every')
+    out.push('caller at once. Everything reachable from the target seals with it.')
+    out.push('')
+    out.push('| Model | Field | Move | From → To | Made by | Level | Seals |')
+    out.push('| --- | --- | --- | --- | --- | --- | --- |')
     for (const m of withTransitions) {
       for (const t of m.transitions) {
         const lvl = t.gate == null ? '—' : `${t.gate} ${levelLabel(t.gate)}`
-        out.push(`| \`${m.name}\` | \`${t.field}\` | \`${t.name}\` | ${t.from.join(', ')} → ${t.to} | ${lvl} |`)
+        const by  = t.system ? '**application**' : 'caller'
+        out.push(`| \`${m.name}\` | \`${t.field}\` | \`${t.name}\` | ${t.from.join(', ')} → ${t.to} | ${by} | ${lvl} | ${t.seals ? '**yes**' : '—'} |`)
       }
+    }
+    const sealing = withTransitions.filter(m => m.sealedRelations?.length)
+    if (sealing.length) {
+      out.push('')
+      out.push('`@sealed` names the children a document is MADE of — the other half of `@seals`,')
+      out.push('and explicit rather than inferred, because a sealing model routinely has children')
+      out.push('that must go on arriving after it is issued.')
+      out.push('')
+      for (const m of sealing)
+        out.push(`- \`${m.name}\` seals ${m.sealedRelations.map(r => `\`${r.field}\`${r.model ? ` (\`${r.model}\`)` : ''}`).join(', ')}`)
     }
     out.push('')
   }

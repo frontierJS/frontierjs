@@ -589,7 +589,7 @@ enum WebhookEndpointStatus {
 }
 
 model WebhookDelivery {
-  id String @id @default(cuid())
+  id String @default(cuid())
   friendlyId String
   webhookEndpointId String
   organizationId String
@@ -610,8 +610,8 @@ model WebhookDelivery {
   updatedAt DateTime @updatedAt
   processedAt DateTime?
 
+  @@id([id, createdAt])
   @@index([webhookEndpointId, createdAt(sort: Desc)])
-  @@unique([id, createdAt])
 }
 
 enum WebhookDeliveryStatus {
@@ -1820,7 +1820,7 @@ model RealtimeStreamChunk {
 }
 
 model TaskEventPartitioned {
-  id String @id @default(cuid())
+  id String @default(cuid())
   message String
   traceId String
   spanId String
@@ -1871,10 +1871,10 @@ model TaskEventPartitioned {
   machinePresetMemory Float?
   machinePresetCentsPerMs Float?
 
+  @@id([id, createdAt])
   @@index([traceId])
   @@index([spanId])
   @@index([runId])
-  @@unique([id, createdAt])
 }
 
 enum GithubRepositorySelection {

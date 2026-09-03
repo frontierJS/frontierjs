@@ -1,0 +1,12 @@
+<script>
+  // Forward.mesa — a kit component's shape: it declares a couple of props and
+  // spreads everything else onto its own root, which is what `{...$attributes}`
+  // exists for and what 81 of this repo's 82 uses of it look like.
+  //
+  // `tone` is declared so a spec can assert it does NOT reach the DOM — that
+  // is restProps' original job and the thing a live view must not lose.
+  export let tone = 'neutral'
+  export let label = ''
+</script>
+
+<span class="forward" data-tone={tone} {...$attributes}>{label}</span>

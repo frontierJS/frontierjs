@@ -1,0 +1,150 @@
+---
+title: People
+---
+<script>
+  // Who works here, and what they are on NOW.
+  //
+  // ─── The one-audience screen ──────────────────────────────────────────────
+  //
+  // This is the first screen in `example` with exactly one audience. Every
+  // other one has at least two — a shop and a shopper, staff and a customer,
+  // the console and the storefront — and each of those asymmetries is what a
+  // gate ladder is FOR. `Employee` is `@@gate("5.5.5.5")`: read, create, update
+  // and delete at one level, so `can('create', level)` and `can('read', level)`
+  // are the same answer and a disabled button would be disabled for nobody who
+  // can see the page.
+  //
+  // Nothing about that made a screen harder to write, which is the answer to
+  // the question the phase asked: **the affordance layer degrades to a constant
+  // rather than to a wrong answer.** The nav link is the one place it still
+  // pays, because a link is a way IN and level 4 staff have no business
+  // arriving at a page they cannot read a row on.
+  //
+  // ─── One query, not one per person ────────────────────────────────────────
+  //
+  // *What is somebody on now* is the OPEN window, so it is one read of
+  // `pay-windows` filtered to `effectiveTo: null` rather than a `payOn` call
+  // per row. The as-at read — what were they on in March — is a different
+  // question and it belongs on the detail screen, where somebody is asking it
+  // about one person.
+  import Employee, { employees } from '@/resources/Employee.mesa'
+  import { payWindows } from '@/resources/PayWindow.mesa'
+  import { session } from '@/session.js'
+  import { prefs } from '@/prefs.js'
+  import { useStore } from '@frontierjs/sierra/junction'
+  import { page } from '@frontierjs/sierra/router'
+  import { money } from '../../money.js'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Drawer        from '@frontierjs/ui/components/overlay/Drawer.mesa'
+  import Mono          from '@frontierjs/ui/components/display/Mono.mesa'
+  import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+
+  const columns = [
+    { key: 'reference', label: 'Reference' },
+    { key: 'name',      label: 'Name' },
+    { key: 'status',    label: 'Employment' },
+    { key: 'pay',       label: 'On',    align: 'right' },
+    { key: 'actions',   label: '' },
+  ]
+
+  const { get: rows, unsubscribe } = useStore(employees.store)
+  $.onDestroy(unsubscribe)
+
+  $: (session.level, prefs.dense, prefs.currency)
+
+  let error = null
+  let open  = new Map()     // employeeId → the window with no end on it
+  let adding = null
+
+  async function loadPay() {
+    try {
+      const list = await payWindows.service.find({ effectiveTo: null }, { limit: 500 })
+      // Counted into a local and ASSIGNED once — `Map.set` on the rendered map
+      // is a mutation, and a mutation is not an assignment.
+      const held = new Map()
+      for (const w of list?.data ?? []) held.set(w.employeeId, w)
+      open = held
+    } catch { open = new Map() }
+  }
+
+  function load() {
+    employees.load(page.query, { orderBy: 'reference', ...page.directives })
+      .then(loadPay)
+      .catch(e => { error = e.message })
+  }
+  load()
+  $: page.query, page.directives, () => load()
+
+  /** Employed is a question about DATES, never about having a pay window —
+   *  phase 2's finding, on screen. Somebody who left keeps their history. */
+  const isHere = (e) => !e.endedOn || new Date(e.endedOn) > new Date()
+
+  /** What the open window is worth a year, which is the magnitude a band table
+   *  is written in. `rate` means two different things under the two bases and
+   *  this is the one place the screen has to know that. */
+  const annual = (w) => w && (w.basis === 'hourly' ? w.rate * w.hoursPerWeek * 52 : w.rate)
+
+  const when = iso => iso ? new Date(iso).toLocaleDateString(undefined,
+    { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
+
+  function newPerson() { adding = employees.make(); error = null }
+  function close()     { adding = null }
+</script>
+
+<SectionHeader title="People" level={1}>
+  {#snippet action()}
+    <div class="cluster">
+      <a class="navlink" href="/payroll/">Pay runs</a>
+      <Button id="p-new" onclick={newPerson}>New employee</Button>
+    </div>
+  {/snippet}
+</SectionHeader>
+
+{#if error}<Alert tone="danger" id="p-error">{error}</Alert>{/if}
+
+<Table {columns} rows={rows()} striped hover compact={prefs.dense}>
+  {#snippet row(e)}
+    <tr data-employee={e.id} data-reference={e.reference}>
+      <td><a href={'/people/' + e.id + '/'} data-open><Mono size="xs">{e.reference}</Mono></a></td>
+      <td>{e.name}</td>
+      <td>
+        {#if isHere(e)}
+          <Pill tone="success" data-status="here">since {when(e.startedOn)}</Pill>
+        {:else}
+          <Pill tone="muted" data-status="left">left {when(e.endedOn)}</Pill>
+        {/if}
+      </td>
+      <td class="text-right" data-annual={annual(open.get(e.id)) ?? ''}>
+        {#if open.get(e.id)}
+          {money(annual(open.get(e.id)))}<span class="text-muted"> a year</span>
+        {:else}
+          <span class="text-muted">no open window</span>
+        {/if}
+      </td>
+      <td><Button variant="ghost" href={'/people/' + e.id + '/'}>Open</Button></td>
+    </tr>
+  {/snippet}
+</Table>
+
+<Alert tone="muted">
+  What somebody is paid is not a column on this model. <code>PayWindow</code>
+  carries it with a lifetime, so the salary box is on the person's own screen
+  and changing it closes one row and opens another — which is why a form
+  generated from <code>Employee</code> cannot offer one by accident.
+</Alert>
+
+<Drawer open={adding !== null} title="New employee" side="right" onclose={close}>
+  {#if adding}
+    <Employee
+      bind:record={adding}
+      method="create"
+      submitId="p-save"
+      oncancel={close}
+      ondone={() => { close(); load() }}
+    />
+  {/if}
+</Drawer>

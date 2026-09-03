@@ -1,0 +1,217 @@
+---
+title: Plan
+---
+<script>
+  // One plan, and the only screen in this app where a person types money that
+  // is not a product price.
+  //
+  // ─── What makes it worth a screen ─────────────────────────────────────────
+  //
+  // A price here is a ROW WITH A LIFETIME, so *raise the price* is not a field
+  // on a form. `PlanVersion.price` and `effectiveFrom` are `@immutable`, so the
+  // Data boundary refuses a PATCH naming either by name; what actually happens
+  // is that the open window is closed at an instant and the next one opens at
+  // the same instant, in one transaction (`plans.reprice`).
+  //
+  // The form below is therefore a CREATE form over `PlanVersion` narrowed to
+  // one field, with the request replaced. That is what `<Form onsubmit>` is
+  // for: the in-flight state, the field errors and the dirty tracking still
+  // apply, and only the call changes.
+  //
+  // ─── The money control ────────────────────────────────────────────────────
+  //
+  // `price` is `@money(USD)`, so the column holds CENTS and the person types
+  // dollars. Nothing on this page knows that: `web/src/money-control.js`
+  // registers a control off `x-money` on the rule, and `<PlanVersion>` renders
+  // whatever the schema's own control table answers. Without it the box is an
+  // integer spinner and twenty-nine dollars is stored as twenty-nine cents,
+  // with every screen agreeing (`FJS-582`).
+  import PlanVersion, { planVersions } from '@/resources/PlanVersion.mesa'
+  import { plans }         from '@/resources/Plan.mesa'
+  import { subscriptions } from '@/resources/Subscription.mesa'
+  import { session } from '@/session.js'
+  import { page } from '@frontierjs/sierra/router'
+  import { money } from '../../money.js'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Badge         from '@frontierjs/ui/components/display/Badge.mesa'
+  import Breadcrumbs   from '@frontierjs/ui/components/display/Breadcrumbs.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Mono          from '@frontierjs/ui/components/display/Mono.mesa'
+  import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Skeleton      from '@frontierjs/ui/components/feedback/Skeleton.mesa'
+  import StatCard      from '@frontierjs/ui/components/display/StatCard.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+  import { toasts }    from '@frontierjs/ui/stores/toastStore.js'
+
+  $: (page.params, session.level)
+
+  let plan     = null
+  let row      = null       // the record view the plan is watched through
+  let unwatch  = null
+  let versions = []
+  let held     = new Map()  // planVersionId → how many subscriptions are on it
+  let error    = null
+  let draft    = planVersions.make()
+
+  const columns = [
+    { key: 'price',   label: 'Price',   align: 'right' },
+    { key: 'from',    label: 'From' },
+    { key: 'to',      label: 'Until' },
+    { key: 'holders', label: 'Subscribers', align: 'right' },
+  ]
+
+  /** The plan itself, watched rather than read — a price raised in another tab
+   *  moves `currentPrice` here with nothing refreshing (`FJS-518`). */
+  function watch() {
+    row?.release()
+    row = plans.record(page.params.id)
+    unwatch = row.subscribe(v => { plan = v })
+    return row.ready
+  }
+
+  /** The windows, newest first, and who is still on each.
+   *
+   *  The subscriber counts are one request rather than one per version: the
+   *  point they make is that repricing moves NOBODY, and a screen that made
+   *  five requests to say so would be making the wrong point about the cost of
+   *  saying it. */
+  async function loadVersions() {
+    const list = await planVersions.service.find(
+      { planId: Number(page.params.id) }, { orderBy: '-effectiveFrom', limit: 50 })
+    versions = list?.data ?? []
+
+    if (!versions.length) { held = new Map(); return }
+    try {
+      const subs = await subscriptions.service.find(
+        { planVersionId: { in: versions.map(v => v.id) } }, { limit: 200 })
+      // Counted into a local and ASSIGNED once. `held.set(…)` on the rendered
+      // Map is a mutation, and a mutation is not an assignment — the template
+      // keeps the empty Map it was handed and every count reads 0, which looks
+      // exactly like a plan nobody is subscribed to.
+      const counted = new Map()
+      for (const s of subs?.data ?? []) counted.set(s.planVersionId, (counted.get(s.planVersionId) ?? 0) + 1)
+      held = counted
+    } catch {
+      // A caller who may read a plan may not be able to read subscriptions —
+      // `Subscription` reads at 1 and `Plan` at 0. An empty count column is the
+      // honest answer there; a refusal banner over a page that otherwise works
+      // is not.
+      held = new Map()
+    }
+  }
+
+  async function boot() {
+    error = null
+    try { await watch(); await loadVersions() }
+    catch (e) { error = e.message }
+  }
+  boot()
+  $: page.params.id, () => boot()
+  $.onDestroy(() => { unwatch?.(); row?.release() })
+
+  /** Charge something else from now on.
+   *
+   *  `<Form onsubmit>` replaces the request and nothing else, so the payload
+   *  arriving here has already been coerced, blank-stripped and validated
+   *  against `PlanVersion`'s own rules — and a 400 from the service's declared
+   *  `PlanPrice` input still lands under the price box, because the resource
+   *  unwraps it. */
+  async function reprice(record) {
+    const result = await plans.service.invoke('reprice', page.params.id, { price: record.price })
+    toasts.success(`Now ${money(result.price)} for new subscribers`)
+    draft = planVersions.make()
+
+    // Re-read the plan, and this is the one thing on this page a live store
+    // cannot do for it. `currentPrice` is `@from(PlanVersion, …)` — it moves
+    // when a CHILD row is written, and what was written here is a
+    // `PlanVersion`. Nothing announces that the plan changed, because as a row
+    // it did not, so the tile above would hold the old price until something
+    // else touched `Plan`. The screen that made the change is the one place
+    // that knows.
+    await Promise.all([row.refresh(), loadVersions()])
+    return result
+  }
+
+  $: canPrice = plans.can('update', session.level)
+
+  const when = iso => iso ? new Date(iso).toLocaleDateString(undefined,
+    { year: 'numeric', month: 'short', day: 'numeric' }) : null
+</script>
+
+<Breadcrumbs items={[{ label: 'Plans', href: '/plans/' }, { label: plan?.name ?? '…' }]} />
+
+{#if error}<Alert tone="danger" id="pv-error">{error}</Alert>{/if}
+
+{#if !plan}
+  <div class="stack">
+    <Skeleton variant="text" width="40%" />
+    <Skeleton variant="card" />
+  </div>
+{:else}
+  <SectionHeader title={plan.name} level={1}>
+    {#snippet action()}
+      <div class="cluster">
+        <Badge tone="muted">{plan.interval}</Badge>
+        <Pill tone={plan.active ? 'success' : 'muted'} data-active={String(plan.active)}>
+          {plan.active ? 'on sale' : 'retired'}
+        </Pill>
+      </div>
+    {/snippet}
+  </SectionHeader>
+
+  <div class="tiles" style="--tile-min: 12rem">
+    <StatCard label="Code"      value={plan.code} />
+    <StatCard label="Price now" value={plan.currentPrice == null ? '—' : money(plan.currentPrice)} id="pv-current" />
+    <StatCard label="Windows"   value={String(versions.length)} />
+  </div>
+
+  {#if plan.description}<p class="text-muted">{plan.description}</p>{/if}
+
+  <SectionHeader title="Price history" level={2} />
+
+  <Table {columns} rows={versions} striped compact>
+    {#snippet row(v)}
+      <tr data-version={v.id} data-open={String(v.effectiveTo == null)}>
+        <td class="text-right" data-price={v.price}>{money(v.price)}</td>
+        <td>{when(v.effectiveFrom)}</td>
+        <!-- An open window is the state a price is in for almost all of its
+             life, so it reads as a word rather than as an empty cell. -->
+        <td>{v.effectiveTo ? when(v.effectiveTo) : 'now'}</td>
+        <td class="text-right" data-holders={held.get(v.id) ?? 0}>{held.get(v.id) ?? 0}</td>
+      </tr>
+    {/snippet}
+  </Table>
+
+  {#if canPrice}
+    <SectionHeader title="Charge something else" level={2} />
+
+    <!--
+      One field, generated. `only={['price']}` narrows the generated list rather
+      than replacing it, so the control, the label, the step and the message a
+      bad amount produces are all still the schema's.
+
+      `method="create"` is not decoration: `@immutable` reaches the client as
+      `readOnly` in the UPDATE schema alone, so a form in patch mode would offer
+      no price box at all — which is the correct answer to *edit this version*
+      and the wrong one to *open the next*.
+    -->
+    <PlanVersion
+      bind:record={draft}
+      method="create"
+      only={['price']}
+      onsubmit={reprice}
+      submitId="pv-save"
+      submitLabel="Set price"
+    />
+
+    <Alert tone="muted" id="pv-note">
+      This closes the open window and opens a new one at the same instant.
+      <strong>Nobody already subscribed moves.</strong> A subscription names the
+      <code>PlanVersion</code> it was sold at, so somebody who signed up in
+      February keeps February's price until <code>subscriptions.changePlan</code>
+      moves them.
+    </Alert>
+  {/if}
+{/if}

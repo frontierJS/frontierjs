@@ -8,6 +8,15 @@
 // It was missing for the whole life of the app, and `loadConfig` treated the
 // absent directory exactly like an absent file — so the read below took its
 // default every boot and nothing said so (`FJS-415`).
+//
+// Paths here are anchored to THIS FILE. A cwd-relative one is only correct
+// when the command was typed at the package root, so a tool run from `api/` —
+// which is where the API's own snapshots live — resolved it to nothing
+// (`FJS-449`'s class). `api/src/app.ts` states `configPath` for the same
+// reason.
+import { fileURLToPath } from 'node:url'
+
+const here = (p) => fileURLToPath(new URL(p, import.meta.url))
 
 export default {
   // ── Middleware ────────────────────────────────────────────────────────
@@ -33,10 +42,9 @@ export default {
   // follows a test that redirects the main database instead of writing jobs
   // into the developer's own.
   caravan: {
-    // Relative to cwd, which is the package root — `bun api/index.ts`.
     // A job file names the job, declares its own queue and retry budget, and
     // is the dispatch handle every service imports.
-    jobsDir:      './api/src/jobs',
+    jobsDir:      here('../src/jobs'),
     pollInterval: 1_000,
     queues: {
       default:     { concurrency: 2 },

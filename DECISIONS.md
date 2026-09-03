@@ -449,6 +449,115 @@ for derived — if it has no independent existence, it is not a Projection.
 
 ## Access control
 
+### <a id="fjs-d182"></a>2026-09-02 · `FJS-D182` — a bulk write refuses the transitions KEY, not the verb. `FJS-044`'s power tool survives for every other column.
+
+`updateMany` matches rows with a WHERE and never reads them, so there is no
+`from` state to grade — and the skip took the whole state machine with it, not
+just the from-check. Measured, one level-4 caller holding no capability: a
+`@gate(5)` move refused through `update()` and **allowed** through `updateMany`;
+a `@system` move refused and **allowed**; a move the schema does not declare,
+**allowed** (`FJS-671`).
+
+**What the precedent actually said matters, and the audit had it backwards.**
+`FJS-044` did not rule the skip acceptable. It fixed it one layer up: junction's
+`bulkByRow` selects its targets and writes them one at a time through
+`update()`, so a filtered `PATCH` over HTTP has enforced transitions since
+2026-08-14 and still does. What was reachable is a hand-written service, job or
+script calling `db.model.updateMany` with a payload a caller supplied — a
+narrower path than *any API caller*, and a real one.
+
+**Two things arrived after that fix and neither could have been weighed by it.**
+The capability grid, which charges a transitions-field key to *the check where
+the transition is* — a check this verb does not run. And
+`access.snapshot.md`, which is the artefact a reviewer grades an access change
+with: it stated *a move a caller may not make is refused even where `@@gate`
+allows the update* and printed `application` and `5 ADMINISTRATOR` with no
+per-verb qualification. **A committed artefact certifying enforcement one verb
+does not apply is worse than the hole**, because it is what somebody reads
+instead of the code.
+
+**The ruling is that one KEY is refused rather than the tool removed.**
+`BulkTransitionError`, **400** — not 403, and the difference is the whole
+distinction: no level answers it and no grant answers it, because the verb is
+wrong rather than the caller. `upsertMany`'s `update:` half is the same
+ungraded write and refuses with it; its insert half is a create, which has no
+from-state, and does not. Every other column on the model stays bulk-writable
+in the same call, which is `FJS-044`'s reasoning kept rather than overturned:
+`updateMany` is still a power tool, for the columns a power tool can be trusted
+with.
+
+**The rejected alternatives.** *Enforce per row off `RETURNING`* — reading every
+row back is no longer a bulk write, so it answers the hole by removing the
+feature under a name that says it kept it. *Document the exemption* — the
+snapshot states it and `_checkUpdate` demands the `Model.update` capability —
+leaves the escalation reachable and makes the artefact honest about a hole
+instead of closing it, which is the shape this repo files as a defect rather
+than shipping.
+
+**`asSystem()` still writes it, and now says so.** A system client means no
+rules and a bulk backfill of a status column is exactly what it is for. But
+`update()` announces its own bypass through `emitTransitionEvent`, which a bulk
+write never reaches — so without a warning of its own the system path would have
+been the one silent bypass of the two.
+
+*Lives in:* `packages/litestone/src/core/errors.js` (`BulkTransitionError`) ·
+`src/core/client.js` (`_bulkTransitionField`, `updateMany`, `upsertMany`) ·
+`src/access.js` (the per-verb sentence) · `test/bulk-transitions.test.ts` ·
+`FJS-671` · closes `F16` of the foundation audit
+
+### <a id="fjs-d181"></a>2026-09-02 · `FJS-D181` — a claim is DECLARED, and the declaration is a client option rather than a `.lite` keyword. The eight names this package itself reads are the framework's and no app spells them.
+
+Every identifier on the ROW side of a policy is refused by name at startup —
+`@@allow('read', ownerIdd == 1)` names the model, the expression and the columns
+it could have meant. The identifier on the AUTH side of the same comparison was
+resolved against nothing, ever, and the cost is not a wrong answer but two
+opposite ones: `NOT (NULL = 1)` excludes every caller and `null === true`
+excludes none, so one misspelling is a lockout on read and an open door on
+create, and the side that refused reads exactly like a policy doing its job
+(`FJS-666`).
+
+**What a claim can be has four sources and there is no fifth.**
+
+**The eight the framework fixes.** `id`, because `auth()` bare IS the id, and
+`capabilities`, because the grid reads it (`FJS-D151`) — plus the six
+`FrontierGateGetLevel` grades a caller by: `role`, `isAdmin`, `isOwner`,
+`isSystemAdmin`, `verifiedAt`, `activatedAt`. Those six are in this package, in
+`src/plugins/gate.js`, read off the principal by name. **A standing is not a
+column** — `example`'s ladder tops out at `isAdmin` and its `User` has no such
+field, because auth puts it on the session — so deriving the set from the model
+alone would refuse the most common predicate an app writes.
+
+**The `@@auth` model's own columns**, which is what `sessionFields` carries.
+
+**The `tenancy { claim }`**, the one claim the schema itself declares.
+
+**And `claims: [...]` at `createClient`**, for a value resolved PER REQUEST: a
+cart token, an impersonation. It is on no row and in no schema, so nothing can
+derive it, and it is the reason this is a client option and not a `.lite`
+keyword. The alternative — a `claims { }` block beside `tenancy { }` — would put
+the list in a second file, and **junction already declares it**: a `principal:`
+resolver carries a `describe()` and `principal.snapshot.md` § Claims is
+generated from it. One place has the names; a keyword would make two, and the
+one that goes stale is the one nothing executes.
+
+**It grades only when there is a set.** A schema declaring no `@@auth` and an
+app passing no `claims` have said nothing to compare against. Inventing a floor
+there would refuse `auth().isStaff` on every app in the world, so the check is
+silent — and that silence is **announced once per distinct set of names**, which
+is the difference between a stated degradation and a check that quietly does not
+run. `claims: []` is a statement (the framework's eight and nothing else) where
+absent is silence, so the empty array is deliberately not falsy.
+
+**The rejected alternative was inference.** A claim's only appearance is inside
+the policy that names it, so a set derived from usage contains the typo — the
+one shape that cannot work, and the reason `@@auth` had to become something an
+app declares. Both apps here adopted it, which is what makes the check live
+where the bug was.
+
+*Lives in:* `packages/litestone/src/core/policy.js` (`buildClaimSet`,
+`checkExpr`, `authClaimsUsed`) · `src/core/client.js` (the option and the
+notice) · `test/auth-claims.test.ts` · `FJS-666` · `FJS-667` · `FJS-668`
+
 ### <a id="fjs-d150"></a>2026-08-26 · `FJS-D150` — a move can say the APPLICATION makes it, with `@system`, and the escape is the column's own. `@gate(8)` keeps meaning *asSystem() and nothing else*.
 
 `FJS-506` ruled what `@gate(8)` means on a move — `asSystem()` and nothing else,
@@ -1517,6 +1626,718 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d175"></a>2026-09-02 · `FJS-D175` — a broadcast is graded PER RECIPIENT at publish, by the Data boundary, in cohorts; joining a channel is a subscription and never a permission.
+
+`FJS-631`. A channel is a named set of connections and joining one was an
+ungraded **grant**: every row published there reached every member, whatever the
+schema said. `@@allow` compiles into a SELECT's WHERE and **a broadcast is not a
+SELECT**, so a row reaching a caller through a query was filtered by
+construction and one reaching them through a frame was filtered by nothing.
+
+**Measured on `example` rather than reasoned about.** A socket opened at
+`ws://localhost:8110/ws` with no token received a whole `Order` row — reference,
+status, subtotal, tax, total, `customerId`, `trackingCode` — one publish after
+an admin's `PATCH`, while the same anonymous caller was answered **401** on
+`GET /api/orders`.
+
+**Prior art picked the design and then changed the implementation.** Two
+families exist. Rails ActionCable, Phoenix and Laravel Echo authorize at JOIN,
+with the audience encoded in the channel name; Supabase Realtime and Feathers
+grade at PUBLISH. Join-time is cheaper and was rejected because the publisher
+must then decide per row which channel it goes to — re-deriving in application
+code what `@@allow` already states declaratively, which is the duplication the
+framework exists to remove. Supabase does what is ruled here, and its
+documentation supplies the number: one change to a table with 100 subscribed
+users is 100 authorization checks, throughput scaling with subscribers rather
+than with the write rate, and a recommendation to switch to plain broadcast past
+~3,000 concurrent subscribers on the same change. That ceiling is stated rather
+than discovered.
+
+**The cost that multiplies is the ENCODING, not the verdict**, which is Phoenix's
+warning about `handle_out` — intercepting means "the broadcast will be encoded N
+times instead of a single shared encoding". Measured here it is exactly so:
+`JSON.stringify` of one frame is 288 ns against 684 ns for a scoped context, but
+the frame is the term paid per recipient. **So the unit is a COHORT and not a
+connection**, which is Hasura's answer — subscribers sharing session variables
+multiplex, and only differing authorization contexts force separate work. The
+key is the principal's object identity, because `Connection.user` is the session
+built once at upgrade: two tabs of one person are one cohort, and two different
+people can never collide the way a hashed key can. Measured over 100
+connections: **14.9 µs** where the model needs no grading, **49.8 µs** for one
+cohort, **445.6 µs** for 100 distinct principals — a **9×** collapse where
+cohorts exist.
+
+**The rule stays at the Data boundary.** `$readAs(accessor, row, principal)` is
+litestone's fifth `$`-sibling and takes its subject as an ARGUMENT for
+`$capabilitiesFor`'s reason: the asker holds one client and is answering about
+somebody else. It asks the gate, then the row policy, then shapes the row with
+that principal's field policies — the order every other layer here reads in,
+and the gate is the whole answer for a stranger. Junction owns the fan-out and
+the cohorts and **nothing else**; a second implementation of any of those three
+is a second answer to who may read.
+
+**Field shaping is safe to do in JS on a row already read**, which is what makes
+this affordable: `applyFieldPolicyTo` STRIPS `@encrypted`, `@guarded` and
+`@hashed` for any non-system context, and a socket recipient is never system, so
+the decrypt branch cannot run. What it gives up is stated — the row is not
+re-read, so a `@from` or `@computed` value is the writer's rather than one
+derived under the recipient's own policies. Hasura re-runs the query per cohort
+and can, having a connection per subscription; a query per recipient per write
+is the cost that would make this unaffordable.
+
+**A model that can only ever say yes is skipped entirely.** `$readGrading`
+answers `open` for a model whose read gate is 0 with no read policy and no field
+policy — a catalogue, which is also the busiest channel an app has. Read off the
+SCHEMA, so a policy added later turns that channel from open to graded with
+nothing to remember.
+
+**Undecidable refuses; inapplicable does not.** `policyVerdict` throws on a
+policy it cannot decide and at a boundary that must refuse — but a call with no
+Data boundary on its context (a raw route, a test harness) is ungraded rather
+than refused, because grading was never applicable there. Conflating the two is
+how a fail-closed check becomes fail-open at the first odd shape. A LIST payload
+is likewise not graded: a bulk write announces a COUNT (`FJS-D34`), which names
+no row and leaks none.
+
+**The principal has to be translated and that is the defect this nearly
+shipped with.** A `SessionContext` puts the id at `userId` and litestone's
+`auth()` reads `.id`, so handing the session straight over compares every policy
+against `undefined`. It does not merely refuse: measured, `userId == auth().id`
+was FALSE for the buyer's own order and TRUE for a guest order whose `userId` is
+null, so the first working version refused the anonymous socket correctly AND
+delivered the one row the recipient may not read while withholding the one they
+own. `toDataPrincipal` is the owner, and it was caught only because the drive
+asserts both directions of every refusal.
+
+### <a id="fjs-d174"></a>2026-09-02 · `FJS-D174` — a 64-bit column is declared `Int @big` and its value crosses as a STRING of digits; global `safeIntegers` was refused on measurement, and no `CHECK` is emitted because `STRICT` already refuses everything one would.
+
+`FJS-643`. SQLite's `INTEGER` is 64-bit and litestone set `safeIntegers`
+nowhere, so `bun:sqlite` answered a JS `number` on every path. A value past 2^53
+was read back as a **different number, of a value the database was holding
+correctly** — measured both ways: a raw-SQL write of `9007199254740993` stores
+exactly (confirmed with `CAST AS TEXT`) and the ORM read back `…992`. Nothing
+could see it, because the write and the read were each self-consistent.
+
+`FJS-583` bounded `@scale`/`@money` at 2^53 and deliberately left plain `Int`
+unbounded — "it makes no exactness promise, and bounding every integer column in
+every app to buy back one is the wrong trade". That is a ruling about the WRITE
+side and does not reach this one. It arrives by two ordinary routes: a snowflake
+id, which Discord and Twitter/X passed years ago, and `litestone import`, which
+maps a foreign `BIGINT` straight onto `Int`.
+
+**Four things ruled, and three of them were settled by measurement rather than
+by argument.**
+
+**Global `safeIntegers` is refused.** It was the issue's own second candidate
+and it fails twice. It costs **+68 %** on every read for every app — 1884 →
+3171 µs over a 5,000-row scan — and, decisively, **`JSON.stringify` throws on a
+`BigInt`**. That is every HTTP response, every WebSocket frame and every
+`before`/`after` snapshot in an audit trail, so the version of this that changes
+the read type of every `Int` breaks the stack at once.
+
+**The value crosses as a string of digits, not as a `BigInt`.** Same reason, one
+scope smaller, and it is the mainstream answer rather than a workaround:
+node-postgres returns `int8` as a string by default and mysql2 has
+`bigNumberStrings` for it. The type does not depend on the magnitude — a `@big`
+column holding `42` reads back `'42'` — or a caller would have to branch on the
+size of the value. A JS number is still accepted going IN below 2^53, so
+ordinary code writing small values does not quote them. What it costs is stated:
+arithmetic says `BigInt(v)` first, which is honest about a value that does not
+fit a number.
+
+**The column keeps `INTEGER` storage, which is what makes it worth doing.**
+Holding digits in a `TEXT` column was the standing advice (`wide-int.js` said
+"Store it as String") and it loses everything SQLite does with a number.
+Measured, all of it survives: a text parameter takes the column's INTEGER
+affinity, so `ORDER BY` puts `100` before `9007…` where text puts it after, a
+range filter compares numerically, `EXPLAIN QUERY PLAN` answers
+`SEARCH … USING COVERING INDEX (v=?)`, and `AUTOINCREMENT` continues correctly
+past 2^53.
+
+**No `CHECK` is emitted, and that is the opposite of `@scale`.** The first cut
+emitted `CHECK (typeof(col) = 'integer')` by analogy — `@scale`'s CHECK exists
+because four writers never reach the boundary. Measuring it killed it:
+litestone emits `STRICT` on every table, and STRICT already refuses all three
+ways a wide value stops being exact — past int64 (which a loose table demotes to
+REAL `9.22e+18`), a non-numeric string, and a fraction. So the CHECK's message
+could never appear, and a constraint that cannot fire is worse than none because
+it reads as the thing doing the work. **The distinction is the bound**:
+`@scale`'s is NARROWER than the column's own, so only a CHECK can hold it, while
+`@big`'s IS the column's own. `@@noStrict` is the one shape that turned STRICT
+off and is therefore the one shape that earns the constraint, which is where it
+is emitted.
+
+**An attribute, not a `BigInt` scalar.** `FJS-D142`'s reasoning applies
+unchanged: the storage is a SQLite `INTEGER` either way, so a new scalar emits an
+identical column and duplicates the DDL, JSON Schema, validate, client-type and
+import branches to do it.
+
+**Two smaller things fell out of building it.** `safeIntegers` is all-or-nothing
+per STATEMENT, so a wide model's statements answer BigInts for `id`, a count and
+a Boolean's 0/1 as well — and asking at the statement while narrowing in the row
+read is an enumeration: `count()` on a wide model answered `0n`, because a
+statement also serves counts and aggregates that reach a caller through neither
+`read` nor `readAll`. The statement narrows what it returns, so there is no list
+to keep in step. And for a key the row read does not recognise — `_max__col`, a
+window's row number — the fallback is the VALUE: one that fits becomes a number,
+one that does not becomes digits, because a wrong number is the defect and an
+unexpected string is not.
+
+**`litestone import` now carries a wide column instead of narrowing it**, which
+moves `bigint` from `changed` to `noted` in `src/import/tiers.js`. Keys and
+foreign keys stay a plain `Int` on the existing structural exemption — without
+it a Rails import turns every id in the app into a string.
+
+### <a id="fjs-d173"></a>2026-09-02 · `FJS-D173` — an announcement travels as far as the DATABASE declares, and `crossProcess` records it rather than sending it; the reach is one machine, and that is stated rather than approximated.
+
+`FJS-642`. The live layer was in-process callbacks, so a second process
+announced nothing to the first — and `docs/concurrency.md` recommended running
+one. Not a gap in a mechanism: SQLite has no central server, so there is nothing
+to LISTEN to. `sqlite3_update_hook`, the pre-update hook and the sessions API
+are all in-process by construction, which is why every real system solving this
+records instead — Rails 8 ships Solid Cable as its Redis-free default and it is
+a messages table polled at 100 ms.
+
+**Four things ruled, and each one removes the reason for the next.**
+
+**The reach is one machine, said out loud.** Two processes share a FILE. A
+second machine shares nothing and hears nothing, and no file-based signal can
+change that — so the alternative was a declared bus (Redis, NATS), which
+contradicts the whole premise of a package whose deployment story is a file.
+The supported shape is what `docs/concurrency.md` already recommends: a worker
+or a second replica beside the API.
+
+**It is DECLARED, per database.** `database main { announce crossProcess }`,
+default `inProcess`, which is what every existing schema already means. The
+mechanism costs a recorded row per announced write — **+14 µs on a 25 µs
+single-row insert, and nothing on a bulk one**, because `changed` already
+carries a count rather than a row (`FJS-D34`). An app that runs one process must
+pay none of that and carry no table, and an app that runs a worker is the one
+that knows it does. Refused on a `jsonl` or `logger` driver by name: those are
+files, so there is no table to record into and no transaction to record with.
+
+**The row carries the ID, never the row itself.** Writing the row would put the
+plaintext of every `@encrypted` and `@guarded` column into a table beside the
+ciphertext — undoing encryption at rest to save a read. The receiving process
+re-reads through its own client, which also makes the row the shape ITS reads
+produce: plugin read hooks run, a `File` reference resolves, the field policies
+apply (`FJS-541` is what a differently-shaped read costs). The consequence is
+accepted rather than hidden: **a re-read answers the row as it is now**, so a
+create delivered after a later update carries the later values, which for a live
+store is the wanted answer. A removal carries the id and no row, because there
+is nothing left to read.
+
+**A foreign event arrives on the SAME seam as a local one.** `$tapEvents`, with
+`foreign: true` on it — so Junction's `announceDataWrites` and everything above
+it needed no change and cannot tell them apart. That is the whole design; a
+second delivery path is how the two ends up disagreeing about what an
+announcement is.
+
+**What it does not promise, stated:** at-most-once across a crash. The row is
+recorded after the write's own transaction commits — `FJS-D170` holds
+announcements until COMMIT precisely because an announcement is a claim that a
+row is there — so a process dying in the microseconds between them loses that
+one announcement. Making it exactly-once means moving twelve write paths'
+announce inside their transaction, a different change with its own risk, and
+`ctx.afterCommit` already makes and states the same trade one realm over.
+
+**The wake is a file watch with a slow poll behind it.** Measured: `fs.watch` on
+the database directory woke on 5 of 5 foreign commits at a **median 0.7 ms**,
+against 50 ms average for the 100 ms poll Rails uses — and it costs nothing when
+idle. The poll stays as the backstop for what a watch cannot see (an inotify
+limit, a filesystem that does not report), gated on `PRAGMA data_version`, which
+is 2.5 µs prepared and does not move for this connection's own commits. It is
+FROZEN inside a read transaction, so nothing in the watcher opens one.
+
+*Lives in:* `packages/litestone/src/core/cross-process.js`, the declaration in
+`src/core/parser.js`, the seam in `src/core/client.js`; `test/cross-process.test.ts`.
+
+### <a id="fjs-d172"></a>2026-09-02 · `FJS-D172` — `maxOpen` is how many tenants to keep WARM, not a ceiling on open connections; a pool never closes what it lent out, and a LEASE is what makes the close deterministic.
+
+Four rulings from one defect (`FJS-640`), and the order matters because each one
+removes the reason for the next.
+
+**`maxOpen` is a target.** A hard cap can only be honoured by closing something,
+and the only thing available to close is a client a request is holding. The
+measurement settles it rather than the argument: bun's `close()` is
+`sqlite3_close_v2`, so it defers destruction until the last prepared statement is
+finalised, and `wrapDb` holds up to 500 — a close with one live statement freed
+**0 file descriptors**. `maxOpen` had never bounded a connection in any process
+that ran one query per tenant. It was not a cap being relaxed; it was a cap
+discovering it had never existed.
+
+**Eviction never closes a lent client.** Closing one does not kill it — it leaves
+a MIXED client that answers a cached query off a closed, checkpointed handle and
+throws on a fresh one, so a request fails only if it takes a branch it has not
+taken before. Every mature pool reaches the same answer independently: HikariCP,
+Go's `database/sql` and pgbouncer all evict idle entries only and retire a busy
+one **when it is returned**. `sqlite3_close_v2` is the same rule one layer down.
+
+**The lease lives in the request scope and is not a public verb.** The cost of a
+soft target alone is that the release is untimed — the handles come back on a
+collection that file-descriptor pressure does not trigger, which is the habit
+Java deprecated `finalize()` over, .NET puts behind `Dispose`, and the
+`FinalizationRegistry` proposal itself warns against. junction's `withTenantDb`
+already has the answer: a request IS the unit of work, so it pins on entry and
+releases in a `finally`. Nothing an app writes changes, and nothing an app can
+forget. A client from a bare `tenants.get()` was never leased, so it is dropped
+rather than closed and the finaliser remains the backstop for it — the honest
+split, because the pool genuinely does not know who holds that one.
+
+**A fan-out is a scan and gets a ring.** `tenants.query` walks every tenant, so
+through a plain LRU an admin dashboard evicts the tenants under live traffic.
+Cold entries are the eviction victim before any hot one, in a ring sized to the
+fan-out's concurrency and capped at half the pool — Postgres's seqscan ring
+buffer and MySQL's midpoint insertion, which exist for exactly this. The cap is
+load-bearing and was found by a test: a ring wider than the pool can never fill,
+so it never starts recycling and every cold insert evicts a hot entry, which is
+the scan resistance being off in silence for the small pools that need it most.
+
+**What follows for anything else that hands out a handle**: a close is not a
+close until the things holding the connection open are released, and a pool that
+cannot say who is holding one cannot close it. `$close()` therefore finalises the
+statement cache and every path afterwards throws `ClientClosedError` — a
+half-working client is worse than a refused one, and it is what made this defect
+read as random for as long as it existed.
+
+### <a id="fjs-d171"></a>2026-09-01 · `FJS-D171` — *somebody moved this under me* is earned by a declared PRECONDITION, never inferred from who won a footrace.
+
+Serialising writes (`FJS-D170`) made the in-process transition race impossible,
+and the loser of two concurrent named moves now gets the answer the sequential
+case always gave: `calculated -> cancelled` is not a declared move, so asking for
+it is a `TransitionViolationError` however the row got there.
+
+**What was lost was not a contract, it was an artefact.** The old
+`TransitionConflictError` with `retryable: true` appeared only because both
+callers evaluated against `draft` before either committed — so the SAME end state
+answered two different classes depending on which request won by a microsecond,
+and the retry that answer advised failed identically. Measured both ways before
+the change.
+
+**The prior art is unanimous and it decides this.** Every system that separates
+*you lost a race* from *you asked for something illegal* does it from a
+precondition the caller declared, never from timing: HTTP answers `412` because
+the client sent `If-Match`; Hibernate and EF Core raise because a version column
+mismatched; Postgres and MySQL raise `40001` because the ENGINE detected a
+serialization conflict. Stripe — the closest analogue, an operation against a
+state machine with no precondition — answers a permanent domain code
+(`charge_already_captured`) and is right to. TanStack Query, notably, classifies
+nothing at all: it retries queries and by default does NOT retry mutations, and
+its answer to a 409 is roll back the optimistic update and `invalidateQueries`.
+
+`transition(id, 'cancel')` states nothing about what the caller read, so the
+boundary genuinely cannot tell the two apart. **`@version` is litestone's
+`If-Match`** and is what a screen wanting *someone else moved this* declares — it
+already answers `VersionConflictError` (409, retryable) carrying both revisions.
+
+The engine-detected race survives where it is real: **across processes**, where
+one client's JS lock reaches nothing and the UPDATE's `AND status = <from>`
+compare-and-swap is the only authority. Nothing in sierra changes.
+
+`FJS-611` · `packages/litestone/test/transition-race.test.ts`.
+
+### <a id="fjs-d170"></a>2026-09-01 · `FJS-D170` — an announcement means COMMITTED. Held on the transaction, flushed on commit, dropped on rollback.
+
+An event used to be announced at statement time, so a write inside a transaction
+that rolled back still reached `$tapEvents` → junction's `announceDataWrites` →
+every open tab, and nothing ever retracted it: a screen showed a row the database
+does not have, until something unrelated refreshed it. Measured.
+
+Held on the transaction manager now and flushed after `COMMIT`. The buffer takes
+a mark at `begin`, so a SAVEPOINT rollback drops exactly the announcements queued
+since that savepoint and keeps the ones from before it — the events go with the
+rows they describe. Buffered at `fireEvent`, which is the one funnel every
+announcement in the package already passes through, so no call site is asked to
+remember and a new one cannot forget.
+
+**The cost, stated:** an announcement made inside `$transaction` arrives later
+than it used to — after the commit rather than on the statement. That is the
+correct meaning and it is the one junction's live layer already assumes; a test
+asserting an event immediately after a write inside a transaction is asserting
+the artefact.
+
+Sibling of junction's `ctx.afterCommit`, which grew for exactly this reason one
+realm up (`FJS-D35`'s neighbourhood) — the Data boundary had no equivalent tier
+and now the tier is the transaction itself.
+
+`FJS-638` · `packages/litestone/src/core/client.js` (`makeTxManager`, `fireEvent`).
+
+### <a id="fjs-d169"></a>2026-09-01 · `FJS-D169` — an unknown `where` key is refused on a READ too. `FJS-D57`'s write half stands; its read half rested on a premise that is not true.
+
+**What `FJS-D57` said and why it was reasonable.** A typo'd filter on a write is
+a mis-scoped destructive operation and must reject; on a read it is "merely
+empty", so the kind answer is a `did you mean` on stderr and the query runs.
+Everything about that is right except the word *empty*.
+
+**What was measured.** A read carrying an unknown key does not run a broader
+query, it runs a **different** one. SQLite resolves a double-quoted identifier it
+cannot bind as a STRING LITERAL rather than raising, so `{ ownerIdd: 1 }`
+compiles to `'ownerIdd' = 1` — two constants — and answers **no rows**. The
+caller sees an empty list where the filter never applied, which is
+indistinguishable from an empty table. That is the same failure this very
+function already refuses to report by warning one reason further down: a
+`@computed` key throws precisely because *the alternative is not fewer rows, it
+is the wrong rows*. One `describe` block in `litestone.test.ts` held both the
+argument and its exception, and the exception asserted `[]` as the expected
+answer.
+
+**And the key reached the SQL.** Warning does not drop it, so it is interpolated
+into the clause — which makes a crafted key an injection: `id" = 2) OR ("id`
+closes the quote, unbalances the parentheses the row policy is ANDed inside, and
+hands a scoped caller every row in the table. That is **Invariant 8**, which is
+binding, and an invariant outranks a ruling.
+
+**So the read half is reversed and the kindness is kept**: the did-you-mean hint
+moves from a log into the error, where the person who made the typo is actually
+standing. `$checkWhere` is untouched and is what a boundary that can answer 400
+still asks — a refusal and a MESSAGE are two jobs, and only one of them belongs
+in the engine. `FJS-D58` (unknown `data` keys are stripped) is a different
+question with a different answer — mass assignment — and is unaffected.
+
+**The general form, which is the part worth keeping**: *a rule that fails open
+is not softened by a warning, because the warning goes somewhere nobody is.* It
+is doubly true for the audience this framework is increasingly written for — a
+warning on stderr is not a return value and not an exception, so an agent
+writing the app never sees it at all (`IDEAS/provable-enforcement.md` §4).
+
+`FJS-634` · `packages/litestone/src/core/client.js` (`checkWhereKeys`) ·
+`src/core/query.js` (`quoteIdent`, the one owner of putting a name in a pattern).
+
+### <a id="fjs-d168"></a>2026-09-01 · `FJS-D168` — a cross-row invariant stays in application code, and the reason is that its moment is the LAST CHILD WRITE. The seal is the one case where something else says *now*.
+
+**The question `FJS-D162` left open and `FJS-D167` was expected to close.** *The
+lines sum to `subtotal`* reads a child table, which no `@@check` can see and no
+policy can aggregate. `@seals` supplied a moment for free, so what was left
+looked like a spelling: `@@check` over an aggregate of a `@sealed` relation,
+evaluated in the transition that seals. Filed as `FJS-627` and deliberately not
+built alongside the seal, because a red test between a new guard and a new check
+is undecidable between them.
+
+**Measured, that shape reaches one of the three known demands.**
+
+| Document | The invariant | State machine | `@seals` | Reached |
+| --- | --- | --- | --- | --- |
+| `Invoice` | `Σ lines.amount = subtotal` | yes | yes | ✓ |
+| `JournalEntry` | `Σ lines.amount = 0`, `count ≥ 2` | **none — no status column** | no | ✗ |
+| `Payslip` | `Σ lines where counts = net` | on the PARENT, `PayRun` | no | ✗ |
+
+`basecamp` declares no cross-row invariant at all, so those three are the whole
+demand. Two of them do not MOVE: they are written whole inside one transaction
+and are frozen from birth by `@immutable` plus `@@gate("5.8.9.9")` /
+`@@gate("5.5.8.8")`. `@seals` hands a moment to the one document that happens to
+have a state machine, and the two it misses are the two that would gain most from
+a declaration — both are written only through `asSystem()`, which is exactly the
+writer a JS assertion does not reach and a table constraint does.
+
+**But it is not a *moment* problem, it is a LAST-WRITE problem.** A declared check
+reads the child table, so it can only fire once rows exist. All three
+hand-written ones read the caller's own array and refuse before the first INSERT
+— `postJournal` sums its `lines` argument, `assertPayslipAddsUp` takes a draft
+object, `issueInvoice` reduces `args.lines`. Run the declaration against the real
+write order instead and it fires on statement one:
+
+| statement | rows in `payslip_line` | the declared check |
+| --- | --- | --- |
+| `payslip.create({ net: 45000 })` | 0 | `sum = 0`, `net = 45000` → **refuse** |
+| `payslipLine.createMany([…])` | 7 | would pass — never reached |
+
+`postJournal` survives that only because it happens to write its lines in a
+single `createMany`, for a durability reason it states in a comment — a loop of
+`journalLine.create` is a legal way to write the same thing and refuses on line 1
+of 4. **A constraint that passes or fails depending on whether the caller batched
+is not a constraint.**
+
+**The invoice escapes because `issue` says *don't look yet*.**
+`invoice.create({ subtotal: 2400 })` has no lines under it and is not a
+checkpoint, because the seal is a later statement the check can hang on. Journal
+and payslip can have no equivalent, and the reason is the foreign key: the child
+carries the parent's id, so the parent is written first and the last statement is
+always a child insert. After every child insert the invariant is legitimately
+false until the final one, and nothing in SQL knows which one is final. **Only
+the caller knows, and the caller knowing is what a declaration was supposed to
+remove.**
+
+**So it is not built, and the two escapes are each worse than the assertion they
+would replace.** Bolt a status column onto `JournalEntry` so it can carry a seal
+— which is the language shaping the domain, the mistake `FJS-D167` named about
+`@immutable` freezing at create. Or defer the check to a commit hook in JS —
+which holds against no migration, no seed and no `asSystem().sql`, so every
+reason to prefer a `@@check` over an `if` is gone and what is left is a longer
+way to write the assertion that is already there.
+
+**`@from` is the neighbouring spelling and it is deliberately the wrong one
+here.** `Invoice.subtotal @from(InvoiceLine, sum: amount)` makes the invariant
+true by construction with nothing left to check. It also re-derives on every
+read, and a document STORES (`FJS-D162`) — `Payslip` copies every figure
+precisely so that a later correction cannot reprint history. A live aggregate
+takes `@from`; a document takes a frozen column and an assertion beside it.
+
+**What the schema owes a document is the MOMENT and the FREEZE, and it now has
+both.** The residual is three assertions in the three functions that are each the
+only writer of their own document — `issueInvoice`, `postJournal`,
+`assertPayslipAddsUp` — and it is stated rather than hidden, here and in
+`packages/litestone/docs/schema.md` § *What a `@@check` cannot say*.
+
+**Reopen on evidence, not on taste**: a fourth demand whose document has a
+declarable moment, or a second writer of one of these three that is not the
+function above it.
+
+### <a id="fjs-d164"></a>2026-08-30 · `FJS-D164` — effective-dated reference data is a ROW WITH A WINDOW, and the thing that consumes it names the version rather than the parent.
+
+**The problem.** A price that changed in March must not reprice a subscription
+sold in February, and there are three ways to arrange that. Copy the price onto
+the subscription at the moment of sale, the way `Order` copies its nine
+columns. Keep the price on the plan and a *changed on* date beside it. Or make
+the price a row with a lifetime and have the subscription point at THAT row.
+
+**The ruling.** The third. `Plan` is what is on offer; `PlanVersion` is what it
+cost over a window (`effectiveFrom`, nullable `effectiveTo`); `Subscription`
+names a `PlanVersion` and never a `Plan`.
+
+**Why not the copy**, which is what this app already does everywhere else: a
+copy is right when the thing copied is a fact about one moment — what was
+charged, what the tax rate was, what the item cost — and it is wrong here
+because a subscription is charged AGAIN next month and has to charge the same
+amount. The copy would have to be re-read on every renewal to know whether it
+is still the right one, which is the version table with the history thrown away.
+
+**What it costs, and each cost has a spelling.** The open window is the state a
+price is in for almost all of its life, so `effectiveTo` is nullable rather than
+dated far in the future — a row saying 2099 reads as a decision somebody made.
+*At most one open window per plan* was then not expressible — two NULLs never
+compare equal and `@@unique` took no predicate — which is
+[`FJS-603`](ISSUES.md#fjs-603), **closed 2026-08-31**:
+`@@unique([planId], where: effectiveTo == null)`. It is a table constraint now
+rather than a rule in a service, so a seed, a migration and `asSystem()` are each
+held to it. The service that closes a window and opens the next in a single
+transaction is still what makes the second write legal, and it still REFUSES a
+plan holding two rather than picking one — for a database written before the
+constraint existed. A price is `@immutable`, so raising one is never a PATCH.
+
+**What it buys is a screen that can say it.** *Repricing moves nobody* is an
+assertion a drive can make — the new window has no subscribers and an older one
+still does — where under a copy it is a property of code nobody can see.
+`Plan.currentPrice` is `@from(PlanVersion, max: price, where: "effectiveTo IS
+NULL")`, so *what does this cost today* stays one query and no join a screen
+writes. The cost of THAT is the hazard in root `CLAUDE.md` § UI: a derived
+column moves when a child row is written and nothing announces the parent.
+
+Built in `example` (`db/schema.lite`, `plans.reprice`), proven by `verify` and
+`verify:site`. The general question — whether the language should know about
+validity windows rather than an app arranging them — is candidate A's temporal
+gap and is not ruled here.
+
+### <a id="fjs-d167"></a>2026-08-31 · `FJS-D167` — a document seals on a MOVE. `@seals` names the moment and `@sealed` names the children, and the sealed set is computed from the machine rather than restated.
+
+**The problem `FJS-D162` left open.** That ruling settled what a document IS —
+columns written once, the cross-row invariant checked when it is issued — and
+said the check happens "when the invoice moves to `issued`" without saying what a
+schema WRITES to mean that. Two halves had no spelling: WHEN a row stops being
+editable, and WHICH of its children go with it. `@immutable` freezes at CREATE,
+which is a different moment and the wrong one — `IDEAS/billing.md` phase 1 had
+already removed `draft` from the invoice for exactly that reason, so the language
+was shaping the domain rather than describing it.
+
+**Measured first.** Every writable column on `example`'s `InvoiceLine` is already
+`@immutable`, so a line could not be EDITED before any of this. The gap was two
+operations and only two: `invoiceLine.create` and `invoiceLine.delete` — the pair
+`@immutable` cannot reach, the second of which `FJS-D162` says outright it says
+nothing about.
+
+**The ruling: it goes on the MOVE.** `issue: draft -> issued @seals`, in the slot
+that already carries `@gate` and `@system`, with `lines InvoiceLine[] @sealed` on
+the relation. Three spellings were weighed. On the CHILD (`@@sealedWith(invoice)`)
+reads well from the side that pays and cannot say *when*, so it needs a second
+declaration anyway. On the PARENT as a predicate (`@@sealed(status != draft)`)
+mirrors `@@softDelete(cascade)` + `@keep`, which is real precedent, and duplicates
+knowledge `@@transitions` already holds — two sources of truth about one column,
+which can disagree. On the move duplicates nothing.
+
+**The sealed set is COMPUTED and this is the load-bearing half.** It is everything
+reachable from a `@seals` move's target, so `paid` and `void` seal without being
+named and a move appended to the tail of the machine seals by arriving. A one-hop
+reading passes every behavioural test and leaves a document editable in two of its
+three terminal states. A machine that comes back OUT of a sealed state is refused
+at parse — a document that unseals is not a document — and a second `@seals` on a
+move FROM an already-sealed state is refused separately, because that one seals
+nothing and the reader believes it does.
+
+**`@sealed` is explicit and may never be inferred.** Every child relation on a
+sealing model looks sealable and they are not: a payment against an issued invoice
+is exactly the row that must keep arriving.
+
+**`@immutable` changes meaning on a sealing model, and that is the price.** It
+means *frozen at the seal* there — scoped by the declaration, so a model with no
+`@seals` move is untouched. Two consequences follow. The refusal moves out of the
+payload into the WHERE, because the answer is now in the ROW; and it stops being
+`readOnly` in the update schema, since no schema can answer it — the field carries
+`x-litestone-kind: 'immutable-until-seal'` with the state column and the sealed
+set instead, and a form resolves it off the record it is editing.
+
+**`asSystem()` does not lift it.** This is where it parts company with
+`@@transitions`, which `asSystem()` bypasses entirely: a gate is about who is
+asking, a seal is about what the row IS. It sits with `@immutable`, `@check`,
+`@@check` and `@@arc` (`FJS-519`).
+
+**A bulk write filters rather than throwing**, as it already does for a row policy
+and as `updateMany` already does for a transition. The direction it fails in is
+the safe one — the rows are not written — and inventing a per-row diagnosis for a
+method whose answer is a count is a different feature.
+
+**Deleting the document itself is out of scope and deliberately so**, for the
+reason `FJS-D162` gives about DELETE: whether an issued invoice may be removed is
+a question about who may remove it, which `@@gate` already answers. `@sealed`
+governs the children a document is MADE of; adding a row-level delete refusal
+here would be a second rule about the same question, decided in a different
+place.
+
+**What this does NOT do.** The cross-row check at the seal — *the lines sum to the
+total* — is not built. `@seals` hands it its moment for free and that is the point
+of the shape, but it is its own feature and its own ruling; building both at once
+makes a red test undecidable between them. Filed as `FJS-627`, and ruled
+there: it is not built ([`FJS-D168`](#fjs-d168)) — two of the three known
+demands have no declarable moment. The client-side
+affordance is `FJS-628`: the seal reaches sierra's field rules and no form reads
+it yet, which is a box that looks writable and 409s.
+
+**Where it lives.** `packages/litestone/src/core/seal.js` is the one owner of
+*which states are sealed* — three readers ask it and a second walk is how they end
+up disagreeing about `void`. The guards are in `client.js` beside
+`applyTransitionWhereClause`, composed the same way. `docs/modelling.md` § `@seals`,
+`access.snapshot.md` (a **Seals** column and the relation list), and the release
+surface, where gaining either half is a **contract**.
+
+### <a id="fjs-d166"></a>2026-08-30 · `FJS-D166` — payroll goes into `example/` rather than a fourth app, and the argument is the shared LEDGER. Two apps would be two implementations of the one invariant this domain exists to prove.
+
+**The problem.** `example/` is a Shopify-shaped thing and payroll is not shopping,
+so a second proving ground looked like the tidier answer. Taken 2026-08-29 in
+`IDEAS/proving-grounds.md` § *Where A lives*, to be recorded here once the first
+model landed; it landed in phase 1 and this is nine phases overdue.
+
+**The ruling.** One app. `example/` was never really a shop — it is a BUSINESS,
+and it had been drifting that way since it grew a fleet of tenants, a payment
+provider it signs to, an inventory ledger, and a receipt copied at the moment of
+sale. A business that sells things also employs people, and the two halves meet
+at a general ledger: an order posts a journal, a pay run posts a journal, and
+`Σ lines = 0` is the cross-row invariant both need. **In two apps that is two
+implementations**, and the second one is the one that drifts.
+
+**What it bought, measured rather than predicted.** `api/src/ledger.ts` has two
+callers and one balance rule; `allocate` has two callers from opposite ends —
+billing splits a period across seats, payroll splits a year across periods — and
+`verify:proration` and `verify:payrun` assert the same function from both. Six
+models earned their place by carrying a wall; the budget was eight models and
+three enums and it was not exceeded.
+
+**What it cost, and the estimates were low.** The schema went 23 → 31 models
+as predicted. The drives did not: the estimate was *at least three of its own*
+and the answer is **five**, 250 assertions, because the console and the batch
+each turned out to need one nothing else could give. And the shared database
+grew a hazard nothing anticipated — a drive that leaves a paid pay run behind
+makes every later drive's arrears computation wrong, since a correction is a
+function of every paid period rather than of what changed. That is what
+`web/test/payroll-sweep.mjs` exists for, and it is the price of one app rather
+than two, paid once.
+
+**The counter-argument that did not survive.** *A newcomer can hold `example/` in
+their head* was the real objection, and the answer is that holding it is a
+function of how the domain is DIVIDED rather than of how many models there are:
+payroll is five files under `api/src/` with one job each, and a reader who never
+opens them is unaffected by their existence.
+
+### <a id="fjs-d165"></a>2026-08-30 · `FJS-D165` — a recurring schedule's DEADLINE is a comparison against a document's own date, never a counter on the row. The queue owns *try again*; the deadline is not the queue's to own.
+
+**The problem.** Dunning is *keep trying, and give up on day 21*. Both halves
+look like retry, and a queue already does retry — so the obvious arrangement is
+a `failedAttempts` column that the job increments and compares against a
+maximum.
+
+**The ruling.** No counter. *How long has this been unpaid* is `now − dueAt` on
+the oldest unpaid invoice — two columns that are already frozen on a document
+([`FJS-D162`](#fjs-d162)) — and the states in between are declared moves on the
+subscription, not arithmetic.
+
+**Why.** A counter is a second answer to a question the rows already answer, and
+the two disagree the first time anything runs twice: a cron that fires in two
+replicas, an operator re-running a half-finished sweep, a retry after a crash.
+Under the comparison, running the job twice at one instant is the same answer
+by construction, and `verify:billing` asserts exactly that. A counter also has
+to be RESET, which means every path that settles an invoice — a webhook, a
+member of staff, a bank transfer somebody reconciled — has to know the
+subscription had lapsed. Under the comparison none of them does: the ledger
+comes clean and the next dunning pass recovers it.
+
+**What the queue keeps.** A transport failure — the provider unreachable, a
+timeout — throws, and caravan's ladder is exactly right for it. What must not
+be given to the ladder is a DOMAIN answer: a decline is returned as a value, so
+it exits the ladder successfully, which is why the deadline cannot live there.
+That split is also what makes the gap in [`FJS-610`](ISSUES.md#fjs-610)
+visible as a gap rather than as a bug.
+
+**The clock is a parameter, not a mock.** `dunSubscriptions({ at, subscriptionId })`
+takes the instant to grade at and the row to grade, and both are an operator's
+parameters before they are a drive's — *re-run dunning for this customer, I have
+just taken their payment by hand* is a real request. The cron passes neither and
+gets now and everybody, which is what keeps it one code path rather than a
+`force` flag proving nothing about the other.
+
+Built in `example` (`api/src/jobs/dun-subscriptions.job.ts`), proven by
+`verify:billing`.
+
+### <a id="fjs-d162"></a>2026-08-30 · `FJS-D162` — a DOCUMENT is a row whose columns are written once and whose invariant is checked at the moment it is issued. Two features, one shape, and neither needs a rule that can see the old row.
+
+An invoice is the case: once issued it does not change, a correction is a credit
+note rather than an edit, and its lines must sum to what was charged. Both were
+filed as language gaps in `IDEAS/billing.md` § Phase 1 and both were narrower
+than that. **Nothing in the seed can compare the stored row to the incoming
+one** — `@@check` and a `post-update` policy each see the row as it would be, an
+`update` policy sees it as it is — and the answer is to need neither.
+
+**`@immutable` is a COLUMN and it refuses the KEY, not the value.** An update
+payload naming an `@immutable` column is refused by name, exactly as `@system`
+is refused by name; there is no comparison, so there is nothing to fetch and
+nothing to race. It is the column tier rather than the row tier because a
+document still has to MOVE — an invoice goes `issued → paid`, and a row-level
+freeze then has to carve out the one column `@@transitions` governs, which is a
+rule with an exception where this is a rule. `number`, `issuedAt`, `total` and
+`currency` are `@immutable`; `status` is not, and `@@transitions` already says
+what may happen to it.
+
+**It is the CONSTRAINT tier, so `asSystem()` cannot drop it.** This is the half
+that decides whether the feature is worth having: the renewal job, the payment
+settler and every migration run as system, so a rule the system may drop is a
+rule absent from every caller that actually writes invoices. It therefore sits
+with `@check`, `@@check` and `@@arc` on the short list of things `asSystem()`
+does not bypass (`FJS-519`), and against the gate, the row policies and
+`@guarded`, which it does. A raw `UPDATE` still bypasses, as it does for a
+`@check`; making it survive that means a trigger, which is available — FTS emits
+five per model and only `@updatedAt`'s was retired, for a clock reason of its
+own — and is not taken now, because a trigger is also what stops anyone ever
+repairing a bad row.
+
+**The cross-row invariant is checked at the TRANSITION, and the freeze is what
+makes once enough.** *Lines sum to the total* reads a child table, which no
+`@@check` can do and no policy can aggregate. Checking it continuously means
+enforcing on four write paths — a line inserted, updated, deleted, and the header
+updated — which in SQLite is triggers on two tables. Checking it **when the
+invoice moves to `issued`** costs one evaluation, and the columns are frozen
+immediately after, so there is no drift to catch. A draft that does not add up is
+legal, which is what a draft is.
+
+**The lines freeze with the parent.** A line whose invoice is frozen is frozen,
+and a line inserted against an issued invoice is refused. Without that the sum
+drifts after the one moment it was checked and the paragraph above is worth
+nothing. The cost is stated: a write to a line must read its parent's state, so
+the child's rule is not local the way `@immutable` on a column is.
+
+**What is NOT ruled here, and each is cheaper to answer against real code.**
+What spells *check this at this transition* — an argument on `@@check`, an
+argument on `@@transitions`, or a third attribute. Whether `@immutable` refuses
+a DELETE, and how it reads against `@@softDelete`, whose stamp is a write to the
+row. Which error class and status a refusal carries. And whether the parent read
+the cascade needs is one query or a correlated condition on the child's own
+write. `IDEAS/billing.md` § Phase 1 is where they are reached.
+
 ### <a id="fjs-d154"></a>2026-08-30 · `FJS-D154` — allocation is a pure function over minor units. There is no Money value object, the remainder goes to the largest fractional part, and nothing in the seed hands an allocator out.
 
 `FJS-D142` made storage exact and stopped there deliberately: it does not decide
@@ -1557,7 +2378,7 @@ position, because a rule that leaves them open is a rule that produces two
 receipts for one basket.
 
 **Half away from zero, and the mode is a per-call option on `roundMinor`.** The
-default is what `example/api/src/pricing.ts` did in its own `roundCents`, which
+default is what `example/api/src/domain/shop/pricing.ts` did in its own `roundCents`, which
 is now an alias of this, and what a person checking the sum on paper expects — `Math.round` alone breaks ties towards
 positive infinity, so a negative would round the other way from its positive
 twin. It is overridable rather than fixed because banker's rounding is required
@@ -1921,6 +2742,80 @@ I actually use*.
 
 *Lives in:* `IDEAS/value-sets.md` · not built — `FJS-412`.
 
+### <a id="fjs-d176"></a>2026-09-02 · `FJS-D176` — `$merge` is the sixth atomic operator, it wears a `$`, and a patch is graded PARTIAL only where the target is guaranteed to be there.
+
+`{ settings: { $merge: { commute: { source } } } }` → `json_patch(coalesce(col,
+'{}'), ?)`, on `update` and `updateMany`. Refused on `create`, `createMany`,
+`upsert` and `upsertMany` for `FJS-D54`'s reason — there is no stored value to
+merge into, and upsert's two paths could not agree about one.
+
+**Why it is not `merge`.** `FJS-D54` ruled that the COLUMN decides an operator
+is an operator, which works because a numeric column cannot hold an object. A
+`Json` column can, so a document's own key may be spelled `merge` and nothing
+could tell the two apart. `extractWriteOps` skips `Json` columns for exactly
+that reason today, and the cost of the skip is measurable: `{ doc: { increment:
+1 } }` stores `{"increment":1}` as the document. The `$` is what removes the
+ambiguity, and it is the only single-`$` name in a write payload — Invariant
+10's `$`-prefixed KEY is a transport directive and this is not one, so the two
+share a character and nothing else.
+
+**The grading rule, and the obvious version of it is unsound.** The first design
+said: check the patch's present keys against `T`, refuse a `null` on a required
+key. Measured against real `json_patch` and litestone's own validator over 68
+(stored × patch) pairs, **2 counterexamples**, one mechanism — RFC 7396
+REPLACES rather than merges when the target at a path is absent or null:
+
+```
+{"a":null}     + {"a":{"x":1}}  =  {"a":{"x":1}}        ← replaced
+{"a":{"x":1}}  + {"a":{"y":2}}  =  {"a":{"x":1,"y":2}}   ← merged
+```
+
+So a patch aimed at an optional field is a create however partial it looks, and
+that type's required keys are not optional after all. Nothing about the patch
+can show it — a missing required key and a partial patch are the same thing.
+
+The ruling is the repair, and it needs no read:
+
+> **Grade a patch as PARTIAL where the target is guaranteed to be present, and
+> as a CREATE where it may be absent.** A required field is present in every
+> valid parent, by induction from the column's own type. An optional one may be
+> null. The same applies to the column: `Json @type(T)` is partial, `Json?
+> @type(T)` is a create.
+
+Verified over 90 pairs at three levels of nesting: **0 unsound**, 3 conservative
+refusals, every one a partial patch into an optional nested object that happened
+to be present. The operator cannot know that without the read it exists to
+avoid, so it refuses and the message says why rather than answering a bare *is
+required* — a refusal that looks like the validator being wrong is worse than no
+refusal.
+
+**An undescribed `Json` column is not graded.** It declares no shape, so there
+is no invariant a merge can break. Two earlier positions were considered and
+both are retired: *typed only* (the read side refuses an undescribed path, so
+symmetry) and *untyped only* (a validator cannot see a value computed inside
+SQLite). The first is wrong because the read refuses for a reason that does not
+apply here — it cannot COMPILE a comparison without a declared type, and a merge
+needs no type knowledge. The second is wrong because the grading above is sound
+without seeing the result. The undescribed case is also where the feature has
+users: `@type(` is bound to zero fields in this repo, while `advise` reports 24
+undescribed `Json` columns on basecamp alone.
+
+**What it buys over the alternatives.** Read-modify-write is two statements and
+loses a concurrent change; `@version` turns that into a retry rather than
+removing it. `asSystem().sql json_set(…)` is already atomic and race-free, and
+it enforces no gate, no row policy and no `@version` — and **announces nothing**,
+so a merged row reaches no open tab. `$merge` is an ordinary write: the gate,
+the row policies, the field write predicate (`FJS-661`), `@version`, the audit
+actor and `@@log`'s before/after snapshots all apply, and it broadcasts the
+merged row.
+
+Refused by name beyond the operations above: a column that is not `Json`, an
+`@encrypted`/`@secret` column (the stored text is ciphertext, so a patch of it
+is neither), a patch that is not an object, and `$merge` mixed with any other
+key. `validateTypedJson` grew a `mode` defaulting to `full`, so every existing
+caller is unchanged. Full argument and the measurements:
+`IDEAS/json-document-writes.md`.
+
 ### <a id="fjs-d54"></a>2026-08-17 · `FJS-D54` — Litestone has atomic update operators, and the COLUMN decides one is an operator at all (`FJS-D27`).
 
 `increment` `decrement` `multiply`
@@ -1989,11 +2884,16 @@ value is refused BY NAME before the statement runs: `announce: 'row'` is somebod
 who wanted per-row announcements, and quietly handing them the coarse one is the
 class of bug `FJS-307` closed.
 
-### <a id="fjs-d57"></a>2026-08-01 · `FJS-D57` — Unknown `where` fields: WARN on reads, ERROR on writes.
-Reads log once per model+field (did-you-mean hint) and still execute; writes
+### <a id="fjs-d57"></a>2026-08-01 · `FJS-D57` — Unknown `where` fields: ~~WARN on reads~~, ERROR on writes.
+~~Reads log once per model+field (did-you-mean hint) and still execute~~; writes
 (update/delete/restore/upsert families) reject — a typo'd filter on a write is a
 mis-scoped destructive operation. `AND/OR/NOT` are descended into; relation
 sub-filters are not (their keys belong to the related model).
+
+**Read half reversed 2026-09-01 by [`FJS-D169`](#fjs-d169)** — a warned read did
+not "still execute", it executed a different query and answered no rows, and the
+key reached the SQL pattern (Invariant 8). Reads reject too, hint in the error.
+The write half and the descent rules are unchanged.
 
 ### <a id="fjs-d58"></a>2026-08-01 · `FJS-D58` — Unknown `data` keys are silently stripped.
 Mass-assignment protection: pass a request body straight in without
@@ -2285,6 +3185,87 @@ and Junction's SQLite cache take their own option for the connections they own.
 
 ## Migrations (Litestone)
 
+### <a id="fjs-d180"></a>2026-09-02 · `FJS-D180` — the audit index's write transaction is the trail file's LOCK, and WAL is what makes taking it affordable. The order is the ruling: the unlink goes first.
+
+A `driver logger` database is schema-global — every tenant's client and every
+process appends to one `.jsonl` and one companion index — and
+`docs/concurrency.md` recommends running a second process. Three things were
+wrong with that, each destroying a trail rather than inconveniencing it, and
+they share one fix (`FJS-665`).
+
+**A byte offset cannot be computed before the append and cannot be recovered
+after it.** `statSync(f).size` then `appendFileSync` is two syscalls; a second
+process appending between them makes the recorded offset name the OTHER
+writer's line. Measured, two processes, no artificial delay: **1,999 of 8,000 —
+one in four**. An indexed read then answers the wrong record with no error, and
+for an audit trail wrong-with-confidence is the worst failure there is.
+
+**So the pair is serialised, and the lock is `BEGIN IMMEDIATE` on the index
+database rather than a lockfile.** Not preference: a lockfile has no answer for a
+writer that dies holding it. Stale detection by pid or mtime is the standard
+footgun — it either blocks the trail for ever or breaks the lock while the holder
+is alive — and the operating system already drops a dead process's file locks,
+which is a guarantee SQLite inherits and a lockfile cannot. The index row naming
+the offset is written under the same transaction, so the offset and the row
+commit together or not at all.
+
+**WAL is the second half of that decision, because a lock is only affordable if
+it is cheap.** Measured, 8 processes × 400 appends:
+
+| | rollback journal | WAL |
+| --- | --- | --- |
+| processes killed by the DDL | **2 of 8** | 0 |
+| rows dropped to `SQLITE_BUSY` | **12** | 0 |
+| worst single insert | **5,007 ms** | 79 ms |
+| mean insert | 9.6–65.2 ms | **0.03–0.27 ms** |
+
+A rollback journal makes readers and writers exclude each other on the one file
+every process touches, so a single open reader blocks a writer for the whole
+`busy_timeout` and then fails it (5,006 ms → `SQLITE_BUSY`). `core/pragmas.js`
+already says what that costs: the driver is synchronous, so the wait is the event
+loop.
+
+**WAL was tried before and taken back out, and that instinct was right for a
+better reason than the one recorded.** The note said WAL would owe two more
+unlinks wherever the index is deleted. Measured, it is worse than a maintenance
+worry: after compaction unlinked the index, a live process's next write answers
+`SQLITE_READONLY_DBMOVED` under a rollback journal — a loud crash, which is
+`FJS-540` — and answers **`ok` under WAL**, silently writing into an inode with
+no directory entry. **WAL turns a crash into a lie.**
+
+**Which is why the ORDER is the ruling and not an implementation detail.**
+Compaction stops unlinking the index FIRST — it rebuilds it, which costs one pass
+over a file already in memory — and only then is WAL safe, because nothing
+separates the database from its `-wal`. A future change that reintroduces the
+unlink reintroduces the silent write, so the two are one decision.
+
+**The read is inside the lock, not just the write.** Locking the write-back alone
+leaves the window where it was and makes it WIDER, because compaction then waits
+for the lock while the writer keeps appending: measured at a 297-row gap where
+the unlocked original lost 4,637. So an append waits for a compaction, for as
+long as the compaction takes. That is the correct trade rather than a reluctant
+one — the alternative to a blocked append is a destroyed audit row, and under WAL
+the hold blocks writers only.
+
+**The upgrade may fail without failing the open.** `journal_mode = WAL` is
+persistent, so opening an index an older build wrote IS the migration — and it
+needs a moment with no other connection, which a rolling deploy is exactly when
+there is not one. Measured against a live reader: 5,008 ms and then an exception,
+at boot, on the audit path. It is attempted with a 50 ms wait of its own and its
+failure is swallowed; a later start completes it. Until then the index is correct
+and merely has the old contention profile, **because correctness here is the lock
+and not the journal mode**.
+
+**What was NOT adopted, and why it is worth knowing.** The canonical design for
+this shape — an append-only file with a byte-offset index — is Bitcask's, and it
+takes no lock at all: one writer owns the active file, closed files are immutable,
+and compaction writes NEW files. That is the better answer at a storage engine's
+write rates and it is a different feature, with segment ids in every index row and
+a merge policy. For a trail whose lock is held across two syscalls, one file and
+one lock is the proportionate answer; the Bitcask shape is what to reach for if
+the append rate ever makes the lock the bottleneck.
+
+
 ### <a id="fjs-d123"></a>2026-08-23 · `FJS-D123` — `migrate create` diffs against the migration HISTORY, not the live database; `db push` is prototyping only (`FJS-345`, `FJS-388`).
 
 **The development workflow wrote tables and the deploy workflow applied files,
@@ -2479,6 +3460,92 @@ handles and would otherwise answer *is this copy safe under an open WAL* twice)
 `test/cli-smoke.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d179"></a>2026-09-02 · `FJS-D179` — `update` is patch with an id REQUIRED. Feathers' full replace is retired, because the write never did it.
+
+`update` was validated against the CREATE-mode document and `patch` against the
+update one. The create document omits `@version` — it is emitted for update and
+only for update — so a create-mode validator STRIPPED the version a `PUT`
+carried, and the Data boundary then refused the write for not carrying one.
+**`FJS-335` exactly, one method along** (`FJS-663`), unfound because nothing here
+drives a `PUT` on a versioned model: measured on `example`, `PUT /api/tax-rates/1`
+carrying the version read one request earlier was a 400 naming `version`, on a
+service with no hooks at all, while the identical payload through `PATCH` was a
+200.
+
+**Swapping the word is the fix, and it is a ruling because of what create mode
+was buying.** The two documents differ on exactly two things: create omits `id`
+and `version`, and create has a `required` list. So create mode's only
+contribution to `update` was REQUIREDNESS — and the write underneath is
+litestone's `table.update`, which merges. Measured: a `PUT` stating only `title`
+leaves `subtitle` and `note` where they were. The validator was demanding fields
+that would not be replaced.
+
+**Three layers already agreed and the fourth was the odd one out.** The write
+merges; sierra's `field-rules.js` grades a form with `isPatch = mode === 'patch'
+|| mode === 'update'`; and a sierra resource never issues `update` at all —
+`save()` is create-or-patch (`FJS-D114`). Feathers' distinction survived in one
+comment and one half-working validator, and that half was the defect.
+
+**What stays is the id, and it is a real distinction rather than a consolation.**
+`patch` without an id is a bulk write over a query; `update` refuses without one.
+So a REST client's `PUT` can never become a bulk write, which is worth a verb.
+
+**The alternative was ruled out rather than overlooked.** Making `update`
+genuinely replace means junction synthesising the null-out set for every absent
+writable column — deciding what *absent* means for a default, an `@immutable`, a
+`@system` and a `File` — and handing every caller a write that silently discards
+what they did not restate. That is a feature with a design of its own, not the
+repair of a strip.
+
+
+### <a id="fjs-d178"></a>2026-09-02 · `FJS-D178` — a hook says which `@system` columns THIS CALL is supplying, through a Set it adds to. `@guarded` gets no equivalent, deliberately.
+
+`@system` means *the application writes this column and the caller does not*, so
+the Data boundary refuses a payload naming one. Its narrow hatch is `system: ['col']`
+on the litestone call — naming the field IS the statement, and it keeps the gate,
+the row policies, `@@softDelete` and the audit actor where `asSystem()` drops all
+four to set one value.
+
+**The gap was that a hook could not reach the hatch.** A hook shapes `ctx.data`
+and the write happens downstream, on the caller's own client, through the derived
+`create`/`update`/`patch` — so a value the application DERIVED arrived at the
+boundary indistinguishable from one the caller sent. That is not a corner: any
+column computed from the payload rather than declared in the schema has this
+shape. Measured on `example`, where a hook rebuilds a slot-keyed mirror from a
+customer's `fields` and every customer create over HTTP was a **403** (`FJS-644`).
+
+**`ctx.system` is a Set the hook ADDS to.** `ctx.system.add('slots')`, fresh per
+call, not propagated, `readonly` so an assignment is a compile error. It is a Set
+rather than a list one hook assigns because `before.all` and `validated.create`
+each legitimately derive their own column, and an assignment from the second
+silently drops the first's — the same class of silent loss the seam exists to
+close. It is named for the boundary option it feeds rather than for an action,
+so there is one word for the thing at both ends of it.
+
+**Three properties are the ruling and each is asserted as a pair.**
+
+*Naming a column widens one CALL, never the model.* A service that named nothing
+still refuses the identical payload; the pair is the test.
+
+*The set is not a hole a payload climbs through.* Naming a column is the
+application vouching for what IT put there. Where a hook derives the value, a
+caller who sends the same key has it overwritten before the write, so what lands
+is the derived value — asserted on the STORED value and never on a 201, which a
+service that simply accepted the forgery would also answer.
+
+*An empty set is not "all".* Nothing reaches the boundary that did not have to,
+so a call naming nothing is exactly the call that existed before.
+
+**`@guarded` gets no such hatch and that is the point of the pair.** `@guarded` is
+a system-context lock in BOTH directions and answers both halves at once; a hatch
+would make it a slower `@system` with a worse name. The consequence is that
+reaching for `@guarded` when the argument is entirely about the write is a
+misdeclaration, and it presents as a 403 nobody can act on — which is what
+`Customer.slots` was. The question to ask of a column is *is there anything to
+hide*, not *should the caller write it*: `example`'s mirror holds a re-keying of
+`fields`, which any caller who may read the customer already reads.
+
 
 ### <a id="fjs-d145"></a>2026-08-25 · `FJS-D145` — a live list's answer is a WINDOW THAT GROWS, not pages. A keyset cursor is the wire under it and never a concept anyone types. `offset` stays, for the numbered page it was always right for.
 
@@ -5283,6 +6350,53 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d163"></a>2026-08-30 · `FJS-D163` — `AGENTS.md` is a permitted fifth file at a package root and is not a required one. It is `CLAUDE.md`'s question asked about the other audience, and that audience has a tarball rather than a tree.
+
+**The problem.** Invariant 17 named four files and warned about a fifth, which is
+the right shape for a rule that cannot tell a stray design note from the next
+thing everyone needs at the root. `packages/css/AGENTS.md` had sat under a named
+allowance since 2026-08-14 saying it was the same KIND of thing as `CLAUDE.md`
+and that the ruling was deferred. Deferring it cost nothing while there was one.
+Writing the second one is what forces the answer, because an allowance per
+package is a rule nobody has stated.
+
+**The two files are not one file, and the split is the audience's ACCESS.**
+`CLAUDE.md` addresses somebody working IN the package: it can cite `src/`, name
+a test, and assume a grep will resolve. `AGENTS.md` addresses somebody writing
+AGAINST the package from an installed copy, where `docs/` and every snapshot are
+absent and the only things on disk are whatever `files:` shipped. Folding them
+would put the contributor's file-by-file map in front of a consumer who cannot
+open any of it, and would put the consumer's compressed reference in front of a
+contributor who has the authority beside them. Two audiences is why it is two
+files, the same argument `packages/frontierjs-vscode` already makes for keeping
+`CHANGELOG.md` beside `CHANGES.md`.
+
+**Permitted and not required, because the audience is not universal.** A package
+that nobody writes against — `outpost` is a process, `config` is a dependency
+with no source — owes nothing here, and adding it to the four would manufacture
+an empty file per package to satisfy a count. So `package-root-md` admits the name and
+asks for it nowhere; a sixth root file is still the question it always was.
+
+**The half that makes it real is `files:`.** A root document for an installed
+consumer that the tarball does not carry is a file for nobody, and it fails
+silently in exactly the direction nothing notices: the repo reads correctly
+throughout. litestone shipped `["src/", "README.md", "LICENSE"]`, so its `docs/`,
+its `catalog.snapshot.md` and its new `AGENTS.md` all stopped at the workspace
+edge. `exports.snapshot.md` already commits the tarball listing per package, so
+this is decidable from a committed artefact rather than from a pack — which is
+the same argument the `scaffold` CI phase makes one level up, where a declared
+entry point `files:` omits is a broken install.
+
+**What it may NOT do is restate a generated table.** litestone ships
+`catalog.snapshot.md` — 98 words, asserted against the parser's own switch arms
+in both directions — so the AGENTS file carries the judgement half (which word
+to reach for, what a legal spelling means when it is the wrong one) and points
+at the catalogue for the language. A hand-written word list beside a generated
+one is the copy `FJS-D33` refuses, and it goes stale in the direction that reads
+as authoritative. Where a package has no such artefact the file carries the
+vocabulary itself, which is why `packages/css/AGENTS.md` is a different shape
+and is not a template violation.
+
 ### <a id="fjs-d156"></a>2026-08-29 · `FJS-D156` — the journal owns *what state did the last run leave*; the deploy lock owns *is another run working here*. They are two questions, and the lock only looked like a second answer to the first because it could not expire.
 
 **The problem.** `fli deploy` had two records of a run in flight. `.deploy.lock`, a
@@ -5942,6 +7056,89 @@ reuses `.mesa` — so that §1–§3 do not foreclose either answer.
 
 ## Dependencies & the ecosystem
 
+### <a id="fjs-d177"></a>2026-09-02 · `FJS-D177` — Conduit holds the RELATIONSHIP, so it is two-way. The axis is who dials, not which way bytes move.
+
+Asked of a Basecamp connection and answered for every counterparty.
+
+**Conduit was never ruled one-way.** The phrase *outbound boundary* appears twice
+in this file, both inside [`FJS-D153`](#fjs-d153), both as a premise in an argument
+about vendor coupling — never as a decision about direction. It is an artefact of
+origin: conduit began as basecamp's fleet arm, and telling a machine to deploy is
+outbound by nature.
+
+**And it was never literally true.** `stream()` yields chunks and every `send()`
+reads a response; data arrives constantly. What conduit does not do is **listen**.
+
+**So the axis is who dials.** That distinction decides three things at once — who
+retries (the dialer's choice, against the callee's problem), who authenticates
+whom (we prove ourselves, against they prove themselves), and whether a listening
+socket exists at all. A coherent package hides under the old name: *the
+connections this process initiates*, where retry, breaker, deadline, pool and a
+credential-we-spend all hang together.
+
+**It is not the package conduit is.** Its own claim is *one place lists what this
+process may talk to*, and **talk to is a relationship, not a dialing direction**.
+A vendor holds two of our secrets and dials us about as often as we dial it —
+Stripe issues `sk_live_…` to spend and `whsec_…` to verify, and
+`example/api/src/providers/stripe/index.ts` already carries both in one file
+because the relationship is one fact. n8n, Zapier, Apache Camel and MuleSoft each
+landed here independently; Camel is the sharpest, where a Component *is* an
+integration point and `from()` consumes what `to()` produces.
+
+**Ruling: conduit is the third parties an app integrates with, declared in one
+place, and a declared relationship has two ends.** Outbound ships; the receiving
+end is conduit's and is not built (`IDEAS/inbound-integrations.md`).
+
+**But receiving is two features, and the test is *whose scheme is it*.**
+
+- **Our own scheme is junction's.** The `webhooks` plugin is outbound only —
+  `register(url, events)` registers a SUBSCRIBER — and it signs with
+  `@frontierjs/toolbelt/signature`. The mirror half is the same scheme read the
+  other way, it is generic, there is no counterparty to declare, and an app must
+  get it **without installing conduit**, because it completes a feature junction
+  already half ships.
+- **A counterparty's dialect is conduit's.** Stripe's `t=…,v1=…`, GitHub's
+  `X-Hub-Signature-256`, Basecamp's *nothing at all*. The relationship is already
+  declared here, so [`FJS-D153`](#fjs-d153) applies unchanged in the new
+  direction: conduit owns the mechanism — the route, the raw bytes, the freshness
+  window, the dedupe key, the refusal taxonomy — and a connector owns how that
+  vendor signs.
+
+**Three things are excluded by name**, so the edge of what was taken is decidable
+rather than argued later: a machine caller **becoming a principal**
+([`FJS-371`](ISSUES.md#fjs-371)), which is junction's auth door; inbound email,
+which Rails made its own noun (`ActionMailbox`) and was right to; and a polled
+feed, which is a cursor rather than a route.
+
+**A receiver is not a second kind of target.** A `TargetDescriptor` describes a
+place we send to; a webhook has no such place, it has a route of theirs to us.
+One relationship, two records — and this is the mistake Camel actually pays for,
+whose URI model leaks precisely because a component's consumer and producer
+options diverge while one string carries both.
+
+**Two things must not merge.** **Resilience does not cross**: retry, breaker,
+deadline and the concurrency cap are ours because we chose to dial, while inbound
+the retry is theirs and our only jobs are to be idempotent and answer 2xx
+quickly — a breaker has no inbound meaning, and an inbound branch inside
+`resilience.ts` is the first sign this went wrong. And **neither half may mint a
+principal**, which is the guardrail that pays for itself: a verified webhook looks
+identical to an authenticated machine caller from outside and is not one. Stripe
+is not a caller with a session; it is an event we verified and then act on as the
+system. Conflating them is how a webhook ends up minting a session.
+
+**Anything both halves need is a kit**, or the two drift on the one thing that
+must not — which is why `@frontierjs/toolbelt/signature` exists at all
+(`FJS-349`: a signer with no verifier reads as a scheme being enforced, and three
+fleet endpoints took no credential). It already holds the canonical string, the
+freshness-before-compare order and the constant-time compare. It does **not** hold
+a nonce store and must not: that is I/O, and computing only what it is given is
+the whole of [`FJS-D26`](#fjs-d26).
+
+**What this does not rule is the schedule.** The mechanism is unbuilt and the
+ordering is a proposal, not a ruling: the credential seam first
+(`IDEAS/third-party-credentials.md` leg three), because it is the only genuinely
+shared machinery between two ends of one relationship.
+
 ### <a id="fjs-d153"></a>2026-08-27 · `FJS-D153` — an official Conduit connector is its own package. Conduit owns the mechanism, never the vendor.
 
 Asked of Stripe, and the answer generalises to every provider this project would
@@ -5978,7 +7175,7 @@ would otherwise reimplement, and in particular anything the HMAC signer touches:
 `serialise()` produces the bytes the signature is computed over, so an encoder
 living in a connector would sign bytes the transport did not produce. A connector
 owns the vendor's paths, its payload shapes, its own webhook signature scheme
-(Stripe's `t=…,v1=…` is not this project's `X-Hub-Signature`, and neither is
+(Stripe's `t=…,v1=…` is not this project's `X-Fjs-Signature`, and neither is
 wrong), and its sink.
 
 **Naming: `@frontierjs/conduit-stripe`, not `@frontierjs/stripe`.** It says which
