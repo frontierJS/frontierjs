@@ -13,7 +13,7 @@
  *
  * `.popover` is `position: absolute`, so without a positioned ancestor it
  * resolves against the page, and with no inset it resolves to its STATIC
- * position — centred on its own trigger. Measured in the demo before the
+ * position — centered on its own trigger. Measured in the demo before the
  * anchor existed: 265px tall at y = -39, hanging off the top of the
  * viewport. Every consumer of a term this package NAMES had to write both
  * rules before the term worked at all, which is what made it a gap rather

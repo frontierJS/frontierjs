@@ -21,7 +21,7 @@
 // the sub-call was simply refused by the model's own gate, or worse, allowed.
 //
 // A type cannot hold any of this: propagation, freezing and freshness are
-// runtime behaviours. So they are asserted by running them.
+// runtime behaviors. So they are asserted by running them.
 
 import { describe, test, expect } from 'bun:test'
 import { createApp }     from '../src/core/app.ts'

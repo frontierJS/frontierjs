@@ -19,7 +19,7 @@ one function — `pointAtLocalServer` — and the deploy CI phase runs the ident
 one, because two copies of a recipe drift and only one of them is exercised.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 3
 

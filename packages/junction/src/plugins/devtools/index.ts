@@ -118,7 +118,7 @@ function redactObj(
   return out
 }
 
-function summarise(result: unknown): string {
+function summarize(result: unknown): string {
   if (result === null || result === undefined) return 'null'
   if (typeof result !== 'object') return String(result)
   const r = result as Record<string, unknown>

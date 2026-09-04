@@ -39,7 +39,7 @@ const EXPIRY: Record<string, number | null> = {
 
 export const EXPIRY_PRESETS = Object.keys(EXPIRY)
 
-/** `fjs_AbCd…wXyZ` — enough to recognise a key in a list, useless as a token. */
+/** `fjs_AbCd…wXyZ` — enough to recognize a key in a list, useless as a token. */
 function maskToken(raw: string): string {
   const body = raw.replace(/^fjs_/, '')
   return `fjs_${body.slice(0, 4)}…${body.slice(-4)}`

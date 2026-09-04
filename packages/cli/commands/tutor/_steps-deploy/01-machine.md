@@ -13,7 +13,7 @@ If Docker is not here the lesson stops rather than failing — there is nothing
 wrong with your machine, this lesson just cannot be run on it.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 1
 

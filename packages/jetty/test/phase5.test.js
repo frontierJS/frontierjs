@@ -246,7 +246,7 @@ group('DevServer — lifecycle + broadcast')
 //
 // `globalThis.__jettyMesa.hot_update` is what jetty's whole dev loop rests on,
 // and until now nothing ran it: `phase8` audits the classic-script shape of the
-// bundle it lives in, not its behaviour. The DOM swap inside it is Mesa's
+// bundle it lives in, not its behavior. The DOM swap inside it is Mesa's
 // (`@frontierjs/mesa/vite/swap`, `FJS-259`); what is asserted here is jetty's
 // half — the two module shapes it accepts, the mark it seeds, and the fact that
 // an updated instance re-registers so the SECOND edit lands too. That last one

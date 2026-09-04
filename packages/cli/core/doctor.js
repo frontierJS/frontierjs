@@ -21,7 +21,7 @@
 // machine happens to have, so it can only ever assert the shape. With them a
 // missing `docker` and a present one are both a test.
 //
-// Zero dependencies, plain ESM, node or bun — same rule as its neighbours.
+// Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
 import { existsSync }   from 'node:fs'
 import { execSync }     from 'node:child_process'

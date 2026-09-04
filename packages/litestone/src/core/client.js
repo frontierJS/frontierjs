@@ -12,7 +12,7 @@ import { tmpdir } from 'os'
 import { existsSync, mkdirSync, mkdtempSync, statSync } from 'fs'
 import { resolveAnchor, noteMintedDirectory } from './db-path.js'
 import { parse, parseFile } from './parser.js'
-import { modelToTableName, modelToAccessor, updatedAtFields } from './ddl.js'
+import { modelToTableName, modelToAccessor, updatedAtFields, isStoredField } from './ddl.js'
 import { buildSealMap } from './seal.js'
 import { buildValueSetMap, enforceValueSets } from './valuesets.js'
 import { buildEdgeMap, arcCheckExpr, arcDefaultMessage } from './ddl.js'
@@ -160,12 +160,12 @@ function wrapDb(rawDb, { maxCacheSize = 500, label = 'sqlite' } = {}) {
       if (NO_CACHE.test(sql)) return rawDb.prepare(sql).run(...params)
       return stmt(sql).run(...params)
     },
-    // Finalising every cached statement is what makes a close a close. bun's
+    // Finalizing every cached statement is what makes a close a close. bun's
     // `close()` is `sqlite3_close_v2`: it defers the real destruction until the
-    // last statement is finalised, so closing a handle while this cache holds
+    // last statement is finalized, so closing a handle while this cache holds
     // 500 of them frees NO file descriptors and leaves a client that answers a
     // cached query and throws on a fresh one (`FJS-640`). Measured: a close
-    // with one live statement freed 0 fds, and finalising it freed 3.
+    // with one live statement freed 0 fds, and finalizing it freed 3.
     close() {
       closed = true
       for (const s of cache.values()) { try { s.finalize?.() } catch {} }
@@ -681,7 +681,7 @@ function filterableKeysFor(model) {
 //
 // It cannot live in `filterableKeysFor`. That answers whether a column CAN be
 // compared, which is a fact about the schema and is why `$checkWhere` may be
-// asked of any flavour of client. This asks who is asking, so it belongs at the
+// asked of any flavor of client. This asks who is asking, so it belongs at the
 // read, beside the write refusal it mirrors.
 //
 // **The walk crosses relations, because the grammar does.** `where: { author:
@@ -884,12 +884,12 @@ function collectWhereKeyProblems(where, filterable, computed, encrypted, out = [
 // A column whose stored TEXT is a storage detail rather than the value. SQLite
 // orders by that text, so the answer is always plausible and never the one
 // asked for — `[10]` sorts before `[9]`, a Json document sorts by whichever key
-// serialised first, and ciphertext reshuffles on every re-encryption. One
+// serialized first, and ciphertext reshuffles on every re-encryption. One
 // bucket, because the question is not what sorting *within* the value would mean
 // but whether the column may be a sort key at all, and the answer is no.
 const OPAQUE_SORT = {
-  array:     `an array column, stored as a JSON document — sorting it orders rows by that text, so '[10]' sorts before '[9]' and a re-serialised row moves`,
-  json:      `a Json column, stored as a document — sorting it orders rows by the serialised text, so the order is by whichever key serialised first`,
+  array:     `an array column, stored as a JSON document — sorting it orders rows by that text, so '[10]' sorts before '[9]' and a re-serialized row moves`,
+  json:      `a Json column, stored as a document — sorting it orders rows by the serialized text, so the order is by whichever key serialized first`,
   file:      `a File column, stored as a reference document — sorting it orders rows by that JSON text, not by anything about the file`,
   encrypted: `@encrypted — sorting it orders rows by ciphertext, which is meaningless, and stable only where the IV is derived from the value`,
   hashed:    `@hashed — sorting it orders rows by the digest, which is stable and equally meaningless`,
@@ -1049,7 +1049,7 @@ const AGG_REASONS = {
 // SUM/AVG fail differently from ORDER BY and the sentence has to say which.
 const OPAQUE_AGG = {
   array:     `an array column, stored as a JSON document — MIN/MAX compare that text, so '[10]' ranks below '[9]', and SUM answers 0`,
-  json:      `a Json column, stored as a document — an aggregate compares the serialised text, so the answer is about whichever key serialised first`,
+  json:      `a Json column, stored as a document — an aggregate compares the serialized text, so the answer is about whichever key serialized first`,
   file:      `a File column, stored as a reference document — an aggregate compares that JSON text, never anything about the file`,
   encrypted: `@encrypted — an aggregate compares ciphertext, which orders nothing and re-shuffles on every re-encryption`,
   hashed:    `@hashed — the column holds a one-way digest, so an aggregate would answer a fact about digests rather than about values. ` +
@@ -1138,7 +1138,7 @@ const ARG_WRITE_METHODS = [
 // (jsonl cache, per-scope rebuilds) never accumulate nested wrappers.
 function withArgValidation(table, model, ctx) {
   if (!table || !model) return table
-  // Per FLAVOUR of client: buildTableForModel runs again for asSystem() and
+  // Per FLAVOR of client: buildTableForModel runs again for asSystem() and
   // $setAuth(), so `ctx.isSystem` here is the context these tables belong to.
   const guardedMap   = ctx.guardedMap
   const checkGuarded = !ctx.isSystem && guardedMap?.reaches.has(model.name)
@@ -1349,7 +1349,7 @@ async function loadComputedFields(computedInput) {
 //   fullName: row => …                                    → needs: null
 //   initials: { needs: ['firstName'], compute: row => … }  → needs: ['firstName']
 //
-// `needs: null` means *fetch everything* — the original behaviour, and still
+// `needs: null` means *fetch everything* — the original behavior, and still
 // the right answer for a fn whose inputs cannot be listed.
 //
 // Keys beginning with `$` are not fields ($validate is a cross-field validator
@@ -1923,7 +1923,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
         results = readDb.query(sql).all(...pkValues, ...(countPolicy?.params ?? []))
       } else {
         const sdExtra = softDeleteMap[rel.targetModel] ? ` AND "deletedAt" IS NULL` : ''
-        // Default _count behaviour mirrors normal reads — exclude templates.
+        // Default _count behavior mirrors normal reads — exclude templates.
         // The relInclude here is `spec`, parsed above; we don't currently
         // surface withTemplates/onlyTemplates on _count selectors (matches
         // soft-delete: no withDeleted on _count either).
@@ -2399,7 +2399,7 @@ function installHooks(table, ctx, modelName) {
 
 function buildEventEmitter(onEvent) {
   if (!onEvent) return null
-  // Normalise: onEvent.create, onEvent.update, onEvent.remove, onEvent.change
+  // Normalize: onEvent.create, onEvent.update, onEvent.remove, onEvent.change
   // Each can be a single function or array of functions
   const listeners = {}
   for (const [event, fns] of Object.entries(onEvent)) {
@@ -2468,9 +2468,9 @@ function rowsChanged(db) {
 // The three arguments are three different lifetimes, and that is the whole of
 // why they are separate. `readDb`/`writeDb` are the CONNECTION. `shape` is what
 // the SCHEMA says about this one model — derived once at client build, identical
-// for every caller. `ctx` is the FLAVOUR: the principal, the scope stack, the
+// for every caller. `ctx` is the FLAVOR: the principal, the scope stack, the
 // system flag, and the maps that read them. This function runs once per model
-// per flavour, so a client over 45 models builds it 180 times.
+// per flavor, so a client over 45 models builds it 180 times.
 //
 // `shape` used to be thirteen positional arguments. The view call site passed
 // blanks for the ones it has no answer to (`new Set(), new Set(), false, null,
@@ -4086,6 +4086,33 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return `"${col}" = CASE WHEN ${pred.sql} THEN ${expr} ELSE "${col}" END`
   }
 
+  /**
+   * Why this field cannot be left without a value, in the field's own wording.
+   *
+   * One owner because two callers ask it — a create-shaped write with the key
+   * missing, and any write clearing it with an explicit `null`. Two sentences
+   * for one rule is how the second one ends up saying something the first does
+   * not.
+   *
+   * `@required("…")` carries the wording; `@label("Customer")` names the field
+   * when there is none. Neither creates the rule — the absence of `?` did.
+   */
+  function requiredFailure(f) {
+    const attrs  = f.attributes ?? []
+    const custom = attrs.find(a => a.kind === 'required')?.message
+    const label  = attrs.find(a => a.kind === 'label')?.text ?? f.name
+    return {
+      path: [f.name],
+      // A required @system column is the one case where "is required" names the
+      // wrong party. The caller was never asked for it — the client schema
+      // leaves it out of `required` on purpose — so the app forgot to fill it,
+      // and the message has to say which side is missing.
+      message: attrs.some(a => a.kind === 'system')
+        ? `${label} is @system and was not supplied — the application fills it, with \`system: ['${f.name}']\` on the call`
+        : custom ?? `${label} is required`,
+    }
+  }
+
   function writeData(data, { requireAll = false, system = null, fieldWrite = 'js', stamped = null, creating = false } = {}) {
     const model = ctx.models[modelName]
 
@@ -4209,7 +4236,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // It refuses the KEY and never compares the value, which is the only thing
     // a rule here could do: nothing in this language can see the stored row
     // beside the incoming one. So *I sent the same total back* is refused too,
-    // and that is the behaviour wanted — a form that round-trips a frozen
+    // and that is the behavior wanted — a form that round-trips a frozen
     // column is a form that would have overwritten it the day somebody changed
     // the box.
     //
@@ -4304,25 +4331,43 @@ function makeTable(readDb, writeDb, shape, ctx) {
         // as a raw `NOT NULL constraint failed` naming a physical table
         // (`FJS-608`). `PRIMARY KEY (a, b)` is never a rowid alias.
         if (isServerAssignedId(f, model)) continue
-        if (data?.[f.name] == null) {
-          // @required("…") carries the wording; @label("Customer") names the
-          // field when there is none. Neither creates the rule — the absence of
-          // `?` above did.
-          const custom = attrs.find(a => a.kind === 'required')?.message
-          const label  = attrs.find(a => a.kind === 'label')?.text ?? f.name
-          // A required @system column is the one case where "is required" names
-          // the wrong party. The caller was never asked for it — the client
-          // schema leaves it out of `required` on purpose — so the app forgot to
-          // fill it, and the message has to say which side is missing.
-          missing.push({
-            path:    [f.name],
-            message: attrs.some(a => a.kind === 'system')
-              ? `${label} is @system and was not supplied — the application fills it, with \`system: ['${f.name}']\` on the call`
-              : custom ?? `${label} is required`,
-          })
-        }
+        if (data?.[f.name] == null) missing.push(requiredFailure(f))
       }
       if (missing.length) throw new ValidationError(missing)
+    }
+
+    // The OTHER thing a payload can say, and the one shape that is
+    // unambiguously wrong.
+    //
+    // An absent key on a partial write means *leave it alone*, which is why the
+    // block above is create-shaped only and correctly so. An explicit `null` is
+    // Invariant 9's *clear this*, and clearing is exactly what a NOT NULL column
+    // cannot do — so with nothing checking it, the payload nobody could defend
+    // was the one that reached SQLite: a bare `NOT NULL constraint failed:
+    // item.name`, which declares no status and lands as a 500 with a null body,
+    // where the same mistake on a create is a 400 naming the field (`FJS-669`).
+    // `FJS-608` is the same class one door along and was fixed the same way, by
+    // testing the KEY rather than letting the database answer.
+    //
+    // `@default` does not exempt here, where it does above: a default fills an
+    // ABSENT key and this key is present. Measured — `qty: null` on
+    // `Int @default(1)` reaches SQLite and is refused by it.
+    //
+    // `undefined` is not this, and is not handled here: the strip above deletes
+    // an undefined-valued key and reassigns `data`, so this loop cannot see one.
+    // `=== null` is still what it should say — the rule is about the value, and
+    // stating it here is what keeps this correct if that strip ever moves.
+    else if (model) {
+      const clearing = []
+      for (const key of Object.keys(data ?? {})) {
+        if (data[key] !== null) continue
+        const f = _fieldsByName.get(key)
+        // A virtual column is refused by name upstream (`_virtualWriteKeys`) and
+        // is not a column here either; an optional one is what `null` is for.
+        if (!f || f.type.optional || !isStoredField(f)) continue
+        clearing.push(requiredFailure(f))
+      }
+      if (clearing.length) throw new ValidationError(clearing)
     }
 
     const transformed = model ? applyTransforms(data, model) : { ...data }
@@ -5116,7 +5161,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return rows
   }
 
-  function finalise(rows, ps) {
+  function finalize(rows, ps) {
     return ps ? trimAllToSelect(rows, ps.requestedFields, ps.injectedFKs) : rows
   }
   function finaliseOne(row, ps) {
@@ -5210,7 +5255,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   // The soft-delete half of the same pair. It exists so that sdMode is asked on
   // EVERY read, not only on the models that can answer it: guarding the call
-  // with `softDelete ? … : where` is what let a flag this model cannot honour
+  // with `softDelete ? … : where` is what let a flag this model cannot honor
   // through without a word.
   function applySdFilter(where, args) {
     const mode = sdMode(args)
@@ -5626,7 +5671,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       let rows              = readAll(readDb.query(sql).all(...params), { mode: 'list', selectedFields: ps?.requestedFields })
       if (_nt) fireQuery({ operation: 'findMany', args, sql, params, duration: _nt ? performance.now() - _fmT0 : 0, rowCount: rows.length })
       withIncludes(rows, ps, include)
-      rows = finalise(rows, ps)
+      rows = finalize(rows, ps)
       attachFlatEdges(rows, scopedBy)
       if (plugins?.hasPlugins) await plugins.afterRead(modelName, rows, ctx, { select })
       if (tableHasAnyLog && rows.length > 0) emitLogs('read', rows)
@@ -5833,7 +5878,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       let rows = readAll(readDb.query(sql).all(...params), { mode: 'list', selectedFields: ps?.requestedFields })
       fireQuery({ operation: 'findMany', args, sql, params, duration: _nt ? performance.now() - _t0 : 0, rowCount: rows.length })
       withIncludes(rows, ps, include)
-      rows = finalise(rows, ps)
+      rows = finalize(rows, ps)
 
       // ── count query (same WHERE, no limit/offset) ─────────────────────
       const countParams = []
@@ -7164,7 +7209,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // ride the ON CONFLICT SET clause — a conflict is an update, and an update
       // may not rewrite who created the row. Columns the CALLER supplied are not
       // in this set: naming one is an explicit request, and excluding it would
-      // change behaviour that predates the stamps.
+      // change behavior that predates the stamps.
       const supplied = new Set()
       for (const item of data) for (const k of Object.keys(item ?? {})) supplied.add(k)
       const authorCols = new Set(
@@ -8039,7 +8084,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
       // ── Step 4: resolve includes + trim select ────────────────────────────
       withIncludes(result, ps, include)
-      return finalise(result, ps)
+      return finalize(result, ps)
     },
 
     // ── delete ──────────────────────────────────────────────────────────────
@@ -8191,7 +8236,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     // Accepts a row (no round trip) or an id (one read). Returns every move
     // legal from the record's current value, each flagged with `allowed`:
     // a gated move the caller can't make is reported, not hidden, because a
-    // greyed-out button is usually better UI than a missing one. Callers that
+    // grayed-out button is usually better UI than a missing one. Callers that
     // want only the usable ones filter on `allowed`.
     //
     // Mirrored on the client by sierra's resource.transitions(row, level),
@@ -8846,6 +8891,17 @@ export async function createClient({
   //   createClient({ path: './db/schema.lite' })
   //   createClient({ schema: `model User { id Int @id }`, db: ':memory:' })
   //   createClient({ parsed: parseFile('./db/schema.lite') })
+  // A `schema:` that is really a FILE PATH is read as one below, and
+  // `resolveFrom: 'schema'` then has to anchor on it: the option's contract is
+  // *the app root, from the schema file*, and the file was handed over — under
+  // the other key. Without this the anchor is null, every relative database
+  // path silently falls back to the working directory, and a command run from a
+  // surface opens a NEW, EMPTY database (`FJS-449`'s shape) with the option that
+  // was supposed to prevent it set.
+  if (!schemaFilePath && typeof schemaInline === 'string' &&
+      !schemaInline.includes('\n') && schemaInline.endsWith('.lite'))
+    schemaFilePath = resolve(schemaInline)
+
   const parseResult = (() => {
     if (schemaPreParsed) return schemaPreParsed
     if (schemaInline) {
@@ -9487,7 +9543,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // same connection — otherwise they cannot see its uncommitted writes.
   const tx = makeTxManager(writeDb, txState)
 
-  // Normalise global filters: { tableName: whereObject | (ctx) => whereObject }
+  // Normalize global filters: { tableName: whereObject | (ctx) => whereObject }
   const globalFilters = filters ?? {}
 
   // ── A predicate that can never match is refused HERE, once ────────────────
@@ -10109,7 +10165,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   //   - accessor.<scopeName> → another scoped accessor (chaining)
   //
   // Methods that don't take a where-shaped first arg (search, optimizeFts) are
-  // exposed as-is when no scope stack would change behaviour, otherwise throw.
+  // exposed as-is when no scope stack would change behavior, otherwise throw.
   //
   // tableAccessor: the real table object from `tables[accessor]`
   // scopeStack:    array of scope defs accumulated so far (left-to-right)
@@ -10314,7 +10370,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // `ctx.locals.db`, so its autoFilter hook threw on every list read by a
   // signed-in caller, in every app, with a message about a table nobody named.
   // Which filter keys are valid is a question about the SCHEMA — auth and scope
-  // have no bearing on it, so every flavour of client answers it identically.
+  // have no bearing on it, so every flavor of client answers it identically.
   function $checkWhere(accessor, where) {
     const model = modelForAccessor(accessor)
     if (!model?.fields) return []
@@ -10328,7 +10384,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // The declared scope names for a model, as source text. The published list
   // `$checkWhere` validates a `$scope` against — asked rather than copied, so a
   // UI offering scopes and the client refusing one cannot disagree. A schema
-  // fact, so it is on every flavour of client, like both $check* helpers.
+  // fact, so it is on every flavor of client, like both $check* helpers.
   function $scopes(accessor) {
     const model = modelForAccessor(accessor)
     if (!model) return {}
@@ -10359,7 +10415,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   }
 
   // The tenancy declaration, resolved — null when the schema declares none.
-  // A schema fact, so it is on every flavour of client, and memoised because
+  // A schema fact, so it is on every flavor of client, and memoised because
   // resolving reads env vars and the filesystem's idea of cwd.
   //
   // What it is FOR: everything above the Data realm has to know whether this
@@ -10380,7 +10436,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   //
   // $checkWhere's sibling, same contract in every respect: ask before you
   // query, unknown accessor answers [] because "I cannot judge this" is not
-  // "this is wrong", and every flavour of client answers identically because
+  // "this is wrong", and every flavor of client answers identically because
   // sortability is a fact about the schema that auth and scope cannot change.
   //
   // It exists for the same reason $checkWhere does. The ORM throws, which is
@@ -10388,7 +10444,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // without running the query, and must not grow a second copy of the rule.
   // `reason` is 'computed', 'opaque' or 'unknown' — a boundary wants to say
   // different sentences for "no such field", "that field is derived in JS" and
-  // "that column stores a serialisation, so its text is not the value".
+  // "that column stores a serialization, so its text is not the value".
   function $checkOrderBy(accessor, orderBy, opts = {}) {
     const model = modelForAccessor(accessor)
     if (!model?.fields) return []
@@ -10403,7 +10459,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   //
   // Which columns of a model must never be written down in plain text. The
   // third sibling of $checkWhere/$checkOrderBy and the same contract: an
-  // unknown accessor answers {}, and every flavour of client answers
+  // unknown accessor answers {}, and every flavor of client answers
   // identically, because what a schema DECLARES protected is not a question
   // about who is asking.
   //
@@ -10437,7 +10493,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // accessor or a model with no declared key.
   //
   // The sixth sibling of $checkWhere/$checkOrderBy/$protectedFields, and the
-  // same contract: every flavour of client answers identically, because what a
+  // same contract: every flavor of client answers identically, because what a
   // schema declares the key to be is not a question about who is asking.
   //
   // It exists because the layer above has to know whether a row can be named by
@@ -10463,7 +10519,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // The fifth sibling of $checkWhere, $checkOrderBy, $protectedFields and
   // $capabilitiesFor, and it takes its subject as an ARGUMENT for
   // $capabilitiesFor's reason: the asker holds one client and is answering
-  // about somebody else. Every flavour of client answers identically for the
+  // about somebody else. Every flavor of client answers identically for the
   // same principal.
   //
   // **It exists because a broadcast is not a SELECT.** `@@allow` compiles into
@@ -10574,7 +10630,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   //
   // *What can this person do* — `FJS-D148`. The fourth sibling of $checkWhere,
   // $checkOrderBy and $protectedFields, and the same contract: it takes its
-  // subject as an ARGUMENT and every flavour of client answers identically for
+  // subject as an ARGUMENT and every flavor of client answers identically for
   // the same one, because what a name GRANTS is a fact about the schema and not
   // about which client is asking. Defaulting to this client's own principal
   // would break exactly that.
@@ -10624,10 +10680,10 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // name, like $enums and $relations; the accessor-keyed siblings are the ones
   // that take an argument.
   //
-  // A COPY, and on every flavour of client. The live map is what every read
+  // A COPY, and on every flavor of client. The live map is what every read
   // filters against, so handing it out let a caller turn soft delete off for
   // the whole client by assigning to a property they had asked to read. And it
-  // answered on the root client alone, so the one flavour an application
+  // answered on the root client alone, so the one flavor an application
   // actually holds — junction scopes `ctx.locals.db` with $setAuth — threw the
   // unknown-property error instead of answering a question about the schema.
   function softDeleteInfo() {
@@ -10698,7 +10754,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
 
   // $transaction — wraps async callback in BEGIN IMMEDIATE / COMMIT
   //
-  // `asProxy` is which flavour of client the callback is handed, and it is not
+  // `asProxy` is which flavor of client the callback is handed, and it is not
   // a detail: every scoped proxy (asSystem, $setAuth, $scopedBy) exposed THIS
   // function directly, so the callback received the ROOT client and the scope
   // was dropped for the whole transaction — silently, in both directions.
@@ -11165,10 +11221,10 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop in target)     return Reflect.get(target, prop)
         if (prop in sysTables)  return sysTables[prop]
         // Idempotent, and it has to be: a caller handed a client cannot tell
-        // which flavour it is, so `db.asSystem()` at the top of a function is
+        // which flavor it is, so `db.asSystem()` at the top of a function is
         // the normal defensive spelling. Without this it threw
         // `"asSystem" is not a table in this schema` — a message about tables,
-        // about a method every other flavour of this client has.
+        // about a method every other flavor of this client has.
         if (prop === 'asSystem') return () => proxy
         if (prop === '$close')  return () => _closeAll()
         if (prop === '$inTransaction') return txState.depth > 0
@@ -11416,7 +11472,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         file:   conn.absPath,
         origin: cp.origin,
         now:    nowDate,
-        // Serialised, in arrival order. Each delivery re-reads its row, so
+        // Serialized, in arrival order. Each delivery re-reads its row, so
         // firing them off in parallel lets a later event's read finish first
         // and a subscriber sees a create after the remove that undid it —
         // measured, and the order is the one thing a live store cannot repair.
@@ -11555,7 +11611,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       // a method, and a hook can run against a method it does not name.
       //
       // A fact about this connection, so it is the same answer on every
-      // flavour — a scoped client and the system bypass share one write
+      // flavor — a scoped client and the system bypass share one write
       // connection and one depth counter.
       if (prop === '$inTransaction')  return txState.depth > 0
       if (prop === '$attached')       return $attachedDatabases()

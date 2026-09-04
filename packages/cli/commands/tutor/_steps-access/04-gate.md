@@ -22,7 +22,7 @@ Nothing in `api/src/services/notes.service.ts` says any of this. The service is
 eleven lines and none of them mention authentication.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 4
 

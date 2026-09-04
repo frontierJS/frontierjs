@@ -179,7 +179,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
   // it was BEFORE the file — which is to say, without it (`FJS-416`).
 
   function applyJunctionConfig(app: CaravanApp): void {
-      // The caravan section of junction.config.js. Every key is honoured, and
+      // The caravan section of junction.config.js. Every key is honored, and
       // opts always wins — explicit beats config file. Absent is not a value:
       // the tests are `=== undefined`, so `cleanupAfter: 0` from a config file
       // disables the sweep rather than reading as "unset" (`admin: false` the
@@ -360,7 +360,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       //
       // The admin surface could retry a job and cancel a job but not START
       // one, so the only way to exercise a nightly sweep was to wait until
-      // 03:00 — which means a cron handler's behaviour is untestable and, in
+      // 03:00 — which means a cron handler's behavior is untestable and, in
       // an incident, unrunnable. "Run the sweep now" is the ops verb this was
       // missing.
       //

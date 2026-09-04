@@ -19,7 +19,7 @@ this prose would make both unreadable, and a failed health check needs somewhere
 to point.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 4
 

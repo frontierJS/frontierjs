@@ -342,8 +342,8 @@ export class GatePlugin extends Plugin {
 //
 // Level scale:
 //   0  STRANGER      — not logged in
-//   1  VISITOR       — modelled as unverified
-//   2  READER        — verified, modelled as not yet activated (read-only)
+//   1  VISITOR       — modeled as unverified
+//   2  READER        — verified, modeled as not yet activated (read-only)
 //   3  CREATOR       — no role assigned (submit but can't manage)
 //   4  USER          — full CRUD
 //   5  ADMINISTRATOR — isAdmin
@@ -358,7 +358,7 @@ export function FrontierGateGetLevel(user) {
   if (user.isOwner)       return LEVELS.OWNER
   if (user.isAdmin)       return LEVELS.ADMINISTRATOR
 
-  // `=== null` — modelled and not reached. undefined means "not modelled".
+  // `=== null` — modeled and not reached. undefined means "not modeled".
   if (user.verifiedAt  === null) return LEVELS.VISITOR
   if (user.activatedAt === null) return LEVELS.READER
 

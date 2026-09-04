@@ -158,7 +158,7 @@ test('search: every term links to a section id that its tier can produce', funct
 test('search: a second word narrows, it does not widen', function () {
   /*
    * Every token has to land somewhere on an entry or the entry is out. OR
-   * semantics is the behaviour that teaches people to type one word and
+   * semantics is the behavior that teaches people to type one word and
    * scroll: "card footer" would return everything about cards plus
    * everything about footers, with the thing they asked for somewhere in
    * the middle.

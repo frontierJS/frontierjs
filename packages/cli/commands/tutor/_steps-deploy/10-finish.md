@@ -5,6 +5,10 @@ runOnAbort: true
 ---
 
 ```js
+// The reader `narrate` asks its questions through. Held open it keeps the event
+// loop alive and the lesson never exits.
+context.config.prompts?.close()
+
 // Runs on the way out of a refusal too. A lesson that left a container holding
 // a port and eight images on the disk would be a lesson nobody runs twice.
 
@@ -32,7 +36,7 @@ if (context.config.abort) {
 
 context.config.journal.settle('succeeded')
 
-log.success('Lesson 3 done — deployed, redeployed, reverted, and reverted back')
+log.success('Lesson 6 done — deployed, redeployed, reverted, and reverted back')
 log.info('')
 log.info(`  ${app}`)
 log.info('')
@@ -42,6 +46,8 @@ log.info('  fli deploy:journal        what the machine remembers')
 log.info('')
 log.info('  Deploying to a real host is the same commands with a real hostname in')
 log.info('  frontier.config.js, and `fli deploy:setup` to prepare the machine.')
+log.info('')
+log.info('  fli tutor:change          next — changing the schema of something already deployed')
 log.info('')
 
 if (ws.kind === 'temp' && !context.flag.keep) {

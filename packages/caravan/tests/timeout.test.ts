@@ -77,7 +77,7 @@ describe('a declared timeout bounds one attempt', () => {
   })
 
   // Absent means no bound, honestly — the same contract every declaration here
-  // has. This is the defect's original behaviour, kept deliberately and pinned
+  // has. This is the defect's original behavior, kept deliberately and pinned
   // so that a default timeout cannot be introduced by accident: one would kill
   // every legitimately long job in every app that upgraded.
   it('no timeout declared is still no bound', async () => {
@@ -200,7 +200,7 @@ describe('an unbounded stall is visible even though it is not stopped', () => {
 describe('a timeout declared in a job file survives the round trip', () => {
   it('reaches the registry through defineJob', async () => {
     const { defineJob } = await import('../src/index.ts')
-    const def = defineJob('shipping', async () => {}, { timeout: 30_000, queue: 'fulfilment' })
+    const def = defineJob('shipping', async () => {}, { timeout: 30_000, queue: 'fulfillment' })
     expect(def.timeout).toBe(30_000)
 
     const q = makeQueue()

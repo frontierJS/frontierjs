@@ -30,7 +30,7 @@ export const chalk = {
   cyan:    wrap(36, 39),
   white:   wrap(37, 39),
   gray:    wrap(90, 39),
-  grey:    wrap(90, 39),
+  gray:    wrap(90, 39),
   bold:    wrap(1, 22),
   dim:     wrap(2, 22),
   italic:  wrap(3, 23),

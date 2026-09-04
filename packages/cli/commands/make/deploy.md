@@ -42,7 +42,7 @@ import { resolve, dirname } from 'path'
 // reading the schema.
 //
 // It installs from deploy/generated/ rather than from package.json, and that is
-// not an optimisation. An app scaffolded with `--source local` depends on the
+// not an optimization. An app scaffolded with `--source local` depends on the
 // framework by `link:`, which resolves to the workspace on the machine that made
 // it and to nothing inside a build — so `bun install` failed five times over and
 // this image could not be built at all (FJS-241). `fli deploy:local` and the

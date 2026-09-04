@@ -10,7 +10,7 @@
 // An app's db module ends in a top-level `await` — `export const db = await
 // openShop(…)` is the shape — and a module whose TLA throws reports its real
 // error exactly ONCE. Every import after that resolves to a partially
-// initialised namespace rather than re-throwing, so the next reader gets
+// initialized namespace rather than re-throwing, so the next reader gets
 // `Cannot access 'X' before initialization` naming whichever binding it
 // happened to touch, and the cause is gone from the process for good.
 //

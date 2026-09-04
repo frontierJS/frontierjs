@@ -63,8 +63,8 @@
 <output id="invalids">{invalids}</output>
 
 <style>
-  /* The backdrop needs a centre the inner button is not sitting in: a
-     coordinate click reads the element's centre, and a block child at the top
+  /* The backdrop needs a center the inner button is not sitting in: a
+     coordinate click reads the element's center, and a block child at the top
      left is exactly what would be under it otherwise. */
   #backdrop { position: relative; height: 160px; background: #eee }
   #inner    { position: absolute; top: 0; left: 0 }

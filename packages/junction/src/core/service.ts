@@ -106,7 +106,7 @@ export function setServiceCache(cache: ICache): void {
 }
 
 /**
- * Builds a deterministic, normalised cache key from a ServiceContext.
+ * Builds a deterministic, normalized cache key from a ServiceContext.
  *
  * find → `{service}:find:{sorted-params}[:uid={userId}]`
  * get  → `{service}:get:{id}[:uid={userId}]`
@@ -255,7 +255,7 @@ export interface ServiceDescription {
  *   transactional: false               declared opt-out
  *
  * `find`/`get` are never wrapped whatever is declared — a read taking
- * `BEGIN IMMEDIATE` would serialise every reader behind every other.
+ * `BEGIN IMMEDIATE` would serialize every reader behind every other.
  */
 export type TransactionalDeclaration = boolean | string[]
 
@@ -270,7 +270,7 @@ export interface Service {
    * Whether bulk (query-targeted, id-less) writes are permitted.
    *
    * Carried onto the built service so consumers can read it back. It was
-   * declared on ServiceDefinition and honoured internally, but never landed
+   * declared on ServiceDefinition and honored internally, but never landed
    * on the service object — so `/metrics` reported `allowBulk: false` for
    * every service, including ones configured `allowBulk: true`.
    */
@@ -748,7 +748,7 @@ async function _callService(
   const doAnnounce = async () => {
     const past = eventName as string
 
-    // ctx.dispatch is the ONE suppression/override switch, honoured by both
+    // ctx.dispatch is the ONE suppression/override switch, honored by both
     // consumers: `false` announces nothing, any other value replaces the
     // payload (redaction, shaping). Previously only the socket obeyed it, so
     // a hook that suppressed a broadcast still leaked the record to every
@@ -1078,7 +1078,7 @@ export const SERVICE_RUNTIME_KEYS: ReadonlySet<string> = new Set([
 
 // ─── Custom methods: the one parse step ───────────────────────────────────
 //
-// A custom method used to be recognised by EXCLUSION — a function whose key is in
+// A custom method used to be recognized by EXCLUSION — a function whose key is in
 // neither reserved set — and six consumers re-applied that rule: dispatch twice,
 // the method policy, the manifest, the OpenAPI spec and /metrics. Six copies of
 // one question, none of them able to answer it any better than the deny-lists
@@ -1097,7 +1097,7 @@ export const SERVICE_RUNTIME_KEYS: ReadonlySet<string> = new Set([
 // `cache`, `schema`, `channel` and the rest of SERVICE_OPTION_KEYS are eaten by
 // the scan with no error, so `async cache(ctx)` was simply impossible. It still
 // costs a cast in TypeScript where the option is typed — `cache` is declared as
-// a CacheDeclaration and cannot also be a function — so the runtime honours the
+// a CacheDeclaration and cannot also be a function — so the runtime honors the
 // declaration and the type does not know about it.
 
 export type CustomMethodFn  = (ctx: ServiceContext) => Promise<unknown> | unknown
@@ -1177,14 +1177,14 @@ export function customMethodNames(svc: object): string[] {
 //   · the announcement happens in callService AFTER runPipeline, so the write
 //     lock is released before anything fans out to a socket.
 //
-// A nested `app.service('x')` call needs no propagation: every client flavour
+// A nested `app.service('x')` call needs no propagation: every client flavor
 // shares one write connection and one depth counter, so its writes land inside
 // this transaction and its reads see them (litestone `FJS-237` is what keeps
 // that true under concurrency).
 //
 // Reads are excluded BY NAME rather than by guessing from the method's shape —
 // the same rule the announcement uses. A read taking BEGIN IMMEDIATE would
-// serialise every reader behind every other.
+// serialize every reader behind every other.
 const NON_TRANSACTIONAL_METHODS = new Set(['find', 'get'])
 
 export function resolveTransactional(
@@ -1425,7 +1425,7 @@ export function collectMethodInputs(
 }
 
 /**
- * Normalise a declared policy to the set of callable method names.
+ * Normalize a declared policy to the set of callable method names.
  *
  * Returns `null` for "no policy declared", which is NOT the same as an empty
  * set — an empty `methods: []` is a service that answers nothing, and saying so
@@ -1545,7 +1545,7 @@ export function createBaseService(
   // Semantics preserved from the old base:
   //   • allowBulk defaults to FALSE here (explicit opt-in for bulk writes),
   //     while createLitestoneBase's own default is true.
-  //   • The db() thunk is honoured per call: ctx.locals.db is seeded from
+  //   • The db() thunk is honored per call: ctx.locals.db is seeded from
   //     it unless a request-scoped client is already there (withLitestoneDb
   //     always wins).
 
@@ -1678,7 +1678,7 @@ export function createBaseService(
       // not carrying one — `FJS-335` exactly, one method along, and it made
       // every PUT to a versioned model a 400 naming the field the request had
       // just sent. What create mode bought was requiredness, which the write
-      // does not honour: `table.update` merges, so demanding a field that will
+      // does not honor: `table.update` merges, so demanding a field that will
       // not be replaced enforces a discipline nothing delivers.
       update: derived(autoValidate(model, 'patch')),
     },
@@ -2097,7 +2097,7 @@ export function createService(def: ServiceDefinition): Service {
   // silently dropping idField, softDelete and schema — so
   // `createService({ model, softDelete: 'deleted_at' })` HARD DELETED rows while
   // `createBaseService({ model, softDelete: 'deleted_at' })` soft-deleted them.
-  // Same option name, same docs, opposite behaviour. Keep this in sync with
+  // Same option name, same docs, opposite behavior. Keep this in sync with
   // SERVICE_OPTION_KEYS; nothing here may be dropped on the way through.
   //
   // `model` is OPTIONAL here, exactly as it is on createBaseService: the
@@ -2111,7 +2111,7 @@ export function createService(def: ServiceDefinition): Service {
   // `createService({ name: 'leads' })` — was a service whose every method threw
   // 'No model/db configured for this service', despite reporting
   // `model: def.model ?? def.name` on the way out. Same file, same options,
-  // opposite behaviour.
+  // opposite behavior.
   //
   // A service with no model at all (custom methods only) is unaffected: the
   // derived hooks no-op when the accessor resolves to nothing (gateAuth reads
@@ -2132,7 +2132,7 @@ export function createService(def: ServiceDefinition): Service {
   })
   const baseHooks = (base as unknown as { hooks?: HookMap }).hooks
 
-  // Reserved query keys, normalised once. A `$`-name is the one collision
+  // Reserved query keys, normalized once. A `$`-name is the one collision
   // decidable with no client: `$` is transport syntax and the directive table
   // owns every name under it (Invariant 10), so reserving one would put two
   // owners on a single spelling. The COLUMN collision is checked on first use
@@ -2286,7 +2286,7 @@ export function createService(def: ServiceDefinition): Service {
     // Carried through so callService can find it after the pipeline. Reserved
     // in SERVICE_OPTION_KEYS, so a function form never becomes a custom method.
     ...(def.channel !== undefined ? { channel: def.channel as PublishDeclaration } : {}),
-    // Same reason: declared, honoured internally, but previously not carried
+    // Same reason: declared, honored internally, but previously not carried
     // onto the built service, so anything reading it back saw undefined.
     allowBulk: def.allowBulk ?? (base as { allowBulk?: boolean }).allowBulk ?? false,
     bulkMax:   def.bulkMax   ?? (base as { bulkMax?: number }).bulkMax   ?? 1000,
@@ -2423,7 +2423,7 @@ export class ServiceRegistry {
     return this._appHooks !== null
   }
 
-  // Called by app.start() once all plugins and app-level hooks are finalised.
+  // Called by app.start() once all plugins and app-level hooks are finalized.
   setAppHooks(hooks: HookMap): void {
     this._appHooks = hooks
     // Warm every registered service so the first request after start() does not

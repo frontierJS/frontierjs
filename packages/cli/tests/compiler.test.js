@@ -345,7 +345,7 @@ const x = 1
 echo('main')
 \`\`\`
 `)
-    // prose/script lines get commented out — that's correct behaviour here
+    // prose/script lines get commented out — that's correct behavior here
     expect(result).toContain('// <script>')
     expect(result).toContain("echo('main')")
   })

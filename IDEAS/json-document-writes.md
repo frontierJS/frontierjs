@@ -11,7 +11,7 @@ measurements — the DX matrix, and the verification that falsified the first
 grading rule before it was built. What shipped differs from what this record
 first proposed in one respect and it is named where it happened. The SILENCE this record was written
 against is fixed and is `FJS-658`; two claims below were measured before that
-fix and are marked where they changed. Every claim about current behaviour was
+fix and are marked where they changed. Every claim about current behavior was
 measured on 2026-09-02 against `packages/litestone/src/index.js` at HEAD, with
 the probe's output reproduced below rather than described. See `VERIFYING.md`.
 

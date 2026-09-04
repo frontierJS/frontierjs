@@ -103,7 +103,7 @@
   };
 
   /*
-   * Normalise any CSS color — rgb(), color(xyz-d65 …), oklch(), color-mix()
+   * Normalize any CSS color — rgb(), color(xyz-d65 …), oklch(), color-mix()
    * output, a named color — to [r, g, b, a] with r/g/b as 0–255 sRGB bytes.
    *
    * It paints one pixel and reads it back, because that is the only step

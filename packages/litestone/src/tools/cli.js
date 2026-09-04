@@ -73,7 +73,7 @@ const cyan   = s => `${c.cyan}${s}${c.reset}`
 
 // ─── .env loading ─────────────────────────────────────────────────────────────
 // Auto-load environment variables from .env files in cwd before any command
-// runs. This matches behaviour developers expect from tools like Prisma and
+// runs. This matches behavior developers expect from tools like Prisma and
 // Drizzle: drop secrets in .env, run `litestone db push`, it just works.
 //
 // Precedence (highest wins, never overrides what the shell already set):
@@ -2088,7 +2088,7 @@ async function cmdStudio(cfg) {
     return flat.length <= 72 ? flat : `{\n${parts.map(p => inner + p).join(',\n')}\n${indent}}`
   }
 
-  // The client flavour is part of the query. A view browsed as a user and the
+  // The client flavor is part of the query. A view browsed as a user and the
   // same args run through asSystem() return different rows, so emitting the
   // args alone hands back something that silently does not reproduce the view.
   function buildViewQuery(accessor, authCtx, args) {

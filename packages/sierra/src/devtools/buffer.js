@@ -1,6 +1,6 @@
 /**
  * Client-side ring buffers for devtools.
- * Initialised from the `state` snapshot. No persistence.
+ * Initialized from the `state` snapshot. No persistence.
  */
 export function createBuffer({ requests = 200, logs = 500, events = 200 } = {}) {
   // True circular buffer. The previous implementation was `push()` followed by

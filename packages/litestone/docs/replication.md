@@ -83,7 +83,7 @@ Three things to check, because nothing here is checking them for you:
 - **The app is not restored — the Data realm is.** A restore does not un-send an
   email, un-run a job, or un-notify a client.
 
-**A restore nothing has read is a rumour.** The cheapest proof available today is to
+**A restore nothing has read is a rumor.** The cheapest proof available today is to
 restore into a temporary directory, point a client at it and run the app's own suite:
 
 ```bash

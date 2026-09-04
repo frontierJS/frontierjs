@@ -33,7 +33,7 @@ row inside the call's own transaction and `app.configure(outbox())` relays it to
 `app.jobs` (`FJS-D35`). They are two verbs because a closure cannot be written
 to a table.
 
-Schema-derived behaviour is the load-bearing part: `createService({ model })`
+Schema-derived behavior is the load-bearing part: `createService({ model })`
 merges `gateAuth()` and `autoValidate()` through `createBaseService`, so a model
 service gets 401s and 400s from `db/schema.lite` without declaring them.
 

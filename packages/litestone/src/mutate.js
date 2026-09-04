@@ -145,7 +145,7 @@ const MUTATIONS = [
 // This exists because the first run against `example` reported four surviving
 // `guarded-drop` mutants on a model with no `@guarded` field: the matches were
 // inside a doc comment explaining what `@guarded` is not. Editing prose produces
-// a mutant identical in behaviour to the original, which survives everything, so
+// a mutant identical in behavior to the original, which survives everything, so
 // every documented attribute name was quietly costing a point.
 function _commentAt(line) {
   let quote = null
@@ -222,7 +222,7 @@ export function schemaMutants(schemaText, { kinds = null } = {}) {
 
     // Only the code half of the line is anything: an attribute named inside a
     // doc comment is prose, and mutating it produces a schema identical in
-    // behaviour. The comment travels along untouched.
+    // behavior. The comment travels along untouched.
     const cut     = _commentAt(line)
     const code    = cut === -1 ? line : line.slice(0, cut)
     const comment = cut === -1 ? ''   : line.slice(cut)

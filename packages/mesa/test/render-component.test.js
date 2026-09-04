@@ -239,7 +239,7 @@ describe('renderComponent — RULE 19 server semantics', () => {
 
   it('builds no reactive graph for path watches on the server', async () => {
     // initRenderer() has to enable the DOM so components can call
-    // htmlToFragment(); it must not thereby turn on client behaviour.
+    // htmlToFragment(); it must not thereby turn on client behavior.
     await renderComponent(`<p>x</p>`, { filename: 'Warm.mesa', cwd: '/tmp/mesa', target: 'html' })
     const { watchProxy, watchPath, createEffect, flushSync } = await import('../src/runtime.js')
     const store = { n: 0 }
@@ -388,7 +388,7 @@ describe('renderComponent — tmpDir', () => {
 
   afterAll(async () => { try { rmSync(ROOT, { recursive: true, force: true }) } catch {} })
 
-  it("renders a component that imports its own NEIGHBOUR by relative path", async () => {
+  it("renders a component that imports its own NEIGHBOR by relative path", async () => {
     // The compiled module is written to a temp directory, so every relative
     // specifier in it points somewhere else. A bare specifier survives (Node
     // walks up to a node_modules) and an absolute one survives; a relative one

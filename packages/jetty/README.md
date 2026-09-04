@@ -2,7 +2,7 @@
 
 Browser extension framework for FrontierJS. MV3-first, Mesa-rendered, Junction-connected.
 
-> **Status:** Phases 0–8 complete — **432 assertions pass across 10 phase files**
+> **Status:** Phases 0–8 complete — every phase file passes
 > (`bun run test`, which runs plain `node` over the phases in order).
 > Foundational architecture, port protocol, Junction adapter, channels,
 > Resources, Islands, dev tooling, Firefox parity, and permission audit + CLI
@@ -29,20 +29,20 @@ bin/
   dev-ext.js     — dev mode CLI w/ file watching + WS broadcast
 
 test/
-  phase{0–8}.test.js  — 431 assertions across the architectural layers, run in
-                        order by `bun run test`. Ten files (phase2.5 is one)
+  phase{0–9}.test.js  — the architectural layers, run in order by
+                        `bun run test` (phase2.5 is one of them)
   fixtures/basic-ext/ — minimal smoke fixture (harbor + dock + 1 island)
 ```
 
 ## Build & test
 
 This package supports both Node 20+ and Bun 1.3+. **`bun run test` runs plain
-`node`** over the ten phase files in order — the runner is node, the launcher is
+`node`** over the phase files in order — the runner is node, the launcher is
 whichever you have.
 
 ```bash
 bun install
-bun run test                   # 431 assertions, all phases, under node
+bun run test                   # all phases, in order, under node
 bun run test:bun               # the same phases under bun's runtime
 bun run build:fixture          # Chrome build → dist/chrome/
 bun run dev:fixture            # dev mode, Chrome only, WS on 8400
@@ -164,10 +164,12 @@ lookup walks up from the surface to find it.
 - **AST-based audit.** The current audit uses string matching, which has
   known false negatives on framework-internal indirection and minified code.
   A swap to a real JS parser (acorn/swc) would catch both.
-- **Junction native package.** jetty ships a default WS adapter as a fallback
-  and nothing here talks to a real Junction yet (`FJS-279`). Mesa is no longer
-  in this bracket: the compiler is found and used whenever the app that owns the
-  surface has it installed, and the fixture's dock is a real Mesa component.
+- **The default adapter is still a placeholder.** `createJunctionAdapter` over
+  `@frontierjs/junction/client` is the real connection and closed `FJS-279`;
+  `default-adapter.js` beside it is the stand-in it says it is, and nothing
+  points at it. Mesa is not in this bracket either: the compiler is found and
+  used whenever the app that owns the surface has it installed, and the
+  fixture's dock is a real Mesa component.
 
 ## Architecture references
 

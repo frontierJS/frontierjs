@@ -255,7 +255,7 @@ describe('the recorder', () => {
     expect(forced.beforeStep('05-model').run).toBe(true)
   })
 
-  test('--restart clears the lesson and leaves its neighbours alone', () => {
+  test('--restart clears the lesson and leaves its neighbors alone', () => {
     const a = makeRecorder({ workspace: base, lesson: 'tutor:app', context: ctx() })
     a.beforeStep('01'); a.afterStep('01', 1, { status: 'succeeded' })
     const b = makeRecorder({ workspace: base, lesson: 'tutor:access', context: ctx() })

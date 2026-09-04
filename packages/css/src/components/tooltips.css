@@ -47,7 +47,7 @@
 }
 
 /*
- * .tooltip is in the chip lineage (chip.css), so it gets centred inline-flex
+ * .tooltip is in the chip lineage (chip.css), so it gets centered inline-flex
  * layout and the auto-contrast machinery — a toned tooltip keeps readable
  * text without anyone choosing a colour.
  */

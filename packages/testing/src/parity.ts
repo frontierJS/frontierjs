@@ -272,7 +272,7 @@ function invoke(svc: Record<string, (...a: unknown[]) => Promise<unknown>>, call
     case 'restore': return svc.restore(call.id)
     // A custom method. `invoke()` is the HTTP spelling and `call()` the WS one;
     // the proxy picks between them on whether a socket is live, which is the
-    // behaviour under test rather than something to route around here.
+    // behavior under test rather than something to route around here.
     default:        return svc.invoke(call.method, call.id, call.data ?? {}, call.query ?? undefined)
   }
 }
@@ -282,7 +282,7 @@ function invoke(svc: Record<string, (...a: unknown[]) => Promise<unknown>>, call
 function compare(http: Outcome, ws: Outcome, volatile: Set<string>): Omit<ParityMismatch, 'call' | 'principal'> | null {
   // The loudest failure and the reason this exists: one transport did the thing
   // and the other refused. A gate that reaches one path and not the other is
-  // either an authorisation hole or an unusable feature, and which of the two it
+  // either an authorization hole or an unusable feature, and which of the two it
   // is depends on which transport was the permissive one.
   if (http.ok !== ws.ok) {
     const [allowed, refused] = http.ok ? ['HTTP', 'WS'] : ['WS', 'HTTP']

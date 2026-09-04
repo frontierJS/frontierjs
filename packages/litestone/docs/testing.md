@@ -55,7 +55,7 @@ handed a client, and a template is built on a raw connection.
 
 | | Grades through | Use it for |
 | --- | --- | --- |
-| `env.actingAs(user)` | the app's own `getLevel` | anything about behaviour |
+| `env.actingAs(user)` | the app's own `getLevel` | anything about behavior |
 | `env.atLevel(n)` | a synthetic resolver | walking the gate grid |
 
 **Conflating them is the failure this exists to prevent.** A matrix driven by
@@ -800,7 +800,7 @@ for (const model of access.models)
 ```
 
 Models are sorted rather than left in schema order, and empty sections are omitted:
-both exist so the diff is small and localised. The first section is **Unrestricted**
+both exist so the diff is small and localized. The first section is **Unrestricted**
 — models declaring neither `@@gate` nor `@@allow`, which every caller reaches
 including an unauthenticated one.
 

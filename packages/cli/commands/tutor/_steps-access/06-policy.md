@@ -36,7 +36,7 @@ the WHERE clause of every read. Two accounts, one list endpoint, two different
 answers — both 200.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 6
 

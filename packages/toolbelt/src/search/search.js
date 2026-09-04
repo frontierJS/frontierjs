@@ -84,7 +84,7 @@ export function rank(items, query, { keys, minimumScore = 0, limit } = {}) {
 
   const out = qs.search(q).map((r) => {
     // A string list answers a flat array of ranges; a keyed list answers a map,
-    // and `scoreKey` names the field that won. Normalising to one array here is
+    // and `scoreKey` names the field that won. Normalizing to one array here is
     // what keeps the common case — highlight the label — a single read.
     const keyed  = r.matches && !Array.isArray(r.matches)
     const key    = keyed ? (r.scoreKey || null) : null

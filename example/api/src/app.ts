@@ -504,7 +504,7 @@ app.configure(channels((a: App) => {
 //                  establishes is "the provider", not "a user"
 //   raw bytes      the signature covers a hash of what was sent. A service
 //                  method is handed `ctx.data` after autoValidate has coerced
-//                  it, and re-serialising that to check a hash means both ends
+//                  it, and re-serializing that to check a hash means both ends
 //                  have to agree about key order forever
 //   its own status a service answers 4xx from the gate and the validator; a
 //                  provider reads 2xx as "stop retrying" and everything else
@@ -558,7 +558,7 @@ app.post(WEBHOOK_PATH, async (ctx) => {
 // (`FJS-D153`).
 //
 // `ctx.rawBody` and not `ctx.body`: the signature is over BYTES, and
-// re-serialising the parsed object produces different ones for the same
+// re-serializing the parsed object produces different ones for the same
 // document — key order, whitespace, number formatting — so every legitimate
 // event would be refused.
 //

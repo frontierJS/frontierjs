@@ -2,7 +2,7 @@
  * dropdown.spec.mjs — DropdownMenu, DropdownItem, DropdownLabel, DropdownSeparator.
  *
  * Four components that had never been opened in a browser. Everything they add
- * over `@frontierjs/css` is behaviour that only exists at runtime: a panel
+ * over `@frontierjs/css` is behavior that only exists at runtime: a panel
  * portaled to <body> and positioned against the trigger's rect, a roving focus
  * walk over live DOM, click-away, Escape, and two ARIA attributes the component
  * writes onto markup the CALLER owns.
@@ -246,7 +246,7 @@ export async function run(t) {
     const tr = document.querySelector('#dd-low').getBoundingClientRect();
     return { below: Math.round(innerHeight - tr.bottom), scrolled: Math.round(scrollY) };
   `)
-  // Assert the PREMISE before the behaviour: a spacer shorter than the window
+  // Assert the PREMISE before the behavior: a spacer shorter than the window
   // leaves room below, and then not flipping is the correct answer and the
   // check below proves nothing at all.
   t.ok(room.scrolled > 0 && room.below < 120,

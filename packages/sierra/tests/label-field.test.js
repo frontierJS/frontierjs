@@ -152,7 +152,7 @@ describe('a resource carries its own display column', () => {
 describe('the picker uses the declared column end to end', () => {
   beforeEach(() => registerSchemas(defsFor(PERSON, 'Person'), ['Order', 'Person']))
 
-  test('options are labelled with it', async () => {
+  test('options are labeled with it', async () => {
     const r = await createResource('orders').options('personId')
     // The scan would have answered `firstName` here and both rows read *Ada*.
     expect(r.options).toEqual([
@@ -189,7 +189,7 @@ describe('a guessed display column is said out loud', () => {
     expect(said()).toContain('@@label(<column>) on model Unnamed')
   })
 
-  test('the fallback tier says the options are labelled with their id', async () => {
+  test('the fallback tier says the options are labeled with their id', async () => {
     registerSchemas(defsFor(OPAQUE, 'Opaque'), ['Order', 'Opaque'])
     const out = await createResource('orders').options('personId')
 

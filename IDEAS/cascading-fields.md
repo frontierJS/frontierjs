@@ -77,7 +77,7 @@ Read: *when `completedAt` is set on a Task, set it on every related Message that
 no `completedAt` of its own; keep every Message's `archived` equal to the Task's.*
 
 `@@softDelete(cascade)` then desugars to `@@cascade(deletedAt -> <children>.deletedAt)`
-plus its filter behaviour — one mechanism where there are currently two, which is the
+plus its filter behavior — one mechanism where there are currently two, which is the
 real reason to build it.
 
 ### Why this spelling

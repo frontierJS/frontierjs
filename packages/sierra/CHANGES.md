@@ -1,5 +1,19 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-03 — `resource.sealedFields(record)`
+
+`FJS-628`. 1146 passing.
+
+Which columns are frozen for a given row — the `@immutable` ones on a model that
+seals, once the row has reached a sealed state. `sealedFor` was the owner and
+had no caller; this is how a form reaches it, alongside `formFields` and
+`options`, because `@frontierjs/ui` peers only on mesa and css and may not
+import sierra.
+
+It answers a LIST rather than a predicate, which keeps it one call per render
+instead of one per field, and no record answers `[]` — a create form is making a
+draft.
+
 ## 2026-09-03 — the presence store understands a batched frame
 
 `FJS-703`. 1146 tests, 0 fail. Typecheck clean.
@@ -34,7 +48,7 @@ every reader learned to skim past the one that means something.
 and the warning with it. Everything else is unchanged: no schema means no field
 rules, so coerce, blank-strip and validate stay inert exactly as before.
 
-## 2026-08-29 — `record()` takes options, and honours `detailQuery`
+## 2026-08-29 — `record()` takes options, and honors `detailQuery`
 
 1141 tests, 0 fail. Two changes behind
 [`FJS-D161`](../../DECISIONS.md#fjs-d161).
@@ -102,7 +116,7 @@ awaits.
 ## 2026-08-29 — the build keeps the one true error
 
 `FJS-551`. A module whose top-level `await` throws reports its real error
-exactly once; every import after that resolves to a partially-initialised
+exactly once; every import after that resolves to a partially-initialized
 namespace, so the next reader gets `Cannot access 'X' before initialization`
 naming whichever binding it touched, and the cause is gone from the process.
 That is the runtime's and cannot be fixed here. What was Sierra's is that it
@@ -186,7 +200,7 @@ for both now; under node it fails as *Only URLs with a scheme in: file, data,
 and node are supported — received protocol `bun:`*, which names nothing an app
 author did.
 
-`dev: { staticData: false }` is the way back to the old behaviour. Default true,
+`dev: { staticData: false }` is the way back to the old behavior. Default true,
 because a dev server you cannot see the site on is not much of one.
 
 ## 2026-08-27 — the build only ever showed the second error
@@ -206,7 +220,7 @@ same day; it was a broken file.
 `export const db = await openShop(…)` — a top-level await. Import it three times
 in one Bun process with the schema broken and the first throws the parse error,
 the second and third throw `Cannot access 'DEFAULT_SHOP' before initialization`.
-A failed TLA module re-imports as a partially-initialised namespace instead of
+A failed TLA module re-imports as a partially-initialized namespace instead of
 re-throwing, so every reader after the first gets a TDZ on whichever binding it
 touched and the cause is gone.
 
@@ -355,7 +369,7 @@ needs exactly that much of a field and nothing more.
 
 `tests/live-filter.test.js` keeps the SEAM, which is the half only this side can
 answer, plus one line asserting the re-export IS the toolbelt function rather
-than a copy made here to fix an import. Its 31 behavioural cases are in
+than a copy made here to fix an import. Its 31 behavioral cases are in
 `toolbelt/test/specs/match.spec.js`. sierra 1114 pass.
 
 ## 2026-08-26 — `transitionsAt` knows the third refusal, and it is the certain one
@@ -523,7 +537,7 @@ all of them silent.
 
 **The config never reached the browser.** `initTheme(config)` is called by
 `virtual:sierra`, which a prerendered page never loads — it ships HTML plus one
-chunk per island and nothing else. So the theme module kept `normalise({})`:
+chunk per island and nothing else. So the theme module kept `normalize({})`:
 `DEFAULT_THEMES` and key `theme`. An app declaring six themes had four refused
 by name, and the two that worked persisted under a key that the
 flash-prevention script *the same config block generated* does not read, so
@@ -1026,7 +1040,7 @@ drop the load stamp (1), drop junction's adoption (3), drop litestone's payload
 973 tests + 3 new, 0 fail.
 
 `writeOnly` is carried through `buildFieldRules`, so a field the caller sends and
-no read answers is a rule a view can recognise. Nothing else was needed and that
+no read answers is a rule a view can recognize. Nothing else was needed and that
 is the point: sierra registers the CREATE-mode schema, which is where litestone
 emits a transient field, so `<Form>` renders a control for it and
 `createResource` coerces and validates it like any other column — where a
@@ -1047,7 +1061,7 @@ table at all. `derefFieldSchema` is re-exported from `field-rules.js`, where
 every caller here already looks for it.
 
 **One internal change**: `mergeHooks` answers a new map rather than merging in
-place, so `_hooks` is reassigned. Toolbelt's licence is purity, and this was the
+place, so `_hooks` is reassigned. Toolbelt's license is purity, and this was the
 only one of the three that mutated an argument.
 
 `createStore` stays here: it is service-backed and stamps each request, jetty's
@@ -1131,7 +1145,7 @@ works.
 `manifest.environments` went with it: it was declared in the `SierraConfig`
 typedef and read nowhere.
 
-Two neighbours keep the word and are not a lapse. Junction's `/manifest` is a
+Two neighbors keep the word and are not a lapse. Junction's `/manifest` is a
 manifest of services, and an HTTP path is not vocabulary. A `package.json` read
 by `schema-plugin.js`, `virtual-sierra.js` and `vitest.config.js` is npm's
 manifest, not this repo's.
@@ -1321,7 +1335,7 @@ src/Embeds/LeadForm/index.mesa → dist/embeds/LeadForm.js
 `sierra widgets` runs the loop — N widgets is N library builds, because a
 self-contained IIFE is exactly what a bundler's shared chunks are not. The
 config's `widget` branch is what a widget is COMPILED with and what `vite dev`
-serves. A widget declares its tag, selector and shadow behaviour in
+serves. A widget declares its tag, selector and shadow behavior in
 `<script module>`; the generated entry supplies the rest, so a widget author
 writes a `.mesa` file and no boilerplate.
 
@@ -1432,7 +1446,7 @@ costs no request.
 
 The store itself is Junction's and Junction holds no schema, so `resource()`
 takes the decision as `match` and `createResource` supplies it. Passing nothing
-is the old behaviour exactly. 32 tests here, 8 in junction.
+is the old behavior exactly. 32 tests here, 8 in junction.
 
 Ordering and paging are the other half and are junction's — see its CHANGES for
 `FJS-270`. What reaches this package is one more thing on the resource: **`stale`,
@@ -1735,7 +1749,7 @@ happily and failing on first import. 833 tests unchanged.
 ## 2026-08-10 — auto-import recurses, and covers module bindings
 
 `autoImport.components` scanned one directory level and matched only tags, which
-made it the weaker half of what it was modelled on. Two changes.
+made it the weaker half of what it was modeled on. Two changes.
 
 **Directories are scanned recursively**, keyed on the basename. A component's
 directory organises it; its name identifies it — the same split the repo already
@@ -2208,7 +2222,7 @@ Three fixes in `src/islands/loader.js`:
 `findIslands` now links each island to its `parent`, which is the client's only
 view of nesting: a marker records a component, not a position in a tree.
 `client:static` under a live ancestor warns — the parent renders its children,
-so "no JS" cannot be honoured — while a `client:static` *parent* never mounts and
+so "no JS" cannot be honored — while a `client:static` *parent* never mounts and
 therefore does not subsume anything inside it.
 
 Requires the matching Mesa build: the fixture for this uncovered a
@@ -2272,7 +2286,7 @@ produced three reloads from three distinct causes:
 `mesa-plugin.js`, dev only; production output is unchanged (verified: no
 `__mesa_register` / `__mesaHMRWrap` in `dist/`). `canInject()` guards both
 regexes, so an unexpected compiler output shape falls back to the old reload
-behaviour rather than emitting broken code.
+behavior rather than emitting broken code.
 
 **`src/build/mesa-plugin.js`** — also tracks which files received a boundary and
 suppresses `sierra:hmr` for them. Mesa's accept handler owns those updates;
@@ -2322,7 +2336,7 @@ Also removed:
 
 `tests/build.test.js` gained two guards asserting the bridge is *not* emitted.
 
-### ⚠ Behaviour change: `.subscribe()` coalesces
+### ⚠ Behavior change: `.subscribe()` coalesces
 
 Subscribers previously fired synchronously on every `set`. Mesa coalesces writes
 through `queueMicrotask`, so a subscriber now sees the latest value once per
@@ -2452,7 +2466,7 @@ pure function in the router. Three sources of waste:
 - **Pattern segments were re-split and re-lowercased per comparison.** Patterns
   are static for the life of the tree, so they are now precomputed once per node
   into `{ dynamic, name }` / `{ dynamic, lower }` and cached in a `WeakMap`. A
-  WeakMap rather than a field on the node, because the tree is serialised into
+  WeakMap rather than a field on the node, because the tree is serialized into
   the manifest and tests build trees by hand.
 - **The params object was allocated before the first comparison.**
   `matchPattern` opened with `{ ...inheritedParams }`, so every failed match
@@ -2471,7 +2485,7 @@ throughout, including case-insensitive statics, percent-encoded params, all
 three `trailingSlash` modes, catch-all fallthrough and malformed input.
 
 **New:** `tests/match-semantics.test.js` — 20 tests locking the observable
-behaviour so a future optimisation has something to fail against.
+behavior so a future optimization has something to fail against.
 **New:** `smoke-test/probes/match-bench.mjs` — rerunnable benchmark.
 
 ## 8. Devtools — quadratic under traffic bursts

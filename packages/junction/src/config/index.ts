@@ -30,6 +30,20 @@ export interface AppConfig {
   http: {
     maxBodySize:  number    // bytes
     compress:     boolean
+    /**
+     * Seconds a connection may go without progress before the RUNTIME closes
+     * it. Bun's own bound; its default is 10 and it could not be reached from
+     * an app at all, so a request slower than that was reset with no status,
+     * no body and no line in this app's log. 0 disables; above 255 is refused
+     * at boot, because that is the runtime's ceiling.
+     */
+    idleTimeout?: number    // seconds, default 10 (the runtime's)
+    /**
+     * Milliseconds a handler may take before the app answers 503 itself.
+     * Absent means no bound. Setting it also raises the runtime's per-request
+     * timer, so this answer wins the race instead of the socket resetting.
+     */
+    requestTimeout?: number // ms, default off
     cors: {
       origins:    string[]
       methods:    string[]
@@ -43,6 +57,11 @@ export interface AppConfig {
     static?: {
       root:       string
       maxAge:     number
+      // Directories a symlink inside `root` may resolve into. A link out of
+      // the root is otherwise refused — it is served to anyone who can guess
+      // the URL — and a shared assets directory is a real deployment, so it
+      // is named rather than followed blindly (`FJS-746`).
+      allowOutside?: string[]
     }
     powered:      string
     /**

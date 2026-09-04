@@ -4715,7 +4715,7 @@ function CreateProjectWizard({ onClose, onCreated, nav }) {
               {step===0 ? 'New project' : `${name} is ready`}
             </div>
             <div style={{fontSize:12,color:T.sec,marginTop:2}}>
-              {step===0 ? 'Set up a project to organise your apps and deployments' : 'Production environment created'}
+              {step===0 ? 'Set up a project to organize your apps and deployments' : 'Production environment created'}
             </div>
           </div>
           <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',color:T.sec,fontSize:20,lineHeight:1,padding:4}}>✕</button>
@@ -8794,7 +8794,7 @@ const ONBOARDING_STEPS = [
   { id:'workspace', icon:'🏢', title:'Create workspace',      desc:'Your workspace is ready.',                                     done:true  },
   { id:'server',    icon:'🖥', title:'Add your first server',  desc:'Provision or import a machine into the fleet.',               done:false },
   { id:'ssh-key',   icon:'🔑', title:'Add an SSH key',         desc:'Upload a public key to install on servers.',                  done:false },
-  { id:'project',   icon:'◫', title:'Create a project',        desc:'Organise apps and deployments into a project.',               done:false },
+  { id:'project',   icon:'◫', title:'Create a project',        desc:'Organize apps and deployments into a project.',               done:false },
   { id:'deploy',    icon:'🚀', title:'Deploy an app',           desc:'Point an image at an environment and deploy.',               done:false },
   { id:'team',      icon:'👥', title:'Invite a teammate',       desc:'Add a developer, admin, or viewer to your workspace.',       done:false },
 ];
@@ -9748,7 +9748,7 @@ function UserSettingsView({ nav }) {
           <Card>
             <SecHead title="Active sessions"/>
             <div style={{fontSize:12,color:T.sec,marginBottom:14}}>
-              These are all devices currently signed in to your account. Revoke any session you don't recognise.
+              These are all devices currently signed in to your account. Revoke any session you don't recognize.
             </div>
             <div style={{display:'flex',flexDirection:'column',gap:0}}>
               {sessions.map((s,i)=>(
@@ -10313,7 +10313,7 @@ function generateParamValue(generate) {
 // ── Blueprint param filler modal ──────────────────────────────────────────────
 function BlueprintDeployModal({ blueprint, project, env, onClose, onCreated }) {
   const toast = useToast();
-  // Initialise param values — auto-generate where specified
+  // Initialize param values — auto-generate where specified
   const [values, setValues] = useState(()=>{
     const init={};
     blueprint.params.forEach(p=>{ init[p.id] = p.generate ? generateParamValue(p.generate) : (p.default||''); });
@@ -12036,7 +12036,7 @@ function NewFlagModal({ onClose, onCreate }) {
           </div>
 
           <Input label="Description" value={desc} onChange={e=>setDesc(e.target.value)} placeholder="What does this flag control?"/>
-          <Input label="Tags (comma-separated)" value={tags} onChange={e=>setTags(e.target.value)} placeholder="frontend, experiment, killswitch" hint="Used for filtering and organisation."/>
+          <Input label="Tags (comma-separated)" value={tags} onChange={e=>setTags(e.target.value)} placeholder="frontend, experiment, killswitch" hint="Used for filtering and organization."/>
         </div>
         <div style={{padding:'14px 22px',borderTop:`0.5px solid ${T.border}`,display:'flex',justifyContent:'space-between'}}>
           <button onClick={onClose} style={{background:'none',border:'none',color:T.sec,fontSize:13,cursor:'pointer'}}>Cancel</button>

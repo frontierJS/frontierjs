@@ -10,7 +10,7 @@ dated: 2026-08-06
 tested (21 tests) and documented in `packages/litestone/docs/schema.md`; the
 section below is kept as the argument for it, with a note on where the built
 thing differs. Items 2–4 are unbuilt, and the defect this file carried
-(`FJS-088`) **closed 2026-08-13**. Claims about current behaviour
+(`FJS-088`) **closed 2026-08-13**. Claims about current behavior
 were read off the source on 2026-08-06 with line numbers named, item 2 was
 re-read and rewritten on 2026-08-24 against a 188-model fixture, and the whole
 file was **re-audited against the tree on 2026-08-25** — which moved item 2's
@@ -73,7 +73,7 @@ boundary refuses to add to a float, whether or not anyone remembered.
 >   Collapsing them would tell a caller to retry something that cannot succeed.
 >
 > The implementation is the compare-and-swap `@@transitions` already ran, with
-> the column unfrozen — which is the same "generalise the mechanism, do not add
+> the column unfrozen — which is the same "generalize the mechanism, do not add
 > a second one" move `cascading-fields.md` argues for `@@softDelete(cascade)`.
 
 **The strongest of the four.** Nothing in litestone carries a row version; there
@@ -402,9 +402,9 @@ Not a proposal. `ctx.idempotencyKey` is read off the `idempotency-key` header
 twice while carrying the header that says it must not.
 
 The sharp part is the asymmetry: **Conduit sends `Idempotency-Key` outbound and
-treats its presence as licence to retry a non-idempotent POST**
+treats its presence as license to retry a non-idempotent POST**
 (`conduit/src/transports/http.ts:79` and `:159`). FJS asks other people's APIs
-for a guarantee that FJS's own API accepts the header for and does not honour.
+for a guarantee that FJS's own API accepts the header for and does not honor.
 
 The fix has the same shape as the rest of this file — a declaration, not a
 library. A service, or a model, states that its writes are replayable; the

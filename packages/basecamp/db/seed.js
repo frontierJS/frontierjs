@@ -42,7 +42,7 @@ const RNG_SEED = 42
 // from the RNG (litestone src/seeder.js ~131) so that different seeds produce
 // different values. That makes it deterministic but NOT sequential, and a name
 // derived from `seq % 3` collides — `UNIQUE constraint failed: secret.workspaceId,
-// secret.name` on the first run of this file. The RNG is for flavour (status,
+// secret.name` on the first run of this file. The RNG is for flavor (status,
 // region, durations); identity is the caller's job.
 let nth = 0
 const uid = () => ++nth

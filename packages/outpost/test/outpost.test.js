@@ -362,7 +362,7 @@ describe('what this machine tells basecamp', () => {
   })
 
   test('the signature is over the bytes actually sent', async () => {
-    // Signing a re-serialisation is how both sides end up agreeing about a
+    // Signing a re-serialization is how both sides end up agreeing about a
     // payload and disagreeing about a hash, and every request 401s.
     const { reporter, sent } = reporterWith()
     await reporter.heartbeat()

@@ -2488,7 +2488,7 @@ export const TEMPLATES = [
   {
     id: "tpl_llm_summary",
     name: "LLM Document Summariser",
-    description: "Pull docs from S3 or URL → chunk → summarise with GPT-4o → store result",
+    description: "Pull docs from S3 or URL → chunk → summarize with GPT-4o → store result",
     category: "AI & LLM",
     tags: ["ai", "llm", "documents"],
     nodes: 6, complexity: "simple",
@@ -2499,7 +2499,7 @@ export const TEMPLATES = [
   {
     id: "tpl_health_monitor",
     name: "Service Health Monitor",
-    description: "Ping endpoints every minute → analyse latency → page on-call via PagerDuty on anomaly",
+    description: "Ping endpoints every minute → analyze latency → page on-call via PagerDuty on anomaly",
     category: "DevOps",
     tags: ["ops", "monitoring", "alerts"],
     nodes: 3, complexity: "simple",

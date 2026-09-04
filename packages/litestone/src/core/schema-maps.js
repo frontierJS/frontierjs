@@ -2,7 +2,7 @@
 //
 // Every function here is (schema) -> a plain Map/Set/object. No connection, no
 // principal, no context: these are what the DECLARATION says, derived once when
-// the client is built and identical for every flavour of it. `makeTable` then
+// the client is built and identical for every flavor of it. `makeTable` then
 // reads them per model, which is why `shape` and `ctx` are separate arguments
 // there — this file is where `shape` comes from.
 //
@@ -305,7 +305,7 @@ export function buildFieldPolicyMap(schema) {
         omit:      omitAttr?.level    ?? null,
         guarded:   guardedAttr?.level ?? null,
         encrypted: encryptedAttr ? { deterministic: encryptedAttr.deterministic ?? false } : null,
-        // @hashed is not a flavour of encrypted — no ciphertext, no decrypt, and it
+        // @hashed is not a flavor of encrypted — no ciphertext, no decrypt, and it
         // strips from asSystem() too, which no other protection does.
         hashed:    !!hashedAttr,
         // @system — readable by anyone, writable only by the system. The
@@ -614,7 +614,7 @@ export function buildBoolMap(schema) {
 // which two of its questions need. Whether a bare array means `IN` or `hasSome`
 // (`{ id: [1,2] }` and `{ tags: ['x','y'] }` are the same shape and different
 // SQL), and whether a string operator can ask this column anything at all: a
-// serialisation answers about its own punctuation and a Boolean is 0/1, so both
+// serialization answers about its own punctuation and a Boolean is 0/1, so both
 // answer plausibly and wrongly rather than failing (`FJS-210`).
 //
 // Anything absent is a plain scalar. Int and DateTime are deliberately absent —
@@ -658,7 +658,7 @@ export function buildTransitionMap(schema) {
         enumName:    field?.type?.name ?? null,
         // A boolean column is stored 1/0 and the write payload is coerced the
         // same way, while the declared states are real booleans — so both sides
-        // of every comparison below need normalising or nothing ever matches.
+        // of every comparison below need normalizing or nothing ever matches.
         isBoolean:   field?.type?.name === 'Boolean',
         transitions: attr.transitions,
       }

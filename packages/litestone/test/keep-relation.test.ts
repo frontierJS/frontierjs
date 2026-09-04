@@ -85,7 +85,7 @@ describe('@keep — parse and the footgun warning', () => {
   })
 })
 
-// ─── the behaviour ────────────────────────────────────────────────────────────
+// ─── the behavior ────────────────────────────────────────────────────────────
 //
 // The warning is the half a schema author sees; this is the half that has to be
 // true for the word to mean anything. A parent declaring (cascade) with @keep on
@@ -175,7 +175,7 @@ describe('@keep — what happens to the rows', () => {
     expect(await db.order.count()).toBe(1)
   })
 
-  test('removeMany honours it the same way', async () => {
+  test('removeMany honors it the same way', async () => {
     await db.customer.removeMany({ where: { id: 1 } })
     expect(await db.order.count()).toBe(1)
     expect(await db.note.count()).toBe(0)

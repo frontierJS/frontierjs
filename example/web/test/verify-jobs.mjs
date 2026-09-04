@@ -241,7 +241,7 @@ try {
     newAnnouncements: (await announcementsFor()).length - beforeRefused,
   })
 
-  // ── 6. the cron's BEHAVIOUR, not just its schedule ─────────────────────
+  // ── 6. the cron's BEHAVIOR, not just its schedule ─────────────────────
   //
   // `nextRuns()` proves a schedule was registered, which is not the same as the
   // handler being right — and waiting until 03:00 is not a test. `POST
@@ -323,7 +323,7 @@ try {
   // The old row goes at the FRONT and that is not cosmetic. `compactJsonl` has a
   // cheap pre-check — an append-only log is oldest-first, so if the FIRST line
   // is inside the window every line is, and the pass returns without reading the
-  // file. It is the right optimisation (this runs on every boot, over a file
+  // file. It is the right optimization (this runs on every boot, over a file
   // that grows for the life of the deployment) and it means a probe appending an
   // old line to the end measures the pre-check rather than the sweep: the job
   // reports `done`, removes nothing, and looks broken. A log that has genuinely
@@ -415,7 +415,7 @@ const expected = {
   // a job that wrote the wrong code would still pass a null check.
   'job.wroteTracking': { arrived: true, trackingCode: 'TRK-1A12', stillShipped: 'shipped' },
   'job.record': {
-    name: 'book-courier', queue: 'fulfilment', status: 'done', attempts: 1,
+    name: 'book-courier', queue: 'fulfillment', status: 'done', attempts: 1,
     maxAttempts: 5, retryDelay: '[60000,300000,1800000]',
   },
   'retention.planted':      { old: true, fresh: 2 },

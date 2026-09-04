@@ -6,7 +6,7 @@
   // is indistinguishable from one showing a complete list, and the row somebody
   // is looking for is simply absent (`FJS-391`).
   //
-  // Two behaviours, and they are separate: SAYING how many were cut, which
+  // Two behaviors, and they are separate: SAYING how many were cut, which
   // every list control can do, and SENDING what was typed to the server, which
   // only the two searchable ones can. A native `<select>` cannot search, so it
   // says the count and offers nothing — which is honest, and is the argument

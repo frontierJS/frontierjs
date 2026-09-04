@@ -8,7 +8,7 @@ dated: 2026-08-26
 
 **Status: ARGUED. Nothing here is built.** Three questions want a ruling before
 any code is written; two more gaps are filed as defects with ids rather than
-argued here. Claims about current behaviour were read off the source on
+argued here. Claims about current behavior were read off the source on
 2026-08-26 with the files named. See `VERIFYING.md`.
 
 ---

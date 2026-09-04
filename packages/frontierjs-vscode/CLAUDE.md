@@ -3,9 +3,9 @@
 **Editor support.** A Litestone language server (`.lite`) plus Mesa editor
 support. Uses **npm**, not bun: `npm run build`.
 
-> **`npm run build` is green as of 2026-08-06.** It used to fail on a stale
-> parser path; the resolver now probes `core/parser.js` then `parser.js` under
-> each base, because the parser moved into `litestone/src/core/`.
+> **The compiler is resolved by probing, not by a fixed path.** `core/parser.js`
+> then `parser.js` under each base, because the parser's location inside
+> litestone has moved once and a single hardcoded path fails the build.
 
 ---
 
@@ -57,9 +57,8 @@ out/                  build output, not source
   Feature-detected off the bundle, like the catalog, so an older litestone still
   gets a server. An import that resolves to nothing is NOT reported: the package
   may simply not be installed here, and a squiggle on a line the author cannot
-  act on is worse than a schema that describes less. It went unseen for as long
-  as it existed because basecamp — the one real schema in this suite with
-  imports — had hand copies instead until 2026-08-24.
+  act on is worse than a schema that describes less. This suite's own fixtures
+  cannot see it: the one real schema in them with imports is basecamp's.
 - **Block detection is a stack of all block kinds, not a per-keyword counter**
   (`isInsideBlock`). A counter that only increments on its own keyword but
   decrements on every `}` goes negative after any earlier block — an `enum`
@@ -150,7 +149,7 @@ out/                  build output, not source
   the pipeline that note described produced the three-line placeholder these
   replaced. Sizes are what the sheet held — the art is never upscaled, so
   `mesa.png` and `litestone.png` are odd-sized square canvases (168, 166) with
-  the tile centred at its native pixels rather than resampled into a round
+  the tile centered at its native pixels rather than resampled into a round
   number. The marketplace icon must be 128x128 and is the one that was scaled.
 - **A file icon has to survive 16px, and most of that sheet did not.** The
   explorer renders these at 16 and the extension's own frontiersman is mud at
@@ -178,17 +177,17 @@ out/                  build output, not source
 - **`capabilities` is a security statement, not metadata.** Mesa diagnostics load
   the workspace's OWN compiler and call it, so `untrustedWorkspaces.supported` is
   `false` — an extension declaring nothing is disabled in a restricted workspace
-  anyway, which is the right behaviour reached by accident rather than a stated
+  anyway, which is the right behavior reached by accident rather than a stated
   one. `virtualWorkspaces` is `false` because the server is a node process and
   both languages resolve through the filesystem.
 
 ## Proving a change
 
-**`npm test`** — three suites, 88 assertions, over the built output. It builds
+**`npm test`** — three suites over the built output. It builds
 first on purpose: a stale `out/` tests the previous fix and reads as "the change
 did not work".
 
-### Litestone — 46 assertions over real LSP/stdio
+### Litestone — over real LSP/stdio
 
 - `test/lsp-client.js` — a small LSP client (Content-Length framing, requests
   correlated by id, `openDoc()` resolves on the diagnostics notification). No
@@ -205,7 +204,7 @@ The suite is mutation-checked: reverting `isInsideBlock`, the caret-aware
 attribute detection, or the null-schema guards each turns it red (the last one
 reproduces the original `Cannot read properties of null (reading 'models')`).
 
-### Mesa — 36 assertions against the built `out/mesa/`
+### Mesa — against the built `out/mesa/`
 
 - `test/vscode-stub.js` — stands in for the editor (`Module._load` intercepts
   `require('vscode')`), because there is no protocol to drive these providers
@@ -216,7 +215,7 @@ reproduces the original `Cannot read properties of null (reading 'models')`).
   none-found case, diagnostics from analysis errors and from a `compile()` that
   throws, the debounce, and each of the three providers.
 
-### Snippets — 6 assertions, no build needed
+### Snippets — no build needed
 
 `test/snippets.test.js` walks every body of both snippet files: a `$` must be
 escaped, a tabstop, or one of the 33 real VS Code variables. It exists because

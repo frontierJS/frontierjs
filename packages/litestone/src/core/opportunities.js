@@ -116,7 +116,7 @@ export const OPPORTUNITIES = [
     title:      'an ungated model in a gated schema',
     blurb:      'A schema that declares any @@gate has GatePlugin installed for all of it, and a ' +
                 'model declaring none is open at every level to everyone the transport lets in. ' +
-                'That is a decision in a schema where the neighbours are graded — one worth ' +
+                'That is a decision in a schema where the neighbors are graded — one worth ' +
                 'writing down, if only as the level it is genuinely readable at.',
     run(schema) {
       const models = authored(schema)

@@ -158,10 +158,10 @@ export async function run(t) {
   /* ── skeletonRows ─────────────────────────────────────────────────────── */
 
   // Stated as 2 rather than left at the default 5. A prop that silently does
-  // not apply is the kind of thing a render test cannot see, because five grey
+  // not apply is the kind of thing a render test cannot see, because five gray
   // boxes look as reasonable as two.
   t.is(await t.evaluate(`return document.querySelectorAll('#skel tbody tr[aria-busy=true]').length;`), 2,
-    'skeletonRows is honoured rather than fixed at five')
+    'skeletonRows is honored rather than fixed at five')
 
   /* ── sorting, pushed from outside ─────────────────────────────────────── */
 

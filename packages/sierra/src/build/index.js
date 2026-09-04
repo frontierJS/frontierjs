@@ -49,7 +49,7 @@ import { beginBuildImports, importAppModule } from './app-import.js'
  *   companion is never imported by the browser either way — the client gets a
  *   `fetch` to `/__sierra/static-data`, which is why this cannot re-open
  *   `FJS-543`. Dev only; a build is unaffected in every respect. Set it false
- *   for the old behaviour, where every prerendered page renders `data: null`
+ *   for the old behavior, where every prerendered page renders `data: null`
  *   and says so once per route.
  *   **The dev server must run under bun** for an app whose loader reads its own
  *   database: `bun --bun vite`, the same reason `build:site` has always needed

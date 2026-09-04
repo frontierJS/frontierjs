@@ -63,7 +63,7 @@ const routesDir   = resolve(projectRoot, ROUTES_DIR)
 const nsDir       = resolve(routesDir, ns)
 const sampleFile  = resolve(nsDir, 'hello.md')
 
-// ─── Check if already initialised ────────────────────────────────────────────
+// ─── Check if already initialized ────────────────────────────────────────────
 if (existsSync(routesDir) && !flag.dry) {
   log.warn(`${ROUTES_DIR} already exists at ${projectRoot}`)
   log.info('Add commands manually or use: fli make:command')
@@ -71,7 +71,7 @@ if (existsSync(routesDir) && !flag.dry) {
 }
 
 // ─── Show plan ────────────────────────────────────────────────────────────────
-log.info(`Initialising FLI in: ${projectRoot}`)
+log.info(`Initializing FLI in: ${projectRoot}`)
 log.dry(`  create  ${ROUTES_DIR}/${ns}/hello.md`)
 
 if (flag.dry) {

@@ -33,7 +33,7 @@ A non-empty default is an array literal — `@default(["a", "b"])`, `@default([1
 enum default is. Every element is graded against the column's own base type, so
 `String[] @default([1])` is a schema error rather than a number sitting in a text
 column. `@default("[…]")`, the JSON-string spelling, still parses and is graded
-by the same rules; it is normalised into the literal, so everything downstream —
+by the same rules; it is normalized into the literal, so everything downstream —
 the DDL, the JSON Schema, `release:check` — reads one shape. A `Json` column
 takes the literal too, since it can hold a list; a column that holds one value
 refuses it by name.
@@ -77,7 +77,7 @@ refuses it by name.
 `@default(auth().id)`. A default loses to a value in the payload, so an
 authenticated caller could forge authorship by sending the column; a stamp
 overwrites it. With no `ctx.auth` — `asSystem()`, a seeder, an anonymous write —
-nothing is stamped and an explicit value is honoured, which is how backfills and
+nothing is stamped and an explicit value is honored, which is how backfills and
 imports carry authorship in. It never re-stamps on update; that is `@updatedBy`.
 
 Most models want the pair on the model instead — see
@@ -690,7 +690,7 @@ identify a row:
 | `@@id` twice | a row has one identity — name every column in one |
 | a nullable member | SQLite permits a NULL in a primary key on a rowid table, and there is no `nullsDistinct` reading of one. `@@unique([...], nullsDistinct: true)` is the spelling for *unique when present* |
 | a relation field | a primary key is over columns — name the foreign key beside it |
-| an array, or a `@computed` / `@transient` / `@from` / `@derived` field | an array is stored as JSON text, so the key would be over a serialisation; a virtual field is not a stored column at all |
+| an array, or a `@computed` / `@transient` / `@from` / `@derived` field | an array is stored as JSON text, so the key would be over a serialization; a virtual field is not a stored column at all |
 
 **Changing one is a table rebuild**, order included — there is no `ALTER` that
 reaches a table constraint. See [migrations.md](migrations.md) § *Uniqueness the
@@ -885,7 +885,7 @@ Three rules, each of which exists because the alternative is quietly wrong:
   of its target, which reads on a bare member (`-> refunded` is `refund`) and
   says nothing as a sentence: write `complete: … -> "To Receive and Bill"`.
 
-### Labelling a member
+### Labeling a member
 
 A member's own name is what a picker shows, which is fine while the code reads
 as the words and useless the moment it does not. `@label` — the same attribute
@@ -900,7 +900,7 @@ enum Plan {
 ```
 
 It is the only attribute a member may carry, and anything else is refused by
-name. Labelling is per member and partial is normal: label the codes whose
+name. Labeling is per member and partial is normal: label the codes whose
 spelling is not already the words and leave the rest, since a member with no
 label falls back to its own name.
 

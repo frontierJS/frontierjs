@@ -198,7 +198,7 @@ describe('GET /auth/oauth/{provider}/callback', () => {
     expect(String(res.headers['content-type'] ?? '')).not.toContain('json')
   })
 
-  test('a returnTo that passed the allow-list at START is honoured at the end', async () => {
+  test('a returnTo that passed the allow-list at START is honored at the end', async () => {
     const start = await request(app).get('/auth/oauth/google?returnTo=/dashboard')
     const state = new URL(String(start.headers['location'])).searchParams.get('state')!
     stubProviderOk()

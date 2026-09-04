@@ -140,7 +140,7 @@ END;
 
 -- One line. The quantity and the PRICE THE SHOPPER WAS SHOWN, which is not
 -- the same fact as the variant's price today — a basket left overnight must
--- either honour what it quoted or say out loud that it changed, and it can do
+-- either honor what it quoted or say out loud that it changed, and it can do
 -- neither if the number was never written down.
 CREATE TABLE IF NOT EXISTS "cart_line" (
   "id" INTEGER NOT NULL PRIMARY KEY,

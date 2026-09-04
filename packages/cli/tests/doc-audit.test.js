@@ -90,7 +90,7 @@ describe('doc-word-unknown', () => {
   })
 
   test('an npm scope, an at-rule, an address and Mesa are not schema words', () => {
-    const root = tree('word-neighbours', { ...base,
+    const root = tree('word-neighbors', { ...base,
       'packages/litestone/docs/a.md':
         'Import `@frontierjs/toolbelt`. CSS has `@starting-style`. Mesa writes `@const`.\n' +
         'A factory seeds `u1@x.com`.\n' })

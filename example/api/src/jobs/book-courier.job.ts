@@ -65,7 +65,7 @@ export default defineJob<BookCourier>('book-courier', async (ctx) => {
   // (see api/services/orders.service.ts).
   await ctx.app!.service('orders').call('recordTracking', orderId, { trackingCode })
 }, {
-  queue:       'fulfilment',
+  queue:       'fulfillment',
   maxAttempts: 5,
   // 1m, 5m, 30m, then 30m again — the last value is reused for every further
   // attempt. A courier outage is measured in minutes, not milliseconds.

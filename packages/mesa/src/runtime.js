@@ -16,7 +16,7 @@ let _isBrowser = typeof document !== 'undefined'
  *  graph, onMount a no-op, path watches inert.
  *
  *  One flag could not express both, so turning the DOM on turned client
- *  behaviour on with it and every RULE 19 guard became dead code. onMount then
+ *  behavior on with it and every RULE 19 guard became dead code. onMount then
  *  ran once per render on the server — with a happy-dom `window` available, so
  *  addEventListener and friends silently succeeded against a global that
  *  outlived the request — and watchProxy built real proxies and signals that
@@ -308,7 +308,7 @@ export function createSignal(value, opts) {
     // self-assignment idiom `x = x` — "I mutated this in place, notify anyway" —
     // which is otherwise a no-op precisely because the reference is unchanged.
     // Per-write, never per-signal: making a signal always-notify would discard
-    // the equality optimisation for every ordinary write to it.
+    // the equality optimization for every ordinary write to it.
     if (!force && eq(value, next)) return
     value = next
     for (const sub of [...self._subs]) sub._notify()
@@ -3544,7 +3544,7 @@ export function spreadAttributes(el, fn) {
     // onclick="() => $$set_clicks(…)" — the handler stringified into an inline
     // attribute, where it silently never fires.
     // A getter with no setter is a dead end in both directions: assigning
-    // throws, and a function cannot be serialised into an attribute either.
+    // throws, and a function cannot be serialized into an attribute either.
     // Skipping is the only move left, and it keeps one stray prop from taking
     // the whole render down — `children` is getter-only on Element.
     //
@@ -3921,7 +3921,7 @@ export function watchProxy(obj) {
   // set trap fires signals keyed by the raw object, so a write never reached a
   // watcher and nothing re-rendered. That happens whenever a module exports
   // `watchProxy(state)` rather than the plain object — an easy and reasonable
-  // thing to write. Idempotent is the only safe behaviour here.
+  // thing to write. Idempotent is the only safe behavior here.
   if (_proxyToRoot.has(obj)) return obj
 
   if (_rootProxyCache.has(obj)) return _rootProxyCache.get(obj)
@@ -4652,7 +4652,7 @@ function islandPayload(props, meta) {
  * Mount a component that carries a `client:*` directive.
  *
  * Emitted by the compiler in place of a direct component call, and only when
- * compiling with `{ islands: true }` (VISION RULE 26). Behaviour splits on the
+ * compiling with `{ islands: true }` (VISION RULE 26). Behavior splits on the
  * environment, not on the flag:
  *
  *   - Real client: identical to the direct call the compiler used to emit. The

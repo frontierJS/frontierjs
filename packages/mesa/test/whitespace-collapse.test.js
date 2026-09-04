@@ -10,7 +10,7 @@
  *
  * The rule now: a text node with content collapses whitespace runs to one
  * space (what HTML says they mean); a whitespace-only node keeps the old
- * behaviour, because the DOM traversal counts those nodes and changing which
+ * behavior, because the DOM traversal counts those nodes and changing which
  * ones survive desyncs refer().
  */
 

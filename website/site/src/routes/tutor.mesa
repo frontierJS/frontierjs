@@ -1,6 +1,6 @@
 ---
 title: "FrontierJS — the tutorial is a command"
-description: "fli tutor is four lessons that run the real commands and then ask the running world whether they worked — including a real deploy to your own machine. It is graded by the project's own CI."
+description: "fli tutor is eight lessons that run the real commands and then ask the running world whether they worked — including a real deploy to your own machine. It is graded by the project's own CI."
 render: static
 ---
 <!--
@@ -8,7 +8,7 @@ render: static
 
   Its whole argument is that a tutorial which cannot fail is not evidence, so
   every sample here is a transcript or a verbatim lift from the step's own
-  source. The four lesson cards are markup; there is nothing on this page for
+  source. The eight lesson cards are markup; there is nothing on this page for
   an island to move.
 -->
 <script>
@@ -23,9 +23,9 @@ render: static
     {
       cmd:   'fli tutor:app',
       name:  'An app that runs',
-      steps: 10,
+      steps: 11,
       needs: 'nothing',
-      body:  'Scaffold an app, start it, register an account, add a model of your own, push it, write a row through the API and read it back out of the SQLite file the app wrote. Then build it, and check the built page actually loads its JavaScript.',
+      body:  'Scaffold an app, start it, register an account, add a model of your own, push it, write a row through the API and read it back out of the SQLite file the app wrote. Then write a Mesa component, and ask the dev server for the compiled module. Then build it, and check the built page actually loads its JavaScript.',
       proves: 'the row is in db/app.db',
     },
     {
@@ -37,12 +37,44 @@ render: static
       proves: 'the same request answers 200, then 401',
     },
     {
+      cmd:   'fli tutor:live',
+      name:  'A change reaching somebody else',
+      steps: 8,
+      needs: 'nothing',
+      body:  'A row is written over plain HTTP and a socket that asked for nothing is told about it. Then the second question, which most frameworks never ask: who is on the other end? Two sockets, one signed in and one not, watched against a single publish before and after the gate goes up.',
+      proves: 'the anonymous one is not told',
+    },
+    {
+      cmd:   'fli tutor:jobs',
+      name:  'Work that outlives the request',
+      steps: 6,
+      needs: 'nothing',
+      body:  'A queue that is a SQLite file, a job named by its own filename, and a dispatch from a service hook. What is asserted is the order — the response comes back with the work not yet done, and the row changes afterwards. A test that only checked the final state would pass with the work done synchronously.',
+      proves: 'the response came back before the work was done',
+    },
+    {
+      cmd:   'fli tutor:site',
+      name:  'The public half',
+      steps: 8,
+      needs: 'nothing',
+      body:  'A prerendered site is a peer surface, not a folder in the SPA. One HTML file per page with the data already in it — and a build that refuses to emit a page whose load() read something gated, because a published page cannot be recalled. You watch the refusal, then the override that gets past it.',
+      proves: 'the build refuses to publish a gated model',
+    },
+    {
       cmd:   'fli tutor:deploy',
       name:  'A deploy you can take back',
       steps: 10,
       needs: 'Docker · git',
       body:  'A deploy target may be localhost, so this is the real pipeline: an image, a journal on disk, a health poll, a swap. Deploy, change a line and deploy again, then revert — and revert the revert. Asserted against the image id the container is on, because a pipeline that reports success while leaving the old container up passes everything else.',
       proves: 'the previous release is serving again',
+    },
+    {
+      cmd:   'fli tutor:change',
+      name:  'The schema you already deployed',
+      steps: 6,
+      needs: 'nothing',
+      body:  'Month two: rows in production and a release already serving them. Three changes, each classified — an optional column you can take back, a required one that makes the deploy a pivot and comes back with the three-deploy split, and a raised gate that touches no column and is still a contract.',
+      proves: 'a gate raise is a contract, with no column touched',
     },
     {
       cmd:   'fli tutor:fleet',
@@ -56,12 +88,14 @@ render: static
 
   // The defects the tutorial found on the way to being written. Every one of
   // them exited 0, which is the argument for probing rather than trusting a
-  // status code — a tutorial graded on exit codes teaches all four.
+  // status code — a tutorial graded on exit codes teaches all six.
   const found = [
     { id: 'FJS-735', what: 'Nine of ten refusals in the scaffolder exited 0, so every wrapper around it read “scaffolded”.' },
     { id: 'FJS-736', what: 'The auth commands had rotted through five layers, ending with one that created an account and reported failure.' },
     { id: 'FJS-737', what: 'Every app scaffolded with auth booted with its policy claims graded against nothing — and said so on every boot, to nobody.' },
     { id: 'FJS-738', what: 'Every command the deploy pipeline sent to a machine did nothing at all under node, and reported success.' },
+    { id: 'FJS-752', what: 'Every scaffolded app announced its writes on a channel no connection had joined — real-time wired everywhere, delivered nowhere.' },
+    { id: 'FJS-758', what: 'Every file the static-site scaffold generated was broken, four different ways, because nothing had ever executed one.' },
   ]
 </script>
 
@@ -69,7 +103,7 @@ render: static
   <div class="container">
     <a href="#top">The idea</a>
     <a href="#step">A step</a>
-    <a href="#lessons">The four lessons</a>
+    <a href="#lessons">The eight lessons</a>
     <a href="#why">Why it is different</a>
     <a href="#found">What it found</a>
     <a href="#start">Start</a>
@@ -95,7 +129,7 @@ render: static
       </p>
       <div class="cluster">
         <a class="btn primary raised" href="#start">Run it</a>
-        <a class="btn outlined" href="#lessons">The four lessons</a>
+        <a class="btn outlined" href="#lessons">The eight lessons</a>
       </div>
     </div>
 
@@ -145,7 +179,7 @@ render: static
 <!-- ─── The lessons ───────────────────────────────────────────────────── -->
 <section id="lessons">
   <div class="container stack">
-    <p class="eyebrow">The four lessons</p>
+    <p class="eyebrow">The eight lessons</p>
     <h2>Empty directory to a machine taking orders.</h2>
     <p class="lede" style="max-width:64ch">
       Each one is separately runnable and separately resumable. The first two need nothing
@@ -199,7 +233,7 @@ render: static
       <div class="tile">
         <h3>Our CI grades it</h3>
         <p>
-          All four lessons run in <code>bun run ci</code>. Tutorials rot when the product
+          All eight lessons run in <code>bun run ci</code>. Tutorials rot when the product
           moves — ours already had, and its own header disagreed with the README about
           whether it had ever been executed. That is what this replaces.
         </p>
@@ -214,12 +248,12 @@ render: static
 <section id="found">
   <div class="container stack">
     <p class="eyebrow">What it found</p>
-    <h2>Four defects, and every one of them exited 0.</h2>
+    <h2>Six defects, and every one of them exited 0.</h2>
     <p class="lede" style="max-width:64ch">
       Writing a tutorial that asserts is the first time anybody walks the whole path as a
       stranger would. These came out of doing it, and they are the argument for probing
       rather than trusting a status code: a tutorial graded on exit codes would have passed
-      against all four and taught each of them.
+      against all six and taught each of them.
     </p>
 
     <table class="table">
@@ -233,7 +267,7 @@ render: static
 
     <p class="lede" style="max-width:64ch">
       The last one is the one worth reading. <code>execSync</code> with
-      <code>stdio: 'inherit'</code> ignores its <code>input</code> on Node and honours it on
+      <code>stdio: 'inherit'</code> ignores its <code>input</code> on Node and honors it on
       Bun — and every command a deploy sends travels on stdin. So under Node the container
       swap, the lock release and the nginx write all reported success and did nothing.
       Every defect is filed in the repo's own register with the measurement that found it.
@@ -251,6 +285,11 @@ render: static
       <code>--workspace ~/somewhere</code> to keep what it makes, which is the point if you
       want to read the app afterwards — and to stop and come back to it, since running a
       lesson again picks up where you left off.
+    </p>
+    <p class="lede" style="max-width:64ch">
+      Every step says what it is about to do and waits for you. Press enter to go on, or
+      <code>n</code> to stop — the step you stopped at is the one the next run starts from.
+      <code>--yes</code> runs a lesson straight through, which is what CI passes.
     </p>
     <pre class="code">{@html sample.START}</pre>
     <div class="cluster">

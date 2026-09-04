@@ -23,7 +23,7 @@
 //
 // The one movement written any other way is `sold`, and it is written by a
 // shopper at level 0 through `asSystem()` in `carts.checkout` — the shop
-// recording its own act. That asymmetry is the whole of the authorisation story
+// recording its own act. That asymmetry is the whole of the authorization story
 // for stock and it is two sentences long.
 
 import { createBaseService, $ } from '@frontierjs/junction'

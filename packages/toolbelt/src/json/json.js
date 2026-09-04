@@ -44,7 +44,7 @@
  *
  * `null` is its own answer rather than 'object', which is what `typeof` says
  * and has never once been what a caller meant. A `Date` is named because a
- * document held in memory can carry one before it is serialised — a value read
+ * document held in memory can carry one before it is serialized — a value read
  * off a Litestone row, say — and rendering it as `{}` (which is what walking
  * its own keys produces) is a value silently disappearing.
  *

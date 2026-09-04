@@ -23,7 +23,7 @@ with their numbers. Claims about this tree were **run** (`VERIFYING.md`); the
 probe output is inline.
 
 > **The five findings below were FIXED the same day. Read § What the mechanism
-> cannot do today as dated evidence, not as current behaviour.** `FJS-648`
+> cannot do today as dated evidence, not as current behavior.** `FJS-648`
 > (response headers), `FJS-649` (304 as a success), `FJS-650` (`rate_limited` and
 > `Retry-After`), `FJS-651` (binary bodies) and `FJS-652` (constant per-target
 > headers) are all closed, and fixing them turned up two more that are also
@@ -283,7 +283,7 @@ typed reads, the error translation, the webhook handler.
 
 **Phase 4 — the sink and the drive.** `sink.ts` on 8115, `verify:basecamp` under
 bun. Its assertions are the ones nothing else here can make: a 304 answered out
-of cache, a `Link` walk onto page two, a 429 that honours `Retry-After` and does
+of cache, a `Link` walk onto page two, a 429 that honors `Retry-After` and does
 **not** open the breaker, an attachment whose bytes arrive as bytes, a webhook
 accepted only through the secret path **and** re-read before it is acted on, and
 a token refreshed mid-drive with two sends in flight and only one refresh.

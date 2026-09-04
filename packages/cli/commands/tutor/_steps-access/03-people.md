@@ -21,7 +21,7 @@ That asymmetry *is* the lesson, arriving early: the first administrator comes
 from the machine, not from the API.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 3
 

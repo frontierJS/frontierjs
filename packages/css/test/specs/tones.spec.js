@@ -41,7 +41,7 @@ var CONSUMERS = [
 ];
 
 CONSUMERS.forEach(function (consumer) {
-  test('tone: ' + consumer.name + ' honours all seven tones', function () {
+  test('tone: ' + consumer.name + ' honors all seven tones', function () {
     var untoned = el(consumer.html.replace(' TONE', ''));
     var base = style(untoned, consumer.prop);
     cleanup();

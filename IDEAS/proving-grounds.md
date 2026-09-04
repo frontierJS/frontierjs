@@ -27,7 +27,7 @@ one touches:
    over which a fact was true of the world, as against the interval over which the
    database believed it. Every row in both apps is current-state-with-history-beside-it.
 2. **Permission as the product.** Both apps have real gates, real policies, real
-   capabilities — and in both, authorisation is a property *of a column on the row*
+   capabilities — and in both, authorization is a property *of a column on the row*
    (`workspaceId`, `ownerId`, `isStaff`). Neither has an access rule that must join
    through a **relationship table with a validity window**, and neither has a rule
    whose input is a **third table's rows** (a consent, a lock, a period close).
@@ -56,7 +56,7 @@ and not because arithmetic is hard. It is hard because five hard things stack:
 
 **What it exercises that the two apps do not.**
 
-- **Money that is not a shop price.** Allocating £100 across three cost centres is
+- **Money that is not a shop price.** Allocating £100 across three cost centers is
   33.33 / 33.33 / 33.34, and which line takes the penny is a domain rule.
   `@frontierjs/toolbelt/units` currently formats; it does not allocate.
 - **Batch as a first-class thing.** A pay run is 5,000 employees. One transaction is
@@ -141,7 +141,7 @@ Dunning is **durable retry with a deadline**. Invoice lines summing to the charg
 is the **cross-row invariant**. Plan versions are **reference data with validity
 windows**. Every gap named under payroll appears here, smaller, with a customer.
 
-**What already ships that it builds on:** `example/api/src/core/psp-sink.ts` and the
+**What already ships that it builds on:** `example/api/src/providers/psp/sink.ts` and the
 Stripe connector (`FJS-D153`), `verify:stripe` (a real vendor's dialect crossing the
 conduit boundary — form encoding, bearer key, webhook secret rotation), `verify:pay`
 (HMAC in both directions, a signed webhook driving a state machine, `Idempotency-Key`
@@ -356,8 +356,8 @@ Prefer projects that ship a Prisma schema (one file, mechanical) — marked ⚡.
 | **OpenFGA's sample stores** | not a schema: the canonical relationship-based access models (GitHub, Drive, Slack). A direct, cheap adversary for Invariant 6 |
 | **Documenso** ⚡ | an immutable document with an audit trail and recipients — the payslip's shape, dev-sized |
 
-Check the licence and the current ORM before vendoring anything, and copy
-`openmrp.lite`'s header discipline: name the repository, the licence, the exact source
+Check the license and the current ORM before vendoring anything, and copy
+`openmrp.lite`'s header discipline: name the repository, the license, the exact source
 file, and every place the conversion made a choice the source did not.
 
 ### What a fixture costs
@@ -423,7 +423,7 @@ having a person in front of it.
 ## See also
 
 - `IDEAS/time-and-recurrence.md` — the calendar half of candidate A, already argued
-- `IDEAS/compliance-from-the-seed.md` — candidate B's `@pii`/`@retain` neighbour, and
+- `IDEAS/compliance-from-the-seed.md` — candidate B's `@pii`/`@retain` neighbor, and
   the retention footgun (`FJS-521`) a disclosure log would inherit
 - `IDEAS/time-travel.md` — why the UI-realm version of *what was true then* does not
   work, and why the answer is one realm down
@@ -434,6 +434,6 @@ having a person in front of it.
 - `ISSUES.md` `FJS-561` (no composite `@@id`) — the gap § The corpus found on the day
   this record was written, invisible to every rule `fli check` could carry. Its sibling
   `FJS-560` was filed the same hour as *no `Decimal`* and was a misread of shipped
-  behaviour; what it is now is the migration `example` still owes
+  behavior; what it is now is the migration `example` still owes
 - `DECISIONS.md` `FJS-D154` — allocation, the half `FJS-D142` left open and the one
   candidate C actually waits on

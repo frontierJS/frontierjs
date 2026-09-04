@@ -415,7 +415,7 @@ test('convertTo: "false" is false, because that is what a person typing it means
 
 test('convertTo: a number that cannot be read is 0, not NaN', () => {
   // NaN is not a JSON value — writing one produces a document that cannot be
-  // serialised, from a control that looked like it worked.
+  // serialized, from a control that looked like it worked.
   assert.equal(convertTo('abc', 'number'), 0)
   assert.equal(convertTo('  7 ', 'number'), 7)
   assert.equal(convertTo(true, 'number'), 1)

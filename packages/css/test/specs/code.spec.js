@@ -211,7 +211,7 @@ test('code: a --code-* override beats the tone it falls back to', function () {
 test('code: comment and punctuation are the theme ink ramp, not new greys', function () {
   /*
    * The counterpart to the AA tests above. Those cover the four colours this
-   * file derives; these two it must NOT derive — inventing a grey here would
+   * file derives; these two it must NOT derive — inventing a gray here would
    * mean a theme could retune its ink ramp and have code blocks ignore it,
    * and would hide a theme whose muted ink does not read.
    */

@@ -563,7 +563,7 @@ export function delegationProblems(policyMap, schema, relationMap) {
   // The path bounds depth at one entry per model, so this terminates; the budget
   // is a backstop against a schema whose branching is pathological, and running
   // out means reporting nothing rather than half of it — the runtime guard still
-  // fails closed, so an unreported cycle is the behaviour that shipped.
+  // fails closed, so an unreported cycle is the behavior that shipped.
   let budget = 50_000
 
   const walk = (model, op, path, edges) => {

@@ -342,7 +342,7 @@ await evaluate(`(() => {
   }
   set('#co-email', 'Drive@Shop.test')
   set('#co-name',  'Drive Shopper')
-  set('#co-note',  'leave it with the neighbour')
+  set('#co-note',  'leave it with the neighbor')
   document.querySelector('#co-submit').click()
   return true
 })()`)

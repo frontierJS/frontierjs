@@ -145,7 +145,7 @@ deliberate deferral with a seam held open, rather than an unanswered question.
 > mechanisms (Drupal's split, Payload's two features), `/inflect` never takes a
 > locale, kit strings are props with English defaults, and formatting gets one
 > owner. Reserved as ours: a seed-derived `strings.snapshot.md` gated in CI,
-> `db.$setLocale()` as a client flavour beside `$setAuth`, and per-locale
+> `db.$setLocale()` as a client flavor beside `$setAuth`, and per-locale
 > prerender on the `static` target. Full argument and the survey it rests on —
 > ZenStack, Rails, Django, Payload, Drupal, Paraglide — in `DECISIONS.md`
 > § Dependencies & the ecosystem.
@@ -390,7 +390,7 @@ answer that people only find after shipping the wrong one.
 rewriting every row after the one that moved, which is a write storm and a race, and
 `0 hits` is what a grep for `fractional`, `reorder` or `sortOrder` returns across
 `IDEAS/` and the parser. The known answer is a fractional or lexicographic rank —
-insert between two neighbours, touch one row — plus a rebalance for the pathological
+insert between two neighbors, touch one row — plus a rebalance for the pathological
 case. It is a field type with a comparison rule, which puts it in the same family as
 `IDEAS/declared-semantics.md`. Wants `$checkOrderBy` to know the column is a rank
 rather than a number, so the client sorts by it without being told.

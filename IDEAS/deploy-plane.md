@@ -229,7 +229,7 @@ it should be scoped and judged by that job — which is also why it does not nee
 grow multi-node, blue-green or a scheduler.
 
 **Ring 1 — Basecamp installs the Outpost.** One-shot over SSH, authenticated with a
-`Secret` of kind `ssh_key` (already modelled), driving `pending → provisioning →
+`Secret` of kind `ssh_key` (already modeled), driving `pending → provisioning →
 installing → ready` and writing `ServerEvent` rows as it goes. After the first
 heartbeat, SSH stops being the channel and becomes the recovery path.
 
@@ -345,11 +345,11 @@ was written to apply.
   on every fleet server, which is heavy for something whose job is to run Docker
   commands and report health. If it is not, it is the first thing in the repo that
   does not derive from a seed.
-- **Whether a build-role server is a `Server` row.** Modelling it as one is free and
+- **Whether a build-role server is a `Server` row.** Modeling it as one is free and
   makes the builder visible in the fleet; it also means Basecamp's build capacity is
   fleet state, with everything that implies for the tenancy work.
 - **How ring 0 and ring 2 stay one implementation.** Two deployers is how a framework
-  ends up shipping two behaviours — the same argument `core/checks.js` settled for
+  ends up shipping two behaviors — the same argument `core/checks.js` settled for
   architecture rules. Whether the Outpost can literally reuse `_steps-docker` is the
   question to answer before writing a second one.
 

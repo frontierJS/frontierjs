@@ -356,7 +356,7 @@ describe('REPL preview is interactive', () => {
   })
 
   it('index.html mounts via mount() and owns the instance with createRoot', () => {
-    // A structural guard on the file itself — the behavioural test above uses a
+    // A structural guard on the file itself — the behavioral test above uses a
     // transcription, so this is what ties it to the real thing.
     const preview = INDEX.slice(INDEX.indexOf('// Mount new component'), INDEX.indexOf('setPvStatus(\'ok\')'))
     const code = preview.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n')

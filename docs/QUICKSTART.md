@@ -16,20 +16,26 @@ phase, so a command renamed out from under a step is a red build rather than a
 stale paragraph.
 
 ```bash
-fli tutor            # the four lessons
+fli tutor            # the eight lessons, and how far through them you are
 fli tutor:app        # lesson 1 — an app that runs
 ```
 
-You can stop anywhere; running one again picks up where you left off, and
-`--step N` runs one step on its own.
+Every step says what it is about to do and waits — press enter to go on, `n` to
+stop. The step you stopped at is the one the next run starts from, so stopping
+costs nothing. `--yes` runs a lesson straight through, and `--step N` runs one
+step on its own.
 
-## The four lessons
+## The eight lessons
 
 | | | Needs |
 | --- | --- | --- |
 | `fli tutor:app` | An empty directory to a running app with a model of your own in it, and a row read back out of the database | — |
 | `fli tutor:access` | The gate, the row policy and the field policy, each watched refusing somebody — and every refusal paired with an identical call that is allowed | — |
+| `fli tutor:live` | A write reaching a client that asked for nothing — then two sockets against one publish, and the gate deciding which of them is told | — |
+| `fli tutor:jobs` | Work that outlives the request: a queue that is a SQLite file, a job named by its own filename, and a response that comes back before the work is done | — |
+| `fli tutor:site` | A public site built ahead of time — one HTML file per page with the data in it, and a build that refuses to publish anything gated | — |
 | `fli tutor:deploy` | A real deploy to **this machine**: an image, a journal on disk, a redeploy, a revert, and a revert of the revert | Docker · git |
+| `fli tutor:change` | Changing a schema that is already deployed: expand, contract, the three-deploy split, and a raised gate that touches no column and is still a contract | — |
 | `fli tutor:fleet` | The other release story — a control plane, a machine that reports in, and a signed command that really runs on it | a checkout |
 
 They run in a throwaway directory by default. `--workspace ~/somewhere` keeps
@@ -49,7 +55,7 @@ assume it rather than teaching it:
 | You want to | Edit |
 | --- | --- |
 | Add a field, a model, an access rule | `db/schema.lite`, then `fli db:push` |
-| Add behaviour to a service | `api/src/services/<name>.service.ts` — hooks, or a custom method |
+| Add behavior to a service | `api/src/services/<name>.service.ts` — hooks, or a custom method |
 | Register a plugin | `api/src/app.ts`, top to bottom, in order |
 | Add a page | `web/src/routes/` — the file tree is the route table |
 | Bind a page to data | `web/src/resources/` — one Resource per model |

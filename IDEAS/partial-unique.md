@@ -59,7 +59,7 @@ it is worth doing before the corpus figure is quoted anywhere a decision rests o
 it. The three instances in `example/db/schema.lite` are the evidence this record
 actually stands on, and they are re-derivable at any time.
 
-## What the neighbours do
+## What the neighbors do
 
 **Prisma shipped it, and picked this spelling.** v7.4, February 2026, behind the
 `partialIndexes` preview flag, for PostgreSQL, SQLite, SQL Server and
@@ -99,7 +99,7 @@ they compound.
 
 **`@@index` means *changes no answer* here, and this changes answers.** The
 package's own summary of what proves a partial index is the EXPLAIN, precisely
-because every behavioural test passes with the index dropped. A partial unique
+because every behavioral test passes with the index dropped. A partial unique
 refuses writes. Putting it on `@@index` puts a write refusal behind the one
 attribute whose whole documented property is that it has no observable effect.
 
@@ -158,7 +158,7 @@ that is what the derivation would have produced and a declaration cannot.
 this record.** `createIndexes` ANDs `@@softDelete`'s `"deletedAt" IS NULL` into a
 declared `@@index(where:)` predicate, deliberately, because on such a model that
 clause is what makes the index reachable at all. **It must not be ANDed into a
-declared `@@unique(where:)`.** For an index the AND is an optimisation; for a
+declared `@@unique(where:)`.** For an index the AND is an optimization; for a
 unique index the AND is the constraint, and ANDing it is `FJS-204`'s rejected
 derivation arriving through the back door — the deleted row stops holding its
 slot, and `SoftDeletedUniqueError` can never fire for a partial unique because

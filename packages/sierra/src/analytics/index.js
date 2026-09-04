@@ -1,7 +1,7 @@
 /**
  * sierra/analytics — analytics integration
  *
- * Initialised by virtual:sierra at boot.
+ * Initialized by virtual:sierra at boot.
  * App code uses track() to fire events.
  *
  * Providers:

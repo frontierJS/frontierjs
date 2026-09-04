@@ -1,5 +1,159 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-03 — the tutorial waits for you
+
+**The default is a walk-through.** Every step now prints its prose, says what it
+is about to do, and waits:
+
+```
+  Start the two servers and prove they answer — ready? (Y/n) ›
+```
+
+Before this a lesson ran eleven steps to completion while you were still reading
+step two, which is a transcript rather than a lesson. `--yes` runs a whole
+lesson without stopping — what CI passes, and what a second run through material
+you have already read wants. `--step N` does not ask either: naming one step is
+already the answer to *which one*.
+
+The question is the step's own `description:`, so it is about that step rather
+than a generic *continue?*, and there is no second place for it to go stale.
+
+Three things it took to be correct rather than merely present.
+
+**One reader per lesson, not one per question.** A piped stdin is DRAINED by the
+first reader, so a second one waits on a stream that has already ended — a
+`printf 'y\ny\n' | fli tutor:change` hung after step 1. It is created in
+`openTutor` and closed by the finish step, which runs on the success path and on
+a refusal; the decline path closes it itself, because a `stop` skips that step.
+
+**A declined step is not recorded.** Nothing throws when you answer `n`, so the
+runner hands the recorder `succeeded` — after which the resume skips the one
+step you stopped at. The row is dropped instead: absent is what a step that has
+not run looks like, and `resumeDecision` already answers that correctly.
+
+**`context.log`, not `log`.** The bare binding exists inside a step body and not
+in the namespace module, so the decline path threw `log.info is not a function`
+over the sentence explaining how to resume.
+
+Answering `n` is a `stop` and not an `abort` (`FJS-589`): it exits 0, stops the
+servers this run started, and prints where the app is and the command that picks
+up from there.
+
+## 2026-09-03 — Four more lessons, and the surface nothing had ever run
+
+`FJS-752`, `FJS-757`, `FJS-758`. The tutorial is eight lessons now: **live**,
+**jobs**, **site** and **change** join app, access, deploy and fleet, and the
+order is the arc rather than the order they were written — build, secure, then
+real-time, background work, the public half, the deploy, the schema change after
+it, and the fleet.
+
+**`tutor:live` (8 steps)** — a write reaching a second client, and who it does
+not reach. It meets the silence first: the service announces, the publish
+succeeds, and nothing arrives, because a channel is a set of connections and
+nothing has joined it. One file later the same publish lands. Then two sockets
+against one publish — signed in and anonymous — before and after the read gate
+goes up, which is the pair the lesson exists for. A refusal on its own proves
+nothing: a grader that delivered to nobody would satisfy it.
+
+**`tutor:jobs` (6 steps)** — a queue that is a SQLite file, a job named by its
+own filename, and a dispatch from an `after` hook. The assertion is the
+**order**: the response is read before the work is done, and the row changes
+afterwards. A test that checked only the final state would pass with the work
+done inside the request.
+
+**`tutor:site` (8 steps)** — one HTML file per page with the data already in it,
+and a build that **refuses** to emit a page whose `load()` read something gated.
+You watch the refusal and then the `publishes:` line that gets past it. The last
+step changes a row and reads the file again: still the old value, which is what
+prerendered means.
+
+**`tutor:change` (6 steps)** — month two. An optional column is an **expand**; a
+required one is a **contract** that comes back with the three-deploy split and
+the column that has to be backfilled; and a raised gate touches no column and is
+a contract too, marked `narrows`. No server, no Docker.
+
+`probe.httpText` (a body as text) and `probe.eventually` (any probe, until it
+holds) are new, and `openSocket`/`bothSockets`/`fliJson`/`addNoteField` are the
+lessons' shared halves.
+
+### What writing them found
+
+**`FJS-752` — a scaffolded app's real-time is wired everywhere and delivered
+nowhere.** Every generated service declares `channel:`, `fli new` configures
+`channels()`, and nothing ever calls `app.channel(name).join(conn)` — so every
+write announces into an empty set, with no error and no log. The generated
+README points at `api/src/core/channels.ts`, which the scaffold does not write.
+Beside it, the generated service's own comment was **stale in the dangerous
+direction**: it said `@@allow` is not re-checked per subscriber and told the
+author to work around that, which was `FJS-631` and is closed. The comment now
+says what is true — nothing is delivered until a connection joins, and joining
+is a subscription rather than a permission. `tutor:live` teaches the gap
+deliberately; that is not a substitute for closing it.
+
+**`FJS-758` — every file `fli make:site` generated was broken, and nothing had
+ever executed one.** Four defects, found in order: `fli site:build` ran `bunx
+vite` (node) while the scripts the same generator writes say `bun --bun` with the
+reason in a comment beside them; both commands `cd` into the surface, so bun
+auto-loads `.env` from the wrong directory and a client with a required variable
+refuses to load at all; `site/src/main.js` imported `mount` from the compiler,
+a virtual id that does not exist and a component path that does not exist, and
+passed `mount()` an id where it takes a node; and the scaffolded client passed
+`schema: './db/schema.lite'`, resolved against the process — so the site build
+opened a **new, empty database** under `site/db/` and prerendered every page with
+no rows in it, exit 0, which is `FJS-449` exactly. All four fixed. The class has
+no fix: `scaffold-build.mjs` builds `web/` and nothing runs a generated `site/`.
+
+**`FJS-757` — `release:check --from <path>` drops the baseline's imports.** A
+baseline copied anywhere but beside the schema loses every imported model and the
+comparison reports the imported package as newly added — three fabricated
+contract findings on a scaffolded app. `FJS-670` one layer up, in the command
+whose whole job is to classify a difference.
+
+Also fixed on the way: the `after`-hook envelope. `ctx.result` inside the
+pipeline is `{ kind, object, data }`, so `ctx.result.id` is `undefined` with no
+error — the job was queued with an empty payload and the patch was refused as a
+bulk write. `resultData(ctx.result)` is the unwrapper junction exports for it,
+and the lesson says so where somebody meets it.
+
+## 2026-09-03 — Mesa, in the lesson and in the app it scaffolds
+
+**`tutor:app` gains a ninth step and the scaffold gains a front page.** The
+tutorial taught the seed, the API and the database, and said nothing about the
+language every screen it generated is written in. Two halves, on purpose:
+
+**The lesson** — `09-mesa` — states the five things that carry almost all of
+Mesa (state is a variable, a `$:` line re-runs when what it read changes, blocks
+are markup, styles are scoped to the file, everything the runtime offers is on
+`$`), then writes a component with a prop, a derived value and an `{#if}`,
+imports it into the home page, and **asks the dev server for the compiled
+module**. That is the assertion, and the only one available without a browser: a
+file that compiles is a fact about the compiler, not about the file.
+
+`?import` on that URL is load-bearing and cost a run to find. Vite decides
+whether to transform by EXTENSION, and `.mesa` is not one it knows — so the
+bare path is served as a static file and answers **200 with the source**, which
+reads exactly like a component that compiled to itself. The query is what Vite
+appends when a module imports a file it cannot recognize. A file that does not
+compile answers 500 carrying the compiler's own sentence, which is why
+`probe.httpText` reports a status separately from a missing needle.
+
+**The app** — `fli new`'s `web/src/routes/index.mesa` is now a running tour of
+the same five points rather than three lines and a health check. A counter for
+state, an input for `bind:` and `$:`, an `{#each}` over the three realms, and a
+link to the repository with the two documentation directories named. Every
+point does the thing it describes, which is the only form of this that cannot
+go stale silently: the page has to compile to render at all.
+
+`probe.httpText` is new — the body as text, for the things that are not JSON.
+
+**A third authoring trap for literate commands**, found by writing the step: a
+`.mesa` sample cannot be shown whole in prose. `matchScriptBlock` takes the
+first line-leading `<script>` in the file and everything down to the **last**
+closing tag, so a sample carrying one is hoisted to module scope and executed as
+JavaScript — the step failed with `plenty is not defined`, naming a variable
+that only exists inside the example. The two halves are shown apart, and the
+step says why.
+
 ## 2026-09-03 — `fli tutor:fleet`, and a column nothing writes
 
 `FJS-743`. Lesson 4 of four, and the tutorial is complete.
@@ -79,7 +233,7 @@ matter are against the image id the container is on, because a pipeline that
 reported success while leaving the old container up passes everything else.
 
 **And it found the largest defect of the day.** `execSync(cmd, { input, stdio:
-'inherit' })` **ignores `input` on node** and honours it on bun. Every command a
+'inherit' })` **ignores `input` on node** and honors it on bun. Every command a
 deploy sends travels on stdin to `sh -s`, and `core/machine.js` defaulted to
 `stdio: 'inherit'` — so under node the `mkdir` that makes room for the journal
 runner, the container swap, the lock release and the nginx write all reported
@@ -431,7 +585,7 @@ What survives is the call itself: `createClient`/`createTenantRegistry` handed a
 in the suite, beside a comment mentioning the hazard — this rule's own prose
 describes what it matches on, so it reads through `readCode`.
 
-`tests/checks.test.js` § `schema-in-memory` (6) · [checks.js](packages/cli/core/checks.js)
+`tests/checks.test.js` § `schema-in-memory` (6) · [checks.js](core/checks.js)
 
 ## 2026-08-31 — the schema a tool reads is not the schema an app runs
 
@@ -702,7 +856,7 @@ taken. In those the app had already said exactly what was wrong, clearly, in its
 own output, and the operator saw none of it: the sentence was in `docker logs`,
 where nobody looks at 3am because nothing said to.
 
-`showContainerTail` tails 40 lines on a failed health check, labelled as the
+`showContainerTail` tails 40 lines on a failed health check, labeled as the
 app's own words. Tailed rather than dumped: an app that started and is merely
 unwell has written thousands of lines, and burying the one that matters is the
 same failure one layer along. A stopped container still answers, which is the
@@ -1214,7 +1368,7 @@ script, which is the half that bites, and `fli check`'s **`drive-preamble`**
 — *`db:seed`, then `api` + `web`* — and `+` means *these may run at once*.
 Running them in sequence instead loses only concurrency nobody asked for, and
 two rows say `api` + `build:site` where the second genuinely needs the first, so
-a parser that honoured the `+` would race them.
+a parser that honored the `+` would race them.
 
 **The sequence is on the page, not on the server.** Each step lights up as it
 goes, so *the API is still coming up* and *the API failed to start* are
@@ -1352,7 +1506,7 @@ on purpose, and the journal records which sentence happened.
 image back with no journal and no questions, and works on a target that has never
 deployed through one. `deploy:revert` restores the pair. The second never
 silently becomes the first: with no journal it says so and names the other
-command, because that degrade is precisely the behaviour this phase exists to
+command, because that degrade is precisely the behavior this phase exists to
 replace.
 
 **Two extractions, for one reason.** `swapContainer` and `healthOrRestore` moved
@@ -1612,7 +1766,7 @@ somebody else is depending on.
 
 **A child is its own process group, and that is not a detail.** Every command
 here is a launcher — `bun run api` is bun running a script that spawns the app —
-so signalling the pid kills the wrapper and leaves what it started running. It
+so signaling the pid kills the wrapper and leaves what it started running. It
 was measured the expensive way: the first cut of the HTTP test started the first
 `bun` task it found, which in this package is `bun run test`, and the suite ran
 itself; stopping it reported success and left a tree of suites forking until
@@ -1965,7 +2119,7 @@ hosts. `2.3f` supplies it.
 Writing it turned up `FJS-537` — `context.exec({ capture: true })` is not an
 option, so four auth commands parse an empty string and print `Failed` directly
 beneath the output they meant to read. `release:mint` reached for the same
-option because four neighbours use it, which is how a wrong idiom spreads.
+option because four neighbors use it, which is how a wrong idiom spreads.
 
 ## 2026-08-26 — `register:check` catches a register that stopped counting, and `detail-read-dead` names its own limit
 
@@ -1999,7 +2153,7 @@ and it writes nothing and deploys nothing. Five models — `Journal`, `Release`,
 `BindingSet`, `Transition`, `TransitionStep` — carrying every field including
 the ones nothing fills yet: `audienceKey`, `retentionUntil`, `formatVersion`.
 That is the sequencing rule the record is built on, *state shape early,
-behaviour late*, and the reason is that a recorded-state migration is the
+behavior late*, and the reason is that a recorded-state migration is the
 expensive kind of change while an unused column is free.
 
 **It is opened, not installed**, which is the whole of how it differs from
@@ -2015,7 +2169,7 @@ a second block the deploy lock lands in the app's database while `deploy.db`
 gets no `_locks` table at all — the lock cannot sit with the record it protects.
 And `$backup` sweeps every declared SQLite database, which is the copy
 `05-backup` takes before every deploy, so restoring it would erase the journal
-recording the deploy that authorised the restore. Both are asserted as a
+recording the deploy that authorized the restore. Both are asserted as a
 negative control, so the rejection fails loudly if litestone ever moves either.
 
 Two things came out of writing it. Lock contention **throws** rather than
@@ -2327,7 +2481,7 @@ Three rules carry one. `:id` → `{id}` is a spelling; the two model rules have
 already worked out the exact name the call is missing, so the edit is
 `model: 'ProductVariant'` written into the options object **the way that object
 is already written** — `{}` takes no comma, one opened on its own line takes a
-line indented like its neighbour. A canonical form would reformat somebody's
+line indented like its neighbor. A canonical form would reformat somebody's
 file to add a missing key, which is how a `--fix` gets a reputation.
 
 **The other six deliberately carry none, and `set-auth-discarded` is the
@@ -2857,7 +3011,7 @@ comes back along the top.
 A package tag is a **control** now — outlined in the realm's tone above the node
 it joins, and clicking it opens that package's detail. In the first pass they
 were badges inside the node, which meant a `<button>` inside a `<button>`, a
-name wider than its node painting over the neighbour, and a detail panel nothing
+name wider than its node painting over the neighbor, and a detail panel nothing
 could reach.
 
 **The bigger half is what it no longer says.** Six of its twelve panels were
@@ -3389,7 +3543,7 @@ file to find a spot in it.
 test read `'model users'` — lowercase plural, from before the rename — and the
 fragments have emitted `model User` ever since, so it matched nothing. It is
 anchored and PascalCase now, and reads `auth.lite` too, so an app installed
-BEFORE the split is still recognised rather than injected over.
+BEFORE the split is still recognized rather than injected over.
 
 One rule is still restated here, because it cannot be imported: the `@@db(main)`
 swap that makes `--db` work. Auth's own suite lifts this arrow out of the
@@ -3865,7 +4019,7 @@ than on neither.
 
 The realm on each plate is parsed out of the root `CLAUDE.md` table rather than
 restated, so a package that moves realm moves here; one the table forgets reads
-*unfiled* rather than being quietly labelled. `core/repo-map.js` gained the
+*unfiled* rather than being quietly labeled. `core/repo-map.js` gained the
 readers both pages share: that table, the app directories, and the inverse
 dependency edge no file states.
 
@@ -3981,7 +4135,7 @@ because litestream reaches the server as a binary.
 the parse sweep.** A command using a `_module.md` helper compiles whether or not
 the module defines it, so only running one says anything:
 
-- **`context.config` was initialised inside the steps runner**, so every command
+- **`context.config` was initialized inside the steps runner**, so every command
   in `commands/deploy/` had it by accident. Narrowing the inheritance left
   `deploy:doctor` throwing `undefined is not an object` on
   `context.config.abort = true`. It is per-run scratch and now exists for every
@@ -4102,7 +4256,7 @@ extra, so **`fli new --full` failed in both directions**: `--source local`
 aborted before writing anything (no `packages/litestream`), and `--source npm`
 wrote the dep and 404'd at `bun install`.
 
-`--with litestream` is now recognised by name rather than dropped, so the flag
+`--with litestream` is now recognized by name rather than dropped, so the flag
 says where the thing went instead of calling it unknown:
 
 ```
@@ -4236,7 +4390,7 @@ reading rather than by anything failing. That is the finding underneath the four
 
 **A step that threw skipped the cleanup step written to run on failure** (`FJS-237`).
 `09-cleanup` declares `runOnAbort: true` so a bad deploy still releases
-`{serverPath}/.deploy.lock` — but the runner only honoured that for the abort
+`{serverPath}/.deploy.lock` — but the runner only honored that for the abort
 *flag*, and `07-health` sets the flag **and then throws**. The throw exited the
 group loop, cleanup never ran, and the next deploy refused while naming a deploy
 that had finished minutes earlier. Fixed in `core/runtime.js`: a throw now records

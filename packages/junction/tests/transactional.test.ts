@@ -6,7 +6,7 @@
 // a rejected response.
 //
 // Against a REAL Litestone client, not a fake. The whole feature is a claim
-// about $transaction's behaviour, and a stub that records calls would pass every
+// about $transaction's behavior, and a stub that records calls would pass every
 // assertion here while proving nothing (house rule, and how the accessor bug
 // shipped once).
 
@@ -68,7 +68,7 @@ describe('transactional: the write is atomic with the whole pipeline', () => {
   })
 
   test('a nested service call rolls back with its caller', async () => {
-    // Every client flavour shares one write connection and one depth counter, so
+    // Every client flavor shares one write connection and one depth counter, so
     // the inner write lands inside the outer transaction with no propagation.
     const db    = await mkDb()
     const inner = createService(writes() as never)
@@ -90,7 +90,7 @@ describe('transactional: the write is atomic with the whole pipeline', () => {
 describe('what it is and is not applied to', () => {
 
   test('find is never wrapped, whatever is declared', async () => {
-    // A read taking BEGIN IMMEDIATE would serialise every reader. Excluded by
+    // A read taking BEGIN IMMEDIATE would serialize every reader. Excluded by
     // name, the same rule the announcement uses.
     expect(resolveTransactional(true, ['find', 'get', 'create', 'patch'])).toEqual(['create', 'patch'])
     expect(resolveTransactional(['find', 'create'], ['find', 'create'])).toEqual(['create'])

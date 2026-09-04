@@ -92,7 +92,7 @@ describe('parseQuery consumes directives', () => {
     expect(parseQuery({}, 20, 100, { limit: 9999 }).limit).toBe(100)
   })
 
-  test('limit 0 is honoured — it means count-only, not "unset"', () => {
+  test('limit 0 is honored — it means count-only, not "unset"', () => {
     expect(parseQuery({}, 20, 100, { limit: 0 }).limit).toBe(0)
   })
 

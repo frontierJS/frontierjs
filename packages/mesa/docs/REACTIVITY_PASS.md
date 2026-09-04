@@ -187,7 +187,7 @@ restored *after* the try.
 
 `initRenderer()` must set a DOM flag, because compiled components call
 `htmlToFragment()` at module load. But it used one flag for both meanings, so
-enabling the DOM enabled client behaviour and every RULE 19 guard became dead
+enabling the DOM enabled client behavior and every RULE 19 guard became dead
 code. Measured: `$.onMount` fired once per server render (against a happy-dom
 `window` that outlives the request), `watchProxy` built real proxies, and
 effects against module-scope stores accumulated — after 5 renders one write ran

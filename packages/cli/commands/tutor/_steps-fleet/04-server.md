@@ -27,7 +27,7 @@ acting under* — the same request with a workspace the caller is not a member o
 is a different answer.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 4
 

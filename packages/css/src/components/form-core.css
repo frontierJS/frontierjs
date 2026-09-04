@@ -180,7 +180,7 @@ select.field {
  * <input> is a replaced element, and pseudo-elements on replaced
  * elements are not guaranteed by spec — they happen to work on
  * appearance:none checkboxes in current browsers, but a background
- * gradient is defined behaviour everywhere.
+ * gradient is defined behavior everywhere.
  */
 .switch {
   appearance:    none;
@@ -251,7 +251,7 @@ select.field {
   border-start-end-radius: var(--field-radius);
   border-end-end-radius:   var(--field-radius);
 }
-/* Collapse the doubled border between neighbours. */
+/* Collapse the doubled border between neighbors. */
 .field-row > * + * {
   margin-inline-start: -1px;
 }
@@ -259,7 +259,7 @@ select.field {
   flex:            1;
   min-inline-size: 0;
 }
-/* Lift the focused control so its ring is not clipped by its neighbour. */
+/* Lift the focused control so its ring is not clipped by its neighbor. */
 .field-row > .field:focus,
 .field-row > .btn:focus-visible {
   position: relative;

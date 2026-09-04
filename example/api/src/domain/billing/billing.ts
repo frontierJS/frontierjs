@@ -23,7 +23,7 @@
 import { roundMinor, allocate } from '@frontierjs/toolbelt/units'
 import { createIntent, confirmOffSession } from '../../providers/psp/index.ts'
 
-/** A Litestone client of some flavour — see `pricing.ts` for why this is loose. */
+/** A Litestone client of some flavor — see `pricing.ts` for why this is loose. */
 type Client = Record<string, any>
 
 /** A line as this file builds it, before it has an invoice to belong to. */

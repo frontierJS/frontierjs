@@ -263,7 +263,7 @@ export function createDashboardsService(app: BasecampApp) {
     // this, so a kind cannot be offered that the service would refuse — and the
     // `needs` sentence reaches the card from the same place, rather than being
     // retyped into the UI where it would drift from what is actually missing.
-    // **Not the list envelope.** `{ total, data, … }` is recognised as a list
+    // **Not the list envelope.** `{ total, data, … }` is recognized as a list
     // and rebuilt from those two keys alone — `statSources` and
     // `portalServices` were dropped by `wrapResult` with no error and no
     // warning, so the picker offered kinds and then had nothing to configure

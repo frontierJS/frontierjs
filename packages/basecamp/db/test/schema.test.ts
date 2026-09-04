@@ -2,7 +2,7 @@
 // The Data realm's contract, pinned.
 //
 // Everything here was verified by hand while the schema was being built; this
-// file is what keeps it true. It deliberately tests BEHAVIOUR against a real
+// file is what keeps it true. It deliberately tests BEHAVIOR against a real
 // database rather than asserting on the schema AST — a `.lite` file that parses
 // is not the same as one that works.
 //
@@ -235,7 +235,7 @@ describe('schema.lite', () => {
   test('every model declares @@gate — Invariant 6 has no exceptions', () => {
     // The inverse of the test that used to stand here, which pinned the gap.
     // A model added without a level is the failure this catches: it would be
-    // ungated in a schema where every neighbour is gated, and nothing else
+    // ungated in a schema where every neighbor is gated, and nothing else
     // would say so — the app would simply let anyone read it.
     const r = parseFile(SCHEMA)
     const ungated = r.schema.models

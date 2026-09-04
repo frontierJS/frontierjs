@@ -195,7 +195,7 @@ export class Channel {
 // collapse into one verdict and one frame.
 //
 // **The principal is the cohort key** and it is an object identity rather than
-// a serialisation: `Connection.user` is the session built once at upgrade, so
+// a serialization: `Connection.user` is the session built once at upgrade, so
 // two connections of one person share it, and two DIFFERENT people can never
 // collide the way a hashed key can. A connection with no session is its own
 // cohort, keyed by a sentinel, because every anonymous connection grades
@@ -216,9 +216,39 @@ const ANON = Symbol('anonymous')
 
 interface Cohort { conns: Connection[]; frame: string }
 
+/** One principal, one claim set, and every connection that shares both. */
+interface ClaimGroup { claims: Record<string, unknown> | null; conns: Connection[] }
+
+/**
+ * What a recipient holds IN THIS CHANNEL — the one fact grading cannot derive.
+ *
+ * A claim is resolved per REQUEST (junction's `principal:` resolver, off a
+ * header), and a broadcast has no request: the principal on a connection was
+ * built at the upgrade, where there is no workspace, no tenant and no header to
+ * read one from. Under `strategy row` the tenancy rule desugars into an
+ * `@@deny`, and an `@@deny` fires on UNKNOWN as well as on TRUE — so a claim
+ * that is merely ABSENT refuses every subscriber on every tenanted model, which
+ * is an application's entire live layer, silently (`FJS-749`).
+ *
+ * The app answers because the app named the channel: `workspace:<id>` encodes a
+ * tenant and nothing here can know that. What it returns is a CLAIM, in the
+ * `membershipClaim` sense — a statement the app has already verified, not a
+ * request to trust the channel. Where a channel's membership is itself the
+ * proof (basecamp joins a connection to `workspace:<id>` only after reading the
+ * `WorkspaceMember` row), returning the id is exactly that statement.
+ *
+ * An empty object is not a claim and is treated as none, or a resolver that
+ * answers `{}` for an anonymous connection turns a `null` principal into an
+ * object and grades it a rung ABOVE a stranger.
+ */
+export type ChannelClaimsFn = (
+  channelName: string,
+  conn:        Connection,
+) => Record<string, unknown> | null | undefined
+
 /** What the rule is asked of, and what it is asked about. */
 export interface GradingSource {
-  /** The client the rule lives on. Any flavour answers identically. */
+  /** The client the rule lives on. Any flavor answers identically. */
   db:       unknown
   /** The Litestone accessor for the model the payload is a row of. */
   accessor: string
@@ -231,14 +261,61 @@ export interface GradingSource {
 // label so a misresolved accessor is visible without a line per broadcast.
 const _refusedAll = new Set<string>()
 
-function warnRefusedAll(label: string, accessor: string, size: number): void {
+/**
+ * Why a whole channel was refused, where the answer is knowable.
+ *
+ * Under `strategy row` the tenancy rule desugars into an `@@deny` over a claim,
+ * and a claim is per REQUEST — a connection's principal was built at the
+ * upgrade and carries none, so the deny fires on UNKNOWN and refuses everybody
+ * on every tenanted model. That is one sentence away from *the model is
+ * genuinely private*, and telling the two apart took a signed heartbeat, a real
+ * socket and an instrumented `$readAs` (`FJS-749`). Probed with `in` because a
+ * Litestone client THROWS on an unknown property.
+ */
+function tenancyHint(db: unknown, claimsFor?: ChannelClaimsFn): string {
+  if (claimsFor) return ''
+  if (!db || typeof db !== 'object' || !('$tenancy' in db)) return ''
+  const t = (db as { $tenancy?: { strategy?: string; claim?: string } }).$tenancy
+  if (t?.strategy !== 'row') return ''
+  return ` This schema is \`strategy row\` and no channels({ claims }) resolver is installed, so ` +
+         `no recipient carries \`${t.claim ?? 'the tenant claim'}\` and the tenancy deny refuses all of them.`
+}
+
+// A resolver is application code on the fan-out path, so a throw in one would
+// otherwise take down the announcement for every recipient of every channel.
+// Refused rather than widened, the same answer `$readAs` throwing gets — and
+// said out loud, because refusing in silence is the defect this whole seam
+// exists to close.
+const _claimsThrew = new Set<string>()
+
+function resolveClaims(
+  claimsFor:   ChannelClaimsFn,
+  channelName: string,
+  conn:        Connection,
+): Record<string, unknown> | null {
+  let answer
+  try { answer = claimsFor(channelName, conn) }
+  catch (err) {
+    if (!_claimsThrew.has(channelName)) {
+      _claimsThrew.add(channelName)
+      console.warn(
+        `[Junction] the channels({ claims }) resolver threw for '${channelName}', so its ` +
+        `recipients are graded carrying no claim at all: ${(err as Error)?.message ?? err}`
+      )
+    }
+    return null
+  }
+  return answer && typeof answer === 'object' && Object.keys(answer).length > 0 ? answer : null
+}
+
+function warnRefusedAll(label: string, accessor: string, size: number, hint = ''): void {
   if (_refusedAll.has(label)) return
   _refusedAll.add(label)
   console.warn(
     `[Junction] every one of ${size} subscribers was refused a '${label}' broadcast graded as ` +
     `'${accessor}'. That is correct where the model is genuinely private, and is what a ` +
     `misresolved accessor also looks like — check that '${accessor}' is the model this service ` +
-    `writes, declaring model: on the service if it is not.`
+    `writes, declaring model: on the service if it is not.` + hint
   )
 }
 
@@ -261,6 +338,7 @@ export async function gradeRecipients(
   payload: unknown,
   src:     GradingSource,
   mode:    'row' | 'gate' = 'row',
+  claimsFor?: ChannelClaimsFn,
 ): Promise<Cohort[] | null> {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null
 
@@ -286,7 +364,11 @@ export async function gradeRecipients(
   // is the opposite ("it will get the data from the FIRST channel that it is
   // in"), and a set keyed by connection is what removes the ordering question
   // rather than answering it.
-  const byPrincipal = new Map<unknown, Connection[]>()
+  // Two levels, because a claim is per CHANNEL and a principal is not: one
+  // person in two workspaces is one principal on one socket and holds a
+  // different tenant in each. Without a resolver the inner map has exactly one
+  // entry and this is the flat map it used to be.
+  const byPrincipal = new Map<unknown, Map<string, ClaimGroup>>()
   const seen = new Set<Connection>()
   let live = 0
   for (const ch of targets) {
@@ -294,15 +376,19 @@ export async function gradeRecipients(
       if (conn.socket.readyState !== 1 || seen.has(conn)) continue
       seen.add(conn)
       live++
-      const key = conn.user ?? ANON
-      const list = byPrincipal.get(key)
-      if (list) list.push(conn)
-      else byPrincipal.set(key, [conn])
+      const key    = conn.user ?? ANON
+      const claims = claimsFor ? resolveClaims(claimsFor, ch.name, conn) : null
+      const sig    = claims ? JSON.stringify(claims) : ''
+      let byClaims = byPrincipal.get(key)
+      if (!byClaims) byPrincipal.set(key, byClaims = new Map())
+      const entry = byClaims.get(sig)
+      if (entry) entry.conns.push(conn)
+      else byClaims.set(sig, { claims, conns: [conn] })
     }
   }
 
   const out: Cohort[] = []
-  for (const [key, conns] of byPrincipal) {
+  for (const [key, byClaims] of byPrincipal) for (const { claims, conns } of byClaims.values()) {
     if (mode === 'gate') {
       // The gate alone. Nothing here is a row, so there is no policy to ask and
       // no field to shape — the question is whether this caller may read the
@@ -320,13 +406,18 @@ export async function gradeRecipients(
     // guest order whose `userId` is null, so the fix delivered the one row the
     // recipient may not read and withheld the one they own. The two functions
     // are one boundary: change either and ask whether the other needs it.
-    try { visible = await db.$readAs(accessor, payload, key === ANON ? null : toDataPrincipal(key)) }
+    // Claims are merged OVER the principal: the resolver is answering about this
+    // channel, and the principal was built where the channel was not known.
+    const base = key === ANON ? null : toDataPrincipal(key)
+    const who  = claims ? { ...(base as object ?? {}), ...claims } : base
+    try { visible = await db.$readAs(accessor, payload, who) }
     catch { continue }                      // undecidable: refuse, never widen
     if (!visible) continue                  // the gate or a policy said no
     out.push({ conns, frame: encodeEventFrame(event, visible) })
   }
 
-  if (live > 0 && out.length === 0 && src.label) warnRefusedAll(src.label, accessor, live)
+  if (live > 0 && out.length === 0 && src.label)
+    warnRefusedAll(src.label, accessor, live, tenancyHint(db, claimsFor))
   return out
 }
 
@@ -340,7 +431,7 @@ export interface PresencePolicy {
   flushMs: number
 }
 
-export function createChannelManager(presencePolicy?: PresencePolicy) {
+export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?: ChannelClaimsFn) {
 
   const _presencePolicy: PresencePolicy = presencePolicy ?? { enabled: () => false, flushMs: 50 }
 
@@ -422,7 +513,7 @@ export function createChannelManager(presencePolicy?: PresencePolicy) {
     ): Promise<void> {
       const ch = channels.get(channelId)
       if (!ch) return
-      const graded = await gradeRecipients([ch], event, payload, src, mode)
+      const graded = await gradeRecipients([ch], event, payload, src, mode, claimsFor)
       if (!graded) { ch.send(event, payload); return }
       for (const { conns, frame } of graded)
         for (const conn of conns)
@@ -606,7 +697,7 @@ export function createChannelManager(presencePolicy?: PresencePolicy) {
         db:       (ctx as { locals?: { db?: unknown } }).locals?.db,
         accessor: svc?.model ?? (ctx as { service?: string }).service ?? '',
         label:    (ctx as { service?: string }).service,
-      })
+      }, 'row', claimsFor)
       if (graded) {
         for (const { conns, frame } of graded)
           for (const conn of conns)
@@ -742,6 +833,13 @@ export interface ChannelsOptions {
   presenceMetaBytes?: number
 
   /**
+   * What a recipient holds in a given channel, merged onto their principal
+   * before a broadcast is graded. See `ChannelClaimsFn` — under `strategy row`
+   * an app without one delivers nothing on any tenanted model.
+   */
+  claims?: ChannelClaimsFn
+
+  /**
    * Presence updates one connection may publish per second. Default 5.
    *
    * The size cap bounds one frame and this bounds the stream: 4KB at a
@@ -756,7 +854,7 @@ export interface ChannelsOptions {
    * The size and rate bounds are the floor under any app; this is how an app
    * says the thing neither of them can know — that meta is `{ typing: boolean }`
    * and nothing else. Absent, any JSON inside the cap is accepted, which is the
-   * behaviour that shipped and is a reasonable default for a field whose whole
+   * behavior that shipped and is a reasonable default for a field whose whole
    * purpose is application-defined.
    */
   presenceMeta?: (meta: Record<string, unknown>) => Record<string, unknown>
@@ -812,7 +910,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
             return (name: string) => exact.has(name) || prefixes.some(p => name.startsWith(p))
           })()
 
-      const manager = createChannelManager({ enabled, flushMs: opts.presenceFlushMs ?? 50 })
+      const manager = createChannelManager({ enabled, flushMs: opts.presenceFlushMs ?? 50 }, opts.claims)
       _manager = manager
       ;(app as unknown as Record<string, unknown>).channels = manager
 
@@ -1098,7 +1196,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
             // Update meta if provided.
             //
             // Three bounds, and the order is the cheap test first: the rate
-            // needs no serialisation, the size needs one, and the app's own
+            // needs no serialization, the size needs one, and the app's own
             // rule runs last and only on something already known to be small
             // enough to be worth judging.
             if (parsed.meta && typeof parsed.meta === 'object' && !Array.isArray(parsed.meta)) {

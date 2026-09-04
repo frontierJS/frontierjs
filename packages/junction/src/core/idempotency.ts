@@ -4,7 +4,7 @@
 // The header was read into ctx.idempotencyKey and consumed by nothing, so a
 // double-submitted create ran twice while the request carried the value that
 // says not to — and Conduit spends the OTHER side of the same contract, sending
-// `Idempotency-Key` outbound and treating its presence as licence to retry a
+// `Idempotency-Key` outbound and treating its presence as license to retry a
 // POST (FJS-088). This makes the inbound half true.
 //
 // What a key promises: the same key, from the same principal, to the same
@@ -102,7 +102,7 @@ function cacheKey(ctx: ServiceContext, principal: string, key: string): string {
  * created record, with their id in it — or refused with a 409 about a request
  * they never made (`FJS-680`). There is nothing here to key on: a guest's
  * claims deliberately never become `ctx.auth.user` (they scope the Data client
- * and nothing else), so the honest answer is that the header cannot be honoured
+ * and nothing else), so the honest answer is that the header cannot be honored
  * and the call runs normally. Two anonymous POSTs with one key are two calls,
  * which is the safe reading of an ambiguous request.
  */

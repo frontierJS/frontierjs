@@ -37,8 +37,8 @@ export const FORMATS = Object.keys(READERS)
 // Re-exported AND imported: `export … from` re-publishes without binding, and
 // `convert`/`annotate` below call both of these.
 
-export { TIERS, tierOf, gradedKinds, summarise } from './tiers.js'
-import  { tierOf, summarise }                    from './tiers.js'
+export { TIERS, tierOf, gradedKinds, summarize } from './tiers.js'
+import  { tierOf, summarize }                    from './tiers.js'
 
 // ─── reading a source off disk ───────────────────────────────────────────────
 
@@ -89,7 +89,7 @@ export function convert({ source, format, label = 'schema' }) {
   const read = READERS[format]
   if (!read) throw new Error(`unknown format '${format}' — one of ${FORMATS.join(', ')}`)
   const { lite, gaps, models } = read(source, label)
-  return { lite, gaps, models, format, summary: summarise(gaps) }
+  return { lite, gaps, models, format, summary: summarize(gaps) }
 }
 
 // ─── saying it in the file itself ────────────────────────────────────────────

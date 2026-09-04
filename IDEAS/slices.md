@@ -235,7 +235,7 @@ Added 2026-08-15. `IDEAS/ecosystem-gaps.md` nominates **billing** as the canonic
 first slice and the proof the format works. Billing is the right *commercial* first
 slice and the wrong *structural* one, and there is a better candidate that nothing in
 `IDEAS/` currently mentions at all: a grep across every record for `invite`,
-`invitation`, `membership`, `organisation` or `organization` returns nothing on point.
+`invitation`, `membership`, `organization` or `organization` returns nothing on point.
 
 **It is the largest thing this repo has already built by hand.** Basecamp declares
 `Workspace` and `WorkspaceMember`, a five-rung role ladder (viewer/billing → READER,
@@ -263,7 +263,7 @@ machine, which means the slice *demonstrates* `@@transitions` at the Data bounda
 rather than merely using the framework. A slice whose value is visible in the schema
 diff is the one to lead with.
 
-**Design it with two neighbours, not after them.** `IDEAS/row-level-tenancy.md` (4.18)
+**Design it with two neighbors, not after them.** `IDEAS/row-level-tenancy.md` (4.18)
 is the mechanism for *which rows*; `warden` (4.5) is the mechanism for *which
 permissions*; this is the *noun* both of them are about. Settled apart, they produce
 three vocabularies for one idea — the same failure `IDEAS/release-transitions.md`

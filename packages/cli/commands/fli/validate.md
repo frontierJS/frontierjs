@@ -196,7 +196,7 @@ const warn = (l, file, msg) => warns.push({ layer:  l, file, msg })
 // ─── Guard: schema.lite must exist ───────────────────────────────────────────
 
 if (!existsSync(schemaLite)) {
-  log.error('schema.lite not found — run fli db:push to initialise')
+  log.error('schema.lite not found — run fli db:push to initialize')
   return
 }
 

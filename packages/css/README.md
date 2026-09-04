@@ -174,11 +174,11 @@ tokens → themes → tones → base → layout → components → patterns → 
 
 ## Using it with UnoCSS
 
-Uno is not required, but running it alongside is **supported** (ruled
-2026-08-08) and this is the configuration that works. Everything below was
+Uno is not required, but running it alongside is **supported** (`FJS-D99`,
+which amends Invariant 13) and this is the configuration that works. Everything below was
 measured against UnoCSS 66.7.5 with `presetWind3`, not inferred.
 
-The division of labour: this package owns the **vocabulary** — a tone
+The division of labor: this package owns the **vocabulary** — a tone
 (`danger`), a treatment (`outlined`), a component (`card`). Uno owns the
 **one-off adjustment** — the `mt-6` on the third card that nothing else needs.
 Reach for Uno when you would otherwise write a one-line override; reach for the
@@ -236,7 +236,7 @@ export default defineConfig({
 })
 ```
 
-**The `text-*` collision has a better fix than blocklisting since 2026-08-08.**
+**The `text-*` collision has a better fix than blocklisting.**
 The scale is `--text-*` tokens now, and *every* size in the package reads one —
 components, patterns and the `h1`–`h6` ladder alike. So rather than picking
 which set of classes wins, make them agree:
@@ -471,14 +471,14 @@ in the package where the markup has to say it twice:
 
 ---
 
-## Behaviour is not included
+## Behavior is not included
 
 Visual treatment is a class; keyboard, focus and ARIA management are a
 component. Tabs need roving tabindex and arrow keys. Dialogs need
 `showModal()`. Tooltips need Escape-to-dismiss. The CSS draws them; your app
 drives them. Each file's header documents the contract it expects.
 
-Where the platform already has the behaviour, the system uses it —
+Where the platform already has the behavior, the system uses it —
 `<dialog>` for modals and drawers, `<details>` for disclosure,
 `<progress>` for progress bars, a real checkbox for switches.
 
@@ -496,31 +496,13 @@ than breaking, but they are not a target.
 
 ## Status
 
-Alpha, and honest about it: **zero production consumers so far.** All 54
-vocabulary terms ship CSS — checked both directions against the real CSSOM, so
+Alpha, and honest about it: **zero production consumers so far.** Every
+vocabulary term ships CSS — checked both directions against the real CSSOM, so
 a class the vocabulary does not name fails the suite — and the invariants are
 covered by a checked-in test suite. But nothing has been through the friction
 of a real build yet.
 
-## Breaking changes
-
-**v0.11**
-
-- **Stylesheets moved to `src/`**, grouped into directories that mirror the
-  cascade layers: `foundation/` `themes/` `components/` `patterns/` `a11y/`,
-  with `index.css` and `utilities.css` at the top of `src/`.
-- **Single-file imports carry the folder now.** `@frontierjs/css/buttons.css`
-  → `@frontierjs/css/components/buttons.css`. `src/` does **not** appear in the
-  public path — the exports map hides it. The one-line
-  `import '@frontierjs/css'` is unchanged, and that is what most apps use.
-
-```css
-@import '@frontierjs/css/foundation/tokens.css';
-@import '@frontierjs/css/themes/elite.css';
-@import '@frontierjs/css/components/buttons.css';
-```
-
-### One file, if you want one
+## One file, if you want one
 
 The package still needs no build step. But for a CDN drop-in, a CodePen, or a
 bundler you do not control, `bun run build` emits a single file:
@@ -538,17 +520,11 @@ bundler you do not control, `bun run build` emits a single file:
 > statement from `index.css`, prepends it, and refuses to write a bundle
 > without it.
 
-**v0.10.1**
+## Breaking changes
 
-- **`.shell.fixed` → `.shell.viewport`.** `fixed` is a core UnoCSS/Tailwind
-  utility name (`position: fixed`), generated unlayered, so merely having Uno
-  installed re-positioned the shell. See *Using it with UnoCSS*.
-- **The `.text-*` utilities moved to a new `utilities` layer** (their own file,
-  `utilities.css`). No markup change — but they now actually apply. Sharing the
-  `components` layer with `.btn`, which sets its own `font-size`, made all five
-  size steps inert on a button. If you compensated with an inline `font-size`,
-  you can drop it.
-
+In `CHANGES.md`, with the reasoning. The two that move markup are
+`.shell.fixed` → `.shell.viewport` and the `.text-*` utilities gaining a layer
+of their own.
 
 ## Tests
 
@@ -558,7 +534,7 @@ bun run test focus tone   # only matching spec files
 bun run test --keep       # leave the generated page on disk to eyeball
 ```
 
-464 assertions, run in real headless Chrome against real computed styles —
+Run in real headless Chrome against real computed styles —
 because every invariant here *is* a computed-style invariant. Cascade layers,
 `color-mix()`, `@property … inherits: false`, `:focus-visible`,
 `:user-invalid`, relative luminance: none of that exists in a DOM shim, so a
@@ -579,7 +555,7 @@ bun run demo          # → http://localhost:5173
 ```
 
 A five-route SaaS admin — dashboard, table, detail, list, settings — built
-strictly to the vocabulary, with the behaviour contracts implemented in plain
+strictly to the vocabulary, with the behavior contracts implemented in plain
 JS. It is the reference for what real markup looks like, and its `demo.css` is
 a deliberate measurement: every rule in that file is a gap in this package.
 `demo/README.md` writes up what building it found.

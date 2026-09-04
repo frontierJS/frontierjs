@@ -37,7 +37,7 @@
 
   import Field from './Field.mesa'
   import { formatBytes } from '@frontierjs/toolbelt/units'
-  import { uid, resolveError, resolveRule, stated } from '../../utils.js'
+  import { uid, resolveError, resolveRule, stated, lockedBy } from '../../utils.js'
 
   export let accept       = '*/*'     // MIME types e.g. 'image/*' or '.pdf,.doc'
   export let multiple     = false
@@ -104,7 +104,7 @@
   // A <Form> above this control locks it two ways — the caller disabled the
   // form, or a save is in flight — and both mean the same thing to a field.
   // A stated prop still wins, including `disabled={false}` on a saving form.
-  const resolvedDisabled = stated(disabled, form?.disabled || form?.submitting) ?? false
+  const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
   const rule         = resolveRule(form, name)
   const displayError = localError || resolveError(form, name, error, errors)
 

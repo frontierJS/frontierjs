@@ -23,7 +23,7 @@ import { describe, test, expect } from 'vitest'
 
 const { buildFieldRules, controlFor } = await import('../src/junction/field-rules.js')
 
-const LABELLED = {
+const LABELED = {
   type: 'object', title: 'Account',
   properties: {
     plan: {
@@ -41,7 +41,7 @@ describe('x-labels → rule.options', () => {
     // A partial map is the normal case: a schema labels the codes whose
     // spelling is not already the words, and leaves the rest. Dropping the
     // unlabelled ones would silently shorten the picker.
-    const rule = buildFieldRules(LABELLED).plan
+    const rule = buildFieldRules(LABELED).plan
     expect(rule.options).toEqual([
       { value: 'starter',    label: 'Starter' },
       { value: 'pro',        label: 'Pro' },
@@ -50,18 +50,18 @@ describe('x-labels → rule.options', () => {
   })
 
   test('the codes are untouched, so validation still reads a plain array', () => {
-    const rule = buildFieldRules(LABELLED).plan
+    const rule = buildFieldRules(LABELED).plan
     expect(rule.enum).toEqual(['starter', 'pro', 'enterprise'])
   })
 
   test('an unlabelled enum carries no options at all', () => {
-    const rule = buildFieldRules(LABELLED).bare
+    const rule = buildFieldRules(LABELED).bare
     expect(rule.options).toBeUndefined()
     expect(rule.enum).toEqual(['a', 'b'])
   })
 
-  test('controlFor prefers the labelled list and falls back to the codes', () => {
-    const rules = buildFieldRules(LABELLED)
+  test('controlFor prefers the labeled list and falls back to the codes', () => {
+    const rules = buildFieldRules(LABELED)
 
     expect(controlFor(rules.plan)).toEqual({
       control: 'select',

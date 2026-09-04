@@ -14,7 +14,7 @@ wrote for itself (`FJS-D26`). `createMakeFromSchema` and `derefFieldSchema` are
 `@frontierjs/toolbelt/hooks`. Both sides import them.
 
 **Two pieces this document lists did NOT move, deliberately.** `createStore` is
-state, and toolbelt's licence is that every export is a pure function — and the
+state, and toolbelt's license is that every export is a pure function — and the
 two stores were never one fact anyway: Sierra's is service-backed and stamps
 each request, jetty's takes no service at all because Junction lives in Harbor.
 And the `defineResource({ transport })` seam below is refused rather than

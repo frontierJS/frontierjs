@@ -72,10 +72,10 @@ test('layers: every import lands in a declared layer', function () {
 
 /* ── What the order actually buys ────────────────────────────────────*/
 
-test('layers: .bar.center stays a flex bar, not a centring grid', function () {
+test('layers: .bar.center stays a flex bar, not a centering grid', function () {
   /*
-   * `.center` (layout.css) is "centre on both axes, via grid".
-   * `.bar.center` (bars.css) is "centre this bar's contents, still flex".
+   * `.center` (layout.css) is "center on both axes, via grid".
+   * `.bar.center` (bars.css) is "center this bar's contents, still flex".
    * Both are single-class selectors on `display`, so specificity cannot
    * separate them — only `layout` sitting before `patterns` does.
    *
@@ -86,7 +86,7 @@ test('layers: .bar.center stays a flex bar, not a centring grid', function () {
   assert.equal(style(bar, 'display'), 'flex', '.bar.center collapsed into the .center grid');
 
   var plain = el('<div class="center">x</div>');
-  assert.equal(style(plain, 'display'), 'grid', '.center is no longer a centring grid');
+  assert.equal(style(plain, 'display'), 'grid', '.center is no longer a centering grid');
 });
 
 test('layers: a .text-* utility beats a component that sets its own font-size', function () {

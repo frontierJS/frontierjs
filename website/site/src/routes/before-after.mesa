@@ -249,7 +249,7 @@ render: static
     <div class="job">
       <h2>Errors becoming status codes</h2>
       <p>Four libraries throw four shapes. Your error middleware grows an
-         <code>instanceof</code> ladder, and anything it does not recognise is a 500 —
+         <code>instanceof</code> ladder, and anything it does not recognize is a 500 —
          including the 404 you meant.</p>
       <div class="cost">
         <div><span class="k">Before</span><span class="before">1 ladder, edited per library</span></div>
@@ -397,7 +397,7 @@ render: static
       <p class="derived">
         Same process, same file, same deploy. Retries, attempts and cron state are rows
         you can query — and job stats show up on <code>/metrics</code> because the queue is
-        <strong>a plugin, not a neighbour</strong>.
+        <strong>a plugin, not a neighbor</strong>.
       </p>
     </div>
   </div>

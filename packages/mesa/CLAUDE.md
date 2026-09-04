@@ -26,7 +26,7 @@ work.
 
 ```
 src/
-  compiler.js          — the compiler. ~290 KB, one file: parse → analyse → emit
+  compiler.js          — the compiler. ~290 KB, one file: parse → analyze → emit
   runtime.js           — the signal runtime the emitted code calls. ~174 KB
   render-component.js  — renderComponent(): a component → HTML, at build time
   render.js            — SSR / static-site rendering entry
@@ -57,9 +57,9 @@ test/browser/
   repl/                — example/index.html itself. Manual: needs the network
 ```
 
-**The Vite plugin is a subpath, not a package.** It had its own `package.json`
-until 2026-08-10 and was therefore invisible to the `packages/*` glob —
-uninstalled, so nothing imported it and nothing could test it. It also could not
+**The Vite plugin is a subpath, not a package.** A `package.json` of its own
+would put it below the `packages/*` glob — uninstalled, so nothing imports it
+and nothing can test it. It also could not
 find its own compiler: the resolver hunted `@mesa/compiler` and
 `node_modules/mesa/`, one never published and the other someone else's package
 on npm. The compiler is now a sibling and reached by relative path, which is
@@ -151,8 +151,8 @@ defaults to whatever `dev` is, and the path in it is relative to `locRoot`.
   non-string keys.
 - **`bind:this` on a COMPONENT is the exported interface; on an ELEMENT it is
   the node.** The component form reads props through the child's own signals, so
-  `ref.count` is live and `ref.count = 2` writes it. It used to hand over the
-  anchor comment, silently.
+  `ref.count` is live and `ref.count = 2` writes it. Handing over the anchor
+  comment instead fails silently.
 - **`<mesa:element this={tag}>` is compiled under a placeholder tag** and
   transplanted at runtime, wrapped in a `keyBlock` so a changed tag rebuilds. A
   **tag selector** in a scoped `<style>` cannot match it — the scoper runs on the
@@ -161,8 +161,8 @@ defaults to whatever `dev` is, and the path in it is relative to `locRoot`.
   used to emit nothing, which made a typo and a missing feature the same event.
 - **`{#each}` takes an array, an iterable or an array-like — and refuses a
   number or a plain object by name.** `eachItems()` in `runtime.js` is the one
-  definition; `{#each}` and `{#virtual each}` share it. It used to call `.map()`
-  on whatever arrived, so `{#each { length: 6 }}` — a fixed-size grid, which is
+  definition; `{#each}` and `{#virtual each}` share it. Calling `.map()` on
+  whatever arrives means `{#each { length: 6 }}` — a fixed-size grid, which is
   what the kit's `DatePicker` builds its calendar from — died as `array.map is
   not a function`, naming no block and no expression. That component had
   therefore never rendered at all while compiling perfectly (`FJS-147`).
@@ -172,7 +172,7 @@ defaults to whatever `dev` is, and the path in it is relative to `locRoot`.
   `el.animate`, so one animating attachment threw and took the whole render
   down (`FJS-146`). Guard is `!_isClient` in `attach()`/`applyAttachments()`.
 - **`{@attach}` runs when the element MOUNTS, not when it is built** (VISION
-  §10.6, enforced since `FJS-114`). It used to run on a detached node, where
+  §10.6, enforced since `FJS-114`). Running it on a detached node instead is where
   `el.animate(..., { fill: 'forwards' })` returns an animation that never starts
   — so every kit overlay painted at keyframe 0 and the command palette was an
   invisible full-screen backdrop that ate every click. An already-connected

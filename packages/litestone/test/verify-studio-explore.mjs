@@ -204,7 +204,7 @@ t('home.everyGroupBoxed', await evaluate(`
 
 // ─── a word with nothing behind it is DIMMED, not hidden ──────────────────
 //
-// The whole panel rests on this: a grey box is the only way someone finds a
+// The whole panel rests on this: a gray box is the only way someone finds a
 // feature they have never heard of, and `hidden` or `disabled` would take it
 // out of reach exactly where it is needed.
 
@@ -221,7 +221,7 @@ t('empty.dimmedNotHidden', await evaluate(`
 
 // Which words the fixture leaves unused is the fixture's business — naming them
 // here makes the drive red the day somebody adds a view to example/. What has to
-// hold is the LINK: a box is grey exactly when its count is zero.
+// hold is the LINK: a box is gray exactly when its count is zero.
 t('empty.greyMatchesTheCount', await evaluate(`
   const use   = exUsage();
   const boxes = [...document.querySelectorAll('#exBody section')][0].querySelectorAll('.ex-box');
@@ -255,7 +255,7 @@ t('drill.enumValues', await evaluate(`
 `), true)
 
 // A word the schema does not use opens its CARD — the teaching path, and the
-// only reason a grey box is worth clicking.
+// only reason a gray box is worth clicking.
 t('drill.emptyWordOpensItsCard', await evaluate(`
   const use  = exUsage();
   const word = _catalog.filter(r => r.level === 'schema').map(r => r.word)
@@ -316,8 +316,8 @@ t('usage.generatedModelIsShownAndLabelled', await evaluate(`
   exGo({ kind: 'top', word: 'model' });
   const gen = [...exGenerated()][0];
   const card = [...document.querySelectorAll('#exBody .ex-card')].find(c => c.textContent.includes(gen));
-  return { listed: !!card, labelled: card.textContent.includes('generated') };
-`), { listed: true, labelled: true })
+  return { listed: !!card, labeled: card.textContent.includes('generated') };
+`), { listed: true, labeled: true })
 
 // ─── search reaches both the language and this schema ─────────────────────
 

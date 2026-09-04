@@ -2,7 +2,7 @@
  * popover.spec.mjs — Popover and ConfirmationPopover.
  *
  * Neither is a `<dialog>`: both portal a panel to `<body>` and position it
- * from the trigger's rect, which means every part of them is behaviour this
+ * from the trigger's rect, which means every part of them is behavior this
  * package wrote and a render test sees none of it. The panel is not even in
  * the component's own tree, so a query scoped to the fixture finds nothing and
  * a spec that scopes it reports "closed" for a panel sitting on screen.

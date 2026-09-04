@@ -176,7 +176,7 @@ t('raw.noGatedData', !/@shop\.test|correct-horse|"notes"/.test(sampleHTML))
 
 // The published directory carries no server code. A companion runs at build
 // time and imports the app's Litestone client; a static host serves a file
-// whether or not a page links it, so "nothing references it" is not a defence.
+// whether or not a page links it, so "nothing references it" is not a defense.
 // Matched on code rather than on the word: the schema's own doc comments reach
 // the client as JSON Schema descriptions, and one of them says "stored as JSON
 // in SQLite" — a field label, not an engine.

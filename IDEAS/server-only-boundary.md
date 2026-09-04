@@ -108,7 +108,7 @@ That is the reason to do this in FJS's idiom rather than just adopting
 `.server.ts` is a **convention the framework enforces**, not a fact derived from
 the code — which makes it the odd one out in a repo whose whole argument is that
 facts should be declared once, in the seed, and derived from there. The honest
-defence is that "this module must not ship" is not a property of the data; it is
+defense is that "this module must not ship" is not a property of the data; it is
 an intent about a file, and a filename is the cheapest true place to put an
 intent about a file.
 

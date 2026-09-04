@@ -9,7 +9,7 @@
 // read. This is the service, not the evaluator: nothing here decides that a
 // rule has been breached. That belongs with whatever measures (an outpost
 // heartbeat, an observability adapter), and is deliberately not invented here,
-// because a rule that fires from the browser's idea of the truth is theatre.
+// because a rule that fires from the browser's idea of the truth is theater.
 // `AlertEvent` rows are therefore written by the system today and read here.
 //
 // The split in the schema is the split in the hooks: a rule is authored by a

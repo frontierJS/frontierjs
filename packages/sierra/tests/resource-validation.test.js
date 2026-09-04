@@ -339,7 +339,7 @@ describe('normalizeBlanks', () => {
   })
 })
 
-describe('blankToNull: true — automatic normalisation', () => {
+describe('blankToNull: true — automatic normalization', () => {
 
   test('is ON by default: the empty string is stored as null', async () => {
     const r = createResource('leads')
@@ -381,7 +381,7 @@ describe('blankToNull: true — automatic normalisation', () => {
     expect(_created[0].notes).toBeNull()
   })
 
-  test('composes with validate: normalisation happens first', async () => {
+  test('composes with validate: normalization happens first', async () => {
     // notes '' → null is fine (nullable, not required). The record must still
     // pass validation afterwards, judged on what will actually be sent.
     const r = createResource('leads', { blankToNull: true, validate: true })

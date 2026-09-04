@@ -91,7 +91,7 @@
   /*
    * No shadow at rest. The link is moved off the top of the viewport with
    * a transform, but a shadow paints outside its box — --shadow-lg reaches
-   * 16px past the bottom edge, which was enough to leave a faint grey
+   * 16px past the bottom edge, which was enough to leave a faint gray
    * smudge across the top of every page that had a skip link. Off-screen
    * has to mean nothing paints, not just that the box is gone.
    */

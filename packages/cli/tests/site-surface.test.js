@@ -158,7 +158,12 @@ describe('the ports it bakes in', () => {
     // `bun --bun`: the build imports the app's Litestone client to tap what
     // load() reads, and node's TS stripper refuses a parameter property — which
     // Vite reports as "could not load the db", i.e. as a path problem.
-    expect(scripts['build:site']).toMatch(/^cd site && bun --bun vite build/)
+    expect(scripts['build:site']).toMatch(/^cd site && bun --bun /)
+    // And the app's own `.env`: both commands `cd` into the surface, so bun's
+    // auto-load looks in the wrong directory and a client validating a required
+    // variable refuses to load at all.
+    expect(scripts['build:site']).toMatch(/--env-file=\.\.\/\.env/)
+    expect(scripts['dev:site']).toMatch(/--env-file=\.\.\/\.env/)
   })
 })
 

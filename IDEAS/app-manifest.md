@@ -8,7 +8,7 @@ dated: 2026-08-04
 
 **Status: IDEA. Nothing here is built.** Dated 2026-08-04. There is no
 `frontier.config.js`, no lock, and no filename-segment rule anywhere in the tree. Do
-not cite this file as describing behaviour — see `VERIFYING.md`.
+not cite this file as describing behavior — see `VERIFYING.md`.
 
 Three proposals that only pay off together:
 
@@ -274,7 +274,7 @@ has copied it. `--check` matches the precedent already set by
   or drop to `.json`/`.toml` and stop pretending. Unresolved, but the status quo of
   "arbitrary JS" should not win by default.
 - **Config sprawl is the default outcome.** webpack and Vite both got here. The
-  three-bucket test is the only defence proposed and it needs teeth.
+  three-bucket test is the only defense proposed and it needs teeth.
 - **Deploy config and shareability are enemies.** The moment `deploy: { host, domain,
   tenant }` lands inline, "pass this file around" becomes "leak your infrastructure."
   Reference it; do not inline it.

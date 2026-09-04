@@ -74,17 +74,16 @@ there is nothing for the build's publish check to fail closed on, and
 - **State maturity honestly.** The packages table names what is solid and what is
   not. A framework that overstates readiness burns the trust it most needs.
 - **No feature the repo does not have.** Aspirations belong under Vision, clearly
-  labelled as direction rather than fact.
+  labeled as direction rather than fact.
 - **The code samples are the product.** If a sample needs a paragraph of
   explanation, the API is wrong — fix the API, not the paragraph.
 
 ## Design system
 
 The site imports **`@frontierjs/css`**, the project's own design system. This is
-deliberate: as of 2026-08-02 that package had no consumer inside the framework, and
-a design system without a consumer drifts. Its own `demo/` app found 8 shipped bugs
-and 4 core gaps on first contact; this site is the second consumer and should be
-expected to find more.
+deliberate: a design system without a consumer drifts, and this site is the second
+one it has — the first, its own `demo/` app, found shipped bugs and core gaps on
+first contact, and this should be expected to find more.
 
 Uses only shipped classes: `.container` `.stack` `.cluster` `.split` `.card`
 `.btn` `.badge` `.pill` `.table` `.tiles`/`.tile` `.bar` `.navlink` `.h` `.code`

@@ -20,7 +20,7 @@
 // durable, retried unit; `dispatch({ id })` keyed on the cursor makes a replay
 // a no-op. **Idempotence is the predicate, not the cursor**: a chunk re-reads
 // `field IS NULL`, so a row an interrupted chunk already filled is skipped
-// whatever position the row records. The cursor is an optimisation.
+// whatever position the row records. The cursor is an optimization.
 //
 // Throttling is the one thing that is a build, and it is deliberately measured
 // on this side of the wire — see `nextDelayMs`.

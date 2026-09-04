@@ -487,14 +487,14 @@ export interface LitestoneConfig {
  * index signature — which makes it UNASSIGNABLE to this file's, so an app
  * holding generated types could not call `autoMigrate(db)` at all (FJS-018).
  *
- * The tools below take this instead. It names what every flavour of client
+ * The tools below take this instead. It names what every flavor of client
  * carries and no table, because a tool that reaches for a specific model would
  * be a tool that only works on one schema.
  */
 export interface AnyLitestoneClient {
   // `unknown`, and not `LitestoneSchema` as the hand-written client below
   // types it: a generated client declares a `$schema` of its own, and naming a
-  // shape here would make the generated flavour unassignable — which is the
+  // shape here would make the generated flavor unassignable — which is the
   // whole failure this interface was added to end (FJS-018).
   readonly $schema: unknown
   asSystem(): AnyLitestoneClient
@@ -510,7 +510,7 @@ export interface LitestoneClient {
    *
    * For a write whose meaning depends on rolling back with everything else —
    * an outbox row recording an effect to deliver. Same answer on every
-   * flavour: one write connection, one depth counter.
+   * flavor: one write connection, one depth counter.
    */
   $inTransaction: boolean
   $databases:  Record<string, { driver: string; access: string; path: string | null }>
@@ -545,7 +545,7 @@ export interface LitestoneClient {
    * The fifth sibling of `$checkWhere` / `$checkOrderBy` / `$protectedFields` /
    * `$capabilitiesFor`, and it takes its subject as an ARGUMENT for the same
    * reason `$capabilitiesFor` does: the asker holds one client and is answering
-   * about somebody else. Every flavour answers identically for one principal.
+   * about somebody else. Every flavor answers identically for one principal.
    *
    * It exists because **a broadcast is not a SELECT**: `@@allow` compiles into a
    * WHERE, so a row that reaches a caller through a query is filtered by
@@ -578,7 +578,7 @@ export interface LitestoneClient {
    *
    * The published list `$checkWhere` validates a `where: { $scope }` against, so
    * a UI offering scopes and the client refusing one cannot disagree. A schema
-   * fact, so every flavour of client answers it identically.
+   * fact, so every flavor of client answers it identically.
    */
   $scopes(accessor: string): Record<string, string>
   /**
@@ -624,7 +624,7 @@ export interface LitestoneClient {
    * ```
    *
    * **`asSystem()` only.** It is a DELETE against the base table and applies no
-   * gate, no row policy and no `@@softDelete`; every other flavour of client
+   * gate, no row policy and no `@@softDelete`; every other flavor of client
    * refuses it by name. The cutoff is a rolling instant — the duration back from
    * the moment it runs, `d` a flat 24 hours — with no calendar and no zone.
    */

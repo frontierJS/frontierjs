@@ -80,7 +80,7 @@ export async function run(t) {
 
   t.is(await t.evaluate(`
     return document.querySelector('#tile-loading [aria-busy=true]') !== null;
-  `), true, 'a loading StatCard announces itself busy rather than just drawing grey boxes')
+  `), true, 'a loading StatCard announces itself busy rather than just drawing gray boxes')
 
   /* ── Breadcrumbs ──────────────────────────────────────────────────────── */
 
@@ -213,7 +213,7 @@ export async function run(t) {
     const cs = getComputedStyle(document.querySelector('#sk-avatar'));
     return parseFloat(cs.borderRadius) > 0 && cs.inlineSize === cs.blockSize;
   `), 'an avatar skeleton is a circle of equal sides')
-  // A screenful of grey boxes announced as content is worse than nothing,
+  // A screenful of gray boxes announced as content is worse than nothing,
   // which is why the composite variants carry the busy state themselves.
   t.ok(await t.evaluate(`
     return document.querySelector('#skeletons article.card[aria-busy=true]') !== null;

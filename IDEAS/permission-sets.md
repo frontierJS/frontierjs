@@ -67,7 +67,7 @@ found and fixed while probing per-column capabilities (`FJS-510`, `FJS-511`).
 
 The `§ What already works`, `§ The whole shape, executed` and `§ Several roles`
 sections carry executed output; **everything else here is unbuilt and none of it is
-declared syntax today** — do not cite this file as describing behaviour, see
+declared syntax today** — do not cite this file as describing behavior, see
 `VERIFYING.md`.
 
 ---
@@ -228,7 +228,7 @@ questions, three answers, each in the place that already answers it.
 What falls out for free once the vocabulary is declared:
 
 - `db.$permissions(accessor)` — the sibling of `$protectedFields` and `$checkWhere`,
-  same contract, on every flavour of client.
+  same contract, on every flavor of client.
 - `x-permissions` on the client beside `x-gate`, so `resource.can()` and the agent
   surface's tool projection both keep working — affordance only, the Data boundary
   enforces regardless (Invariant 6).
@@ -731,7 +731,7 @@ Step 1 shipped 2026-08-26. The rest, in dependency order:
 | ~~2~~ | ~~the refusals~~ | half shipped with 1 (`@capability` without the model's switch); the half that needs a held name folded into 4 |
 | ~~3~~ | ~~enforcement~~ | **shipped 2026-08-26** — `CapabilityPlugin` auto-installed on the gate's seam (so every read path is free), a move graded where the transition's `@gate` is, a column graded beside `@system`, four contradictions refused at parse. 19 tests against a real client |
 | ~~4~~ | ~~the grant column~~ | **shipped 2026-08-26** — `Capability` synthesised as a real enum, so storage, the typo refusal and the picker come from tested machinery; the escalation guard as a property of the column (subset, never a rank); the hand-written literal inside a predicate resolved at parse. 14 tests |
-| ~~5~~ | ~~affordance and snapshot~~ | **shipped 2026-08-26** — `x-capabilities` (names, never a verdict), `$capabilitiesFor` on all four flavours with its `unknown` bucket, a derived section in `access.snapshot.md`, and a grid change graded on the access axis. 14 tests |
+| ~~5~~ | ~~affordance and snapshot~~ | **shipped 2026-08-26** — `x-capabilities` (names, never a verdict), `$capabilitiesFor` on all four flavors with its `unknown` bucket, a derived section in `access.snapshot.md`, and a grid change graded on the access axis. 14 tests |
 | ~~6~~ | ~~cli~~ | **shipped 2026-08-26** — `litestone access --for <who>`, `capabilityDrift` on the `--from` comparison (which is where a rename is computable — **`migrate create` cannot see one**, measured), and `fli check`'s `capability-ladder`. 11 tests |
 | ~~7~~ | ~~basecamp adopts it~~ | **shipped 2026-08-26** — `Server` and `Environment` opt in (10 capabilities, grouped by model, which is a picker), `WorkspaceMember.capabilities` is the grant column, and `membershipClaim({ capabilities })` reads it onto `auth().capabilities` off the row the standing already comes from — per request, per workspace, cached nowhere, which settles `FJS-D149`'s owed probe by executing it. **Adoption found three defects in the mechanism and one in the record.** The record said this deletes `refuseRoleAboveOwn`: it does not, because all three membership writers are `asSystem()`, which has no principal, so *what you hold* is undefined there rather than merely skipped — and the guard needed the ladder axis KEPT beside the new subset one, since `admin` and `owner` hold the same grid. In the mechanism: `@system` moves derived as capabilities (basecamp's `Server` offered eight where three are human); `access.js` re-derived the picker's list by hand instead of asking `deriveCapabilities`, and the two disagreed the moment the derivation learned something (Invariant 4); and **a finer grant ADDED to the coarse one instead of replacing it** — writing a `@capability` column also demanded `Model.update` and a move also demanded it, so `Server.reboot` alone could not reboot and `Environment.variables` could only be handed to somebody who already held every other edit. That last one is the complaint this whole record was written to answer, shipped inverted, and invisible to every unit test because no fixture had ever held one grant and not the other |
 
@@ -767,7 +767,7 @@ model Role {
 ```
 
 `Capability` is a type litestone synthesises from the schema's own surface, the way
-`File` is a built-in that carries behaviour — D139 already says the set is derived,
+`File` is a built-in that carries behavior — D139 already says the set is derived,
 so the type IS that set. The alternative spelling is `String[] @capability`, which
 works and is less good: validation becomes attribute-driven where the type already
 carries it.
@@ -938,7 +938,7 @@ below it a refusal would disclose the contents of the database.
 
 **A capability is never row-scoped** — model, column or move, and never *which rows*.
 So it sits above that line and rule one does not reach it: refusing leaks nothing the
-caller could not already read off the schema. That is the whole licence to throw, and it
+caller could not already read off the schema. That is the whole license to throw, and it
 is the argument that `@@require` cannot be sugar over `@@allow`: inherit the desugaring
 and it inherits the filter, which is the empty screen this record opens by complaining
 about.
@@ -1072,7 +1072,7 @@ language stops being reviewable.
   remembers to write it. What remains open is the spelling: `Capability[]` as a
   synthesised type, recommended, against `String[] @capability`.
 - ~~**What answers *what can this person do*, once roles union?**~~ Ruled by `FJS-D148`:
-  `db.$capabilitiesFor(principal)` on every flavour of client, the shape `$checkWhere` and
+  `db.$capabilitiesFor(principal)` on every flavor of client, the shape `$checkWhere` and
   `$protectedFields` already have, with a CLI as a caller rather than a second
   implementation. **It is two questions and only one is answerable that way** — *what can
   Ada do now* is a live query, *what could Ada do in March* cannot be recomputed because

@@ -9,7 +9,7 @@
  * That rewrite must not change a single resolution. These tests lock the
  * observable semantics — case-insensitivity of static segments, param decoding,
  * trailing-slash modes, priority ordering, prefix vs exact, catch-all — so a
- * future optimisation has something to fail against.
+ * future optimization has something to fail against.
  *
  * (The rewrite itself was additionally verified by differential-testing the old
  * and new implementations over 328 path × option combinations plus 270

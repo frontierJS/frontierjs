@@ -16,7 +16,7 @@
  *
  * How it works:
  * 1. Scans configured dirs RECURSIVELY for PascalCase .mesa/.md files at build
- *    start, keyed on the basename — a component's directory is an organising
+ *    start, keyed on the basename — a component's directory is an organizing
  *    device, its name is the whole identity.
  * 2. Builds a map: name → { kind, from, imported }
  * 3. Exposes virtual:sierra-autoimport — an object of { Name: factory }
@@ -39,7 +39,7 @@ const RESOLVED_ID = '\0virtual:sierra-autoimport'
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.git'])
 
 /**
- * Normalise `autoImport.modules` into entries.
+ * Normalize `autoImport.modules` into entries.
  *
  * Accepted per package:
  *   ['a', 'b']                  — named imports

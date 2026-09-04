@@ -425,7 +425,7 @@ Two smaller things fall out and are worth stating so they are not rediscovered:
 
 Sequenced by one rule, which is the reason the phases fall where they do:
 
-> **State shape early, behaviour late.** Anything that changes what gets *recorded* —
+> **State shape early, behavior late.** Anything that changes what gets *recorded* —
 > Release fields, journal rows, binding generations, audience keys — belongs in the
 > first phase even when unused, because a recorded-state migration is the expensive
 > kind of change. Anything that only *does* something can wait.
@@ -491,7 +491,7 @@ way.
 #### Phase 1, decomposed — six steps, in this order
 
 Added 2026-08-26. Sequenced by the same rule the phases are: **state shape early,
-behaviour late**, so the first two steps write nothing and deploy nothing, and the
+behavior late**, so the first two steps write nothing and deploy nothing, and the
 thing that is expensive to change is settled while it is free. Each step is
 independently shippable and each names what proves it.
 
@@ -524,7 +524,7 @@ rather than showing a tag. A command that computes the
 four terms and writes one row: the image digest, the `bindingsHash` over the resolved
 binding set, the schema-surface hash off the snapshot that already exists, and the
 pivot verdict from `classifyPivot` against the Release currently serving. **`2.3f` is
-a prerequisite rather than a neighbour** — a Release cannot be content-addressed while
+a prerequisite rather than a neighbor** — a Release cannot be content-addressed while
 its artefact is named by a tag that means different bytes on different hosts — so
 *digest, not tag* is either taken first or folded in here. Proved by reproducibility:
 two builds of an unchanged tree mint the same Release id, which is the assertion
@@ -1080,7 +1080,7 @@ atomicity genuinely stops at external effects, already-delivered clients, rows w
 under the new schema, in-flight requests, and caches below us — Cloud Run states four
 of the five in its own documentation. And a generic transition model is real but
 smaller than hoped: the four nouns recur across Cloud Run, Lambda, Nomad, ECS, Helm and
-Kamal by convergent evolution, while the *execution* does not generalise — plain
+Kamal by convergent evolution, while the *execution* does not generalize — plain
 Compose has no traffic layer at all and stops the old container before starting the new.
 
 ---
@@ -1117,7 +1117,7 @@ Compose has no traffic layer at all and stops the old container before starting 
   deploy, a build, a push. It cannot be read at the moment it is most needed, which is
   when the app is down and someone is reverting. And `$backup` covers **every declared
   SQLite database** unless a caller narrows it with `only`, while `05-backup` takes a
-  pre-deploy copy of exactly that set — so restoring the backup a deploy authorised
+  pre-deploy copy of exactly that set — so restoring the backup a deploy authorized
   would erase the journal recording the deploy that took it.
 
   *The recommendation is its own Litestone client whose `main` IS `deploy.db`*, a file

@@ -134,7 +134,7 @@ describe('the table', () => {
     expect(childOf('suite:x').exit.error).toBe('ENOENT')
   })
 
-  test('stopping one that already exited releases it without signalling', () => {
+  test('stopping one that already exited releases it without signaling', () => {
     const spawnFn = fakeSpawn()
     let made
     startRow(row(), { root: ROOT, fliRoot: FLI, spawnFn: (...a) => (made = spawnFn(...a)) })

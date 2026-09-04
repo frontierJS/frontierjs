@@ -64,7 +64,7 @@ export interface DatabaseOptions {
   // Useful for query logging
   log?:     boolean
 
-  // Skip applying production pragmas (useful for testing specific behaviours)
+  // Skip applying production pragmas (useful for testing specific behaviors)
   bare?:    boolean
 }
 
@@ -75,7 +75,7 @@ export function createDatabase(pathOrOpts?: string | DatabaseOptions): DatabaseC
     : (pathOrOpts ?? {})
 
   const rawPath = opts.path ?? './app.db'
-  // Normalise: bun:sqlite accepts both 'file:./app.db' and './app.db'
+  // Normalize: bun:sqlite accepts both 'file:./app.db' and './app.db'
   const dbPath  = rawPath.replace(/^file:/, '')
 
   const db = new Database(dbPath, { create: true })

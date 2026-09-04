@@ -64,7 +64,7 @@ passed to `killall`.
 const target = String(arg.target ?? '').trim()
 const signal = flag.force ? '-9' : '-15'
 
-// ── No arg: the original behaviour — every node and bun ──────────────────────
+// ── No arg: the original behavior — every node and bun ──────────────────────
 if (!target) {
   for (const name of ['node', 'bun']) {
     if (!sh(`killall ${signal} ${name}`, flag.dry, log)) log.info(`no ${name} processes running`)

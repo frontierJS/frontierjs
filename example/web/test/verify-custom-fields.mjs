@@ -39,7 +39,7 @@
  * so both are asked here about the same customer and must agree.
  *
  * `index.*` — the EXPLAIN. A promoted segment must reach the composite index,
- * and no behavioural assertion can see that it did not: every row comes back
+ * and no behavioral assertion can see that it did not: every row comes back
  * either way, just slower. Twelve single-column indexes measured 139 ms against
  * the composite's 2.7 ms, so this is the assertion that keeps the shape.
  *
@@ -240,7 +240,7 @@ try {
   t('audience.matchesAudienceSaysUndecidableRatherThanGuessing',
     matchesAudience(compileSegment(terms, declared).where, { /* slot dropped */ }) === null)
 
-  // ─── The index. Nothing behavioural can see this one ────────────────────
+  // ─── The index. Nothing behavioral can see this one ────────────────────
   //
   // Asked of a THROWAWAY database built from the same `db/schema.lite`, not of
   // the shop. The shop has four customers, and SQLite is right to scan four

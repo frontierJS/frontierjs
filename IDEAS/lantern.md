@@ -204,7 +204,7 @@ observed in production. Dev on by default, production off or sampled.
 ### Phase 4 — the viewer (M)
 
 Extend devtools on 8503 rather than opening a fifth surface; it already has the
-server, the auth refusal and the fail-closed behaviour under
+server, the auth refusal and the fail-closed behavior under
 `NODE_ENV=production`. Three panes: the span tree; the query with the
 policy-contributed part of its WHERE marked as such; and **the decision pane** —
 *this call was refused because …*, *this list came back empty because …* — with

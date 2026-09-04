@@ -1,7 +1,7 @@
 <script>
   // display.mesa — the long tail of display components, on one page.
   //
-  // These are not behavioural in the way an overlay is, but every one of them
+  // These are not behavioral in the way an overlay is, but every one of them
   // draws something: an SVG path, a fill width, an overlap offset, a status
   // dot's corner. A render test asserts the class; only a browser can say
   // whether the geometry the component computed is on screen.

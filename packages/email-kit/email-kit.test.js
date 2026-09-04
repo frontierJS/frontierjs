@@ -246,7 +246,7 @@ describe('Email components', () => {
 // come out the other side of a render intact, and until 2026-08-03 neither
 // did — happy-dom, which the static renderer runs in, ends a conditional
 // comment early for several shapes of tag inside it, so `<!--[if mso]>`
-// serialised as `<!--[if mso]-->`. The comment closed, and the VML after it
+// serialized as `<!--[if mso]-->`. The comment closed, and the VML after it
 // became live markup on every client.
 //
 // The failure is silent: the HTML stays well-formed, so nothing complains —

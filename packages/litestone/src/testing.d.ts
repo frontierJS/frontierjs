@@ -325,7 +325,7 @@ export interface TestEnv {
 
   /**
    * A client graded at `n` by a synthetic resolver, for walking the gate grid.
-   * Never use it to test behaviour — it does not call the app's `getLevel`, so
+   * Never use it to test behavior — it does not call the app's `getLevel`, so
    * a grid driven through it says nothing about the app's own derivation.
    * `atLevel(8)` is `asSystem()`, since `getLevel` is clamped to 0–7.
    */

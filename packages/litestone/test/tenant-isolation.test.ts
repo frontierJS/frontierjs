@@ -146,7 +146,7 @@ describe('verifyTenantIsolation', () => {
     // `check(rel)` answers true for a null foreign key — a row naming no parent
     // is not a row naming somebody else's (`FJS-382`). So an optional scoping
     // relation means a row can exist in no tenant, and every tenant reads it.
-    // Ruled behaviour, so it is named rather than called a leak — and it is not
+    // Ruled behavior, so it is named rather than called a leak — and it is not
     // silent, which is the whole point.
     const env = await createTestEnv({ schema: `
       ${CLEAN}

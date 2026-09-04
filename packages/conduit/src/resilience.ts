@@ -27,7 +27,7 @@ const DEFAULT_RESET_MS          = 30_000
 const DEFAULT_MAX_CONCURRENT = 64
 
 // Failures that implicate the *target*. A credential that will not resolve,
-// a body that will not serialise, a typo'd method or an unknown target are
+// a body that will not serialize, a typo'd method or an unknown target are
 // all local bugs — counting them would open a breaker that no amount of
 // waiting can heal, and hide the actual error behind circuit_open.
 //

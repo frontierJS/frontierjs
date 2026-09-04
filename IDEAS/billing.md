@@ -564,7 +564,7 @@ the call that caused it, so the webhook saying *paid* can reach
 a 200, and money taken against nothing. So the shop mints the intent, writes its
 row, and only then presents the card. The two calls also fall out symmetrically:
 the shopper's confirm is UNSIGNED because a person at a browser is the
-authorisation, and the shop's is SIGNED because there is nobody there and a
+authorization, and the shop's is SIGNED because there is nobody there and a
 signature is the only caller that can stand in for one.
 
 **No instrument is its own answer, and it pays for itself immediately.** Before

@@ -566,15 +566,15 @@ export async function run(t) {
   // and not identical. Compared by identity that reads as a second, foreign
   // change, the write goes on the stack twice, and every edit costs two presses
   // to undo — which looks like undo being broken rather than like a rule.
-  await t.clickAt(`#normalising [data-path='["a"]'] .fjs-json-edit`)
+  await t.clickAt(`#normalizing [data-path='["a"]'] .fjs-json-edit`)
   await t.type('5')
   await t.press('Enter')
   await t.eventually(`document.querySelector('#n-doc').textContent`, '{"a":5}',
     'a controlled, rebuilding caller still edits')
 
-  await t.clickAt('#normalising .fjs-json-history')
+  await t.clickAt('#normalizing .fjs-json-history')
   await t.eventually(`document.querySelector('#n-doc').textContent`, '{"a":1}',
-    'and ONE undo is enough — the echo is recognised by value, not by identity')
+    'and ONE undo is enough — the echo is recognized by value, not by identity')
 
   t.is(await t.evaluate(`
     return document.querySelectorAll('#viewer .fjs-json-history').length;

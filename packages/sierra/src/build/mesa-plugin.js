@@ -445,7 +445,7 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
         // edit to a full page reload. Skipped for Sierra's own components
         // (RouterView/ChainRenderer are framework internals, not user routes)
         // and whenever the compiled shape doesn't match — better to keep the
-        // old reload behaviour than emit broken code.
+        // old reload behavior than emit broken code.
         const wantsHMR = isDev
           && !id.includes('/node_modules/')
           && !!hmr

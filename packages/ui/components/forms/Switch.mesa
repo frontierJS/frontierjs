@@ -19,7 +19,7 @@
   //   <Switch bind:checked={darkMode} label="Dark mode" />
   //   <Switch bind:checked={enabled} tone="success" />
 
-  import { tone as toTone, cx, uid, nameToLabel, resolveError, resolveRule, stated, nativeValidationGuard } from '../../utils.js'
+  import { tone as toTone, cx, uid, nameToLabel, resolveError, resolveRule, stated, nativeValidationGuard, lockedBy } from '../../utils.js'
 
   export let checked     = false
   // `undefined` is "not stated" and `''` is "no label, deliberately". They have
@@ -51,7 +51,7 @@
   // A <Form> above this control locks it two ways — the caller disabled the
   // form, or a save is in flight — and both mean the same thing to a field.
   // A stated prop still wins, including `disabled={false}` on a saving form.
-  const resolvedDisabled = stated(disabled, form?.disabled || form?.submitting) ?? false
+  const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
   const rule = resolveRule(form, name)
 
   const resolvedLabel    = stated(label, rule?.title, name ? nameToLabel(name) : '') ?? ''

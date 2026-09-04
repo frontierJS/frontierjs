@@ -16,7 +16,7 @@ const SCHEMA = join(import.meta.dir, 'fixtures', 'schema.lite')
 
 // The app's own grading. Deliberately reads fields off the SessionContext rather
 // than being a constant: `atLevel` is the synthetic door, and a test about
-// behaviour has to go through this one.
+// behavior has to go through this one.
 const gate = new GatePlugin({
   getLevel: (user: any) => {
     if (!user)             return 0

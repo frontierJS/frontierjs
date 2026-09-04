@@ -302,7 +302,7 @@ function resolveMesaImport(spec, importer) {
   try {
     return fileURLToPath(import.meta.resolve(spec, pathToFileURL(importer).href))
   } catch {
-    // Fall through to the old behaviour so the error names the file the author
+    // Fall through to the old behavior so the error names the file the author
     // wrote, not a resolution API they have never heard of.
     return path.resolve(path.dirname(importer), spec)
   }
@@ -408,7 +408,7 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
     // resolves against `node_modules/.sierra/render/` and is not there. A bare
     // specifier survives (Node walks up to a node_modules) and so does an
     // absolute one, which is why this only ever bit a component importing its
-    // own neighbour — an ordinary thing for an island to do, and it failed the
+    // own neighbor — an ordinary thing for an island to do, and it failed the
     // render rather than the build.
     if (!isMesaSpecifier(spec)) {
       // `path.isAbsolute` also catches an aliased specifier, which is already a
@@ -596,7 +596,7 @@ function htmlToText(html) {
     .replace(/&#39;/g,  "'")
     // &amp; last, so "&amp;lt;" decodes to "&lt;" and not to "<".
     .replace(/&amp;/g,  '&')
-    // Normalise whitespace
+    // Normalize whitespace
     .replace(/\t/g,      ' ')
     .replace(/ {2,}/g,   ' ')
     .replace(/\n[ \t]+/g, '\n')

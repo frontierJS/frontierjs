@@ -1,8 +1,8 @@
 # Oracle
 
-**A domain-modelling recogniser: describe a thing in prose, get back the canonical entity it already is.** You type "customers book a recurring cleaning slot and get invoiced after"; Oracle answers `Contact:customer`, `Visit`, `Document:invoice`, names the actors, and writes the sentence that connects them. It is the step before `db/schema.lite` — the argument about *what nouns exist* that every app has and almost no app writes down.
+**A domain-modeling recogniser: describe a thing in prose, get back the canonical entity it already is.** You type "customers book a recurring cleaning slot and get invoiced after"; Oracle answers `Contact:customer`, `Visit`, `Document:invoice`, names the actors, and writes the sentence that connects them. It is the step before `db/schema.lite` — the argument about *what nouns exist* that every app has and almost no app writes down.
 
-> **Status: V2, deferred.** Nothing is owed here until FrontierJS core leaves alpha — `FJS-D14`, ruled 2026-08-15.
+> **Status: V2, deferred.** Nothing is owed here until FrontierJS core leaves alpha — `FJS-D14`.
 > See § Status below for what reopening it would cost.
 
 Claimed, not built. What is here is a mockup — `mockup/oracle.jsx`, one file, exported from a Claude artifact and now runnable locally. It is **not a workspace member**: `mockup/` holds its own `package.json` and its own React toolchain, the same convention `packages/mesa/mesa-bench` and `packages/orion/mockup/api-engine` use, so nothing it depends on reaches the rest of the repo. Run it from its own directory.
@@ -31,7 +31,7 @@ The catalogue is hand-written and is the durable part of this package:
 | Actor archetypes | 7 | `ACTOR_ARCHETYPES` |
 | Modifiers | 5 | `MODIFIERS` |
 
-Recognition runs three questions in order — *is this a property of something more fundamental? a variant of a catalogue entry? genuinely novel?* — and most candidates fail at the first two, which is the whole point. The collapses are opinionated and stated: an order is `Document:order`, an audit log is `Event:audit`, a fee is a line item, a thread is a chain of `Message`. Colon notation is reserved for kinds that change an entity's lifecycle; domain flavour goes in prose beside the bracket, never inside it.
+Recognition runs three questions in order — *is this a property of something more fundamental? a variant of a catalogue entry? genuinely novel?* — and most candidates fail at the first two, which is the whole point. The collapses are opinionated and stated: an order is `Document:order`, an audit log is `Event:audit`, a fee is a line item, a thread is a chain of `Message`. Colon notation is reserved for kinds that change an entity's lifecycle; domain flavor goes in prose beside the bracket, never inside it.
 
 ## What it does not do
 
@@ -41,7 +41,7 @@ Two more things a real version would have to fix. The catalogue's collapse rules
 
 ## Status: V2, deferred
 
-**Nothing is owed here until FrontierJS core leaves alpha** — `FJS-D14`, ruled 2026-08-15, `DECISIONS.md` § Repo conventions. Oracle is a tool built on the framework rather than a gap in it, and the version worth having asks a question the CLI has not answered: it would be **the first `fli` command to call an LLM**, which is a posture decision about offline behaviour, key handling and CI, not about Oracle.
+**Nothing is owed here until FrontierJS core leaves alpha** — `FJS-D14`, `DECISIONS.md` § Repo conventions. Oracle is a tool built on the framework rather than a gap in it, and the version worth having asks a question the CLI has not answered: it would be **the first `fli` command to call an LLM**, which is a posture decision about offline behavior, key handling and CI, not about Oracle.
 
 When it is reopened, the choice is narrower than for the other claimed folders, because the thinking here is worth keeping even if the code is not:
 

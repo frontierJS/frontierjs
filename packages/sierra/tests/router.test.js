@@ -289,7 +289,7 @@ describe('signal', () => {
     s.set(1)
     s.set(2)
     flushSync()
-    // BEHAVIOUR CHANGE: signals are Mesa signals now, and Mesa coalesces writes
+    // BEHAVIOR CHANGE: signals are Mesa signals now, and Mesa coalesces writes
     // through queueMicrotask. A subscriber sees the latest value once per flush
     // rather than every intermediate value — previously this was [0, 1, 2].
     // This is the same mechanism that makes a navigation's eight signal commits

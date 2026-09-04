@@ -48,8 +48,8 @@ async function getMesaRender() {
   const candidates = [
     // Sibling in the monorepo layout (dev) — try first, so an edit to
     // packages/mesa is picked up rather than a stale install. `bun install`
-    // resolves workspace:* to a COPY, so this is a real defence and not a
-    // micro-optimisation.
+    // resolves workspace:* to a COPY, so this is a real defense and not a
+    // micro-optimization.
     //
     // The path is `mesa/src/…`: mesa keeps its sources under src/ and maps them
     // through `exports`. These candidates used to name `mesa/render-component.js`
@@ -140,7 +140,7 @@ const MSO_PLACEHOLDER = /<span\s+data-mso(?:-close)?="([^"]*)"\s*><\/span>/gi
 
 /**
  * Decode the payload. It is percent-encoded rather than HTML-escaped because
- * happy-dom does not escape `"` when serialising an attribute value, so raw
+ * happy-dom does not escape `"` when serializing an attribute value, so raw
  * markup in there would close the attribute and spill across the tag.
  */
 function decodePayload(value) {

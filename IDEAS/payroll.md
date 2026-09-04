@@ -75,7 +75,7 @@ omission.
 
 **Two deliberate flattenings, each a fixed set expressed as an enum rather than a
 table**, and both are stated here so nobody reads them as a claim about how payroll
-should be modelled:
+should be modeled:
 
 - **The chart of accounts** is `LedgerAccount` — sales, cash, receivables, tax
   control, wages expense, PAYE control, pension control, net pay control. A real
@@ -121,7 +121,7 @@ silently mis-stated, the whole list is `lost` (335) or `noted` (191). The corpus
 is now 1,537 models across eight applications.
 
 **The headline is not in the refusal list, and that is the point.** Four of the
-five walls this file is organised around are absent from a mature payroll
+five walls this file is organized around are absent from a mature payroll
 application's schema *as well*, because Frappe declares them in Python. A port
 cannot report a gap the source does not attempt. What it can do — and did — is
 show what each wall looks like when nobody declares it:
@@ -465,7 +465,7 @@ the ruling is overdue.
 
 **`allocate` gets its second caller.** `FJS-D154` shipped
 `allocate(amount, ratios)` for proration; splitting employer cost across cost
-centres is the same function with a different reason, and the parts must sum to
+centers is the same function with a different reason, and the parts must sum to
 what was actually paid.
 
 **Ends with:** one run over three employees producing three payslips and one
@@ -702,7 +702,7 @@ dimension** — no read of `PayWindow` can be asked to stand at a past moment of
 KNOWLEDGE the way `coveringAt` stands at a past moment of validity.
 
 That also answers the open question phase 2 raised. **An `asAt(date)` client
-flavour would be a real convenience and would not have helped here**: it moves
+flavor would be a real convenience and would not have helped here**: it moves
 the valid-time instant, which `coveringAt` already does, and the correction case
 needs the OTHER axis — which is not in the table for any read to stand at.
 
@@ -905,7 +905,7 @@ suspected, worth executing.
   `asSystem()` is refused and so is a raw INSERT. The pinned assertion did its
   job — `gap.twoOpenWindowsAreAcceptedByTheSchema` went red on the first run and
   is now eight `constraint.*` assertions of the opposite. `payAsAtMany`'s own
-  overlap defence is unreachable through any client now, which is the correct
+  overlap defense is unreachable through any client now, which is the correct
   outcome and is why it is no longer asserted.
 - **`FJS-610`** — a soft-declined invoice is never re-presented, so the
   distinction `declineKind` draws buys nothing. Billing's one substantive
@@ -914,7 +914,7 @@ suspected, worth executing.
   off. Phase 7 wrote six resource files and avoided it by writing both buttons
   unconditionally, with the reason in each file. **No longer silent as of
   2026-08-30**: the form warns when it generated nothing and holds no control
-  over a resource that had fields to offer. The behaviour is open — whether a
+  over a resource that had fields to offer. The behavior is open — whether a
   block whose every branch is slotted counts as default content is a Mesa
   question about `$slots` — and the workaround is unchanged.
 - ~~**`FJS-612`**~~ — **closed 2026-08-30.** `$attributes` was a copy taken
@@ -1049,13 +1049,13 @@ each ruling was stronger for naming the alternative the code had already rejecte
    a hand-written query whose absence pays somebody twice. A stale payslip is
    byte-identical to a current one, so the only sound cascade is to recompute
    everything and compare — which is what the correction does.
-5. **Whether an as-at read is a client flavour or a directive** — `asAt(date)`
+5. **Whether an as-at read is a client flavor or a directive** — `asAt(date)`
    beside `asSystem()`, or `$asAt` on the call. Phase 2 raised it and **phase 6
    answered it: still worth having, and it would not have helped here.** Both
    halves of a correction are ordinary reads at different VALID instants against
    one belief, which `coveringAt` already expresses; what the correction needs
    is the other axis — when we learnt something — and that is in no table for a
-   flavour or a directive to stand at. It survives in this application only as
+   flavor or a directive to stand at. It survives in this application only as
    `@@log(audit)`, a record rather than a dimension.
 
 **Also owed at the first model:** `proving-grounds.md` § *Where A lives* took the

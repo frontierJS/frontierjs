@@ -338,7 +338,7 @@ export async function run(process) {
     const yellow = (s) => chalk.yellow(s)
     const cyan = (s) => chalk.cyan(s)
     const bold = (s) => chalk.bold(s)
-    const grey = (s) => chalk.dim(s)
+    const gray = (s) => chalk.dim(s)
     const line = () => process.stdout.write('\n')
 
     const printRow = (title, alias, desc) => {
@@ -396,7 +396,7 @@ export async function run(process) {
     if (project.length) {
       line()
       process.stdout.write(`  ${dim('─'.repeat(58))}\n`)
-      process.stdout.write(`  ${dim('project')}  ${grey(global.projectRoot)}\n`)
+      process.stdout.write(`  ${dim('project')}  ${gray(global.projectRoot)}\n`)
       line()
       const groups = groupByNs(project)
       Object.entries(groups).forEach(([ns, cmds], i) => {

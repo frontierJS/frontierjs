@@ -1,6 +1,6 @@
 /**
  * web/test/verify-ui.mjs — drive the screens built from @frontierjs/ui's
- * BEHAVIOURAL components and assert what a user would see.
+ * BEHAVIORAL components and assert what a user would see.
  *
  * `verify.mjs` is the framework drive: schema → API → UI, one claim per
  * assertion. This one is the kit drive. It exists because the things these

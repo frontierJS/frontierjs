@@ -358,7 +358,7 @@ claim instead of an empty list with a 200. Anonymous is left to the gate.
 ## Reading the declaration yourself
 
 ```js
-db.$tenancy          // on every flavour of client — root, $setAuth, asSystem, $scopedBy
+db.$tenancy          // on every flavor of client — root, $setAuth, asSystem, $scopedBy
 tenants.tenancy      // the same, off a registry
 tenants.tenantFor({ host, headers, principal })
 

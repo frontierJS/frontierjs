@@ -1,5 +1,35 @@
 # Changes
 
+## 2026-09-03 — a frozen column on a document that has been issued
+
+`FJS-628`. 889 passing in the browser drive. `example`: `verify` 58/58.
+
+`@immutable` on a model that declares a `@seals` move means *frozen at the
+seal*, so the field arrives carrying `x-litestone-seal` INSTEAD of `readOnly` —
+the answer is in the ROW and no schema keyword can state it. `sealedFor`
+resolved it and nothing called it: `<Form>` and `FormField` read `readOnly` and
+stopped.
+
+**Reproducing it found the other half.** `@immutable` refuses the KEY and not
+the value — resending the number a sealed row already holds is refused exactly
+as changing it is — and an edit form round-trips the whole record. Graying the
+box alone is the same 409 with a nicer screen.
+
+`lockedBy(form, name)` is the affordance, one owner in `utils.js` folding the
+seal in beside *the caller disabled the form* and *a save is in flight*, so
+thirteen controls gained a term rather than a branch each and a hand-written
+control gets it from `$context.form` like every other resolution. A stated
+`disabled` still wins: the seal is an affordance and the boundary refuses
+regardless (Invariant 6).
+
+The payload is `<Form>`'s own, and the row it asks about is the one the form was
+OPENED on rather than the draft being assembled — a save that issues the
+document and edits it in the same submit is legitimate, since the boundary
+grades the stored state.
+
+11 assertions, every one paired with the same field on a DRAFT record. Stubbed
+one at a time they fail 1 / 1 / 2.
+
 ## 2026-08-30 — a form with nothing to fill in says so
 
 878 assertions, 0 fail. The cheap half of
@@ -23,11 +53,11 @@ entirely by hand and a form over a resource with nothing writable both stay
 silent — and `$.onMount` is a no-op server-side, so a prerendered form says
 nothing about a page nobody is developing.
 
-**What did NOT change is the behaviour.** Whether a block whose every branch is
+**What did NOT change is the behavior.** Whether a block whose every branch is
 slotted should count as default content is a Mesa question about `$slots`, and
 the workaround is unchanged: render the slotted children unconditionally, which
 is what every resource file in `example/` already does. `form-generate`'s two
-new rows PIN the behaviour rather than assert it is right, so settling the Mesa
+new rows PIN the behavior rather than assert it is right, so settling the Mesa
 half turns them red on purpose, with the warning asserted beside them.
 
 ## 2026-08-29 — a picker that could not ask says so
@@ -102,7 +132,7 @@ size. The cost is a native select's two advantages: the OS picker on a phone,
 and a value that submits with the form on its own. The second does not apply
 under `<Form>`, which writes through the resource.
 
-It is a behaviour change for every generated foreign-key form in every app, and
+It is a behavior change for every generated foreign-key form in every app, and
 the drives are what said so: `example`'s `verify` reported `Customer:select`
 where it now reports `Customer:combobox`, and its create step had been choosing
 a customer by writing an `<option>` value — which types into the search box and
@@ -268,7 +298,7 @@ not touch, so an entry is the path that changed and nothing else. A component
 that edited its document in place could not offer this at any price — there
 would be nothing left to go back to. Capped at 50 documents.
 
-**The echo is recognised by VALUE, not by identity, and that is the whole of
+**The echo is recognized by VALUE, not by identity, and that is the whole of
 what makes it work in a controlled tree.** A caller that adopts a write and
 rebuilds its own object — which is exactly what `example`'s /settings/ does,
 key by key — hands back a document that is equal and not identical. Compared by
@@ -584,7 +614,7 @@ The consequence: **a control given a `name` always had a visible label.** That
 is what the `<Form>` shorthand wants and it is wrong everywhere else — a filter
 bar, a search box, a toolbar, anywhere the name is there because a submit
 handler reads it. Found in basecamp, where a three-control filter bar rendered
-one labelled control 38px tall beside two unlabelled ones, and the labelled one
+one labeled control 38px tall beside two unlabelled ones, and the labeled one
 had *two* labels: the invented one and the `visually-hidden` one its caller had
 already supplied.
 
@@ -709,7 +739,7 @@ built on the native `<dialog>` — `max-width: 480px`, and a `::backdrop` that
 paints only for a real dialog element — while this panel is a div with a
 hand-written backdrop, deliberately (`FJS-322`); adopting it would swap the
 platform focus trap and Escape in for the keyboard model that row hardened,
-which is a behaviour change rather than a restyle. `.field` is a BOX, and this
+which is a behavior change rather than a restyle. `.field` is a BOX, and this
 input is deliberately transparent inside a row that owns the bottom rule, so
 applying it means overriding all four of background, border, radius and padding
 back off. `.items`/`.item` do not fit the structure: the scroller holds group
@@ -754,7 +784,7 @@ learned about headless Chrome.
 
 What stays here is what makes it the KIT's drive — the server that compiles a
 `.mesa` on request, the fixture path, the mount, and coverage over the
-component tree. Behaviour is identical: 631 assertions, 65/65 components.
+component tree. Behavior is identical: 631 assertions, 65/65 components.
 
 Two things the harness gained, both from mesa's drives:
 `t.eventually(expr, expected, label, ms?)` takes a timeout, for a round trip
@@ -789,7 +819,7 @@ empty.
 
 **The drive could not click the control at all**, which is what surfaced it.
 `clickAt` scrolled only when an element's TOP was past the fold, so a
-full-width field at the end of a long form — top in view, centre past the
+full-width field at the end of a long form — top in view, center past the
 bottom edge — was pressed at a point outside the viewport and the event landed
 nowhere. It tests the point it is about to press.
 
@@ -1119,7 +1149,7 @@ The drive gained two things to make that possible: `/@sierra/` and
 `/@toolbelt/` mounts, so a fixture reads the REAL control table rather than its
 own idea of what a `Float` is, and `waitSettled(sel)` — `waitVisible` answers
 *can this be seen*, which is not *has it stopped moving*, and a coordinate
-click on a neighbour that is still animating lands wherever the layout has
+click on a neighbor that is still animating lands wherever the layout has
 since put it. That one was green alone and red under load.
 
 Coverage: **42 of 66**, from 28.
@@ -1264,8 +1294,8 @@ The screenshot caught it; the class assertions could not.
 
 ## 2026-08-16 — the kit has a browser drive of its own, and it found six defects on day one
 
-Everything this package adds over `@frontierjs/css` is behaviour, and until
-today the only thing that could see behaviour was `example`'s `verify:ui` —
+Everything this package adds over `@frontierjs/css` is behavior, and until
+today the only thing that could see behavior was `example`'s `verify:ui` —
 which covers a component by first putting it on a real application screen. That
 friction is why 35 of 64 components had never been opened in a browser at all
 (`FJS-028`), including the 1200-line `DatePicker`.
@@ -1527,7 +1557,7 @@ pair keeps the `.items` scoping that lets it outrank the `(0,3,0)` hover.
 **`Drawer` (`FJS-127`).** Four lines making the drawer a flex column so a
 `.surface-body` between a header and a footer takes the remaining height.
 Moved into `drawers.css`, which owns `.drawer`. The `[open]` scoping is the
-whole subtlety and travelled with a comment: an author `display: flex` beats
+whole subtlety and traveled with a comment: an author `display: flex` beats
 the UA's `display: none`, so declared on `.drawer` the drawer would render on
 screen while shut — the trap `overlay: a closed <dialog> stays closed` already
 records. A new css test asserts both halves and was proven to fail; dropping
@@ -1708,14 +1738,14 @@ Five defects, all invisible to the compile and render suites:
   `<p class="field-hint">` inside `<div class="field-group danger">`, but
   `tones.css` registers `--bg-mix` with `inherits: false`, so a tone on an
   ancestor reaches nothing below it: every validation error rendered in the
-  ordinary muted hint grey. The tone now sits on the hint itself.
+  ordinary muted hint gray. The tone now sits on the hint itself.
 - **`Input` swallowed the input event.** No `oninput` prop, so a caller could
   only see typing through `bind:value` — live validation, a character counter
   or search-as-you-type could not be written against the component at all. It
   now fires `oninput` after writing the value back.
 - **`Input` had no `maxlength`/`minlength`.** A length limit is as much a
   schema fact as `min`; `@length(3, 20)` reaches the browser and the only way
-  to honour it was to stop using the component.
+  to honor it was to stop using the component.
 - **`Input` turned a cleared number field into 0.** `Number('')` is `0`, so
   emptying the box wrote a real value the schema accepts. Empty stays empty.
 - **`Select`'s placeholder submitted its own label.** The option was

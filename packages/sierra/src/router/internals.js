@@ -255,7 +255,7 @@ export async function loadLayoutChain(node, layouts, onError) {
 /**
  * Drop all module-level registries.
  *
- * Test seam, and a note on production behaviour: _fileToComponent,
+ * Test seam, and a note on production behavior: _fileToComponent,
  * _layoutParents, _chainCache and _entryCache all live at module scope for the
  * lifetime of the module. That is fine for a single app instance — which is the
  * only case in a browser — but it means calling initRouter() twice in one

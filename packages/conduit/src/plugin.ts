@@ -51,7 +51,7 @@ declare module '@frontierjs/junction' {
  * correlation id on `requestMeta()` and conduit's default correlation header is
  * already `X-Request-Id`. What was missing is that they were never introduced.
  *
- * It is a DEFAULT and not a behaviour: `createConduit({ trace, ...opts })`
+ * It is a DEFAULT and not a behavior: `createConduit({ trace, ...opts })`
  * puts it under the caller's, so an app wiring its own tracer replaces this
  * whole thing rather than fighting it, and `trace: () => null` turns it off.
  *

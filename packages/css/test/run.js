@@ -313,7 +313,7 @@ const page = `<!doctype html>
  * so a property that is mid-flight reads as its old value — and Chrome
  * serialises an interpolating color in oklab(), which makes it look like a
  * different value again. Both bit this suite: .btn transitions box-shadow,
- * so a just-focused button reported its resting shadow re-serialised, and
+ * so a just-focused button reported its resting shadow re-serialized, and
  * the assertion blamed the CSS.
  *
  * Unlayered + !important so it beats every layer in the package.

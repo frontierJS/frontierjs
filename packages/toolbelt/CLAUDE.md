@@ -4,11 +4,12 @@
 anywhere in the tree including litestone and mesa. One rule: **every export is a
 pure function** — same input, same output, no I/O, no clock, no globals, no
 framework import, no mutation of its arguments. The rule is the package's
-licence, not its style: `FJS-D26` admits toolbelt as substrate *below* the
+license, not its style: `FJS-D26` admits toolbelt as substrate *below* the
 dependency graph on the strength of it, so breaking purity costs the standing.
 
 **One kit per subpath.** `/glow`, `/inflect`, `/directives`, `/history`,
-`/hooks`, `/json`, `/jsonschema`, `/search`, `/signature` and `/units` today; a caller
+`/hooks`, `/json`, `/jsonschema`, `/match`, `/query`, `/search`, `/signature` and
+`/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
 `bun run test` — `test/run.js` is the whole harness, no dependencies, runs
@@ -127,7 +128,7 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
 
 - **`mergeHooks` answers a NEW map.** It merged in place in both copies it came
   from; a pure function may not mutate its arguments, and that rule is this
-  package's licence rather than its style (`FJS-D26`). A caller upgrading has to
+  package's license rather than its style (`FJS-D26`). A caller upgrading has to
   assign the result. The failure mode after the change is a map that never grew,
   which is louder than one silently rewritten.
 - **`formatMoney` is `Intl` and not a symbol table, and the reason is JPY.**
@@ -261,7 +262,7 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
 
 | Changed | Run |
 | --- | --- |
-| `glow` | `packages/css`: `bun run test code` — 26 assertions that style *real glow output*, injected by the css harness. A change to the element glow picks for a token breaks there, not here. Then `packages/mesa`: `bun run test`, whose markdown fences run it |
+| `glow` | `packages/css`: `bun run test code` — it styles *real glow output*, injected by the css harness. A change to the element glow picks for a token breaks there, not here. Then `packages/mesa`: `bun run test`, whose markdown fences run it |
 | `inflect` | `packages/litestone`: `bun run test` (table names), `packages/junction` and `packages/sierra`: `bun run test` (model resolution). A rule changed here renames tables — read the DDL snapshot diff before believing a green run |
 | `units` | `packages/toolbelt`: `bun run test`, then `example`: `verify` and `verify:public` — the prices on a live screen and in a PRERENDERED file, which is the one place the formatter runs in node with no browser under it |
 | `directives` | `packages/junction`: `bun run test` — the bridge strips by this table, and `live-order.test.ts` asserts both transports only emit names it holds. Then `packages/sierra`: `bun run test` (`page-query.test.js`), and `example`: `verify` for a real navigation |

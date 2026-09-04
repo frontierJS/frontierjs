@@ -171,7 +171,7 @@ export function compileSegment(terms: SegmentTerm[], declared: CustomField[]): C
  * Three-valued like `matchesQuery` itself. `null` means undecidable from this
  * record — the row arrived through a `select` that dropped a slot column, which
  * is the case a boolean would have to guess at, and guessing wrong here either
- * refuses a valid code or honours an invalid one.
+ * refuses a valid code or honors an invalid one.
  */
 export function matchesAudience(
   where:    Record<string, unknown>,

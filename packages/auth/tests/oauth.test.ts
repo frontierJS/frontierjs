@@ -275,7 +275,7 @@ describe('fetchIdentity', () => {
     expect((await fetchIdentity(google(), TOKENS)).emailVerified).toBe(false)
   })
 
-  test("email_verified as the string 'true' is honoured", async () => {
+  test("email_verified as the string 'true' is honored", async () => {
     stubFetch([['openidconnect.googleapis.com', { body: { sub: '1', email: 'x@y.z', email_verified: 'true' } }]])
     expect((await fetchIdentity(google(), TOKENS)).emailVerified).toBe(true)
   })

@@ -653,7 +653,7 @@ const _request       = (a: Parameters<typeof req2>[0])     => req2(a)
 
 describe('protect() dot-path support', () => {
 
-  it('strips a top-level field (existing behaviour)', async () => {
+  it('strips a top-level field (existing behavior)', async () => {
     const app = await _createTestApp({
       services: [() => createService({
         name: 'users',
@@ -2535,7 +2535,7 @@ describe('Bidirectional WS service calls', () => {
 
   it('ctx.transport is websocket for WS calls', async () => {
     // Collected, not assigned to a `let`: TypeScript cannot see an assignment
-    // made inside a service method, so a `let` initialised to null stays
+    // made inside a service method, so a `let` initialized to null stays
     // narrowed to `null` at the assertion.
     const transports: string[] = []
 
@@ -3482,7 +3482,7 @@ describe('cors() + csrf() ordering', () => {
       .set('origin',                        'https://evil.com')
       .set('access-control-request-method', 'POST')
     // cors() responds 204 — CORS headers will reflect the unlisted origin
-    // by omitting Access-Control-Allow-Origin, which is correct CORS behaviour.
+    // by omitting Access-Control-Allow-Origin, which is correct CORS behavior.
     // What matters here is that csrf() did NOT throw a 403.
     expect(res.status).toBe(204)
   })
@@ -3585,7 +3585,7 @@ describe('paginate() hook', () => {
     expect((await pageFor('/things?$limit=0')).locals).toEqual({ limit: 0, offset: 0 })
   })
 
-  it('honours a plainly-spelled limit from an internal caller', async () => {
+  it('honors a plainly-spelled limit from an internal caller', async () => {
     // No bridge involved, so no directives — `{ limit: 5 }` is on ctx.query.
     let locals: unknown
     const app = await createTestApp({
@@ -4548,7 +4548,7 @@ describe('Plugin lifecycle', () => {
     // configure after createTestApp to test late boot
     // boot already ran in createTestApp — test that boot fires via direct configure
     app.configure({ name: 'test', register() {}, boot() { booted = true } })
-    // boot() on post-start plugins does not run (documented behaviour) —
+    // boot() on post-start plugins does not run (documented behavior) —
     // but register() does. Verify register ran.
     expect(booted).toBe(false) // boot skipped after start
   })

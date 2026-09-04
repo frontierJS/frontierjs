@@ -207,7 +207,7 @@ describe('@@index(where:) — what it accepts', () => {
   it('ANDs with the soft-delete clause rather than replacing it', () => {
     // The soft-delete clause is what makes the index reachable on such a model —
     // every read carries it — so honouring the declaration by dropping it would
-    // silently un-optimise every query.
+    // silently un-optimize every query.
     expect(indexLine(M('  @@index([kind], where: archivedAt == null)\n  @@softDelete')))
       .toMatch(/WHERE \("deletedAt" IS NULL\) AND \("archivedAt" IS NULL\)/)
   })
@@ -880,7 +880,7 @@ describe('litestone import — the predicate survives', () => {
 // assertions below are about that split being real rather than cosmetic.
 //
 // The load-bearing one is `the soft-delete clause is NOT ANDed in`. On an
-// @@index the AND is an optimisation; on a UNIQUE index the predicate IS the
+// @@index the AND is an optimization; on a UNIQUE index the predicate IS the
 // constraint, and ANDing it is FJS-204's rejected derivation arriving through
 // the back door — the deleted row stops holding its @unique slot.
 

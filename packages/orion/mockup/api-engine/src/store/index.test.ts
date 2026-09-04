@@ -138,7 +138,7 @@ describe("SQLiteFlowStore — save + get", () => {
     expect(store.get("flow_test")!.name).toBe("Updated")
   })
 
-  test("node definitions are preserved through serialisation", () => {
+  test("node definitions are preserved through serialization", () => {
     const flow = makeFlow({
       nodes: {
         t:    { id: "t",    type: "trigger.webhook", config: { path: { type: "literal", value: "/hooks/test" } } },
@@ -275,7 +275,7 @@ describe("SQLiteExecutionStore — records", () => {
     expect(await store.getRecord("unknown")).toBeUndefined()
   })
 
-  test("preserves trigger payload through serialisation", async () => {
+  test("preserves trigger payload through serialization", async () => {
     const trigger = { webhook: true, body: { email: "a@b.com", score: 0.9 } }
     await store.saveRecord(makeRecord({ trigger }))
     const found = await store.getRecord("exec_001")

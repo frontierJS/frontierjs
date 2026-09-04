@@ -29,12 +29,12 @@ columns — or store the value in a real column and write it on change.
 
 **A column whose stored text is a storage detail cannot be sorted either.** The
 column exists and SQLite will happily order by what is in it — which is a
-serialisation or an encoding, not the value:
+serialization or an encoding, not the value:
 
 | Column | Ordering by its text means |
 | --- | --- |
-| `String[]` · `Int[]` · `Enum[]` | the JSON document, so `[10]` sorts before `[9]` and a re-serialised row moves |
-| `Json` (typed or not) | whichever key serialised first |
+| `String[]` · `Int[]` · `Enum[]` | the JSON document, so `[10]` sorts before `[9]` and a re-serialized row moves |
+| `Json` (typed or not) | whichever key serialized first |
 | `File` | the storage reference, not the file |
 | `@encrypted` | ciphertext — meaningless, and stable only where the IV is derived from the value |
 | `@hashed` | the digest — stable and equally meaningless |
@@ -54,11 +54,11 @@ db.$checkOrderBy('client', { chattiness: 'asc' })
 
 `$checkWhere`'s sibling, same contract: `[]` means no problems, an unknown
 accessor also answers `[]` (*I cannot judge this* is not *this is wrong*), and
-every flavour of client — root, `$setAuth`, `asSystem`, `$scopedBy` — answers
+every flavor of client — root, `$setAuth`, `asSystem`, `$scopedBy` — answers
 identically, because sortability is a fact about the schema. `reason` is
 `'computed'`, `'opaque'` or `'unknown'`, so a boundary can say different
 sentences for "no such field", "that field is derived in JS" and "that column
-stores a serialisation, so its text is not the value". Junction's `autoSort` hook
+stores a serialization, so its text is not the value". Junction's `autoSort` hook
 calls it and turns a problem into a 400.
 
 ## Basic orderBy

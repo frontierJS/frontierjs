@@ -917,7 +917,7 @@
 .sg-sk-bar.on { background: var(--color-primary); }
 
 /*
- * Stretch, not centre. A box inside a row is `flex: 1` on the INLINE axis;
+ * Stretch, not center. A box inside a row is `flex: 1` on the INLINE axis;
  * on the block axis it has nothing to size against, so `align-items: center`
  * collapsed it to a hairline and the three-box arrangement sketch rendered
  * as one dashed rule. `.mid` is for the one row that really is a line of
@@ -999,7 +999,7 @@
  * The sketch has no width of its own — it is sized by whatever holds it. In a
  * wizard option that is a Tile, whose column shrinks a block-level child to
  * its content, so the wireframe drew narrower than the card it sits in and
- * every option looked ragged against its neighbours.
+ * every option looked ragged against its neighbors.
  */
 .sg-wiz-opt .sg-sk {
   margin-block-end: 8px;

@@ -1,4 +1,4 @@
-// Litestone language server — behavioural tests over real LSP/stdio.
+// Litestone language server — behavioral tests over real LSP/stdio.
 //
 // Run:  npm test           (builds first — a stale out/ tests the previous fix)
 //
@@ -266,7 +266,7 @@ async function main() {
     // And the one line that leads OUT of the catalog. Named, never linked: the
     // docs ship inside the package, not beside the file being edited.
     ok('a word with a docs page says which',
-       /📖 `docs\/modelling\.md`/.test(h3 || ''), JSON.stringify(h3))
+       /📖 `docs\/modeling\.md`/.test(h3 || ''), JSON.stringify(h3))
 
     // Every word either has a page or is named as having none, so a new word
     // arriving undocumented is a decision rather than an omission.

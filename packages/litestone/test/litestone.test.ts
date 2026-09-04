@@ -887,7 +887,7 @@ describe('query helpers', () => {
 
 
 describe('@updatedAt parser attribute', () => {
-  test('@updatedAt is a recognised field attribute', () => {
+  test('@updatedAt is a recognized field attribute', () => {
     const result = parse(`
       model Post {
         id        Int  @id
@@ -3575,9 +3575,9 @@ describe('client — metadata properties', () => {
     expect(db.$softDelete.Account).toBe(false)
   })
 
-  test('$softDelete answers on every flavour of client', () => {
+  test('$softDelete answers on every flavor of client', () => {
     // A capability that depends only on the schema belongs on all four. This
-    // one answered on the root alone, so the flavour an application actually
+    // one answered on the root alone, so the flavor an application actually
     // holds — junction scopes ctx.locals.db with $setAuth — threw the
     // unknown-property error at a question about the schema.
     for (const c of [db, db.$setAuth({ id: 1 }), db.asSystem(), db.$scopedBy({})]) {
@@ -3762,7 +3762,7 @@ describe('soft delete — a write takes the flags too', () => {
     expect((await db.doc.findMany())[0].cost).toBe(0)
   })
 
-  test('aggregate and groupBy honour onlyDeleted/withDeleted, like every other read', async () => {
+  test('aggregate and groupBy honor onlyDeleted/withDeleted, like every other read', async () => {
     // Both were pinned to 'live' regardless of the args, so
     // `aggregate({ _count: true, onlyDeleted: true })` counted the LIVE rows —
     // the opposite of the question, from the method whose whole answer is one
@@ -5161,10 +5161,10 @@ describe('computed: inline object', () => {
 // ─── computed: needs ─────────────────────────────────────────────────────────
 //
 // A computed fn either declares what it reads or it does not. Undeclared is the
-// original behaviour and stays: naming the field in a `select` fetches every
+// original behavior and stays: naming the field in a `select` fetches every
 // column, because nothing can know what the fn will touch.
 //
-// The declared form is not only an optimisation. Before it, a computed fn ran
+// The declared form is not only an optimization. Before it, a computed fn ran
 // on EVERY read whether or not the select asked for it — over a row narrowed by
 // that same select, so a fn reading a column the caller had not selected saw
 // undefined and answered something plausible. That is the same failure the
@@ -5682,7 +5682,7 @@ describe('a stamped column is not a caller write (FJS-565)', () => {
 })
 
 
-// ─── 18b. @guarded(all) + WHERE clause behaviour ──────────────────────────────
+// ─── 18b. @guarded(all) + WHERE clause behavior ──────────────────────────────
 //
 // Confirms the three documented cases:
 //   1. Non-system WHERE on @guarded(all) field: filters correctly, field stripped from result
@@ -6386,7 +6386,7 @@ describe('@secret field attribute', () => {
     expect(r.valid).toBe(false)
   })
 
-  // ── Runtime behaviour ─────────────────────────────────────────────────────
+  // ── Runtime behavior ─────────────────────────────────────────────────────
 
   test('@secret field is encrypted at rest', async () => {
     const db = await makeDb(`model Secret { id Int @id; token String @secret }`, 'secret-enc', { encryptionKey: ENC_KEY })
@@ -6838,10 +6838,10 @@ describe('onLog callback', () => {
     db.$close()
   })
 
-  // Every flavour of client answers it. $checkWhere shipped without this and a
+  // Every flavor of client answers it. $checkWhere shipped without this and a
   // scoped client threw on the property itself, since a Litestone proxy throws
   // on an unknown one rather than answering undefined.
-  test('every flavour of client has it', async () => {
+  test('every flavor of client has it', async () => {
     const db: any = await makeLogDb()
     for (const client of [db, db.asSystem(), db.$setAuth({ id: 1 }), db.$scopedBy({})])
       expect(typeof client.$audit).toBe('function')
@@ -6854,7 +6854,7 @@ describe('onLog callback', () => {
   })
 
   // $protectedFields — the same contract as $checkWhere: a fact about the
-  // schema, so every flavour of client answers it identically, and an unknown
+  // schema, so every flavor of client answers it identically, and an unknown
   // accessor answers {} rather than throwing.
   test('$protectedFields names the columns a trail must not write down', async () => {
     const db: any = await createClient({
@@ -7891,7 +7891,7 @@ describe('@@allow / @@deny row-level policies', () => {
   //
   // A relation is a read of the target model, and the include paths build their
   // own SQL. Until 2026-08-10 nothing applied the target's policy there, so a
-  // model filtered on every direct read travelled whole as somebody's child.
+  // model filtered on every direct read traveled whole as somebody's child.
 
   async function policiedTree(name: string) {
     const db = await makeDb(`
@@ -8757,7 +8757,7 @@ describe('GatePlugin', () => {
   test('asSystem() is idempotent — a function handed a client cannot tell which it has', async () => {
     // `const sys = db.asSystem()` at the top of a function is the normal
     // defensive spelling, and it threw `"asSystem" is not a table in this
-    // schema` — a message about tables, about a method every other flavour of
+    // schema` — a message about tables, about a method every other flavor of
     // the client has. basecamp's seeder is written exactly that way.
     const db = await makeGateDb(`
       model Thing { id Int @id  name String  @@gate("4.8.8.8") }
@@ -8915,7 +8915,7 @@ describe('FrontierGateGetLevel', () => {
     expect(FrontierGateGetLevel(null)).toBe(LEVELS.STRANGER)
   })
 
-  test('lifecycle NOT modelled (fields absent) is not an objection', () => {
+  test('lifecycle NOT modeled (fields absent) is not an objection', () => {
     const { FrontierGateGetLevel, LEVELS } = G()
     // No verifiedAt / activatedAt keys at all — exactly what
     // @frontierjs/auth's toContext() emits for a verified user.
@@ -10251,7 +10251,7 @@ describe('enum transitions — parser', () => {
     expect(Object.keys(en.transitions)).toEqual(['pay','ship','deliver','refund'])
   })
 
-  test('single from normalised to array', () => {
+  test('single from normalized to array', () => {
     const { schema } = parse(TRANSITION_SCHEMA)
     const en = schema.enums.find((e: any) => e.name === 'OrderStatus')
     expect(en.transitions.pay.from).toEqual(['pending'])
@@ -10498,7 +10498,7 @@ describe('@@transitions — gates', () => {
     //
     // This asserted 1 (VISITOR) until 2026-08-04, when the resolver stopped
     // treating an ABSENT verifiedAt as "unverified". Absence means the app does
-    // not model verification; only `null` means modelled-and-not-reached. The
+    // not model verification; only `null` means modeled-and-not-reached. The
     // old reading graded every session from every app without a verification
     // flow at VISITOR(1), below the USER(4) an ordinary model needs to read.
     expect(err.got).toBe(3)
@@ -11106,7 +11106,7 @@ describe('enum transitions — conflict and upsert', () => {
 
     // The declared states survive as real booleans, not 1/0 — and the per-move
     // gate is read: this client is unauthenticated, so `demote` is reported and
-    // not offered, which is what a greyed-out button needs.
+    // not offered, which is what a grayed-out button needs.
     const moves = await bdb.domain.transitions(await bdb.domain.findUnique({ where: { id: d.id } }))
     expect(moves).toEqual([{ name: 'demote', field: 'isPrimary', from: true, to: false, gate: 5, system: false, allowed: false, refusedBy: 'gate' }])
 
@@ -12559,7 +12559,7 @@ describe('Factory — relations (has / attach / withParents)', () => {
     r.db.$close()
   })
 
-  test('pins at two depths are both honoured', async () => {
+  test('pins at two depths are both honored', async () => {
     const r = await makeTestClient(CHAIN, { autoFactories: true })
     const org  = await r.factories.org.createOne()
     const team = await r.factories.team.withParents({ pins: { Org: org } }).createOne()
@@ -13262,7 +13262,7 @@ describe('generateFactory', () => {
     }
   })
 
-  test('Int honours @gte / @lte', () => {
+  test('Int honors @gte / @lte', () => {
     const { schema: s } = parse(`model T { id Int @id; age Int @gte(18) @lte(99) }`)
     const def = generateFactory(s, 'T')
     for (const n of [1, 2, 50, 11001]) {
@@ -13272,7 +13272,7 @@ describe('generateFactory', () => {
     }
   })
 
-  test('Int honours exclusive @gt / @lt', () => {
+  test('Int honors exclusive @gt / @lt', () => {
     const { schema: s } = parse(`model T { id Int @id; n Int @gt(0) @lt(10) }`)
     const def = generateFactory(s, 'T')
     for (const seq of [1, 2, 3, 99]) {
@@ -13282,7 +13282,7 @@ describe('generateFactory', () => {
     }
   })
 
-  test('Float honours exclusive @gt', () => {
+  test('Float honors exclusive @gt', () => {
     const { schema: s } = parse(`model T { id Int @id; n Float @gt(0) }`)
     expect(generateFactory(s, 'T')(1, null).n as number).toBeGreaterThan(0)
   })
@@ -13313,14 +13313,14 @@ describe('generateFactory', () => {
     }
   })
 
-  test('@startsWith / @endsWith honoured', () => {
+  test('@startsWith / @endsWith honored', () => {
     const { schema: s } = parse(`model T { id Int @id; v String @startsWith("pre") @endsWith("post") }`)
     const v = generateFactory(s, 'T')(1, null).v as string
     expect(v.startsWith('pre')).toBe(true)
     expect(v.endsWith('post')).toBe(true)
   })
 
-  test('array honours @minItems', () => {
+  test('array honors @minItems', () => {
     const { schema: s } = parse(`model T { id Int @id; tags String[] @minItems(2) }`)
     const tags = generateFactory(s, 'T')(1, null).tags as string[]
     expect(tags.length).toBe(2)
@@ -13964,7 +13964,7 @@ describe('@@scope', () => {
     expect(bad[0].reason).toBe('scope')
     expect(bad[0].message).toMatch(/Task declares: active, mine, overdue, unfinished/)
     // The published list, as source text — a schema fact, so it is the same on
-    // every flavour of client.
+    // every flavor of client.
     const want = {
       overdue:    'dueAt < now() && completedAt == null',
       mine:       'ownerId == auth().id',
@@ -17767,7 +17767,7 @@ describe('orderBy key validation', () => {
     db.$close()
   })
 
-  // A column whose stored text is a serialisation or an encoding. SQLite orders
+  // A column whose stored text is a serialization or an encoding. SQLite orders
   // by that text, so the rows come back in an order nobody asked for and nothing
   // about the answer says so — the failure sorting has and filtering does not
   // (FJS-200).
@@ -17818,7 +17818,7 @@ describe('orderBy key validation', () => {
       expect(p.suggestion).toBeNull()
       expect(p.sortable).toContain('title')
       expect(p.sortable).not.toContain('words')
-      // Same contract as the computed bucket: every flavour answers identically.
+      // Same contract as the computed bucket: every flavor answers identically.
       for (const c of [db.asSystem(), db.$setAuth({ id: 1 })])
         expect(c.$checkOrderBy('doc', { meta: 'asc' })[0].reason).toBe('opaque')
       db.$close()
@@ -17838,7 +17838,7 @@ describe('orderBy key validation', () => {
     db.$close()
   })
 
-  test('$checkOrderBy is on every flavour of client — sortability is a fact about the schema', async () => {
+  test('$checkOrderBy is on every flavor of client — sortability is a fact about the schema', async () => {
     const db = await fromAliasClient()
     for (const client of [db.asSystem(), db.$setAuth({ id: 1 }), db.$scopedBy({})]) {
       expect(typeof client.$checkOrderBy).toBe('function')
@@ -22488,7 +22488,7 @@ describe('@@hasTemplates — writes take the flags', () => {
   })
 
   test('a hard delete no longer destroys a template the caller cannot see', async () => {
-    // The behaviour change. `delete`/`deleteMany` applied no template filter, so
+    // The behavior change. `delete`/`deleteMany` applied no template filter, so
     // an ordinary cleanup destroyed rows that no read of the model returns —
     // data loss with nothing to anticipate it.
     expect(await db.recipe.delete({ where: { id: 3 } })).toBeNull()
@@ -22872,7 +22872,7 @@ describe('co-FK propagation — nested create', () => {
     // Use orders nested under account — tenantId is a co-FK (NOT the direct
     // hasMany FK). Child provides tenantId=2; parent has tenantId=1; strict
     // mode must overwrite to 1. This is the *real* test of co-FK strictness,
-    // separate from the always-overridden direct FK behaviour.
+    // separate from the always-overridden direct FK behavior.
     await db.tenant.create({ data: { id: 2, name: 'T2' } })
     await db.account.create({ data: { id: 10, tenantId: 1, name: 'A' } })
     await db.account.update({
@@ -22891,7 +22891,7 @@ describe('co-FK propagation — nested create', () => {
     // unset.
     //
     // Simulate by writing accounts with explicit tenantId then orders without
-    // co-FK to verify normal behaviour (this test mainly guards against a
+    // co-FK to verify normal behavior (this test mainly guards against a
     // nullable-parent bug — we don't have a nullable co-FK in this schema).
     await db.account.create({ data: { id: 10, tenantId: 1, name: 'A' } })
     await db.order.create({ data: { id: 100, accountId: 10, tenantId: 1 } })
@@ -22915,7 +22915,7 @@ describe('co-FK propagation — allowChildFkOverride: true', () => {
 
   // Use accounts→orders so we have a co-FK (tenantId) that is NOT the same
   // column as the direct hasMany FK (accountId). Direct FKs are always
-  // overridden — that's existing behaviour, separate from this feature.
+  // overridden — that's existing behavior, separate from this feature.
   const SCHEMA = `
     model Tenant {
       id       Int @id
@@ -23878,7 +23878,7 @@ describe('@createdBy — field attribute', () => {
 
   // No principal, no stamp — this is what lets seeders, imports and backfills
   // carry authorship in explicitly.
-  test('an unauthenticated write honours an explicit value', async () => {
+  test('an unauthenticated write honors an explicit value', async () => {
     const db = await makeDb(SCHEMA, 'cby-anon')
     await db.post.create({ data: { id: 1, title: 'A', createdById: 5 } })
     await db.asSystem().post.create({ data: { id: 2, title: 'B', createdById: 6 } })
@@ -24059,7 +24059,7 @@ describe('bulk writes — ctx.auth stamps (FJS-092)', () => {
     db.$close()
   })
 
-  // Excluding a column the caller named would have changed behaviour that
+  // Excluding a column the caller named would have changed behavior that
   // predates the stamps, so the exclusion covers only what we filled in.
   test('a caller-supplied auth-default column still rides the conflict update', async () => {
     const db = await makeDocs('bulk-usm-supplied')
@@ -24069,7 +24069,7 @@ describe('bulk writes — ctx.auth stamps (FJS-092)', () => {
     db.$close()
   })
 
-  test('upsertMany honours explicit values with no principal', async () => {
+  test('upsertMany honors explicit values with no principal', async () => {
     const db = await makeDocs('bulk-usm-anon')
     await db.doc.upsertMany({ data: [{ id: 1, title: 'A', createdById: 5, ownerId: 6 }] })
     expect(await db.doc.findUnique({ where: { id: 1 } }))
@@ -24441,16 +24441,16 @@ describe('$checkWhere', () => {
   // threw. Junction hands services a `$setAuth` client, so its autoFilter hook
   // died on every list read in both apps, complaining about a table nobody
   // named. Which keys are valid is a question about the SCHEMA; auth and scope
-  // have no bearing on the answer, so every flavour must give the same one.
-  test('every client flavour answers it, identically', async () => {
-    const db = await makeDb(SCHEMA, 'checkwhere-flavours')
-    const flavours: Record<string, any> = {
+  // have no bearing on the answer, so every flavor must give the same one.
+  test('every client flavor answers it, identically', async () => {
+    const db = await makeDb(SCHEMA, 'checkwhere-flavors')
+    const flavors: Record<string, any> = {
       root:      db,
       setAuth:   db.$setAuth({ id: 1 }),
       asSystem:  db.asSystem(),
       scopedBy:  db.$scopedBy({}),
     }
-    for (const [name, c] of Object.entries(flavours)) {
+    for (const [name, c] of Object.entries(flavors)) {
       expect(typeof c.$checkWhere, name).toBe('function')
       expect(c.$checkWhere('product', { name: 'a', price: 2 }), name).toEqual([])
       expect(c.$checkWhere('product', { nme: 'a' })[0].suggestion, name).toBe('name')
@@ -24786,7 +24786,7 @@ describe('array fields — @default', () => {
     }
   })
 
-  test('a JSON array default is accepted, and normalised to the literal', () => {
+  test('a JSON array default is accepted, and normalized to the literal', () => {
     expect(bad('String[] @default("[]")').valid).toBe(true)
     expect(bad('T[] @default("[\\"a\\"]")').valid).toBe(true)
 
@@ -24860,7 +24860,7 @@ describe('a string operator on a column that is not text', () => {
       .rejects.toThrow(/"flag" is a Boolean, stored as 0\/1/)
   })
 
-  test('a Json document would match its own serialised text', async () => {
+  test('a Json document would match its own serialized text', async () => {
     await expect(db.doc.findMany({ where: { meta: { contains: 'z' } } }))
       .rejects.toThrow(/"meta" holds a JSON document/)
     await expect(db.doc.findMany({ where: { addr: { contains: 'Boston' } } }))
@@ -24986,7 +24986,7 @@ describe('where on an array column', () => {
         .rejects.toThrow(new RegExp(`"tags" holds a JSON array, so "${op}" would substring-match`))
     }
     // The two that made it look like it worked: a real element, and punctuation
-    // from the serialisation itself.
+    // from the serialization itself.
     await expect(db.m.findMany({ where: { tags: { contains: '","' } } })).rejects.toThrow(/use "has"/)
     await expect(db.m.findMany({ where: { tags: { contains: '[' } } })).rejects.toThrow(/use "has"/)
     // Refused as a caller error, so a boundary can answer 400 rather than 500.
@@ -25639,8 +25639,8 @@ describe('$checkWhere says WHY a key cannot be filtered', () => {
     expect(unk.allowed).toContain('title')
   })
 
-  test('every flavour of client answers identically — filterability is schema, not auth', async () => {
-    const db = await makeDb(S, 'cw-flavours', {
+  test('every flavor of client answers identically — filterability is schema, not auth', async () => {
+    const db = await makeDb(S, 'cw-flavors', {
       encryptionKey: 'a'.repeat(64),
       computed: { Post: { comp: (r: any) => r.title } },
     })
@@ -26213,7 +26213,7 @@ describe('@encrypted(deterministic) / @hashed — declaration', () => {
 //
 // Re-entrancy is now asked of AsyncLocalStorage — a nested call runs inside the
 // outer callback and inherits its store, a concurrent request does not. These
-// assert BOTH halves, because a fix that serialised everything would deadlock
+// assert BOTH halves, because a fix that serialized everything would deadlock
 // basecamp's /setup and a fix that nested everything is the original bug.
 
 describe('$transaction under concurrency', () => {
@@ -26318,7 +26318,7 @@ describe('$transaction under concurrency', () => {
 // realm here. And this package already has `hooks`, so a rename would have
 // collided with a live concept one option key away.
 
-describe('a plugin has a name, and every client flavour will say it', () => {
+describe('a plugin has a name, and every client flavor will say it', () => {
   const schema = `model Post {
     id    Int    @id
     title String
@@ -26359,7 +26359,7 @@ describe('a plugin has a name, and every client flavour will say it', () => {
     db.$close()
   })
 
-  test('is on every flavour — what is installed does not vary with auth', async () => {
+  test('is on every flavor — what is installed does not vary with auth', async () => {
     const db = await createClient({ schema, db: ':memory:' })
     expect(db.asSystem().$plugins).toEqual(db.$plugins)
     expect(db.$setAuth({ id: 1 }).$plugins).toEqual(db.$plugins)

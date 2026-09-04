@@ -53,7 +53,7 @@ transports, junction's webhooks plugin, the Outpost's server and reporter,
 basecamp's `requireOutpostSignature`, and the example shop's PSP sink and
 webhook route. A verifier recomputes from the RAW request URL, never from a path
 the router already stripped and never from a parsed query bag: a signature is
-over the bytes the sender put on the wire, and a re-serialisation of a parse is
+over the bytes the sender put on the wire, and a re-serialization of a parse is
 a different string.
 
 ## 2026-09-02 — the signature kit signs bytes, and its default prefix is `X-Fjs`
@@ -186,7 +186,7 @@ takes one `@`, so it matched at the second one and every `@@gate` rendered as a
 stray punctuation mark followed by an attribute. And a field's TYPE was coloured
 only where the common keyword list happened to contain it case-insensitively:
 `Int` and `String` were lit, `DateTime`, `Json`, `Boolean` and a relation to
-another model were not. Matched by shape now — a capitalised word — so a new
+another model were not. Matched by shape now — a capitalized word — so a new
 scalar and a relation both work with no edit here.
 
 **SQL.** Nothing in the common list is SQL and `--` was not read as a comment,
@@ -356,7 +356,7 @@ field and then saying *object* does what it looks like it should.
 Two rules that are easy to get backwards. `'false'` converts to `false`, because
 that is what a person typing it means and every non-empty string is truthy in
 JavaScript. And a number that cannot be read is `0`, never `NaN` — NaN is not a
-JSON value, so the alternative is a document that cannot be serialised, written
+JSON value, so the alternative is a document that cannot be serialized, written
 by a control that looked like it worked.
 
 Where no mapping exists the value is dropped: a string asked to become an object
@@ -526,7 +526,7 @@ null rather than `0`.
 
 **`/hooks`** is the four-phase pipeline — `runHooks`, `runAroundHooks`,
 `runPhase`, `mergeHooks`. **`mergeHooks` answers a NEW map** where both copies
-merged in place: this package's licence is that every export is pure, and a
+merged in place: this package's license is that every export is pure, and a
 caller that now forgets the assignment gets a map that never grew rather than
 one silently rewritten.
 
@@ -612,7 +612,7 @@ because a project that wants one usually ends up wanting two.
   and `&` are punctuation rules in most languages and therefore usually arrive
   as tokens, so a language whose rules skip them sent them to the page. Found
   fixing `FJS-261` in mesa, which could not be fixed on its side alone.
-- The purity rule stopped being a house style and became the licence: `FJS-D26`
+- The purity rule stopped being a house style and became the license: `FJS-D26`
   admits this package as **substrate below the dependency graph**, importable by
   litestone and mesa, and the argument rests entirely on it depending on nothing
   and calling no clock — which `scripts/ci.mjs` § hygiene now fails the build

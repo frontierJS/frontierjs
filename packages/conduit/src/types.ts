@@ -267,7 +267,7 @@ export interface ResponseMeta {
   duration_ms: number
 
   // The response's headers, lowercased. Absent when nothing was sent — a
-  // breaker refusal, an unknown target, a body that would not serialise.
+  // breaker refusal, an unknown target, a body that would not serialize.
   //
   // Not a convenience. A large share of the field puts load-bearing answers
   // here and nowhere else: RFC 5988 `Link` is how GitHub, Basecamp and Shopify
@@ -344,7 +344,7 @@ export type ConduitErrorKind =
   // after it failed `circuit_open` — load shed by the one status that means
   // *slow down* rather than *I am broken* (`FJS-650`).
   | 'rate_limited'
-  // The request itself is unusable — a body that will not serialise, a
+  // The request itself is unusable — a body that will not serialize, a
   // response larger than the configured cap. The caller is at fault, not
   // the network or the target, so these are never retryable.
   | 'invalid_request'
@@ -387,7 +387,7 @@ export interface ConduitError {
   // How long the target asked us to wait, in milliseconds — parsed from
   // `Retry-After`, which is either a count of seconds or an HTTP-date. Set on
   // `rate_limited` and on any other response that carried the header. The retry
-  // loop honours it in place of its own backoff, capped by the deadline; a
+  // loop honors it in place of its own backoff, capped by the deadline; a
   // caller handling the error itself gets the same number rather than the
   // header's two possible spellings.
   retry_after_ms?: number
@@ -515,7 +515,7 @@ export interface ResilienceOptions {
    * unlimited was not unbounded either: it queued inside the connection pool
    * with the attempt timer already running, so the wait came back as the
    * target's timeout and opened its breaker (`FJS-685`).
-   * `Infinity` restores the old behaviour.
+   * `Infinity` restores the old behavior.
    */
   max_concurrent?: number
 }

@@ -27,7 +27,7 @@ to offer. The model you add later in this lesson gets a different four, and the
 difference will be visible without you writing a check anywhere.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 3
 

@@ -35,7 +35,7 @@ stayed well-formed.
 
 ### The bulletproof button was not bulletproof
 
-`<!--[if mso]>` was being serialised as `<!--[if mso]-->`. The comment closed,
+`<!--[if mso]>` was being serialized as `<!--[if mso]-->`. The comment closed,
 and the VML after it became live markup: `<v:roundrect …>` parsed as
 `<v :roundrect="" …>`, an unknown element with a stray attribute. **The
 Outlook-only fallback shipped to every client, so every recipient saw the
@@ -51,7 +51,7 @@ DOM.
 Fix: the VML never enters the DOM. `Button.mesa` emits it percent-encoded in a
 `data-mso` attribute, and `expandMsoPlaceholders()` in `render.js` splices it
 back once the HTML is a string again. Percent-encoding rather than raw text
-because happy-dom does not escape `"` in a serialised attribute value either.
+because happy-dom does not escape `"` in a serialized attribute value either.
 
 **Consequence to know:** rendering a kit component through Mesa's
 `renderComponent` *directly* leaves the placeholder in place and drops the

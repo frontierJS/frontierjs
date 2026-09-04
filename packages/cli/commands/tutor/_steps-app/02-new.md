@@ -20,7 +20,7 @@ What lands is five directories and one file that matters more than the rest:
 Everything else in FrontierJS is derived from the first of those.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 2
 

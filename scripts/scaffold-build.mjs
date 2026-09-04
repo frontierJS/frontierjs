@@ -111,7 +111,7 @@ export const daemonBlindHint = (output, dir) => {
 }
 
 /** A scaffold/deploy work directory: previous runs' swept, this one registered
- *  so an interrupt takes it with it. `base` is honoured for the reason
+ *  so an interrupt takes it with it. `base` is honored for the reason
  *  $FJS_CI_WORKDIR exists — the Docker daemon must be able to read it. */
 function workDir(prefix, base) {
   trapSignals()
@@ -129,7 +129,7 @@ const MAX_BUFFER = 64 * 1024 * 1024
 // ─── the app under test ──────────────────────────────────────
 // Full-stack with auth: the shape `fli new` produces when it is not told
 // otherwise, and the one that pulls in sierra, mesa and css — the three
-// packages whose build-time behaviour only differs once installed.
+// packages whose build-time behavior only differs once installed.
 const SCAFFOLD_ARGS = ['new', 'demo', '--yes', '--auth', '--source', 'npm', '--no-install', '--no-git']
 
 // Synchronous throughout — spawnSync and the sync fs calls — so ci.mjs can run
@@ -138,7 +138,7 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
   const findings = []
   const fail     = (message, output) => { findings.push({ message, output }); return findings }
 
-  // $FJS_CI_WORKDIR for the same reason scaffoldAndDeploy honours it: step 8
+  // $FJS_CI_WORKDIR for the same reason scaffoldAndDeploy honors it: step 8
   // hands this directory to the Docker daemon as a build context, and a shell
   // with a private /tmp gets `unable to prepare context` about a path that is
   // plainly there.
@@ -847,7 +847,7 @@ function dockerLogs(container) {
 //
 // Everything above this grades whether the framework INSTALLS and whether the
 // container answers health. Neither can see the class FJS-252 was filed for: a
-// scaffold template written against behaviour only the working tree has, which
+// scaffold template written against behavior only the working tree has, which
 // installs cleanly and fails at runtime.
 //
 // It was measured. The scaffold points its browser client at `apiPrefix` and the

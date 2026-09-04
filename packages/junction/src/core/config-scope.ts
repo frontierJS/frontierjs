@@ -14,7 +14,7 @@
 // is the part that gets more expensive the longer it waits. Twenty-five reads
 // inside this package plus every closure an app captured is a boundary move
 // under a live feature; the same move under no feature at all costs nothing and
-// changes no behaviour.
+// changes no behavior.
 //
 // ─── Why a read and never a rebind ────────────────────────────────────────
 //

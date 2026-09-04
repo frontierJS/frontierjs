@@ -174,7 +174,7 @@ title: Hub settings
     <p class="text-sm text-muted">
       Stored, and <strong>read by nothing yet</strong>. Each of these is a rule the sign-in path
       or the key issuer would have to consult, and none of them does — a switch that changes a
-      column and no behaviour is worth saying out loud rather than leaving to be discovered.
+      column and no behavior is worth saying out loud rather than leaving to be discovered.
     </p>
   </Card>
 

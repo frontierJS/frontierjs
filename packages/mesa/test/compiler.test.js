@@ -3291,7 +3291,7 @@ describe('end-to-end — external object watch ($: obj)', () => {
   })
 
   // The force is per-WRITE. Making the signal always-notify instead would throw
-  // away the equality optimisation for every ordinary write to that binding.
+  // away the equality optimization for every ordinary write to that binding.
   it('mutation without the self-assignment stays inert (RULE 43)', async () => {
     const runtime = await import('../src/runtime.js')
     const Comp = await compileAndExec(`<script>
@@ -4613,7 +4613,7 @@ describe('top-level await in expressions', () => {
     expect(bareAwait).toBeUndefined()
   })
 
-  it('const await declaration still uses async IIFE (existing behaviour)', async () => {
+  it('const await declaration still uses async IIFE (existing behavior)', async () => {
     const out = await cx(`
 <script>
   const data = await fetch('/api').then(r => r.json())
@@ -4771,7 +4771,7 @@ describe('compileSource — the extension decides the language', () => {
   // compileSource used to route ANY source starting with `---` to the Markdown
   // compiler, whatever its extension, so most route files in existence were
   // compiled as Markdown by whoever handed the compiler the raw file. Markdown
-  // escapes what it does not recognise: a component call with props came out as
+  // escapes what it does not recognize: a component call with props came out as
   // a PARAGRAPH OF ESCAPED TEXT with the props stringified into it, silently,
   // while a bare `<LiveStock />` beside it compiled as a component.
   //

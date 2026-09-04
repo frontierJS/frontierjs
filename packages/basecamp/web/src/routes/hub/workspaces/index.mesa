@@ -12,7 +12,7 @@ title: Hub workspaces
   // Suspension is the action worth understanding. It is NOT deletion — the rows
   // stay, the servers keep running — and it bites in scopeToWorkspace, the one
   // hook every workspace-scoped service already runs, so a suspended tenant is
-  // refused everywhere rather than merely labelled here.
+  // refused everywhere rather than merely labeled here.
   import { hub } from '../../../resources/Hub.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'

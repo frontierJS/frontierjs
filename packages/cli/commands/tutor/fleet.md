@@ -22,7 +22,7 @@ flags:
   yes:
     char: y
     type: boolean
-    description: Answer every question with its default
+    description: Run the whole lesson without stopping — no confirmation between steps
     defaultValue: false
   keep:
     type: boolean
@@ -51,9 +51,9 @@ context.vars.apiPort     = context.config.apiPort
 context.vars.outpostPort = context.config.outpostPort
 ```
 
-## Lesson 4 — one control plane, one machine
+## Lesson 8 — one control plane, one machine
 
-Lesson 3 deployed from your laptop with `fli deploy`: you hold the ssh key, you
+Lesson 6 deployed from your laptop with `fli deploy`: you hold the ssh key, you
 type the command, and the machine is a target. That is one release story and it
 is the right one for one app on one box.
 

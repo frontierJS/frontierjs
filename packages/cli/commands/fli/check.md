@@ -283,7 +283,7 @@ Three rules carry one: `:id` → `{id}` is a spelling, and the two model rules
 have already worked out the exact name the call is missing, so the edit is
 `model: 'ProductVariant'` written into the options object the way that object is
 already written — `{}` gets no comma, one opened on its own line gets a line
-indented like its neighbour.
+indented like its neighbor.
 
 **The others deliberately have none, and `set-auth-discarded` is the argument.**
 Wrapping the call in `const scoped =` would silence the rule and leave every

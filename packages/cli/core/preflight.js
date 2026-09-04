@@ -27,9 +27,9 @@
 // two things that may run at once, and running them in sequence instead is
 // always safe, so a flat ordered list loses nothing but concurrency nobody asked
 // for. Two rows say `api` + `build:site`, where the second genuinely needs the
-// first, and a parser that honoured the `+` would race them.
+// first, and a parser that honored the `+` would race them.
 //
-// Zero dependencies, plain ESM, node or bun — same rule as its neighbours.
+// Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
 import { readFileSync } from 'node:fs'
 import { join }         from 'node:path'

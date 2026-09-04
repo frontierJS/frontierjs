@@ -343,7 +343,7 @@ deliberately not columns on the new model:
   stored status and a stored expiry are two owners of one fact.
 
 Two things it found: **`<Textarea>` silently ignored `oninput`** while `<Input>`
-and `<Select>` honoured it, so the PEM fields stayed empty and the service
+and `<Select>` honored it, so the PEM fields stayed empty and the service
 refused the upload with nothing explaining why (`FJS-116`, fixed in the kit).
 And **a derived field needs its owner imported** — `apps.get` includes `domains`,
 an include returns raw rows, and the screen rendered every hostname as "no
@@ -405,7 +405,7 @@ the fleet were built:
   Both `servers.feed` and `flags.resolve` are about a whole service; the client
   interpolated an id unconditionally.
 - **`autoValidate` strips a wire-only field before the method body runs.** Not a
-  defect — documented behaviour — but silent: the channels service reported
+  defect — documented behavior — but silent: the channels service reported
   "Slack needs a credential" about a request carrying exactly that. A field that
   is not a column has to be captured in a BEFORE hook.
 
@@ -627,7 +627,7 @@ read-side lock: with it on `isSystemAdmin` the write still landed and the answer
 came back with the column absent, which reads as a refusal. `litestone`'s own
 `docs/schema.md` says *excluded from all operations unless `asSystem()`*, and
 `@encrypted` implies it while `Secret.data` is plainly written by an admin, so
-the sentence is wrong rather than the behaviour — `FJS-248`.
+the sentence is wrong rather than the behavior — `FJS-248`.
 
 ## It runs in a container (2026-08-14)
 

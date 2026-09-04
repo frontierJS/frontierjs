@@ -49,7 +49,7 @@ render: static
           Declare your data once and the rest arrives the same way it does on a hosted
           platform — CRUD endpoints, validation, row-level permissions, live updates,
           migrations, types. Except there is no platform. It is a package in your
-          <code>node_modules</code>, an MIT licence, and a SQLite file you own.
+          <code>node_modules</code>, an MIT license, and a SQLite file you own.
         </p>
         <div class="cluster" style="margin-top:1.75rem; gap:.75rem;">
           <a class="btn primary raised" href="/#start">Get started</a>

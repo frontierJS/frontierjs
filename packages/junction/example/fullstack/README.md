@@ -95,7 +95,7 @@ with the load-bearing rule that **absence is not an objection**:
 | nothing | STRANGER (0) | not logged in |
 | `verifiedAt: null` | VISITOR (1) | app models verification; user hasn't |
 | `activatedAt: null` | READER (2) | app models activation; user hasn't |
-| *nothing relevant* | **USER (4)** | authenticated, no lifecycle modelled |
+| *nothing relevant* | **USER (4)** | authenticated, no lifecycle modeled |
 | `isAdmin` | ADMINISTRATOR (5) | |
 | `isOwner` | OWNER (6) | |
 | `isSystemAdmin` | SYSADMIN (7) | |

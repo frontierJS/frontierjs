@@ -18,7 +18,7 @@ suites are the parts that moved.
 rather than what runs. Everything from § Design — the Suite realm onward is
 unbuilt. Every claim below was probed by running, not read off a status file
 (`VERIFYING.md`); the evidence is named inline. Do not cite this file as
-describing behaviour.
+describing behavior.
 
 **What the assessment below got wrong, re-probed 2026-08-10.** Two of its three
 skipped packages are no longer skipped — `packages/basecamp` has a `package.json`
@@ -53,7 +53,7 @@ no action, no pre-commit hook, no scheduled anything.
 `bun run test` end to end: 13 packages ran, `@frontierjs/jetty` exited 1 (its known
 phase8 failure), the other 12 exited 0, and the aggregate exited **1**. It does not
 stop at the first failure — every package still ran. `bun run typecheck` behaves the
-same and honours the per-package `--baseline` ratchet: junction printed its
+same and honors the per-package `--baseline` ratchet: junction printed its
 long-standing diagnostics and still exited 0.
 
 That matters because it means **CI is not a design problem here, it is a missing
@@ -163,7 +163,7 @@ Constraints this repo actually has, which shape the job:
 4. **Typecheck baselines are a ratchet — enforce the direction.** `scripts/typecheck.mjs`
    already prints `below the baseline of N. Lower the baseline…`. CI should fail on
    a *raise* and ideally nag on a not-lowered improvement. `CLAUDE.md`'s rule
-   ("lower when you improve it; never raise one") is currently honour-system.
+   ("lower when you improve it; never raise one") is currently honor-system.
 5. **The registry, not just the workspace.** A job that installs the published
    package into a scratch app is the only thing that would have caught the dialect
    trap, and the only thing that will catch the next one.

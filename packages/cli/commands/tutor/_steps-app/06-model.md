@@ -29,7 +29,7 @@ The route files are Mesa. `web/src/routes/notes/index.mesa` is the URL
 step with it.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 6
 

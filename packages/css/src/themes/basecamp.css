@@ -100,7 +100,7 @@
   /*
    * Translucent white, as the prototype had them. A rule that composites
    * over whatever is beneath it stays correct on all three surfaces, where
-   * a solid grey picked against --surface reads too heavy on --surface-sunken
+   * a solid gray picked against --surface reads too heavy on --surface-sunken
    * and too light on --surface-raised.
    */
   --rule:        rgba(255, 255, 255, 0.07);

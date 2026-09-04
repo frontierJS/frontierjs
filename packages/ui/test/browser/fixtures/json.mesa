@@ -125,7 +125,7 @@
 <!-- The shape example's /settings/ has: what comes back is equal and not
      identical, so an identity test would read every edit as a second, foreign
      change and cost two presses to undo. -->
-<Json id="normalising" value={ndoc} expand={1} editable
+<Json id="normalizing" value={ndoc} expand={1} editable
   onchange={(next) => { ndoc = { ...next } }} />
 <output id="n-doc">{JSON.stringify(ndoc)}</output>
 

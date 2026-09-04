@@ -28,7 +28,7 @@
   <!--
     `undefined` puts the RECORD's value back, which is what a form does with it:
     a field the caller did not change is a key the patch does not carry, so the
-    stored file stays exactly as it is. Modelled here rather than assumed,
+    stored file stays exactly as it is. Modeled here rather than assumed,
     because the alternative reading — undefined clears the field — is the one
     that silently drops a photograph on every edit that did not touch it.
   -->

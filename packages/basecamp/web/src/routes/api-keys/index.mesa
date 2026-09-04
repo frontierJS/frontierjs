@@ -15,7 +15,7 @@ title: API keys
   // The scope list is NOT a copy of the server's. It is fetched from the
   // `scopes` action, which derives it from the service registry — so a service
   // added tomorrow is grantable tomorrow, and a checkbox can never offer a
-  // scope the guard does not recognise.
+  // scope the guard does not recognize.
   import { session } from '../../session.js'
   import { apiKeys } from '../../resources/ApiKey.mesa'
 

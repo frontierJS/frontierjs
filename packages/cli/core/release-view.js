@@ -28,7 +28,7 @@
 // with the terminal about whether a deploy can be undone, which is the one
 // disagreement that costs a database.
 //
-// Zero dependencies, plain ESM, node or bun — same rule as its neighbours.
+// Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
 import { existsSync, readFileSync } from 'node:fs'
 import { spawnSync }                from 'node:child_process'

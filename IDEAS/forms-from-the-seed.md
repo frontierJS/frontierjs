@@ -67,7 +67,7 @@ So this is now true, and it is most of the value:
 </Form>
 ```
 
-`email` arrives labelled, `required`, `type="email"`, with `@length` as
+`email` arrives labeled, `required`, `type="email"`, with `@length` as
 `maxlength`, and its rejection lands under it. Nothing in that markup states
 what a Lead is.
 

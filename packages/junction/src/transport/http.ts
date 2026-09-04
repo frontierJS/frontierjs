@@ -7,7 +7,7 @@
 import { Router }                         from './router.ts'
 import { BUILD_HEADER } from '../core/build-id.ts'
 import { parsePathSegments, matchPathDirect } from './router.ts'
-import { parseBody, parseQuery, parseCookies, extractIP } from './body.ts'
+import { parseBody, parseQuery, parseCookies, extractIP, BodyTooLargeError } from './body.ts'
 import { serveStatic }                    from './static.ts'
 // `type` matters: StaticOptions is an interface, and importing it as a value
 // breaks any runtime that strips types rather than transpiling — Node's
@@ -82,6 +82,32 @@ export interface HttpTransportOptions {
   hostname?:    string
   maxBodySize?: number     // bytes, default 256KB
   compress?:    boolean    // gzip responses, default true
+  /**
+   * Seconds a connection may go without progress before the RUNTIME closes it.
+   * Bun's own bound, exposed because it could not be reached from an app at all
+   * and its default is 10 — which is short: a request that takes longer is
+   * reset with no status, no body and no log line this app writes, and Bun
+   * prints its own warning naming an option nothing here passed through.
+   *
+   * 0 disables it. Bun refuses anything above 255, so this is refused at boot
+   * rather than at the first request.
+   */
+  idleTimeout?: number     // seconds, default 10 (Bun's)
+  /**
+   * Milliseconds a handler may take before this app answers 503 itself.
+   *
+   * Absent means no bound, honestly — the same answer caravan gives a job,
+   * because a default here kills every legitimately long request in every app
+   * that upgraded. What it buys when set is that the app answers rather than
+   * the socket resetting: junction raises the runtime's per-request timer to
+   * sit above this one, so its own 503 wins the race and the caller reads a
+   * status instead of ECONNRESET.
+   *
+   * It does not STOP the handler — nothing in JavaScript cancels a promise —
+   * so an abandoned one is announced through `onError` when it finally
+   * settles, the way caravan announces an orphaned job attempt.
+   */
+  requestTimeout?: number  // ms, default off
   ddos?: {
     enabled:    boolean
     limit:      number     // requests per window
@@ -281,6 +307,17 @@ export class HttpTransport {
       ...opts
     }
 
+    // Refused here rather than at `Bun.serve`, where it is a throw out of
+    // `start()` with the app already half-built.
+    const idle = this._opts.idleTimeout
+    if (idle !== undefined && (!Number.isInteger(idle) || idle < 0 || idle > 255)) {
+      throw new Error(
+        `http.idleTimeout must be a whole number of seconds between 0 and 255 (got ${idle}). ` +
+        `It is the runtime's own bound and 255 is its ceiling; for a longer request, set ` +
+        `http.requestTimeout, which this app answers itself.`
+      )
+    }
+
     // GC: prune expired DDoS counters every window interval so the map
     // doesn't accumulate every IP the server has ever seen. Handle is kept
     // so stop() can clear it — previously it ran forever after shutdown.
@@ -318,6 +355,7 @@ export class HttpTransport {
     this._server = Bun.serve<WsData>({
       port:     port ?? this._opts.port,
       hostname: this._opts.hostname,
+      ...(this._opts.idleTimeout !== undefined ? { idleTimeout: this._opts.idleTimeout } : {}),
 
       fetch: (req, server) => this._handle(req, server),
 
@@ -391,7 +429,7 @@ export class HttpTransport {
    * Exists so an auth plugin can turn cookie mode on from its own `register()`
    * rather than making the app state it twice. `cookieAuth: true` on
    * @frontierjs/auth used to set a cookie nothing read back — declaring the
-   * mode in one place and having the transport honour it is what closes that.
+   * mode in one place and having the transport honor it is what closes that.
    *
    * See extractToken for why this is opt-in rather than always on.
    */
@@ -504,10 +542,70 @@ export class HttpTransport {
   private async _handle(req: Request, server: ReturnType<typeof Bun.serve>): Promise<Response> {
     this._inFlight++
     try {
-      return await this._handleRequest(req, server)
+      const bound = this._opts.requestTimeout
+      if (!bound || bound <= 0) return await this._handleRequest(req, server)
+      return await this._withDeadline(req, server, bound)
     } finally {
       this._inFlight--
     }
+  }
+
+  /**
+   * Answer 503 if the handler has not, rather than letting the socket reset.
+   *
+   * The runtime's timer has to be moved out of the way first, or it fires
+   * first and the caller reads ECONNRESET — which is the state every app was
+   * in: Bun's 10-second default killed a slow request with no status, no body
+   * and nothing this app could log. `server.timeout` is per REQUEST, so this
+   * raises the bound for the one in hand and leaves every other connection on
+   * the configured idle timeout.
+   *
+   * The handler is not stopped, because nothing in JavaScript stops one. It
+   * goes on running and its eventual outcome is announced through `onError` —
+   * the same answer caravan gives an orphaned job attempt, and for the same
+   * reason: work still writing after the caller has been answered is the thing
+   * nobody expects, so it is said rather than swallowed.
+   */
+  private async _withDeadline(
+    req:    Request,
+    server: ReturnType<typeof Bun.serve>,
+    ms:     number
+  ): Promise<Response> {
+    // One second of headroom, and the ceiling the runtime enforces. It only
+    // has to be greater: the runtime's timer is coarse — measured, it closes
+    // at roughly twice the configured value with a floor near four seconds —
+    // so anything at or above this deadline leaves the app's own answer first.
+    const seconds = Math.min(255, Math.ceil(ms / 1000) + 1)
+    try { (server as { timeout?: (r: Request, s: number) => void }).timeout?.(req, seconds) } catch {}
+
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let timedOut = false
+
+    const work = this._handleRequest(req, server)
+    const deadline = new Promise<Response>((resolve) => {
+      timer = setTimeout(() => {
+        timedOut = true
+        this.stats.response.error++
+        resolve(new Response(
+          JSON.stringify({
+            name: 'RequestTimeout', code: 503, retryable: true,
+            message: `This request took longer than ${ms}ms and was not answered.`,
+          }),
+          { status: 503, headers: { 'content-type': 'application/json', connection: 'close' } }
+        ))
+      }, ms)
+    })
+
+    work.then(
+      () => { if (timedOut) this._opts.onError?.(new Error(
+        `A handler finished after its ${ms}ms deadline had already been answered 503 ` +
+        `(${req.method} ${new URL(req.url).pathname}). Its work still ran.`
+      )) },
+      (err) => { if (timedOut) this._opts.onError?.(err) },
+    )
+
+    try   { return await Promise.race([work, deadline]) }
+    finally { clearTimeout(timer) }
   }
 
   private async _handleRequest(req: Request, server: ReturnType<typeof Bun.serve>): Promise<Response> {
@@ -557,10 +655,18 @@ export class HttpTransport {
     // in-memory match while static serving stats the filesystem, so with
     // the old static-first order every API GET paid a disk probe. Dynamic
     // routes therefore now take precedence over same-path static files.
-    const match = this.router.lookup(method, path)
+    let match = this.router.lookup(method, path)
+
+    // A HEAD is a GET whose body is discarded, and that discarding is the
+    // runtime's — Bun drops the body off any response to a HEAD and leaves the
+    // headers. So an app that registers `GET /things` answers HEAD too, which
+    // is what every HTTP client, cache and uptime probe expects; without it
+    // every resource in every app answered 404 to a HEAD. A registered HEAD
+    // route still wins: the fallback only runs after the lookup missed.
+    if (!match && method === 'HEAD') match = this.router.lookup('GET', path)
 
     // ── Static file serving (only for unrouted GETs) ───────────────
-    if (!match && this._opts.static && method === 'GET') {
+    if (!match && this._opts.static && (method === 'GET' || method === 'HEAD')) {
       const staticResp = await serveStatic(req, path, this._opts.static)
       if (staticResp) {
         this.stats.response.file++
@@ -569,6 +675,12 @@ export class HttpTransport {
     }
 
     if (!match) {
+      // Nothing answered this method — but something may answer the path. The
+      // two are different answers to the caller: 404 says look for another
+      // URL, 405 says look at your verb, and only the second can name what
+      // would have worked.
+      const allowed = this.router.allowedMethods(path)
+      if (allowed.length > 0) return this._methodNotAllowed(method, allowed)
       return this._notFound(path)
     }
 
@@ -577,7 +689,25 @@ export class HttpTransport {
     try {
       parsed = await parseBody(req, this._opts.maxBodySize)
     } catch (err) {
-      return new Response('Payload Too Large', { status: 413 })
+      // Only the size bound answers 413. Everything else this can throw is a
+      // body the parser could not make sense of, and calling that too large
+      // sends the caller looking for a limit they are nowhere near.
+      if (err instanceof BodyTooLargeError) {
+        // The refusal lands with bytes still on the wire. `connection: close`
+        // is what says so to anything in front of us; Bun itself ignores it
+        // and keeps the socket, so the abandoned bytes are read as the start
+        // of the next request and BUN answers that one 400 before this app
+        // sees it — measured, and measured as far as it goes: the leftover is
+        // refused as malformed rather than parsed, so nothing is smuggled.
+        // One connection of the sender's own is spent. Draining instead would
+        // keep it clean and is not worth it: it means accepting every byte of
+        // a flood the app has already refused.
+        return new Response(err.message, {
+          status:  413,
+          headers: { 'content-type': 'text/plain', connection: 'close' },
+        })
+      }
+      return new Response('Bad Request', { status: 400 })
     }
 
     // ── Lazy headers proxy ─────────────────────────────────────────
@@ -1233,6 +1363,34 @@ export class HttpTransport {
       status:  404,
       headers: { 'content-type': 'application/json' }
     })
+  }
+
+  /**
+   * `405`, or the default answer to an `OPTIONS`.
+   *
+   * `Allow` is required on a 405 and is the whole value of the status: without
+   * it the caller is told they used the wrong verb and not which one is right.
+   * HEAD is listed wherever GET is, because this transport answers it; OPTIONS
+   * is listed because this method IS the OPTIONS answer when nothing else
+   * claimed the path — a `cors()` app registers `OPTIONS /*` and wins the
+   * lookup above, so this only ever runs for an app that installed no CORS.
+   */
+  private _methodNotAllowed(method: string, allowed: string[]): Response {
+    const set = new Set(allowed)
+    if (set.has('GET')) set.add('HEAD')
+    set.add('OPTIONS')
+    const allow = [...set].sort().join(', ')
+
+    if (method === 'OPTIONS') {
+      this.stats.response.empty++
+      return new Response(null, { status: 204, headers: { allow } })
+    }
+
+    this.stats.response.error++
+    return new Response(
+      JSON.stringify({ name: 'MethodNotAllowed', message: `${method} is not allowed here`, code: 405, allow }),
+      { status: 405, headers: { 'content-type': 'application/json', allow } }
+    )
   }
 
   private _trackMethod(method: string): void {

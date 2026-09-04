@@ -1,4 +1,4 @@
-// Mesa editor support — behavioural tests against the built out/mesa/.
+// Mesa editor support — behavioral tests against the built out/mesa/.
 //
 // Run:  npm test            (builds first — a stale out/ tests the previous fix)
 //       node test/mesa.test.js

@@ -23,7 +23,7 @@ only a deployed container answers with it. It is what lets a browser know it is
 running against a build that no longer exists.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 6
 
@@ -32,7 +32,28 @@ if (!needs(context, ['appDir', 'serverDir'], { from: { appDir: '02-app', serverD
 const app       = context.config.appDir
 const container = context.config.container
 
-context.exec({ command: `${context.fli} deploy --api`, cwd: app })
+// `fli deploy` throws on a failed step and the throw is the whole diagnosis a
+// person gets. One class deserves better because nothing about it is their
+// mistake: the Docker daemon cannot read a build context this shell can see —
+// a private /tmp — and the error it prints names a directory that is plainly
+// there. The lesson already puts its workspace under $HOME to avoid it, so
+// reaching here means the workspace was STATED.
+try {
+  context.exec({ command: `${context.fli} deploy --api`, cwd: app })
+} catch (err) {
+  const blind = /unable to prepare context: path .* not found|failed to build: resolve .*lstat .*: no such file or directory/
+  if (!blind.test(String(err?.stdout ?? '') + String(err?.message ?? ''))) throw err
+
+  log.error([
+    'the Docker daemon cannot read the build context',
+    `    ${'asked'.padEnd(10)}docker build in ${context.config.serverDir}`,
+    `    ${'got'.padEnd(10)}a path it says is not there, and it is`,
+    `    ${'likely'.padEnd(10)}this shell's /tmp is private to it, so the daemon sees a different one`,
+    `    ${'continue'.padEnd(10)}fli ${context.config.lesson} --workspace ~/frontier-tutorial`,
+  ].join('\n'))
+  context.config.abort = true
+  return
+}
 
 if (!await must(context, probe.dockerRunning({ container, name: `the container ${container} is running` }), {
   likely:    'the deploy did not reach the swap, or the container exited — its output is above',

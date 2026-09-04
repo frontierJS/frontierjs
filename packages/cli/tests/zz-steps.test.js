@@ -229,7 +229,7 @@ describe('_steps/ attaches to the index, not to every sibling', () => {
     const file = resolve(__dir, 'fixtures/sibling-steps/scratch.md')
     const ev   = await runCommand(file, [], {})
     const log  = texts(ev)
-    // It used to be initialised only inside the steps runner, so every deploy
+    // It used to be initialized only inside the steps runner, so every deploy
     // command got it by accident and deploy:doctor threw
     // "undefined is not an object" on context.config.abort = true.
     expect(log.some(t => t.includes('scratch is object'))).toBe(true)

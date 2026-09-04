@@ -41,7 +41,7 @@ export type { Service, ServiceDefinition, ServiceDefinitionValue, BaseServiceOpt
 // ─── Sorting ──────────────────────────────────────────────────────────────
 // The one reading of `orderBy` (Bridge index). `autoSort` VALIDATES a request's
 // `$orderBy` and leaves it raw on `ctx.directives`, so a service that wants to
-// honour it has to parse the same three spellings — and doing that by hand in
+// honor it has to parse the same three spellings — and doing that by hand in
 // a service is how the grammar ends up with a second definition.
 export { normalizeOrderBy, comparatorFor, compareValues } from './src/core/sort.ts'
 export type { SortParam, OrderBy } from './src/core/sort.ts'

@@ -120,7 +120,7 @@ killed, and survived a page reload.
 `.get()` and `.value`. The virtual-module bridge patched `.get` and left
 `.value` on the original closure, so `.value` was an untracked read in a script —
 and in a template the accessor rewrite turned `{s.value}` into `s.get().value`,
-a property lookup on the value object. Same syntax, two behaviours, no
+a property lookup on the value object. Same syntax, two behaviors, no
 diagnostic. (Removed; signals are Mesa signals now.)
 
 **It isn't verifiable by reading.** Writing

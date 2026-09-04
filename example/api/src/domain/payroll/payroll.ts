@@ -17,7 +17,7 @@ import { postJournal }                    from '../ledger.ts'
 import { arrearsFor }                     from './arrears.ts'
 import { draftPayslip, withArrears, assertPayslipAddsUp } from './payslip.ts'
 
-/** A Litestone client of some flavour — `inventory.ts`'s reason, unchanged. */
+/** A Litestone client of some flavor — `inventory.ts`'s reason, unchanged. */
 type Client = Record<string, any>
 
 // ─── the batch ────────────────────────────────────────────────────────────

@@ -138,7 +138,7 @@ model M { orgId String  org Org @relation(fields: [orgId], references: [id])  x 
       .toMatch(/names the relation 'org' — name the foreign key field instead/)
   })
 
-  it('an array — the key would be over a JSON serialisation', () => {
+  it('an array — the key would be over a JSON serialization', () => {
     expect(errorsOf(`model M { a String  tags String[]  @@id([a, tags]) }`)[0])
       .toMatch(/names the array 'tags'/)
   })

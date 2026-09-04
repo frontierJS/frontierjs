@@ -108,7 +108,7 @@ both halves, and **`FJS-296`** was filed and closed out of it. Decision waiting:
 ### 1. Every auth failure reached the client as HTTP 500 — **FIXED**
 
 `auth.ts` threw plain `new Error(...)`. Junction's `toFrameworkError()`
-(`src/core/errors.ts`) only honours its own `FrameworkError` subclasses plus two
+(`src/core/errors.ts`) only honors its own `FrameworkError` subclasses plus two
 name-matched Litestone errors — everything else became `GeneralError`, a **500**.
 
 Reproduced against a real `createTestApp()` — 5 of 22 route probes:
@@ -199,7 +199,7 @@ state.
 ### 3. `cookieAuth: true` also returned the token in the body — **FIXED**
 
 `types.ts` documents the cookie as going out "instead of returning it in the
-response body". It did both: `respond()` set the cookie and still serialised
+response body". It did both: `respond()` set the cookie and still serialized
 `{ token, user }`. The entire point of `httpOnly` is that page JavaScript cannot
 read the token, and handing it back in the body defeated the opt-in.
 
@@ -254,7 +254,7 @@ Everything in "the good news" above is now regression-protected, including the
 two facts this file previously told readers to assume were broken.
 
 Still uncovered: `createAuthCleanupJobs` has no test, and there is no test for
-concurrent logins or session-fixation behaviour.
+concurrent logins or session-fixation behavior.
 ### 6. Login is a user-enumeration timing oracle — **FIXED**
 
 Was: `login()` returned early when the user was absent, skipping the bcrypt

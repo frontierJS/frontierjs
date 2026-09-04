@@ -8,7 +8,7 @@
  * per realm that drifts.
  *
  * The label matters more than it looks. A relation's local key is emitted as a
- * plain integer, so a form labelled "customer" was reporting `customerId is
+ * plain integer, so a form labeled "customer" was reporting `customerId is
  * required` — the column name, under a label that says something else.
  */
 

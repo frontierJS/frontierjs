@@ -49,7 +49,7 @@ find it:
   underneath is unverified** and is the first thing to check.
 - Say it in the docs at the point of `create()`. This is the largest number in the
   whole investigation and it is a *usage* fact, not a code fact — no amount of
-  optimising the framework recovers it for a caller who writes the loop.
+  optimizing the framework recovers it for a caller who writes the loop.
 
 ---
 
@@ -121,8 +121,8 @@ next person spends their week somewhere else.
 but `heapUsed` **6.1 MB** and `external` 2.9 MB. Litestone's live footprint is under 10
 MB; the rest is JSC declining to return pages to the kernel. An empty `.mjs` file is
 already 68.7 MB RSS while `bun -e ''` is 29.8 MB, so ~39 MB is bun's file-module
-machinery — four times the whole package's live memory. **Optimising litestone for RSS
-is optimising the wrong process.**
+machinery — four times the whole package's live memory. **Optimizing litestone for RSS
+is optimizing the wrong process.**
 
 **SQLite pragmas are not the memory cost.** `client.js` sets `cache_size = -32768`
 (32 MB) on both the write and read connections and `mmap_size = 256 MB`, which reads
@@ -142,7 +142,7 @@ surface is only 87 KB over the client. `index.js` does eagerly pull 24 modules /
 which a running server calls — and lazy-importing those is worth doing for cold start
 and for tidiness. But the ceiling on the whole exercise is roughly 10 MB of RSS, which
 is smaller than `--smol` gives for free. Do the lazy imports; do not build a
-schema-driven `--define` specialisation pass expecting a memory result.
+schema-driven `--define` specialization pass expecting a memory result.
 
 **If a feature-stripping build is ever built anyway, it must carry a boot guard.** A
 build flag that removes gate enforcement is precisely the fail-open shape Invariant 6
@@ -166,7 +166,7 @@ precomputation in §The per-write floor, which keeps every semantic.
 29.8 MB, and the `bun:sqlite` coupling at `client.js:8` would have to be abstracted to
 lose the comparison.
 
-**Do not optimise the read path.** 1.13× the raw-sqlite floor, stated above and
+**Do not optimize the read path.** 1.13× the raw-sqlite floor, stated above and
 repeated here because it is the lead most likely to be picked up again by someone
 reading only the write numbers.
 
@@ -189,7 +189,7 @@ Named so that nobody reads absence as a clean result:
 - **`include` relation loading.** Untouched, and the likeliest remaining N+1.
 - **Whether Junction's bulk protocol actually reaches `createMany()`.** Assumed above
   that it may not; unverified either way, and it gates the largest recommendation here.
-- **ARM.** Everything is x64. The allocator behaviour behind the memory findings in
+- **ARM.** Everything is x64. The allocator behavior behind the memory findings in
   particular may differ on a Pi.
 - **`bun build --compile`.** The plausible answer to bun's 39 MB file-module overhead,
   and the one number in the memory section nobody has run.

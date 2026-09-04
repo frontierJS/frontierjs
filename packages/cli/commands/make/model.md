@@ -76,7 +76,7 @@ const makeLiteModel = (name, softDelete) => {
 // ─── The service ──────────────────────────────────────────────────────────────
 // The autoloader looks for a `create*Service` factory export and takes the
 // registered name from the FILENAME. A file exporting something it cannot
-// recognise is skipped with a warning rather than an error.
+// recognize is skipped with a warning rather than an error.
 
 const makeServiceFile = (model, plural) => {
   const pascalPlural = plural.charAt(0).toUpperCase() + plural.slice(1)
@@ -88,12 +88,19 @@ import { createBaseService } from '@frontierjs/junction'
 
 export function create${pascalPlural}Service() {
   return createBaseService({
-    // Announce every mutation on the '${plural}' channel so a subscribed browser
-    // updates without polling.
+    // Announce every mutation on the '${plural}' channel. Every write through
+    // this service is published there under its own name — the five CRUD
+    // methods and any action you add.
     //
-    // SCOPE THIS BEFORE YOU SHIP. Every connection in the channel receives every
-    // row, and @@allow policies are evaluated when a row is READ — a broadcast
-    // does not re-check them per subscriber. Set it to false to turn it off.
+    // NOTHING IS DELIVERED UNTIL A CONNECTION JOINS. Membership is the app's
+    // decision and Junction never makes it: a publish to a channel nobody
+    // joined succeeds and reaches nobody, with no error and no log. Join on
+    // connection with app.channel('${plural}').join(conn).
+    //
+    // Joining is a subscription and not a permission: each frame is graded
+    // per recipient against this model's own @@gate and @@allow, so a
+    // subscriber receives what they could have read and nothing else. Set
+    // channel to false to announce nothing.
     channel: '${plural}',
   })
 }

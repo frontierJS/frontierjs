@@ -28,7 +28,7 @@ const METHODS_WITH_BODY: Record<string, 1> = {
 // Fixed routes and dynamic routes are kept in SEPARATE fields.
 //
 // They used to share one object, with dynamic routes under the key 'D' and
-// fixed routes keyed by their normalised path. A route registered at '/D'
+// fixed routes keyed by their normalized path. A route registered at '/D'
 // normalises to exactly 'D', so it collided with the bucket: build() threw
 // `methodCache.D.push is not a function`, and lookup() would have returned the
 // bucket array as if it were a route. Two fields cannot collide.
@@ -189,6 +189,23 @@ export class Router {
     }
 
     return null
+  }
+
+  /**
+   * Which methods would answer this path?
+   *
+   * Only ever asked once the caller's own method has already missed, so the
+   * cost is on the 404 branch and nowhere else. It is the difference between
+   * *there is nothing here* and *not that way* — a `DELETE` on a read-only
+   * resource is a mistake the caller can fix, and 404 tells them to look for a
+   * different URL.
+   */
+  allowedMethods(path: string): string[] {
+    const out: string[] = []
+    for (const method in this._cache) {
+      if (this.lookup(method, path) !== null) out.push(method)
+    }
+    return out
   }
 
   get hasBodyMethods() { return METHODS_WITH_BODY }
@@ -385,10 +402,10 @@ export function matchPathDirect(
 
 // Array-based match — used for WS upgrade (exported) and tests.
 // Delegates to matchPathDirect — previously this was a second, independent
-// matcher with DIVERGENT wildcard semantics (it only honoured a wildcard in
+// matcher with DIVERGENT wildcard semantics (it only honored a wildcard in
 // the last segment, while matchPathDirect matches at the first wildcard),
 // so the same pattern could match differently depending on entry point.
-// One matcher, one behaviour.
+// One matcher, one behavior.
 function matchRoute(
   segments: RouteSegment[],
   actual:   string[]

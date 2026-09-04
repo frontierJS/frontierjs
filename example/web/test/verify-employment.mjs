@@ -57,7 +57,7 @@ const refused = async (fn) => { try { await fn(); return false } catch { return 
 
 // Everything this drive makes is registered here as it is made and swept in the
 // `finally` below — **on the failure path too**, which is the run whose
-// leftovers are hardest to recognise later. `payroll-sweep.mjs` owns the order
+// leftovers are hardest to recognize later. `payroll-sweep.mjs` owns the order
 // and the one hatch under the boundary the books need.
 const fixtures = { runIds: [], employeeIds: [] }
 let failedEarly = null
@@ -235,7 +235,7 @@ t('constraint.closingFirstMakesRoomForTheNext', !!next.id && !!shut.effectiveTo)
 await sys.payWindow.delete({ where: { id: next.id } })
 await sys.payWindow.update({ where: { id: opened.id }, data: { effectiveTo: null } })
 
-// `payAsAtMany`'s own overlap defence — the sentence naming the employee, and
+// `payAsAtMany`'s own overlap defense — the sentence naming the employee, and
 // the `latest` escape hatch beside it — is now UNREACHABLE through any client,
 // which is the correct outcome and is why it is not asserted here any more. It
 // stays in `api/src/domain/payroll` for a database written before the constraint

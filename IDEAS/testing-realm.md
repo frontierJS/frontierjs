@@ -9,7 +9,7 @@ dated: 2026-08-11
 **Status: Phases 1a, 1b, 2, 3's constraint runner, 4, and Phase 5's transport
 parity have SHIPPED — in `@frontierjs/litestone/testing` plus `@frontierjs/testing`.
 Phase 3's derived page model, Phase 5's generated pair and Phase 6 are unbuilt.**
-Dated 2026-08-11, amended 2026-08-12. This is a design record, not a description of behaviour
+Dated 2026-08-11, amended 2026-08-12. This is a design record, not a description of behavior
 (`VERIFYING.md`) — except where § The plan marks a phase shipped, and those claims
 belong to `packages/litestone/CHANGES.md`, which is where they should be read.
 Every claim about *another framework* was web-researched on the date above and is
@@ -61,7 +61,7 @@ Both came from surveying Rails, Laravel, Phoenix/Ecto, Django, Encore, AdonisJS,
 RedwoodJS, Wasp, SvelteKit and Supabase. Sources in § Evidence.
 
 **Migration cost dominates isolation cost, and Encore already solved it.** Every
-framework's test-database optimisation is *stop re-migrating*, not *isolate more
+framework's test-database optimization is *stop re-migrating*, not *isolate more
 cheaply*. Laravel's `RefreshDatabase` runs `migrate:fresh` on every run and the
 community had to ship a package that re-migrates only when migration files change;
 Rails' parallel-test overhead is per-process database setup and fixture loading, to
@@ -98,7 +98,7 @@ jsdom/happy-dom component tier.** Go straight to a real browser.
 J.B. Rainsberger's *Integrated Tests Are A Scam* gives the placement rule: each
 boundary gets a **collaboration test** (the client sends the right message and
 handles the response, against a stub) and a **contract test** (the real server
-honours that message). If both pass, the integration is proven and the integrated
+honors that message). If both pass, the integration is proven and the integrated
 test is redundant.
 
 **The exploit is that both halves are generatable, not just the contract half.** The
@@ -112,7 +112,7 @@ between them structurally impossible rather than merely discouraged.
 **Where the method needs adapting: "delete the integrated tests" is wrong here.**
 `example/README.md` § *Found by building this* is the counter-evidence, and it splits
 cleanly. FJS-097 (`userId` vs `auth().id`, every row policy matching nothing),
-FJS-098 (`actorId` declared `Int` against uuid sessions), FJS-099 (`methods:` honoured
+FJS-098 (`actorId` declared `Int` against uuid sessions), FJS-099 (`methods:` honored
 by one factory and dropped by the other) and the PATCH-rewrites-the-record defect are
 all boundary faults a pair would have caught. FJS-106 (a `.mesa` route compiled as
 Markdown **only by the prerenderer**, correct in dev and in the SPA build), FJS-107,
@@ -121,7 +121,7 @@ boundary faults at all — they are two code paths compiling the same source
 differently, and no contract test can see which build produced the message.
 
 So the chain tier survives, renamed and bounded. **Wiring tests assert that the
-pieces are connected, not that behaviour is correct** — one per assembly path (SPA
+pieces are connected, not that behavior is correct** — one per assembly path (SPA
 build, static build, HTTP transport, WS transport), which is a fixed, small,
 non-combinatorial set rather than the combinatorial space Rainsberger is arguing
 against. Rails prices this tier honestly: browser tests are slow, and they get
@@ -657,7 +657,7 @@ Three kinds of entry are in that list and only one of them wants a pair:
   than carrying a copy. Where this is available it beats a contract test, because
   a passing test still permits drift and a shared function does not.
 - **A genuine boundary** — two sides that can be edited independently, where one
-  sends a message and the other honours it.
+  sends a message and the other honors it.
 
 The eleven, ranked by how likely they are to be wrong today rather than by size:
 
@@ -924,11 +924,11 @@ Supabase needed a third-party helper package before RLS testing was bearable —
 [Basejump pgTAP helpers](https://usebasejump.com/blog/testing-on-supabase-with-pgtap) ·
 [Supabase pgTAP](https://supabase.com/docs/guides/local-development/testing/pgtap-extended).
 
-**Does anyone generate authorisation tests from an app schema? No.** Schemathesis
-generates negative authorisation cases from OpenAPI scopes; OpenFGA tests a
-declarative authorisation model in CI; OPA/Rego ships a policy test framework. All
+**Does anyone generate authorization tests from an app schema? No.** Schemathesis
+generates negative authorization cases from OpenAPI scopes; OpenFGA tests a
+declarative authorization model in CI; OPA/Rego ships a policy test framework. All
 three test a *policy artefact*, none derives from an application schema.
-[Continuous authorisation testing](https://auth0.com/blog/continuous-authorization-testing-fga-github-ci-cd/).
+[Continuous authorization testing](https://auth0.com/blog/continuous-authorization-testing-fga-github-ci-cd/).
 Mutation testing of access-control policies is established research.
 [XACML fault model, WWW '07](https://dl.acm.org/doi/10.1145/1242572.1242663) ·
 [Testing access-control configuration changes](https://arxiv.org/pdf/2505.12770).

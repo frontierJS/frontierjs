@@ -34,8 +34,8 @@ export default {
     queues: {
       default:    { concurrency: 2 },
       // One at a time: the courier's API is rate limited in the story, and a
-      // single worker makes the queue's behaviour observable in a drive.
-      fulfilment: { concurrency: 1 },
+      // single worker makes the queue's behavior observable in a drive.
+      fulfillment: { concurrency: 1 },
     },
   },
 }

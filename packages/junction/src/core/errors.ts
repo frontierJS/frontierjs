@@ -62,7 +62,7 @@ export class Timeout          extends FrameworkError { constructor(m?: string, d
 // wrong password, and @frontierjs/caravan returned 500 for an unauthorized
 // admin request. Both worked around it locally, in different ways.
 //
-// A thrown value is now recognised by, in order:
+// A thrown value is now recognized by, in order:
 //
 //   1. instanceof FrameworkError        — already precise, use it
 //   2. a registered ErrorMapper         — for errors you cannot modify
@@ -82,7 +82,7 @@ export type ErrorMapper = (err: unknown) => FrameworkError | null | undefined
 const _mappers: ErrorMapper[] = []
 
 /**
- * Teach the error boundary about errors it cannot recognise on its own —
+ * Teach the error boundary about errors it cannot recognize on its own —
  * typically a third-party library whose error classes you cannot modify.
  *
  * Mappers are consulted most-recently-registered first, and a mapper that

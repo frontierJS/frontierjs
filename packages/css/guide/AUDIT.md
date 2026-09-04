@@ -209,7 +209,7 @@ diagram of itself rather than showing the fault.
 
 Real UI, but for a *documentation app*, not for the design system. The package
 has no term for a ⌘K palette or a decision wizard — and in the palette's case
-that is close to a ruling: there is no Menu term because arrow-key behaviour is
+that is close to a ruling: there is no Menu term because arrow-key behavior is
 not CSS, and the same reasoning applies here.
 
 - `sg-search-*` (19) — the ⌘K palette
@@ -262,7 +262,7 @@ a glance. Two files make the debt a number that goes down.
 to fail on purpose before being trusted, because a green test that cannot go red
 is worse than no test.
 
-Modelled on `demo.spec.js`, which exists because of exactly this failure mode:
+Modeled on `demo.spec.js`, which exists because of exactly this failure mode:
 the demo wrote `class="page"` on every pagination control, a class the package
 does not ship, and it rendered as raw UA links for as long as it existed because
 nothing looked.
@@ -359,7 +359,7 @@ capture listener on `document`. Same class of gap `CLAUDE.md` records for
 top-layer transitions. `dispose()` in `openConfig` is the direct removal each
 exit calls, with the `close` listener kept so Esc still works in a real browser.
 
-The dialog conversion is the one change here that improves behaviour rather than
+The dialog conversion is the one change here that improves behavior rather than
 just provenance: Esc, focus trapping, `::backdrop` and the entry/exit motion in
 `overlays.css` all arrive with the element.
 
@@ -432,9 +432,9 @@ done with our CSS at all?* Mostly yes. `.sg-next-link` was a hand-built
 hand-drawn `border-top`; it is an `<hr>`. The label column was a hand-built
 flex column; it is a `.stack`.
 
-The grid version needed `grid-row: 1 / -1` on the arrow so it would centre
+The grid version needed `grid-row: 1 / -1` on the arrow so it would center
 against the whole card rather than against the label — because on pages that
-cross a nav group the card grows a third line. **Split centres it for free**,
+cross a nav group the card grows a third line. **Split centers it for free**,
 and the browser confirms it in both variants. That is the shape of most of these
 finds: the hand-rolled version is not only longer, it carries a fix for a
 problem the term does not have.

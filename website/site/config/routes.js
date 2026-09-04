@@ -138,7 +138,7 @@ export const tree = {
       file: "src/routes/tutor.mesa",
       companion: "src/routes/tutor.meta.js",
       layout: "src/routes/_module.mesa",
-      meta: {"title":"FrontierJS — the tutorial is a command","description":"fli tutor is four lessons that run the real commands and then ask the running world whether they worked — including a real deploy to your own machine. It is graded by the project's own CI.","render":"static"},
+      meta: {"title":"FrontierJS — the tutorial is a command","description":"fli tutor is eight lessons that run the real commands and then ask the running world whether they worked — including a real deploy to your own machine. It is graded by the project's own CI.","render":"static"},
       params: [],
       children: [],
     },

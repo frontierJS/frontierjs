@@ -18,7 +18,7 @@
  * The stub is also how the diagnostics below are reached. The plugin defends
  * against a warning containing a newline and an error carrying `details`; no
  * compiler output today has either, so without a stub those branches are
- * unreachable and the defence is untested until the day it matters.
+ * unreachable and the defense is untested until the day it matters.
  */
 
 import { describe, test, expect, vi } from 'vitest'

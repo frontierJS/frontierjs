@@ -30,7 +30,7 @@ $$runtime.createEffect(() => { $$watch_cart_total(); });
 var __a = `${$$proxy_cart.total}`;
 ```
 
-Behaviour, measured:
+Behavior, measured:
 
 | | re-renders |
 |---|---|
@@ -146,7 +146,7 @@ at all. Only the writer does.
 
 **A raw write silently does nothing.** If any code path mutates `page.path`
 without going through `watchProxy`, no watcher fires. This is a new silent
-failure — but it's localised to the *producing* package, where one module owns
+failure — but it's localized to the *producing* package, where one module owns
 all writes, instead of being spread across every consuming app. That's a much
 smaller surface.
 

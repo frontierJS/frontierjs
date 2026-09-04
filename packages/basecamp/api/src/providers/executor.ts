@@ -5,7 +5,7 @@
 // Until FJS-257 there was no such question. `deployment-run.job.ts` looked for a
 // placement, found none, returned early from every step, and the caller marked
 // each one `success` — a release that finished green in 23ms having issued no
-// command, with the App left reading `running`. The early return was labelled
+// command, with the App left reading `running`. The early return was labeled
 // "log only, don't fail (supports local/stub mode)", which is the shape this
 // module exists to replace: a stub nobody asked for and nothing named.
 //

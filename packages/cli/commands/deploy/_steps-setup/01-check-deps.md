@@ -15,7 +15,7 @@ if (machine.reach()) {
   log.success(machine.local ? 'Local machine' : 'SSH connected')
 } else {
   log.error(`Cannot reach ${host}`)
-  log.info('Check that your SSH key is authorised on the server:')
+  log.info('Check that your SSH key is authorized on the server:')
   log.info(`  ssh-copy-id ${host}`)
   context.config.abort = true
   return

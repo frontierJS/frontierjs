@@ -1,10 +1,10 @@
 # Orion
 
 > **Status: V2, deferred.** Folder claimed, nothing implemented, and nothing is owed here **until FrontierJS core
-> leaves alpha** (`FJS-D14`, ruled 2026-08-15 — `DECISIONS.md` § Repo conventions). Orion is an app built ON the
-> framework, so building it now spends alpha time on a consumer of seams that are still moving; its primary
-> trigger also waits on a Junction subscriber for litestone's `onEvent` (`FJS-010`, blocked on `FJS-D04`).
-> This file is the intent, not a description of behaviour — and the thing to reopen when core is out of alpha.
+> leaves alpha** (`FJS-D14` — `DECISIONS.md` § Repo conventions). Orion is an app built ON the
+> framework, so building it now spends alpha time on a consumer of seams that are still moving. Its primary
+> trigger is a Junction subscriber for litestone's write tap, which `announceDataWrites` now provides.
+> This file is the intent, not a description of behavior — and the thing to reopen when core is out of alpha.
 
 An automations engine. Triggers, conditions, actions — wired into flows that run on their own. Think Zapier or n8n, except it runs inside your own app, against your own schema, with your own gates enforced.
 

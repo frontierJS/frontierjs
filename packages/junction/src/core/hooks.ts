@@ -288,7 +288,7 @@ async function runAroundHooks(
 // ─── Sequential hook runner ───────────────────────────────────────────────
 // Stops early if a before or validated hook sets ctx.result — the rest of the
 // chain is skipped just as the method itself is. This is the correct Feathers
-// short-circuit behaviour.
+// short-circuit behavior.
 
 async function runHooks(
   ctx:        ServiceContext,

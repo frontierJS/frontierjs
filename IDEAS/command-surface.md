@@ -8,7 +8,7 @@ dated: 2026-08-10
 
 **Status: IDEA. Nothing here is built.** Dated 2026-08-10. Written after sizing
 `packages/cli` against oclif, Salesforce's CLI framework. Do not cite this file as
-describing behaviour — see `VERIFYING.md`.
+describing behavior — see `VERIFYING.md`.
 
 ---
 
@@ -77,7 +77,7 @@ deploy failed* from *the SSH host is down*.
 
 - `--json` as a global contract rather than a per-command courtesy. oclif's
   `enableJsonFlag` is the shape: a command returns a value, the framework decides
-  whether to render it or serialise it. `fli`'s `run(context)` already returns
+  whether to render it or serialize it. `fli`'s `run(context)` already returns
   `context`, so the return channel exists and nothing reads it.
 - A JSON error envelope on the same switch — code, message, the command, and the
   suggestions the did-you-mean engine already computes.
@@ -161,7 +161,7 @@ as a user meets them.
 **The proposal.** Export `runCommand(name, { args, flags, dry })` — resolve through
 the real registry, compile with the real module script, capture the output, return
 the context. `--dry` already makes this safe for the majority of commands, because
-`exec` and `stream` both honour it and print instead of running.
+`exec` and `stream` both honor it and print instead of running.
 
 oclif ships `@oclif/test` for exactly this and it is the least interesting item on
 their list; here it is the one that closes a hole the repo has already written down.
@@ -218,7 +218,7 @@ out loud because the two are indistinguishable from the result.
 `rl.pause()` does not hold back lines readline has already buffered, so a pasted
 block fires every handler and the statements complete in whatever order their
 awaits finish — against a database, writes landing in an order nobody wrote.
-Serialising is a promise chain, and `close` has to await it too.
+Serializing is a promise chain, and `close` has to await it too.
 
 **What is left is the `M` this record predicted, and it is the API realm.** `db`
 and nothing above it: a console over the app's *services* — hooks, the result
@@ -247,7 +247,7 @@ not have Node. `fli` ships on npm to people who already have it; `npm i -g` is t
 update mechanism and a version-check warning is the whole remainder.
 
 **A `Command` class hierarchy.** oclif's inheritance model is how a TypeScript CLI
-shares behaviour between commands. `_module.md` already answers that here, from the
+shares behavior between commands. `_module.md` already answers that here, from the
 namespace rather than from a base class, and it answers it in the language the
 command is written in.
 

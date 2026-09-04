@@ -109,6 +109,6 @@ The schema is a starting point, not a migration:
 
 ## Related
 
-- [modelling.md](modelling.md) — writing a schema from scratch
+- [modeling.md](modeling.md) — writing a schema from scratch
 - [schema.md](schema.md) — the language the output is written in
 - [cli.md](cli.md) — every command with its flags

@@ -279,7 +279,7 @@ export async function openChrome({ windowSize = '1280,900', bootstrap } = {}) {
   const press = (k, modifiers = 0) => key(k, { ...(KEYS[k] ?? {}), modifiers })
   const type  = async (text) => { for (const ch of text) await key(ch) }
 
-  /** A real click at an element's centre, through the input pipeline.
+  /** A real click at an element's center, through the input pipeline.
    *
    *  `el.click()` is enough for a handler, and not enough for anything the
    *  browser itself decides: light-dismissing a `[popover]`, closing a
@@ -294,7 +294,7 @@ export async function openChrome({ windowSize = '1280,900', bootstrap } = {}) {
       // whatever is at those coordinates, or nowhere, and the assertion
       // afterwards reads as a control that does nothing. The test is the POINT
       // this will press, not the element: a control straddling the bottom edge
-      // has its top in view and its centre past it, which is the whole of a
+      // has its top in view and its center past it, which is the whole of a
       // full-width field at the end of a long form. Scroll ONLY when that
       // point is out of view — a spec that has positioned the page
       // deliberately (a popover testing where it flips) must not have that

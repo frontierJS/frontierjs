@@ -251,7 +251,7 @@ The write half matters because the read half hides the evidence: without it the
 column is invisible and settable at once, so a caller cannot see what they are
 overwriting and the owner cannot see that they did.
 
-`@omit` is the weaker neighbour — a read-shaped rule only, and an explicit
+`@omit` is the weaker neighbor — a read-shaped rule only, and an explicit
 `select` unlocks it. Neither level of `@guarded` is unlockable that way.
 
 For a column *some* callers may write, the tool is field-level

@@ -156,7 +156,7 @@ answering *which words does any app in this repo actually use*.
 - If the grid cannot be made to run in a time an application will tolerate. This one
   has a real warning sign already: `litestone mutate` runs in no CI phase because
   basecamp took over 25 minutes and was killed (`FJS-598`). A proof nobody runs is a
-  document. **Tiering is therefore part of the design, not a later optimisation.**
+  document. **Tiering is therefore part of the design, not a later optimization.**
 
 ## 7. Order
 

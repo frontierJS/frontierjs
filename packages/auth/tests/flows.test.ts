@@ -887,7 +887,7 @@ describe('the auth hooks', () => {
     h.cleanup()
   })
 
-  test('no hooks configured is the behaviour that already existed', async () => {
+  test('no hooks configured is the behavior that already existed', async () => {
     const h = await makeAuth()
     await h.auth.createUser({ email: 'a@b.co', password: 'correct-horse-1', name: 'A' })
     const { token } = await h.auth.login('a@b.co', 'correct-horse-1')

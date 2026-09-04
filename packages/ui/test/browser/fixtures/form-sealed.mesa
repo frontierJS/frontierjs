@@ -1,0 +1,65 @@
+<script>
+  // form-sealed.mesa — a document that has been issued.
+  //
+  // `@immutable` on a model that declares a `@seals` move means *frozen at the
+  // seal*, so the answer is in the ROW and no schema keyword can carry it: the
+  // field arrives with `x-litestone-seal` INSTEAD of `readOnly`, and until this
+  // nothing read it — a person edited a sealed invoice's number, pressed save,
+  // and got a 409 for a field the screen had shown as writable.
+  //
+  // Everything crossing the seam is real: `sealedFor` is Sierra's, by relative
+  // specifier, and the resource resolves the list through it exactly as
+  // `createResource` does. What is stubbed is the network alone.
+  import Form from '../../../components/forms/Form.mesa'
+  import { formFieldList, coerceToSchema, sealedFor } from '@frontierjs/sierra/field-rules'
+
+  // The shape litestone emits in UPDATE mode for `number String @immutable` on
+  // a model whose `issue: draft -> issued` move is `@seals`. Note what is NOT
+  // here: `readOnly`. That is the whole reason the seal needs resolving.
+  const SEAL = { field: 'state', states: ['issued', 'paid'] }
+  const FIELDS = {
+    id:     { type: 'string', readOnly: true, title: 'Id' },
+    number: { type: 'string', title: 'Number',
+              'x-litestone-kind': 'immutable-until-seal', 'x-litestone-seal': SEAL },
+    note:   { type: 'string', title: 'Note' },
+    state:  { type: 'string', title: 'State', enum: ['draft', 'issued', 'paid'] },
+  }
+
+  let sent = []
+  window.kitSent = () => sent
+
+  const RESOURCE = {
+    context: { model: 'Invoice', service: 'invoices', idField: 'id' },
+    fields:  FIELDS,
+    formFields: (opts) => formFieldList(FIELDS, opts),
+    options: () => Promise.resolve([]),
+    make: () => ({ number: '', note: '', state: 'draft' }),
+    coerce: (data) => coerceToSchema(FIELDS, data),
+    fieldErrors: () => ({ fields: {}, message: '' }),
+    // The same walk `createResource` does, over the same rule module.
+    sealedFields: (record) => {
+      if (!record) return []
+      return Object.entries(FIELDS).filter(([, r]) => sealedFor(r, record)).map(([n]) => n)
+    },
+    save: (data, opts) => {
+      sent = [...sent, { mode: opts?.mode ?? '-', keys: Object.keys(data), data }]
+      return Promise.resolve({ ok: true })
+    },
+    service: {},
+  }
+
+  const ISSUED = { id: 'i-1', number: 'A-1', note: 'as issued', state: 'issued' }
+  const DRAFT  = { id: 'i-2', number: 'A-2', note: 'still open', state: 'draft' }
+</script>
+
+<div id="issued">
+  <Form resource={RESOURCE} record={ISSUED} />
+</div>
+
+<div id="draft">
+  <Form resource={RESOURCE} record={DRAFT} />
+</div>
+
+<div id="create">
+  <Form resource={RESOURCE} />
+</div>

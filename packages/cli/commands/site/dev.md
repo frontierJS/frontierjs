@@ -25,7 +25,9 @@ not a surprise.
 ```js
 const port = flag.port ? `SITE_PORT=${flag.port} ` : ''
 context.exec({
-  command: `${port}bunx vite -c config/vite.config.js`,
+  // `bun --bun` and the app's own `.env` — same reasons as site:build, and the
+  // dev server needs the first one too because it RUNS a static route's loader.
+  command: `${port}bun --bun --env-file=../.env vite -c config/vite.config.js`,
   cwd:     context.paths.site,
   dry:     flag.dry,
 })

@@ -84,7 +84,7 @@ function mockPagePort() {
 //
 // `createMakeFromSchema` and the hook pipeline are `@frontierjs/toolbelt`'s
 // (`FJS-059`): pure, zero-dependency, and a hand copy of Sierra's until they
-// moved. Their behaviour is asserted there, in `test/specs/jsonschema.spec.js`
+// moved. Their behavior is asserted there, in `test/specs/jsonschema.spec.js`
 // and `hooks.spec.js`, and restating it here would be two owners again by
 // another route. What is jetty's — and what the copy got WRONG — is the wiring
 // below.
@@ -103,7 +103,7 @@ group('the substrate halves')
   if (same) ok('and so do all four hook runners')
   else bad('a hook runner is not toolbelt\'s')
 
-  // mergeHooks answers a NEW map — toolbelt's licence is that every export is
+  // mergeHooks answers a NEW map — toolbelt's license is that every export is
   // pure. The older spelling merged in place, so a caller upgrading has to
   // assign the result.
   const target = { before: { all: ['A'] } }
@@ -439,7 +439,7 @@ group('createResource — channel push events update store')
   if (!storeData?.find((x) => x.id === 3)) ok('a remove is not mistaken for an upsert')
   else bad('remove was upserted — the event name is being ignored')
 
-  // The bus spelling must not be honoured on the wire, or the two vocabularies
+  // The bus spelling must not be honored on the wire, or the two vocabularies
   // are interchangeable and the separator stops discriminating anything.
   port._emitChannel('widgets', { id: 4 }, 'widgets:created')
   if (!storeData?.find((x) => x.id === 4)) ok('the colon spelling is not accepted from the wire')

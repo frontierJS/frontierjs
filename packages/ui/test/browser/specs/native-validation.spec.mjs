@@ -25,7 +25,7 @@ export async function run(t) {
   t.ok(!ours.some((w) => w.includes('quietField')),
     'and a novalidate form has nothing to report')
 
-  // The warning is a report, not a change of behaviour: the constraint is
+  // The warning is a report, not a change of behavior: the constraint is
   // still on the element, because that is what makes it announceable.
   const state = await t.evaluate(`
     const el = document.querySelector('[name=bareField]');

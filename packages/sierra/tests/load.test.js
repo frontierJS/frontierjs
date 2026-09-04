@@ -2,7 +2,7 @@
  * tests/load.test.js — tests for load() data flow
  *
  * Tests: companion resolution in scanner, loaders map in the route table,
- * sierraFetch wrapper, and load() invocation behaviour.
+ * sierraFetch wrapper, and load() invocation behavior.
  */
 
 import { describe, test, expect, beforeAll, vi } from 'vitest'

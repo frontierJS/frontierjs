@@ -164,7 +164,7 @@ export function requireCapability(model, action, ctx) {
  * Separation of duties — *the person who administers access must not use it* — is
  * the real exception this forbids, it is squarely in the 20%, and the hatch is a
  * service method that writes its own rule. `grantable Capability[]` is the shape
- * that would generalise it and is deliberately not shipped: a blunt off-switch on a
+ * that would generalize it and is deliberately not shipped: a blunt off-switch on a
  * security rule is the worse of the two.
  */
 export function requireGrantSubset(model, field, values, ctx) {

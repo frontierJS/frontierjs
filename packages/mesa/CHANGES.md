@@ -175,7 +175,7 @@ built that content sees no reason to run again. The page keeps a live, correct
 This is the rule a component invocation has followed since `FJS-110`, and the
 fix is that rule applied to `{#if}`, `{#each}`, `{#key}`, `{#await}`, `{@render}`
 and `{@html}` — `ownAnchor()` pushes a comment of the block's own rather than
-adopting a neighbour.
+adopting a neighbor.
 
 **Two accidents decide whether a given page shows it**, which is what kept it
 unisolated for a day and made `FJS-512` read as a `{#if}` going stale beside an
@@ -253,7 +253,7 @@ the screen had none; `verify:widget` covers it now.
 
 19 tests in `test/watch-no-depth.test.js`: the refusal matrix in both
 directions, the message naming the variable and both ways out, and three
-behavioural cases that mount real components — a plain `let` re-rendering on its
+behavioral cases that mount real components — a plain `let` re-rendering on its
 own, and the deep watch still tracking a mutation on an object and on a named
 path, which is the half that must not regress.
 
@@ -278,7 +278,7 @@ reads back as live markup.
 deferred as six majors needing the suite behind it. The suite needed no change
 for the API rewrite. Three advisories, two critical, go with it.
 
-**Four tests pin the behaviour, and they were run against 14.12.3 first to
+**Four tests pin the behavior, and they were run against 14.12.3 first to
 confirm they fail.** An assertion about a dependency belongs in the suite and
 not in a version range: a downgrade, a second resolved copy or a serialiser
 regression is red now, rather than an injected script on a page a CDN holds.
@@ -571,7 +571,7 @@ through the accessor map, and so was never affected either way.
 `FJS-477`. Three door members are compiled rather than read — a pre-parse pass
 rewrites `$.mounted`, `$.context` and `$.inspect` to `$mounted`, `$context`,
 `$inspect` — and the DECLARATION of those locals was gated on a sniff that
-recognised one shape each. Every other shape emitted a reference to a binding
+recognized one shape each. Every other shape emitted a reference to a binding
 nothing declared: clean compile, valid JavaScript, `ReferenceError` on first
 render.
 
@@ -663,7 +663,7 @@ sense `FJS-D134` had just ruled. `$dom` is what a block factory answers with and
 turns `$.context` into `$context`, so their injected locals must keep the bare
 spelling or the author's own reference resolves to nothing.
 
-What did NOT converge is `__anchor`, `__block`, `__props` and their neighbours,
+What did NOT converge is `__anchor`, `__block`, `__props` and their neighbors,
 so the four-line rule is still three lines and a footnote. That half stays open.
 
 ## 2026-08-24 — the runtime's exports drop their `$`
@@ -796,7 +796,7 @@ per `FJS-D132` it ships as a 0.1.x patch, which a `^0.1.3` range resolves.
 `FJS-D132` phase 3. 249 sites across 120 `.mesa` files rewritten from
 `$onDestroy` to `$.onDestroy` and its eleven siblings. Both spellings still
 compile — the old one is retired in phase 4 — so this is the tree catching up
-with the door rather than a change of behaviour.
+with the door rather than a change of behavior.
 
 **39 dead imports went with it.** Thirty-nine components carried
 `import { $onDestroy } from '@frontierjs/mesa/runtime'`, which has never done
@@ -903,7 +903,7 @@ this compiler has emitted at module scope in a while and that is the shape
 
 `FJS-471`, and the first phase of `FJS-D132`. The compiler injects thirteen
 names as `const` into the component factory scope — `$props`, `$onMount`,
-`$option`, `$slots` and their neighbours. An instance script declaring one
+`$option`, `$slots` and their neighbors. An instance script declaring one
 emitted a SECOND declaration of that name in the same scope, which is a
 duplicate binding and therefore a `SyntaxError`, while the compile reported
 nothing at all.
@@ -1002,7 +1002,7 @@ version of this fix.
 `null` still removes in every case, which is what the `x || null` idiom through
 the components is for.
 
-## 2026-08-23 — a component may import its own neighbour
+## 2026-08-23 — a component may import its own neighbor
 
 1216 tests, 0 fail. Browser drives 47/47.
 
@@ -1047,7 +1047,7 @@ whole class is invisible to the vitest suites — `test/browser/runtime/`'s
 `dirty-props` is the assertion, and it covers the second flip as well as the
 first, because a one-shot recovery passes a single round trip.
 
-One behaviour came with the merge: the reactive path now keeps `__value` beside
+One behavior came with the merge: the reactive path now keeps `__value` beside
 a dynamic `<option value={obj}>`, which only the static path did. An object
 attribute stringifies to `[object Object]`, so a bound `<option>` over objects
 could not hand its value back.
@@ -1061,7 +1061,7 @@ element under the pointer is outlined with its location, click and Vite's own
 focus, for the keyboard.
 
 **An attribute rather than a runtime map**, which is where this differs from the
-Svelte plugin it is modelled on. Svelte builds a DOM element at a time and can
+Svelte plugin it is modeled on. Svelte builds a DOM element at a time and can
 hang `__svelte_meta` on each one; Mesa clones a template, so an element with no
 binding has no runtime reference for a map to be keyed by — and those are most
 of them. The attribute goes into the template string, so it costs nothing at
@@ -1190,7 +1190,7 @@ renders the array it was handed. **The trade is node identity across a
 reorder** — a moved item is rebound into the node already at that position, so
 DOM state a row owns (focus, an uncontrolled input, a running animation) stays
 with the POSITION. An author who needs identity states a key, and `(item)` is
-still how you ask for the old behaviour where the values really are unique.
+still how you ask for the old behavior where the values really are unique.
 `$$virtualEach` already keyed by index with no key function, so the two forms
 now agree.
 
@@ -1259,7 +1259,7 @@ that dies is disposed before anyone asks.
 
 `createEffect`'s own comment had stated this invariant for renders since it was
 written — *an ifBlock's condition has to run before the renders inside its
-branch*. The derived tier was added ahead of both passes and did not honour it.
+branch*. The derived tier was added ahead of both passes and did not honor it.
 
 **Reproducing it needed three things at once, which is the diagnosis.** The
 guarded value must be DERIVED, the outer loop FIXED, and the read a MEMO rather
@@ -1302,7 +1302,7 @@ tested everywhere but a browser (`FJS-024`).
 the report; `test/browser/probes.js` is the in-page DOM half. `@frontierjs/ui`
 now reads both by relative path instead of carrying its own copy — one CDP
 client, so a trap learned in one drive is fixed for both. The extraction is
-behaviour-identical: 631 assertions, 65/65 components, unchanged.
+behavior-identical: 631 assertions, 65/65 components, unchanged.
 
 **`runtime/` — the language against a real DOM.** 39 assertions over six
 fixtures: the delegation root and the five events that do not bubble,
@@ -1313,7 +1313,7 @@ content an `{#if}` or an `{#each}` builds later.
 
 **`vite/` — the plugin in a real dev server.** 31 assertions. HMR was proven up
 to the frame Vite sends and no further; this watches a component swap in place,
-twice, with the neighbour's state intact and no navigation, plus a style-only
+twice, with the neighbor's state intact and no navigation, plus a style-only
 edit, the devtools panel booting, and both compile-error routes. The fixture
 app is copied to a temp directory and edited there, because an edit is what an
 HMR update IS and a drive that mutates tracked files leaves the tree dirty when
@@ -1877,7 +1877,7 @@ email-kit 34, `@frontierjs/ui` 64 compile / 26 render / 60 attributes / 7 form.
 
 — an assignment to a call, so the module did not parse. Clean compile, empty
 `analysis.errors`, and the failure surfaced as *contains invalid JS syntax*
-from Vite. Both rewriters recognised only a bare `Identifier` on the left, so a
+from Vite. Both rewriters recognized only a bare `Identifier` on the left, so a
 pattern fell through to the generic descent and every target was rewritten as a
 READ.
 
@@ -2012,7 +2012,7 @@ checked by reverting it.
 routed any source beginning with `---` to `compileMd`, whatever its extension.
 A `---` block is how every Sierra route states its title and its render mode, so
 that heuristic said "this component is Markdown" about most route files in
-existence. Markdown escapes what it does not recognise:
+existence. Markdown escapes what it does not recognize:
 
 ```mesa
 <CatalogList client:load products={data?.products ?? []} />
@@ -2186,7 +2186,7 @@ accepts any value at all, so the suite saw nothing.
 
 - **undefined** is "no value yet", not "clear" — it leaves a selection the user
   just made alone.
-- **A FileList** is assigned straight through, recognised by shape rather than
+- **A FileList** is assigned straight through, recognized by shape rather than
   `instanceof`: a FileList from an iframe is a different constructor and fails
   the instanceof check, and so does a shimmed DOM's.
 - **An array of File objects** is converted through a `DataTransfer`. The DOM
@@ -2313,7 +2313,7 @@ reach.
 ## 2026-08-04 — portals were unclickable, and five more from building screens
 
 975 tests (was 967). A second pass over `example/`, adding the screens that use
-the kit's *behavioural* components — an order detail with tabs and a confirm
+the kit's *behavioral* components — an order detail with tabs and a confirm
 dialog, a products filter bar, a settings screen, a ⌘K palette. Everything
 below compiled clean and failed in a browser.
 
@@ -2449,11 +2449,11 @@ read-only, so the assignment could never have been literal.
 
 For a **local** `let` the same source compiled to an ordinary `$$set_user(user)`,
 and signals write through `Object.is` — so the identical reference was skipped
-and nothing happened. One idiom, two behaviours, no diagnostic. Now both force.
+and nothing happened. One idiom, two behaviors, no diagnostic. Now both force.
 
 **Per-write, not per-signal.** `track()` has carried an unused `_alwaysNotify`
 flag since before this that would have made a binding *always* notify; that is
-the wrong shape, because it discards the equality optimisation for every
+the wrong shape, because it discards the equality optimization for every
 ordinary write to that binding. `createSignal`'s `write(next, force)` and
 `set(tracked, value, force)` take the flag per call, and only the
 self-assignment call site passes it. Nothing else changes: an equal write is
@@ -2810,7 +2810,7 @@ premise is that a clean compile is not proof of valid JS (repo invariant 15).
 
 ## 2026-08-04 — package layout: `test/` and `src/`
 
-Structural only — no behaviour change. 941 tests, `spec-check.mjs` and
+Structural only — no behavior change. 941 tests, `spec-check.mjs` and
 typecheck were green before and after each step.
 
 - **All 16 test files moved to `test/`**, and `vitest.config.js` `include`
@@ -3006,7 +3006,7 @@ combined a base class with the passthrough — which is nearly all of them.
 
 ### Documented, not fixed
 
-Pinned in `emission.test.js` as current behaviour:
+Pinned in `emission.test.js` as current behavior:
 
 - **A destructuring assignment to reactive lets is not rewritten.**
   `[a, b] = [b, a]` emits `[$runtime.get(…), $runtime.get(…)] = …`, which does
@@ -3277,7 +3277,7 @@ into a grouping run, the run was rewritten, and the continuation was orphaned.
 
 The scanner now walks lines and requires a complete statement — balanced
 backticks — before grouping anything. A binding it cannot parse is passed
-through untouched: grouping is an optimisation, and leaving a binding alone is
+through untouched: grouping is an optimization, and leaving a binding alone is
 always correct where truncating one never is.
 
 Worth knowing for anyone reproducing it: a preceding text binding is required.
@@ -3390,7 +3390,7 @@ other.
 **Deferred.** The handler no longer runs on mount, only on change. "When X
 changes, do Y" reads as change-triggered, and firing on mount is usually wrong —
 `$: userId, () => { count = 0 }` resetting on first render is a no-op at best.
-The eager case is already owned by `$onMount`, and the "initialise, then keep in
+The eager case is already owned by `$onMount`, and the "initialize, then keep in
 sync" shape is almost always a `const` memo wearing an effect's clothes.
 
 This is only possible because the deps are explicit: the effect still reads them

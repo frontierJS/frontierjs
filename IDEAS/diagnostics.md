@@ -23,7 +23,7 @@ build-time half, in the only form it can take here: two rules that ask whether
 Sierra's publish proof is **switched on**, never whether it passes. **All four
 steps of § What would have to be built are done.** What is left in this file is
 argument, and one row that wants re-measuring. Everything below is the original argument, kept because it is the
-argument — read the table as a backlog, not as behaviour, and see
+argument — read the table as a backlog, not as behavior, and see
 `VERIFYING.md`.
 
 ---
@@ -71,7 +71,7 @@ tests each in `tests/checks.test.js`.
 
 The list is not the design — **the design is that the list is executable and grows.**
 Every future landmine should arrive as a check plus a line in `CLAUDE.md`, not as a
-line alone. That is the actual behavioural change being proposed.
+line alone. That is the actual behavioral change being proposed.
 
 ## Why this is worth more here than in another framework
 
@@ -80,7 +80,7 @@ line alone. That is the actual behavioural change being proposed.
   failure mode and the fix.
 - **The failures are derivation failures, and only this framework has them.** A
   naming slip that disables authorization, a missing `model:` that removes every
-  derived behaviour, a `@@gate` whose resolver rejects the sessions the app actually
+  derived behavior, a `@@gate` whose resolver rejects the sessions the app actually
   produces — no other framework can check for these, because no other framework has
   them. This is the inverse of the usual linter argument: the checks are *not*
   portable, which is exactly why they are valuable.

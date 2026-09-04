@@ -21,8 +21,8 @@ import { join }                             from 'node:path'
 import { Database }                         from 'bun:sqlite'
 
 import {
-  httpStatus, httpJson, header, portAnswering, portFree,
-  fileExists, fileContains, sqliteRow, dockerRunning, dockerImageOf,
+  httpStatus, httpJson, httpText, header, portAnswering, portFree,
+  fileExists, fileContains, sqliteRow, eventually, dockerRunning, dockerImageOf,
   commandExists, formatFailure,
 } from '../core/probe.js'
 
@@ -139,6 +139,34 @@ describe('httpJson', () => {
   })
 })
 
+describe('httpText', () => {
+  test('a string needle in a body that is not JSON', async () => {
+    const r = await httpText({ url: `${base}/html`, needle: 'not json' })
+    expect(r.ok).toBe(true)
+  })
+
+  test('a regular expression matches across lines', async () => {
+    const r = await httpText({ url: `${base}/html`, needle: /<p>.*<\/p>/ })
+    expect(r.ok).toBe(true)
+  })
+
+  test('a needle that is absent reports the body rather than the status', async () => {
+    const r = await httpText({ url: `${base}/html`, needle: 'nope', describe: 'the module' })
+    expect(r.ok).toBe(false)
+    expect(r.got).toBe('the body did not match')
+    expect(r.detail).toContain('not json')
+  })
+
+  // The case it exists for: a dev server that could not compile the file
+  // answers a 500 whose body is the compiler's own error, and reading that as
+  // *the needle is missing* hides the sentence that says what is wrong.
+  test('a failing status is reported as the status', async () => {
+    const r = await httpText({ url: `${base}/nope`, needle: 'anything' })
+    expect(r.ok).toBe(false)
+    expect(r.got).toContain('status 401')
+  })
+})
+
 describe('header', () => {
   test('matches', async () => {
     const r = await header({ url: `${base}/health`, name: 'x-fjs-build', expect: 'abc1234' })
@@ -196,6 +224,28 @@ describe('files', () => {
     const r = fileContains({ path: join(dir, 'gone.lite'), needle: 'x' })
     expect(r.ok).toBe(false)
     expect(r.got).toContain('not there')
+  })
+})
+
+describe('eventually', () => {
+  test('returns as soon as the probe holds', async () => {
+    let calls = 0
+    const r = await eventually(() => {
+      calls += 1
+      return { ok: calls === 2, name: 'n', asked: 'a', got: String(calls) }
+    }, { retries: 5, everyMs: 1 })
+    expect(r.ok).toBe(true)
+    expect(calls).toBe(2)
+  })
+
+  // The LAST failure is returned, not the first — a diagnosis has to describe
+  // the state the caller is actually looking at.
+  test('gives up with the last failure', async () => {
+    let calls = 0
+    const r = await eventually(() => ({ ok: false, name: 'n', asked: 'a', got: String(++calls) }),
+      { retries: 3, everyMs: 1 })
+    expect(r.ok).toBe(false)
+    expect(r.got).toBe('3')
   })
 })
 

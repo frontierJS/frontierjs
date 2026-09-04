@@ -160,7 +160,7 @@
 <!--
   The trigger announces the menu it controls. Without aria-haspopup and
   aria-expanded a screen reader hears an ordinary button and is never told a
-  menu opened — the component's whole job is the behaviour the stylesheet
+  menu opened — the component's whole job is the behavior the stylesheet
   cannot supply, and this is part of it.
 
   The attributes are written onto the caller's own control rather than onto

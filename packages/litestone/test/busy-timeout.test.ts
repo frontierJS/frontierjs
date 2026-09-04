@@ -12,7 +12,7 @@
 // process is a fact about this process and the same schema is opened by an API
 // answering a person and a queue draining a batch.
 //
-// **Behavioural, not a pragma read.** Asserting `PRAGMA busy_timeout` says the
+// **Behavioral, not a pragma read.** Asserting `PRAGMA busy_timeout` says the
 // statement ran; it does not say a second writer survives, which is the claim.
 // So every case here really takes the lock from a second connection and really
 // tries to write through the client — the shape that produced the original
@@ -178,7 +178,7 @@ describe('where the number comes from', () => {
     expect(resolveBusyTimeout(9000)).toBe(9000) // a caller that did
   })
 
-  test('a stated 0 is honoured, not treated as absent', () => {
+  test('a stated 0 is honored, not treated as absent', () => {
     // `0` is SQLite's own *fail immediately*, and it is a real answer: a test
     // asserting contention wants it, and so does a write that must never block
     // the loop. `??` on a falsy number is how this goes wrong silently.

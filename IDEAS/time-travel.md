@@ -221,7 +221,7 @@ answer **the file is gone** — and something in this repo now does, in one dire
 - **`FJS-D31`** ruled the artefact out of scope: no `@frontierjs/litestream`, because
   republishing a durability tool means lagging its data-corruption fixes, and
   `bun add litestream` today installs a stranger's package. `fli new --with litestream`
-  is recognised **by name** and refused with that reason rather than 404ing at install.
+  is recognized **by name** and refused with that reason rather than 404ing at install.
 
 So the sentence this section used to lead with — *every competing framework inherits
 backups from a vendor and FJS has none to inherit from* — is the wrong way round. On
@@ -248,7 +248,7 @@ A vendor knows none of that about your app.
   for the rest, `--at <timestamp>` where `l0Retention` allows it, and a refusal rather
   than a partial when one database in the set cannot be reached.
 - **Nothing proves a restore**, and this is the only claim here no vendor can match.
-  An unrestored backup is a rumour. The framework owns the test harness, so a restore
+  An unrestored backup is a rumor. The framework owns the test harness, so a restore
   can be *proven*: restore into a temporary database, run the app's own suite against
   it (`@frontierjs/litestone/testing`'s `createTestEnv` is already the runner for
   exactly this shape), report. No other framework can offer *your backup is known-good*

@@ -379,7 +379,7 @@ exit 1`
 //
 // `execSync(cmd, { input, stdio: 'inherit' })` ignores `input` on node — stdin
 // is the parent's, so `sh -s` reads EOF and exits 0 having run nothing — and
-// honours it on bun. Every script this module sends travels on stdin, so under
+// honors it on bun. Every script this module sends travels on stdin, so under
 // node every `machine.run` in the deploy pipeline was a silent no-op that
 // reported success (`FJS-738`). `fli`'s shebang is `#!/usr/bin/env node`.
 //

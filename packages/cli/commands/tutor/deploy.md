@@ -22,7 +22,7 @@ flags:
   yes:
     char: y
     type: boolean
-    description: Answer every question with its default
+    description: Run the whole lesson without stopping — no confirmation between steps
     defaultValue: false
   keep:
     type: boolean
@@ -39,7 +39,23 @@ flags:
 ---
 
 ```js
-openTutor(context, 'tutor:deploy', { ephemeral: ['10-finish'] })
+// The throwaway workspace is a Docker BUILD CONTEXT here, which no other
+// lesson's is, and that rules out two directories the others are happy in.
+//
+// Not /tmp: a shell whose /tmp is private to it hands the daemon a path it
+// cannot see, and the build fails with `lstat deploy: no such file or
+// directory` about a directory that is plainly there.
+//
+// And not a HIDDEN one. `docker build` cannot read a Dockerfile whose context
+// path has a dot-prefixed component anywhere in it — measured, with the same
+// tree in two places: `~/probe/server` builds and `~/.probe/server` answers
+// `open Dockerfile: no such file or directory`, with an absolute `-f` and an
+// absolute context making no difference. So this is `fjs-tutor` and not
+// `.fli/tutor`, which is where it was first put.
+openTutor(context, 'tutor:deploy', {
+  ephemeral: ['10-finish'],
+  base:      join(homedir(), 'fjs-tutor'),
+})
 
 context.config.source = flag.source || defaultSource()
 context.config.port   = flag.port
@@ -51,7 +67,7 @@ context.config.container = `${context.config.app}-api`
 context.vars.container   = context.config.container
 ```
 
-## Lesson 3 — deploying it, and taking it back
+## Lesson 6 — deploying it, and taking it back
 
 This is the lesson almost no framework tutorial has, and the reason is always
 the same: they cannot give you a server.

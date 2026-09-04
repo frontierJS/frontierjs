@@ -71,7 +71,7 @@ path in `applyClaims` sets nothing unless the claim name matches: a cart token i
 claim and is not a tenant.
 
 **`RequestMeta` grows `tenant`**, set by `enterRequest`, so work with no `ctx` in hand
-can still name one — this is what step 4 rides on. `withTenantDb` already honours a
+can still name one — this is what step 4 rides on. `withTenantDb` already honors a
 STATED `ctx.locals.tenantId`; it gains `requestMeta()?.tenant` as the second source,
 below the stated one and above the registry's own resolution.
 
@@ -221,7 +221,7 @@ Prior art worth reading before ruling: Laravel's service-provider rebind per req
 
 ## Order, and why
 
-1. **§1 spine** — nothing else is writable without it, and alone it changes no behaviour.
+1. **§1 spine** — nothing else is writable without it, and alone it changes no behavior.
 2. **§2 cache** — smallest, and the only one of the four that is a live cross-tenant
    read.
 3. **§4 jobs** — the one an app is working around today in four files.

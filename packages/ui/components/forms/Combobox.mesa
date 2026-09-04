@@ -14,7 +14,7 @@
   //   <Combobox bind:value allowNew placeholder="Select or type a tag…" {options} />
 
   import Field from '../forms/Field.mesa'
-  import { uid, resolveError, resolveRule, stated, nativeValidationGuard, truncationNote, withNote, optionsNote } from '../../utils.js'
+  import { uid, resolveError, resolveRule, stated, nativeValidationGuard, truncationNote, withNote, optionsNote, lockedBy } from '../../utils.js'
 
   export let value       = undefined    // scalar — bindable
   export let options     = []           // string[] | { value, label, disabled? }[]
@@ -40,7 +40,7 @@
   // A <Form> above this control locks it two ways — the caller disabled the
   // form, or a save is in flight — and both mean the same thing to a field.
   // A stated prop still wins, including `disabled={false}` on a saving form.
-  const resolvedDisabled = stated(disabled, form?.disabled || form?.submitting) ?? false
+  const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
   const rule     = resolveRule(form, name)
   const hasError = !!resolveError(form, name, error, errors)
 
@@ -62,8 +62,8 @@
   const listId = uid('cb-list')
   const rowId  = (i) => `${listId}-${i}`
 
-  // Normalise options
-  function normalise(o) {
+  // Normalize options
+  function normalize(o) {
     if (typeof o === 'string' || typeof o === 'number') return { value: o, label: String(o) }
     return { value: o.value, label: o.label ?? o.textContent ?? String(o.value), disabled: o.disabled ?? false }
   }
@@ -135,7 +135,7 @@
     }, 200)
   }
 
-  const normOptions = _rows.map(normalise)
+  const normOptions = _rows.map(normalize)
 
   // Find the display label for the current value
   function labelFor(v) {

@@ -244,13 +244,13 @@ describe('tenancy { strategy row } — a real client', () => {
     db.$close()
   })
 
-  it('publishes the declaration on every flavour of client', async () => {
+  it('publishes the declaration on every flavor of client', async () => {
     const db = await createClient({ schema: ROW_SCHEMA, db: ':memory:' })
-    for (const flavour of [db, db.asSystem(), db.$setAuth({ id: 1 })]) {
-      expect(flavour.$tenancy.strategy).toBe('row')
-      expect(flavour.$tenancy.column).toBe('workspaceId')
+    for (const flavor of [db, db.asSystem(), db.$setAuth({ id: 1 })]) {
+      expect(flavor.$tenancy.strategy).toBe('row')
+      expect(flavor.$tenancy.column).toBe('workspaceId')
       // A row app already knows which tenant a caller is in — it is the claim.
-      expect(flavour.$tenancy.resolve).toEqual({ kind: 'claim', name: 'workspaceId' })
+      expect(flavor.$tenancy.resolve).toEqual({ kind: 'claim', name: 'workspaceId' })
     }
     db.$close()
   })

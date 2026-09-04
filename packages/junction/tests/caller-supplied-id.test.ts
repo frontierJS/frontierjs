@@ -113,7 +113,7 @@ describe('a key the caller supplies survives autoValidate', () => {
   // the strip is silent, so a key that is missing from the schema is a key that
   // never reaches the row, and the refusal then comes from the Data boundary
   // one layer down, about a field the caller plainly sent.
-  test('stating an autoincrementing key is dropped, not honoured', async () => {
+  test('stating an autoincrementing key is dropped, not honored', async () => {
     const { app } = await appWith()
 
     const res = await request(app).post('/notes').send({ id: 99, body: 'hello' })

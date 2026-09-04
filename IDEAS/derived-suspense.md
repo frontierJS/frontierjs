@@ -27,7 +27,7 @@ a suspense system needs and the thing React had to invent a protocol for.
 ## The defect that started this — fixed 2026-08-05
 
 **Kept in the past tense; the code below is what it used to do.** `compiler.js:3079`
-collected the watch set, with the comment stating the behaviour plainly:
+collected the watch set, with the comment stating the behavior plainly:
 
 ```js
 // Get all async-derived vars — boundary watches all $async state objects
@@ -167,7 +167,7 @@ Open, and the reason this is a note rather than a proposal:
 - **Does a value read only in an attribute get its own boundary?** Gating
   `<img src={url}>` on its own is probably right and probably looks wrong. Attribute
   reads may want to bubble to their element's parent.
-- **What is the SSR behaviour?** `render.js` produces inert HTML; a derived boundary
+- **What is the SSR behavior?** `render.js` produces inert HTML; a derived boundary
   in an SSR pass should presumably emit the `pending` snippet, which makes it the
   first thing a prerendered page shows and therefore a layout decision, not only a
   loading one.

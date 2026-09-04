@@ -20,7 +20,7 @@ drawn at 128 and is the only one of the three that can carry that much detail.
 
 **Nothing is upscaled except the marketplace icon, which has to be.** The tiles
 are ~110–130px on the sheet, so `mesa.png` and `litestone.png` are 168 and 166
-square with the art centred at native pixels; the brand icon is the 131px
+square with the art centered at native pixels; the brand icon is the 131px
 circle scaled to the 128 the marketplace requires. `frontierjs.svg` and the two
 `litestone-{light,dark}.svg` placeholders are deleted, and with them the
 `convert` line the package map documented — `icons/*.png` is the master now.
@@ -41,7 +41,7 @@ everything under `icons/`.
 
 ## 2026-08-27 — publish readiness
 
-Nothing about the extension's behaviour. `npm test` 88 pass (46 Litestone over
+Nothing about the extension's behavior. `npm test` 88 pass (46 Litestone over
 real LSP/stdio, 36 Mesa, 6 snippets), `npm run verify:package` green.
 
 **The suites were green and the extension was not installed anywhere**, which is
@@ -60,7 +60,7 @@ same way the unpacked `.vsix` is — 82 of the 88 assertions run against it.
 statement rather than metadata.** Mesa diagnostics load the workspace's OWN
 `@frontierjs/mesa` and call it, so opening a folder executes code from that
 folder. An extension that declares nothing is disabled in a restricted workspace
-already, which is the right behaviour arrived at by accident — declaring
+already, which is the right behavior arrived at by accident — declaring
 `untrustedWorkspaces: { supported: false }` says why, where a reader can see it.
 `virtualWorkspaces: false` is the same fact one layer down: the Litestone server
 is a node process and both languages resolve through the filesystem, so there is

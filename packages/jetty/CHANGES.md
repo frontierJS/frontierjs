@@ -64,7 +64,7 @@ Two things had to move for it to be honest:
   The contract gains an optional `auth` block and `makeAuthFlow` prefers it,
   falling back to the old call for the placeholder.
 
-Its wire behaviour is proved by `example`'s `verify:extension`, against a real
+Its wire behavior is proved by `example`'s `verify:extension`, against a real
 API. A fake Junction here is the mock that hid this for as long as it existed;
 what is asserted in node is the shape — the URL dialect, the contract, and which
 of the two sign-in spellings the auth flow reaches for.
@@ -130,7 +130,7 @@ place a relation exists on the client, since a belongsTo is emitted as a plain
 integer.
 
 **A surface change:** `mergeHooks` answers a NEW map and mutates neither
-argument, because toolbelt's licence is that every export is pure. A caller
+argument, because toolbelt's license is that every export is pure. A caller
 using the re-export must assign the result.
 
 `createStore` stays here. Sierra's is service-backed and stamps each request;
@@ -149,7 +149,7 @@ foreign key and the `readOnly` column right. 424 pass, 0 fail.
 `globalThis.__jettyMesa.hot_update` carried a hand copy of Mesa's DOM swap —
 ~30 lines, identical in both — and **nothing ran either one**. `phase8` audits
 the classic-script shape of the bundle the dev client lives in, not its
-behaviour, so jetty's whole dev loop rested on code no test had executed.
+behavior, so jetty's whole dev loop rested on code no test had executed.
 
 **The test came first.** Eleven assertions in `phase5` over jsdom: both module
 shapes `hot_update` accepts, the mark it seeds, a detached instance pruned

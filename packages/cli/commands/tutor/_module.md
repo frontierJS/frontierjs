@@ -21,7 +21,8 @@ const probe             = await import(new URL('file://' + global.fliRoot + '/co
 const T                 = await import(new URL('file://' + global.fliRoot + '/core/tutor.js'))
 
 const { existsSync, mkdirSync, openSync, readFileSync, writeFileSync, appendFileSync, copyFileSync, rmSync } = await import('node:fs')
-const { join, resolve }  = await import('node:path')
+const { join, resolve, basename } = await import('node:path')
+const { homedir }        = await import('node:os')
 const { spawn }          = await import('node:child_process')
 
 // ─── openTutor ────────────────────────────────────────────────────────────────
@@ -34,11 +35,12 @@ const { spawn }          = await import('node:child_process')
 // alone still knows the app directory step 2 created. Without it that flag
 // fails as a TypeError several frames from anything a reader can act on.
 
-const openTutor = (context, lesson, { ephemeral = [] } = {}) => {
+const openTutor = (context, lesson, { ephemeral = [], base } = {}) => {
   const ws = T.tutorWorkspace({
     name: context.flag.workspace,
     tmp:  context.flag.tmp || !context.flag.workspace,
     cwd:  process.cwd(),
+    base,
   })
 
   const verdict = T.journalVerdict(T.readJournal(ws.dir), { workspace: ws.dir })
@@ -51,7 +53,10 @@ const openTutor = (context, lesson, { ephemeral = [] } = {}) => {
   context.config.ws     = ws
   context.config.lesson = lesson
   context.config.app    = ws.app
-  context.config.prompts = createPrompts({ yes: context.flag.yes })
+  // ONE reader for the lesson, closed by the finish step. Not one per question:
+  // a piped stdin is DRAINED by the first reader, so a second one waits on a
+  // stream that has already ended and the lesson hangs after step 1.
+  context.config.prompts = createPrompts({ yes: Boolean(context.flag.yes) })
 
   const recorder = T.makeRecorder({ workspace: ws.dir, lesson, context, ephemeral })
   if (context.flag.restart) recorder.restart()
@@ -83,11 +88,61 @@ const openTutor = (context, lesson, { ephemeral = [] } = {}) => {
 }
 
 // ─── narrate ──────────────────────────────────────────────────────────────────
-// A step's own prose, rendered at the moment it is reached. `printPlan` is
-// bound to the STEP file rather than the orchestrator (`FJS-725`), so this is
-// the step talking rather than the lesson's front page repeated nine times.
+// A step's own prose, rendered at the moment it is reached, and then a gate.
+// `printPlan` is bound to the STEP file rather than the orchestrator
+// (`FJS-725`), so this is the step talking rather than the lesson's front page
+// repeated nine times.
+//
+// **The default is a walk-through.** A lesson that runs eleven steps to
+// completion while you are still reading step two is a transcript rather than a
+// lesson, so each step says what it is about to do and then waits. `--yes` runs
+// the whole thing without stopping, which is what CI passes and what a second
+// run through material you have already read wants.
+//
+// The question is the step's own `description:`, so it is about THIS step
+// rather than a generic *continue?* — and it costs no second place to keep in
+// step with what the step does.
+const stepDescription = (context) => {
+  try {
+    const head = readFileSync(context.filePath, 'utf8').split('\n---')[0]
+    return head.match(/^description:\s*(.+)$/m)?.[1]?.trim() ?? null
+  } catch { return null }
+}
 
-const narrate = (context) => context.printPlan()
+const narrate = async (context) => {
+  context.printPlan()
+
+  // `--step N` is a person naming the one thing they want done. Asking again is
+  // asking twice.
+  if (context.flag.yes || context.flag.step) return true
+
+  const what = stepDescription(context)
+  const go   = await context.config.prompts.confirm(`  ${what ? `${what} —` : ''} ready?`, { default: true })
+
+  if (go) return true
+
+  // Not a refusal. `stop` is the ruled verdict for a deliberate early exit that
+  // SUCCEEDED (`FJS-589`), so the lesson exits 0 — but the servers this run
+  // started are still this run's to stop — and a `stop` skips the finish step
+  // that would have done both that and closed the reader.
+  stopServers(context)
+  context.config.prompts.close()
+
+  // `context.log`, not `log`: this module's script runs outside a step body, and
+  // the bare binding is only in scope inside one.
+  const where = context.flag.workspace ? ` --workspace ${context.flag.workspace}` : ''
+  context.log.info('')
+  context.log.info('  Stopped here — nothing after this step ran.')
+  if (context.config.appDir) context.log.info(`  The app is at ${context.config.appDir}`)
+  context.log.info(`  Pick up where you left off:  fli ${context.config.lesson}${where}`)
+  context.log.info('')
+
+  // Named so the recorder can drop the row: a declined step must not be
+  // remembered as done, or the resume skips the one place they stopped.
+  context.config.__declinedAt = basename(context.filePath, '.md')
+  context.config.stop = true
+  return false
+}
 
 // ─── must ─────────────────────────────────────────────────────────────────────
 //
@@ -265,6 +320,25 @@ const ensureApi = async (context) => {
   return api.up
 }
 
+// The web server's half of the same problem. `--step 9` reaches a lesson whose
+// dev server is not running, and the Mesa step asks that server to compile a
+// file — so it is the process, not a fact, and `needs()` cannot cover it.
+const ensureWeb = async (context) => {
+  const port    = context.config.webPort
+  const already = await probe.httpStatus({ url: `http://127.0.0.1:${port}/`, name: 'the web server is up' })
+  if (already.ok) return already
+
+  const web = await startServer(context, {
+    name:   'web',
+    script: 'dev:web',
+    cwd:    context.config.appDir,
+    env:    { WEB_PORT: String(port), FLI_PORT_BE: String(context.config.apiPort) },
+    port,
+    path:   '/',
+  })
+  return web.up
+}
+
 // The API reads db/schema.lite once, at boot. A step that changes the schema
 // has to put the process through it again or the app goes on serving the shape
 // it started with — and the request that follows is refused for a model the
@@ -355,16 +429,47 @@ const ensureFleet = async (context, { outpost = false } = {}) => {
 // A lesson about access control has to CHANGE the schema and watch the answer
 // change. `editSchema` refuses when its anchor is not there rather than writing
 // the file back unchanged — a rewrite that silently missed leaves the lesson
-// asserting the old behaviour and blaming the framework for it.
+// asserting the old behavior and blaming the framework for it.
 
 const schemaFile = (context) => join(context.config.appDir, 'db', 'schema.lite')
 
 const editSchema = (context, from, to) => {
   const path = schemaFile(context)
   const src  = readFileSync(path, 'utf8')
-  if (!src.includes(from)) return { ok: false, why: `the schema has no ${JSON.stringify(from)} to change` }
+  // The target is asked about FIRST. Lessons share a named workspace and several
+  // of them raise the same gate, so an app arriving already changed is the
+  // ordinary case — and asking for `from` first reports that as *the schema has
+  // no such line*, which is true and is the wrong answer.
   if (src.includes(to))    return { ok: true,  already: true }
+  if (!src.includes(from)) return { ok: false, why: `the schema has no ${JSON.stringify(from)} to change` }
   writeFileSync(path, src.replace(from, to), 'utf8')
+  return { ok: true }
+}
+
+// A field added to `model Note`, which is what `tutor:change` edits three times.
+// Refuses rather than writing the file back unchanged, for `editSchema`'s reason.
+const addNoteField = (context, line) => {
+  const path = schemaFile(context)
+  const src  = readFileSync(path, 'utf8')
+  const name = line.trim().split(/\s+/)[0]
+
+  const at = src.indexOf('model Note {')
+  if (at === -1) return { ok: false, why: 'the seed has no `model Note {` block' }
+
+  const end = src.indexOf('\n}', at)
+  if (end === -1) return { ok: false, why: '`model Note {` is not closed' }
+
+  const body = src.slice(at, end)
+  if (new RegExp(`^\\s*${name}\\s`, 'm').test(body)) {
+    // Already declared — replace the line rather than adding a second, since
+    // the three steps of this lesson change the SAME column in turn.
+    const next = src.slice(0, at) + body.replace(new RegExp(`^\\s*${name}\\s.*$`, 'm'), line) + src.slice(end)
+    if (next === src) return { ok: true, already: true }
+    writeFileSync(path, next, 'utf8')
+    return { ok: true }
+  }
+
+  writeFileSync(path, src.slice(0, end) + '\n' + line + src.slice(end), 'utf8')
   return { ok: true }
 }
 
@@ -374,6 +479,109 @@ const pushSchema = (context) =>
 // An account, and the token it answers with. Two callers is the whole shape of
 // this lesson — a refusal proves nothing without an otherwise identical call
 // that is allowed.
+// ─── a raw socket ─────────────────────────────────────────────────────────────
+//
+// The client `@frontierjs/junction/client` gives a browser is the ordinary way
+// to hold one of these, and it is the wrong instrument for `tutor:live`: it
+// signs in, and the question the lesson asks is what an UNSIGNED connection
+// receives. A raw socket is the only client here that can be genuinely signed
+// out — which is why the hole this lesson teaches survived in the example app
+// until a drive was written that could open one.
+//
+// The token rides the UPGRADE, never a frame: the identity of a connection is
+// established once, when it is made, and a frame that could name its own
+// principal would be a frame that could name anybody's.
+const openSocket = async (context, { token, channels, settleMs = 250 }) => {
+  const url    = `ws://127.0.0.1:${context.config.apiPort}/ws${token ? `?token=${token}` : ''}`
+  const frames = []
+  const ws     = new WebSocket(url)
+
+  const connected = await new Promise((resolve) => {
+    const give = setTimeout(() => resolve(false), 5000)
+    ws.onmessage = (e) => {
+      let frame
+      try { frame = JSON.parse(e.data) } catch { return }
+      frames.push(frame)
+      if (frame.type === 'connected') { clearTimeout(give); resolve(true) }
+    }
+    ws.onerror = () => { clearTimeout(give); resolve(false) }
+  })
+
+  if (!connected) return { ok: false, ws, events: () => [] }
+
+  ws.send(JSON.stringify({ type: 'subscribe', channels }))
+  // Subscribing is a frame with no acknowledgement, so a publish sent in the
+  // same millisecond can reach the server before the subscription does. The
+  // wait is short and it is the difference between a lesson that is flaky and
+  // one that teaches.
+  await new Promise((r) => setTimeout(r, settleMs))
+
+  return {
+    ok: true,
+    ws,
+    events: (prefix) => frames.filter(f => typeof f.event === 'string' && f.event.startsWith(prefix)),
+  }
+}
+
+// The pair `tutor:live` asks every question with, and the reason it is here
+// rather than in a step: steps 5 and 6 open the same two clients against the
+// same publish, and two sockets built twice is how a lesson ends up proving
+// that two DIFFERENT connections behave differently.
+const bothSockets = async (context, { channels = ['notes'] } = {}) => {
+  const signedIn  = await openSocket(context, { token: context.config.userToken, channels })
+  const anonymous = await openSocket(context, { token: null, channels })
+
+  const close = () => { try { signedIn.ws.close() } catch {} ; try { anonymous.ws.close() } catch {} }
+
+  if (!signedIn.ok || !anonymous.ok) {
+    close()
+    await must(context, {
+      ok:    false,
+      name:  'two sockets are connected',
+      asked: 'a connected frame on each',
+      got:   `signed in: ${signedIn.ok ? 'yes' : 'no'}, anonymous: ${anonymous.ok ? 'yes' : 'no'}`,
+    }, {
+      likely: 'the app does not configure channels(), or an anonymous upgrade is being refused',
+    })
+    return { ok: false, close, settle: async () => ({ signedIn: [], anonymous: [] }) }
+  }
+
+  return {
+    ok: true,
+    close,
+    // A broadcast is not the response, so it has not happened when the response
+    // arrives. This waits once for both, then closes — the alternative is each
+    // caller inventing its own sleep and the two drifting apart.
+    settle: async (ms = 700) => {
+      await new Promise((r) => setTimeout(r, ms))
+      const heard = { signedIn: signedIn.events('notes '), anonymous: anonymous.events('notes ') }
+      close()
+      return heard
+    },
+  }
+}
+
+const createNote = (context, title) => probe.httpJson({
+  url:      apiUrl(context, '/notes'),
+  method:   'POST',
+  headers:  { 'content-type': 'application/json', authorization: `Bearer ${context.config.userToken}` },
+  body:     JSON.stringify({ title, body: 'written over HTTP', done: false }),
+  expect:   (j) => typeof j.id !== 'undefined',
+  describe: 'the note was created',
+  name:     `POST /api/notes — ${title}`,
+})
+
+// Running `fli` and reading the ANSWER rather than the exit code. `context.exec`
+// is a shell and prints; a lesson that has to branch on a verdict needs the
+// document. Never a bare `fli` — that is whatever global install the machine
+// happens to have, which is not the build under test.
+const fliJson = (context, args, cwd) => {
+  const r = probe.runArgv(process.execPath, [join(global.fliRoot, 'bin', 'fli.js'), ...args], { cwd })
+  let json = null
+  try { json = JSON.parse(r.stdout) } catch {}
+  return { code: r.code, json, stdout: r.stdout, stderr: r.stderr }
+}
+
 const signIn = (context, email, password) => probe.httpJson({
   url:      apiUrl(context, '/auth/login'),
   method:   'POST',
@@ -465,19 +673,28 @@ const dockerSweep = (container, appName) => {
 const appDir = (context) => join(context.config.ws.dir, context.config.app)
 </script>
 
-Four lessons, in order. Each one leaves an app you can open.
+Eight lessons, in order. Each one leaves an app you can open.
 
 - tutor:app — an empty directory to a running app with a model of your own in it
 - tutor:access — the gate and the row policy, watched refusing somebody
+- tutor:live — a write reaching a second client, and who it does not reach
+- tutor:jobs — work that outlives the request, and the file it is queued in
+- tutor:site — a public site built ahead of time, and the check on what it published
 - tutor:deploy — a real deploy to this machine, and a revert that really reverts
+- tutor:change — changing a schema that is already deployed
 - tutor:fleet — basecamp, and a machine reporting in
 
 Every step ends in an assertion against the running world rather than an exit
 code, so a lesson that passes is a lesson that worked.
 
+Each step says what it is about to do and waits for you before doing it. Press
+enter to go on, or n to stop — a lesson you stop is picked up where you left
+off, so stopping costs nothing. --yes runs a whole lesson without stopping,
+which is what CI passes and what a second run wants.
+
 Where the app is built: pass --workspace <dir> to keep what you build, or --tmp
 for a throwaway one. --restart begins a lesson again; --step N runs one step on
-its own; --yes answers every question with its default.
+its own.
 
 Writing a step — two things the compiler decides for you, both of which look
 like prose and are not:
@@ -488,6 +705,9 @@ like prose and are not:
   walks every command file including these.
 - A bash-fenced block is EXECUTED as a zx template. A command shown for reading
   is fenced console or text.
+- A script tag at the start of a line is HOISTED to module scope, together with
+  everything down to the last closing tag in the file — so a .mesa sample cannot
+  be shown whole. Show its two halves apart, and say why.
 
 And one the runner decides: a step that needs a fact an earlier step
 established must say so through needs(), or it reads undefined as a path and

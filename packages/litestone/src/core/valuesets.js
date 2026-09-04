@@ -10,7 +10,7 @@
 //
 // The check runs HERE rather than in `validate.js` because it is the one rule
 // that needs a query, and it runs against `ctx.tables` — the sibling accessor at
-// the CALLER'S OWN flavour. That is the whole of why `open` needs no permission
+// the CALLER'S OWN flavor. That is the whole of why `open` needs no permission
 // concept of its own: the read is the caller's read, so a caller may only pick
 // what they can see, and the create is the caller's create, so the source
 // model's `@@gate` and `@@allow` answer who may extend the set. A check written
@@ -18,7 +18,7 @@
 // caller grow a shared list.
 //
 // A `suggested` binding issues NO query at all. Enforcing nothing has to cost
-// nothing, or nobody uses the strength that keeps the list travelling.
+// nothing, or nobody uses the strength that keeps the list traveling.
 
 import { ValidationError } from './validate.js'
 import { modelToAccessor } from './ddl.js'

@@ -53,7 +53,7 @@
   // Scoped to type="submit" on purpose: that is the button the submission
   // belongs to, and a "Cancel" beside it must stay live while the save runs.
   //
-  // Absent form → undefined → unchanged behaviour standing alone.
+  // Absent form → undefined → unchanged behavior standing alone.
   const form      = $context.form
   const isLoading = loading || (type === 'submit' && !!form?.submitting)
   // A form the caller has disabled disables every button under it, including

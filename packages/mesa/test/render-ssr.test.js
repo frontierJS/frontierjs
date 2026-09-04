@@ -145,7 +145,7 @@ describe('renderToHTML — the serialiser escapes (FJS-500)', () => {
   // how many attributes the element has, which is the property, not the
   // encoding.
 
-  /** Parse serialised HTML back and answer the first matching element. */
+  /** Parse serialized HTML back and answer the first matching element. */
   const reparse = (html, sel) => {
     const host = document.createElement('div')
     host.innerHTML = html
@@ -199,7 +199,7 @@ describe('renderToHTML — the serialiser escapes (FJS-500)', () => {
   it('an entity written in the markup stays one character', async () => {
     // The direction a naive escaper breaks, in an attribute this time. The
     // PARSER decodes `&amp;` in the source to one ampersand, so the value is
-    // `Tea & Co` and serialising it must give back one entity — not
+    // `Tea & Co` and serializing it must give back one entity — not
     // `&amp;amp;`, which renders as visible mojibake in a tooltip.
     const Comp = await build(`<a href="/x" title="Tea &amp; Co">go</a>`)
     const html = await renderToHTML(Comp, {})
@@ -700,7 +700,7 @@ describe('islands — client:* markers in SSR output', () => {
     expect(off.html).toBe(bare.html)
   })
 
-  it('wraps a client:* component, and leaves its neighbours alone', async () => {
+  it('wraps a client:* component, and leaves its neighbors alone', async () => {
     const { html } = await ssr('I1',
       entry(`<article><p>s</p><Counter client:load start={3} /><Counter start={9} /></article>`))
 
@@ -971,7 +971,7 @@ describe('CSS scoping — selectors match the markup they are emitted with', () 
  * comparing compiler output across a change (13 false "differences" the first
  * time it was tried), and giving a component ONE id across the two compilers
  * that see it in a static build — Mesa's prerenderer and Vite — which is what
- * lets `addStyles` recognise a style already in the document.
+ * lets `addStyles` recognize a style already in the document.
  */
 describe('CSS scope ids are content-addressed', () => {
   const idOf = async (src, filename) => {

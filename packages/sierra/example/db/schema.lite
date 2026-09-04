@@ -39,7 +39,7 @@ model Lead {
 
   /// Nullable AND unique — the case that makes blankToNull matter. An empty
   /// text box submits '', SQLite accepts any number of NULLs but rejects a
-  /// second '', so without normalisation the second lead saved with an empty
+  /// second '', so without normalization the second lead saved with an empty
   /// slug fails a constraint nobody wrote.
   slug   String? @unique
 

@@ -9,7 +9,7 @@
  * is. A search box whose ranking nothing checks is a search box that goes
  * subtly wrong and reports nothing.
  *
- * ── The division of labour ────────────────────────────────────────────
+ * ── The division of labor ────────────────────────────────────────────
  *
  *   here        the ranker, the tokeniser, and the term entries built
  *               from VOCAB
@@ -151,7 +151,7 @@ function searchScoreToken(e, t) {
 /*
  * Every token has to land somewhere, so a second word narrows rather than
  * widens. "card header" must not return everything about cards plus
- * everything about headers — that is the behaviour that teaches people to
+ * everything about headers — that is the behavior that teaches people to
  * type one word and scroll.
  */
 function searchRank(entries, query, limit) {

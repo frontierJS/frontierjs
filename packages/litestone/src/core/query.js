@@ -216,9 +216,9 @@ const TEXT_OPS = new Set(['contains', 'startsWith', 'endsWith'])
 const TEXT_OP_REFUSALS = {
   array:   (k, op) => `"${k}" holds a JSON array, so "${op}" would substring-match the stored document rather than its elements — ` +
                       `use "has" for an element, or "hasSome"/"hasEvery" for several`,
-  json:    (k, op) => `"${k}" holds a JSON document, so "${op}" would match its serialised text, punctuation included — ` +
+  json:    (k, op) => `"${k}" holds a JSON document, so "${op}" would match its serialized text, punctuation included — ` +
                       `declare @type(...) on the column to filter by a path`,
-  file:    (k, op) => `"${k}" holds a file reference document, so "${op}" would match its serialised text rather than anything about the file`,
+  file:    (k, op) => `"${k}" holds a file reference document, so "${op}" would match its serialized text rather than anything about the file`,
   boolean: (k, op) => `"${k}" is a Boolean, stored as 0/1, so "${op}" can never match — compare it to true or false`,
 }
 

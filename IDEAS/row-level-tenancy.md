@@ -59,7 +59,7 @@ directions — a missing clause leaks, and a wrong one returns nothing with a 20
 ## What already exists to build on
 
 More than it looks, which is the argument for doing it properly rather than
-generalising basecamp's helper.
+generalizing basecamp's helper.
 
 - **Policies compile into SQL.** `@@allow`/`@@deny` are already predicates over
   `auth()`, applied at the Data boundary rather than in a handler. The mechanism is
@@ -68,9 +68,9 @@ generalising basecamp's helper.
   named seam that turns a `SessionContext` into what `auth()` reads, and `CLAUDE.md`
   records what happens without it — every row policy compares against `undefined` and
   matches nothing, silently.
-- **`$scopedBy` is already a client flavour.** Whatever this becomes has a place to
+- **`$scopedBy` is already a client flavor.** Whatever this becomes has a place to
   live that is not a new concept, and the `$check*` rule applies: a capability that
-  depends only on the schema belongs on every flavour of client.
+  depends only on the schema belongs on every flavor of client.
 - **basecamp has already solved the hard part by hand.** `applyStanding()` resolves
   membership per *request* onto the principal, because — quoting `FJS-007` — *"the same
   person is `owner` in one workspace and `viewer` in the next"*. That is the discovery

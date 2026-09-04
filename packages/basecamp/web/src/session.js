@@ -77,7 +77,7 @@ async function api(path, { method = 'GET', body, auth = true } = {}) {
 // flashing a redirect after the fact.
 //
 // It waits on Sierra's own restore first — that is what puts `session.user`
-// there and clears a token the server no longer honours — and then adds the
+// there and clears a token the server no longer honors — and then adds the
 // two questions that are this app's: is there an account at all, and which
 // workspace are we in.
 export const ready = restore()

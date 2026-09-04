@@ -32,7 +32,7 @@ everything outbound looks up. A machine can be `online` in the list and have
 nowhere to send a command, and those are two different failures.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 5
 

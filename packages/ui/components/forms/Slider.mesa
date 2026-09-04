@@ -16,7 +16,7 @@
   //   <Slider bind:value format={(v) => `$${v.toLocaleString()}`} />
 
   import Field from './Field.mesa'
-  import { tone as toTone, cx, nameToLabel, resolveError, resolveRule, stated } from '../../utils.js'
+  import { tone as toTone, cx, nameToLabel, resolveError, resolveRule, stated, lockedBy } from '../../utils.js'
 
   // ── Props ───────────────────────────────────────────────────────────────────
 
@@ -57,7 +57,7 @@
   // A <Form> above this control locks it two ways — the caller disabled the
   // form, or a save is in flight — and both mean the same thing to a field.
   // A stated prop still wins, including `disabled={false}` on a saving form.
-  const resolvedDisabled = stated(disabled, form?.disabled || form?.submitting) ?? false
+  const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
   const rule = resolveRule(form, name)
 
   const resolvedLabel = stated(label, rule?.title, name ? nameToLabel(name) : undefined)
@@ -88,7 +88,7 @@
 
   // ── State ────────────────────────────────────────────────────────────────────
 
-  // Initialise range handles with sensible defaults
+  // Initialize range handles with sensible defaults
   if (range && start == null) start = min
   if (range && end   == null) end   = max
   if (!range && value == null) value = min

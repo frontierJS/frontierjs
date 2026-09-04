@@ -190,15 +190,23 @@ export function siteMainEntry() {
 // \`vite dev\` navigable while the site is being written. It is deliberately the
 // same router the SPA uses, so a link behaves the same in both.
 
-import { mount } from '@frontierjs/mesa'
-import { initRouter } from '@frontierjs/sierra/router'
-import { routes } from 'virtual:sierra-routes'
-import RouterView from '@frontierjs/sierra/components/RouterView'
-
+// Same three lines the SPA's entry uses, in the same order. \`virtual:sierra\`
+// boots the router and — where the app has a schema — registers it, and it is
+// imported FIRST: a route module that evaluates before the schemas are
+// registered gets a bare make() with no field rules.
+import 'virtual:sierra'
 import '@frontierjs/css'
 
-initRouter(routes)
-mount('site', RouterView, { root: document.getElementById('app') })
+import { mount } from '@frontierjs/mesa/runtime'
+import { RouterView } from '@frontierjs/sierra/router'
+
+// mount()'s first argument is an anchor NODE, not an element id — Mesa inserts
+// the component immediately after it, so the anchor must already be in the tree.
+const root   = document.getElementById('app')
+const anchor = document.createTextNode('')
+root.appendChild(anchor)
+
+mount(anchor, RouterView, { root })
 `
 }
 
@@ -360,8 +368,12 @@ export function siteScripts({ dir = 'site', servePort = 8700 } = {}) {
     // correctly empty. Under node it fails as `Only URLs with a scheme in:
     // file, data, and node are supported — received protocol 'bun:'`, which
     // names nothing an app author did.
-    'dev:site':   `cd ${dir} && bun --bun vite -c config/vite.config.js`,
-    'build:site': `cd ${dir} && bun --bun vite build -c config/vite.config.js`,
+    // And `--env-file=../.env`, because both commands run from the SURFACE:
+    // bun auto-loads `.env` from the working directory, so the app's own one is
+    // not read, and a client that validates a required variable refuses to load
+    // at all. A missing file here is silently fine.
+    'dev:site':   `cd ${dir} && bun --bun --env-file=../.env vite -c config/vite.config.js`,
+    'build:site': `cd ${dir} && bun --bun --env-file=../.env vite build -c config/vite.config.js`,
     'serve:site': `cd ${dir} && bunx sierra site --serve --port ${servePort}`,
   }
 }

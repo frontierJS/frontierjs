@@ -782,7 +782,7 @@ td:hover .copy-btn { opacity: 1 }
 .ex-example { overflow-x: auto; margin-block: var(--space-md) 0 }
 .ex-chips { display: flex; flex-wrap: wrap; gap: var(--space-2xs) }
 
-/* A diff half is tinted by what it means, and also labelled `gone` / `new` —
+/* A diff half is tinted by what it means, and also labeled `gone` / `new` —
    colour is not a label. */
 .ex-diff-out { border-inline-start: 3px solid var(--color-danger) }
 .ex-diff-in  { border-inline-start: 3px solid var(--color-success) }
@@ -813,7 +813,7 @@ td:hover .copy-btn { opacity: 1 }
 /* ─── Browse splash ────────────────────────────────────────────────────────
  *
  * The Empty term with the brand in it: wordmark, stone, one instruction. The
- * Empty grid already centres and gaps its children, so this only sets the two
+ * Empty grid already centers and gaps its children, so this only sets the two
  * sizes and the order they were asked for.
  */
 .splash      { gap: var(--space-2xl) }
@@ -1331,7 +1331,7 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
 
     <div class="view" id="perfQueryView" role="tabpanel" aria-labelledby="perfTabQuery" tabindex="0" hidden>
       <div class="bar">
-        <textarea class="field" id="perfQueryInput" rows="3" aria-label="SQL to analyse"
+        <textarea class="field" id="perfQueryInput" rows="3" aria-label="SQL to analyze"
           placeholder="SELECT * FROM users WHERE email = 'alice@example.com'"
           onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();perfAnalyze()}"></textarea>
         <button class="btn primary" id="perfAnalyzeBtn" onclick="perfAnalyze()">Analyze</button>
@@ -2652,7 +2652,7 @@ function acRender() {
 
 // ── Gates ──
 // A grid rather than the snapshot's table of "4.4.4.5" strings: the useful
-// question is which model breaks the pattern its neighbours follow, and that is
+// question is which model breaks the pattern its neighbors follow, and that is
 // a glance in a grid and a careful read in a column of numbers.
 function acGates() {
   const gated = _access.models.filter(m => m.gate)
@@ -3798,7 +3798,7 @@ function exText(v) {
  * Lines present on one side only, marked.
  *
  * Not an LCS: a moved line reads as removed-and-added, which is honest for what
- * this shows and is why the two halves are labelled rather than interleaved.
+ * this shows and is why the two halves are labeled rather than interleaved.
  */
 function exLineDiff(a, b) {
   const before = a.split('\n'), after = b.split('\n')

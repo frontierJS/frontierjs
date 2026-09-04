@@ -22,7 +22,7 @@
   // bind:this exposes: focus()
 
   import Field from './Field.mesa'
-  import { nameToLabel, uid, resolveError, resolveRule, stated, nativeValidationGuard } from '../../utils.js'
+  import { nameToLabel, uid, resolveError, resolveRule, stated, nativeValidationGuard, lockedBy } from '../../utils.js'
 
   // ── Core props ────────────────────────────────────────────────────────────
 
@@ -66,7 +66,7 @@
   // A <Form> above this control locks it two ways — the caller disabled the
   // form, or a save is in flight — and both mean the same thing to a field.
   // A stated prop still wins, including `disabled={false}` on a saving form.
-  const resolvedDisabled = stated(disabled, form?.disabled || form?.submitting) ?? false
+  const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
   const rule     = resolveRule(form, name)
   const hasError = !!resolveError(form, name, error, errors)
 

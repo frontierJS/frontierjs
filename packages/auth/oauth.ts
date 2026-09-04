@@ -2,7 +2,7 @@
 // The OAuth flow engine — what a provider is, and the three steps of a sign-in.
 //
 // No HTTP server, no database, no session. It builds a URL, trades a code for
-// tokens, and turns whatever came back into one normalised identity. Routes are
+// tokens, and turns whatever came back into one normalized identity. Routes are
 // plugin.ts's; deciding WHO that identity is, is auth.ts's. Kept apart because
 // the interesting parts of this file are testable with neither.
 //
@@ -60,7 +60,7 @@ export class OAuthError extends AuthError {
 
 // ─── What a provider is ─────────────────────────────────────────────────────
 
-/** The normalised end of the flow. Everything above this line is provider-shaped. */
+/** The normalized end of the flow. Everything above this line is provider-shaped. */
 export interface OAuthIdentity {
   /**
    * The provider's own immutable id for this person — `sub` on OIDC, the

@@ -135,7 +135,7 @@ describe('$readGrading — when the whole pass can be skipped', () => {
 })
 
 describe('the sibling contract', () => {
-  test('every flavour of client answers identically for the same principal', async () => {
+  test('every flavor of client answers identically for the same principal', async () => {
     // $capabilitiesFor's rule: the subject is an ARGUMENT, so which client is
     // asking cannot change the answer. Defaulting to the client's own principal
     // would break exactly that.

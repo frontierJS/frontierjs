@@ -95,7 +95,7 @@ describe('node_modules allowance', () => {
     expect(await transformed(resolve(SIERRA_ROOT, 'src/routes/index.mesa'))).toBe(true)
   })
 
-  // The behavioural tests above pass for a plugin that transforms everything, so
+  // The behavioral tests above pass for a plugin that transforms everything, so
   // this is what pins the literal the bug lived in. The bare name must not
   // come back, and neither may the single-package form that replaced it.
   test('the plugin names the scope, once', async () => {

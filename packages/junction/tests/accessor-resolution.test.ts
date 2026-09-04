@@ -433,7 +433,7 @@ describe('autoFilter — unknown filter keys', () => {
   // The quieter half of the same failure. An unknown FILTER key at least
   // answered an empty list; an unknown SORT key answered the right rows in the
   // original order and said nothing anywhere, so a "sorted" page 2 is
-  // plausible and wrong. Same division of labour: litestone owns what is
+  // plausible and wrong. Same division of labor: litestone owns what is
   // sortable, Junction owns the status code.
   const appWithSortables = async () => {
     const { createClient } = await import('../../litestone/src/index.js')

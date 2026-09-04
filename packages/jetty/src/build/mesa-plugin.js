@@ -272,7 +272,7 @@ export function injectJettyHMR(js, id, root) {
   // wrapper that mounts fine and never registers, so HMR silently does nothing
   // for that component and the only symptom is an edit that does not appear.
   // Mesa's output shape is a thing jetty reads rather than owns, so the failure
-  // to recognise it is reported at BUILD time instead of at someone's desk.
+  // to recognize it is reported at BUILD time instead of at someone's desk.
   if (!result.includes('__jettyMesa.register(')) {
     throw new Error(
       `[jetty] could not inject HMR registration into ${shortName} — the compiled Mesa ` +

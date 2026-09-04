@@ -179,7 +179,7 @@ export async function run(t) {
     'No results found', 'no rows is an empty state, not a blank table')
   t.is(await t.evaluate(`
     return document.querySelector('#tbl tbody td').getAttribute('colspan');
-  `), '3', 'which spans every column, so it is centred rather than in column one')
+  `), '3', 'which spans every column, so it is centered rather than in column one')
 
   await t.clickAt('#refill-rows')
   await t.eventually(`document.querySelectorAll('#tbl tbody [data-row]').length`, '3',

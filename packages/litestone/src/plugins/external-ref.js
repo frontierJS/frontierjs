@@ -365,7 +365,7 @@ export class ExternalRefPlugin extends Plugin {
    * Resolve this model's ref fields on every row, then do the same for every
    * INCLUDED row hanging off them.
    *
-   * `select: { avatar: { resolve: false } }` is honoured at the level it was
+   * `select: { avatar: { resolve: false } }` is honored at the level it was
    * written and does not descend, because there is no spelling for a nested
    * one — `include: { photos: true }` takes no per-field options.
    *

@@ -194,7 +194,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       }
       // created / updated / patched / restored, and a custom action, all mean
       // "here is a record" — the same fallback Junction's own browser client
-      // applies, and the reason a REMOVE has to be recognised explicitly above.
+      // applies, and the reason a REMOVE has to be recognized explicitly above.
       if (!method) return
 
       // …and a record is an announcement about a ROW, while this store is the

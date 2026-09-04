@@ -48,4 +48,4 @@ test/       what reaches fli, and what happens with no name
 
 `bun run test` here. The scaffold itself is proved by
 `node scripts/scaffold-build.mjs`, which drives `fli new` directly — this package
-adds three behaviours on top of it and those are what the tests cover.
+adds three behaviors on top of it and those are what the tests cover.

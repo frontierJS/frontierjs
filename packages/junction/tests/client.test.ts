@@ -1,6 +1,6 @@
 // tests/client.test.ts
 // JunctionClient test suite — Bun test runner.
-// Tests cover: URL normalisation, Store, ServiceProxy, resource(),
+// Tests cover: URL normalization, Store, ServiceProxy, resource(),
 // _hasFiles / _toFormData, and WS routing logic.
 //
 // No real network calls — _request is intercepted via fetch mock.
@@ -44,9 +44,9 @@ function mockFetch(body: unknown, status = 200) {
   }
 }
 
-// ─── URL normalisation ────────────────────────────────────────────────────────
+// ─── URL normalization ────────────────────────────────────────────────────────
 
-describe('createJunctionClient — URL normalisation', () => {
+describe('createJunctionClient — URL normalization', () => {
 
   it('accepts http:// URL', () => {
     const c = makeClient('http://localhost:3000')
@@ -107,7 +107,7 @@ describe('client.service()', () => {
 
 })
 
-// ─── _request — HTTP behaviour ────────────────────────────────────────────────
+// ─── _request — HTTP behavior ────────────────────────────────────────────────
 
 describe('_request', () => {
 
@@ -434,7 +434,7 @@ describe('Store', () => {
 
 // ─── resource() ───────────────────────────────────────────────────────────────
 
-// ─── find() shape normalisation ───────────────────────────────────────────────
+// ─── find() shape normalization ───────────────────────────────────────────────
 // find() accepts three shapes and refuses a fourth. The refusal is the test
 // that matters: every non-list answer used to become an empty list, so a
 // service answering ONE object (a rollup, a settings blob, a health snapshot)
@@ -851,7 +851,7 @@ describe('ServiceProxy events', () => {
 // matched an app that set `apiPrefix: '/api'`. Junction's server default is ''
 // (registerServiceRoutes in core/app.ts), so against a default app every one of
 // those requests 404'd. These pin the client to the server's default and to the
-// same normalisation the server applies.
+// same normalization the server applies.
 
 describe('apiPrefix', () => {
 
@@ -997,7 +997,7 @@ describe('config.http.cors', () => {
     expect(res.headers['access-control-allow-methods']).toContain('GET')
   })
 
-  it('honours methods/headers overrides from config', async () => {
+  it('honors methods/headers overrides from config', async () => {
     const app = await appWith({ origins: ['https://app.test'], methods: ['GET'], headers: ['X-Custom'] })
     const res = await hdr(app as never, 'options')
     expect(res.headers['access-control-allow-methods']).toBe('GET')
@@ -1035,9 +1035,15 @@ describe('config.http.cors', () => {
   })
 
   it('installs nothing for an empty origins list', async () => {
+    // The claim is that no CORS route was mounted, which is what the ABSENT
+    // headers say. The preflight is not a 404: the transport answers an
+    // OPTIONS nothing claimed, with `Allow` and no CORS headers on it, so
+    // asserting the status here would be asserting that instead.
     const app = await appWith({ origins: [] })
     expect((await hdr(app as never, 'get')).headers['access-control-allow-origin']).toBeUndefined()
-    expect((await hdr(app as never, 'options')).status).toBe(404)
+    const pre = await hdr(app as never, 'options')
+    expect(pre.headers['access-control-allow-origin']).toBeUndefined()
+    expect(pre.headers['access-control-allow-methods']).toBeUndefined()
   })
 
   it('does not echo an origin that is not allowed', async () => {

@@ -5,7 +5,7 @@
   //
   // @frontierjs/css draws the strip and keys the selected state off
   // `[aria-selected]` rather than a class — so the visual state and the
-  // announced state cannot drift. This component supplies the behaviour the
+  // announced state cannot drift. This component supplies the behavior the
   // stylesheet deliberately does not: roving tabindex, arrow keys, and which
   // panel is shown.
   //
@@ -41,7 +41,7 @@
     return !!entry && !entry.isDisabled?.()
   }
 
-  // The neighbour of `id` in `delta`'s direction, skipping every tab that
+  // The neighbor of `id` in `delta`'s direction, skipping every tab that
   // cannot be selected. A disabled tab is not a focus stop that does nothing —
   // it is worse: selecting it announces a disabled tab as selected, shows its
   // panel, and then refuses focus, so the next key is dispatched from wherever

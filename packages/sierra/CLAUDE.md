@@ -106,8 +106,8 @@ src/
 - **`@` is the SURFACE's src/, and it is resolved twice.** A surface is a Vite
   root, so `@/api.js` in `web/` and in `site/` are different files;
   `app-alias-plugin.js` is the one definition and its base is the Vite root, not
-  the cwd. It had been `resolve(process.cwd(), 'src')` for its whole life, which
-  is the same directory only when a command is typed inside the surface —
+  the cwd. `resolve(process.cwd(), 'src')` is the same directory only when a
+  command is typed inside the surface —
   `build:site` does `cd site` and works, `vite -c web/config/vite.config.js`
   from the app root does not, and there `@` pointed at an `example/src` nothing
   ever created. Nothing said so: a missing alias TARGET is not an error, it just

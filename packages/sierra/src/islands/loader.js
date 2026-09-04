@@ -10,7 +10,7 @@
  *
  * A prerendered Sierra page is otherwise inert — `target: 'static'` emits HTML
  * and CSS and no script at all — so this is the whole interactivity story for
- * that target, not an optimisation on top of a working one.
+ * that target, not an optimization on top of a working one.
  *
  * ── Replace, not adopt ────────────────────────────────────────────────────
  * Mounting REPLACES the prerendered markup: the nodes between the markers are
@@ -37,7 +37,7 @@
  *
  * ── Nested islands ────────────────────────────────────────────────────────
  * A `client:*` component can contain another one, and the server render nests
- * the markers accordingly. On the client there is no nesting to honour: Mesa's
+ * the markers accordingly. On the client there is no nesting to honor: Mesa's
  * `island()` short-circuits when `_isClient`, so an outer island's client
  * render calls the inner component DIRECTLY — live, inside the outer's
  * delegation root. An inner island is therefore already mounted, by its parent,
@@ -57,7 +57,7 @@
  *      remove, so a descendant that got there first releases its delegation
  *      root instead of leaking it.
  *
- * The one thing that cannot be honoured is `client:static` under a live
+ * The one thing that cannot be honored is `client:static` under a live
  * ancestor: "no JS even if reactive" loses to the parent rendering its own
  * children. That is warned about rather than silently reinterpreted.
  */
@@ -325,7 +325,7 @@ export function hydrateIslands(registry, { root = document.body } = {}) {
         console.warn(
           `[Sierra islands] <${name}> is client:static inside <${live.meta.component}> ` +
           `client:${live.meta.directive} — a live parent renders its children, so ` +
-          `"no JS" cannot be honoured here. Move it outside the parent island, or ` +
+          `"no JS" cannot be honored here. Move it outside the parent island, or ` +
           `make the parent client:static too.`
         )
       }

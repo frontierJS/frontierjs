@@ -38,7 +38,7 @@ The public surface is genuinely well-designed, and better than most things in th
 - Shipping a test double alongside the library shows the author was thinking about consumers.
 - `NotImplementedTransport` failing loudly for `ssh`/`nats` instead of silently no-oping is exactly right.
 
-But the tagline is *"One interface. Any protocol. Any direction."* and that promise does not hold. **Auth is declared per-target, but only one of the three implemented transports honours it.** A target declared `auth: { type: 'hmac', secret }` sends fully unauthenticated traffic over WebSocket and over Unix sockets — silently, with no warning and no error. The same `ConduitRequest` also means materially different things depending on which protocol the target happens to use: `headers` is honoured on HTTP and dropped on Unix; `method` is a real verb on HTTP and an arbitrary string wrapped into the body on Unix; `stream()` is real on WebSocket, a silent empty iterator on HTTP and Unix. The abstraction leaks at exactly the boundary it exists to hide.
+But the tagline is *"One interface. Any protocol. Any direction."* and that promise does not hold. **Auth is declared per-target, but only one of the three implemented transports honors it.** A target declared `auth: { type: 'hmac', secret }` sends fully unauthenticated traffic over WebSocket and over Unix sockets — silently, with no warning and no error. The same `ConduitRequest` also means materially different things depending on which protocol the target happens to use: `headers` is honored on HTTP and dropped on Unix; `method` is a real verb on HTTP and an arbitrary string wrapped into the body on Unix; `stream()` is real on WebSocket, a silent empty iterator on HTTP and Unix. The abstraction leaks at exactly the boundary it exists to hide.
 
 That is a design problem, not just a bug list. Fixing it means pulling auth into `BaseTransport` as a mandatory step rather than an opt-in helper each transport may forget to call.
 
@@ -338,8 +338,8 @@ Measured coverage (`bun test --coverage`), after stubbing the peer dep:
 
 Three structural problems make that hard to fix with the shipped tooling:
 
-- **`StubTransport` cannot simulate failure.** There is no `mockError()`, no status control on failure paths, no delay. The retry logic, the error taxonomy and the timeout behaviour — the things most likely to be wrong — are untestable with the provided double.
-- **Stubs bypass the store entirely** (`router.ts:29–30`), so `resolve()`, `list()` and `stats()` return empty for stubbed targets. The test at `conduit.test.ts:230–247` **asserts this as correct behaviour** (`expect(provider).toBeNull()`), enshrining the divergence. You cannot integration-test any code that calls `send()` alongside `resolve()`.
+- **`StubTransport` cannot simulate failure.** There is no `mockError()`, no status control on failure paths, no delay. The retry logic, the error taxonomy and the timeout behavior — the things most likely to be wrong — are untestable with the provided double.
+- **Stubs bypass the store entirely** (`router.ts:29–30`), so `resolve()`, `list()` and `stats()` return empty for stubbed targets. The test at `conduit.test.ts:230–247` **asserts this as correct behavior** (`expect(provider).toBeNull()`), enshrining the divergence. You cannot integration-test any code that calls `send()` alongside `resolve()`.
 - **Mocks are keyed on path only** (`stub.ts:73`), so `GET /servers/42` and `DELETE /servers/42` are indistinguishable.
 
 `createTestConduit` also accepts only `hooks` (`testing.ts:43`), so there is no way to mix stubbed and real targets or to test with `opts.targets`.
@@ -399,7 +399,7 @@ Recorded so they are not re-litigated:
 
 **P1 — correctness**
 
-Dedup the in-flight WS connect and clear stale ping timers (§2.1); propagate socket close to stream listeners (§2.2); throw `ConduitStreamError` on WS connect failure (§2.3); move body serialisation inside the `try` and guard hook invocations (§2.4); check `Content-Type` and classify parse failures as non-retryable `server_error` (§2.5); restrict retries to idempotent methods and add idempotency keys (§2.6); add jitter, a total-deadline budget and a circuit breaker (§2.7).
+Dedup the in-flight WS connect and clear stale ping timers (§2.1); propagate socket close to stream listeners (§2.2); throw `ConduitStreamError` on WS connect failure (§2.3); move body serialization inside the `try` and guard hook invocations (§2.4); check `Content-Type` and classify parse failures as non-retryable `server_error` (§2.5); restrict retries to idempotent methods and add idempotency keys (§2.6); add jitter, a total-deadline budget and a circuit breaker (§2.7).
 
 **P2 — close the test gap**
 

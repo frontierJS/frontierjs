@@ -445,7 +445,7 @@ try {
   // and stayed green while every announcement this drive queued failed its
   // whole retry ladder: the webhook runs as the app's own principal, and
   // re-resolving that principal at run time threw `no such principal` — the
-  // app saying its own name and not being recognised (`FJS-467`). A queued
+  // app saying its own name and not being recognized (`FJS-467`). A queued
   // job nobody watches finish is a row, not an effect.
   const finished = queued ? await until(async () => {
     const rows = await announcements()

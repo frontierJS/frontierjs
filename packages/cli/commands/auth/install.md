@@ -307,19 +307,29 @@ if (!userLite) {
   // schema disagrees with the one the app was built against: measured as a
   // deploy whose `db:migrate` refused, because the tree's Verification had moved
   // to a uuid id and the published one had not (`FJS-741`).
-  const spec = (() => {
-    try {
-      const deps = JSON.parse(readFileSync(resolve(context.paths.root, 'package.json'), 'utf8')).dependencies ?? {}
-      const linked = Object.entries(deps).some(([k, v]) => k.startsWith('@frontierjs/') && String(v).startsWith('link:'))
-      return linked ? `link:${AUTH_PKG}` : AUTH_PKG
-    } catch { return AUTH_PKG }
+  //
+  // And when the app ALREADY declares it, the verb is `install` rather than
+  // `add`. `bun add link:<name>` does not dedupe against an existing key — it
+  // appends a second one, and `package.json` then carries the same dependency
+  // twice and warns on every install for ever. `bun add <name>` does dedupe,
+  // and dedupes by REPLACING the `link:` with a registry range, which is the
+  // bug above. So neither form of `add` is right for a dependency that is
+  // already there; what is missing is node_modules, and `install` is the verb
+  // for that.
+  const deps = (() => {
+    try { return JSON.parse(readFileSync(resolve(context.paths.root, 'package.json'), 'utf8')).dependencies ?? {} }
+    catch { return {} }
   })()
 
+  const declared = Boolean(deps[AUTH_PKG])
+  const linked   = Object.entries(deps).some(([k, v]) => k.startsWith('@frontierjs/') && String(v).startsWith('link:'))
+  const command  = declared ? 'bun install' : `bun add ${linked ? `link:${AUTH_PKG}` : AUTH_PKG}`
+
   if (flag.dry) {
-    log.dry(`Would run: bun add ${spec}`)
+    log.dry(`Would run: ${command}`)
   } else {
-    log.info(`Installing ${spec}...`)
-    context.exec({ command: `cd ${context.paths.root} && bun add ${spec}` })
+    log.info(declared ? `${AUTH_PKG} is already declared — installing...` : `Installing ${AUTH_PKG}...`)
+    context.exec({ command: `cd ${context.paths.root} && ${command}` })
     userLite = resolveFromApp(context.paths.root, `${AUTH_PKG}/user.lite`)
   }
 }

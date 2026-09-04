@@ -193,7 +193,7 @@ export interface LitestoneClient {
   $scopedBy(scope: Record<string, unknown>): LitestoneClient
 
   // Is this key filterable / sortable? Asked rather than copied — every
-  // flavour of client answers, because it is a fact about the schema.
+  // flavor of client answers, because it is a fact about the schema.
   $checkWhere(accessor: string, where: Record<string, unknown>): { key: string; suggestion?: string; allowed?: string[] }[]
   $checkOrderBy(accessor: string, orderBy: unknown): { key: string; reason: string; suggestion?: string; sortable?: string[]; message?: string }[]
 

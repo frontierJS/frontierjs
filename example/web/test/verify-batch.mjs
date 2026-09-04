@@ -50,7 +50,7 @@ const refused = async (fn) => { try { await fn(); return false } catch { return 
 
 // Everything this drive makes is registered here as it is made and swept in the
 // `finally` below — **on the failure path too**, which is the run whose
-// leftovers are hardest to recognise later. `payroll-sweep.mjs` owns the order
+// leftovers are hardest to recognize later. `payroll-sweep.mjs` owns the order
 // and the one hatch under the boundary the books need.
 const fixtures = { runIds: [], employeeIds: [] }
 let failedEarly = null
@@ -68,7 +68,7 @@ function recorder() {
       seen.push({ job: job?.name ?? String(job), payload, key, kind: opts.id ? 'id' : 'unique' })
       // A dispatch under an id already taken is a no-op FOREVER, which is what
       // caravan does with a taken primary key. A `unique` one frees when the
-      // job is terminal, so it is modelled as always reaching the handler.
+      // job is terminal, so it is modeled as always reaching the handler.
       if (opts.id) { if (taken.has(opts.id)) return false; taken.add(opts.id) }
       return true
     },

@@ -125,7 +125,7 @@
   /*
    * A MINIMUM, not a height. A .cluster is `flex-wrap: wrap` and the two are
    * paired in this package's own frame docs, so a bar holding more than fits
-   * laid a second row inside a fixed box and centred both — drawing half its
+   * laid a second row inside a fixed box and centered both — drawing half its
    * contents above the bar and half below, over the page, with no horizontal
    * overflow at any width for the usual smell test to catch.
    *
@@ -168,7 +168,7 @@
 }
 
 /*
- * ── Pane — a labelled subdivision of a Screen ─────────────────────
+ * ── Pane — a labeled subdivision of a Screen ─────────────────────
  *
  * States no `display`. A Pane is a semantic subdivision, not a layout mode,
  * and a <section> is already block — so the declaration bought nothing and

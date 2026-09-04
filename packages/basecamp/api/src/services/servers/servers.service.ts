@@ -144,7 +144,7 @@ export function createServersService(app: BasecampApp) {
       if (role)   where.role   = role
       if (search) where.name   = { contains: search }
 
-      // `$orderBy` is honoured rather than ignored: this list is sorted from the
+      // `$orderBy` is honored rather than ignored: this list is sorted from the
       // URL, so the order has to survive a reload and a pasted link like every
       // other part of the query. autoSort has already run — it validates the
       // key against the schema and answers a 400 naming it — but it leaves the

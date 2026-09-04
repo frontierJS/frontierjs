@@ -101,13 +101,16 @@ the FJS port scheme, `packages/cli/core/ports.js`.
 > tree — see [Publishing status](#publishing-status) — but the surface still
 > moves between releases, so pin a version rather than taking `latest` or `*`.
 
-**`fli tutor` is the whole path, and it runs.** Four lessons — an app that
-runs, the access rules watched refusing somebody, a real deploy to your own
-machine with a revert, and a control plane with a machine reporting in to it.
-Every step runs the real command and then asks the running world whether it
-worked, and `bun run ci` grades all four, so a command renamed out from under a
-step is a red build rather than a stale paragraph. The
-[Quickstart](./docs/QUICKSTART.md) is now its index.
+**`fli tutor` is the whole path, and it runs.** Eight lessons — an app that
+runs, the access rules watched refusing somebody, a write reaching a second
+client and one it must not reach, work that outlives its request, a public site
+built ahead of time and the check on what it published, a real deploy to your
+own machine with a revert, changing the schema of something already deployed,
+and a control plane with a machine reporting in to it. Every step runs the real
+command and then asks the running world whether it worked, and `bun run ci`
+grades all eight, so a command renamed out from under a step is a red build
+rather than a stale paragraph. The [Quickstart](./docs/QUICKSTART.md) is now its
+index.
 
 For the API realm on its own, the [Junction example ladder](./packages/junction/example/README.md)
 and its UI counterpart in [Sierra's example app](./packages/sierra/example/README.md).
@@ -179,7 +182,7 @@ One schema. One service declaration. One resource binding. Any component that im
 
 **Boundaries are checkpoints, not walls.** Realms are separated intentionally. Communication flows through defined boundaries, carried by context, governed by hooks. One realm does not reach into another's internals.
 
-**Access is declared, not programmed.** The gate system defines minimum trust levels per model, per operation, enforced at the database boundary. It cannot be bypassed from a route someone forgot to protect.
+**Access is declared, not programed.** The gate system defines minimum trust levels per model, per operation, enforced at the database boundary. It cannot be bypassed from a route someone forgot to protect.
 
 **Real-time is core.** Every service emits events after writes. Every resource subscribes to them. A FrontierJS UI is live by default — open two tabs, make a change in one, the other updates without a refresh.
 
@@ -198,7 +201,7 @@ One schema. One service declaration. One resource binding. Any component that im
 
 | Document                                                                              | Description                                                                     |
 | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| [Quickstart](./docs/QUICKSTART.md)                                                    | `fli tutor` — the four lessons, and where to write what                         |
+| [Quickstart](./docs/QUICKSTART.md)                                                    | `fli tutor` — the eight lessons, and where to write what                         |
 | [Philosophy](./PHILOSOPHY.md)                                                         | Why FrontierJS exists — the axioms and decision tests above the architecture     |
 | [Architecture & Vocabulary](./ARCHITECT.md)                                           | The mental model (§1), the mandatory vocabulary (§2), the eight domains (§4)     |
 | [Decisions](./DECISIONS.md)                                                           | Dated rulings — read before relitigating any semantics                           |
@@ -442,7 +445,7 @@ application, not a library) and `vscode-frontierjs` (a marketplace extension,
 which needs a publisher account rather than an npm one).
 
 **Pin a version — never `latest` or `*`.** Below 1.0 a caret pins the *minor*
-(`^0.1.0` is `>=0.1.0 <0.2.0`), which is the behaviour a pre-alpha peer wants and
+(`^0.1.0` is `>=0.1.0 <0.2.0`), which is the behavior a pre-alpha peer wants and
 the trap in the other direction: a caret left behind by a minor bump excludes
 every published copy, and nothing inside this workspace catches it, because a
 `workspace:*` devDependency answers first and the range is never consulted.

@@ -71,7 +71,7 @@ export function money(cents: number | null | undefined): string {
   return formatMoney(fromMinor(cents, BASE), BASE)
 }
 
-/** A Litestone client of some flavour — see `inventory.ts` for why this is
+/** A Litestone client of some flavor — see `inventory.ts` for why this is
  *  loose. The reads below go through whichever one the caller is entitled to. */
 type Client = Record<string, any>
 

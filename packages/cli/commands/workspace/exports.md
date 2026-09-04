@@ -58,7 +58,7 @@ const packedFiles = (dir) => {
 //
 // Every path a consumer can arrive at: the `exports` map (nested conditions
 // included — "import"/"require"/"default" are all real entry points), `bin`,
-// and the legacy `main`/`types`. Normalised to a tarball-relative path so
+// and the legacy `main`/`types`. Normalized to a tarball-relative path so
 // membership is a string compare against the listing.
 
 const entryTargets = (pkg) => {

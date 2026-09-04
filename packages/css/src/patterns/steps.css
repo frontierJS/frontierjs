@@ -95,7 +95,7 @@
  * One rule, drawn by each step except the first, reaching back to the
  * previous marker. Because every .step is an equal flex track, "half my
  * width plus half the previous one" is just 100% of one track ending at
- * my own centre — no per-step geometry, and nothing to retune when the
+ * my own center — no per-step geometry, and nothing to retune when the
  * marker size changes.
  *
  * Contrast this with the feed timeline, whose connector is pinned to
@@ -124,7 +124,7 @@
 
 /*
  * The marker is in the chip lineage (see chip.css), which is where the
- * inline-flex centring comes from and, more importantly, the auto-contrast
+ * inline-flex centering comes from and, more importantly, the auto-contrast
  * pair: --fill is --step-accent capped so text on it clears AA, --on-fill
  * is that text.
  *
@@ -234,7 +234,7 @@
  * Long labels, hints on every step, or a narrow column. The connector
  * turns with it: same "reach back to the previous marker" idea, now on
  * the block axis, where the tracks are not equal heights — so it spans
- * from the previous marker's centre to this one's rather than a fixed
+ * from the previous marker's center to this one's rather than a fixed
  * 100%.
  */
 .steps.vertical {
@@ -304,7 +304,7 @@
 }
 .steps.vertical .step-label {
   flex: 1;
-  /* Optically centre the first line of the label against the marker. */
+  /* Optically center the first line of the label against the marker. */
   padding-block-start: 0.3125rem;
 }
 .steps.vertical .step-hint {

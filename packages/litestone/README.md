@@ -2,7 +2,7 @@
 
 **Schema-first SQLite ORM for Bun.**
 
-A single `.lite` file declares the **shape** of your data, **access** rules, **lifecycle** behaviour, and the **generation** of everything downstream — TypeScript types, migrations, JSON Schema, runtime enforcement. Edit the schema; everything stays consistent. SQLite and Bun keep the runtime embedded, fast, and dependency-free.
+A single `.lite` file declares the **shape** of your data, **access** rules, **lifecycle** behavior, and the **generation** of everything downstream — TypeScript types, migrations, JSON Schema, runtime enforcement. Edit the schema; everything stays consistent. SQLite and Bun keep the runtime embedded, fast, and dependency-free.
 
 ```
 // schema.lite
@@ -1245,7 +1245,7 @@ await db.$audit({
 side effect of a write that already succeeded and must not fail it; here it *is*
 the point. An unknown key is refused by name, a stated `actorId` beats `onLog`'s,
 and `meta` is **not redacted** — it is yours, so do not put a secret in it. On
-every flavour of client.
+every flavor of client.
 
 **Protected fields are redacted in the trail.** Any `@encrypted` / `@guarded` /
 `@secret` value logs as `[redacted]` in both the field entry and the
@@ -1314,11 +1314,11 @@ db.$checkOrderBy('post', { fullName: 'asc' })
 `reason` separates *no such field* from **`computed`** (a JS function over a
 fetched row — SQLite can neither sort nor paginate by one) from **`opaque`**: an
 array, a `Json` document, a `File` or an encrypted column, whose stored TEXT is a
-serialisation rather than the value, so ordering by it is always plausible and
+serialization rather than the value, so ordering by it is always plausible and
 never what was asked. A `@from` and a `@derived` field both sort fine.
 
 An unknown accessor answers `[]` — *I cannot judge this* is not *this is wrong*.
-Both live on **every** flavour of client: filterability is a fact about the
+Both live on **every** flavor of client: filterability is a fact about the
 schema, and auth has no bearing on it.
 
 The two differ in strictness on purpose. **A bad sort key throws**, where a bad
@@ -1877,7 +1877,7 @@ const env = await createTestEnv({
   plugins:    [myGatePlugin],    //   so the tests run against the database a deploy produces
 })
 
-env.actingAs(user)      // the app's own getLevel — anything about behaviour
+env.actingAs(user)      // the app's own getLevel — anything about behavior
 await env.atLevel(4)    // a SYNTHETIC standing — the gate grid only
 env.seal(); env.reset(); env.close()
 ```
@@ -1931,7 +1931,7 @@ const { score, survived } = await mutationScore({
 counting harness errors was worth 36 points on a 14-mutant schema, reading 93%
 while four mutations went completely unnoticed. Mutation is code-only and
 quote-aware: an attribute named inside a doc comment is prose, and editing it
-produces a mutant identical in behaviour that survives everything.
+produces a mutant identical in behavior that survives everything.
 
 ### makeTestClient
 
@@ -2135,7 +2135,7 @@ db.$detach('archive')
 // Schema introspection
 db.$schema           // augmented parsed schema (includes auto-generated models)
 db.$databases        // { main: { driver, access, path }, ... }
-db.$softDelete       // { ModelName: boolean } — a copy, on every flavour of client
+db.$softDelete       // { ModelName: boolean } — a copy, on every flavor of client
 db.$enums            // { EnumName: ['val1', 'val2', ...] }
 db.$scopes('post')   // the @@scope names this model declares
 db.$tenancy          // the resolved tenancy { } block, or null
@@ -2155,7 +2155,7 @@ await db.$lock('nightly-sweep', fn)     // an application-level lock
 **`db.$plugins` is worth knowing about**: a schema declaring any `@@gate`
 auto-installs `GatePlugin`, so what you passed is not necessarily what is running.
 
-**A capability that depends only on the schema lives on every flavour of client**
+**A capability that depends only on the schema lives on every flavor of client**
 — root, `$setAuth`, `asSystem`, `$scopedBy`. Both `$check*` and `$audit` are in
 that set.
 

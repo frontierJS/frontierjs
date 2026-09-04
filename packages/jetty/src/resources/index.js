@@ -35,7 +35,7 @@ export { useStore,
          getConnectionSignals }      from './mesa-bridge.js'
 
 // Hook utilities, for a caller building its own resource. NOTE: `mergeHooks`
-// answers a NEW map and mutates neither argument — toolbelt's licence is that
+// answers a NEW map and mutates neither argument — toolbelt's license is that
 // every export is pure. It used to merge in place, so a caller upgrading must
 // assign the result.
 export { mergeHooks, runPhase,

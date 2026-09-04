@@ -3,7 +3,7 @@
  *
  * Litestone already let every validator carry its own wording:
  * `@length(3, 20, "…")`, `@email("…")`, `@gte(1, "…")`. Its own validator
- * honoured them and `generateJsonSchema` emitted none of them, so a sentence
+ * honored them and `generateJsonSchema` emitted none of them, so a sentence
  * authored once in db/schema.lite died at the Data boundary — invisible to
  * Junction's autoValidate and to Sierra's client-side rules, both of which
  * derive from that document. A form therefore said `customerId is required`
@@ -146,7 +146,7 @@ model Job {
     return db
   }
 
-  // Authorisation before state, which is the order every other layer here reads
+  // Authorization before state, which is the order every other layer here reads
   // in: `ship` is `@gate(5)` and this caller is anonymous, so the answer is
   // about the CALLER and never about where the row happens to be. Telling
   // somebody who could not make the move at any level that the row is in the

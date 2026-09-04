@@ -248,7 +248,7 @@ export async function run(t) {
 
   /* ── a server error reaches each of them ──────────────────────────────── */
 
-  // Every field named at once: a control that shows its neighbour's message,
+  // Every field named at once: a control that shows its neighbor's message,
   // or none, is what the per-control resolution is for.
   await t.evaluate(`
     window.kitFailWith({

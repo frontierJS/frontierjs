@@ -18,7 +18,7 @@
 //     the lock cannot sit with the record it protects.
 //   · `$backup` sweeps every declared SQLite database. `05-backup` takes that
 //     copy before every deploy, so restoring it would erase the journal that
-//     records the deploy which authorised the restore.
+//     records the deploy which authorized the restore.
 //   · The transaction manager holds main's alone, so a row outside it survives
 //     main's rollback. That is a defect for an outbox (`FJS-D35`) and the
 //     requirement here: the journal must outlive the app's own rollback.

@@ -533,7 +533,7 @@ export function inspectBuild({
 export const refuses = (findings) => findings.some(f => f.level === 'error')
 
 /** One line, for a pipeline step or the doctor's checklist. */
-export function summarise(findings) {
+export function summarize(findings) {
   if (!findings.length) return 'promotable: no deployment state in the bytes'
   const errors = findings.filter(f => f.level === 'error').length
   const warns  = findings.length - errors

@@ -52,7 +52,9 @@ import { readPreambles, resolveNeeds } from './preflight.js'
 import { declaredLogDatabases }        from './db-preflight.js'
 import { hostCollisions }              from './proxy.js'
 import { docWordUnknown, docCitesDead, docClaimsCount, docInvariantRef,
-         COUNTABLES, checkRulesCountable, docStatusStale } from './doc-audit.js'
+         COUNTABLES, checkRulesCountable, docStatusStale, docMapNarration,
+         docUncheckedCount } from './doc-audit.js'
+import { invariantCoverage }                   from './invariants.js'
 
 export const RULES = [
   { id: 'model-name-case',      scope: 'app',  severity: 'error', invariant: 2,
@@ -97,11 +99,11 @@ export const RULES = [
     title: 'a row a screen KEEPS is watched, not fetched once' },
   { id: 'service-module-db',    scope: 'app',  severity: 'error', invariant: null,
     title: 'a service reads the request-scoped client, not the module one' },
-  { id: 'service-as-system',    scope: 'app',  severity: 'warn',  invariant: null,
+  { id: 'service-as-system',    scope: 'app',  severity: 'warn',  invariant: 6,
     title: 'asSystem() off the app client crosses tenants; off the request client it does not' },
   { id: 'scheduler-dispatch',   scope: 'app',  severity: 'error', invariant: null,
     title: 'a timer that dispatches into a queue is the queue\'s schedule' },
-  { id: 'gate-unreachable',     scope: 'app',  severity: 'warn',  invariant: null,
+  { id: 'gate-unreachable',     scope: 'app',  severity: 'warn',  invariant: 6,
     title: 'a declared @@gate level something can actually reach' },
   { id: 'static-publish-db',    scope: 'app',  severity: 'error', invariant: null,
     title: 'a prerendered site wires the client its publish check reads' },
@@ -151,6 +153,12 @@ export const RULES = [
     title: 'every cited invariant is one CLAUDE.md declares' },
   { id: 'doc-status-stale',     scope: 'repo', severity: 'warn',  invariant: null,
     title: 'a guiding document does not call open what the register has ruled' },
+  { id: 'doc-map-narration',    scope: 'repo', severity: 'warn',  invariant: null,
+    title: 'a map states what is true, not what used to be' },
+  { id: 'doc-unchecked-count',  scope: 'repo', severity: 'warn',  invariant: null,
+    title: 'a number in prose is generated or absent' },
+  { id: 'invariant-enforcer',   scope: 'repo', severity: 'error', invariant: null,
+    title: 'a declared invariant enforcer resolves to something that exists' },
 ]
 
 const BY_ID = Object.fromEntries(RULES.map(r => [r.id, r]))
@@ -562,7 +570,7 @@ const CHECKS = {
   },
 
   // Not an invariant — a live hazard, which is worse. Vite hops to the next free
-  // port in silence, so the second app to start binds the first app's neighbour
+  // port in silence, so the second app to start binds the first app's neighbor
   // and a test drive exercises the wrong app with everything green.
   'vite-strict-port': ({ root }) => {
     const configs = []
@@ -2534,6 +2542,9 @@ const CHECKS = {
   'doc-claims-count':  ({ root }) => docClaimsCount({ root, countables: [...COUNTABLES, checkRulesCountable(RULES)] }),
   'doc-invariant-ref': ({ root }) => docInvariantRef({ root, rules: RULES }),
   'doc-status-stale':  ({ root }) => docStatusStale({ root }),
+  'doc-map-narration': ({ root }) => docMapNarration({ root }),
+  'doc-unchecked-count': ({ root }) => docUncheckedCount({ root, countables: [...COUNTABLES, checkRulesCountable(RULES)] }),
+  'invariant-enforcer': ({ root }) => invariantEnforcer({ root }),
 }
 
 // ─── reading source ───────────────────────────────────────────────────────────
@@ -2591,7 +2602,7 @@ function closingParen(text, open) {
  *
  * Three shapes and they are the three an app writes: `{}` takes the entry and
  * no comma, `{ a: 1 }` takes it first with one, and an object opened on its own
- * line takes a line of its own indented like its neighbour. The alternative —
+ * line takes a line of its own indented like its neighbor. The alternative —
  * one canonical form — reformats somebody's file to fix a missing key, which is
  * how a `--fix` gets a reputation.
  */
@@ -2629,7 +2640,7 @@ function optionsInsert(text, brace, entry) {
  * A scanner rather than a parser: it knows strings, template literals and the
  * two comment forms, and nothing else. Regex literals are not tracked — a `//`
  * cannot appear inside one (that is an empty regex, which no engine accepts) —
- * and an escaped quote is honoured, which is the only escape that matters here.
+ * and an escaped quote is honored, which is the only escape that matters here.
  */
 function readCode(path) {
   let text = ''
@@ -3121,4 +3132,43 @@ export function formatFindings(findings, root) {
     }
   }
   return out
+}
+
+// ─── invariant-enforcer ───────────────────────────────────────────────────────
+//
+// `core/invariants.js` declares which test, phase or drive fails when an
+// invariant stops being true — the half no table can derive. A declaration is
+// advice, and advice that fails when taken is worse than none: an invariant
+// pointing at a renamed suite reads as covered from every angle, and the only
+// way to find out is to go looking for the assertion by hand.
+//
+// So this grades the pointer and nothing else. Whether the named suite really
+// holds the assertion is a judgement no rule can make; whether the file is
+// still there is a fact, and it is the half that rots. Same argument, same
+// severity and the same shape as `proof-target`.
+//
+// It does NOT report an invariant with no enforcer at all. That is the gap the
+// snapshot exists to publish, and a check that failed on it would be a red
+// build for a piece of honesty — the fastest way to have somebody delete the
+// row rather than write the rule.
+
+function invariantEnforcer({ root }) {
+  const rows = invariantCoverage({ root, rules: RULES })
+  if (!rows.length) return { skipped: 'CLAUDE.md declares no numbered Invariants section' }
+
+  const findings = []
+  for (const row of rows) {
+    for (const e of row.enforcers) {
+      if (e.resolved || e.derived) continue
+      findings.push({
+        file: join(root, 'packages', 'cli', 'core', 'invariants.js'),
+        message: `Invariant ${row.n} names ${e.kind} \`${e.at}\`, which is not in the tree. ` +
+                 `A declared enforcer that does not resolve reports the invariant as covered ` +
+                 `and there is nothing behind it — point it at what replaced it, or record ` +
+                 `the invariant as having no enforcer, which \`invariants.snapshot.md\` is ` +
+                 `written to say out loud.`,
+      })
+    }
+  }
+  return { findings }
 }

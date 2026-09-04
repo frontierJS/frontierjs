@@ -25,7 +25,7 @@ First release. Litestone gets a language server; Mesa gets editor support.
   including where a word is legal and what its arguments accept.
 - **Go-to-definition** from a model reference to its declaration, and from
   `@funcName` to its function block.
-- **Formatting** — aligned field columns and normalised spacing, on demand or
+- **Formatting** — aligned field columns and normalized spacing, on demand or
   on save.
 
 ### Mesa (`.mesa`)

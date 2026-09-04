@@ -6,7 +6,7 @@
  * component"). Every file header states the contract it expects. This
  * file is the other side of those contracts, written once, in plain JS,
  * with no framework — which is itself the test: if a contract needs more
- * than a few lines of vanilla JS to honour, it is too demanding.
+ * than a few lines of vanilla JS to honor, it is too demanding.
  *
  * Running tally, for demo/README.md:
  *   tabs (roving tabindex + arrows)   ~30 lines
@@ -19,7 +19,7 @@
  *   density                             ~4 lines
  *
  * The legend at the bottom of this file is not in that tally. It is not a
- * contract the package expects a consumer to honour — it is the demo
+ * contract the package expects a consumer to honor — it is the demo
  * measuring its own coverage, and it exists because the alternative was a
  * hand-written list that was wrong on the first day.
  */
@@ -255,7 +255,7 @@ function toast(message, tone = 'success') {
  * anchor's `position: relative` is enough. That relative is in demo.css,
  * because the package has no `.popover-anchor` to match `.tooltip-anchor`.
  *
- * Escape and click-away are the app's, like every other behaviour here.
+ * Escape and click-away are the app's, like every other behavior here.
  */
 const helpBtn = $('#help-btn');
 const helpPop = $('#help-pop');
@@ -284,7 +284,7 @@ if (helpBtn) {
 
 /* ── Density ──────────────────────────────────────────────────────────
  *
- * One line of behaviour, because density is one number. Setting it on the
+ * One line of behavior, because density is one number. Setting it on the
  * Pane is enough: --density inherits, so the table, its cells, the bar
  * above it and every badge in that bar all follow. Nothing is told which
  * components exist.

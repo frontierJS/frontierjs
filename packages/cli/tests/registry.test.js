@@ -91,9 +91,9 @@ describe('uniqueCommands', () => {
 
 })
 
-// ─── Dual-root source labelling ──────────────────────────────────────────────
+// ─── Dual-root source labeling ──────────────────────────────────────────────
 
-describe('registry — dual-root source labelling', () => {
+describe('registry — dual-root source labeling', () => {
 
   test('core commands have _source === "core"', () => {
     const registry = buildRegistry()

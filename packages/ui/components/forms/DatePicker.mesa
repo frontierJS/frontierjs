@@ -923,7 +923,7 @@
    * The ring is drawn from the package's tokens rather than restated as a
    * recipe — focus.css opts elements in BY CLASS and cannot name a class this
    * kit invented, so the rule lives here and the look stays the theme's.
-   * A day cell is flush against its neighbours, so the ring goes inset.
+   * A day cell is flush against its neighbors, so the ring goes inset.
    */
   .fjs-dp button:focus-visible {
     outline:        var(--ring-width) var(--ring-style, solid)

@@ -8,7 +8,7 @@
  *
  * What this family is, is a context provider and three consumers. Everything
  * it adds over `@frontierjs/css` — which keys the selected look off
- * `[aria-selected]` and ships no behaviour at all — exists only at runtime:
+ * `[aria-selected]` and ships no behavior at all — exists only at runtime:
  * which tab is selected, the roving tabindex, the arrow/Home/End walk, and
  * whether a panel is hidden or absent.
  *
@@ -165,7 +165,7 @@ export async function run(t) {
   // its own subtree would make the second strip follow the first.
   await t.eventually(`
     document.querySelector('#t-unmount [role=tab][aria-selected=true]')?.getAttribute('data-tab-id')
-  `, 'two', 'a stated activeId is honoured, and the other strip does not move it')
+  `, 'two', 'a stated activeId is honored, and the other strip does not move it')
 
   /* ── unmount panels ───────────────────────────────────────────────────── */
 

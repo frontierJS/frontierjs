@@ -13,7 +13,7 @@
 //   • it is the only way the INBOUND half is real. A webhook that arrives
 //     from inside the process is a function call wearing a URL: nothing
 //     crosses a socket, so no signature is computed over bytes that were
-//     actually serialised, no clock skew exists, and the endpoint's own
+//     actually serialized, no clock skew exists, and the endpoint's own
 //     `rawBody` is never exercised
 //
 // ─── It VERIFIES the shop's signature, and that is the point ──────────────
@@ -92,7 +92,7 @@ interface Setup {
 
 /** What the provider is holding, and how it will behave when presented.
  *
- *  `behaviour` is the test-card convention every real provider ships — a number
+ *  `behavior` is the test-card convention every real provider ships — a number
  *  that always declines, one that always asks for the cardholder — kept here
  *  rather than encoded in the id, so the shop's stored handle is opaque to it
  *  and a drive cannot pass by reading the string. */
@@ -102,7 +102,7 @@ interface Instrument {
   last4:     string
   expMonth:  number
   expYear:   number
-  behaviour: 'ok' | 'declines' | 'needs_action'
+  behavior: 'ok' | 'declines' | 'needs_action'
 }
 
 const setups      = new Map<string, Setup>()
@@ -140,7 +140,7 @@ export function startPspSink(): { stop(): void; port: number } {
    * same function the shop verifies with, so the canonical string cannot
    * disagree.
    *
-   * The body is serialised ONCE and those exact bytes are both signed and
+   * The body is serialized ONCE and those exact bytes are both signed and
    * sent. Re-stringifying for the signature is the classic way to ship a
    * scheme that fails on the first payload whose key order differs.
    */
@@ -248,7 +248,7 @@ export function startPspSink(): { stop(): void; port: number } {
         // ── The API half. Signed, and refused otherwise ──────────────────
         //
         // Read the body as BYTES and verify over those. Parsing first and
-        // re-serialising to check the hash is the mistake that makes a scheme
+        // re-serializing to check the hash is the mistake that makes a scheme
         // pass every test and fail on the first payload whose keys come back
         // in a different order.
         const signed = async () => {
@@ -342,17 +342,17 @@ export function startPspSink(): { stop(): void; port: number } {
           // whether it has an SCA path at all: it files perfectly and then asks
           // for the cardholder the first time it is presented with nobody there.
           const { card = 'ok' } = await req.json().catch(() => ({})) as { card?: string }
-          const behaviour: Instrument['behaviour'] =
+          const behavior: Instrument['behavior'] =
             card === 'declines'    ? 'declines'
             : card === 'needs_action' ? 'needs_action'
             : 'ok'
           const instrument: Instrument = {
             id:        mint('pm'),
-            brand:     behaviour === 'declines' ? 'visa' : 'mastercard',
-            last4:     behaviour === 'declines' ? '0002' : behaviour === 'needs_action' ? '3155' : '4242',
+            brand:     behavior === 'declines' ? 'visa' : 'mastercard',
+            last4:     behavior === 'declines' ? '0002' : behavior === 'needs_action' ? '3155' : '4242',
             expMonth:  12,
             expYear:   2030,
-            behaviour,
+            behavior,
           }
           instruments.set(instrument.id, instrument)
           setup.instrument = instrument
@@ -385,7 +385,7 @@ export function startPspSink(): { stop(): void; port: number } {
         // ── Refunds. Signed, and IDEMPOTENT ─────────────────────────────
         //
         // The only endpoint here where a retry costs real money, so it is the
-        // only one that honours `Idempotency-Key` — which conduit sends when
+        // only one that honors `Idempotency-Key` — which conduit sends when
         // the caller states one. A refund is the case the header exists for:
         // a click, a timeout, a click again, and without a key the shop has
         // paid the customer twice with two 200s and no way to tell.
@@ -440,7 +440,7 @@ export function startPspSink(): { stop(): void; port: number } {
         //
         // SIGNED, where the confirm below is not, and the difference is the
         // whole point of the pair: down there a person is at a browser and the
-        // person is the authorisation; here there is nobody, and a signature is
+        // person is the authorization; here there is nobody, and a signature is
         // the only kind of caller that can stand in for one.
         const offSession = path.match(/^\/v1\/intents\/([^/]+)\/confirm-off-session$/)
         if (offSession && req.method === 'POST') {
@@ -465,8 +465,8 @@ export function startPspSink(): { stop(): void; port: number } {
           // the only thing that can resolve it, which is somewhere to send a
           // person.
           intent.status =
-            instrument.behaviour === 'declines'     ? 'failed'
-            : instrument.behaviour === 'needs_action' ? 'requires_action'
+            instrument.behavior === 'declines'     ? 'failed'
+            : instrument.behavior === 'needs_action' ? 'requires_action'
             : 'succeeded'
           if (intent.status === 'requires_action')
             intent.actionUrl = `${PUBLIC_URL}/challenge/${intent.id}`
@@ -512,7 +512,7 @@ export function startPspSink(): { stop(): void; port: number } {
         // ── The issuer's challenge ──────────────────────────────────────
         //
         // Unsigned, like the two confirms above and for the same reason: a
-        // person reaches it with a browser and the person is the authorisation.
+        // person reaches it with a browser and the person is the authorization.
         // It is on the PROVIDER's origin, which is the whole design decision —
         // hosting a card network's challenge on the shop's own pages would put
         // a third party's script there to collect the one thing every other

@@ -256,7 +256,7 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   - **Undo is a stack of documents, and it is affordable only because every
     write answers a copy** — `setIn` shares every branch it did not touch, so an
     entry costs the path that changed. Capped at 50. The rule that matters:
-    **the echo is recognised by VALUE, not identity.** A controlled caller that
+    **the echo is recognized by VALUE, not identity.** A controlled caller that
     adopts a write and rebuilds its own object hands back an equal document with
     a different identity; by identity that is a second, foreign change, the
     write lands twice, and every edit costs two presses to undo. A document that
@@ -374,7 +374,7 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
     nowhere, and the assertion after it read as a component that ignores
     clicks. What it tests is the POINT it is about to press, not the element:
     a full-width field at the end of a long form has its top in view and its
-    centre past the bottom edge, which asking about the element misses. It
+    center past the bottom edge, which asking about the element misses. It
     scrolls only when that point is out of view — a spec that has positioned
     the page on purpose (where a popover flips) must not have that undone.
   - **No backticks in a probe's own comments.** Everything passed to
@@ -387,7 +387,7 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   - **`waitSettled(sel)` before a coordinate click near anything animating.**
     `waitVisible` answers *can this be seen*, which is not *has it stopped
     moving*: `t.clickAt` reads a rect and then presses that point, so a
-    neighbour still growing into place puts the target somewhere else by the
+    neighbor still growing into place puts the target somewhere else by the
     time the press lands. Green alone, red under load.
   - **A fixture may import the REAL control table**, through
     `@frontierjs/sierra/field-rules` (the server mounts `/@sierra/` and
@@ -453,7 +453,7 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   dismiss() }` and settles the same toast in place — `toasts.update(id, patch)`
   is underneath it. A loading toast has `duration: 0` and a spinner rather than
   a verdict icon, so it does not dismiss itself and does not draw a drain bar
-  it cannot honour. Settling one the reader already dismissed answers `false`
+  it cannot honor. Settling one the reader already dismissed answers `false`
   and does not put it back; `update()` reschedules the timer only when a
   duration is stated. **The test that matters is node identity** — a
   remove-and-add looks identical on screen and loses the reader's place in the
@@ -465,7 +465,7 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
 ## Proving a change
 
 `bun run test` — which now includes the browser drive — then `example`:
-`bun run verify:ui`, the behavioural components on real screens. `verify` covers
+`bun run verify:ui`, the behavioral components on real screens. `verify` covers
 the 13 that carry every route. The two drives answer different questions and
 both are worth running: this one mounts a component alone and can reach modes no
 screen uses, `example`'s puts it in an app with a real service behind it.

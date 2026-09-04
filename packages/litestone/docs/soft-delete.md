@@ -158,7 +158,7 @@ await db.order.update({ where: { id: 1 }, data: { status: 'cancelled' } })  // e
 await db.order.remove({ where: { id: 1 } })                                  // not enforced
 ```
 
-To require a state before deletion, express it as access rather than as a transition. A row-level policy narrows the `WHERE`, and `remove()` does honour it:
+To require a state before deletion, express it as access rather than as a transition. A row-level policy narrows the `WHERE`, and `remove()` does honor it:
 
 ```prisma
 @@deny('delete', status != 'cancelled')

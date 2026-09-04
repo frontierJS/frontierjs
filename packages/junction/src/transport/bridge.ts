@@ -324,7 +324,7 @@ function protectedFieldsFor(ctx?: ServiceContext): Record<string, string> {
 // way past the bound, unauthenticated (`FJS-683`). `clampPage` floors it now,
 // but a clamp answers a caller who stated something impossible with silence.
 // Refused by NAME here, where the `$` convention is already owned, in the same
-// shape `$checkWhere` refuses a filter key it cannot honour.
+// shape `$checkWhere` refuses a filter key it cannot honor.
 //
 // Only a stated negative is refused. A non-numeric `$limit` keeps its existing
 // fallback to the default: text is a caller who wrote nothing usable, where a

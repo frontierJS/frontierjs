@@ -100,7 +100,7 @@ model Doc {
 })
 
 // The classifier itself, asked directly — the per-row cases above prove the
-// behaviour, and these pin the RULE, including the one no schema can express yet.
+// behavior, and these pin the RULE, including the one no schema can express yet.
 describe('referencesRow is an allow-list, so an unknown node reads the row', () => {
   const auth = { type: 'auth', field: 'isAdmin' }
 

@@ -69,7 +69,7 @@ describe('the jsonl companion index rebuilds rather than failing every write', (
   test('an index with a CHANGED type is still rebuilt', async () => {
     // The case that was already covered. Kept as the negative control for the
     // one above: a fix that only handled the new-column case would pass that
-    // test and quietly drop this behaviour.
+    // test and quietly drop this behavior.
     const dir = mkdtempSync(join(tmpdir(), 'fjs-idx-'))
     try {
       seedIndex(dir, '"actorId" TEXT, "model" TEXT, "correlationId" TEXT')

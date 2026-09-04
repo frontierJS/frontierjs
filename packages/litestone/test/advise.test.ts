@@ -369,7 +369,7 @@ describe('index-another-index-already-covers', () => {
 // used to say the deny "won't restrict access unless you add @@allow rules".
 // That is false and it reads as *this declaration is inert*, which invites
 // deleting a rule that is working. Driven here rather than asserted as a string,
-// because the claim is about behaviour.
+// because the claim is about behavior.
 
 describe('a @@deny with no @@allow', () => {
   test('restricts the operation it names', async () => {

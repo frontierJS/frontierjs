@@ -68,7 +68,7 @@ went through the edge at all.
 
 And the app-detail screen has been naming the gap out loud the whole time:
 
-> `log-analysis` — nothing STORES a log line, so there is nothing to analyse.
+> `log-analysis` — nothing STORES a log line, so there is nothing to analyze.
 
 ---
 
@@ -237,7 +237,7 @@ different audience.
   they mean *not wired*, and `resource.options()`'s `error` field is the settled
   shape for the difference. An app with no GoAccess must say so.
 - **No product analytics by accident.** *Unique visitors* is GoAccess counting
-  IPs and must be labelled as that. The moment a design reaches for a cookie or a
+  IPs and must be labeled as that. The moment a design reaches for a cookie or a
   first-party script it has become a different feature with a consent story, and
   that is a decision, not a phase.
 

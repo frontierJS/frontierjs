@@ -40,7 +40,7 @@ try {
   await waitFor(async () => (await ev(`document.querySelectorAll('#dataGrid tr').length`)) > 0)
   const btn = await ev(`(() => { const b = document.getElementById('btnRandomRow'); return { shown: b.style.display !== 'none', text: b.textContent.trim() } })()`)
   ok('button is visible on a normal table', btn?.shown === true, JSON.stringify(btn))
-  ok('button is labelled', /Random/.test(btn?.text ?? ''), btn?.text)
+  ok('button is labeled', /Random/.test(btn?.text ?? ''), btn?.text)
 
   const before = await ev(`document.getElementById('pageInfo').textContent`)
   await ev(`document.getElementById('btnRandomRow').click()`)

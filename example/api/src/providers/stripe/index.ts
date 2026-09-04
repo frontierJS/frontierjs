@@ -196,7 +196,7 @@ export async function createPaymentIntent(app: App, req: {
  *
  * The one outbound call in this app where a retry costs real money, so the key
  * is REQUIRED rather than optional — conduit puts it on the wire as
- * `Idempotency-Key`, which is the header Stripe honours under that exact name.
+ * `Idempotency-Key`, which is the header Stripe honors under that exact name.
  * It is the caller's to choose: what makes two attempts "the same refund" is a
  * question about the shop's intention, and a uuid minted here would be unique
  * and would guard nothing.
@@ -244,7 +244,7 @@ export async function createRefund(app: App, req: {
  *
  * Three details that are easy to get wrong and each of which is a real hole:
  *
- *   - It is over the RAW BYTES. Re-serialising the parsed object gives
+ *   - It is over the RAW BYTES. Re-serializing the parsed object gives
  *     different bytes for the same document — key order, whitespace, number
  *     formatting — so the signature would fail for every legitimate event.
  *     `ctx.$raw.rawBody` is junction's half of this seam.

@@ -513,7 +513,7 @@ function quotedPrintable(input: string): string {
   const encodedLines = input
     .split('\n')
     .map(line => {
-      // Normalise \r\n to \n first (we'll re-add \r\n at the join step)
+      // Normalize \r\n to \n first (we'll re-add \r\n at the join step)
       const stripped = line.replace(/\r$/, '')
       let result = ''
 

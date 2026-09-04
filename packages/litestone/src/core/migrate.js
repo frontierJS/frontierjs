@@ -89,13 +89,13 @@ export function parseGeneratedColumns(sql) {
 }
 
 /**
- * Every CHECK constraint in a CREATE TABLE, normalised for comparison.
+ * Every CHECK constraint in a CREATE TABLE, normalized for comparison.
  *
  * SQLite stores the CREATE statement verbatim and offers no pragma for
  * constraints, so the text is the only place they exist. Both sides of the
  * diff come through here — `buildPristine` executes today's DDL into a scratch
  * database and introspects that — so what is compared is one emitter's output
- * against another's, which is why a normalised string is enough and an
+ * against another's, which is why a normalized string is enough and an
  * expression parser is not.
  *
  * Column-level and table-level alike: a `CHECK` inside a column's definition
@@ -269,8 +269,8 @@ export function introspect(db) {
   // had to remember to write. An object SQLite keeps no statement for — an
   // implicit index behind a UNIQUE constraint — is not one anybody declared
   // either; `tableUniques` is what reads those.
-  // Stored RAW and normalised only where two of them disagree: measured on the
-  // 188-model fixture, normalising here costs 18 ms of a 75 ms introspection
+  // Stored RAW and normalized only where two of them disagree: measured on the
+  // 188-model fixture, normalizing here costs 18 ms of a 75 ms introspection
   // and every object it touches is one that then compares equal anyway.
   schema.__sql = {}
   for (const r of db.prepare(`SELECT type, name, tbl_name, sql FROM sqlite_master`).all()) {
@@ -962,7 +962,7 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
   // A rebuild drops the table, and a trigger the app wrote exists only in the
   // live database — there is nothing to restate it from. Litestone does not
   // support carrying one through a rebuild (FJS-183); what it can do is say so
-  // where the author will read it, rather than let a behaviour disappear.
+  // where the author will read it, rather than let a behavior disappear.
   //
   // A VIEW is not in that class, and must not be treated as if it were: a view
   // is a stored SELECT with no state and no side effects, so it can be dropped

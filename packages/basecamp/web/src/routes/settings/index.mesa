@@ -21,7 +21,7 @@ title: Your settings
   // `account` and `sessions` are auth's own services, and the client already
   // holds the half that knows both prefixes and the token. A resource over
   // `account` would also have to state `model: 'User'` — because
-  // `modelNameFor('account')` resolves this app's ORGANISATION model, which is
+  // `modelNameFor('account')` resolves this app's ORGANIZATION model, which is
   // a different table entirely and would generate a form for the wrong thing.
   //
   // ─── Why the preference rows are not `find`'s rows ──────────────────────

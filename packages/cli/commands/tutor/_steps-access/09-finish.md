@@ -5,6 +5,10 @@ runOnAbort: true
 ---
 
 ```js
+// The reader `narrate` asks its questions through. Held open it keeps the event
+// loop alive and the lesson never exits.
+context.config.prompts?.close()
+
 // Runs on the way out of a refusal too, so it reports and stops what it
 // started rather than narrating over a diagnosis.
 
@@ -27,7 +31,7 @@ log.info('')
 log.info('  db/schema.lite            the four mechanisms, all in one file')
 log.info('  db/access.snapshot.md     what they add up to, committed')
 log.info('')
-log.info('  fli tutor:deploy          next — a real deploy to this machine, and a revert')
+log.info('  fli tutor:live            next — a change reaching a second client, and who it does not')
 log.info('')
 
 if (ws.kind === 'temp' && !context.flag.keep) {

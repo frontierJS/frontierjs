@@ -72,7 +72,7 @@
  *
  * ⚠ For anything navigable, use `.navlink` (nav.css) instead. This styles
  * an <li> to look clickable, but an <li> is not focusable and takes no
- * keyboard input, so the hover state writes a cheque the markup cannot
+ * keyboard input, so the hover state writes a check the markup cannot
  * cash. `.navlink` goes on a real <a>.
  *
  * This variant is fine when the <li> *contains* the control — a <button>
@@ -134,7 +134,7 @@
  *
  * The row switches to baseline alignment when it holds one, and only then.
  * `.item` is `align-items: center`, which is right for one line of text
- * beside a control and wrong the moment the text stacks: a gutter centred
+ * beside a control and wrong the moment the text stacks: a gutter centered
  * against a three-line block sits opposite the SUBTITLE, not the title it
  * labels. Keyed on `:has(.item-lead)` so an ordinary Item is untouched.
  */

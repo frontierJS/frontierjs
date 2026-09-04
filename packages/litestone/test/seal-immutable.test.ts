@@ -1,6 +1,6 @@
 // ─── @immutable on a sealing model ────────────────────────────────────────────
 //
-// Phase 4, and the only part of this feature that changes a SHIPPED behaviour.
+// Phase 4, and the only part of this feature that changes a SHIPPED behavior.
 //
 // `@immutable` means *written once, at create*. On a model that declares a
 // `@seals` move it means *frozen at the seal* instead — because a document is

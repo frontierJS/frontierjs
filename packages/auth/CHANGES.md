@@ -395,7 +395,7 @@ reported success and the key kept working. The coercion is gone, the delete is
 filtered on `type: 'apiKey'` so a wrong id cannot take a password with it, and
 a revoke that matches nothing throws.
 
-### One behaviour change: verifying is quiet, issuing is loud
+### One behavior change: verifying is quiet, issuing is loud
 
 `verifyApiKey` used to throw `AuthConfigError` when no `encryptionKey` was
 configured. It answers `null` now. It runs on attacker-supplied input on every

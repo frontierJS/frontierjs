@@ -260,7 +260,7 @@ const made = await create(asAdmin, {
   email: addr('C').toUpperCase(), name: 'New Person', isStaff: true, emailVerified: true,
 })
 check('an admin creates one', made.status, 201)
-check('…with the address normalised by @lower at the boundary',
+check('…with the address normalized by @lower at the boundary',
       made.row?.email, addr('c'))
 check('…and the three admin-only columns set, because an admin set them',
       [made.row?.isStaff, made.row?.emailVerified], [true, true])

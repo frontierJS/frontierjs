@@ -20,7 +20,7 @@
  *   1. **The buy box cannot bake.** The page carries every variant's sku,
  *      colour and size in the file; `variantId` and what is actually available
  *      come from the shop. So the join happens in a browser, and a box that
- *      rendered before the shop answered would offer a button it cannot honour.
+ *      rendered before the shop answered would offer a button it cannot honor.
  *
  *   2. **Every basket call is CROSS-ORIGIN.** The console reaches the API
  *      through Vite's `/api` proxy and has never preflighted. Here the token
@@ -136,7 +136,7 @@ const html = await (await fetch(`${ORIGIN}/products/${slug}/`)).text()
 check('the buy box ships in the prerendered file', html.includes('id="buy-box"'), true)
 // …and the button it ships with says it is WAITING rather than offering. The
 // variantId is not in this file — the baked half deliberately carries no id —
-// so a button reading `Add to basket` here would be one nothing could honour.
+// so a button reading `Add to basket` here would be one nothing could honor.
 check('…saying it has not asked the shop yet', html.includes('Checking with the shop'), true)
 // Plain markup, on every page, with no count on it — a layout on a static
 // target holds no state, and a number baked into a file a CDN serves for a week

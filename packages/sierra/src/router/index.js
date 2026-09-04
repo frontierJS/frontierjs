@@ -602,7 +602,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   _navigating = true
 
   // Load the layout chain and the page component together — they're independent
-  // network requests, so serialising them would add a round-trip to every first
+  // network requests, so serializing them would add a round-trip to every first
   // visit. Started here, awaited below.
   const layoutsReady = loadLayoutChain(toNode, _layouts, _reportError)
 

@@ -8,7 +8,7 @@
 //      everybody and let any caller grow a shared list — and would pass every
 //      test that only ever uses one principal.
 //   2. `suggested` issues no query at all. Enforcing nothing has to COST
-//      nothing, or nobody uses the strength that keeps the list travelling.
+//      nothing, or nobody uses the strength that keeps the list traveling.
 //   3. Every write path that carries a payload runs it. Six do; a seventh
 //      added later would be silent, so the grid below is read off the client's
 //      own source rather than hand-listed.

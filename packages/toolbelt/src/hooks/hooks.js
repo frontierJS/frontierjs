@@ -56,7 +56,7 @@ export async function runPhase(hookMap, phase, method, ctx) {
 /**
  * Merge two hook maps, existing hooks first.
  *
- * Returns a NEW map and mutates neither argument — this package's licence is
+ * Returns a NEW map and mutates neither argument — this package's license is
  * that every export is pure (`FJS-D26`), and both callers hold their map in a
  * variable they can reassign. The older in-place spelling read as `mergeHooks(a,
  * b)` with the result discarded, so a caller who now forgets the assignment

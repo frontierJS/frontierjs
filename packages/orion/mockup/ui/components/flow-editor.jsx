@@ -1586,7 +1586,7 @@ export const FlowEditor = ({ flowId, onBack }) => {
     })
   }
 
-  // ── Enter JSON mode: serialise current canvas state ───────────────────────
+  // ── Enter JSON mode: serialize current canvas state ───────────────────────
   const enterJsonMode = () => {
     const flow = {
       id: fd.id, version: fd.version, name: flowName, description: flowDesc,
@@ -1708,7 +1708,7 @@ export const FlowEditor = ({ flowId, onBack }) => {
       }
       setConn(null); setHoverIn(null)
     }
-    // Finalise box select
+    // Finalize box select
     if (boxSel) {
       const minX=Math.min(boxSel.sx,boxSel.ex), maxX=Math.max(boxSel.sx,boxSel.ex)
       const minY=Math.min(boxSel.sy,boxSel.ey), maxY=Math.max(boxSel.sy,boxSel.ey)
@@ -1780,7 +1780,7 @@ export const FlowEditor = ({ flowId, onBack }) => {
           const { nodes:cNodes, edges:cEdges } = JSON.parse(raw)
           if(!cNodes?.length) return
 
-          // Centre of current viewport in canvas coords
+          // Center of current viewport in canvas coords
           const canvasEl = ref.current
           const vw = canvasEl ? canvasEl.getBoundingClientRect().width  : 800
           const vh = canvasEl ? canvasEl.getBoundingClientRect().height : 600

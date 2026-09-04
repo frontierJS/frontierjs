@@ -335,7 +335,7 @@ is which subset earns a name.
   available now; when bun ships `Temporal` the twenty lines are deleted, which is
   what *declare the distinction, not the representation* buys.
 - **The escape hatch is that the column is still a string.** Anyone who wants to
-  ignore all of this keeps the current behaviour, and that must remain true.
+  ignore all of this keeps the current behavior, and that must remain true.
 
 ---
 

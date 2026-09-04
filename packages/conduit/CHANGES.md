@@ -45,7 +45,7 @@ idempotency key was never replayed — that part was right — and the error was
 handed back untouched, still carrying the transient fault's `retryable: true`.
 That flag is what the layer above acts on: `example`'s own mailer copies it onto
 the Error it throws and a caravan job retries on it, so *we will not send this
-again* travelled outwards as *send this again*, on the one class of request where
+again* traveled outwards as *send this again*, on the one class of request where
 a duplicate takes money. `declineReplay` is the one place the judgement is made.
 
 **`indeterminate` is what that flag was standing in for.** The request went out
@@ -160,7 +160,7 @@ running, so the wait comes back as the TARGET's timeout and opens its breaker.
 5000 concurrent against a target that answered every request measured 10s, 136
 timeouts, 533 file descriptors and an open circuit; the same burst against a cap
 answers instantly, sheds the excess as `overloaded`, and leaves the breaker
-closed. `Infinity` restores the old behaviour. The finding's other half — moving
+closed. `Infinity` restores the old behavior. The finding's other half — moving
 the per-attempt timer to socket dispatch — is not needed and is not done: a cap
 below the pool means the queue that produced those timeouts does not form, and
 `fetch` exposes no dispatch hook to move the timer to.

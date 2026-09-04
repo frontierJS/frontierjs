@@ -42,7 +42,7 @@
 // the employee and say what to do, where the boundary answers a 409 naming a
 // column.
 //
-// The defence below therefore guards against a database written BEFORE the
+// The defense below therefore guards against a database written BEFORE the
 // constraint existed. Nothing in this repo can stage one any more, which is why
 // no drive asserts it. A function that has to re-check an
 // invariant its own database was supposed to hold is what a missing feature
@@ -57,7 +57,7 @@
 // for `FJS-D164`'s open question, and it is only an argument because they are
 // the same arrangement rather than two dialects.
 
-/** A Litestone client of some flavour — `inventory.ts`'s reason, unchanged. */
+/** A Litestone client of some flavor — `inventory.ts`'s reason, unchanged. */
 type Client = Record<string, any>
 
 export type PayWindowRow = Record<string, unknown> & {

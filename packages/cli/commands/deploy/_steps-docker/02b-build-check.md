@@ -12,7 +12,7 @@ if (context.config.abort) return
 const { host, path: serverPath } = context.config.builder ?? context.config.api
 const dockerfile = context.config.deployConf.api?.dockerfile ?? 'deploy/Dockerfile'
 
-const { gather, inspectBuild, refuses, summarise, renderFinding, CONTEXT_FIND } =
+const { gather, inspectBuild, refuses, summarize, renderFinding, CONTEXT_FIND } =
   await import(new URL('file://' + global.fliRoot + '/core/build-check.js'))
 
 // ─── Why this reads the SERVER and not the working tree ──────────────────────
@@ -50,7 +50,7 @@ if (input.missing) {
 const findings = inspectBuild(input)
 
 if (!findings.length) {
-  log.success(`Build check: ${summarise(findings)}`)
+  log.success(`Build check: ${summarize(findings)}`)
   return
 }
 
@@ -63,7 +63,7 @@ for (const f of findings) {
 }
 
 if (!refuses(findings)) {
-  log.warn(`Build check: ${summarise(findings)}`)
+  log.warn(`Build check: ${summarize(findings)}`)
   return
 }
 
@@ -71,7 +71,7 @@ if (!refuses(findings)) {
 // the image is broken — it will build, start and answer health. It is that the
 // digest would describe one deployment rather than one artefact, which nothing
 // downstream can detect and which `fli release:mint` would then record as fact.
-log.error(`Build check: ${summarise(findings)} — refusing to build`)
+log.error(`Build check: ${summarize(findings)} — refusing to build`)
 log.info('')
 log.info('  A Release promotes one artefact between environments and changes only its bindings.')
 log.info('  Set deploy.api.buildCheck = false in frontier.config.js to deploy anyway.')

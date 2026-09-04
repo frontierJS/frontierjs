@@ -16,7 +16,7 @@ Combine row-level policies and GatePlugin to build a complete permission system 
 - Compiled to SQL `WHERE` clauses — filter happens in SQLite
 - Evaluated inside every query
 
-Use both together for defence in depth.
+Use both together for defense in depth.
 
 ---
 

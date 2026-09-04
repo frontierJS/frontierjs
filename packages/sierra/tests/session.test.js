@@ -235,7 +235,7 @@ describe('the boot restore', () => {
     expect(s.session.checked).toBe(true)
   })
 
-  test('a token the server no longer honours leaves no session, and ready still resolves', async () => {
+  test('a token the server no longer honors leaves no session, and ready still resolves', async () => {
     const s = await freshSession()
     const client = fakeClient({ token: 'stale', fail: Object.assign(new Error('Unauthorized'), { code: 401 }) })
 

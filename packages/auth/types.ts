@@ -151,7 +151,7 @@ export interface LitestoneAuthOptions {
    *
    * Checked when the flow STARTS, so the value stored on the row is already
    * known good and the callback has nothing left to decide. Empty means no
-   * `returnTo` is ever honoured, which is the safe default: an open redirector
+   * `returnTo` is ever honored, which is the safe default: an open redirector
    * is how an authorization code leaves the building, and RFC 9700 states that
    * as a MUST rather than as hardening.
    */

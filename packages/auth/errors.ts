@@ -2,7 +2,7 @@
 // Named error types for the data layer.
 //
 // auth.ts used to throw plain `new Error('Invalid credentials')`. Junction's
-// toFrameworkError() only honours its own FrameworkError subclasses, so every
+// toFrameworkError() only honors its own FrameworkError subclasses, so every
 // one of those reached the client as a **500 GeneralError** — a mistyped
 // password was indistinguishable from a broken server, and Sierra's browser
 // client (which keys off 401 to clear a stale token) never saw its signal.

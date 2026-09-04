@@ -124,7 +124,7 @@
   // bind:this exposes: focus()
 
   import Field from './Field.mesa'
-  import { uid, resolveError, resolveRule, stated, nativeValidationGuard } from '../../utils.js'
+  import { uid, resolveError, resolveRule, stated, nativeValidationGuard, lockedBy } from '../../utils.js'
 
   export let value    = ''            // ISO-8601 with an offset, or a Date, or ''
   export let disabled = undefined  // undefined = ask the form; false overrides it
@@ -161,7 +161,7 @@
   // A <Form> above this control locks it two ways — the caller disabled the
   // form, or a save is in flight — and both mean the same thing to a field.
   // A stated prop still wins, including `disabled={false}` on a saving form.
-  const resolvedDisabled = stated(disabled, form?.disabled || form?.submitting) ?? false
+  const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
   const rule = resolveRule(form, name)
 
   const displayError = resolveError(form, name, error, errors)

@@ -54,7 +54,7 @@ function runWriters(dir: string, tags: string[], n: number) {
     writeFileSync(f, writerSource(dir, tag, n))
     return f
   })
-  // Spawned together, then all awaited — `spawnSync` per file would serialise
+  // Spawned together, then all awaited — `spawnSync` per file would serialize
   // them and prove nothing, which is the whole point of the file.
   const script = files.map(f => `bun ${JSON.stringify(f)} &`).join('\n') + '\nwait\n'
   const sh = join(dir, 'run.sh')

@@ -24,7 +24,7 @@
 // reads → `verify:account`* is a statement about what a drive can SEE, and no
 // import graph produces it. The rows are the asset; this is only the reader.
 //
-// Zero dependencies, plain ESM, node or bun — same rule as its neighbours.
+// Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join }                                  from 'node:path'

@@ -25,7 +25,7 @@ required and unwritable by the ordinary caller at once, and the write fails at
 the database rather than at the boundary.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 7
 

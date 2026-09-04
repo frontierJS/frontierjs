@@ -15,7 +15,7 @@
  * noticed by somebody copying the markup; the second never would.
  *
  * The wizard is guide chrome and does not ship, which is why these tests
- * check its relationship to the package rather than its behaviour. What it
+ * check its relationship to the package rather than its behavior. What it
  * DOES — every path reaching a rendered outcome — is driven in a browser
  * against the real guide, not from here.
  */

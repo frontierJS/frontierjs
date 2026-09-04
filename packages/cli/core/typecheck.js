@@ -18,7 +18,7 @@
 // the count goes up. There is no tsc option for *check my files, not the ones
 // they import*, so the filtering happens here, on the output.
 //
-// Foreign diagnostics are COUNTED AND SUMMARISED, never silently dropped. They
+// Foreign diagnostics are COUNTED AND SUMMARIZED, never silently dropped. They
 // are someone's problem — just not this exit code's. `--foreign` prints them.
 //
 // ─── two callers ─────────────────────────────────────────────

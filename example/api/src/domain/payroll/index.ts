@@ -12,7 +12,7 @@
 // free to move, and *what may call into payroll* stops being answerable.
 //
 // Adding an export here is a deliberate widening of that surface. A function
-// used only by its neighbours does not belong on this list.
+// used only by its neighbors does not belong on this list.
 
 // ─── who worked here, on what terms, on a given date ──────────────────────
 export {

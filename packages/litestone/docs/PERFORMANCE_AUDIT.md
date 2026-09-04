@@ -16,7 +16,7 @@
 >   H4 measurement, the one that proves a security-relevant cache still works,
 >   had been silently skipped for three weeks. Accessor is singular
 >   (Invariant 2). Fixed.
-> - **Several annotations were fossils** describing the pre-fix behaviour of
+> - **Several annotations were fossils** describing the pre-fix behavior of
 >   findings that had been fixed the same day — a reader saw `0.3 ms/call` next
 >   to *"runs full pristine build + 2x introspection"*. Each note now says which
 >   finding it verifies, or says **STILL OPEN**.

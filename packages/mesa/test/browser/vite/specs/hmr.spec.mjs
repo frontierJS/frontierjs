@@ -10,7 +10,7 @@
  *
  *   the edited component shows the new content     — the update arrived
  *   the page did not navigate                      — it was not a full reload
- *   the neighbour kept its state                   — it was a SWAP
+ *   the neighbor kept its state                   — it was a SWAP
  *
  * The second edit is not a repetition. `__setMark` is set on the NEW function,
  * and setting it on the old module's leaves the new `__hmrMark` undefined: the
@@ -40,7 +40,7 @@ async function afterEdit(t, want, label) {
     `${label}: the edited component shows the new content`, ARRIVES)
   t.is(await t.boots(), 1, `${label}: and the page did not reload to get it`)
   t.is(await t.evaluate(`return document.querySelector('#sibling-count').textContent;`), '2',
-    `${label}: the neighbour kept its state`)
+    `${label}: the neighbor kept its state`)
 }
 
 export async function run(t) {
@@ -50,7 +50,7 @@ export async function run(t) {
   await t.clickAt('#sibling')
   await t.clickAt('#sibling')
   await t.eventually(`document.querySelector('#sibling-count').textContent`, '2',
-    'the neighbour holds state before any edit')
+    'the neighbor holds state before any edit')
 
   await t.edit('src/Counter.mesa', '>v1<', '>v2<')
   await afterEdit(t, 'v2', 'first edit')

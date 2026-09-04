@@ -9,7 +9,7 @@
 // Prisma requires no label for a 1:1 and whoever writes .lite by hand learns
 // the label habit, so no hand-written fixture had ever taken this shape.
 //
-// The corpus fixtures that found it are only partly committed (licence — see
+// The corpus fixtures that found it are only partly committed (license — see
 // fixtures/corpus/README.md), so the guarantee is pinned here.
 
 import { describe, test, expect } from 'bun:test'
@@ -87,7 +87,7 @@ describe('a one-to-one back-reference', () => {
     expect(err).toContain('@unique')        // the one-to-one way out
   })
 
-  test('no back reference at all is named, and points at the labelled case when there is one', () => {
+  test('no back reference at all is named, and points at the labeled case when there is one', () => {
     expect(first(`model A { id String @id
       b B? }
     model B { id String @id }`)).toContain('declares no unlabelled @relation back')
@@ -96,7 +96,7 @@ describe('a one-to-one back-reference', () => {
       b B? }
     model B { id String @id
       aId String @unique
-      a A @relation("x", fields: [aId], references: [id]) }`)).toContain('It has a LABELLED one')
+      a A @relation("x", fields: [aId], references: [id]) }`)).toContain('It has a LABELED one')
   })
 
   test('two unlabelled candidates are named, both of them', () => {

@@ -70,7 +70,7 @@
 
     if (!client.token) { state = 'out'; return }
     try { await load() }
-    catch { // A stored token the shop no longer honours is not an error to
+    catch { // A stored token the shop no longer honors is not an error to
             // show a shopper — it is being signed out.
             client.setToken(null); state = 'out' }
   })

@@ -17,7 +17,7 @@ The account is real. You can sign in with it at
 `http://127.0.0.1:{{webPort}}/login/`.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 5
 

@@ -1,4 +1,4 @@
-# Modelling decisions
+# Modeling decisions
 
 Reference tells you what an attribute does. This tells you which one to reach for.
 

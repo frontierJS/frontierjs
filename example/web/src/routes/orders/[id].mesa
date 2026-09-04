@@ -2,7 +2,7 @@
 title: Order
 ---
 <script>
-  // One order, in depth. This is where the kit's *behavioural* components
+  // One order, in depth. This is where the kit's *behavioral* components
   // earn their place: a state machine drawn as Steps, an actions menu, a
   // confirmation dialog for the moves you cannot take back, and a toast for
   // what the server said.

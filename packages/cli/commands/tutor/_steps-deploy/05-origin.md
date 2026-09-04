@@ -15,7 +15,7 @@ never writes it: what a deploy checks is that the keys the app declares are
 **bound here**, and what binds them is you.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 5
 

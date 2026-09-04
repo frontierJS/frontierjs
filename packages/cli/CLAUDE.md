@@ -1,8 +1,8 @@
 # cli (`fli`) — package map
 
 **A markdown-native command runtime.** A command is a `.md` file: prose and
-fenced code, compiled to JavaScript and run. 201 command files over 10 namespace
-modules. Scaffolds, deploy, the workspace/release commands and the port broker
+fenced code, compiled to JavaScript and run — one directory under `commands/`
+per namespace. Scaffolds, deploy, the workspace/release commands and the port broker
 live here.
 `bun run test` (bun).
 
@@ -26,7 +26,7 @@ core/
                 is a row with no port, which is a different sentence from `down`
   children.js   the process table behind a start button. Two runners allowed and
                 nothing else, `detached: true` and a `-pid` kill because a child
-                is a LAUNCHER: signalling the pid kills the wrapper and leaves
+                is a LAUNCHER: signaling the pid kills the wrapper and leaves
                 the server answering. It also keeps the LAST finished run per
                 row — facts only (when, how long, the exit, and whether the stop
                 was asked for), because the words differ by kind and belong to
@@ -179,9 +179,9 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   Snapshot generators had the same disease through `bunx <name>`, which on a
   machine with no global went to the registry and downloaded a stranger's package
   (`core/snapshots.js` resolves bin → package → workspace member now).
-- **A clean compile is not proof of valid JS** (Invariant 15). Compiling all 195
-  command files and *parsing* the output found 14 producing broken JavaScript
-  that the compiler reported as fine. Every command file now has a parse test —
+- **A clean compile is not proof of valid JS** (Invariant 15). Compiling every
+  command file and *parsing* the output found fourteen producing broken
+  JavaScript that the compiler reported as fine. Every command file now has a parse test —
   a new command needs one too.
 - **`commands/auth/install.md` reads `@frontierjs/auth`'s schema; it no longer
   carries a copy of it.** The copy drifted three times, and two walls had kept it
@@ -239,7 +239,7 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   (a bare directory name means everything under it, README/LICENSE/package.json
   are always in), so the listing is asked for rather than derived; and a `*` in
   an `exports` target is **Node's subpath pattern, which matches across `/`** —
-  read as a shell glob it reports `@frontierjs/ui` as shipping none of its 64
+  read as a shell glob it reports `@frontierjs/ui` as shipping none of its
   components. The snapshot records top-level entries only, so adding a source
   file does not move it.
 - **`core/snapshots.js` has the same two callers, for the same reason.**
@@ -518,6 +518,16 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   answering it a sixth time would grade an app by an inflection the app does not
   run — `people` → `person` is exactly the case `service-model` has to get right.
   Nothing else may be imported: `ci.mjs` runs on plain node.
+- **`core/invariants.js` is the enforcer per Invariant, and it may not import
+  `core/checks.js`.** The rule table is the derived half of that answer, so it is
+  handed IN — the same shape `checkRulesCountable` uses and for the same reason:
+  `checks.js` imports this module, so reaching back for `RULES` is a cycle. The
+  declared half is a test, a CI phase or a drive, which nothing can derive, and
+  `invariant-enforcer` grades that it resolves rather than that it is right —
+  whether a named suite really holds the assertion is a judgement no rule makes
+  (`FJS-D190`). An invariant with NO enforcer is not a finding: that is the gap
+  `invariants.snapshot.md` exists to publish, and failing on it makes deleting the
+  row the fastest fix.
 - **A rule about a NAME written twice has to accept every spelling of it.**
   `transition-methods` asks whether a declared `@@transitions` move is reachable
   from `api/`, and reachable means the move name OR the state it moves to —
@@ -538,7 +548,7 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   hazard is only a mention BEFORE the real tag, because Vite injects at the
   first textual match. A check nobody trusts is the failure this engine exists
   to prevent. **Run `fli check` at the repo root after touching a rule** — it is
-  the only caller that sees this package's own neighbours.
+  the only caller that sees this package's own neighbors.
 - **`fli dev` runs two preflights and they disagree on purpose: the port check
   REFUSES, the database check warns.** An empty database is the correct state
   for a first run; a port that is already answering is not correct in any
@@ -562,7 +572,7 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   with no rows boots clean and shows a blank screen, so nothing says anything.
   It resolves the path from the schema's `database` declaration — NOT from
   `resolveDb`, whose `development.db` / `test.db` convention describes a file
-  many apps have never had — honours `env("VAR", default)` when the variable is
+  many apps have never had — honors `env("VAR", default)` when the variable is
   set, and does not count litestone's `_migrations` table as data. Two callers,
   `utils:dev` and `ports:claim`, because a person claiming ports is about to
   start the servers it warns about. `node:sqlite` or `bun:sqlite`, whichever the

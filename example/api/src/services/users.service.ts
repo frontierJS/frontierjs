@@ -66,7 +66,7 @@
 //     so <Form> marks the box rather than showing a banner. auth's own
 //     `EmailTakenError` is the same fact one door along.
 //   · `@email` and `@lower` are applied at the boundary, so the address is
-//     normalised before it is compared.
+//     normalized before it is compared.
 //
 // ─── What a created row is NOT ────────────────────────────────────────────
 //

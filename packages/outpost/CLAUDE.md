@@ -43,6 +43,6 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
 
 ## Proving a change
 
-`bun run test` — 19 tests, no Docker, no network. Then `basecamp`'s own drive
+`bun run test` — no Docker, no network. Then `basecamp`'s own drive
 (`bun run verify`), which stands up a sink speaking this protocol: if a shape
 here changes, that is where it shows.

@@ -17,17 +17,17 @@ For the language specification, see
 | ----------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `@frontierjs/mesa`      | this package                          | Core compiler, runtime, REPL, render pipeline                                                                   |
 | `@frontierjs/mesa/vite` | [`mesa-vite/`](./mesa-vite/)          | Vite plugin — transform, HMR, error overlay, scoped CSS, DevTools. A **subpath of this package**, not a package |
-| `@frontierjs/ui`        | [`packages/ui`](../ui/)               | Component kit over `@frontierjs/css` — 65 `.mesa` components                                                    |
+| `@frontierjs/ui`        | [`packages/ui`](../ui/)               | Component kit over `@frontierjs/css`                                                                            |
 | `@frontierjs/sierra`    | [`packages/sierra`](../sierra/)       | Meta-framework built on Mesa — **in this monorepo**, not a separate repo                                        |
 | `@frontierjs/email-kit` | [`packages/email-kit`](../email-kit/) | Email component kit — table-based, CSS-inlined, Outlook-safe.                                                   |
 
 > `mesa-bench/` is nested *inside* `packages/mesa`, so the workspace glob
 > (`packages/*`) does not see it — not installed as a member, no tests, no
 > typecheck. That is deliberate and named in `scripts/ci-allowances.json`.
-> **`mesa-vite/` used to be in that bracket and is not any more**: it had a
-> `package.json` of its own until 2026-08-10, which made it invisible the same
-> way — uninstalled, so nothing imported it and nothing could test it. It is a
-> subpath now (`@frontierjs/mesa/vite`), reached by relative path, and four
+> **`mesa-vite/` is not in that bracket, and a `package.json` of its own is what
+> would put it there** — a nested member is invisible the same way: uninstalled, so
+> nothing imports it and nothing can test it. It is a
+> subpath (`@frontierjs/mesa/vite`), reached by relative path, and four
 > suites cover it.
 
 ---
@@ -37,7 +37,7 @@ For the language specification, see
 ```bash
 bun install         # acorn, astring, unified, remark, rehype, vitest
 bun run serve       # then open /packages/mesa/example/ — the live REPL
-bun run test        # 1194 tests across 25 files — compiler, runtime, render, css
+bun run test        # vitest, then Chrome — compiler, runtime, render, css
 ```
 
 **`bun run test`, never `bun test`.** The runner is **vitest**; bun's own runner
@@ -480,12 +480,12 @@ DevTools server hooks — no separate import needed.
 ## Tests
 
 ```bash
-bun run test        # vitest — 1194 tests across 25 files
+bun run test        # vitest, then the browser drives
 ```
 
 Every suite lives in `test/`. What each covers, rather than how many assertions
 it holds — a per-suite count is a number nothing regenerates, and the table this
-replaced was 239 tests and ten files out of date without ever rendering wrong:
+replaced was out of date in both columns without ever rendering wrong:
 
 | Suite | Covers |
 |---|---|

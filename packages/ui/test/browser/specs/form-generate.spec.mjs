@@ -169,7 +169,7 @@ export async function run(t) {
   // failure is total and silent, and it looks like a component that failed to
   // load.
   //
-  // The first two rows PIN the behaviour rather than assert it is right —
+  // The first two rows PIN the behavior rather than assert it is right —
   // whether a block whose every branch is slotted counts as default content is
   // a Mesa question about `$slots`, and settling it turns these red on purpose.
   // The third is what shipped: the form can see the pair — it generated nothing

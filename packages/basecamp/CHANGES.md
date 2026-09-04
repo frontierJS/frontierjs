@@ -1,5 +1,29 @@
 # Changes — Basecamp
 
+## 2026-09-03 — every live screen in the app, off
+
+`FJS-749`, `FJS-D191`. The whole live layer had been dead: eighteen services
+declare `workspaceChannel(app)`, every model behind them is scoped on
+`workspaceId`, and a graded broadcast was refused for all of them.
+
+The claim those models are scoped on is resolved per REQUEST by
+`membershipClaim`, off the workspace header. A connection has no request — the
+channel wiring says exactly this, in a comment three lines above the membership
+query it does instead — so the principal a broadcast is graded against carried
+no `workspaceId`, and the tenancy `@@deny` fires on UNKNOWN.
+
+`channels(setup, { claims })` answers it off the channel name, which is sound
+here rather than a shortcut: the join reads `WorkspaceMember` through
+`asSystem()` and puts a connection in `workspace:<id>` only where a membership
+row exists, so being in the channel IS the verified claim.
+`workspaceIdFromChannel` lives beside `workspaceChannelName` for the reason that
+one exists — a name written in one place and read in another is a name one
+caller can get wrong while every other caller keeps working.
+
+Found from the outpost heartbeat, which was the visible symptom and not the
+defect: the signed POST answers 200 and writes every column, and the screen
+showed `pending` because nothing ever reached it.
+
 ## 2026-09-01 — the config is found from any directory
 
 `createApp({ configPath })` is stated, anchored to `api/src/app.ts` itself, and
@@ -121,7 +145,7 @@ that eleven of these files already had resolves against the call it is invoked
 inside. Eight of the models involved are genuinely tenant-scoped — `AppServer`,
 `Channel`, `DeploymentStep`, `Invitation`, `JobRun`, `Recipe`, `Volume`,
 `Server` — so those eight gained real scoping. Three touch `@@tenant(none)`
-models (`User`, `WorkspaceMember`, `Workspace`) and are unchanged in behaviour;
+models (`User`, `WorkspaceMember`, `Workspace`) and are unchanged in behavior;
 they moved anyway, because leaving them means carrying an allowance forever.
 
 **Three sites stay, and each has a reason rather than a deferral.** `/hub/` is
@@ -1273,7 +1297,7 @@ caller owns, signed with this app's own secret.
 `requireOutpostSignature` is the credential, registered app-level so a new
 machine-facing method cannot inherit the exemption without it. It verifies with
 `@frontierjs/toolbelt/signature`, the module conduit signs with, over
-`ctx.$raw.rawBody` — the bytes, not a re-serialisation. Fail-closed in every
+`ctx.$raw.rawBody` — the bytes, not a re-serialization. Fail-closed in every
 direction, and the reason is logged rather than returned.
 
 **The Outpost exists.** `@frontierjs/outpost` answers the protocol this app has
@@ -1375,7 +1399,7 @@ Two labels for one control, and a row at two heights.
 the thirteen controls that document it (`FJS-340`, fixed in `@frontierjs/ui`).
 All three controls state it now, rather than only the one that needed it: the
 rule is *this bar has no visible labels*, and stating it per control is what
-keeps the next one from arriving taller than its neighbours.
+keeps the next one from arriving taller than its neighbors.
 
 Measured: no invented labels, every control still named (`Status`, `Role`,
 `Search` from the visually-hidden labels), and the search still submits. The
@@ -2246,7 +2270,7 @@ is `FJS-177`, unrelated and already allowed in CI.
 Not renamed: `userAgent` (an HTTP header), `db/legacy-sql/002_server_agent.sql` (it is
 history and `db/README.md` explains it never worked), and the entries above this one.
 
-## 2026-08-13 — the hub prints the subscriber count it used to apologise for
+## 2026-08-13 — the hub prints the subscriber count it used to apologize for
 
 `IEventBus` grew `stats()` in Junction (`FJS-143`), so the hub's badge shows
 `N event subscribers` instead of *has listeners / idle*, and the "Not shown
@@ -2412,7 +2436,7 @@ already grades SYSADMIN(7) on, so the column filling these screens today is the
 column `@@gate` will read tomorrow. `/setup` grants the first one, because it is
 the only place a system administrator is created rather than granted.
 
-**Suspension was a word nothing honoured.** `User.status` had been a free
+**Suspension was a word nothing honored.** `User.status` had been a free
 `String` since the schema was written and @frontierjs/auth never reads it, so a
 Suspend button would have reported success and revoked nothing. Three things
 make it real and no two are enough: an enum, so the column carries a CHECK and
@@ -2651,7 +2675,7 @@ hold one.
 **A scope is `<service>:<read|write>`, and the resource half IS the service
 name.** No mapping table: the vocabulary is derived from the service registry
 at call time, so a service added tomorrow is grantable tomorrow, and a checkbox
-can never offer a scope the guard does not recognise. The screen fetches it
+can never offer a scope the guard does not recognize. The screen fetches it
 from a collection-level `scopes` action rather than shipping a copy. Two
 services are off limits to a key at all — `api-keys` itself, because a key that
 can mint keys escalates past its own scopes, and conduit's management service.

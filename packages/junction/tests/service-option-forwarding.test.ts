@@ -11,7 +11,7 @@
 //   createBaseService({ model: 'lead', softDelete: 'deleted_at' })  → UPDATE
 //   createService({ name, model: 'lead', softDelete: 'deleted_at' }) → DELETE
 //
-// Same option name, same documentation, opposite behaviour — and createService
+// Same option name, same documentation, opposite behavior — and createService
 // is the primary public factory. These tests pin every option across the
 // handoff so a future option cannot be added to one side only.
 

@@ -127,7 +127,7 @@ src/
   the wait is charged to the target as a timeout and opens its breaker: 5000
   concurrent against a healthy target measured 10s, 136 timeouts, 533 file
   descriptors and an open circuit (`FJS-685`). Shedding as `overloaded` is the
-  honest answer and it is instant. `Infinity` restores the old behaviour.
+  honest answer and it is instant. `Infinity` restores the old behavior.
 - **A truncated response RAISES on this Bun, in all three shapes** — graceful
   FIN, shutdown and RST — so the existing catch already answers a retryable
   `connection_failed` and a length check on `content-length` would be

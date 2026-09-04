@@ -77,7 +77,7 @@ Clarifications settled by the code:
   signal. A Signal never crosses a Boundary; an Event exists only to
   (`FJS-D44`).
 - **Projection** is a *stored or served* second shape of the same truth — a
-  materialised view, a serialised subset, a report. What a compiler or a
+  materialised view, a serialized subset, a report. What a compiler or a
   component computes and throws away stays **derived**. If it has no independent
   existence, it is not a Projection (`FJS-D46`).
 - **A custom service method is a Method, not an Action.** A Service answers
@@ -160,7 +160,7 @@ Standing rules the framework is designed against.
 5. **Plugins extend realms without modifying core.** One plugin, one job.
    Plugins compose. (Known strain: whole domain facilities also attach via the
    plugin protocol — see §2 under-review.)
-6. **Access is declared, not programmed — and declaration enforces.** Gates in
+6. **Access is declared, not programed — and declaration enforces.** Gates in
    the schema, resolved against the 0–9 gate ladder, enforced from the
    first request with no further wiring; a shipped default resolver, overridable.
    The converse binds too: a model with no gate is open, honestly. `asSystem()`

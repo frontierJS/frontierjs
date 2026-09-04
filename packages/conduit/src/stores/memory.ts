@@ -18,7 +18,7 @@ export function createMemoryStore(): ConduitStore {
 
   return {
     async init() {
-      // Nothing to initialise for in-memory store
+      // Nothing to initialize for in-memory store
     },
 
     async get(id) {

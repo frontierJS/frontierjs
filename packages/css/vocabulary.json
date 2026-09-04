@@ -68,7 +68,7 @@
       "tier": "Page",
       "tierBlurb": "What changes when you navigate.",
       "element": "<section aria-labelledby>",
-      "meaning": "A labelled major subdivision of a Screen",
+      "meaning": "A labeled major subdivision of a Screen",
       "class": "pane"
     },
     {
@@ -132,7 +132,7 @@
       "tier": "Region",
       "tierBlurb": "Grouping and wayfinding inside a Screen.",
       "element": "<hr>",
-      "meaning": "A labelled or plain break between groups",
+      "meaning": "A labeled or plain break between groups",
       "class": "divider"
     },
     {
@@ -420,7 +420,7 @@
       "tier": "Layout",
       "tierBlurb": "Composition helpers. They own one arrangement each and no skin, so they compose onto anything, including a term from another tier. The names are Every Layout's — the vocabulary people already have.",
       "element": "<div>",
-      "meaning": "Children flow across, wrap, and stay centred",
+      "meaning": "Children flow across, wrap, and stay centered",
       "class": "cluster"
     },
     {
@@ -428,7 +428,7 @@
       "tier": "Layout",
       "tierBlurb": "Composition helpers. They own one arrangement each and no skin, so they compose onto anything, including a term from another tier. The names are Every Layout's — the vocabulary people already have.",
       "element": "<div>",
-      "meaning": "One child, dead centre in both axes",
+      "meaning": "One child, dead center in both axes",
       "class": "center"
     },
     {
@@ -726,7 +726,7 @@
       "parts": [
         [
           ".divider-label",
-          "The labelled form. A <div> rather than an <hr>, because an <hr> cannot hold text",
+          "The labeled form. A <div> rather than an <hr>, because an <hr> cannot hold text",
           "optional"
         ]
       ]

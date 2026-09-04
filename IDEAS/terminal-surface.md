@@ -9,7 +9,7 @@ dated: 2026-08-17
 **Status: IDEA. Nothing here is built.** Dated 2026-08-17. Written after sizing
 `packages/cli`'s output layer against Cargo, Rails, clack and `gh`, and after
 measuring how much of `@frontierjs/mesa` could reach a terminal. Do not cite this
-file as describing behaviour — see `VERIFYING.md`.
+file as describing behavior — see `VERIFYING.md`.
 
 Two questions live here because the second one decides how much of the first is
 worth building. **How should the framework's output look** is answerable today and

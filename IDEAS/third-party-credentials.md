@@ -13,10 +13,10 @@ two halves with one credential between them, and the half `ecosystem-gaps.md` 1
 names is the smaller.
 
 **Read the two halves differently.** Phases 0–6 of § Build plan shipped on
-2026-08-24 and are BEHAVIOUR — `packages/auth/oauth.ts`, three routes, a
+2026-08-24 and are BEHAVIOR — `packages/auth/oauth.ts`, three routes, a
 `connections` service, and `example`'s `verify:oauth` (22 assertions, its own IdP
 on 8113). Everything else in this file is still an idea and must not be cited as
-behaviour: legs one and three — a principal in `CredentialResolver.get()`, an
+behavior: legs one and three — a principal in `CredentialResolver.get()`, an
 expiry in the return, an OAuth-shaped `TargetAuth`, refresh under a lock, and the
 scope derivation in § The move that makes this FJS — are unbuilt, deliberately and
 in that order.
@@ -149,7 +149,7 @@ production an hour later, nothing saying why.
 
 **The session must not reach the browser by a new route.** The callback is a
 full-page redirect, so a bearer token in a response body is not available. Rather
-than adding an auth mode, the callback should honour whichever the app already
+than adding an auth mode, the callback should honor whichever the app already
 chose: `cookieAuth: true` sets the cookie and redirects clean; the Bearer default
 hands back a single-use, short-lived code the client exchanges — the shape the
 widget handoff already uses in `verify:widget`. Putting the session token itself on
@@ -178,7 +178,7 @@ row.
 An app that never verifies email therefore takes the proof path every time. That is
 correct rather than a defect, and it is the incentive to turn verification on.
 
-Auto-linking on a fully verified match is still the behaviour people expect, and
+Auto-linking on a fully verified match is still the behavior people expect, and
 refusing *that* buys little: the user who forgot they had a password account does a
 password reset, which is proof of control of the same address, taken the long way
 round.
@@ -357,7 +357,7 @@ Person-owned means the integration dies when they leave. Tenant-owned means it s
 and any admin can spend it, but the person consented as themselves. The schema currently
 says person-owned by omission — a question answered without being asked.
 
-### The hole: there is no client flavour that is system AND still in one tenant
+### The hole: there is no client flavor that is system AND still in one tenant
 
 `Credential` is `@@gate("8")` and only `asSystem()` reads it. `asSystem()` is a complete
 bypass of all policies (`packages/litestone/src/core/policy.js` — `if (ctx.isSystem)
@@ -443,7 +443,7 @@ plan says:
 
 **Phase 1 — the flow engine, no server.** Provider descriptor → authorize URL with
 `state`, PKCE `S256` and the browser-binding cookie; code plus verifier → token
-exchange; token → a normalised `{ providerId, email, emailVerified, name }`. Pure
+exchange; token → a normalized `{ providerId, email, emailVerified, name }`. Pure
 functions, testable without an HTTP server.
 
 **No `id_token` validation in v1 — fetch userinfo.** One code path for OIDC providers

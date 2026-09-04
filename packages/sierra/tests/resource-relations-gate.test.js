@@ -10,7 +10,7 @@
  *
  * x-gate lets the UI avoid offering a control the server is going to 403. It is
  * an affordance, never a boundary — the assertions below pin the permissive
- * behaviour that follows from that.
+ * behavior that follows from that.
  */
 
 import { describe, test, expect, vi, beforeEach } from 'vitest'
@@ -192,7 +192,7 @@ describe('on the resource', () => {
   })
 
   test('a relation target can be turned into its own resource', () => {
-    // The point of normalising `model`: it round-trips.
+    // The point of normalizing `model`: it round-trips.
     const users = createResource('users')
     const target = createResource('accounts', { model: users.relations.account.model })
     expect(target.fields.name.required).toBe(true)

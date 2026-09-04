@@ -31,7 +31,7 @@ export type SQLParam = string | number | bigint | boolean | null | Uint8Array
 // ─────────────────────────────────────────────
 // SQL.JS ADAPTER
 // Used in Vitest (Node environment).
-// sql.js WASM must be initialised asynchronously — use the factory:
+// sql.js WASM must be initialized asynchronously — use the factory:
 //   const db = await createSqlJsDatabase()
 // After that, all operations are synchronous.
 // ─────────────────────────────────────────────

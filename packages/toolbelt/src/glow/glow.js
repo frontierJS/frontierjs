@@ -105,7 +105,7 @@ const RULES = {
      so every `@@gate` in a schema rendered as a stray punctuation mark
      followed by an attribute. Both forms are one rule here.
 
-     The type is capitalised and the common keyword pass is case-insensitive,
+     The type is capitalized and the common keyword pass is case-insensitive,
      so `Int`, `String` and `Float` were already coloured as keywords while
      `DateTime`, `Boolean`, `Json` and a `model`'s own name were not — the
      column that says what a field IS, half-lit down the page. Matched by

@@ -11,7 +11,7 @@
  * where no token and no `.dense` could reach them.
  *
  * `anatomy.spec.js` already checks that each part ships CSS and appears in
- * its own markup block. What it cannot check is the three behaviours the
+ * its own markup block. What it cannot check is the three behaviors the
  * parts exist FOR — each of which is one declaration, and each of which
  * fails by looking almost right:
  *
@@ -92,7 +92,7 @@ test('item: a lead switches the row to baseline, and nothing else does', functio
    *
    * `.item` is `align-items: center`, which is right for one line of text
    * beside a control and wrong the moment the text stacks: a gutter
-   * centred against a three-line block sits opposite the SUBTITLE, not
+   * centered against a three-line block sits opposite the SUBTITLE, not
    * the title it labels. So `.item:has(.item-lead)` goes baseline.
    *
    * The reverse is what stops that being a silent regression for every
@@ -114,7 +114,7 @@ test('item: a lead switches the row to baseline, and nothing else does', functio
 
   cleanup();
   assert.equal(led, 'baseline', 'an .item with a .item-lead did not align to the baseline');
-  assert.equal(bare, 'center', 'a plain .item was moved off centre by the lead rule');
+  assert.equal(bare, 'center', 'a plain .item was moved off center by the lead rule');
 });
 
 test('item: the lead is a fixed column', function () {

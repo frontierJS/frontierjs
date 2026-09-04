@@ -171,7 +171,7 @@ Junction. `junction principal --app <module> [--services <dir>]`, written at the
 root, added to the `snapshots` CI phase by naming its own generator in its header
 like every other snapshot does — so this costs a generator and no CI edit.
 
-Pure derivation. It changes no behaviour and can be read off both apps the day it
+Pure derivation. It changes no behavior and can be read off both apps the day it
 exists: `example` on `strategy database` with `cartClaim`, basecamp on `strategy
 row` with `membershipClaim`. Two strategies and two resolvers is enough to know
 whether the seven sections are the right seven.
@@ -280,14 +280,14 @@ a global.** Junction already has the primitive — `$` is an ALS — so the thin
 one of them pays for is the thing this framework gets for nothing, and only by not
 choosing the mutation.
 
-**The correction.** This plan's first draft said Laravel needs the tenant serialised
+**The correction.** This plan's first draft said Laravel needs the tenant serialized
 into a queued job by hand. It does not — `QueueTenancyBootstrapper` puts the tenant
 id in the payload and re-initialises on the way out. **Django** is the one requiring
-manual serialise-and-restore. The corrected reading is more useful: the two systems
+manual serialize-and-restore. The corrected reading is more useful: the two systems
 split on exactly the seam junction already has, and `app.runAs(actor, { tenant })`
 is on the side that works.
 
-**Artefact plus executed check.** OpenFGA commits an authorisation model and a set
+**Artefact plus executed check.** OpenFGA commits an authorization model and a set
 of assertions in one `.fga.yaml`, and ships a GitHub Action that runs them on every
 push touching it. Declared file diffed, assertions executed, both gated. Same split
 as `access.snapshot.md` beside `verifyRowPolicies`, arrived at independently, which
@@ -312,7 +312,7 @@ Phase 1 is not catching up; it is the part that has no equivalent.
    good today*, and the one with no design left in it.
 2. **§4 `principal.snapshot.md`** — derivation only. Once §3 has said what is true,
    this is what stops it drifting.
-3. **§5 `$.config` with no resolver** — no behaviour change, and its cost only rises.
+3. **§5 `$.config` with no resolver** — no behavior change, and its cost only rises.
 4. **§6 the ruling, then the source** — last, because by then two of its three
    clauses are already standing.
 

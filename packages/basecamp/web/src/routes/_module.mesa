@@ -60,7 +60,7 @@ siteName: Basecamp
   $: notices = computeNotices({ servers: srv(), deployments: dep(), jobs: jbs() })
 
   // ── ⌘K ───────────────────────────────────────────────────────────────────
-  // The commands are the nav and the header's own behaviours, reached a second
+  // The commands are the nav and the header's own behaviors, reached a second
   // way — never a second set of actions. `$:` and not a plain const because
   // the Servers and Workspace groups are built from live rows.
   $: COMMANDS = [
@@ -210,7 +210,7 @@ siteName: Basecamp
     : NAV
 
   // Below 767px the design system hides `.shell > .sidebar` and says its
-  // contents belong in a <dialog class="drawer"> — a behaviour, so the app owns
+  // contents belong in a <dialog class="drawer"> — a behavior, so the app owns
   // it (css components/frame.css § Sidebar toggle).
   let navOpen = false
   // Navigating with the drawer open leaves it covering the screen it just went

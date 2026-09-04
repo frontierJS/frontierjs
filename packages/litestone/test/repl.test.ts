@@ -4,7 +4,7 @@
 //
 //   1. Statements must complete in the order they were typed. Against a
 //      database, out-of-order is writes landing in an order nobody wrote, and it
-//      is invisible until it matters. It was the first version's behaviour.
+//      is invisible until it matters. It was the first version's behavior.
 //   2. The standing must be legible. A console that does not say what it is
 //      running as is a god-mode console with an extra flag, and every claim this
 //      command makes rests on the prompt being true.
@@ -134,7 +134,7 @@ describe('printing a row', () => {
     expect(await session(['null'])).toContain('null')
   })
 
-  it('bytes are summarised rather than dumped', async () => {
+  it('bytes are summarized rather than dumped', async () => {
     const out = await session(['db.row()'], { db: { row: () => ({ blob: new Uint8Array(2048) }) } })
     expect(out).toContain('<2048 bytes>')
   })

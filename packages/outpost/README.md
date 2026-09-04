@@ -72,7 +72,7 @@ at all rather than as a plausible one.
 
 ## Testing
 
-`bun run test` — 19 tests, no Docker and no network. `createDocker({ run })`
+`bun run test` — no Docker and no network. `createDocker({ run })`
 takes the runner and `createReporter({ fetch })` takes the client, so what is
 asserted is what the machine was ASKED to do and what left the process. A
 package that could only be tested against a real daemon would be tested rarely

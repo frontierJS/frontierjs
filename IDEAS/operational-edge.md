@@ -21,7 +21,7 @@ production, observable, in an environment per pull request."
 ## The two bets
 
 **Encore's bet — infrastructure from code.** You declare a database, a Pub/Sub
-topic, a cron job or a cache inline in service code. A compiler statically analyses
+topic, a cron job or a cache inline in service code. A compiler statically analyzes
 the source, builds an application model, and provisions the real thing: locally, in
 per-PR preview environments, and in your own AWS or GCP account. That same app model
 powers automatic distributed tracing, API documentation and generated architecture
@@ -94,7 +94,7 @@ maintained by hand — a diagram that can drift from the code is a diagram that 
 ### 1. Infrastructure from declarations
 
 **The strongest idea to take, and closer than it looks.** Encore extracts
-infrastructure declarations by statically analysing source code. FJS does not need
+infrastructure declarations by statically analyzing source code. FJS does not need
 to, because **its declarations are already explicit and already parsed**:
 
 | Declared today | Infrastructure it implies |
@@ -146,7 +146,7 @@ secrets are scoped, and who is allowed to spend the resources.
   WHERE that emptied the screen. That is the part Encore has no answer to either,
   because nobody does.
 - **Generate the diagrams.** `project:map --json` plus the bridge index is enough
-  to emit the request-path view that `website/journey.html` currently hardcodes.
+  to emit the request-path view that `website/site/src/routes/journey.mesa` currently hardcodes.
 - **A local dev dashboard** that puts `project:view`, the devtools overlay, traces
   and an API explorer in one place. This is Basecamp's local counterpart
   (`IDEAS/offline-first-and-release.md`), and probably the same codebase.
@@ -171,7 +171,7 @@ subject of none.
 retried. `@@transitions` is one row moving through a declared state machine. What has
 no noun is the thing between them: **a multi-step process that survives a restart,
 compensates when a later step fails, and has a point past which it can only go
-forward.** Order fulfilment, onboarding, anything with a human approval in it, anything
+forward.** Order fulfillment, onboarding, anything with a human approval in it, anything
 that calls three third parties in sequence. Temporal built a company on this category,
 which is the evidence that it is one.
 

@@ -10,7 +10,7 @@ dated: 2026-08-22
 `@requiredWhen`, no `@readOnlyWhen`, no `@setOnce` and no conditional field
 state of any kind in the tree. The *What exists today* section is read off
 shipped code and cited; every other section is a proposal. Do not cite this file
-as describing behaviour — see `VERIFYING.md`.
+as describing behavior — see `VERIFYING.md`.
 
 ---
 

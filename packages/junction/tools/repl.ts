@@ -513,7 +513,7 @@ const CHAPTERS: TutorialChapter[] = [
       {
         title:   'Clear the token',
         explain: [
-          '${cmd}unauth${r} clears the token. The prompt dot goes grey (${gry}○${r}).',
+          '${cmd}unauth${r} clears the token. The prompt dot goes gray (${gry}○${r}).',
           'Useful when testing public vs protected endpoints side-by-side.',
         ],
         example: 'unauth',

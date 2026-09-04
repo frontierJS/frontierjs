@@ -1,6 +1,6 @@
 // ─── doc-audit.js — the notes, graded against the tree ───────────────────────
 //
-// Four rules over this repo's own markdown, all of them the same failure: a
+// The rules over this repo's own markdown, all of them the same failure: a
 // document that says something the tree does not say back. Prose is the one
 // artefact here with no compiler, no test and no snapshot behind it, so it is
 // the only place a claim can be wrong for months while everything runs green —
@@ -9,9 +9,11 @@
 // `FJS-560` is the shape and it cost a session: `litestone/docs/roadmap.md`
 // still proposed a way to express money four days after `@money` shipped, a
 // reader took the roadmap for the current state, and a defect was filed against
-// a settled ruling. `roadmap-shipped` closed that one page. These four close the
+// a settled ruling. `roadmap-shipped` closed that one page. These close the
 // classes around it — a word that does not exist, a citation that resolves to
-// nothing, a count that has moved, and an invariant that has been renumbered.
+// nothing, a count that has moved, an invariant that has been renumbered, a
+// question the register has ruled and the document still calls open, and a map
+// that says what used to be true.
 //
 // ── What a rule here may grade ───────────────────────────────────────────────
 //
@@ -340,6 +342,15 @@ export function docCitesDead({ root }) {
     const prose = maskFences(doc.text)
     const pkg   = packageRootOf(root, doc.path)
 
+    // `ISSUES.md` is two tiers in one file: the rows above § Closed are the open
+    // register and the rows below it are history that has not aged out to
+    // `ISSUES_ARCHIVE.md` yet. A closed row legitimately names a file that was
+    // deleted BY closing it — *`app-ref.ts` is deleted* is the fix, written down
+    // — so the section is read the way the archive is, and an open row citing a
+    // path that has moved is still the finding this rule exists for.
+    const closedAt = /^##\s+Closed\b/m.exec(prose)
+    const cutoff   = doc.rel === 'ISSUES.md' && closedAt ? closedAt.index : Infinity
+
     // (a) a relative link. Inline code is masked as well as fences: a
     // destructure quoted in prose — `[...args](fn)` — is a markdown link to a
     // regex and to nothing else.
@@ -351,7 +362,7 @@ export function docCitesDead({ root }) {
       if (target.includes('*') || target.includes('{')) continue
 
       if (!resolvesAnywhere(root, doc, target)) {
-        findings.push({
+        if (m.index < cutoff) findings.push({
           file: doc.path, line: lineOf(doc.text, m.index),
           message: `links to \`${target}\`, which is not in the tree from the repo root, from this file's own ` +
                    `directory, or from its package. A link that resolves to nothing is advice that fails the ` +
@@ -364,7 +375,7 @@ export function docCitesDead({ root }) {
         const bare = resolve(dirname(doc.path), target)
         const at   = existsSync(bare) ? bare : resolve(root, target)
         const text = readSafe(at) ?? ''
-        if (text && !text.includes(`id="${frag}"`)) findings.push({
+        if (text && !text.includes(`id="${frag}"`)) if (m.index < cutoff) findings.push({
           file: doc.path, line: lineOf(doc.text, m.index),
           message: `links to \`${target}#${frag}\` and that anchor is not in the target — the row was renumbered, ` +
                    `retired, or never had an \`<a id>\`. The link lands at the top of the register and the reader ` +
@@ -380,7 +391,7 @@ export function docCitesDead({ root }) {
       if (body.startsWith('node_modules/'))                continue
       if (!addressesThisRepo(top, body))                   continue
       if (resolvesAnywhere(root, doc, body))               continue
-      findings.push({
+      if (span.index < cutoff) findings.push({
         file: doc.path, line: lineOf(doc.text, span.index),
         message: `cites \`${body}\`, which is not in the tree. A path in prose is the fastest way anybody navigates ` +
                  `this repo, and one that has moved sends them looking for a file that is somewhere else.`,
@@ -763,5 +774,182 @@ export function docStatusStale({ root }) {
     }
   }
 
+  return { findings }
+}
+
+// ─── doc-map-narration ────────────────────────────────────────────────────────
+//
+// A map that tells you what USED to be true.
+//
+// `PHILOSOPHY.md` §VII gives the map tier one job — live facts, each backed by a
+// generator or a check — and puts history in the registers. The rule is not
+// taste: a map is what a reader consults to decide what to do in the next hour,
+// and a paragraph that opens by describing the old behavior costs that reader
+// the same attention as one describing the current behavior, while ageing at a
+// rate nothing measures.
+//
+// ── What it does NOT fire on, and why that is the whole design ───────────────
+//
+// House style names one narrow exception and it is real: *a past bug stated
+// because the shape still invites it* — `it used to land silently while the read
+// strip made it look refused* is the failure mode, written the only way it can
+// be written. Measured across the root and package maps, that shape accounts for
+// 81 of the 91 mid-sentence uses of `used to`. A rule matching the phrase
+// anywhere would report all 81, and the first thing anybody does with a rule
+// like that is turn it off.
+//
+// So it matches only where the history is the SUBJECT rather than the
+// explanation: a sentence that OPENS with it, which §VII already says, and a
+// calendar date, which a map has no use for at all. Ten and sixteen against 81,
+// and every one of them is a sentence a register already holds.
+//
+// It grades the whole map tier — `mapTier()` below, the same set
+// `doc-unchecked-count` reads — rather than `CLAUDE.md` alone. A package README
+// is in that tier (§VII), and grading only the CLAUDE.md half left a README
+// carrying a struck-through defect record, two *fixed on <date>* parentheticals
+// and a `## Breaking changes` section doing `CHANGES.md`'s job.
+//
+// A date inside a code span is a VALUE (`datetime('now')` answers one) and a
+// date inside quotation marks is a quoted example — House style quotes the bad
+// form in order to ban it, which a rule reading its own instruction must not
+// report. The span mask here allows ONE newline inside the backticks, which
+// `maskInline` does not: these files are hard-wrapped, so a span carrying a
+// timestamp wraps as often as not, and the strict mask reported the wrapped
+// half of a value as narration.
+
+const MAP_NARRATION =
+  /^(?:it|they|that|this) used to\b|^until\s+\d{4}-\d{2}|^before\s+`?FJS-|^for its whole life\b|^it shipped\b|^it had been\b|^for as long as\b/i
+
+const CALENDAR_DATE = /\b20\d{2}-\d{2}-\d{2}\b/
+
+// A date the author is quoting rather than asserting. Straight and curly pairs,
+// on one line: a quotation spanning a paragraph is not this shape.
+function quotedSpans(line) {
+  const out = []
+  for (const m of line.matchAll(/"[^"\n]*"|“[^”\n]*”/g)) out.push([m.index, m.index + m[0].length])
+  return out
+}
+
+/** The documents a reader acts on today: the maps, at the repo and package roots. */
+function mapTier(root) {
+  return docCorpus(root, { history: false, registers: false, proposals: false })
+    .filter(d => /^(CLAUDE|README|ARCHITECT|PHILOSOPHY)\.md$/.test(d.rel.split(sep).pop()))
+    .filter(d => !['test', 'tests', 'fixtures', 'docs', 'example', 'mockup', 'node_modules']
+      .some(seg => d.rel.split(sep).includes(seg)))
+}
+
+export function docMapNarration({ root }) {
+  const docs = mapTier(root)
+  if (!docs.length) return { skipped: 'no map document to grade' }
+
+  const findings = []
+  for (const doc of docs) {
+    // One newline allowed inside the span: see the note above.
+    const text = maskFences(doc.text)
+      .replace(/(?<!`)`[^`]{1,200}?`(?!`)/g, m =>
+        (m.split('\n').length <= 2 ? m.replace(/[^\n]/g, ' ') : m))
+
+    // The opening of a sentence, where a list marker, a heading hash and a bold
+    // run all count as the start — the map writes most of its claims that way.
+    for (const raw of splitSentences(text)) {
+      const s = raw.text.replace(/^[\s\-*|#>]+/, '').replace(/^\*\*/, '')
+      if (!MAP_NARRATION.test(s)) continue
+      findings.push({
+        file: doc.path, line: lineOf(text, raw.index),
+        message: `opens with what used to be true — "${s.slice(0, 56).trim()}…". A map carries live facts, ` +
+                 `and history belongs to \`CHANGES.md\`, \`DECISIONS.md\` and git (\`FJS-D187\`). State the ` +
+                 `rule and cite the id. The one exception House style keeps is a past bug stated MID-sentence ` +
+                 `because the shape still invites the mistake, which this does not report.`,
+      })
+    }
+
+    text.split('\n').forEach((line, i) => {
+      const m = CALENDAR_DATE.exec(line)
+      if (!m) return
+      if (quotedSpans(line).some(([a, b]) => m.index >= a && m.index < b)) return
+      findings.push({
+        file: doc.path, line: i + 1,
+        message: `carries the date ${m[0]}. A map has no use for one: a fact that needs a date is history ` +
+                 `and belongs in a register, and a ruling is cited by its id rather than by the day it was ` +
+                 `made (\`FJS-D187\`). A date inside a code span or a quotation is a value or an example ` +
+                 `and is not reported.`,
+      })
+    })
+  }
+
+  return { findings }
+}
+
+/** Sentences with the offset each one starts at. */
+function splitSentences(text) {
+  const out = []
+  let at = 0
+  for (const part of text.split(/(?<=[.!?])\s+|\n\n+/)) {
+    out.push({ text: part, index: at })
+    at += part.length + 1
+  }
+  return out
+}
+
+// ─── doc-unchecked-count ──────────────────────────────────────────────────────
+//
+// *A number in prose is generated or absent* (`FJS-D187`). `doc-claims-count`
+// asks the other half of that — a stated number against the generator that owns
+// it — and by construction it can only grade a count somebody wrote a countable
+// for. Every count with no authority behind it went unread, which is where they
+// all were: measured across the map tier, the ONE count backed by a generator
+// was right and every count that was not had drifted, two of them by half.
+//
+// What separates a claim from prose is DIGITS and a countable artefact noun. The
+// house spells a rhetorical number — *three realms*, *two owners*, *fourteen
+// producing broken JavaScript* — and reaches for a numeral when it is reporting
+// an inventory, so the discriminator is the one the writing already uses. That
+// is why the fix for a number worth keeping in an example is to spell it, which
+// is what `PHILOSOPHY.md` §VII does with its own.
+//
+// Three things are deliberately NOT reported. A count a countable owns, since
+// `doc-claims-count` grades it against the tree and it is generated in exactly
+// the sense §VII means. A count of ONE, which is a statement about singularity
+// and not an inventory. And anything outside the map tier: a dated
+// `PROJECT_STATE.md` is a measurement with a date on it, and the corpus README
+// under `packages/litestone/test/fixtures/` counts models in schemas this repo
+// did not write, where the number is the finding.
+
+const ARTEFACT_NOUNS =
+  'tests|assertions|components|commands|namespaces|models|enums|rules|checks|suites|drives'
+
+// A `§`, a `#` or a decimal point in front means the digits are an address or a
+// version rather than a quantity — `§11, rule 30` is a citation.
+const UNCHECKED_COUNT =
+  new RegExp(String.raw`(?<![\w.$§#-])(\d+(?:,\d{3})*)\s+(${ARTEFACT_NOUNS})\b`, 'gi')
+
+export function docUncheckedCount({ root, countables = COUNTABLES }) {
+  const docs = mapTier(root)
+  if (!docs.length) return { skipped: 'no map document to grade' }
+
+  const findings = []
+  for (const doc of docs) {
+    // The same ownership test `doc-claims-count` applies, so a countable exempts
+    // its own count here rather than the two rules disagreeing about who owns it.
+    const owns = noun => countables.some(c =>
+      c.what.replace(/s$/, '') === noun.replace(/s$/, '') &&
+      (doc.rel === c.owner || doc.rel.startsWith(c.owner) ||
+       (c.also ?? []).some(p => doc.rel === p || doc.rel.startsWith(p))))
+
+    const text = maskInline(maskFences(doc.text))
+    for (const m of text.matchAll(UNCHECKED_COUNT)) {
+      const said = Number(m[1].replace(/,/g, ''))
+      if (said < 2) continue
+      if (owns(m[2])) continue
+      findings.push({
+        file: doc.path, line: lineOf(text, m.index),
+        message: `states "${m[0].replace(/\s+/g, ' ')}", and nothing regenerates it. A count with no ` +
+                 `authority reads exactly as true as one with a generator behind it, and it is wrong by ` +
+                 `the next commit (\`FJS-D187\`: a number in prose is generated or absent). Cut it and keep ` +
+                 `the half of the sentence that changes what a reader does, give it a countable in ` +
+                 `\`COUNTABLES\` so \`doc-claims-count\` grades it, or spell it if it is rhetoric.`,
+      })
+    }
+  }
   return { findings }
 }

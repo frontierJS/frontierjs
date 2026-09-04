@@ -2,7 +2,7 @@
 //
 // One file, and a folder anyway: billing is closed — it imports nothing else in
 // `domain/` — and it is the module most likely to grow, since dunning, credit
-// notes and proration each already have enough surface to become neighbours.
+// notes and proration each already have enough surface to become neighbors.
 // The alternative was leaving `billing.ts` beside `ledger.ts` until it had a
 // second file, which trades this folder for a later move of every import.
 //

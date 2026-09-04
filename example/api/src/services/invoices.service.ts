@@ -60,7 +60,7 @@ export function createInvoicesService() {
      * The money arrived.
      *
      * `@system` in `@@transitions`, so this method cannot be it — a caller
-     * asking to be marked paid is not a request a shop can honour. It is here
+     * asking to be marked paid is not a request a shop can honor. It is here
      * for the same shape `orders.pay` has: the webhook path settles the row,
      * and this is the staff button for the bank transfer somebody reconciled by
      * hand. Both go through the same transition, which is the only arrangement

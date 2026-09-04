@@ -636,12 +636,12 @@ export const DOCS = {
   'field:scoped':       'edge-fields.md',
 
   // derive — the four that get confused go to the page that compares them
-  'field:computed':     'modelling.md',
-  'field:transient':    'modelling.md',
-  'field:derived':      'modelling.md',
-  'field:system':       'modelling.md',
-  'field:immutable':    'modelling.md',
-  'field:sealed':       'modelling.md',
+  'field:computed':     'modeling.md',
+  'field:transient':    'modeling.md',
+  'field:derived':      'modeling.md',
+  'field:system':       'modeling.md',
+  'field:immutable':    'modeling.md',
+  'field:sealed':       'modeling.md',
   'field:generated':    'schema.md',
   'field:hardDelete':   'soft-delete.md',
   'field:keep':         'soft-delete.md',

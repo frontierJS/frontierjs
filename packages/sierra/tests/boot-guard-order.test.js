@@ -13,7 +13,7 @@
  * direct page load or refresh of it.
  *
  * Fixed by deferring the boot navigation one microtask. These tests assert the
- * fixed behaviour — flip the second expectation in the first test to reproduce
+ * fixed behavior — flip the second expectation in the first test to reproduce
  * the original bug.
  */
 

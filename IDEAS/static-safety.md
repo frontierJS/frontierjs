@@ -35,7 +35,7 @@ the build does that. They answer whether the build can.
 table it wants is now produced as a by-product — `prerenderRoutes` returns
 `safety.rows` and the build prints it — but routes are still hand-annotated
 `render: static` rather than sorted into buckets. Do not cite that section as
-describing behaviour; see `VERIFYING.md`.
+describing behavior; see `VERIFYING.md`.
 
 ---
 

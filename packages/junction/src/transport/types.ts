@@ -68,7 +68,7 @@ export interface PaginateResponse {
 // ─── SSE sender ───────────────────────────────────────────────────────────
 
 export interface SseEvent {
-  data:    unknown           // will be JSON-serialised
+  data:    unknown           // will be JSON-serialized
   event?:  string            // named event type, e.g. 'update'
   id?:     string            // event id for Last-Event-ID tracking
   retry?:  number            // reconnect delay hint in ms

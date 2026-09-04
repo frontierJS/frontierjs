@@ -282,7 +282,7 @@ export interface CronSchedulerOptions {
   /**
    * The clock. Absent, it is the wall clock.
    *
-   * Injectable because the behaviour that matters most here happens on two days
+   * Injectable because the behavior that matters most here happens on two days
    * a year, and a suite that cannot move the clock can only assert the parser.
    * That is precisely what the suite did assert, which is how `FJS-525` sat in
    * the firing path with four green `timeZone` tests above it.
@@ -296,7 +296,7 @@ export class CronScheduler {
   private _timer:      ReturnType<typeof setInterval> | null = null
   private _lastMinute: number = -1
   // Per fixed-time schedule, the last wall-clock minute considered. It is the
-  // whole of the boundary behaviour: the walk from it to now runs FORWARD over
+  // whole of the boundary behavior: the walk from it to now runs FORWARD over
   // the local clock, so a skipped hour is still in the walk and a repeated one
   // is not. Keyed by name because two schedules may be in two zones.
   private _lastWall:   Map<string, number> = new Map()
@@ -397,7 +397,7 @@ export class CronScheduler {
   //                 both boundaries: 25 fires on a 25-hour day.
   //   fixed time  — which wall-clock minutes have passed since the last look,
   //                 and does any of them match? One forward walk over the LOCAL
-  //                 clock, which is where both boundary behaviours come from
+  //                 clock, which is where both boundary behaviors come from
   //                 rather than from a rule about either.
   //
   // Spring: the local clock goes 01:59 → 03:00, so the walk covers 02:00…02:59
@@ -446,7 +446,7 @@ export class CronScheduler {
     }
 
     // The mark only ever moves FORWARD, and that is the whole of the autumn
-    // behaviour. The local clock going back IS the repeated hour; letting the
+    // behavior. The local clock going back IS the repeated hour; letting the
     // mark follow it down would walk that hour a second time, which is the
     // double fire this exists to stop — measured, and the first version of this
     // method had exactly that bug.

@@ -2,7 +2,7 @@
 
 **The two most recent sessions, narrative. Older ones rotate into
 `docs/handoff-archive/`.** This is an assessment file (`PHILOSOPHY.md` §VII):
-dated, never cited as behaviour, and read cold rather than consulted.
+dated, never cited as behavior, and read cold rather than consulted.
 
 **It names nothing a register does not also hold.** A defect gets an id in
 `ISSUES.md`, a settled argument a ruling in `DECISIONS.md`, a shipped change a
@@ -68,7 +68,7 @@ It immediately reported `written: 0, dropped: 0` against a SQLite trail that had
 just been written to. Zero **and** zero is the informative pair: not a failing
 write, a `fireLog` never reached. `logModel` was being copied onto the
 jsonl/logger registry branch and onto none of the three SQLite ones, so the whole
-feature was inert and every behavioural test passed by asserting on a client that
+feature was inert and every behavioral test passed by asserting on a client that
 never got there.
 
 **The transferable part is that a counter is not instrumentation, it is the
@@ -214,7 +214,7 @@ assemble a fragment at boot.
 structural. The correct operation is `IAuth.deleteUser`, which needs a custom
 method, and `gateAuth` grades CRUD only — *a method the map does not name is not
 gated here* — so a custom method has no way to ask the schema for its own
-authority. `payments.refund`'s answer does not generalise: it asks
+authority. `payments.refund`'s answer does not generalize: it asks
 `db.order.transitions(row)`, which works because a refund IS a declared move.
 Removing a person is not one.
 
@@ -512,12 +512,12 @@ on its column list alone, so a predicate appears in neither the rendering nor th
 comparison: edit one and `ddl.snapshot.sql` moves while `release.snapshot.md`
 does not. The verdict stays correct, because an index is EXPAND either way and
 partial uniques are refused — so this is an artefact that is less informative
-than the DDL beside it, not a misclassification, and `ISSUES.md` is for behaviour
+than the DDL beside it, not a misclassification, and `ISSUES.md` is for behavior
 that is wrong. It becomes a correctness hole the day Option C ships, and it is
 recorded against Option C in the idea rather than as a defect.
 
 **What no drive can do is prove an index is used**, because an index changes no
-answer and every behavioural assertion passes with it dropped. The EXPLAIN in
+answer and every behavioral assertion passes with it dropped. The EXPLAIN in
 `test/index-predicates.test.ts` is the proof and the negative controls are the
 test; `verify:catalogue` proves only that the app still works with it.
 

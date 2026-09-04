@@ -9,7 +9,7 @@
 // meant a job asked for by a customer ran with the authority of the shop.
 //
 // Now a dispatch records WHO asked and the worker opens a scope for them.
-// Three rules, and each is a behaviour rather than a shape, so each is run:
+// Three rules, and each is a behavior rather than a shape, so each is run:
 //
 //   1. a dispatch inside a request records that caller
 //   2. the handler runs as them — re-RESOLVED, never replayed

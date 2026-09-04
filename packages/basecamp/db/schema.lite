@@ -881,7 +881,7 @@ model Server {
   //
   // `checkIn` names the from-set heartbeat has always used. A server sitting at
   // `ready` or `provisioning` that starts checking in stays where it is; that
-  // is today's behaviour written down rather than a decision made here.
+  // is today's behavior written down rather than a decision made here.
   // Two kinds of move, and `@system` is what says which.
   //
   // `reboot`, `drain` and `undrain` are a PERSON's: somebody decides, and the
@@ -2193,7 +2193,7 @@ model Backup {
 // key/value table is a schema this file does not describe: no validation, no
 // JSON Schema, no generated form, and a typo in a key is a setting that
 // silently reverts to its default. The cost is that adding a setting is a
-// migration, which is the correct cost for something the app's behaviour reads.
+// migration, which is the correct cost for something the app's behavior reads.
 //
 // **The credentials in the mock's Settings screen are deliberately absent** —
 // its auth secret, agent secret, Resend key and Infisical token. Three reasons,

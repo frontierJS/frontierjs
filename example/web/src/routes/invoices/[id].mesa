@@ -78,7 +78,7 @@ title: Invoice
   $.onDestroy(() => { unwatch?.(); row?.release() })
 
   // What may be asked for on this row, off the schema. `settle` is `@system` —
-  // a caller asking to be marked paid is not a request a shop can honour — so
+  // a caller asking to be marked paid is not a request a shop can honor — so
   // it is refused here by `refusedBy: 'system'` and is not in this list; the
   // staff button below is the service method beside it, for the bank transfer
   // somebody reconciled by hand.

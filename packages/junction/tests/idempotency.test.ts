@@ -201,7 +201,7 @@ describe('the header reaches it', () => {
 
 // ─── FJS-680 — a key belongs to WHO sent it ───────────────────────────────
 
-describe('an Idempotency-Key from nobody is not honoured', () => {
+describe('an Idempotency-Key from nobody is not honored', () => {
 
   test('two anonymous calls with one key both run', async () => {
     // Anonymous callers shared the literal string `anonymous`, so the second

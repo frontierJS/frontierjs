@@ -84,7 +84,7 @@ Two habits the system rewards, both visible in `web/src/routes/`:
 | --- | --- |
 | [`db/schema.lite`](db/schema.lite) | everything below |
 | [`api/src/services/leads.service.ts`](api/src/services/leads.service.ts) | 4 lines. CRUD, 401s and 400s are all derived |
-| [`web/src/resources/leads.mesa`](web/src/resources/leads.mesa) | names a model, turns two flags on |
+| [`web/src/resources/Lead.mesa`](web/src/resources/Lead.mesa) | names a model, turns two flags on |
 | [`web/src/routes/leads/create.mesa`](web/src/routes/leads/create.mesa) | a form with no field list in it |
 
 ## What to look at

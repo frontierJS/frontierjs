@@ -1,5 +1,5 @@
 ---
-title: 09-build
+title: 10-build
 description: The production build, and the one thing that makes it real
 ---
 
@@ -16,9 +16,9 @@ injection and the page loads no JavaScript at all. The HTML looks right, the
 build is green, and nothing runs.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
-context.config.__step = 9
+context.config.__step = 10
 
 if (!needs(context, ['appDir'], { from: '02-new' })) return
 

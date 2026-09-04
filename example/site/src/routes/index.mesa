@@ -311,7 +311,7 @@ render: static
     block-size:    auto;
     border-radius: var(--card-radius);
     /* A warm hairline rather than --rule: the plate's own edge is sunset and a
-       neutral grey line reads as a seam against it. */
+       neutral gray line reads as a seam against it. */
     border:     var(--border-width) solid rgba(216, 184, 146, 0.35);
     box-shadow: var(--shadow-lg);
   }

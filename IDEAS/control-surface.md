@@ -7,10 +7,10 @@ dated: 2026-08-26
 # Idea — the control surface: one page that shows what can run, what is running, and starts it
 
 **Status: SHIPPED.** Dated 2026-08-26; all six steps of §8 landed 2026-08-27 and
-are behaviour, not proposal. §1–§7 are the argument that produced them and are
+are behavior, not proposal. §1–§7 are the argument that produced them and are
 kept as the record; **§9's open questions are still open** and one of them —
 whether a started server should outlive the GUI — is now a thing a person will
-notice rather than a thing to reason about. Do not cite the rest of this file as describing behaviour — see
+notice rather than a thing to reason about. Do not cite the rest of this file as describing behavior — see
 `VERIFYING.md`.
 
 The third `*-surface` paper and the one with the least new machinery under it.
@@ -155,7 +155,7 @@ is also the only version that cannot be wrong.
 
 **Tier 2 is the gap, and it is an Axiom 1 miss sitting in the middle of this
 proposal.** `8111` exists in three places today — a literal in
-`example/api/src/core/mail-sink.ts` (with an env override), a row in `CLAUDE.md`'s
+`example/api/src/providers/mail/sink.ts` (with an env override), a row in `CLAUDE.md`'s
 prose ports table, and a hand-written `console.log` in `example/api/index.ts`. None of
 the three is data. They agree today; nothing makes them agree.
 
@@ -373,7 +373,7 @@ route cases in `tests/server.test.js`, and eleven in the browser drive — start
 stop, and both refusals on screen. Three guards mutation-checked.
 
 **What this step actually cost, and it is the correction worth keeping.** A child is
-a LAUNCHER: `bun run api` is bun running a script that spawns the app, so signalling
+a LAUNCHER: `bun run api` is bun running a script that spawns the app, so signaling
 the pid kills the wrapper and leaves what it started running. It was found the
 expensive way — the first HTTP test started the first `bun` task it found, which in
 this package is `bun run test`, so the suite ran itself and stopping it reported

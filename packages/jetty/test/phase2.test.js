@@ -506,7 +506,7 @@ group('defineHarbor boot')
 
 // --- the real Junction adapter ---
 //
-// Its wire behaviour is proved end to end by `example`'s `verify:extension`,
+// Its wire behavior is proved end to end by `example`'s `verify:extension`,
 // against a real API — a fake Junction here would be the mock that hid FJS-279
 // for as long as it existed. What IS decidable in node is the shape: the URL
 // dialect the two packages spell differently, and which of the two sign-in

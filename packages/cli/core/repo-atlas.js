@@ -55,7 +55,7 @@ const BUCKET_ORDER = ['data', 'api', 'ui', 'testing', 'tooling', 'cross', 'app',
 //
 // A line drawing per card, in a 48×48 box, stroked in the card's own colour.
 // Named for the thing the package is, because the point of a plate in a field
-// manual is that you recognise the card before you read it. A package with no
+// manual is that you recognize the card before you read it. A package with no
 // motif of its own falls back to its bucket's.
 
 const MOTIF = {
@@ -1087,7 +1087,7 @@ function rulingBlock(model) {
         <td class="atlas-key text-xs text-muted">${esc(r.section)}</td>
       </tr>`).join('')
     }</tbody></table></div>` +
-    `<p class="text-xs text-muted">The claim only — the argument stays in <a class="link" href="${esc(settled.file)}">${esc(settled.file)}</a>. Settled unless explicitly reopened: do not fix behaviour back toward what a ruling replaced.</p>`)
+    `<p class="text-xs text-muted">The claim only — the argument stays in <a class="link" href="${esc(settled.file)}">${esc(settled.file)}</a>. Settled unless explicitly reopened: do not fix behavior back toward what a ruling replaced.</p>`)
 }
 
 // ─── the third register: what is not started ──────────────────────────────────
@@ -1585,7 +1585,7 @@ border-top:1px solid var(--rule);margin-top:var(--space-2xl)}
 @media (max-width:52rem){.atlas-title{order:3;width:100%;text-align:left}.atlas-tools{margin-left:0}}
 `
 
-// ─── behaviour ────────────────────────────────────────────────────────────────
+// ─── behavior ────────────────────────────────────────────────────────────────
 //
 // Three doors, all routes: a part, an action, or a realm — the last a filter
 // over the deck rather than a sheet, so it stays linkable without hiding the

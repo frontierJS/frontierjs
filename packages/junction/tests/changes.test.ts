@@ -256,7 +256,7 @@ describe('get(query) → findFirst', () => {
   it('GET /users/123 routes to get with id', async () => {
     const app = await createTestApp()
     // Collected rather than assigned to a `let`: TypeScript cannot see an
-    // assignment made inside a callback, so a `let` initialised to null stays
+    // assignment made inside a callback, so a `let` initialized to null stays
     // narrowed to `null` at the assertion. An array also says how many times
     // the method ran, which is the other half of what this asserts.
     const gotIds: string[] = []
@@ -559,9 +559,9 @@ describe('ctx.app.service() — internal calls from hooks', () => {
   })
 })
 
-// ─── 5. Client — updated method behaviour ────────────────────────────────────
+// ─── 5. Client — updated method behavior ────────────────────────────────────
 
-describe('Client — updated method behaviour', () => {
+describe('Client — updated method behavior', () => {
 
   it('find() returns the list envelope, metadata intact', async () => {
     // Was: find() unwrapped to T[] and threw total/limit/offset away, so no
@@ -594,7 +594,7 @@ describe('Client — updated method behaviour', () => {
 
   it('a legacy paginated response is not silently emptied', async () => {
     // { total, limit, skip, data } with no `kind` — an older server, or a
-    // service returning a paginated shape directly. Normalised, not dropped.
+    // service returning a paginated shape directly. Normalized, not dropped.
     stubbable.fetch = async () => new Response(
       JSON.stringify({ total: 9, limit: 5, skip: 5, data: [{ id: 1 }] }),
       { headers: { 'Content-Type': 'application/json' } }

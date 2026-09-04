@@ -141,7 +141,7 @@ curl -X POST localhost:3000/jobs/run/sweep-abandoned -d '{"days":0}'
 # → { "ok": true, "id": "…" }
 ```
 
-This is how a cron's *behaviour* gets tested. `nextRuns()` only proves a
+This is how a cron's *behavior* gets tested. `nextRuns()` only proves a
 schedule was registered.
 
 ### `queue.handle(name, handler, opts?)` · `queue.handle(definition)`
@@ -184,7 +184,7 @@ replaces it rather than firing the job twice.
 
 `queue.nextRuns()` answers `{ name, cron, nextRun }` per schedule, which proves
 a schedule exists and nothing about the handler behind it —
-`POST /jobs/run/{name}` is how the behaviour gets exercised.
+`POST /jobs/run/{name}` is how the behavior gets exercised.
 
 ### `queue.cancel(id)`
 
@@ -272,7 +272,7 @@ nothing gated.
 | `ctx.auth.user` | the principal this runs as. `null` when there is none |
 | `ctx.actorId` | the id recorded at dispatch. `null` when nobody asked |
 
-## Retry behaviour
+## Retry behavior
 
 Retry delays are configured per handler as an array of millisecond values. Index 0 is the delay before the 2nd attempt, index 1 before the 3rd, etc. If attempts exceed the array length, the last value is reused.
 

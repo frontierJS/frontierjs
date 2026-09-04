@@ -293,7 +293,7 @@ argument, which is where `user.firstName` above comes from.
 3. `Promise.allSettled` across all transports — a failed email does not block inApp delivery
 4. Failures collected and thrown as `NotificationDeliveryError` with per-transport detail
 
-The message formatted in step 2 is the one delivered in step 3. It used to be built twice — once to check the method existed, once to send — so a formatter that rendered a template did it twice per notification.
+The message formatted in step 2 is the one delivered in step 3. It is built once: formatting to check the method exists and formatting to send are one call, or a formatter that renders a template does it twice per notification.
 
 Step 2 awaits, so a formatter may be async. Validation is still eager: every transport is formatted and checked before any of them is delivered.
 

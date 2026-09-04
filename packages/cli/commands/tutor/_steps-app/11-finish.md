@@ -1,10 +1,14 @@
 ---
-title: 10-finish
+title: 11-finish
 description: Stop the servers, and say what you have
 runOnAbort: true
 ---
 
 ```js
+// The reader `narrate` asks its questions through. Held open it keeps the event
+// loop alive and the lesson never exits.
+context.config.prompts?.close()
+
 // No narration: this step runs on the way out of a REFUSAL as well as at the
 // end, and a page of prose after a failed step buries the diagnosis that
 // matters. It reports, and stops what it started.
@@ -30,6 +34,9 @@ log.info(`  ${app}`)
 log.info('')
 log.info('  bun run dev        both servers again')
 log.info('  db/schema.lite     the source everything else is derived from')
+log.info('')
+log.info('  fli db:tinker      a console on the app, booted at a standing — read the row back')
+log.info('  fli db:studio      the same database in a browser')
 log.info('')
 log.info('  fli tutor:access   next — the gate and the row policy, watched refusing somebody')
 log.info('')

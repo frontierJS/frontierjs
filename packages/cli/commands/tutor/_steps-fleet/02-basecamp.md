@@ -24,7 +24,7 @@ up — and it is the next step that reads the answer, since *empty* is only true
 until somebody sets it up and this step runs again on every resume.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 2
 

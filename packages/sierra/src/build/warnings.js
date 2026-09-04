@@ -408,7 +408,7 @@ function extractProvidedSlots(source) {
   return names
 }
 
-// ─── A module that failed to initialise, read a second time ───────────────────
+// ─── A module that failed to initialize, read a second time ───────────────────
 
 /**
  * Explain a TDZ error that is really a re-import of a module that already
@@ -416,7 +416,7 @@ function extractProvidedSlots(source) {
  *
  * A module ending in a top-level `await` — which is what an app's own db module
  * is, `export const db = await openShop(…)` — reports its real error exactly
- * once. Every import after that resolves to a partially-initialised namespace
+ * once. Every import after that resolves to a partially-initialized namespace
  * instead of re-throwing, so the next reader gets `Cannot access 'X' before
  * initialization` naming whichever binding it happened to touch first, and the
  * cause is gone.
@@ -442,7 +442,7 @@ export function explainModuleInitFailure(message, specifier) {
 
   const head = `${message}\n` +
     `      This is not the real error. A module${where} in this import graph threw while\n` +
-    `      it was initialising; re-importing it yields a half-built namespace rather than\n` +
+    `      it was initializing; re-importing it yields a half-built namespace rather than\n` +
     `      the original throw, so what you are reading is a binding that never got a value.`
 
   if (!first) return `${head}\n` +

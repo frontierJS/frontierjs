@@ -54,7 +54,7 @@ is a string again:
 
 `expandMsoPlaceholders()` in `render.js` expands them after render.
 
-**Percent-encoded, not raw** — happy-dom does not escape `"` inside a serialised
+**Percent-encoded, not raw** — happy-dom does not escape `"` inside a serialized
 attribute value either, so a raw payload's own quotes would close the attribute
 and reintroduce the same class of breakage one layer down.
 
@@ -106,4 +106,4 @@ defect only exists in the eye of a mail client.
 **Nothing here has been opened in a real mail client** — see `PROJECT_STATE.md`
 §"What is NOT verified". Litmus/Email-on-Acid style verification is the
 outstanding work, and until then these two are pinned by tests that assert the
-*serialised string*, not the DOM.
+*serialized string*, not the DOM.

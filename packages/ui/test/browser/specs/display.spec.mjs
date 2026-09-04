@@ -8,7 +8,7 @@
  * those is a number the component worked out, and a wrong number renders a
  * component that looks plausible and says something false.
  *
- * The ones with behaviour — CopyButton, Tag, a clickable Steps — are driven
+ * The ones with behavior — CopyButton, Tag, a clickable Steps — are driven
  * rather than inspected.
  */
 export const name = 'display tier'
@@ -39,7 +39,7 @@ export async function run(t) {
   t.ok(spark.d && !/NaN|Infinity/.test(spark.d), 'the sparkline computes a path with no NaN in it')
   t.is((spark.d.match(/[\d.]+[ ,][\d.]+/g) ?? []).length, 5, 'one point per value')
   t.ok(spark.w > 0 && spark.h > 0, 'and the svg occupies its declared box')
-  t.match(spark.label, /Signups/, 'a labelled sparkline is announced rather than decorative')
+  t.match(spark.label, /Signups/, 'a labeled sparkline is announced rather than decorative')
 
   /* ── Bar ─────────────────────────────────────────────────────────────── */
 
@@ -108,7 +108,7 @@ export async function run(t) {
     return getComputedStyle(document.querySelector('#probe-mono code, #probe-mono .code-inline')).fontFamily;
   `), /mono/i, 'Mono renders in the monospace face')
   t.ok(await t.evaluate(`return !!byText('#probe-divider', 'or');`),
-    'a labelled Divider shows its label')
+    'a labeled Divider shows its label')
   t.ok(await t.evaluate(`
     const s = document.querySelector('#probe-account');
     return s.textContent.includes('12 days left') && !!s.querySelector('.feed-dot');

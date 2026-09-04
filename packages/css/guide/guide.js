@@ -135,7 +135,7 @@ const NAV = [
     items: [
       { id: 'layouts', label: 'Layouts' },
       { id: 'responsive', label: 'Responsive' },
-      { id: 'behaviour', label: 'How things behave' },
+      { id: 'behavior', label: 'How things behave' },
       { id: 'typography', label: 'Typography' },
       { id: 'a11y', label: 'Accessibility' }
     ]
@@ -635,7 +635,7 @@ function overviewPage() {
         'Principle 2 in practice',
         `
         <p>
-          This is the one that comes up daily. A Pane is a labelled subdivision of
+          This is the one that comes up daily. A Pane is a labeled subdivision of
           a Screen, so it is a <code>&lt;section&gt;</code>. Anything discrete
           inside it — a card, a feed entry, a subsection you could lift out whole —
           is an <code>&lt;article&gt;</code>.
@@ -1755,7 +1755,7 @@ function tonalPage() {
           they clear AA. Because it is derived rather than tabulated it holds
           for hues no theme has defined yet, so the suite also throws
           <strong>eight invented hues</strong> at it — pure yellow, navy, mid
-          grey, the light lime near Elite's brand — chosen to straddle the
+          gray, the light lime near Elite's brand — chosen to straddle the
           branch. A new theme cannot reintroduce the bug.
         </p>
         ${code(`/* chip.css — override per tone or theme if you want a specific text color */
@@ -3291,7 +3291,7 @@ function popoversPage() {
           <a class="link" href="#bar">Bar and Toolbar</a> are two terms
           rather than one with a variant. <code>@frontierjs/ui</code>'s
           <code>DropdownMenu</code> is exactly this composition with the
-          behaviour attached.
+          behavior attached.
         </p>
         ${preview(`
           <div style="min-height: 9rem">
@@ -3334,7 +3334,7 @@ function popoversPage() {
             <p>
               <code>.items.menu</code> styles a row to look clickable, and an
               <code>&lt;li&gt;</code> is not focusable and takes no keyboard —
-              so a hover state on the <code>&lt;li&gt;</code> writes a cheque
+              so a hover state on the <code>&lt;li&gt;</code> writes a check
               the markup cannot cash. Put a real
               <code>&lt;button&gt;</code> or <code>&lt;a&gt;</code> in the row
               and the package resets it to look like the row rather than like
@@ -4311,7 +4311,7 @@ function findRule(selector) {
  *
  * Looked up BY PROPERTY, optionally narrowed by selector — because the
  * CSSOM does not hand back the selector that was authored. `*, *::before,
- * *::after` is serialised as `*, ::before, ::after`: the redundant `*` is
+ * *::after` is serialized as `*, ::before, ::after`: the redundant `*` is
  * dropped, so an exact match on the written string finds nothing while the
  * rule sits right there. That is what made the tint ramp read as absent
  * and the swatches it feeds render as nothing at all.
@@ -4433,7 +4433,7 @@ function layoutsPage() {
         `
         <p>
           <code>cluster</code> is <code>display: flex</code> with
-          <code>flex-wrap</code>, centred items and <code>gap: 0.5rem</code>.
+          <code>flex-wrap</code>, centered items and <code>gap: 0.5rem</code>.
           Children line up horizontally, wrap when they run out of room, stay
           baseline-centered. Use it for filter chips, tag rows, button groups,
           form actions.
@@ -4467,7 +4467,7 @@ function layoutsPage() {
           <div class="center" style="height: 140px; border: 1px dashed var(--rule-strong); border-radius: 8px; background: var(--surface-sunken)">
             <button class="btn">Centered</button>
           </div>`)}
-        ${code(`<!-- .center owns the centring; the box size is yours.
+        ${code(`<!-- .center owns the centering; the box size is yours.
      There is no h-36 in this package — that is Uno's. -->
 <div class="center" style="height: 9rem">
   <button class="btn">Centered</button>
@@ -4479,7 +4479,7 @@ function layoutsPage() {
         `
         <p>
           <code>split</code> is <code>display: flex</code> with
-          <code>justify-content: space-between</code>, centred items and
+          <code>justify-content: space-between</code>, centered items and
           <code>gap: 1rem</code>. Two-up rows
           where the first child sits left, the rest pushes right. Built for
           headers and toolbars.
@@ -4726,7 +4726,7 @@ function behaviourPage() {
           <li class="step complete">
             <span class="step-marker"></span>
             <span class="step-label">Then put it in context and decide the gap</span>
-            <span class="step-hint">Now it has neighbours. How far apart should they be? A different question, a different answer, and it belongs to the parent.</span>
+            <span class="step-hint">Now it has neighbors. How far apart should they be? A different question, a different answer, and it belongs to the parent.</span>
           </li>
           <li class="step complete">
             <span class="step-marker"></span>
@@ -5152,7 +5152,7 @@ function cheatSheetPage() {
    * here by construction, and one removed disappears.
    */
   const BASE_NOTES = {
-    chip: 'inline-flex, centred, gap 0.375rem, no wrap — structure only',
+    chip: 'inline-flex, centered, gap 0.375rem, no wrap — structure only',
     surface: 'background, border, --card-radius, the tonal tint recipe',
 
     /* chip lineage */
@@ -5161,7 +5161,7 @@ function cheatSheetPage() {
     badge: 'btn radius, --text-xs, uppercase, tone fill',
     'pagination-link': 'one control in a pager — square-ish, current is a solid fill',
     tooltip: 'the attached bubble — absolute, --text-xs, dark fill',
-    avatar: 'fixed square, --avatar-size, initials centred, circle by default',
+    avatar: 'fixed square, --avatar-size, initials centered, circle by default',
     'step-marker': 'numbered circle — counts itself from its position when empty',
 
     /* surface lineage */
@@ -6603,7 +6603,7 @@ function formsPage() {
               An <code>&lt;input&gt;</code> is a replaced element, and
               pseudo-elements on replaced elements are not guaranteed by spec —
               they happen to work on <code>appearance: none</code> checkboxes in
-              current browsers, but a background gradient is defined behaviour
+              current browsers, but a background gradient is defined behavior
               everywhere.
             </p>
           </div>
@@ -6672,7 +6672,7 @@ function formsPage() {
 </div>`)}
         <p>
           Internal edges square off, the outer two keep
-          <code>--field-radius</code>, and neighbours pull back
+          <code>--field-radius</code>, and neighbors pull back
           <code>-1px</code> so their borders collapse into one. A focused control
           lifts to <code>z-index: 1</code> so its ring is not clipped by whatever
           sits beside it.
@@ -7072,7 +7072,7 @@ function navPage() {
             <p>
               <code>.items.menu .item</code> styles an <code>&lt;li&gt;</code> to
               look clickable, but an <code>&lt;li&gt;</code> is not focusable and
-              takes no keyboard input — the hover state writes a cheque the markup
+              takes no keyboard input — the hover state writes a check the markup
               cannot cash. <code>.navlink</code> goes on a real
               <code>&lt;a&gt;</code>, so it is focusable, activatable and
               announced as a link.
@@ -7894,7 +7894,7 @@ function framePage() {
         "Pane and View",
         `
         <p>
-          A <strong>Pane</strong> is a labelled major subdivision of a Screen —
+          A <strong>Pane</strong> is a labeled major subdivision of a Screen —
           <code>&lt;section aria-labelledby&gt;</code>, 2rem of rhythm between
           siblings, none on the last. A <strong>View</strong> is one switchable
           panel inside a Pane, <code>${esc('<article role="tabpanel">')}</code>.
@@ -8152,7 +8152,7 @@ function iconsPage() {
         <p>
           Bring your own glyphs — Iconify, Uno's <code>preset-icons</code>,
           inline <code>&lt;svg&gt;</code>, an <code>&lt;img&gt;</code>. The
-          recognised shapes are an <code>&lt;svg&gt;</code>, an
+          recognized shapes are an <code>&lt;svg&gt;</code>, an
           <code>&lt;img&gt;</code>, or any element whose class starts
           <code>i-heroicons</code>, which is what Uno's preset produces.
         </p>
@@ -8431,7 +8431,7 @@ function barPage() {
               enters and leaves it once, and <strong>arrow keys</strong> move
               between the controls inside. The CSS cannot do that — same split
               as Tabs, Principle 6: visual treatment is a class, keyboard
-              behaviour is a component. The app owes a roving
+              behavior is a component. The app owes a roving
               <code>tabindex</code> (one control <code>0</code>, the rest
               <code>-1</code>), Left/Right, and Home/End.
             </p>
@@ -9182,7 +9182,7 @@ function avatarPage() {
         <p>
           Nine times out of ten an initials avatar is a fallback rendering of a
           name that is <em>already on screen</em> — beside the name in a list
-          row, inside a cell whose row is labelled. Announcing "D O" there is
+          row, inside a cell whose row is labeled. Announcing "D O" there is
           noise, so the default is <code>aria-hidden</code>.
         </p>
         <p>
@@ -10354,7 +10354,7 @@ function learnPage() {
         'Answer about the thing, not the look',
         `
         <p>
-          Every question below is about behaviour, placement or promise —
+          Every question below is about behavior, placement or promise —
           never about colour, size or border. That order is the system: pick
           the term first and the look is three more decisions, all of which
           compose. Pick the look first and you end up with
@@ -10495,7 +10495,7 @@ const FRAMEWORKS = [
     kind: 'Utility-first',
     write: 'Every declaration, in the class attribute',
     build: 'Required',
-    behaviour: 'None',
+    behavior: 'None',
     theming: '@theme in CSS; tokens become both variables and utilities',
     layers: 'Yes — native',
     lock: 'Nothing, but the markup is unreadable without it'
@@ -10505,7 +10505,7 @@ const FRAMEWORKS = [
     kind: 'Component + variant',
     write: 'A component class plus one variant per look',
     build: 'Optional — CDN',
-    behaviour: 'Included',
+    behavior: 'Included',
     theming: '--bs-* variables per component, plus Sass',
     layers: 'No',
     lock: 'Nothing'
@@ -10515,7 +10515,7 @@ const FRAMEWORKS = [
     kind: 'Component + modifier',
     write: 'A component class plus stacking is-* modifiers',
     build: 'Optional — Sass',
-    behaviour: 'None, deliberately',
+    behavior: 'None, deliberately',
     theming: 'CSS variables since 1.0, Sass before that',
     layers: 'No',
     lock: 'Nothing'
@@ -10525,7 +10525,7 @@ const FRAMEWORKS = [
     kind: 'Classless / semantic',
     write: 'Nothing. It styles the elements',
     build: 'None',
-    behaviour: 'None',
+    behavior: 'None',
     theming: 'CSS variables, light and dark schemes',
     layers: 'No',
     lock: 'Nothing'
@@ -10535,7 +10535,7 @@ const FRAMEWORKS = [
     kind: 'Tokens only',
     write: 'Your own CSS, using its variables',
     build: 'None',
-    behaviour: 'None',
+    behavior: 'None',
     theming: 'It IS the theming — 500+ props, no components',
     layers: 'No',
     lock: 'Nothing'
@@ -10545,8 +10545,8 @@ const FRAMEWORKS = [
     kind: 'Component library',
     write: 'JSX props, not classes',
     build: 'Required',
-    behaviour: 'Included — the point of it',
-    theming: '12-step colour scales, accent and grey',
+    behavior: 'Included — the point of it',
+    theming: '12-step colour scales, accent and gray',
     layers: 'Layerable',
     lock: 'React'
   },
@@ -10555,7 +10555,7 @@ const FRAMEWORKS = [
     kind: 'Web components',
     write: 'Custom elements — <wa-dialog>',
     build: 'Bundler, in practice',
-    behaviour: 'Included, with the ARIA',
+    behavior: 'Included, with the ARIA',
     theming: 'CSS variables and parts',
     layers: 'n/a (shadow DOM)',
     lock: 'Nothing — web standards'
@@ -10572,7 +10572,7 @@ function comparePage() {
       <tr>
         <td><strong>${esc(f.name)}</strong><br><span class="text-muted text-xs">${esc(f.kind)}</span></td>
         <td>${esc(f.build)}</td>
-        <td>${esc(f.behaviour)}</td>
+        <td>${esc(f.behavior)}</td>
         <td>${esc(f.layers)}</td>
       </tr>`
   ).join('')
@@ -10593,23 +10593,23 @@ function comparePage() {
           Two questions separate almost every CSS framework, and neither is
           about how it looks. <strong>Who names the thing</strong> — you, in
           the class attribute, or the framework, in its vocabulary. And
-          <strong>does behaviour come with it</strong> — the focus trap, the
+          <strong>does behavior come with it</strong> — the focus trap, the
           arrow keys, the open and close.
         </p>
         ${code(`                     YOU name it           the FRAMEWORK names it
                      ------------          --------------------
   ships no           Tailwind              Bulma
-  behaviour          UnoCSS                Pico CSS
+  behavior          UnoCSS                Pico CSS
                      Open Props            Bootstrap's CSS half
                                            FrontierJS  <-- here
 
   ships the          (nothing lives         Bootstrap's JS half
-  behaviour           here)                 Radix Themes
+  behavior           here)                 Radix Themes
                                             Web Awesome
                                             MUI`, 'txt')}
         <p>
           This package is in the bottom-left of nothing: it names things and
-          ships no behaviour. That is a deliberate corner, and it is the
+          ships no behavior. That is a deliberate corner, and it is the
           corner Bulma occupies too. The difference between us and Bulma is
           not the corner — it is what the names are attached to, which is the
           next section.
@@ -10786,7 +10786,7 @@ $custom-colors: ("brand": (#6d28d9, #fff));`, 'bash')}
             <thead>
               <tr>
                 <th>Framework</th><th>Build step</th>
-                <th>Behaviour</th><th>Layers</th>
+                <th>Behavior</th><th>Layers</th>
               </tr>
             </thead>
             <tbody>
@@ -10929,7 +10929,7 @@ $custom-colors: ("brand": (#6d28d9, #fff));`, 'bash')}
           </dd>
           <dt>Radix Themes, Web Awesome, MUI</dt>
           <dd>
-            They ship the <em>behaviour</em> — focus traps, arrow-key
+            They ship the <em>behavior</em> — focus traps, arrow-key
             roving, dismissal, announcement. This package ships none of it.
             A menu here is a popover plus a list plus a keyboard contract you
             write yourself.
@@ -11449,7 +11449,7 @@ colour-worded (13)
             equivalent.
           </li>
           <li>
-            <strong>No behaviour.</strong> Bootstrap ships JavaScript for its
+            <strong>No behavior.</strong> Bootstrap ships JavaScript for its
             dialog and dropdown; ours live in
             <code>@frontierjs/ui</code> and are not in this file. Bulma ships
             none either, so that row is like for like and Bootstrap's is not.
@@ -11458,7 +11458,7 @@ colour-worded (13)
             <strong>Nothing here is tree-shaken.</strong> A Bootstrap project
             importing four Sass partials ships far less than 30 kB. Ours has
             no build step, so ${kb(FJS_GZIP)} is simply what arrives — which
-            favours us in practice and flatters us in this table.
+            favors us in practice and flatters us in this table.
           </li>
         </ul>`
       )}
@@ -11554,7 +11554,7 @@ const PAGES = {
   // Utilities
   layouts: layoutsPage,
   responsive: responsivePage,
-  behaviour: behaviourPage,
+  behavior: behaviourPage,
   a11y: accessibilityPage,
   typography: typographyPage,
   // Reference
@@ -11891,7 +11891,7 @@ function topbar() {
    *
    * There was one, carrying `split sg-topbar-inner` to cap the width at
    * 1400px. All three of its properties were dead: `margin: 0 auto` cannot
-   * centre a flex item, `width: 100%` is a hint the flex algorithm overrides,
+   * center a flex item, `width: 100%` is a hint the flex algorithm overrides,
    * and the max-width never bound because .shell already caps at the same
    * 1400px — measured, brand and actions land on the identical pixel with the
    * wrapper and without it. `split` restated what .topbar declares itself.
@@ -12293,9 +12293,9 @@ const RENAMED = {
   /*
    * Spacing documented a 4px numeric scale the package never had, and a set
    * of margin utilities it does not ship — on a page whose real subject was
-   * who OWNS the space. That is what behaviour is.
+   * who OWNS the space. That is what behavior is.
    */
-  spacing: "behaviour",
+  spacing: "behavior",
 };
 
 /*
@@ -12445,7 +12445,7 @@ function boot() {
     })
     .catch(() => {})
 
-  /* Chrome behaviour, delegated once from the root — the topbar and the
+  /* Chrome behavior, delegated once from the root — the topbar and the
    * sidebar are re-rendered as HTML, so nothing may hold a node reference. */
   app.addEventListener('click', (e) => {
     if (e.target.closest('[data-theme-menu]')) {

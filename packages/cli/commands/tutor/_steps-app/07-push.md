@@ -19,7 +19,7 @@ command that exits 0 and a table that exists are two different claims, and only
 the second one is worth having.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 7
 

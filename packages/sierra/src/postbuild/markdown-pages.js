@@ -21,7 +21,7 @@ import { join } from 'path'
 // ── HTML → Markdown ───────────────────────────────────────────────────────────
 
 /**
- * Minimal HTML→Markdown converter optimised for marketing page content.
+ * Minimal HTML→Markdown converter optimized for marketing page content.
  * No dependencies. Handles the elements that matter for prose content.
  */
 function htmlToMarkdown(html) {
@@ -87,7 +87,7 @@ function htmlToMarkdown(html) {
   // 5. Decode HTML entities
   s = _decode(s)
 
-  // 6. Normalise whitespace — collapse blank lines to max 2
+  // 6. Normalize whitespace — collapse blank lines to max 2
   s = s
     .replace(/\r\n/g, '\n')
     .replace(/[ \t]+$/gm, '')

@@ -37,7 +37,7 @@ export type OrderBy = Record<string, 'asc' | 'desc'>[]
  *   '-createdAt'              descending
  *   'status,-createdAt'       several, in order
  *   { createdAt: 'desc' }     object form; 1 / -1 also accepted
- *   [{ a: 'asc' }, { b: … }]  already normalised
+ *   [{ a: 'asc' }, { b: … }]  already normalized
  */
 export function normalizeOrderBy(sort: SortParam): OrderBy {
   if (typeof sort === 'string') {

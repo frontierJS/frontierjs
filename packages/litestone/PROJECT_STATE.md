@@ -353,7 +353,7 @@ db.quote.findMany({ onlyTemplates: true })  // templates only
 db.account.findMany({ include: { quotes: { withTemplates: true } } })
 ```
 
-**Default behaviour:**
+**Default behavior:**
 - All read paths exclude templates by default
 - `update`/`updateMany`/`remove`/`removeMany` target instances only
 - `aggregate` and `groupBy` are hardcoded to instances (parallel to hardcoded
@@ -415,7 +415,7 @@ than its parent order is a bug, not a feature).
 
 **Direct FKs unchanged.** The direct hasMany FK (e.g. `accountId` from `account`
 → `account.orders`) is always injected from the parent's PK — that's pre-
-existing behaviour, not co-FK propagation. Co-FK only applies to *additional*
+existing behavior, not co-FK propagation. Co-FK only applies to *additional*
 overlapping FK columns.
 
 **Opt-out:**

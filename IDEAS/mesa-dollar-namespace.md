@@ -7,7 +7,7 @@ dated: 2026-08-23
 # Mesa's `$` namespace — the implementation plan
 
 **Status: not started.** The ruling is `FJS-D132`; this is how it gets built.
-Nothing here is behaviour — do not cite it as such. The follow-up on compiler
+Nothing here is behavior — do not cite it as such. The follow-up on compiler
 internals is `FJS-470`, the defect this work retires is `FJS-471`.
 
 ---
@@ -95,9 +95,9 @@ needs. Invariant 15 applies directly: the test must parse, not merely compile.
 per-instance object carrying all twelve, beside the existing injected names.
 Nothing breaks, nothing is migrated, and both spellings compile. This is where
 the animation-helper question gets answered and where the per-instance
-allocation gets measured. The emit site is already localised — the builtins are
+allocation gets measured. The emit site is already localized — the builtins are
 injected as a run of `const` declarations in the component init, visible in
-compiled output as `const $option = { props: __props }` and its neighbours — so
+compiled output as `const $option = { props: __props }` and its neighbors — so
 this is an addition next to an existing block rather than a new mechanism.
 
 **Phase 2 — the refusals. DONE 2026-08-23.** Destructure, alias and shadow of `$`, each a compile

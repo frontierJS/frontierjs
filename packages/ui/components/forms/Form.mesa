@@ -149,6 +149,19 @@
   const seed = record === undefined ? (resource?.make?.() ?? {}) : record
   if (record === undefined) record = seed
 
+  // The row as it was HANDED IN, kept because `record` is replaced on every
+  // keystroke. Only the seal reads it, and only for the reason above.
+  const _opened = record
+
+  // Which columns are frozen FOR THIS ROW. `@immutable` on a model that seals
+  // freezes at the seal rather than at create, so the answer is in the record
+  // and no schema keyword can carry it — which is why these fields arrive with
+  // no `readOnly` and were offered as editable boxes until now. Resolved once,
+  // off the row the form was OPENED on: the boundary grades the STORED state,
+  // so reading it back off the draft would unfreeze the column the moment
+  // somebody edited the state field beside it.
+  const _sealed = resource?.sealedFields?.(_opened) ?? []
+
   // A parent that re-pushes its props sends `record: undefined` a second time —
   // which is *not stated*, not *cleared* (the same distinction Invariant 9 makes
   // about a patch). Without this the seed is dropped on that push and every
@@ -188,6 +201,7 @@
     submitting,
     disabled,
     fields: resource?.fields ?? {},
+    sealed: _sealed,
     submitted,
     optionsFor: (name, opts) =>
       resource?.options?.(name, opts) ??
@@ -343,6 +357,29 @@
     return fn(err) ?? { fields: {}, message: '' }
   }
 
+  /**
+   * The record without the columns this row has frozen.
+   *
+   * `@immutable` refuses the KEY and not the value — the same number sent back
+   * is refused too, because nothing at the boundary can see the stored row
+   * beside the incoming one. An edit form round-trips the whole record, so
+   * leaving a frozen key in the payload is a 409 on a save where the person
+   * changed nothing about it. `stripReadOnly` in the resource does exactly this
+   * for every other server-owned column and cannot do it for this one: the
+   * answer is in the row that was READ, and the pipeline only ever sees the
+   * payload.
+   *
+   * A create sends everything — `sealed` is empty with no record, which is what
+   * makes a draft a draft.
+   */
+  function _writable(data) {
+    const frozen = _sealed
+    if (!frozen.length || !data || _mode() === 'create') return data
+    const out = { ...data }
+    for (const name of frozen) delete out[name]
+    return out
+  }
+
   function _send(data) {
     if (!resource) {
       throw new Error('<Form> needs either a `resource` or an `onsubmit` handler')
@@ -411,7 +448,7 @@
     submitting = true
 
     try {
-      const result = onsubmit ? await onsubmit(record) : await _send(record)
+      const result = onsubmit ? await onsubmit(record) : await _send(_writable(record))
       dirty = false
       if (resetOnDone) reset()
       ondone?.(result, record)

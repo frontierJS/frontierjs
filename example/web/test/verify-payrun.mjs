@@ -49,7 +49,7 @@ const refused = async (fn) => { try { await fn(); return false } catch { return 
 
 // Everything this drive makes is registered here as it is made and swept in the
 // `finally` below — **on the failure path too**, which is the run whose
-// leftovers are hardest to recognise later. `payroll-sweep.mjs` owns the order
+// leftovers are hardest to recognize later. `payroll-sweep.mjs` owns the order
 // and the one hatch under the boundary the books need.
 const fixtures = { runIds: [], employeeIds: [] }
 

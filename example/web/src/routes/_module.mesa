@@ -89,7 +89,7 @@ siteName: Kitchen sink
   $: commandPalette.open
 
   // ⌘K. The commands are ordinary functions — the palette is a way to reach
-  // what the nav and the header already do, not a second set of behaviours.
+  // what the nav and the header already do, not a second set of behaviors.
   const COMMANDS = [
     { id: 'go-home',      group: 'Navigate', label: 'Home',       action: () => goto('/') },
     { id: 'go-orders',    group: 'Navigate', label: 'Orders',     action: () => goto('/orders/') },

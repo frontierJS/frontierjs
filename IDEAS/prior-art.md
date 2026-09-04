@@ -114,7 +114,7 @@ known for.
 Classifies a schema diff as destructive or not, as a product rather than as a
 phase. That is `classifyPivot` built by people for whom it is the whole company.
 Worth reading for its vocabulary and for what it refuses to decide
-automatically — `release-transitions.md` and `FJS-D145`'s neighbours are the
+automatically — `release-transitions.md` and `FJS-D145`'s neighbors are the
 consumers.
 
 ## Already read, so not restated here

@@ -3,7 +3,7 @@
   //
   // The submit button lives in a real <Form> with a submit that does not
   // resolve until the page says so, because `Button`'s one piece of hidden
-  // behaviour is that a type="submit" reports the form's state without being
+  // behavior is that a type="submit" reports the form's state without being
   // told — and a form that settles immediately never shows it.
   import Button from '../../../components/forms/Button.mesa'
   import Label  from '../../../components/forms/Label.mesa'

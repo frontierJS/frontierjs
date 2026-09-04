@@ -9,7 +9,7 @@ dated: 2026-08-09
 **Status: ASSESSMENT + PROPOSAL. UNBUILT.** Dated 2026-08-09. The *exists today*
 claims were read off `packages/css/src/` and `vocabulary.js` on that date;
 everything under *Proposed* is a suggestion, not a ruling, and the names are
-placeholders. Do not cite the proposed sections as behaviour — see `VERIFYING.md`.
+placeholders. Do not cite the proposed sections as behavior — see `VERIFYING.md`.
 
 ---
 
@@ -102,7 +102,7 @@ tone whose luminance sits near the middle is a judgement call nobody makes twice
 the same way. `chip.css` reads the fill's relative luminance out of the `y`
 channel of `xyz-d65` — which *is* WCAG's L, so no approximation is involved — and
 derives `--on-fill` from it. One tone name; the text colour is not an authoring
-decision. This is the single largest divergence in the package's favour.
+decision. This is the single largest divergence in the package's favor.
 
 **Density is a third axis, and it inherits.** ksite has no counterpart. A tone is
 `inherits: false` because it is a fact about one element; density is
@@ -150,7 +150,7 @@ assigns the role of its first child:
 | `block-with-grid` | n-up grid | header |
 | `block-with-feature` | n-up grid, icon cells | header |
 
-Our `Pane` is *"a labelled major subdivision of a Screen"* and says nothing about
+Our `Pane` is *"a labeled major subdivision of a Screen"* and says nothing about
 arrangement. An app building a hero, a feature grid or a text-beside-media band
 composes it by hand out of Layout helpers every time — which is the definition of
 a missing term, and the reason `@frontierjs/ui`'s marketing surface does not

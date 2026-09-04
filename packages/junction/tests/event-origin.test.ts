@@ -177,7 +177,7 @@ describe('broadcasting is opt-in', () => {
 describe('bulk writes announce once per record', () => {
 
   test('three rows → three events on each consumer', async () => {
-    // Feathers' behaviour, and required by the browser store: created/patched/
+    // Feathers' behavior, and required by the browser store: created/patched/
     // removed handlers each take ONE record, so a single event carrying an
     // array would land as one malformed upsert. Bulk create only started
     // working recently, which is what made this path reachable.

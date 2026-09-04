@@ -124,7 +124,7 @@ title: Alerts
     try {
       // `condition` is Json in the schema and a threshold in the UI. One shape
       // is built here rather than asking a person to type JSON — and the
-      // service is what refuses a severity it does not recognise.
+      // service is what refuses a severity it does not recognize.
       const created = await alerts.service.create({
         ...data,
         condition: { operator: 'gt', threshold: Number(data.threshold ?? 0) },
@@ -192,7 +192,7 @@ title: Alerts
 
 <Callout tone="info" title="Rules are declared, not yet evaluated">
   Nothing measures these thresholds today — an evaluator belongs with whatever does the
-  measuring, and a rule that fired from the browser's view of the fleet would be theatre.
+  measuring, and a rule that fired from the browser's view of the fleet would be theater.
   Events written by the system are read here.
 </Callout>
 

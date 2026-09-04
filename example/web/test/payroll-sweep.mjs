@@ -42,7 +42,7 @@
  *
  * Call it from a `finally`. A drive that sweeps only on the success path leaves
  * its fixtures behind exactly when something went wrong — which is the run
- * whose leftovers are hardest to recognise later.
+ * whose leftovers are hardest to recognize later.
  */
 export async function sweepPayroll(sys, { runIds = [], employeeIds = [] } = {}) {
   const runs = runIds.filter(Boolean)

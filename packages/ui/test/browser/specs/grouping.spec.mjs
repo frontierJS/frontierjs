@@ -38,7 +38,7 @@ export async function run(t) {
 
   // The one thing <details> cannot do by itself at this browser floor.
   //
-  // Settle first: the panel above is still growing, so its neighbour's summary
+  // Settle first: the panel above is still growing, so its neighbor's summary
   // is moving down the page — and a coordinate click reads a rect and then
   // presses that point, landing wherever the layout has since put it. Green
   // alone, red under load, which is the shape that wastes a morning.

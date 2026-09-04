@@ -96,7 +96,7 @@ describe('topics and sections', () => {
     const dir = tree('sections', {
       'package.json': pkg({ name: 'ws' }),
       'packages/x/package.json': pkg({ name: 'x' }),
-      'packages/x/README.md': '# x\n\n## Install\n\n## Migrations\n\n## Window functions\n\n## Licence\n',
+      'packages/x/README.md': '# x\n\n## Install\n\n## Migrations\n\n## Window functions\n\n## License\n',
     })
     expect(collect({ root: dir }).packages[0].sections.map(s => s.title))
       .toEqual(['Migrations', 'Window functions'])
@@ -556,7 +556,7 @@ describe('ideas', () => {
     expect(rows.map(r => r.status)).toEqual(['idea', 'defect', 'shipped', 'contested'])
   })
 
-  test('the cell is kept whole beside the normalised word', () => {
+  test('the cell is kept whole beside the normalized word', () => {
     expect(backlog('idea-note').waves[0].rows[3].note).toContain('ISSUES.md')
   })
 

@@ -814,7 +814,7 @@ model Discount {
 ///
 /// Readable at 0, unlike a discount: a storefront has to OFFER these, and the
 /// prices are printed on the shipping page anyway. That difference — one table
-/// public, its neighbour staff-only, both on the same screen — is the clearest
+/// public, its neighbor staff-only, both on the same screen — is the clearest
 /// statement in this schema that a gate answers *what kind of caller* and not
 /// *what kind of table*.
 model ShippingMethod {
@@ -1117,7 +1117,7 @@ model Order {
 ///
 /// Every column below except the two ids is a value this row already has a
 /// relation to. That is not denormalisation for speed — it is that a line is a
-/// statement about a MOMENT and its neighbours are statements about now. A
+/// statement about a MOMENT and its neighbors are statements about now. A
 /// variant's price is what the shop charges today; `unitPrice` is what this
 /// shopper was charged, and re-reading the first to render the second rewrites
 /// what past customers paid every time somebody edits the catalogue. Same for
@@ -1244,8 +1244,8 @@ enum PaymentStatus { pending requiresAction succeeded failed refunded }
 /// that bills and a shop that takes payments.
 ///
 /// The shop never sees a card number. `providerRef` is a handle the provider
-/// will honour, and the four columns beside it are what a person needs in order
-/// to recognise which card they are looking at.
+/// will honor, and the four columns beside it are what a person needs in order
+/// to recognize which card they are looking at.
 ///
 /// ─── The row is not uniformly secret, and that is the point ──────────────
 ///
@@ -1319,7 +1319,7 @@ model Payment {
   status PaymentStatus @default(pending)
 
   /// COPIED from the order at the moment the intent was created, not joined.
-  /// What was authorised is a fact about that authorisation, and an order
+  /// What was authorized is a fact about that authorization, and an order
   /// whose total was corrected afterwards must not silently rewrite what the
   /// provider was asked for — the disagreement between the two numbers is the
   /// thing a person needs to see.
@@ -1577,7 +1577,7 @@ model Subscription {
   planVersionId      Int
   status             SubscriptionStatus @default(trialing)
 
-  /// How many of it. Seats, licences, whatever the plan sells — the number
+  /// How many of it. Seats, licenses, whatever the plan sells — the number
   /// proration has to split a period's price across when it changes mid-cycle.
   quantity           Int                @default(1) @gte(1) @label("Quantity")
 
@@ -1923,7 +1923,7 @@ model Cart {
 
 /// One line. The quantity and the PRICE THE SHOPPER WAS SHOWN, which is not
 /// the same fact as the variant's price today — a basket left overnight must
-/// either honour what it quoted or say out loud that it changed, and it can do
+/// either honor what it quoted or say out loud that it changed, and it can do
 /// neither if the number was never written down.
 model CartLine {
   id         Int             @id

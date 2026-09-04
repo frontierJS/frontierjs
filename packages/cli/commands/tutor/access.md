@@ -22,7 +22,7 @@ flags:
   yes:
     char: y
     type: boolean
-    description: Answer every question with its default
+    description: Run the whole lesson without stopping — no confirmation between steps
     defaultValue: false
   keep:
     type: boolean

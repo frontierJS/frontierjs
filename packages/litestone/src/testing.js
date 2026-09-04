@@ -50,7 +50,7 @@ import { join }                     from 'path'
 // crossings — a window that opens, a schedule at a boundary, a retention that
 // expires — and a frozen instant can only ever assert one side of one.
 //
-// So the option is normalised into a holder every client this env opens reads
+// So the option is normalized into a holder every client this env opens reads
 // through, and the holder is handed back on `env.clock`.
 //
 // WHAT IT DOES NOT COVER, and it is not a small caveat: `@default(now())` and
@@ -147,7 +147,7 @@ async function _buildEnv(schemaText, opts = {}) {
   const dir  = tempDir('litestone-test-')
   const path = join(dir, 'test.db')
 
-  // A `database` block WINS over the `db:` option (documented litestone behaviour),
+  // A `database` block WINS over the `db:` option (documented litestone behavior),
   // so a schema declaring `database main { path "./db/app.db" }` used to make this
   // helper open the PROJECT'S REAL DATABASE and write test rows into it. Every
   // declared path is overridden into the tmpdir so a test can never reach outside.
@@ -268,7 +268,7 @@ export function readOnly(client) {
       // than caught by the `$` rule, which does not cover them.
       if (prop.startsWith('$') || prop === 'sql' || prop === 'asSystem') return refuse(prop)
       // Anything else is an accessor. Reading it off the client throws by name
-      // when it is a typo, which is the behaviour a caller already relies on.
+      // when it is a typo, which is the behavior a caller already relies on.
       return table(prop, client[prop])
     },
     has: (_, p) => p === '$readOnly' || p in client,
@@ -301,7 +301,7 @@ export function readOnly(client) {
 // Conflating them is the failure this exists to prevent: a matrix driven by
 // atLevel passes in full while the app's own resolver is broken, because the
 // resolver was never called. atLevel is for the grid; every test about
-// behaviour uses actingAs.
+// behavior uses actingAs.
 //
 // atLevel builds a SECOND client whose GatePlugin answers `n` — the level is
 // fixed when a client is constructed, so it cannot be a property of a call —
@@ -954,7 +954,7 @@ export async function createTestEnv(opts = {}) {
           // every tenant can reach it.
           //
           // Reported under its own name rather than as a leak, because it is
-          // the ruled behaviour and the fix is a schema decision: make the
+          // the ruled behavior and the fix is a schema decision: make the
           // relation required, or give the model the column. A verdict here
           // would be this checker overruling a decision record; silence would
           // be the same hole `unscoped` exists to close.
@@ -1688,7 +1688,7 @@ export function generateFactory(schema, modelName, options = {}) {
       const attrs = field.attributes
       const opt   = type.optional
 
-      // Array types — honour @minItems, else [] for required / null for optional
+      // Array types — honor @minItems, else [] for required / null for optional
       if (type.array) {
         const minItems = attrs.find(a => a.kind === 'minItems')?.value ?? 0
         if (minItems > 0) {
@@ -2557,7 +2557,7 @@ function _interestingValues(rules, who, model) {
         // `level > 5` seeded `level = 5`, which is on the excluded side, so the
         // only admitted rows were whatever the factory happened to generate —
         // and a policy graded by luck reports "all on one side" the day the
-        // factory changes. Seed the neighbours and mark whichever one the
+        // factory changes. Seed the neighbors and mark whichever one the
         // operator actually admits, evaluated rather than assumed.
         if (otherNode?.type === 'literal' && typeof otherNode.value === 'number' &&
             ['<', '>', '<=', '>='].includes(node.op)) {
@@ -2917,7 +2917,7 @@ function _shouldSkipField(field, model) {
   if (attrs.some(a => a.kind === 'from'))     return true  // subquery — not writable
   if (attrs.some(a => a.kind === 'generated')) return true
   if (attrs.some(a => a.kind === 'funcCall'))  return true
-  // @sequence — the db owns this counter. An explicit value IS honoured and moves
+  // @sequence — the db owns this counter. An explicit value IS honored and moves
   // the counter forward, so emitting one both defeats the feature and collides
   // with any @@unique([scope, seqField]) declared alongside it.
   if (attrs.some(a => a.kind === 'sequence')) return true

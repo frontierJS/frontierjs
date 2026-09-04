@@ -1,7 +1,7 @@
 # Caravan — Project State
 
 _Verified 2026-08-02 by running the code. Everything below marked **verified** was
-reproduced; anything else is labelled as unconfirmed._
+reproduced; anything else is labeled as unconfirmed._
 
 > Drop this file into a fresh session to pick up Caravan cold.
 > Read `../../CLAUDE.md` first for repo-wide vocabulary and landmines.
@@ -94,7 +94,7 @@ HTTP routes" — the convention was already there.)
 ### 4. Guard/404 rejections surfaced as HTTP 500
 
 **New.** Both threw `Object.assign(new Error(...), { code: 401 })`. Junction's
-`toFrameworkError()` (`src/core/errors.ts`) only honours its own
+`toFrameworkError()` (`src/core/errors.ts`) only honors its own
 `FrameworkError` subclasses plus two name-matched Litestone errors — anything
 else becomes a `GeneralError`, i.e. **500**. So even after fix #2 the guard
 denied with the wrong status.
@@ -185,7 +185,7 @@ shape, `cancel()` revert race) is still `stale?` and unprobed in
 
 Junction publishes `JunctionCaravanConfig` with `db`, `jobsDir`, `pollInterval`,
 `cleanupAfter`, `queues` and `admin` (`src/config/index.ts`), and `register()`
-honours every one of them, opts always winning.
+honors every one of them, opts always winning.
 
 Four of the six could not work before, and the reason was construction order:
 `createCaravan()` opened the database and built the worker pool immediately, so
@@ -225,7 +225,7 @@ Two things follow from that and are worth knowing:
 
 - Whether the worker's polling loop leaks timers on `shutdown()`. The
   integration test asserts no *further jobs are processed* after shutdown, which
-  is the observable behaviour; it does not inspect timer handles. The interval
+  is the observable behavior; it does not inspect timer handles. The interval
   timers are `unref()`'d, so they would not hold the process open regardless.
 - Whether `defineJob()`'s `__caravanJob` marker survives a bundler.
 - Retry/backoff timing under real failure load is covered only by the direct

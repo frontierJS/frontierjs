@@ -449,7 +449,7 @@ export function workspaceChannel(app: BasecampApp): import('@frontierjs/junction
 // The scheme is `@frontierjs/toolbelt/signature` — the same module conduit signs
 // with, so this cannot be a second reading of it. What it needs from the
 // request is the body as BYTES, which junction now carries as
-// `ctx.$raw.rawBody`: re-serialising `ctx.data` to hash it would mean both sides
+// `ctx.$raw.rawBody`: re-serializing `ctx.data` to hash it would mean both sides
 // agreeing on key order and spacing forever.
 //
 // One secret for the fleet (`OUTPOST_SECRET`), which is what conduit already
@@ -541,7 +541,7 @@ export function requireOutpostSignature(app: BasecampApp, { only = [] }: { only?
       // The query is part of the canonical string since `FJS-678`, and it is
       // read off the RAW url rather than off `ctx.$raw.query`, which is the
       // PARSED bag — a signature is over the bytes the sender put on the wire,
-      // and a re-serialisation of a parsed query is a different string.
+      // and a re-serialization of a parsed query is a different string.
       query:     searchOf(raw.$raw?.url),
       body:      raw.rawBody ?? '',
       headers:   raw.headers ?? {},
@@ -775,7 +775,7 @@ export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: s
 // query string and puts them on ctx.directives; nothing past the bridge ever
 // sees a `$` (Invariant 10). ctx.query is filters only, so the old
 // `q.$limit ?? ctx.$raw.query.$limit` chain read fields that are never there.
-// ctx.query.limit is still honoured for internal callers that pass it plainly.
+// ctx.query.limit is still honored for internal callers that pass it plainly.
 
 export function getPagination(
   defaults: { limit?: number; max?: number } = {}

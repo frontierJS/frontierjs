@@ -33,7 +33,7 @@ the design is picked up again:
 
 **Revisit with `herald`** (`IDEAS/agent-surface.md`) — the consumer that makes
 scoped raw SQL a capability worth its cost rather than a speculative one. The
-sections below are the design as argued; do not cite them as behaviour, and read
+sections below are the design as argued; do not cite them as behavior, and read
 the two corrections above first. See `VERIFYING.md`.
 
 ---
@@ -215,6 +215,6 @@ around is worse than the current honest raw one.
 - `IDEAS/compliance-from-the-seed.md` — the same declarations, read for audit
 - `CLAUDE.md` invariant 6 (access declared in the schema, enforced at the Data
   boundary) and invariant 7 (protected fields never surface) — this is both of them
-  applied to the one path that currently honours neither
+  applied to the one path that currently honors neither
 - `packages/litestone/src/core/client.js` — `sql` (6306), `authSql` (6627),
   `_makeScopedProxy`, `$attach`/`$detach`

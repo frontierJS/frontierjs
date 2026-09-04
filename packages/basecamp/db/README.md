@@ -64,8 +64,8 @@ Two deliberate deviations from the shipped fragment, each noted in the schema:
 1. **`accountId` is `String`, not `Int`.** `Account.id` is a uuid; `Int` cannot
    hold it. Safe for `auth.ts`, which only ever does `String(user.accountId)`.
 2. **`@secret` → `@guarded(all)`** on the `Credential` and `Session` token
-   columns. Not for a logging reason — log entries redact protected fields as of
-   2026-08-03, so `@secret` is safe here now. What still defers it is
+   columns. Not for a logging reason — log entries redact protected
+   fields (Invariant 7), so `@secret` is safe here. What still defers it is
    encryption: `@secret` implies `@encrypted`, and `Session.token` is looked up
    *by value*, which needs `@encrypted(searchable: true)`. `Credential.value`
    already holds a hash, so encrypting it buys little. Revisit in the API pass.
@@ -87,7 +87,7 @@ column would make user creation throw.
 
 **Every model declares `@@gate`.** `api/src/core/gate.ts` is the resolver and
 `api/src/core/hooks.ts`'s `applyStanding()` is what feeds it; the full ruling is
-`DECISIONS.md` § Access control (2026-08-10).
+`DECISIONS.md` § Access control.
 
 **The level is a fact about a caller IN A WORKSPACE, not about their user row.**
 That is the whole reason this app could not use `example/`'s four-line
@@ -116,7 +116,7 @@ rather than a stand-in's.
 
 **What a gate does not do is scope rows.** It answers *may this caller touch
 Server at all*, never *may they touch THAT server*. That is `@@allow`, and
-**15 models declare one** — every model carrying a `workspaceId` except two:
+**Every model carrying a `workspaceId` declares one, except two:**
 
 | | |
 | --- | --- |
@@ -178,7 +178,7 @@ Declaring `Secret` also found a defect in Litestone's own checks:
 `verifyFieldProtection` seeds a row carrying the policy's targeted value and did
 not create the parent that value points at, so a model with **both** a protected
 field and a row policy could not be graded at all (fixed the same day; its
-sibling `verifyRowPolicies` already did this). 15 models can carry the policy and
+sibling `verifyRowPolicies` already did this). Many models carry the policy and
 exactly one has a `@guarded` column, which is why nothing before it had put the
 two attributes on one model.
 
@@ -290,9 +290,10 @@ SSH key written and then rotated through `Secret` produces a full create+update
 trail with **0 occurrences of the key material in the log or in the SQLite
 file**.
 
-This behaviour did not exist until 2026-08-03 — before that, `@@log(audit)` on a
-model with an `@encrypted` column wrote the plaintext into the JSONL while the
-database row was correctly ciphertext, which is why these models could not be
+The trap the redaction closes: `@@log(audit)` on a
+model with an `@encrypted` column would otherwise write the plaintext into the
+JSONL while the database row is correctly ciphertext, which is why these models
+could not be
 logged at all. **Basecamp now requires a Litestone with that fix**; on an older
 one, the four identity models and `Secret` would leak.
 
@@ -343,7 +344,7 @@ EXISTS` is not valid SQLite (confirmed: `near "EXISTS": syntax error`), and both
 columns it adds already exist in `001`. The migration chain would have thrown on
 first boot.
 
-## Downstream — done (2026-08-04)
+## Downstream
 
 When this schema was regenerated it broke every service at once: they queried
 snake_case columns and epoch-ms timestamps that no longer existed, and

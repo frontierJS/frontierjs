@@ -150,7 +150,7 @@ describe('static routes in dev', () => {
     await runBuildStart(TMP, 'serve', { dev: { staticData: false } })
     const code = await table()
     expect(code).not.toContain('__sierraDevStatic')
-    // …and the route is still not given a real loader, which is the behaviour
+    // …and the route is still not given a real loader, which is the behavior
     // opting out asks for rather than a second way of getting one.
     expect(code).not.toMatch(/import\(['"][^'"]*\.meta\.js['"]\)/)
   })

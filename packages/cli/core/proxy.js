@@ -45,7 +45,7 @@
 // browser opens a connection per origin, so every request on one carries the
 // same Host.
 //
-// Zero dependencies, plain ESM, node or bun — same rule as its neighbours.
+// Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
 import { createServer, connect } from 'node:net'
 

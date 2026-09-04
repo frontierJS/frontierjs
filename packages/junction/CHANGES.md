@@ -1,5 +1,188 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-03 — a claim is per request, and a broadcast has no request
+
+`FJS-749`, `FJS-D191`. 1955 pass. Typecheck clean.
+
+A broadcast is graded against the principal on a CONNECTION, and that principal
+was built at the upgrade — where there is no workspace, no tenant and no header
+to read one from. Under `strategy row` the tenancy rule desugars into an
+`@@deny` over a claim, and an `@@deny` fires on UNKNOWN as well as on TRUE, so a
+claim that is merely absent is not a narrower answer. It is a total one:
+**every subscriber refused, on every tenanted model, for ever.**
+
+Measured on basecamp with a signed heartbeat, a real socket and an instrumented
+`$readAs`: the gate passed at **7** against a required **2** and the row policy
+answered false; the same row and the same principal with one `workspaceId` added
+were delivered. Eighteen live services, and the only sign was a once-per-service
+warning whose own wording reads as *the model is genuinely private*.
+
+**`channels(setup, { claims })`** is the missing input — *what does this
+recipient hold IN THIS CHANNEL* — merged onto the principal before grading. The
+app answers because the app named the channel: `workspace:<id>` encodes a tenant
+and nothing here can know that. What it returns is a claim in the
+`membershipClaim` sense, a statement the app has already verified; where a
+channel's membership is itself the proof, returning the id IS that statement.
+
+**Per channel and not per connection**, which is the whole reason it is a
+resolver rather than a field on the connection: one person in two workspaces is
+one principal on one socket and holds a different tenant in each. Cohorts are
+therefore keyed on the principal AND the claim set — a split that only matters
+for two SOCKETS of one person in different channels on one publish, which is the
+test that had to be written after the mutation for it failed to fire.
+
+**An empty answer is not a claim.** A resolver returning `{}` would turn a
+`null` principal into an object, which every `getLevel` in the field grades a
+rung above a stranger — a widening bought by a resolver that said nothing.
+
+**The warning now names the cause.** Where the schema is `strategy row` and no
+resolver is installed, the refuse-all line says which claim nobody carries.
+That sentence is the difference between this diagnosis and a thirty-second one.
+
+16 new tests; stubbed one at a time they fail **8 / 1 / 1 / 1**.
+
+## 2026-09-03 — two timers, and which one the caller hears from
+
+`FJS-756`. 1923 pass. Typecheck clean. `example`: `verify` 58/58,
+`verify:cart` 32/32, `verify:money` 107/107, `verify:jobs` 12/12.
+`basecamp` 211/211.
+
+The finding said a slow handler ran unbounded. Measured on Bun 1.3.11 it does
+not: a 20-second request is answered **ECONNRESET at 12 s**, while Bun prints
+`pass idleTimeout to configure` about an option `Bun.serve` was never given from
+here. Bounded invisibly is worse than unbounded — the work goes on running, the
+answer is discarded, and neither side records it.
+
+**`http.idleTimeout`** is the runtime's bound, in seconds, exposed because an
+app could not reach it. 0 disables; above 255 is refused at BOOT rather than
+thrown out of `start()` with the app half-built.
+
+**`http.requestTimeout`** is the app's, in milliseconds, and absent means no
+bound — the same answer caravan gives a job, because a default kills every
+legitimately long request in every app that upgraded. When it is set, junction
+raises the runtime's PER-REQUEST timer above its own deadline, so the 503 wins
+the race and the caller reads a status rather than a reset; without that the two
+timers are ordered by accident. The 503 carries `retryable: true`, since a
+deadline says nothing about the request being wrong. It does not stop the
+handler — nothing in JavaScript stops one — so one that finishes afterwards is
+announced through `onError`, the way an orphaned job attempt is.
+
+**The runtime's timer is coarse, and knowing by how much is what made the tests
+cheap.** It closes at roughly twice the configured value with a floor near four
+seconds: `1` and `2` both cut a 10 s handler at 4.0 s, `5` cut a 20 s one at
+8.0 s, `0` let a 12 s one finish. So a configured 10 is a kill at about 20. Two
+assertions written before that was measured passed with the fix stubbed out,
+which is why it was measured.
+
+10 tests, every timing one paired with a request that must NOT be cut off.
+Stubbed one at a time they fail 1 / 1 / 2 / 1.
+
+## 2026-09-03 — HEAD, OPTIONS, and the difference between 404 and 405
+
+`FJS-753`. 1913 pass. Typecheck clean. `example`: `verify` 58/58,
+`verify:cart` 32/32, `verify:catalogue` 35/35, `verify:pay` 24/24.
+`basecamp` 211/211.
+
+Three answers a transport owes every caller, and this one gave none of them.
+
+**A HEAD was a 404 on every resource in every app.** A HEAD is a GET whose body
+is discarded, and the discarding is the RUNTIME's — Bun drops the body off any
+response to a HEAD and leaves the headers — so the whole of what was missing is
+the routing. The lookup falls back to the GET route, which is why
+`content-length` comes back correct on a request that costs the caller nothing:
+a cache, a link checker and an uptime probe all reach for one first. A route
+registered with `head()` still wins, since the fallback runs only after the
+lookup missed, and static files answer a HEAD now too.
+
+**The wrong verb is 405 with `Allow`.** That header is the whole value of the
+status — without it the caller is told their verb is wrong and not which one is
+right. It lists HEAD wherever GET appears, because this transport answers it.
+404 stays 404 where the PATH does not exist: the two are different instructions,
+*look for another URL* against *look at your verb*. The methods reported are
+that path's rather than the app's, so a read-only resource does not advertise a
+POST it does not have. `router.allowedMethods(path)` is asked only after the
+caller's own method has already missed, so the scan is on the 404 branch and
+nowhere else.
+
+**An OPTIONS nobody claimed is answered 204 with `Allow`** — and a registered
+one still wins, which is the case that matters: `cors()` mounts `OPTIONS /*`,
+so every CORS preflight goes on being CORS's.
+
+10 tests, every one paired with the request that must still 404, since a
+transport answering 405 for everything satisfies each of them alone. Stubbed one
+at a time they fail 2 / 4 / 1. One committed test asserted the old behavior
+with its claim elsewhere: *installs nothing for an empty origins list* checked
+that the preflight 404s, where what it means is that no CORS headers come back.
+
+Measured and not a defect: an unknown verb reached the GET handler in a first
+probe, which is Bun's `fetch` CLIENT normalizing a method it does not know. Over
+a raw socket the method arrives verbatim and is refused.
+
+## 2026-09-03 — a body that declares no length is bounded too
+
+`FJS-751`. 1903 pass. Typecheck clean. `example`: `verify` 58/58,
+`verify:catalogue` 35/35, `verify:pay` 24/24, `verify:jobs` 12/12,
+`verify:notify` 11/11.
+
+`Content-Length` is optional — a chunked request states none — so the pre-read
+check had nothing to look at and `req.arrayBuffer()` buffered whatever arrived.
+Measured against a bare `Bun.serve`: **8 MB read whole with the limit at
+256 KB**, refused afterwards about memory already spent.
+
+**The obvious fix does not work.** `maxRequestBodySize` compares the DECLARED
+length and nothing else: with it at 256 KB a declared 8 MB is refused before the
+handler runs and a chunked 8 MB passes untouched, which is the same blind spot
+one layer down. It is also not needed — Bun does not buffer a body the handler
+never reads, so the whole cost is in this package's own read.
+
+So the bound lives where the limit is known. A declared length within the limit
+still takes one `arrayBuffer()`, since framing makes the declaration trustworthy
+in that direction; an undeclared one is read chunk by chunk and cancelled the
+moment it goes past, so the sender is told to stop rather than allowed to finish
+into a buffer that is discarded.
+
+**The refusal is its own class.** `BodyTooLargeError` carries the limit and the
+size it saw. Both answers used to come out of one `catch` that said 413 whatever
+had gone wrong, which sends a caller with a body the parser could not read
+looking for a limit they are nowhere near; that is a 400 now.
+
+**What cancelling costs, measured rather than assumed.** On Bun 1.3.11 an early
+return leaves the abandoned bytes on a kept-alive socket, and they are read as
+the start of the next request — so the sender's own next request is answered 400
+by Bun's own parser before this app is reached. The leftover is refused as
+malformed rather than parsed, so nothing is smuggled. `connection: close` is set
+for anything in front of us; Bun ignores it. Draining instead keeps the socket
+clean and was refused: it means accepting every byte of a flood already refused.
+
+10 tests. The two carrying the fix count PULLS — a limit enforced after the
+buffer and one enforced during it answer the same status, and the only
+difference visible from outside is how much of the stream was asked for. Stubbed
+one at a time they fail 2 / 1.
+
+## 2026-09-03 — a file that stays inside the root, not a path that does
+
+`FJS-746`. 1893 pass. Typecheck clean.
+
+`sanitizePath` refuses `..` and a NUL byte, which is the whole of what a URL can
+say. A symlink says the rest, and it was followed:
+`assets/css/link.css → ../../../secret.txt` was served **200 with the file's
+contents**. Only the resolved path can answer this, so `realpath` is compared
+against the realpath of the root — the root once, since it is a configured
+constant, and the FILE on every request, because a link can be repointed under a
+running server and a cached answer would go on serving what it used to be.
+
+**It answers 404, not 403.** A 403 confirms to the caller that they found a way
+out of the root; `..` keeps its 403, because that is a request nobody makes by
+accident. The OPERATOR is told instead, once per path — a symlinked assets
+directory is a real deployment and silently serving nothing would be a day lost
+— and `allowOutside: [dir]` is how they say a directory is published on
+purpose. A check with no way to say otherwise is one that gets turned off
+wholesale. Those directories are compared as realpaths too, or a declared
+directory that is itself a link never matches the file underneath it.
+
+**An empty root is not a root and is exempt**: `ctx.file('/var/data/x.pdf')`
+names a file the application chose, and there is nothing for it to be inside of.
+
 ## 2026-09-03 — which address do we believe
 
 `FJS-744`. 1885 pass. Typecheck clean.
@@ -33,7 +216,7 @@ header. A prefix that is not a whole number of bytes is compared bit-wise;
 not match a v6 address. `x-real-ip` stands in only where there is no chain to
 read, since the same proxy wrote both and a caller can send it too.
 
-**Two committed tests asserted the unsafe behaviour while a third asserted the
+**Two committed tests asserted the unsafe behavior while a third asserted the
 safe one**, and all three passed: `index.test.ts` had *prefers
 x-forwarded-for*, `p0-fixes.test.ts` had *ignores forwarded headers by
 default*, and the difference was that one supplied a socket address. The branch
@@ -329,7 +512,7 @@ and the amplification factor is the channel's membership, so it grows with the
 application's success — and it needs no privilege beyond being in the channel,
 which for a public channel is nobody's. Three bounds, cheapest test first: a
 token bucket per connection (`presenceUpdatesPerSecond`, 5), a byte cap on the
-serialised value (`presenceMetaBytes`, 4096), then `presenceMeta(meta)`, the
+serialized value (`presenceMetaBytes`, 4096), then `presenceMeta(meta)`, the
 app's own rule and the only one that can know meta is `{ typing: boolean }`.
 **The two refusals answer differently on purpose**: an oversize meta is a fixed
 property of the client's own code and is told, where a rate refusal is
@@ -1146,7 +1329,7 @@ contend for.
 
 `FJS-523`'s remaining half, and the change is what it SAYS rather than what it does.
 
-`remove` never honoured the directive and does not start now: against an already-deleted
+`remove` never honored the directive and does not start now: against an already-deleted
 row the only action left is to destroy it, which is the one write that defeats
 `@@softDelete`. A directive on the ordinary DELETE would hand that to every caller who
 may remove a row — no separate permission to grade, no way back — so what a model
@@ -1166,7 +1349,7 @@ delete the directive is asking about and there is nothing to decline.
 `modelSoftDeletes`, memoised per client, keyed through `accessorCandidates` like every
 other name that crosses this boundary. Deriving it here would be a second reading of
 `@@softDelete`, and two readings drift. `in` rather than a bare read, so a Litestone
-older than the capability answers `false` and degrades to the previous behaviour instead
+older than the capability answers `false` and degrades to the previous behavior instead
 of exploding — which is also how it found `FJS-536`.
 
 11 tests against a real Litestone client, with a model that hides nothing as the
@@ -1463,7 +1646,7 @@ in step only because both happened to subscribe to the same service.
 
 `src/client/nodes.ts` is the registry. One node per row, keyed by MODEL — two
 services over one model are one row, and the name is passed in because this
-package holds no schema, the same reason `match` is. **The id is normalised
+package holds no schema, the same reason `match` is. **The id is normalized
 into the key**: a list holds `{ id: 5 }` and a detail screen is reached by a URL
 carrying `'5'`, and two nodes there means a push moves exactly one of them.
 Identity rather than filtering, which is what makes `String(id)` right here and
@@ -2435,7 +2618,7 @@ this parent*, and because a declaration would hard-code one model, one subject c
 one standing column — false for membership through a team or a role that is a join.
 
 **Two things the tests found rather than confirmed.** A caller with no claim is not an
-empty list: `tenantClaimGuard` refuses with a sentence, which is better than the behaviour
+empty list: `tenantClaimGuard` refuses with a sentence, which is better than the behavior
 these tests were first written to expect, so a non-member gets a refusal naming the claim
 rather than a silent empty screen. And that guard's advice predated this seam — it said
 *put the column on the session* and nothing else, which is exactly wrong for the shape
@@ -2538,7 +2721,7 @@ every miss in a scaffolded app answered `undefined with id=… not found`. One
 1232 tests, 0 fail. Typecheck clean.
 
 **`ctx.$raw.rawBody`.** A signature binds a hash of the body, so a hook handed
-only the parsed object has to re-serialise to check one — which means the sender
+only the parsed object has to re-serialize to check one — which means the sender
 and the receiver must agree on key order, spacing and number formatting forever.
 `parseBody` already decoded the text for JSON, urlencoded, XML and plain text;
 it keeps it now (`parsed.raw`) and the transport carries it. Absent for
@@ -2798,7 +2981,7 @@ rather than in every app's config.
 
 `autoSort` VALIDATES a request's `$orderBy` — it asks `db.$checkOrderBy` and
 answers a 400 naming the key — and then leaves the value RAW on
-`ctx.directives`. A service that wants to honour it therefore has to parse the
+`ctx.directives`. A service that wants to honor it therefore has to parse the
 three spellings (`'name'`, `'-createdAt'`, `{ name: 'asc' }`) itself, and doing
 that in a service is how the grammar acquires a second definition.
 
@@ -2868,7 +3051,7 @@ stated null is an answer where an absent key is not. Found by reading the suite'
 own output after the change.
 
 **The pretty writer emitted escape codes unconditionally**, so `bun run api > log`
-recorded them as log content. It now honours `NO_COLOR`/`FORCE_COLOR`/TTY, the
+recorded them as log content. It now honors `NO_COLOR`/`FORCE_COLOR`/TTY, the
 same rule `packages/cli/core/color.js` already applied. `env.ts` was the only
 other raw-ANSI writer in `src/` and imports the gate rather than restating the
 predicate — env validation runs before an app, and therefore before its logger,
@@ -2937,7 +3120,7 @@ in-memory alternative for an app assembling one schema string.
 **Refusals by name, never degradation.** Outside a transaction, on a schema with
 no `OutboxMessage`, and with no relay installed — a row nothing delivers is
 worse than a refusal. The transaction test asks `db.$inTransaction` (new in
-litestone, on every client flavour) rather than reading the `transactional:`
+litestone, on every client flavor) rather than reading the `transactional:`
 declaration: a hook can run against a method the declaration does not name.
 
 **Delivery is at-least-once and no version of it is not.** The queue is a
@@ -3257,7 +3440,7 @@ It returns a **`BridgeHook`** — `(ctx: ServiceContext | TransportContext) => v
 — rather than `Hook`. The parameter is wider, so it stays assignable to `Hook`
 and a `before:` map is unchanged.
 
-Nothing about the behaviour moves. This hook is a service before-hook AND the
+Nothing about the behavior moves. This hook is a service before-hook AND the
 limiter `@frontierjs/auth` puts on its own `/auth/*` routes, which are plain
 handlers; both things it reads go through accessors written for either shape,
 and the comment above it has named auth as the reason since `FJS-017`. The
@@ -3462,7 +3645,7 @@ deliberately not its business: nobody is not a caller missing a claim.
 
 ## 2026-08-16 — `app.principal()` / `app.runAs()`, the seam deferred work runs through
 
-1120 tests, unchanged — the behaviour is proved from Caravan, which is its only
+1120 tests, unchanged — the behavior is proved from Caravan, which is its only
 caller. Typecheck clean.
 
 `auth` propagating (below) fixed calls *inside* a request. Work that outlives
@@ -3516,7 +3699,7 @@ rules, all executed in `tests/context-contract.test.ts`:
 calls deep has no other way to reach the IP of the request that caused the write.
 It is information, never authority.
 
-A test that pinned the old behaviour — *"app.service() without params makes an
+A test that pinned the old behavior — *"app.service() without params makes an
 anonymous call"* — is rewritten. Its own comment called that an "anonymous system
 call", which is the opposite thing: STRANGER(0), not level 8.
 
@@ -3654,7 +3837,7 @@ limit is the server's, and a caller naming none still got one. A service
 answering no pagination metadata leaves it unknown, which turns trimming off
 rather than inventing a page size. An unordered list that outgrows its page
 counts rather than dropping a row at random — throwing away the row the user just
-created, to honour a page size, is the worse half of that trade.
+created, to honor a page size, is the worse half of that trade.
 
 
 ## 2026-08-15 — the consumer surface type-checks, and seven defects were under it (FJS-268, FJS-272)
@@ -3750,7 +3933,7 @@ a patch had just moved out of the filter stayed in, updated in place.
 record* and the store reloads instead of guessing, once per burst rather than
 once per event. Sierra passes a matcher built from the model's own field rules;
 this package holds no schema, which is why it is passed in and not decided here.
-A caller passing nothing gets exactly the old behaviour.
+A caller passing nothing gets exactly the old behavior.
 
 The query is recorded when the rows are, inside the `FJS-082` stamp check, so a
 superseded load leaves neither its rows nor its filter behind. A custom action
@@ -3931,13 +4114,13 @@ the announcement happens in `callService` after `runPipeline`, so the write lock
 is released before anything fans out to a socket.
 
 `find`/`get` are never wrapped, excluded **by name** the same way the announcement
-excludes them — a read taking `BEGIN IMMEDIATE` would serialise every reader. A
+excludes them — a read taking `BEGIN IMMEDIATE` would serialize every reader. A
 service declaring it without a Litestone client **throws naming the service**; a
 declared guarantee that quietly does nothing is the failure mode this package
 keeps rediscovering. `describe()` reports the resolved list.
 
 **A nested `app.service('x')` call needs no propagation.** Planning assumed it
-would escape the transaction; reading the client disproved it — every flavour
+would escape the transaction; reading the client disproved it — every flavor
 shares one write connection and one depth counter, so the inner write lands
 inside the outer transaction and its reads see it. Litestone `FJS-244` is what
 keeps that true under concurrency, and this feature required it first: it opens a
@@ -3958,7 +4141,7 @@ declaration, so a service written with the base factory and spread through the
 autoloader declared a transaction nobody opened — the same silence that once made
 `methods:` do nothing through that factory. 11 tests, against a real Litestone
 client rather than a stub, since the whole feature is a claim about
-`$transaction`'s behaviour.
+`$transaction`'s behavior.
 
 ## 2026-08-13 — one rate limiter, three adapters
 
@@ -4261,7 +4444,7 @@ GET /products?$orderBy=-bogusColumn   → 200, unsorted, silent
 GET /products?$orderBy=shoutName      → 200, unsorted, silent  (a @computed field)
 ```
 
-Both are now 400. Same division of labour as `autoFilter`: litestone's new
+Both are now 400. Same division of labor as `autoFilter`: litestone's new
 `db.$checkOrderBy` keeps the one definition of what is sortable, Junction
 contributes the status code. The two refusals stay distinct — a field that does
 not exist gets the typo suggestion litestone already computes, a `@computed`
@@ -4462,7 +4645,7 @@ just *outside* the `try` guarding the call it protects. When `$checkWhere` turne
 out to be missing from the scoped proxies, every list read by a signed-in caller
 became a 500 complaining about a table nobody had written.
 
-Litestone was fixed (it now answers on every flavour of client). This side is
+Litestone was fixed (it now answers on every flavor of client). This side is
 fixed too, and independently: `db` is whatever the app handed `createApp`, and a
 stand-in that cannot answer the question must **no-op**, not take down the
 request. The probe now reads inside a `try`, and the call goes through the
@@ -4718,7 +4901,7 @@ Recorded as [FJS-D21](../../DECISIONS.md).
 validation**, whether or not the file declared one. Declaring only `find()` did
 not make a service read-only — it made the writes invisible. Basecamp's `/audit`
 is an append-only trail and an admin could `POST` a forged row into it, verified
-over HTTP, and the only defence was four hand-written `MethodNotAllowed` stubs
+over HTTP, and the only defense was four hand-written `MethodNotAllowed` stubs
 per service. Opt-out safety, with no warning that you had not opted out.
 
 One key, two forms:
@@ -4790,7 +4973,7 @@ methods did not follow it, and the fallback had a hole with no bottom.
 which made a custom action the only service call that ignored a live connection.
 The WS handler dispatches any method name generically — it passes `method`
 straight to `bridge.internal` — so there was never a reason for the exception.
-Both now prefer the socket. `action()` also honours the file exception, because
+Both now prefer the socket. `action()` also honors the file exception, because
 multipart cannot travel over it.
 
 **The HTTP fallback recursed forever.** `_httpFallback`'s `default` branch
@@ -4831,7 +5014,7 @@ the existing resolver.
 
 ## 2026-08-04 — the startup banner reports the Data realm
 
-787 tests (was 781). Additive; no behaviour change to any request path.
+787 tests (was 781). Additive; no behavior change to any request path.
 
 `createApp()`'s banner covered routes, services, health and docs, and said
 nothing about the database. "Is Litestone actually loaded, and against which
@@ -4874,10 +5057,10 @@ Newest first. Everything below the 2026-08-02 block was applied during the
 ## 2026-08-02 — the error boundary is extensible
 
 `src/core/errors.ts`. `toFrameworkError()` is the single point where a thrown
-value becomes an HTTP status, and it used to recognise a **closed** world:
+value becomes an HTTP status, and it used to recognize a **closed** world:
 Junction's own `FrameworkError` subclasses plus two Litestone error names by
 string. Every other package's errors fell through to `GeneralError` — a 500 for
-what the thrower had modelled as a 401 or a 404.
+what the thrower had modeled as a 401 or a 404.
 
 That bit `@frontierjs/auth` and `@frontierjs/caravan` independently, and each
 worked around it differently: auth wrapped every one of its own routes in a
@@ -5177,7 +5360,7 @@ warning. It fails closed — policies match nothing rather than leaking — but 
 looks like broken code rather than misconfiguration. It now throws and names the
 fix.
 
-**New:** `tools/check-app-db.mjs` — 10 checks over the option's behaviour,
+**New:** `tools/check-app-db.mjs` — 10 checks over the option's behavior,
 including anonymous requests, plain clients, and composition with later
 `app.hooks()` calls.
 
@@ -5213,7 +5396,7 @@ factory used.
 
 `createBaseService` and `createLitestoneService` were parallel implementations
 over the same `createLitestoneBase`. The difference was invisible at the call
-site and decided real behaviour — only one scoped with `$setAuth`, only one
+site and decided real behavior — only one scoped with `$setAuth`, only one
 validated. None of the three options that seemed to justify the split were
 Litestone-specific:
 
@@ -5231,7 +5414,7 @@ No stubs were needed — `createBaseService` simply wasn't passing them through.
 
 `createBaseService` and `createLitestoneService` were parallel implementations
 over the same `createLitestoneBase`. The difference was invisible at the call
-site and decided real behaviour — only one scoped with `$setAuth`, only one
+site and decided real behavior — only one scoped with `$setAuth`, only one
 validated. Both are derived from the client now, which left the split with
 nothing to justify it except three options.
 
@@ -5252,7 +5435,7 @@ devtools plugins.
 service whose validation should differ from its table definition.
 
 ```
-✓ softDelete / cache / idField honoured
+✓ softDelete / cache / idField honored
 ✓ gate auth still derived
 ✓ validation still derived
 ✓ explicit schema enforced — name: name is required

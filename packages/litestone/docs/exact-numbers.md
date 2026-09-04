@@ -2,7 +2,7 @@
 
 `.lite` has `Int` and `Float` and nothing between them, and SQLite has no
 fixed-point type to put there. So an exact quantity — a price, a reorder point,
-a rate — gets modelled as a float and hoped over.
+a rate — gets modeled as a float and hoped over.
 
 `Int @scale(n)` is the fix, and `@money` is a step on top of it. Ruled in
 `FJS-D142`.

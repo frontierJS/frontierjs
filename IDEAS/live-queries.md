@@ -144,7 +144,7 @@ Live queries inherit that and make it *worse*, by encouraging more services to
 declare a channel. A client-side matcher does not help — filtering for relevance is
 not filtering for permission, and a client that discards a row still received it.
 **Per-subscriber policy evaluation is the harder problem sitting behind this one**,
-and it should be named as a prerequisite for any default-on live behaviour rather
+and it should be named as a prerequisite for any default-on live behavior rather
 than discovered later. § *Per-subscriber deltas* below is the proposed answer.
 
 **2. Pagination is genuinely unanswerable.** Nothing can know whether a new row

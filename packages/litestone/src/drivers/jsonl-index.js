@@ -17,7 +17,7 @@
 // writer's line** — one in four, and an indexed read then answers the wrong
 // record with no error, which for an audit trail is the worst failure there is.
 //
-// So the pair has to be serialised across processes, and the lock is
+// So the pair has to be serialized across processes, and the lock is
 // `BEGIN IMMEDIATE` on this database rather than a lockfile. Not preference:
 // **a lockfile has no answer for a writer that dies holding it.** Stale-lock
 // detection by pid or mtime is the standard footgun — it either blocks the
@@ -173,7 +173,7 @@ export function withWriteLock(db, fn) {
  * other symptom.
  *
  * **It answers early when the table is already right**, which is not a
- * micro-optimisation: `CREATE TABLE` and `DROP TABLE` need SQLite's schema lock,
+ * micro-optimization: `CREATE TABLE` and `DROP TABLE` need SQLite's schema lock,
  * and running DDL on every open is what killed 2 of 8 concurrent processes
  * outright. A read-only pragma query needs no write lock at all.
  */

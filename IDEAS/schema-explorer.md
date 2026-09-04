@@ -165,7 +165,7 @@ there is no view that answers **what is this language, and what of it am I using
 
 A tenth Studio panel, or a second view inside `#schema` behind the pill tablist
 `#access` already uses. Nine boxes, one per top-level word, each carrying its count.
-A box with nothing declared is **greyed, never hidden, and still a full card** — blurb,
+A box with nothing declared is **grayed, never hidden, and still a full card** — blurb,
 worked example, the traps, and a button that inserts a template into the `#lite`
 editor. Dim means *you are not using this*; it must never mean *this is not available*,
 because the boxes that are dim are exactly the ones the feature exists for.
@@ -189,7 +189,7 @@ An index that only tells you a word exists has moved the problem. The loop is fi
 hops and four of them ship:
 
 ```
-grey box → card (what it buys, example, traps)
+gray box → card (what it buys, example, traps)
          → [+ Add] template into the #lite editor
          → /api/schema-validate   live, under the textarea
          → /api/schema-diff       what DDL this changes
@@ -201,7 +201,7 @@ schema** — the Tenants nav is hidden until `tenancy` is declared — so adopti
 feature makes the tool grow: `@@fts` brings Optimize FTS into Maintenance,
 `@@softDelete` brings the show-deleted toggle and the restore button into Browse,
 `@@gate` populates the Access panel and gives the *Acting as* picker something to
-change. Nothing has to be built for that; it is behaviour that exists and nothing
+change. Nothing has to be built for that; it is behavior that exists and nothing
 announces.
 
 ## The rail: one catalog, or the index lies
@@ -236,7 +236,7 @@ Once it exists it has four readers, and the browser is only the loudest:
 
 | Reader | What it gets |
 | --- | --- |
-| Studio Explorer | the boxes, the cards, the grey ones |
+| Studio Explorer | the boxes, the cards, the gray ones |
 | `litestone explain @guarded` | the same rows in a terminal |
 | `frontierjs-vscode` | hover and completion detail, which the extension hand-carries today |
 | generated reference docs | one source for a page nobody maintains |

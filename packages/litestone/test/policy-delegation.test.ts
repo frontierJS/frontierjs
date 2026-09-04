@@ -52,7 +52,7 @@ describe('a check() cycle is refused at startup', () => {
     expect(err!.message).toContain('foreign key is NULL')
   })
 
-  test('a ring of three closes too — the guard tests the model, not the neighbour', async () => {
+  test('a ring of three closes too — the guard tests the model, not the neighbor', async () => {
     const err = await open(`
       model A {
         id Int @id
@@ -210,8 +210,8 @@ describe('a check() at protection the compiler cannot see is warned about', () =
     expect(warnings[0]).toContain('@@gate')
     expect(warnings[0]).toContain('places no restriction at all on Doc')
 
-    // The warning is a warning: the behaviour is unchanged, and this is the
-    // behaviour. An anonymous caller reads a document whose vault needs 7.
+    // The warning is a warning: the behavior is unchanged, and this is the
+    // behavior. An anonymous caller reads a document whose vault needs 7.
     const sys = db.asSystem()
     await sys.vault.create({ data: { id: 1 } })
     await sys.doc.create({ data: { id: 1, vaultId: 1 } })

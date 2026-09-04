@@ -3,7 +3,7 @@
 // The half of OAuth that touches the database: writing a flow down and
 // consuming it. `oauth.test.ts` beside this one is the engine, which needs
 // neither a database nor a server; this one needs both halves of a round trip
-// and a real Litestone client, because a fake one would be modelling the
+// and a real Litestone client, because a fake one would be modeling the
 // contract rather than exercising it.
 //
 // Everything here is a REFUSAL except two. That is the point of the file: the
@@ -86,7 +86,7 @@ describe('oauthBegin', () => {
 
   test('a returnTo off the list is DROPPED, not refused', async () => {
     // The person asked to sign in. Where they land afterwards is not worth
-    // failing that over — but it is worth refusing to honour.
+    // failing that over — but it is worth refusing to honor.
     const { state } = await h.auth.oauthBegin('google', { redirectUri: REDIRECT, returnTo: '//evil.test' })
     expect((await flowRow(state)).returnTo).toBeNull()
   })

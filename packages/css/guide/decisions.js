@@ -116,7 +116,7 @@ var QUESTIONS = {
       { label: 'A section that collapses', on: 'Disclosure' },
       { label: 'Code', on: 'Code' },
       { label: 'Nothing yet — there is no content', on: 'Empty' },
-      { label: 'A labelled major subdivision', hint: 'and it needs to be findable', to: 'grouping' },
+      { label: 'A labeled major subdivision', hint: 'and it needs to be findable', to: 'grouping' },
     ],
   },
 
@@ -218,7 +218,7 @@ var QUESTIONS = {
     options: [
       { label: 'Children flow down, evenly spaced', on: 'Stack' },
       { label: 'Children flow across and wrap', on: 'Cluster' },
-      { label: 'One child, dead centre both ways', on: 'Center' },
+      { label: 'One child, dead center both ways', on: 'Center' },
       { label: 'Two things pushed to opposite ends', on: 'Split' },
       { label: 'A max-width page column', on: 'Container' },
     ],
@@ -246,7 +246,7 @@ var QUESTIONS = {
       { label: 'The bar across the top', on: 'Topbar' },
       { label: 'The navigation column', on: 'Sidebar' },
       { label: 'The routed page body', on: 'Screen' },
-      { label: 'A labelled subdivision of that body', on: 'Pane' },
+      { label: 'A labeled subdivision of that body', on: 'Pane' },
       { label: 'One switchable view inside it', on: 'View' },
     ],
   },
@@ -602,7 +602,7 @@ var OUTCOMES = {
 
   Section: {
     page: 'sectionheader',
-    lead: 'A labelled subdivision. It has a heading, so it is a landmark.',
+    lead: 'A labeled subdivision. It has a heading, so it is a landmark.',
     markup: function () {
       return '<section aria-labelledby="billing-h">\n  <h2 id="billing-h">Billing</h2>\n  …\n</section>'
     },
@@ -834,7 +834,7 @@ var OUTCOMES = {
 
   Divider: {
     page: 'divider',
-    lead: 'A break between groups, labelled or plain.',
+    lead: 'A break between groups, labeled or plain.',
     markup: function (c) { return '<hr class="' + c + '">' },
     tones: false,
     treatments: [],
@@ -906,7 +906,7 @@ var OUTCOMES = {
 
   Center: {
     page: 'layouts',
-    lead: 'One child, dead centre in both axes.',
+    lead: 'One child, dead center in both axes.',
     markup: function (c) { return '<div class="' + c + '" style="min-height: 12rem">\n  <span class="spinner"></span>\n</div>' },
     tones: false,
     treatments: [],
@@ -1028,7 +1028,7 @@ var OUTCOMES = {
   Pane: {
     live: false,
     page: 'frame',
-    lead: 'A labelled major subdivision of a Screen.',
+    lead: 'A labeled major subdivision of a Screen.',
     markup: function (c) {
       return '<section class="' + c + '" aria-labelledby="fleet-h">\n  <h2 id="fleet-h">Fleet</h2>\n  …\n</section>'
     },

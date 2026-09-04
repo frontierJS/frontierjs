@@ -398,7 +398,7 @@ holds: the number belongs in the seed, beside its reason, so it is a decision
 somebody made rather than a limit somebody hit.
 
 **The measurement that has to stay green is the negative one.** A promoted column
-changes no answer — the same rows come back either way — so every behavioural
+changes no answer — the same rows come back either way — so every behavioral
 test passes with the promotion silently not happening. The assertion is the
 `EXPLAIN`, exactly as it is for `@@index([cols], where: …)`
 ([partial-indexes.md](partial-indexes.md)), and for the same reason.

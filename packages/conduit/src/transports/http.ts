@@ -254,7 +254,7 @@ export class HttpTransport extends BaseTransport {
       // send() rejects an unknown verb before reaching here.
       const method = this.resolveMethod(req.method)!
 
-      // Serialise body once so the same bytes go to both the HMAC
+      // Serialize body once so the same bytes go to both the HMAC
       // signer and the fetch body — they must match exactly.
       // GET requests carry no body (params go in the URL).
       //
@@ -263,7 +263,7 @@ export class HttpTransport extends BaseTransport {
       const isGet   = method === 'GET'
       const encoding = this.descriptor.encoding ?? 'json'
       const rawBody = (!isGet && req.body !== undefined)
-        ? serialise(req.body, encoding)
+        ? serialize(req.body, encoding)
         : undefined
 
       const { res, url: finalUrl } = await this.dispatch(url, method, async (target) => this.fetchInit({
@@ -583,7 +583,7 @@ function sleep(ms: number) {
 
 class SerialiseError extends Error {
   constructor(cause: Error) {
-    super(`Request body could not be serialised: ${cause.message}`)
+    super(`Request body could not be serialized: ${cause.message}`)
     this.name = 'SerialiseError'
   }
 }
@@ -609,7 +609,7 @@ function isJsonType(contentType: string): boolean {
 // that will not encode fails the same way whichever encoding was asked for —
 // JSON.stringify throws on a cycle and on BigInt, and form encoding throws on a
 // body that is not an object.
-function serialise(body: unknown, encoding: BodyEncoding): EncodedBody {
+function serialize(body: unknown, encoding: BodyEncoding): EncodedBody {
   try {
     return encodeBody(body, encoding)
   } catch (err) {

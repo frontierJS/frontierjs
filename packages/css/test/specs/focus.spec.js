@@ -5,7 +5,7 @@
  * box-shadow halo at 30% on .btn, an 18% tone-aware one on .field, an inset
  * 25% one on .disclosure-summary, a hardcoded 2px currentColor one on
  * .pill-close — and a solid `outline` on everything added late in v0.6.
- * Only the box-shadow three honoured --ring-width; the outline ones
+ * Only the box-shadow three honored --ring-width; the outline ones
  * hardcoded 2px, so the token themed some rings and not others.
  *
  * Two of those recipes were also load-bearing on a property another rule
@@ -65,7 +65,7 @@ var FOCUSABLE = [
 
 /*
  * The inset set: elements whose ring would be clipped by a scroll container
- * or would spill over an attached neighbour, so it is drawn inside the box.
+ * or would spill over an attached neighbor, so it is drawn inside the box.
  */
 var INSET = ['.tab', '.navlink', '.disclosure-summary', '.pill-close'];
 
@@ -119,7 +119,7 @@ FOCUSABLE.forEach(function (spec) {
     assert.ok(parseFloat(cs.outlineWidth) > 0, spec.name + ' outline has zero width');
   });
 
-  test('focus: ' + spec.name + ' honours --ring-width', function () {
+  test('focus: ' + spec.name + ' honors --ring-width', function () {
     var node = mountFocused(spec);
     assert.equal(
       getComputedStyle(node).outlineWidth,

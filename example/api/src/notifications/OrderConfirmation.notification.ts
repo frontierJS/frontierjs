@@ -66,7 +66,7 @@ export default defineNotification<Confirmation>({
     const { subject, html, text } = await renderEmailFile(TEMPLATE, { data })
 
     // The template's `subject` is a function of the same data — module exports
-    // come back as values, so it arrives callable. A string is still honoured,
+    // come back as values, so it arrives callable. A string is still honored,
     // because a template with nothing to interpolate should not have to export
     // a function to say so.
     const line = typeof subject === 'function' ? subject(data) : String(subject)

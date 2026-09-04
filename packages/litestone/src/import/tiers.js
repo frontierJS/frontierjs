@@ -139,7 +139,7 @@ export const TIERS = ['changed', 'lost', 'noted']
 export const tierOf   = (kind) => TIER[kind] ?? 'changed'
 export const gradedKinds = () => Object.keys(TIER)
 
-export function summarise(gaps) {
+export function summarize(gaps) {
   const counts = { changed: 0, lost: 0, noted: 0 }
   const byKind = new Map()
   for (const g of gaps) {

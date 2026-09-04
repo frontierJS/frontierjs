@@ -21,7 +21,7 @@ baseline now is what makes the rest of the lesson possible, which is a fair
 picture of what it is for.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 4
 

@@ -186,7 +186,7 @@ export default defineJob('retention', () => db.asSystem().$retain(), { cron: '0 
 ```
 
 `asSystem()` because a sweep is a DELETE against the base table and applies no gate, no
-row policy and no `@@softDelete`; every other flavour of client refuses it by name. It
+row policy and no `@@softDelete`; every other flavor of client refuses it by name. It
 answers one row per table it touched — `{ model, table, removed }`, plus `error` where a
 table would not sweep, which is worth logging: a declared policy quietly not applying is
 the failure the whole declaration exists to prevent.

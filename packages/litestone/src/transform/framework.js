@@ -255,7 +255,7 @@ function parseShard(pipeline) {
   }
 }
 
-// ─── Config normalisation ─────────────────────────────────────────────────────
+// ─── Config normalization ─────────────────────────────────────────────────────
 // Supports both shapes:
 //   new: export let pipeline = [...]
 //        export let config = { db, pipeline, splitBy, ... }

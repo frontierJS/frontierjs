@@ -50,7 +50,7 @@ const REALM_BY_BIN = { litestone: 'data', junction: 'api', sierra: 'ui', fli: 'r
 
 // ─── collect ──────────────────────────────────────────────────────────────────
 //
-//   collect({ root })  → the whole model, ready to render or serialise
+//   collect({ root })  → the whole model, ready to render or serialize
 //
 // Every field is either read or null. A caller may render a partial model.
 
@@ -348,7 +348,7 @@ function countFiles(dir) {
 // The realm a package belongs to is a statement about the mental model and lives
 // in the root `CLAUDE.md` table — the one place it is written down. Parsed, not
 // restated: a package that moves realm moves here, and one the table forgets is
-// visibly missing rather than quietly labelled.
+// visibly missing rather than quietly labeled.
 
 function packageNotes(root) {
   const src = read(join(root, 'CLAUDE.md'))
@@ -473,7 +473,7 @@ function proofs(root) {
 // ─── apps ─────────────────────────────────────────────────────────────────────
 //
 // An app is not a package: it is never published, it sits wherever it sits, and
-// it is where a framework's seams are actually crossed. One is recognised by
+// it is where a framework's seams are actually crossed. One is recognized by
 // carrying a schema or a drive — the two things a library in this workspace
 // does not have.
 
@@ -731,8 +731,8 @@ function decisions(root) {
 //
 // A row's Status is the column that matters and it is written for people:
 // `**defect**`, `~~shipped~~`, `` `contested` — see ISSUES.md ``. It is
-// normalised to one word so it can be a facet, and the cell is kept whole
-// beside it so nothing is lost to the normalisation.
+// normalized to one word so it can be a facet, and the cell is kept whole
+// beside it so nothing is lost to the normalization.
 
 function ideas(root) {
   const dir = join(root, 'IDEAS')

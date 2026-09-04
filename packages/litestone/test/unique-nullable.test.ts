@@ -11,7 +11,7 @@
 // every SQL developer already holds it. On a tuple the reading is the tuple.
 //
 // `nullsDistinct: true` is SQL's own word for what SQLite does, so the opt-in
-// states the behaviour rather than inventing an escape hatch.
+// states the behavior rather than inventing an escape hatch.
 
 import { describe, it, expect } from 'bun:test'
 import { createClient } from '../src/index.js'

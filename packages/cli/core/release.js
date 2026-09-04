@@ -38,7 +38,7 @@ const short = (hex) => hex.slice(0, 12)
 
 // ─── canonical form ──────────────────────────────────────────────────────────
 //
-// Hashing an object means choosing a serialisation, and the choice has to be
+// Hashing an object means choosing a serialization, and the choice has to be
 // stable across every machine that mints. Sorted keys, no whitespace, and a
 // value coerced to a string — so `{a:1}` and `{a:'1'}` hash the same, which is
 // what an environment variable already means: everything in a binding set

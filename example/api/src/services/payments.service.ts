@@ -522,7 +522,7 @@ const record = async () => {
 
     // A refund against an INVOICE is a credit note, and issuing one is a
     // decision rather than a consequence — a shop that credited automatically
-    // on every provider refund would write documents nobody authorised. So the
+    // on every provider refund would write documents nobody authorized. So the
     // payment row is updated and the ledger says so; the note is `changePlan`'s
     // business or a person's.
     if (payment.invoiceId)

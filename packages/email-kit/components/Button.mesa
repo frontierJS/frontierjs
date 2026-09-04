@@ -16,7 +16,7 @@
    * The static renderer runs in happy-dom, and happy-dom ends a conditional
    * comment early for several shapes of tag inside it — an attribute with a
    * namespace prefix (`xmlns:v="…"`) and some `style` values are each enough
-   * on their own. When it does, `<!--[if mso]>` is serialised as
+   * on their own. When it does, `<!--[if mso]>` is serialized as
    * `<!--[if mso]-->`, the comment closes, and the VML that follows is parsed
    * as live markup: `<v:roundrect …>` becomes `<v :roundrect="" …>`.
    *

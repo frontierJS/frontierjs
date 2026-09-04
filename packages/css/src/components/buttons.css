@@ -46,8 +46,8 @@
  * ── Variants — read --bg-mix, restructure ───────────────────────
  *
  * .raised / .outlined / .ghost are Treatment classes: the README says
- * they compose onto anything, and surface.css honours all three. A button
- * has to honour all three too, or the claim is false — this is the same
+ * they compose onto anything, and surface.css honors all three. A button
+ * has to honor all three too, or the claim is false — this is the same
  * rule as "a tone consumer takes all seven tones or it's a bug".
  *
  * ── Why three of them do not paint the tone directly ──────────────

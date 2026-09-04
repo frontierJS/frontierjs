@@ -11,7 +11,7 @@ cannot start without one and a deploy that fails at the last step teaches
 nothing about deploying.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 2
 

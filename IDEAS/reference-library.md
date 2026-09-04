@@ -25,11 +25,11 @@ The tree already has two things that are nearly this and neither is it.
 
 **`packages/litestone/test/fixtures/corpus/` selects for the wrong property.**
 Its own README says so: *nothing here is a claim about how any of it should be
-modelled*. Seven applications were chosen because they are large, foreign and
+modeled*. Seven applications were chosen because they are large, foreign and
 awkward — the point is to find what `.lite` cannot say, and it worked (251
 partial indexes, 235 wide integers, `FJS-563` and `FJS-583` among the rest). A
 corpus fixture is a **measurement**. Grading one of its files on whether it is
-good modelling would break the thing that makes it useful.
+good modeling would break the thing that makes it useful.
 
 **`packages/litestone/references/` selects for the right property at the wrong
 granularity.** Three hand-written files, one model each, self-contained by
@@ -40,7 +40,7 @@ and the constraint that makes the folder work (no `@relation` to a model the fil
 does not declare) is exactly what forbids it.
 
 So the missing tier is a third: **whole schemas, one application each, carried
-because that application is the best available answer to one modelling problem.**
+because that application is the best available answer to one modeling problem.**
 A **judgement**, where the corpus is a measurement, and the two must not be
 confused for each other in either direction.
 
@@ -89,7 +89,7 @@ uncontroversial. Byte counts are the fetched file.
 
 ## The list by problem, which is the axis that is useful
 
-Organising by application category produces a directory nobody opens. Organising
+Organizing by application category produces a directory nobody opens. Organizing
 by *which one do I read when I have this question* is the thing being asked for.
 
 ### Double-entry money — the corpus has nothing
@@ -99,7 +99,7 @@ balanced entries. Directly relevant to `@money`, `FJS-D154` and
 `@frontierjs/toolbelt/units`'s `allocate`.
 
 - **Apache Fineract** (Liquibase XML) — core banking: loan schedules, accrual,
-  charges, a general ledger. The reference for modelling financial *products*
+  charges, a general ledger. The reference for modeling financial *products*
   rather than transactions.
 - **Firefly III** (Laravel migrations) — personal finance, and the
   transaction-journal-with-splits shape stated at a readable size.
@@ -116,7 +116,7 @@ two apps. These are the three shapes the field actually ships.
 - **Keycloak** — realm / client / role / group, with composite roles. The
   enterprise answer.
 - **Moodle** — role × capability × **context tree**. The best hierarchical-scope
-  permission model in open source, and the nearest neighbour to the inferred
+  permission model in open source, and the nearest neighbor to the inferred
   `@@tenant(via:)` scoping.
 - **Ory Keto** — Zanzibar relation tuples. A tiny schema carrying an entirely
   different idea: a permission is an edge in a graph, not a column on a row.
@@ -127,7 +127,7 @@ two apps. These are the three shapes the field actually ships.
 `example/` is a working shop and these are the depth references above it.
 
 - **Saleor** (Django, or the pg_dump route) — channels, price lists, stock
-  allocations, fulfilment. The deepest commerce model that is open.
+  allocations, fulfillment. The deepest commerce model that is open.
 - **Medusa** (TypeScript) — order edits, and tax and promotion as separable
   concerns.
 
@@ -159,7 +159,7 @@ ERPNext is already in the corpus and is the strong case. The contrast set:
 
 ### Grouping and observability
 
-- **Sentry** — event against issue against group. A modelling decision almost
+- **Sentry** — event against issue against group. A modeling decision almost
   everybody gets wrong on the first attempt.
 
 ---
@@ -196,7 +196,7 @@ nobody can calibrate against.
 
 **The one rule: a judgement must never leak into the corpus, and a measurement
 must never leak out of it.** The corpus README's *nothing here is a claim about
-how any of it should be modelled* is load-bearing — it is what makes `gaps.json`
+how any of it should be modeled* is load-bearing — it is what makes `gaps.json`
 a report about `.lite` rather than about the applications. This new directory is
 the opposite claim by construction, so the two need different words at the top of
 each and probably a line in each pointing at the other.
@@ -221,7 +221,7 @@ Then the question the corpus cannot answer is worth asking of it: *what does
 cannot be said. A reference library, read with a question in hand, reports what
 can be said badly — which is the more expensive class and has no detector.
 
-**Licence.** The corpus already vendors GPL-2, GPL-3 and AGPL derivatives, so the
+**License.** The corpus already vendors GPL-2, GPL-3 and AGPL derivatives, so the
 precedent is set and its README carries the split. GitLab and Moodle are worth
 checking before either is committed rather than fetched.
 

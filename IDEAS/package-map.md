@@ -96,8 +96,8 @@ ladder beside it is written out four separate times across `core/` and two servi
 | **`compass`** | Data + UI | The offline/sync engine — client-side SQLite (OPFS / wa-sqlite), mutation queue, local gate evaluation, `@@sync` conflict policy. Its own package because "one engine on both sides" is the strongest structural advantage FJS holds over Prisma and Drizzle. | `offline-first-and-release.md` |
 | **`herald`** | API | The agent surface — an MCP server derived from the seed, with the gate as the permission model and tool visibility computed per session level. | `agent-surface.md` |
 | **`marshal`** | Data | Compliance from the seed — `@pii` / `@retain`, the data map, DSAR, erasure cascade, and a permission diff on every pull request. | `compliance-from-the-seed.md` |
-| **`lexicon`** | UI | i18n. **V2 — ruled 2026-08-15 (`FJS-D12`).** Its design question is answered without the package existing: `@label` stays a default English string and the key is DERIVED (`Model.field.label`), so the schema never becomes a catalogue. It was never a gate on `foundry` either — a generator authors no string. Alpha owes it six constraints, not a build; when it is built, three things are reserved for it — a seed-derived `strings.snapshot.md`, `db.$setLocale()` as a client flavour, and per-locale prerender. | `ecosystem-gaps.md` tier-1 item 4 · `DECISIONS.md` |
-| **`atlas`** | Meta | The app model as a product. `project:map --json` already *is* one and nothing reads it. Generated architecture diagrams (retiring the hand-drawn `website/journey.html`), the permission matrix, drift detection, the outbound-surface report. Shared substrate for `marshal` and `depot`. | `operational-edge.md` |
+| **`lexicon`** | UI | i18n. **V2 — ruled 2026-08-15 (`FJS-D12`).** Its design question is answered without the package existing: `@label` stays a default English string and the key is DERIVED (`Model.field.label`), so the schema never becomes a catalogue. It was never a gate on `foundry` either — a generator authors no string. Alpha owes it six constraints, not a build; when it is built, three things are reserved for it — a seed-derived `strings.snapshot.md`, `db.$setLocale()` as a client flavor, and per-locale prerender. | `ecosystem-gaps.md` tier-1 item 4 · `DECISIONS.md` |
+| **`atlas`** | Meta | The app model as a product. `project:map --json` already *is* one and nothing reads it. Generated architecture diagrams (retiring the hand-drawn `website/site/src/routes/journey.mesa`), the permission matrix, drift detection, the outbound-surface report. Shared substrate for `marshal` and `depot`. | `operational-edge.md` |
 | **`quarry`** | Data | Demo and seed data. Adjacent to factories, distinct from them: a coherent fake dataset **plus a persona at every gate level**, so `fli demo` boots an app you can click through as STRANGER, USER and ADMIN with no fixtures. This is how the framework gets *shown*, and it is what `foundry` needs something to render. | new |
 
 ### Also worth naming
@@ -119,7 +119,7 @@ ladder beside it is written out four separate times across `core/` and two servi
 1. **`foundry`** — makes the thesis visible. Everything else is easier to explain
    once someone has watched a form build itself from a schema.
 2. **`create-frontier` + `quarry`** — a demo nobody can run is a demo nobody sees.
-3. **`depot`** — the Release hole, found independently by three separate analyses.
+3. **`depot`** — the Release hole, found independently by three separate analyzes.
 4. **`herald` and `marshal`** — the two that make FJS *unlike* anything else, and
    both cheap, because the decisions that make them possible are already made.
 

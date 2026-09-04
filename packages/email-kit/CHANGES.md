@@ -92,7 +92,7 @@ to **zero**.
 
 ### The bulletproof button was shipping its Outlook fallback to everyone
 
-`<!--[if mso]>` was serialised as `<!--[if mso]-->` — a *closed* comment — so
+`<!--[if mso]>` was serialized as `<!--[if mso]-->` — a *closed* comment — so
 the VML behind it became live markup and `<v:roundrect …>` parsed as
 `<v :roundrect="" …>`. Every recipient on every client saw the button twice.
 
@@ -105,12 +105,12 @@ the DOM.
 `Button.mesa` now keeps the VML out of the DOM entirely: percent-encoded into a
 `data-mso` attribute, spliced back by `expandMsoPlaceholders()` in `render.js`
 once the HTML is a string again. (Percent-encoded, not raw — happy-dom does not
-escape `"` in a serialised attribute value either, so the payload's own quotes
+escape `"` in a serialized attribute value either, so the payload's own quotes
 would close the attribute.)
 
 **Trade-off:** rendering a kit component through Mesa's `renderComponent`
 directly now leaves the placeholder and drops the Outlook fallback. Use
-`renderEmail` / `renderEmailFile`. A test pins that behaviour rather than
+`renderEmail` / `renderEmailFile`. A test pins that behavior rather than
 letting it be discovered.
 
 ### The plain-text alternative was full of markup artefacts

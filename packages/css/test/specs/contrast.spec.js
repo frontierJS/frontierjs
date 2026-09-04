@@ -190,7 +190,7 @@ test('contrast: a tone rendered as text generalises to a hue no theme defines', 
       assert.ok(
         ratio >= AA,
         'an undeclared hue ' + hue + ' rendered at ' + ratio.toFixed(2) + ':1 in theme-' +
-          theme + ' — the tone-as-text window does not generalise'
+          theme + ' — the tone-as-text window does not generalize'
       );
       cleanup();
     });
@@ -228,7 +228,7 @@ test('contrast: the derivation covers a hue no theme defines', function () {
     '#00ff00', // pure green
     '#c0ff3e', // light lime, near the Elite brand
     '#000080', // navy — dark, keeps white text
-    '#7f7f7f', // mid grey, right at the branch
+    '#7f7f7f', // mid gray, right at the branch
     '#ff00ff',
     '#00ffff',
     '#8b4513',
@@ -241,7 +241,7 @@ test('contrast: the derivation covers a hue no theme defines', function () {
     assert.ok(
       ratio >= AA,
       'an undeclared hue ' + hue + ' rendered at ' + ratio.toFixed(2) + ':1 — ' +
-        'the contrast derivation does not generalise'
+        'the contrast derivation does not generalize'
     );
     cleanup();
   });

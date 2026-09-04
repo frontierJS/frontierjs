@@ -88,7 +88,7 @@ export default defineJob<AnnouncePayment>(
     if (failures.length) throw new Error(`announce-payment: ${failures.join(' | ')}`)
   },
   {
-    queue: 'fulfilment',
+    queue: 'fulfillment',
     maxAttempts: 5,
     retryDelay: [30_000, 120_000, 600_000]
   }

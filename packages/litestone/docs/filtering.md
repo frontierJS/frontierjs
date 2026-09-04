@@ -117,7 +117,7 @@ All four kinds are refused now, naming the operator that was meant:
 | Column | Because |
 | --- | --- |
 | array | it would substring-match the document — use `has` / `hasSome` / `hasEvery` |
-| `Json` | it would match the serialised text, punctuation included — declare `@type(...)` to filter by a path |
+| `Json` | it would match the serialized text, punctuation included — declare `@type(...)` to filter by a path |
 | `File` | it would match the reference document, not anything about the file |
 | `Boolean` | the value is stored as 0/1, so it can never match — compare to `true` / `false` |
 
@@ -175,7 +175,7 @@ db.$checkWhere('post', { comp: 'A' })
 
 `$checkOrderBy`'s sibling, same contract: `[]` means no problems, an unknown
 accessor also answers `[]` (*I cannot judge this* is not *this is wrong*), and
-every flavour of client — root, `$setAuth`, `asSystem`, `$scopedBy` — answers
+every flavor of client — root, `$setAuth`, `asSystem`, `$scopedBy` — answers
 identically, because filterability is a fact about the schema. `reason` is
 `'computed'`, `'encrypted'` or `'unknown'`, so a boundary can say different
 sentences for each, and `allowed` lists only keys that can actually be filtered.

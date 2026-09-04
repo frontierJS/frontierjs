@@ -12,7 +12,7 @@
   //   1. aria-describedby on the trigger, pointing at the tooltip's id. Without
   //      it the tooltip is a hover style and a screen reader never sees it.
   //   2. Shows on focus, not only hover — so a keyboard user gets it by tabbing.
-  //   3. Escape dismisses it. That part is behaviour, so it is handled here.
+  //   3. Escape dismisses it. That part is behavior, so it is handled here.
   //
   // The trade-off is real: an anchored tooltip is clipped by an ancestor with
   // overflow:hidden, which a portal escapes. Prefer this; reach for a Popover

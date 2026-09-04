@@ -13,7 +13,7 @@ truth: it is the bytes actually running, and a pipeline that reported success
 while leaving the old container up would pass every other check here.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 8
 

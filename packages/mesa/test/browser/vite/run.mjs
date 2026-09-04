@@ -16,7 +16,7 @@
  * plugin — the HMR boundary, the client that swaps a component in place, the
  * devtools page's own 18 KB of JavaScript — is unreached (`FJS-024`). HMR in
  * particular is proven only up to the frame Vite sends; nothing had ever
- * watched a component swap and its neighbours survive, which is the entire
+ * watched a component swap and its neighbors survive, which is the entire
  * claim being made over a full reload.
  *
  * ── The app is a COPY ─────────────────────────────────────────────────

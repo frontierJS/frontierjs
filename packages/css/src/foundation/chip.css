@@ -60,7 +60,7 @@
  *
  * Set --on-bg-mix on a tone or theme to pin the text color instead.
  * The consumer-side fallbacks keep pre-2024 browsers (no relative color
- * syntax) on the old behaviour rather than unstyled.
+ * syntax) on the old behavior rather than unstyled.
  */
 :where(.chip, .btn, .pill, .badge, .pagination-link, .tooltip, .avatar, .step-marker) {
   --fill: color(from var(--tone-fill) xyz-d65

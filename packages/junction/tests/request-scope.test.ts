@@ -224,7 +224,7 @@ describe('every entry point opens the request scope', () => {
   // Not the fallback the code deliberately refuses: this matches the id the
   // app ITSELF supplied, where a fallback would run a demoted user's work with
   // authority they never held.
-  test("runAs(<the app's own principal>) — recognised, not looked up", async () => {
+  test("runAs(<the app's own principal>) — recognized, not looked up", async () => {
     seen = undefined
     await app.runAs(SYS.userId, async () => { await app.service('probe').find() })
     expect(seen!.user?.userId).toBe('u-sys')

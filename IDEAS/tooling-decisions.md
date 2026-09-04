@@ -19,7 +19,7 @@ person who needs one installs something, and five years later that is the standa
 > candidates rewrites the app the scaffold had just written, and the answer is
 > forced rather than chosen. The tool is **Biome, linter only**, shipped as
 > `@frontierjs/config`; the boundary sentence below survives intact and is now
-> the ruling's centre, with one correction — the app-facing command is **`fli
+> the ruling's center, with one correction — the app-facing command is **`fli
 > check`**, which exists, rather than `fli doctor` (0.5), which does not and is
 > about fli's own setup. What is still open from item 1 is only this repo
 > extending its own config: `FJS-266`, a counted cleanup of ~600 findings.

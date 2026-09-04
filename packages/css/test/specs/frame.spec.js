@@ -5,7 +5,7 @@
  * documentation and in the guide's shell demo, and the pairing was broken:
  * a cluster is `flex-wrap: wrap`, a topbar was a fixed `block-size` with
  * `align-items: center`, so a bar holding more than fits laid a SECOND ROW
- * inside a fixed box and centred both — drawing half its contents above the
+ * inside a fixed box and centered both — drawing half its contents above the
  * bar and half below it, over the page.
  *
  * Nothing overflowed horizontally at any width, so the usual smell test —
@@ -26,7 +26,7 @@ function overfullBar(inlineSize) {
           '<span>a-workspace-with-a-long-name</span>' +
         '</div>' +
         '<div class="cluster">' +
-          '<span>somebody@an-organisation.example</span>' +
+          '<span>somebody@an-organization.example</span>' +
           '<button class="btn">Sign out</button>' +
         '</div>' +
       '</header>' +
@@ -98,7 +98,7 @@ test('controls: a .btn and a .field on one row are the same height', function ()
    * line-height and the same border and DIFFERENT vertical padding — a button
    * at --space-xs, a control at --space-sm — so nothing about either rule read
    * as wrong on its own. In basecamp's filter bar that was three controls at
-   * 38px and a submit at 34px, and .cluster centres, so the button sat 2px
+   * 38px and a submit at 34px, and .cluster centers, so the button sat 2px
    * below the row it belonged to (`FJS-347`).
    */
   var row = el(
@@ -126,7 +126,7 @@ test('controls: a .btn and a .field on one row are the same height', function ()
 test('controls: and .cluster therefore lines their edges up', function () {
   /*
    * The height is the cause; this is the thing anybody actually sees. Equal
-   * heights inside a centring row means equal tops and equal bottoms.
+   * heights inside a centering row means equal tops and equal bottoms.
    */
   var row = el(
     '<div class="cluster">' +

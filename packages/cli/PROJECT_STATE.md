@@ -257,7 +257,7 @@ export default {
 |---|---|---|
 | `tests/compiler.test.js` | 233 | `extractFrontmatter`, `transformMarkdown`, `compileCli`, `extractSegments`, echo context shadowing, **and every shipped command file compiled and parsed** (one test each) |
 | `tests/runtime.test.js` | 15 | `getConfig` — arg/flag validation, short-chars, options enum, deep-clone, defaultFlags isolation |
-| `tests/registry.test.js` | 18 | Dual-root scanning, source labelling, `_steps/` exclusion, `fli list --json`, alias/title collision warns |
+| `tests/registry.test.js` | 18 | Dual-root scanning, source labeling, `_steps/` exclusion, `fli list --json`, alias/title collision warns |
 | `tests/server.test.js` | 25 | API endpoints, SSE streaming, CORS, segments shape in metadata, registry cache TTL |
 | `tests/config.test.js` | 10 | `loadConfig` / `getConfig` — no file, merge, partial, malformed JSON |
 | `tests/zz-steps.test.js` | 8 | All `_steps/` execution scenarios |
@@ -301,7 +301,7 @@ API: `GET /api/commands`, `GET /api/commands/:name` (with segments), `POST /api/
 ### Environment variables
 
 ```bash
-# FLI behaviour
+# FLI behavior
 FLI_PORT=8500              # Web GUI port
 FLI_DEBUG=1                # Enable full stack traces (or pass --debug)
 WORKSPACE_DIR=~/outlaw     # Workspace root (all ws-* commands)

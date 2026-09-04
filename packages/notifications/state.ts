@@ -2,7 +2,7 @@
 //
 // It used to be two enumerable `_db` / `_drivers` properties, under a comment
 // claiming they were symbol-keyed to stay off the app surface. They were not:
-// they enumerated, they serialised, and `app.notify` on an app that never
+// they enumerated, they serialized, and `app.notify` on an app that never
 // configured the plugin read `undefined._drivers` and threw a TypeError about
 // a property nobody had heard of.
 

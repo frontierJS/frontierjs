@@ -20,7 +20,7 @@ image*; it is *restore the pair the journal recorded* — a Release and the
 environment generation it ran with.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 7
 

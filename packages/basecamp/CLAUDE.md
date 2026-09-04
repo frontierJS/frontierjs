@@ -61,7 +61,7 @@ and both ports free: API **8120**, web **8020**. That web port is the same one
 `example/` uses — they cannot serve at once, and only this side is strict about
 it (`strictPort`, plus `fli dev`'s port preflight — which reads the surfaces
 that exist and derives their ports from `packages/cli/core/ports.js`, so this
-app no longer keeps a `scripts/preflight.mjs` of its own).
+app no longer keeps a `packages/cli/core/preflight.js` of its own).
 
 ---
 
@@ -116,8 +116,8 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
 
 ## What bites here
 
-- **A level is per WORKSPACE, and it rides on the principal.** All 45 models
-  declare `@@gate`; `api/src/core/gate.ts` is the ladder (viewer/billing 2,
+- **A level is per WORKSPACE, and it rides on the principal.** Every model
+  declares `@@gate`; `api/src/core/gate.ts` is the ladder (viewer/billing 2,
   developer 4, admin 5, owner 6, `isSystemAdmin` 7, authenticated-but-not-a-member
   1). The level comes from the `WorkspaceMember` row for the workspace the
   request is FOR, which is why `sessionGateLevel()` is not used here — it grades
@@ -203,8 +203,8 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   `@@tenant(via: rel)` to silence it — seven of the fourteen have two scoped
   parents, which get one deny EACH and are AND'd, so naming one relation drops
   the other (measured: nine rules across seven models). Before the tenancy
-  block they carried no rule either — **17 models with
-  row policies became 32**. Nothing in a service restates the column: `deriveSlug`
+  block they carried no rule either — **declaring it roughly doubled the
+  models carrying a row policy**. Nothing in a service restates the column: `deriveSlug`
   does not stamp it and `findScoped`/`getScoped` do not filter on it.
   `Deployment`/`Job`/`Domain`
   brought a shape the hierarchy did not have — a read filtered on `appId` alone
@@ -224,11 +224,11 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   caller holding no claim, on read/create/update/delete/post-update. **31 graded,
   14 exempt, no leak.** Coverage is asserted as a SET, so a model that quietly
   drops out of the check fails the suite rather than passing silently.
-- **`asSystem()` is what a system path needs, and a transaction used to lose
-  it.** `db.asSystem().$transaction(tx => …)` handed the callback the ROOT
-  client until 2026-08-10, so `POST /setup` — four models in one transaction —
-  failed with *"Account.create" requires SYSTEM access (use asSystem())* about a
-  call that was using it. Fixed in litestone (`FJS-149`); the mirror image,
+- **`asSystem()` has to survive a transaction, and a system path is where you
+  notice.** `db.asSystem().$transaction(tx => …)` handing the callback the ROOT
+  client makes `POST /setup` — four models in one transaction — fail with
+  *"Account.create" requires SYSTEM access (use asSystem())* about a call that
+  was using it. Fixed in litestone (`FJS-149`); the mirror image,
   `$setAuth(u).$transaction`, silently ran with `auth()` null.
 - **A session carries three columns auth knows nothing about.** `isSystemAdmin`,
   `status` and `kind` are Basecamp's additions to auth's `User`, and they reach
@@ -282,7 +282,7 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   material is written into the registry, which `GET /conduit-targets` returns.
   `core/credentials.ts` resolves `secret:<id>` and `env:<NAME>`. Nothing had
   ever sent to an outpost, so neither half showed for two phases.
-- **`bun run db:seed` is the only thing here that writes every model, and `db/test/seed.test.ts` runs it** — as a process, in a throwaway cwd, including `--force`. **It discovers the tables rather than listing them**: every table in the seeded database must have rows unless it is named in `NOT_SEEDED` with a reason, and the exemptions are asserted empty too, so neither list can go stale. It used to check a hand-written sixteen, which is the same drift as the `--force` list it was written to catch — six models were added in one afternoon without it noticing. Adding a model is now a choice between seeding it and saying why not.
+- **`bun run db:seed` is the only thing here that writes every model, and `db/test/seed.test.ts` runs it** — as a process, in a throwaway cwd, including `--force`. **It discovers the tables rather than listing them**: every table in the seeded database must have rows unless it is named in `NOT_SEEDED` with a reason, and the exemptions are asserted empty too, so neither list can go stale. A hand-written list of models here is the same drift as the `--force` list it was written to catch: six models can land in one afternoon without it noticing. Adding a model is now a choice between seeding it and saying why not.
 - **Migrations are per DATABASE — `db/migrations/main/`** — and both the boot
   path and the seeder apply them with litestone's `apply()`, never junction's
   `dbClient.migrate(dir)`, which globs one level and reports success for a
@@ -294,7 +294,7 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   dropped with a 200 and no warning, whatever method produced it.
   `dashboards.kinds` shipped nine widget kinds and neither of the vocabularies
   needed to configure them, so the picker offered widgets it could not fill in
-  (`FJS-140`, closed 2026-08-10). An action answering rows now keeps everything
+  (`FJS-140`). An action answering rows keeps everything
   it sends, and a `find` that answers anything but a list throws rather than
   guessing. NAMED keys and no `data` is still the clearest shape for an action
   that answers more than one thing — `volumes.usage`, `cleanup.targets`.
@@ -380,8 +380,8 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
 - **A placement is written by `apps.place`, through `asSystem()`.** `AppServer`
   is `@@gate("2.8")` — a member may read it, only the system may write it — so
   the authority check is against the WORKSPACE in the service and the write is a
-  system one. Until 2026-08-19 nothing wrote the row at all and three engines
-  read it, which is why a deploy had no machine to talk to.
+  system one. Nothing writing the row while three engines read it is what
+  leaves a deploy with no machine to talk to.
 - **A tag is not an identity.** An executor reply may carry a `digest`; it is
   recorded on `Deployment.builtImage` and every later step is addressed by it.
   Only `sha256:<64 hex>` is accepted — a `builtImage` nobody can resolve reads as
@@ -398,6 +398,17 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   place and excludes `find`/`get` there; an `after: { all: [publish(…)] }` hook
   cannot, and broadcast every read to the whole workspace (`FJS-031`). Declaring
   both is refused at construction.
+- **A connection carries no workspace, so `channels({ claims })` says which one
+  a channel is** (`FJS-749`, `FJS-D191`). Every broadcast model here is scoped
+  on `workspaceId` and that claim is resolved per REQUEST by `membershipClaim`,
+  off the header — an upgrade has neither, so a graded broadcast saw no claim
+  and the tenancy `@@deny` fired on UNKNOWN, refusing every subscriber on all
+  eighteen live services. Answering off the channel name is sound rather than a
+  shortcut: the join reads `WorkspaceMember` through `asSystem()` and puts a
+  connection in `workspace:<id>` only where a membership row exists, so being in
+  the channel IS the verified claim. `workspaceIdFromChannel` lives beside
+  `workspaceChannelName` — a name written in one place and read in another is
+  one a caller can get wrong while every other caller keeps working.
 - **Zero raw SQL, on purpose** — everything goes through accessors, which is what
   keeps policies enforceable. `db.asSystem().sql` is the only bypass and it
   enforces nothing.

@@ -57,7 +57,7 @@ export const SEVERITY     = ['S1', 'S2', 'S3', 'S4']
 // ships and the rest is still the design · `shipped` built, kept for the
 // argument · `superseded-by` a later paper or ruling replaced it ·
 // `withdrawn` argued and declined. Then `assessment`, a reading of the tree
-// rather than a proposal, which carries a date and is cited as behaviour by
+// rather than a proposal, which carries a date and is cited as behavior by
 // nobody, and `index`, derived from the others and authoritative over none.
 //
 // `idea`, `proposal` and `argued` were the earlier spellings of the first and
@@ -370,7 +370,7 @@ function trailingId(opening) {
 // The only register that is already a file per record, and now the only one
 // whose typed fields are declared rather than read out of prose. The `**Status:
 // …**` line stays in the body — it says WHAT was built and what was not, which
-// no enum can carry — and `status:` in the frontmatter is the normalised half
+// no enum can carry — and `status:` in the frontmatter is the normalized half
 // a filter and a check can use.
 //
 // A file with no frontmatter is still read: title off the `# ` heading, status
@@ -516,7 +516,7 @@ function severityOf(section = '') {
 /**
  * A stable anchor for a record that has no id of its own. Derived from what the
  * record says, so it survives the file being reordered and changes when the
- * claim does — which is the honest behaviour for a record nobody has named.
+ * claim does — which is the honest behavior for a record nobody has named.
  */
 function slug(text = '') {
   return plain(text).toLowerCase()

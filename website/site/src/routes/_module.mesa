@@ -21,12 +21,12 @@
     <nav class="navset" aria-label="Site">
       <a href="/#idea">Idea</a>
       <a href="/#code">See it</a>
+      <a href="/tutor/">Tutorial</a>
       <a href="/showroom/">Showroom</a>
       <a href="/showroom2/">Walkthrough</a>
       <a href="/showroom3/">The ripple</a>
       <a href="/showroom4/">The loop</a>
       <a href="/showroom5/">The stack</a>
-      <a href="/tutor/">Tutorial</a>
       <a href="/journey/">The journey</a>
       <a href="/flow/">The flow</a>
       <a href="/landscape/">Landscape</a>

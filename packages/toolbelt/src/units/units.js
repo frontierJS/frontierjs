@@ -149,13 +149,13 @@ export function knownCurrencies() {
     _known = new Set(Intl.supportedValuesOf('currency'))
   } catch {
     // An older runtime without supportedValuesOf: everything is "known", which
-    // degrades to the pre-existing behaviour rather than refusing every code.
+    // degrades to the pre-existing behavior rather than refusing every code.
     _known = null
   }
   return _known ?? new Set()
 }
 
-/** Does this runtime recognise the code? Always true where ICU cannot be asked. */
+/** Does this runtime recognize the code? Always true where ICU cannot be asked. */
 export function isKnownCurrency(code) {
   const set = knownCurrencies()
   if (!set.size) return true

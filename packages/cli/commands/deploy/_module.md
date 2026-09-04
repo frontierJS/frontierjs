@@ -415,7 +415,7 @@ const swapContainer = (context, { host, container, image, apiPort, dbPath, envFi
 fi`)
 
   log.info('Stopping _replaced container...')
-  // `-t`, not `--time`: docker deprecated the long form in favour of `--timeout`
+  // `-t`, not `--time`: docker deprecated the long form in favor of `--timeout`
   // and prints a warning on every deploy, while the short form means the same
   // thing in both and is not deprecated in either.
   machine.run(`if docker inspect ${replaced} > /dev/null 2>&1; then

@@ -24,7 +24,7 @@ title: Home
 
   $: (session.user, session.level, prefs.currency)
 
-  // ── The shop, summarised ─────────────────────────────────────────────────
+  // ── The shop, summarized ─────────────────────────────────────────────────
   //
   // Both models read at level 0, so this section fills in for a stranger — and
   // it is fed by the same live stores every other screen uses, which is why

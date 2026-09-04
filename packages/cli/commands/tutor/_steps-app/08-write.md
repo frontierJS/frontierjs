@@ -18,7 +18,7 @@ response — a 201 says the request was answered, and only the row says the writ
 happened.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 8
 

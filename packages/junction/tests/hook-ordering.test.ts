@@ -47,7 +47,7 @@ async function mkDb() {
 // `@@gate("4.4.4.5")` — USER for read/create/update, ADMINISTRATOR for delete.
 // Two graders read this principal (junction's `sessionGateLevel` for the 401,
 // litestone's own for the 403) and only the explicit standing satisfies both
-// without modelling a lifecycle these tests are not about.
+// without modeling a lifecycle these tests are not about.
 const SIGNED_IN = { userId: 1, id: 1, isAdmin: true }
 
 /** A context with no principal — the stranger the gate is there to refuse. */

@@ -2,7 +2,8 @@
 // Static file serving — range requests, etag, gzip, cache headers.
 // All the HTTP muscle from Total.js, rewritten for Bun.file().
 
-import { join, extname } from 'node:path'
+import { join, extname, resolve, sep } from 'node:path'
+import { realpath }                     from 'node:fs/promises'
 
 // ─── Module-level constants ────────────────────────────────────────────────
 // Compiled once, never recreated per request.
@@ -103,6 +104,17 @@ export interface StaticOptions {
   etag?:      string        // app version tag for etag
   compress?:  boolean       // gzip compressible types, default true
   index?:     string        // default 'index.html'
+
+  /**
+   * Directories a symlink inside the root may legitimately resolve into.
+   *
+   * A link out of the root is refused, because it is served to anyone who can
+   * guess the URL — but `dist/assets → /srv/shared/assets` is a real
+   * deployment and refusing it with no way to say otherwise is how a check
+   * like this gets turned off wholesale. Name the directory instead; anything
+   * not named is still refused.
+   */
+  allowOutside?: string[]
 }
 
 export async function serveStatic(
@@ -116,7 +128,8 @@ export async function serveStatic(
     maxAge    = MAX_AGE,
     etag      = '',
     compress  = true,
-    index     = 'index.html'
+    index     = 'index.html',
+    allowOutside = []
   } = opts
 
   // Normalize and sanitize path — prevent directory traversal
@@ -133,6 +146,14 @@ export async function serveStatic(
   const file = Bun.file(filePath)
   const exists = await file.exists()
   if (!exists) return null  // let router handle 404
+
+  // A path that stays inside the root is not the same as a FILE that does.
+  // `sanitizePath` refuses `..` and a NUL byte, which is the whole of what a
+  // URL can say — and a symlink INSIDE the root pointing out of it says the
+  // rest: `assets/css/link.css → ../../secret.txt` was served 200 with the
+  // contents (`FJS-746`). Only the resolved path can answer this, so it is
+  // asked here rather than of the request.
+  if (!await withinRoot(root, filePath, allowOutside)) return null
 
   const ext      = extname(filePath).slice(1).toLowerCase()
   const mimeType = CONTENT_TYPES[ext] ?? 'application/octet-stream'
@@ -197,6 +218,77 @@ export async function serveStatic(
   headers['content-length'] = String(size)
 
   return new Response(file, { status: 200, headers })
+}
+
+// ─── Root containment ─────────────────────────────────────────────────────
+
+// The realpath of each declared root. A root is a configured constant and
+// resolving it is a syscall, so it is resolved once; the FILE is resolved on
+// every request, because a symlink can be repointed under a running server and
+// a cached answer would go on serving what it used to be.
+const _realRoots = new Map<string, string | null>()
+
+async function realRoot(root: string): Promise<string | null> {
+  if (_realRoots.has(root)) return _realRoots.get(root)!
+  let real: string | null
+  try   { real = await realpath(resolve(root)) }
+  catch { real = null }   // the root itself is gone — nothing can be inside it
+  _realRoots.set(root, real)
+  return real
+}
+
+/**
+ * Is the file this request resolved to really inside the declared root?
+ *
+ * An EMPTY root is not a root: `ctx.file('/var/data/report.pdf')` names a file
+ * the application chose, and there is nothing for it to be inside of. The
+ * check is about a directory an operator published, not about every path the
+ * app itself can name.
+ *
+ * A link that escapes answers the same 404 a missing file does, deliberately —
+ * a 403 would confirm to the caller that they found a way out of the root. The
+ * OPERATOR is told instead, once per path, because a symlinked asset directory
+ * is a real deployment shape and silently serving nothing would be a day lost.
+ */
+async function withinRoot(root: string, filePath: string, allowOutside: string[]): Promise<boolean> {
+  if (!root) return true
+
+  const base = await realRoot(root)
+  if (!base) return false
+
+  let real: string
+  try   { real = await realpath(filePath) }
+  catch { return false }   // vanished between the stat and here
+
+  if (contains(base, real)) return true
+
+  // Compared as REALPATHS, or a declared directory that is itself a link
+  // never matches the resolved file underneath it — which reads as the
+  // allowance being ignored.
+  for (const allowed of allowOutside) {
+    const dir = await realRoot(allowed)
+    if (dir && contains(dir, real)) return true
+  }
+
+  warnEscape(filePath, real, base)
+  return false
+}
+
+function contains(dir: string, path: string): boolean {
+  return path === dir || path.startsWith(dir + sep)
+}
+
+const _warned = new Set<string>()
+
+function warnEscape(filePath: string, real: string, base: string): void {
+  if (_warned.has(filePath)) return
+  _warned.add(filePath)
+  console.warn(
+    `[Junction] static: '${filePath}' resolves to '${real}', which is outside the served root ` +
+    `'${base}' — refused, and answered as not found. A symlink out of the root is served to ` +
+    `anyone who can guess the URL, so it is refused rather than followed. Name the directory ` +
+    `in the static block's 'allowOutside' if it is meant to be published.`
+  )
 }
 
 // ─── Range response ───────────────────────────────────────────────────────

@@ -33,7 +33,7 @@
   // bind:this exposes: focus(), select()
 
   import Field from './Field.mesa'
-  import { uid, resolveError, resolveRule, stated, nativeValidationGuard } from '../../utils.js'
+  import { uid, resolveError, resolveRule, stated, nativeValidationGuard, lockedBy } from '../../utils.js'
 
   // Core input props
   export let value       = ''
@@ -48,7 +48,7 @@
   export let step        = undefined
   // A length limit is as much a schema fact as a min or a max — @length(3, 20)
   // reaches the browser as maxLength, and without this prop the only way to
-  // honour it was to stop using the component.
+  // honor it was to stop using the component.
   export let maxlength   = undefined
   export let minlength   = undefined
   export let autocomplete = undefined
@@ -102,7 +102,7 @@
   // A <Form> above this control locks it two ways — the caller disabled the
   // form, or a save is in flight — and both mean the same thing to a field.
   // A stated prop still wins, including `disabled={false}` on a saving form.
-  const resolvedDisabled = stated(disabled, form?.disabled || form?.submitting) ?? false
+  const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
   const rule = resolveRule(form, name)
 
   // The control type the schema implies. Only the cases where the mapping is

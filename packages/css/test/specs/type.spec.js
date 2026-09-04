@@ -127,7 +127,7 @@ test('type: a rung is not an alias of another rung', function () {
    * value and the result inherits past every theme. Ruled 2026-08-02 for
    * --ring and --badge-radius; the ladder is the third place it would bite.
    *
-   * Overriding one rung on an element must leave its neighbours alone.
+   * Overriding one rung on an element must leave its neighbors alone.
    */
   var box = el('<div style="--text-md: 43px"><p class="text-md">a</p><p class="text-sm">b</p><p class="text-lg">c</p></div>');
 

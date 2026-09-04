@@ -180,7 +180,7 @@ export async function run(t) {
 
   /* ── dismissal ────────────────────────────────────────────────────────── */
 
-  // Small enough that the centre of the viewport is backdrop rather than
+  // Small enough that the center of the viewport is backdrop rather than
   // panel, which is the only way to click one and not the other.
   await t.mount('palette-modes', { maxWidth: 320, maxHeight: '120px' })
 
@@ -192,7 +192,7 @@ export async function run(t) {
     const r = document.querySelector('.fjs-cp-panel').getBoundingClientRect();
     return { w: Math.round(r.width), h: Math.round(r.height) };
   `)
-  t.is(box.w, 320, 'maxWidth is a pixel count the panel honours')
+  t.is(box.w, 320, 'maxWidth is a pixel count the panel honors')
   t.ok(box.h <= 121, 'and maxHeight caps its height, so the list scrolls inside it')
 
   await t.clickAt('.fjs-cp-footer')

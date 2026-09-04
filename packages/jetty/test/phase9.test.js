@@ -45,7 +45,7 @@ group('injectJettyHMR against real compiler output')
   else ok('fixture emits a trailing $$delegate call')
 
   // Caught rather than allowed to propagate: the plugin now throws when it
-  // cannot recognise the shape, and a thrown error would kill this file before
+  // cannot recognize the shape, and a thrown error would kill this file before
   // it reported anything — which is a red that reads as a crash.
   let out = ''
   try { out = injectJettyHMR(js, '/app/src/Widget.mesa', '/app') }
@@ -71,7 +71,7 @@ group('injectJettyHMR against real compiler output')
   else bad('a non-delegating component gets its HMR registration')
 }
 
-// A shape it cannot recognise must be loud. Silently returning a wrapper that
+// A shape it cannot recognize must be loud. Silently returning a wrapper that
 // never registers is what made the defect above invisible for weeks.
 {
   let threw = null

@@ -101,7 +101,7 @@ h2 { font-size: 1.15rem; margin: 0; letter-spacing: -.01em; }
 
 /* ── Stage: vertical step list beside a stacked work column ────────── */
 /* Not .steps/.step — @frontierjs/css owns both as its stepper component, and
-   .step sets text-align:center, which inherits into the <pre> and centres
+   .step sets text-align:center, which inherits into the <pre> and centers
    every line of code inside it. */
 .stage { display: grid; gap: 2rem; align-items: start; margin-top: 2rem; }
 @media (min-width: 62rem) {

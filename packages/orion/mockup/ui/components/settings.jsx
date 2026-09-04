@@ -464,7 +464,7 @@ export const SystemAdminPage = ({ setPage }) => {
             return data.triggers.map(t => ({
               ...(byNodeId[t.nodeId] ?? {}),
               ...t,
-              // Normalise kind from API shape
+              // Normalize kind from API shape
               kind: t.kind ?? (t.path ? "webhook" : t.expression ? "cron" : t.eventName ? "event" : "manual"),
             }))
           })
@@ -2938,7 +2938,7 @@ export const SettingsPage = ({ session }) => {
                 {/* Per-event matrix */}
                 <SettingsSection
                   title="Event Rules"
-                  description="Choose which channels receive which events. Disabled channels are greyed out."
+                  description="Choose which channels receive which events. Disabled channels are grayed out."
                 >
                   <div style={{ display:"flex", flexDirection:"column", gap:0 }}>
                     {/* Header row */}
@@ -3178,11 +3178,11 @@ export const SettingsPage = ({ session }) => {
                                     <span style={{ fontSize:11, color:"var(--muted)", fontFamily:"var(--font-ui)" }}>Auto</span>
                                   </div>
 
-                                  {/* Cron behaviour */}
+                                  {/* Cron behavior */}
                                   <select
                                     value={env.cronBehaviour ?? (isProd ? "active" : "paused")}
                                     onChange={e => patchEnv(ws.id, env.id, { cronBehaviour:e.target.value })}
-                                    title="Cron / event trigger behaviour in this environment"
+                                    title="Cron / event trigger behavior in this environment"
                                     style={{ background:"var(--bg)", border:"1px solid var(--border2)", borderRadius:4,
                                       padding:"3px 6px", fontSize:10, color:"var(--muted)", outline:"none",
                                       cursor:"pointer", fontFamily:"var(--font-mono)" }}

@@ -137,7 +137,7 @@ describe('who sees what', () => {
   })
 
   test('and a member sees their OWN workspace only — the policy, through the scoped client', async () => {
-    // The second line of defence, reached by a caller the hook admits. Nothing
+    // The second line of defense, reached by a caller the hook admits. Nothing
     // below the API boundary can grade this: the WHERE comes from the
     // principal `toDataPrincipal()` built, and it is compiled per request.
     const rows = await env.as(developer).service('projects').find()
@@ -370,7 +370,7 @@ describe('?workspace_id= — the documented fallback, which had never worked', (
       .rejects.toThrow(/names no 'workspaceId'.*X-Workspace-Id header or \?workspace_id=/)
   })
 
-  test('a filter the service honours still filters beside it', async () => {
+  test('a filter the service honors still filters beside it', async () => {
     // The reservation takes ONE declared name out of the filter set and must
     // not take the rest with it. `status` rather than `name` because this
     // service builds its own where from `status` alone — a query key it does

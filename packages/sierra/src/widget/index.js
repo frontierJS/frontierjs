@@ -43,7 +43,7 @@ import { mount } from '@frontierjs/mesa/runtime'
  *
  * A widget reaches `embed` with the placeholder intact in exactly one case: a
  * dev server, where Vite serves the stylesheet into the document itself. That
- * is recognised HERE rather than in the generated entry, because a comparison
+ * is recognized HERE rather than in the generated entry, because a comparison
  * there is a constant one and the bundler folds it away before the swap can
  * happen — the first version of this shipped `css: ""` into every widget while
  * every part of it read correctly.
@@ -94,7 +94,7 @@ function propsFrom(el) {
  *
  * The shadow root is reused when one is already attached — a script that runs
  * twice (two copies on a page, a re-injected tag) must not produce two widgets
- * in one box, and a host that pre-attached a root of its own is honoured.
+ * in one box, and a host that pre-attached a root of its own is honored.
  */
 function mountInto(el, Component, opts) {
   if (_mounted.has(el)) return _mounted.get(el)

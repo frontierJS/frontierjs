@@ -1881,7 +1881,7 @@ export const WaitNodeConfig = ({ config, onCfg, upstreamSamples }) => {
       {onTimeout === "branch" && (
         <div style={{ fontSize:10, color:"var(--amber)", fontFamily:"var(--font-ui)", lineHeight:1.5,
           padding:"6px 10px", borderRadius:5, background:"var(--amber)0a", border:"1px solid var(--amber)22" }}>
-          Add an edge from this node labelled <code style={{fontFamily:"var(--font-mono)"}}>timed out</code> in the DAG to handle the timeout path.
+          Add an edge from this node labeled <code style={{fontFamily:"var(--font-mono)"}}>timed out</code> in the DAG to handle the timeout path.
           Check <code style={{fontFamily:"var(--font-mono)"}}>$.{"{nodeId}"}.timedOut === true</code> downstream.
         </div>
       )}

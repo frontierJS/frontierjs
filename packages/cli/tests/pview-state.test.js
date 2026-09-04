@@ -15,7 +15,7 @@
 // isolation and can still be absent from the command file.
 //
 // It spawns, so it is careful: a fixed test-tier port, a bounded wait, and a
-// kill of the process GROUP. `fli` is a launcher — signalling the pid leaves
+// kill of the process GROUP. `fli` is a launcher — signaling the pid leaves
 // what it started running, which is the defect that cost this repo an
 // afternoon of orphaned suites.
 

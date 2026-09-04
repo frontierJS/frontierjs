@@ -22,7 +22,7 @@ const stage = document.getElementById('stage')
 let current = null
 
 installProbes()
-// A warning is behaviour: mesa reports a render it survived but corrupted —
+// A warning is behavior: mesa reports a render it survived but corrupted —
 // a duplicate {#each} key above all — through console.warn, so a spec has to
 // be able to assert one by text.
 const resetWarnings = captureWarnings('mesaWarnings')

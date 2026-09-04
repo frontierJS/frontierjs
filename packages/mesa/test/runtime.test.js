@@ -25,7 +25,7 @@
  *   18. watchProxy / watchPath  (+ [FIX 1] root sentinel, [FIX 2] cross-component isolation)
  *   19. makeAsyncState / asyncDerived  (+ edge cases)
  *   20. makeExternalProperty / $push / $apply
- *   21. SSR guards — _isBrowser = false behaviour
+ *   21. SSR guards — _isBrowser = false behavior
  *   22. Misc exports
  *   23. Integration — signals + DOM end-to-end
  */
@@ -493,7 +493,7 @@ describe('createMemo', () => {
 describe('equals applies consistently', () => {
   const deepEq = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 
-  it('createWritableSignal honours equals on manual writes as well as derivations', () => {
+  it('createWritableSignal honors equals on manual writes as well as derivations', () => {
     const [t, setT] = createSignal(1)
     const [read, write] = createWritableSignal(
       () => ({ v: t() > 0 ? 1 : 0 }), { equals: deepEq }
@@ -2700,7 +2700,7 @@ describe('watchProxy / watchPath', () => {
 
 // ─── [FIX 1]  watchPath — whole-object / root sentinel ───────────────────────
 // The old _fireSignal bailed when path was '' (falsy).
-// Fixed by normalising '' → '__root__' sentinel.
+// Fixed by normalizing '' → '__root__' sentinel.
 
 describe('track() stores values, trackDerived() derives', () => {
   it('a zero-arg callback prop is stored, not invoked', () => {
@@ -3915,7 +3915,7 @@ describe('makeExternalProperty / $push / $apply', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §21  SSR guards — _isBrowser = false behaviour
+// §21  SSR guards — _isBrowser = false behavior
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('SSR guards (_isBrowser = false)', () => {
@@ -5100,7 +5100,7 @@ describe('event delegation — per-mount-container roots', () => {
   beforeEach(async () => {
     imports = await import('../src/runtime.js')
     // Reset delegation state between tests by re-importing is not possible in
-    // ESM — instead we verify behaviour through the public API.
+    // ESM — instead we verify behavior through the public API.
   })
 
   it('$$delegate records event types without attaching to document.body', () => {

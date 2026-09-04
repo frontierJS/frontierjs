@@ -8,7 +8,7 @@
  * row somebody was looking for was absent, no message said why, and the screen
  * was indistinguishable from one where the row does not exist (`FJS-391`).
  *
- * Two behaviours, and they fail separately:
+ * Two behaviors, and they fail separately:
  *
  *   · say it     — every list control, from the count it was handed
  *   · search it  — by sending what was typed to the SERVER rather than

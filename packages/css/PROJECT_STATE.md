@@ -39,7 +39,7 @@ compounding basics on basics: each layer is the contract the next reads from.
 Which element each concept uses, what ARIA it carries, how pieces nest. It is
 expressed as the **Principles** and **Vocabulary** further down. Part of it
 ships as CSS (the Anatomy classes below); the rest is a contract the markup has
-to honour. FrontierJS apps follow it strictly; outside projects are
+to honor. FrontierJS apps follow it strictly; outside projects are
 "recommended to."
 
 ### Half 2 — Style: utility-first, one level up
@@ -171,7 +171,7 @@ shell               the grid — topbar spans, sidebar + screen beneath
 topbar              sticky, --topbar-height
 sidebar             --sidebar-width, collapses below md
 screen              the routed body (min-inline-size:0 — see below)
-pane                labelled subdivision, 2rem rhythm
+pane                labeled subdivision, 2rem rhythm
 view                switchable panel, [hidden] restated
 ```
 
@@ -696,7 +696,7 @@ outside a surface composite, and they aren't chained onto it, they nest inside.
   `<code language="css">`, so the whole theme is `code[language] em { … }` —
   nothing for `vocabulary.js` to name, nothing for a consumer to import
 - ✅ `code`, `.code`, `pre code` and `kbd` moved out of `typography.css` into
-  the new file, so a code block has one owner. Verified behaviour-neutral: nine
+  the new file, so a code block has one owner. Verified behavior-neutral: nine
   computed-style subjects byte-identical to HEAD
 - ✅ **The tones needed correcting before they could be text.** A tone is tuned
   as a fill behind white text; measured as text on `--surface-sunken` across
@@ -890,7 +890,7 @@ outside a surface composite, and they aren't chained onto it, they nest inside.
 - ✅ **`Spacing` is retired and `How things behave` takes its slot.** The old
   page documented a 4px numeric scale the package never had and a set of
   `p-*` / `m-*` / `gap-*` margin utilities it does not ship — on a page whose
-  real subject was who *owns* the space. `#spacing` rewrites to `#behaviour`
+  real subject was who *owns* the space. `#spacing` rewrites to `#behavior`
   through the existing `RENAMED` map
 - ✅ Built out of a 2026-05 design note rather than invented. Three
   principles, all of which the package already obeyed silently:
@@ -1260,7 +1260,7 @@ search hit needed seven bespoke classes when it looks like a list of cards.
 - ✅ **All four parts are optional**, so a one-line Item is untouched. The
   anatomy is additive — nothing that already writes `.item` has to change
 - ⚠️ **`.item` is `align-items: center` and a stacked Item must not be.** A
-  gutter centred against a three-line block sits opposite the SUBTITLE, not
+  gutter centered against a three-line block sits opposite the SUBTITLE, not
   the title it labels. Keyed `.item:has(.item-lead)`, so the switch is paid
   for only by rows that have a gutter. A bare `.item { align-items: baseline }`
   would fix the palette and quietly misalign every badge-and-text row in the
@@ -1444,8 +1444,8 @@ always wrong.** If token A should follow token B, write the fallback at the use
 site. There is no case where the `:root` form does what it looks like it does.
 
 ### `.center` and `.bar.center` mean different things
-`.center` (layout.css) is "centre on both axes, via grid". `.bar.center` (bars.css)
-is "centre this bar's contents, still flex". Both are single-class selectors on
+`.center` (layout.css) is "center on both axes, via grid". `.bar.center` (bars.css)
+is "center this bar's contents, still flex". Both are single-class selectors on
 the `display` property, so specificity cannot separate them — the layer order
 does, with `layout` before `patterns` so `.bar` wins.
 
@@ -1594,8 +1594,8 @@ than CSS — it belongs in the style guide, not the package.
    pointing at Uno.
 
 ### Deliberately not doing
-Combobox, date picker, command palette, data grid. All behaviour-heavy;
-Principle 6 says behaviour belongs in a component, and shipping CSS for them
+Combobox, date picker, command palette, data grid. All behavior-heavy;
+Principle 6 says behavior belongs in a component, and shipping CSS for them
 invites half-implementations.
 
 ---
@@ -1658,7 +1658,7 @@ It cannot tell you the vocabulary is right. Only a real consumer can.
 
 - **Treating this as a component framework.** Writing a class that only works on
   one element and calling it a utility; adding a Treatment only some components
-  honour. Both have happened — see the v0.6 tone work.
+  honor. Both have happened — see the v0.6 tone work.
 - **Forgetting tones are element-scoped.** `--bg-mix` is `inherits: false`, so a
   child cannot read its parent's tone. Derive it into a normal property and pass
   that down — `--row-tint`, `--tab-accent`, `--check-accent` all do this.
@@ -1814,7 +1814,7 @@ It cannot tell you the vocabulary is right. Only a real consumer can.
   the surface base sets `display: block` on `.dialog` and `.drawer`. frame.css
   documents this exact trap for `.view[hidden]`; it was never carried across.
   **`.btn.ghost` and `.btn.raised` were silent no-ops** — Treatments that only
-  surface.css honoured, so a toolbar of ghost buttons rendered solid blue; the
+  surface.css honored, so a toolbar of ghost buttons rendered solid blue; the
   same failure the v0.6 tone work fixed for tones. **The `.switch` was squashed
   into a checkbox** by `.field-check input` at (0,1,1) beating `.switch` at
   (0,1,0) — inside the markup form-core.css itself documents. **A tone on a
@@ -1833,7 +1833,7 @@ It cannot tell you the vocabulary is right. Only a real consumer can.
   `.field:user-invalid` is the entire implementation.
 
   One vocabulary gap surfaced: there is **no term for a route**. Pane is a
-  labelled subdivision, View is a tab panel; neither is "the page you navigated
+  labeled subdivision, View is a tab panel; neither is "the page you navigated
   to". The demo used bare `<div data-route>` rather than invent one.
 - **v0.8** — **the SaaS gap list, shipped.** Six new vocabulary terms, each
   with CSS and tests: **Steps** (`.steps`/`.step` + marker/label/hint, current
@@ -1897,7 +1897,7 @@ It cannot tell you the vocabulary is right. Only a real consumer can.
   light themes, since v0.1. That is placeholder text, table headers, field
   hints and nav labels at 11–13px. Both `--ink-mute` values were rescaled
   uniformly in linear RGB — the same operation chip.css uses to cap a fill, so
-  chromaticity is exact and it is the identical grey, only dark enough to read.
+  chromaticity is exact and it is the identical gray, only dark enough to read.
 
   `--ring-width` went 3px → 2px: it only ever reached the three translucent
   box-shadow halos, which needed the spread; a solid ring does not, and 2px is
@@ -1908,7 +1908,7 @@ It cannot tell you the vocabulary is right. Only a real consumer can.
   1280, and `.table-wrap`, because a `<table>` cannot scroll itself and a wide
   one took the whole page layout with it. Added **a11y.css** — `.visually-hidden`
   (+ `.focusable`) and `.skip-link` — in a final `a11y` layer so they win
-  without `!important`. The system had no accessible-labelling primitive at all
+  without `!important`. The system had no accessible-labeling primitive at all
   before this, which made icon-only controls impossible to label properly.
 
 ---
@@ -2016,7 +2016,7 @@ third had never been checked. press.css takes the new knobs: linear easing at
 `.popover` was `position: absolute` with no inset, so a term the vocabulary
 NAMES needed two rules from every consumer before it worked: a positioned
 ancestor, or it resolved against the page, and an offset, or it resolved to its
-STATIC position — centred on its own trigger, measured in the demo at 265px tall
+STATIC position — centered on its own trigger, measured in the demo at 265px tall
 and `y = -39`, hanging off the top of the viewport. `.tooltip-anchor` had solved
 the identical problem for Tooltip since v0.4.
 

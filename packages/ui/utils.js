@@ -55,6 +55,27 @@ export function resolveRule(form, name) {
 }
 
 /**
+ * Is this control locked by the form above it?
+ *
+ * Three reasons and one answer, because a control that spelled them out
+ * separately would have to be told about the next one. The caller disabled the
+ * form, a save is in flight, or the column is FROZEN for the row being edited —
+ * an `@immutable` field on a model that seals, once the row has reached a
+ * sealed state. That last one is in the row rather than the schema, so no
+ * `readOnly` keyword can carry it and the form resolves it and passes the list.
+ *
+ * A stated `disabled` still wins over all three: the seal is an affordance
+ * here, and the Data boundary refuses the write whatever this renders
+ * (Invariant 6). What a `disabled={false}` cannot do is put the value back in
+ * the payload — `<Form>` drops a frozen key on the way out.
+ */
+export function lockedBy(form, name) {
+  if (!form) return false
+  if (form.disabled || form.submitting) return true
+  return Array.isArray(form.sealed) && form.sealed.includes(name)
+}
+
+/**
  * Pick the first value that was actually stated.
  *
  * `undefined` means "not stated" and everything else is a real answer,
@@ -128,7 +149,7 @@ const TONE_ALIASES = {
   error:   'danger',
   neutral: 'muted',
   gray:    'muted',
-  grey:    'muted',
+  gray:    'muted',
   default: '',
   none:    '',
 

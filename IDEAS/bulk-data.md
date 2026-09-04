@@ -87,7 +87,7 @@ The schema states enough to generate that file completely:
 
 **And the same derivation validates the upload.** One function produces the template
 and checks the file against it, so the two cannot drift — which is the failure mode of
-every hand-written importer, where the sample spreadsheet in the help centre is a year
+every hand-written importer, where the sample spreadsheet in the help center is a year
 older than the validator.
 
 This makes the template the *first* deliverable rather than a nicety: it is small, it
@@ -129,7 +129,7 @@ build the leaky version by accident.
 
 An export is a read that leaves the building. It must therefore respect exactly what a
 read respects: `@guarded` and `@encrypted` columns absent rather than redacted-looking,
-`@@allow` row policies applied, `@@softDelete` honoured, the caller's gate level
+`@@allow` row policies applied, `@@softDelete` honored, the caller's gate level
 deciding which columns appear at all. **A framework whose authorization lives in
 handlers cannot derive this**, so its export is written against the table and quietly
 returns the columns the UI hides — which is one of the most common real-world data

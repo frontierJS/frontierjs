@@ -88,8 +88,8 @@ export function startStripeSink(): { stop(): void; port: number } {
    * Tell the shop, signed the way Stripe signs.
    *
    * The signature is over `"<timestamp>.<exact bytes sent>"`, so the body is
-   * serialised ONCE and that string is both signed and sent. Signing a
-   * re-serialisation is the bug this shape exists to make impossible — the same
+   * serialized ONCE and that string is both signed and sent. Signing a
+   * re-serialization is the bug this shape exists to make impossible — the same
    * document, different bytes, and every event refused.
    */
   async function deliver(type: string, data: unknown): Promise<number | null> {

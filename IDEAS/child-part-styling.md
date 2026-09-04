@@ -9,7 +9,7 @@ dated: 2026-08-24
 **Status: IDEA. Nothing here is built.** Dated 2026-08-24. The *What exists today*
 section was measured by compiling against `packages/mesa/src/compiler.js` on that
 date; everything under *Proposed* is a suggestion and the names are placeholders.
-Do not cite the proposed sections as behaviour — see `VERIFYING.md`.
+Do not cite the proposed sections as behavior — see `VERIFYING.md`.
 
 A parent occasionally needs to reach a specific element **inside** a child — the
 header of a `<Card>`, the body of a `<Dialog>` — and Mesa has four adjacent

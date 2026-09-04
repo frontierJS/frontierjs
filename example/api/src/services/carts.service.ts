@@ -162,7 +162,7 @@ export function createCartsService() {
      * a HOLD on the stock for it.
      *
      * The price is COPIED rather than joined at read time. A basket left
-     * overnight has to either honour what it quoted or say out loud that it
+     * overnight has to either honor what it quoted or say out loud that it
      * changed, and it can do neither if the number was never written down.
      *
      * The hold is taken FIRST, and it is what refuses: `api/inventory.ts` reads
@@ -567,7 +567,7 @@ export function createCartsService() {
       // fire (`FJS-D27`). It is safe because this method is `transactional:` —
       // Litestone opens with `BEGIN IMMEDIATE` and takes the write lock up
       // front, so two shoppers racing for the last redemption of a code are
-      // serialised and the second one reads the first one's count.
+      // serialized and the second one reads the first one's count.
       //
       // In the SAME transaction as the order, which is the whole of what makes
       // it honest: a checkout that rolls back did not redeem anything.

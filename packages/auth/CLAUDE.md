@@ -90,7 +90,7 @@ index.ts     public API
   can be graded from. `8` stays on `Credential` / `Session` / `Verification` /
   `OauthFlow`,
   which is what 8 is for: a model nothing outside `asSystem()` has anything to
-  say to. Ruled in `DECISIONS.md` § Access control (2026-08-14).
+  say to. Ruled in `DECISIONS.md` § Access control.
 - **An app says what `'admin'` means once, in `sessionFields`.** The policies
   read `auth().isAdmin` — the same standing `FrontierGateGetLevel` and
   `sessionGateLevel()` grade ADMINISTRATOR(5) from — so an app whose resolver
@@ -176,7 +176,7 @@ index.ts     public API
   so the tarball imported nothing and said so only on install. `files` in
   `package.json` is `["*.ts", "README.md"]`: a new source file at the package
   root ships, a new directory does not.
-- **It is shippable — its peer went to npm on 2026-08-10.** A `bun add` of the
+- **It is shippable — its peer is published.** A `bun add` of the
   auth tarball into an empty project resolves `@frontierjs/junction@^0.1.0` from
   the registry and imports. Still no OAuth, and its typecheck baseline is
   non-zero; see `scripts/typecheck-baselines.json`.

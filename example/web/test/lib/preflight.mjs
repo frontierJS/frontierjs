@@ -22,7 +22,8 @@
 // terminal, and mtime is the only fact both sides can see.
 
 import { readdirSync, statSync } from 'node:fs'
-import { join, dirname }         from 'node:path'
+import { spawnSync }             from 'node:child_process'
+import { join, dirname, relative } from 'node:path'
 import { fileURLToPath }         from 'node:url'
 
 const APP_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
@@ -39,8 +40,29 @@ const SOURCE_EXT  = ['.ts', '.js', '.mjs', '.lite', '.json']
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'build', '.git', 'audit'])
 const SKIP_FILE = /\.(db|db-wal|db-shm|jsonl|snapshot\.\w+)$/
 
+// The extension list cannot answer this on its own. `db/schema.json` is written
+// by the app's own boot and is a `.json` under `db/` — indistinguishable by name
+// from the config files beside it, and newer than the process every single time,
+// which reported a freshly started app as serving code that is not in the tree.
+// What separates the two is already stated: the app's `.gitignore` hides it. So
+// the candidates go through `git check-ignore` in one call, which makes the next
+// generated artefact free rather than a name somebody has to remember to add.
+function dropIgnored(paths, root) {
+  if (paths.length === 0) return paths
+  const res = spawnSync('git', ['check-ignore', '--stdin'], {
+    cwd:   root,
+    input: paths.map(p => relative(root, p)).join('\n'),
+    encoding: 'utf8',
+  })
+  // No git, or it failed for a reason of its own: every candidate stands. The
+  // check is a narrowing, and losing it costs a false *stale*, never a false ok.
+  if (res.error || res.status > 1) return paths
+  const ignored = new Set(res.stdout.split('\n').filter(Boolean).map(l => join(root, l)))
+  return paths.filter(p => !ignored.has(p))
+}
+
 function newestSourceMtime(root = APP_ROOT) {
-  let newest = 0
+  const candidates = []
 
   const walk = (dir) => {
     let entries
@@ -52,14 +74,19 @@ function newestSourceMtime(root = APP_ROOT) {
       }
       if (SKIP_FILE.test(entry.name)) continue
       if (!SOURCE_EXT.some(ext => entry.name.endsWith(ext))) continue
-      try {
-        const at = statSync(join(dir, entry.name)).mtimeMs
-        if (at > newest) newest = at
-      } catch { /* raced with a write; another file will do */ }
+      candidates.push(join(dir, entry.name))
     }
   }
 
   for (const dir of SOURCE_DIRS) walk(join(root, dir))
+
+  let newest = 0
+  for (const file of dropIgnored(candidates, root)) {
+    try {
+      const at = statSync(file).mtimeMs
+      if (at > newest) newest = at
+    } catch { /* raced with a write; another file will do */ }
+  }
   return newest
 }
 

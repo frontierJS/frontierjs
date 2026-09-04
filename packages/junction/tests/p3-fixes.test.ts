@@ -171,7 +171,7 @@ describe('P3: route matchers agree', () => {
     const direct  = matchPathDirect(segments, path)
     const viaSegs = matchRouteSegments(segments, ['files', 'a', 'b', 'c'])
 
-    // Previously matchRoute only honoured last-segment wildcards and would
+    // Previously matchRoute only honored last-segment wildcards and would
     // reject this pattern while matchPathDirect accepted it.
     expect(viaSegs).toEqual(direct)
   })

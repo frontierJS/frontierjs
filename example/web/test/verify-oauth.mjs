@@ -23,7 +23,7 @@
  *   · an identity is keyed on (provider, subject) and never on the address
  *   · an unverified local account is NOT linked to, however verified the
  *     provider says the address is — CVE-2026-53516's shape
- *   · a `returnTo` is honoured only if it passed the allow-list at flow START
+ *   · a `returnTo` is honored only if it passed the allow-list at flow START
  *   · a person cannot unlink their last way in
  *
  * Every one of those is a refusal. The happy path is three of eighteen.
@@ -289,7 +289,7 @@ console.log('\nwhere it lands')
   await setNext({ sub: `s-ret-${uniq}`, email: `ret-${uniq}@shop.test`, verified: true, deny: false })
   const j = jar()
   const flow = await signIn(j, { returnTo: '/orders' })
-  ok('an allow-listed returnTo is honoured', flow.callback.headers.get('location') === '/orders',
+  ok('an allow-listed returnTo is honored', flow.callback.headers.get('location') === '/orders',
      String(flow.callback.headers.get('location')))
 }
 {

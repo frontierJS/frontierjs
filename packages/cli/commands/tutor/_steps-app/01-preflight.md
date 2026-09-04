@@ -15,7 +15,7 @@ makes every one of them a lie. If something already holds one, pass
 `--api-port` or `--web-port` and the lesson will say the numbers you chose.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 1
 

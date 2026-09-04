@@ -195,7 +195,7 @@ test('text: size and colour utilities chain', function () {
 test('text: the small steps still clear AA on every theme', function () {
   /*
    * A size scale that bottoms out below the readable threshold is not a
-   * favour. --ink-mute at .text-xs is the tightest real pairing in the
+   * favor. --ink-mute at .text-xs is the tightest real pairing in the
    * package, and it is exactly what a meta line uses.
    */
   var failures = [];

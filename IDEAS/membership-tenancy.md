@@ -182,7 +182,7 @@ declaration can hide them.
 - What does a **job** do? Basecamp's jobs run `asSystem()` across every tenant, which is
   correct and is also the answer that makes the tenant claim absent. `app.runAs` rebuilds
   a principal from an id — does it rebuild the tenant claim, and from which tenant?
-- **Is there a client flavour that is system AND still inside one tenant?** Today there
+- **Is there a client flavor that is system AND still inside one tenant?** Today there
   is not, and it is a hole in what shipped rather than a question about what did not.
   `asSystem()` is a complete bypass of all policies (`src/core/policy.js` — `if
   (ctx.isSystem) return null`) and declared row tenancy desugars to `@@deny`, which is a

@@ -74,7 +74,7 @@ describe('the app-level default publisher', () => {
   })
 
   test('with no default registered it still broadcasts nothing', async () => {
-    // The ruled behaviour (DECISIONS.md § API design, 2026-08-02) and the whole
+    // The ruled behavior (DECISIONS.md § API design, 2026-08-02) and the whole
     // reason this is a default rather than an on-by-default: a broadcast does
     // not re-evaluate @@allow per subscriber.
     const manager = createChannelManager()

@@ -10,7 +10,7 @@ dated: 2026-08-14
 Dated 2026-08-14. Seven generators, thirteen committed files and one shared runner
 shipped this day — read `packages/*/CHANGES.md` for what each does, and
 `packages/cli/core/snapshots.js` for the engine. Do not cite the § Candidates
-section below as behaviour: nothing there exists.
+section below as behavior: nothing there exists.
 
 This file exists because the *rule* the family follows was argued in a session and
 recorded nowhere, so the next person proposing an artifact would re-derive it — and
@@ -92,13 +92,13 @@ costs a named allowance.
 because scope ids are content-addressed, and that is what makes CSS dedupe work
 across the two compilers a static build runs. Nothing asserts it. Invariant 15's
 tests *parse* compiler output; they do not compare it. So a change to the hashing
-input — a whitespace normalisation, a different serialisation of the AST — leaves
+input — a whitespace normalization, a different serialization of the AST — leaves
 every suite green and silently doubles the CSS a prerendered page ships, or
 worse, dedupes two rules that were not the same.
 
 **Shape.** A small curated fixture set (perhaps 10–15 `.mesa` files, each chosen
 for one feature: scoped style, `:global`, `{#each}`, `{@attach}`, an island, a
-`<script module>`) compiled to committed output. Normalised whitespace. A second
+`<script module>`) compiled to committed output. Normalized whitespace. A second
 section recording just the scope ids, because that is the part with the
 cross-compiler contract.
 

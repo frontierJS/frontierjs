@@ -65,7 +65,7 @@ const VOCAB = [
     "What changes when you navigate.",
     [
       ["Screen", "<main>", "The routed page body"],
-      ["Pane", "<section aria-labelledby>", "A labelled major subdivision of a Screen"],
+      ["Pane", "<section aria-labelledby>", "A labeled major subdivision of a Screen"],
       ["View", '<article role="tabpanel">', "One switchable view inside a Pane"],
       ["Tabs", '<div> + <div role="tablist">', "The control that switches Views. The buttons are <button role=\"tab\">"],
     ],
@@ -79,7 +79,7 @@ const VOCAB = [
       ["Prose", "<div>", "A region of authored long-form copy, styled by element — the one place the package touches a bare <p>. Sets measure, ink and list indentation only; a Heading or Code inside keeps its own term. Spacing is the parent's: compose with Stack"],
       ["Bar", "<div>", "A horizontal strip. Layout only — no role, no keyboard contract, contents are whatever you put there"],
       ["Toolbar", '<div role="toolbar">', "A strip whose contents are controls, presented as ONE tab stop. The role promises arrow-key movement and the app owes it (Principle 6) — if you are not providing the keys, use Bar"],
-      ["Divider", "<hr>", "A labelled or plain break between groups"],
+      ["Divider", "<hr>", "A labeled or plain break between groups"],
       ["Nav", "<ul> + <li> + <a>", "A list of navigation links. The link is .navlink; a heading above it is .navlist-label", "navlist"],
       ["Breadcrumb", '<nav aria-label="Breadcrumb"> + <ol>', "The trail back up. The current page carries aria-current"],
       ["Pagination", '<nav aria-label="Pagination">', "Page-by-page movement through a list. Each control is .pagination-link"],
@@ -139,8 +139,8 @@ const VOCAB = [
     "Composition helpers. They own one arrangement each and no skin, so they compose onto anything, including a term from another tier. The names are Every Layout's — the vocabulary people already have.",
     [
       ["Stack", "<div>", "Children flow down with an even gap"],
-      ["Cluster", "<div>", "Children flow across, wrap, and stay centred"],
-      ["Center", "<div>", "One child, dead centre in both axes"],
+      ["Cluster", "<div>", "Children flow across, wrap, and stay centered"],
+      ["Center", "<div>", "One child, dead center in both axes"],
       ["Split", "<div>", "Two-up: first item left, last item right"],
       ["Container", "<div>", "A max-width column with responsive padding"],
     ],
@@ -546,7 +546,7 @@ const ANATOMY = {
     markup: `<hr class="divider">
 <div class="divider-label">or continue with</div>`,
     parts: [
-      ['.divider-label', 'The labelled form. A <div> rather than an <hr>, because an <hr> cannot hold text', 'optional'],
+      ['.divider-label', 'The labeled form. A <div> rather than an <hr>, because an <hr> cannot hold text', 'optional'],
     ],
   },
 

@@ -191,7 +191,7 @@ async function hmacHex(secret, message) {
  * abbreviation junction's `x-fjs-build` header already uses).
  *
  * `timestamp` and `nonce` are REQUIRED, not defaulted. Defaulting them would
- * mean reading a clock and generating a uuid in a package whose whole licence to
+ * mean reading a clock and generating a uuid in a package whose whole license to
  * be imported by litestone and mesa is that it does neither — and it also makes
  * every caller state the two values a receiver will grade it on, which is the
  * pair most likely to be wrong.

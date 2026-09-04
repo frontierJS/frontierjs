@@ -71,7 +71,7 @@ describe('absence is not an objection', () => {
 
   test('verifiedAt undefined does not hold a user back', () => {
     // An app with no verification flow is not an app whose users are all
-    // unverified. This is the distinction the old behaviour collapsed.
+    // unverified. This is the distinction the old behavior collapsed.
     expect(sessionGateLevel(session({ verifiedAt: undefined }))).toBe(LEVELS.USER)
   })
 
@@ -81,7 +81,7 @@ describe('absence is not an objection', () => {
 
   test('a verified user passes the verification stage', () => {
     expect(sessionGateLevel(session({ verifiedAt: new Date() }))).toBe(LEVELS.USER)
-    // Serialised sessions carry strings, not Dates.
+    // Serialized sessions carry strings, not Dates.
     expect(sessionGateLevel(session({ verifiedAt: '2026-01-01T00:00:00Z' }))).toBe(LEVELS.USER)
   })
 

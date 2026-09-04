@@ -940,7 +940,7 @@ export function rewriteAssignments(src, node, ctx) {
 
       // Destructuring assignment: `[a, b] = [b, a]`, `({x: a} = o)`.
       //
-      // The branches above only recognise a bare Identifier on the left, so a
+      // The branches above only recognize a bare Identifier on the left, so a
       // pattern fell through to the generic descent and its targets were
       // rewritten as READS — `[$$runtime.get($$sig_a), …] = …`, which does not
       // parse. Clean compile, module dead on load; the kit's DatePicker used
@@ -2326,7 +2326,7 @@ function refuseCompiledDoorInTemplate(source) {
  *   const { props } = $   — `$.async` is assigned after the head has run, so a
  *                           destructure at script top reads undefined; and the
  *                           compiler tracks `$.x`, never a copy of it.
- *   const d = $           — the four compiled members are recognised as `$.x`
+ *   const d = $           — the four compiled members are recognized as `$.x`
  *                           and nothing else, so `d.context.k = 1` silently
  *                           assigns to the shared context object.
  *   let $ = …             — the door still exists and now points elsewhere.
@@ -2775,7 +2775,7 @@ export function analyzeScript(raw, ast) {
         // with no side effect is unobservable.
         //
         // This is a compile error rather than a warning because it is decidable,
-        // and because the previous behaviour was worse than either: `$: { (a, b) }`
+        // and because the previous behavior was worse than either: `$: { (a, b) }`
         // compiled to orderedGroup([{ deps: [a], handler: <value of b> }]) and
         // threw `fn is not a function` the first time `a` changed.
         // `[].every()` is true, so an empty block reads as "all watch pairs" —
@@ -6619,10 +6619,10 @@ export function emitScript(ctx) {
 
   watchedPaths.forEach((rawPath) => {
     const p = { path: rawPath }
-    const normalised = p.path.replace(/\?\./g, '.')
-    const dotIdx = normalised.indexOf('.')
-    const root = dotIdx >= 0 ? normalised.slice(0, dotIdx) : normalised
-    const dotPath = dotIdx >= 0 ? normalised.slice(dotIdx + 1) : ''
+    const normalized = p.path.replace(/\?\./g, '.')
+    const dotIdx = normalized.indexOf('.')
+    const root = dotIdx >= 0 ? normalized.slice(0, dotIdx) : normalized
+    const dotPath = dotIdx >= 0 ? normalized.slice(dotIdx + 1) : ''
     const key = `${root}::${dotPath}`
     if (seenPaths.has(key)) return
     seenPaths.add(key)
@@ -6662,11 +6662,11 @@ export function emitScript(ctx) {
   const localProxyPaths = {}   // root → [{ dotPath, sigVar }]
   watchedPaths.forEach((rawPath) => {
     const p = { path: rawPath }
-    const normalised = p.path.replace(/\?\./g, '.')
-    const dotIdx = normalised.indexOf('.')
-    const root = dotIdx >= 0 ? normalised.slice(0, dotIdx) : normalised
+    const normalized = p.path.replace(/\?\./g, '.')
+    const dotIdx = normalized.indexOf('.')
+    const root = dotIdx >= 0 ? normalized.slice(0, dotIdx) : normalized
     if (!localProxyRoots.has(root)) return
-    const dotPath = dotIdx >= 0 ? normalised.slice(dotIdx + 1) : ''
+    const dotPath = dotIdx >= 0 ? normalized.slice(dotIdx + 1) : ''
     const key = `${root}::${dotPath}`
     if (!localProxyPaths[root]) localProxyPaths[root] = []
     if (!localProxyPaths[root].find((e) => e.key === key)) {
@@ -6682,11 +6682,11 @@ export function emitScript(ctx) {
   const localVarProxyPaths = {}  // root → [{ dotPath, sigVar, fireVar }]
   watchedPaths.forEach((rawPath) => {
     const p = { path: rawPath }
-    const normalised = p.path.replace(/\?\./g, '.')
-    const dotIdx = normalised.indexOf('.')
-    const root = dotIdx >= 0 ? normalised.slice(0, dotIdx) : normalised
+    const normalized = p.path.replace(/\?\./g, '.')
+    const dotIdx = normalized.indexOf('.')
+    const root = dotIdx >= 0 ? normalized.slice(0, dotIdx) : normalized
     if (!localVarRoots.has(root)) return
-    const dotPath = dotIdx >= 0 ? normalised.slice(dotIdx + 1) : ''
+    const dotPath = dotIdx >= 0 ? normalized.slice(dotIdx + 1) : ''
     const key = `${root}::${dotPath}`
     if (!localVarProxyPaths[root]) localVarProxyPaths[root] = []
     if (!localVarProxyPaths[root].find((e) => e.key === key)) {
@@ -7132,7 +7132,7 @@ export function emitScript(ctx) {
     // "when X changes, do Y" reads as change-triggered, and firing on mount is
     // both surprising and usually wrong — `$: userId, () => { count = 0 }`
     // resetting on first render is a no-op at best. The eager case is already
-    // owned by $$onMount, and the "initialise then keep in sync" shape is
+    // owned by $$onMount, and the "initialize then keep in sync" shape is
     // usually a `const` memo wearing an effect's clothes.
     //
     // Deferring is only possible because the deps are explicit: the effect
@@ -7596,7 +7596,7 @@ function _renderGroup(code) {
   //
   // Anything that is not a complete single-line bind statement — including a
   // bind whose expression wraps onto the next line — ends the run and is passed
-  // through untouched. Grouping is an optimisation; leaving a binding alone is
+  // through untouched. Grouping is an optimization; leaving a binding alone is
   // always correct, and truncating one never is.
   const BIND_START = /^([ \t]*)\$\$runtime\.(?:bindText|bindAttribute)\(/
 
@@ -8524,7 +8524,7 @@ export async function compileSource(source, config = {}) {
   // compiler, whatever its extension. A frontmatter block is how every Sierra
   // route states its title and its render mode, so that heuristic said "this
   // .mesa component is Markdown" about most route files in existence — and
-  // Markdown escapes what it does not recognise. `<CatalogList client:load
+  // Markdown escapes what it does not recognize. `<CatalogList client:load
   // products={…} />` came out as a PARAGRAPH OF ESCAPED TEXT with the props
   // stringified into it, silently, while `<LiveStock />` beside it compiled as
   // a component.

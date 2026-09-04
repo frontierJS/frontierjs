@@ -28,7 +28,7 @@ import { releaseExpired } from '../domain/shop'
  * defaulting to now.
  *
  * Parameterised for the same reason `sweep-abandoned` takes `days`: a cron
- * whose only proof is `nextRuns()` is a schedule and not a behaviour. The drive
+ * whose only proof is `nextRuns()` is a schedule and not a behavior. The drive
  * posts `{"before":"2099-01-01T00:00:00.000Z"}` to expire every live hold, and
  * that runs the SAME comparison the scheduled fire runs — where a `releaseAll`
  * flag would be a second code path proving nothing about the first.

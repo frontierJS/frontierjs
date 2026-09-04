@@ -20,7 +20,7 @@
  *
  * What this file asserts instead is that the mechanism is DECLARED: the
  * right properties in the transition list, a closed state, an open state,
- * and an @starting-style for each. Whether the browser then honours it is
+ * and an @starting-style for each. Whether the browser then honors it is
  * the browser's guarantee, and it is the same three properties every other
  * framework's JavaScript is emulating.
  */
@@ -114,7 +114,7 @@ test('overlays: the transition list carries display and overlay', function () {
  *
  * `transition: opacity var(--overlay-time, var(--motion-enter)) …` carries a
  * comma inside the fallback arm, so `t.split(',')` cuts a segment in half and
- * every property reports as missing its behaviour — a red test against CSS
+ * every property reports as missing its behavior — a red test against CSS
  * that is exactly right. The nesting is not incidental either: the fallback
  * arm is what stops --overlay-time being an alias resolved once at :root
  * (overlays.css says why), so this shape is here to stay.
@@ -137,7 +137,7 @@ function segments(list) {
 
 test('overlays: display and overlay are allow-discrete', function () {
   /*
-   * The property in the list does nothing without the behaviour. This is
+   * The property in the list does nothing without the behavior. This is
    * the failure worth a test of its own: `transition: display 160ms` on its
    * own is valid CSS, changes nothing, and looks exactly like the fix.
    */

@@ -127,7 +127,7 @@ export const shipCommand = (from, to, image) =>
 export const sameMachine = (a, b) =>
   a.kind === b.kind && (a.kind === 'local' || a.host === b.host)
 
-/** The reachability probe. Local is reachable by construction; saying otherwise would be theatre. */
+/** The reachability probe. Local is reachable by construction; saying otherwise would be theater. */
 export const reachCommand = (host, transport) =>
   transport === 'local' ? null : `ssh -o ConnectTimeout=5 -o BatchMode=yes ${host} true`
 
@@ -195,7 +195,7 @@ export function createMachine({ host, exec, transport = null, path = null }) {
   // STDIN IS PIPED AND THE REST IS INHERITED, and the three cannot be collapsed
   // to `'inherit'`. `execSync` with `stdio: 'inherit'` IGNORES `input` on node —
   // stdin is the parent's, `sh -s` reads EOF and exits 0 having run nothing — and
-  // HONOURS it on bun. The script travels on stdin, so under node every
+  // HONORS it on bun. The script travels on stdin, so under node every
   // `machine.run` in the pipeline was a silent no-op that reported success: the
   // mkdir that creates `.fli`, the swap, the lock release, all of it. `fli`'s
   // shebang is `#!/usr/bin/env node`, so that is what a global install does; CI

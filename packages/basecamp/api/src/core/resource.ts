@@ -7,7 +7,7 @@
 // where-clause — which is a tenancy leak, not a style problem.
 //
 // These are helpers, not a factory. Each service still declares its own methods
-// so the ones with real behaviour (servers' drain/heartbeat, deployments'
+// so the ones with real behavior (servers' drain/heartbeat, deployments'
 // job handoff) read as themselves rather than as config for a base class.
 
 import { NotFound, Conflict, $ } from '@frontierjs/junction'

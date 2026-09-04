@@ -808,6 +808,34 @@ function describeDataLoss(tableDiffs) {
 const lossLine = (l) => `${l.table}.${l.columns.join(', ')}` +
   (l.renameTo ? ` (renamed to "${l.renameTo}"?)` : '')
 
+/**
+ * Does this diff only take things away?
+ *
+ * The signature of *the database is ahead of this schema*. It cannot prove it —
+ * an author who removed a column and changed nothing else produces the same
+ * diff — which is why both readings are printed rather than one being chosen.
+ * What it rules out is the common case where a schema is being edited forward,
+ * since that adds something.
+ */
+function onlyDrops(diffResult) {
+  // Not `needsRebuild`: SQLite cannot drop a column in place, so a rebuild is
+  // what a drop LOOKS like and testing it here would answer false in the one
+  // case this exists for. The question is whether anything arrives.
+  if (diffResult.newTables?.length)      return false
+  if (diffResult.newMatViews?.length)    return false
+  if (diffResult.newViews?.length)       return false
+  if (diffResult.changedViews?.length)   return false
+  if (diffResult.changedTriggers?.length) return false
+  for (const t of diffResult.tableDiffs ?? []) {
+    if (t.cols?.added?.length)     return false
+    if (t.cols?.modified?.length)  return false
+    if (t.indexes?.added?.length)  return false
+    // A constraint that changed is an edit, not a removal.
+    if (t.fkChanged || t.strictChanged || t.checksChanged || t.uniquesChanged) return false
+  }
+  return true
+}
+
 export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force = false, acceptDataLoss = false, acceptResidue = false } = {}) {
   // Accept either a parseResult or pull it from db.$schema
   const parseResult = parseResultOrSchema ?? { schema: db.$schema, valid: true, errors: [] }
@@ -930,7 +958,7 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
       // The other half of the same rule (FJS-183). A rebuild drops the table,
       // taking any trigger or index the APP created — litestone did not write
       // them and cannot restate them, so applying the rebuild here would delete
-      // behaviour with nothing recording that it had. The generated file blocks
+      // behavior with nothing recording that it had. The generated file blocks
       // for this too; the hash is not written, so it surfaces on every startup
       // until the schema or the database says what should happen.
       const blockedObjects = diffResult.tableDiffs.flatMap(d => d.needsRebuild
@@ -951,11 +979,23 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
       // column leaving the schema takes its values with it, and nothing said so.
       // `acceptDataLoss: true` is the caller stating it — Prisma's `db push`
       // demands `--accept-data-loss` for exactly this shape, and this mechanism
-      // is modelled on it. The hash is withheld like the other two, so a schema
+      // is modeled on it. The hash is withheld like the other two, so a schema
       // left this way re-announces on every boot rather than going quiet.
+      //
+      // The message names TWO readings because the diff cannot tell them apart
+      // and they want opposite actions. *You removed these* is the one the
+      // option is for. *Something else migrated this database forward and you
+      // are older than it* produces an identical drops-only diff — two
+      // processes on one file, which under `strategy database` is the ordinary
+      // shape: a long-running API, and a drive or a seed run from the app root
+      // after the schema moved (`FJS-566`). Taking the option there deletes the
+      // column the newer build is writing to. `only` is the tell and is stated
+      // rather than left to be noticed: a diff that ADDS nothing is not a
+      // schema being edited, it is a schema that is behind.
       const dataLoss = describeDataLoss(diffResult.tableDiffs)
       if (dataLoss.length && !acceptDataLoss) {
         const rename = dataLoss.find(l => l.renameTo)
+        const only   = onlyDrops(diffResult)
         const reason = `drops column(s) and the values in them: ${dataLoss.map(lossLine).join('; ')}`
         console.warn(
           `[litestone] Migration BLOCKED for database "${dbName}" — it would destroy data.\n` +
@@ -964,9 +1004,16 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
             ? `            A rename is a drop plus an add here, so keep the values with a file migration:\n` +
               `            ALTER TABLE "${rename.table}" RENAME COLUMN "${rename.columns[0]}" TO "${rename.renameTo}"\n`
             : '') +
-          `            Nothing was applied. Pass { acceptDataLoss: true } to autoMigrate() to say the ` +
-          `loss is intended.`)
-        results[dbName] = { state: 'blocked', reason, dataLoss }
+          `            Nothing was applied.\n` +
+          (only
+            ? `            This diff only REMOVES things, so there are two readings and they want\n` +
+              `            opposite actions:\n` +
+              `              • you removed them from the schema  → { acceptDataLoss: true }\n` +
+              `              • this database was migrated by a NEWER schema than the one this\n` +
+              `                process holds → do not pass it; run the current build instead.\n` +
+              `            Two processes on one database file is the ordinary way to reach the second.`
+            : `            Pass { acceptDataLoss: true } to autoMigrate() to say the loss is intended.`))
+        results[dbName] = { state: 'blocked', reason, dataLoss, onlyDrops: only }
         continue
       }
 

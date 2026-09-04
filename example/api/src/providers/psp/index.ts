@@ -84,7 +84,7 @@ function noteNonce(nonce: string, now: number): boolean {
  *
  * `rawBody` is REQUIRED and is why this takes a context rather than a parsed
  * body: the signature covers a hash of the bytes that were sent, and
- * re-serialising `ctx.body` to check it means both ends have to agree about
+ * re-serializing `ctx.body` to check it means both ends have to agree about
  * key order forever. Junction keeps the bytes for exactly this
  * (`ctx.rawBody` on a raw route, `ctx.$raw.rawBody` in a hook).
  */
@@ -95,7 +95,7 @@ export async function verifyWebhook(ctx: {
    * The RAW search string, as it arrived. Part of the canonical string since
    * `FJS-678`; it is taken raw rather than off a parsed query bag, because a
    * signature covers the bytes the sender put on the wire and a
-   * re-serialisation of a parsed query is a different string.
+   * re-serialization of a parsed query is a different string.
    */
   query?: string
   headers: Record<string, string> | Headers
@@ -129,7 +129,7 @@ export async function verifyWebhook(ctx: {
  * costs nothing. Refunding twice pays the customer twice, with two 200s and
  * nothing to distinguish them afterwards — so this is the one outbound call in
  * this app that states an idempotency key, and conduit puts it on the wire as
- * `Idempotency-Key` for the provider to honour.
+ * `Idempotency-Key` for the provider to honor.
  *
  * The key is the CALLER's to choose and is not defaulted here, because what
  * makes two attempts "the same refund" is a question about the shop's
@@ -304,7 +304,7 @@ export async function createIntent(app: App, req: {
  * ─── And why it is SIGNED where the shopper's confirm is not ─────────────
  *
  * The hosted page a person is sent to confirms with no credential — it is
- * reached with a browser and the person IS the authorisation. This one is the
+ * reached with a browser and the person IS the authorization. This one is the
  * shop acting on its own, with nobody there, which is the only kind of caller a
  * signature can speak for.
  *

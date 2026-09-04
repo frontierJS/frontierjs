@@ -79,9 +79,9 @@ const _w = () => watchProxy(theme)
  */
 const DEFAULT_THEMES = ['theme-default', 'theme-dark']
 
-let _config = normalise({})
+let _config = normalize({})
 
-function normalise(config) {
+function normalize(config) {
   const themes = Array.isArray(config.themes) && config.themes.length
     ? config.themes
     : DEFAULT_THEMES
@@ -122,7 +122,7 @@ function normalise(config) {
  * @param {object} config — theme config from sierra.config.js
  */
 export function initTheme(config = {}) {
-  _config = normalise(config)
+  _config = normalize(config)
 
   if (typeof window === 'undefined') return
 

@@ -74,10 +74,10 @@ describe('two callers, one move', () => {
   })
 
   // `$transaction` is the documented mitigation and it made this WORSE, not
-  // better: serialising the callers means each one re-reads AFTER the winner
+  // better: serializing the callers means each one re-reads AFTER the winner
   // committed, which is precisely the state the early return called a no-op.
   // All four succeeded.
-  it('inside $transaction too — serialising the callers used to hide it', async () => {
+  it('inside $transaction too — serializing the callers used to hide it', async () => {
     const db = await setup()
     const id = await mk(db)
     const r  = await Promise.allSettled([0, 1, 2, 3].map(() =>
@@ -122,7 +122,7 @@ describe('the refusal says what to do about it', () => {
   // only because both callers evaluated against `draft` before either
   // committed, so the SAME end state gave two different classes depending on
   // which request won a footrace, and the retry that answer advised failed
-  // identically. Writes are serialised now (`FJS-638`), so there is no
+  // identically. Writes are serialized now (`FJS-638`), so there is no
   // interleaving left to infer a race from.
   //
   // The signal is not lost, it is relocated to where every other system earns

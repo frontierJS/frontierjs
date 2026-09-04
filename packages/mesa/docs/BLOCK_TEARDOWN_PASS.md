@@ -133,7 +133,7 @@ One thing noticed and deliberately not changed: `boundaryBlock` rebuilds its
 `{:pending}` branch on every state change while still loading, rather than
 leaving the mounted one alone. That is wasted work and it discards any DOM state
 in the pending branch (an in-flight animation, a focused input). It is no longer
-a *leak* — each rebuild disposes the last — so it is a behaviour question, not a
+a *leak* — each rebuild disposes the last — so it is a behavior question, not a
 bug, and changing it would change what `fetching` → `loading` transitions look
 like.
 

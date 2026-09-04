@@ -86,7 +86,7 @@ export class StubTransport extends BaseTransport {
   // keying on path alone made them the same mock.
   mock(pattern: string, data: unknown, opts: number | MockOptions = {}): this {
     const { status = 200, delay_ms } = typeof opts === 'number' ? { status: opts } : opts
-    this.mocks.set(normalise(pattern), { kind: 'response', data, status, delay_ms })
+    this.mocks.set(normalize(pattern), { kind: 'response', data, status, delay_ms })
     return this
   }
 
@@ -94,7 +94,7 @@ export class StubTransport extends BaseTransport {
   // and timeout handling testable — none of which could be exercised when
   // the double could only succeed.
   mockError(pattern: string, kind: ConduitErrorKind, opts: MockErrorOptions = {}): this {
-    this.mocks.set(normalise(pattern), {
+    this.mocks.set(normalize(pattern), {
       kind:       'error',
       error_kind: kind,
       message:    opts.message ?? `Stubbed ${kind}`,
@@ -106,7 +106,7 @@ export class StubTransport extends BaseTransport {
 
   // Register chunks for stream(). Without this, stream() yields nothing.
   mockStream(pattern: string, chunks: unknown[], opts: MockOptions = {}): this {
-    this.mocks.set(normalise(pattern), {
+    this.mocks.set(normalize(pattern), {
       kind:     'stream',
       chunks,
       delay_ms: opts.delay_ms,
@@ -192,10 +192,10 @@ export class StubTransport extends BaseTransport {
   // "<METHOD> <path>" beats "<path>" beats the default.
   private match(req: ConduitRequest): MockEntry {
     if (req.path) {
-      const qualified = this.mocks.get(normalise(`${req.method} ${req.path}`))
+      const qualified = this.mocks.get(normalize(`${req.method} ${req.path}`))
       if (qualified) return qualified
 
-      const bare = this.mocks.get(normalise(req.path))
+      const bare = this.mocks.get(normalize(req.path))
       if (bare) return bare
     }
     return this.defaultResponse
@@ -206,7 +206,7 @@ export class StubTransport extends BaseTransport {
 
 // 'POST /deploy' → 'POST /deploy'; '/deploy' → '/deploy'
 // Method is upper-cased so 'post /x' and 'POST /x' are the same key.
-function normalise(pattern: string): string {
+function normalize(pattern: string): string {
   const trimmed = pattern.trim()
   const space   = trimmed.indexOf(' ')
   if (space === -1) return trimmed

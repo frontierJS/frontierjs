@@ -354,7 +354,7 @@ declared. One authored string, all three realms.
                                  leave it unset are all distinct to the index
 @@unique([a, b], nullsDistinct: true)
                                  …and this is how a schema says it meant that. SQL's own
-                                 word for SQLite's behaviour; emits identical DDL. Single
+                                 word for SQLite's behavior; emits identical DDL. Single
                                  @unique over an optional column is untouched
 @@unique([a, b], global: true)   the tuple form of @unique(global) — see it above
 @@unique([a], where: expr)       conditional uniqueness — the constraint holds over the rows
@@ -412,7 +412,7 @@ declared. One authored string, all three realms.
 
 Without `@@softDelete(cascade)`, soft-deleting a parent row leaves FK children live — this is almost always a bug. The parser emits a warning when a `@@softDelete` model has a `hasMany` relation to another `@@softDelete` model without cascade.
 
-`@hardDelete` on a relation field overrides cascade behaviour for that specific child:
+`@hardDelete` on a relation field overrides cascade behavior for that specific child:
 
 ```
 model Account {
@@ -617,7 +617,7 @@ db.$backup('./backups/prod.db')
 db.$backup('./backups/prod.db', { vacuum: true })
 db.$transaction(async (tx) => { ... })
 db.$inTransaction         // is one open on this connection right now? Same answer
-                          // on every flavour — one write connection, one counter.
+                          // on every flavor — one write connection, one counter.
                           // For a write whose meaning depends on rolling back
                           // with everything else (junction's outbox row)
 db.$attach('./other.db', 'other')
@@ -635,7 +635,7 @@ db.$capabilitiesFor(user)
                            // { held, unknown, byModel } — what can this person do.
                            // Fourth sibling of the three above and the same
                            // contract: takes its subject as an ARGUMENT, and every
-                           // flavour answers identically for the same one. `unknown`
+                           // flavor answers identically for the same one. `unknown`
                            // is the half that earns it — a capability is a
                            // reference, so a rename leaves the OLD string sitting in
                            // every Role row; this is what shows you the data
@@ -669,14 +669,14 @@ db.$protectedFields('secret')
                            // @@log(audit) redacts these in its own JSONL, and an
                            // app writing its own audit table had nothing to ask.
                            // Same contract as $checkWhere — unknown accessor is
-                           // {}, every flavour of client answers the same
+                           // {}, every flavor of client answers the same
 db.$softDelete             // { ModelName: boolean } — which models hide a removed
                            // row rather than destroying it. A COPY, and on every
-                           // flavour of client: the live map is what every read
+                           // flavor of client: the live map is what every read
                            // filters against, and junction holds a $setAuth one
 db.$schema                 // parsed schema object
 db.$plugins                // installed plugin names, in run order — every client
-                           // flavour. A gated schema auto-installs GatePlugin, so
+                           // flavor. A gated schema auto-installs GatePlugin, so
                            // what you passed is not necessarily what is running
 db.$rawDbs                 // { main: Database, ... } raw write connections
 db.$databases              // { main: { driver, path }, ... }
@@ -772,9 +772,9 @@ Conflicts with `@guarded` and `@secret` — validation error.
 
 The expression is checked at startup by the same walk `@@allow` and `@@scope`
 run — a column that is not on the model and a claim the principal cannot carry
-are each refused by name, naming the operation and the field (`FJS-667`). It was
-checked by nothing until 2026-09-02, and it fails CLOSED, so a typo stripped the
-column from every row and read as the policy working strictly.
+are each refused by name, naming the operation and the field (`FJS-667`). It
+fails CLOSED, so an ungraded typo strips the column from every row and reads as
+the policy working strictly.
 
 ---
 
@@ -1068,7 +1068,7 @@ database audit {
 
 Log entry shape: `operation, model, field?, records (id array), before?, after?, actorId?, actorType?, meta Json?, createdAt`.
 
-**A jsonl/logger retention pass reads the FIRST line and stops if it is inside the window.** An append-only log is oldest-first, so a fresh first line means every line is fresh — the right optimisation for a check that runs on every boot over a file that grows for the life of the deployment. What it costs is a probe: append an old row to the END and the pass returns `null`, having read nothing, so `$retain()` answers `[]` and the job that called it reports success while removing nothing. A test planting an old row has to plant it where an old row would actually be. The companion `.index.db` holds byte offsets and is DELETED by a compaction that rewrites the file, then rebuilt lazily — so anything rewriting that file by hand owes the same removal.
+**A jsonl/logger retention pass reads the FIRST line and stops if it is inside the window.** An append-only log is oldest-first, so a fresh first line means every line is fresh — the right optimization for a check that runs on every boot over a file that grows for the life of the deployment. What it costs is a probe: append an old row to the END and the pass returns `null`, having read nothing, so `$retain()` answers `[]` and the job that called it reports success while removing nothing. A test planting an old row has to plant it where an old row would actually be. The companion `.index.db` holds byte offsets and is DELETED by a compaction that rewrites the file, then rebuilt lazily — so anything rewriting that file by hand owes the same removal.
 
 **Protected fields are redacted.** Any `@encrypted` / `@guarded` / `@secret` field has its value replaced with `'[redacted]'` in both the field-level entry and the model-level `before`/`after` snapshot — the trail records *that* the field was written, never what it holds. This is what makes `@secret`'s expansion safe: `@secret` implies `@log(<first logger db>)`, so declaring a logger database alone starts logging every `@secret` field, and without redaction that writes plaintext beside a correctly-encrypted row. `null` is preserved rather than redacted (nothing to leak, and it keeps `null → value` transitions visible); unprotected fields on the same model are still logged in full; the row returned to the caller is untouched.
 
@@ -1291,7 +1291,7 @@ const env = await createTestEnv({
   plugins:    [myGatePlugin],
 })
 
-env.actingAs(user)                  // the app's own getLevel — anything about behaviour
+env.actingAs(user)                  // the app's own getLevel — anything about behavior
 await env.atLevel(4)                // a SYNTHETIC standing — the gate grid only
 await env.verifyGateLadder()        // every gated model × every level × all four ops
 await env.verifyReadLadder()        // the read column alone — no fixtures needed
@@ -1513,7 +1513,7 @@ has no model in scope, so the default belongs at the caller that has one.
 
 **`@big` is `@scale`'s opposite and it emits no CHECK, which is the part that looks inconsistent and is not.** `@scale` narrows the column to the range a JS number carries; `@big` says the values use all 64 bits and pays by crossing as a **string of digits** — a `BigInt` is exact and `JSON.stringify` throws on one, which is every HTTP response, every WS frame and every `before`/`after` audit snapshot. node-postgres answers `int8` the same way; mysql2 has `bigNumberStrings` for it. The type does not vary with the magnitude (`42` reads back `'42'`) or a caller would branch on the size of the value; a JS number is still accepted going IN below 2^53. The column keeps `INTEGER` storage, which is what makes it worth doing over a `TEXT` column of digits — measured, a text parameter takes the column's affinity, so `ORDER BY` puts `100` before `9007…`, a range filter compares numerically, EXPLAIN answers `SEARCH … USING COVERING INDEX (v=?)`, and `AUTOINCREMENT` continues past 2^53. **No CHECK because `STRICT` is on every table this package writes** and already refuses all three ways a wide value stops being exact: past int64 (a loose table stores REAL `9.22e+18`), a non-numeric string, a fraction. A constraint that cannot fire is worse than none; `@@noStrict` is the one shape that earns it, and there it is emitted. The distinction from `@scale` is the bound — `@scale`'s is NARROWER than the column's own, `@big`'s IS the column's own.
 
-**Two traps in implementing it, both measured.** `safeIntegers` is per-STATEMENT and all-or-nothing, so a wide model's statements answer BigInts for `id`, a count and a Boolean's 0/1 as well — and asking at the statement while narrowing in `read`/`readAll` is an enumeration: `count()` answered `0n`, because a statement also serves counts and aggregates that reach a caller through neither. The **statement** narrows what it returns (`wideStmt`/`wideDb` in `client.js`), and `wideDb` unwraps through `$plain` before re-wrapping, because a wide model's `readDb` is handed to the include and `@from` resolvers, which read a DIFFERENT model. For a key the row read does not recognise — `_max__col`, a window's row number — the fallback is the VALUE: one that fits becomes a number, one that does not becomes digits.
+**Two traps in implementing it, both measured.** `safeIntegers` is per-STATEMENT and all-or-nothing, so a wide model's statements answer BigInts for `id`, a count and a Boolean's 0/1 as well — and asking at the statement while narrowing in `read`/`readAll` is an enumeration: `count()` answered `0n`, because a statement also serves counts and aggregates that reach a caller through neither. The **statement** narrows what it returns (`wideStmt`/`wideDb` in `client.js`), and `wideDb` unwraps through `$plain` before re-wrapping, because a wide model's `readDb` is handed to the include and `@from` resolvers, which read a DIFFERENT model. For a key the row read does not recognize — `_max__col`, a window's row number — the fallback is the VALUE: one that fits becomes a number, one that does not becomes digits.
 
 **No ILIKE** — use `WHERE LOWER(name) LIKE '%term%'`
 
@@ -1521,7 +1521,7 @@ has no model in scope, so the default belongs at the caller that has one.
 
 **There are THREE schemas and most migration confusion is a comparison between the wrong two** — declared (`schema.lite`), shadow (the migration files replayed into an empty database) and live. `migrate create` and `migrate check` compare declared ↔ shadow: *what migration is missing*. `migrate dev` and `migrate baseline` also compare shadow ↔ live: *has somebody changed this database without writing a file*. It was ONE comparison, declared ↔ live, doing both jobs — which is why a `db push` database, matching the declaration by construction, made `migrate create` answer *already in sync* at the exact moment a migration was needed, while the deploy refused for want of one (`FJS-388`, ruled `FJS-D123`). `buildShadow` and `historyGap` in `core/migrations.js` are the owners; `migrate check` is the repo-only question with no database opened, and `fli deploy:doctor` asks it before an image is built while `migrate apply` asks the same function at container start. **`db push` is prototyping only** — it reaches no deploy — and `migrate baseline` is the way back for a database that is already correct and has no history to say so, refusing when the database does not actually hold what the files build.
 
-**A protection that only STRIPS is not a protection.** `@guarded` hid its value from every read and let the same caller name the column in a `where`, which recovers it one `startsWith` at a time, and in an `orderBy`, which leaks the ordering of every row at once (`FJS-393`). The refusal is `collectGuardedArgs` in `client.js`, at the read where `ctx.isSystem` is known — NOT in `filterableKeysFor`, which answers whether a column CAN be compared and is therefore the same answer on every flavour of client, which is what lets junction ask `$checkWhere` of a caller's own. **It walks the relation graph**, because the filter grammar does: `where: { author: { is: { … } } }`, a relation `orderBy` and a nested `include` all ask about a model the table is not. `ctx.guardedMap.reaches` is the gate — a model from which no guarded column is reachable at any depth costs one boolean — and the walk descends only into a relation key or a logical/relation operator, since a nested object under an ordinary column is a typed-Json path where a key sharing a guarded column's name means something else. The sibling hole through a field-level `@allow('read', …)` is open and measured (`FJS-442`): a predicate is not a set, and refusing it needs a ruling first. **A credential lookup is now a system read by construction** — a `Session`/`Invitation`/`ApiKey` token is `@guarded(all)` and found BY its value, so `where: { token }` on a caller's client is refused; auth and basecamp already went through `asSystem()` for it, and the comment in `invitations.service.ts` says why. Allowing bare equality instead would have kept them working and left the hole open for anything low-entropy, which is what a probe enumerates.
+**A protection that only STRIPS is not a protection.** `@guarded` hid its value from every read and let the same caller name the column in a `where`, which recovers it one `startsWith` at a time, and in an `orderBy`, which leaks the ordering of every row at once (`FJS-393`). The refusal is `collectGuardedArgs` in `client.js`, at the read where `ctx.isSystem` is known — NOT in `filterableKeysFor`, which answers whether a column CAN be compared and is therefore the same answer on every flavor of client, which is what lets junction ask `$checkWhere` of a caller's own. **It walks the relation graph**, because the filter grammar does: `where: { author: { is: { … } } }`, a relation `orderBy` and a nested `include` all ask about a model the table is not. `ctx.guardedMap.reaches` is the gate — a model from which no guarded column is reachable at any depth costs one boolean — and the walk descends only into a relation key or a logical/relation operator, since a nested object under an ordinary column is a typed-Json path where a key sharing a guarded column's name means something else. The sibling hole through a field-level `@allow('read', …)` is open and measured (`FJS-442`): a predicate is not a set, and refusing it needs a ruling first. **A credential lookup is now a system read by construction** — a `Session`/`Invitation`/`ApiKey` token is `@guarded(all)` and found BY its value, so `where: { token }` on a caller's client is refused; auth and basecamp already went through `asSystem()` for it, and the comment in `invitations.service.ts` says why. Allowing bare equality instead would have kept them working and left the hole open for anything low-entropy, which is what a probe enumerates.
 
 **`@updatedAt` is stamped by the CLIENT, and there is no trigger any more.** It was an AFTER UPDATE trigger, and a trigger can only ever read SQLite's own clock — so `createClient({ now })` moved a policy's `now()` and left every stamp on today, which meant the one thing a frozen clock is for (staging a row aging past a window) could not be staged (`FJS-531`). Three mechanisms became one: `@default(now())` and `@updatedAt`-on-create go through `buildGeneratedDefaultMap`, `@updatedAt`-on-update through `stampSets`, all three reading the client's clock. `isUpdatedAtField` in `ddl.js` is the one answer to *is this a stamp column* — the ATTRIBUTE, or the name `updatedAt` on a `DateTime`, because binding to the attribute alone leaves a column named for the job unstamped. **`FJS-396` is closed at the root rather than narrowed**: RETURNING is evaluated before an AFTER trigger, so a write that leaned on one handed back a value the row no longer held, and naming the column in the SET clause only fixed that while the two values DIFFERED — which they do not when the clock has not moved between two writes to one row (under an injected clock, every write after the first). With no trigger there is no window. **The floor is now asymmetric and that is the price**: the column DEFAULT stays, so a raw INSERT still stamps; a raw UPDATE does not, and a hand-written statement owns its own stamp. An existing database is migrated by `litestone migrate` — pristine stops carrying the trigger, `droppedTriggers` in `migrate.js` sees it, one `DROP TRIGGER IF EXISTS` and no table rebuild. `@@external` answers no stamp columns at all: a client stamp into a table litestone does not own is a silent write into somebody else's.
 
@@ -1587,7 +1587,7 @@ fill it from that, never by hand. Its first run found `FJS-720`.
 operations, one cell each, under one invariant — *no cell may silently return a
 wrong answer*: supported, or refused **by name**. Adding a column kind or an
 operation means filling its row or column; a missing cell fails rather than being
-skipped, because every defect in the 2026-08-11/12 sweep lived in an intersection
+skipped, because every defect the crossing sweep found lived in an intersection
 that each feature's own suite passed. A cell reading `200:ref` is open FJS-200,
 asserted **still broken** — fix it and the matrix goes red telling you to promote
 the cell, so a fix cannot leave the grid stale. Fill cells from
@@ -1722,7 +1722,7 @@ cell means.
   `auth().id ==` row policy matches nothing and its model answers an empty list
   rather than refusing — indistinguishable from a gate refusal by the result, and
   said out loud for that reason.
-- **A REPL that does not serialise its lines executes them out of order, and
+- **A REPL that does not serialize its lines executes them out of order, and
   `rl.pause()` does not fix it.** Pausing does not hold back lines readline has
   already buffered, so a pasted block or a piped heredoc fires every handler and
   the statements complete in whatever order their awaits finish — against a
@@ -1794,7 +1794,7 @@ cell means.
   outside the run. What this buys is reach: the `@secret` and `@guarded` columns
   auth ships are only mutable once the fragment is in.
 - **Mutation is code-only and quote-aware.** An attribute named inside a doc
-  comment is prose; editing it produces a mutant identical in behaviour, which
+  comment is prose; editing it produces a mutant identical in behavior, which
   survives everything. `example` reported four surviving `guarded-drop` mutants
   on a model with no `@guarded` field before this.
 - **A UNIQUE collision is indistinguishable from a validator working.** Both are
@@ -1874,9 +1874,9 @@ cell means.
   and a policy that is not applied at all look identical from one side.
 - **`$close()` finalises the statement cache, and without that it closes
   nothing.** bun's `close()` is `sqlite3_close_v2` — it defers the real
-  destruction until the last prepared statement is finalised — and `wrapDb`
+  destruction until the last prepared statement is finalized — and `wrapDb`
   holds up to 500. Measured: a close with one live statement freed **0 file
-  descriptors**, and finalising that statement freed 3. So for its whole life
+  descriptors**, and finalizing that statement freed 3. So for its whole life
   `$close()` produced a client that answered a cached query off a closed,
   checkpointed handle and threw on a fresh one, and the tenant pool's eviction
   paid a 7.97 ms `wal_checkpoint(TRUNCATE)` for a release that never happened
@@ -2015,7 +2015,7 @@ cell means.
   right rows in the wrong order. `@from` sorts fine (it is a subquery in the
   SELECT). `db.$checkOrderBy(accessor, orderBy)` asks without running the query.
 - **Nor can a column whose stored TEXT is a storage detail** — an array or a
-  `Json` document (a serialisation), a `File` (a reference), `@encrypted` or
+  `Json` document (a serialization), a `File` (a reference), `@encrypted` or
   `@hashed` (an encoding). SQLite orders by that text, so `[10]` sorts before
   `[9]` and ciphertext reshuffles on every re-encryption. One bucket,
   `reason: 'opaque'` (`FJS-200`). An implicit m2m (`Tag[]`) is an array in the
@@ -2040,7 +2040,7 @@ cell means.
   names a column* is what a new argument has to pass.
 - **`@@unique(where:)` must never get `@@softDelete`'s clause ANDed into it, and
   `@@index(where:)` must keep getting it.** On an index the AND is an
-  optimisation — the clause is what makes the index reachable on such a model at
+  optimization — the clause is what makes the index reachable on such a model at
   all. On a UNIQUE index the predicate IS the constraint, so ANDing it is
   `FJS-204`'s rejected derivation arriving through the back door: the deleted row
   stops holding its `@unique` slot, and `SoftDeletedUniqueError` can never fire
@@ -2140,14 +2140,14 @@ cell means.
 
 - **A `@values` binding is checked through the CALLER'S accessor, and that is the
   whole of its permission story.** `enforceValueSets` reads the source model off
-  `ctx.tables[accessor]` — the sibling at this client's own flavour — so the set
+  `ctx.tables[accessor]` — the sibling at this client's own flavor — so the set
   a caller sees is the set their own `@@allow` shows them, and `open` creates
   through that same accessor, which means the source model's `@@gate` and
   `@@allow` answer who may extend it. Written against `asSystem()` it would
   offer every row to everybody and let any caller grow a shared list, and it
   would pass every test that uses one principal. **`suggested` issues no query
   at all** — enforcing nothing has to cost nothing, or nobody uses the strength
-  that keeps the list travelling. **Six write paths carry a payload and all six
+  that keeps the list traveling. **Six write paths carry a payload and all six
   call it**; `test/valuesets.test.ts` § every write path derives that list from
   `client.js` itself rather than restating it, because a seventh added later
   would be silent.
@@ -2158,7 +2158,7 @@ cell means.
   guard passing because it counts rows and not values (`FJS-641`). A plain drop
   was exactly as silent, which is why the rule is *any column drop* rather than
   the rename-shaped case. `{ acceptDataLoss: true }` is the escape — Prisma's
-  `--accept-data-loss` on the mechanism this is modelled on — and the hash is
+  `--accept-data-loss` on the mechanism this is modeled on — and the hash is
   withheld like the other blocked rules, so it re-announces on every boot. One
   column out and one in of the same type is reported as a probable rename with
   the `ALTER TABLE … RENAME COLUMN` to use instead; that guess changes the
@@ -2189,7 +2189,7 @@ cell means.
   its email column, and this language cannot say that. `autoMigrate` announces it
   and records it beside the DDL hash, so the fast path re-announces for one
   SELECT; `{ acceptResidue: true }` is the caller stating it, beside the
-  `acceptDataLoss` it is modelled on. **Adding a dimension to the enumeration is
+  `acceptDataLoss` it is modeled on. **Adding a dimension to the enumeration is
   what makes the tripwire go quiet**, which is the relationship to keep: a
   residue is a question, and the answer is usually a comparison this file is not
   making yet.

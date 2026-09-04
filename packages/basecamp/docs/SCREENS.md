@@ -163,7 +163,7 @@ None of these exists in `db/schema.lite`.
 ### D. Needs an outbound adapter (6) — **screens built 2026-08-30, § Phase 14**
 
 Real third parties. These belong behind `@frontierjs/conduit` as declared
-targets, not `fetch()` in a service — `example/api/src/core/mailer.ts` is the pattern.
+targets, not `fetch()` in a service — `example/api/src/providers/mail/mailer.ts` is the pattern.
 
 Four of them now have a screen that says what is not connected, with a skeleton
 where the vendor's numbers go. Two are named for the job rather than the vendor,
@@ -214,7 +214,7 @@ follow the data. Suggested phases, each one shippable:
 **Do not port the JSX.** It is 2,120 inline `style={{}}` objects against a
 private hex palette; the palette is already `theme-basecamp` in
 `@frontierjs/css` and the components are already `@frontierjs/ui`. The mock is
-a spec for *layout and behaviour*, and nothing else.
+a spec for *layout and behavior*, and nothing else.
 
 ---
 
@@ -364,7 +364,7 @@ What the three decided, each written at its call site:
   effect of a delete is how a fleet loses routing with nobody deciding to.
 - **The alerts service is not an evaluator.** Nothing measures a threshold —
   that belongs with whatever does the measuring, and a rule firing from the
-  browser's view of the fleet would be theatre. The screen says so in a Callout
+  browser's view of the fleet would be theater. The screen says so in a Callout
   rather than showing an empty history that reads as broken.
 - **Acknowledging is not resolving.** Two methods, two roles: authoring a rule
   is admin, acknowledging a firing is anyone carrying the pager.
@@ -442,7 +442,7 @@ app ends up answering on one nobody chose.
 ### What it found
 
 **`<Textarea>` silently ignored `oninput`** while `<Input>` and `<Select>` both
-honoured it — an undeclared prop is just ignored, so the two PEM fields stayed
+honored it — an undeclared prop is just ignored, so the two PEM fields stayed
 empty and the service answered `certPem and keyPem are both required` with
 nothing on either side explaining why. Fixed in the kit (`FJS-116`).
 
@@ -543,7 +543,7 @@ Json column's contents, which SQLite has no way to express.
   subject row; the client interpolated the id unconditionally, so the only way
   to reach one was `/{service}/null`.
 - **`autoValidate` strips a wire-only field before the method body sees it.**
-  Not a defect — it is the documented behaviour — but it is silent, and the
+  Not a defect — it is the documented behavior — but it is silent, and the
   channels service reported "Slack needs a credential" about a request carrying
   exactly that. A field that is not a column has to be captured in a BEFORE
   hook, which is the only place it still exists. Same shape as `ip_address`
@@ -561,7 +561,7 @@ Both halves are real and proven; the thing between them is not. No evaluator
 reads a metric, compares it to a rule and writes an `AlertEvent`, and nothing
 fans a fired event out to the rule's channels. That needs a metric source,
 which is an observability adapter (category D) — and a rule that fires from the
-browser's idea of the truth is theatre.
+browser's idea of the truth is theater.
 
 **A flag's rollout percentage is stored and never applied** (`FJS-124`). The
 bucketing decision has to happen where the user is, per request; computing it
@@ -596,7 +596,7 @@ and nothing else here would notice.
 **A scope is `<service>:<read|write>`, and the resource half IS the service
 name.** No mapping table beside the registry: the vocabulary is derived from
 `app.services.list()` at call time, so a service added tomorrow is grantable
-tomorrow, and a checkbox cannot offer a scope the guard does not recognise. The
+tomorrow, and a checkbox cannot offer a scope the guard does not recognize. The
 screen fetches it through a collection-level `scopes` action rather than
 shipping a copy — which needed `FJS-122`, since there is no subject row.
 
@@ -768,7 +768,7 @@ trend, `service_health` is a live ping with no latency behind it, and
 
 **A custom action that answers `data` plus anything else loses the anything
 else** (`FJS-140`). `kinds` returned `{ total, data, statSources, portalServices }`;
-`wrapResult` recognised the first two keys as a paginated list and rebuilt the
+`wrapResult` recognized the first two keys as a paginated list and rebuilt the
 envelope from those alone, so the browser got nine widget kinds and neither of
 the vocabularies needed to configure them — 200, no warning, no error. Answering
 three named keys instead makes it a `single`, which unwraps whole.
@@ -778,7 +778,7 @@ this the second phase it has cost.
 ### Still open
 
 **A widget cannot be sized per breakpoint.** Width is thirds of a row and the
-browser wraps them; the mock's `defaultRows` is not modelled at all, because a
+browser wraps them; the mock's `defaultRows` is not modeled at all, because a
 card's height here is its content's.
 
 **Nobody can put a board on the home screen.** `isPinned` orders the list and
@@ -917,7 +917,7 @@ no change.
 Refusal is **404, not 403** — the hub is not a screen someone is being refused,
 it is a surface they have no business knowing exists.
 
-### Suspension, which was a word nothing honoured
+### Suspension, which was a word nothing honored
 
 `User.status` was a free `String` and @frontierjs/auth — which owns the model —
 never reads it. A Suspend button written against it would have reported success
@@ -1244,7 +1244,7 @@ models credential material.
 
 **Three switches say they are stored and read by nothing yet** — the two-factor
 requirement, API-key auth and bot accounts. A switch that changes a column and
-no behaviour is worth saying out loud rather than leaving to be discovered.
+no behavior is worth saying out loud rather than leaving to be discovered.
 
 **The notification screen renders *chosen* against *default*.** A row exists
 only where somebody has said something, so *defaulted to on* and *turned on* are

@@ -452,7 +452,7 @@ export async function claimSession(projectName, env, categories) {
     while (usedIds.has(projectId)) projectId++
     if (projectId > 9) throw new Error('Maximum concurrent projects (10) reached')
 
-    // Normalise categories to { category: count }
+    // Normalize categories to { category: count }
     const catMap = Array.isArray(categories)
       ? Object.fromEntries(categories.map(c => [c, 1]))
       : categories

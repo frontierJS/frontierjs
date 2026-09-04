@@ -55,7 +55,7 @@ globalThis.assert = {
   // The first kit here that REFUSES rather than answering. Every other export is
   // total, so this had no reason to exist until /history: an occurrence key that
   // silently accepted a missing part would become a jobs-table primary key every
-  // fire of a job shares, so the refusals are the behaviour under test and a
+  // fire of a job shares, so the refusals are the behavior under test and a
   // spec has to be able to name one.
   throws(fn, pattern, msg) {
     let threw = null

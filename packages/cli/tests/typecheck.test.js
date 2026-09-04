@@ -74,7 +74,7 @@ describe('whose diagnostic is it', () => {
 })
 
 describe('what it says about the ones it dropped', () => {
-  test('they are summarised, never silently gone', () => {
+  test('they are summarized, never silently gone', () => {
     // A count that vanishes reads as coverage. They are someone's problem —
     // just not this exit code's.
     withStubTsc(TRANSCRIPT, dir => {

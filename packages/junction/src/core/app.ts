@@ -299,7 +299,7 @@ export interface App {
   // a scheduler job, or anywhere else that has access to app.
   //
   // Passing params threads the caller's context through (user, workspaceId,
-  // query, etc.) — same as Feathers's default behaviour.
+  // query, etc.) — same as Feathers's default behavior.
   // The principal PROPAGATES: a call that names none inherits the one in scope,
   // at any depth. There is nothing to thread — passing `ctx.params` was the old
   // advice and `ctx.params` is not a thing a ServiceContext has.
@@ -762,7 +762,7 @@ export function createApp(opts: AppOptions = {}): App {
     : null
 
   // Every route registered through app.get/post/put/patch/delete is mounted
-  // under this. Normalised once — an app may write 'api', '/api' or '/api/'.
+  // under this. Normalized once — an app may write 'api', '/api' or '/api/'.
   const _apiPrefix = normalizePrefix(config.apiPrefix)
   const prefixPath = (path: string): string => `${_apiPrefix}${path}`
 
@@ -848,6 +848,11 @@ export function createApp(opts: AppOptions = {}): App {
     hostname:    config.hostname,
     maxBodySize: config.http.maxBodySize,
     compress:    config.http.compress,
+    // Both timers, from the config an app already writes. The runtime's own
+    // was reachable from nowhere, so its 10-second default reset every slower
+    // request with no status and no log line (`FJS-756`).
+    idleTimeout:    config.http.idleTimeout,
+    requestTimeout: config.http.requestTimeout,
     ddos:        config.http.ddos,
     static:      config.http.static,
     // Which forwarding headers to believe. Declared, never guessed: absent
@@ -1554,7 +1559,7 @@ export function createApp(opts: AppOptions = {}): App {
 
   /**
    * Fails startup when a plugin's `requires` is unmet — before ANY boot() runs,
-   * so nothing is half-initialised when it throws.
+   * so nothing is half-initialized when it throws.
    *
    * Checks order, not just presence: register() side effects land in configure()
    * order, so a dependency configured *after* its dependent is as broken as one

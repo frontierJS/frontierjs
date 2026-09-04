@@ -560,7 +560,7 @@ That resolver reads `verifiedAt` / `activatedAt` / `role` / `isAdmin` /
 | value | meaning | effect |
 |---|---|---|
 | `undefined` (absent) | the app does not model this stage | **not an objection** |
-| `null` | modelled, and this user has not reached it | grades down |
+| `null` | modeled, and this user has not reached it | grades down |
 
 An app with no verification flow leaves `verifiedAt` unset and its sessions
 grade `USER`; an app that has one sets it to `null` until the user verifies, and

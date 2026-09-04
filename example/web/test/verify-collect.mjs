@@ -168,7 +168,7 @@ const asShopper = {
 }
 
 /** Confirm a setup intent the way a person does — on the provider's own page,
- *  with no credential, because the person IS the authorisation there. */
+ *  with no credential, because the person IS the authorization there. */
 const confirmCard = (id, card = 'ok') =>
   fetch(`${PSP_URL}/v1/setup-intents/${id}/confirm`, {
     method: 'POST', headers: { 'content-type': 'application/json' },

@@ -35,7 +35,7 @@ escaped it.
 synchronicity is load-bearing for a check. The query has finished before the `await`
 in `await db.post.findMany()` yields; the promise is a wrapper around work that is
 already done. So one Junction process is one thread, and every account's query is
-serialised behind every other account's, along with the HTTP accept loop and the
+serialized behind every other account's, along with the HTTP accept loop and the
 WebSocket handlers.
 
 | | account A blocks account B? |
@@ -76,7 +76,7 @@ each account's file has exactly one writer *process* for its lifetime, so
 cross-process `SQLITE_BUSY` stops being reachable at all. For most fleets this is the
 right answer and it costs a routing rule.
 
-**(c) A process — or a machine — per account.** Full isolation: a noisy neighbour is
+**(c) A process — or a machine — per account.** Full isolation: a noisy neighbor is
 impossible, per-account memory and CPU limits become expressible, a crash has a blast
 radius of one, and per-account deploy, rollback and version pinning all follow. The
 costs are a Bun baseline RSS per process multiplied by the account count, a port each,

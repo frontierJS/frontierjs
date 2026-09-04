@@ -605,7 +605,7 @@ describe('an expression default cannot be ALTERed in', () => {
 //
 // `diffColumns` is a name-set diff with no rename detection, so a rename is a
 // drop plus an add and the rebuild copies only what the two tables share
-// (`FJS-641`). Three shapes had three behaviours and two of them were silent:
+// (`FJS-641`). Three shapes had three behaviors and two of them were silent:
 // a rename destroyed values reporting `migrated`, a plain drop did the same,
 // and a type change SQLite could not satisfy threw a raw `SQLiteError` out of
 // `autoMigrate` and killed the app at boot (`FJS-645`).

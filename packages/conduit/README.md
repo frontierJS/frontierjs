@@ -158,7 +158,7 @@ how a target declared with a 1ms timeout answers a 300ms request as a success.
 
 Auth is declared on the target and applied automatically on every request. Callers never touch headers manually.
 
-| type      | behaviour |
+| type      | behavior |
 |-----------|-----------|
 | `bearer`  | Adds `Authorization: Bearer <secret>` |
 | `api_key` | Adds a custom header: `{ header: 'X-Api-Key', ref: 'STRIPE_KEY' }` |
@@ -203,7 +203,7 @@ A target declares how its request bodies go on the wire — it is a fact about w
 | `form` | `application/x-www-form-urlencoded` | Stripe, PayPal, Twilio, every OAuth token endpoint |
 | `binary` | `application/octet-stream`, or whatever the caller states | raw uploads — an attachment endpoint, object storage |
 
-Under `binary` the body is a `Uint8Array` or `ArrayBuffer` and is passed through untouched; the content-type belongs to the caller, because it is per file rather than per target. Bytes under `json` or `form` are **refused** rather than serialised — `JSON.stringify` turns a PNG into `{"0":137,"1":80,…}` and sends it confidently.
+Under `binary` the body is a `Uint8Array` or `ArrayBuffer` and is passed through untouched; the content-type belongs to the caller, because it is per file rather than per target. Bytes under `json` or `form` are **refused** rather than serialized — `JSON.stringify` turns a PNG into `{"0":137,"1":80,…}` and sends it confidently.
 
 The encoded body is the same value the HMAC signer hashes, so an encoder anywhere else signs bytes the transport did not send.
 
@@ -283,13 +283,13 @@ if (result.error) {
 
 `meta.duration_ms` is the **last attempt**, not the whole call — `conduit.stats()` measures the call including every retry.
 
-This holds for bad input too: a body that will not serialise (a cyclic object, a `BigInt`) returns `invalid_request` rather than throwing out of `send()`.
+This holds for bad input too: a body that will not serialize (a cyclic object, a `BigInt`) returns `invalid_request` rather than throwing out of `send()`.
 
 | `error.kind` | retryable | meaning |
 |---|---|---|
 | `target_not_found` | no | no target registered under that ID |
 | `auth_failed` | no | 401/403 from the target, or a credential ref that would not resolve |
-| `invalid_request` | no | body would not serialise, response exceeded `max_response_bytes`, or the method is not a valid HTTP verb |
+| `invalid_request` | no | body would not serialize, response exceeded `max_response_bytes`, or the method is not a valid HTTP verb |
 | `timeout` | yes | exceeded `timeout_ms`, including during the response body read |
 | `connection_failed` | yes | could not reach the target, or the conduit has been destroyed |
 | `rate_limited` | yes | 429, or a 503 that named a `Retry-After`. Carries `retry_after_ms`, which the retry ladder waits instead of its own backoff, and **does not count toward the circuit breaker** — a rate limit says the target is healthy and we are asking too fast |
@@ -360,7 +360,7 @@ Only failures that implicate the target count — `connection_failed`, `timeout`
 
 **Which is why `server_error` is 5xx and nothing else.** It used to be every non-2xx and every unusable body as well, and one word fed three consumers that disagree about it: the retry decision, the `retryable` flag a background job acts on, and this count. Five 404s in a row opened the breaker on a target that had answered every one of them, after which correct requests were shed locally (`FJS-684`). A 404 is not evidence of an outage and neither is an error page; `client_error` and `invalid_response` say so and stay out of the count.
 
-Beyond `max_concurrent`, requests fail fast with `overloaded` rather than queueing — a bounded queue just moves the pile-up somewhere less visible. **The default is 64 rather than unlimited**, because unlimited was not unbounded either: a burst queues inside the connection pool with the per-attempt timer already running, so the wait comes back as the target's own timeout. Measured at 5000 concurrent against a target that answered every request: 10s, 136 timeouts, 533 file descriptors, breaker open. Pass `Infinity` for the old behaviour. Breaker state per target shows up in `stats().breakers`, and only for targets that are not healthy-and-idle.
+Beyond `max_concurrent`, requests fail fast with `overloaded` rather than queueing — a bounded queue just moves the pile-up somewhere less visible. **The default is 64 rather than unlimited**, because unlimited was not unbounded either: a burst queues inside the connection pool with the per-attempt timer already running, so the wait comes back as the target's own timeout. Measured at 5000 concurrent against a target that answered every request: 10s, 136 timeouts, 533 file descriptors, breaker open. Pass `Infinity` for the old behavior. Breaker state per target shows up in `stats().breakers`, and only for targets that are not healthy-and-idle.
 
 #### Validating responses
 

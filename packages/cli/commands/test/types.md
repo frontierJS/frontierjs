@@ -28,7 +28,7 @@ your program. A freshly scaffolded app gets several hundred diagnostics from
 inside `node_modules` and none of its own, and `skipLibCheck` does not help
 because these are not declaration files.
 
-Foreign diagnostics are counted and summarised rather than hidden. `--foreign`
+Foreign diagnostics are counted and summarized rather than hidden. `--foreign`
 prints them.
 
 ```js

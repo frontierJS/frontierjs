@@ -62,7 +62,7 @@
  *
  * The full ladder is here rather than the shallow range `.text-*` takes.
  * A text utility is bounded by the two steps either side of body size —
- * anything louder is a heading. A gap has no equivalent centre: `3xs`
+ * anything louder is a heading. A gap has no equivalent center: `3xs`
  * between a label and its value and `6xl` between page sections are both
  * ordinary.
  *

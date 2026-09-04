@@ -111,7 +111,7 @@
 }
 
 /*
- * `bar start` — the row, the centring, nowrap and the --space-lg gap all come
+ * `bar start` — the row, the centering, nowrap and the --space-lg gap all come
  * from the term, so this class declares nothing. It survives only as the hook
  * the theme menu and the version badge are positioned against.
  *
@@ -215,7 +215,7 @@
   margin-inline-start: auto;
 }
 
-/* It is labelled `{ }` and names a FILE, so it is monospace where the other
+/* It is labeled `{ }` and names a FILE, so it is monospace where the other
    two triggers are not. Everything else is the shared rule above. */
 .sg-config-trigger { font-family: var(--font-mono); }
 .sg-config-glyph {
@@ -292,13 +292,13 @@
  */
 /*
  * .sg-topbar-inner is gone. It declared max-width/margin-auto/width to cap
- * the topbar at 1400px and did none of it: a flex item cannot be centred by
+ * the topbar at 1400px and did none of it: a flex item cannot be centered by
  * `margin: 0 auto`, `width: 100%` is a hint the flex algorithm overrides,
  * and .shell already caps at the same 1400px so the max-width had nothing
  * to bind against. Brand and actions measured identical with and without it.
  */
 
-/* `bar start` — the row, the centring, nowrap and the gap are the term's, so
+/* `bar start` — the row, the centering, nowrap and the gap are the term's, so
    the mark, the name and the rule-divided sub-label need nothing here. The
    class stays as the hook the three spans below are addressed through. */
 .sg-brand-mark {
@@ -337,7 +337,7 @@
 /*
  * The sidebar stays put while the document scrolls. .shell.viewport would
  * give this for free, but it is the wrong trade here (see above), so the
- * one behaviour it was wanted for is declared directly. --topbar-height is
+ * one behavior it was wanted for is declared directly. --topbar-height is
  * read rather than the 53px literal this replaced: that number had to track
  * the topbar by hand, and nothing said so when it stopped.
  */
@@ -477,7 +477,7 @@
 
 /*
  * A preview is a plain .card — surface, border, radius and padding all come
- * from the package. Centring is the one thing left, and it is a layout
+ * from the package. Centering is the one thing left, and it is a layout
  * modifier rather than spacing, so it survives the Pane owning the gap.
  */
 .sg-preview-center {
@@ -485,10 +485,10 @@
   min-height: 64px;
 }
 /*
- * The preview rows are .cluster — same flex/wrap/centre, and its gap moves
+ * The preview rows are .cluster — same flex/wrap/center, and its gap moves
  * with --density where the 10px literal here did not.
  *
- * Baseline alignment is the one thing Cluster does not offer: it centres,
+ * Baseline alignment is the one thing Cluster does not offer: it centers,
  * which is right for a row of chips and wrong for a row of type samples at
  * different sizes, where the eye reads the baseline.
  */
@@ -679,7 +679,7 @@
   color: var(--ink);
 }
 
-/* Split already pushes it to the far end and centres it against the whole
+/* Split already pushes it to the far end and centers it against the whole
    card; only the movement is ours. */
 .sg-next-arrow {
   font-size: var(--text-xl);
@@ -739,7 +739,7 @@
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: var(--space-sm);
 }
-/* Tile is a metric unit — centred, generously padded. An option is a target
+/* Tile is a metric unit — centered, generously padded. An option is a target
    with a label and a hint, so it stacks and left-aligns. The skin, the hover
    lift and the tone-following border are the interactive-Surface rule's. */
 .sg-wiz-opt {
@@ -854,7 +854,7 @@
   z-index: 120;
   display: flex;
   justify-content: center;
-  /* Near the top, not centred: the list grows downward, and a centred
+  /* Near the top, not centered: the list grows downward, and a centered
      panel would shift under the reader on every keystroke. */
   align-items: flex-start;
   padding: 12vh 24px 24px;

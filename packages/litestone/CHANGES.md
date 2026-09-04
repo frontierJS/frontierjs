@@ -1,5 +1,108 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-03 — `resolveFrom: 'schema'` was inert whenever the schema came in as a path
+
+`FJS-758`. 4222 pass, typecheck clean.
+
+The option's contract is *the app root, derived from the schema FILE*, and the
+anchor is computed from `path:`. But a `schema:` whose value is a single-line
+string ending in `.lite` is read as a file too — `parseFile(resolve(...))`, ten
+lines further down — and that path never reached `schemaAnchor`. So a client
+written as
+
+```js
+createClient({ schema: '/abs/app/db/schema.lite', resolveFrom: 'schema' })
+```
+
+anchored on nothing, every relative `database { path }` fell back to the working
+directory, and the option that exists to prevent exactly that was set. It is
+`FJS-449`'s shape with the guard in place: a scaffolded app's `site/` build,
+which runs from the surface, opened a **new, empty database** under `site/db/`
+and prerendered every page with no rows in it, exit 0.
+
+A path handed over under either key is still a path, so it now fills
+`schemaFilePath` when `path:` is absent. Nothing else changes: with
+`resolveFrom` left at its default this is unreachable, since the anchor is null
+either way.
+
+## 2026-09-03 — the advice a blocked migration gave was right for one of two readings
+
+FJS-566. 4222 pass (5 new), typecheck clean.
+
+A migration that would remove a column is refused, and the refusal said: *Pass
+`{ acceptDataLoss: true }` to say the loss is intended.* That is correct advice
+for an author who removed the column. It is destructive advice for the other way
+to arrive at an identical diff — **your process is older than the database**,
+which two processes on one file reach routinely: under `strategy database` a
+long-running API, and a drive or a seed run from the app root after the schema
+moved. Taking the option there deletes the column the newer build is writing to.
+
+The diff cannot tell them apart, so both readings are printed and neither is
+chosen. The gate is `onlyDrops(diffResult)` — a diff that ADDS anything is a
+schema being edited forward, keeps the single reading, and is asserted as the
+pair. **It must not test `needsRebuild`**: SQLite cannot drop a column in place,
+so a rebuild is what a drop looks like, and testing it answers false in exactly
+the case this exists for. A control pins that.
+
+**What was investigated and found not to exist** is worth recording, because the
+report named it as the cause: a running process re-reading its schema. Every
+link is pinned at construction — `createTenantRegistry` parses once, `#doOpen`
+passes `parsed:` after the options spread so a caller's `path` cannot win, and
+`autoMigrate(db)` reads `db.$schema`. Editing `schema.lite` while a registry is
+up moves nothing: not the flagship, not a tenant created after the edit, not the
+client's own belief.
+
+What no layer does yet is notice at OPEN, without `autoMigrate` being called.
+The cheap test does not work — the recorded DDL hash carries no ordering, so
+*differs from mine* is equally true of a schema being edited in development and
+would fire on every boot for everybody. `FJS-754` holds the superset test that
+would decide it.
+
+
+## 2026-09-03 — the payload nobody could defend was the only one reaching SQLite
+
+FJS-669. 4217 pass (12 new), typecheck clean.
+
+A partial write has two ways of saying nothing about a field and they mean
+opposite things. An **absent** key means *leave it alone*, which is why the
+required pre-flight runs under `requireAll` and is create-shaped — demanding
+every field on a patch would refuse every patch. An **explicit `null`** means
+*clear this* (Invariant 9), and clearing is exactly what a NOT NULL column
+cannot do. Nothing checked the second one, so it went to the database and came
+back as `NOT NULL constraint failed: item.name` — a bare `Error`, which declares
+no status and lands as a **500 with a null body**, where the same mistake on a
+create is a 400 carrying `[{path:["name"], message:"name is required"}]` and a
+form marks the box. Somebody empties a required field and saves.
+
+It reached further than the report: `update`, `updateMany` and `upsert`'s update
+half all did it.
+
+**Fixed the way `FJS-608` was** — by testing the KEY rather than letting the
+database answer. An `else` branch on the same block, asking `isStoredField` so
+that *is this a real column* keeps one owner, and the sentence lifted into
+`requiredFailure(f)` so the create half and this one cannot come to word one
+field differently. That is asserted rather than asserted-about:
+`expect(onUpdate.errors).toEqual(onCreate.errors)`.
+
+**The exemption set is not the create branch's, and that is the substance.**
+`@default` exempts there and must not here: a default fills an *absent* key and
+this key is present. Measured — `qty: null` on `Int @default(1)` reached SQLite
+and was refused by it. Arrays and `@updatedAt` are the same. `@generated` never
+arrives, because `_virtualWriteKeys` already refuses it by name with a better
+sentence than this one would give. `id: null` used to be `datatype mismatch`,
+which is opaque in a different way, and now names the field.
+
+**`asSystem()` is refused too, deliberately.** NOT NULL is the table's rule and
+not one of this package's, so there is nothing here to bypass — the only thing
+refusing buys is a sentence instead of a 500, and a system caller deserves that
+as much as anybody.
+
+`undefined` is untouched and stays absent: the strip above this branch deletes an
+undefined-valued key and reassigns `data`, so it never arrives. The test is
+`=== null` regardless, because the rule is about the value and saying so is what
+keeps this correct if that strip moves.
+
+
 ## 2026-09-03 — one column of a tuple key identifies nothing
 
 `FJS-694`. 4207 tests, 0 fail. Typecheck clean.
@@ -28,7 +131,7 @@ column order is stated only there — and that order is the one fact `@id` per
 field cannot carry, which `test/composite-id.test.ts`'s fixed point already
 pins. **`$primaryKey(accessor)` is the same answer for the layer above**: the
 sixth sibling of `$checkWhere`/`$checkOrderBy`/`$protectedFields`, `[]` for an
-unknown accessor, identical on every flavour of client. Junction reads it to
+unknown accessor, identical on every flavor of client. Junction reads it to
 refuse a one-value `get` by name.
 
 ## 2026-09-03 — a policy comparison follows SQLite's rules rather than JavaScript's
@@ -263,16 +366,16 @@ generates an empty migration and finds the same difference on the next boot for
 ever. And the commonest cause is not a defect: `litestone introspect` is the
 adoption door, so a real database has a `COLLATE NOCASE` on its email column or
 a hand-written index — things this language cannot say. `acceptResidue: true` is
-the caller stating it, beside the `acceptDataLoss` it is modelled on.
+the caller stating it, beside the `acceptDataLoss` it is modeled on.
 
 **Measured before the shape was chosen, twice.** A raw text comparison fires on
 162 of 694 objects across the corpus schemas after an ordinary v1 → v2
 migration — every one of them the spacing `ALTER TABLE ADD COLUMN` leaves in the
-stored statement, and not one of them a difference. Normalised around
+stored statement, and not one of them a difference. Normalized around
 punctuation: 0 of 694, 0 on a fresh build of all nine corpus schemas, and 0 on
-both real databases in this repo. And normalising inside `introspect` cost 18 ms
+both real databases in this repo. And normalizing inside `introspect` cost 18 ms
 of a 75 ms introspection on the 188-model fixture, every object of it one that
-then compared equal — stored raw and normalised only where two disagree, it is
+then compared equal — stored raw and normalized only where two disagree, it is
 1 ms.
 
 Negative controls: 4 of the 13 new tests fail with the tripwire stubbed, 2 with
@@ -466,7 +569,7 @@ way SQLite does — `and3`/`or3`/`not3`, a comparison with an absent operand,
 `NULL IN (…)` — and the verdict asks for TRUE rather than truthiness, so an
 allow holds only on TRUE and a deny fires on TRUE and UNKNOWN alike. That is
 `(allows) AND NOT (denies)` read on both sides. `x == null` keeps its own branch
-and answers a boolean, generalised off `auth()` onto any operand: it is how this
+and answers a boolean, generalized off `auth()` onto any operand: it is how this
 language spells `IS NULL`, and `ownerId == null` compiles to `ownerId IS NULL`.
 What actually moved is the deny side and `!` — an allow list was already
 fail-closed — and the tests say so rather than claiming more.
@@ -597,7 +700,7 @@ db.$readGrading('product')                  // → 'open' | 'graded'
 
 The fifth `$`-sibling, and it takes its subject as an ARGUMENT for
 `$capabilitiesFor`'s reason: the asker holds one client and is answering about
-somebody else. Every flavour answers identically for the same principal.
+somebody else. Every flavor answers identically for the same principal.
 
 Three questions in the order every other layer here reads them — the **gate**
 (about the caller alone, an integer comparison, and the whole answer for a
@@ -846,12 +949,12 @@ await it makes. Measuring it first turned one defect into three.
 **A closed client was not dead, it was mixed, deterministically.** After
 `$close()`, `count()` off a cached statement answered `1` while `findMany()` and
 `create()` threw. bun's `close()` is `sqlite3_close_v2`: it defers destruction
-until the last prepared statement is finalised, and `wrapDb` holds up to 500 and
-finalised none. A request failed only if it took a branch it had not taken
+until the last prepared statement is finalized, and `wrapDb` holds up to 500 and
+finalized none. A request failed only if it took a branch it had not taken
 before, which is why this read as random rather than as a bug.
 
 **So the eager close freed nothing.** Measured: a close with one live statement
-freed **0 file descriptors**, and finalising that statement freed 3. The pool was
+freed **0 file descriptors**, and finalizing that statement freed 3. The pool was
 paying a synchronous `wal_checkpoint(TRUNCATE)` — **7.97 ms against 0.008 ms for
 a pool hit, 991×, on the request path** — for a release that did not happen, and
 `maxOpen` has never bounded a connection in any process that ran one query per
@@ -971,7 +1074,7 @@ back still reached `$tapEvents` → junction's `announceDataWrites` → every op
 tab, and nothing retracted it.
 
 **One contract moved, and it is ruled rather than absorbed** (`FJS-D171`).
-Serialising writes makes the in-process transition race impossible, so the loser
+Serializing writes makes the in-process transition race impossible, so the loser
 of two concurrent named moves now gets the `TransitionViolationError` that the
 same two moves in sequence always gave. The old `TransitionConflictError`
 `retryable: true` was an artefact of both callers evaluating against `draft`
@@ -1080,7 +1183,7 @@ otherwise it is a file path — so `--out db/.json` writes a file literally name
 `.json` on a fresh clone, and `--out db/.json/schema.json` failed with ENOENT
 naming the FILE, which reads as a permissions problem rather than a missing
 parent. Both branches (`--all-modes` and the single write) now `mkdirSync` the
-parent first. The behaviour that could not be fixed here is the directory
+parent first. The behavior that could not be fixed here is the directory
 ambiguity itself: it is load-bearing for callers passing an existing directory,
 so the recommended spelling states the filename.
 
@@ -1113,7 +1216,7 @@ two — `create` and `delete` on the child, the pair `@immutable` cannot reach.
 
 **The sealed set is a CLOSURE, not a target.** Everything reachable from a
 `@seals` move's target, so `paid` and `void` seal without being restated and a
-move appended later seals by arriving. A one-hop reading passes every behavioural
+move appended later seals by arriving. A one-hop reading passes every behavioral
 assertion and leaves the document editable in two of its three terminal states,
 which is why `test/seal-parse.test.ts` asserts the set rather than the syntax.
 `src/core/seal.js` is the one owner — three readers ask it.
@@ -1145,7 +1248,7 @@ the relation or the columns.
 asking; a seal is about what the row IS.
 
 **`@immutable` changes meaning on a sealing model** — *frozen at the seal* — and
-that is the one shipped behaviour this touches. Scoped by the declaration, so a
+that is the one shipped behavior this touches. Scoped by the declaration, so a
 model with no `@seals` move keeps the create-time meaning and its
 `ValidationError` exactly. The guard applies only where the payload names a
 frozen column: narrowing every update would refuse `settle: issued -> paid`, a
@@ -1173,7 +1276,7 @@ moment for free, which is the point of the shape, but it is its own feature.
 
 `test/seal-parse.test.ts` (19) · `test/seal-guards.test.ts` (33) ·
 `test/seal-immutable.test.ts` (14) · `test/seal-artefacts.test.ts` (14) ·
-`src/core/seal.js` · `docs/modelling.md` § `@seals`
+`src/core/seal.js` · `docs/modeling.md` § `@seals`
 
 ## 2026-08-31 — a caller-only field read predicate is answered once, not per row
 
@@ -1285,7 +1388,7 @@ update the model as long as the row was already at the target. Both succeeded,
 measured — which makes half of this an access defect rather than an answer one.
 
 **`$transaction` was the documented mitigation and it made things worse.**
-Serialising the callers means each re-reads *after* the winner committed, which is
+Serializing the callers means each re-reads *after* the winner committed, which is
 precisely the state the early return called a no-op: four concurrent transactions,
 four successes. It now gives one winner and three conflicts like everything else.
 
@@ -1549,7 +1652,7 @@ Five refusals, each one a key that would not identify a row:
 | `@@id` twice | a row has one identity |
 | a nullable member | SQLite permits a NULL in a primary key on a rowid table, and there is no `nullsDistinct` reading of one |
 | a relation field | a primary key is over columns — name the foreign key |
-| an array, or `@computed` / `@transient` / `@from` / `@derived` | not a stored column; an array is a JSON serialisation |
+| an array, or `@computed` / `@transient` / `@from` / `@derived` | not a stored column; an array is a JSON serialization |
 
 **A guard that had never fired is now live.** `TRAIT_FORBIDDEN_MODEL_ATTRS` has
 named `'id'` since traits were written, with the message *`@@id` is not allowed
@@ -1798,7 +1901,7 @@ to be uniform and a shared set would let row 0's stamp excuse row 1's caller. A
 path that forgets to pass one is refused rather than let through, which keeps the
 old fail-closed direction where it belongs — on the framework, not on the schema.
 
-The prior behaviour was deliberate and stated at the check, and the trade-off it
+The prior behavior was deliberate and stated at the check, and the trade-off it
 named was real: grading the caller's payload separately means every write path has
 to remember to. What changed is that the remembering is now the stamp's job rather
 than each path's, so there is one place to add to.
@@ -2164,7 +2267,7 @@ The ruling `FJS-564` asked for turned out to be made already and unsaid: every
 array column is `NOT NULL DEFAULT '[]'` because an empty array is the null state
 of a list, so an omitted one already read back `[]` and a `null` was already
 refused. The empty literal restates that — and it parses because a language that
-refuses the redundant spelling of its own behaviour fails a port on a line that
+refuses the redundant spelling of its own behavior fails a port on a line that
 means what the tree already does. Prisma writes it 11 times across three real
 schemas.
 
@@ -2176,7 +2279,7 @@ column, and is refused now. A call is refused by name (`[now()]` is one
 timestamp frozen at migrate time, and there is no runtime stamp for an element);
 so is a nested array.
 
-**Two spellings arrive and one AST leaves.** The JSON string is normalised into
+**Two spellings arrive and one AST leaves.** The JSON string is normalized into
 the literal at parse, so `defaultExpr`, the JSON Schema and the release
 classifier read one kind rather than two, and the older spelling keeps working
 under a warning that names the literal.
@@ -2659,7 +2762,7 @@ and an absent one is `null` rather than `[]`.
 **Three refusals replace the wrong one.** A foreign key that is not unique is a
 to-many written as a to-one and would answer one of many rows arbitrarily, so it
 is named, with both ways out. No unlabelled back-reference at all is named, and
-points at the labelled one where there is one. Two candidates are named, both of
+points at the labeled one where there is one. Two candidates are named, both of
 them. Uniqueness counts a field `@unique`, an exactly-matching model `@@unique`,
 and **a primary key** — `eventTypeId Int @id` being both the FK and the PK is how
 calcom writes a 1:1.
@@ -2685,7 +2788,7 @@ a database and re-boot with zero drift, in 47–379ms each.
 Two defects fell out, both invisible to any rule a checker could carry, because a
 rule is written by somebody who has already thought of the case:
 
-- **`FJS-563`** — the non-owning side of a one-to-one must be labelled, and
+- **`FJS-563`** — the non-owning side of a one-to-one must be labeled, and
   unlabelled the parser reports `unknown type 'B'` for a model it has registered.
   37 occurrences, and the single cause of every `unknown type` error in all three
   schemas. A list back-reference pairs unlabelled; a singular one does not; Prisma
@@ -2725,7 +2828,7 @@ A session took the three signposts for the current state and filed a defect
 saying the language has no `Decimal` (`FJS-560`) — which is a ruling holding,
 not a gap. The shipped entries are now tombstones in a `## Shipped` section at
 the TOP of the roadmap, the file opens by saying it is proposals and never a
-statement of behaviour, and `fli check`'s `roadmap-shipped` + `docs-index` grade
+statement of behavior, and `fli check`'s `roadmap-shipped` + `docs-index` grade
 both halves so the next one is a warning rather than a day.
 
 ## 2026-08-29 — a reference catalogue, in `.lite` so it can be checked
@@ -3014,7 +3117,7 @@ can hold can only disappoint.
 
 **`db.$capabilitiesFor(principal)` is the fourth sibling** of `$checkWhere`,
 `$checkOrderBy` and `$protectedFields`, with their contract: it takes its subject as
-an ARGUMENT and every flavour of client answers identically for the same one, because
+an ARGUMENT and every flavor of client answers identically for the same one, because
 what a name GRANTS is a fact about the schema. Defaulting to the client's own
 principal would have broken precisely that.
 
@@ -3079,7 +3182,7 @@ cross-process device, and what makes the in-process case fine is `$transaction`'
 FIFO lock, which queues two transactions on one client before SQLite ever sees
 them.
 
-Four tests, behavioural rather than a `PRAGMA` read — asserting the statement ran
+Four tests, behavioral rather than a `PRAGMA` read — asserting the statement ran
 does not assert that a second writer survives. Each takes the lock from a real
 second PROCESS, because holding it in the test process reproduces exactly the
 deadlock above and would pass for the wrong reason. Negative-controlled: with the
@@ -3088,12 +3191,12 @@ index pragma commented out the logger case goes red.
 **Still open**: 5000 is not configurable, and a queue draining a batch and a
 request answering a person want different answers.
 
-## 2026-08-26 — `$softDelete` on every flavour, and three traps that disagreed
+## 2026-08-26 — `$softDelete` on every flavor, and three traps that disagreed
 
 `FJS-536`, found by junction reaching for it.
 
-**A capability that depends only on the schema belongs on every flavour of client.**
-That is a stated rule and `$softDelete` was on one of the four — so the flavour an
+**A capability that depends only on the schema belongs on every flavor of client.**
+That is a stated rule and `$softDelete` was on one of the four — so the flavor an
 application actually holds threw `"$softDelete" is not a table in this schema` at a
 question about the schema, because junction scopes `ctx.locals.db` with `$setAuth`.
 One owner (`softDeleteInfo`) now answers root, `$setAuth`, `asSystem` and `$scopedBy`.
@@ -3104,7 +3207,7 @@ property they had asked to read.
 
 **The second half is bigger.** Each proxy listed its capability names in `ownKeys`,
 denied every one of them in `has`, and described none of them in
-`getOwnPropertyDescriptor` — so `'$checkWhere' in db` was **false**, on every flavour,
+`getOwnPropertyDescriptor` — so `'$checkWhere' in db` was **false**, on every flavor,
 for every capability. `in` is the documented way to feature-detect one, precisely
 because this client throws on an unknown property, and it had never worked. Each
 proxy's list is hoisted so the two traps read one array; two copies is what let them
@@ -3532,7 +3635,7 @@ sweep had never run twice in either.
 
 **`asSystem()` only**, for raw SQL's reason (`FJS-D52`): it is a DELETE against
 the base table through no gate, no row policy and no `@@softDelete`. The other
-three flavours of client refuse it by name and say the way out.
+three flavors of client refuse it by name and say the way out.
 
 **The jsonl half is covered too** — it compacted at `makeJsonlTable` init and
 its failure was `catch { /* non-fatal */ }`, so a policy that threw every boot
@@ -3592,7 +3695,7 @@ worth much: every bug worth a test here is a crossing, and a fixed instant
 asserts one side of one.
 
 **`env.clock` is the movable form.** `now` takes a `Date`, an ISO string or a
-function; the option is normalised into a holder every client this env opens
+function; the option is normalized into a holder every client this env opens
 reads through — `set(at)`, `advance('20d')` or milliseconds, `frozen`. A window
 that opens can now be asserted on both sides in one test.
 
@@ -4048,7 +4151,7 @@ false`, naming the model and the field, values redacted the way the audit trail
 redacts them, because a `@unique` column may be `@encrypted` and ciphertext
 belongs in an error message even less than a plaintext.
 
-The neighbours were already done and this was the gap: a conflict a DELETED row
+The neighbors were already done and this was the gap: a conflict a DELETED row
 caused says so, a conflict inside a batch names the row, and a live single-row
 conflict escaped as `UNIQUE constraint failed: product_variant.sku` inside a
 500. Three separate things wrong with that — a status that pages somebody and is
@@ -4071,7 +4174,7 @@ restore-or-release for a deleted holder, send another value for a live one.
 
 `isUniqueConflict` recognises the translated error. Two paths ask it AFTER the
 translation — upsert's race fallback and the factory's rebuild-and-retry — and
-both would have stopped recognising their own case.
+both would have stopped recognizing their own case.
 
 ## 2026-08-23 — the access diff reports what it cannot grade
 
@@ -4130,7 +4233,7 @@ constraint-wide one.
 
 `parseChecks` reads them out of `sqlite_master.sql`, column-level and
 table-level alike. Both sides of the diff are litestone-generated text read back
-the same way, so a normalised string comparison is exact here in a way it would
+the same way, so a normalized string comparison is exact here in a way it would
 not be for an expression somebody typed — and *an unchanged enum migrates
 nothing* is a test, because comparing a constraint by text is the exact shape
 that rebuilds on every boot.
@@ -4412,7 +4515,7 @@ about the guard and did not extend to a sort.
 
 **The refusal lives at the read, not in `filterableKeysFor`.** That function
 answers whether a column CAN be compared, which is a fact about the schema and
-is why `$checkWhere` may be asked of any flavour of client and answers the same
+is why `$checkWhere` may be asked of any flavor of client and answers the same
 thing every time. This asks who is asking. So it sits beside the write refusal
 it mirrors, where `ctx.isSystem` is known, and `asSystem()` still filters and
 sorts freely.
@@ -4505,7 +4608,7 @@ A relation map is built at `onInit` and the included rows are walked after the
 model's own, to any depth, to-one and to-many alike. A `Set` of visited rows
 guards a row object reachable through two relations — resolving it twice hands
 `resolve()` a URL where it expects a ref, which is not an error, just a value
-that vanishes. `select: { x: { resolve: false } }` is honoured where it was
+that vanishes. `select: { x: { resolve: false } }` is honored where it was
 written and does not descend, because `include: { photos: true }` has no
 spelling for a nested one (`FJS-425`).
 
@@ -4729,8 +4832,8 @@ model Task {
 ```
 
 **The check runs through the caller's own accessor**, and that is the whole of
-the permission story rather than an optimisation. `ctx.tables[accessor]` is the
-sibling model at this client's flavour, so the set a caller sees is the set
+the permission story rather than an optimization. `ctx.tables[accessor]` is the
+sibling model at this client's flavor, so the set a caller sees is the set
 their own `@@allow` shows them — user 1 cannot pick user 2's tag, and the
 refusal reads *theirs is not in TaskTag*, which is the true statement from where
 they stand. `open` creates through that same accessor, so the source model's
@@ -4739,7 +4842,7 @@ hook tier, no option. Written against `asSystem()` it would have offered every
 row to everybody, and it would have passed every test that uses one principal.
 
 **`suggested` issues no query at all.** Enforcing nothing has to cost nothing,
-or nobody uses the strength that keeps the list travelling — and a check that
+or nobody uses the strength that keeps the list traveling — and a check that
 queried and then ignored the answer would pass every other test in the file, so
 the assertion is that a `suggested` binding still works when its source is
 `@@gate("8")` and unreadable.
@@ -5110,7 +5213,7 @@ checks, filtering, sorting and the JSON Schema are all untouched. A refused
 write says which language the field was in — *from its template* against *from
 its expression*.
 
-Written after `docs/modelling.md` grew a field-kind matrix and the entry for
+Written after `docs/modeling.md` grew a field-kind matrix and the entry for
 this case was three lines of SQL that were also subtly wrong.
 
 ## 2026-08-22 — `migrate apply` refuses when the schema is not in the database
@@ -5255,7 +5358,7 @@ never be violated by anything still an email, and `@length(6, …)` can.
 
 **`db.$protectedFields('secret')` → `{ data: 'encrypted' }`.** The third sibling
 of `$checkWhere` / `$checkOrderBy` and the same contract in every respect: an
-unknown accessor answers `{}`, and every flavour of client — root, `$setAuth`,
+unknown accessor answers `{}`, and every flavor of client — root, `$setAuth`,
 `asSystem`, `$scopedBy` — answers identically, because what a schema DECLARES
 protected is not a question about who is asking.
 
@@ -5449,7 +5552,7 @@ the boundary refuses and read as a broken rule. The API is where they run, and
 
 Ruling in `DECISIONS.md` § API design.
 
-## 2026-08-17 — `$inTransaction`, on every flavour of client (`FJS-D35`)
+## 2026-08-17 — `$inTransaction`, on every flavor of client (`FJS-D35`)
 
 2295 tests, 0 fail. Typecheck clean.
 
@@ -5463,7 +5566,7 @@ row, which is only worth writing if it rolls back with the write it belongs to.
 That caller cannot ask the service declaration instead: `transactional:` is a
 statement about a method, and a hook can run against a method it does not name.
 
-A fact about the CONNECTION, so it is the same answer on every flavour — a
+A fact about the CONNECTION, so it is the same answer on every flavor — a
 scoped client, the system bypass and `$scopedBy` share one write connection and
 one depth counter. `litestone types` emits it too, so a generated client
 declares it; `AnyLitestoneClient` deliberately does not (adding it there makes
@@ -5471,7 +5574,7 @@ every already-generated client unassignable, which is `FJS-018`).
 
 ## 2026-08-17 — three declarations that did not match the runtime (`FJS-034`)
 
-2295 tests, 0 fail. Typecheck clean. `src/index.d.ts` only — no behaviour moved.
+2295 tests, 0 fail. Typecheck clean. `src/index.d.ts` only — no behavior moved.
 
 Found from junction's side, driving its typecheck baseline to zero: its examples
 hold a real client, and each of these was an example that could not compile
@@ -5481,7 +5584,7 @@ against a thing that works.
   `generateJsonSchema(db.$schema)` is the documented line — so the documented
   line was a documented cast. `AnyLitestoneClient` keeps `unknown` on purpose: a
   generated client declares a `$schema` of its own, and naming a shape there
-  makes the generated flavour unassignable again, which is the failure that
+  makes the generated flavor unassignable again, which is the failure that
   interface exists to end (`FJS-018`).
 - **`TableClient`'s last four parameters default off the row.** Naming an
   accessor by hand — a test, or an example whose schema is a string with no
@@ -5728,7 +5831,7 @@ refuses now, naming the TARGET model.
 **The silence had a mechanical cause worth naming.** `sdMode()` answered `'live'`
 for a model with no soft delete, and every caller guarded the call with
 `softDelete ? injectSoftDeleteFilter(…, sdMode(args)) : where` — so on exactly
-the models that could not honour a flag, the function that could have refused it
+the models that could not honor a flag, the function that could have refused it
 was never called. `applySdFilter(where, args)` is the fix and the symmetry:
 `applyHtFilter`'s sibling, asked on every read, refusing before it decides
 whether there is a filter to apply. Two inline ternaries in `findManyCursor` and
@@ -5747,7 +5850,7 @@ a truthy value is ever looked at.
 configured from the schema; `strategy row` is one database and a tenant column,
 which was not a framework concept in any form. Everything that needs to know
 reads one resolution — `resolveTenancy(schema, { schemaPath })`, published as
-`db.$tenancy` on every flavour of client and as `registry.tenancy` — and
+`db.$tenancy` on every flavor of client and as `registry.tenancy` — and
 precedence is **option → declaration → default**, stated once in
 `src/core/tenancy.js`.
 
@@ -5837,7 +5940,7 @@ each verified by breaking the fix) and `test/cli-smoke.test.ts`.
 `Plugin` gets a `name`, defaulting to the class name — right for every plugin
 anyone writes here and free — with a stated `name = '…'` field winning, because a
 minifier rewrites `constructor.name` and a bundled app would report `t`.
-`db.$plugins` lists what is installed, in run order, on **every flavour of
+`db.$plugins` lists what is installed, in run order, on **every flavor of
 client**: what is installed does not vary with auth. Its first useful answer is
 the one nobody could get before — a gated schema auto-installs `GatePlugin`, so
 what you passed is not what is running, and it comes last.
@@ -5900,7 +6003,7 @@ said out loud, because the two are indistinguishable from the result.
 Where a schema marks no `@@auth` model and has no `User`, `--as` refuses and asks
 (`--as Customer:ops@acme.test`) rather than guessing which table holds people.
 
-**A REPL has to serialise its lines and `rl.pause()` does not do it.** Pausing
+**A REPL has to serialize its lines and `rl.pause()` does not do it.** Pausing
 does not hold back lines readline already buffered, so a pasted block ran every
 handler at once and the statements finished in whatever order their awaits did.
 Against a database that is writes landing in an order nobody wrote. 16 tests,
@@ -6077,7 +6180,7 @@ caller-supplied, and it is a KEY looked up in the table the schema declared.
 Nothing a caller sends is interpolated, an unknown name is refused before any
 SQL is built with the declared names listed, and `db.$scopes(accessor)`
 publishes that list as source text — the same list `$checkWhere` validates
-against, on every flavour of client, because filterability is a fact about the
+against, on every flavor of client, because filterability is a fact about the
 schema.
 
 **A policy naming a column the model does not have is now refused at startup**,
@@ -6210,7 +6313,7 @@ on a path that must not fail catches it and says so.
 `actorId` defaults to the calling client's principal and a stated one wins over
 `onLog`'s — `onLog` is a generic enricher over every entry, a `$audit` caller is
 naming one event. Unknown keys are refused BY NAME rather than dropped. On every
-flavour of client, which `$checkWhere` shipped without and paid for.
+flavor of client, which `$checkWhere` shipped without and paid for.
 
 `meta` is written as given and nothing redacts it: field redaction protects
 columns the SCHEMA declared protected, and this has no schema behind it.
@@ -6391,7 +6494,7 @@ await db.quote.updateMany({ where: {}, data, onlyTemplates: true })
 await db.quote.update({ where: { id }, data: { isTemplate: false }, withTemplates: true })  // demote
 ```
 
-**One behaviour change, in the safe direction.** A hard `delete`/`deleteMany`
+**One behavior change, in the safe direction.** A hard `delete`/`deleteMany`
 now applies the template filter, so an ordinary cleanup stops destroying rows
 that no read of the model returns. It still bypasses the *soft-delete* filter,
 which is its stated contract and the reason it exists beside `remove` — and a
@@ -6491,7 +6594,7 @@ Composed in the same ORDER `buildSQL` uses: filters, soft-delete,
 with its params after the cursor's. Positional binds, so the order IS the
 correctness. `search` merges once and both of its steps read the same value, so
 the FTS pre-filter and the row fetch cannot drift apart — and the policy is
-applied at both, because the pre-filter is an optimisation and the second query
+applied at both, because the pre-filter is an optimization and the second query
 is what returns the rows.
 
 **The grid is the fix, not the two methods.** A new test seeds one model where
@@ -6724,7 +6827,7 @@ the design: two answers to one question, pick the one that describes the column.
 `guarded: 'all'` in the field policy map, which would have made every encrypted
 column system-write-only and broken the ordinary case — an admin adding a secret
 through a scoped client. The read strip already had its own branch for
-`encrypted`, so decoupling them changed no read behaviour; `@secret` synthesises
+`encrypted`, so decoupling them changed no read behavior; `@secret` synthesises
 a real `@guarded(all)` and is locked both ways as before. Audit redaction asks
 for `encrypted || guarded` and is unaffected (Invariant 7).
 
@@ -6788,7 +6891,7 @@ column carries no `type` at all.
 over the stored `["x","y"]`, so it matched — and matched `["xylophone"]` too,
 while `contains: '","'` matched every array of two or more elements and
 `contains: '['` matched all of them. It looked like `has` and was a substring
-search over a serialisation; the cases where the two agree are exactly the ones
+search over a serialization; the cases where the two agree are exactly the ones
 that hid it. On a `Boolean` the same operator answered `[]`, silently, because
 the value is stored as 0/1.
 
@@ -6892,7 +6995,7 @@ unfilterable. Pinned as asserted-still-broken.
 
 `FJS-200`. `orderBy: { words: 'asc' }` on a `String[]` reached SQLite as an
 `ORDER BY` over the stored document, so rows came back ordered by the string
-`["x","y"]` — `[10]` before `[9]`, and a re-serialised row moving for no reason.
+`["x","y"]` — `[10]` before `[9]`, and a re-serialized row moving for no reason.
 `$checkOrderBy` answered `[]`, *no problems*, so Junction's `autoSort` passed it
 through and no boundary refused it either.
 
@@ -6903,7 +7006,7 @@ fourth bucket, `reason: 'opaque'`:
 | Kind | Ordering by its text means |
 | --- | --- |
 | `String[]` · `Int[]` · `Enum[]` | the JSON document |
-| `Json`, typed or not | whichever key serialised first |
+| `Json`, typed or not | whichever key serialized first |
 | `File` | the storage reference |
 | `@encrypted` | ciphertext — stable only where the IV is derived from the value |
 | `@hashed` | the digest |
@@ -7219,7 +7322,7 @@ to the write connection while `depth > 0`. Reproduced before fixing.
 `AsyncLocalStorage` holds the `txState` objects the current context owns, so a
 nested call — which runs inside the outer callback and inherits the store — still
 takes a SAVEPOINT, and anything else waits on a per-client FIFO lock. Both halves
-matter in opposite directions: serialising everything would deadlock a genuine
+matter in opposite directions: serializing everything would deadlock a genuine
 nesting (basecamp's `/setup`, four models deep), and nesting everything is the
 original defect.
 
@@ -7485,7 +7588,7 @@ Batched: one query per field across every row in hand, so a `findMany` of a
 hundred parents costs one extra query. Resolution happens before `applyComputed`,
 so a `@computed` on the *parent* reading `row.lastOrder.amount` still sees a row.
 
-**Two behaviour changes.** The target's row policy now applies, as it always did
+**Two behavior changes.** The target's row policy now applies, as it always did
 to an `include` — a `@@allow` on the target can make the field `null`. And the
 default `orderBy` for `first`/`last` is now the **target's** id column; it was the
 declaring model's, which is the same name often enough to hide the difference.
@@ -7555,7 +7658,7 @@ Three things that were silently ignored now say so. `count`, `findFirst`,
 `findUnique`, `exists`, `aggregate` and `groupBy` **refuse `recursive` by
 name** — `count({ recursive })` counted the anchors and answered a plausible
 number for a question nobody asked. `nested: true` refuses `limit`/`offset`,
-which would cut branches out of the middle of a tree. And `select` is honoured,
+which would cut branches out of the middle of a tree. And `select` is honored,
 where before a caller that narrowed its read got every column back.
 
 **A row can no longer be made its own ancestor.** The write is refused naming
@@ -7689,7 +7792,7 @@ field "meta"`, not `Unknown where operator: "tier"`.
 `@encrypted(searchable: true)`'s documentation said it stores an HMAC "alongside
 the ciphertext". There is no ciphertext — the column holds the digest and nothing
 else, so **the plaintext is destroyed on write and cannot be read back**. The
-behaviour is deliberate and asserted by a test; the page now says so in a warning
+behavior is deliberate and asserted by a test; the page now says so in a warning
 before the example, and no longer uses `email` as that example. Whether the
 attribute should keep the `@encrypted` name is `FJS-211`.
 
@@ -8046,7 +8149,7 @@ client, factories and a principal in one call. `schema` takes the text or a path
 app's own `getLevel`; `atLevel(n)` grades synthetically for walking the gate
 grid. A matrix driven by `atLevel` passes in full while the app's resolver is
 broken, because the resolver was never called — so `atLevel` is for the grid and
-everything about behaviour uses `actingAs`. `atLevel` opens a second client (a
+everything about behavior uses `actingAs`. `atLevel` opens a second client (a
 level is fixed at construction, so it cannot be a property of a call), dropping
 any caller-installed `GatePlugin` and keeping every other plugin; `atLevel(8)` is
 `asSystem()`, since `getLevel` is clamped to 0–7.
@@ -8398,7 +8501,7 @@ export default {
 
 The SELECT carries exactly those names, a `@from` among them emits just that
 subquery, and all of them are trimmed from the result — asking for a computed
-field does not smuggle its inputs back. A bare fn keeps the old behaviour and
+field does not smuggle its inputs back. A bare fn keeps the old behavior and
 the old `*`, because undeclared has to mean *fetch everything*; one bare fn in a
 select widens it for the declared ones too.
 
@@ -8488,7 +8591,7 @@ STRICT and views were all read back; triggers were not. So `diffSchemas` could
 not see one and `generateMigrationSQL` could not emit one — every database that
 already existed kept the broken trigger pair while the diff reported the schema
 in sync. Triggers now travel in `__triggers` beside `__views` and compare on
-normalised SQL.
+normalized SQL.
 
 **A table rebuild dropped every trigger and put none of them back.**
 `rebuildSQL` is the standard SQLite rewrite — create `_tmp`, copy, `DROP TABLE`,
@@ -8565,7 +8668,7 @@ what to do instead. A `@from` field sorts, as it always did.
 
 `db.$checkOrderBy(accessor, orderBy)` is `$checkWhere`'s sibling and carries the
 identical contract: ask before you query, an unknown accessor answers `[]`
-because *I cannot judge this* is not *this is wrong*, and every flavour of client
+because *I cannot judge this* is not *this is wrong*, and every flavor of client
 answers identically, because sortability is a fact about the schema that auth and
 scope cannot change. Junction's `autoSort` calls it and answers 400.
 
@@ -8757,7 +8860,7 @@ exact thing post-update is there to refuse.
 every scoped proxy — `asSystem()`, `$setAuth(u)`, `$scopedBy()` — exposed the
 root `$transaction`, which hands `fn` the unscoped `clientProxy`.
 
-It fails in opposite directions on the two flavours, and only one of them is
+It fails in opposite directions on the two flavors, and only one of them is
 loud. As system, the body is refused by a level it should never have been asked
 about. As a user, nothing throws at all: `auth()` is null inside the
 transaction, so every `@@allow` matches nothing and every `@createdBy` stamps
@@ -8883,7 +8986,7 @@ query — pinned by a test that taps `$tapQuery` and `console.warn` and asserts
 both stay empty. An unknown accessor returns `[]` rather than throwing: a caller
 using this to reject a request must not reject what it failed to understand.
 
-Nothing about the ORM's own behaviour changed. `findMany` still warns, writes
+Nothing about the ORM's own behavior changed. `findMany` still warns, writes
 still throw.
 
 ## 2026-08-06 — the benchmark harness works again
@@ -8900,11 +9003,11 @@ gate-getlevel FAILED: "posts" is not a table in this schema. Tables: post
 
 A plural accessor against `model Post`. So the one measurement that proves the H4
 fix — GatePlugin resolving `getLevel` once per scoped client rather than once per
-operation, a cache with security-relevant behaviour behind it — had been silently
+operation, a cache with security-relevant behavior behind it — had been silently
 skipping for three weeks. It reports **0 calls across 200 gated reads**, which is
 the pass condition.
 
-Several annotations were fossils: they described the pre-fix behaviour of findings
+Several annotations were fossils: they described the pre-fix behavior of findings
 fixed the same day, so a reader saw `0.3 ms/call` beside *"runs full pristine build
 + 2x introspection"*. Each now names the finding it verifies, or says **STILL
 OPEN** — one does: JSONL `create()` is still `existsSync` + `statSync` +
@@ -9001,7 +9104,7 @@ await db.order.update({ where: {id:1}, data: { status: 'void', version: bob.vers
 `@@transitions` has run a compare-and-swap since 2026-08-04:
 `applyTransitionWhereClause` narrows the `WHERE` by the value it read, and no
 rows changed means somebody got there first. `@version` is that with the column
-unfrozen — the same *generalise the mechanism rather than add a second one* move
+unfrozen — the same *generalize the mechanism rather than add a second one* move
 `cascading-fields.md` argues for `@@softDelete(cascade)`. The bump rides the
 `SET`, which also means a versioned update always has a column to write.
 
@@ -9082,7 +9185,7 @@ that is not the conflict target, so simply filling `createdById` would have put 
 in the `ON CONFLICT … SET` clause and made every bulk upsert rewrite the original
 author. Create-time columns are now held out of that clause — **but only the ones
 we filled**. A column the caller supplied stays in, because naming it is an
-explicit request and excluding it would change behaviour that predates the
+explicit request and excluding it would change behavior that predates the
 stamps; an explicit `update: ['createdById']` moves it too.
 
 ### One owner for "ctx.auth → column"
@@ -9508,7 +9611,7 @@ written. Probed with one hostile model — every line below is a separate failur
 - **Enums always returned the first value** — five seeded builds gave five `free`.
   `rng.pick` when seeded; still the first value unseeded, so generated test cases
   stay stable.
-- **`@sequence` columns are no longer emitted.** An explicit value is honoured and
+- **`@sequence` columns are no longer emitted.** An explicit value is honored and
   moves the per-scope counter (verified), so writing one both defeats the feature
   and collides with any `@@unique([scope, seqField])` beside it.
 
@@ -9517,7 +9620,7 @@ written. Probed with one hostile model — every line below is a separate failur
 Found while running the above against `packages/basecamp/db/schema.lite`: rows
 appeared in tables that should have been empty. `makeTestClient` builds a throwaway
 db in a tmpdir and passes it as `db:` — but **a `database` block in the schema wins
-over `db:`**, which is documented litestone behaviour. So pointing this helper at a
+over `db:`**, which is documented litestone behavior. So pointing this helper at a
 real app schema opened `./db/basecamp.db` — the actual project database — and wrote
 test rows into it. The docs said "always uses `:memory:` — no files created".
 
@@ -9582,7 +9685,7 @@ Found by driving `@@transitions` from a UI for the first time in `example/`.
 
 Every validator already took its own wording — `@length(3, 20, "…")`,
 `@email("…")`, `@gte(0, "…")`, the ZenStack convention — and this package's own
-validator honoured them. `generateJsonSchema` emitted **none** of them, so a
+validator honored them. `generateJsonSchema` emitted **none** of them, so a
 sentence authored once in `db/schema.lite` died here: invisible to Junction's
 autoValidate and to Sierra's client-side rules, both of which derive from that
 document. A form said `customerId is required` and no amount of schema
@@ -9668,7 +9771,7 @@ so every model with a field of that type shared one machine — and therefore
 would have had to share one authority level. Two models using one `Status` can
 now differ. The enum block is kept as shorthand for the common case and
 **desugars into `@@transitions`** at parse time, so there is one enforcement
-path, one representation in the JSON Schema, and the existing behaviour is
+path, one representation in the JSON Schema, and the existing behavior is
 unchanged (all 20 of its tests pass untouched). A model that declares its own
 `@@transitions` for that field overrides the enum's outright.
 

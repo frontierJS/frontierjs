@@ -16,7 +16,7 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse } from '../src/core/parser.js'
-import { READERS, FORMATS, TIERS, tierOf, gradedKinds, summarise,
+import { READERS, FORMATS, TIERS, tierOf, gradedKinds, summarize,
          detectFormat, loadSource, convert, annotate, fileHeader } from '../src/import/index.js'
 
 const src = new URL('../src/import/', import.meta.url).pathname
@@ -152,7 +152,7 @@ describe('converting, grading and marking', () => {
     expect(summary.worst).toBe('changed')
   })
 
-  test('summarise groups by kind, worst tier first', () => {
+  test('summarize groups by kind, worst tier first', () => {
     expect(summary.byKind[0].tier).toBe('changed')
     expect(summary.byKind.map(r => r.kind)).toContain('decimal-no-precision')
   })
@@ -351,12 +351,12 @@ model Ledger {
   })
 })
 
-describe('summarise', () => {
+describe('summarize', () => {
   test('an empty list has no worst tier', () => {
-    expect(summarise([])).toMatchObject({ changed: 0, lost: 0, noted: 0, total: 0, worst: null })
+    expect(summarize([])).toMatchObject({ changed: 0, lost: 0, noted: 0, total: 0, worst: null })
   })
 
   test('lost is the worst when nothing changed', () => {
-    expect(summarise([{ kind: 'view' }, { kind: 'sti-candidate' }] as any).worst).toBe('lost')
+    expect(summarize([{ kind: 'view' }, { kind: 'sti-candidate' }] as any).worst).toBe('lost')
   })
 })

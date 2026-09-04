@@ -35,7 +35,7 @@
  *
  * ── What this file does not do (Principle 6) ────────────────────────
  *
- * Same split as tabs.css: visual treatment is a class, keyboard behaviour
+ * Same split as tabs.css: visual treatment is a class, keyboard behavior
  * is a component. `role="toolbar"` obliges the app to provide
  *
  *   - roving tabindex — one control tabindex="0", the rest tabindex="-1"
@@ -50,7 +50,7 @@
  * NOTE on `.bar.center`: `center` here is a Bar-scoped alignment modifier
  * (the flexbox value), not the Center layout term. Writing both on one
  * element happens to be harmless — Center's `place-items` lands on a flex
- * container where `.bar` already centres, and patterns beats layout on
+ * container where `.bar` already centers, and patterns beats layout on
  * `display` — but they are two different words that share three letters.
  */
 

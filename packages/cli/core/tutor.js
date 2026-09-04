@@ -46,13 +46,17 @@ export const journalPath    = (workspace) => join(workspace, JOURNAL_NAME)
 // teaches you something you cannot then look at. CI gets a temp one, because a
 // lesson must never write into the tree it is grading.
 //
-// `FJS_CI_WORKDIR` is honoured for the reason the deploy phase honours it: a
+// `FJS_CI_WORKDIR` is honored for the reason the deploy phase honors it: a
 // shell with a private `/tmp` gives a Docker daemon that cannot read the build
 // context, and the error is about a directory that is plainly there.
 
-export function tutorWorkspace({ name, tmp = false, cwd = process.cwd() } = {}) {
+// `base` is for the one lesson that hands its workspace to a DAEMON: a shell
+// with a private /tmp gets a Docker build that cannot see a directory plainly
+// there, so `tutor:deploy` asks for somewhere else. $FJS_CI_WORKDIR still wins,
+// because CI states it for the same reason.
+export function tutorWorkspace({ name, tmp = false, cwd = process.cwd(), base: wanted } = {}) {
   if (tmp) {
-    const base = process.env.FJS_CI_WORKDIR || tmpdir()
+    const base = process.env.FJS_CI_WORKDIR || wanted || tmpdir()
     mkdirSync(base, { recursive: true })
     const dir = mkdtempSync(join(base, 'fjs-tutor-'))
     return { dir, kind: 'temp', app: name || 'my-app' }
@@ -204,6 +208,17 @@ export function makeRecorder({ workspace, lesson, context, ephemeral = [], now =
       // word would record every failure as done and the resume would skip it.
       const refused = Boolean(context?.config?.abort) && !context?.config?.stop
       const real    = refused ? 'failed' : status
+
+      // A step somebody DECLINED did not happen, and nothing threw, so the
+      // runner hands it `succeeded` — after which the resume skips the step
+      // they stopped at, which is the one place they wanted to come back to.
+      // The row is dropped rather than marked: absent is what a step that has
+      // not run looks like, and `resumeDecision` already answers it correctly.
+      if (context?.config?.__declinedAt === name) {
+        delete rows()[name]
+        flush()
+        return
+      }
 
       rows()[name] = {
         ...rows()[name],

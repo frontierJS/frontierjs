@@ -4,7 +4,7 @@
 //
 // A file database is trivially opened twice: two replicas behind a load
 // balancer, a web process beside a worker one, a drive started while the dev
-// server runs. Both halves of the old behaviour are measured here as the thing
+// server runs. Both halves of the old behavior are measured here as the thing
 // they must no longer do — a cron declared in both firing twice a tick, and a
 // second start() releasing the row the first instance was midway through.
 //

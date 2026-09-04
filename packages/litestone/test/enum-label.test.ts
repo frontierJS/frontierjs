@@ -133,7 +133,7 @@ enum S {
 
   test('a quoted member that IS an identifier is the same member, not a second one', () => {
     // The reading FJS-564 gave the redundant array default: a language that
-    // refuses its own behaviour spelled another way fails a port on a line that
+    // refuses its own behavior spelled another way fails a port on a line that
     // means what the tree already does. So it parses — and collides.
     expect(parse('model M { id Int @id  s S }\nenum S { Draft "Draft" }').errors.join(' '))
       .toMatch(/duplicate member 'Draft'/)

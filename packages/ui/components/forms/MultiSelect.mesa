@@ -16,7 +16,7 @@
   //   <MultiSelect bind:value asyncOptions={{ trigger: searchFn, delay: 200, min: 1 }} />
 
   import Field from '../forms/Field.mesa'
-  import { uid, resolveError, resolveRule, stated, truncationNote, withNote, optionsNote } from '../../utils.js'
+  import { uid, resolveError, resolveRule, stated, truncationNote, withNote, optionsNote, lockedBy } from '../../utils.js'
   import { rank, segments } from '@frontierjs/toolbelt/search'
 
   // ── Props ───────────────────────────────────────────────────────────────────
@@ -51,7 +51,7 @@
   // A <Form> above this control locks it two ways — the caller disabled the
   // form, or a save is in flight — and both mean the same thing to a field.
   // A stated prop still wins, including `disabled={false}` on a saving form.
-  const resolvedDisabled = stated(disabled, form?.disabled || form?.submitting) ?? false
+  const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
   const rule     = resolveRule(form, name)
   const hasError = !!resolveError(form, name, error, errors)
 
@@ -110,8 +110,8 @@
     return type === 'number' ? Number(v) : String(v)
   }
 
-  // Normalise options to { value, textContent, disabled }
-  function normalise(opt) {
+  // Normalize options to { value, textContent, disabled }
+  function normalize(opt) {
     if (typeof opt === 'string' || typeof opt === 'number') {
       return { value: coerce(opt), textContent: String(opt), disabled: false }
     }
@@ -126,11 +126,11 @@
 
   function mapOf(list) {
     const m = {}
-    for (const o of (Array.isArray(list) ? list : []).map(normalise)) m[o.value] = o
+    for (const o of (Array.isArray(list) ? list : []).map(normalize)) m[o.value] = o
     return m
   }
 
-  // Normalised options map — value → option object. Reactive state rather than
+  // Normalized options map — value → option object. Reactive state rather than
   // a derived const, because the async search and `allowNew` add to it.
   //
   // SEEDED HERE, not only by the watch below: a `$:` watch fires on CHANGE, so
@@ -407,8 +407,8 @@
     if (q.length < (_async.min ?? 1)) return
     _debounceTimer = setTimeout(async () => {
       const results = await _async.trigger(q)
-      const normalised = (results ?? []).map(normalise)
-      for (const o of normalised) optionsMap[o.value] = o
+      const normalized = (results ?? []).map(normalize)
+      for (const o of normalized) optionsMap[o.value] = o
     }, _async.delay ?? 200)
   }
 

@@ -1,6 +1,6 @@
 // tests/raw-body.test.ts
 // A signature is computed over BYTES, so a receiver that only has the parsed
-// object has to re-serialise to check one — which means sender and receiver
+// object has to re-serialize to check one — which means sender and receiver
 // must agree on key order, spacing and number formatting forever. `parsed.raw`
 // and `ctx.$raw.rawBody` exist so nobody has to (`FJS-349`).
 
@@ -22,7 +22,7 @@ describe('the body a signature is computed over', () => {
 
   it('survives the parse, byte for byte', async () => {
     // Deliberately not what JSON.stringify would produce from the parsed
-    // object: extra spaces, and keys out of alphabetical order. Re-serialising
+    // object: extra spaces, and keys out of alphabetical order. Re-serializing
     // gives a different string and therefore a different hash.
     const raw    = '{ "b": 1,  "a": "x" }'
     const parsed = await parseBody(jsonRequest(raw))

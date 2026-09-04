@@ -32,7 +32,7 @@
 //
 // **A child is its own process group and it is stopped as one.** Every command
 // on this list is a launcher — `bun run api` is bun running a script that
-// spawns the app — so signalling the pid kills the wrapper and leaves what it
+// spawns the app — so signaling the pid kills the wrapper and leaves what it
 // started running. Measured, and expensively: a test that started `bun run
 // test` was stopped, reported stopped, and left a tree of suites running that
 // went on spawning. For a server the same shape is quieter and worse — stop
@@ -252,5 +252,5 @@ export function killAll() {
   }
 }
 
-/** Test seam — drop both tables without signalling anything. */
+/** Test seam — drop both tables without signaling anything. */
 export function _reset() { children.clear(); history.clear() }

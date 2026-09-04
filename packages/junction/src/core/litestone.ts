@@ -355,7 +355,7 @@ export function deriveModelName(name: string): string {
  * That is worse than a lookup miss. getTable throws, but the other two FAIL
  * OPEN: a service declaring `model: 'posts'` against `model Post` found no gate
  * and no schema, so `@@gate("4")` silently permitted anonymous requests and
- * validation silently did nothing. Normalising in one place is what keeps the
+ * validation silently did nothing. Normalizing in one place is what keeps the
  * three consistent.
  *
  * The literal spelling always wins, so `@@external` models mirroring a
@@ -717,7 +717,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     if (!q.withDeleted) return
     if (!softDelete && !modelSoftDeletes(ctx.locals.db, model ?? ctx.service)) return
     throw new BadRequest(
-      `$withDeleted is not honoured on remove. Removing a row on a soft-deleting model ` +
+      `$withDeleted is not honored on remove. Removing a row on a soft-deleting model ` +
       `stamps it; destroying one is not something a directive turns on. To free a @unique ` +
       `value a deleted row still holds, move the value aside with PATCH ?$withDeleted=true.`
     )
@@ -800,7 +800,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       }
     }
 
-    // Shape recognised by wrapResult → a list envelope carrying errors.
+    // Shape recognized by wrapResult → a list envelope carrying errors.
     return { data, total: data.length, errors }
   }
 
@@ -963,7 +963,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
           }
         }
 
-        // Shape recognised by wrapResult → a list envelope carrying errors.
+        // Shape recognized by wrapResult → a list envelope carrying errors.
         return { data: created, total: created.length, errors: failures }
       }
 
@@ -1214,7 +1214,7 @@ export function resolveDefsKey(
   accessor:     string,
   parsedSchema?: unknown
 ): string | null {
-  // Same normalisation as _gateLevels — matching the literal accessor only
+  // Same normalization as _gateLevels — matching the literal accessor only
   // meant `model: 'posts'` resolved to no definition, and autoValidate read
   // that as "nothing to validate against" rather than as a misconfiguration.
   const candidates = accessorCandidates(accessor)
@@ -1313,7 +1313,7 @@ function _warnUnvalidated(
 // The four hooks below are installed BY the framework, from the schema, and a
 // service can pass through the merge twice: the autoloader spreads a built base
 // back through createService, whose hooks map already carries this layer. The
-// mark is what lets that second merge recognise its own work and skip it
+// mark is what lets that second merge recognize its own work and skip it
 // (`FJS-231`) — without it every autoloaded service graded its @@gate and ran
 // its validator twice per request.
 //
@@ -1659,7 +1659,7 @@ async function modelVersionField(client: unknown, accessor: string): Promise<str
  *
  * `in` rather than a bare read, and not only because a Litestone client throws
  * on an unknown property — a client older than the capability answers `false`,
- * which degrades to the behaviour this refusal replaced instead of exploding.
+ * which degrades to the behavior this refusal replaced instead of exploding.
  *
  * The map is keyed by MODEL name and a service names an accessor, so the
  * candidates are walked the way every other name crossing this boundary is.
@@ -1890,7 +1890,7 @@ export function liftReservedQuery(
   let problems: WhereKeyProblem[] = []
   try { problems = check.call(client, accessor, probe) ?? [] } catch { return }
 
-  // A key the model DID recognise is the collision: it came back with no
+  // A key the model DID recognize is the collision: it came back with no
   // problem, so it is a real column and the reservation has taken it away.
   const bad = keys.filter(k => !problems.some(pr => pr.key === k))
   if (!bad.length) return
@@ -1930,7 +1930,7 @@ interface OrderByKeyProblem {
 // carries, so the two reasons a 400 has are not flattened into one.
 const UNSORTABLE: Record<string, string> = {
   computed: ' (computed — not sortable)',
-  opaque:   ' (stores a serialisation — not sortable)',
+  opaque:   ' (stores a serialization — not sortable)',
 }
 
 export function autoSort(accessorOpt: string | undefined) {
@@ -2212,7 +2212,7 @@ export function sessionGateLevel(
   if (user.isOwner)       return LEVELS.OWNER
   if (user.isAdmin)       return LEVELS.ADMINISTRATOR
 
-  // `null` is the app saying "modelled, not reached". `undefined` is silence.
+  // `null` is the app saying "modeled, not reached". `undefined` is silence.
   if (user.verifiedAt  === null) return LEVELS.VISITOR
   if (user.activatedAt === null) return LEVELS.READER
 

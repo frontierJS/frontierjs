@@ -27,7 +27,7 @@ cannot: no recorded image, a deploy in flight, nothing prior. Three of its
 refusals carry no override at all, because they are not judgement calls.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 9
 

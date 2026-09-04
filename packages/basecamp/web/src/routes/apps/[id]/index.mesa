@@ -510,7 +510,7 @@ title: App
 <!--
   The mock's other three tabs, and why they are not here:
 
-    log-analysis — nothing STORES a log line, so there is nothing to analyse.
+    log-analysis — nothing STORES a log line, so there is nothing to analyze.
       The `logs` tab reads the container's own log on demand through the
       Outpost; retention, search across apps and anything resembling a query
       are an observability adapter (docs/SCREENS.md § D), not a screen.

@@ -757,7 +757,7 @@ describe('StubTransport failure simulation', () => {
       .toEqual({ created: true })
   })
 
-  it('delays a response so timeout behaviour is testable', async () => {
+  it('delays a response so timeout behavior is testable', async () => {
     const stub = new StubTransport(descriptor)
     stub.mock('/slow', { ok: true }, { delay_ms: 120 })
 
@@ -1641,7 +1641,7 @@ describe('retry policy', () => {
   // which falls through to the JSON.parse failure below. `new Response(…, {
   // headers: { 'content-type': '' } })` does not produce it — Bun normalises
   // the header back to text/plain — and a test that cannot construct its own
-  // premise is theatre.
+  // premise is theater.
 
   it('malformed JSON under a JSON content-type is not retried either', async () => {
     let hits = 0
@@ -1723,7 +1723,7 @@ describe('hmac signing', () => {
     expect(a.get('x-fjs-signature')).not.toBe(b.get('x-fjs-signature'))
   })
 
-  it('honours a custom header prefix', async () => {
+  it('honors a custom header prefix', async () => {
     const s = recorder(() => Response.json({ ok: true }))
     try {
       const target = outpostTarget({
@@ -2527,7 +2527,7 @@ describe('a throwing observer does not take down the caller', () => {
 // Everything that requires a real App — lifecycle ordering, the metrics
 // reach-in, service routing, app-level hooks — lives in
 // junction-integration.test.ts. Driving a hand-rolled `{ _metricsSources:
-// new Map() }` here would assert the fake's behaviour, not Junction's, and
+// new Map() }` here would assert the fake's behavior, not Junction's, and
 // would keep passing after a breaking change on either side.
 describe('conduit Junction plugin', () => {
 
@@ -3157,7 +3157,7 @@ describe("encoding: 'binary' (FJS-651)", () => {
       })
 
       expect(checked.ok).toBe(true)
-      // The control: the signature is over the BYTES, so a re-serialised body
+      // The control: the signature is over the BYTES, so a re-serialized body
       // must not verify — that is the failure this whole path exists to avoid.
       const wrong = await verifyRequest({
         secret: 'test-secret', method: 'POST', path: '/upload',
@@ -3168,7 +3168,7 @@ describe("encoding: 'binary' (FJS-651)", () => {
     } finally { s.stop() }
   })
 
-  it('refuses bytes under json encoding rather than serialising them', async () => {
+  it('refuses bytes under json encoding rather than serializing them', async () => {
     const s = recorder(() => Response.json({ ok: true }))
     try {
       const target = providerTarget({ address: s.url })   // json

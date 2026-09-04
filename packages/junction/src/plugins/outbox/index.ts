@@ -103,7 +103,7 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
       // the reason `FJS-D06` gives: `/metrics` has one owner.
       //
       // A source must be SYNCHRONOUS — `/metrics` assigns `fn()` straight into
-      // the body, so a promise would serialise as `{}`.
+      // the body, so a promise would serialize as `{}`.
       if (typeof app.registerMetricsSource === 'function')
         app.registerMetricsSource('outbox', () => ({ pending, delivered, failed, lastPassAt }))
 

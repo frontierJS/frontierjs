@@ -158,7 +158,7 @@ describe('foreign keys default to null, not 0', () => {
     expect(make().customerId).toBe(7)
   })
 
-  test('passing no FK list leaves every integer at 0 — the old behaviour', () => {
+  test('passing no FK list leaves every integer at 0 — the old behavior', () => {
     const make = createMakeFromSchema(ORDER.properties)
     expect(make().customerId).toBe(0)
   })

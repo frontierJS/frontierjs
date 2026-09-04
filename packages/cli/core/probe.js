@@ -123,6 +123,28 @@ export async function httpJson({ url, method, body, headers, expect, describe, r
   return fail(label, describe ?? 'the body to match', `status ${last.res.status}, and the body did not`, last.text.slice(0, 400))
 }
 
+// The body as TEXT, for the things that are not JSON. A dev server answering a
+// module is the case this exists for: a page that compiles is a fact about the
+// compiler, and asking the server for the module is the only way to get it
+// without a browser.
+export async function httpText({ url, method, body, headers, needle, describe, retries = 1, everyMs = 500, name }) {
+  const label = name ?? `${method ?? 'GET'} ${url}`
+  const want  = describe ?? `a body matching ${needle}`
+  let last
+  for (let i = 0; i < retries; i++) {
+    last = await attempt(url, { method, body, headers })
+    const hit = last.res && last.res.ok &&
+      (typeof needle === 'string' ? last.text.includes(needle) : needle.test(last.text))
+    if (hit) {
+      return ok(label, want, 'it did', last.text.slice(0, 400))
+    }
+    if (i < retries - 1) await wait(everyMs)
+  }
+  if (last.error) return fail(label, want, last.error)
+  if (!last.res.ok) return fail(label, want, `status ${last.res.status}`, last.text.slice(0, 400))
+  return fail(label, want, 'the body did not match', last.text.slice(0, 400))
+}
+
 export async function header({ url, name: hdr, expect, label }) {
   const shown = label ?? `${hdr} on ${url}`
   const got   = await attempt(url)
@@ -190,6 +212,21 @@ export function fileContains({ path, needle, name }) {
 // The sharpest probe there is, and the reason a lesson can say a row was
 // written rather than that a request answered 201: it reads the file the app
 // wrote, through the app's own runtime, with no service in the way.
+
+// Any probe, until it holds. The retry loops above are inside the probes that
+// ask over a network, where a connection refused on the first try is ordinary;
+// this is for the ones that read something a SEPARATE process is about to
+// write — a job finishing a row, a build dropping a file — where the wait is a
+// property of the caller's question rather than of the probe.
+export async function eventually(probe, { retries = 10, everyMs = 500 } = {}) {
+  let last
+  for (let i = 0; i < retries; i++) {
+    last = await probe()
+    if (last.ok) return last
+    if (i < retries - 1) await wait(everyMs)
+  }
+  return last
+}
 
 export function sqliteRow({ db, sql, params = [], expect, name, run = runArgv }) {
   const label  = name ?? sql

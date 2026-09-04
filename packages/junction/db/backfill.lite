@@ -51,7 +51,7 @@ model BackfillRun {
   /// The last id this backfill has scanned PAST. Text because a model's id may
   /// be a uuid or an integer and this column holds both.
   ///
-  /// It is an optimisation and never the correctness: a chunk re-reads its own
+  /// It is an optimization and never the correctness: a chunk re-reads its own
   /// predicate, so a row already filled is skipped whatever the cursor says.
   /// That is what makes an interrupted chunk safe to run again.
   cursor       String?

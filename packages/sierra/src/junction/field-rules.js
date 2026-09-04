@@ -131,7 +131,7 @@ export function buildFieldRules(schema, resolve = resolveRef) {
     if (Array.isArray(def.enum)) rule.enum = def.enum
 
     // `x-labels` is what @label on an enum member emits — a partial map, only
-    // the members that stated one. It is normalised into `rule.options` HERE
+    // the members that stated one. It is normalized into `rule.options` HERE
     // rather than in each control, because @frontierjs/ui peers on mesa and
     // css alone and cannot import this module to share the rule.
     //
@@ -147,7 +147,7 @@ export function buildFieldRules(schema, resolve = resolveRef) {
 
     // `x-values` is a @values binding: which named set this column draws from,
     // and how legal a value outside it is. Renamed onto `rule.values` for the
-    // same reason `x-labels` is normalised into `rule.options` — a control
+    // same reason `x-labels` is normalized into `rule.options` — a control
     // cannot import this module, so the shape it consumes is settled here.
     if (def['x-values'] && typeof def['x-values'] === 'object') rule.values = def['x-values']
 
@@ -201,7 +201,7 @@ export function buildFieldRules(schema, resolve = resolveRef) {
  *                optional:false, onDelete:'Cascade' },
  *     tags:    { field:'tags', type:'m2m', model:'Tag' } }
  *
- * `model` is normalised to the name as declared in the .lite file, so it can be
+ * `model` is normalized to the name as declared in the .lite file, so it can be
  * handed straight to schemaFor() or used to name the related resource. It falls
  * back to whatever the schema said when the registry cannot resolve it.
  *

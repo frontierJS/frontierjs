@@ -13,7 +13,7 @@
  * These sit in the `layout` layer, which index.css orders *before*
  * `components` and `patterns`. That matters for one real collision:
  * `.center` here sets `display: grid`, while `.bar` in patterns sets
- * `display: flex` and uses `.bar.center` to mean "centre the bar's
+ * `display: flex` and uses `.bar.center` to mean "center the bar's
  * contents". Both are single-class selectors, so specificity can't
  * separate them — the layer order does, and `.bar` wins.
  *

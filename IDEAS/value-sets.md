@@ -25,7 +25,7 @@ screen in `example` mounts the picker yet** — there is no variant edit form, s
 the control is proven by `@frontierjs/ui`'s own browser drive and by the
 resource, not by a rendered app screen.
 
-**Three pieces shipped 2026-08-22 and are behaviour, not proposal**, each
+**Three pieces shipped 2026-08-22 and are behavior, not proposal**, each
 buildable without the declaration and each useful without it: `@label` on an
 enum member (a caption per value of a literal set), `@@label(field)` on a model
 (which column a picker SHOWS for a row — FHIR's `display`), and one resolution
@@ -43,7 +43,7 @@ field and merely offered on another, which a strength on the set cannot express.
 The `Sketch` section below is superseded by `DECISIONS.md` § `FJS-D120`; it is
 kept because the reasoning that produced it is the reasoning behind the ruling.
 
-Do not cite the rest of this file as describing behaviour — see `VERIFYING.md`.
+Do not cite the rest of this file as describing behavior — see `VERIFYING.md`.
 
 ---
 
@@ -146,7 +146,7 @@ The axes:
    therefore a Data-boundary question.
 3. **Order** — which of the allowed values appear first. **Not membership**, and
    the reason to keep it out is that it is the only one of the three that is
-   per-caller and non-authoritative. A learned ordering, a pinned favourite and
+   per-caller and non-authoritative. A learned ordering, a pinned favorite and
    an alphabetical default are all this axis; none of them changes what is legal.
 
 Fusing 2 and 3 is the common failure — a *suggested* binding and a *suggested

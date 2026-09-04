@@ -112,7 +112,7 @@ function walk(out: Array<[string, string]>, prefix: string, value: unknown, dept
  * `JSON.stringify` and went out as `{"0":137,"1":80,…}` under
  * `application/json`, confidently, with nothing said (`FJS-651`).
  *
- * A non-binary encoding handed bytes is refused rather than serialised, for the
+ * A non-binary encoding handed bytes is refused rather than serialized, for the
  * same reason: there is no correct string for them, so guessing produces a
  * plausible request that is wrong.
  */
@@ -130,7 +130,7 @@ export function encodeBody(body: unknown, encoding: BodyEncoding): EncodedBody {
   if (body instanceof Uint8Array || body instanceof ArrayBuffer) {
     throw new TypeError(
       `a binary body cannot be sent under '${encoding}' encoding — it would be ` +
-      `serialised as an object of byte indices. Declare encoding: 'binary' on the target.`
+      `serialized as an object of byte indices. Declare encoding: 'binary' on the target.`
     )
   }
 

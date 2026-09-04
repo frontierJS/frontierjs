@@ -52,12 +52,12 @@ export function islandEntrySource(islands, {
   // The theme block, or nothing. A static page never loads `virtual:sierra` —
   // it ships HTML plus these chunks and nothing else — so this entry is the one
   // place a prerendered site can be told what its app declared. Without it the
-  // theme module keeps `normalise({})`: DEFAULT_THEMES and key `theme`, so an
+  // theme module keeps `normalize({})`: DEFAULT_THEMES and key `theme`, so an
   // app declaring six themes had four of them refused by name, and persisted
   // under a key the build's own flash-prevention script does not read, which
   // made every reload revert (`FJS-501`).
   //
-  // Serialised rather than imported, because there is no module here to import
+  // Serialized rather than imported, because there is no module here to import
   // it FROM — the config is a Node-side object that never entered the browser
   // graph on this target.
   const themeInit = theme

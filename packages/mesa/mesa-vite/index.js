@@ -443,7 +443,7 @@ export function __mesa_hot_update() {}
         // Send error to browser overlay — use server.hot in Vite 8, ws as fallback
         const hot = s?.hot ?? s?.ws
         hot?.send({ type: 'error', err: formatError(e, file) })
-        return []   // suppress default HMR behaviour
+        return []   // suppress default HMR behavior
       }
 
       // Explicitly invalidate every affected module so Vite 8 re-runs

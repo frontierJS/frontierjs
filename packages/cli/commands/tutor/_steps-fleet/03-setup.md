@@ -21,7 +21,7 @@ the same account is an owner in one workspace and a viewer in another. That is
 the same `@@gate` ladder from lesson 2, resolved one row further out.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 3
 

@@ -228,7 +228,7 @@ function adopt(basket) {
 }
 
 /**
- * Serialise the calls.
+ * Serialize the calls.
  *
  * Two add-to-cart clicks in the same tick would both find no basket and both
  * mint one, and the second token would overwrite the first — leaving a paid-for

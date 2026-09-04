@@ -461,7 +461,7 @@ describe('the column tier', () => {
 describe('the grid and the ladder are ANDed', () => {
   it('needs both, and the gate is the floor', async () => {
     // `FJS-D146`. OR would make the gate a bypass — a grant would turn an
-    // anonymous caller into an authorised one — so a model that opts into the
+    // anonymous caller into an authorized one — so a model that opts into the
     // grid keeps its ladder underneath.
     const db = await createClient({ db: ':memory:', schema: `
       model Ledger {
@@ -498,7 +498,7 @@ describe('a principal carrying the wrong shape', () => {
   })
 })
 
-describe('a @capability that contradicts its neighbour is refused at parse', () => {
+describe('a @capability that contradicts its neighbor is refused at parse', () => {
   const bad = (src: string) => {
     const r = parse(src)
     expect(r.valid).toBe(false)
@@ -805,7 +805,7 @@ describe('$capabilitiesFor', () => {
     await db.$close()
   })
 
-  it('answers identically on every flavour of client', async () => {
+  it('answers identically on every flavor of client', async () => {
     // The contract $checkWhere and $protectedFields already have. What a name
     // GRANTS is a fact about the schema, so who is asking cannot change it —
     // which is also why it takes its subject as an argument rather than

@@ -119,7 +119,7 @@ function runner(app: BasecampApp) {
     if (!isExecutor(executor)) {
       // The release stops here, with the reason on the row. Every step stays
       // `pending` until failDeploy marks them failed — none of them is touched,
-      // which is the difference from the behaviour this replaced.
+      // which is the difference from the behavior this replaced.
       await failDeploy(deploymentId, startedAt, executor.reason)
       log.error('deployment refused — no executor', { id: deploymentId, reason: executor.reason })
       return

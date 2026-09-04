@@ -14,7 +14,7 @@
   // The tone goes on the HINT ITSELF, not on the group. A tone class sets
   // `--bg-mix`, which tones.css registers with `inherits: false`, so a tone on
   // the wrapper reaches nothing inside it: the error text rendered in ordinary
-  // muted grey and looked like a hint. `.field-hint` reads `--bg-mix` off its
+  // muted gray and looked like a hint. `.field-hint` reads `--bg-mix` off its
   // own element.
   //
   // Two usage patterns:

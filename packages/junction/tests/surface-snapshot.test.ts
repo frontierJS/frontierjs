@@ -5,7 +5,7 @@
 // What these guard is the reason the file is committed at all: every fact in it
 // is one nothing in the source text can answer. `collectCustomMethods` decides at
 // construction whether `pay` is an action or an option key, `svc.pipelines()`
-// resolves a hook chain whose ORDER is behaviour, and `apiPrefix` moves routes
+// resolves a hook chain whose ORDER is behavior, and `apiPrefix` moves routes
 // registered by plugins that never mention it. A renderer that read source, or
 // one that sorted a hook chain, would produce a plausible file that is wrong —
 // so the assertions below are about provenance and ordering, not formatting.
@@ -75,7 +75,7 @@ describe('junction surface', () => {
     const app = await buildApp()
     const svc = describeSurface(app).services.find(s => s.name === 'orders')!
 
-    // Order is behaviour: stamping the owner before the auth check is a
+    // Order is behavior: stamping the owner before the auth check is a
     // different app. A sorted or set-collapsed chain would render identically
     // for both, which is what makes this the assertion worth having.
     //

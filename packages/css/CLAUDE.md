@@ -155,7 +155,7 @@ test/run.js        the harness
 - **The cheat sheet's Bases section reads the lineage out of the CSSOM, and
   the walk must descend through `@import`.** `index.css` is 44 imports and
   almost nothing else, so a walk that only descends into `@layer`/`@media`
-  sees **45 rules** and finds neither lineage — an imported sheet is a
+  sees **only the imports** and finds neither lineage — an imported sheet is a
   separate `CSSStyleSheet` on the rule (`r.styleSheet.cssRules`), not a
   nested rule list. `findRule()`/`tokenValue()` already had that branch;
   a new walk that forgets it returns empty and renders a base with no
@@ -239,7 +239,7 @@ test/run.js        the harness
   ⌘K (`.sg-search-*`) and `@frontierjs/ui`'s CommandPalette (`.cp-row-*`), the
   second in literals no token or `.dense` could reach. Two traps came out of
   building it. **`.item` is `align-items: center` and a stacked Item must not
-  be** — a gutter centred against three lines sits opposite the SUBTITLE, so
+  be** — a gutter centered against three lines sits opposite the SUBTITLE, so
   the switch is keyed `.item:has(.item-lead)`; a bare
   `.item { align-items: baseline }` fixes the palette and misaligns every
   badge-and-text row in the package. And **an `<li>` is block-level, so
@@ -270,7 +270,7 @@ test/run.js        the harness
   that. The anchor gives a `.popover` a containing block AND a default
   placement (below the trigger, start-aligned; `.align-end` flips it), which
   is what made the term usable at all: absolute with no inset resolves to its
-  STATIC position, centred on its own trigger. The placement rules say
+  STATIC position, centered on its own trigger. The placement rules say
   `:not([popover])`, so the stylesheet cannot place a top-layer popover
   against the viewport by accident. Anchor positioning is still the answer for
   a native one, and for any edge other than below.
@@ -398,7 +398,7 @@ test/run.js        the harness
   `rule.cssText`.
 - **`tokenValue(prop)` looks a custom property up BY PROPERTY, not by
   selector, and that is not a preference.** The CSSOM does not hand back the
-  selector that was authored: `*, *::before, *::after` is serialised as
+  selector that was authored: `*, *::before, *::after` is serialized as
   `*, ::before, ::after` — the redundant `*` is dropped — so an exact match on
   the written string finds nothing while the rule sits right there. That is
   what made the two-axes diagram render its tint ramp as no swatches at all.
@@ -411,7 +411,7 @@ test/run.js        the harness
   `ruleText(selector)` in `guide.js` is the one reader. It parses authored
   `cssText`: iterating `rule.style` expands `gap: var(--space-sm)` into two
   longhands that each answer `""`, which prints as `row-gap: ;`.
-- **`#spacing` now rewrites to `#behaviour`.** The Spacing page documented a
+- **`#spacing` now rewrites to `#behavior`.** The Spacing page documented a
   4px numeric scale the package never had and margin utilities it does not
   ship. Its subject was really *who owns the space*, which is what
   `How things behave` is; the ladder itself lives on `Density & space`.

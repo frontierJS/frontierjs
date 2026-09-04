@@ -93,7 +93,7 @@ export async function run(t) {
     t.is(ok.text, 'healthy', 'a health answer with no failing check reads as healthy')
     t.ok(/success/.test(ok.tone), 'and is toned as one')
     t.ok(/database ok/.test(ok.title) && /mail ok/.test(ok.title),
-      `the checks are NAMED, not summarised — "${ok.title}"`)
+      `the checks are NAMED, not summarized — "${ok.title}"`)
 
     /* ── degraded, and it says which ───────────────────────────────────── */
 

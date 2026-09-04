@@ -190,7 +190,7 @@ export async function run(t) {
     return getComputedStyle(panel).borderRadius === token;
   `), true, 'the panel takes its radius from --card-radius, not a literal 12px')
 
-  // Compared with quoting and spacing normalised: the CSSOM re-serialises a
+  // Compared with quoting and spacing normalized: the CSSOM re-serialises a
   // font stack, so a string compare against the token's own text fails against
   // a value that is in fact identical.
   t.is(await t.evaluate(`

@@ -51,7 +51,7 @@ export interface ParsedBody {
    *
    * It exists because a signature is computed over BYTES. An HMAC scheme binds
    * the body hash (see `@frontierjs/toolbelt/signature`), and a receiver handed
-   * only the parsed object has to re-serialise to check one — which means
+   * only the parsed object has to re-serialize to check one — which means
    * sender and receiver must agree on key order, spacing and number formatting
    * forever. That agreement is what basecamp did not have: its three Outpost
    * endpoints took no credential at all behind a comment saying the transport
@@ -60,6 +60,79 @@ export interface ParsedBody {
    * Absent for multipart (there is no single string) and for an empty body.
    */
   raw?:  string
+}
+
+// ─── The size bound ───────────────────────────────────────────────────────
+
+/**
+ * The body did not fit. Carried as its own class so the transport can tell it
+ * apart from a body that could not be PARSED — both used to arrive at one
+ * `catch` that answered 413, which is a lie about every malformed request.
+ */
+export class BodyTooLargeError extends Error {
+  readonly limit: number
+  readonly size:  number
+  constructor(limit: number, size: number) {
+    super(`Request body exceeds ${limit} bytes`)
+    this.name  = 'BodyTooLargeError'
+    this.limit = limit
+    this.size  = size
+  }
+}
+
+/**
+ * Read a body that declared no length, stopping at `maxSize`.
+ *
+ * A chunked request states no Content-Length, so the pre-read check has nothing
+ * to look at and `req.arrayBuffer()` buffers whatever arrives before anything
+ * can measure it: 8 MB read whole, then a 413 about memory already spent, with
+ * the runtime's own default as the real ceiling.
+ *
+ * Bun's `maxRequestBodySize` does not close it — measured, that option compares
+ * the DECLARED length and a chunked body passes it untouched, which is the same
+ * blind spot one layer down. So the read is bounded here, where the limit is
+ * known, and the stream is cancelled the moment it goes past: the sender is
+ * told to stop rather than allowed to finish into a buffer that is discarded.
+ */
+async function readBounded(req: Request, maxSize: number): Promise<ArrayBuffer> {
+  const stream = req.body
+  if (!stream) return await req.arrayBuffer()
+
+  const reader = stream.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done || !value) break
+      total += value.byteLength
+      if (total > maxSize) {
+        // Cancelling can reject on a stream the peer has already torn down,
+        // and that must not replace the refusal the caller is owed.
+        try { await reader.cancel() } catch {}
+        throw new BodyTooLargeError(maxSize, total)
+      }
+      chunks.push(value)
+    }
+  } finally {
+    try { reader.releaseLock() } catch {}
+  }
+
+  if (chunks.length === 1) return toArrayBuffer(chunks[0]!)
+
+  const out = new Uint8Array(total)
+  let at = 0
+  for (const c of chunks) { out.set(c, at); at += c.byteLength }
+  return out.buffer as ArrayBuffer
+}
+
+// A chunk is a view, so its `.buffer` may be longer than the chunk and shared
+// with the next one. Only a view covering its whole buffer can hand it over.
+function toArrayBuffer(v: Uint8Array): ArrayBuffer {
+  return (v.byteOffset === 0 && v.byteLength === v.buffer.byteLength)
+    ? v.buffer as ArrayBuffer
+    : v.slice().buffer as ArrayBuffer
 }
 
 // ─── Main entry point ─────────────────────────────────────────────────────
@@ -96,29 +169,29 @@ export async function parseBody(
     return { type: 'empty', data: null, files: [], size: 0 }
   }
 
-  // Enforce the size limit BEFORE buffering. A declared Content-Length over
-  // the limit is rejected without reading a single body byte — otherwise a
-  // client could push an arbitrarily large body fully into memory before
-  // the 413 fires. (The post-read check below still covers chunked bodies
-  // that arrive without a Content-Length.)
+  // A declared Content-Length over the limit is refused without reading a
+  // body byte. The declaration is trustworthy in the one direction that
+  // matters here: it frames the message, so the server reads exactly that
+  // many bytes and a client cannot send more under it.
   const declaredLength = parseInt(req.headers.get('content-length') ?? '', 10)
-  if (Number.isFinite(declaredLength) && declaredLength > maxSize) {
-    throw new Error(`Request body exceeds ${maxSize} bytes`)
+  const declared       = Number.isFinite(declaredLength)
+  if (declared && declaredLength > maxSize) {
+    throw new BodyTooLargeError(maxSize, declaredLength)
   }
 
-  // Read body as ArrayBuffer — single allocation
   let buffer: ArrayBuffer
   try {
-    buffer = await req.arrayBuffer()
-  } catch {
+    // Declared and within the limit: one allocation, no chunk walk. Undeclared
+    // — a chunked body — is read incrementally and abandoned at the bound.
+    buffer = declared ? await req.arrayBuffer() : await readBounded(req, maxSize)
+  } catch (err) {
+    if (err instanceof BodyTooLargeError) throw err
     return { type: 'empty', data: null, files: [], size: 0 }
   }
 
   const size = buffer.byteLength
-
-  // Enforce size limit (chunked / undeclared-length bodies)
   if (size > maxSize) {
-    throw new Error(`Request body exceeds ${maxSize} bytes`)
+    throw new BodyTooLargeError(maxSize, size)
   }
 
   // ── JSON ────────────────────────────────────────────────────────────

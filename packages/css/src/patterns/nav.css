@@ -145,7 +145,7 @@
  *
  * Use this, not `.items.menu`, for anything navigable. `.items.menu .item`
  * styles an <li> to look clickable, but an <li> is not focusable and takes
- * no keyboard input — the hover state writes a cheque the markup cannot
+ * no keyboard input — the hover state writes a check the markup cannot
  * cash. `.navlink` goes on a real <a>, so it is focusable, activatable and
  * announced as a link.
  */

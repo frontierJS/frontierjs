@@ -125,7 +125,7 @@ attribute, which is what that file exists to make visible.
 - Boxes for the nine declarations, then one per attribute group, each carrying
   how many of its words this schema uses
 - **A word with nothing behind it is dimmed, never hidden.** Its card still
-  opens — blurb, argument form, a worked example — because a grey box is the
+  opens — blurb, argument form, a worked example — because a gray box is the
   only way somebody finds a feature they have not heard of
 - Clicking a declaration gives a card per instance: a model's gate, columns,
   relations, row policies and protected fields; an enum's values; a database's
@@ -213,7 +213,7 @@ the schema says nothing, everything works, and a word would have said it better.
 | --- | --- |
 | `credential-column-in-plain-text` | a password, token or key column stored as text. `@guarded` grades it DOWN rather than clearing it: that decides who may ask, and the value is still plaintext at rest |
 | `column-declared-and-inert` | a `deletedAt` with no `@@softDelete`, an `isTemplate` with no `@@hasTemplates` — the column somebody wrote and the feature they did not |
-| `model-outside-the-gate-ladder` | a model with no `@@gate` where its neighbours are graded |
+| `model-outside-the-gate-ladder` | a model with no `@@gate` where its neighbors are graded |
 | `gate-with-nothing-saying-whose-row` | a `@@gate` with no `@@allow`. A gate is per MODEL and never says which rows |
 | `format-column-with-no-validator` | an `email`, `url` or `phone` column nothing checks |
 | `enum-column-with-no-state-machine` | a lifecycle enum with no `@@transitions`, so any write sets any value from any other |

@@ -37,7 +37,7 @@ import { apiKeyGuard, apiKeyUsage }       from './services/api-keys/scopes.ts'
 import { slugify }                        from './core/resource.ts'
 import { roleForLevel }                   from './core/gate.ts'
 import { restoreSchedules }          from './services/jobs/job-schedule.ts'
-import { workspaceChannelName }      from './channels.ts'
+import { workspaceChannelName, workspaceIdFromChannel } from './channels.ts'
 
 import type { BasecampApp } from './basecamp.types.ts'
 
@@ -394,6 +394,28 @@ export async function buildBasecampApp(
 
       for (const m of memberships) a.channel?.(workspaceChannelName(m.workspaceId)).join(conn)
     })
+  }, {
+    // Which workspace a recipient is acting in, for THIS channel.
+    //
+    // Every model a service broadcasts is scoped on `workspaceId`, and the
+    // tenancy rule desugars into an `@@deny` over `auth().workspaceId`. That
+    // claim is resolved per REQUEST by `membershipClaim` off the workspace
+    // header; a connection has no request and no header, so a graded broadcast
+    // saw no claim at all and the deny fired on UNKNOWN — every subscriber
+    // refused, on all eighteen live services, with only a once-per-service
+    // warning that reads as *the model is genuinely private* (`FJS-749`).
+    //
+    // Answering off the CHANNEL is the same statement `membershipClaim` makes
+    // and not a weaker one: the join above reads `WorkspaceMember` through
+    // `asSystem()` and puts a connection in `workspace:<id>` only where a
+    // membership row exists, so being in the channel IS the verified claim.
+    // A person in two workspaces is one principal on one socket and holds a
+    // different tenant in each, which is why this is per channel and cannot be
+    // put on the connection.
+    claims: (channelName) => {
+      const workspaceId = workspaceIdFromChannel(channelName)
+      return workspaceId ? { workspaceId } : null
+    },
   }))
 
   // ── Services ──────────────────────────────────────────────────────────

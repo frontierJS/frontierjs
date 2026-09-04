@@ -395,7 +395,7 @@ describe('a valueless attribute on a component', () => {
     const Child = await build(
       `<script>export let striped = false</script><p>{striped ? 'on' : 'off'}</p>`, 'Child.mesa')
     const Parent = await build(
-      // A local named `striped` — the shape that made the old behaviour silent
+      // A local named `striped` — the shape that made the old behavior silent
       // rather than loud. The prop must still be true.
       `<script>import Child from './Child.mesa'\n const striped = false</script><Child striped />`,
       'Parent.mesa', Child)
@@ -470,7 +470,7 @@ describe('multi-line interpolated attributes', () => {
   })
 
   it('still group single-line bindings into one render() block', async () => {
-    // The fix must not disable the optimisation for the ordinary case.
+    // The fix must not disable the optimization for the ordinary case.
     const { result } = await compile(
       `<script>let a = 1\n let b = 2</script><div id={a} title={b}>{a}</div>`)
     expect(result).toContain('$$runtime.render(')
@@ -555,7 +555,7 @@ describe('bind: to a member expression', () => {
     expect(result).toContain('bindInput')
   })
 
-  it('CURRENT BEHAVIOUR: the mutation does not notify other readers', async () => {
+  it('CURRENT BEHAVIOR: the mutation does not notify other readers', async () => {
     // Documenting, not endorsing. The setter assigns into the object the signal
     // holds; the signal itself is not replaced, so an effect reading
     // `draft.name` does not re-run and a live preview stays stale. That follows
@@ -637,7 +637,7 @@ describe('a destructuring assignment to reactive lets', () => {
   /*
    * `[a, b] = [b, a]` used to emit `[$$runtime.get($$sig_a), …] = …` — the same
    * invalid target the suite above covers, reached a different way: both
-   * rewriters recognised only a bare Identifier on the left, so a pattern fell
+   * rewriters recognized only a bare Identifier on the left, so a pattern fell
    * through to the generic descent and every target was rewritten as a READ.
    * Clean compile, empty analysis.errors, module dead on load. The kit's
    * DatePicker used the swap idiom and threw before it rendered anything.
@@ -685,7 +685,7 @@ describe('a destructuring assignment to reactive lets', () => {
     )).toEqual({ before: '12', after: '87' })
   })
 
-  it('honours a default in the pattern', async () => {
+  it('honors a default in the pattern', async () => {
     // The default is an ordinary expression and may read a signal, so it is
     // rewritten in place rather than carried across verbatim.
     expect(await drive('Default.mesa',
@@ -1219,7 +1219,7 @@ describe('VISION documents every member of the door', () => {
  *
  * `$.mounted` and `$.context` are rewritten to `$mounted` / `$context` before
  * the script is parsed, and the DECLARATION of those locals was gated on a
- * sniff that recognised one shape each. Every other shape emitted a reference
+ * sniff that recognized one shape each. Every other shape emitted a reference
  * to a binding nothing declared — which compiles, parses, and throws
  * ReferenceError on first render. Invariant 15's failure exactly, so the
  * assertion is Invariant 15's shape: parse the output, then check that every

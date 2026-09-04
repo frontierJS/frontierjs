@@ -105,7 +105,7 @@ const FIELD_MAP = {
   country:      FAKE.country,
   company:      FAKE.company,
   companyname:  FAKE.company,
-  organisation: FAKE.company,
+  organization: FAKE.company,
   organization: FAKE.company,
   street:       FAKE.street,
   address:      FAKE.street,

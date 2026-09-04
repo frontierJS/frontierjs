@@ -45,7 +45,7 @@ async function rawUpstream(onConnection) {
  * One request, on its own connection, written by hand.
  *
  * `fetch` is not usable here and the reason is worth stating: node's strips a
- * `host` header override and sends the URL's authority, bun's honours it — so
+ * `host` header override and sends the URL's authority, bun's honors it — so
  * the same test asserts two different things depending on the runtime. And its
  * connection POOLING is what this proxy's one documented bound is about, which
  * a test must control rather than inherit.

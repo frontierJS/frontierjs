@@ -328,7 +328,7 @@ function modelAttr(line, model, gap, optional) {
 
 // ─── the one-to-one pass ─────────────────────────────────────────────────────
 
-// FJS-563: a singular back-reference must be labelled on both sides, or the
+// FJS-563: a singular back-reference must be labeled on both sides, or the
 // parser reports `unknown type 'B'` for a model it has registered. A list
 // back-reference pairs unlabelled. Prisma requires no label either way, so
 // every ported one-to-one arrives broken.

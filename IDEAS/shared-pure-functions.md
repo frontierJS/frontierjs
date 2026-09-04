@@ -86,10 +86,10 @@ agree. Each carries its own plural rules:
 
 | Where | Rules | `statuses` → | `people` → |
 | --- | --- | --- | --- |
-| [ddl.js:44](packages/litestone/src/core/ddl.js#L44) `pluralizeWord` | 20 irregulars + `es`/`ies` | *(pluraliser)* | `person` → `people` ✓ |
-| [introspect.js:62](packages/litestone/src/tools/introspect.js#L62) `toSingular` | 20 irregulars, mirrored | `status` ✓ | `person` ✓ |
-| [litestone.ts:271](packages/junction/src/core/litestone.ts#L271) `deriveModelName` | `ies`/`ses`, no irregulars | `status` ✓ | `people` ✗ |
-| [resource.js:501](packages/sierra/src/junction/resource.js#L501) inline | `ies`/`s` only | `statuse` ✗ | `people` ✗ |
+| [ddl.js:7](../packages/litestone/src/core/ddl.js#L7) `pluralizeWord` | 20 irregulars + `es`/`ies` | *(pluraliser)* | `person` → `people` ✓ |
+| [introspect.js:25](../packages/litestone/src/tools/introspect.js#L25) `toSingular` | 20 irregulars, mirrored | `status` ✓ | `person` ✓ |
+| [litestone.ts:340](../packages/junction/src/core/litestone.ts#L340) `deriveModelName` | `ies`/`ses`, no irregulars | `status` ✓ | `people` ✗ |
+| [resource.js:501](../packages/sierra/src/junction/resource.js#L501) inline | `ies`/`s` only | `statuse` ✗ | `people` ✗ |
 
 Litestone knows that `model Status` gets table `statuses` and that `Person`
 gets `people`. Sierra's inline singulariser — the one behind `createResource`,
@@ -112,9 +112,9 @@ resolvers structurally impossible rather than tested for.
 
 | Where | Separator | Other |
 | --- | --- | --- |
-| [migrations.js:60](packages/litestone/src/core/migrations.js#L60) | `_` | for a filename |
-| [validate.js:103](packages/litestone/src/core/validate.js#L103) | `-` | **this is what `@slug` writes** |
-| [resource.ts:35](packages/basecamp/api/src/core/resource.ts#L35) | `-` | `.trim()`, `.slice(0, 64)` |
+| [migrations.js:60](../packages/litestone/src/core/migrations.js#L60) | `_` | for a filename |
+| [validate.js:103](../packages/litestone/src/core/validate.js#L103) | `-` | **this is what `@slug` writes** |
+| [resource.ts:35](../packages/basecamp/api/src/core/resource.ts#L35) | `-` | `.trim()`, `.slice(0, 64)` |
 | basecamp `create.mesa` / `[id]/index.mesa` | `-` | `.slice(0, 64)`, no trim |
 
 The migration one is a different function wearing the same name and should be
@@ -137,8 +137,8 @@ and every UI preview calling the same one.
 
 ### 4. `escapeHTML` — two copies, one incomplete
 
-[render.js:131](packages/mesa/src/render.js#L131) escapes `&`, `<`, `>`, `"`.
-[auto-gen.js:162](packages/jetty/src/build/auto-gen.js#L162) escapes those plus
+[render.js:131](../packages/mesa/src/render.js#L131) escapes `&`, `<`, `>`, `"`.
+[auto-gen.js:162](../packages/jetty/src/build/auto-gen.js#L162) escapes those plus
 `'`. Mesa's three call sites are `<title>` and double-quoted `<meta>` attributes,
 so the omission is not exploitable **as currently called** — but an escaper that
 is correct only for its current call sites is a trap the moment a fifth one
@@ -148,15 +148,15 @@ appears, and the file exports it. One implementation, the complete one.
 
 ## Tier 2 — extract, cheap, no divergence yet
 
-- **Case conversion.** `toCamelCase` in [ddl.js:38](packages/litestone/src/core/ddl.js#L38)
-  and [introspect.js:51](packages/litestone/src/tools/introspect.js#L51) are the
+- **Case conversion.** `toCamelCase` in [ddl.js:38](../packages/litestone/src/core/ddl.js#L38)
+  and [introspect.js:51](../packages/litestone/src/tools/introspect.js#L51) are the
   same job (column ⇄ identifier); `toSnakeCase` and `toPascalCase` sit beside
-  them. [compiler.js:76](packages/mesa/src/compiler.js#L76)'s is a **different
+  them. [compiler.js:76](../packages/mesa/src/compiler.js#L76)'s is a **different
   domain** — HTML attribute to DOM property — and should keep its own name
   rather than be merged into a general one.
 - **The validator regex table.** `EMAIL_RE` is byte-identical in
-  [validate.js:32](packages/litestone/src/core/validate.js#L32) and
-  [schema.ts:473](packages/junction/src/core/schema.ts#L473). Litestone's
+  [validate.js:32](../packages/litestone/src/core/validate.js#L32) and
+  [schema.ts:473](../packages/junction/src/core/schema.ts#L473). Litestone's
   `VALIDATORS` and `DEFAULT_MESSAGES` are the fuller table and already reach the
   client as `x-messages`; junction re-states several of the same strings inline.
   Worth doing carefully rather than quickly — junction's is keyword-driven
@@ -165,7 +165,7 @@ appears, and the file exports it. One implementation, the complete one.
   `url` disagrees outright: litestone tests `/^https?:\/\/.+/`, junction
   constructs `new URL()`. That is a third divergence, unfiled because it is
   arguably two different questions.
-- **`isPlainObject`, `deepClone`** — [config/index.ts:230](packages/junction/src/config/index.ts#L230)
+- **`isPlainObject`, `deepClone`** — [config/index.ts:230](../packages/junction/src/config/index.ts#L230)
   has the only real copy of each today, so by toolbelt's own proposed rule
   (*anything with exactly one caller does not belong*) they wait for a second.
 
@@ -174,7 +174,7 @@ appears, and the file exports it. One implementation, the complete one.
 ## Refuse — the extractions that would make things worse
 
 **`deepMerge` is three functions, not one.** Jetty and junction replace arrays;
-[sierra/build/index.js:271](packages/sierra/src/build/index.js#L271) **concatenates**
+[sierra/build/index.js:271](../packages/sierra/src/build/index.js#L271) **concatenates**
 them, deliberately, because vite plugins accumulate. Publishing one `deepMerge`
 means a caller picks array semantics by accident and a config silently gains or
 loses plugins. If it moves at all it moves as two named functions —

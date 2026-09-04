@@ -453,7 +453,7 @@ class TenantRegistry {
 
     const path = this.#dbPath(id)
 
-    // Initialise schema (skip file creation in inMemory mode — createClient handles it)
+    // Initialize schema (skip file creation in inMemory mode — createClient handles it)
     if (this.#inMemory) {
       this.#registryDb.prepare(`INSERT INTO tenants (id, meta) VALUES (?, ?)`).run(id, JSON.stringify(meta))
       return this.#open(id)
@@ -770,7 +770,7 @@ class TenantRegistry {
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
 /**
- * Create and initialise a TenantRegistry.
+ * Create and initialize a TenantRegistry.
  *
  * @param {object} opts
  * @param {string} opts.dir            — directory for tenant .db files

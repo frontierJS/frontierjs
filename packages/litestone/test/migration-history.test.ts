@@ -90,7 +90,7 @@ describe('the shadow — what the FILES build', () => {
     // A JS migration runs against a Litestone client and can change the schema
     // through sys.sql, so replaying only the SQL would answer a confident diff
     // over a shadow missing part of its history — the silent wrongness this
-    // ruling removes. `unknown` is a third answer, not a flavour of `ok`.
+    // ruling removes. `unknown` is a third answer, not a flavor of `ok`.
     const p = project(S1)
     create(null, p.parsed(), 'init', p.migrations)
     writeFileSync(join(p.migrations, '20990101000000_data_fix.js'), 'export function up() {}', 'utf8')

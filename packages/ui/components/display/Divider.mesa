@@ -1,9 +1,9 @@
 <script>
   // Divider.mesa
-  // Horizontal separator. Optionally renders a label centred in the rule.
+  // Horizontal separator. Optionally renders a label centered in the rule.
   //
   // Two different elements on purpose: a bare rule is an <hr>, which means
-  // "thematic break" and needs no ARIA; a labelled one is `.divider-label`,
+  // "thematic break" and needs no ARIA; a labeled one is `.divider-label`,
   // whose flanking rules are ::before/::after pseudo-elements rather than
   // real divs.
   //

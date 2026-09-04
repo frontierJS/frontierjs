@@ -191,10 +191,10 @@ title: Servers
      <label> is the accessible name — and a kit control given a `name` builds a
      visible label out of it unless told not to. Only the Input needs a `name`
      (the submit handler reads `e.target.search.value`), so without this the row
-     had one labelled control and two unlabelled ones, at two different heights.
+     had one labeled control and two unlabelled ones, at two different heights.
      States `label=""` on all three rather than only the Input: the rule is
      "this bar has no visible labels", and stating it once per control is what
-     keeps the next one from arriving taller than its neighbours. -->
+     keeps the next one from arriving taller than its neighbors. -->
 <form class="cluster" on:submit|preventDefault={(e) => apply({ query: { search: e.target.search.value } })}>
   <label class="visually-hidden" for="filter-status">Status</label>
   <Select id="filter-status" label="" style="--field-inline-size: auto"

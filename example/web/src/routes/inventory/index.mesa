@@ -16,7 +16,7 @@ title: Inventory
   // table that changes with the clock, so a stored copy would be a cached
   // answer with nothing to invalidate it.
   //
-  // ─── There is no authorisation code on this screen ───────────────────────
+  // ─── There is no authorization code on this screen ───────────────────────
   //
   // `InventoryMovement` is `@@gate("5.5.9.9")` and `StockReservation` is
   // `@@gate("5.8.8.8")`, so a caller below ADMINISTRATOR(5) is refused at the

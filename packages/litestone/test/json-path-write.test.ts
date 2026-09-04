@@ -54,7 +54,7 @@ const stored  = () => db.account.findUnique({ where: { id: 1 } })
 
 describe('a path into a declared column is refused by name', () => {
   // The sharpest reading: the type declares `commute`, so the schema knows the
-  // column AND the sub-key, and the old behaviour still said nothing.
+  // column AND the sub-key, and the old behavior still said nothing.
   test('a typed Json column', async () => {
     const e = await thrown(upd({ 'settings.commute': { source: 'bus' } }))
     expect(e).toBeTruthy()

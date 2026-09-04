@@ -31,7 +31,7 @@ job's recorded output. A canned answer, a stubbed executor or a command that
 never left the control plane all fail it.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 6
 

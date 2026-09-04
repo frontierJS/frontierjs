@@ -11,7 +11,7 @@ Full language server for Litestone schema files:
 - **Completions** — field types, `@attributes`, `@@model-attributes`, `@funcName(fieldArg)` calls, model/enum names
 - **Hover** — attribute docs, type docs, model/enum/function signatures on hover
 - **Go-to-definition** — jump from a model reference to its declaration, from `@funcName` to the function block
-- **Formatting** — aligned field columns, normalised spacing (`Format Document` or format on save)
+- **Formatting** — aligned field columns, normalized spacing (`Format Document` or format on save)
 
 ### Quick start
 
@@ -71,7 +71,7 @@ npm run watch   # watch mode
 To debug the language server: use the **Extension + Server** compound launch config.
 
 ```bash
-npm test               # builds, then 88 assertions across three suites:
+npm test               # builds, then three suites:
                        #   46  Litestone — the built server over real LSP/stdio
                        #   36  Mesa — the providers against a stubbed editor
                        #    6  Snippets — every `$` in every body

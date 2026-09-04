@@ -257,7 +257,7 @@ describe('pause and resume', () => {
 
 describe('metrics', () => {
   // The source must be SYNCHRONOUS — /metrics assigns `fn()` straight into the
-  // body, so a promise would serialise as `{}`. It is refreshed by the sweep.
+  // body, so a promise would serialize as `{}`. It is refreshed by the sweep.
   test('answers a plain object, keyed by backfill, and never a promise', async () => {
     const { app, db, plugin, metrics } = await mkApp([ship()])
     await seed(db, 3)

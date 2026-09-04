@@ -72,7 +72,7 @@ export function describeSurface(app: App): Surface {
 
   const services = [...app.services.values()].map(svc => {
     const d = svc.describe()
-    // `channel` is a service field rather than part of describe() — normalised
+    // `channel` is a service field rather than part of describe() — normalized
     // to a list because the declaration takes one name or several.
     const channel = svc.channel == null ? []
       : Array.isArray(svc.channel) ? [...svc.channel] as string[]

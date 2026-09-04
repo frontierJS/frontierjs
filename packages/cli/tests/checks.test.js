@@ -1780,7 +1780,7 @@ describe('applyFixes', () => {
       .toContain("createBaseService({ model: 'ProductVariant' })")
   })
 
-  test('an object opened on its own line takes a line, indented like its neighbour', () => {
+  test('an object opened on its own line takes a line, indented like its neighbor', () => {
     // The alternative is one canonical form, which reformats somebody's file to
     // add a missing key — how a --fix gets a reputation.
     const root = tree('fx-block', {
@@ -2131,7 +2131,7 @@ describe('static-publishes-0', () => {
 // defect just fixed.
 
 describe('test-files-run', () => {
-  // Labelled explicitly: deriving the directory name from the file list made two
+  // Labeled explicitly: deriving the directory name from the file list made two
   // trees collide, and a stale file from the first one failed the second — a
   // fixture leak, which reads exactly like a rule that over-fires.
   const pkg = (label, scripts, files) => tree('tf-' + label, {

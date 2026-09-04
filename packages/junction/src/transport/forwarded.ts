@@ -49,14 +49,14 @@ export function clientAddress(opts: {
 
   const entries = (opts.forwarded ?? '')
     .split(',')
-    .map(entry => normalise(entry))
+    .map(entry => normalize(entry))
     .filter(Boolean)
 
   // The socket address is the last hop and the only observed one, so it
   // belongs on the end of the chain rather than beside it. Without it a
   // request that arrived with no `X-Forwarded-For` at all has nothing to
   // resolve against.
-  const chain = socket ? [...entries, normalise(socket)] : entries
+  const chain = socket ? [...entries, normalize(socket)] : entries
   if (chain.length === 0) return FALLBACK
 
   // The proxy immediately in front of us. A header only means anything once
@@ -73,7 +73,7 @@ export function clientAddress(opts: {
   // read, because with one the chain is the better answer and a client can
   // send this header too.
   if (entries.length === 0) {
-    const real = normalise(opts.realIp ?? '')
+    const real = normalize(opts.realIp ?? '')
     if (real) return real
     return chain[chain.length - 1]!
   }
@@ -114,12 +114,12 @@ function isTrusted(address: string, list: string[]): boolean {
 
 function matches(address: string, entry: string): boolean {
   const slash = entry.indexOf('/')
-  if (slash === -1) return normalise(entry) === address
+  if (slash === -1) return normalize(entry) === address
 
   const bits = Number(entry.slice(slash + 1))
   if (!Number.isInteger(bits) || bits < 0) return false
 
-  const network = toBytes(normalise(entry.slice(0, slash)))
+  const network = toBytes(normalize(entry.slice(0, slash)))
   const candidate = toBytes(address)
   if (!network || !candidate) return false
   // A v4 prefix says nothing about a v6 address and the other way round.
@@ -145,7 +145,7 @@ function matches(address: string, entry: string): boolean {
  * listener, and which would otherwise never match the `10.0.0.0/8` an
  * operator wrote.
  */
-function normalise(value: string): string {
+function normalize(value: string): string {
   let out = value.trim()
   if (!out) return ''
 

@@ -37,7 +37,7 @@ export async function load() {
   })
 
   // Flattened HERE rather than in the island, because whatever this returns is
-  // serialised into the page: shipping 43 variant rows so the browser can
+  // serialized into the page: shipping 43 variant rows so the browser can
   // reduce them to a price range puts the whole variant table in the HTML of a
   // page that renders 13 lines.
   const rows = products.map(p => {

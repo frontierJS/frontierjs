@@ -51,7 +51,7 @@ function recorder() {
     seen,
     ctx: { app: { jobs: { dispatch: async (_job, payload, opts) => {
       // A second dispatch under an id already taken is a no-op, which is what
-      // caravan's `dispatch({ id })` does with a taken primary key. Modelling
+      // caravan's `dispatch({ id })` does with a taken primary key. Modeling
       // that here is the difference between asserting the sweep is idempotent
       // and asserting it merely runs.
       if (seen.some(s => s.id === opts?.id)) return false

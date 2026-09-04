@@ -15,7 +15,7 @@ import { describe, test, expect } from 'bun:test'
 import {
   inspectBuild, parseDockerfile, parseDockerignore, ignoreDecision,
   traceToFinalImage, compileGlob, joinPath, isEnvFile, isStateFile,
-  refuses, summarise, gather, walkContextFiles,
+  refuses, summarize, gather, walkContextFiles,
   STATE_EXTENSIONS, CONTEXT_FIND, classifyContextFile,
 } from '../core/build-check.js'
 
@@ -339,12 +339,12 @@ describe('the base image', () => {
 
 describe('the report', () => {
   test('a clean build says what it is claiming', () => {
-    expect(summarise([])).toContain('promotable')
+    expect(summarize([])).toContain('promotable')
     expect(refuses([])).toBe(false)
   })
 
   test('warnings alone still read as promotable', () => {
-    expect(summarise(inspectBuild({ dockerfile: 'FROM oven/bun:1\n' }))).toContain('promotable')
+    expect(summarize(inspectBuild({ dockerfile: 'FROM oven/bun:1\n' }))).toContain('promotable')
   })
 
   test('findings are ordered by line, so the report follows the file', () => {
@@ -441,7 +441,7 @@ describe('gathering the four inputs', () => {
     expect(gather({ read: () => null, list: () => [] })).toEqual({ missing: 'deploy/Dockerfile' })
   })
 
-  test('a configured dockerfile path is honoured and reported when absent', () => {
+  test('a configured dockerfile path is honored and reported when absent', () => {
     expect(gather({ read, list: () => [], dockerfile: 'infra/Dockerfile' }).missing).toBe('infra/Dockerfile')
     expect(gather({ read, list: () => [], dockerfile: 'deploy/Dockerfile' }).missing).toBeUndefined()
   })

@@ -20,7 +20,7 @@ import { createCipheriv, createDecipheriv, randomBytes, createHmac } from 'crypt
 // that was deleted.
 //
 // `v1s.` was a fourth prefix that stored an HMAC under the @encrypted name and is
-// gone. Nothing reads it: a column holding one is unrecoverable, so recognising the
+// gone. Nothing reads it: a column holding one is unrecoverable, so recognizing the
 // prefix could only produce a friendlier way to say the same loss. See CHANGES.md.
 //
 // Payload (base64url) is `iv + tag + ciphertext` for both AES modes, so one
@@ -259,7 +259,7 @@ export function isCiphertext(value) {
   return s.startsWith(ENC_PREFIX) || s.startsWith(ENC_D_PREFIX) || s.startsWith(HASH_PREFIX)
 }
 
-// Normalise key: hex string, Buffer, or Uint8Array → 32-byte Buffer
+// Normalize key: hex string, Buffer, or Uint8Array → 32-byte Buffer
 export function normaliseKey(raw) {
   if (!raw || (typeof raw === 'string' && !raw.trim())) return null
   if (typeof raw === 'string') return Buffer.from(raw, 'hex')

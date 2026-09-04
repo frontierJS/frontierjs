@@ -321,7 +321,7 @@ pointed at `Document`, and deciding what `source`/`derivations` means across two
 tables.
 
 So the risk is not that the feature works badly. It is that it makes a
-**high-stakes** modelling decision feel low-stakes, at the moment there is least
+**high-stakes** modeling decision feel low-stakes, at the moment there is least
 information to make it with.
 
 ### The bar

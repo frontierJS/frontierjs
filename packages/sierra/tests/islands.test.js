@@ -42,7 +42,7 @@ describe('islandEntrySource', () => {
   test('carries the app\'s theme block, because virtual:sierra never loads here (FJS-501)', () => {
     // A prerendered page ships HTML plus these chunks and nothing else, so this
     // entry is the ONE place a static site can be told what its app declared.
-    // Without it the theme module keeps normalise({}) — DEFAULT_THEMES and key
+    // Without it the theme module keeps normalize({}) — DEFAULT_THEMES and key
     // 'theme' — so an app declaring six themes had four refused by name and
     // persisted under a key its own injected <head> script does not read.
     const src = islandEntrySource(
@@ -346,7 +346,7 @@ describe('island loader', () => {
 
   // ── Nested islands ──────────────────────────────────────────────────────────
   //
-  // On the client there is no nesting to honour: Mesa's island() short-circuits
+  // On the client there is no nesting to honor: Mesa's island() short-circuits
   // when it is already on the client, so an outer island's render calls the
   // inner component directly. An ancestor's mount is therefore authoritative,
   // and these pin the three places this file defers to it.
@@ -415,7 +415,7 @@ describe('island loader', () => {
     expect(loader.mountIsland(island, stub('c'))).toBe(null)
   })
 
-  test('client:static under a live ancestor warns — it cannot be honoured', () => {
+  test('client:static under a live ancestor warns — it cannot be honored', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     win.document.body.innerHTML = marker({ component: 'Outer', directive: 'load' },
       `<div>${marker({ component: 'Frozen', directive: 'static' }, '<b>f</b>')}</div>`)

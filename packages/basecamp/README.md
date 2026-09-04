@@ -74,7 +74,7 @@ Seeding is idempotent — a second run does nothing; `--force` starts over.
 | `bun run start` | API, no watch |
 | `bun run build` | `db:check` then the UI production build into `web/dist/` |
 | `bun run preview` | serve that build |
-| `bun run test` | schema + data-layer suite — 92 tests across 3 files |
+| `bun run test` | schema + data-layer suite |
 | `bun run verify` | drive the UI in a real browser — add `--reset` for an empty database |
 | `bun run typecheck` | package-local diagnostics |
 | `bun run db:ddl` | regenerate the migration from `db/schema.lite` |
@@ -142,9 +142,9 @@ is generated from it; editing that SQL by hand is how the two drift apart, and
 
 | Realm | | |
 |---|---|---|
-| **Data** | ✅ Done | 45 models, 26 enums, `database main` declared. **Every model declares a `@@gate`**, and tenancy is one declared block — `tenancy { strategy row  column workspaceId  claim workspaceId }`, with fourteen `@@tenant(none)` declared and fourteen scoped through a parent by inference, so **34 models carry a row policy**. Migration generated and verified against a fresh database. |
+| **Data** | ✅ Done | `database main` declared. **Every model declares a `@@gate`**, and tenancy is one declared block — `tenancy { strategy row  column workspaceId  claim workspaceId }`, with every `@@tenant(none)` declared by name and every other model scoped through a parent by inference rather than by a second declaration. Migration generated and verified against a fresh database. |
 | **API** | ✅ Done | 27 services + 5 job files on Litestone accessors, zero raw SQL. Auth via `@frontierjs/auth`. `/hub/` is the cross-workspace tier — a separate service behind one `requireSystemAdmin` hook. Verified over HTTP end to end. |
-| **UI** | ✅ Built | Sierra SPA covering every service: setup, login, guard, workspace switcher, Projects → Environments → Apps, deployments with a live step timeline, the server fleet (drain/reboot/sync, event trail, outpost heartbeats), jobs with run history, and an admin zone (members, audit trail, adapters). `bun run verify` drives all of it in a real browser — **90 checks**, including an accessibility pass on every screen. `docs/UI_PLAN.md` has what building it found. |
+| **UI** | ✅ Built | Sierra SPA covering every service: setup, login, guard, workspace switcher, Projects → Environments → Apps, deployments with a live step timeline, the server fleet (drain/reboot/sync, event trail, outpost heartbeats), jobs with run history, and an admin zone (members, audit trail, adapters). `bun run verify` drives all of it in a real browser, including an accessibility pass on every screen. `docs/UI_PLAN.md` has what building it found. |
 
 What works today, checked by running it: first-run setup, password login,
 workspaces and membership, projects → environments → apps, environment
@@ -154,7 +154,7 @@ step by step.
 
 ### Access control
 
-**Declared in the schema, per Invariant 6** — all 45 models carry a `@@gate`, and
+**Declared in the schema, per Invariant 6** — every model carries a `@@gate`, and
 the ladder is per WORKSPACE rather than per app. `api/src/core/gate.ts` maps
 `WorkspaceMember.role` onto the gate ladder:
 
@@ -215,8 +215,8 @@ from it), `AuditEvent` (nullable workspace) and the five auth models declare
 is a 404. It is `POST /servers/:id` with `X-Service-Method: drain`.
 
 **Nothing is under `/api`.** Services are `/{service}`, auth is `/auth/*`, setup
-is `/setup`. The prefix auth and setup used to carry was removed 2026-08-04 —
-it made them the only prefixed paths in the app and broke the browser client's
+is `/setup`. Neither carries a prefix, and neither may: a prefix there makes them
+the only prefixed paths in the app and breaks the browser client's
 `needsSetup()`, which asks for `` `${apiPrefix}/setup/probe` ``.
 
 **The wire contract is the schema's field names, in camelCase.** `ipAddress`,

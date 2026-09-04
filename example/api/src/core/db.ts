@@ -179,7 +179,22 @@ export const DEFAULT_SHOP = process.env.SHOP ?? 'flagship'
 const _migrated = new Set<string>()
 async function openShop(id: string) {
   const client = await registry.get(id)
-  if (!_migrated.has(id)) { autoMigrate(client); _migrated.add(id) }
+  if (!_migrated.has(id)) {
+    const result = autoMigrate(client)
+    _migrated.add(id)
+    // The result was thrown away, and a blocked migration is exactly the state
+    // worth hearing about: this shop's database holds something this build's
+    // schema does not describe. litestone names the DATABASE, which is "main"
+    // for every shop under `strategy database`, so its own line cannot say
+    // which one — and a fleet reaches this one shop at a time (`FJS-566`).
+    for (const [name, r] of Object.entries(result ?? {})) {
+      if ((r as { state?: string }).state !== 'blocked') continue
+      console.warn(
+        `[example] shop "${id}" (${name}) is NOT on this build's schema: ` +
+        `${(r as { reason?: string }).reason}\n` +
+        `          It is serving anyway. See the litestone line above for the two readings.`)
+    }
+  }
   return client
 }
 
@@ -235,6 +250,6 @@ export const shops = {
 export const db = await openShop(DEFAULT_SHOP)
 
 // asSystem() is the documented bypass — the seed and the auth package both need
-// to write rows no caller is authorised to write. Everything else goes through
+// to write rows no caller is authorized to write. Everything else goes through
 // the gate.
 export const sys = db.asSystem()

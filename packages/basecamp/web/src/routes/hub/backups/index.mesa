@@ -23,7 +23,7 @@ title: Hub backups
   //
   // What IS here is the schedule, read from the settings row — and it is shown
   // with the caveat that nothing registers it yet, because a cron on screen
-  // that no timer honours is the failure this app has already had twice
+  // that no timer honors is the failure this app has already had twice
   // (`FJS-327`, `FJS-328`).
   import { backups }   from '../../../resources/Backup.mesa'
   import { hubConfig } from '../../../resources/HubConfig.mesa'

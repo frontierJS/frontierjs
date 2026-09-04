@@ -117,7 +117,7 @@ package root. Node then resolves any **bare** import in the compiled output rela
 ### What's needed
 
 Accept `options.tmpDir` on `renderComponent` / `renderFile` and thread it into
-`makeTmpPath`. Default stays `findMesaDir()` so current behaviour is unchanged.
+`makeTmpPath`. Default stays `findMesaDir()` so current behavior is unchanged.
 
 `_tmpDir` is currently a module-level `const`, so this is not purely additive — the
 value has to become per-call. Watch for the recursive `compileTree` path, which also
@@ -226,7 +226,7 @@ renderComponent(src, {
 })
 ```
 
-Called for the entry and for each file `compileTree` reads. Absent, behaviour is
+Called for the entry and for each file `compileTree` reads. Absent, behavior is
 unchanged.
 
 ### Acceptance

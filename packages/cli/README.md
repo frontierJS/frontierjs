@@ -43,7 +43,8 @@ bun link                # `fli` on PATH, pointed at this tree
 
 ## What it does for an application
 
-170 commands over 27 namespaces. The ones that carry the framework:
+Commands are markdown files under `commands/`, one namespace per directory —
+`fli --help` is the list. The ones that carry the framework:
 
 | | |
 | --- | --- |

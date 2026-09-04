@@ -22,7 +22,7 @@ Its sibling is worth knowing about now that you have moved one: `fli test:access
 can share a database.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 8
 

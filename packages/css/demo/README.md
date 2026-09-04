@@ -50,7 +50,7 @@ Three files:
 | File | What it is |
 |---|---|
 | `index.html` | markup only — the structural half of the system, followed strictly |
-| `demo.js` | the behaviour the package refuses to ship (Principle 6) |
+| `demo.js` | the behavior the package refuses to ship (Principle 6) |
 | `demo.css` | **a measurement.** Every rule in it is a gap in the package |
 
 ## The footer counts itself
@@ -76,12 +76,12 @@ than assumed:
   scan of it sweeps up every route including the hidden ones, and all five
   pages report the whole vocabulary. Measured at 54/54 on every route, which
   reads as success. The frame roots are the ones *beside* the Screen; App,
-  Shell and Screen are tested as ancestors instead. Correct behaviour is
+  Shell and Screen are tested as ancestors instead. Correct behavior is
   28–35 per route, union 54.
 
-## The behaviour half
+## The behavior half
 
-Principle 6 says visual treatment is a class and keyboard/focus/ARIA behaviour
+Principle 6 says visual treatment is a class and keyboard/focus/ARIA behavior
 is a component, and every file header states the contract it expects. `demo.js`
 is the other side of those contracts, in plain JS, no framework — which is
 itself the test. If a contract needs more than a few lines of vanilla JS, it is
@@ -119,10 +119,10 @@ because a test suite only asks the questions you already thought to ask.
 
 2. **`.btn.ghost` and `.btn.raised` were silent no-ops.** The README lists
    `raised` / `outlined` / `ghost` as Treatments — "composes onto anything" —
-   and `surface.css` honours all three. `buttons.css` implemented only
+   and `surface.css` honors all three. `buttons.css` implemented only
    `.outlined`, so a toolbar of ghost icon buttons rendered as a wall of solid
    primary blue. Same failure the v0.6 tone work fixed for tones: a Treatment
-   only some components honour is not a Treatment.
+   only some components honor is not a Treatment.
 
 3. **The `.switch` was squashed into a checkbox.** `form-core.css` documents
    `<label class="field-check"><input class="switch">` and then sizes every
@@ -135,7 +135,7 @@ because a test suite only asks the questions you already thought to ask.
    `--check-accent` and the switch had never been wired into it.
 
 5. **The skip link smeared a shadow across every page.** Moved off-screen with
-   a transform, but `--shadow-lg` paints 16px past the box — a faint grey band
+   a transform, but `--shadow-lg` paints 16px past the box — a faint gray band
    at the top of every page that had one. Found by zooming into a screenshot.
 
 **Moved into core in v0.10** — these were the `demo.css` rules, reviewed and
@@ -201,7 +201,7 @@ promoted:
 13. **A Popover needs two rules before the term is usable, and the package
     ships neither.** `.popover` is `position: absolute` with no inset, so
     without a positioned ancestor it anchors to the page, and without an
-    offset it resolves to its static position centred *on* its trigger —
+    offset it resolves to its static position centered *on* its trigger —
     measured at 265px tall, y = −39, hanging off the top of the viewport.
     `.tooltip-anchor` ships in the package and solves exactly this for
     Tooltip; Popover has no counterpart. These are the two rules now in
@@ -226,10 +226,10 @@ assignments — `--avatar-size`, `--field-inline-size` — which is the intended
 API rather than a workaround. The exceptions are the Skeletons, which take an
 `inline-size` because a skeleton is shaped like the content it stands in for
 and only the consumer knows that shape, and one `min-block-size` giving the
-Center something to centre within.
+Center something to center within.
 
 The one place the vocabulary came up short is that it has **no term for a
-route** — the switchable top-level content of a Screen. `Pane` is a labelled
+route** — the switchable top-level content of a Screen. `Pane` is a labeled
 subdivision, `View` is a tab panel; neither is "the page you navigated to". The
 demo used bare `<div data-route>` (the Group term) rather than inventing a
 class, but a real router needs an answer.

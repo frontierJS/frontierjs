@@ -1179,7 +1179,7 @@ class Parser {
       // it cheap and is also the only thing it could do — nothing in this
       // language can see the stored row beside the incoming one. An update
       // payload naming the column is refused whether or not the value differs;
-      // *I sent the same number back* is not a defence a rule this shape can
+      // *I sent the same number back* is not a defense a rule this shape can
       // hear, and a form that round-trips a frozen column is a form that would
       // have overwritten it the day somebody changed the box.
       //
@@ -1376,7 +1376,7 @@ class Parser {
         // A stamp, not a default: an authenticated caller cannot forge
         // authorship by putting the column in the payload. With no ctx.auth
         // (asSystem(), a seeder, an anonymous write) an explicit value is
-        // honoured — that is how backfills and imports carry authorship in.
+        // honored — that is how backfills and imports carry authorship in.
         if (this.check(TK.LPAREN)) {
           this.eat(TK.LPAREN)
           this.eatIdent('auth')
@@ -1562,7 +1562,7 @@ class Parser {
   // them `DEFAULT '[]'`, because an empty array is the null state of a list — so
   // `@default([])` restates what the column already does. It parses anyway: it
   // is what a Prisma schema writes (11 occurrences across three real ones), and
-  // a language that refuses the redundant spelling of its own behaviour makes a
+  // a language that refuses the redundant spelling of its own behavior makes a
   // port fail on a line that means what the tree already does.
   //
   // A NON-empty one is the case with no other spelling at all.
@@ -3547,13 +3547,13 @@ function expandCompositeId(schema) {
       // A primary key is over COLUMNS. Everything below is a field that is not
       // one, and each fails differently if allowed through: a relation would put
       // `@id` on a field with no column and emit a key naming nothing; an array
-      // is JSON TEXT, so the key would be over a serialisation; a virtual field
+      // is JSON TEXT, so the key would be over a serialization; a virtual field
       // is computed at read time and has nothing to be keyed by.
       const why =
         modelNames.has(field.type.name) && !enumNames.has(field.type.name)
           ? `the relation '${name}' — name the foreign key field instead`
         : field.type.array
-          ? `the array '${name}' — an array is stored as JSON text, so a key over it is a key over a serialisation`
+          ? `the array '${name}' — an array is stored as JSON text, so a key over it is a key over a serialization`
         : VIRTUAL.find(k => field.attributes.some(a => a.kind === k))
           ? `'${name}', which is @${VIRTUAL.find(k => field.attributes.some(a => a.kind === k))} — it is not a stored column`
         : null
@@ -4356,7 +4356,7 @@ function validate(schema) {
           `declare @@capabilities — the column tier is opt-in ON TOP of the model's own switch. ` +
           `Add @@capabilities to ${model.name}, or drop @capability.`)
 
-      // Three shapes that make @capability contradict its neighbour, refused for
+      // Three shapes that make @capability contradict its neighbor, refused for
       // the reason @system beside a field @allow('write') is: one says the
       // application fills this column and the other says a granted caller may.
       //
@@ -4453,7 +4453,7 @@ function validate(schema) {
         //
         // Two spellings reach here and exactly one AST leaves: `@default([a, b])`,
         // and the JSON-array STRING that was the only spelling before it. The
-        // string is normalised into the literal's shape rather than carried
+        // string is normalized into the literal's shape rather than carried
         // alongside it, so `defaultExpr`, the JSON Schema and the release
         // classifier each read one kind — and it is type-checked by the same
         // rules, which it never used to be: `String[] @default("[1,2]")` was a
@@ -4889,7 +4889,7 @@ function validate(schema) {
 
 
   // ── @hashed validation ──────────────────────────────────────────────────────
-  // @hashed is not a flavour of @encrypted and does not compose with one: there is
+  // @hashed is not a flavor of @encrypted and does not compose with one: there is
   // no ciphertext to guard, to rotate, or to hand back under a read policy. Every
   // combination below is a schema that states two different fates for one column.
   for (const model of schema.models) {
@@ -6073,12 +6073,12 @@ function validate(schema) {
       }
 
       if (owners.length === 0) {
-        const labelled = targetModel.fields.some(f =>
+        const labeled = targetModel.fields.some(f =>
           f.attributes.some(a => a.kind === 'relation' && a.fields && a.name) && f.type.name === model.name)
         errors.push(
           `Model '${model.name}', field '${field.name}': '${targetModel.name}' declares no unlabelled @relation back to '${model.name}'. ` +
-          (labelled
-            ? `It has a LABELLED one — put the same @relation("name") on this field.`
+          (labeled
+            ? `It has a LABELED one — put the same @relation("name") on this field.`
             : `Add the foreign key on '${targetModel.name}', or a @relation("name") label on both sides.`)
         )
         continue

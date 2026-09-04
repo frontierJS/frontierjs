@@ -12,7 +12,7 @@ import { signal } from '../router/signals.js'
 import { getClient } from '../junction/index.js'
 import { onDestroy } from '@frontierjs/mesa/runtime'
 
-// ── Normalise ─────────────────────────────────────────────────────────────────
+// ── Normalize ─────────────────────────────────────────────────────────────────
 
 function normaliseMember(raw) {
   return {

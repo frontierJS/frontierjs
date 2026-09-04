@@ -100,7 +100,7 @@ describe('the generators themselves', () => {
     expect(generateUlid() > first).toBe(true)
   })
 
-  it('nanoid honours a requested size', () => {
+  it('nanoid honors a requested size', () => {
     expect(generateNanoid(8)).toHaveLength(8)
   })
 })

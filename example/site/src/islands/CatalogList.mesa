@@ -8,13 +8,13 @@
   why the search box only does something after the chunk has run — and why the
   drive asserts a click and not a snapshot.
 
-  `products` arrives as a PROP, serialised into the marker at build time. The
+  `products` arrives as a PROP, serialized into the marker at build time. The
   data was read once, at build, through the app's own Litestone client, and
   checked against the @@gate of every model it read before this page was
   allowed to exist.
 
   A row here is FLATTENED — a price range and a list of SKUs, not the variant
-  rows they came from — because the prop is serialised into the HTML and the
+  rows they came from — because the prop is serialized into the HTML and the
   browser has no reason to hold the variant table to render thirteen lines.
 
   ─── Why the SEARCH asks the shop ─────────────────────────────────────────

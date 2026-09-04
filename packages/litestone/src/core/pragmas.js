@@ -86,7 +86,7 @@ function fromEnv() {
  * `busyTimeout` for one database → milliseconds.
  *
  * `stated` is whatever that connection's caller resolved (a number, or nothing).
- * A stated `0` is honoured and means *fail immediately*, which is a real answer:
+ * A stated `0` is honored and means *fail immediately*, which is a real answer:
  * it is what a test asserting contention wants, and what a fire-and-forget write
  * that must never block the loop wants.
  */

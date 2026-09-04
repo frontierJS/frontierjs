@@ -15,7 +15,7 @@ db/schema.lite  ──►  Junction (API)  ──►  Sierra (UI)
 Sierra sits at the end of the dependency chain — `Litestone ← Junction ← Sierra` — and
 never the reverse. Mesa is the component substrate underneath it.
 
-**Status:** pre-1.0. 970 tests across 48 files pass (`bun run test`), typecheck clean.
+**Status:** pre-1.0. `bun run test` passes, typecheck clean.
 All three targets are built and driven in a real browser. The SPA target is solid and
 verified end-to-end; `static` prerendering works and its pages are **interactive** —
 see [Islands](#islands--making-a-static-page-interactive), verified by clicking a
@@ -165,9 +165,9 @@ for production.
 > layouts therefore work — `config/vite.config.js` next to `config/sierra.config.js`,
 > or a root-level `vite.config.js` with the config in `config/`.
 >
-> Until 2026-08-03 this was a string rewrite of the Vite config path that assumed
-> `vite.config.js` sat at the Vite root, so the conventional `config/vite.config.js`
-> derived `config/config/sierra.config.js` and could never build.
+> Never DERIVE the config path from where `vite.config.js` sits (Invariant 3). A
+> string rewrite off that path assumes it is at the Vite root, so the conventional
+> `config/vite.config.js` derives `config/config/sierra.config.js` and can never build.
 >
 > For a config that lives somewhere neither rule finds, the escape hatch remains:
 >
@@ -331,7 +331,7 @@ import {
 } from '@frontierjs/sierra/router'
 ```
 
-| Call | Behaviour |
+| Call | Behavior |
 | --- | --- |
 | `goto(path, query?, { scroll, replace })` | navigate |
 | `back()` / `forward()` | history |
@@ -678,7 +678,7 @@ leads.relations.tags
 // { field:'tags', type:'m2m', model:'Tag' }
 ```
 
-`model` is normalised to the name as declared in the `.lite` file, so it can be
+`model` is normalized to the name as declared in the `.lite` file, so it can be
 handed straight to `schemaFor()` — or used to build the related resource, which
 is how a picker finds its options without naming the service:
 
@@ -867,11 +867,11 @@ WebSocket-heavy app keeps every response payload alive for the tab's lifetime.
 otherwise. A static build that produces no pages says so rather than silently emitting an
 SPA.
 
-> ~~Prerendering writes a temporary module inside the Mesa package directory, so under a
-> linked workspace a page or layout importing `@frontierjs/sierra/*` fails to resolve
-> and that page is skipped.~~ **Fixed 2026-08-03.** Mesa's `renderComponent` now takes a
-> `tmpDir`, and Sierra points it at `node_modules/.sierra/render` inside the app — so
-> compiled modules resolve bare imports from the app's own tree.
+> **A prerendered module resolves imports from the APP's tree, not Mesa's.** Mesa's
+> `renderComponent` takes a `tmpDir` and Sierra points it at
+> `node_modules/.sierra/render` inside the app. Written into the Mesa package
+> directory instead, a page importing `@frontierjs/sierra/*` fails to resolve under a
+> linked workspace and that page is skipped.
 >
 > One caveat remains: `load()` cannot use relative URLs at build time — there is no
 > origin, so `sierraFetch` throws and directs you to `getStaticPaths()`. When a render
@@ -1000,8 +1000,8 @@ Sierra assembles it — Vite's HTML transform never runs on these files, so what
 
 - **The stylesheets the build emitted are linked automatically.** Without that a
   prerendered page carries every class name the app uses and none of the rules
-  (fixed 2026-08-06; before it, a `static` page was unstyled and the SPA built
-  from the same source was not). They come before the page's own scoped
+  (without it a `static` page is unstyled while the SPA built
+  from the same source is not, which is the shape that reads as a CSS bug). They come before the page's own scoped
   `<style>` blocks, so a component's rules win.
 - **`document: { bodyClass, lang }`** is the rest of it. A theme in
   `@frontierjs/css` is one class on an ancestor, so `bodyClass: 'app
@@ -1208,7 +1208,7 @@ import { tree, components, loaders, layouts, published, indexed, redirects } fro
 ## Testing
 
 ```bash
-bun run test        # vitest — 970 tests, 48 files
+bun run test        # vitest
 bun run typecheck   # scripts/typecheck.mjs — baseline 0
 ```
 

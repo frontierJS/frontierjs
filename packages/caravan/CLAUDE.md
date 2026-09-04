@@ -62,7 +62,7 @@ src/
   `FJS-D144`.** `_tickFixed` keeps the last wall-clock minute it looked at and
   walks forward over the local clock to now, firing every minute the expression
   matches; `_tickWildcard` asks whether the clock says this now. Both boundary
-  behaviours come out of the walk rather than out of a rule about either — the
+  behaviors come out of the walk rather than out of a rule about either — the
   local clock going 01:59 → 03:00 leaves the skipped hour in it, and going
   01:59 → 01:00 leaves it empty — and a minute missed to a blocked event loop is
   caught up for free. **The mark only ever moves forward**: letting it follow the
@@ -73,7 +73,7 @@ src/
 - **`nextRuns()` is the wall clock's own answer and is a day out on the spring
   boundary**, for a schedule `_tickFixed` will run just after the gap. Reporting,
   not firing. Deliberately not a second implementation of the walk.
-- **`CronScheduler` takes `now`.** The behaviour above happens on two days a
+- **`CronScheduler` takes `now`.** The behavior above happens on two days a
   year, and a suite that cannot move the clock can only assert the parser — which
   is exactly what this suite asserted while `FJS-525` sat in the firing path
   under four green `timeZone` tests.

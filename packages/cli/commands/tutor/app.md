@@ -23,7 +23,7 @@ flags:
   yes:
     char: y
     type: boolean
-    description: Answer every question with its default
+    description: Run the whole lesson without stopping — no confirmation between steps
     defaultValue: false
   keep:
     type: boolean
@@ -44,10 +44,10 @@ flags:
 ---
 
 ```js
-// `04-run` starts processes and `10-finish` stops them, and neither is a fact a
+// `04-run` starts processes and `11-finish` stops them, and neither is a fact a
 // journal can hold: replayed into a no-op, the first leaves every step after it
 // talking to a dead port and the second leaves a dev server running.
-openTutor(context, 'tutor:app', { ephemeral: ['04-run', '10-finish'] })
+openTutor(context, 'tutor:app', { ephemeral: ['04-run', '11-finish'] })
 
 context.config.source  = flag.source || defaultSource()
 context.config.apiPort = flag['api-port']
@@ -69,4 +69,6 @@ then asks the running world whether it worked — a port that answers, a table
 that exists, a row that is really there. A step that cannot prove itself stops
 the lesson and tells you what it asked for and what it got instead.
 
-You can stop at any point. Running the lesson again picks up where you left off.
+Each step tells you what it is about to do and waits. Press enter to go on, or
+n to stop — running the lesson again picks up exactly where you left off, so
+stopping costs nothing. `--yes` runs the whole thing without asking.

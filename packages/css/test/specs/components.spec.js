@@ -93,7 +93,7 @@ test('overlay: .raised, .outlined and .ghost all do something on a .btn', functi
    * Only .outlined was implemented on .btn. `.ghost` and `.raised` were
    * silent no-ops, so a row of ghost icon buttons rendered as a row of
    * solid primary-blue buttons. This is the same failure the v0.6 tone
-   * work fixed for tones: a Treatment that only some components honour is
+   * work fixed for tones: a Treatment that only some components honor is
    * not a Treatment.
    */
   var plain = el('<button class="btn">Save</button>');
@@ -179,7 +179,7 @@ test('a11y: a resting skip link paints nothing', function () {
    * Found by the demo, by zooming into a screenshot. The link is moved
    * off the top of the viewport with a transform, but a box-shadow paints
    * outside its box — --shadow-lg reaches 16px past the bottom edge,
-   * which was enough to smear a faint grey band across the top of every
+   * which was enough to smear a faint gray band across the top of every
    * page that had a skip link.
    *
    * Off-screen has to mean nothing paints, not just that the box is gone.
@@ -736,7 +736,7 @@ test('items: a <button class="item"> is reset to the row, not to a button', func
   assert.equal(style(btn, 'background-color'), 'rgba(0, 0, 0, 0)', 'the UA background survived');
   assert.equal(style(btn, 'border-top-style'), 'none', 'the UA border survived');
   assert.equal(style(btn, 'font-size'), '20px', 'the button did not inherit the list type');
-  assert.equal(style(btn, 'text-align'), 'start', 'a button centres its text by default');
+  assert.equal(style(btn, 'text-align'), 'start', 'a button centers its text by default');
   assert.equal(style(btn, 'cursor'), 'pointer');
 
   /* Full width, so the hover background covers the row rather than the word. */
@@ -771,7 +771,7 @@ test('items: a disabled control row reads as disabled', function () {
  *
  * The term was NAMED and unusable: `.popover` is absolute with no inset,
  * so outside a positioned ancestor it resolved against the page, and with
- * no inset it resolved to its STATIC position — centred on its own
+ * no inset it resolved to its STATIC position — centered on its own
  * trigger. Measured in the demo before the anchor existed: 265px tall at
  * y = -39, hanging off the top of the viewport. Both halves are the
  * package's now (FJS-132), and both are geometry, so they are measured

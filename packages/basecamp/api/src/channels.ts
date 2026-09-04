@@ -19,6 +19,23 @@ type Manager = { channel: (name: string) => Channel | undefined }
 /** Every browser in one workspace listens here. */
 export const workspaceChannelName = (workspaceId: string): string => `workspace:${workspaceId}`
 
+/**
+ * The workspace a channel name encodes, or null where it encodes none.
+ *
+ * The other direction of `workspaceChannelName`, and it lives beside it for the
+ * reason that one does: a name written in one place and read in another is a
+ * name one caller can get wrong while every other caller keeps working.
+ *
+ * Its reader is the claims resolver in `app.ts`. A broadcast is graded against
+ * the principal on a CONNECTION, which was built at the upgrade where there is
+ * no workspace header, so the tenant claim every model here is scoped on is
+ * simply absent — and the tenancy `@@deny` fires on UNKNOWN, refusing every
+ * subscriber on all eighteen live services (`FJS-749`).
+ */
+export function workspaceIdFromChannel(name: string): string | null {
+  return name.startsWith('workspace:') ? name.slice('workspace:'.length) || null : null
+}
+
 /** The channels plugin's manager, or undefined when it is not configured. */
 export function channelManager(app: BasecampApp): Manager | undefined {
   return (app as unknown as Record<string, unknown>).channels as Manager | undefined

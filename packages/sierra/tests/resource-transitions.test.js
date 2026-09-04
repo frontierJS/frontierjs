@@ -12,7 +12,7 @@
  * Like x-gate, the `gate` on a transition is an AFFORDANCE, never a boundary.
  * Litestone re-checks every move at the Data boundary and throws
  * TransitionViolationError / TransitionGateError no matter what the client drew.
- * The assertions below pin the permissive behaviour that follows.
+ * The assertions below pin the permissive behavior that follows.
  */
 
 import { describe, test, expect, vi, beforeEach } from 'vitest'

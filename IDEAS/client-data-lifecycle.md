@@ -144,7 +144,7 @@ separates *no such field* from *`@computed`, so SQLite can neither sort nor pagi
 it*, which is exactly the distinction a cursor has to make. The schema states the
 unique keys. So the tiebreaker is derivable, an illegal cursor is refusable by the same
 mechanism that already refuses an illegal sort, and the seam to add it to is one that
-already exists on every flavour of client.
+already exists on every flavor of client.
 
 Two things to decide rather than assume. **A cursor is opaque or it is not** — an
 encoded key is a promise the client will not construct one, and the moment it is
@@ -181,19 +181,19 @@ confirmed — not about the shape.
 | | entity set | a list is | optimism is |
 | --- | --- | --- | --- |
 | Meteor | minimongo collection | a cursor over it | latency compensation |
-| Apollo · Relay | normalised store, `__typename:id` | a field policy over it | an optimistic response |
+| Apollo · Relay | normalized store, `__typename:id` | a field policy over it | an optimistic response |
 | TanStack DB | collection | a live query | an overlay on immutable synced data |
 | Zero · Replicache | client-side store | a ZQL query | pending mutations replayed on the new server state |
 
 **List-as-view is unanimous.** Nobody keeps a parallel copy of a row per query;
 the query names ids and the row lives once.
 
-**The most useful single fact is a refusal.** TanStack Query declines normalised
+**The most useful single fact is a refusal.** TanStack Query declines normalized
 caching on the record, and the reason given is that doing it correctly needs a
 way to infer or ingest a schema, which is more opinion than a library may hold.
 That is the objection that kills this everywhere it is not a framework — and
 FrontierJS emits the schema. The same asymmetry runs through the whole file:
-Apollo's longest-standing pain is pagination in a normalised cache, where an
+Apollo's longest-standing pain is pagination in a normalized cache, where an
 application hand-writes a `keyArgs` and a `merge` per paginated field, and
 `$checkOrderBy` plus the declared unique keys are exactly the inputs that make
 that derivable here (Hole 4).
@@ -214,8 +214,8 @@ git-style. Rebase needs the client to be able to re-execute a mutation locally,
 which means the gate, the row policies and the validators in the browser — that
 is `compass`, not this.
 
-**And an ordering datum.** TanStack DB shipped normalised collections in 0.1 and
-persistence with offline support in 0.6. Normalise first, persist second, which
+**And an ordering datum.** TanStack DB shipped normalized collections in 0.1 and
+persistence with offline support in 0.6. Normalize first, persist second, which
 is the order this file already argued for.
 
 ## The ruling

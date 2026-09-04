@@ -74,7 +74,7 @@ That is not a feature with a large diff. It is a change to the meaning of the
 access core, and the framework's one non-negotiable is that access is declared in
 the schema and enforced at the Data boundary.
 
-## What the neighbours do
+## What the neighbors do
 
 **Prisma does not support it.** The request has been open since 2020 with no
 delegate, no single-table inheritance and no discriminated relation. Prisma's own

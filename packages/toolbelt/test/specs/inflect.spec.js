@@ -41,7 +41,7 @@ test('inflect: every irregular round-trips', function () {
     tooth: 'teeth', foot: 'feet', mouse: 'mice', goose: 'geese',
     ox: 'oxen', leaf: 'leaves', life: 'lives', knife: 'knives',
     index: 'indices', matrix: 'matrices', vertex: 'vertices',
-    analysis: 'analyses', basis: 'bases', crisis: 'crises',
+    analysis: 'analyzes', basis: 'bases', crisis: 'crises',
     datum: 'data', medium: 'media', criterion: 'criteria',
   }
   Object.entries(table).forEach(function ([one, many]) {
@@ -60,7 +60,7 @@ test('inflect: an irregular that a regular rule also matches still wins', functi
   assert.equal(pluralize('index'), 'indices')
   assert.equal(pluralize('matrix'), 'matrices')
   assert.equal(pluralize('vertex'), 'vertices')
-  assert.equal(pluralize('analysis'), 'analyses')
+  assert.equal(pluralize('analysis'), 'analyzes')
   assert.equal(pluralize('basis'), 'bases')
   assert.equal(pluralize('crisis'), 'crises')
   assert.equal(pluralize('ox'), 'oxen')
@@ -130,7 +130,7 @@ test('inflect: -ses splits by a list, because no ending can split it', function 
   // The irregular table is consulted first and still wins.
   assert.equal(singularize('bases'), 'basis')
   assert.equal(singularize('crises'), 'crisis')
-  assert.equal(singularize('analyses'), 'analysis')
+  assert.equal(singularize('analyzes'), 'analysis')
 })
 
 test('inflect: the plural of a word ending in s comes back to it', function () {

@@ -428,7 +428,7 @@ export async function Command({ file, arg, flag, emit }) {
   config.vars       = {}
   config.filePath   = file
 
-  // Per-run scratch, shared with any steps. Initialised for EVERY command, not
+  // Per-run scratch, shared with any steps. Initialized for EVERY command, not
   // only ones that have steps: it used to be set inside the steps runner, and
   // every command in `commands/deploy/` got it only because a bare `_steps/`
   // attached itself to all of them. Narrowing that (FJS-250) left `deploy:doctor`
@@ -479,7 +479,7 @@ export async function Command({ file, arg, flag, emit }) {
   if (defaultStepsDir && existsSync(defaultStepsDir)) {
     // Return a function that runs the orchestrator then all steps
     const runSteps = async () => {
-      // config.config is already there — see the initialisation above.
+      // config.config is already there — see the initialization above.
       // Run the orchestrator's own body first (sets up context.config from flags)
       await config.run(config)
 
@@ -555,7 +555,7 @@ export async function Command({ file, arg, flag, emit }) {
 
         const stepMeta = extractFrontmatter(stepTemplate)
 
-        // Honor an early stop signalled by the orchestrator or a previous step.
+        // Honor an early stop signaled by the orchestrator or a previous step.
         // The step body's own `if (context.config.abort) return` would still
         // catch this, but checking here means we skip the header log too —
         // a stuck "[1/N] step-name" line below an error message is confusing.

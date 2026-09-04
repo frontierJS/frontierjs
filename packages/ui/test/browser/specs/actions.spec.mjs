@@ -3,7 +3,7 @@
  *
  * Three components nothing had opened. Two of them look like markup and one
  * of them is not: `Button` reads `$context.form` and disables itself while a
- * submit is in flight, which is behaviour with no render-time symptom at all.
+ * submit is in flight, which is behavior with no render-time symptom at all.
  */
 export const name = 'Button · Label · Card'
 export const covers = ['forms/Button', 'forms/Label', 'layout/Card']
@@ -83,7 +83,7 @@ export async function run(t) {
 
   /* ── a submit reports the form's state ────────────────────────────────── */
 
-  // Button's one hidden behaviour, and the reason it reads $context.form.
+  // Button's one hidden behavior, and the reason it reads $context.form.
   t.is(await t.evaluate(`return document.querySelector('#b-submit').getAttribute('aria-busy');`), null,
     'a submit button is not busy while the form is idle')
 

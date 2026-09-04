@@ -248,7 +248,7 @@ which reported success from `analysis.errors`:
   class prop was passed and only the consumer's when one was. Fixed with
   `bindClassPassthrough` in `runtime.js`.
 
-Two gaps found there are **not** fixed and are documented as current behaviour:
+Two gaps found there are **not** fixed and are documented as current behavior:
 a destructuring assignment to reactive lets (`[a,b] = [b,a]`) emits invalid JS,
 and `{@const}` inside `{#each}` calls the loop index as a getter. The third —
 `<mesa:element this={…}>` compiling to nothing — is closed; see `CHANGES.md`.

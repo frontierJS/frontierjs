@@ -222,7 +222,7 @@ export class TransitionNotFoundError extends Error {
 // (FJS-204).
 
 export class SoftDeletedUniqueError extends Error {
-  // Every argument is normalised rather than trusted. This is constructed on a
+  // Every argument is normalized rather than trusted. This is constructed on a
   // failure path, so a throw inside it replaces a diagnosable error with an
   // opaque one — and `junction errors` probes it with generic arguments, where
   // a class that cannot be constructed is reported as an unclassified 500.
@@ -309,7 +309,7 @@ export class SealedDocumentError extends Error {
 // the one shape a form already reads, so the message lands under the control
 // that caused it.
 export class UniqueConflictError extends Error {
-  // Normalised, not trusted — see SoftDeletedUniqueError. Values arrive already
+  // Normalized, not trusted — see SoftDeletedUniqueError. Values arrive already
   // redacted, because a @unique column may be @encrypted and only the caller's
   // own model knows which.
   constructor(model, fields, values, opts = {}) {
@@ -370,7 +370,7 @@ export function isCheckViolation(err) {
 export function isUniqueConflict(err) {
   // The translated error answers yes too. Two paths depend on it after the
   // translation has happened — upsert's race fallback and the factory's
-  // rebuild-and-retry — and both would stop recognising their own case if the
+  // rebuild-and-retry — and both would stop recognizing their own case if the
   // question were only ever asked of SQLite's wording.
   return err?.name === 'UniqueConflictError' ||
          err?.code === 'SQLITE_CONSTRAINT_UNIQUE' || err?.errno === 2067 ||
@@ -393,7 +393,7 @@ export function isUniqueConflict(err) {
 // answered the LIVE rows — not an empty list, the exact opposite of what was
 // asked, with nothing anywhere saying the directive had not applied. A filter
 // typo is a 400 by name and a sort key typo is a 400 by name; a directive the
-// model cannot honour was the one that said nothing.
+// model cannot honor was the one that said nothing.
 export class CapabilityNotDeclaredError extends Error {
   constructor(model, asked, requires, hint = '') {
     super(`${model}: ${asked} is not available — the model declares no ${requires}.${hint ? ` ${hint}` : ''}`)
@@ -462,13 +462,13 @@ export class LockExpiredError extends Error {
 //
 // `$close()` used to leave a client that answered some calls and refused
 // others. bun's `close()` is `sqlite3_close_v2`, which defers destruction until
-// the last prepared statement is finalised, and `wrapDb` holds up to 500 of
+// the last prepared statement is finalized, and `wrapDb` holds up to 500 of
 // them — so a cached query kept reading off a closed, checkpointed handle while
 // any query the cache had not seen threw. Same client, same tenant, and which
 // answer you got depended on whether this request had taken this code path
 // before (`FJS-640`).
 //
-// Finalising the cache is what makes a close a close, and this is what the
+// Finalizing the cache is what makes a close a close, and this is what the
 // caller gets afterwards. 500 rather than 4xx: nothing about the request is
 // wrong, and repeating it cannot help.
 

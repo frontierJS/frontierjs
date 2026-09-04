@@ -552,7 +552,7 @@ async function apiCall(path, { method = 'GET', body, workspace, header, outpost 
   // — and until FJS-349 they carried nothing else either, so an unsigned POST
   // could bring a server online and point every later fleet command at an
   // address it chose. Signed with the fleet secret, over the exact bytes sent:
-  // the hash is of the body, so signing a re-serialisation would not match.
+  // the hash is of the body, so signing a re-serialization would not match.
   const payload = body ? JSON.stringify(body) : undefined
   if (outpost) {
     Object.assign(headers, await signRequest({
@@ -619,7 +619,7 @@ const click = text => evaluate(`
   (() => {
     const el = [...document.querySelectorAll('button, a')]
       .find(e => e.textContent.trim() === ${JSON.stringify(text)})
-    if (!el) throw new Error('no control labelled ' + ${JSON.stringify(text)} + ' on ' + location.pathname)
+    if (!el) throw new Error('no control labeled ' + ${JSON.stringify(text)} + ' on ' + location.pathname)
     el.click()
   })()
 `)
@@ -2590,9 +2590,9 @@ check('the owner is back, in the workspace this section started in',
 const AUDIT = `(() => {
   const out = []
   for (const el of document.querySelectorAll('input, select, textarea')) {
-    const labelled = (el.id && document.querySelector('label[for="' + el.id + '"]'))
+    const labeled = (el.id && document.querySelector('label[for="' + el.id + '"]'))
       || el.closest('label') || el.getAttribute('aria-label') || el.getAttribute('aria-labelledby')
-    if (!labelled) out.push('control without a name: ' + (el.id || el.className))
+    if (!labeled) out.push('control without a name: ' + (el.id || el.className))
   }
   for (const th of document.querySelectorAll('th'))
     if (!th.getAttribute('scope')) out.push('th without scope: ' + th.textContent.trim().slice(0, 20))

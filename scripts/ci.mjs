@@ -19,7 +19,7 @@
 //      hid 20 files of Sierra's build pipeline — every suite green, a fresh
 //      clone with no prerenderer.
 //   3. A RAISED typecheck baseline is a failure (Invariant 14). The ratchet was
-//      honour-system; nothing enforced the direction.
+//      honor-system; nothing enforced the direction.
 //   4. A known-failing suite is named, so a NEW failure is loud. One package
 //      failing today makes the aggregate exit 1 forever, which trains everyone
 //      to ignore the exit code.
@@ -220,7 +220,7 @@ function substratePurity() {
         if (pattern.test(code)) fail(
           `${rel} ${why}\n` +
           `      Every export in a substrate package is a pure function: same input, same output.\n` +
-          `      The purity is not a house style, it is the licence to be imported from anywhere.`
+          `      The purity is not a house style, it is the license to be imported from anywhere.`
         )
       }
 
@@ -920,7 +920,7 @@ function registry() {
 
   // The version gap is NOT a failure — a package ahead of the registry is the
   // normal state between releases. It is reported because it is the thing the
-  // register cannot see: a scaffold template written against behaviour only the
+  // register cannot see: a scaffold template written against behavior only the
   // tree has, installed from a registry that does not have it yet.
   const ahead = state
     .filter(([, v]) => v !== 'unpublished' && v !== 'unreachable')
@@ -1021,7 +1021,7 @@ function scaffold() {
 // **The container is then asked to sign someone in.** A health answer says the
 // process is up; it does not say the app WORKS. `scaffoldAndDeploy`'s smoke
 // registers and logs in at the prefix the scaffold's own web config names, which
-// is the one thing that can see a template written against behaviour only the
+// is the one thing that can see a template written against behavior only the
 // tree has — an app that installs, builds, answers health and cannot log in
 // (FJS-252, closed by this). On the `npm` branch it is the published framework
 // answering.
@@ -1201,10 +1201,18 @@ function tutor() {
   const LESSONS = [
     { id: 'tutor:app',    args: ['--api-port', String(API), '--web-port', String(WEB)] },
     { id: 'tutor:access', args: ['--api-port', String(API)] },
+    // Two sockets against one publish, a job that outlives its request, and a
+    // public site built from the database. All three reuse the API slot: each
+    // lesson stops what it started, and the phase runs them in order.
+    { id: 'tutor:live',   args: ['--api-port', String(API)] },
+    { id: 'tutor:jobs',   args: ['--api-port', String(API)] },
+    { id: 'tutor:site',   args: ['--api-port', String(API)] },
     // A real deploy to this machine: a container, a journal on disk, a revert.
     // 7103 is the next test-tier backend slot after the two `scaffoldAndDeploy`
     // sources (7100, 7101) and the transition cycle (7102).
     { id: 'tutor:deploy', args: ['--port', '7103'], needsDocker: true },
+    // No port at all — it is schema and verdicts, with nothing listening.
+    { id: 'tutor:change', args: [] },
     // The control plane and a machine reporting in to it. Basecamp is
     // `private: true`, so this lesson stops with a sentence and exits 0 for
     // anybody who installed from npm — here it runs, because there is a
@@ -1558,7 +1566,7 @@ function isSourcePath(path) {
   return !OUTPUT_DIR.test(path)
 }
 
-// Both streams get their own tail, labelled, because either one alone can be
+// Both streams get their own tail, labeled, because either one alone can be
 // the whole story and neither is reliably the one that carries it.
 // A phase reports its output in one of two shapes and both reach here: a spawned
 // suite carries `{stdout, stderr}`, and a phase that ran something itself — the

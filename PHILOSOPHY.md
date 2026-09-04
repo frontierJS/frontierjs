@@ -191,12 +191,14 @@ say.**
   is true for an afternoon.
 - **Register** — `DECISIONS.md`, `ISSUES.md`, `CHANGES.md`. Dated, cited,
   append-only. History lives here and nowhere else.
-- **Map** — the root and package `CLAUDE.md`, the committed snapshots. Live facts,
-  each one backed by a generator or a check that fails when it stops being true.
+- **Map** — the root and package `CLAUDE.md`, a package `README.md`, the committed
+  snapshots. Live facts, each one backed by a generator or a check that fails when
+  it stops being true. A README is here rather than one tier down because a
+  consumer acts on it without reading anything else.
   A map sentence beginning *until*, *used to*, *before FJS-* is history that
   escaped its register.
 - **Assessment** — `IDEAS/` (`pros-and-cons.md` among them), a package's design notes. Carries
-  a `status` and a date in its frontmatter and is never cited as behaviour.
+  a `status` and a date in its frontmatter and is never cited as behavior.
 
 **Precedence is stated once.** Invariant, then ruling, then map, then package
 document, then assessment. A ruling that must override an invariant amends the
@@ -208,7 +210,7 @@ is `proposed`, `accepted`, `superseded-by` or `withdrawn`. A proposal is those
 four plus `partial` and `shipped` — the two build states between a decision and a
 fact, which a ruling does not need and a roadmap cannot do without. A document
 that READS the tree rather than proposing anything is `assessment`: it is on no
-lifecycle, it carries a date, and it is never cited as behaviour. A file derived
+lifecycle, it carries a date, and it is never cited as behavior. A file derived
 from the others and authoritative over none of them is `index`. *Parked*, *under
 review*, *not yet adopted*, *argued* and *idea* each meant one of these, and each
 let a settled question read as open.
@@ -222,7 +224,7 @@ still not belong**: if it vanished, could someone acting on this file make a
 mistake it would have prevented? *A `@@gate` refuses, a `@@allow` filters, so a
 wrong policy is an empty screen and not an error* stays — the mistake is
 concrete and the sentence is the only thing between a reader and it. *The kit
-ships 70 components over the design system* goes — nobody does anything
+ships seventy components over the design system* goes — nobody does anything
 differently for knowing it, and it was 65 the week before. The test is asked per
 sentence and answered out loud, and a cut with no answer does not happen.
 

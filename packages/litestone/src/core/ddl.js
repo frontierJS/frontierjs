@@ -393,7 +393,7 @@ function createIndexes(model, softDelete = false, tableName) {
     // A DECLARED predicate (@@index(where:)) is ANDed with it rather than
     // replacing it: the soft-delete clause is what makes the index reachable on
     // such a model at all, so honouring the declaration by dropping it would
-    // silently un-optimise every read. `whereSql` is the parser's own compiled
+    // silently un-optimize every read. `whereSql` is the parser's own compiled
     // output — the same compiler a query goes through — which is what makes the
     // two byte-identical and therefore matchable.
     const parts = [soft, attr.whereSql].filter(Boolean)
@@ -408,7 +408,7 @@ function createIndexes(model, softDelete = false, tableName) {
   // constraint, because no dialect takes a predicate on one.
   //
   // The soft-delete clause is NOT ANDed in, and that is the one line this
-  // feature turns on. On an @@index the AND is an optimisation — the clause is
+  // feature turns on. On an @@index the AND is an optimization — the clause is
   // what makes the index reachable on such a model. On a UNIQUE index the
   // predicate IS the constraint, so ANDing it is FJS-204's rejected derivation
   // arriving through the back door: the deleted row stops holding its @unique
@@ -420,7 +420,7 @@ function createIndexes(model, softDelete = false, tableName) {
     const cols = attr.fields.map(f => `"${f}"`).join(', ')
     // Same name as an @@index over the same columns would take, which is what
     // keeps it inside the `idx_<table>_` prefix `ownedIndex` reads — an index
-    // litestone does not recognise as its own is one it never drops. The parser
+    // litestone does not recognize as its own is one it never drops. The parser
     // refuses the collision.
     lines.push(`CREATE UNIQUE INDEX IF NOT EXISTS "idx_${tableName}_${attr.fields.join('_')}" ON "${tableName}" (${cols}) WHERE ${attr.whereSql};`)
   }

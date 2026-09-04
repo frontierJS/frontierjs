@@ -10,7 +10,7 @@ dated: 2026-08-24
 [open-mrp/api](https://github.com/open-mrp/api) as `IDEAS/permission-sets.md`.
 Unlike that one, this is not a missing mechanism — it is three mechanisms that
 already exist for other reasons, never pointed at each other. Do not cite this file
-as describing behaviour — see `VERIFYING.md`.
+as describing behavior — see `VERIFYING.md`.
 
 ---
 

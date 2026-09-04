@@ -3,7 +3,7 @@
  * <Form> and the form context.
  *
  * What is asserted here is the claim that makes <Form> worth having: a control
- * that was handed nothing but a `name` still comes out labelled, constrained
+ * that was handed nothing but a `name` still comes out labeled, constrained
  * and carrying its server error, because the form put the schema and the error
  * map in context and the control read them.
  *
@@ -85,7 +85,7 @@ let failed = 0
 let cases  = 0
 
 // What the render said out loud. A generated form REPORTS the columns it could
-// not give a control, so the warnings are part of the behaviour under test —
+// not give a control, so the warnings are part of the behavior under test —
 // captured rather than printed, and asserted below.
 let warnings = []
 

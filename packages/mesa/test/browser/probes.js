@@ -104,7 +104,7 @@ export function installProbes(win = window) {
    *
    *  `waitVisible` answers "can this be seen"; that is not the same question
    *  as "has it stopped moving". A coordinate click reads a rect and then
-   *  clicks that point, so a neighbour still growing into place puts the
+   *  clicks that point, so a neighbor still growing into place puts the
    *  target somewhere else by the time the press lands — the click hits
    *  whatever moved under it and the assertion reports a component that
    *  ignored a click. It only shows up under load, which is the worst way for
@@ -129,7 +129,7 @@ export function installProbes(win = window) {
 
 /** Capture `console.warn` into `window[name]`, keeping the original.
  *
- *  A warning is behaviour, not noise: several components report by warning and
+ *  A warning is behavior, not noise: several components report by warning and
  *  carry on — `<Form>` names a column it has no control for rather than
  *  dropping it in silence — so a spec has to be able to assert one. The
  *  original is still called, so the node side sees the same message: a

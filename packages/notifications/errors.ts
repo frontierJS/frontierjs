@@ -13,7 +13,7 @@ export class NotificationTransportNotImplementedError extends Error {
   constructor(transport: string, notificationType: string) {
     super(
       `Notification "${notificationType}" declares transport "${transport}" in via() ` +
-      `but does not implement to${capitalise(transport)}().`
+      `but does not implement to${capitalize(transport)}().`
     )
     this.name              = 'NotificationTransportNotImplementedError'
     this.transport         = transport
@@ -92,6 +92,6 @@ export class NotificationDeliveryError extends Error {
 
 // ─── Internal helper ──────────────────────────────────────────────────────────
 
-function capitalise(str: string): string {
+function capitalize(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1)
 }

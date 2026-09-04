@@ -1,7 +1,7 @@
 /**
  * sierra/junction — Junction WebSocket client integration
  *
- * Initialised by virtual:sierra at boot.
+ * Initialized by virtual:sierra at boot.
  * Exposes a plain `status` object for use in components — see below.
  *
  * import { status, session, signIn, signOut, useStore } from 'sierra/junction'

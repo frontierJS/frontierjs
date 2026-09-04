@@ -470,7 +470,7 @@ describe('rewriteMesaSlots', () => {
   })
 
   test('no warning emitted for <mesa:slot> named snippets', () => {
-    // extractProvidedSlots should recognise mesa:slot tags
+    // extractProvidedSlots should recognize mesa:slot tags
     const { warnUnexportedSnippets } = require('../src/build/warnings.js')
     // Use dynamic import for ESM
   })

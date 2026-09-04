@@ -33,7 +33,7 @@
  * property and passes that down instead.
  *
  * Browsers without @property support (pre-Firefox 128) fall back to the
- * old inheriting behaviour: leaky, but not broken.
+ * old inheriting behavior: leaky, but not broken.
  */
 
 @property --bg-mix {

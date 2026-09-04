@@ -17,6 +17,7 @@ import { glow } from '@frontierjs/toolbelt/glow'
 | `/hooks` | the four-phase resource pipeline | shipping |
 | `/json` | reading and editing a JSON document nothing describes | shipping |
 | `/jsonschema` | follow a `$ref`; what a blank record looks like | shipping |
+| `/match` | does this record belong in that query's results | shipping |
 | `/query` | what a query string MEANS — types, structure, both directions | shipping |
 | `/search` | ranking a corpus nobody indexed | shipping |
 | `/signature` | what a signed machine-to-machine request is | shipping |

@@ -20,7 +20,7 @@ import { introspect }             from '../core/migrate.js'
 // One grading table for every converter in this package. A live database is a
 // source like any other and says less than the schema that built it; `import`'s
 // three tiers are what make the list of what it could not say readable.
-import { tierOf, summarise }      from '../import/tiers.js'
+import { tierOf, summarize }      from '../import/tiers.js'
 // Mirrors the pluralizer ddl.js runs — the same table read the other way.
 import { singularize as toSingular } from '@frontierjs/toolbelt/inflect'
 
@@ -203,7 +203,7 @@ export function generateLiteSchema(db, opts = {}) {
 export function introspectToLite(db, { camelCase = true } = {}) {
   const schema = introspect(db)
 
-  // Same shape the four import readers use, so one `summarise` reads both.
+  // Same shape the four import readers use, so one `summarize` reads both.
   const gaps = []
   const gap  = (kind, model, field, detail, emitted) =>
     gaps.push({ kind, model, field, detail, emitted })
@@ -578,5 +578,5 @@ export function introspectToLite(db, { camelCase = true } = {}) {
     lines.push('')
   }
 
-  return { lite: lines.join('\n').trimEnd() + '\n', gaps, summary: summarise(gaps) }
+  return { lite: lines.join('\n').trimEnd() + '\n', gaps, summary: summarize(gaps) }
 }

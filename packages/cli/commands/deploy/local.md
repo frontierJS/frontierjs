@@ -106,7 +106,7 @@ const bc = await import(new URL('file://' + global.fliRoot + '/core/build-check.
 const bcFindings = bc.inspectBuild(bc.gatherLocal({ root: context.paths.root, fs: await import('fs'), dockerfile }))
 
 if (!bcFindings.length) {
-  log.success(`Build check: ${bc.summarise(bcFindings)}`)
+  log.success(`Build check: ${bc.summarize(bcFindings)}`)
 } else {
   log.info('')
   for (const f of bcFindings) {
@@ -117,8 +117,8 @@ if (!bcFindings.length) {
     log.info(`    ${fix}`)
   }
   log.info('')
-  if (bc.refuses(bcFindings)) log.warn(`Build check: ${bc.summarise(bcFindings)} — fli deploy will refuse this build`)
-  else                        log.info(`Build check: ${bc.summarise(bcFindings)}`)
+  if (bc.refuses(bcFindings)) log.warn(`Build check: ${bc.summarize(bcFindings)} — fli deploy will refuse this build`)
+  else                        log.info(`Build check: ${bc.summarize(bcFindings)}`)
 }
 
 // ─── Build ────────────────────────────────────────────────────────────────────

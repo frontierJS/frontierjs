@@ -180,7 +180,7 @@ describe('errors', () => {
     expect(of(result, 'malformed-date').map(h => h.id)).toContain('FJS-011')
   })
 
-  test('every error is levelled as one', () => {
+  test('every error is leveled as one', () => {
     for (const f of runRegisterCheck({ root: ROOT, today: TODAY }).errors) {
       expect(RULES.find(r => r.id === f.rule).level).toBe('error')
     }

@@ -8,7 +8,7 @@
 ## Schema
 - [schema.md](schema.md) — .lite DSL: types, field attributes, model attributes, enums, functions
 - [reference.snapshot.md](reference.snapshot.md) — **every word, A–Z**: what it does, what it accepts, where it is legal, a worked example. Generated from the catalog and gated, so it cannot drift; `litestone explain @guarded` asks the same rows one at a time
-- [modelling.md](modelling.md) — the recurring judgment calls: which feature makes this field (the nine-kind matrix), uuid vs Int id, surrogate vs natural key, Json array vs join table
+- [modeling.md](modeling.md) — the recurring judgment calls: which feature makes this field (the nine-kind matrix), uuid vs Int id, surrogate vs natural key, Json array vs join table
 - [migrations.md](migrations.md) — autoMigrate, file migrations, JS migrations, CLI
 - [typescript.md](typescript.md) — litestone types, generated .d.ts, WhereBase, WindowSpec
 - [jsonschema.md](jsonschema.md) — generateJsonSchema: every key it emits, modes, audience, who reads each
@@ -52,7 +52,7 @@
 - [publishing.md](publishing.md) — npm scope, pre-publish checklist, version strategy
 
 ## Meta
-- [roadmap.md](roadmap.md) — **proposals only, never a statement of behaviour**: Embedding, LatLng, ExternalSync, and the unbuilt half of `@slug`. What the language accepts is `reference.snapshot.md` above
+- [roadmap.md](roadmap.md) — **proposals only, never a statement of behavior**: Embedding, LatLng, ExternalSync, and the unbuilt half of `@slug`. What the language accepts is `reference.snapshot.md` above
 - [gotchas.md](gotchas.md) — production surprises and edge cases
 
 ## Audits

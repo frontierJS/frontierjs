@@ -172,9 +172,9 @@ describe('metrics provider', () => {
 
 // ─── junction.config.js → caravan section ────────────────────
 //
-// register() reads `app.config._junction.caravan` and honours every key of it
+// register() reads `app.config._junction.caravan` and honors every key of it
 // (JunctionCaravanConfig in junction's src/config/index.ts). It could once
-// honour only jobsDir and cleanupAfter: createCaravan() opened the database and
+// honor only jobsDir and cleanupAfter: createCaravan() opened the database and
 // built the workers before any app existed, so db, pollInterval, queues and
 // admin were already spent by the time a config file was visible. The database
 // now opens on first use and the workers are built in start(), which is what
@@ -299,7 +299,7 @@ describe('junction config caravan section', () => {
     expect(res.body).toHaveLength(1)
   })
 
-  it('honours cleanupAfter from the config file', async () => {
+  it('honors cleanupAfter from the config file', async () => {
     // Was read with `!opts.cleanupAfter &&`, so a config file could set it only
     // when opts had not — and `cleanupAfter: 0`, the way to turn the sweep off,
     // read as unset from either side.
@@ -455,7 +455,7 @@ describe('admin routes over real routes', () => {
       .set('x-caravan-secret', 's3cret')).status).toBe(200)
   })
 
-  it('honours a custom admin path', async () => {
+  it('honors a custom admin path', async () => {
     const app = await createTestApp()
     app.configure(createCaravan(opts({ admin: { path: '/admin/jobs' } })))
 

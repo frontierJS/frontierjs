@@ -10,7 +10,7 @@ dated: 2026-08-04
 attribute exists in the `.lite` grammar, and nothing generates any of the artifacts
 below. Do not cite this file as describing behavior — see `VERIFYING.md`.
 
-> **One neighbour DOES ship, added 2026-08-25** — and it is the closest thing in the
+> **One neighbor DOES ship, added 2026-08-25** — and it is the closest thing in the
 > tree to what item 5 below proposes, so read it before designing `@retain`. A
 > `database` block takes `retention 30d`, and `tools/retention.js` deletes rows older
 > than that from every model in the block carrying a `createdAt`. It is at the wrong
@@ -52,7 +52,7 @@ model User {
 
 Every field holding personal data, its category, its retention period, the minimum
 gate level that can read it, and — via Conduit — which third parties receive it.
-This is the document organisations currently maintain by hand in a spreadsheet that
+This is the document organizations currently maintain by hand in a spreadsheet that
 is wrong within a month. Here it is `fli marshal:map`, regenerated on every schema
 change, and **wrong is a build failure rather than a discovery during an audit**.
 

@@ -319,7 +319,7 @@ describe('GET /api/commands — _source field', () => {
     }
   })
 
-  test('core commands are labelled correctly', async () => {
+  test('core commands are labeled correctly', async () => {
     const res  = await fetch(`${base}/api/commands`)
     const cmds = await res.json()
     const makeCmd = cmds.find(c => c.title === 'make:command')
@@ -327,7 +327,7 @@ describe('GET /api/commands — _source field', () => {
     expect(makeCmd._source).toBe('core')
   })
 
-  test('project commands are labelled correctly', async () => {
+  test('project commands are labeled correctly', async () => {
     const res  = await fetch(`${base}/api/commands`)
     const cmds = await res.json()
     const greet = cmds.find(c => c.title === 'hello:greet')
@@ -422,7 +422,7 @@ describe('GET /api/state', () => {
 
 // ─── POST /api/start/:id · POST /api/stop/:id ────────────────────────────────
 //
-// The property worth pinning here is the one that is not about behaviour at
+// The property worth pinning here is the one that is not about behavior at
 // all: the caller sends an ID and never a command. What runs comes from the
 // inventory, which comes from a file in the tree — so a request can choose
 // among the project's own declared commands and cannot name one of its own.

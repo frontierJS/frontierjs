@@ -1,7 +1,7 @@
 // tests/error-boundary.test.ts
 //
 // toFrameworkError is the single point where a thrown value becomes an HTTP
-// status. It used to recognise only Junction's own classes plus two Litestone
+// status. It used to recognize only Junction's own classes plus two Litestone
 // names, so every other package's errors became a 500 — a closed world inside
 // an open plugin system. It hit @frontierjs/auth (wrong password → 500) and
 // @frontierjs/caravan (unauthorized admin request → 500) independently, and
@@ -44,7 +44,7 @@ describe('a FrameworkError is already precise', () => {
 describe('registered mappers', () => {
   class StripeCardError extends Error {}
 
-  it('map an error the boundary could not otherwise recognise', () => {
+  it('map an error the boundary could not otherwise recognize', () => {
     useMapper(e => e instanceof StripeCardError ? new PaymentRequired(e.message) : null)
 
     const fe = toFrameworkError(new StripeCardError('card declined'))
@@ -95,7 +95,7 @@ describe('a numeric HTTP status carried on the error', () => {
   const withProp = (key: string, value: unknown) =>
     Object.assign(new Error('nope'), { [key]: value })
 
-  it('is honoured from status, statusCode, or code', () => {
+  it('is honored from status, statusCode, or code', () => {
     expect(toFrameworkError(withProp('status', 401)).code).toBe(401)
     expect(toFrameworkError(withProp('statusCode', 404)).code).toBe(404)
     // `code` is FrameworkError's own field name for status — caravan used it.

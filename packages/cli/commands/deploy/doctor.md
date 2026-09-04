@@ -236,7 +236,7 @@ if (dockerfileSrc) {
     // A summary either way: warnings alone still answer the question this
     // section asks, and without the line the reader learns only what is wrong.
     if (bc.refuses(findings)) renderCheck('fli deploy will refuse this build', 'info')
-    else                      renderCheck(bc.summarise(findings), 'pass')
+    else                      renderCheck(bc.summarize(findings), 'pass')
   }
 }
 

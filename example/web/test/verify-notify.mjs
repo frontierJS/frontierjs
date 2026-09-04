@@ -137,7 +137,7 @@ try {
     // data the body renders from — so the subject names the order without the
     // wording living in two files.
     subject: mail.subject,
-    // A message with a subject and no body used to be the shipped behaviour of
+    // A message with a subject and no body used to be the shipped behavior of
     // the notifications email driver, and it "succeeded".
     bodyHasTotal:  !!mail.text?.includes('42.00'),
     bodyHasAction: !!mail.text?.includes(`/orders/${orderId}/`),

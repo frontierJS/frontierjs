@@ -48,7 +48,7 @@ what follows, including why basecamp runs two audit trails.
 
 | Piece | Where | State |
 | --- | --- | --- |
-| Levelled logger | `junction/src/core/logger.ts` | `debug`/`info`/`warn`/`error`, `child(ns, defaults)`, pretty in dev and JSON in production, `NO_COLOR` and TTY honoured, a missing `.stack` handled |
+| Leveled logger | `junction/src/core/logger.ts` | `debug`/`info`/`warn`/`error`, `child(ns, defaults)`, pretty in dev and JSON in production, `NO_COLOR` and TTY honored, a missing `.stack` handled |
 | Writers | same | `consoleWriter`, `fileWriter` (Bun `FileSink`), `multiWriter`. An array of writers, which is Laravel's `stack` without the config file |
 | Request logger | `junction/src/transport/middleware.ts:309` | exists; writes with `console[level]`, **not** through `app.logger` |
 | Correlation id | `middleware.ts` `correlationId()` → `ctx.requestId`; `RequestMeta.correlationId` off `x-request-id` | two spellings, and neither reaches a log entry |
@@ -353,7 +353,7 @@ the field does not already have.
 
 Deliberately last. It is worth nothing until phases 0 and 2 mean the trail
 survives a deploy and lives somewhere a rule can defend, and a tamper-evident
-log that a deploy deletes is theatre. **Those two now hold, so the precondition
+log that a deploy deletes is theater. **Those two now hold, so the precondition
 is met and the work is deferred rather than blocked** — it is the only part of
 this document with a position in it, and the only part nothing in the tree is
 waiting on.
@@ -365,7 +365,7 @@ the schema twice and migrating an app's trail to catch up.
 ## What this owes the repo's own conventions
 
 **Two `FJS-###` entries, not two paragraphs here.** Holes 7 and 8 are shipped
-behaviour that is wrong today, and the house rule is an id in `ISSUES.md`. This
+behavior that is wrong today, and the house rule is an id in `ISSUES.md`. This
 file should cite them.
 
 **A `fli check` rule per hole that is statically decidable.** The unbound

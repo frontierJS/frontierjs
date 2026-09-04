@@ -70,7 +70,7 @@
    *
    * The replacement is the same color scaled uniformly in linear RGB —
    * the same operation chip.css uses to cap a fill — so chromaticity is
-   * exact and this is still the identical warm grey, only dark enough to
+   * exact and this is still the identical warm gray, only dark enough to
    * read: 4.92:1 on --surface, 4.51:1 on --surface-sunken, and still well
    * clear of --ink-soft so the three-step ramp survives.
    */
@@ -86,7 +86,7 @@
    * different rungs — a button at --space-xs and a control at --space-sm,
    * everything else about them identical — so a filter bar came out with its
    * controls at 38px and its submit at 34px, and `.cluster`/`.bar`/`.toolbar`
-   * all centre, which put the button 2px low on the row it belongs to.
+   * all center, which put the button 2px low on the row it belongs to.
    *
    * An app could not fix it: a button's size is expressed as a FONT SIZE, so
    * the only knob that made a button taller made its text bigger too.

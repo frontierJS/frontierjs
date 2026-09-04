@@ -53,7 +53,7 @@ import { readdirSync, statSync } from 'node:fs'
 import { mkdir, writeFile, rm }  from 'node:fs/promises'
 import { resolve, join, basename, extname } from 'node:path'
 
-// The mark is the RUNTIME's: that is the side which has to recognise a
+// The mark is the RUNTIME's: that is the side which has to recognize a
 // placeholder nothing replaced (a dev server, where Vite serves the stylesheet
 // into the document). It holds only the PREFIX, and the full marker is built
 // here — this module is not bundled into a widget, so the concatenation is
@@ -130,7 +130,7 @@ export function widgetEntrySource(widget, { prefix = '', runtime = '@frontierjs/
 import Component, * as mod from ${JSON.stringify(widget.entry)}
 import { embed } from ${JSON.stringify(runtime)}
 
-// A widget declares its own tag, selector and shadow behaviour in
+// A widget declares its own tag, selector and shadow behavior in
 // <script module>; everything it does not say is taken from the build config.
 const declared = mod.widget ?? {}
 
@@ -197,7 +197,7 @@ export function widgetCssPlugin() {
           throw new Error(
             `[Sierra] widget ${chunk.fileName}: the CSS placeholder was not found in the built ` +
             `entry, so its stylesheet could not be inlined. The bundler has quoted ` +
-            `${CSS_PLACEHOLDER} in a way this plugin does not recognise — widgetCssPlugin's ` +
+            `${CSS_PLACEHOLDER} in a way this plugin does not recognize — widgetCssPlugin's ` +
             `matcher needs updating. Shipping is worse than failing here: the CSS asset is ` +
             `already deleted, so the widget would carry the placeholder as its stylesheet.`
           )

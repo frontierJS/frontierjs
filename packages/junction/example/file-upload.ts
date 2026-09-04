@@ -127,7 +127,7 @@ autoMigrate(db)
 // Stored value in SQLite is a JSON ref object.
 // Callers want a URL. One after hook on all methods handles it.
 
-// Normalising the result is the whole trick, and the reason this used to 500.
+// Normalizing the result is the whole trick, and the reason this used to 500.
 // ctx.result is a ServiceResult envelope; `kind` says which shape `data` is:
 //   kind: 'list'   → data is an array of rows
 //   kind: 'single' → data is ONE row object

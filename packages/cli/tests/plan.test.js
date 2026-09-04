@@ -44,7 +44,7 @@ describe('the steps are read, not listed', () => {
   // Lexicographic on the whole filename, which is what lets a step be inserted
   // between two others without renumbering the rest — `02b-build-check` is a
   // real instance and its position is load-bearing.
-  test('a lettered step sorts between its neighbours', () => {
+  test('a lettered step sorts between its neighbors', () => {
     expect(stepFilesIn(['03-c.md', '02b-x.md', '02-b.md', '01-a.md']))
       .toEqual(['01-a.md', '02-b.md', '02b-x.md', '03-c.md'])
   })
@@ -332,7 +332,7 @@ describe('what a person reads', () => {
     expect(render(RELEASE)).toContain('nothing recorded')
   })
 
-  test('the attempt is labelled provisional, because the journal owns the count', () => {
+  test('the attempt is labeled provisional, because the journal owns the count', () => {
     expect(render(RELEASE)).toContain('provisional')
   })
 

@@ -47,7 +47,7 @@ export async function run(t) {
 
   // ── the open ──────────────────────────────────────────────────────────
   // A held modifier arms it and the click is swallowed. Both halves are the
-  // behaviour: an inspector that opens the editor AND fires the app's own
+  // behavior: an inspector that opens the editor AND fires the app's own
   // click handler navigates away from the page you were inspecting.
   const opened = await t.evaluate(`
     const before = document.querySelector('#counter').textContent;

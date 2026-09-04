@@ -707,8 +707,21 @@ function makeApiCoreDbTs() {
 // Schema is loaded from disk; createClient runs the DDL automatically
 // on first run. No separate apply() step needed for fresh DBs.
 
+import { fileURLToPath } from 'node:url'
+
 import { createClient, GatePlugin, LEVELS } from '@frontierjs/litestone'
 import { env } from './env.ts'
+
+// Anchored to THIS FILE, never to the working directory. Not every command that
+// imports this module runs from the app root — a \`site/\` build runs from its own
+// surface — and both halves of getting that wrong are quiet: a schema path that
+// resolves nowhere is a client that cannot open, and a DATABASE path that
+// resolves nowhere is a NEW, EMPTY database, which prerenders a page with no
+// rows in it and exits 0.
+//
+// \`resolveFrom: 'schema'\` then anchors env.DATABASE_URL to the app root as well,
+// since that is the directory above the schema's own.
+const schemaPath = fileURLToPath(new URL('../../../db/schema.lite', import.meta.url))
 
 const gate = new GatePlugin({
   async getLevel(user: unknown) {
@@ -721,9 +734,14 @@ const gate = new GatePlugin({
   },
 })
 
+// No \`db:\` here on purpose. That option is an OVERRIDE and is resolved against
+// the process — \`database main\` in the seed already declares
+// \`env("DATABASE_URL", "./db/app.db")\`, which is the same variable, anchored to
+// the app root by \`resolveFrom\` above. Passing it here would put the database
+// wherever the command was typed from.
 export const db = await createClient({
-  schema:        './db/schema.lite',
-  db:            env.DATABASE_URL,
+  schema:        schemaPath,
+  resolveFrom:   'schema',
   encryptionKey: env.ENCRYPTION_KEY,
   plugins:       [gate],
 })
@@ -865,8 +883,8 @@ function makeSchemaLiteEmpty() {
 // Both blocks must exist before any model is added: auth's fragments name
 // \`main\` and \`audit\` explicitly, and a model referencing an undeclared
 // database fails the whole parse — the app dies at createClient, not later.
-// Once \`database main\` is declared THIS PATH WINS and createClient's \`db:\`
-// option is ignored entirely.
+// This path is the app's. createClient's \`db:\` option OVERRIDES it and is
+// resolved against the working directory, so api/src/core/db.ts passes none.
 
 database main  { path env("DATABASE_URL", "./db/app.db") }
 
@@ -1126,9 +1144,32 @@ title: Home
     if (!r.ok) throw new Error('API answered ' + r.status)
     return r.json()
   })
+
+  // ─── the tour ──────────────────────────────────────────────────────
+  // Everything from here down is a worked example of the language this file
+  // is written in, placed so it can be read beside what it renders. Delete it
+  // when you write your own home page; nothing else imports any of it.
+
+  let count = 0
+  let name  = ''
+
+  // A $: line re-runs when anything it READ changes. Nothing is declared as a
+  // dependency, and nothing has to be.
+  $: greeting = name ? 'Hello, ' + name : 'Hello'
+
+  const realms = [
+    { noun: 'Model',    realm: 'Data', where: 'db/schema.lite' },
+    { noun: 'Service',  realm: 'API',  where: 'api/src/services/' },
+    { noun: 'Resource', realm: 'UI',   where: 'web/src/resources/' },
+  ]
 ${sc}
 
 <h1>Welcome to ${appName}</h1>
+
+<p class="lede">
+  This page is <code>web/src/routes/index.mesa</code>, and the tour below is
+  running rather than quoted — every point does the thing it describes.
+</p>
 
 {#await health()}
   <p>API: checking…</p>
@@ -1139,7 +1180,82 @@ ${sc}
 {/await}
 
 <p>Socket: {status.connected ? 'open ✓' : 'opens when you sign in'}</p>
-<p>Edit <code>web/src/routes/index.mesa</code> to start.</p>
+
+<section class="tour">
+  <h2>Mesa in a minute</h2>
+
+  <article>
+    <h3>1 · State is a variable</h3>
+    <p>No store, no hook, no setter. Assign to it, and the markup that read it
+       is what updates.</p>
+    <button on:click={() => count++}>pressed {count} times</button>
+  </article>
+
+  <article>
+    <h3>2 · A <code>$:</code> line re-runs when what it read changes</h3>
+    <p>The subscription is the line itself — there is no dependency array to
+       keep in step with the body.</p>
+    <input bind:value={name} placeholder="your name" />
+    <p>{greeting}</p>
+  </article>
+
+  <article>
+    <h3>3 · Blocks are markup</h3>
+    <p><code>&#123;#each&#125;</code> and <code>&#123;#if&#125;</code> are
+       compiled to DOM operations rather than re-run as functions. Both are
+       below, over the three nouns this framework has.</p>
+    <ul>
+      {#each realms as r}
+        <li><strong>{r.noun}</strong> — the {r.realm} realm, in <code>{r.where}</code></li>
+      {/each}
+    </ul>
+    {#if count > 2}
+      <p class="hint">…and the button above has been pressed {count} times.</p>
+    {/if}
+  </article>
+
+  <article>
+    <h3>4 · Styles are scoped to the file</h3>
+    <p>The <code>&lt;style&gt;</code> block at the bottom cannot leak out of
+       this component, and cannot reach into a child one. To cross that line
+       you write <code>:global(…)</code>, which is a thing you can grep for.</p>
+  </article>
+
+  <article>
+    <h3>5 · Everything the runtime offers is on <code>$</code></h3>
+    <p><code>$.onMount</code>, <code>$.emit</code>, <code>$.tick</code>. Five
+       members keep a bare spelling because they are read as a bag in the
+       middle of markup: <code>$props</code>, <code>$attributes</code>,
+       <code>$slots</code>, <code>$context</code>, <code>$async</code>.</p>
+  </article>
+</section>
+
+<section class="next">
+  <h2>Where to go next</h2>
+  <ul>
+    <li><code>db/schema.lite</code> — the seed. Models, gates and policies; the
+        API and these screens are derived from it.</li>
+    <li><code>fli scaffold Note --fields "title:string body:text"</code> — one
+        command, a stanza in the seed and a working screen.</li>
+    <li><code>fli tutor:access</code> — the next lesson: a gate and a row policy,
+        watched refusing somebody.</li>
+    <li><a href="https://github.com/frontierjs/frontierjs">github.com/frontierjs/frontierjs</a>
+        — Mesa's reference is <code>packages/mesa/docs/</code>, the schema
+        language is <code>packages/litestone/docs/</code>.</li>
+  </ul>
+</section>
+
+<style>
+  .lede { color: #6b7280; max-width: 46rem }
+  .tour, .next { margin-top: 2.5rem }
+  .tour article { padding: 1rem 0; border-top: 1px solid #e5e7eb }
+  .tour h3 { margin: 0 0 .35rem; font-size: 1rem }
+  .tour p, .next li { max-width: 46rem }
+  .hint { color: #6b7280 }
+  button { padding: 6px 12px; border: 1px solid #e5e7eb; border-radius: 6px; background: #fff; cursor: pointer }
+  input { padding: 6px 10px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 14px }
+  code { background: #f3f4f6; padding: 1px 4px; border-radius: 4px; font-size: .9em }
+</style>
 `
 }
 
@@ -1298,7 +1414,7 @@ const validExtras = ['conduit', 'caravan', 'notifications']
 // `litestone replicate`. Listing it here put `@frontierjs/litestream` into
 // FJS_PACKAGES and therefore into the manifest, so `--full` aborted under
 // --source local (no packages/litestream) and 404'd at install under --source
-// npm. Recognised by name rather than dropped, so the flag says where it went.
+// npm. Recognized by name rather than dropped, so the flag says where it went.
 const notAPackage = {
   litestream: 'a server binary, not a dependency — see `litestone replicate` and `fli deploy:setup`',
 }

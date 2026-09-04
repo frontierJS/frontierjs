@@ -113,7 +113,7 @@ writing the connector.
 Do not spend the argument again.
 
 - **A connector is a `@frontierjs/conduit` target, never a `fetch()` in a
-  service.** `example/api/src/core/stripe.ts` is the worked example, and
+  service.** `example/api/src/providers/stripe/index.ts` is the worked example, and
   `example`'s `verify:stripe` is what proves the boundary is generic rather than
   agreeing with itself.
 - **The token is a `Secret`**, like every other machine credential here. The

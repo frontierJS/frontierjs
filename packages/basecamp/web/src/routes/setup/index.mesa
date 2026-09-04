@@ -54,7 +54,7 @@ title: First run
   {/if}
 
   <Input label="Workspace name" name="workspace" id="workspace" required
-         hint="Your organisation. Everything else is scoped inside it."
+         hint="Your organization. Everything else is scoped inside it."
          bind:value={workspace_name} />
 
   <Input label="Your name" name="name" id="name" autocomplete="name" required

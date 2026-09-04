@@ -375,7 +375,7 @@ $: userId, () => { localCount = 0 }   // does NOT reset on first render
 ```
 
 "When X changes, do Y" reads as change-triggered, and firing on mount is usually wrong.
-The eager case is `$.onMount`. The "initialise, then keep in sync" case is almost always a
+The eager case is `$.onMount`. The "initialize, then keep in sync" case is almost always a
 `const` memo in disguise — if you find yourself writing an effect whose whole body assigns
 a value derived from its own dependency, you wanted `const`.
 
@@ -729,7 +729,7 @@ compiles to
 > styles **its own elements, including its root**, and reaches **no** element
 > belonging to a child component. Cross a component boundary with `:global(...)`.
 
-Two consequences worth stating plainly, because the previous behaviour was the
+Two consequences worth stating plainly, because the previous behavior was the
 opposite of both:
 
 - **You can style your own root.** Scoping used to emit `.mHASH button`, an
@@ -943,7 +943,7 @@ and therefore always renders the array it was given; what it gives up is node
 identity across a reorder — a moved item is rebound into the node already at
 that position, so DOM state the row owns (focus, an uncontrolled input, a
 running animation, a scroll offset) stays with the POSITION rather than
-travelling with the item. State a key whenever that matters. Keying by the item
+traveling with the item. State a key whenever that matters. Keying by the item
 itself is `(item)`, and it is only safe where the values are unique: a duplicate
 key corrupts the reconciler, which is why it is not the default (`FJS-325`).
 
@@ -1856,7 +1856,7 @@ else (`FJS-D134`). Neither is ever authored.
 > instead.
 
 **`$` the object and `$:` the label are unrelated.** A reactive watch is a
-labelled statement, which JavaScript keeps in a namespace separate from
+labeled statement, which JavaScript keeps in a namespace separate from
 bindings, so the two can never collide and `$:` is unaffected by any of the
 above. Two things wearing one character, and the character is all they share.
 
@@ -1990,7 +1990,7 @@ A `client:*` directive on a component says when an island is MOUNTED on the clie
 is not hydration — nothing adopts the prerendered DOM; the loader clears the marked
 range and mounts the component fresh into it. The Mesa core compiler strips the
 directive by default and carries it into the island marker under `{ islands: true }`;
-the schedule is the loader's, and Sierra's honours these:
+the schedule is the loader's, and Sierra's honors these:
 
 | Directive | Meaning |
 |---|---|
@@ -2164,7 +2164,7 @@ at module load time.
 
 > **RULE 20** — There is no hydration. A server render is HTML and nothing else: the
 > comment anchors compiled output relies on are stripped from it, no reactive graph is
-> serialised, and no client adopts server-rendered DOM. What ships is the island seam
+> serialized, and no client adopts server-rendered DOM. What ships is the island seam
 > (§18.5) — `island()` in the runtime wraps a `client:*` call site in comment markers on
 > the server, and a loader outside Mesa (Sierra's) clears the range and does a fresh
 > `mount()` into it. Async data is the loader's to fetch again.

@@ -25,7 +25,7 @@
 
   const t = toTone(color || tone)
 
-  // Normalise data to SVG coordinates
+  // Normalize data to SVG coordinates
   // SVG origin is top-left; we flip Y so higher values go up
   const pad = 2  // px padding so the stroke isn't clipped at edges
 

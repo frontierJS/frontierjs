@@ -551,7 +551,7 @@ h1 {
       }
       @media (min-width: 60rem) {
         .stop .rail::after {
-          /* centred on the spine: rail right edge → half the gap. */
+          /* centered on the spine: rail right edge → half the gap. */
           content: '';
           position: absolute;
           right: -1.6rem;

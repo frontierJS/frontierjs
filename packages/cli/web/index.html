@@ -231,7 +231,7 @@ button[data-health] {
 /* A Field stretches to its container; in a Topbar it should be its own size. */
 .gui-theme { inline-size: 8rem; }
 
-/* A Cluster centres its children on the cross axis. Two lists of different
+/* A Cluster centers its children on the cross axis. Two lists of different
    lengths side by side want their first rows level instead. */
 .gui-columns { align-items: flex-start; }
 
@@ -670,7 +670,7 @@ log.success(`Got ${data.length} records`)
         <p class="text-lg">FLI is designed to grow with your workflow. There are three levels of extension: project commands, core namespace additions, and deeper runtime hooks.</p>
         <h3>level 1 — project commands</h3>
         <p>The simplest extension: add <code>.md</code> files to your project's <code>cli/src/routes/</code>. These commands only appear in that project. Use them for project-specific automation that doesn't belong in the shared core.</p>
-        <pre class="code"><code language="bash"># Initialise the project routes directory
+        <pre class="code"><code language="bash"># Initialize the project routes directory
 fli init
 
 # Then add commands for your project
@@ -2100,7 +2100,7 @@ function renderLast(li, last, alive) {
     : last.exit?.error     ? ['could not start',                           'danger']
     : code === 0           ? [graded ? 'passed' : 'ran',                   graded ? 'success' : 'muted']
     : typeof code === 'number' ? [graded ? `failed (${code})` : `exited ${code}`, 'danger']
-    : [`signalled ${last.exit?.signal ?? '?'}`,                            'warning']
+    : [`signaled ${last.exit?.signal ?? '?'}`,                            'warning']
 
   // While it is running again, the previous run is still worth showing and is
   // no longer the current state — so it is said in the past tense either way.

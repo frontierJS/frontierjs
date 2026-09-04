@@ -211,7 +211,7 @@ Free with the walk: **a minute missed because the event loop was blocked or the
 container was paused is now caught up**, which *does the current minute match*
 could not see at all.
 
-`CronScheduler` takes `now`. The behaviour above happens on two days a year and
+`CronScheduler` takes `now`. The behavior above happens on two days a year and
 a suite that cannot move the clock can only assert the parser — which is what
 this suite did assert, with four green `timeZone` tests sitting above a defect in
 the firing path. `nextRuns()` deliberately stays the wall clock's own answer and
@@ -274,7 +274,7 @@ run in `boot()`. That is late enough for the file to be loaded and early enough
 for the routes: `boot-plugins` runs before `service-routes` and before `listen`.
 
 Found by giving `example` the config file it should have had and watching
-`/api/jobs` 404 — 22 routes became 28 with the block honoured.
+`/api/jobs` 404 — 22 routes became 28 with the block honored.
 
 
 ## 2026-08-22 — the queue contributes a readiness check
@@ -563,7 +563,7 @@ the whole of `FJS-090`'s original symptom: `send-email.job.ts` defining
 
 **Construction is deferred, so a config file can set anything.** The database
 opens on first use, the workers are built in `start()` after autoload, and
-`register()` honours every key of `JunctionCaravanConfig` — `db`, `jobsDir`,
+`register()` honors every key of `JunctionCaravanConfig` — `db`, `jobsDir`,
 `cleanupAfter`, `pollInterval`, `queues`, `admin` — with opts winning. Two more
 defects fell out: the merge tested truthiness, so `cleanupAfter: 0` (the way to
 turn the sweep off) read as unset from either side; and `stop()` closed the

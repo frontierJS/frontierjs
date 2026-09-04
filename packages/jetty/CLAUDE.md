@@ -75,7 +75,7 @@ It is the only place that scheme is written down.
   takes no service at all, because Junction lives in Harbor. Do not "resync"
   either against Sierra.
 - **`mergeHooks` answers a NEW map**, re-exported from `resources/index.js`. It
-  merged in place before; toolbelt's licence is purity, so both callers reassign.
+  merged in place before; toolbelt's license is purity, so both callers reassign.
 - **The HMR algorithm is not duplicated either**: the DOM swap is Mesa's
   (`@frontierjs/mesa/vite/swap`, `FJS-259`) and only the registry and the two
   module shapes are jetty's.
@@ -129,11 +129,11 @@ It is the only place that scheme is written down.
 
 ## Proving a change
 
-`bun run test` (all ten phases), plus `bun run build:fixture` and loading the
+`bun run test` (every phase), plus `bun run build:fixture` and loading the
 result — the failure above is exactly the kind a build that "succeeds" hides.
 
 **And `example`: `verify:extension`**, which is the only place this package
 talks to a real Junction and the only place an extension is loaded into a
 browser profile. A fake Junction here is the mock that hid `FJS-279` for as long
-as it existed, so the adapter's WIRE behaviour is proved there and only its
+as it existed, so the adapter's WIRE behavior is proved there and only its
 shape is asserted in `test/phase2.test.js`.

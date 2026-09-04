@@ -11,7 +11,7 @@ request, because the gate and the policies are enforced at the **Data boundary**
 `curl` sees and would add a page to read in between.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 2
 

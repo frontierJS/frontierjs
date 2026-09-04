@@ -48,7 +48,7 @@ title: Users
   // `settled()` below is this screen's answer to that last one: it compares
   // what came back against what was sent and says so when a switch did not
   // move. It is not a permission check — `users.can()` and `isAdmin` already
-  // grey the control out — it is what catches the case where the affordance and
+  // gray the control out — it is what catches the case where the affordance and
   // the boundary disagree, which is the case an affordance can never cover.
   import User, { users } from '@/resources/User.mesa'
   import { session }     from '@/session.js'

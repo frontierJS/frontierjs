@@ -3,7 +3,7 @@
  *
  * AI-readable site description file.
  *
- * Behaviour:
+ * Behavior:
  *   config.llms = false   → never generate (default)
  *   config.llms = true    → generate once, never overwrite
  *   config.llms = 'auto'  → always regenerate

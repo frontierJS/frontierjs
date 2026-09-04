@@ -387,14 +387,14 @@ app.services.register(createService({
   }
 }))
 
-// Custom key — rate limit by organisation
+// Custom key — rate limit by organization
 hooks: {
   before: {
     create: [rateLimit({
       max:     100,
       window:  '1 hour',
       key:     (ctx) => ctx.auth.user?.accountId ?? ctx.client.ip,
-      message: 'Organisation limit reached',
+      message: 'Organization limit reached',
     })]
   }
 }
@@ -553,6 +553,24 @@ return response
 
 ---
 
+## Methods the transport answers for you
+
+Three answers no app registers:
+
+| Request | Answer |
+| --- | --- |
+| `HEAD /things` where `GET /things` is registered | the GET route runs, headers intact, body dropped by the runtime |
+| `DELETE /things` where only `GET`/`POST` are | `405` with `Allow: GET, HEAD, OPTIONS, POST` |
+| `OPTIONS /things` where nothing claimed it | `204` with the same `Allow` |
+| any method on a path nothing answers | `404` — the URL is wrong, not the verb |
+
+A route registered with `router.head(...)` or `router.options(...)` wins over
+either fallback, which is how `cors()`'s `OPTIONS /*` keeps every preflight.
+`Allow` lists the methods of THAT path, so a read-only resource does not
+advertise a `POST` it does not have.
+
+---
+
 ## Health and metrics
 
 ```typescript
@@ -578,7 +596,7 @@ app.configure(healthPlugin({
 A plugin contributes its own block through `app.registerMetricsSource(name, fn)`
 rather than mounting a second endpoint: Caravan adds `jobs`, the outbox adds
 `outbox`. The function must be **synchronous** — its return value is assigned
-straight into the body, so a promise would serialise as `{}`; anything that
+straight into the body, so a promise would serialize as `{}`; anything that
 needs a query caches it rather than running one per scrape.
 
 ### Announcing a second listener
@@ -827,7 +845,9 @@ Row by row rather than one `UPDATE` because that is what applies the schema. Lit
 | `shutdown.pluginTimeout` | `number` | `5000` | ms each plugin's `shutdown()` gets. One that never settles is logged and skipped instead of taking the rest of the list with it |
 | `shutdown.crashHandlers` | `boolean` | `true` | install `unhandledRejection`/`uncaughtException` handlers that log, stop the app and exit 1. Skipped where the app already has its own |
 | `http.compress` | `boolean` | `true` | gzip responses |
-| `http.maxBodySize` | `number` | `262144` | max request body bytes |
+| `http.maxBodySize` | `number` | `262144` | max request body bytes. A body declaring no length is read incrementally and cancelled at the bound, so it is a memory limit and not only a check |
+| `http.idleTimeout` | `number` | the runtime's `10` | seconds a connection may go without progress before the RUNTIME closes it. `0` disables; above `255` is refused at boot. Coarse — measured, it closes at about twice the value with a floor near four seconds, so it is not a deadline |
+| `http.requestTimeout` | `number` | off | ms a handler may take before the app answers `503` itself. Absent means no bound. Setting it raises the runtime's per-request timer, so this answer wins the race instead of the socket resetting. It does not stop the handler |
 | `http.ws.maxFrameBytes` | `number` | `maxBodySize` | largest inbound frame this app accepts. Refused by name — 1009 `frame_too_large` — because Bun's own ceiling closes with a bare 1006 that reads as the network dropping. Follows `maxBodySize` by default: a socket must not be a wider door than a POST |
 | `http.ws.maxPayloadLength` | `number` | `1048576` | the runtime's ceiling — what this process will buffer at all |
 | `http.ws.maxFramesPerSecond` | `number` | `100` | per socket, token bucket, burst 2x. Over it a frame is dropped and the client is told once a second |
@@ -1204,7 +1224,7 @@ createService({
 `cache`, `schema`, `channel` and the other option names were previously
 impossible as action names, silently. In TypeScript a *typed* option still needs
 a cast — `cache` is declared `CacheDeclaration` and cannot also be a function —
-so the runtime honours the declaration and the type does not know about it.
+so the runtime honors the declaration and the type does not know about it.
 
 Because the policy is structural rather than authorization, it is checked ahead
 of the hook pipeline — an anonymous caller gets 405, not 401.
@@ -1842,7 +1862,7 @@ store.remove(1)                              // remove by id
 store.set([])                                // replace all
 ```
 
-**URL normalisation** — pass `http://`, `https://`, `ws://`, or `wss://` — the client normalises to `http(s)://` for requests and converts back to `ws(s)://` for the WebSocket connection:
+**URL normalization** — pass `http://`, `https://`, `ws://`, or `wss://` — the client normalises to `http(s)://` for requests and converts back to `ws(s)://` for the WebSocket connection:
 
 ```typescript
 createJunctionClient({ url: 'ws://localhost:3000' })   // works fine

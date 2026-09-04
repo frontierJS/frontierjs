@@ -1,6 +1,6 @@
 <script>
   // Select.mesa
-  // Native <select> with option normalisation and Field composition.
+  // Native <select> with option normalization and Field composition.
   //
   // `.field` styles a <select> directly, so the chevron is the UA's — the
   // appearance:none reset and the hand-drawn arrow are gone. That also means
@@ -17,7 +17,7 @@
   // bind:this exposes: focus()
 
   import Field from './Field.mesa'
-  import { nameToLabel, uid, resolveError, resolveRule, stated, nativeValidationGuard, truncationNote, withNote, optionsNote } from '../../utils.js'
+  import { nameToLabel, uid, resolveError, resolveRule, stated, nativeValidationGuard, truncationNote, withNote, optionsNote, lockedBy } from '../../utils.js'
 
   export let value       = null
   export let options     = []          // flat or grouped (see above)
@@ -47,7 +47,7 @@
   // A <Form> above this control locks it two ways — the caller disabled the
   // form, or a save is in flight — and both mean the same thing to a field.
   // A stated prop still wins, including `disabled={false}` on a saving form.
-  const resolvedDisabled = stated(disabled, form?.disabled || form?.submitting) ?? false
+  const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
   const rule = resolveRule(form, name)
 
   // Inside a <Form> the option list is a schema fact, like the label and the
@@ -97,12 +97,12 @@
 
   const isGrouped = resolved.length > 0 && typeof resolved[0] === 'object' && 'group' in resolved[0]
 
-  function normalise(opts) {
+  function normalize(opts) {
     return opts.map(o => typeof o === 'string' ? { value: o, label: o, disabled: false } : o)
   }
 
-  const flatOptions    = isGrouped ? [] : normalise(resolved)
-  const groupedOptions = isGrouped ? resolved.map(g => ({ ...g, options: normalise(g.options) })) : []
+  const flatOptions    = isGrouped ? [] : normalize(resolved)
+  const groupedOptions = isGrouped ? resolved.map(g => ({ ...g, options: normalize(g.options) })) : []
 
   const hasError = !!resolveError(form, name, error, errors)
 

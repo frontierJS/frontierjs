@@ -47,7 +47,7 @@ exactly the line between the two packages:
 
 A stylesheet cannot give you a focus-trapped dialog, a roving-tabindex
 tablist, a combobox, or a toast queue. This package is that half. Every
-component here draws itself with the css vocabulary and adds only behaviour.
+component here draws itself with the css vocabulary and adds only behavior.
 
 **There is no second design system here.** No colour maps, no size scales, no
 `tokens.css`. A component that wants to be red does not carry a red — it takes
@@ -161,7 +161,7 @@ changed, what the server said about each field, and not submitting twice:
 ```
 
 Nothing there states what a Lead is. `createResource('leads')` read that from
-`db/schema.lite`, so `email` arrives labelled, `required`, `type="email"`, with
+`db/schema.lite`, so `email` arrives labeled, `required`, `type="email"`, with
 its `@length` as `maxlength` — and if the write is rejected, the message lands
 under that control without anyone routing it there. The form puts the rules and
 the error map in context; each control resolves its own.
@@ -283,7 +283,7 @@ apply. `mapErrors` replaces only the unwrapping. Neither turns the rest off.
 
 ## The platform does the work
 
-Where the browser already has the behaviour, these components use it instead
+Where the browser already has the behavior, these components use it instead
 of reimplementing it. That is not a style preference — each one deleted a real
 bug:
 
@@ -348,7 +348,7 @@ the slot — so they go on the wrapper.
 Where a component **declares** `id` it means something else and the attribute
 never reaches the DOM as an id: `Toast` (the identity the store dismisses by),
 `Tab`/`TabPanel`/`AccordionItem` (which name a pairing and render as
-`id="tab-{id}"`), `Label`/`Field` (the id of the control being labelled) and
+`id="tab-{id}"`), `Label`/`Field` (the id of the control being labeled) and
 `Tooltip` (the generated tooltip id). Address those with a `data-*` attribute.
 `test/attributes.mjs` holds the whole contract, exceptions included.
 
@@ -365,18 +365,18 @@ Four suites, and the split matters:
   and still emit a module that throws on load.
 - **`test/render.mjs`** — renders a component from each tier and asserts the
   css vocabulary reaches the DOM, and that no utility class has crept back in.
-  This is the suite that would have caught the original problem, where 55 of
-  63 components were styled with Tailwind/Uno classes that nothing in this
+  This is the suite that would have caught the original problem, where most
+  of the kit was styled with Tailwind/Uno classes that nothing in this
   repo generates — so every one of them rendered unstyled while compiling
   perfectly.
 - **`test/attributes.mjs`** — every component forwards its caller's attributes,
   the caller's value replaces the component's own, and `id` lands wherever it
-  is not a declared prop. Renders all 69; the ones it cannot render are named
-  with the reason rather than filtered out, so nothing goes quiet. 55 of 64
-  components dropped every undeclared attribute before it existed.
+  is not a declared prop. Renders every one; the ones it cannot render are named
+  with the reason rather than filtered out, so nothing goes quiet. Almost the
+  whole kit dropped every undeclared attribute before it existed.
 - **`test/form.mjs`** — `<Form>` and the form context. Asserts the claim that
   makes the component worth having: a control handed nothing but a `name` comes
-  out labelled, constrained and carrying its server error. Covers the wiring,
+  out labeled, constrained and carrying its server error. Covers the wiring,
   not the state machine — the machine's inputs are pinned in sierra's
   `resource-validation.test.js`, and the whole of it in `example/`'s
   `bun run verify`.

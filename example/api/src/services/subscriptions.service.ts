@@ -69,7 +69,7 @@ export function createSubscriptionsService() {
      * It does NOT touch invoices. An invoice already issued is a document
      * (`FJS-D162`) and the money is owed whether or not the arrangement
      * continues — cancelling a subscription that owes for last month and having
-     * the debt vanish is the behaviour a shop cannot have.
+     * the debt vanish is the behavior a shop cannot have.
      *
      * `system:` names the one column this may write. It keeps the model's gate,
      * its row policies and the audit actor, where `asSystem()` would drop all

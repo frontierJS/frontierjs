@@ -141,7 +141,7 @@ import {
   derefFieldSchema, buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
   validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError,
-  toFieldErrors, controlFor, defaultControlFor, formFieldList, labelFieldFor, labelFieldInfo, matchesQuery,
+  toFieldErrors, controlFor, defaultControlFor, formFieldList, labelFieldFor, labelFieldInfo, matchesQuery, sealedFor,
   registerControl, unregisterControl, registeredControls,
 } from './field-rules.js'
 import { singularize } from '@frontierjs/toolbelt/inflect'
@@ -153,7 +153,7 @@ export {
   buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
   validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError,
-  toFieldErrors, controlFor, defaultControlFor, formFieldList, labelFieldFor, labelFieldInfo, matchesQuery,
+  toFieldErrors, controlFor, defaultControlFor, formFieldList, labelFieldFor, labelFieldInfo, matchesQuery, sealedFor,
   registerControl, unregisterControl, registeredControls,
 }
 
@@ -670,7 +670,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       // of the payload, and acting on the pre-hook data would reject or rewrite
       // records the server would have accepted.
       //
-      // Normalisation runs first so validation judges what will actually be
+      // Normalization runs first so validation judges what will actually be
       // sent, not an intermediate form of it.
       // The server's own columns go first, so nothing below coerces, blanks or
       // validates a value that is not going to be sent. An edit form is handed
@@ -979,6 +979,31 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     return formFieldList(fields, { ...opts, model })
   }
 
+  /**
+   * Which columns are frozen FOR THIS ROW — the `@immutable` ones on a model
+   * that seals, once the row has reached a sealed state.
+   *
+   * Reached through the resource rather than imported, like `formFields` and
+   * `options`, because `@frontierjs/ui` peers only on mesa and css and the rule
+   * belongs to `sealedFor`. Answering a LIST rather than a predicate is what
+   * keeps it one call per render instead of one per field.
+   *
+   * The row to ask about is the one that was READ, never the payload being
+   * assembled: a save that issues the document and edits it in the same
+   * submit is legitimate — the boundary grades against the STORED state — and
+   * reading the payload's own state column would drop that edit in silence.
+   *
+   * No record answers `[]`, deliberately: a create form is making a draft.
+   */
+  function sealedFields(record) {
+    if (!record) return []
+    const out = []
+    for (const [name, rule] of Object.entries(fields)) {
+      if (sealedFor(rule, record)) out.push(name)
+    }
+    return out
+  }
+
   // One request per (field, query) for the life of the resource. A form with
   // three pickers over the same model still asks three times — they are three
   // different columns and may be filtered differently — but a re-render does
@@ -1045,7 +1070,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     // returns a value sometimes and a promise other times is one every caller
     // has to special-case.
     //
-    // `rule.options` is the labelled list (@label on a member); `rule.enum` is
+    // `rule.options` is the labeled list (@label on a member); `rule.enum` is
     // the bare codes. Falling back to the code as its own label is what a
     // control rendering a bare enum already shows.
     if (rule?.options || Array.isArray(rule?.enum)) {
@@ -1128,7 +1153,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       _labelWarned.add(fieldName)
       console.warn(
         `[${serviceName}] options('${fieldName}') — ${related.labelSource === 'fallback'
-          ? `${ref.model} has no readable string column, so every option is labelled with its id`
+          ? `${ref.model} has no readable string column, so every option is labeled with its id`
           : `showing ${ref.model}.${shown}, the first plain string column, which is a guess`}. ` +
         `Declare it: @@label(<column>) on model ${ref.model}.`,
       )
@@ -1268,7 +1293,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     more, hasMore: junctionResource.hasMore,
     fields, relations, gate, can, transitions, validate, normalize, coerce,
     version, versionField: versionOf, conflict,
-    formFields, options,
+    formFields, options, sealedFields,
     labelField: labelInfo.field, labelSource: labelInfo.source,
     fieldErrors, context, hooks: addHooks,
   }

@@ -16,7 +16,7 @@
 //
 // What this is NOT: a statement about which columns can be compared. That is
 // `filterableKeysFor`, a fact about the schema, and it is why `$checkWhere` may
-// be asked of any flavour of client and answers the same thing every time. This
+// be asked of any flavor of client and answers the same thing every time. This
 // asks who is asking, so `asSystem()` still filters and sorts freely.
 
 import { describe, it, expect } from 'bun:test'
@@ -180,7 +180,7 @@ describe('@guarded — what must keep working', () => {
 })
 
 describe('@guarded — filterability is still a fact about the schema', () => {
-  it('$checkWhere and $checkOrderBy answer the same on every flavour of client', async () => {
+  it('$checkWhere and $checkOrderBy answer the same on every flavor of client', async () => {
     const { db, sys, as } = await seeded()
     // These say whether a column CAN be compared, which is why junction may ask
     // them of a caller's own client. Making them auth-dependent would give one

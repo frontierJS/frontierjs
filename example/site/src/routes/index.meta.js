@@ -40,7 +40,7 @@ export async function load() {
   })
 
   // Flattened HERE rather than in the page, because whatever this returns is
-  // serialised into the HTML: shipping every variant row so the browser can
+  // serialized into the HTML: shipping every variant row so the browser can
   // reduce them to a price range puts the variant table in a page that renders
   // three cards.
   return {

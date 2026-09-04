@@ -102,7 +102,7 @@ export function assertSafeId(id: unknown): string {
 
 // This store is a SECOND owner of file storage: litestone already ships a
 // `FileStorage` with local and S3 drivers, `@accept` and cleanup (Invariant 4).
-// Retiring this one in favour of it is a ruling, not a refactor — see
+// Retiring this one in favor of it is a ruling, not a refactor — see
 // `FJS-692`; until then it is hardened rather than trusted.
 
 // ─── createFileStorage ────────────────────────────────────────────────────

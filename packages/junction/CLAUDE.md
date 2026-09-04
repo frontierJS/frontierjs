@@ -169,12 +169,45 @@ src/
   a refusal is an HTTP status rather than a close code on a socket the client
   believes it established — and the per-IP map deletes at zero, since a row per
   address that ever connected is itself unbounded.
+- **Two timers bound a request and the runtime's is the coarse one.**
+  `http.idleTimeout` is Bun's, in seconds, and it was reachable from nowhere —
+  its 10-second default reset every slower request with no status and no log
+  line here. It closes at roughly TWICE the configured value with a floor near
+  four seconds (measured: `1` and `2` both cut a 10 s handler at 4.0 s, `5` cut
+  a 20 s one at 8.0 s), so do not read it as a deadline. `http.requestTimeout`
+  is the app's own, in ms, absent by default, and setting it raises the
+  runtime's per-request timer above it so the app's 503 wins the race. Neither
+  stops a handler; one that finishes after its deadline is announced through
+  `onError`.
+- **`HEAD`, `OPTIONS` and `405` are the transport's, and none of them is a
+  route.** A HEAD falls back to the GET route after the lookup misses — Bun
+  drops the body itself, so only the routing was missing — and a registered
+  `head()` still wins. A method that missed on a path something else answers is
+  405 with `Allow`, listing HEAD wherever GET appears; a path nothing answers
+  stays 404, because *look for another URL* and *look at your verb* are
+  different instructions. An unclaimed OPTIONS is 204 with `Allow`, and
+  `cors()`'s own `OPTIONS /*` wins the lookup before any of this runs. The scan
+  behind `Allow` (`router.allowedMethods`) is only ever reached once the
+  caller's own method has already missed.
+- **A body that declares no length is bounded by this package and by nothing
+  else.** `Content-Length` is optional, so the pre-read check has nothing to
+  look at on a chunked request; `req.arrayBuffer()` then buffers whatever
+  arrives, and Bun's `maxRequestBodySize` does not help — measured, it compares
+  the DECLARED length and a chunked body passes it untouched. `readBounded`
+  walks the stream and cancels at the limit. **Cancelling spends the
+  connection**: on Bun 1.3.11 the abandoned bytes stay on a kept-alive socket
+  and are read as the start of the next request, so the sender's own next
+  request is answered 400 by Bun before this app sees it. That is refused as
+  malformed rather than parsed, so nothing is smuggled, and draining instead
+  would mean accepting every byte of a flood already refused. Only
+  `BodyTooLargeError` answers 413 — the catch used to say it for any parse
+  failure, which is a lie about a limit the caller is nowhere near.
 - **A presence meta was whatever the client sent, and it went to every member.**
   One 200KB frame produced 39.8MB of egress to 199 members in 114ms, and the
   amplification factor is the channel's membership, so it grows with the
   application's success and needs no privilege beyond being in the channel
   (`FJS-704`). Three bounds, cheapest first: a token bucket per connection, a
-  byte cap on the serialised meta, then the app's own `presenceMeta(meta)` —
+  byte cap on the serialized meta, then the app's own `presenceMeta(meta)` —
   which is the only one that can know meta is `{ typing: boolean }`. **The two
   refusals answer differently and that is deliberate**: an oversize meta is a
   fixed property of the client's code, so it is told; a rate refusal is
@@ -348,8 +381,8 @@ src/
   principal, because signing in is what produces one.
 - **A route can be registered once. A second registration throws, naming it.**
   Keyed on the route's SHAPE, so `/a/{id}` and `/a/{name}` are the same route —
-  the param name is read by the handler and by nothing that matches. It used to
-  be silent, and which copy survived depended on the path: a FIXED path is
+  the param name is read by the handler and by nothing that matches. Silence
+  there makes which copy survives depend on the path: a FIXED path is
   overwritten in `build()` so the LAST won, a DYNAMIC one is scanned in order so
   the FIRST won and the later handler never ran. Doubled CORS is what surfaced it
   (`FJS-225`); the refusal covers any plugin claiming a path another owns.
@@ -380,6 +413,21 @@ src/
   guest row whose `userId` is null. The first working version refused the
   anonymous socket correctly and delivered the one row the recipient may not
   read — caught only because every assertion is a pair.
+  **A CLAIM cannot be resolved for a connection, so the app states it per
+  channel** (`FJS-D191`). A claim is per REQUEST — `createApp({ principal })`,
+  off a header — and a broadcast has no request: the principal on a connection
+  was built at the upgrade, where there is no workspace and no header to read
+  one from. Under `strategy row` the tenancy rule desugars into an `@@deny` and
+  an `@@deny` fires on UNKNOWN, so an ABSENT claim refuses every subscriber on
+  every tenanted model, permanently — basecamp's eighteen live services, with
+  only a once-per-service warning that reads as *the model is genuinely
+  private* (`FJS-749`). `channels(setup, { claims })` is the missing input,
+  merged onto the principal before grading; the app answers because the app
+  named the channel. **Per channel and not per connection** — one person in two
+  workspaces is one principal on one socket and holds a different tenant in
+  each — so a cohort is keyed on the principal AND the claim set. **An empty
+  answer is not a claim**: `{}` would turn a `null` principal into an object,
+  which every `getLevel` grades a rung above a stranger.
   **The BACKGROUND path is graded by the same function** (`FJS-672`).
   `announceDataWrites` sent raw for as long as it existed, so every write that
   went through no service call — a job, a webhook, a cron, a bulk write,
@@ -814,7 +862,7 @@ src/
 - **The METHOD decides list vs single** — `wrapResult(raw, service, method)`.
   `find` must answer a list or it throws `ResultShapeError`; an array is a list;
   `{ data, errors }` is a list on any method (the bulk protocol); everything else
-  is a single and travels whole. It used to guess from shape alone, which dropped
+  is a single and travels whole. Guessing from shape alone drops
   an action's extra keys (`FJS-140`) and turned a non-list `find` into an empty
   list in the browser (`FJS-144`). The browser client calls this same function
   rather than copying the rule — that copy is how the two ends drifted.
@@ -834,7 +882,7 @@ src/
   `false` REMOVES (a patch is how a row leaves a list, and nothing else announces
   that), `null` means *undecidable from this record* and reloads instead of
   guessing, once per burst. With no `match` every event applies, which is the old
-  behaviour and the one every non-Sierra caller still gets.
+  behavior and the one every non-Sierra caller still gets.
 - **A push is also PLACED, and a page past the first refuses one.** `orderBy`
   decides where the row goes (`core/sort.ts`, which is `parseSort` — one reading
   of `-createdAt`), and on the first page the row pushed past `limit` belongs to
@@ -847,8 +895,8 @@ src/
   the caller that awaited them, and its request is not cancelled. Code reading
   the return value of a load it may have superseded is reading stale rows on
   purpose — the store is what is current.
-- **A custom method announces under its own name** (`orders pay`) since
-  2026-08-06. Only `find`/`get` are excluded; a read-shaped one opts out with
+- **A custom method announces under its own name** (`orders pay`).
+  Only `find`/`get` are excluded; a read-shaped one opts out with
   `ctx.dispatch = false`.
 - **`changed` is the announcement for a write that cannot name its row.**
   `announceDataWrites` used to drop every event whose `result` was null, which is
@@ -900,7 +948,7 @@ src/
   so no plain stub is assignable) and `asRecord` (a key the type does not
   declare, which is Invariant 5 working). Anything else is usually the type
   being wrong.
-- **Fake clients hide real bugs.** Cross-package behaviour goes in
+- **Fake clients hide real bugs.** Cross-package behavior goes in
   `tests/real-litestone-client.test.ts`, against a real client.
 - **`tests/email.test.ts` calls `mock.module()` on the smtp shim, and bun does
   not undo that.** The replacement is process-wide for the rest of the run, so
@@ -914,7 +962,7 @@ src/
 - **The HTTP and WS paths build their context separately** — `bridge.toContext()`
   vs `bridge.internal()` — so anything one derives from a request the other must
   lift out of the frame by hand, and a difference is silent because the browser
-  client falls back to HTTP whenever no socket is up. `ctx.id` is normalised to a
+  client falls back to HTTP whenever no socket is up. `ctx.id` is normalized to a
   string on both (FJS-197) because a path segment cannot be anything else, and
   request metadata (`requestMeta()` — correlation id, idempotency key) is
   established on both, which it was not: the WS path wrapped nothing in
@@ -1059,6 +1107,17 @@ Propagation rides an `AsyncLocalStorage` store, so nothing is threaded and no
 caller is rebuilt. A call whose principal *differs* re-scopes — which is what
 makes a sub-call issued as somebody else pass **that** principal to its own
 children rather than the request's.
+
+**The static server serves a FILE inside the root, not a path that looks like
+one.** `sanitizePath` refuses `..` and a NUL byte — the whole of what a URL can
+say — and a symlink inside the root said the rest, serving anything on the disk
+with a 200 (`FJS-746`). The resolved path is compared against the root's, the
+root resolved once and the file every request, since a link can be repointed
+under a running server. It answers **404** rather than 403, because a 403
+confirms the caller found a way out; the operator gets the warning instead, and
+`allowOutside` is how a shared assets directory is published on purpose. An
+EMPTY root is exempt — `ctx.file(path)` names a file the app chose and there is
+nothing for it to be inside of.
 
 **The client's address is DECLARED, not discovered.** `X-Forwarded-For` is a
 list the caller can start and nginx appends to, so the leftmost entry is their

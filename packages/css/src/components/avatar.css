@@ -13,7 +13,7 @@
  *
  * The initials form is a *fallback rendering of a name that is already on
  * screen* nine times out of ten — beside the name in a list row, inside a
- * cell whose row is labelled. Announcing "D O" there is noise, so the
+ * cell whose row is labeled. Announcing "D O" there is noise, so the
  * default is aria-hidden. When the avatar stands alone and IS the only
  * identification, give it the real name instead:
  *

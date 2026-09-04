@@ -6,7 +6,7 @@ dated: 2026-08-29
 
 # Idea — the proof map: which drive proves the change I just made
 
-**Status: SHIPPED 2026-08-29.** All four of §6 are behaviour — `core/proofs.js`,
+**Status: SHIPPED 2026-08-29.** All four of §6 are behavior — `core/proofs.js`,
 `fli proves`, the two `fli check` rules, and the dashboard panel over
 `GET /api/proves`. Everything else here is the argument that produced them; see
 `VERIFYING.md`.

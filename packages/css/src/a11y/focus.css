@@ -135,7 +135,7 @@
 
 /*
  * Inset rings. These sit inside a scroll container or hard against a
- * neighbour, where an outward ring is clipped or overlaps something:
+ * neighbor, where an outward ring is clipped or overlaps something:
  *
  *   .tab                 the tablist scrolls horizontally
  *   .navlink             flush to the sidebar's edge

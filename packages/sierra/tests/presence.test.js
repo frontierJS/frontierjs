@@ -1,5 +1,5 @@
 /**
- * tests/presence.test.js — presence() store behaviour
+ * tests/presence.test.js — presence() store behavior
  */
 import { describe, test, it, expect, vi, beforeEach } from 'vitest'
 import { presence } from '../src/presence/index.js'

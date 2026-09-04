@@ -1,5 +1,37 @@
 # Changes — @frontierjs/css
 
+## Breaking changes, by version
+
+Moved out of `README.md`, which is a map: a version history is a register's
+job (`FJS-D187`).
+
+### v0.11
+
+- **Stylesheets moved to `src/`**, grouped into directories that mirror the
+  cascade layers: `foundation/` `themes/` `components/` `patterns/` `a11y/`,
+  with `index.css` and `utilities.css` at the top of `src/`.
+- **Single-file imports carry the folder now.** `@frontierjs/css/buttons.css`
+  → `@frontierjs/css/components/buttons.css`. `src/` does **not** appear in the
+  public path — the exports map hides it. The one-line
+  `import '@frontierjs/css'` is unchanged, and that is what most apps use.
+
+```css
+@import '@frontierjs/css/foundation/tokens.css';
+@import '@frontierjs/css/themes/elite.css';
+@import '@frontierjs/css/components/buttons.css';
+```
+
+### v0.10.1
+
+- **`.shell.fixed` → `.shell.viewport`.** `fixed` is a core UnoCSS/Tailwind
+  utility name (`position: fixed`), generated unlayered, so merely having Uno
+  installed re-positioned the shell. See *Using it with UnoCSS*.
+- **The `.text-*` utilities moved to a new `utilities` layer** (their own file,
+  `utilities.css`). No markup change — but they now actually apply. Sharing the
+  `components` layer with `.btn`, which sets its own `font-size`, made all five
+  size steps inert on a button. If you compensated with an inline `font-size`,
+  you can drop it.
+
 ## 2026-08-27 — the default theme carries a ramp, a ground and an elevation
 
 `theme-default` was seven colours, every one of them the value `tokens.css`
@@ -8,7 +40,7 @@ and what an unstyled FrontierJS app looked like was decided entirely by the
 package defaults — which are tuned to be neutral, not to be a design.
 
 Measured on `example/`: white cards on a `#f5f5f5` page separated by a `#e7e3d8`
-hairline. The rules are WARM and the surfaces are NEUTRAL GREY, which is the
+hairline. The rules are WARM and the surfaces are NEUTRAL GRAY, which is the
 mismatch that reads as unfinished; `--app-bg` fell back to `--surface-sunken`,
 so the page, the table head and every inset well were one colour and a Card had
 nothing but that hairline holding it off the page; and `--surface-shadow: none`
@@ -45,7 +77,7 @@ three jobs.
 
 Same font-size, same line-height, same border — different vertical padding. A
 `.btn` read `--space-xs` and a `.field` read `--space-sm`, so they came out
-34px and 38px, and `.cluster`, `.bar` and `.toolbar` all centre: the pattern
+34px and 38px, and `.cluster`, `.bar` and `.toolbar` all center: the pattern
 built for a strip of controls put the button 2px below the row it belongs to.
 Measured in basecamp's filter bar, three controls at 38px and the submit at 34.
 
@@ -74,7 +106,7 @@ nothing caught this. Reverted, the spec reports `tops disagree by 2.0px`
 `align-items: center`. The two are paired in this package's own frame
 documentation and in the guide's shell demo, and paired they were broken: a bar
 holding more than fits did not shrink, scroll or clip — it laid a second row
-inside a fixed box and centred both, drawing half its contents ABOVE the bar and
+inside a fixed box and centered both, drawing half its contents ABOVE the bar and
 half BELOW, over the page.
 
 Measured in basecamp at 767px, in a 56px bar: `☰` at y=-4, the workspace

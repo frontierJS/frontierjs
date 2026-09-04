@@ -107,7 +107,7 @@ answers to *is this column unique*, and they disagree — Invariant 4's shape.
 emitted inside `CREATE TABLE` as `UNIQUE (cols)`, not as standalone indexes.
 A predicate cannot ride a table constraint, so every model carrying one would
 have to move to a separate `CREATE UNIQUE INDEX` — a table rebuild for a feature
-whose value is a slot-freeing behaviour the project already refused.
+whose value is a slot-freeing behavior the project already refused.
 
 **The asymmetry is what makes the index half safe.** A wrong predicate on a plain
 index costs a table scan. A wrong predicate on a unique index costs a duplicate
@@ -375,7 +375,7 @@ leaves both of the others open without prejudice.
    predicate where there is one. Interaction with the soft-delete predicate has
    to be decided: `AND` them, or refuse the pair. **`AND` them** — the soft-delete
    clause is what makes the index reachable at all on such a model, and dropping
-   it to honour a declaration would silently un-optimise every existing read.
+   it to honor a declaration would silently un-optimize every existing read.
 4. **The advise rule**, before this is documented as a feature anybody should use.
 5. `ddl.snapshot.sql` and `jsonschema.snapshot.md` regenerate; the `snapshots`
    CI phase catches any surface this touches that was not predicted.

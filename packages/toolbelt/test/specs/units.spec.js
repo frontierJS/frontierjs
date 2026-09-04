@@ -12,7 +12,7 @@ import { formatBytes, formatMoney, BYTE_UNITS, minorUnits, isKnownCurrency, know
 
 /* ── The ladder ────────────────────────────────────────────────────── */
 
-test('units: each step is 1024, labelled the familiar way', function () {
+test('units: each step is 1024, labeled the familiar way', function () {
   assert.equal(formatBytes(0), '0 B')
   assert.equal(formatBytes(900), '900 B')
   assert.equal(formatBytes(1024), '1.0 KB')
@@ -140,7 +140,7 @@ test('units: a MALFORMED code is the case the catch exists for', function () {
   assert.equal(formatMoney(12, 'US'), 'US 12.00')
 })
 
-test('units: a code is normalised, and an absent one falls to the default', function () {
+test('units: a code is normalized, and an absent one falls to the default', function () {
   assert.equal(formatMoney(12, 'usd'), '$12.00')
   assert.equal(formatMoney(12, ''),    '$12.00')
 })
@@ -156,7 +156,7 @@ test('units: minorUnits reads the currency, not a table we ship', function () {
   assert.equal(minorUnits('JPY'), 0)      // the yen has no minor unit
   assert.equal(minorUnits('KWD'), 3)
   assert.equal(minorUnits('CLP'), 0)
-  assert.equal(minorUnits('usd'), 2)      // normalised
+  assert.equal(minorUnits('usd'), 2)      // normalized
 })
 
 test('units: an unknown code THROWS rather than answering two', function () {

@@ -2,7 +2,7 @@
 // The result envelope — one module, one owner.
 //
 // `{ kind, object, data, errors, total?, limit?, offset? }` is the framework's
-// most-travelled shape. It used to be built in one place and taken apart in
+// most-traveled shape. It used to be built in one place and taken apart in
 // TWELVE others, each with its own idea of the rules:
 //
 //   bridge.toResponse   list → keep whole, single → unwrap unless $wrap
@@ -158,7 +158,7 @@ export class ResultShapeError extends Error {
   }
 }
 
-/** What arrived, in enough detail to recognise the return statement that sent it. */
+/** What arrived, in enough detail to recognize the return statement that sent it. */
 export function describeShape(value: unknown): string {
   if (value === null)      return 'null'
   if (value === undefined) return 'nothing'
@@ -240,7 +240,7 @@ export function wrapResult(raw: unknown, object: string, method = ''): ServiceRe
 
   // A stream is not a result — `FJS-D13`. Refused by name rather than wrapped,
   // because wrapping one is silent and total: a Response and a ReadableStream
-  // both have no enumerable own properties, so they serialise to `data: {}` and
+  // both have no enumerable own properties, so they serialize to `data: {}` and
   // the caller gets an empty object with a 200.
   const streaming = describeStream(raw)
   if (streaming) {

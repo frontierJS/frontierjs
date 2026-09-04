@@ -210,7 +210,7 @@ await db.user.findUnique({ where: { id: 1 }, withDeleted: true }) // → the row
 ## ~~@encrypted on a Json field silently destroys the value~~ — fixed 2026-08-06
 
 **Fixed.** `Json @encrypted` now round-trips. Kept here because the failure shape
-is worth recognising and because a database written before the fix still holds
+is worth recognizing and because a database written before the fix still holds
 the damage.
 
 It used to store the string `"[object Object]"`: the value reached the cipher

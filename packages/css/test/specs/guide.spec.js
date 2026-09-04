@@ -214,7 +214,7 @@ test('guide: every class in guide.js markup is shipped, its own, or named here',
 
 test('guide: every exception in NOT_SHIPPED_OK is still written by the guide', function () {
   /*
-   * The reverse direction. An exception that outlives its use is a licence
+   * The reverse direction. An exception that outlives its use is a license
    * nobody is using and the next reader has to evaluate.
    */
   var stale = Object.keys(NOT_SHIPPED_OK).filter(function (cls) {
@@ -651,10 +651,10 @@ var ACCEPTED_NEAR = {
   'sg-modal': 'rows: max-width,overflow-x,overflow-y',
 
   /*
-   * Already `class="card sg-preview-center"`. A centred box with a minimum
+   * Already `class="card sg-preview-center"`. A centered box with a minimum
    * height, which is what a preview needs so single-chip samples do not sit
-   * in a 20px-tall card. .avatars is a flex row that centres — true of any
-   * centred row, and an avatar stack is not what this is.
+   * in a 20px-tall card. .avatars is a flex row that centers — true of any
+   * centered row, and an avatar stack is not what this is.
    */
   'sg-preview-center': 'avatars: justify-content,min-height,height',
 };

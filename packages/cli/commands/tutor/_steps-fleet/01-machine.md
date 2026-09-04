@@ -17,7 +17,7 @@ Neither being here is a reason to think something is wrong: if you installed
 `fli` from npm this lesson has nothing to stand on, and it says so and stops.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 1
 

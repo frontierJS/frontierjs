@@ -534,7 +534,7 @@ describe('$withDeleted on a write', () => {
     expect(made.code).toBe('X')
   })
 
-  test('update by id honours it the same way', async () => {
+  test('update by id honors it the same way', async () => {
     const db  = await seedDeleted()
     const row = await svc().update(ctx(db, {
       service: 'docs', method: 'update', id: 1,
@@ -589,7 +589,7 @@ describe('$withDeleted on a write', () => {
     })).catch((e: Error) => e) as Error
 
     expect(toFrameworkError(err).code).toBe(400)
-    expect(err.message).toContain('$withDeleted is not honoured on remove')
+    expect(err.message).toContain('$withDeleted is not honored on remove')
     // The way out is named, or the refusal is a dead end.
     expect(err.message).toContain('PATCH')
   })
@@ -618,7 +618,7 @@ describe('$withDeleted on a write', () => {
       service: 'docs', method: 'remove', query: { code: 'X' }, directives: { withDeleted: true },
     })).catch((e: Error) => e) as Error
     expect(toFrameworkError(err).code).toBe(400)
-    expect(err.message).toContain('$withDeleted is not honoured on remove')
+    expect(err.message).toContain('$withDeleted is not honored on remove')
   })
 
   test('an ordinary remove is untouched, and so is a model that hides nothing', async () => {

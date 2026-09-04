@@ -173,7 +173,7 @@ const user = await db.user.create({
   }
 })
 
-// `select: false` is honoured and still returns null, but it does NOT skip the
+// `select: false` is honored and still returns null, but it does NOT skip the
 // RETURNING when there are children: a hasMany create needs the parent's id, so
 // the row is fetched internally and simply not handed back (`FJS-615`).
 
@@ -286,7 +286,7 @@ refused with the candidates listed.
 
 This is routine on a self-relational model: `parent` + `children` is **one** relation and
 needs no `via`, but add a second (`blocker`/`blocked`) and both need naming. Picking the
-first that fits was the old behaviour, and the count it returned answered a different
+first that fits was the old behavior, and the count it returned answered a different
 question with nothing in the value to say so.
 
 ### Operations

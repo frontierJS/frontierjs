@@ -25,7 +25,7 @@ chk('defaults: softDelete null', bare._meta?.softDelete === null)
 chk('defaults: cache false',     bare._meta?.cache === false)
 chk('no cache key when omitted', !('cache' in bare))
 
-// the three still-derived behaviours survive the fold
+// the three still-derived behaviors survive the fold
 const db = { $schema: parsed, lead: {} }
 const run = async (method, user, data) => {
   const ctx = { method, data, locals: { db }, auth: user ? { user } : {}, app: {} }

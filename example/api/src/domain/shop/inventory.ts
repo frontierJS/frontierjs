@@ -30,7 +30,7 @@
 // `transactional:` Junction reassigns `ctx.locals.db` to the transaction's
 // client for the length of the method, so a write through anything else is a
 // write OUTSIDE the transaction that was supposed to contain it — committed
-// while its neighbours roll back, and invisible until the day a checkout fails
+// while its neighbors roll back, and invisible until the day a checkout fails
 // half way. Passing the client makes that a decision at every call site.
 //
 // Which client to pass is the other half, and the answer is *whose act is
@@ -47,7 +47,7 @@
  *  tells the shopper the same number the sweep enforces. */
 export const HOLD_MINUTES = 20
 
-/** A Litestone client of some flavour. Deliberately loose: this module is
+/** A Litestone client of some flavor. Deliberately loose: this module is
  *  handed the caller's scoped client, a system client, or a transaction's, and
  *  the whole point is that it does not care which. */
 type Client = Record<string, any>
@@ -95,7 +95,7 @@ const nowIso = () => new Date().toISOString()
 /**
  * What may be sold, per variant.
  *
- * `exceptCartId` is the whole subtlety and it is not an optimisation. A shopper
+ * `exceptCartId` is the whole subtlety and it is not an optimization. A shopper
  * holding 2 of the last 5 who raises their line to 3 is asking whether 3 is
  * available — and it is, because the 2 they already hold are theirs. Summing
  * every hold answers 3, refuses the request, and the shopper cannot buy stock

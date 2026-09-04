@@ -19,7 +19,7 @@ The restart is not tidiness: an app reads `db/schema.lite` once, at
 it booted with.
 
 ```js
-narrate(context)
+if (!await narrate(context)) return
 
 context.config.__step = 5
 

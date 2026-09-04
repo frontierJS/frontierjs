@@ -91,7 +91,7 @@ describe('resolveSchemaPath', () => {
     expect(resolveSchemaPath({}, dir)).toBe(path)
   })
 
-  test('honours an explicit relative path', () => {
+  test('honors an explicit relative path', () => {
     const { dir, path } = fixture()
     expect(resolveSchemaPath({ schema: 'db/schema.lite' }, dir)).toBe(path)
   })

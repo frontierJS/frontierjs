@@ -96,7 +96,7 @@ export interface JunctionClientOptions {
    * against. Sierra's build stamps it into the page; an app may state it.
    *
    * Absent, nothing is compared and no `stale` event ever fires, which is the
-   * right behaviour for a dev server and for an app that does not build one in.
+   * right behavior for a dev server and for an app that does not build one in.
    */
   build?: string
   timeout?: number // request timeout ms, default 30_000
@@ -274,7 +274,7 @@ export class ServiceProxy<
    * server only when the app sets `apiPrefix: '/api'`. Junction's default is ''
    * (see registerServiceRoutes in core/app.ts) — so against a default app every
    * one of these requests 404'd. The prefix is now the client's, supplied once
-   * at construction and normalised the same way the server normalises its own.
+   * at construction and normalized the same way the server normalises its own.
    */
   private get _base(): string {
     return `${this._client._apiPrefix}/${this.name}`
@@ -299,7 +299,7 @@ export class ServiceProxy<
    * Throws `ResultShapeError` if the server answered anything that is not a list.
    */
   async find(query?: Record<string, unknown>, directives?: QueryDirectives): Promise<ListResult<T>> {
-    // Normalise whatever arrived into one shape, so callers see one shape:
+    // Normalize whatever arrived into one shape, so callers see one shape:
     // an envelope passes through, and everything else goes to the SAME
     // wrapResult the service layer uses, asked as `find`. This used to be a
     // hand-copy of that rule — array, then { total, data }, then an invented
@@ -498,7 +498,7 @@ export class ServiceProxy<
     // invent a throwaway id and post to `/{service}/null` — found writing
     // basecamp's fleet-wide event feed, where there IS no subject row.
     const path = id == null ? this._base : `${this._base}/${id}`
-    // A plain filter map, NOT QueryDirectives — so it is serialised plainly rather
+    // A plain filter map, NOT QueryDirectives — so it is serialized plainly rather
     // than through buildQueryString, which exists to turn {limit, orderBy, …}
     // into the `$`-prefixed directive syntax. A custom method declares its own query
     // vocabulary; the bridge still splits `$` keys off as directives if the
@@ -796,7 +796,7 @@ export class JunctionClient extends EventEmitter {
   }
 
   /**
-   * The API origin this client talks to, normalised to http(s).
+   * The API origin this client talks to, normalized to http(s).
    *
    * Public because a browser sometimes has to NAVIGATE to the API rather than
    * fetch it — an OAuth sign-in is a full-page redirect, so the URL has to be
@@ -900,7 +900,7 @@ export class JunctionClient extends EventEmitter {
   private _timeout: number
   private _reconnectDelay: number
   private _reconnectMax: number
-  // Read by ServiceProxy._base. Normalised at construction, never re-derived.
+  // Read by ServiceProxy._base. Normalized at construction, never re-derived.
   _apiPrefix: string
   private _authPrefix: string
   private _tokens: TokenStore | null
@@ -1050,7 +1050,7 @@ export class JunctionClient extends EventEmitter {
   // The store is scoped to the query its last load() ran with: given a `match`
   // (see ResourceOptions) a record outside that query is not added, and one that
   // has just left it is removed. Without a match every event applies, which is
-  // the old behaviour and still what a caller passing nothing gets.
+  // the old behavior and still what a caller passing nothing gets.
   //
   // Usage:
   //   const { service, store, load } = client.resource('leads')
@@ -1095,7 +1095,7 @@ export class JunctionClient extends EventEmitter {
     this.connect()
 
     // Wire WS push events → store mutations.
-    // A push carries the record (events are about one row), but normalise
+    // A push carries the record (events are about one row), but normalize
     // anyway so a server that sends an envelope still works. The old version
     // took `.data` off ANY object that had it — including a record with a
     // column named `data`, which it would silently replace with that column.
@@ -1214,7 +1214,7 @@ export class JunctionClient extends EventEmitter {
         // a comparator and is still the only defensible move — but the list can
         // now be longer than the page it claims to be, so say so rather than
         // trimming a row chosen at random. Dropping the row the user just
-        // created, to honour a page size, is the worse of the two.
+        // created, to honor a page size, is the worse of the two.
         store.upsert(record, idField)
         if (limit !== null && store.get().length > limit) stale.bump()
         return
@@ -1939,7 +1939,7 @@ export function createJunctionClient(opts: JunctionClientOptions = {}): Junction
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
-// Normalise a URL prefix to '' or '/segment[/segment…]'.
+// Normalize a URL prefix to '' or '/segment[/segment…]'.
 //
 // This is deliberately the same transform registerServiceRoutes() applies to
 // `apiPrefix` server-side (core/app.ts): strip any surrounding slashes, re-add
@@ -2052,7 +2052,7 @@ export interface StoreBinding {
  *
  * UNBOUND it is what it always was — rows, held here, no registry — and that
  * is not a compatibility shim: a `Store` is constructible on its own and the
- * standalone behaviour is what the membership and placement rules were written
+ * standalone behavior is what the membership and placement rules were written
  * and tested against.
  */
 export class Store<T extends Record<string, unknown> = Record<string, unknown>> {
@@ -2285,7 +2285,7 @@ export interface ResourceOptions<T extends Record<string, unknown> = Record<stri
    *
    * `true` → upsert, `false` → take it out of the list, `null` → cannot be
    * decided from the record alone, so the store reloads instead of guessing.
-   * Without one every event is applied, which is the pre-`FJS-011` behaviour.
+   * Without one every event is applied, which is the pre-`FJS-011` behavior.
    *
    * Sierra supplies `matchesQuery(fields, …)` from the model's own schema; this
    * package holds no schema, which is why the decision is passed in.

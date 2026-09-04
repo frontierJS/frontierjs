@@ -35,7 +35,7 @@ const IRREGULAR = {
   tooth: 'teeth',     foot: 'feet',      mouse: 'mice',    goose: 'geese',
   ox: 'oxen',         leaf: 'leaves',    life: 'lives',    knife: 'knives',
   index: 'indices',   matrix: 'matrices', vertex: 'vertices',
-  analysis: 'analyses', basis: 'bases',  crisis: 'crises',
+  analysis: 'analyzes', basis: 'bases',  crisis: 'crises',
   datum: 'data',      medium: 'media',   criterion: 'criteria',
 }
 
@@ -153,7 +153,7 @@ function rules(word) {
      `statuses` is `status` but `purchases` is `purchase`. Stripping `es` for
      both was the wrong way round — a singular ending in a bare `s` is a closed
      list (`status`, `bus`, `lens`) and a singular ending in `-se` is most of
-     the language (`case`, `release`, `licence`, `expense`, `response`,
+     the language (`case`, `release`, `license`, `expense`, `response`,
      `database`, `warehouse`, `phase`, `lease`, `clause`, `course`, `house`).
      So: strip one `s` by default, and strip `es` for the `-ss` stems and for
      the list.

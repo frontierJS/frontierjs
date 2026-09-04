@@ -42,7 +42,7 @@
 // Both regexes were verified against compiled output for a page, a layout, a
 // co-located component and a feature route. If the compiler's output shape
 // changes, `canInject` fails CLOSED and the caller keeps the old full-reload
-// behaviour rather than emitting broken code — which is what a bare pair of
+// behavior rather than emitting broken code — which is what a bare pair of
 // `.replace()` calls does, since a pattern that matches nothing is silent.
 const RE_DEFAULT_FN = /export default function (\w+)\(__anchor,\s*__props,\s*__block\)/
 const RE_POP        = /(\.pop_component\(\);)([\s\S]*?\n\})(?=\n\$\$runtime\.\$\$delegate|\s*$)/
@@ -55,7 +55,7 @@ export function canInject(js) {
 /**
  * @param {string} js       compiled component JS
  * @param {string} id       resolved module id (absolute)
- * @param {string} root     Vite root, for normalising the registry key
+ * @param {string} root     Vite root, for normalizing the registry key
  * @param {string} clientId the virtual id the caller serves its HMR client at
  * @returns {string}
  */

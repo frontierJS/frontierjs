@@ -44,7 +44,7 @@ export interface SessionContext {
   // "not yet" — otherwise every app would have to restate a lifecycle it
   // does not have in order to make @@gate usable at all.
 
-  /** When the user verified (email, phone, …). null = modelled, not verified. */
+  /** When the user verified (email, phone, …). null = modeled, not verified. */
   verifiedAt?:     Date | string | null
   /** When the account became active (plan chosen, invite accepted, …). */
   activatedAt?:    Date | string | null

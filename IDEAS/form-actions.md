@@ -7,7 +7,7 @@ dated: 2026-08-06
 # Idea — A mutation you can declare beside the page, that works without a bundle
 
 **Status: IDEA. Nothing here is built.** Dated 2026-08-06. Claims about current
-behaviour were read off the source with line numbers named. See `VERIFYING.md`.
+behavior were read off the source with line numbers named. See `VERIFYING.md`.
 
 ---
 
