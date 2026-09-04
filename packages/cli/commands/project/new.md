@@ -817,7 +817,14 @@ export default {
   },
 
   middleware: {
-    cors:          { origins: ['*'], credentials: true },
+    // A scaffolded app authenticates with a BEARER token, so it never needs a
+    // credentialed request and \`*\` is an ordinary local-development
+    // convenience. Turning on \`cookieAuth\` means a cookie, and a cookie means
+    // naming the origins that may hold a session: junction refuses \`*\` beside
+    // \`credentials: true\` at construction, because the browser refuses the
+    // literal \`*\` next to Access-Control-Allow-Credentials and the middleware
+    // would otherwise reflect whatever Origin arrived.
+    cors:          { origins: ['*'], credentials: false },
     helmet:        true,
     requestLogger: true,
     correlationId: true,
@@ -1224,13 +1231,20 @@ alongside.
 const name = arg.name
 const useHere = flag.here === true
 
+// Every refusal here sets `abort` before returning. A bare `return` after a
+// `log.error` exits 0, so `fli new` printed *Directory already exists* and
+// reported success — and everything that WRAPS this command believed it:
+// `npm create frontier`, a CI script, and the tutor, whose next assertion then
+// passed against the previous run's files (`FJS-589`'s rule, nine sites).
 if (!useHere && !name) {
   log.error('Project name is required. Use `fli new <name>` or `fli new --here`.')
+  context.config.abort = true
   return
 }
 
 if (name && !isValidProjectName(name)) {
   log.error(`Invalid project name: "${name}". Use lowercase letters, digits, and hyphens.`)
+  context.config.abort = true
   return
 }
 
@@ -1241,6 +1255,7 @@ const appName   = useHere ? basename(context.paths.root) : name
 
 if (!useHere && existsSync(targetDir)) {
   log.error(`Directory ${name}/ already exists. Use --here if you meant to scaffold into it, or pick a different name.`)
+  context.config.abort = true
   return
 }
 
@@ -1248,6 +1263,7 @@ if (useHere && !flag.force) {
   const entries = readdirSync(targetDir).filter(f => !f.startsWith('.'))
   if (entries.length > 0) {
     log.error(`Current directory is not empty (${entries.length} entries). Use --force to override.`)
+    context.config.abort = true
     return
   }
 }
@@ -1332,16 +1348,19 @@ if (useWorkspace) {
   const wsRoot = process.env.WORKSPACE_DIR || process.env.OUTLAW_DIR
   if (!wsRoot) {
     log.error('--workspace requires $WORKSPACE_DIR to be set.')
+    context.config.abort = true
     return
   }
   const wsResolved = resolve(wsRoot.replace(/^~/, process.env.HOME || ''))
   if (!existsSync(wsResolved)) {
     log.error(`$WORKSPACE_DIR does not exist: ${wsResolved}`)
+    context.config.abort = true
     return
   }
   const wsTarget = resolve(wsResolved, 'packages', name)
   if (existsSync(wsTarget)) {
     log.error(`Workspace package already exists: packages/${name}/`)
+    context.config.abort = true
     return
   }
   log.info(`Workspace mode — creating at ${wsTarget}`)
@@ -1371,6 +1390,7 @@ if (fjsSource !== 'local' && fjsSource !== 'npm') {
     ? '--source github is not supported yet.'
     : `Unknown --source "${fjsSource}".`
   log.error(`${hint} Use local (symlink to your packages) or npm (published).`)
+  context.config.abort = true
   return
 }
 
@@ -1411,6 +1431,7 @@ if (fjsSource === 'local') {
     log.error(`--source local: package(s) not found under ${packagesDir}:`)
     for (const m of missing) log.error(`  ${m}  (expected ${pkgDir(m)})`)
     log.info('Set $FJS_PACKAGES_DIR or $WORKSPACE_DIR, or use --source npm.')
+    context.config.abort = true
     return
   }
 }

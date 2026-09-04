@@ -46,15 +46,9 @@ const SINK = process.env.MAIL_SINK_URL ?? 'http://localhost:8111'
 const RUN  = Date.now().toString(36).slice(-6).toUpperCase()
 const REF  = `ORD-N${RUN}`
 
-for (const [name, url] of [['api (bun run api)', `${API}/api/health`], ['the mail sink', `${SINK}/outbox`]]) {
-  try {
-    const r = await fetch(url)
-    if (!r.ok) throw new Error(`HTTP ${r.status}`)
-  } catch (e) {
-    console.error(`Cannot reach ${name} at ${url} — ${e.message}`)
-    process.exit(1)
-  }
-}
+import { requireServers } from './lib/preflight.mjs'
+
+await requireServers([['api (bun run api)', `${API}/api/health`], ['the mail sink', `${SINK}/outbox`]])
 
 const got = {}
 const t = (label, value) => { got[label] = value }
@@ -258,7 +252,11 @@ try {
   }
 
   const failed = await until(async () => {
-    const jobs = await (await fetch(`${API}/api/jobs?limit=500`)).json()
+    // `?data=1` because this predicate reads the PAYLOAD. The admin route
+    // redacts `data` unless a request asks for it, so without the flag every
+    // row's `JSON.parse` throws, the filter matches nothing, and the drive
+    // reports the job as never having run.
+    const jobs = await (await fetch(`${API}/api/jobs?limit=500&data=1`)).json()
     return jobs.find(j => isForThisOrder(j) && j.error && j.status === 'pending') ?? null
   })
   t('mail.providerOutageIsRetried', failed ? {

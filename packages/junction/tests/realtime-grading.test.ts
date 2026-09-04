@@ -27,19 +27,20 @@ import { channels }       from '../src/transport/channels.ts'
 const SCHEMA = `
   model Order {
     id         Int    @id @default(autoincrement())
-    customerId String?
+    customerId Int?
     status     String @default("pending")
     @@gate("1.4.4.5")
     @@allow('read', customerId == auth().id || auth().isAdmin)
   }
 `
 
-// `customerId` is a String and that is deliberate. A `SessionContext` carries
-// `userId` as a string, so on an Int column `customerId == auth().id` is TRUE
-// through a query — SQLite applies the column's affinity — and FALSE in
-// `$readAs`, which compares in JS. That is a real divergence between the two
-// paths and it belongs to the Data boundary; grading it here would make this
-// file about a coercion rather than about who receives a frame.
+// `customerId` is an `Int` against a principal whose `userId` is TEXT, which is
+// the crossing the whole file used to be arranged around: a `SessionContext`
+// carries the id as a string, so `customerId == auth().id` was TRUE through a
+// query — SQLite applies the column's affinity — and FALSE in `$readAs`, which
+// compared in JS. The fixture used a `String` column to avoid it, so the suite
+// was green on the rarer shape (`FJS-713`). The Data boundary answers both the
+// same way now, and this is the column type that says so.
 
 // The write tap defers one event-loop tick and the frame then crosses a real
 // socket, so a yield is not enough — this is the only wait in the file and it
@@ -181,7 +182,9 @@ describe('a background write is graded like a published one (FJS-672)', () => {
     // names proves nothing: the owner receiving it is what separates *graded*
     // from *broadcasting nothing at all*.
     expect(owner.events.map(e => e.event)).toEqual(['orders created'])
-    expect(owner.events[0].data.customerId).toBe('5')
+    // Written as text into an Int column and stored as a number, which is the
+    // affinity the grading now agrees with rather than works around.
+    expect(owner.events[0].data.customerId).toBe(5)
     expect(anon.events).toEqual([])
     expect(other.events).toEqual([])
   })

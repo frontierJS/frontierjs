@@ -37,6 +37,24 @@ export type TargetAuth =
 
 export type FollowRedirects = 'never' | 'same-origin'
 
+// Per-target overrides for the conduit's own policy numbers. Each is the same
+// value, with the same meaning and the same default, as the ConduitOptions /
+// ResilienceOptions field it shadows — see those for what each one buys.
+//
+// An absent field is not zero: it defers to the conduit. `0` and `Infinity`
+// keep the meanings they have conduit-wide (`failure_threshold: 0` disables the
+// breaker, `max_concurrent: Infinity` removes the cap), so a target can opt out
+// of a policy the rest of the conduit runs under.
+export interface TargetPolicy {
+  timeout_ms?:         number
+  retry_limit?:        number
+  deadline_ms?:        number
+  max_response_bytes?: number
+  failure_threshold?:  number
+  reset_ms?:           number
+  max_concurrent?:     number
+}
+
 export interface TargetDescriptor {
   id:              string
   kind:            TargetKind
@@ -89,6 +107,36 @@ export interface TargetDescriptor {
   // valid for the request being made, or sends a key to an address the
   // descriptor never named.
   follow_redirects?: FollowRedirects
+
+  // How this target collapses a duplicate request, if it does.
+  //
+  // `header` is the name the key travels under. `Idempotency-Key` is the
+  // convention and the default, and it is not universal — PayPal reads
+  // `PayPal-Request-Id`, and a target that names something else silently
+  // received a header it ignores.
+  //
+  // `auto` mints a key for any non-idempotent request that carries none, once
+  // per `send()`, so every attempt inside one send carries the same key. It is
+  // declared on the TARGET because it is an assertion about the far end —
+  // *this counterparty collapses duplicates under this header* — which conduit
+  // cannot discover and a caller should not have to restate per call. Off by
+  // default: minting a key for a target that ignores it turns *we did not
+  // retry your charge* into four charges.
+  idempotency?:    { header?: string; auto?: boolean }
+
+  // What this target costs when it misbehaves. Every field falls back to the
+  // conduit-wide option of the same name, so a descriptor that states nothing
+  // behaves exactly as it did.
+  //
+  // It is per-target because the numbers are facts about one counterparty and
+  // nothing else: one conduit carries a card processor, a mail sink and an
+  // outpost, and 10s with three retries is generous for the mail sink, thin for
+  // a card capture, and absurd for a health probe. Held conduit-wide, the only
+  // way to say so was a second conduit, which also means a second registry and
+  // a second set of breakers. A field here was already being written by hand and
+  // dropped in silence — a descriptor carrying `timeout_ms: 1` let a 300ms
+  // request succeed (`FJS-728`).
+  policy?:         TargetPolicy
 
   registered_at:   number        // unix ms
   last_seen_at:    number | null
@@ -167,6 +215,21 @@ export interface ConduitRequest {
   // duplicates. Without it, POST and PATCH are never retried — a timed-out
   // `POST /servers` that actually committed must not create four servers.
   idempotency_key?: string
+
+  // The caller asserting that repeating this request is harmless, for a
+  // non-idempotent method conduit would otherwise not replay.
+  //
+  // A DIFFERENT claim from `idempotency_key`, which asserts the target collapses
+  // duplicates. Minting a payment intent is the case: it moves no money and the
+  // shop writes no row until it succeeds, so a second one costs nothing — while
+  // a key would be wrong, since after a decline the next attempt must be a new
+  // intent rather than the refused one handed back.
+  //
+  // Only the caller can know this: conduit sees a method and a path. Without
+  // either assertion a failed POST is returned rather than replayed, and its
+  // error says `retryable: false` and, where the outcome is open,
+  // `indeterminate: true`.
+  replayable?: boolean
 
   // Checks the decoded response before it is handed back. Without one,
   // `data` is an unchecked cast: a provider returning {"error": …} under
@@ -248,8 +311,31 @@ export type ConduitErrorKind =
   | 'timeout'
   | 'auth_failed'
   | 'not_implemented'
+  // 5xx ONLY. The target is broken, this is retryable, and it is the one
+  // response-shaped kind the breaker counts. It used to be every non-2xx and
+  // every unusable body as well, which put three unrelated things behind one
+  // word that three consumers branch on (`FJS-684`).
   | 'server_error'
   | 'stream_error'
+  // The target understood the request and refused it — any 4xx that is not a
+  // 401/403 (`auth_failed`), a 429 (`rate_limited`) or a 3xx (`redirected`).
+  // Its own kind for the reason each carve-out beside it has one: it is never
+  // retryable, since the same request gets the same 404, and it says nothing
+  // about the target's health, so it must not reach the breaker. Under
+  // `server_error` five 404s in a row opened the circuit on a target that had
+  // answered every one of them, after which correct requests were refused
+  // locally (`FJS-684`). `raw` carries the body, because a 4xx is the one
+  // failure whose payload the caller can usually act on — a validation report,
+  // a decline code.
+  | 'client_error'
+  // The target answered and the answer is unusable: HTML where a payload was
+  // expected, a body that did not parse as the JSON its own content-type
+  // claimed. Not retryable — the same request renders the same error page —
+  // and not a target fault, because a captive portal, a proxy interstitial or
+  // a wrong content-type is a misconfiguration and a breaker cannot heal one.
+  // A body that arrived SHORT is not this: that is a `connection_failed`,
+  // because the bytes stopped rather than being wrong.
+  | 'invalid_response'
   // The target asked us to slow down — HTTP 429, or 503 carrying `Retry-After`.
   // Its own kind rather than a `server_error`, because the two disagree on both
   // counts that matter: this one is always retryable, and it says nothing about
@@ -284,6 +370,19 @@ export interface ConduitError {
   message:   string
   retryable: boolean
   raw?:      unknown
+
+  // The request was dispatched and its outcome is unknown — it may have been
+  // applied at the target. Set where a transient fault ends a request conduit
+  // will not replay: a POST that timed out carrying no idempotency key is the
+  // case, and it is the difference between *this did not happen* and *this may
+  // have taken the money*. Never set where nothing left the process (a refused
+  // connection, a name that does not resolve) or where the target answered by
+  // refusing.
+  //
+  // Separate from `retryable`, which is the narrower question of whether
+  // sending it again is safe. Both are false here, and they are false for
+  // different reasons.
+  indeterminate?: boolean
 
   // How long the target asked us to wait, in milliseconds — parsed from
   // `Retry-After`, which is either a count of seconds or an HTTP-date. Set on
@@ -410,9 +509,13 @@ export interface ResilienceOptions {
   reset_ms?: number
 
   /**
-   * Max in-flight requests per target. Default: unlimited.
+   * Max in-flight requests per target. Default: 64.
    * Excess requests fail fast with `overloaded` rather than queueing —
-   * a bounded queue just moves the pile-up somewhere less visible.
+   * a bounded queue just moves the pile-up somewhere less visible, and
+   * unlimited was not unbounded either: it queued inside the connection pool
+   * with the attempt timer already running, so the wait came back as the
+   * target's timeout and opened its breaker (`FJS-685`).
+   * `Infinity` restores the old behaviour.
    */
   max_concurrent?: number
 }

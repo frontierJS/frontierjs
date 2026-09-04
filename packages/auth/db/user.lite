@@ -52,6 +52,13 @@ model User {
   // Registration is unaffected: every write this package makes goes through
   // asSystem(), which is above the ladder. The three models in auth.lite stay
   // at 8 — they hold the credential material, and that is the case 8 is for.
+  // @@auth names the principal model, which is what makes `auth().x` GRADED:
+  // without it litestone can check no claim name, and a misspelling compiles to
+  // NULL — which the SQL half reads as "nobody" and the JS half as "everybody",
+  // so one typo is a lockout on read and an open door on create (FJS-666). Every
+  // app scaffolded with `fli new --auth` booted with that warning and its
+  // policies unchecked.
+  @@auth
   @@gate("4.4.4.5")
   @@allow('update', id == auth().id || auth().isAdmin)
   @@log(audit)

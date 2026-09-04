@@ -148,9 +148,13 @@ describe('P0: webhook routes — auth required, secrets redacted', () => {
   async function makeWebhookApp() {
     const app = await createTestApp({
       config: { apiPrefix: '/api' },
-      users:  [{ id: 'admin-1', role: 'admin' }],
+      // `isAdmin`, not `role`: managing registrations needs level 5 and
+      // `sessionGateLevel` reads the standing fields (`FJS-681`).
+      users:  [{ id: 'admin-1', role: 'admin', isAdmin: true }],
     })
-    app.configure(webhooks({ events: [] }))   // store auto-created from app.db
+    // `allowPrivate` skips the destination lookup — this block is about the
+    // secret being shown once, not about where a hook may point.
+    app.configure(webhooks({ events: [], targets: { allowPrivate: true } }))   // store auto-created from app.db
     return app
   }
 
@@ -221,12 +225,19 @@ describe('P0: extractIP trust model', () => {
     expect(extractIP(spoofed, '203.0.113.9')).toBe('203.0.113.9')
   })
 
-  it('honors forwarded headers only when trustProxy is enabled', () => {
-    expect(extractIP(spoofed, '203.0.113.9', true)).toBe('6.6.6.6')
+  // `true` is ONE trusted hop, so the answer is what that proxy observed —
+  // the rightmost entry it appended — and never the leftmost, which is the
+  // one the caller wrote. This assertion is the fix inverted: it used to
+  // expect `6.6.6.6` (`FJS-744`).
+  it('reads the chain from the right when a proxy is trusted', () => {
+    expect(extractIP(spoofed, '203.0.113.9', true)).toBe('10.0.0.1')
+    expect(extractIP(spoofed, '203.0.113.9', true)).not.toBe('6.6.6.6')
   })
 
-  it('falls back to headers, then localhost, when no socket address exists', () => {
-    expect(extractIP(spoofed)).toBe('6.6.6.6')
+  it('trusts no header at all when there is no socket address', () => {
+    // Nothing observed this request, so there is nothing to anchor the chain
+    // to — believing a header here is the spoof the default exists to refuse.
+    expect(extractIP(spoofed)).toBe('127.0.0.1')
     expect(extractIP(new Request('http://localhost/'))).toBe('127.0.0.1')
   })
 })

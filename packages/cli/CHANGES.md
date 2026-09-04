@@ -1,5 +1,297 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-03 — `fli tutor:fleet`, and a column nothing writes
+
+`FJS-743`. Lesson 4 of four, and the tutorial is complete.
+
+**Lesson 4 is the other release story.** Lesson 3 is you holding the key,
+deploying one app to one machine with `fli deploy`. This one is a control
+plane: basecamp holds the fleet as rows, an Outpost is the process a machine
+runs so the control plane has hands on it, and nobody types a deploy — somebody
+clicks one, and a job sends a signed command to a machine that agreed to take
+orders. Seven steps, twenty-nine assertions, **3.1s in CI** — no Docker and no
+network, because the heartbeat reads `/proc` and the Outpost's disk report is
+allowed to fail.
+
+It starts a real control plane on a database of its own, sets it up, creates the
+machine as a row, starts a **real Outpost** against it, and then sends a command
+that really runs here. The last one is the lesson: four rows have to exist
+before there is anywhere to send it (`Project → Environment → App → AppServer`,
+then `Job`), and the assertion is a **nonce minted in this process a second
+earlier**, read back out of the `job_run` row the control plane wrote. A canned
+answer, a stubbed executor or a command that never left the control plane all
+fail it. The negative control was run by hand: with the Outpost stopped, the
+same trigger fails `ConnectionRefused`.
+
+**What the lesson teaches that no row can say** is what *reachable* means. The
+heartbeat moves `status` to `online` and fills `lastHeartbeatAt`, and neither of
+those is what anything outbound consults: the address becomes a Conduit target
+called `outpost:<id>`, and `resolveExecutor` asks the registry. **Online and
+unreachable is a real state**, and the two are different failures.
+
+Which is how `FJS-743` was found. `Server.outpostUrl` is declared, migrated, and
+named by the executor's own refusal — and written by nothing. The heartbeat
+carries the address and registers the target with it, then omits the column from
+the update three lines above. Measured: the row read `online` with a version, a
+health block and a timestamp, and `outpostUrl: null`, while the registry held
+the real address. Nothing reads the column either, so it is dead on both ends —
+and an operator reading a null there finds it agreeing with a sentence that is
+false.
+
+**Basecamp is `private: true`, so the lesson stops rather than fails** for
+anybody who installed from npm: step 1 looks for the two packages beside the CLI
+and exits 0 with a sentence and a clone command. Proven by running the CLI out
+of a copy with no siblings.
+
+Two smaller things it forced. `startServer` takes a `logs` directory, because a
+lesson that runs basecamp out of the checkout must not write its log beside
+somebody's source. And both of basecamp's databases are redirected, not one:
+the audit trail is a second `database` block with a relative path, so it follows
+the process CWD, and setting only `DATABASE_URL` writes the lesson's rows into
+the developer's own trail — which is `FJS-633`'s stated fix, applied to a third
+drive.
+
+`bun run ci`'s `tutor` phase runs all four lessons now; fleet takes 7120 and
+7180, basecamp's and outpost's own test-tier slots.
+
+**And the phase's first full run found an environment fact rather than a
+defect.** `tutor:deploy` under `--tmp` failed at `docker build` with
+*`lstat deploy: no such file or directory`* about a directory that is plainly
+there — this shell's `/tmp` is private to it, which is exactly the class
+`scaffold-build.mjs` already names for the `deploy` phase, down to the regex.
+With `FJS_CI_WORKDIR=$HOME/fjs-ci-work` the lesson is green at 71 assertions.
+`daemonBlindHint` is exported now and the tutor phase's failure says the same
+sentence, because two paragraphs about a private `/tmp` is how the second one
+ends up not mentioning the variable that fixes it.
+
+## 2026-09-03 — `fli tutor:deploy`, and the deploy pipeline did nothing under node
+
+`FJS-738`, `FJS-741`. Lesson 3 of four.
+
+**Lesson 3 deploys to this machine and takes it back.** A deploy target may be
+`localhost`, so the ten steps are the real pipeline — a real journal on disk, a
+real image, a real swap, a real health poll, a real revert. Point the app at a
+machine, write the release baseline (without it every change grades as a
+contract and the revert would be refused, correctly), clone the app into a
+`server/` directory as its own origin, deploy, change a line and deploy again,
+then **revert, and revert the revert**. Eighteen assertions; the ones that
+matter are against the image id the container is on, because a pipeline that
+reported success while leaving the old container up passes everything else.
+
+**And it found the largest defect of the day.** `execSync(cmd, { input, stdio:
+'inherit' })` **ignores `input` on node** and honours it on bun. Every command a
+deploy sends travels on stdin to `sh -s`, and `core/machine.js` defaulted to
+`stdio: 'inherit'` — so under node the `mkdir` that makes room for the journal
+runner, the container swap, the lock release and the nginx write all reported
+success and **did nothing** (`FJS-738`). Measured: `fli deploy:unlock --force`
+printed `Dropped …` with the lock still on disk. `bin/fli.js` is
+`#!/usr/bin/env node`, so that is what a global install gets; CI never saw it
+because the deploy phase runs `bun <fli>` explicitly. Fixed as
+`stdio: ['pipe', 'inherit', 'inherit']`. The suite runs under bun, where the bug
+does not reproduce, so the shape is asserted first — stdin piped, stdout and
+stderr not — and then the real `createMachine` is run under `node` and asked
+whether the script actually ran. All three fail against the old default; the
+file's existing executed tests missed it because every one of them passed
+`stdio: 'pipe'` explicitly.
+
+**Behind it, an app that developed against one auth and deployed another**
+(`FJS-741`). `fli auth:install` ran a bare `bun add @frontierjs/auth`, so a
+`--source local` scaffold had six `link:` siblings and auth from the registry —
+while `deploy:vendor` packed the workspace copy into the image. The container's
+`db:migrate` refused with a diff showing the tree's `Verification.id` as a uuid
+and the installed one as an `Int`. The spec is read off the app's own manifest
+now.
+
+The `tutor` phase gained lesson 3 on port 7103, skipped by name without a
+daemon, with the deploy phase's `FJS_CI_REQUIRE_DOCKER=1` escalation. The deploy
+transition cycle was re-run after the `machine.js` change and is still 12 of 12.
+
+## 2026-09-03 — `fli tutor:access`, and the tutorial is a CI phase
+
+`FJS-736`, `FJS-737`. Lesson 2 of four, and `bun run ci`'s thirteenth phase.
+
+**Lesson 2 changes one line of `db/schema.lite` at a time and shows the answer
+to the same HTTP request changing.** Nine steps: two callers (an ordinary
+account through the API, an administrator through the CLI — `role` is
+`@allow('write', auth().isAdmin)`, so the first admin cannot come from the API,
+and that asymmetry is the lesson arriving early); the gate as it already is; the
+read level raised from `0` to `4`, after which the request that answered 200 a
+moment ago answers 401; a row policy, where two accounts get 200 from one list
+endpoint and one of them cannot see the row; a field policy, where both callers
+send `done: true` and only one of the two rows carries it; and `fli test:access`,
+read back to check it agrees with the schema. **Every refusal is asked twice** —
+once by a caller who should be refused and once by an otherwise identical caller
+who should not — because a rule that refused everybody looks the same from the
+refused side. ~18s from an empty directory.
+
+Every answer in it was measured against a real scaffold before a word was
+written. Two came back different from what the plan assumed: raising a read gate
+answers **401**, not 403; and a field `@allow('write')` on a required column with
+no default is a **500** from SQLite rather than a refusal at the boundary, which
+is why the lesson adds `@default(false)` and says why.
+
+**The `tutor` phase** runs both lessons `--tmp --yes` on test-tier ports
+(7100/7000). It is the phase for the document that had no compiler behind it:
+`docs/QUICKSTART.md` §7 exited 0 on every command it named and had never put an
+app on a server. What it catches is a command renamed out from under a step, a
+scaffold whose default gate moved, an answer the framework changed — none of
+which any suite here can see. No Docker, no network. A port already held is a
+named SKIP rather than a finding, because refusing a busy port is the lessons'
+own rule; `knownTutorFailures` ratchets like the rest.
+
+**`fli auth:*` had rotted through five layers** (`FJS-736`) and lesson 2 is what
+found it, because it needs `auth:create-user` to make an administrator. Each
+layer hid the next: a free `loadEnv`, then a `createClient` signature litestone
+stopped having, then `sys.users` where the accessor is `db.user`, then
+`context.exec({ capture: true })` — not an option, so the default `inherit`
+stood and **`auth:create-user` created the account and reported failure** — then
+`take:` where litestone names it `limit:`. Two files in this tree already carry
+a comment saying `capture: true` is not real. All five parse; nothing had run
+them against an app since litestone's API moved, and `tutor:access` is that
+caller now.
+
+**And `@@auth` was missing from the User model auth ships** (`FJS-737`), so
+every scaffolded app graded its policy claims against nothing and printed
+litestone's warning about it on every boot. A misspelled claim there is a
+lockout on read and an open door on create. The lesson teaches the line rather
+than assuming it.
+
+## 2026-09-03 — `fli tutor:app` runs end to end
+
+`FJS-735`. Lesson 1 of four, and the first one that can be run.
+
+Six steps landed on top of the three that existed: start both servers and prove
+they answer, register an account and keep the token, scaffold a model, push it
+into the database and restart the API through it, write a row and read it back
+out of `db/app.db`, build, and stop what was started. `fli tutor:app --tmp --yes`
+is **green end to end in about 7 seconds** with a warm bun cache, and re-running
+it replays every finished step into a no-op.
+
+**Three things a running server forced.** A process is the one thing a journal
+cannot hold — the row says `succeeded` and the port is dead — so `makeRecorder`
+takes `ephemeral`, a list of steps that are recorded and never replayed;
+`04-run` and `10-finish` are named there. Whatever a run starts, that run stops:
+`openTutor` traps `exit`, `SIGINT`, `SIGTERM` and `SIGHUP`, because `--step N`
+never reaches the teardown step and a Ctrl-C reaches nothing at all — without it
+a lesson leaves the dev server that its own step 1 then refuses on, and blames
+the person for it. And a step that talks to the API asks for it (`ensureApi`)
+rather than assuming: `needs()` covers a missing FACT and cannot cover a missing
+process, which is what made `--step 8` report an expired token.
+
+**`fli new`'s refusals exited 0** — nine of ten, `log.error` then a bare
+`return`, where the ruled refusal is `context.config.abort` (`FJS-589`).
+`--restart` is what surfaced it: the scaffold refused, `context.exec` saw
+success, and the step's file probes then passed against the previous run's
+files. That reaches past this repo — `npm create frontier` forwards to this
+command.
+
+Smaller, all measured rather than assumed: the ports are `--api-port` /
+`--web-port` and every printed URL comes from them, since a machine with a busy
+8000 could not run the lesson at all; `httpJson` returns the PARSED body beside
+the truncated `detail`, because a caller reading a token back out of a 400-character
+diagnosis fails on a correct response that is longer than the cut; `writeJournal`
+answers `null` for a workspace that has been swept, which is the order the
+teardown step and the runner actually run in; `needs()` maps each missing fact to
+its own step; and step 3's gate sample is `4.4.4.5`, which is what a scaffolded
+`User` carries — the `0.4.4.6` it claimed is the scaffolded `Note`'s, three
+steps later, and asserting both is now the point of the pair.
+
+## 2026-09-03 — five commands that could not run, and the check that found them
+
+`FJS-730`, `FJS-731`, `FJS-732`. Design record: `IDEAS/scope-checking.md`.
+
+`FJS-726` was a free identifier, so the obvious next question was how many more
+there are. A prototype answers it: parse the compiled unit the RUNTIME builds —
+namespace module script prepended — and resolve every identifier against real
+lexical scopes. Over **237 command units** it found **four live defects on a
+green tree**, and a fifth stacked behind the first.
+
+**Four `fli auth:*` commands and `make:schema` threw on a free name.**
+`loadEnv({ path: envPath })` is a `core/utils.js` export, not a global and not a
+zx global, so `auth:list-users`, `auth:create-user`, `auth:revoke-sessions` and
+`auth:rotate-key` all died at the line that reads `.env` — and the call was
+redundant besides, since `bootstrap.js` loads the project's `.env` with override
+before any command runs. `make:schema` did the same with `resolve`, inside an
+`await import(…).catch(…)` where the throw is evaluating the argument and the
+catch never sees it; the binding it imported was unused.
+
+**`fli db:schema` could not load at all.** The `db` namespace module imports
+`existsSync` and `resolve`, and the command imported both again — one module, so
+a duplicate declaration and a `SyntaxError`. A `_module.md` helper reaching for
+a binding by importing it breaks every command in that namespace that imports
+the same name, which is why `requireAuthInstalled` now says `fs.readFileSync`.
+
+**And behind the first, a signature that had moved.** All four auth commands
+generate `createClient('<path>', { encryption: { key } })`; litestone takes one
+object, `createClient({ path, encryptionKey })`, which `auth:install`'s own
+generated `db.ts` already writes correctly. Two defects stacked in one command is
+this class's normal shape — `FJS-726` hid `FJS-727` exactly the same way —
+because code nothing has ever run accumulates faults in layers and only the
+outermost is visible.
+
+Two things the prototype measured rather than assumed. A flat *declared anywhere
+in the module* set **misses `deployConf`**, since it is a parameter of three
+sibling functions in the same file, so this class needs real scope chains or it
+needs nothing. And resolving a step's namespace from its own frontmatter title
+rather than its orchestrator's reports **27 free names instead of 0** — the unit
+is the join, not the file.
+
+Nothing is committed but the fixes and the write-up: the checker itself is
+`IDEAS/scope-checking.md` 0.10, and its one open decision is a parser dependency.
+The tree now answers 0 free identifiers and 0 parse failures over 237 units,
+which is what would let a rule go in at zero rather than at a baseline.
+
+## 2026-09-03 — the deploy pipeline could not deploy, and a scaffolded app could not start
+
+`FJS-726`, `FJS-727`, `FJS-725`. 1648 pass (35 new).
+
+**`swapContainer` named a variable in no scope it could see.** `dockerLogArgs(deployConf)`
+was a free identifier — the function's options are
+`{ host, container, image, apiPort, dbPath, envFile, build, log }` and neither
+caller passed it, though both had it in their own scope. The throw lands while
+building the `docker run` line, which is AFTER `docker rename <c> <c>_replaced`
+and `docker stop`: measured against the pre-fix source, two commands are already
+on the machine, so a deploy took the running app down and never put anything up.
+`_steps-revert/03-swap` calls the same function, so the way back was broken the
+same way.
+
+Three things kept it invisible, and they compose. The parse sweep parses and
+does not resolve scopes, which is `FJS-269`'s class one layer along; both callers
+read correctly on their own, because each has its own `deployConf`; and
+`deployJournalCycle` is the only thing in the repo that runs `fli deploy` at all.
+It was failing here, which is why every assertion past this line — the journal,
+the resume, the revert — had never run.
+
+`deployConf` is an explicit option now, like every other value the function
+takes. The eight new tests drive the real function through an injected
+`context.exec` and assert what the failure destroyed: that a `docker run` line is
+produced at all, the rename → stop → run ORDER, the log driver reaching the
+command, and that `logs: false` still starts a container. The capture reads
+`input` rather than `command`, because the script travels on stdin to `sh -s` and
+a test watching the command line sees nothing but `sh -s`.
+
+**Behind it, every scaffolded app refused to start.** `fli new` writes
+`cors: { origins: ['*'], credentials: true }`, and junction refuses that pair at
+CONSTRUCTION (`FJS-689`) — so `runStartPhases` throws, the container exits 1, the
+health poll fails and the deploy rolls back reporting *health check failed* about
+an app the framework declined to run. Two layers of never-executed code, the
+second invisible while the first threw earlier in the same step. A scaffolded app
+authenticates with a bearer token and never needed a credentialed request.
+
+**And a step's `printPlan()` rendered the orchestrator's prose.** `stepContext`
+is spread from the orchestrator's, so `filePath` and `printPlan` named `index.md`
+inside every step. Rebound in `runOneStep`, with a fixture and four tests
+captured off stdout — the prose renderer writes to the terminal directly, so no
+event assertion could have seen it.
+
+**New, and the reason all three were found:** `core/prompt.js` (one prompt engine
+over a TTY and a pipe, `--yes` never opening stdin), `core/probe.js` (the
+assertions a tutorial step ends with — http, ports, files, sqlite, docker — every
+one answering rather than throwing, so a refusal goes through `context.config
+.abort` and the teardown still runs), and `core/tutor.js` (a lesson's workspace,
+its resume journal, and `pointAtLocalServer`, which `scripts/scaffold-build.mjs`
+now imports rather than keeping its own copy of).
+
 ## 2026-09-02 — `-d` is `--dry`
 
 `FJS-653`. 1566 pass (7 new).

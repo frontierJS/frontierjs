@@ -83,6 +83,18 @@ export abstract class BaseTransport {
     return out
   }
 
+  /**
+   * The header this target's idempotency key travels under.
+   *
+   * `Idempotency-Key` is the convention and was hardcoded. It is not
+   * universal — PayPal reads `PayPal-Request-Id` — and a wrong name is
+   * silent in the worst way: the key is sent, the target ignores it, and a
+   * retry the caller believed was collapsed is a second charge.
+   */
+  protected idempotencyHeader(): string {
+    return this.descriptor.idempotency?.header ?? 'Idempotency-Key'
+  }
+
   protected timer() {
     const start = performance.now()
     return () => Math.round(performance.now() - start)

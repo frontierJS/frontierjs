@@ -87,12 +87,72 @@ interface TargetDescriptor {
   address:       string      // base URL or socket path
   auth:          TargetAuth
   encoding?:     'json' | 'form'   // how bodies go on the wire; default 'json'
+  idempotency?:  { header?: string; auto?: boolean }
+  policy?:       TargetPolicy // what this one costs when it misbehaves
   registered_at: number      // unix ms
   last_seen_at:  number | null
 }
 ```
 
 Targets can be registered statically at startup (see `opts.targets`) or dynamically at runtime (see `register()`).
+
+### Policy
+
+One conduit carries a card processor, a mail sink and a health probe, and 10s
+with three retries is generous for one, thin for another and absurd for the
+third. Every policy number can be stated on the target, and each falls back to
+the conduit-wide option of the same name — state one and the rest are unchanged.
+
+```ts
+interface TargetPolicy {
+  timeout_ms?:         number   // per attempt
+  retry_limit?:        number   // retries after the first attempt
+  deadline_ms?:        number   // total wall clock for one send()
+  max_response_bytes?: number
+  failure_threshold?:  number   // consecutive faults before the breaker opens; 0 disables
+  reset_ms?:           number   // how long it stays open
+  max_concurrent?:     number   // in-flight cap; Infinity removes it
+}
+```
+
+```ts
+{ id: 'provider:stripe', /* … */ policy: { timeout_ms: 20_000, retry_limit: 1 } }
+{ id: 'local:mail',      /* … */ policy: { timeout_ms: 2_000,  max_concurrent: 8 } }
+```
+
+### Retries and idempotency
+
+A non-idempotent method — POST, PATCH — is replayed only when there is an
+idempotency key, and the error from one conduit refused to replay says so:
+`retryable: false`, because that flag is what the layer above acts on. It carries
+`indeterminate: true` where the request went out and its outcome is unknown,
+which is the question a payment caller actually has and is not the same as
+whether sending it again is safe.
+
+```ts
+{ id: 'provider:paypal', /* … */ idempotency: { header: 'PayPal-Request-Id' } }
+{ id: 'provider:psp',    /* … */ idempotency: { auto: true } }
+```
+
+A caller with no key can still say the request is safe to repeat:
+
+```ts
+await conduit.send({ target: 'provider:psp', method: 'POST', path: '/intents',
+                     body, replayable: true })
+```
+
+That is a different claim from a key — a key says the target collapses
+duplicates, `replayable` says repeating costs nothing — and conduit, which sees
+a method and a path, can make neither on the caller's behalf.
+
+`header` defaults to `Idempotency-Key`. `auto` mints a key for any
+non-idempotent request that carries none, once per `send()` so every attempt
+inside one send carries the same one — it is off by default, because minting a
+key for a target that ignores it turns one refused retry into four charges.
+
+An unknown field, or a value that cannot mean anything, is refused by name at
+`register()` — a policy field is written by hand, and being quietly ignored is
+how a target declared with a 1ms timeout answers a 300ms request as a success.
 
 ### Auth
 
@@ -118,7 +178,7 @@ The signature covers a canonical string, not just the body:
 emitted as three headers (prefix configurable via `header_prefix`, default `X-Fjs`):
 
 ```
-X-Fjs-Signature: sha256=<hex>
+X-Fjs-Signature: v1-sha256=<hex>
 X-Fjs-Timestamp: <unix seconds>
 X-Fjs-Nonce:     <uuid>
 ```
@@ -233,7 +293,9 @@ This holds for bad input too: a body that will not serialise (a cyclic object, a
 | `timeout` | yes | exceeded `timeout_ms`, including during the response body read |
 | `connection_failed` | yes | could not reach the target, or the conduit has been destroyed |
 | `rate_limited` | yes | 429, or a 503 that named a `Retry-After`. Carries `retry_after_ms`, which the retry ladder waits instead of its own backoff, and **does not count toward the circuit breaker** — a rate limit says the target is healthy and we are asking too fast |
-| `server_error` | 5xx yes, 4xx no | the target responded with an error status |
+| `server_error` | yes | 5xx **only**. The one response-shaped kind the breaker counts |
+| `client_error` | no | any other 4xx — the target understood and refused. `raw` carries the body, which on a 4xx is usually the half you can act on: a validation report, a decline code |
+| `invalid_response` | no | the target answered and the answer is unusable — HTML where a payload was expected, a body that did not parse as the JSON it claimed, or a response that failed the `validate` you declared |
 | `not_implemented` | no | the target's protocol has no transport yet (`ssh`, `nats`) |
 | `circuit_open` | no | the target's breaker is open — nothing was sent |
 | `overloaded` | no | the target's concurrency cap is full — nothing was sent |
@@ -287,7 +349,7 @@ conduit({
   resilience: {
     failure_threshold: 5,       // consecutive failures before opening (0 disables)
     reset_ms:          30_000,  // how long it stays open
-    max_concurrent:    10,      // per-target in-flight cap (default: unlimited)
+    max_concurrent:    10,      // per-target in-flight cap (default: 64)
   }
 })
 ```
@@ -296,7 +358,9 @@ Open → requests fail immediately with `circuit_open` and **nothing leaves the 
 
 Only failures that implicate the target count — `connection_failed`, `timeout`, `server_error`. An unresolvable credential, an unserialisable body or a typo'd method is your bug, and tripping a breaker on it would hide the real error behind `circuit_open` forever.
 
-Beyond `max_concurrent`, requests fail fast with `overloaded` rather than queueing — a bounded queue just moves the pile-up somewhere less visible. Breaker state per target shows up in `stats().breakers`, and only for targets that are not healthy-and-idle.
+**Which is why `server_error` is 5xx and nothing else.** It used to be every non-2xx and every unusable body as well, and one word fed three consumers that disagree about it: the retry decision, the `retryable` flag a background job acts on, and this count. Five 404s in a row opened the breaker on a target that had answered every one of them, after which correct requests were shed locally (`FJS-684`). A 404 is not evidence of an outage and neither is an error page; `client_error` and `invalid_response` say so and stay out of the count.
+
+Beyond `max_concurrent`, requests fail fast with `overloaded` rather than queueing — a bounded queue just moves the pile-up somewhere less visible. **The default is 64 rather than unlimited**, because unlimited was not unbounded either: a burst queues inside the connection pool with the per-attempt timer already running, so the wait comes back as the target's own timeout. Measured at 5000 concurrent against a target that answered every request: 10s, 136 timeouts, 533 file descriptors, breaker open. Pass `Infinity` for the old behaviour. Breaker state per target shows up in `stats().breakers`, and only for targets that are not healthy-and-idle.
 
 #### Validating responses
 
@@ -315,7 +379,7 @@ const result = await app.conduit.send<Server>({
 })
 ```
 
-The interface is structural, not tied to a schema library, so Junction's `createSchema`, zod, valibot or a hand-written predicate all fit with a small adapter. A failure returns a non-retryable `server_error` with the raw payload on `error.raw`.
+The interface is structural, not tied to a schema library, so Junction's `createSchema`, zod, valibot or a hand-written predicate all fit with a small adapter. A failure returns a non-retryable `invalid_response` with the raw payload on `error.raw`.
 
 To opt a specific call in, pass an idempotency key — your assertion that the target collapses duplicates. It is forwarded as an `Idempotency-Key` header:
 
@@ -539,21 +603,39 @@ Observers may be `async`. They are **never awaited** — an exporter that takes 
 
 ### Trace context
 
-Nothing otherwise ties a Hub request to the outpost call it produced. `createTraceContext()` emits a W3C `traceparent` and a correlation id on every outbound request:
+**Under the Junction plugin this is on by default.** Every outbound call
+carries a `traceparent` and an `X-Request-Id`, so a target's logs join to the
+request that caused them:
+
+- a `traceparent` the caller sent is **continued** — same trace, a fresh span,
+  so the target's work hangs off yours;
+- with none, the trace id is **derived from the correlation id**, so every call
+  made during one request shares one trace. A random id per call would make six
+  calls six unrelated traces. Junction mints correlation ids with
+  `crypto.randomUUID()`, and a uuid with its dashes out already IS a trace id;
+- outside a request — a job, a script — a fresh trace is minted, which is the
+  right answer rather than a missing one.
+
+The default sits *under* your own options, so wiring a tracer replaces it whole:
 
 ```ts
-import { createTraceContext } from '@frontierjs/conduit'
+import { createTraceContext, parseTraceparent } from '@frontierjs/conduit'
 
 conduit({
   trace: createTraceContext({
-    // Join the inbound request's trace instead of starting a new one.
-    // Junction exposes a correlation id via requestMeta().
-    current: () => ({ trace_id: requestMeta()?.correlationId }),
+    current: () => parseTraceparent(myTracer.activeHeader()),
+    correlation_header: 'X-Correlation-Id',
   }),
 })
+
+conduit({ trace: () => null })   // off
 ```
 
-A fresh span id is minted per call, so the target's work hangs off yours rather than replacing it. A malformed upstream trace id is discarded and replaced rather than propagated — collectors drop a bad `traceparent`, so passing one through loses the span entirely.
+A malformed upstream trace is discarded and replaced rather than propagated —
+collectors drop a bad `traceparent`, so passing one through loses the span
+entirely. Only version `00` is read: a later version may append fields, and
+forwarding ids out of a format this does not understand is worse than starting
+fresh.
 
 Precedence: trace headers sit under `req.headers`, which sit under auth. A caller can override a traceparent; nobody can displace a credential.
 

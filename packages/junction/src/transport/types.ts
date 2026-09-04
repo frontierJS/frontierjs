@@ -253,6 +253,22 @@ export interface WsData {
   // Reference to the matched handler set — set at upgrade time so
   // _wsOpen/_wsMessage/_wsClose don't need to re-run route lookup.
   handlers: WsHandlerSet
+  // Per-socket inbound accounting (`FJS-705`). On `ws.data` rather than in a
+  // Map keyed by the socket, because a Map outlives a connection that closed
+  // without a close event and this cannot.
+  limits?: {
+    // Token bucket: `tokens` refilled toward the burst allowance at
+    // maxFramesPerSecond, `refilled` the instant it was last topped up.
+    tokens:    number
+    refilled:  number
+    // Frames currently being handled. A frame is in flight until its handler
+    // settles, which is what makes this different from the rate: a slow call
+    // holds one for as long as it runs.
+    inFlight:  number
+    // When the last refusal was sent. One frame per second at most: an error
+    // per dropped frame is the amplifier the limit exists to remove.
+    told:      number
+  }
 }
 
 export interface WsContext {

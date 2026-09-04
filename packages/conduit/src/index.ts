@@ -22,7 +22,11 @@ export {
 } from './credentials.ts'
 
 // Trace context propagation
-export { createTraceContext } from './trace.ts'
+// `parseTraceparent` and `traceIdFrom` are exported for the same reason the
+// factory is: an app wiring its own tracer replaces the default whole, and
+// then needs the two readings the default was using rather than a second copy
+// of the W3C format.
+export { createTraceContext, parseTraceparent, traceIdFrom } from './trace.ts'
 export type { TraceContextOptions } from './trace.ts'
 
 // Test doubles are NOT exported here. StubTransport and createTestConduit

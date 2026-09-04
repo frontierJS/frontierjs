@@ -822,9 +822,18 @@ Row by row rather than one `UPDATE` because that is what applies the schema. Lit
 | `port` | `number` | `3000` | HTTP port |
 | `hostname` | `string` | `'0.0.0.0'` | Bind address |
 | `apiPrefix` | `string` | `''` | Prefix for every route the app registers — `''` mounts services at `/{service}` |
-| `http.drainTimeout` | `number` | `5000` | ms to drain requests on shutdown |
+| `http.drainTimeout` | `number` | `5000` | ms a socket gets to finish during shutdown |
+| `shutdown.timeout` | `number` | `15000` | ms the WHOLE shutdown gets. Past it the process exits **1** rather than waiting — a hung step used to end with node exiting 0 |
+| `shutdown.pluginTimeout` | `number` | `5000` | ms each plugin's `shutdown()` gets. One that never settles is logged and skipped instead of taking the rest of the list with it |
+| `shutdown.crashHandlers` | `boolean` | `true` | install `unhandledRejection`/`uncaughtException` handlers that log, stop the app and exit 1. Skipped where the app already has its own |
 | `http.compress` | `boolean` | `true` | gzip responses |
 | `http.maxBodySize` | `number` | `262144` | max request body bytes |
+| `http.ws.maxFrameBytes` | `number` | `maxBodySize` | largest inbound frame this app accepts. Refused by name — 1009 `frame_too_large` — because Bun's own ceiling closes with a bare 1006 that reads as the network dropping. Follows `maxBodySize` by default: a socket must not be a wider door than a POST |
+| `http.ws.maxPayloadLength` | `number` | `1048576` | the runtime's ceiling — what this process will buffer at all |
+| `http.ws.maxFramesPerSecond` | `number` | `100` | per socket, token bucket, burst 2x. Over it a frame is dropped and the client is told once a second |
+| `http.ws.maxInFlight` | `number` | `32` | concurrent unresolved frames per socket. The rate bounds arrivals; this bounds outstanding work |
+| `http.ws.maxConnectionsPerIp` | `number` | `256` | refused at the upgrade with a 503, so the caller reads a status rather than a close code. 0 is unlimited |
+| `http.ws.maxConnections` | `number` | `0` | total sockets. Unlimited by default — only an operator knows what the box holds |
 | `cache.defaultTtl` | `string` | `'5 minutes'` | default cache entry TTL |
 
 ### Where the services are

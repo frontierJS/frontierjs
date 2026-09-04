@@ -1,6 +1,6 @@
 ---
 id: compliance-from-the-seed
-status: idea
+status: proposed
 dated: 2026-08-04
 ---
 

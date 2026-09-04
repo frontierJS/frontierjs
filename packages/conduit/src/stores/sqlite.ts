@@ -33,7 +33,7 @@ const CREATE_TABLE = `
 // A descriptor field absent from this list is dropped on write with nothing
 // said — the row round-trips, the target works, and the field it was declared
 // with is simply not there after a restart (`FJS-657`).
-const EXTRA_KEYS = ['encoding', 'headers', 'follow_redirects'] as const
+const EXTRA_KEYS = ['encoding', 'headers', 'follow_redirects', 'policy', 'idempotency'] as const
 
 // `CREATE TABLE IF NOT EXISTS` does nothing to a table that already exists, so a
 // registry written before this column simply lacks it. Added idempotently rather
@@ -138,7 +138,14 @@ function serializeExtra(descriptor: TargetDescriptor): string | null {
     const value = descriptor[key]
     if (value !== undefined) extra[key] = value
   }
-  return Object.keys(extra).length ? JSON.stringify(extra) : null
+  // `Infinity` is a documented policy value — `max_concurrent: Infinity` removes
+  // the cap — and JSON.stringify writes it as `null`, which reads back as *field
+  // absent* and silently restores the cap the target opted out of. Carried as a
+  // string and revived below; the same shape a registry that drops a field it was
+  // given has (`FJS-657`), one value deep instead of one field deep.
+  return Object.keys(extra).length
+    ? JSON.stringify(extra, (_k, v) => (v === Infinity ? '@Infinity' : v))
+    : null
 }
 
 function deserialize(row: RawRow): TargetDescriptor {
@@ -160,7 +167,7 @@ function deserialize(row: RawRow): TargetDescriptor {
 function parseExtra(raw: string | null): Partial<TargetDescriptor> {
   if (!raw) return {}
   try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const parsed = JSON.parse(raw, (_k, v) => (v === '@Infinity' ? Infinity : v)) as Record<string, unknown>
     const out: Record<string, unknown> = {}
     for (const key of EXTRA_KEYS) {
       if (parsed[key] !== undefined) out[key] = parsed[key]

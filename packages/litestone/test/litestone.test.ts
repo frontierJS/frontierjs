@@ -19,6 +19,10 @@ import { splitStatements, introspect,
          summariseDiff }              from '../src/core/migrate.js'
 import { createClient, ValidationError } from '../src/core/client.js'
 import { AccessDeniedError }              from '../src/core/plugin.js'
+// The stored envelope is asserted by PARSING it rather than by a prefix
+// substring: the prefix moved once (`v1.` → `v2.<kid>.`, FJS-714) and every
+// one of these read as a green test against a format that no longer existed.
+import { parseEnvelope, keyId }           from '../src/core/encryption.js'
 import { buildWhere, buildOrderBy, sql, now,
          encodeCursor, decodeCursor,
          normaliseOrderBy, buildCursorWhere,
@@ -5857,9 +5861,9 @@ describe('@encrypted field policy', () => {
     // stored column IS a deliberate bypass, so saying so is right — this test
     // was the first caller the refusal caught.
     const raw = await db.asSystem().sql`SELECT ssn, email, token FROM user WHERE id = 1`
-    expect(raw[0].ssn.startsWith('v1.')).toBe(true)
-    expect(raw[0].email.startsWith('v1d.')).toBe(true)
-    expect(raw[0].token.startsWith('v1h.')).toBe(true)
+    expect(parseEnvelope(raw[0].ssn)).toMatchObject({ version: 2, mode: 'enc' })
+    expect(parseEnvelope(raw[0].email)).toMatchObject({ version: 2, mode: 'det' })
+    expect(parseEnvelope(raw[0].token)).toMatchObject({ version: 2, mode: 'hash' })
   })
   test('deterministic: the same plaintext encrypts to the same bytes, and that is the mechanism', async () => {
     await db.asSystem().user.create({ data: { id: 3, name: 'Alice2', ssn: 'x', email: 'alice@example.com', token: 'tok-3' } })
@@ -6263,7 +6267,7 @@ describe('@encrypted on a Json field', () => {
     // The point of the feature. A round-trip test alone would also pass if the
     // field were simply not encrypted at all.
     const raw = db.$rawDbs.main.query('SELECT blob FROM vault WHERE id = 1').get() as any
-    expect(String(raw.blob).replace(/^"/, '').startsWith('v1.')).toBe(true)
+    expect(parseEnvelope(String(raw.blob).replace(/^"/, ''))).toMatchObject({ version: 2, mode: 'enc' })
     expect(String(raw.blob)).not.toContain('hunter2')
     expect(String(raw.blob)).not.toContain('[object Object]')
   })
@@ -6388,7 +6392,7 @@ describe('@secret field attribute', () => {
     const db = await makeDb(`model Secret { id Int @id; token String @secret }`, 'secret-enc', { encryptionKey: ENC_KEY })
     await db.asSystem().secret.create({ data: { token: 'mysecret' } })
     const raw = db.$db.query(`SELECT token FROM secret`).get() as any
-    expect(raw.token).toMatch(/^v1\./)   // AES-GCM ciphertext prefix
+    expect(parseEnvelope(raw.token)).toMatchObject({ version: 2, mode: 'enc' })   // AES-GCM
     db.$close()
   })
 
@@ -6417,13 +6421,13 @@ describe('@secret field attribute', () => {
     await db.asSystem().secret.create({ data: { token: 'rotate-me' } })
 
     const statsBefore = db.$db.query(`SELECT token FROM secret`).get() as any
-    expect(statsBefore.token).toMatch(/^v1\./)
+    expect(parseEnvelope(statsBefore.token)).toMatchObject({ version: 2, mode: 'enc' })
 
     await db.$rotateKey(NEW_KEY)
 
     // Ciphertext should have changed (different IV → different output)
     const statsAfter = db.$db.query(`SELECT token FROM secret`).get() as any
-    expect(statsAfter.token).toMatch(/^v1\./)
+    expect(parseEnvelope(statsAfter.token)).toMatchObject({ version: 2, mode: 'enc' })
     expect(statsAfter.token).not.toBe(statsBefore.token)
 
     // And it is still the value that was written. Asserting only that the
@@ -6611,12 +6615,35 @@ describe('@secret field attribute', () => {
     // rotateable has a new ciphertext
     expect(after.rotateable).not.toBe(before.rotateable)
 
-    // …and `fixed` now reads as empty, which is the cost the caller accepted by
-    // naming it. Stated here so the trade is written down where it happens.
+    // …and `fixed` is still readable HERE, because the old key stays on this
+    // client's ring (`FJS-714`). The loss the caller accepted is real and it
+    // happens at the next START, not at the rotation — asserted below, since
+    // this line alone would read as the orphan costing nothing.
     const row = (await db.asSystem().secret.findFirst({})) as any
-    expect(row.fixed).toBeNull()
+    expect(row.fixed).toBe('stays')
     expect(row.rotateable).toBe('changes')
+    const dbPath = db.$db.filename
     db.$close()
+
+    // Where the accepted loss actually lands: a process that starts with the
+    // NEW key alone. `rotateable` comes back and `fixed` reads as empty rather
+    // than throwing, because the schema DECLARED it un-rotatable — every other
+    // column raises instead (`FJS-716`).
+    const fresh = await createClient({
+      schema: `model Secret { id Int @id; fixed String @secret(rotate: false); rotateable String @secret }`,
+      db: dbPath, encryptionKey: NEW_KEY })
+    const lost = (await fresh.asSystem().secret.findFirst({})) as any
+    expect(lost.rotateable).toBe('changes')
+    expect(lost.fixed).toBeNull()
+    fresh.$close()
+
+    // …and it is recoverable for as long as the operator still has the key,
+    // which is the whole reason the refusal names `previousEncryptionKeys`.
+    const kept = await createClient({
+      schema: `model Secret { id Int @id; fixed String @secret(rotate: false); rotateable String @secret }`,
+      db: dbPath, encryptionKey: NEW_KEY, previousEncryptionKeys: [ENC_KEY] })
+    expect(((await kept.asSystem().secret.findFirst({})) as any).fixed).toBe('stays')
+    kept.$close()
   })
 
   test('$rotateKey with no @secret fields returns empty stats', async () => {
@@ -26127,8 +26154,8 @@ describe('@encrypted(deterministic) / @hashed — declaration', () => {
     const raw = (await db.asSystem().sql`SELECT a, b FROM u WHERE id = 1`)[0] as any
     // Same plaintext, same key, different domain — the IV is derived under its own
     // salt, so the digest cannot be read off the front of the ciphertext.
-    expect(raw.a.startsWith('v1d.')).toBe(true)
-    expect(raw.b.startsWith('v1h.')).toBe(true)
+    expect(parseEnvelope(raw.a)).toMatchObject({ version: 2, mode: 'det' })
+    expect(parseEnvelope(raw.b)).toMatchObject({ version: 2, mode: 'hash' })
     expect(raw.a.slice(4)).not.toContain(raw.b.slice(4))
     db.$close()
   })
@@ -26167,7 +26194,7 @@ describe('@encrypted(deterministic) / @hashed — declaration', () => {
     expect((await sys.k.findFirst({ where: { id: 1 } }))?.token).toBe('tok-abc')
     expect((await sys.k.findFirst({ where: { token: 'tok-abc' } }))?.label).toBe('k1')
     const col = (await sys.sql`SELECT token FROM k WHERE id = 1`)[0] as any
-    expect(col.token.startsWith('v1d.')).toBe(true)
+    expect(parseEnvelope(col.token)).toMatchObject({ version: 2, mode: 'det' })
     dbNew.$close()
   })
 })

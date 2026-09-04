@@ -197,6 +197,25 @@ src/
 - An old `jobs.db` is migrated on open; the schema and the code used to disagree
   in both directions (a raw `UNIQUE constraint failed` out of an HTTP request one
   way, a job that silently never ran the other).
+- **`PLANNED` in `db.ts` owns the SQL whose QUERY PLAN is load-bearing**, and
+  the statements are prepared from it. A prepared statement stringifies with its
+  parameters expanded to their last bound values — `status = ?` comes back as
+  `status = NULL` — so its plan cannot be asked for after the fact, and a test
+  holding a copy of the string grades SQLite rather than this module. Two rules
+  fall out of it. **A filter that can be null needs its own statement**: one
+  statement is planned before anything is bound, so `($q IS NULL OR queue = $q)`
+  never seeks on `queue`, and no index fixes it. And **an inert clause is not
+  free** — `status IN (<every status>)` selected nothing out and cost a scrape
+  1009ms at 1M rows by steering the planner (`FJS-698`).
+- **`PRAGMA auto_vacuum` must precede the WAL switch**, and it reports success
+  either way. Set after it, the connection that set it reads back 2 and the next
+  open reads 0, so the sweep's reclaim is a silent no-op for the life of the
+  file. An existing database keeps whatever it has; changing it means a full
+  VACUUM.
+- **The cleanup sweep is a loop, and the yield is half of the point.** The
+  statement deletes one batch; batching without yielding to the event loop
+  slices the write lock and still holds this process for the whole sweep. The
+  batch size is measured and not monotonic — see `CLEANUP_BATCH`.
 
 ## Proving a change
 

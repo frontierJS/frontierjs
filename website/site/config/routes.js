@@ -133,6 +133,16 @@ export const tree = {
       children: [],
     },
   {
+      id: "tutor",
+      path: "/tutor/",
+      file: "src/routes/tutor.mesa",
+      companion: "src/routes/tutor.meta.js",
+      layout: "src/routes/_module.mesa",
+      meta: {"title":"FrontierJS — the tutorial is a command","description":"fli tutor is four lessons that run the real commands and then ask the running world whether they worked — including a real deploy to your own machine. It is graded by the project's own CI.","render":"static"},
+      params: [],
+      children: [],
+    },
+  {
       id: "vs-laravel",
       path: "/vs-laravel/",
       file: "src/routes/vs-laravel.mesa",
@@ -170,6 +180,7 @@ export const components = {
   'showroom3': () => import('../src/routes/showroom3.mesa'),
   'showroom4': () => import('../src/routes/showroom4.mesa'),
   'showroom5': () => import('../src/routes/showroom5.mesa'),
+  'tutor': () => import('../src/routes/tutor.mesa'),
   'vs-laravel': () => import('../src/routes/vs-laravel.mesa'),
   '[pkg]': () => import('../src/routes/[pkg].mesa'),
 }
@@ -204,6 +215,7 @@ export const all = [
   "/showroom3/",
   "/showroom4/",
   "/showroom5/",
+  "/tutor/",
   "/vs-laravel/",
   "/:pkg/"
 ]
@@ -222,6 +234,7 @@ export const published = [
   "/showroom3/",
   "/showroom4/",
   "/showroom5/",
+  "/tutor/",
   "/vs-laravel/",
   "/:pkg/"
 ]
@@ -240,6 +253,7 @@ export const indexed = [
   "/showroom3/",
   "/showroom4/",
   "/showroom5/",
+  "/tutor/",
   "/vs-laravel/"
 ]
 

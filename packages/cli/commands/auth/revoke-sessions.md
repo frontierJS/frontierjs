@@ -28,19 +28,19 @@ import { resolve }                    from 'path'
 const makeScript = (schemaPath, encKey, email, revokeAll) => `
 import { createClient } from '@frontierjs/litestone'
 
-const db  = await createClient('${schemaPath}', { encryption: { key: '${encKey}' } })
+const db  = await createClient({ path: '${schemaPath}', encryptionKey: '${encKey}' })
 const sys = db.asSystem()
 
 ${revokeAll ? `
-const result = await sys.sessions.deleteMany({ where: {} })
+const result = await sys.session.deleteMany({ where: {} })
 console.log(JSON.stringify({ revoked: result?.count ?? 0, target: 'all' }))
 ` : `
-const user = await sys.users.findFirst({ where: { email: '${email}' } })
+const user = await sys.user.findFirst({ where: { email: '${email}' } })
 if (!user) {
   console.error('ERROR: User not found: ${email}')
   process.exit(1)
 }
-const result = await sys.sessions.deleteMany({ where: { userId: user.id } })
+const result = await sys.session.deleteMany({ where: { userId: user.id } })
 console.log(JSON.stringify({ revoked: result?.count ?? 0, target: '${email}' }))
 `}
 
@@ -53,7 +53,6 @@ The user will be required to log in again on all devices.
 
 ```js
 const schemaPath = resolve(context.paths.db, 'schema.lite')
-const envPath    = resolve(context.paths.root, '.env')
 
 // ─── Preflight ────────────────────────────────────────────────────────────────
 
@@ -70,7 +69,8 @@ if (!existsSync(schemaPath)) {
   return
 }
 
-loadEnv({ path: envPath })
+// `.env` is already loaded — bootstrap.js reads the project's before any
+// command runs, and overrides the global one with it.
 const encKey = process.env.ENCRYPTION_KEY
 
 if (!encKey) {
@@ -114,7 +114,7 @@ try {
     flag.all
   ), 'utf8')
 
-  const result = context.exec({ command: `bun run "${tmpPath}"`, capture: true })
+  const result = context.exec({ command: `bun run "${tmpPath}"`, stdio: ['ignore', 'pipe', 'inherit'] })
   const output = (result?.stdout ?? result ?? '').toString().trim()
   const last   = output.split('\n').find(l => l.startsWith('{'))
 

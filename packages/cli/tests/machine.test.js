@@ -15,9 +15,12 @@
 
 import { describe, test, expect } from 'bun:test'
 import { execSync, execFileSync } from 'child_process'
-import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'fs'
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { join, dirname } from 'path'
+import { fileURLToPath, pathToFileURL } from 'url'
+
+const HERE = dirname(fileURLToPath(import.meta.url))
 import {
   LOCAL_SERVERS, serverOf, transportFor, shQuote,
   runCommand, reachCommand, sendCommand, withCwd, createMachine,
@@ -369,5 +372,67 @@ exit 1`
     try { execSync('sh -s', { input: script, stdio: 'pipe' }) }
     catch (e) { stdout = String(e.stdout ?? '').trim() }
     expect(stdout).toBe('fail')
+  })
+})
+
+// ─── the script has to REACH the shell ────────────────────────────────────────
+//
+// `execSync(cmd, { input, stdio: 'inherit' })` ignores `input` on node — stdin
+// is the parent's, so `sh -s` reads EOF and exits 0 having run nothing — and
+// honours it on bun. Every script this module sends travels on stdin, so under
+// node every `machine.run` in the deploy pipeline was a silent no-op that
+// reported success (`FJS-738`). `fli`'s shebang is `#!/usr/bin/env node`.
+//
+// The suite runs under bun, where the bug does not reproduce, which is why the
+// SHAPE is asserted first: whatever else changes, stdin must be piped.
+
+describe('a script sent to a machine', () => {
+
+  test('is delivered on a PIPED stdin, never an inherited one', () => {
+    let seen = null
+    const m = createMachine({ host: 'localhost', exec: (opts) => { seen = opts } })
+    m.run('echo hello')
+
+    expect(seen.input).toContain('echo hello')
+    expect(seen.stdio).not.toBe('inherit')
+    expect(Array.isArray(seen.stdio)).toBe(true)
+    expect(seen.stdio[0]).toBe('pipe')
+  })
+
+  test('and stdout and stderr are still the operator\'s', () => {
+    let seen = null
+    const m = createMachine({ host: 'localhost', exec: (opts) => { seen = opts } })
+    m.run('echo hello')
+
+    expect(seen.stdio[1]).toBe('inherit')
+    expect(seen.stdio[2]).toBe('inherit')
+  })
+
+  test('a caller that states its own stdio still gets it', () => {
+    let seen = null
+    const m = createMachine({ host: 'localhost', exec: (opts) => { seen = opts } })
+    m.capture('echo hello')
+    expect(seen.stdio).toBe('pipe')
+  })
+
+  // The failure itself, under the runtime that has it. Skipped rather than
+  // faked where there is no node — a shape assertion is above and this is the
+  // execution.
+  test('really runs, under node', () => {
+    const node = execSync('command -v node || true', { encoding: 'utf8' }).trim()
+    if (!node) return
+
+    const mark = join(tmpdir(), `fjs-machine-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    const probe = `
+      const { createMachine } = await import(${JSON.stringify(pathToFileURL(join(HERE, '..', 'core', 'machine.js')).href)})
+      const { execSync } = await import('node:child_process')
+      const m = createMachine({ host: 'localhost', exec: ({ command, ...opts }) => execSync(command, { stdio: 'inherit', ...opts }) })
+      m.run(${JSON.stringify(`touch ${mark}`)})
+    `
+    execFileSync(node, ['--input-type=module', '-e', probe], { stdio: 'pipe' })
+
+    const made = existsSync(mark)
+    if (made) rmSync(mark, { force: true })
+    expect(made).toBe(true)
   })
 })

@@ -60,7 +60,7 @@ someone reads it as a package that failed to install.
 
 | Name | Realm | What it is | Source |
 | --- | --- | --- | --- |
-| **`foundry`** | UI | **Schema → UI.** `<AutoForm resource={posts}>`, `<AutoTable>`, `<AutoFilter>`, and a gate-aware generated admin. Absorbs and replaces `fli admin:generate`, which emits `.svelte` and is drifted past usefulness. | `framework-shape.md` item 1; `PROS_AND_CONS.md` con 6 |
+| **`foundry`** | UI | **Schema → UI.** `<AutoForm resource={posts}>`, `<AutoTable>`, `<AutoFilter>`, and a gate-aware generated admin. Absorbs and replaces `fli admin:generate`, which emits `.svelte` and is drifted past usefulness. | `framework-shape.md` item 1; `pros-and-cons.md` con 6 |
 | **`depot`** | Release | The realm with no package. Artifact kinds first-class (single binary / container / static+API / PWA), preview environments, provisioning from declarations — degrading to nothing for the one-file path. | `offline-first-and-release.md`, `operational-edge.md`, `framework-shape.md` item 3 |
 | **`assay`** | Testing | The Suite noun. Junction's test kit extracted, `createTestEnv`, factories from field rules, a browser harness, and **derived per-model suites**. The plug slices' `suite/` part needs. | `testing-and-ci.md` |
 | **`create-frontier`** | — | `npm create frontier@latest`. Unglamorous and the highest-leverage adoption surface any framework has; today there is no path from the website to a running app that does not involve cloning a monorepo. | `ecosystem-gaps.md` § starter kits |
@@ -195,5 +195,5 @@ interleave than the `L` beside it suggests.
   on 2026-08-06. What is left is the field *list* and a control table with one home,
   which is the same table a UI plugin would contribute to — so this is where the
   `FJS-D17` question about what a UI plugin can contribute gets its first real answer
-- `PROS_AND_CONS.md` — `foundry` and `warden` are the two fixes it ranks first
+- `pros-and-cons.md` — `foundry` and `warden` are the two fixes it ranks first
 - `CLAUDE.md` § Packages — the authoritative state of what exists

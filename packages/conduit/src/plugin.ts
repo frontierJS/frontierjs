@@ -15,8 +15,9 @@
 // ============================================================
 
 import type { App, Plugin } from '@frontierjs/junction'
-import { NotFound, createService } from '@frontierjs/junction'
+import { NotFound, createService, requestMeta } from '@frontierjs/junction'
 import { createConduit }    from './conduit.ts'
+import { createTraceContext, parseTraceparent, traceIdFrom } from './trace.ts'
 import type { ConduitOptions, IConduit, TargetDescriptor } from './types.ts'
 
 // ─── App augmentation ────────────────────────────────────────
@@ -35,6 +36,46 @@ import type { ConduitOptions, IConduit, TargetDescriptor } from './types.ts'
 // this package but never calls configure(conduit()) is still typed honestly.
 declare module '@frontierjs/junction' {
   interface AppConduit extends IConduit {}
+}
+
+// ─── Trace propagation ───────────────────────────────────────
+
+/**
+ * The default `trace`, and the reason there is one.
+ *
+ * `createTraceContext` shipped with nobody wiring it, so nothing this app sent
+ * carried a correlation id or a `traceparent` — measured with a recorder, an
+ * inbound request stating both produced an outbound call carrying neither, and
+ * a target's logs could not be joined to the request that caused them
+ * (`FJS-742`). Every ingredient was already here: junction holds the
+ * correlation id on `requestMeta()` and conduit's default correlation header is
+ * already `X-Request-Id`. What was missing is that they were never introduced.
+ *
+ * It is a DEFAULT and not a behaviour: `createConduit({ trace, ...opts })`
+ * puts it under the caller's, so an app wiring its own tracer replaces this
+ * whole thing rather than fighting it, and `trace: () => null` turns it off.
+ *
+ * Outside a request — a job, a script, boot — `requestMeta()` answers
+ * undefined, and a fresh trace per call is then the correct answer rather than
+ * a missing one: there is no inbound request for the call to hang off.
+ */
+function junctionTrace() {
+  return createTraceContext({
+    current: () => {
+      const meta = requestMeta()
+      if (!meta) return null
+
+      // An upstream trace wins over one derived here. Continuing it is the
+      // whole point — a derived id would make this process the root of a
+      // trace the caller is already in the middle of.
+      const upstream = parseTraceparent(meta.traceparent)
+      if (upstream) return upstream
+
+      const traceId = traceIdFrom(meta.correlationId)
+      return traceId ? { trace_id: traceId } : null
+    },
+    correlationId: () => requestMeta()?.correlationId,
+  })
 }
 
 // ─── Plugin factory ──────────────────────────────────────────
@@ -72,7 +113,7 @@ export function conduit(opts: ConduitOptions = {}): Plugin {
     // Creates this app's conduit, attaches it, wires metrics, and registers
     // the management service.
     register(app: App): void {
-      const instance = createConduit(opts)
+      const instance = createConduit({ trace: junctionTrace(), ...opts })
       instances.set(app, instance)
 
       // claim() rather than `app.conduit = instance`: a second plugin

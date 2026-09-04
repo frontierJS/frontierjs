@@ -351,3 +351,116 @@ describe('app-level hooks apply to the management service', () => {
     expect(res.status).toBe(200)
   })
 })
+
+// ─── Trace propagation ───────────────────────────────────────
+// `createTraceContext` shipped with nobody wiring it: an inbound request
+// stating both a correlation id and a `traceparent` produced an outbound call
+// carrying neither, so a target's logs could not be joined to the request that
+// caused them (`FJS-742`). Every assertion here is about what really left the
+// process, read off a listening server rather than off the request object.
+
+function headerRecorder() {
+  const seen: Record<string, string>[] = []
+  const server = Bun.serve({
+    port: 0,
+    fetch(req) {
+      const headers: Record<string, string> = {}
+      req.headers.forEach((v, k) => { headers[k.toLowerCase()] = v })
+      seen.push(headers)
+      return Response.json({ ok: true })
+    },
+  })
+  return { seen, url: `http://localhost:${server.port}`, stop: () => server.stop(true) }
+}
+
+async function appCalling(rec: { url: string }, opts: Record<string, unknown> = {}, calls = 1) {
+  const app = await createTestApp()
+  app.configure(conduitPlugin({
+    ...opts,
+    targets: [providerTarget({ id: 'provider:x', address: rec.url, auth: { type: 'none' } })],
+  }))
+  app.get('/go', async () => {
+    for (let i = 0; i < calls; i++) {
+      await conduitOf(app as never).send({ target: 'provider:x', method: 'GET', path: '/ping' })
+    }
+    return new Response('ok')
+  })
+  await app._startForTest()
+  return app
+}
+
+describe('an outbound call carries the request that caused it', () => {
+  it('continues an upstream trace rather than starting a new one', async () => {
+    const rec = headerRecorder()
+    try {
+      const app = await appCalling(rec)
+      await request(app).get('/go')
+        .set('x-request-id', 'req-abc-123')
+        .set('traceparent', '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01')
+
+      const sent = rec.seen[0]!
+      // Same trace, new span — the target's work hangs off ours rather than
+      // being the root of something unrelated.
+      expect(sent.traceparent).toMatch(/^00-4bf92f3577b34da6a3ce929d0e0e4736-[0-9a-f]{16}-01$/)
+      expect(sent.traceparent).not.toContain('00f067aa0ba902b7')
+      // And the caller's own id, verbatim — this is the join a log search uses.
+      expect(sent['x-request-id']).toBe('req-abc-123')
+    } finally {
+      rec.stop()
+    }
+  })
+
+  it('gives every call in one request the same trace when nobody sent one', async () => {
+    const rec = headerRecorder()
+    try {
+      const app = await appCalling(rec, {}, 2)
+      await request(app).get('/go')
+
+      const [a, b] = rec.seen as [Record<string, string>, Record<string, string>]
+      const trace = (h: Record<string, string>) => h.traceparent!.split('-')[1]
+      const span  = (h: Record<string, string>) => h.traceparent!.split('-')[2]
+
+      // The assertion the derivation exists for: two calls, one request, one
+      // trace. A random trace id per call would make these two unrelated.
+      expect(trace(a)).toBe(trace(b)!)
+      expect(span(a)).not.toBe(span(b))
+      // Junction minted the correlation id, and it is what the trace is
+      // derived from — so the header and the trace id name the same request.
+      expect(a['x-request-id']).toBe(b['x-request-id']!)
+      expect(trace(a)).toBe(a['x-request-id']!.replace(/-/g, ''))
+    } finally {
+      rec.stop()
+    }
+  })
+
+  it('lets the app replace it, and turn it off', async () => {
+    const rec = headerRecorder()
+    try {
+      const own = await appCalling(rec, { trace: () => ({ 'x-my-trace': 'mine' }) })
+      await request(own).get('/go')
+      expect(rec.seen[0]!['x-my-trace']).toBe('mine')
+      // The default is under the caller's, so replacing it really replaces it.
+      expect(rec.seen[0]!.traceparent).toBeUndefined()
+
+      const off = await appCalling(rec, { trace: () => null })
+      await request(off).get('/go')
+      expect(rec.seen[1]!.traceparent).toBeUndefined()
+      expect(rec.seen[1]!['x-request-id']).toBeUndefined()
+    } finally {
+      rec.stop()
+    }
+  })
+
+  it('traces a call made outside any request', async () => {
+    const rec = headerRecorder()
+    try {
+      const app = await appCalling(rec)
+      // A job, a script, boot: there is no inbound request to hang off, so a
+      // fresh trace is the right answer rather than a missing one.
+      await conduitOf(app as never).send({ target: 'provider:x', method: 'GET', path: '/ping' })
+      expect(rec.seen[0]!.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/)
+    } finally {
+      rec.stop()
+    }
+  })
+})

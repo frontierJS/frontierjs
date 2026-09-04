@@ -715,7 +715,10 @@ async function cmdDryRun(label, cfg) {
       const diffResult = diffSchemas(pristine, live, parseResult, name, { pluralize: cfg.pluralize })
 
       if (!diffResult.hasChanges) {
-        console.log(`  ${green('✓')}  ${multi ? name + ': ' : ''}schema is in sync — no migration needed\n`)
+        console.log(`  ${green('✓')}  ${multi ? name + ': ' : ''}schema is in sync — no migration needed`)
+        if (diffResult.residue.length)
+          console.log(summariseDiff(diffResult).split('\n').slice(1).map(l => `  ${yellow(l)}`).join('\n'))
+        console.log()
         continue
       }
 
@@ -5780,7 +5783,15 @@ async function cmdDbPush(cfg) {
       if (result.dataLoss?.length)
         console.log(`  ${dim('Pass')} ${cyan('--accept-data-loss')} ${dim('to apply it anyway.')}`)
     } else if (result.state === 'in-sync') {
-      console.log(`${label}${green('✓')}  already in sync`)
+      // "already in sync" is exactly the sentence a residue makes false, and
+      // this command's own refusals exist to stop a green tick over a database
+      // that is not the declared one (`FJS-646`, one dimension out).
+      console.log(`${label}${green('✓')}  already in sync${result.residue ? dim(` — on every dimension the differ reads`) : ''}`)
+      for (const r of result.residue ?? []) {
+        console.log(`${label}${yellow('!')}  ${r.type} ${cyan(r.name)} differs in a way the differ cannot name`)
+        console.log(`  ${dim('declared:')} ${dim(r.pristine ?? '(absent)')}`)
+        console.log(`  ${dim('live    :')} ${dim(r.live ?? '(absent)')}`)
+      }
     } else if (result.state === 'migrated') {
       anyChanges = true
       console.log(`${label}${green('✓')}  ${result.applied} statement${result.applied !== 1 ? 's' : ''} applied`)

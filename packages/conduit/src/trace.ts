@@ -55,6 +55,69 @@ export function createTraceContext(opts: TraceContextOptions = {}) {
   }
 }
 
+/**
+ * Read an inbound `traceparent` into the shape `current` answers.
+ *
+ * The one reading of the header in this package, so continuing a trace and
+ * emitting one cannot disagree about the format. A header this cannot parse
+ * answers null and the caller starts a fresh trace, which is the honest
+ * failure: a malformed traceparent propagated onwards is dropped by every
+ * collector downstream, so it is worse than a new one.
+ *
+ * Only version `00` is accepted. The spec says a future version may append
+ * fields, and a parser that guessed at one it has never seen would forward
+ * ids it did not understand.
+ */
+export function parseTraceparent(header: string | undefined | null):
+  { trace_id: string; parent_id: string; sampled: boolean } | null {
+  if (!header) return null
+  const parts = header.trim().split('-')
+  if (parts.length !== 4) return null
+  const [version, traceId, spanId, flags] = parts as [string, string, string, string]
+  if (version !== '00') return null
+  if (!/^[0-9a-f]{2}$/.test(flags)) return null
+
+  const trace = normaliseId(traceId, 32)
+  const span  = normaliseId(spanId, 16)
+  if (!trace || !span) return null
+
+  return { trace_id: trace, parent_id: span, sampled: (parseInt(flags, 16) & 1) === 1 }
+}
+
+/**
+ * A trace id derived from a correlation id, so every outbound call made during
+ * one request shares one trace even where the caller sent no `traceparent`.
+ *
+ * A UUID is the case that matters and it needs no derivation: strip the dashes
+ * and it is already 32 lowercase hex, which is exactly a trace id — and
+ * junction mints its correlation ids with `crypto.randomUUID()`.
+ *
+ * Anything else is folded to 32 hex, because the alternative is a fresh random
+ * trace per call, which makes six calls from one request six unrelated traces —
+ * the thing this exists to prevent. FNV-1a twice under different offsets: it is
+ * not a cryptographic hash and does not need to be, since the input is already
+ * the request's own identity and the output is only ever compared for equality
+ * with itself.
+ */
+export function traceIdFrom(value: string | undefined | null): string | null {
+  if (!value) return null
+
+  const direct = normaliseId(value.replace(/-/g, ''), 32)
+  if (direct) return direct
+
+  return fnv64(value, 0x811c9dc5) + fnv64(value, 0x01000193)
+}
+
+function fnv64(value: string, offset: number): string {
+  let hash = BigInt(offset)
+  const prime = 0x100000001b3n
+  const mask  = 0xffffffffffffffffn
+  for (let i = 0; i < value.length; i++) {
+    hash = (hash ^ BigInt(value.charCodeAt(i))) * prime & mask
+  }
+  return hash.toString(16).padStart(16, '0')
+}
+
 // ─── Internal ────────────────────────────────────────────────
 
 function randomHex(chars: number): string {

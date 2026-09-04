@@ -19,6 +19,109 @@ import type {
 import { ConduitStreamError } from './types.ts'
 import type { BaseTransport } from './transports/base.ts'
 
+// What a policy field may say. A number here is refused at register() rather
+// than clamped, for the reason `follow_redirects` beside `hmac` is: a
+// descriptor is written by hand, and a value that cannot mean anything is a
+// typo the author wants told about, not one to be quietly replaced by the
+// default it was written to override.
+//
+// The unknown-key refusal is the finding itself. `timeout_ms` on the descriptor
+// rather than under `policy` was accepted and ignored, so a target declared with
+// a 1ms timeout answered a 300ms request as a success (`FJS-728`), and TypeScript
+// cannot see it: a descriptor read out of a store is `TargetDescriptor` by
+// assertion, and excess-property checking only fires on an object literal.
+const POLICY_FIELDS = {
+  timeout_ms:         { min: 1,  integer: false, infinite: false },
+  retry_limit:        { min: 0,  integer: true,  infinite: false },
+  deadline_ms:        { min: 1,  integer: false, infinite: false },
+  max_response_bytes: { min: 1,  integer: false, infinite: false },
+  failure_threshold:  { min: 0,  integer: true,  infinite: false },
+  reset_ms:           { min: 1,  integer: false, infinite: false },
+  // `Infinity` removes the cap and is the documented way to opt out.
+  max_concurrent:     { min: 1,  integer: false, infinite: true  },
+} as const
+
+function assertDescriptor(descriptor: TargetDescriptor): void {
+  // Refused here rather than in the transport. A followed hop rebuilds its
+  // headers for the new address, and for these two auth types that is either a
+  // signature bound to a path and query that are no longer the ones being
+  // requested, or a key sent to an address the descriptor never named
+  // (`FJS-679`). Neither is something a per-request decision can make safe.
+  //
+  // It lives in `put()` and not in `register()`, which is where it started:
+  // `init()` writes `opts.targets` through `put()` directly, so a STATIC target
+  // — the way a provider integration is actually declared — skipped the refusal
+  // entirely (`FJS-733`).
+  if (descriptor.follow_redirects === 'same-origin'
+      && (descriptor.auth.type === 'hmac' || descriptor.auth.type === 'api_key')) {
+    throw new TypeError(
+      `Target '${descriptor.id}': follow_redirects 'same-origin' cannot be combined with `
+      + `auth type '${descriptor.auth.type}' — a followed redirect re-sends the credential.`,
+    )
+  }
+
+  assertIdempotency(descriptor)
+  assertPolicy(descriptor)
+}
+
+function assertIdempotency(descriptor: TargetDescriptor): void {
+  const spec = descriptor.idempotency
+  if (spec === undefined) return
+
+  const where = `Target '${descriptor.id}' idempotency`
+  if (typeof spec !== 'object' || spec === null || Array.isArray(spec)) {
+    throw new TypeError(`${where}: expected { header?, auto? }`)
+  }
+  for (const key of Object.keys(spec)) {
+    if (key !== 'header' && key !== 'auto') {
+      throw new TypeError(`${where}: unknown field '${key}'. Known fields: header, auto`)
+    }
+  }
+  // An empty or whitespace header name reaches `mergeHeaders`, which lowercases
+  // it and writes it — so the key would go out under a header nobody can read.
+  if (spec.header !== undefined && (typeof spec.header !== 'string' || spec.header.trim() === '')) {
+    throw new TypeError(`${where}: 'header' must be a non-empty string`)
+  }
+  if (spec.auto !== undefined && typeof spec.auto !== 'boolean') {
+    throw new TypeError(`${where}: 'auto' must be a boolean`)
+  }
+}
+
+function assertPolicy(descriptor: TargetDescriptor): void {
+  const policy = descriptor.policy
+  if (policy === undefined) return
+
+  const where = `Target '${descriptor.id}' policy`
+
+  if (typeof policy !== 'object' || policy === null || Array.isArray(policy)) {
+    throw new TypeError(`${where}: expected an object of policy fields`)
+  }
+
+  for (const [key, raw] of Object.entries(policy)) {
+    const rule = POLICY_FIELDS[key as keyof typeof POLICY_FIELDS]
+    if (!rule) {
+      throw new TypeError(
+        `${where}: unknown field '${key}'. Known fields: ${Object.keys(POLICY_FIELDS).join(', ')}`,
+      )
+    }
+    if (raw === undefined) continue
+
+    const value = raw as number
+    const bad =
+      typeof value !== 'number' || Number.isNaN(value) ||
+      value < rule.min ||
+      (!rule.infinite && !Number.isFinite(value)) ||
+      (rule.integer && !Number.isInteger(value) && Number.isFinite(value))
+
+    if (bad) {
+      throw new TypeError(
+        `${where}: '${key}' must be ${rule.integer ? 'an integer' : 'a number'} >= ${rule.min}`
+        + `${rule.infinite ? ' (or Infinity)' : ''}, got ${String(value)}`,
+      )
+    }
+  }
+}
+
 // _overrides is intentionally not part of ConduitOptions.
 // Pass it only through createTestConduit() — never in production code.
 export function createConduit(
@@ -38,10 +141,20 @@ export function createConduit(
       max_response_bytes: opts.max_response_bytes,
     },
     observers,
+    learn,
     _overrides
   )
 
   const resilience = new Resilience(opts.resilience)
+
+  // A target's policy reaches the breaker and the concurrency gate here, and
+  // nowhere else. Two feeders, one writer: `put()` for what this process
+  // registers, and the router for a descriptor it read out of the store —
+  // which is the only way a target another replica registered is ever graded
+  // by its own numbers.
+  function learn(descriptor: TargetDescriptor): void {
+    resilience.setPolicy(descriptor.id, descriptor.policy)
+  }
 
   // Set by destroy(). The router evicts its pool, but without this flag a
   // late in-flight request simply rebuilds the transport and opens a fresh
@@ -114,6 +227,8 @@ export function createConduit(
   // Upsert through a read so the counters stay correct when a re-register
   // changes a target's kind or protocol.
   async function put(descriptor: TargetDescriptor): Promise<void> {
+    assertDescriptor(descriptor)
+    learn(descriptor)
     const previous = await store.get(descriptor.id)
     await store.set(descriptor)
     if (previous) countTarget(previous, -1)
@@ -252,7 +367,10 @@ export function createConduit(
     return {
       data:  null,
       error: {
-        kind:      'server_error',
+        // The target answered and the answer is not what it declared. Not a
+        // target fault — a schema that has moved on is a misconfiguration and
+        // a breaker cannot heal one (`FJS-684`).
+        kind:      'invalid_response',
         target:    req.target,
         protocol:  result.meta.protocol,
         message:   `Response failed validation: ${verdict.errors.join('; ')}`,
@@ -327,19 +445,8 @@ export function createConduit(
   }
 
   async function register(descriptor: TargetDescriptor): Promise<void> {
-    // Refused here rather than handled in the transport. A followed hop rebuilds
-    // its headers for the new address, and for these two auth types that is
-    // either a signature bound to a path and query that are no longer the ones
-    // being requested, or a key sent to an address the descriptor never named
-    // (`FJS-679`). Neither is something a per-request decision can make safe.
-    if (descriptor.follow_redirects === 'same-origin'
-        && (descriptor.auth.type === 'hmac' || descriptor.auth.type === 'api_key')) {
-      throw new TypeError(
-        `Target '${descriptor.id}': follow_redirects 'same-origin' cannot be combined with `
-        + `auth type '${descriptor.auth.type}' — a followed redirect re-sends the credential.`,
-      )
-    }
-
+    // Every refusal is `put()`'s — a static target reaches this store through
+    // the same door and must be refused by the same rules.
     await put(descriptor)
     router.evict(descriptor.id)   // evict stale pooled connection
     safe('onRegistered', () => observers.onRegistered?.(descriptor))

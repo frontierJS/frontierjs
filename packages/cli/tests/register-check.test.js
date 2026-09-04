@@ -77,7 +77,7 @@ beforeAll(() => {
   ].join('\n'))
 
   writeFileSync(join(ROOT, 'IDEAS', 'good.md'), [
-    '---', 'id: good', 'status: idea', 'dated: 2026-08-04', '---', '',
+    '---', 'id: good', 'status: proposed', 'dated: 2026-08-04', '---', '',
     '# Idea — A well-formed paper', '',
     'It links [the register](../ISSUES.md) and [a file](src/real.js).', '',
   ].join('\n'))

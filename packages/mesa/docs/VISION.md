@@ -1,7 +1,5 @@
 # Mesa
 ## Reactive UI Language — Vision & Specification
-### v1.9
-
 ---
 
 ## 1. Design Philosophy
@@ -29,10 +27,10 @@ Mesa is built on five foundational principles:
 
 ### Compiled Output Strategy
 
-Mesa's compiler targets `@mesa/runtime` and emits a named function per component:
+Mesa's compiler targets `@frontierjs/mesa/runtime` and emits a named function per component:
 
 ```js
-import * as $$runtime from '@mesa/runtime';
+import * as $$runtime from '@frontierjs/mesa/runtime.js';
 
 // Template factory — cloned once per mount via cloneNode(true)
 var $$tpl0 = $$runtime.template(`<p> </p>`, 0);
@@ -266,7 +264,7 @@ Two facts explain nearly every question about which form to use.
 > `o = { … }` notifies. `o.n = 2` does not, unless a `$:` path watch covers it.
 > This holds identically for local `let` objects and imported ones.
 >
-> **`o = o` is the third option** *(2026-08-04)*: self-assignment means "I mutated
+> **`o = o` is the third option**: self-assignment means "I mutated
 > this in place, notify anyway" and always notifies, skipping the equality guard
 > for that one write. It reads as a no-op and is not one — that is the point of
 > the idiom. It works identically for a local `let` and for a `$:`-watched
@@ -391,7 +389,7 @@ $: (a, b), ([a, b], [prevA, prevB]) => …       // multi dep gives arrays
 Deferring is what makes `prev` meaningful — the first invocation *is* the first change,
 so there is always a real previous value rather than `undefined`.
 
-> **RULE 46** — `prev` holds a reference. A **replaced** object gives a genuine previous
+> **RULE 59** — `prev` holds a reference. A **replaced** object gives a genuine previous
 > value; an object **mutated in place** gives the same reference for both. Producing a
 > distinct previous would mean deep-cloning every read, so Mesa doesn't.
 
@@ -428,7 +426,7 @@ $: {
 }
 ```
 
-> **RULE 47** — Auto-tracked effects run on mount and cannot be deferred. They discover
+> **RULE 60** — Auto-tracked effects run on mount and cannot be deferred. They discover
 > their dependencies **by running**; withholding the first run would subscribe to nothing.
 > Only the explicit-dependency form of §4.2 can defer, and that is a mechanical
 > consequence, not a style choice.
@@ -506,7 +504,7 @@ $: cities, () => { selectedCity = cities[0] }    // only resets when you say so
 // a user override via bind:value now persists across cities changes
 ```
 
-Note that under RULE 47 the watch+handler no longer fires on mount, so the initial value
+Note that under RULE 60 the watch+handler does not fire on mount, so the initial value
 comes from the `let` initialiser rather than from the handler.
 
 ---
@@ -528,7 +526,7 @@ $_computeTotal: total = items.reduce(...)
 Signal writes coalesce. Multiple writes anywhere in the same tick — event handlers,
 timers, promise callbacks — accumulate into a single flush on the next microtask.
 
-> **RULE 48** — Within a flush, everything that builds the DOM runs before user effects.
+> **RULE 61** — Within a flush, everything that builds the DOM runs before user effects.
 > A `$:` effect therefore observes the DOM **as it is after** the change it is reacting
 > to, matching Solid's `createEffect` and Svelte's `$effect`.
 
@@ -553,9 +551,9 @@ function addMessage(m) {
 **`$.tick()` resolves after the DOM has updated.** Use it to read the result of a change
 you just made.
 
-> **RULE 49** — The *initial* run of an auto-tracked effect happens during component
+> **RULE 62** — The *initial* run of an auto-tracked effect happens during component
 > setup, before the template exists. Only updates are ordered after the DOM. Explicit-
-> dependency effects are unaffected, having no initial run at all (RULE 47).
+> dependency effects are unaffected, having no initial run at all (RULE 60).
 
 ---
 
@@ -837,8 +835,10 @@ var   theme = $context.theme    // snapshot at mount — non-reactive
 
 - **Nearest ancestor wins** — when multiple ancestors in the same tree provide the same key,
   the value from the closest ancestor is used.
-- **Missing key** — if no ancestor provides the key, the value is `undefined` and the runtime
-  emits a warning. No build error.
+- **Missing key** — if no ancestor provides the key, the value is `undefined` and nothing
+  says so: the lookup answers silently, and a consumer's fallback is the consumer's own.
+  `@frontierjs/ui`'s controls are written to that — an absent `$context.form` means the
+  control behaves as it does standing alone. No build error, no runtime warning.
 
 ### 7.4 Instance Isolation vs Stores
 
@@ -1039,8 +1039,7 @@ export let header = null    // optional snippet prop
 ```
 
 Named snippets defined directly inside a component tag are automatically passed as same-name
-props — no explicit `row={row}` attribute needed. (Implemented 2026-08-04; before that they
-fell into the default slot and the prop arrived undefined.)
+props — no explicit `row={row}` attribute needed.
 
 **Arguments are getters.** `{@render row(person)}` compiles to `row(anchor, () => person)`,
 and inside the snippet body `person` reads through `person()`. This is invisible when writing
@@ -1987,17 +1986,20 @@ And some more content.
 
 ### 18.5 `client:*` Directives
 
-Build tools can annotate Mesa components with `client:*` directives to control island
-hydration strategy. The Mesa core compiler strips these — they are build-layer concerns.
+A `client:*` directive on a component says when an island is MOUNTED on the client. It
+is not hydration — nothing adopts the prerendered DOM; the loader clears the marked
+range and mounts the component fresh into it. The Mesa core compiler strips the
+directive by default and carries it into the island marker under `{ islands: true }`;
+the schedule is the loader's, and Sierra's honours these:
 
 | Directive | Meaning |
 |---|---|
 | *(none)* | Auto-detect: static if no reactivity, interactive if reactive |
-| `client:static` | Force static — no JS even if component is reactive |
-| `client:load` | Force interactive — hydrate immediately |
-| `client:idle` | Hydrate when `requestIdleCallback` fires |
-| `client:visible` | Hydrate when element enters viewport |
-| `client:media="(query)"` | Hydrate when media query matches |
+| `client:static` | Static — never mounted, the prerendered markup is the whole of it |
+| `client:load` | Mount immediately |
+| `client:idle` | Mount when `requestIdleCallback` fires |
+| `client:visible` | Mount when the marked range enters the viewport |
+| `client:media="(query)"` | Mount when the media query matches |
 
 #### Island markers — `{ islands: true }`
 
@@ -2020,11 +2022,11 @@ server render →  <!--mesa-island {"component":"Counter","directive":"load","pr
 client         →  identical to the direct call — no markers, no extra DOM
 ```
 
-> **RULE 26** *(amended)* — `client:*` directives are stripped by the Mesa core
+> **RULE 26** — `client:*` directives are stripped by the Mesa core
 > compiler. Compiling with `{ islands: true }` instead emits the call site
 > through `$$runtime.island()`, which wraps the output in island markers **in a
-> server render only**. The directive still never reaches the child as a prop,
-> and omitting the flag produces byte-identical output to before.
+> server render only**. The directive never reaches the child as a prop, and
+> omitting the flag produces the direct call.
 
 Markers are comment-delimited, not a `<mesa-island>` element. An element is
 easier to query and is what `SSR_SPEC.md` first sketched, but it fails in two
@@ -2160,8 +2162,12 @@ at module load time.
 > code on the server: `$.onMount` ran once per render against a `window` that outlived the
 > request, and path watches built signals nothing disposed.
 
-> **RULE 20** — Full per-request SSR (hydration, async data serialization) is deferred to a
-> future version.
+> **RULE 20** — There is no hydration. A server render is HTML and nothing else: the
+> comment anchors compiled output relies on are stripped from it, no reactive graph is
+> serialised, and no client adopts server-rendered DOM. What ships is the island seam
+> (§18.5) — `island()` in the runtime wraps a `client:*` call site in comment markers on
+> the server, and a loader outside Mesa (Sierra's) clears the range and does a fresh
+> `mount()` into it. Async data is the loader's to fetch again.
 
 ### 19.4 `renderComponent` / `renderFile` — Source-In Pipeline
 
@@ -2309,8 +2315,8 @@ components hydrate to their initial render and serialize cleanly.
 | 18e | `$class` and `$dom` wear a single `$` and are PROTOCOL, read by name from outside the compiler — the only single-`$` names in compiled output (`FJS-D134`) |
 | 18c | The five data members — `$props`, `$attributes`, `$slots`, `$context`, `$async` — also carry a bare spelling, which is canonical; the bare names stay reserved. The other seven and the animation helpers are refused bare (`FJS-D135`) |
 | 19 | SSR: signals synchronous, `$.onMount` no-op, `$context` instance-scoped |
-| 20 | Full hydration SSR deferred to a future version |
-| 21 | Compiler target is `@mesa/runtime` — full stack ownership |
+| 20 | No hydration: a server render is HTML, an island is a fresh `mount()` into a comment-marked range, nothing adopts server DOM |
+| 21 | Compiler target is `@frontierjs/mesa/runtime` — full stack ownership |
 | 22 | `bind:` is only valid on `export let` props |
 | 22a | On an ELEMENT `bind:` is `value`, `checked`, `files` (plus `group`, `this`) — the DOM writes back for a form value and nothing else. Everything else is `attr={expr}`. On a COMPONENT `bind:` is unchanged (`FJS-D136`) |
 | 23 | `on:event` on a component is a compiler error — use `onclick={fn}` prop |
@@ -2318,7 +2324,7 @@ components hydrate to their initial render and serialize cleanly.
 | 25 | `$context` provides and consumes must be at the top level of the script block |
 | 25a | `const` context consumers always track the provider; `let` initializes at mount then is independent; `var` snapshots at mount only |
 | 25b | `$context.<key>` is a compile step and therefore script-only; the imperative `$context.use` / `.provide` works anywhere (`FJS-477`) |
-| 26 | `client:*` directives are stripped by the Mesa core compiler — build-layer concern. **Amended:** `{ islands: true }` emits the call site through `$$runtime.island()`, which wraps it in island markers in a **server render only** (§18.5) |
+| 26 | `client:*` directives are stripped by the Mesa core compiler — build-layer concern. `{ islands: true }` emits the call site through `$$runtime.island()`, which wraps it in island markers in a **server render only** (§18.5) |
 | 27 | `{#key expr}` destroys and recreates content on every change of `expr` |
 | 28 | `{#snippet name(args)}` defines a reusable template fragment; `{@render name(args)}` mounts it |
 | 29 | Snippets close over outer reactive variables; args are plain values, not signals |
@@ -2356,6 +2362,10 @@ components hydrate to their initial render and serialize cleanly.
 | 56 | An instance `<script>` exports exactly two things: `export let` (a prop) and `export function` (a method on the instance API). Every other export form is a compiler error — module scope is `<script module>` |
 | 57 | `<mesa:element this={expr}>` takes a non-empty tag name; changing it rebuilds the element. A tag selector in a scoped `<style>` cannot match it |
 | 58 | An unknown `mesa:` name is a compiler error, never a silently dropped element |
+| 59 | `prev` holds a reference — a replaced object gives a genuine previous value, an object mutated in place gives the same reference for both |
+| 60 | Auto-tracked effects run on mount and cannot be deferred — they discover their dependencies by running; only the explicit-dependency form defers |
+| 61 | Within a flush everything that builds the DOM runs before user effects — a `$:` effect observes the DOM as it is after the change it reacts to |
+| 62 | The initial run of an auto-tracked effect happens during setup, before the template exists; only updates are ordered after the DOM |
 
 ---
 
@@ -2469,4 +2479,4 @@ export const cart = { items: [], total: 0 }
 
 ---
 
-*Mesa Vision · v1.8 · TypeScript support and full hydration SSR deferred to a future version*
+*Mesa Vision*

@@ -299,11 +299,27 @@ echo('')
 let userLite = resolveFromApp(context.paths.root, `${AUTH_PKG}/user.lite`)
 
 if (!userLite) {
+  // WHICH auth, and it is the app's existing answer rather than a fresh one.
+  // `bun add @frontierjs/auth` is always the published package, so an app
+  // scaffolded with `--source local` — every other @frontierjs dep a `link:` to
+  // the tree — got the REGISTRY's auth. Development then runs one auth and
+  // `deploy:vendor` packs the other into the image, which is a container whose
+  // schema disagrees with the one the app was built against: measured as a
+  // deploy whose `db:migrate` refused, because the tree's Verification had moved
+  // to a uuid id and the published one had not (`FJS-741`).
+  const spec = (() => {
+    try {
+      const deps = JSON.parse(readFileSync(resolve(context.paths.root, 'package.json'), 'utf8')).dependencies ?? {}
+      const linked = Object.entries(deps).some(([k, v]) => k.startsWith('@frontierjs/') && String(v).startsWith('link:'))
+      return linked ? `link:${AUTH_PKG}` : AUTH_PKG
+    } catch { return AUTH_PKG }
+  })()
+
   if (flag.dry) {
-    log.dry(`Would run: bun add ${AUTH_PKG}`)
+    log.dry(`Would run: bun add ${spec}`)
   } else {
-    log.info(`Installing ${AUTH_PKG}...`)
-    context.exec({ command: `cd ${context.paths.root} && bun add ${AUTH_PKG}` })
+    log.info(`Installing ${spec}...`)
+    context.exec({ command: `cd ${context.paths.root} && bun add ${spec}` })
     userLite = resolveFromApp(context.paths.root, `${AUTH_PKG}/user.lite`)
   }
 }

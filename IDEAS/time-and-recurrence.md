@@ -1,6 +1,6 @@
 ---
 id: time-and-recurrence
-status: idea
+status: proposed
 dated: 2026-08-12
 ---
 

@@ -93,10 +93,14 @@ beforeAll(async () => {
     },
   })
 
+  // Presence is opt-in as of `FJS-703`, and `presenceFlushMs: 0` keeps the
+  // immediate per-event protocol this file was written against — a supported
+  // mode, and the one a small app wants. The batched default is covered in
+  // presence-scale.test.ts.
   app.configure(channels((a: any) => {
     // Server owns membership: everyone who connects lands in ROOM.
     a.channels.on('connection', (_session: unknown, conn: unknown) => { a.channel(ROOM).join(conn) })
-  }))
+  }, { presence: true, presenceFlushMs: 0 }))
 
   await app.start()
 })

@@ -40,6 +40,7 @@ import { spawn } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { requireServers } from './lib/preflight.mjs'
 
 const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
 const API    = process.env.API_URL ?? 'http://localhost:8110'
@@ -64,15 +65,7 @@ const REF2 = `ORD-DTL-${RUN}`
 // fixed fixture key passes exactly once per seed (`FJS-530`).
 const REF3 = `ORD-LEAK-${RUN}`
 
-for (const [name, url] of [['api (bun run api)', `${API}/api/health`], ['web (bun run web)', UI]]) {
-  try {
-    const r = await fetch(url)
-    if (!r.ok) throw new Error(`HTTP ${r.status}`)
-  } catch (e) {
-    console.error(`Cannot reach ${name} at ${url} — ${e.message}`)
-    process.exit(1)
-  }
-}
+await requireServers([['api (bun run api)', `${API}/api/health`], ['web (bun run web)', UI]])
 
 // ─── CDP ──────────────────────────────────────────────────────────────────
 

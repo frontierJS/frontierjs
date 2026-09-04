@@ -17,7 +17,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import { occurrenceKey } from '@frontierjs/toolbelt/history'
 import type { Database }                            from 'bun:sqlite'
-import { openDb, buildStatements, aggregateStats, isPrimaryKeyCollision, isUniqueKeyCollision } from './db.ts'
+import { openDb, buildStatements, aggregateStats, reclaimFreePages, isPrimaryKeyCollision, isUniqueKeyCollision } from './db.ts'
 import type { Statements }                          from './db.ts'
 import { QueueWorker, WorkerPool }                  from './worker.ts'
 import { autoloadJobs }                             from './autoload.ts'
@@ -85,6 +85,9 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
   // start() cannot be cleared, so the hourly sweep went on firing against a
   // closed handle after stop() and a restart added a second one.
   let   sweepTimer: ReturnType<typeof setInterval> | null = null
+  // The cleanup sweep yields between batches, so the hourly timer can fire
+  // into a sweep that has not finished.
+  let   sweeping = false
   // The running app, or null standalone. Held so dispatch can read who is in
   // scope and the worker can open a scope to run the handler in.
   let   host: CaravanApp | null = null
@@ -679,6 +682,9 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
 
     // ── stats ────────────────────────────────────────────────────────────────
 
+    // Exact, and linear in the retention window: grouping 1M rows costs ~134ms.
+    // Readiness deliberately does not come through here — it needs one number
+    // and reads the query that answers it.
     stats(): CaravanStats {
       const { stmts } = rt()
       const rows = stmts.statsByQueue.all() as {
@@ -728,12 +734,39 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       // Cleanup sweep — remove old terminal jobs (done/failed/cancelled) on
       // start and every hour
       if (cleanupAfter > 0) {
-        const sweep = onTimer('cleanup sweep', () => {
-          if (!runtime) return
-          stmts.cleanup.run({ before: Date.now() - cleanupAfter })
-        })
-        sweep()
-        sweepTimer = setInterval(sweep, 60 * 60 * 1_000)
+        // One BATCH per pass, yielding to the event loop between them.
+        //
+        // The statement deletes up to CLEANUP_BATCH rows; the loop repeats
+        // until a pass changes nothing. Both halves are load-bearing. Deleting
+        // every expired row in one statement held the write lock for 11.5s over
+        // 1M rows, and every dispatch and claim in every process waits on it —
+        // but batching without the yield only slices the LOCK, since a
+        // synchronous loop still holds this process for the whole sweep.
+        const sweep = async (): Promise<void> => {
+          // The hourly timer must not start a second sweep over a running one:
+          // two loops delete each other's batches, so neither sees an empty
+          // pass while the other is still finding rows.
+          if (sweeping) return
+          sweeping = true
+          try {
+            let removed = 0
+            for (;;) {
+              // Re-checked after every yield: stop() may have run since.
+              if (!runtime) return
+              const { changes } = stmts.cleanup.run({ before: Date.now() - cleanupAfter })
+              removed += changes
+              if (changes === 0) break
+              await new Promise(resolve => setTimeout(resolve, 0))
+            }
+            if (removed > 0) reclaimFreePages(db)
+          } catch (err) {
+            console.warn('[Caravan] cleanup sweep failed and was skipped:', (err as Error)?.message ?? err)
+          } finally {
+            sweeping = false
+          }
+        }
+        void sweep()
+        sweepTimer = setInterval(() => void sweep(), 60 * 60 * 1_000)
         if (sweepTimer.unref) sweepTimer.unref()
       }
 
@@ -832,8 +865,14 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
           const bounds = caravan.registrations().map(r => r.timeout).filter((t): t is number => t != null)
           if (!bounds.length) return true
           const limit  = Math.max(...bounds)
-          const oldest = Object.values(caravan.stats().queues)
-            .map(q => q.oldestRunningMs ?? 0)
+          // `oldestRunning` and not `stats()`: readiness reads one number and
+          // the full aggregate groups every row in the retention window to
+          // produce it — 1009ms per probe over 1M rows, for a query that on
+          // its own costs nothing, on the endpoint an operator hits BECAUSE
+          // something is already wrong.
+          const now    = Date.now()
+          const oldest = (rt().stmts.oldestRunning.all() as { started_at: number }[])
+            .map(r => now - r.started_at)
           return Math.max(0, ...oldest) < limit * 2
         })
       }

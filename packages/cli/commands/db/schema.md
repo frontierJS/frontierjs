@@ -19,8 +19,10 @@ flags:
 ---
 
 <script>
-import { appendFileSync, existsSync } from 'fs'
-import { resolve } from 'path'
+// The namespace module already imports `existsSync` and `resolve`, and its
+// script is prepended into this same module — a second import of either is a
+// duplicate declaration, which is a SyntaxError the command never loads past.
+import { appendFileSync } from 'fs'
 
 const makeModel = (name) => {
   // Model names are PascalCase singular — e.g. Lead, not leads

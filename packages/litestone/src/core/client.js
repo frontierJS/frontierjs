@@ -35,7 +35,7 @@ import { capabilityDeclarations, capabilityNames } from './capabilities.js'
 import { buildPolicyMap, buildScopeMap, compileScope, policyExprToString, buildPolicyFilter, checkCreatePolicy, checkPostUpdatePolicy, policyVerdict, evalJs, compileFieldPredicate, referencesRow, delegationProblems, buildClaimSet, checkFieldPolicies, authClaimsUsed } from './policy.js'
 import {
   encryptField, decryptField, encryptDeterministic, hashField,
-  isCiphertext, normaliseKey, comparisonEncoderFor,
+  normaliseKey, comparisonEncoderFor, parseEnvelope, verifiesAs, makeKeyring, keyId, legacyForm,
 } from './encryption.js'
 import { backupSqliteTo } from './backup.js'
 import { resolveTenancy } from './tenancy.js'
@@ -58,6 +58,7 @@ import {
   buildFieldRefDefaultMap, buildUpdatedByMap, buildVersionMap, buildCreatedByMap,
   buildSequenceMap, schemaDeclaresAccessRules, buildFieldPolicyMap, buildSecretMap,
   buildJsonMap, buildGeneratedMap, buildFromMap, buildComputedSet, buildBoolMap, buildBigMap,
+  buildAffinityMap,
   buildFilterKindMap, buildTransitionMap, buildEnumMap, buildSoftDeleteCascadeMap,
   getCascadeTargets, buildRelationMap, buildFieldReadMap, buildGuardedMap,
   buildSoftDeleteMap, buildHasTemplatesMap, buildCoFkMap, buildFtsMap, nowISO,
@@ -1770,7 +1771,7 @@ function applyFieldPolicyTo(row, modelName, fieldPolicy, ctx, { mode = 'list', s
     // ── Decrypt if field is present and encrypted ─────────────────────────
     if (encrypted && fieldName in out && out[fieldName] != null) {
       try {
-        out[fieldName] = decryptField(out[fieldName], ctx.enc.key)
+        out[fieldName] = decryptField(out[fieldName], ctx.enc.ring ?? ctx.enc.key)
 
         // Mirror of the write step: a Json field was serialized before it was
         // encrypted, so it is parsed after it is decrypted.
@@ -1784,8 +1785,34 @@ function applyFieldPolicyTo(row, modelName, fieldPolicy, ctx, { mode = 'list', s
         if (policy.json && typeof out[fieldName] === 'string') {
           try { out[fieldName] = JSON.parse(out[fieldName]) } catch {}
         }
-      } catch {
+      } catch (err) {
+        // A protected value that cannot be decrypted used to become `null`, and
+        // that is a WRONG ANSWER rather than a missing one: the column reads as
+        // empty, every check on it passes, and the row looks fine (`FJS-716`).
+        // The cause is almost always a key this client does not hold, which now
+        // has a remedy the message can name — so it is raised rather than
+        // swallowed, and it names the row.
+        if (err?.name === 'DecryptionFailedError') {
+          // `@secret(rotate: false)` is a loss the schema DECLARES and
+          // `$rotateKey` makes the caller acknowledge by name. Raising here
+          // would make the whole row unreadable to punish one column the app
+          // already said it was giving up — so this one degrades, and only this
+          // one. Everything else is a key that should have been there.
+          if (ctx.secretMap?.[modelName]?.[fieldName]?.rotate === false) {
+            out[fieldName] = null
+          } else {
+            err.model = modelName
+            err.field = fieldName
+            err.message = `${modelName}.${fieldName}: ${err.message}`
+            throw err
+          }
+        } else {
+        // Anything else here is the Json parse below, which has its own reason
+        // to degrade: a row written before that bug was fixed holds the literal
+        // '[object Object]', which is data already lost, and surfacing it beats
+        // blanking it.
         out[fieldName] = null
+        }
       }
     }
   }
@@ -4314,7 +4341,35 @@ function makeTable(readDb, writeDb, shape, ctx) {
         if (!(fieldName in transformed)) continue
         const val = transformed[fieldName]
         if (val == null) continue
-        if (isCiphertext(val)) continue  // already encrypted (e.g. re-save)
+        // ── Is this already protected, or does it merely LOOK it? ──────────
+        //
+        // `isCiphertext(val)` read three characters and answered yes, so a
+        // caller sending `v1.` plus their own text had it stored VERBATIM in a
+        // column the app promises is encrypted — and read back as `null`, since
+        // the decrypt then failed. The same one function gated the HASH path,
+        // so a `v1.` value skipped hashing too and a `@hashed` column ended up
+        // holding something that is not a digest of anything (`FJS-715`).
+        //
+        // Three things replace it. The MODE must match the column's own
+        // protection. The value must actually VERIFY — GCM's tag is the answer
+        // and a forgery cannot produce one. And a non-system caller may not
+        // send one at all: a caller never legitimately holds ciphertext, so the
+        // shape is either an accident (a value that starts `v1.`) or an
+        // attempt, and both are better refused by name than stored in clear.
+        const wantMode = policy.hashed ? 'hash' : 'enc'
+        const env      = parseEnvelope(val)
+        if (env) {
+          if (!ctx.isSystem)
+            throw new ValidationError([{ path: [fieldName], message:
+              `${fieldName} looks like a stored ${env.mode === 'hash' ? 'digest' : 'ciphertext'} ` +
+              `(it begins '${env.prefix}'). A caller sends the value itself — this column is ` +
+              `${policy.hashed ? '@hashed' : '@encrypted'} and the encoding is the database's.` }])
+          // A system write MAY carry one: a re-save, a restore, a backfill. It
+          // is skipped only where it is genuinely that value's own encoding —
+          // otherwise it falls through and is protected like any other string,
+          // which is what makes a `v1.` in a `@hashed` column get hashed.
+          if (verifiesAs(val, ctx.enc.ring ?? ctx.enc.key, wantMode)) continue
+        }
 
         // A Json field is serialized to text BEFORE encryption, because
         // encryptField's String(plaintext) turns an object into
@@ -4576,11 +4631,42 @@ function makeTable(readDb, writeDb, shape, ctx) {
       const encoder = comparisonEncoderFor(policy)
       const encode  = encoder?.encode ? (v) => encoder.encode(v, ctx.enc.key) : null
 
+      // ── One value, every key on the ring ──────────────────────────────────
+      //
+      // Deterministic encoding is a function of the KEY, so an operand encoded
+      // under the current key does not equal the same value stored under a
+      // previous one — and a schema mid-rotation holds both. Encoding under one
+      // key made every equality filter over a not-yet-rotated row answer
+      // NOTHING, silently, which is the failure `previousEncryptionKeys` would
+      // otherwise have created by making that state supported (`FJS-714`).
+      //
+      // Widened to a set rather than left to the caller: there is no request a
+      // caller could make that would find the row, and no error would have been
+      // raised to tell them so. With one key on the ring `encodeSet` answers one
+      // element and the scalar path is kept, so the common query's SQL is
+      // unchanged.
+      // The set is ALWAYS widened, not only for a ring of two, and the second
+      // reason is the one no test here could see: the payload is byte-identical
+      // across envelope versions, so a value stored before the key id existed
+      // reads `v1d.<p>` where this encodes `v2d.<kid>.<p>`. Equality compares
+      // the whole string, so every deterministic and `@hashed` lookup in every
+      // EXISTING database would have answered nothing, silently — and every
+      // suite in this repo builds a fresh one.
+      const ring      = ctx.enc.ring?.all ?? (ctx.enc.key ? [ctx.enc.key] : [])
+      const multiKey  = !!encode
+      const encodeSet = (v) => [...new Set(ring.flatMap(k => {
+        const now = encoder.encode(v, k)
+        const was = legacyForm(now)
+        return was ? [now, was] : [now]
+      }))]
+
       if (encode && val !== null && typeof val !== 'object') {
-        out[key] = encode(val)
+        out[key] = multiKey ? { in: encodeSet(val) } : encode(val)
       } else if (encode && Array.isArray(val)) {
         // The bare-array shorthand is `in`, so it encodes like `in`.
-        out[key] = val.map(v => v === null ? null : encode(v))
+        out[key] = multiKey
+          ? { in: val.flatMap(v => v === null ? [null] : encodeSet(v)) }
+          : val.map(v => v === null ? null : encode(v))
       } else if (encode && val !== null && typeof val === 'object') {
         // An OPERATOR object. Each spelling of equality has to be encoded on its
         // own — the scalar branch above covers `{ email: x }` and nothing else, so
@@ -4590,10 +4676,16 @@ function makeTable(readDb, writeDb, shape, ctx) {
         const rewritten = {}
         for (const [op, operand] of Object.entries(val)) {
           const enc = (v) => v === null ? null : encode(v)
+          const many = (v) => v === null ? [null] : encodeSet(v)
           if (op === 'equals' || op === 'not') {
-            rewritten[op] = enc(operand)
+            // `equals` widens to `in` and `not` to `notIn` — the same question
+            // asked of every key the ring holds.
+            if (multiKey) { rewritten[op === 'equals' ? 'in' : 'notIn'] = many(operand) }
+            else          { rewritten[op] = enc(operand) }
           } else if (op === 'in' || op === 'notIn') {
-            rewritten[op] = Array.isArray(operand) ? operand.map(enc) : operand
+            rewritten[op] = Array.isArray(operand)
+              ? (multiKey ? operand.flatMap(many) : operand.map(enc))
+              : operand
           } else {
             // Deterministic encryption and an HMAC preserve equality and nothing
             // else — no ordering, no substrings. Refuse rather than compare
@@ -4659,12 +4751,40 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   // Unique/PK columns eligible as an ON CONFLICT target for the upsert fast
   // path. Built lazily — schema is immutable after createClient.
+  // The primary key's columns, IN KEY ORDER.
+  //
+  // `expandCompositeId` stamps `@id` on every member of an `@@id([a, b])`, so
+  // asking the fields which one is the key answers all of them and in
+  // DECLARATION order, which is not the key's — and the key's order is the one
+  // fact `@id` per field cannot carry. The model attribute is where it is
+  // stated, so that is what is read, with the single-column case falling back
+  // to the field.
+  let _keyColsCache = null
+  function _keyCols() {
+    if (_keyColsCache) return _keyColsCache
+    const model = ctx.models[modelName]
+    const composite = model?.attributes?.find(a => a.kind === 'id')
+    if (composite?.fields?.length) return (_keyColsCache = [...composite.fields])
+    const single = model?.fields?.find(f => f.attributes.some(a => a.kind === 'id'))
+    return (_keyColsCache = single ? [single.name] : [])
+  }
+
+  // Columns that identify a row ON THEIR OWN.
+  //
+  // A member of a composite key is NOT one of them, and treating it as one is
+  // silent data loss rather than a wrong answer: with `@@id([userId, teamId])`
+  // and `orderBy: { userId }`, three rows paged two at a time served the first
+  // two and then answered EMPTY, because the cursor said `userId > 1` and every
+  // remaining row shares that userId (`FJS-694`). The tuple is unique; no
+  // column of it is.
   let _upsertUniqueColsCache = null
   function _upsertUniqueCols() {
     if (_upsertUniqueColsCache) return _upsertUniqueColsCache
     const s = new Set()
+    const keyIsSingle = _keyCols().length === 1
     for (const f of ctx.models[modelName]?.fields ?? []) {
-      if (f.attributes.some(a => a.kind === 'id' || a.kind === 'unique')) s.add(f.name)
+      const isId = f.attributes.some(a => a.kind === 'id')
+      if (f.attributes.some(a => a.kind === 'unique') || (isId && keyIsSingle)) s.add(f.name)
     }
     return (_upsertUniqueColsCache = s)
   }
@@ -4692,16 +4812,27 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // about the tiebreaker would name a position the next page does not resume
   // from — a scan that skips a row, which is the thing this exists to stop.
   function cursorFields(orderBy) {
-    const fields = normaliseOrderBy(orderBy)
+    const keyCols = _keyCols()
+    // `normaliseOrderBy` defaults to the literal `id`, which it has to — it is
+    // a pure function with no model in scope. Here there IS one, and a
+    // composite-keyed model has no column called `id`: the default ordering
+    // named one that does not exist, so every derived list over such a model
+    // was a 400 (`FJS-694`).
+    const fields = orderBy ? normaliseOrderBy(orderBy) : keyCols.map(c => ({ col: c, dir: 'ASC' }))
     const uniqueCols = _upsertUniqueCols()
     if (fields.some(f => uniqueCols.has(f.col))) return fields
-    const tie = ctx.models[modelName]?.fields
-      .find(f => f.attributes.some(a => a.kind === 'id'))?.name
-    if (!tie) throw new Error(
+
+    // The whole key, or none of it. Appending the first column of a tuple
+    // leaves an ordering that is still not total, which is the shape that loses
+    // rows in silence.
+    const named   = new Set(fields.map(f => f.col))
+    const missing = keyCols.filter(c => !named.has(c))
+    if (!keyCols.length) throw new Error(
       `${modelName}.findManyCursor: orderBy ${JSON.stringify(orderBy)} is not a total order and ` +
       `this model declares no unique column to break the tie with, so a cursor would serve some ` +
       `rows twice and skip others. Order by a @unique column, or page with limit/offset.`)
-    fields.push({ col: tie, dir: fields[fields.length - 1]?.dir ?? 'ASC' })
+    const dir = fields[fields.length - 1]?.dir ?? 'ASC'
+    for (const col of missing) fields.push({ col, dir })
     return fields
   }
 
@@ -7090,6 +7221,60 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           }
         }
 
+        // ── Which rows are inserts and which are updates ─────────────────────
+        //
+        // Both halves are policied and they are policied by DIFFERENT rules, so
+        // the split has to be known before either can be applied: a row that
+        // will insert is a create and a row that will conflict is an update.
+        // It was neither — `create()` refused planting a row owned by somebody
+        // else and `upsertMany` planted it, `update()` refused writing to their
+        // row and `upsertMany` wrote it (`FJS-720`). `createMany` has always
+        // checked the create policy one verb along, which is what makes the
+        // cost known rather than guessed: the same lookup the audit trail
+        // already pays for on a logged model.
+        // The lookup is what the CREATE half needs, so it is paid for policies
+        // alone: the template guard rides the statement's own WHERE and knows
+        // nothing about which rows already exist.
+        let present = null
+        const keyOf = row => JSON.stringify(target.map(c => row[c] ?? null))
+        if (_usNeedRows || ctx.hasPolicies) {
+          const clause = target.map(c => `"${c}" = ?`).join(' AND ')
+          const lookup = writeDb.prepare(`SELECT 1 FROM "${tableName}" WHERE ${clause} LIMIT 1`)
+          present = new Set()
+          for (const row of rows) {
+            if (lookup.get(...target.map(c => row[c] ?? null))) present.add(keyOf(row))
+          }
+          if (_usNeedRows) { _usCreated = []; _usUpdated = [] }
+        }
+
+        // The INSERT half, refused whole like `createMany`'s — a batch is one
+        // call, and half of it landing is a worse answer than none of it.
+        if (ctx.hasPolicies) {
+          for (const [i, row] of rows.entries()) {
+            if (present.has(keyOf(row))) continue
+            try { checkCreatePolicy(modelName, data[i], ctx, ctx.policyMap, ctx.schema, ctx.relationMap) }
+            catch (e) { throw asBatchRowError(e, i, rows.length, data[i]) }
+          }
+        }
+
+        // The UPDATE half rides SQLite's own `DO UPDATE … WHERE`, where an
+        // unqualified column is the EXISTING row — which is exactly the row the
+        // update policy is about, and the same predicate `updateMany` puts in
+        // its WHERE. A row the policy excludes is skipped rather than refused,
+        // for `updateMany`'s reason: a bulk write narrows, it does not throw.
+        const _usUpdPolicy = ctx.hasPolicies
+          ? buildPolicyFilter(modelName, 'update', ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
+          : null
+        // A template is a live row in a parallel category, so a bulk write must
+        // not reach one it did not ask for — the rule `updateMany` applies
+        // through `applyHtFilter` and this statement builds no WHERE to carry.
+        const _usGuards = [
+          ...(_usUpdPolicy ? [_usUpdPolicy.sql] : []),
+          ...(hasTemplatesField ? [`"${hasTemplatesField}" = 0`] : []),
+        ]
+        const _usGuardSql    = _usGuards.length ? _usGuards.join(' AND ') : null
+        const _usGuardParams = _usUpdPolicy?.params ?? []
+
         // One statement per row shape — see createMany. The SET clause is
         // derived from the shape's own columns, so a row carrying a column the
         // batch's first row omitted updates it on conflict rather than losing it.
@@ -7125,6 +7310,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           if (setPairs.length) {
             const conflictSql = target.map(c => `"${c}"`).join(', ')
             s += ` ON CONFLICT(${conflictSql}) DO UPDATE SET ${setPairs.join(', ')}`
+            if (_usGuardSql) s += ` WHERE ${_usGuardSql}`
           } else {
             s += ` ON CONFLICT DO NOTHING`
           }
@@ -7137,25 +7323,13 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           return entry
         }
 
-        // Which conflict keys already exist — read BEFORE the writes, or every
-        // row would look like an update.
-        let present = null
-        const keyOf = row => JSON.stringify(target.map(c => row[c] ?? null))
-        if (_usNeedRows) {
-          const clause = target.map(c => `"${c}" = ?`).join(' AND ')
-          const lookup = writeDb.prepare(`SELECT 1 FROM "${tableName}" WHERE ${clause} LIMIT 1`)
-          present = new Set()
-          for (const row of rows) {
-            if (lookup.get(...target.map(c => row[c] ?? null))) present.add(keyOf(row))
-          }
-          _usCreated = []
-          _usUpdated = []
-        }
-
         for (const row of rows) {
           const { cols, stmt } = stmtFor(Object.keys(row))
           const _usSeal = sealInsertGuard(row)
-          const args = [...cols.map(c => row[c] ?? null), ...(_usSeal?.params ?? [])]
+          // The guard's params bind LAST, because `ON CONFLICT … WHERE` is the
+          // tail of the statement — after the VALUES and after the seal's own
+          // WHERE on the `INSERT … SELECT` form.
+          const args = [...cols.map(c => row[c] ?? null), ...(_usSeal?.params ?? []), ..._usGuardParams]
           // A conflict TARGET is handled by ON CONFLICT; anything else — a second
           // @unique, a NOT NULL, an FK — still reaches here as SQLite's message.
           let _usWrote = true
@@ -7163,15 +7337,20 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
             if (_usNeedRows) {
               const written = stmt.get(...args)
               if (written) (present.has(keyOf(row)) ? _usUpdated : _usCreated).push(written)
-              else if (_usSeal) _usWrote = false
+              else if (_usSeal || _usGuardSql) _usWrote = false
             } else {
               stmt.run(...args)
-              if (_usSeal) _usWrote = rowsChanged(writeDb) > 0
+              if (_usSeal || _usGuardSql) _usWrote = rowsChanged(writeDb) > 0
             }
           } catch (e) { throw asBatchRowError(asConstraintError(e, row), count, rows.length, row) }
           // Named like a constraint failure rather than counted: a batch that
           // reports writing a row it did not write is worse than one that stops,
           // and `ON CONFLICT DO NOTHING` is the only other way to get here.
+          //
+          // A row the update GUARD skipped is the third way and is not a
+          // refusal: `updateMany` narrows its WHERE and counts what it moved, so
+          // this counts what it moved too. Which is also why the count has to be
+          // read from SQLite rather than assumed — the reason this branch exists.
           if (!_usWrote) {
             const refusal = sealRefusal(_usSeal?.parents, 'create')
             if (refusal) throw asBatchRowError(refusal, count, rows.length, row)
@@ -8563,6 +8742,7 @@ const CLIENT_OPTIONS = [
   'hooks', 'onEvent', 'announce', 'filters', 'plugins', 'databases', 'access',
   'readOnly', 'busyTimeout', 'pluralize', 'onLog', 'onQuery', 'policyDebug',
   'now', 'scopes', 'allowChildFkOverride', 'logContext', 'claims',
+  'previousEncryptionKeys',
 ]
 
 // A key with a real answer says it, rather than being suggested at — the
@@ -8614,6 +8794,11 @@ export async function createClient({
   db:         dbPath,
   computed: computedInput,
   encryptionKey,       // 64-char hex string — required for @encrypted / @secret fields
+  previousEncryptionKeys,  // string[] — keys this client can still READ but never writes.
+                           // A rotation runs one transaction per DATABASE, so a crash
+                           // between two commits leaves a schema in two keys; holding the
+                           // old one is what makes that readable and the rotation
+                           // resumable rather than a loss (`FJS-714`)
   hooks,
   onEvent,
   announce:   announceDefault,  // 'collection' (default) | 'rows' | 'none' — what a BULK
@@ -9110,6 +9295,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   const softDeleteCascadeMap = buildSoftDeleteCascadeMap(schema)
   const hasTemplatesMap      = buildHasTemplatesMap(schema)
   const boolMap        = buildBoolMap(schema)
+  const affinityMap    = buildAffinityMap(schema)
   const bigMap         = buildBigMap(schema)
   const filterKindMap  = buildFilterKindMap(schema)
   const autoIdMap      = buildAutoIdMap(schema)
@@ -9208,6 +9394,19 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
 
   // Validate encryption key — fail fast if @encrypted fields exist but no key given
   const encKey = normaliseKey(encryptionKey ?? null)
+  const prevKeys = (Array.isArray(previousEncryptionKeys) ? previousEncryptionKeys
+                   : previousEncryptionKeys ? [previousEncryptionKeys] : [])
+    .map((k, i) => {
+      const b = normaliseKey(k)
+      // Same refusal the current key gets, and for the same reason: a hex string
+      // that is not 32 bytes decodes short and would silently never match.
+      if (!b || b.length !== 32)
+        throw new Error(`previousEncryptionKeys[${i}] must be 32 bytes (got ${b?.length ?? 0}) — it is parsed as hex`)
+      return b
+    })
+  const encRing = encKey ? makeKeyring(encKey, prevKeys) : null
+  if (!encKey && prevKeys.length)
+    throw new Error('previousEncryptionKeys was given with no encryptionKey — there is nothing to rotate to')
   const encryptedFields = []
   for (const m of schema.models)
     for (const f of m.fields)
@@ -9380,7 +9579,38 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         // evaluated in JS too, but against the row read BACK, and an encrypted
         // column is @guarded(all) — stripped from that row, so the comparison is
         // against undefined and denies every write.
-        if (op === 'create') continue
+        if (op === 'create') {
+          // …and what it is written against is the PAYLOAD, so a column the
+          // payload can never carry reads `undefined` there and the allow never
+          // holds: the model becomes uncreatable by every caller.
+          //
+          // The two refusals above are the same class reached from the other
+          // side — @computed and @transient are not columns, so the READ half
+          // is broken too and the sentence is about the read. These three ARE
+          // columns, so the read half works perfectly: the row is legible and
+          // nothing can make it, which is `FJS-195`'s shape with the two
+          // interpreters the other way round. Derived from the FACET — a value
+          // SQLite computes from the row — rather than enumerated, or the next
+          // virtual kind arrives with the same hole.
+          const virtualIn = fieldsIn(rule.expr).find(n =>
+            model.fields.find(f => f.name === n)?.attributes
+              ?.some(a => a.kind === 'derived' || a.kind === 'generated' || a.kind === 'from'))
+          if (virtualIn) {
+            const kind = model.fields.find(f => f.name === virtualIn).attributes
+              .find(a => a.kind === 'derived' || a.kind === 'generated' || a.kind === 'from').kind
+            // The two directions fail opposite ways, so they get different
+            // sentences: an allow that never holds refuses everybody, a deny
+            // that never fires refuses nobody.
+            const consequence = bucket.allows.includes(rule)
+              ? `can never hold, so no caller could create this model`
+              : `can never fire, so it refuses nothing`
+            throw new Error(
+              `${decl} ${consequence} — "${virtualIn}" is @${kind}, a value SQLite computes from the row, so it ` +
+              `is not in the payload a create policy is evaluated against. Write the predicate over the columns ` +
+              `it is computed from; the read policy can keep naming it.`)
+          }
+          continue
+        }
         if (op === 'post-update') {
           const named = fieldsIn(rule.expr).find(n => keys.encryptedAny.has(n))
           if (named) throw new Error(
@@ -9469,7 +9699,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   const ctx = {
     now,
     relationMap, jsonMap, edgeMap, computedSets, fromMap,
-    softDeleteMap, softDeleteCascadeMap, hasTemplatesMap, ftsMap, boolMap, bigMap, enumMap, filterKindMap, autoIdMap, generatedDefaultMap, authDefaultMap, fieldRefDefaultMap, updatedByMap, createdByMap, versionMap, selfRelationMap, sequenceMap, computedFns, tx,
+    softDeleteMap, softDeleteCascadeMap, hasTemplatesMap, ftsMap, boolMap, bigMap, enumMap, filterKindMap, affinityMap, autoIdMap, generatedDefaultMap, authDefaultMap, fieldRefDefaultMap, updatedByMap, createdByMap, versionMap, selfRelationMap, sequenceMap, computedFns, tx,
     coFkMap,
     // Which columns bind to a value set, resolved once. Absent for a schema
     // that declares none, so the check is one map lookup per write there.
@@ -9498,7 +9728,15 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     // out kept decrypting with the old key, silently, because read()'s catch
     // turns a failed GCM tag into `null` (FJS-236). A spread copies this
     // object by REFERENCE, so there is one key and nothing to keep in step.
-    enc:           { key: encKey },
+    // `key` is the CURRENT key and stays a Buffer, because every write uses it
+    // and nothing else may. `ring` is what a READ asks, so a value written under
+    // a key this client has rotated away from is still readable (`FJS-714`).
+    enc:           { key: encKey, ring: encRing },
+    // Read by the decrypt path for one question: was this column DECLARED
+    // un-rotatable? `@secret(rotate: false)` is an acknowledged loss — the
+    // caller said the value stops being readable at the next rotation — so it
+    // degrades where every other column raises (`FJS-716`).
+    secretMap,
     isSystem:      false,
     // Which columns a caller may not NAME, per model, plus which models can reach
     // one at all. Built once — the relation walk is a fixed point over the graph.
@@ -10104,9 +10342,20 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     return out
   }
 
+  // `ctx.models` is keyed by MODEL NAME and every caller here passes an
+  // ACCESSOR, so the lookup missed every time and each of the six `$` siblings
+  // paid a scan of the model list with a name derivation per model. `$readAs`
+  // is the one that makes it matter: it runs once per broadcast cohort, so the
+  // cost is multiplied by the audience — measured, 17 µs a call on a 188-model
+  // schema against 2 µs on a small one (`FJS-723`). Indexed under both spellings
+  // because reaching one of these with a model name has always worked.
+  const accessorIndex = {}
+  for (const m of schema.models) {
+    accessorIndex[modelToAccessor(m.name)] = m
+    accessorIndex[m.name] = m
+  }
   function modelForAccessor(accessor) {
-    return ctx.models?.[accessor]
-      ?? schema.models.find(m => m.name.charAt(0).toLowerCase() + m.name.slice(1) === accessor)
+    return accessorIndex[accessor]
   }
 
   // The tenancy declaration, resolved — null when the schema declares none.
@@ -10180,6 +10429,30 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       else if (policy.encrypted) out[field] = 'encrypted'
     }
     return out
+  }
+
+  // ─── $primaryKey ────────────────────────────────────────────────────────
+  //
+  // $primaryKey(accessor) → the key's columns, IN KEY ORDER; [] for an unknown
+  // accessor or a model with no declared key.
+  //
+  // The sixth sibling of $checkWhere/$checkOrderBy/$protectedFields, and the
+  // same contract: every flavour of client answers identically, because what a
+  // schema declares the key to be is not a question about who is asking.
+  //
+  // It exists because the layer above has to know whether a row can be named by
+  // ONE value. `expandCompositeId` stamps `@id` on every member of an
+  // `@@id([a, b])`, so asking the fields answers all of them and in DECLARATION
+  // order — and the key's own order, which is what the implicit index is
+  // prefix-matched on, is stated only on the model attribute. A caller reading
+  // it off the fields gets a plausible wrong answer (`FJS-694`).
+  function $primaryKey(accessor) {
+    const model = modelForAccessor(accessor)
+    if (!model) return []
+    const composite = model.attributes?.find(a => a.kind === 'id')
+    if (composite?.fields?.length) return [...composite.fields]
+    const single = model.fields?.find(f => f.attributes.some(a => a.kind === 'id'))
+    return single ? [single.name] : []
   }
 
   // ─── $readAs ────────────────────────────────────────────────────────────
@@ -10604,7 +10877,9 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       throw new Error(
         `$rotateKey would leave ${unacked.length} column(s) unreadable and has rotated nothing:\n` +
         unacked.map(o => `  ${o.key} — ${o.reason}`).join('\n') +
-        `\nThe key swap is global, so a column this cannot re-encrypt is not left on the old key — it is lost.\n` +
+        `\nThe key swap is global, so a column this cannot re-encrypt is not carried forward.\n` +
+        `This client keeps reading it — the old key stays on its ring — but the next process to\n` +
+        `start does not, unless it is given previousEncryptionKeys: ['<the old key>'].\n` +
         `Pass { orphan: [${unacked.map(o => `'${o.key}'`).join(', ')}] } to accept that deliberately.`
       )
     }
@@ -10663,7 +10938,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
               const vals = []
               for (const fieldName of rotatableFields) {
                 if (row[fieldName] == null) continue
-                const plain = decryptField(row[fieldName], ctx.enc.key)
+                const plain = decryptField(row[fieldName], ctx.enc.ring ?? ctx.enc.key)
                 sets.push(`"${fieldName}" = ?`)
                 // Re-encrypt in the mode the field was DECLARED with, not the mode
                 // rotation happens to use. Rewriting a deterministic column with a
@@ -10694,7 +10969,21 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     // One assignment reaches every client derived from this one, including the
     // memoised asSystem() proxy built before the rotation. That is the whole
     // reason the key lives in a cell.
-    if (Object.keys(results).length > 0) ctx.enc.key = newKey
+    //
+    // The OLD key stays on the ring, and that is what makes a partial rotation
+    // survivable rather than a loss (`FJS-714`). The loop above is one
+    // transaction per DATABASE, so a crash between two commits leaves database
+    // A on the new key and B on the old — which used to be undetectable and
+    // unreadable, with a single global key setting and no way to say which
+    // value was under which. Now every value names its key, both keys are held,
+    // and running the rotation again finishes it: a row already on the new kid
+    // decrypts, re-encrypts to the same kid, and costs a write rather than a
+    // wrong answer.
+    if (Object.keys(results).length > 0) {
+      const previous = ctx.enc.ring?.all ?? (ctx.enc.key ? [ctx.enc.key] : [])
+      ctx.enc.key  = newKey
+      ctx.enc.ring = makeKeyring(newKey, previous.filter(k => !k.equals(newKey)))
+    }
 
     return results
   }
@@ -10868,7 +11157,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       })
     }
 
-    const sysOwnProps = ['asSystem', '$close', '$schema', '$checkWhere', '$checkOrderBy', '$protectedFields', '$capabilitiesFor', '$readAs', '$readGrading', '$softDelete', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const sysOwnProps = ['asSystem', '$close', '$schema', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$readAs', '$readGrading', '$softDelete', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
     const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: sys$lock, $locks: lockPrimitive.$locks }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
@@ -10887,6 +11176,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$retain')     return $retain
         if (prop === '$checkWhere') return $checkWhere
         if (prop === '$protectedFields') return $protectedFields
+        if (prop === '$primaryKey') return $primaryKey
       if (prop === '$capabilitiesFor') return $capabilitiesFor
       if (prop === '$readAs')          return $readAs
       if (prop === '$readGrading')     return $readGrading
@@ -10993,7 +11283,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       })
     }
 
-    const authOwnProps = ['$close', '$schema', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$capabilitiesFor', '$readAs', '$readGrading', '$softDelete', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
+    const authOwnProps = ['$close', '$schema', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$readAs', '$readGrading', '$softDelete', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
     const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
@@ -11009,6 +11299,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$retain')         return retainRefusal
         if (prop === '$checkWhere')     return $checkWhere
         if (prop === '$protectedFields') return $protectedFields
+        if (prop === '$primaryKey') return $primaryKey
       if (prop === '$capabilitiesFor') return $capabilitiesFor
       if (prop === '$readAs')          return $readAs
       if (prop === '$readGrading')     return $readGrading
@@ -11053,7 +11344,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     const rawTables = makeLazyTables(sCtx)
     sCtx.tables = rawTables
     const tables = installScopesLazy(rawTables, () => sCtx)
-    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$capabilitiesFor', '$readAs', '$readGrading', '$softDelete', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$readAs', '$readGrading', '$softDelete', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
     const target = {
       $scopedBy: (b) => _makeScopedProxy({ ...overrides, scopedBy: { ...(overrides.scopedBy ?? {}), ...(b ?? {}) } }),
       $setAuth:  (u) => _makeScopedProxy({ ...overrides, auth: u }),
@@ -11076,6 +11367,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$retain')     return retainRefusal
         if (prop === '$checkWhere') return $checkWhere
         if (prop === '$protectedFields') return $protectedFields
+        if (prop === '$primaryKey') return $primaryKey
       if (prop === '$capabilitiesFor') return $capabilitiesFor
       if (prop === '$readAs')          return $readAs
       if (prop === '$readGrading')     return $readGrading
@@ -11240,7 +11532,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     return result
   }
 
-  const rootOwnProps = ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$capabilitiesFor', '$readAs', '$readGrading', '$scopes', '$audit', '$softDelete', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
+  const rootOwnProps = ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$readAs', '$readGrading', '$scopes', '$audit', '$softDelete', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
   clientProxy = new Proxy({ sql, query, $transaction, $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
     get(target, prop) {
       if (typeof prop === 'symbol')   return undefined
@@ -11272,6 +11564,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       if (prop === '$retain')     return retainRefusal
       if (prop === '$checkWhere')     return $checkWhere
       if (prop === '$protectedFields') return $protectedFields
+      if (prop === '$primaryKey')      return $primaryKey
       if (prop === '$capabilitiesFor') return $capabilitiesFor
       if (prop === '$readAs')          return $readAs
       if (prop === '$readGrading')     return $readGrading

@@ -449,6 +449,71 @@ for derived — if it has no independent existence, it is not a Projection.
 
 ## Access control
 
+### <a id="fjs-d183"></a>2026-09-03 · `FJS-D183` — the envelope names the KEY. A rotation is resumable because every value says which key wrote it, and the old key stays readable rather than being dropped.
+
+`v1.` encoded the FORMAT version — the one thing about a stored value that never
+changes — and left out the one that does. `$rotateKey` runs **one transaction
+per database**, so a crash between two commits leaves database A on the new key
+and B on the old under a single global key setting, with nothing able to say
+which value is under which, no old-key decrypt window, and no way to find the
+rows still to do (`FJS-714`).
+
+**`v2.<kid>.<payload>`**, where the kid is a domain-separated HMAC of the key
+truncated to eight hex characters. It identifies a key without being one, which
+is what makes it safe in a column, in a log line and in an error message. It is
+not a collision-resistant identifier and is not used as one: an unknown kid
+still tries every key on the ring, because **GCM's tag is the authority and a
+kid is only the order**. What the kid buys is the right key first, and a
+resumable rotation — *which rows are still on the old kid* is a question that
+could not previously be asked.
+
+**`previousEncryptionKeys` is read-only and the ring is what a READ asks.** The
+current key stays the only thing a write uses. After a rotation the old key
+**stays on the ring** rather than being dropped, which is the whole of what
+makes a partial rotation survivable, and re-running the rotation finishes it: a
+row already on the new kid decrypts, re-encrypts to the same kid, and costs a
+write rather than a wrong answer.
+
+**Two consequences the finding did not name, and measuring is what found both.**
+
+A deterministic encoding is a **function of the key**, so an operand encoded
+under the current one does not equal the same value stored under a previous one.
+Making a half-rotated schema *supported* would therefore have created a new
+silent failure: every equality filter over a not-yet-rotated row answering
+nothing, with no error, in exactly the state this feature exists to make safe.
+The operand is widened across the whole ring, at all four spellings of equality
+(`equals` and a bare scalar become `in`; `not` becomes `notIn`).
+
+And the payload is **byte-identical across envelope versions** — same key, same
+derivation, same digest — so a value written before this change reads
+`v1d.<p>` where the operand now encodes `v2d.<kid>.<p>`, and equality compares
+the whole stored string. Every deterministic and every `@hashed` lookup **in
+every existing app** would have stopped matching on the first query after the
+upgrade, silently. **No suite in this package could see it, because every one
+of them builds a fresh database** — `FJS-251`'s shape, one subsystem over — so
+`legacyForm` emits the v1 twin beside each encoding and a simulated pre-upgrade
+database is a written test.
+
+**A stored value that cannot be decrypted is raised, not blanked** (`FJS-716`),
+with one exception that the schema declares: `@secret(rotate: false)` is an
+acknowledged loss `$rotateKey` makes the caller name, so raising there would
+make the whole row unreadable to punish a column the app already gave up. That
+exception is read off the declaration rather than configured, so there is no
+knob. The ring also moved WHEN the loss lands: an orphaned column stays readable
+while the process holds the old key and is lost at the next start, which the
+refusal now says.
+
+**And a caller may not send a value that merely looks encrypted** (`FJS-715`).
+The mode must match the column's protection, the value must actually verify, and
+a non-system caller is refused by name — a caller never legitimately holds
+ciphertext, since a non-system read strips or decrypts.
+
+*Lives in:* `packages/litestone/src/core/encryption.js` (`keyId`,
+`parseEnvelope`, `makeKeyring`, `verifiesAs`, `legacyForm`) ·
+`src/core/client.js` (the ring, the write guard, the widened operand,
+`$rotateKey`) · `test/key-rotation.test.ts` · `FJS-714` · `FJS-715` ·
+`FJS-716` · closes `F18` of the foundation audit
+
 ### <a id="fjs-d182"></a>2026-09-02 · `FJS-D182` — a bulk write refuses the transitions KEY, not the verb. `FJS-044`'s power tool survives for every other column.
 
 `updateMany` matches rows with a WHERE and never reads them, so there is no
@@ -1625,6 +1690,80 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d189"></a>2026-09-03 · `FJS-D189` — a polymorphic relation is refused. The closed set is `@@arc`, the open set stays two plain columns, and the reason is that a relation's target is an input to the access-control compiler.
+
+`IDEAS/polymorphic-relations.md` is the argument, measured against the tree
+rather than estimated. The request arrives as one question and is two, and
+conflating them is how a project buys the expensive answer and still does not get
+what it wanted.
+
+**A closed set of models you own, sharing an identity** — *a Content is a Post or
+a Video* — is solvable, and a real foreign key is available at the end of it.
+**An open set, pointing at anything** — *this tag, audit row or notification is
+about any row in the app* — is not: no relational database gives it referential
+integrity, with or without an ORM's help, and no ORM in this ecosystem changes
+that. Litestone has three instances of the second and none of the first, and all
+three are two plain columns and a naming convention, which is the honest shape.
+
+**The count is the cheap half of the refusal.** 158 call sites thread
+`relationMap`, 69 read `.targetModel` as a single value, and nine modules hold
+the single-target assumption. **The expensive half is `policy.js`**: a
+`check(rel, 'read')` compiles the TARGET's own policy into a correlated subquery
+against the target's own table. One relation, one table, one WHERE. A
+polymorphic target is N compiled branches inside a `CASE` on the discriminator,
+each carrying that target's `@@gate` and its `@@allow` set — and then the
+question with no good answer, which is a caller who reads `Order` at 4 and
+`Product` at 5 listing the attachments on a tag. Filtered by policy is a 200 with
+fewer rows, and a wrong policy is an empty screen rather than an error, which is
+what Invariant 6 is arranged around. Everything downstream inherits it: no
+foreign key for `ddl.js` to emit, a union `typegen` cannot answer so
+`controlFor` answers `null` and the column is absent from every generated form,
+an `x-gate` that cannot answer on the client because the gate is per target and
+the target is per row, and an `announceDataWrites` that cannot say which service
+announced the write. **That is not a feature with a large diff — it is a change
+to the meaning of the access core**, and this framework's one non-negotiable is
+that access is declared in the schema and enforced at the Data boundary.
+
+**The neighbours do not settle it against us.** Prisma does not support it and
+the request has been open since 2020; its own documentation answers with three
+workarounds and one of them is `@@arc`. ZenStack's `@@delegate` is the strongest
+thing in this ecosystem and it answers the FIRST problem only — every
+participant must `extends` the base, which is a closed set by construction, so
+expressing *tag any row of any model* through it means a schema-wide refactor
+that adds a join to every read of three models in exchange for a tag. The open
+set stays open under delegate exactly as it does here.
+
+**What ships instead is `@@arc([a, b, …])`** — several optional foreign keys of
+which exactly one is set, which was writable in `.lite` before the attribute
+existed, since `ddl.js` emits a `@@check` expression verbatim and SQLite spells a
+boolean as 0 or 1. **The whole argument for it is that these are ordinary
+relations**: a real foreign key, a real `onDelete`, a real `include`, all 69
+`.targetModel` reads still single-valued, and one target per branch for the
+policy compiler. Nothing in the access core moves. What the attribute adds over
+the hand-written CHECK is a parse-time refusal — every column named must exist,
+be nullable and carry a `@relation` — and a constraint that is derived rather
+than typed. It is a **contract** for `release:check`, like any row invariant, and
+it stops scaling around six columns, **which is the signal that the target set is
+OPEN and no relation can serve it**.
+
+**Refused *for now*, and the condition is named rather than left to taste.**
+Reopen this when an open target set has to carry a real foreign key, a real
+cascade and a policy-compiled `include` at once — the case `@@arc` cannot reach
+and two columns do not pretend to. A larger `@@arc`, a second discriminator
+convention or an ORM-side sweep of dangling rows are each this ruling being
+worked around rather than a reason to revisit it. Until then a polymorphic pair
+is graded rather than forbidden: `fli check`'s `polymorphic-subject` warns where
+the discriminator is a bare `String`, because an `enum` there emits a table CHECK
+and reaches a picker, and that is the one column of the pair that can still be
+told something.
+
+*Lives in:* `packages/litestone/src/core/parser.js` (`@@arc`) ·
+`packages/litestone/src/core/ddl.js` · `packages/litestone/src/release.js` ·
+`packages/cli/core/checks.js` (`polymorphic-subject`) ·
+`IDEAS/polymorphic-relations.md` is the argument · `example`: `verify:collect` is
+the only `@@arc` in either app and the only place a provider's answer drives a
+state machine.
 
 ### <a id="fjs-d175"></a>2026-09-02 · `FJS-D175` — a broadcast is graded PER RECIPIENT at publish, by the Data boundary, in cohorts; joining a channel is a subscription and never a permission.
 
@@ -2911,9 +3050,11 @@ DDL default), `@default`/`@updatedAt`/`@sequence`/generated/computed/`@from`,
 `Int @id` (autoincrement). Applies to create/createMany/upsert-insert only —
 updates stay partial.
 
-### <a id="fjs-d61"></a>2026-08-01 · `FJS-D61` — `@@strict` model flag: PARKED.
-(Would escalate read-warnings to errors per-model.) Revisit after the warnings
-have been observed in practice; the warn infrastructure makes it nearly free.
+### <a id="fjs-d61"></a>2026-08-01 · `FJS-D61` — ~~`@@strict` model flag: PARKED.~~ Withdrawn 2026-09-03.
+~~(Would escalate read-warnings to errors per-model.) Revisit after the warnings
+have been observed in practice; the warn infrastructure makes it nearly free.~~
+**Withdrawn 2026-09-03**: [`FJS-D169`](#fjs-d169) removed the read warnings
+this flag existed to escalate, so there is nothing left for it to do.
 *All four above live in:* `packages/litestone/src/core/client.js`
 (`withArgValidation`, `checkWhereKeys`, `writeData`); tests in
 `test/elegance-fixes.test.ts` and the rewritten block in `test/litestone.test.ts`
@@ -3184,6 +3325,62 @@ and the pragma, read by every site that opens a connection. `@frontierjs/caravan
 and Junction's SQLite cache take their own option for the connections they own.
 
 ## Migrations (Litestone)
+
+### <a id="fjs-d186"></a>2026-09-03 · `FJS-D186` — an enumeration gets a catch-all underneath it. A difference the differ cannot NAME is announced, never migrated and never blocking.
+
+`diffSchemas` compares a list of dimensions somebody wrote down: columns,
+indexes, foreign keys, STRICT, CHECKs, table uniques, triggers, views. Six
+issues of this package's history are one dimension arriving in the DDL emitter
+and not in that list, and every one of them reads the same way — *schema is in
+sync*, over a database that is not the declared one. `FJS-717` is the seventh
+prevented and `FJS-718` is the seventh, found by the thing that prevents it.
+
+**The catch-all is the whole of the fix and the enumeration stays.** Comparing
+`sqlite_master` whole could not replace the dimension list: the list is what
+knows a column add is an `ALTER` and a CHECK change is a rebuild, and a text
+comparison knows only that two statements differ. So the two are layered — the
+enumeration says what to DO, and once it has finished saying it the statements
+are compared whole and the leftovers are named.
+
+**A residue is not part of `hasChanges`, and that is not a softening.** There is
+nothing in this file that could write a migration for a dimension it cannot see,
+so counting it as a change would generate an empty migration, apply nothing,
+and find the same difference on the next boot — for ever. What the tripwire
+produces is the one thing an enumeration cannot produce for itself: the
+statement that something is left over.
+
+**It does not block, because the commonest cause is not a defect.** `litestone
+introspect` is the adoption door, and a real database has a `COLLATE NOCASE` on
+its email column, a `WITHOUT ROWID` table or a hand-written index — things this
+language cannot say, so no enumeration will ever grow to cover them. Refusing to
+boot over one would refuse every adopted database. The refusal that would be
+right for a litestone-created database is wrong for an adopted one and nothing
+here can tell them apart, so it announces and names both readings.
+
+**It is recorded beside the DDL hash rather than withholding it.** The hash is
+what makes *call this on every startup* free, and it is also the guard two
+replicas race on, so a state that suppresses it buys an announcement at the
+price of a double migration. Recorded, the fast path re-announces for one
+SELECT — which is what a difference nothing can migrate needs, since saying it
+once and going quiet is how it stops being known. `acceptResidue: true` is the
+caller stating it, modelled on the `acceptDataLoss` beside it, and it clears the
+record rather than filtering the output.
+
+**The false-positive rate decided the normalisation and was measured first.**
+`ALTER TABLE ADD COLUMN` appends the column text to the stored statement in the
+spacing the ALTER used, so a table that migrated perfectly differs from the
+pristine one by a space: 162 of 694 objects across the corpus schemas, every one
+of them spacing. Whitespace around punctuation comes out on both sides, which
+takes it to 0 of 694 — and 0 on a fresh build of all nine corpus schemas, and 0
+on both real databases in this repo. What that cannot tell apart is two
+statements differing only by whitespace inside a string literal; the alternative
+is a SQL parser standing behind a tripwire whose whole value is not needing one.
+
+**The statements are stored raw and normalised only where two disagree.**
+Normalising in `introspect` cost 18 ms of a 75 ms introspection on the 188-model
+fixture and every object it touched then compared equal anyway. Compared raw
+first, it is 1 ms — inside the noise — so the tripwire is not a thing anybody
+has a reason to turn off.
 
 ### <a id="fjs-d180"></a>2026-09-02 · `FJS-D180` — the audit index's write transaction is the trail file's LOCK, and WAL is what makes taking it affordable. The order is the ruling: the unlink goes first.
 
@@ -6349,6 +6546,95 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d187"></a>2026-09-03 · `FJS-D187` — every document is one of four kinds, precedence is stated once, and a status is one of four words. `PHILOSOPHY.md` §VII holds the rule.
+
+Every contradiction found reading the prose top-down had one shape: a sentence
+written before a fix or a ruling and never re-derived. `ARCHITECT.md` §5 called
+tenancy and the context shape unsettled after [`FJS-D05`](#fjs-d05) and
+[`FJS-D03`](#fjs-d03) had ruled them; junction's `ARCHITECTURE.md` described
+four context fields and a typecheck baseline of 214 against a tree holding six
+and zero; the root README counted components. The framework's first axiom
+already names the disease. This ruling points it at the documents.
+
+**Four kinds** — guiding, register, map, assessment — each with what a
+sentence in it may say, so that a count in a guiding file or a *used to* in a
+map is a rule broken rather than a judgement call. **Precedence** — invariant,
+ruling, map, package document, assessment — so a ruling that must override an
+invariant amends it in the same commit, which [`FJS-D108`](#fjs-d108) and
+[`FJS-D112`](#fjs-d112) did not and [`FJS-D169`](#fjs-d169) assumed the
+opposite of. **Status** — proposed, accepted, superseded-by, withdrawn — so
+*parked* and *under review* stop letting a settled question read as open.
+**Numbers** are generated or absent. And **the delete test** for the sentence
+that is in the right file and may still not belong: if it vanished, could
+someone acting on this file make a mistake it would have prevented?
+
+The rule lives in `PHILOSOPHY.md` §VII rather than in a fifth root file because
+it is Axiom 1 applied to prose and that file already says *write it down or
+lose it*. What enforces it is `fli check`'s doc-audit rules; the one they do
+not yet carry — a guiding document calling open what the register holds as
+ruled — is the class every finding above belonged to.
+
+**Amended the same day, by the corpus.** The section first said status had four
+words — proposed, accepted, superseded-by, withdrawn — which is right for a
+ruling and cannot describe a proposal: `IDEAS/` was already carrying `partial`
+and `shipped`, the two build states between a decision and a fact, and a
+roadmap needs both. Forcing eighty-two files into the smaller vocabulary would
+have made the register worse to serve a rule written without reading it, which
+is *doctrine vs discovery* (`PHILOSOPHY.md` §IV) answered the way that section
+says to answer it. The vocabulary is `proposed` · `partial` · `shipped` ·
+`superseded-by` · `withdrawn`, plus `assessment` for a reading of the tree and
+`index` for a file derived from the others. `idea`, `proposal` and `argued` are
+retired.
+
+*Lives in:* `PHILOSOPHY.md` §VII · `packages/cli/core/registers.js`
+(`IDEA_STATUS`, enforced by `fli register:check`) · `packages/cli/core/doc-audit.js`
+(`doc-status-stale`).
+
+### <a id="fjs-d188"></a>2026-09-03 · `FJS-D188` — the tutorial is a command, and CI grades it
+
+`docs/QUICKSTART.md` was the last large document in this repo with no compiler
+behind it, and it had already rotted in the way that costs most: its own header
+said §7 *Deploy* was "documented from the pipeline, not from a live deployment",
+while `README.md` said every command in it had been run against a clean
+scaffold. One path, two documents, disagreeing about whether it had ever
+worked — and nothing could tell you which was right.
+
+Everything else here that carries knowledge executes it. `fli check` runs the
+live-hazard catalogue, `fli proves` runs the drive table, `core/preflight.js`
+runs the *Start first* column, the `snapshots` phase reruns every committed
+artefact's own generator. The tutorial is the same shape and gets the same
+answer: **`fli tutor` is four commands, each step's prose is the lesson text,
+each step runs the real command, and each step ends in a probe against the
+running world** — a port that answers, a table in `sqlite_master`, a row read
+back out of the file the app wrote, the image id a container is on, a nonce
+minted a second earlier coming back out of a job's recorded output. A step that
+cannot prove itself refuses and says what it asked for and what it got.
+
+**A probe rather than an exit code, and that is the ruling's substance.** Every
+one of the defects this found was green by exit code: nine of `fli new`'s ten
+refusals exited 0 (`FJS-735`), `fli auth:create-user` created an account and
+reported failure (`FJS-736`), and every command the deploy pipeline sent to a
+machine did nothing at all under node while reporting success (`FJS-738`). A
+tutorial graded on exit codes would have passed against all three and taught
+each of them.
+
+**Graded by `bun run ci`, in the full tier**, so a command renamed out from
+under a step is a red build. Without that this is a script that rots the same
+way the prose did, one release later.
+
+**The counter-precedent is deliberate.** `FJS-D92` chose a *decision wizard*
+over a linear lesson for `@frontierjs/css`'s guide, and this goes the other
+way. The distinction is what the reader is doing: that question is a lookup
+somebody returns to a hundred times and enters from the middle, and this one is
+a first run, in order, once. A wizard for a first run is a menu in front of
+somebody who does not yet know the words.
+
+**What stays prose is what is a reference rather than a sequence.** QUICKSTART
+keeps *Where to write what* and loses the step-by-step half — deleting the file
+outright would have taken a working reference with it, and executing a table
+that maps intentions onto directories is not a thing a probe can do.
+
 
 ### <a id="fjs-d163"></a>2026-08-30 · `FJS-D163` — `AGENTS.md` is a permitted fifth file at a package root and is not a required one. It is `CLAUDE.md`'s question asked about the other audience, and that audience has a tarball rather than a tree.
 

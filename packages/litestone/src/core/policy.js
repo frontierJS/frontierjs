@@ -27,7 +27,7 @@
 //   Cycle-safe: visited set prevents infinite recursion.
 
 import { AccessDeniedError }   from './plugin.js'
-import { modelToTableName }    from './ddl.js'
+import { modelToTableName, sqlType } from './ddl.js'
 import { comparisonEncoderFor } from './encryption.js'
 import { ValidationError }     from './validate.js'
 import { NOW_SQL }             from './query.js'
@@ -1252,7 +1252,19 @@ export function evalJs(node, ctx, data, modelName, policyMap, relationMap, op = 
         // `NULL IN (…)` is NULL in SQL, never false — the value is unknown, so
         // whether it is in the list is unknown.
         if (needle === null || needle === undefined) return null
-        return listOf(right).includes(needle)
+        // Membership is equality repeated, so it takes the same affinity — the
+        // left operand's, applied to each element, which is what makes
+        // `qty in ['5']` over an Int column TRUE the way the WHERE says it is.
+        // A NULL in the list is UNKNOWN rather than a miss, for the same reason
+        // an absent operand is.
+        const affNeedle = affinityOf(left, ctx, modelName, relationMap)
+        let unknown = false
+        for (const item of listOf(right)) {
+          const hit = compare(needle, '==', item, affNeedle, null)
+          if (hit === true) return true
+          if (hit === null) unknown = true
+        }
+        return unknown ? null : false
       }
 
       // `x == null` is how this language spells `IS NULL`, and it is the one
@@ -1279,17 +1291,19 @@ export function evalJs(node, ctx, data, modelName, policyMap, relationMap, op = 
         const fk  = rel?.kind === 'belongsTo' ? rel.foreignKey : left.name
         const L   = data?.[fk] ?? null
         const R   = ctx.auth?.id ?? null
-        return compare(L, op, R)
+        return compare(L, op, R, affinityOf(left, ctx, modelName, relationMap), null)
       }
       if (right.type === 'field' && left.type === 'auth' && left.field === null) {
         const rel = relationMap[modelName]?.[right.name]
         const fk  = rel?.kind === 'belongsTo' ? rel.foreignKey : right.name
         const L   = ctx.auth?.id ?? null
         const R   = data?.[fk] ?? null
-        return compare(L, op, R)
+        return compare(L, op, R, null, affinityOf(right, ctx, modelName, relationMap))
       }
 
-      return compare(ev(left), op, ev(right))
+      return compare(ev(left), op, ev(right),
+        affinityOf(left,  ctx, modelName, relationMap),
+        affinityOf(right, ctx, modelName, relationMap))
     }
 
     // The SQL compiler throws on a node it does not know; this answered `true`
@@ -1306,18 +1320,105 @@ export function evalJs(node, ctx, data, modelName, policyMap, relationMap, op = 
   }
 }
 
-function compare(L, op, R) {
+// ─── SQLite's comparison, in the interpreter that has JavaScript's ───────────
+//
+// The second value the two halves disagreed about, after `FJS-668`'s absent
+// one. SQLite applies the COLUMN's affinity to the other operand before
+// comparing and then orders by storage class; JS `===` does neither. So
+// `ownerId == auth().id` over an `Int` column and a caller whose id is the
+// string `'5'` — which is every junction principal, since a `SessionContext`
+// carries `userId` as text — is TRUE through a query and FALSE here: the owner
+// reads their own row over HTTP and is then graded out of the broadcast for it
+// (`FJS-713`). Measured across column type × operator × operand, 54 of 594
+// cells disagreed, in both directions and on every operator.
+//
+// Affinity is the whole of why `toDataPrincipal` coercing one claim is not the
+// fix: it closes four of those cells and leaves fifty.
+
+// A JS value as SQLite would STORE it — the binder's own conversions, since
+// that is what the SQL half is comparing against.
+const toStorage = (v) => {
+  if (typeof v === 'boolean') return v ? 1 : 0
+  if (v instanceof Date)      return v.toISOString()
+  return v
+}
+
+// NUMERIC affinity converts TEXT only when it is a well-formed number, and
+// leaves it TEXT otherwise — which is what makes `qty < 'abc'` TRUE rather than
+// unknown. `Number` is wider than SQLite here (hex, `Infinity`), so the shapes
+// SQLite refuses are excluded rather than inherited.
+const toNumeric = (v) => {
+  if (typeof v !== 'string') return v
+  if (!/^\s*[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?\s*$/.test(v)) return v
+  const n = Number(v)
+  return Number.isFinite(n) ? n : v
+}
+const toText = (v) => (typeof v === 'number' ? String(v) : v)
+
+// The affinity of one side of a comparison. A literal and a claim have none —
+// they are the parameter — so this only ever answers for a column.
+function affinityOf(node, ctx, modelName, relationMap) {
+  if (node?.type !== 'field') return null
+  const rel = relationMap?.[modelName]?.[node.name]
+  const col = rel?.kind === 'belongsTo' ? rel.foreignKey : node.name
+  // A client builds the map once; a caller evaluating a policy outside one —
+  // `testing.js` imports this function — falls back to the scan rather than to
+  // no affinity, or the two entry points would answer differently.
+  const mapped = ctx?.affinityMap?.[modelName]
+  if (mapped) return mapped[col] ?? null
+  const f = ctx?.schema?.models?.find(m => m.name === modelName)?.fields?.find(x => x.name === col)
+  if (!f?.type) return null
+  const t = sqlType(f.type)
+  return t === 'INTEGER' || t === 'REAL' ? 'NUMERIC' : t === 'BLOB' ? 'BLOB' : 'TEXT'
+}
+
+function compare(L, op, R, affL = null, affR = null) {
   // Every comparison with an absent operand is UNKNOWN, `IS NULL` included —
   // which is why `auth().x == null` has its own branch above rather than
   // reaching here: that one is a presence test and this one is a comparison.
   if (L === null || L === undefined || R === null || R === undefined) return null
+
+  L = toStorage(L)
+  R = toStorage(R)
+
+  // SQLite's own rules, in its own order (§4.2 Affinity Of Comparison
+  // Operands): numeric affinity on one side pulls the other to a number, text
+  // affinity pushes an unaffinitied operand to text, and nothing else applies.
+  if      (affL === 'NUMERIC' && affR !== 'NUMERIC') R = toNumeric(R)
+  else if (affR === 'NUMERIC' && affL !== 'NUMERIC') L = toNumeric(L)
+  else if (affL === 'TEXT'    && affR === null)      R = toText(R)
+  else if (affR === 'TEXT'    && affL === null)      L = toText(L)
+
+  // Anything that is not a number or a string after that is a value this
+  // comparison has no storage class for — a Bytes column, a Json document.
+  // Those keep JavaScript's answer rather than being given a wrong one: two
+  // distinct Buffers rank equal under a class comparison, which would make
+  // `==` TRUE for them.
+  const rank = (v) => (typeof v === 'number' ? 1 : typeof v === 'string' ? 2 : 0)
+  const rl = rank(L), rr = rank(R)
+  if (!rl || !rr) {
+    switch (op) {
+      case '==': return L === R
+      case '!=': return L !== R
+      case '<':  return L < R
+      case '>':  return L > R
+      case '<=': return L <= R
+      case '>=': return L >= R
+      default:   throw new Error(`Unknown policy comparison operator: ${op}`)
+    }
+  }
+
+  // NULL < INTEGER/REAL < TEXT < BLOB, and within a class by value. Text is
+  // compared with JS `<`, which is UTF-16 code-unit order where SQLite's BINARY
+  // collation is UTF-8 byte order — the two agree below U+10000 and not above.
+  const c = rl !== rr ? (rl < rr ? -1 : 1) : L < R ? -1 : L > R ? 1 : 0
   switch (op) {
-    case '==': return L === R
-    case '!=': return L !== R
-    case '<':  return L < R
-    case '>':  return L > R
-    case '<=': return L <= R
-    case '>=': return L >= R
+    case '==': return c === 0
+    case '!=': return c !== 0
+    case '<':  return c < 0
+    case '>':  return c > 0
+    case '<=': return c <= 0
+    case '>=': return c >= 0
     default:   throw new Error(`Unknown policy comparison operator: ${op}`)
   }
 }

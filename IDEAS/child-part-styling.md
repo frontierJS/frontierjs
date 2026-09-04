@@ -1,6 +1,6 @@
 ---
 id: child-part-styling
-status: idea
+status: proposed
 dated: 2026-08-24
 ---
 

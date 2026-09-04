@@ -47,6 +47,7 @@ import { createRequire }                   from 'node:module'
 import { existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs'
 import { join, dirname, relative }         from 'node:path'
 import { fileURLToPath }                   from 'node:url'
+import { tmpdir }                          from 'node:os'
 
 // The SAME module `fli check` runs against a client app. Imported by relative
 // path rather than reimplemented, because a framework that breaks its own stated
@@ -59,7 +60,7 @@ import { FJS_PACKAGES, APP_DEV_DEPS }          from '../packages/cli/core/app-co
 
 // Packs the working tree and builds a scaffolded app against it. Its own file
 // because the mechanism needs more explaining than the phase does.
-import { scaffoldAndBuild, scaffoldAndDeploy, deployJournalCycle } from './scaffold-build.mjs'
+import { scaffoldAndBuild, scaffoldAndDeploy, deployJournalCycle, daemonBlindHint } from './scaffold-build.mjs'
 
 const ROOT       = resolveRoot()
 const ALLOWANCES = join(ROOT, 'scripts', 'ci-allowances.json')
@@ -113,6 +114,7 @@ function main() {
   }
   if (!fast) {
     deploy()
+    tutor()
     tests()
   }
   report()
@@ -1167,6 +1169,125 @@ function tests() {
 
   if (update && fixed.length) saveAllowances()
   ok(`${passed.length} suite(s) green`)
+}
+
+// ─── phase 9 · tutor ────────────────────────────────────────
+// The tutorial, executed. `docs/QUICKSTART.md` §7 exited 0 on every command it
+// named and had never once put an app on a server — a document with no compiler
+// behind it, which is the failure every other phase here exists to prevent one
+// realm at a time. A lesson is a command with steps, and each step ends in a
+// probe against the running world: a port that answers, a table that exists, a
+// row in the file the app wrote.
+//
+// What this phase catches that nothing else can: a command renamed out from
+// under a step, a scaffold whose default gate moved, an answer the framework
+// changed. The parse sweep sees a lesson's JavaScript and the drives do not run
+// one, so without this the tutorial rots exactly the way the document did.
+//
+// Test-tier ports (`packages/cli/core/ports.js`: env 7, project 0), so a lesson
+// in CI cannot collide with a dev server on 8000. They are REFUSED rather than
+// moved — that is the lesson's own rule — so a port already held here is an
+// environment fact and reported as a skip, the way a missing Docker daemon is.
+// No daemon, no network: `--source local` resolves the tree beside it.
+
+function tutor() {
+  const from  = phase('tutor')
+  const known = allowances.knownTutorFailures ?? {}
+  const fixed = []
+
+  const fli     = join(ROOT, 'packages', 'cli', 'bin', 'fli.js')
+  const API     = 7100
+  const WEB     = 7000
+  const LESSONS = [
+    { id: 'tutor:app',    args: ['--api-port', String(API), '--web-port', String(WEB)] },
+    { id: 'tutor:access', args: ['--api-port', String(API)] },
+    // A real deploy to this machine: a container, a journal on disk, a revert.
+    // 7103 is the next test-tier backend slot after the two `scaffoldAndDeploy`
+    // sources (7100, 7101) and the transition cycle (7102).
+    { id: 'tutor:deploy', args: ['--port', '7103'], needsDocker: true },
+    // The control plane and a machine reporting in to it. Basecamp is
+    // `private: true`, so this lesson stops with a sentence and exits 0 for
+    // anybody who installed from npm — here it runs, because there is a
+    // checkout. 7120/7180 are basecamp's and outpost's own test-tier slots
+    // (project 2 and project 8).
+    { id: 'tutor:fleet',  args: ['--api-port', '7120', '--outpost-port', '7180'] },
+  ]
+
+  const daemon = spawnSync('docker', ['version', '--format', '{{.Server.Version}}'], { stdio: 'ignore' }).status === 0
+
+  const held = [API, WEB, 7120, 7180, ...(daemon ? [7103] : [])].filter(p => !portFree(p))
+  if (held.length) {
+    note(`tutor phase SKIPPED — port ${held.join(' and ')} already in use. The lessons refuse a busy port rather than moving to the next one, so this is an environment fact rather than a finding.`)
+    warn(`skipped — port ${held.join(', ')} in use`)
+    return
+  }
+
+  for (const lesson of LESSONS) {
+    // The lesson refuses on its own when there is no daemon and exits 0 saying
+    // why — a `stop`, not a failure. Skipping it here as well is what makes
+    // `FJS_CI_REQUIRE_DOCKER=1` mean the same thing in this phase as in the
+    // deploy one: a check that quietly stops running is worse than one nobody
+    // wrote.
+    if (lesson.needsDocker && !daemon) {
+      if (process.env.FJS_CI_REQUIRE_DOCKER === '1') {
+        fail(`${lesson.id} needs a Docker daemon and FJS_CI_REQUIRE_DOCKER=1`)
+      } else {
+        note(`${lesson.id} SKIPPED — no Docker daemon. Set FJS_CI_REQUIRE_DOCKER=1 to make this a failure.`)
+        warn(`${lesson.id} skipped — no Docker daemon`)
+      }
+      continue
+    }
+
+    const t0  = Date.now()
+    const run = spawnSync('bun', [fli, lesson.id, '--tmp', '--yes', ...lesson.args], {
+      cwd:        ROOT,
+      encoding:   'utf8',
+      stdio:      verbose ? 'inherit' : 'pipe',
+      timeout:    TIMEOUT_MS,
+      maxBuffer:  MAX_BUFFER,
+    })
+    const output = verbose ? '' : `${run.stdout ?? ''}${run.stderr ?? ''}`
+
+    if (run.status === 0) {
+      if (lesson.id in known) fixed.push(lesson.id)
+      ok(lesson.id, Date.now() - t0)
+      continue
+    }
+
+    if (lesson.id in known) {
+      note(`${lesson.id} failed — known: ${known[lesson.id]}`)
+      warn(`${lesson.id} (known failure)`, Date.now() - t0)
+      continue
+    }
+
+    // A lesson that builds an image builds it inside its own throwaway
+    // workspace, and this shell's /tmp may be private to it — the same
+    // environment fact the deploy phase names, so it is named with the same
+    // sentence rather than a second one.
+    fail(`${lesson.id} exited ${run.status}${daemonBlindHint(output, process.env.FJS_CI_WORKDIR || tmpdir())}`, output)
+  }
+
+  for (const id of fixed) {
+    if (update) {
+      delete allowances.knownTutorFailures[id]
+      note(`${id} now passes — removed from knownTutorFailures.`)
+    } else {
+      fail(
+        `${id} is listed in knownTutorFailures and now PASSES.\n` +
+        `      Remove the entry, or run with --update. A stale allowance stops CI seeing the next real failure.`
+      )
+    }
+  }
+
+  if (update && fixed.length) saveAllowances()
+  if (clean(from)) ok('the tutorial runs, and every step proved itself')
+}
+
+// Is this port bindable RIGHT NOW. A child process rather than `net` here
+// because every phase in this file is synchronous, and a listen is not.
+function portFree(port) {
+  const probe = `const s=require('net').createServer();s.once('error',()=>process.exit(1));s.listen(${port},'127.0.0.1',()=>s.close(()=>process.exit(0)))`
+  return spawnSync(process.execPath, ['-e', probe], { stdio: 'ignore' }).status === 0
 }
 
 // ─── running a package's own script ─────────────────────────

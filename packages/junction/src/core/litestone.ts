@@ -33,7 +33,7 @@ import type { HookMap } from './hooks.ts'
 import { NotFound, BadRequest, Unauthorized, Forbidden } from './errors.ts'
 import type { ServiceContext, QueryDirectives } from './context.ts'
 import { clampPage } from './directives.ts'
-import { announcingService, freezeUser, requestMeta, currentCall } from './context.ts'
+import { announcingService, announcedInCommitScope, freezeUser, requestMeta, currentCall } from './context.ts'
 import { toBulkFailure, partitionBulk, BULK_FAILURES, type BulkFailure } from './envelope.ts'
 import { singularize } from '@frontierjs/toolbelt/inflect'
 import { normalizeOrderBy, type SortParam } from './sort.ts'
@@ -528,6 +528,28 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
   // fallback is the same one getTable resolves the accessor with.
   const modelLabel = (ctx: ServiceContext): string => model ?? ctx.service
 
+  /**
+   * The model's key columns, in key order, or [] where nothing can say.
+   *
+   * The accessor is resolved by PROBING, exactly as `getTable` does, because
+   * `model` is optional and the spelling that resolves is the one the client
+   * answers to. `$primaryKey` answers [] for an unknown accessor — the
+   * `$check*` family's contract, where *I cannot judge this* is not *this is
+   * wrong* — so the probe is safe and a client that predates it is a miss
+   * rather than a throw.
+   */
+  function primaryKeyOf(ctx: ServiceContext): string[] {
+    const db = ctx.locals?.db as { $primaryKey?: (a: string) => string[] } | undefined
+    if (typeof db?.$primaryKey !== 'function') return []
+    for (const candidate of accessorCandidates(model ?? ctx.service)) {
+      try {
+        const key = db.$primaryKey(candidate)
+        if (key.length) return key
+      } catch { /* not this spelling */ }
+    }
+    return []
+  }
+
   function getTable(ctx: ServiceContext): LitestoneTable {
     const baseDb = ctx.locals.db as LitestoneClient | undefined
 
@@ -848,6 +870,22 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       const q     = parseQuery(ctx.query, 1, 1, ctx.directives)
 
       if (ctx.id) {
+        // A URL segment is ONE value and this model's key is several.
+        //
+        // The list works — litestone orders and pages a tuple-keyed model
+        // correctly as of `FJS-694` — but naming one row does not, and the
+        // failure it used to give was the Data boundary's: *Unknown field 'id'
+        // in where*, which reads as the schema being wrong rather than as the
+        // request being unanswerable. Refused here, by name, with the two ways
+        // out, because what a composite key should look like in a URL is a
+        // decision about a public shape and not something to invent inside a
+        // 404 path.
+        const key = primaryKeyOf(ctx)
+        if (key.length > 1 && !key.includes(idField)) throw new BadRequest(
+          `${modelLabel(ctx)} is keyed by (${key.join(', ')}), so one value cannot name a row. ` +
+          `Filter for it instead — GET /${ctx.service}?${key.map(k => `${k}=…`).join('&')} — ` +
+          `or give the service a custom method that takes the whole key.`)
+
         const where = { [idField]: ctx.id, ...softDeleteFilter() }
         const args: Record<string, unknown> = { where }
         if (q.select)      args.select      = q.select
@@ -3064,7 +3102,7 @@ export function announceDataWrites(
     if (e.event === 'transition') {
       const name = serviceFor(e.model)
       if (!name || !e.transition) return
-      if (announcingService() === name) return
+      if (announcedInCommitScope(name) || announcingService() === name) return
       const record = e.record
       // No row to hand over — the same position a `select: false` write is in
       // below, and it takes the same answer rather than a guess.
@@ -3097,7 +3135,14 @@ export function announceDataWrites(
     // The comparison survives the emitter's setImmediate because ALS propagates
     // to a callback through the scheduling, so the store read here is the one
     // that was active at the write.
-    if (announcingService() === name) return
+    //
+    // Under a transaction it is not, and that is what the commit scope answers:
+    // litestone BUFFERS a transaction's events to the commit, so they arrive
+    // with the OUTERMOST call's span in force and this comparison misses for
+    // every inner one — measured, three events for one nested create
+    // (`FJS-682`). `announcedInCommitScope` is the same question asked of the
+    // transaction rather than of the call.
+    if (announcedInCommitScope(name) || announcingService() === name) return
 
     const row = e.result
     // ── A write with no row to hand over ──────────────────────────────────

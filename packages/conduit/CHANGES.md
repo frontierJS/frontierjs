@@ -1,5 +1,184 @@
 # Changes — @frontierjs/conduit
 
+## 2026-09-03 — an outbound call carries the request that caused it
+
+`FJS-742`. 290 tests, 0 fail. Typecheck clean.
+
+**Every ingredient was already built and none of them had been introduced.**
+`createTraceContext` shipped with nobody wiring it, junction holds the
+correlation id on `requestMeta()`, and the default correlation header here is
+already `X-Request-Id`. Measured against a listening recorder: an inbound
+request stating both `x-request-id` and `traceparent` produced an outbound call
+carrying **neither**, so nothing could join a target's logs to the request that
+caused them.
+
+**The plugin defaults `trace` now**, and it does it under the caller's own
+(`{ trace: junctionTrace(), ...opts }`) — so an app with its own tracer replaces
+this whole thing rather than fighting it, and `trace: () => null` turns it off.
+An upstream trace wins over a derived one, which is the difference between
+hanging off the caller's span and making this process the root of a trace it is
+already in the middle of. Junction is the other half: it carries `traceparent`
+and `tracestate` on `RequestMeta` now, verbatim.
+
+**Where nobody sent a trace, the id is DERIVED from the correlation id.** A
+random trace per call would make six calls from one request six unrelated
+traces, which is the thing this exists to prevent — and the case that matters
+needs no derivation at all: junction mints correlation ids with
+`crypto.randomUUID()`, and a uuid with its dashes out IS a 32-hex trace id.
+Anything else folds through FNV-1a twice; not a cryptographic hash and it does
+not need to be, since the input is already the request's own identity and the
+output is only ever compared for equality with itself. Outside a request — a
+job, a script, boot — a fresh trace is the right answer rather than a missing
+one.
+
+`parseTraceparent` takes version `00` and nothing else: a future version may
+append fields, and forwarding ids out of a format nobody here understands is
+worse than starting fresh. Both readers are exported, because an app replacing
+the default needs them rather than a second copy of the W3C format.
+
+## 2026-09-03 — a replay conduit refused is a replay nobody else should make
+
+`FJS-733`. 278 tests, 0 fail. Typecheck clean.
+
+**The flag now says what the loop decided.** A non-idempotent method with no
+idempotency key was never replayed — that part was right — and the error was then
+handed back untouched, still carrying the transient fault's `retryable: true`.
+That flag is what the layer above acts on: `example`'s own mailer copies it onto
+the Error it throws and a caravan job retries on it, so *we will not send this
+again* travelled outwards as *send this again*, on the one class of request where
+a duplicate takes money. `declineReplay` is the one place the judgement is made.
+
+**`indeterminate` is what that flag was standing in for.** The request went out
+and nobody knows whether it was applied — a different question from whether
+sending it again is safe, and the one a payment caller actually needs. Set for a
+`timeout`, a `server_error` and a `connection_failed` that got past the
+handshake; never where nothing left the process, since a flag that fires on every
+network fault is one nobody reads. Bun answers `ConnectionRefused` for a refused
+port and an unresolvable name alike, and `CERT_*` is matched as a prefix because
+a failed handshake wrote no request. Where the two cannot be told apart the
+answer is *indeterminate*: reporting it wrongly costs a caller one check, and the
+other way round costs a duplicate charge.
+
+**`idempotency` on the target.** `header` names what the key travels under —
+`Idempotency-Key` is the convention and PayPal reads `PayPal-Request-Id`, and a
+wrong name fails in the worst way: the key is sent, ignored, and a retry the
+caller believed was collapsed is a second charge. `auto` mints one for any
+non-idempotent request that carries none, **once per `send()` and not per
+attempt**, or each replay would be a fresh request under a fresh key, which is
+the duplicate the key exists to prevent. On the target because it asserts
+something about the far end that conduit cannot discover; off by default,
+because minting a key for a target that ignores it turns one refused retry into
+four charges.
+
+**`ConduitRequest.replayable` is the assertion that was missing.** A key says
+*the target collapses duplicates*; this says *repeating this is harmless*, and
+they are not the same claim. Minting a payment intent is the case that forced it
+— it moves no money and the shop writes no row until it succeeds, so a second
+one costs nothing, while a key would be actively wrong: after a decline the next
+attempt must be a NEW intent rather than the refused one handed back. Conduit
+sees a method and a path and can know neither, so only the caller can say so.
+`example`'s PSP connector declares it, which is what makes a provider blip heal
+instead of surfacing to a shopper.
+
+**Every refusal is `put()`'s now.** `register()` held the `follow_redirects:
+'same-origin'` refusal and `init()` writes `opts.targets` straight through
+`put()` — so a STATIC target, which is how a provider integration is actually
+declared, skipped it entirely. One `assertDescriptor` for redirects, idempotency
+and policy alike.
+
+11 tests, each with the control that separates the fix from a blanket
+suppression — a GET on the same target, at the same timeout, keeps
+`retryable: true`. Stubbed one at a time they fail 2 / 1 / 1 / 6.
+
+## 2026-09-03 — policy belongs to a target
+
+`FJS-728`. 269 tests, 0 fail. Typecheck clean.
+
+**A target declares what it costs when it misbehaves.** `TargetDescriptor.policy`
+carries the seven numbers policy was made of — `timeout_ms`, `retry_limit`,
+`deadline_ms`, `max_response_bytes`, `failure_threshold`, `reset_ms`,
+`max_concurrent` — each falling back field by field to the conduit-wide option of
+the same name, so a descriptor that states one keeps the conduit's answer for the
+rest and a descriptor that states nothing behaves exactly as it did. They were
+conduit-wide, and one conduit carries a card processor, a mail sink and an
+outpost: 10s with three retries is generous for the mail sink, thin for a card
+capture, absurd for a health probe. The only way to say so was a SECOND conduit,
+which also means a second registry and a second set of breakers.
+
+**The field was already being written and dropped in silence.** A descriptor
+declaring `timeout_ms: 1` answered a 300ms request as a success, and TypeScript
+cannot see it — a descriptor read out of a store is a `TargetDescriptor` by
+assertion, and excess-property checking only fires on an object literal. So an
+unknown field under `policy` is refused **by name** at `register()`, and so is a
+value that cannot mean anything: the author is telling you about a typo, not
+asking for the default they wrote the field to override.
+
+**Two owners, and the second is the one that is not obvious.** The router merges
+the transport half when it builds the transport; the breaker and the concurrency
+gate are consulted BEFORE any descriptor is resolved, so `Resilience.setPolicy`
+is fed twice — by `put()` for what this process registers, and by the router for
+a descriptor it read out of the store, which is the only way a target another
+replica registered is ever graded by its own numbers. `setPolicy` deliberately
+does not reset the counts: a policy change says nothing about a target's health,
+and clearing the trip count on re-register would make a heartbeat a way to keep a
+broken target admitted.
+
+**Two persistence traps, both the same shape one level apart.** The SQLite
+registry drops any descriptor field absent from `EXTRA_KEYS`, so a policy would
+have survived no restart (`FJS-657`). And `JSON.stringify` writes `Infinity` as
+`null`, which reads back as *field absent* — silently restoring the cap
+`max_concurrent: Infinity` was written to remove — so it is carried as a string
+and revived on read.
+
+Every one of the 8 tests is a pair: the target that declared a policy beside an
+otherwise identical target on the same conduit that did not, because a change
+that applied the number to everything looks identical from the declaring side.
+7 of 8 fail with the merge stubbed, and the eighth fails against either half of
+the persistence fix stubbed on its own.
+
+## 2026-09-03 — the kind says who is at fault, and a burst sheds
+
+`FJS-684`, `FJS-685`. 261 tests, 0 fail. Typecheck clean.
+
+**`server_error` is 5xx and nothing else** (`FJS-684`). It was every non-2xx and
+every unusable body as well, and that one word feeds three consumers that
+disagree about it: whether to retry, the `retryable` flag a caravan job acts on,
+and the circuit breaker's failure count. Measured: five 404s in a row opened the
+breaker on a target that had answered all five, after which correct requests
+were shed locally as `circuit_open`. Two kinds carved out beside the three that
+were already there — **`client_error`** for a 4xx the target understood and
+refused, carrying `raw` because a validation report or a decline code is the
+half a caller can act on; **`invalid_response`** for an answer that is unusable,
+which is HTML where a payload was expected, a body that did not parse as the
+JSON it claimed, and a response that failed the caller's own `validate`.
+`TARGET_FAULTS` is unchanged — the fix is the label, not the set, which is what
+makes it small.
+
+**`max_concurrent` defaults to 64** (`FJS-685`). Unlimited was not unbounded: a
+burst queues inside the connection pool with the per-attempt timer already
+running, so the wait comes back as the TARGET's timeout and opens its breaker.
+5000 concurrent against a target that answered every request measured 10s, 136
+timeouts, 533 file descriptors and an open circuit; the same burst against a cap
+answers instantly, sheds the excess as `overloaded`, and leaves the breaker
+closed. `Infinity` restores the old behaviour. The finding's other half — moving
+the per-attempt timer to socket dispatch — is not needed and is not done: a cap
+below the pool means the queue that produced those timeouts does not form, and
+`fetch` exposes no dispatch hook to move the timer to.
+
+**A connection failure names itself.** DNS, refused, TLS and a mid-body reset
+are one kind and all retryable, which is right — and four different things to
+whoever is reading the log. Bun's `code` is the only thing that separates them
+and it was not surfaced; it is now in the message.
+
+**`conduit-5` did not reproduce and the row is corrected.** A body shorter than
+its declared `content-length` does not arrive as a success: the reader raises,
+in all three shapes a server can end early in, and the existing catch already
+answers a retryable `connection_failed`. What the original measurement caught is
+a `Bun.serve` recorder rewriting a fabricated `content-length` to the real body
+length — the declared length never left the test. Pinned with a raw `Bun.listen`,
+which is the only way to send a mismatched one; no guard was added, because it
+would be unreachable code carrying a comment about a bug that is not there.
+
 ## 2026-09-02 — a redirect is an answer, not a hop; and the HMAC signs the query
 
 `FJS-679`, `FJS-678`. 252 tests, 0 fail. Typecheck clean.
@@ -42,7 +221,8 @@ signed GET can no longer be replayed against different parameters. The websocket
 transport signs its upgrade URL's query for the same reason — a verifier
 recomputing from the raw URL would otherwise build a different string than this
 side did and refuse every connection to an address carrying one. The signature
-value is `v2-sha256=…`; an old signer against a new verifier is refused by name.
+value carries its version (`v1-sha256=…`); any other version is refused by name
+rather than as a mismatch.
 
 ## 2026-08-27 — a target declares how its bodies are encoded
 

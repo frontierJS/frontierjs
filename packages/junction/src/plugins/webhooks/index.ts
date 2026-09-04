@@ -37,6 +37,9 @@ import type { App, Plugin }    from '../../core/app.ts'
 import type { IEventBus }      from '../../events/index.ts'
 import type { DatabaseClient } from '../../storage/database/index.ts'
 import { signRequest }         from '@frontierjs/toolbelt/signature'
+import { sessionGateLevel }    from '../../core/litestone.ts'
+import { assertDeliverableTarget, WebhookTargetError } from './url.ts'
+import type { TargetPolicy }   from './url.ts'
 
 // ─── Retry schedule ────────────────────────────────────────────────────────
 // Delays in ms after each failed attempt.
@@ -85,6 +88,10 @@ export interface IWebhookStore {
   // Registration
   register(url: string, events: string[], secret?: string): Promise<WebhookRegistration>
   unregister(id: string): Promise<void>
+  // Stop delivering to a registration without forgetting it — a subscriber
+  // that has stopped answering is not the same fact as one nobody wants, and
+  // the row is what tells its owner which happened.
+  setActive(id: string, active: boolean): Promise<void>
   list(): Promise<WebhookRegistration[]>
   getRegistration(id: string): Promise<WebhookRegistration | null>
   findForEvent(event: string): Promise<WebhookRegistration[]>
@@ -140,6 +147,7 @@ export function createSqliteWebhookStore(dbClient: DatabaseClient): IWebhookStor
      VALUES (?, ?, ?, ?, 1, ?)`
   )
   const stmtDeleteHook = db.prepare(`DELETE FROM webhooks WHERE id = ?`)
+  const stmtSetActive  = db.prepare(`UPDATE webhooks SET active = ? WHERE id = ?`)
   const stmtListHooks     = db.prepare(`SELECT * FROM webhooks WHERE active = 1 ORDER BY created_at DESC`)
   // Find hooks subscribed to this event, or to the wildcard '*'.
   //
@@ -243,6 +251,10 @@ export function createSqliteWebhookStore(dbClient: DatabaseClient): IWebhookStor
       stmtDeleteHook.run(id)
     },
 
+    async setActive(id, active) {
+      stmtSetActive.run(active ? 1 : 0, id)
+    },
+
     async list(): Promise<WebhookRegistration[]> {
       return (stmtListHooks.all() as HookRow[]).map(rowToHook)
     },
@@ -341,7 +353,16 @@ export interface WebhookDeliveryResult {
 async function attemptDelivery(
   registration: WebhookRegistration,
   delivery:     WebhookDelivery,
+  targets:      TargetPolicy = {},
 ): Promise<WebhookDeliveryResult> {
+
+  // Re-graded per attempt, not only at registration: a name that resolved to a
+  // public address when somebody registered it can resolve to `127.0.0.1` an
+  // hour later, and a retry ladder runs for a day.
+  try { await assertDeliverableTarget(registration.url, targets) }
+  catch (err) {
+    return { ok: false, statusCode: null, error: (err as Error).message, ms: 0 }
+  }
 
   const body      = JSON.stringify({
     id:        delivery.id,
@@ -386,13 +407,22 @@ async function attemptDelivery(
         ...signed,
       },
       body,
+      // A redirect is a destination this app never graded, and `fetch` follows
+      // one by default carrying the signature and the payload with it — so a
+      // subscriber who passes the target check can hand both to any host by
+      // answering 307. A 3xx is a failed delivery, and the location is in the
+      // error so its owner can see what happened.
+      redirect: 'manual',
       signal: AbortSignal.timeout(10_000),   // 10s timeout per attempt
     })
 
+    const redirected = res.status >= 300 && res.status < 400
     return {
-      ok:         res.ok,
+      ok:         res.ok && !redirected,
       statusCode: res.status,
-      error:      res.ok ? null : `HTTP ${res.status}`,
+      error:      redirected ? `redirect refused (HTTP ${res.status} → ${res.headers.get('location') ?? 'no location'})`
+                : res.ok     ? null
+                :              `HTTP ${res.status}`,
       ms:         Date.now() - start,
     }
   } catch (err) {
@@ -441,6 +471,23 @@ export interface WebhookOptions {
 
   // How often to poll for overdue retries (ms). Default 60 000.
   retryInterval?: number
+
+  // Where a registration may point. Default: https, resolving to a public
+  // address — see `./url.ts`. A test with a receiver on localhost turns both
+  // off and says so in one place.
+  targets?: TargetPolicy
+
+  // The gate level a caller needs to manage registrations over HTTP. Default
+  // ADMINISTRATOR(5): a registration is a standing grant to receive this app's
+  // events, and it hands back an HMAC secret, so *any signed-in caller* is the
+  // wrong audience (`FJS-681`).
+  manage?: number
+
+  // Stop delivering to a registration after this many consecutive deliveries
+  // reach 'dead'. Default 3; 0 never deactivates. A dead-lettered delivery is
+  // per EVENT, so a receiver that has gone away keeps costing seven attempts
+  // per event for ever unless something says stop.
+  deactivateAfterDead?: number
 }
 
 // ─── webhooks() plugin ─────────────────────────────────────────────────────
@@ -452,6 +499,10 @@ export function webhooks(opts: WebhookOptions): Plugin {
 
     // Synchronous: every await below lives inside a nested handler, not here.
     register(app: App): void {
+
+      const targets             = opts.targets ?? {}
+      const manageLevel         = opts.manage ?? 5           // ADMINISTRATOR
+      const deactivateAfterDead = opts.deactivateAfterDead ?? 3
 
       // ── Resolve store ──────────────────────────────────────────────
       let store: IWebhookStore
@@ -514,13 +565,29 @@ export function webhooks(opts: WebhookOptions): Plugin {
           isExhausted ? 'webhook:dead' : 'webhook:failed',
           { delivery: { ...delivery, attempts }, result }
         )
+
+        if (!isExhausted || !deactivateAfterDead) return
+
+        // A dead delivery is per EVENT, so a receiver that has gone away keeps
+        // costing seven attempts of every event for ever. Counted over the
+        // registration's most recent deliveries and reset by any success, so a
+        // subscriber that is merely flaky is not turned off.
+        // Most recent first, and this delivery is already among them — it was
+        // written 'dead' three lines up.
+        const recent = await store.getDeliveries(registration.id, deactivateAfterDead)
+        if (recent.length < deactivateAfterDead || !recent.every(d => d.status === 'dead')) return
+        await store.setActive(registration.id, false)
+        app.events.emit('webhook:deactivated', {
+          registration: { ...registration, active: false },
+          reason:       `${deactivateAfterDead} consecutive deliveries dead-lettered`,
+        })
       }
 
       async function attemptAndRecord(
         registration: WebhookRegistration,
         delivery:     WebhookDelivery
       ): Promise<void> {
-        await recordResult(registration, delivery, await attemptDelivery(registration, delivery))
+        await recordResult(registration, delivery, await attemptDelivery(registration, delivery, targets))
       }
 
       // ── Fan-out on event bus ───────────────────────────────────────
@@ -605,6 +672,10 @@ export function webhooks(opts: WebhookOptions): Plugin {
       const manager: WebhookManager = {
 
         async register(url, events, secret) {
+          // Graded here rather than in the store, so a custom store cannot
+          // arrive without the check — and again before every attempt, since
+          // what a name resolves to is not fixed at registration.
+          await assertDeliverableTarget(url, targets)
           return store.register(url, events, secret)
         },
 
@@ -625,7 +696,7 @@ export function webhooks(opts: WebhookOptions): Plugin {
           if (!delivery) return null
           const reg = await store.getRegistration(delivery.webhookId)
           if (!reg) return null
-          const result = await attemptDelivery(reg, delivery)
+          const result = await attemptDelivery(reg, delivery, targets)
           // Shares the recording path, so a manual retry dead-letters and
           // reschedules exactly like a scheduled one.
           await recordResult(reg, delivery, result)
@@ -661,8 +732,19 @@ export function webhooks(opts: WebhookOptions): Plugin {
       // app.get/post/delete apply apiPrefix themselves (core/app.ts). This
       // used to hand-resolve it here, one of four copies of the same read.
       type RouteCtx = Parameters<Parameters<typeof app.get>[1]>[0]
+      // A registration is a standing grant to receive this app's events, and
+      // creating one hands back the HMAC secret that signs them. *Signed in*
+      // was the whole of the old bar, so any shopper with an account could
+      // subscribe to `*` (`FJS-681`) — measured, 201 with the secret in the
+      // body. The level is the app's own ladder, read with the same function
+      // the Data boundary grades a caller by.
       const guard = (ctx: RouteCtx): ReturnType<RouteCtx['json']> | null => {
-        if (ctx.user) return null                                    // authenticated session
+        if (ctx.user) {
+          if (sessionGateLevel(ctx.user) >= manageLevel) return null
+          // 403 rather than 404: the route exists and this caller may not use
+          // it, which is a different thing from a route that is not there.
+          return ctx.json({ error: 'Forbidden' }, 403)
+        }
         const isProd = process.env.NODE_ENV === 'production'
         if (!app.auth && !isProd) return null                        // dev convenience only
         return ctx.json({ error: 'Unauthorized' }, 401)
@@ -686,6 +768,11 @@ export function webhooks(opts: WebhookOptions): Plugin {
         const body = ctx.body as { url?: string; events?: string[]; secret?: string }
         if (!body?.url)           return ctx.json({ error: 'url required' }, 400)
         if (!body?.events?.length) return ctx.json({ error: 'events required' }, 400)
+        try { await assertDeliverableTarget(body.url, targets) }
+        catch (err) {
+          if (err instanceof WebhookTargetError) return ctx.json({ error: err.message }, 400)
+          throw err
+        }
         const hook = await store.register(body.url, body.events, body.secret)
         return ctx.json(hook, 201)   // includes secret — the one and only time
       })
@@ -711,7 +798,7 @@ export function webhooks(opts: WebhookOptions): Plugin {
         const hook = await store.getRegistration(ctx.route.id)
         if (!hook) return ctx.json({ error: 'Not found' }, 404)
         const delivery = await store.createDelivery(hook.id, 'webhook:test', { test: true, ts: Date.now() })
-        const result   = await attemptDelivery(hook, delivery)
+        const result   = await attemptDelivery(hook, delivery, targets)
         // A test ping is one-shot and never enters the retry pipeline, so a
         // failure is terminal ('dead'), not 'failed'. Marking it 'failed' with
         // a null next_retry_at left a row that pendingRetries could never

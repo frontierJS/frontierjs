@@ -434,6 +434,15 @@ That route did not exist until this app needed it.
 
 ## Verified
 
+**Every drive checks the process it is about to test is the one this tree
+describes.** `web/test/lib/preflight.mjs` asks reachability and freshness
+together — `/health`'s `uptime` against the newest mtime under `api/` and `db/`
+— because a port that answers is not evidence the right process is on it:
+`bun run api` spawns a child, so killing the wrapper leaves the app holding its
+ports and the next start exits `EADDRINUSE` into a log nobody reads. A drive
+run against that process reports on code that is not in the tree, and it is
+wrong in both directions (`FJS-740`).
+
 Nothing in this file is asserted from reading the source. `bun run verify`
 drives the app in headless Chrome — navigating, signing in, typing into fields
 and leaving them, filling the form, submitting, deleting, signing out — and

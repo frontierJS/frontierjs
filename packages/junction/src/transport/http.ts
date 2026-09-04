@@ -23,6 +23,7 @@ import type { TransportContext, RawRequest, RouteHandler, MiddlewareFn,
               WsData, WsContext, WsHandlerSet,
               RouteSegment }              from './types.ts'
 import type { SessionVerifier }           from '../auth/types.ts'
+import type { TrustProxy } from './forwarded.ts'
 
 // ─── Module-level constants ────────────────────────────────────────────────
 
@@ -101,14 +102,23 @@ export interface HttpTransportOptions {
   powered?:     string     // X-Powered-By header value
   onError?:     (err: unknown, ctx?: TransportContext) => void
   /**
-   * Trust x-forwarded-for / x-real-ip headers for client IP resolution.
-   * Enable ONLY when a trusted reverse proxy (nginx, Caddy, a load
-   * balancer) sits in front of the app and sets these headers itself.
-   * Default false: the socket address is used, because the forwarding
-   * headers are client-settable and would let attackers spoof their way
-   * past IP-keyed rate limiting and DDoS protection.
+   * How many proxies stand in front of this app, or which ones.
+   *
+   *   false      the socket address alone. The default.
+   *   true       one trusted hop — what the shipped nginx template is.
+   *   <n>        n trusted hops.
+   *   [...]      trusted proxies, by address or CIDR (IPv4 and IPv6).
+   *
+   * `X-Forwarded-For` is a list the CLIENT can start, and nginx appends to
+   * whatever it is handed — so the leftmost entry is the caller's claim and
+   * reading it hands every IP-keyed decision to them. The chain is read from
+   * the right, and how far back to believe it is a statement about the
+   * operator's own infrastructure: it cannot be discovered, because every
+   * entry left of the trusted boundary is an unverified string. `true` used to
+   * mean *take the leftmost*, which behind the documented proxy is *take
+   * whatever the caller sent* (`FJS-744`).
    */
-  trustProxy?:  boolean
+  trustProxy?:  TrustProxy
   /**
    * How many bytes junction will hold for one socket that is not draining,
    * before closing it with 1013 rather than growing without bound. Default 8MB
@@ -121,7 +131,53 @@ export interface HttpTransportOptions {
    * nothing.
    */
   wsMaxQueued?: number
+  /**
+   * The inbound bounds. Every limit the HTTP transport has — body size, the
+   * DDoS gate, the rate limiter — stopped at the upgrade, so the transport
+   * junction PREFERS was the cheapest way to exhaust it: from one anonymous
+   * socket, 20 000 `find` frames were answered in 1.1s and took a victim's
+   * latency from 9.2ms to 1093ms, a 15MB frame took it to 49.8ms, and 3000
+   * anonymous sockets were accepted in 2.2s (`FJS-705`).
+   */
+  ws?: WsLimits
 }
+
+/**
+ * What one socket may do.
+ *
+ * `maxFrameBytes` and `maxPayloadLength` are two facts, not one knob written
+ * twice: the first is what this APP accepts and is refused by name with a
+ * 1009, the second is what this PROCESS will buffer at all and is enforced by
+ * the runtime, which closes with a bare 1006 and no reason — measured on Bun
+ * 1.3.11, and indistinguishable from a network fault, which is why the app's
+ * own limit sits below it and answers first.
+ *
+ * `maxFrameBytes` defaults to `maxBodySize`, which is the whole argument for
+ * the number: a socket must not be a wider door than a POST.
+ */
+export interface WsLimits {
+  /** Refused by name with 1009. Default: `maxBodySize` (256KB). */
+  maxFrameBytes?:       number
+  /** Bun's own ceiling — closes 1006, no reason. Default 1MB. */
+  maxPayloadLength?:    number
+  /** Frames per second per socket, token bucket. Default 100, burst 2x. */
+  maxFramesPerSecond?:  number
+  /** Concurrent unresolved frames per socket. Default 32. */
+  maxInFlight?:         number
+  /** Sockets from one IP. Default 256. 0 is unlimited. */
+  maxConnectionsPerIp?: number
+  /** Sockets in total. Default 0 — unlimited, because only an operator knows
+   *  what this box can hold, and a wrong guess here refuses real users. */
+  maxConnections?:      number
+}
+
+const WS_DEFAULTS = {
+  maxPayloadLength:    1024 * 1024,
+  maxFramesPerSecond:  100,
+  maxInFlight:         32,
+  maxConnectionsPerIp: 256,
+  maxConnections:      0,
+} as const
 
 // ─── HTTP Transport ───────────────────────────────────────────────────────
 
@@ -133,6 +189,11 @@ export class HttpTransport {
   private _opts:        HttpTransportOptions
   private _server:      ReturnType<typeof Bun.serve> | null = null
   private _ddos:        Map<string, { count: number; reset: number }> = new Map()
+  // Sockets currently open per IP. The per-IP bound is checked at UPGRADE, so
+  // a refusal is an HTTP response the caller can read rather than a close code
+  // after the fact.
+  private _wsPerIp:     Map<string, number> = new Map()
+  private _wsLimits:    Required<WsLimits>
   private _ddosGc:      ReturnType<typeof setInterval> | null = null
   private _wsRoutes: Array<{ segments: RouteSegment[]; handlers: WsHandlerSet }> = []
 
@@ -174,6 +235,15 @@ export class HttpTransport {
   constructor(opts: HttpTransportOptions = {}) {
     this.router = new Router()
     this.stats  = createStats()
+
+    // `maxFrameBytes` follows `maxBodySize` unless the app says otherwise: a
+    // socket must not be a wider door than a POST, and a number invented here
+    // would be a second answer to a question the app has already given.
+    this._wsLimits = {
+      ...WS_DEFAULTS,
+      maxFrameBytes: opts.maxBodySize ?? 256 * 1024,
+      ...Object.fromEntries(Object.entries(opts.ws ?? {}).filter(([, v]) => v !== undefined)),
+    } as Required<WsLimits>
 
     const stats = this.stats
     this._sharedHelpers = {
@@ -253,6 +323,10 @@ export class HttpTransport {
 
       // WebSocket handlers
       websocket: {
+        // The hard ceiling. Bun closes an oversize frame with a bare 1006 and
+        // no reason, so this is a memory bound and never the app's answer —
+        // `maxFrameBytes` sits below it and refuses by name first.
+        maxPayloadLength: this._wsLimits.maxPayloadLength,
         open:    (ws)            => this._wsOpen(ws),
         message: (ws, msg)       => this._wsMessage(ws, msg),
         close:   (ws, code, reason) => this._wsClose(ws, code, reason),
@@ -291,6 +365,20 @@ export class HttpTransport {
   setBuildId(id: string | null): void {
     this._buildId = id
   }
+
+  /**
+   * From the first line of `app.stop()`. Every answer then carries
+   * `Connection: close`, so a client holding a keep-alive socket opens a new
+   * one somewhere else rather than sending its next request into a process
+   * that is closing — measured, one arrived during the drain and was answered
+   * 200 (`FJS-693`). False for the whole life of a running app, which is what
+   * keeps `_finalizeWithHeaders`'s no-op fast path intact.
+   */
+  setDraining(on: boolean): void {
+    this._draining = on
+  }
+
+  private _draining = false
 
   setAuth(auth: SessionVerifier): void {
     this._opts.auth = auth
@@ -624,10 +712,12 @@ export class HttpTransport {
 
     const needsCacheControl = canDecorate && response.status >= 200 && response.status < 300
     const buildId = this._buildId
+    const draining = this._draining
     const hasExtras =
       !!(cookieHeaders?.length || cors || security || rateLimit || correlation) ||
       !!(this._opts.powered && canDecorate) ||
-      !!(buildId && canDecorate)
+      !!(buildId && canDecorate) ||
+      draining
 
     // Compression decision is readable without cloning anything.
     const rawContentType = response.headers.get('content-type') ?? ''
@@ -665,6 +755,7 @@ export class HttpTransport {
     // Stated, never compared: the client holds the build it loaded and is the
     // side that knows what to do about a difference.
     if (buildId && canDecorate) headers.set(BUILD_HEADER, buildId)
+    if (draining) headers.set('connection', 'close')
 
     // ── Cache-Control ───────────────────────────────────────────────────────
     // Replace the blunt NOCACHE constant that was hardcoded in ctx.json() /
@@ -943,6 +1034,16 @@ export class HttpTransport {
       handlers: matchedHandlers,
     }
 
+    // Refused HERE rather than closed after `open`, because an upgrade that
+    // does not happen is an HTTP response the caller can read, where a close
+    // code arrives on a socket the client believes it established.
+    const perIp = this._wsLimits.maxConnectionsPerIp
+    const total = this._wsLimits.maxConnections
+    if (total > 0 && this.stats.performance.online >= total)
+      return new Response('Too many connections', { status: 503 })
+    if (perIp > 0 && (this._wsPerIp.get(ip) ?? 0) >= perIp)
+      return new Response('Too many connections from this address', { status: 503 })
+
     const upgraded = server.upgrade(req, { data: wsData })
 
     return upgraded
@@ -977,6 +1078,7 @@ export class HttpTransport {
   private async _wsOpen(ws: Bun.ServerWebSocket<WsData>): Promise<void> {
     this.stats.performance.online++
     this._sockets.add(ws)
+    this._wsPerIp.set(ws.data.ip, (this._wsPerIp.get(ws.data.ip) ?? 0) + 1)
 
     // Resolve auth from token in headers or query — same logic as HTTP.
     // We do this here rather than at upgrade time because verifySession is async
@@ -1012,6 +1114,7 @@ export class HttpTransport {
           ws.close(4001, 'auth_failed')
           this.stats.performance.online--
           this._sockets.delete(ws)
+          this._releaseIp(ws.data.ip)
           return
         }
       }
@@ -1032,14 +1135,83 @@ export class HttpTransport {
       this._buildId ? { type: 'connected', build: this._buildId } : { type: 'connected' }))
   }
 
+  /**
+   * Tell the client why a frame was dropped, at most once a second.
+   *
+   * Throttled because an error per dropped frame is the amplifier the limit
+   * exists to remove: 20 000 refusals is the same egress as 20 000 answers.
+   */
+  private _wsRefuse(ws: Bun.ServerWebSocket<WsData>, code: string, message: string): void {
+    const l = ws.data.limits!
+    const now = Date.now()
+    if (now - l.told < 1000) return
+    l.told = now
+    wsSend(ws, JSON.stringify({ type: 'error', error: { code, message } }))
+  }
+
   private async _wsMessage(ws: Bun.ServerWebSocket<WsData>, message: string | Buffer): Promise<void> {
+    const lim = this._wsLimits
+    const l   = ws.data.limits ??= { tokens: lim.maxFramesPerSecond, refilled: Date.now(), inFlight: 0, told: 0 }
+
+    // ── The app's own size limit ──────────────────────────────────────
+    // Below Bun's ceiling, so this is the answer a caller actually gets: 1009
+    // is *message too big* and it carries a reason, where the runtime's 1006
+    // reads as the network having dropped.
+    const size = typeof message === 'string' ? Buffer.byteLength(message) : message.length
+    if (size > lim.maxFrameBytes) {
+      wsSend(ws, JSON.stringify({ type: 'error', error: {
+        code: 'frame_too_large',
+        message: `Frame is ${size} bytes; this app accepts ${lim.maxFrameBytes}`,
+      } }))
+      ws.close(1009, 'frame_too_large')
+      return
+    }
+
+    // ── Frames per second ─────────────────────────────────────────────
+    // A token bucket rather than a counter per window: a window boundary lets
+    // twice the allowance through across it, which against 20 000 frames in a
+    // second is not a rounding error. Burst is 2x, so an ordinary client
+    // catching up after a reconnect is not refused.
+    const now  = Date.now()
+    const rate = lim.maxFramesPerSecond
+    if (rate > 0) {
+      l.tokens  = Math.min(rate * 2, l.tokens + ((now - l.refilled) / 1000) * rate)
+      l.refilled = now
+      if (l.tokens < 1) {
+        this._wsRefuse(ws, 'rate_limited', `More than ${rate} frames per second`)
+        return
+      }
+      l.tokens -= 1
+    }
+
+    // ── Concurrent work ───────────────────────────────────────────────
+    // The rate limit bounds arrivals and says nothing about how much work is
+    // outstanding: 100 frames a second against a service call taking a second
+    // each is 100 concurrent calls, which is the shape that took a victim's
+    // latency to a second.
+    if (lim.maxInFlight > 0 && l.inFlight >= lim.maxInFlight) {
+      this._wsRefuse(ws, 'too_many_in_flight', `More than ${lim.maxInFlight} frames in flight`)
+      return
+    }
+
+    l.inFlight++
     const ctx = this._buildWsContext(ws)
     try { await ws.data.handlers.message?.(ctx, message) } catch {}
+    finally { l.inFlight-- }
+  }
+
+  private _releaseIp(ip: string): void {
+    const n = (this._wsPerIp.get(ip) ?? 0) - 1
+    // Deleted at zero rather than left at 0: the map is keyed by caller-supplied
+    // address space, so a row per IP that ever connected is itself unbounded.
+    if (n > 0) this._wsPerIp.set(ip, n)
+    else this._wsPerIp.delete(ip)
   }
 
   private async _wsClose(ws: Bun.ServerWebSocket<WsData>, code: number, reason: string): Promise<void> {
     this.stats.performance.online--
     this._sockets.delete(ws)
+    this._releaseIp(ws.data.ip)
     dropSendQueue(ws)
     const ctx = this._buildWsContext(ws)
     try { await ws.data.handlers.close?.(ctx, code, reason) } catch {}

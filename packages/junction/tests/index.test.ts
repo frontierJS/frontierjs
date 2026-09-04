@@ -308,18 +308,26 @@ describe('parseCookies', () => {
 
 describe('extractIP', () => {
 
-  it('prefers x-forwarded-for', () => {
+  // These two used to assert the opposite, and the file next door
+  // (`p0-fixes.test.ts`) asserted that a forwarding header is ignored by
+  // default — both passed, because that one supplied a socket address and this
+  // one did not, so the unsafe branch was the one nothing covered (`FJS-744`).
+  it('does not believe x-forwarded-for on the word of the sender', () => {
     const req = new Request('http://localhost', {
       headers: { 'x-forwarded-for': '1.2.3.4, 5.6.7.8' }
     })
-    expect(extractIP(req)).toBe('1.2.3.4')
+    expect(extractIP(req)).toBe('127.0.0.1')
+    // Declaring a trusted hop is what makes the chain readable — and even then
+    // it is the entry the proxy appended, never the one the caller wrote.
+    expect(extractIP(req, '10.0.0.1', true)).toBe('5.6.7.8')
   })
 
-  it('falls back to x-real-ip', () => {
+  it('does not believe x-real-ip either', () => {
     const req = new Request('http://localhost', {
       headers: { 'x-real-ip': '9.10.11.12' }
     })
-    expect(extractIP(req)).toBe('9.10.11.12')
+    expect(extractIP(req)).toBe('127.0.0.1')
+    expect(extractIP(req, '10.0.0.1', true)).toBe('9.10.11.12')
   })
 
   it('falls back to remoteAddr', () => {

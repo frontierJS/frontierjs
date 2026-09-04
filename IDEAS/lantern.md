@@ -1,6 +1,6 @@
 ---
 id: lantern
-status: idea
+status: proposed
 dated: 2026-08-26
 ---
 

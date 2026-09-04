@@ -50,16 +50,24 @@ export const REGISTERS_VERSION = 1
 export const ISSUE_STATUS = ['open', 'stale?', 'contested', 'ruled', 'needs a ruling', 'closed']
 export const SEVERITY     = ['S1', 'S2', 'S3', 'S4']
 
-// `idea` nothing built · 'proposal' idea has been designed and just not started  · `partial` some of it ships and the rest is the design
-// · `shipped` built, kept for the argument · `argued` reasoned and not adopted
-// · `assessment` a reading of the tree rather than a idea · `index` derived
-// from the others.
+// The lifecycle a proposal is on, plus the two shapes that are on no lifecycle.
+// `PHILOSOPHY.md` §VII is the rule and this is what enforces it.
+//
+// `proposed` decided or merely argued, nothing built · `partial` some of it
+// ships and the rest is still the design · `shipped` built, kept for the
+// argument · `superseded-by` a later paper or ruling replaced it ·
+// `withdrawn` argued and declined. Then `assessment`, a reading of the tree
+// rather than a proposal, which carries a date and is cited as behaviour by
+// nobody, and `index`, derived from the others and authoritative over none.
+//
+// `idea`, `proposal` and `argued` were the earlier spellings of the first and
+// last of these, and each let a settled question read as open.
 export const IDEA_STATUS = [
-  'idea',
-  'proposal',
+  'proposed',
   'partial',
   'shipped',
-  'argued',
+  'superseded-by',
+  'withdrawn',
   'assessment',
   'index'
 ]

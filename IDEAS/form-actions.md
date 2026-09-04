@@ -1,6 +1,6 @@
 ---
 id: form-actions
-status: idea
+status: proposed
 dated: 2026-08-06
 ---
 

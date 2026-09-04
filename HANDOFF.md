@@ -1,3 +1,19 @@
+# Handoff
+
+**The two most recent sessions, narrative. Older ones rotate into
+`docs/handoff-archive/`.** This is an assessment file (`PHILOSOPHY.md` §VII):
+dated, never cited as behaviour, and read cold rather than consulted.
+
+**It names nothing a register does not also hold.** A defect gets an id in
+`ISSUES.md`, a settled argument a ruling in `DECISIONS.md`, a shipped change a
+line in the package's `CHANGES.md`, and a live fact a sentence in a `CLAUDE.md`.
+What belongs here is the ORDER those were found in and why one led to the next —
+the half a register cannot carry, and the half that costs nothing when the entry
+rotates out. A session that ends with something recorded only here has not
+finished.
+
+---
+
 # Handoff — 2026-08-31 (logging, and the log nobody could read back)
 
 > **Two things in this tree were called logging and they were not the same

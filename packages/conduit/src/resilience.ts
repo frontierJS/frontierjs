@@ -9,10 +9,22 @@
 // handler for up to the full timeout, for as long as the outage lasts.
 // ============================================================
 
-import type { BreakerState, ConduitErrorKind, ResilienceOptions } from './types.ts'
+import type { BreakerState, ConduitErrorKind, ResilienceOptions, TargetPolicy } from './types.ts'
 
 const DEFAULT_FAILURE_THRESHOLD = 5
 const DEFAULT_RESET_MS          = 30_000
+
+// In-flight sends per target. There was no default, and an unbounded burst does
+// not go out unbounded — it QUEUES inside Bun's connection pool, and the
+// per-attempt timer is already running while it waits, so the wait is charged
+// to the target as a timeout. Measured: 5000 concurrent requests to a target
+// that answered every one of them took 10s, returned 136 timeouts, took the
+// process from 23 to 533 file descriptors, and opened the breaker. The same
+// burst against a cap answers instantly, sheds the excess as `overloaded`, and
+// leaves the breaker closed — which is the honest answer rather than a nicer
+// one (`FJS-685`). 64 sits under a connection pool rather than above it, so the
+// queue that produced those timeouts does not form.
+const DEFAULT_MAX_CONCURRENT = 64
 
 // Failures that implicate the *target*. A credential that will not resolve,
 // a body that will not serialise, a typo'd method or an unknown target are
@@ -39,6 +51,11 @@ type TargetState = {
   openedAt:  number | null
   halfOpen:  boolean   // a trial request is in flight
   inFlight:  number
+  // What this target declared, or undefined for one that declared nothing.
+  // Kept beside the counts rather than resolved into them: a re-register may
+  // change the policy of a target that is already open, and a threshold copied
+  // at first-touch would keep grading it by the old one.
+  policy?:   TargetPolicy
 }
 
 export type Admission =
@@ -50,12 +67,25 @@ export class Resilience {
 
   private readonly threshold: number
   private readonly resetMs:   number
-  private readonly maxConcurrent?: number
+  private readonly maxConcurrent: number
 
   constructor(opts: ResilienceOptions = {}) {
     this.threshold      = opts.failure_threshold ?? DEFAULT_FAILURE_THRESHOLD
     this.resetMs        = opts.reset_ms ?? DEFAULT_RESET_MS
-    this.maxConcurrent  = opts.max_concurrent
+    this.maxConcurrent  = opts.max_concurrent ?? DEFAULT_MAX_CONCURRENT
+  }
+
+  /**
+   * Record what a target declared. Called wherever a descriptor is read, so a
+   * target registered on another replica is graded by its own numbers from the
+   * first request this process resolves it for.
+   *
+   * Deliberately does not reset the counts: a policy change is not a statement
+   * about the target's health, and clearing the trip count on re-register would
+   * make a heartbeat that re-registers a way to keep a broken target admitted.
+   */
+  setPolicy(target: string, policy: TargetPolicy | undefined): void {
+    this.state(target).policy = policy
   }
 
   /**
@@ -64,16 +94,19 @@ export class Resilience {
    */
   admit(target: string): Admission {
     const s = this.state(target)
+    const threshold     = s.policy?.failure_threshold ?? this.threshold
+    const resetMs       = s.policy?.reset_ms ?? this.resetMs
+    const maxConcurrent = s.policy?.max_concurrent ?? this.maxConcurrent
 
-    if (this.threshold > 0 && s.openedAt !== null) {
+    if (threshold > 0 && s.openedAt !== null) {
       const elapsed = Date.now() - s.openedAt
 
-      if (elapsed < this.resetMs) {
+      if (elapsed < resetMs) {
         return {
           ok: false,
           kind: 'circuit_open',
           message: `Circuit open for '${target}' after ${s.failures} consecutive failures; ` +
-                   `retrying in ${Math.ceil((this.resetMs - elapsed) / 1000)}s`,
+                   `retrying in ${Math.ceil((resetMs - elapsed) / 1000)}s`,
         }
       }
 
@@ -90,14 +123,14 @@ export class Resilience {
       s.halfOpen = true
     }
 
-    if (this.maxConcurrent !== undefined && s.inFlight >= this.maxConcurrent) {
+    if (s.inFlight >= maxConcurrent) {
       // Undo the trial reservation — this request is not going out, so it
       // cannot be the probe.
       if (s.halfOpen && s.openedAt !== null) s.halfOpen = false
       return {
         ok: false,
         kind: 'overloaded',
-        message: `Target '${target}' is at its concurrency cap of ${this.maxConcurrent}`,
+        message: `Target '${target}' is at its concurrency cap of ${maxConcurrent}`,
       }
     }
 
@@ -110,7 +143,8 @@ export class Resilience {
     const s = this.state(target)
     s.inFlight = Math.max(0, s.inFlight - 1)
 
-    if (this.threshold <= 0) return
+    const threshold = s.policy?.failure_threshold ?? this.threshold
+    if (threshold <= 0) return
 
     if (outcome === 'success') {
       s.failures = 0
@@ -137,7 +171,7 @@ export class Resilience {
       return
     }
 
-    if (s.failures >= this.threshold) s.openedAt = Date.now()
+    if (s.failures >= threshold) s.openedAt = Date.now()
   }
 
   /** Drop a target's state — on deregister, so a re-registered target starts clean. */
@@ -177,7 +211,7 @@ export class Resilience {
 
   private stateNameOf(s: TargetState): BreakerState {
     if (s.openedAt === null) return 'closed'
-    return Date.now() - s.openedAt >= this.resetMs ? 'half_open' : 'open'
+    return Date.now() - s.openedAt >= (s.policy?.reset_ms ?? this.resetMs) ? 'half_open' : 'open'
   }
 
   private state(target: string): TargetState {

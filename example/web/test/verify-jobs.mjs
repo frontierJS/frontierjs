@@ -18,6 +18,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs'
+import { requireServers } from './lib/preflight.mjs'
 
 const API = process.env.API_URL ?? 'http://localhost:8110'
 const REF = 'ORD-JOBS-1'
@@ -27,13 +28,7 @@ const REF = 'ORD-JOBS-1'
 // gets, and the reason `FJS-449` is a hazard worth knowing about here.
 const AUDIT = 'db/audit/auditLogs.jsonl'
 
-try {
-  const r = await fetch(`${API}/api/health`)
-  if (!r.ok) throw new Error(`HTTP ${r.status}`)
-} catch (e) {
-  console.error(`Cannot reach api (bun run api) at ${API} — ${e.message}`)
-  process.exit(1)
-}
+await requireServers([['api (bun run api)', `${API}/api/health`]])
 
 const got = {}
 const t = (label, value) => { got[label] = value }
@@ -128,8 +123,11 @@ try {
   // announcement naming order 5 is this run's and also whichever order held id
   // 5 last time. An absolute count reports the previous run's work as this
   // run's. Identified by PAYLOAD — ctx.enqueue writes no `unique` key.
+  // `?data=1` — the admin route redacts the payload unless asked, and this
+  // filter reads it, so without the flag it matches nothing and the drive
+  // reports a job that ran as one that never did.
   const announcementsFor = async () =>
-    (await (await fetch(`${API}/api/jobs?limit=500`)).json())
+    (await (await fetch(`${API}/api/jobs?limit=500&data=1`)).json())
       .filter(j => {
         if (j.name !== 'announce-payment') return false
         try { return JSON.parse(j.data)?.orderId === orderId } catch { return false }

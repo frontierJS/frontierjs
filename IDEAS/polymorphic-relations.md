@@ -1,14 +1,16 @@
 ---
 id: polymorphic-relations
-status: argued
+status: shipped
 dated: 2026-08-29
 ---
 
-# Argued — polymorphic relations, refused; `@@arc`, proposed
+# Polymorphic relations, refused; `@@arc`, shipped
 
-**Status: ARGUED. The refusal is the finding.** Litestone has no polymorphic
-relation and this record argues it should not grow one. What it proposes instead
-is `@@arc`, which is sugar over machinery that already ships. Dated 2026-08-29.
+**Ruled by [`FJS-D189`](../DECISIONS.md#fjs-d189).** Litestone has no polymorphic
+relation and this record is the argument that it should not grow one; `@@arc`
+ships in its place. The ruling names the condition for reopening it: an open
+target set that has to carry a real foreign key, a real cascade and a
+policy-compiled `include` at once. Argued 2026-08-29.
 
 ## Two different things wear the word
 

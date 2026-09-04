@@ -168,13 +168,14 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
   reserves them) — because nothing preserves parameter order across a proxy or a
   client library, and an order-sensitive signature fails intermittently and
   reads as a clock problem.
-- **The version rides in the signature VALUE, `v2-sha256=…`.** A v1 signature is
-  refused by name before the digest is compared. Both halves matter: every
-  already-deployed signer emits v1, and *signature does not match* is the same
-  sentence a wrong secret produces, which is the wrong half to spend an outage
-  on. Changing the canonical string means bumping `SIGNATURE_VERSION` and the
-  two prefixes beside it — a change that only alters the string is a fleet-wide
-  401 nobody can diagnose.
+- **The version rides in the signature VALUE, `v1-sha256=…`, and it is carried
+  before anything needs it.** A signature on another version is refused by name
+  before the digest is compared, because *signature does not match* is the same
+  sentence a wrong secret produces and is the wrong half to spend an outage on.
+  Nothing outside this repo signs anything, so there has only ever been one
+  version; what the marker buys is that a second one costs
+  `SIGNATURE_VERSION` and the prefix beside it, where a change that only alters
+  the canonical string is a fleet-wide 401 nobody can diagnose.
 - **`canonicalQuery` checks `Array.isArray` BEFORE `.entries()`.** An Array has
   an `entries()` of its own and it answers index/value pairs, so a list of pairs
   canonicalises as `0=to%2Calice` — a well-formed string that agrees with

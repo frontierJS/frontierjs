@@ -1,6 +1,6 @@
 ---
 id: agent-surface
-status: idea
+status: proposed
 dated: 2026-08-04
 ---
 
@@ -158,7 +158,7 @@ a dependency junction should not acquire.
   principal — it acts *for* a session and its ceiling is that session's level — and
   the objection was the background agent with no human behind it. The hold settles
   it without a tenth level on a scale that is already too linear
-  (`PROS_AND_CONS.md` con #2): the ceiling stays the session's, and above a
+  (`pros-and-cons.md` con #2): the ceiling stays the session's, and above a
   threshold the call becomes a proposal instead of a write. A background agent with
   nobody behind it is then not a caller with special standing; it is a caller whose
   every protected move waits. What remains open is **who may approve** — which is a

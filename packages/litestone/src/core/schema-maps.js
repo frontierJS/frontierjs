@@ -14,7 +14,7 @@
 // something was inserted between them — so each is reunited with its own pass.
 
 import { inferFromFk }                                             from './parser.js'
-import { isSoftDelete, modelToTableName, isUpdatedAtField, detectM2MPairs } from './ddl.js'
+import { isSoftDelete, modelToTableName, isUpdatedAtField, detectM2MPairs, sqlType } from './ddl.js'
 import { assertNoBareClock, expandNowTokens }                      from './query.js'
 import { compileDerived, checkDerivedType, dependsOnClock }        from './policy.js'
 import { ID_GENERATORS, GENERATED_DEFAULTS }                       from './ids.js'
@@ -569,6 +569,29 @@ export function buildBigMap(schema) {
   for (const model of schema.models) {
     const wide = model.fields.filter(f => f.attributes.some(a => a.kind === 'big')).map(f => f.name)
     if (wide.length) map[model.name] = new Set(wide)
+  }
+  return map
+}
+
+// ─── Affinity map ─────────────────────────────────────────────────────────────
+// { modelName: { fieldName: 'NUMERIC' | 'TEXT' | 'BLOB' } }
+//
+// Which affinity SQLite applies to the OTHER operand when this column is
+// compared. The JS policy evaluator needs it to answer a comparison the way the
+// WHERE does, and `$readAs` runs it once per broadcast cohort — a scan of the
+// model list there is 188 string compares per operand on the scale fixture.
+//
+// Derived through `sqlType`, so it cannot drift from the column the DDL emits.
+export function buildAffinityMap(schema) {
+  const map = {}
+  for (const model of schema.models) {
+    const cols = {}
+    for (const f of model.fields) {
+      if (!f.type) continue
+      const t = sqlType(f.type)
+      cols[f.name] = t === 'INTEGER' || t === 'REAL' ? 'NUMERIC' : t === 'BLOB' ? 'BLOB' : 'TEXT'
+    }
+    map[model.name] = cols
   }
   return map
 }

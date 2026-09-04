@@ -320,14 +320,14 @@ describe('reading a container log', () => {
     expect(res.status).toBe(200)
   })
 
-  test('a version-1 signature is refused by name', async () => {
-    // Every Outpost deployed before this signs v1. Refused as a mismatch it
-    // reads exactly like a wrong secret, which is the wrong half to look at.
+  test('a signature from another version is refused by name', async () => {
+    // Refused as a mismatch it reads exactly like a wrong secret, which is the
+    // wrong half to look at while a fleet 401s every call.
     const fake    = fakeRunner({ 'docker logs': { stdout: '' } })
     const payload = JSON.stringify({ app_id: 'app-1' })
     const headers = new Headers({ 'content-type': 'application/json' })
     for (const [k, v] of Object.entries(await sign({ secret: CONFIG.secret, method: 'POST', path: '/logs', body: payload })))
-      headers.set(k, k.toLowerCase() === 'x-fjs-signature' ? v.replace(/^v2-/, '') : v)
+      headers.set(k, k.toLowerCase() === 'x-fjs-signature' ? v.replace(/^v1-/, 'v2-') : v)
 
     const res = await serverWith(fake).handle(new Request('http://outpost.test/logs', {
       method: 'POST', headers, body: payload,
@@ -358,7 +358,7 @@ describe('what this machine tells basecamp', () => {
     // Until this lands, basecamp has no address for the machine and refuses
     // every release for it.
     expect(call.body.outpost_url).toBe('http://outpost.test:7180')
-    expect(call.init.headers['X-Fjs-Signature']).toMatch(/^v2-sha256=[0-9a-f]{64}$/)
+    expect(call.init.headers['X-Fjs-Signature']).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
   })
 
   test('the signature is over the bytes actually sent', async () => {

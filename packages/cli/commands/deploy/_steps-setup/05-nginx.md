@@ -59,6 +59,11 @@ ${sslBlock}
     proxy_http_version 1.1;
     proxy_set_header Host              $host;
     proxy_set_header X-Real-IP         $remote_addr;
+    # APPENDS to whatever the client already sent, so the rightmost entry is
+    # what nginx observed and everything left of it is the caller's claim. The
+    # app has to be told there is one proxy in front of it -- set
+    # http.trustProxy to true in junction.config.js -- or it keys every caller
+    # on this machine's address.
     proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
   }

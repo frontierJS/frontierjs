@@ -25,7 +25,6 @@ flags:
 
 ```js
 // Delegates to make:model — same thing in FJS
-const { callCommand } = await import(resolve(global.fliRoot, 'core/bootstrap.js')).catch(() => ({}))
 log.info(`Delegating to make:model ${arg.model}...`)
 context.exec({
   command: `${context.fli} make:model ${arg.model}${flag.service ? ' --service' : ''}${flag.open ? ' --open' : ''}${flag.dry ? ' --dry' : ''}`

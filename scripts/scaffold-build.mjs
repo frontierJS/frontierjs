@@ -56,6 +56,7 @@ import { tmpdir }                                      from 'node:os'
 import { randomBytes }                                 from 'node:crypto'
 
 import { vendorWorkspacePackages }                     from '../packages/cli/core/vendor.js'
+import { pointAtLocalServer }                          from '../packages/cli/core/tutor.js'
 import { reapTempDirs }                                from '../packages/litestone/src/tmp-dirs.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -98,7 +99,10 @@ const CONTEXT_BLIND = [
   /failed to build: resolve .*lstat .*: no such file or directory/,
 ]
 
-const daemonBlindHint = (output, dir) => {
+/** Exported because the `tutor` phase's deploy lesson builds in the same kind of
+ *  directory and fails the same way: two sentences saying *the daemon cannot see
+ *  your /tmp* is how the second one ends up not mentioning `FJS_CI_WORKDIR`. */
+export const daemonBlindHint = (output, dir) => {
   if (!dir || !existsSync(dir)) return ''
   if (!CONTEXT_BLIND.some(re => re.test(String(output)))) return ''
   return `\n\nThe build context exists at ${dir} and the Docker daemon cannot see it — ` +
@@ -490,17 +494,14 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
     const m = inApp(['make:deploy', '--server', 'localhost', '--domain', 'ci.invalid'])
     if (m.status !== 0) return fail('fli make:deploy failed', m.output)
 
-    // Point the generated block at this machine and this directory. `web: false`
-    // because the web half wants nginx and a domain, which is a different proof.
+    // Point the generated block at this machine and this directory. The rewrite
+    // is `core/tutor.js`'s, because `fli tutor:deploy` needs the identical
+    // recipe and two copies of it would drift with only this pipeline able to
+    // notice.
     const confPath = join(app, 'frontier.config.js')
-    const conf = readFileSync(confPath, 'utf8')
-      .replace(/path: '[^']*',(\s*\/\/ deploy root)/, `path: '${srv}',$1`)
-      .replace(/env:\s*'[^']*'/, `env:        '${srv}/.env.production'`)
-      .replace(/port:\s*3000,/, `port:       ${PORT},`)
-      .replace(/path:\s*'[^']*\/db',/, `path:         '${srv}/db',`)
-      .replace(/\n    web: \{[\s\S]*?\n    \},/, '\n    web: false,')
+    const { text: conf, ok: pointed } = pointAtLocalServer(readFileSync(confPath, 'utf8'), { serverDir: srv, port: PORT })
     writeFileSync(confPath, conf)
-    if (!conf.includes(srv)) return fail('could not point the deploy block at the local server directory', conf)
+    if (!pointed) return fail('could not point the deploy block at the local server directory', conf)
 
     // A release baseline, so the pivot classifies rather than answering unknown
     // — which counts as a contract and would refuse every revert below.

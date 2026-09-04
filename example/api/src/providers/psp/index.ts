@@ -272,6 +272,13 @@ export async function createIntent(app: App, req: {
     method: 'POST',
     path:   '/v1/intents',
     body:   req,
+    // Minting an intent moves no money and writes no row here until it
+    // succeeds, so repeating one is harmless — which conduit cannot know from
+    // `POST` alone and will not assume. An idempotency key would be the wrong
+    // way to say it: a key asserts the provider COLLAPSES duplicates, and after
+    // a decline the shopper needs a genuinely new intent rather than the
+    // refused one back.
+    replayable: true,
   })
 
   if (result.error) {

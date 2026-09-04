@@ -365,6 +365,22 @@ export interface RequestMeta {
   origin:          'http' | 'websocket' | 'internal'
 
   /**
+   * The W3C trace this request is part of, where the caller stated one —
+   * `traceparent` verbatim, and `tracestate` beside it because a vendor's
+   * position in the trace is carried there and dropping it breaks the chain
+   * for that vendor alone.
+   *
+   * Captured rather than parsed: what is done with it belongs to whoever
+   * continues the trace, and a parse here would be a second reading of the
+   * spec beside theirs. It is CARRIED and not emitted — junction traces
+   * nothing itself; this is the value an outbound call needs to hang off the
+   * inbound one, and without it every call this process makes is the root of
+   * an unrelated trace (`FJS-742`).
+   */
+  traceparent?:    string
+  tracestate?:     string
+
+  /**
    * WHO the request is on behalf of — the principal, request-wide.
    *
    * `ctx.auth.user` is the per-call view of this. It lives here because
@@ -443,9 +459,10 @@ export interface RequestSource {
   /**
    * The request's own headers, where there are any.
    *
-   * Three keys are read off them and this is the only place that knows which:
-   * `x-request-id`, `idempotency-key`, `accept-language`. A transport with no
-   * headers (a job, a script) states the values it has instead.
+   * Five keys are read off them and this is the only place that knows which:
+   * `x-request-id`, `idempotency-key`, `accept-language`, `traceparent` and
+   * `tracestate`. A transport with no headers (a job, a script) states the
+   * values it has instead.
    */
   headers?: Record<string, string | undefined>
 
@@ -454,6 +471,8 @@ export interface RequestSource {
   correlationId?:  string
   idempotencyKey?: string
   locale?:         string
+  traceparent?:    string
+  tracestate?:     string
 
   /** WHO and WHERE. Both propagate; see the doc on RequestMeta. */
   user?:   RequestMeta['user']
@@ -469,6 +488,8 @@ export function enterRequest<T>(src: RequestSource, fn: () => T): T {
     correlationId:  src.correlationId  ?? h?.['x-request-id'] ?? crypto.randomUUID(),
     idempotencyKey: src.idempotencyKey ?? h?.['idempotency-key'],
     locale:         src.locale         ?? h?.['accept-language']?.split(',')[0]?.trim(),
+    traceparent:    src.traceparent    ?? h?.['traceparent'],
+    tracestate:     src.tracestate     ?? h?.['tracestate'],
     origin:         src.origin,
     user:           src.user,
     client:         src.client,
@@ -527,8 +548,40 @@ export function requestMeta(): RequestMeta | undefined {
 
 const _callStore = new AsyncLocalStorage<ServiceContext>()
 
+// Set when the call settles. An AsyncLocalStorage store PROPAGATES into every
+// timer and microtask created inside the call, and nothing marked the call
+// over — so a `setTimeout` scheduled from a hook found `$` answering the call
+// it was scheduled from, long after that call had resolved, and `$.db` was the
+// SETTLED transaction client, which still accepted writes (`FJS-687`). The
+// whole safety argument for an ambient object is that it refuses outside a
+// call; without this it did not refuse, it just answered something stale.
+const ENDED = Symbol.for('junction.callEnded')
+
+function markCallEnded(ctx: ServiceContext): void {
+  ;(ctx as unknown as Record<symbol, unknown>)[ENDED] = true
+}
+
+/**
+ * Run `fn` with `ctx` as the ambient call, and mark that call over when it
+ * settles.
+ *
+ * The marking is here rather than in `callService` because this is the one
+ * owner of the scope — the escape hatch a hand-built context uses has to get
+ * the same guarantee, or `$` refuses in the ordinary path and answers stale in
+ * the unusual one, which is the worse of the two arrangements.
+ *
+ * A nested call runs this again with its own context, so an inner call ending
+ * says nothing about the outer one.
+ */
 export function enterCall<T>(ctx: ServiceContext, fn: () => T): T {
-  return _callStore.run(ctx, fn)
+  return _callStore.run(ctx, () => {
+    const out = fn()
+    // `finally` rather than `then`: a call that THREW is just as over as one
+    // that returned, and the timer it left behind is the same hazard.
+    if (out instanceof Promise) return out.finally(() => markCallEnded(ctx)) as T
+    markCallEnded(ctx)
+    return out
+  })
 }
 
 /** The context of the call in progress, or undefined outside one. */
@@ -596,7 +649,23 @@ export type CallContext = ServiceContext & {
 
 function held(key: string | symbol): ServiceContext {
   const ctx = _callStore.getStore()
-  if (ctx) return ctx
+  if (ctx && !(ctx as unknown as Record<symbol, unknown>)[ENDED]) return ctx
+
+  if (ctx) throw new Error(
+    `[Junction] '$' was read after '${ctx.service}.${String(ctx.method)}' had finished ` +
+    `(reading '${String(key)}').
+` +
+    `The call is over: its transaction has settled, its result has gone out, and ` +
+    `'$.db' would be a client whose transaction is closed. This is what a ` +
+    `setTimeout, a floating promise or an un-awaited effect scheduled inside a ` +
+    `call looks like — the async context follows them, so '$' is still there ` +
+    `and no longer means anything.
+` +
+    `Capture what you need BEFORE the call ends (const db = $.db), or do the ` +
+    `work through ctx.afterCommit(fn) if it must run after the write, or ` +
+    `ctx.enqueue(job, payload) if it must survive a crash.`
+  )
+
   throw new Error(
     `[Junction] '$' was read outside a service call (reading '${String(key)}').
 ` +
@@ -739,6 +808,63 @@ export const $: CallContext = new Proxy({} as CallContext, {
     return d ? { ...d, configurable: true } : undefined
   },
 })
+
+// ─── The commit scope — who owns the effects and the announcement ─────────
+//
+// A call decides *did this succeed* and then announces and drains its
+// `afterCommit` queue. That is the right owner only when the call is also what
+// makes the write durable, and under `transactional:` it is not: the rows
+// belong to the OUTERMOST transaction, so a nested call settles on the wrong
+// clock (`FJS-682`). Measured — on the rollback path the inner effect RAN and
+// the inner announcement went out, both for a row that no longer exists.
+//
+// So a transaction opens a scope and the calls inside it hand their effects and
+// their announcements over. Commit drains them, rollback discards them, and a
+// nested transaction reuses the scope it finds rather than opening a second —
+// which is what makes the OUTERMOST one the owner.
+//
+// `announced` is the third member and it is the tap's half. The Litestone tap
+// suppresses a write `callService` already announced by comparing
+// `announcingService()`, and litestone buffers a transaction's events to the
+// commit — where the innermost span is the OUTER call's, so the comparison
+// missed and the row was broadcast twice (measured: three events for one inner
+// create). A name in this set is a name some call in this transaction has taken
+// responsibility for.
+export interface CommitScope {
+  effects:       Array<() => unknown>
+  announcements: Array<() => Promise<void>>
+  announced:     Set<string>
+}
+
+const _commitScopeStore = new AsyncLocalStorage<CommitScope>()
+
+/** The scope in force, or undefined outside a transaction. */
+export function commitScope(): CommitScope | undefined {
+  return _commitScopeStore.getStore()
+}
+
+/**
+ * Run `fn` inside a commit scope, returning the one it opened.
+ *
+ * Reuses an enclosing scope rather than nesting: a nested `$transaction` is a
+ * SAVEPOINT inside the outer one, so its rows are not durable until the outer
+ * commits and its effects belong to the outer drain.
+ */
+export function runInCommitScope<T>(fn: (scope: CommitScope, owner: boolean) => T): T {
+  const existing = _commitScopeStore.getStore()
+  // `owner` is answered here rather than inferred by the caller: whether a
+  // scope was CREATED is knowable only at the moment of creation, and every
+  // proxy for it (is it empty? is a flag set?) is true of a scope somebody else
+  // opened a moment ago and has not filled yet.
+  if (existing) return fn(existing, false)
+  const scope: CommitScope = { effects: [], announcements: [], announced: new Set() }
+  return _commitScopeStore.run(scope, () => fn(scope, true))
+}
+
+/** Has some call in this transaction taken responsibility for announcing `name`? */
+export function announcedInCommitScope(name: string): boolean {
+  return _commitScopeStore.getStore()?.announced.has(name) ?? false
+}
 
 // ─── Which service is announcing this call? ───────────────────────────────
 // Read by the Litestone adapter's write tap, which announces a write that

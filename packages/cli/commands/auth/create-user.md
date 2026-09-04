@@ -45,20 +45,21 @@ import { randomBytes }                            from 'crypto'
 const makeScript = (schemaPath, encKey, email, password, name, role) => `
 import { createClient, GatePlugin, LEVELS } from '@frontierjs/litestone'
 
-const db = await createClient('${schemaPath}', {
-  encryption: { key: '${encKey}' },
-  plugins: [new GatePlugin({ getLevel: () => LEVELS.SYSTEM })]
+const db = await createClient({
+  path:          '${schemaPath}',
+  encryptionKey: '${encKey}',
+  plugins:       [new GatePlugin({ getLevel: () => LEVELS.SYSTEM })]
 })
 
 const sys = db.asSystem()
 
-const existing = await sys.users.findFirst({ where: { email: '${email}' } })
+const existing = await sys.user.findFirst({ where: { email: '${email}' } })
 if (existing) {
   console.error('ERROR: Email already registered: ${email}')
   process.exit(1)
 }
 
-const user = await sys.users.create({
+const user = await sys.user.create({
   data: {
     email: '${email}',
     name:  ${name ? `'${name}'` : 'null'},
@@ -69,7 +70,7 @@ const user = await sys.users.create({
 
 const hash = await Bun.password.hash('${password}', { algorithm: 'bcrypt', cost: 12 })
 
-await sys.credentials.create({
+await sys.credential.create({
   data: {
     userId: user.id,
     type:   'password',
@@ -87,7 +88,6 @@ No running server required — safe to use during initial setup and in CI.
 
 ```js
 const schemaPath = resolve(context.paths.db, 'schema.lite')
-const envPath    = resolve(context.paths.root, '.env')
 
 // ─── Preflight ────────────────────────────────────────────────────────────────
 
@@ -97,7 +97,8 @@ if (!existsSync(schemaPath)) {
   return
 }
 
-loadEnv({ path: envPath })
+// `.env` is already loaded — bootstrap.js reads the project's before any
+// command runs, and overrides the global one with it.
 const encKey = process.env.ENCRYPTION_KEY
 
 if (!encKey) {
@@ -150,7 +151,7 @@ try {
 
   const result = context.exec({
     command: `bun run "${tmpPath}"`,
-    capture: true,
+    stdio: ['ignore', 'pipe', 'inherit'],
   })
 
   const output = (result?.stdout ?? result ?? '').toString().trim()

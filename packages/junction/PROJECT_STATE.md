@@ -127,6 +127,6 @@ Add a new one to `../../ISSUES.md`, not to this file.
 
 ## Layout
 
-`README.md` (users) · `PROJECT_STATE.md` (this) · `CHANGES.md` (history,
-newest first) · `docs/ARCHITECTURE.md` (depth). Per the root convention, nothing
+`README.md` (users) · `CLAUDE.md` (the map, and the depth) · `PROJECT_STATE.md`
+(this) · `CHANGES.md` (history, newest first). Per the root convention, nothing
 else belongs at this package root.

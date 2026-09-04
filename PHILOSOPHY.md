@@ -175,7 +175,60 @@ If it belongs, every answer above will show it.
 
 ---
 
-## VII. Coda
+## VII. How the documents govern
+
+*(Axiom 1 pointed at the prose. `VERIFYING.md` records why: every hand-maintained
+restatement drifted, and the documents drifted most.)*
+
+**Every document is one of four kinds, and the kind decides what a sentence may
+say.**
+
+- **Guiding** — `PHILOSOPHY.md`, `ARCHITECT.md`, the Invariants. Principles and
+  vocabulary. No counts, no dates, no maturity words, no defect ids — a ruling
+  may be cited, since it is what settles a principle; a defect is what the
+  principle is not yet true about, and belongs in the register. A principle
+  is true on the day it is written and on the day the code catches up; a number
+  is true for an afternoon.
+- **Register** — `DECISIONS.md`, `ISSUES.md`, `CHANGES.md`. Dated, cited,
+  append-only. History lives here and nowhere else.
+- **Map** — the root and package `CLAUDE.md`, the committed snapshots. Live facts,
+  each one backed by a generator or a check that fails when it stops being true.
+  A map sentence beginning *until*, *used to*, *before FJS-* is history that
+  escaped its register.
+- **Assessment** — `IDEAS/` (`pros-and-cons.md` among them), a package's design notes. Carries
+  a `status` and a date in its frontmatter and is never cited as behaviour.
+
+**Precedence is stated once.** Invariant, then ruling, then map, then package
+document, then assessment. A ruling that must override an invariant amends the
+invariant in the same commit or does not land. Where two documents of one kind
+disagree, the one with the later date wins and the earlier is struck in place.
+
+**Status is a closed vocabulary, and it is one word in the frontmatter.** A ruling
+is `proposed`, `accepted`, `superseded-by` or `withdrawn`. A proposal is those
+four plus `partial` and `shipped` — the two build states between a decision and a
+fact, which a ruling does not need and a roadmap cannot do without. A document
+that READS the tree rather than proposing anything is `assessment`: it is on no
+lifecycle, it carries a date, and it is never cited as behaviour. A file derived
+from the others and authoritative over none of them is `index`. *Parked*, *under
+review*, *not yet adopted*, *argued* and *idea* each meant one of these, and each
+let a settled question read as open.
+
+**A number in prose is generated or absent.** Components, tests, rules, models,
+drives. A count that nothing regenerates is wrong by the next commit and reads as
+authoritative until then.
+
+**The delete test, for the sentence that is in the right kind of file and may
+still not belong**: if it vanished, could someone acting on this file make a
+mistake it would have prevented? *A `@@gate` refuses, a `@@allow` filters, so a
+wrong policy is an empty screen and not an error* stays — the mistake is
+concrete and the sentence is the only thing between a reader and it. *The kit
+ships 70 components over the design system* goes — nobody does anything
+differently for knowing it, and it was 65 the week before. The test is asked per
+sentence and answered out loud, and a cut with no answer does not happen.
+
+---
+
+## VIII. Coda
 
 Restatement is the disease; one origin is the cure. A schema file is called
 a seed because it is small, complete, and utterly committed — everything

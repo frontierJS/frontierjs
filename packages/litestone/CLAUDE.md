@@ -778,6 +778,33 @@ column from every row and read as the policy working strictly.
 
 ---
 
+## Encryption keys
+
+A stored value names its key: `v2.<kid>.<payload>`, kid = a domain-separated
+HMAC of the key truncated to 8 hex (`FJS-714`, ruled `FJS-D183`). An unknown kid
+still tries the ring — GCM's tag is the authority, the kid is only the order.
+
+`createClient({ previousEncryptionKeys: [...] })` is a READ-only ring. The old
+key stays on it after `$rotateKey`, so a rotation that crashed between two
+databases (it is one transaction PER DATABASE) is readable and resumable.
+
+Three traps, all closed and all worth knowing:
+
+  the operand is widened  a deterministic encoding is a function of the KEY, so
+                          a filter is encoded under every key on the ring — else
+                          a not-yet-rotated row silently matches nothing
+  the v1 twin is emitted  the payload is BYTE-IDENTICAL across versions, so a
+                          pre-upgrade `v1d.<p>` would not match `v2d.<kid>.<p>`.
+                          No suite here can see this: they all build a fresh db
+  a caller sends none     a ciphertext-shaped value from a non-system caller is
+                          refused by name (`FJS-715`); a system write may carry
+                          one and it is skipped only where it VERIFIES
+
+A decrypt that fails **raises** (`FJS-716`). The one column that degrades is
+`@secret(rotate: false)` — a loss the schema declares.
+
+---
+
 ## A bulk write and the state machine
 
 `updateMany` and `upsertMany`'s `update:` half **refuse a transitions-typed
@@ -1460,6 +1487,24 @@ Suites cover: parser, DDL, migrations, autoMigrate, client CRUD, soft delete, so
 
 ---
 
+## A tuple key is not a unique column
+
+**`@@id([a, b])` stamps `@id` on EVERY member**, so asking the fields which
+column identifies a row answers all of them — and one member of a tuple
+identifies nothing. Three faults came out of that single read and the worst is
+silent (`FJS-694`): with `orderBy: { userId }` on `@@id([userId, teamId])`,
+three rows sharing a userId paged two at a time served the first two and then
+answered EMPTY, because the tie-break thought the ordering was already total and
+the cursor said `userId > 1`. Beside it, the default ordering was the literal
+`id` — a column such a model does not have, so every derived list over one was a
+400 — and the tie-break appended only the key's FIRST column, which is still not
+total.
+
+`_keyCols()` reads the model ATTRIBUTE, because that is the only place the key's
+column ORDER is stated, and `$primaryKey(accessor)` is the same answer for the
+layer above. `normaliseOrderBy` still defaults to `id` and must: it is pure and
+has no model in scope, so the default belongs at the caller that has one.
+
 ## SQLite gotchas
 
 **`busy_timeout` is 5000ms on every connection this package opens, and it is a CROSS-PROCESS device only.** `src/core/pragmas.js` is the one owner — the number was a literal in three files and absent from four others, so whether a database waited under contention was an accident of which file opened it (`FJS-569`). The one with no wait was the `logger` index, which is schema-global and therefore the single file every tenant and every process writes; a second API beside a running one died on its first audit write, in about a millisecond. **Inside one process the timeout is not a safety net, it is a stall** — `bun:sqlite` is synchronous, so a connection waiting on the lock blocks the event loop, and it can deadlock outright: the waiter blocks the loop, the holder's continuation never runs to commit, and the wait can only expire. Measured both ways — 5000ms then failure in one process for an 800ms hold, 1444ms then commit across two. What makes the in-process case fine is `$transaction`'s FIFO lock, which queues two transactions on one client in JavaScript so they never reach the SQLite lock — and what keeps THAT true is **one client per database file per process**, since `createClient` twice on one path is two connections that can deadlock where `$setAuth`/`asSystem`/`$scopedBy` are views over one handle. **The number is `createClient({ busyTimeout })`, precedence option → env (`LITESTONE_BUSY_TIMEOUT`) → 5000**, per database as `{ default, <db> }` because the audit index wants the opposite answer to main — its write is fire-and-forget and its failure swallowed, so `{ audit: 250 }` says *drop the row rather than stall the loop*. A malformed value and a key naming a database the schema does not declare are both refused by name at `createClient`, since a dropped key is a database silently keeping the default. **There is deliberately no `database { }` spelling** (`FJS-D155`): how long to wait for another process is a fact about THIS process, and the same schema is opened by an API answering a person and a queue draining a batch. `docs/concurrency.md` is the whole of it, including the worker-thread answer for a query that is genuinely long — measured, a worker holding the lock for 600ms let the main loop keep ticking and the main thread's write waited 639ms and committed, where the same shape on one thread deadlocks.
@@ -1524,6 +1569,19 @@ update the root and leave every derived client decrypting with the old key.
 realm every other package sits on: `example`: `bun run verify` and `basecamp`:
 `bun run verify`, plus `sierra`: `bun run test:safety` — the five checks that run
 against a real client rather than a stand-in.
+
+**`test/verbs-rules.test.ts` is the grid underneath that one**, and it asks the
+question `makeTable`'s shape makes urgent: *does every verb that can reach a row
+apply every rule that guards it?* Twenty verbs × five row-reaching rules, ONE
+SCHEMA PER RULE — a fixture carrying every rule at once has the gate refusing
+everything and every other rule then reports as applied (`FJS-351`). Each rule
+is arranged the same way: two rows, and the rule admits exactly one, so a verb
+that applies it sees one and a verb that skips it sees two. **The verdict is
+never read off the verb's own return value** — a count, a row, a boolean and a
+throw are four vocabularies, and the first cut of this file scored `upsertMany`
+as passing because `count && 2` is 2 for any non-zero count. Every cell asks the
+SYSTEM what the caller could reach or move. `VERBS_REPORT=1` prints the grid;
+fill it from that, never by hand. Its first run found `FJS-720`.
 
 **`test/matrix.test.ts` is where a CROSSING is answered.** 20 column kinds × 16
 operations, one cell each, under one invariant — *no cell may silently return a
@@ -1618,6 +1676,21 @@ cell means.
   caller. The pair `@guarded(all) @system` is legal and means both halves; a
   field `@allow('write')` beside `@system` is refused, because one says nobody
   ever and the other says it depends who is asking.
+- **Attribute legality is asked of a FACET, and there are two owners.** The
+  parser refuses `@unique` over a randomly-encrypted column; the same class one
+  attribute over was ruled nowhere, so three things that cannot work at all
+  parsed clean — `@unique`/`@@unique`/`@@index` over a field with no column
+  (`@@unique([c])` over a `@computed` makes a table SQLite refuses at boot),
+  a fractional `@default` on `@scale`/`@money` (an INTEGER of minor units takes
+  `DEFAULT 12.99` and the first defaulted row is refused at runtime), and a
+  `@relation` across two `database` blocks (an FK that resolves nowhere).
+  Derived from *what does the column physically hold* rather than from a pair,
+  so the next virtual kind arrives covered; `@generated` is outside it, being a
+  real column (`FJS-721`). **What belongs in the parser is what cannot be
+  EXPRESSED; what is legal and WRONG belongs in `advise.js`**, whose own
+  contract is that every rule in it parses — `@@fts` over an encrypted column is
+  one of those, and putting it in the parser as well made that rule unreachable
+  and broke its own test.
 - **A converter is graded by reading its output BACK, never by matching strings
   in it.** `generateLiteSchema` had six tests and every one was
   `expect(schema).toContain(...)`; none fed the result to `parse()`, and the
@@ -1741,7 +1814,39 @@ cell means.
   rewrite a `where` gets, `FJS-214`), the JS evaluator compares plaintext
   because `create` hands it the data as written. `post-update` gets the row read
   BACK, where the column is stripped by `@guarded(all)` — refused at startup
-  rather than denying every write.
+  rather than denying every write. **`test/policy-interpreters.test.ts` is the
+  oracle between them** — the same predicate over the same rows, asked of both
+  halves, 29 forms × 3 principals × 5 rows plus the clock, a `check()`
+  delegation and a `@@deny` beside an `@@allow`. Adding a form to the parser
+  means adding a row there, or the two compilers can take it in different
+  directions with nothing failing.
+- **The JS half compares the way SQLite does, and `===` is not that.** SQLite
+  applies the COLUMN's affinity to the other operand and then orders by storage
+  class; JS does neither, so `ownerId == auth().id` over an `Int` column and a
+  caller whose id is the string `'5'` — which is every junction principal, a
+  `SessionContext` carrying `userId` as TEXT — was TRUE through a query and
+  FALSE on create and in `$readAs` (`FJS-713`). Measured across column type ×
+  operator × operand, **54 of 594 cells disagreed**, in both directions and on
+  every operator, so the filed pairing was one of a class. `compare()` in
+  `policy.js` now puts a JS value in the storage class the binder would have
+  given it (a boolean is 0/1, a `Date` its ISO text), applies the column's
+  affinity, and orders by class; `in` takes the same affinity per element. Two
+  things are deliberately left alone: a value that is neither a number nor a
+  string after all that keeps JavaScript's answer, because two distinct Buffers
+  rank EQUAL under a class comparison and `==` would answer TRUE for them; and
+  the affinity is read through `sqlType`, the DDL emitter's own function, so it
+  cannot drift from the column that gets built.
+- **The create half is evaluated against the PAYLOAD, so a column SQLite
+  computes from the row can never be named in a create policy.** `@derived`,
+  `@generated` and `@from` read `undefined` there, so the allow never holds and
+  the model is uncreatable by everybody — while the read half, being SQL,
+  answers it perfectly (`FJS-719`). Refused at build, and derived from the FACET
+  rather than from a list, because the enumeration that already refused
+  `@computed` and `@transient` is what missed these three. `@system` is
+  deliberately not in it: `system: ['col']` puts one in the payload, so a create
+  policy naming one is answerable. A `@@deny` fails the opposite way and gets
+  the opposite sentence — an allow that never holds refuses everybody, a deny
+  that never fires refuses nobody.
 - **Raw SQL requires `asSystem()`** once a schema declares access rules — `db.sql`
   and `db.$setAuth(u).sql` both throw. Raw statements enforce no `@@gate`,
   `@@allow`, `@guarded`, `@scoped` or `@@softDelete`; they all live above SQLite.
@@ -1793,6 +1898,20 @@ cell means.
   ':memory:'` is the shorthand that moves every one of them, jsonl and logger
   included. Most specific wins: `databases: ':memory:'` > `databases: { main }` >
   `db` > the declaration.
+- **`upsertMany` is TWO writes and they are policed by two different rules.** A
+  row that will INSERT is a create and one that will conflict is an update, so
+  the split has to be known before either rule can be applied — and it was
+  neither: `create()` refused planting a row owned by somebody else and
+  `upsertMany` planted it, `update()` refused writing to their row and
+  `upsertMany` wrote it, and a `@@hasTemplates` template `updateMany` correctly
+  skipped was written too (`FJS-720`). The presence lookup a logged model
+  already pays for is now paid whenever the model has policies; the insert half
+  calls `checkCreatePolicy` and refuses the batch WHOLE, like `createMany`; the
+  update half rides SQLite's own `ON CONFLICT … DO UPDATE … WHERE`, where an
+  unqualified column is the EXISTING row, and narrows rather than throwing —
+  because that is what `updateMany` beside it does. `count` counts what SQLite
+  moved rather than what the caller handed in, or a guarded skip reports as a
+  write.
 - **A bulk write prepares one statement per row SHAPE, and the shapes come from
   the rows.** `createMany`/`upsertMany` no longer take the column list from row
   0, so a batch may be ragged; rows still insert in caller order, because an
@@ -2055,6 +2174,25 @@ cell means.
   third state and honestly distinct from `blocked`: one is a pre-flight refusal,
   the other is SQLite declining what was attempted. A view the rebuild
   invalidates is `failed` too, where it used to throw.
+- **The differ compares an enumerated list, and there is now a catch-all under
+  it.** Six issues of this package's history are one dimension arriving in
+  `ddl.js` and not in `diffSchemas` — generated columns, CHECK, table uniques,
+  index order, index sorts, index predicates — each reading *schema is in sync*
+  over a database that is not the declared one. Once the enumeration has spoken,
+  the two `sqlite_master`s are compared whole and the leftovers are `diff.residue`
+  (`FJS-717`, ruled `FJS-D186`). **Its first run named the seventh**: `onUpdate`
+  was emitted, parsed, introspected and dropped by `fkKey` (`FJS-718`). It is
+  deliberately **not part of `hasChanges`** — nothing here can write a migration
+  for a dimension it cannot see, so counting it would generate an empty migration
+  every boot for ever — and it does not block, because the commonest cause is the
+  adoption door rather than a defect: a real database has a `COLLATE NOCASE` on
+  its email column, and this language cannot say that. `autoMigrate` announces it
+  and records it beside the DDL hash, so the fast path re-announces for one
+  SELECT; `{ acceptResidue: true }` is the caller stating it, beside the
+  `acceptDataLoss` it is modelled on. **Adding a dimension to the enumeration is
+  what makes the tripwire go quiet**, which is the relationship to keep: a
+  residue is a question, and the answer is usually a comparison this file is not
+  making yet.
 - **A migration only drops what litestone named.** Triggers: `*_fts_*`,
   `*_updatedAt`. Indexes: `idx_<table>_<fields>`. Anything the app created
   survives an ordinary migration — `introspect()` reads triggers into

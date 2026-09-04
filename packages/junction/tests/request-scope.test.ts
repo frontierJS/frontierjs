@@ -132,10 +132,36 @@ describe('every entry point opens the request scope', () => {
     expect(seen!.origin).toBe('http')
     expect(seen!.user?.userId).toBe('u-alice')
     expect(seen!.client).toBeDefined()
-    // The three header-derived fields have one reader, and this is what it reads.
+    // The header-derived fields have one reader, and this is what it reads.
     expect(seen!.correlationId).toBe('corr-http')
     expect(seen!.idempotencyKey).toBe('idem-http')
     expect(seen!.locale).toBe('en-GB')
+  })
+
+  // Carried, never emitted: junction traces nothing itself. It is the value an
+  // outbound call needs to hang off the inbound one, and without it every call
+  // this process makes is the root of an unrelated trace (`FJS-742`).
+  test('HTTP — a W3C trace the caller stated is carried', async () => {
+    seen = undefined
+    await fetch(`${BASE}/probe`, {
+      headers: {
+        traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
+        tracestate:  'congo=t61rcWkgMzE',
+      },
+    })
+    // Verbatim and unparsed — what to do with it belongs to whoever continues
+    // the trace, and a parse here would be a second reading of the spec.
+    expect(seen!.traceparent).toBe('00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01')
+    // `tracestate` is not decoration: a vendor's own position in the trace is
+    // carried there, so dropping it breaks the chain for that vendor alone.
+    expect(seen!.tracestate).toBe('congo=t61rcWkgMzE')
+
+    // The control — a request that stated none carries none, rather than an
+    // invented one that would read as an upstream trace downstream.
+    seen = undefined
+    await fetch(`${BASE}/probe`)
+    expect(seen!.traceparent).toBeUndefined()
+    expect(seen!.tracestate).toBeUndefined()
   })
 
   test('WebSocket — the same six fields, stated on the frame', async () => {

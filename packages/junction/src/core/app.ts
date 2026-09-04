@@ -35,6 +35,29 @@ import type { IEventBus }           from '../events/index.ts'
 import type { AIRegistry }          from '../ai/index.ts'
 import type { RouteHandler, MiddlewareFn, WsHandlerSet } from '../transport/types.ts'
 
+// ─── Shutdown ─────────────────────────────────────────────────────────────
+
+/**
+ * Wait for `work`, or give up after `ms` and carry on.
+ *
+ * Nothing in JavaScript cancels a promise, so a step that eventually settles
+ * does so into a void. That is the honest shape and it is why `onTimeout` says
+ * so out loud — a step silently not running is the failure this exists for.
+ *
+ * The timer is REF'd. An unref'd one is the bug itself: with every remaining
+ * timer unref'd the loop empties and node exits **0**, which is what an
+ * orchestrator reads as a clean stop (`FJS-693`).
+ */
+async function withDeadline(work: Promise<unknown>, ms: number, onTimeout: () => void): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<'timeout'>(resolve => { timer = setTimeout(() => resolve('timeout'), ms) })
+  try {
+    if (await Promise.race([work.then(() => 'done' as const), deadline]) === 'timeout') onTimeout()
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 // ─── Plugin interface ─────────────────────────────────────────────────────
 
 /**
@@ -492,6 +515,15 @@ export interface App {
    *  its own port, and an option living in a plugin closure made it answer a
    *  smaller one than `/health` did. */
   _healthChecksApp: Map<string, () => boolean | Promise<boolean>>
+  /** True from the first line of `stop()` until the process goes away.
+   *
+   *  Readiness has to answer differently while a process is leaving, or a load
+   *  balancer keeps sending it traffic: measured, a request arriving during the
+   *  drain was answered 200 and `/health` stayed 200 throughout (`FJS-693`).
+   *  Held on the APP for `_healthChecksApp`'s reason — two surfaces answer
+   *  readiness, `/health` and the devtools console on its own port, and a flag
+   *  in one closure makes them disagree about whether this process is up. */
+  draining: boolean
   /** Whether the devtools console is up, and where.
    *
    *  The startup banner is derived from MOUNTED ROUTES, and the console has
@@ -767,6 +799,18 @@ export function createApp(opts: AppOptions = {}): App {
   // Signal handler installed by start(), removed by stop() — kept here so
   // repeated start() calls never register duplicates.
   let _signalHandler: (() => void) | null = null
+  let _rejectionHandler: ((reason: unknown) => void) | null = null
+  let _exceptionHandler: ((err: Error) => void) | null = null
+
+  // One way out of a crash, shared by both handlers. Exits 1 whichever way it
+  // goes — a crash that shut down tidily is still a crash, and reporting 0
+  // there is the same lie the deadline exists to stop.
+  const crashStop = () => {
+    const ms = config.shutdown?.timeout ?? 15_000
+    withDeadline(app.stop(), ms, () => {})
+      .then(() => process.exit(1))
+      .catch(() => process.exit(1))
+  }
   // Async plugin register() rejections, captured by configure() and
   // rethrown by start() — a half-registered plugin must not boot.
   const _registerFailures: Array<{ plugin: string; err: unknown }> = []
@@ -806,10 +850,16 @@ export function createApp(opts: AppOptions = {}): App {
     compress:    config.http.compress,
     ddos:        config.http.ddos,
     static:      config.http.static,
+    // Which forwarding headers to believe. Declared, never guessed: absent
+    // behind a proxy means every caller shares the proxy's bucket, and this
+    // was passed from nowhere at all until `FJS-744` — so the transport's
+    // option was unreachable and that was the state every deployed app was in.
+    trustProxy:  config.http.trustProxy,
     // How much junction holds for a socket that is not draining before it
     // closes it. See outbox.ts — past Bun's own buffer a frame is DROPPED,
     // which is silent at every layer above it.
     wsMaxQueued: config.http.wsMaxQueued,
+    ws:          config.http.ws,
     auth:        opts.auth,
     // Cookie mode is normally declared by the auth plugin, which calls
     // http.setAuthCookie() from its own register(). This is the path for a
@@ -1177,6 +1227,7 @@ export function createApp(opts: AppOptions = {}): App {
     _metricsSources: new Map<string, () => unknown>(),
     _healthChecks:    new Map<string, () => boolean | Promise<boolean>>(),
     _healthChecksApp: new Map<string, () => boolean | Promise<boolean>>(),
+    draining: false,
     _devtools:        { status: 'off' as const },
     _devServices:     new Map<string, DevService>(),
 
@@ -1347,6 +1398,12 @@ export function createApp(opts: AppOptions = {}): App {
 
       logger.info('[App] Shutting down...')
 
+      // Before anything closes. Readiness answers 503 from here on, so a load
+      // balancer stops choosing this process while it still has a drain's worth
+      // of work to finish — the whole window this flag exists for (`FJS-693`).
+      app.draining = true
+      http.setDraining?.(true)
+
       events.emit('app:shutdown')
 
       // Stop accepting new connections, close the live ones, and give an
@@ -1361,10 +1418,23 @@ export function createApp(opts: AppOptions = {}): App {
       // what is genuinely outstanding, and forces the server down (`FJS-460`).
       await http.stop(config.http?.drainTimeout ?? 5_000)
 
-      // Shutdown plugins in reverse order
+      // Shutdown plugins in reverse order, each bounded.
+      //
+      // A `shutdown()` that never settles used to take the whole list with it:
+      // the loop stopped at that plugin and the caravan pool, the outbox relay
+      // and the litestone close never ran. Bounded, one plugin hanging costs
+      // its own step and nothing else — and it is LOGGED, because a step that
+      // silently did not run is the failure this whole change is about.
+      const pluginMs = config.shutdown?.pluginTimeout ?? 5_000
       for (const plugin of [...plugins].reverse()) {
+        if (!plugin.shutdown) continue
         try {
-          await plugin.shutdown?.(app)
+          await withDeadline(
+            Promise.resolve(plugin.shutdown(app)),
+            pluginMs,
+            () => logger.error(
+              `plugin '${plugin.name}' shutdown did not finish within ${pluginMs}ms — skipped`),
+          )
         } catch (err) {
           logger.error(`plugin '${plugin.name}' shutdown failed`, err as Error)
         }
@@ -1388,6 +1458,14 @@ export function createApp(opts: AppOptions = {}): App {
         process.removeListener('SIGTERM', _signalHandler)
         process.removeListener('SIGINT',  _signalHandler)
         _signalHandler = null
+      }
+      if (_rejectionHandler) {
+        process.removeListener('unhandledRejection', _rejectionHandler)
+        _rejectionHandler = null
+      }
+      if (_exceptionHandler) {
+        process.removeListener('uncaughtException', _exceptionHandler)
+        _exceptionHandler = null
       }
 
       started = false
@@ -1657,11 +1735,48 @@ export function createApp(opts: AppOptions = {}): App {
       // start() calls don't stack listeners.
       { name: 'signal-handlers', needsHost: true, run: () => {
         if (_signalHandler) return
+
+        // `stop()` is raced against a whole-shutdown deadline, and the race is
+        // the point rather than a nicety: a plugin whose `shutdown()` never
+        // settles used to leave the loop empty with every timer unref'd, and
+        // node exited **0** in 54ms with the queue, the outbox and the database
+        // close all skipped and *Shutdown complete* never printed. Zero is a
+        // clean stop to an orchestrator, so nothing anywhere reported it
+        // (`FJS-693`). Past the deadline this exits 1, which is a statement.
         _signalHandler = () => {
-          app.stop().then(() => process.exit(0)).catch(() => process.exit(1))
+          const ms = config.shutdown?.timeout ?? 15_000
+          let timedOut = false
+          withDeadline(app.stop(), ms, () => {
+            timedOut = true
+            logger.error(`[App] Shutdown did not finish within ${ms}ms — exiting 1 with steps outstanding`)
+          })
+            .then(() => process.exit(timedOut ? 1 : 0))
+            .catch(() => process.exit(1))
         }
         process.on('SIGTERM', _signalHandler)
         process.on('SIGINT',  _signalHandler)
+
+        // A rejected promise in a timer killed the process with `stop()` never
+        // running at all — no drain, no plugin shutdown, no close. Installed
+        // only where the app has NOT already stated its own policy: a framework
+        // replacing an application's crash handling is worse than not having
+        // any, and `listenerCount` is the only way to ask.
+        if (config.shutdown?.crashHandlers !== false) {
+          if (process.listenerCount('unhandledRejection') === 0) {
+            _rejectionHandler = (reason: unknown) => {
+              logger.error('[App] Unhandled rejection — shutting down', reason as Error)
+              crashStop()
+            }
+            process.on('unhandledRejection', _rejectionHandler)
+          }
+          if (process.listenerCount('uncaughtException') === 0) {
+            _exceptionHandler = (err: Error) => {
+              logger.error('[App] Uncaught exception — shutting down', err)
+              crashStop()
+            }
+            process.on('uncaughtException', _exceptionHandler)
+          }
+        }
       }},
 
       { name: 'announce', needsHost: true, run: () => {

@@ -37,15 +37,15 @@ import { resolve }                    from 'path'
 const makeScript = (schemaPath, encKey, role, limit, includeSessions) => `
 import { createClient } from '@frontierjs/litestone'
 
-const db  = await createClient('${schemaPath}', { encryption: { key: '${encKey}' } })
+const db  = await createClient({ path: '${schemaPath}', encryptionKey: '${encKey}' })
 const sys = db.asSystem()
 
 const where = ${role ? `{ role: '${role}' }` : '{}'}
 
-const users = await sys.users.findMany({
+const users = await sys.user.findMany({
   where,
   orderBy: { createdAt: 'desc' },
-  take: ${limit},
+  limit: ${limit},
 })
 
 const result = []
@@ -61,7 +61,7 @@ for (const u of users) {
   }
 
   ${includeSessions ? `
-  const sessionCount = await sys.sessions.count({
+  const sessionCount = await sys.session.count({
     where: { userId: u.id, expiresAt: { $gt: new Date() } }
   })
   entry.activeSessions = sessionCount
@@ -79,7 +79,6 @@ Lists users directly from the database. No running server required.
 
 ```js
 const schemaPath = resolve(context.paths.db, 'schema.lite')
-const envPath    = resolve(context.paths.root, '.env')
 
 // ─── Preflight ────────────────────────────────────────────────────────────────
 
@@ -89,7 +88,8 @@ if (!existsSync(schemaPath)) {
   return
 }
 
-loadEnv({ path: envPath })
+// `.env` is already loaded — bootstrap.js reads the project's before any
+// command runs, and overrides the global one with it.
 const encKey = process.env.ENCRYPTION_KEY
 
 if (!encKey) {
@@ -111,7 +111,7 @@ try {
     flag.sessions
   ), 'utf8')
 
-  const result = context.exec({ command: `bun run "${tmpPath}"`, capture: true })
+  const result = context.exec({ command: `bun run "${tmpPath}"`, stdio: ['ignore', 'pipe', 'inherit'] })
   const output = (result?.stdout ?? result ?? '').toString().trim()
   const last   = output.split('\n').find(l => l.startsWith('['))
 

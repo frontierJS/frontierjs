@@ -14,7 +14,7 @@ const requireAuthInstalled = (context) => {
     context.log.error('schema.lite not found — run fli auth:install first')
     return false
   }
-  const contents = readFileSync(schemaPath, 'utf8')
+  const contents = fs.readFileSync(schemaPath, 'utf8')
   const hasAuth = ['model users', 'model sessions', 'model credentials', 'model verifications']
     .every(m => contents.includes(m))
   if (!hasAuth) {

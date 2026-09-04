@@ -1,0 +1,324 @@
+---
+title: "FrontierJS — the tutorial is a command"
+description: "fli tutor is four lessons that run the real commands and then ask the running world whether they worked — including a real deploy to your own machine. It is graded by the project's own CI."
+render: static
+---
+<!--
+  The tutorial page.
+
+  Its whole argument is that a tutorial which cannot fail is not evidence, so
+  every sample here is a transcript or a verbatim lift from the step's own
+  source. The four lesson cards are markup; there is nothing on this page for
+  an island to move.
+-->
+<script>
+  export let data = null
+
+  const sample = data?.samples ?? {}
+
+  // The lessons, as they are on disk. Step counts are file counts in
+  // packages/cli/commands/tutor/_steps-*/ — a number that goes stale by
+  // somebody deleting a step, which is the kind that shows.
+  const lessons = [
+    {
+      cmd:   'fli tutor:app',
+      name:  'An app that runs',
+      steps: 10,
+      needs: 'nothing',
+      body:  'Scaffold an app, start it, register an account, add a model of your own, push it, write a row through the API and read it back out of the SQLite file the app wrote. Then build it, and check the built page actually loads its JavaScript.',
+      proves: 'the row is in db/app.db',
+    },
+    {
+      cmd:   'fli tutor:access',
+      name:  'Who may do what',
+      steps: 9,
+      needs: 'nothing',
+      body:  'Authorization is declared in the schema rather than written in hooks, which is easy to nod at and hard to believe. So this one changes one line of db/schema.lite at a time and shows the answer to the same HTTP request changing: a gate that refuses, a policy that filters, a column that silently declines a write.',
+      proves: 'the same request answers 200, then 401',
+    },
+    {
+      cmd:   'fli tutor:deploy',
+      name:  'A deploy you can take back',
+      steps: 10,
+      needs: 'Docker · git',
+      body:  'A deploy target may be localhost, so this is the real pipeline: an image, a journal on disk, a health poll, a swap. Deploy, change a line and deploy again, then revert — and revert the revert. Asserted against the image id the container is on, because a pipeline that reports success while leaving the old container up passes everything else.',
+      proves: 'the previous release is serving again',
+    },
+    {
+      cmd:   'fli tutor:fleet',
+      name:  'A machine that takes orders',
+      steps: 7,
+      needs: 'a checkout',
+      body:  'The other release story. A control plane holds the fleet as rows, a machine runs an outpost so the control plane has hands on it, and nobody types a deploy. It ends by sending a signed command from the control plane that really runs on your machine.',
+      proves: 'and what it said came from this machine',
+    },
+  ]
+
+  // The defects the tutorial found on the way to being written. Every one of
+  // them exited 0, which is the argument for probing rather than trusting a
+  // status code — a tutorial graded on exit codes teaches all four.
+  const found = [
+    { id: 'FJS-735', what: 'Nine of ten refusals in the scaffolder exited 0, so every wrapper around it read “scaffolded”.' },
+    { id: 'FJS-736', what: 'The auth commands had rotted through five layers, ending with one that created an account and reported failure.' },
+    { id: 'FJS-737', what: 'Every app scaffolded with auth booted with its policy claims graded against nothing — and said so on every boot, to nobody.' },
+    { id: 'FJS-738', what: 'Every command the deploy pipeline sent to a machine did nothing at all under node, and reported success.' },
+  ]
+</script>
+
+<nav class="subnav" aria-label="Sections">
+  <div class="container">
+    <a href="#top">The idea</a>
+    <a href="#step">A step</a>
+    <a href="#lessons">The four lessons</a>
+    <a href="#why">Why it is different</a>
+    <a href="#found">What it found</a>
+    <a href="#start">Start</a>
+  </div>
+</nav>
+
+<!-- ─── Hero ──────────────────────────────────────────────────────────── -->
+<section id="top">
+  <div class="container hero">
+    <div class="stack">
+      <p class="eyebrow">The tutorial</p>
+      <h1>The tutorial<br>is a command.</h1>
+      <p class="lede">
+        Not a page you read with a terminal open beside it. <code>fli tutor</code> prints
+        its own prose, runs the real commands, and then <strong>asks the running world
+        whether they worked</strong> — a port that answers, a table in
+        <code>sqlite_master</code>, a row read back out of the file the app wrote.
+      </p>
+      <p class="lede">
+        A step that cannot prove itself stops and tells you what it asked for and what it
+        got instead. And the whole thing runs in this project's CI, so a command renamed
+        out from under a step is a red build rather than a stale paragraph.
+      </p>
+      <div class="cluster">
+        <a class="btn primary raised" href="#start">Run it</a>
+        <a class="btn outlined" href="#lessons">The four lessons</a>
+      </div>
+    </div>
+
+    <pre class="code">{@html sample.START}</pre>
+  </div>
+</section>
+
+<!-- ─── A step ────────────────────────────────────────────────────────── -->
+<section id="step">
+  <div class="container stack">
+    <p class="eyebrow">A step</p>
+    <h2>Every line beginning <span class="tick">✓</span> is a question that was asked.</h2>
+    <p class="lede" style="max-width:64ch">
+      This is lesson 1 applying a model you just wrote and then using it. Nothing here is
+      an echo of a command that exited 0.
+    </p>
+
+    <div class="pair">
+      <div>
+        <p class="cap">What you see</p>
+        <pre class="code">{@html sample.STEP}</pre>
+      </div>
+      <div>
+        <p class="cap">What produced it</p>
+        <pre class="code">{@html sample.ASSERT}</pre>
+      </div>
+    </div>
+
+    <div class="note">
+      <b>Two things worth noticing.</b> The row is read out of the app's own SQLite file
+      rather than off the response, because a service that answers 201 and writes nowhere
+      passes every check above that line. And the refusal is a <b>pair</b> with the
+      acceptance — the identical request without a token — because a refusal that cannot
+      be shown to come from the rule it names proves nothing.
+    </div>
+
+    <p class="cap" style="margin-top:var(--space-xl)">And when it does not work</p>
+    <pre class="code">{@html sample.FAIL}</pre>
+    <p class="lede" style="max-width:64ch">
+      The exit code is non-zero, nothing after the failing step ran, and the two ways
+      forward are printed. Running the lesson again picks up where it stopped;
+      <code>--step 1</code> runs that one step on its own.
+    </p>
+  </div>
+</section>
+
+<!-- ─── The lessons ───────────────────────────────────────────────────── -->
+<section id="lessons">
+  <div class="container stack">
+    <p class="eyebrow">The four lessons</p>
+    <h2>Empty directory to a machine taking orders.</h2>
+    <p class="lede" style="max-width:64ch">
+      Each one is separately runnable and separately resumable. The first two need nothing
+      but Bun — no Docker, no network, no account, no browser tab open on somebody else's
+      site.
+    </p>
+
+    <div class="lessons">
+      {#each lessons as l}
+        <article class="card lesson">
+          <div class="split">
+            <code class="cmd">{l.cmd}</code>
+            <span class="badge muted">{l.steps} steps</span>
+          </div>
+          <h3>{l.name}</h3>
+          <p>{l.body}</p>
+          <div class="foot">
+            <span class="pill">needs {l.needs}</span>
+            <span class="proof"><span class="tick">✓</span> {l.proves}</span>
+          </div>
+        </article>
+      {/each}
+    </div>
+  </div>
+</section>
+
+<!-- ─── Why ───────────────────────────────────────────────────────────── -->
+<section id="why">
+  <div class="container stack">
+    <p class="eyebrow">Why it is different</p>
+    <h2>Three claims, and we have not found the third anywhere else.</h2>
+
+    <div class="tiles">
+      <div class="tile">
+        <h3>You cannot fake a step</h3>
+        <p>
+          Progression is gated on a probe, the way rustlings gates on the compiler
+          accepting your code. What is different is what the probe asks: not
+          <em>did my command exit 0</em> but <em>is the row there</em>.
+        </p>
+      </div>
+      <div class="tile">
+        <h3>It teaches deployment</h3>
+        <p>
+          Most tutorials stop at localhost, because they cannot give you a server. This one
+          does not need to: a deploy target may <em>be</em> <code>localhost</code>, so
+          lesson 3 is a real image, a real journal on disk, a real swap and a real revert —
+          on your own machine, and reversible.
+        </p>
+      </div>
+      <div class="tile">
+        <h3>Our CI grades it</h3>
+        <p>
+          All four lessons run in <code>bun run ci</code>. Tutorials rot when the product
+          moves — ours already had, and its own header disagreed with the README about
+          whether it had ever been executed. That is what this replaces.
+        </p>
+      </div>
+    </div>
+
+    <pre class="code">{@html sample.CI}</pre>
+  </div>
+</section>
+
+<!-- ─── What it found ─────────────────────────────────────────────────── -->
+<section id="found">
+  <div class="container stack">
+    <p class="eyebrow">What it found</p>
+    <h2>Four defects, and every one of them exited 0.</h2>
+    <p class="lede" style="max-width:64ch">
+      Writing a tutorial that asserts is the first time anybody walks the whole path as a
+      stranger would. These came out of doing it, and they are the argument for probing
+      rather than trusting a status code: a tutorial graded on exit codes would have passed
+      against all four and taught each of them.
+    </p>
+
+    <table class="table">
+      <thead><tr><th>Id</th><th>What was wrong</th></tr></thead>
+      <tbody>
+        {#each found as f}
+          <tr><td><code>{f.id}</code></td><td>{f.what}</td></tr>
+        {/each}
+      </tbody>
+    </table>
+
+    <p class="lede" style="max-width:64ch">
+      The last one is the one worth reading. <code>execSync</code> with
+      <code>stdio: 'inherit'</code> ignores its <code>input</code> on Node and honours it on
+      Bun — and every command a deploy sends travels on stdin. So under Node the container
+      swap, the lock release and the nginx write all reported success and did nothing.
+      Every defect is filed in the repo's own register with the measurement that found it.
+    </p>
+  </div>
+</section>
+
+<!-- ─── Start ─────────────────────────────────────────────────────────── -->
+<section id="start">
+  <div class="container stack">
+    <p class="eyebrow">Start</p>
+    <h2>One command, and nothing to clean up.</h2>
+    <p class="lede" style="max-width:64ch">
+      It builds in a throwaway directory by default and removes it when it is done. Pass
+      <code>--workspace ~/somewhere</code> to keep what it makes, which is the point if you
+      want to read the app afterwards — and to stop and come back to it, since running a
+      lesson again picks up where you left off.
+    </p>
+    <pre class="code">{@html sample.START}</pre>
+    <div class="cluster">
+      <a class="btn primary raised" href="/#code">See the code it writes</a>
+      <a class="btn outlined" href="/flow/">Follow one field through it</a>
+      <a class="btn ghost" href="/#packages">The packages</a>
+    </div>
+  </div>
+</section>
+
+<div class="container pagenote">
+  <span>Every sample on this page is a transcript or a verbatim lift from the step that produced it.</span>
+  <span><a href="/journey/">The journey →</a></span>
+</div>
+
+<style>
+  section { padding: var(--space-3xl) 0; }
+  section + section { border-top: 1px solid var(--rule); }
+
+  .hero { display: grid; gap: var(--space-2xl); align-items: center; }
+  @media (min-width: 60rem) { .hero { grid-template-columns: 1fr 1fr; } }
+
+  h1 { font-size: var(--text-4xl); line-height: var(--leading-display); letter-spacing: -.02em; margin: 0; }
+  h2 { letter-spacing: -.01em; }
+
+  .eyebrow {
+    text-transform: uppercase; letter-spacing: .08em;
+    font-size: var(--text-2xs); color: var(--ink-mute); margin: 0;
+  }
+  .lede { color: var(--ink-soft); line-height: var(--leading-relaxed); }
+  .cap  { font-size: var(--text-xs); color: var(--ink-mute); margin: 0 0 var(--space-2xs); }
+
+  /* The mark that means "asked and answered". It is the page's one piece of
+     colour vocabulary and it is a TONE, never a hex. */
+  .tick { color: var(--color-success); font-weight: 700; }
+
+  .pair { display: grid; gap: var(--space-lg); }
+  /* The right column is the longer of the two — a transcript is short and the
+     source that produced it is not — so the split is uneven rather than even,
+     which is what keeps the gap under the left one from reading as a mistake. */
+  @media (min-width: 64rem) {
+    .pair { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); align-items: start; }
+  }
+  .pair pre { margin: 0; }
+
+  .note {
+    border-left: 3px solid var(--color-primary);
+    background: var(--surface-sunken);
+    padding: var(--space-md) var(--space-lg);
+    border-radius: var(--card-radius);
+    color: var(--ink-soft);
+    line-height: var(--leading-relaxed);
+  }
+
+  .lessons { display: grid; gap: var(--space-lg); }
+  @media (min-width: 52rem) { .lessons { grid-template-columns: 1fr 1fr; } }
+
+  .lesson { display: flex; flex-direction: column; gap: var(--space-sm); }
+  .lesson h3 { margin: 0; }
+  .lesson p  { margin: 0; color: var(--ink-soft); line-height: var(--leading-relaxed); }
+  .cmd { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--color-primary); }
+
+  .foot {
+    display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center;
+    margin-top: auto; padding-top: var(--space-sm); border-top: 1px solid var(--rule);
+    font-size: var(--text-xs);
+  }
+  .proof { color: var(--ink-mute); font-family: var(--font-mono); }
+
+  .table code { font-size: var(--text-xs); }
+</style>

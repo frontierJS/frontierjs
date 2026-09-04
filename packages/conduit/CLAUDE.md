@@ -55,6 +55,86 @@ src/
 
 ## What bites here
 
+- **`kind` says who is at fault, and `server_error` means 5xx and nothing
+  else.** Three consumers branch on it and they disagree: the retry decision,
+  the `retryable` flag a caravan job acts on, and the breaker's failure count.
+  Under one word for every non-2xx, five 404s opened the circuit on a target
+  that answered all five, after which correct requests were shed as
+  `circuit_open` (`FJS-684`). `client_error` is the target refusing (`raw`
+  carries the body, which on a 4xx is the actionable half), `invalid_response`
+  is an answer that is unusable — HTML where a payload was expected, a body that
+  did not parse, a failed `validate`. Neither reaches `TARGET_FAULTS`, which is
+  unchanged and is still the three that mean the target is unwell. **Adding a
+  kind means deciding all three columns**: retryable, breaker, and what a caller
+  can do with it — the four carve-outs here (`rate_limited`, `redirected`,
+  `client_error`, `invalid_response`) each exist because one of the three
+  disagreed with the word they were under.
+- **The junction plugin wires `trace` by default, and everything it needed was
+  already here.** `createTraceContext` existed with no caller, junction holds
+  the correlation id on `requestMeta()`, and the default header is already
+  `X-Request-Id` — so nothing this app sent carried either, and a target's logs
+  could not be joined to the request that caused them (`FJS-742`). It is spread
+  UNDER the caller's opts, so an app's own tracer replaces it and
+  `trace: () => null` turns it off. An upstream `traceparent` is continued; with
+  none, the trace id is DERIVED from the correlation id, because a random one
+  per call makes six calls from one request six unrelated traces. A uuid needs
+  no derivation — dashes out, it is already a trace id.
+- **A replay conduit refuses must not come back `retryable`.** The ladder
+  returns a non-idempotent request with no idempotency key rather than replaying
+  it, and the flag it hands back is what the layer above acts on — `example`'s
+  mailer copies it onto a thrown Error and a caravan job retries on it, so the
+  charge conduit declined to repeat was repeated one layer up (`FJS-733`).
+  `declineReplay` is the single owner of that judgement. **`indeterminate` is
+  the separate fact**: the request went out and nobody knows whether it was
+  applied. Never set where nothing left the process — Bun says
+  `ConnectionRefused` for a refused port AND an unresolvable name, and `CERT_*`
+  is a prefix — because a flag that fires on every network fault is one nobody
+  reads; everything else is on the over-reporting side deliberately.
+- **`replayable` and `idempotency_key` are two different claims.** A key asserts
+  the TARGET collapses duplicates; `replayable: true` asserts that repeating the
+  request is harmless. Minting a payment intent is the case for the second and
+  against the first — it moves no money, and after a decline the next attempt
+  must be a new intent rather than the refused one handed back. Conduit sees a
+  method and a path, so only the caller can make either claim; with neither, a
+  failed POST is returned rather than replayed.
+- **The idempotency header name belongs to the target.** `Idempotency-Key` is
+  the convention, not the rule — PayPal reads `PayPal-Request-Id` — and a wrong
+  name is silent in the worst way: the key is sent, ignored, and a retry
+  believed collapsed is a second charge. `idempotency.auto` mints one **per
+  `send()`, never per attempt**, or every replay is a fresh request under a
+  fresh key. It is on the target because it asserts what the far end does, and
+  it is off by default for the same reason.
+- **Every refusal belongs in `put()`, not in `register()`.** `init()` writes
+  `opts.targets` straight through `put()`, so a rule that lives in `register()`
+  is one a STATIC target — the way a provider is actually declared — never
+  meets. `assertDescriptor` is the door.
+- **Policy is per TARGET first and per conduit second.** All seven numbers live
+  on `TargetDescriptor.policy` and fall back field by field to the conduit-wide
+  option of the same name, so one conduit really can carry a card processor, a
+  mail sink and a health probe. Two owners apply it and both are needed: the
+  router merges the transport half when it builds a transport, and
+  `Resilience.setPolicy` takes the breaker half — fed by `put()` for what this
+  process registers AND by the router for a descriptor it read out of the store,
+  since admission is graded before any descriptor is resolved. An unknown field
+  under `policy` is refused at `register()` **by name**, which is the finding
+  rather than tidiness: `timeout_ms` written beside `policy` instead of inside it
+  was accepted and ignored, and TypeScript cannot see it — a descriptor read out
+  of a store is a `TargetDescriptor` by assertion (`FJS-728`). Adding a field
+  means `POLICY_FIELDS`, the router's merge or `Resilience`, **and**
+  `EXTRA_KEYS`; a value that JSON cannot carry means the store too.
+- **`max_concurrent` defaults to 64 and unlimited was never unbounded.** A burst
+  past the pool queues INSIDE it with the per-attempt timer already running, so
+  the wait is charged to the target as a timeout and opens its breaker: 5000
+  concurrent against a healthy target measured 10s, 136 timeouts, 533 file
+  descriptors and an open circuit (`FJS-685`). Shedding as `overloaded` is the
+  honest answer and it is instant. `Infinity` restores the old behaviour.
+- **A truncated response RAISES on this Bun, in all three shapes** — graceful
+  FIN, shutdown and RST — so the existing catch already answers a retryable
+  `connection_failed` and a length check on `content-length` would be
+  unreachable code. `FJS-710`'s `conduit-5` said otherwise; what it measured is
+  a `Bun.serve` recorder REWRITING a fabricated `content-length` to the real
+  body length, so the client saw a consistent short response and correctly
+  reported success. A raw `Bun.listen` is the only way to send a mismatched one.
 - **A 3xx is an answer here, not a hop.** Every fetch is `redirect: 'manual'`
   and a redirect comes back as its own kind, `redirected` — non-retryable, not a
   breaker fault, with the resolved `location` and the status on `meta`. The
@@ -75,9 +155,9 @@ src/
   3986 encoded, empty when there is none. It signed the pathname alone until
   `FJS-678`, so a captured `GET /transfer?to=alice` verified unchanged against
   `?to=mallory` and a receiver could not include the query even if it wanted to.
-  The value is `v2-sha256=…`; a v1 signature is refused **by name** rather than
-  as a mismatch, because *signature does not match* is the same sentence a wrong
-  secret produces and every already-deployed Outpost signs v1. A verifier must
+  The value is `v1-sha256=…`; a signature carrying another version is refused
+  **by name** rather than as a mismatch, because *signature does not match* is
+  the same sentence a wrong secret produces. A verifier must
   recompute from the RAW request URL — a path the router already stripped is a
   different request.
 - **A target is declared, not constructed at the call site.** That is the whole

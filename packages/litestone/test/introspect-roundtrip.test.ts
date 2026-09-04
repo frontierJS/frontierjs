@@ -102,13 +102,17 @@ describe('a generated schema builds the database it was read from', () => {
   for (const path of CORPUS) {
     const name = path.split('/').slice(-1)[0]
 
+    // Three round trips over 534 models is genuinely seconds of work, and the
+    // default 5000ms is close enough to it that whether this passes depends on
+    // what else the run is doing — it went red when an unrelated file was added
+    // beside it, having taken 5432ms.
     test(`${name}: the output parses, and reading it again is a fixed point`, () => {
       const src = readFileSync(path, 'utf8')
       const { two, three } = roundTrip(src)
       // The whole file, not a line count: a converter whose output moves on its
       // own is one nobody can re-run and diff.
       expect(three.lite).toBe(two.lite)
-    })
+    }, 30000)
   }
 })
 

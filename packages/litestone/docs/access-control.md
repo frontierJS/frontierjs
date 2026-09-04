@@ -56,6 +56,46 @@ cond ? a : b          a value chosen by a condition — see below
 expr1 && expr2        expr1 || expr2  !expr
 ```
 
+### Encryption keys, and rotating one
+
+Every stored value names the key that wrote it — `v2.<kid>.<payload>`, where the
+kid is a truncated HMAC of the key: it identifies a key without being one, so it
+is safe in a column, a log line and an error.
+
+```js
+const db = await createClient({
+  path:                   './db/schema.lite',
+  encryptionKey:           process.env.ENCRYPTION_KEY,
+  previousEncryptionKeys: [process.env.ENCRYPTION_KEY_OLD],  // read-only
+})
+```
+
+`previousEncryptionKeys` is what makes a rotation safe rather than a cliff.
+`$rotateKey` runs **one transaction per database**, so a crash between two
+commits leaves a schema in two keys — with both keys held that state is readable
+and the rotation resumable, because running it again re-encrypts what is left
+and costs a write on what is already done.
+
+A value that cannot be decrypted **raises** rather than reading as `null`:
+
+```
+Secret.ssn: Cannot decrypt: the value names key '59514c9d' and this client holds
+'bd16940a'. A key that has been rotated away from is passed as
+previousEncryptionKeys: ['<hex>'].
+```
+
+The one exception is `@secret(rotate: false)`, which is a loss the schema
+declares and `$rotateKey` makes you acknowledge by name — that column reads as
+empty instead, because raising would make the whole row unreadable to punish a
+column you already gave up. It stays readable for as long as the old key is on
+the ring.
+
+**A caller cannot send a value that merely looks encrypted.** A payload naming a
+column `@encrypted` or `@hashed` with a ciphertext-shaped string is refused —
+a caller never legitimately holds one, since a non-system read strips or
+decrypts. A system write may carry one, which is the re-save and the restore
+path, and it is skipped only where it actually verifies.
+
 ### What `auth().x` may name
 
 A claim is checked at startup like any other identifier, and an unknown one is
@@ -258,6 +298,36 @@ two occurrences in one predicate agree, and what puts it out of reach of
 `createClient({ now })`. A test that needs a frozen instant in a raw predicate
 binds its own ISO string.
 
+### A create policy is answered against the PAYLOAD
+
+`read`, `update` and `delete` compile the predicate to a WHERE and let SQLite
+answer it. `create` cannot — there is no row yet — so the same predicate is
+evaluated in JS against the data as written, which is the whole reason the two
+halves exist and the reason they can disagree.
+
+One consequence is worth stating on its own: **a column SQLite computes from the
+row is not in a payload**, so naming one in a create policy compares against
+`undefined`.
+
+```
+model Doc {
+  qty Int?
+  big Boolean? @derived(qty > 5)
+
+  @@allow('read',   big == true)   // fine — SQL answers it
+  @@allow('create', big == true)   // refused at build: nobody could ever create one
+}
+```
+
+`@derived`, `@generated` and `@from` are refused at `createClient`, with the fix
+in the message: write the predicate over the columns the value is computed from,
+and leave the read policy naming it. `@computed` and `@transient` are refused
+too, for a different reason — they are not columns at all, so the *read* half is
+broken as well.
+
+`@system` is not in that set. It reaches the payload through `system: ['col']`
+on the call, so a create policy naming one is answerable.
+
 ### Applying policies
 
 ```js
@@ -405,7 +475,31 @@ column in the most literal sense (`FJS-565`).
 
 ## Gates — level-based access control
 
-Assigns numeric levels to users (0–7) and declares the minimum level required per operation.
+A gate is a floor: a level 0–7 for the caller, and the minimum level this model
+requires for each of read, create, update and delete.
+
+**What it buys is a bound that holds over a query nobody read.** A row policy is
+a predicate about a row, so it can only be decided once there is a row to decide
+about — which is why it arrives as a `WHERE` injection, a correlated `EXISTS`
+under `check(field)`, and a set of interactions that gets intricate exactly
+where a query gets interesting. A gate is answered from the session alone,
+before any SQL runs, so it composes with the query object model for free:
+`findMany` with four levels of `include` reaching a `@@gate("7")` model refuses
+the whole query and names the model it refused (§ Reaching a model through
+`include`), whatever the shape of the query that got there.
+
+Three guarantees fall out of that, and each is one line in a schema rather than
+a predicate somebody has to get right:
+
+- a model that is not public gets a caller who signed in at all
+- a model that is administrative is not pulled by somebody who is not
+- a model at `9` is not pulled by anything, `asSystem()` included
+
+**Neither axis replaces the other.** A gate cannot say *not this record* — that
+is the whole of what a policy is for — and a policy cannot be verified by
+reading it, because whether it holds depends on the rows it will meet. Being
+wrong about a policy costs a screen. The gate is what stops being wrong about a
+policy costing the table.
 
 **Gates are enforced by default.** If any model declares `@@gate`, Litestone
 installs the standard resolver (`FrontierGateGetLevel` — reads `verifiedAt`,

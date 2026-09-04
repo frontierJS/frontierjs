@@ -79,6 +79,56 @@ describe('presence()', () => {
     expect(store.get().count).toBe(2)
   })
 
+  // Junction batches join and leave into one frame per channel per window,
+  // because a join used to send a frame to every existing member and N
+  // connections cost N x (N-1) frames (`FJS-703`). A client that only knows
+  // the unbatched events sees presence silently stop updating.
+  it('presence:diff applies several joins and leaves in one frame', () => {
+    const store = presence('workspace:1')
+    _mockClient.emit('presence:sync:workspace:1', {
+      members: [
+        { connectionId: 'conn-self', userId: 1, joinedAt: new Date(), meta: {} },
+        { connectionId: 'conn-b',    userId: 2, joinedAt: new Date(), meta: {} },
+      ]
+    })
+    _mockClient.emit('presence:diff:workspace:1', {
+      joined: [
+        { connectionId: 'conn-c', userId: 3, joinedAt: new Date(), meta: {} },
+        { connectionId: 'conn-d', userId: 4, joinedAt: new Date(), meta: {} },
+      ],
+      left: [{ connectionId: 'conn-b' }],
+    })
+    expect(store.get().count).toBe(3)
+    expect(store.get().members.map(m => m.connectionId).sort())
+      .toEqual(['conn-c', 'conn-d', 'conn-self'])
+  })
+
+  it('presence:diff applies leaves BEFORE joins', () => {
+    // A connection that left and rejoined inside one window is in both lists,
+    // and the other order removes the row it had just added.
+    const store = presence('workspace:1')
+    _mockClient.emit('presence:sync:workspace:1', {
+      members: [{ connectionId: 'conn-self', userId: 1, joinedAt: new Date(), meta: {} }]
+    })
+    _mockClient.emit('presence:diff:workspace:1', {
+      joined: [{ connectionId: 'conn-b', userId: 2, joinedAt: new Date(), meta: { name: 'back' } }],
+      left:   [{ connectionId: 'conn-b' }],
+    })
+    expect(store.get().count).toBe(2)
+    expect(store.get().members.find(m => m.connectionId === 'conn-b').meta.name).toBe('back')
+  })
+
+  it('presence:diff does not duplicate a member a sync already reported', () => {
+    const store = presence('workspace:1')
+    _mockClient.emit('presence:sync:workspace:1', {
+      members: [{ connectionId: 'conn-b', userId: 2, joinedAt: new Date(), meta: {} }]
+    })
+    _mockClient.emit('presence:diff:workspace:1', {
+      joined: [{ connectionId: 'conn-b', userId: 2, joinedAt: new Date(), meta: {} }],
+    })
+    expect(store.get().count).toBe(1)
+  })
+
   it('presence:leave removes member by connectionId', () => {
     const store = presence('workspace:1')
     _mockClient.emit('presence:sync:workspace:1', {

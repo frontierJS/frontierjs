@@ -52,7 +52,7 @@ import { readPreambles, resolveNeeds } from './preflight.js'
 import { declaredLogDatabases }        from './db-preflight.js'
 import { hostCollisions }              from './proxy.js'
 import { docWordUnknown, docCitesDead, docClaimsCount, docInvariantRef,
-         COUNTABLES, checkRulesCountable } from './doc-audit.js'
+         COUNTABLES, checkRulesCountable, docStatusStale } from './doc-audit.js'
 
 export const RULES = [
   { id: 'model-name-case',      scope: 'app',  severity: 'error', invariant: 2,
@@ -149,6 +149,8 @@ export const RULES = [
     title: 'a count in prose is the count in the tree' },
   { id: 'doc-invariant-ref',    scope: 'repo', severity: 'error', invariant: null,
     title: 'every cited invariant is one CLAUDE.md declares' },
+  { id: 'doc-status-stale',     scope: 'repo', severity: 'warn',  invariant: null,
+    title: 'a guiding document does not call open what the register has ruled' },
 ]
 
 const BY_ID = Object.fromEntries(RULES.map(r => [r.id, r]))
@@ -2531,6 +2533,7 @@ const CHECKS = {
   'doc-cites-dead':    ({ root }) => docCitesDead({ root }),
   'doc-claims-count':  ({ root }) => docClaimsCount({ root, countables: [...COUNTABLES, checkRulesCountable(RULES)] }),
   'doc-invariant-ref': ({ root }) => docInvariantRef({ root, rules: RULES }),
+  'doc-status-stale':  ({ root }) => docStatusStale({ root }),
 }
 
 // ─── reading source ───────────────────────────────────────────────────────────

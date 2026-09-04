@@ -1,6 +1,6 @@
 ---
 id: conduit-basecamp
-status: idea
+status: proposed
 dated: 2026-09-02
 ---
 

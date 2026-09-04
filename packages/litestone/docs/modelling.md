@@ -166,6 +166,28 @@ tools rather than tastes:
   `orderBy` says so rather than answering the right rows in the wrong order
   ([sorting.md](sorting.md)). Reach for it when the derivation needs JavaScript:
   formatting, a lookup table, anything with a branch SQL would make unreadable.
+### What the parser refuses, and what `advise` merely reports
+
+Two owners, and the line between them is whether the schema can be built at all.
+
+The **parser** refuses what cannot be expressed. Three of these are derived from
+one question — *what does the column physically hold* — rather than ruled
+attribute by attribute:
+
+| written | what happens without the rule |
+| --- | --- |
+| `@unique` / `@@unique` / `@@index` over `@computed`, `@derived` or `@from` | the constraint vanishes, or `@@unique` emits `UNIQUE ("c")` over a column that is not emitted and SQLite refuses the whole table at boot |
+| `@default(12.99)` on `@scale(2)` or `@money` | the column is an INTEGER of minor units, so `DEFAULT 12.99` is written into the DDL and the first row that takes it is refused |
+| `@relation` between models in two `database` blocks | a foreign key names a table and a table lives in one file, so every create throws `no such table` |
+
+`@generated` is deliberately not in the first row: it is a real column and takes
+a constraint like any other.
+
+**`litestone advise`** is the other half — what is legal and *wrong*. Its own
+contract is that every rule in it parses, so `@@fts` over an `@encrypted` column
+(the index holds ciphertext; `search()` can never match a word) is reported
+there and not refused here.
+
 - **`@derived(expr)`** — a *predicate or a bucket*, in the `@@allow` expression
   language, emitted into the SELECT. Filterable and sortable, because it is SQL.
   The language is comparisons, `and`/`or`/`not`, a ternary, `now()` and

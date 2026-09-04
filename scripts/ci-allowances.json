@@ -34,6 +34,9 @@
   },
   "//knownTestFailures": "Packages whose own suite exits non-zero today. Listed so that a NEW failure is loud rather than lost in an already-red run. An entry whose suite now passes fails CI until it is removed — that is the ratchet, and `--update` removes it for you.",
   "knownTestFailures": {},
+  "//knownTutorFailures": "A lesson of `fli tutor` that is known to fail, keyed by its command name with the reason. It ratchets like the rest: once the lesson passes, CI fails until the entry is removed (or `--update` removes it), because a stale allowance is how the next real failure goes unseen. A lesson refuses on a busy port rather than moving, so an environment collision is a SKIP and never an entry here.",
+  "knownTutorFailures": {},
+
   "//knownDeployFailures": "Package sources whose deploy branch fails today, by name and reason. The `deploy` phase runs `fli new` → `make:deploy` → `deploy:local` once per source; `npm` grades the PUBLISHED framework and `local` the working tree, and they drift independently. Listed so a NEW failure is loud. An entry whose branch now passes fails CI until it is removed — `bun run ci -- --update` removes it.",
   "knownDeployFailures": {},
   "//knownUnpublished": "Packages the scaffold installs that npm cannot serve yet, by name and reason. The `registry` phase fails on any name not listed here, because a scaffolded app that cannot install is the framework's worst first impression. An entry whose package IS published fails CI until it is removed — that is the ratchet, and it is the day the allowance stops being true.",

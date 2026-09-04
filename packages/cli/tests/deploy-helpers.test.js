@@ -50,12 +50,12 @@ async function loadModuleHelpers() {
   const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor
   const fn = new AsyncFunction(`
     ${scriptMatch[1]}
-    return { resolveTarget, resolveDeployConf }
+    return { resolveTarget, resolveDeployConf, swapContainer }
   `)
   return fn()
 }
 
-const { resolveTarget, resolveDeployConf } = await loadModuleHelpers()
+const { resolveTarget, resolveDeployConf, swapContainer } = await loadModuleHelpers()
 
 // ─── loadFrontierConfig ───────────────────────────────────────────────────────
 
@@ -293,5 +293,110 @@ describe('dockerfileScripts', () => {
     const { readFileSync } = await import('fs')
     const src = readFileSync(resolve(ROOT, '../basecamp/deploy/Dockerfile'), 'utf8')
     expect(await parse(src)).toEqual(['start'])
+  })
+})
+
+
+// ─── swapContainer ────────────────────────────────────────────────────────────
+//
+// The step that takes the old container down and puts the new one up. It threw
+// `ReferenceError: deployConf is not defined` on every real deploy for as long
+// as it existed — `dockerLogArgs(deployConf)` named a variable in no scope it
+// could see, and the throw landed AFTER the running container had been renamed
+// to `_replaced` and stopped and BEFORE `docker run`, so a deploy left the app
+// down (`FJS-726`).
+//
+// Nothing could see it. The parse sweep parses and does not resolve scopes, so
+// the file compiles; the two callers both had `deployConf` in their own scope,
+// so reading either one reads correctly; and `deployJournalCycle` is the only
+// thing in the repo that runs `fli deploy` at all.
+//
+// The machine is driven through an injected `context.exec`, which is what
+// `createMachine` takes — no daemon, no host.
+
+describe('swapContainer', () => {
+
+  const drive = (opts = {}) => {
+    // The script travels on STDIN to `sh -s` (core/machine.js), so what a step
+    // actually sends is `input` and never the command line. Capturing the
+    // command alone finds nothing but `sh -s`.
+    const commands = []
+    const context  = {
+      exec: ({ command, input }) => { commands.push(input ?? command); return '' },
+      config: {},
+    }
+    const result = swapContainer(context, {
+      host:      'localhost',
+      container: 'my-app-api',
+      image:     'sha256:abc',
+      apiPort:   7102,
+      dbPath:    '/srv/db',
+      envFile:   '/srv/.env.production',
+      log:       { info() {}, success() {}, warn() {}, error() {} },
+      ...opts,
+    })
+    return { commands, result, runCmd: commands.find(c => c.includes('docker run')) }
+  }
+
+  test('starts the new container — it threw before reaching docker run', () => {
+    const { runCmd } = drive({ deployConf: {} })
+
+    expect(runCmd).toBeDefined()
+    expect(runCmd).toContain('docker run -d')
+    expect(runCmd).toContain('--name my-app-api')
+    expect(runCmd).toContain('sha256:abc')
+  })
+
+  test('the old container is renamed and stopped BEFORE the new one starts', () => {
+    const { commands } = drive({ deployConf: {} })
+
+    const rename = commands.findIndex(c => c.includes('docker rename'))
+    const stop   = commands.findIndex(c => c.includes('docker stop'))
+    const run    = commands.findIndex(c => c.includes('docker run'))
+
+    expect(rename).toBeGreaterThanOrEqual(0)
+    expect(stop).toBeGreaterThan(rename)
+    expect(run).toBeGreaterThan(stop)
+  })
+
+  test('the log driver reaches the run command', () => {
+    const { runCmd } = drive({ deployConf: {} })
+
+    expect(runCmd).toContain('--log-driver json-file')
+    expect(runCmd).toContain('--log-opt max-size=10m')
+  })
+
+  test('a stated log driver is carried', () => {
+    const { runCmd } = drive({ deployConf: { logs: { driver: 'journald' } } })
+
+    expect(runCmd).toContain('--log-driver journald')
+    expect(runCmd).not.toContain('json-file')
+  })
+
+  test('logs: false declines them, and still starts the container', () => {
+    const { runCmd } = drive({ deployConf: { logs: false } })
+
+    expect(runCmd).toContain('docker run -d')
+    expect(runCmd).not.toContain('--log-driver')
+  })
+
+  test('an absent deployConf does not throw — the revert path passes less', () => {
+    // `_steps-revert/03-swap` calls this without a build id, and a config that
+    // never declared `logs` is the ordinary case. Neither may be a crash.
+    const { runCmd } = drive({ deployConf: undefined })
+
+    expect(runCmd).toContain('docker run -d')
+    expect(runCmd).toContain('--log-driver json-file')
+  })
+
+  test('the build id is stamped when given and absent when not', () => {
+    expect(drive({ deployConf: {}, build: 'abc1234' }).runCmd).toContain('--env FJS_BUILD=abc1234')
+    expect(drive({ deployConf: {} }).runCmd).not.toContain('FJS_BUILD')
+  })
+
+  test('PORT is forced after the env file, so .env.production cannot move it', () => {
+    const { runCmd } = drive({ deployConf: {} })
+
+    expect(runCmd.indexOf('--env PORT=3000')).toBeGreaterThan(runCmd.indexOf('--env-file'))
   })
 })

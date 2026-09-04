@@ -20,8 +20,9 @@ import { resolve }                                  from 'path'
 const makeScript = (schemaPath, oldKey, newKey) => `
 import { createClient } from '@frontierjs/litestone'
 
-const db = await createClient('${schemaPath}', {
-  encryption: { key: '${oldKey}' }
+const db = await createClient({
+  path:          '${schemaPath}',
+  encryptionKey: '${oldKey}'
 })
 
 console.log('Rotating encryption key...')
@@ -71,7 +72,8 @@ if (!existsSync(envPath)) {
   return
 }
 
-loadEnv({ path: envPath })
+// `.env` is already loaded — bootstrap.js reads the project's before any
+// command runs, and overrides the global one with it.
 
 const oldKey = process.env.ENCRYPTION_KEY
 const newKey = process.env.ENCRYPTION_KEY_NEW
@@ -129,7 +131,7 @@ try {
 
   log.info('Rotating key — this may take a moment on large databases...')
 
-  const result = context.exec({ command: `bun run "${tmpPath}"`, capture: true })
+  const result = context.exec({ command: `bun run "${tmpPath}"`, stdio: ['ignore', 'pipe', 'inherit'] })
   const output = (result?.stdout ?? result ?? '').toString().trim()
   const last   = output.split('\n').find(l => l.startsWith('{'))
 

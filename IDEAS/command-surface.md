@@ -1,6 +1,6 @@
 ---
 id: command-surface
-status: idea
+status: proposed
 dated: 2026-08-10
 ---
 

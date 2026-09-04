@@ -11,6 +11,7 @@ import { CredentialError, ConduitStreamError } from '../types.ts'
 import type {
   ConduitRequest,
   ConduitResult,
+  ConduitErrorResponse,
   ConduitChunk,
   ConduitError,
   CredentialResolver,
@@ -68,6 +69,28 @@ class ResponseTooLargeError extends Error {
 // same state; a retried POST bills for a second server.
 const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE'])
 
+// Failure codes that mean no request reached the target — the connection was
+// never established, so nothing can have been applied.
+//
+// Bun answers `ConnectionRefused` for both a refused port and a name that does
+// not resolve; the node spellings are here because this is the one place a
+// runtime's own vocabulary leaks in. Certificate failures are a PREFIX, since
+// the code space is open (`CERT_HAS_EXPIRED`, `CERT_UNTRUSTED`, …) and every
+// one of them is a handshake that failed before a byte of the request was
+// written.
+//
+// Everything else leaves the question open, and the error is on that side
+// deliberately: reporting *this may have been applied* when it was not costs a
+// caller one check, and the other way round costs a duplicate charge.
+const NEVER_DISPATCHED = new Set([
+  'ConnectionRefused', 'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'DNSException',
+])
+
+function neverDispatched(code: string | undefined): boolean {
+  if (!code) return false
+  return NEVER_DISPATCHED.has(code) || code.startsWith('CERT_')
+}
+
 // A followed redirect is a second request nobody wrote. Bounded so a pair of
 // hosts pointing at each other cannot spin.
 const MAX_REDIRECT_HOPS = 5
@@ -107,11 +130,20 @@ export class HttpTransport extends BaseTransport {
       })
     }
 
-    // A non-idempotent method is retried only when the caller supplies an
-    // idempotency key — that is their assertion that the target collapses
-    // duplicates. Without it the timeout is returned and the caller decides.
-    const replayable =
-      IDEMPOTENT_METHODS.has(method) || req.idempotency_key !== undefined
+    // A non-idempotent method is retried only when there is an idempotency key
+    // — the caller's assertion that the target collapses duplicates, or the
+    // target's own if it declared `idempotency.auto`. Minted once per send()
+    // rather than per attempt, or each replay would be a fresh request under a
+    // fresh key, which is the duplicate the key exists to prevent.
+    const auto = this.descriptor.idempotency?.auto === true
+    const key  = req.idempotency_key
+      ?? (auto && !IDEMPOTENT_METHODS.has(method) ? crypto.randomUUID() : undefined)
+
+    // Every path below sends the key it decided on, including the observer,
+    // so what onRetry reports is what went on the wire.
+    const sent: ConduitRequest = key === req.idempotency_key ? req : { ...req, idempotency_key: key }
+
+    const replayable = IDEMPOTENT_METHODS.has(method) || key !== undefined || req.replayable === true
 
     while (attempt <= retries) {
       const remaining = deadline - performance.now()
@@ -123,15 +155,18 @@ export class HttpTransport extends BaseTransport {
 
       // The per-attempt timeout is also capped by what is left of the total
       // budget, so a long tail of retries cannot outlive the deadline.
-      const result = await this.attempt<T>(req, remaining)
+      const result = await this.attempt<T>(sent, remaining)
 
       if (result.error === null)        return result  // success
       if (!result.error.retryable)      return result  // permanent failure
-      if (!replayable)                  return result  // unsafe to replay
+      // Conduit has decided this must not be sent again, so the error may not
+      // say `retryable: true` — that flag is what a caravan job acts on, and
+      // the job would then make the replay conduit just refused (`FJS-733`).
+      if (!replayable)                  return this.declineReplay(result)
       if (attempt === retries)          return result  // exhausted
 
       attempt++
-      this.opts.onRetry?.(req, result.error, attempt)
+      this.opts.onRetry?.(sent, result.error, attempt)
 
       // A stated Retry-After beats our own ladder. Ignoring it and retrying at
       // 400ms against a target that asked for seven seconds is how a rate limit
@@ -166,6 +201,42 @@ export class HttpTransport extends BaseTransport {
   }
 
   // ─── Private ────────────────────────────────────────────────
+
+  /**
+   * The answer to a transient fault on a request conduit will not replay.
+   *
+   * One judgement, one owner: the loop above decided this cannot be sent
+   * again, so the flag the caller reads has to say the same thing. It used to
+   * be handed back untouched, so an unkeyed POST that timed out came back
+   * `retryable: true` — and the layer above conduit acts on that flag, so the
+   * charge conduit declined to repeat was repeated by a job (`FJS-733`).
+   *
+   * `indeterminate` is the fact that flag was standing in for and cannot
+   * express: the request went out and nobody knows whether it was applied. It
+   * is set for the faults that leave that open and not for the ones that do
+   * not — a 429 is the target refusing, and a connection that was never
+   * established carried no bytes.
+   */
+  private declineReplay(result: ConduitErrorResponse): ConduitErrorResponse {
+    const err  = result.error
+    const code = (err.raw as { code?: string } | undefined)?.code
+    const indeterminate =
+      (err.kind === 'timeout' || err.kind === 'server_error' ||
+       (err.kind === 'connection_failed' && !neverDispatched(code)))
+
+    return {
+      data: null,
+      meta: result.meta,
+      error: {
+        ...err,
+        retryable: false,
+        ...(indeterminate ? { indeterminate: true } : {}),
+        message: indeterminate
+          ? `${err.message} — not replayed: no idempotency key, and the request may already have been applied`
+          : `${err.message} — not replayed: no idempotency key`,
+      },
+    }
+  }
 
   private async attempt<T>(req: ConduitRequest, budgetMs = Infinity): Promise<ConduitResult<T>> {
     const elapsed  = this.timer()
@@ -210,7 +281,7 @@ export class HttpTransport extends BaseTransport {
             'Content-Type': CONTENT_TYPE[encoding],
             'Accept':       'application/json',
           },
-          req.idempotency_key ? { 'Idempotency-Key': req.idempotency_key } : undefined,
+          req.idempotency_key ? { [this.idempotencyHeader()]: req.idempotency_key } : undefined,
           this.descriptor.headers,
           req.headers,
           // Signed over the same path AND query the URL carries, so a captured
@@ -293,8 +364,11 @@ export class HttpTransport extends BaseTransport {
         }, meta)
       }
 
+      // 4xx. The target understood and refused; the same request gets the same
+      // answer, and nothing here says the target is unwell — so it is neither
+      // retryable nor a breaker fault (`FJS-684`).
       if (!res.ok) {
-        return this.fail('server_error', `HTTP ${res.status}`, {
+        return this.fail('client_error', `HTTP ${res.status}`, {
           retryable: false,
           raw: await readBody(res, maxBytes)
         }, meta)
@@ -310,7 +384,7 @@ export class HttpTransport extends BaseTransport {
       // both the wrong kind and three wasted attempts (§2.5).
       const contentType = res.headers.get('content-type') ?? ''
       if (isMarkupType(contentType)) {
-        return this.fail('server_error', `Expected a payload, got '${contentType}'`, {
+        return this.fail('invalid_response', `Expected a payload, got '${contentType}'`, {
           retryable: false,
           raw:       text.slice(0, 512),
         }, meta)
@@ -332,7 +406,7 @@ export class HttpTransport extends BaseTransport {
         // An empty content-type with a non-JSON body lands here rather than
         // above, and is still a failure: nothing said what this was, and it
         // did not parse.
-        return this.fail('server_error', 'Response was not valid JSON', {
+        return this.fail('invalid_response', 'Response was not valid JSON', {
           retryable: false,
           raw:       text.slice(0, 512),
         })
@@ -359,7 +433,14 @@ export class HttpTransport extends BaseTransport {
         })
       }
 
-      return this.fail('connection_failed', (err as Error).message, {
+      // DNS, refused, TLS and a mid-body reset are one kind — all four are
+      // retryable network faults — but they are four different things to
+      // whoever is looking at the log, and Bun's `code` is the only thing that
+      // separates them. Without it every one of them reads as one sentence and
+      // an operator cannot tell a wrong hostname from a certificate (`FJS-710`,
+      // `conduit-12`).
+      const code = (err as { code?: string }).code
+      return this.fail('connection_failed', code ? `${(err as Error).message} (${code})` : (err as Error).message, {
         retryable: true,
         raw: err
       })

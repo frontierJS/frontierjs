@@ -101,9 +101,13 @@ the FJS port scheme, `packages/cli/core/ports.js`.
 > tree — see [Publishing status](#publishing-status) — but the surface still
 > moves between releases, so pin a version rather than taking `latest` or `*`.
 
-**[Quickstart](./docs/QUICKSTART.md) is the whole path** — a new app, a model of
-your own, and the deploy pipeline that puts it on a server. Every command in it
-was run against a clean scaffold.
+**`fli tutor` is the whole path, and it runs.** Four lessons — an app that
+runs, the access rules watched refusing somebody, a real deploy to your own
+machine with a revert, and a control plane with a machine reporting in to it.
+Every step runs the real command and then asks the running world whether it
+worked, and `bun run ci` grades all four, so a command renamed out from under a
+step is a red build rather than a stale paragraph. The
+[Quickstart](./docs/QUICKSTART.md) is now its index.
 
 For the API realm on its own, the [Junction example ladder](./packages/junction/example/README.md)
 and its UI counterpart in [Sierra's example app](./packages/sierra/example/README.md).
@@ -194,7 +198,7 @@ One schema. One service declaration. One resource binding. Any component that im
 
 | Document                                                                              | Description                                                                     |
 | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| [Quickstart](./docs/QUICKSTART.md)                                                    | A new app to a deployed server, in the order you type it                        |
+| [Quickstart](./docs/QUICKSTART.md)                                                    | `fli tutor` — the four lessons, and where to write what                         |
 | [Philosophy](./PHILOSOPHY.md)                                                         | Why FrontierJS exists — the axioms and decision tests above the architecture     |
 | [Architecture & Vocabulary](./ARCHITECT.md)                                           | The mental model (§1), the mandatory vocabulary (§2), the eight domains (§4)     |
 | [Decisions](./DECISIONS.md)                                                           | Dated rulings — read before relitigating any semantics                           |

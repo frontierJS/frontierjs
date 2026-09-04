@@ -1,6 +1,12 @@
+---
+id: pros-and-cons
+status: assessment
+dated: 2026-08-03
+---
+
 # FrontierJS — Pros and Cons
 
-**Written 2026-08-03.** A design-level assessment of FJS as a *developer would experience it*,
+**Written 2026-08-03; struck items are dated where they stopped being true.** A design-level assessment of FJS as a *developer would experience it*,
 not an engineering audit. Two lists: the design decisions that are worth keeping, and the ones
 a developer will squint at. Both are about **shipped, fleshed-out decisions** — not gaps, not
 bugs, not things still unbuilt (those live in `IDEAS/` and `HANDOFF.md`).
@@ -82,8 +88,8 @@ design system decides what that looks like, and theming / dark mode / a11y are p
 system rather than of every component.
 
 The alternative — 40 characters of `bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded` on
-every button — means your design system exists only in your muscle memory. A 35-term vocabulary is
-something a team can actually hold.
+every button — means your design system exists only in your muscle memory. A vocabulary of a few dozen
+terms is something a team can actually hold.
 
 ### 9. Batteries are namespaced plugins, and the outbound edge is declared
 
@@ -154,6 +160,10 @@ anyway so the thesis reads as a choice.**
 
 ### 2. `@@gate("2.4.4.5")` — positional magic numbers on a linear ladder
 
+> *Partly answered 2026-08-26.* Named levels are canonical (`FJS-D43`), and the second
+> vocabulary exists: `@@capabilities` is a grid beside the ladder, ANDed with the gate
+> (`FJS-D146`). The ladder stays the floor.
+
 Two separate problems stacked.
 
 *The syntax:* a dev has to memorize that the positions are read·create·update·delete and that each
@@ -187,7 +197,10 @@ the failure mode for a naming mismatch is "the form quietly has no field rules,"
 later. Something this load-bearing should not be inferred from morphology in any language, let
 alone English.
 
-### 5. Derivation is opt-in, and the defaults produce broken behavior
+### 5. ~~Derivation is opt-in, and the defaults produce broken behavior~~ — closed
+
+> *Closed.* `coerce`, `blankToNull` and `validate` are on by default; `{ validate: false }`
+> is the opt-out (`CLAUDE.md` § Live hazards, UI).
 
 `coerce`, `blankToNull`, and `validate` all default to **off**. So the out-of-the-box experience is:
 bind a form to `make()`, type 42 in a number field, send `"42"`, get rejected — and the fix is a
@@ -198,7 +211,11 @@ get nulled), which means they are *safe enough to be on*. Shipping the correct b
 three booleans means the framework's headline feature only works for developers who already read
 the source.
 
-### 6. The schema reaches the browser — and then stops one step short of the payoff
+### 6. ~~The schema reaches the browser — and then stops one step short of the payoff~~ — closed
+
+> *Closed.* `<Form {resource} />` with no children generates every writable control from
+> the field rules, and a contributed control is two registrations (`FJS-D17`). Invariant 18
+> makes a Resource file carry its model's default form.
 
 The one that will frustrate people most, because pro #1 sets an expectation this does not meet.
 
@@ -274,7 +291,6 @@ re-opening while nothing depends on them.
 
 ## If only two things get fixed
 
-1. **Con #6 — ship the form generator.** The expensive half is already built, and it is what makes
-   the entire schema-first thesis *visible*.
+1. ~~**Con #6 — ship the form generator.**~~ Done — see con 6.
 2. **Con #2's ladder — give authorization a second vocabulary.** A linear scale is the constraint
    most likely to make someone abandon the framework's best idea mid-project.

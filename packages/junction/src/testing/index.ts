@@ -41,6 +41,14 @@ export interface StubUser {
   workspaceId?: string
   accountId?:  string
   scopes?:      string[]
+  // The standing `sessionGateLevel` actually reads. `role` is an app's own
+  // column and the ladder does not consult it, so a stub user carrying
+  // `role: 'admin'` grades 4 — a test that needs 5 says `isAdmin: true`.
+  isAdmin?:       boolean
+  isOwner?:       boolean
+  isSystemAdmin?: boolean
+  verifiedAt?:    string
+  activatedAt?:   string
 }
 
 export function createStubAuth(opts: { users?: StubUser[] } = {}): IAuth & {
@@ -63,6 +71,14 @@ export function createStubAuth(opts: { users?: StubUser[] } = {}): IAuth & {
       role:         user.role ?? 'user',
       scopes:       user.scopes ?? [],
       authMethod:  method,
+      // Only when stated: `sessionGateLevel` reads an ABSENT lifecycle field as
+      // "this app does not model that stage" and only `null` grades down, so
+      // defaulting these here would change every existing test's standing.
+      ...(user.isAdmin       !== undefined && { isAdmin:       user.isAdmin }),
+      ...(user.isOwner       !== undefined && { isOwner:       user.isOwner }),
+      ...(user.isSystemAdmin !== undefined && { isSystemAdmin: user.isSystemAdmin }),
+      ...(user.verifiedAt    !== undefined && { verifiedAt:    user.verifiedAt }),
+      ...(user.activatedAt   !== undefined && { activatedAt:   user.activatedAt }),
     }
   }
 

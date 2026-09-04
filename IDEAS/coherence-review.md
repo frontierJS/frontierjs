@@ -1,6 +1,6 @@
 ---
 id: coherence-review
-status: argued
+status: assessment
 dated: 2026-07-31
 ---
 

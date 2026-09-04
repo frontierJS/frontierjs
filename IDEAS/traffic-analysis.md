@@ -1,6 +1,6 @@
 ---
 id: traffic-analysis
-status: idea
+status: proposed
 dated: 2026-08-31
 ---
 

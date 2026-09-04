@@ -1,5 +1,23 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-03 — the presence store understands a batched frame
+
+`FJS-703`. 1146 tests, 0 fail. Typecheck clean.
+
+Junction now coalesces presence join and leave into one `presence:diff` per
+channel per window, because a join used to send a frame to every existing member
+and N connections cost N x (N-1) frames — 251 500 of them for 500 users. A
+client that only knows `presence:join` and `presence:leave` sees presence
+silently stop updating, so `onDiff` is not optional.
+
+**Leaves are applied BEFORE joins.** A connection that left and rejoined inside
+one window is in both lists, and the other order removes the row it had just
+added. Joins are deduplicated against what is already held, since a reconnect
+can put a connection in a batch that a `presence:sync` already reported.
+
+The unbatched events are still handled: `presenceFlushMs: 0` is a supported mode
+for an app that wants presence instantly, so neither spelling is legacy.
+
 ## 2026-08-30 — a service with no model can say so
 
 `createResource(name, { model: null })`. 1141 tests, 0 fail.

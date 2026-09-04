@@ -326,8 +326,41 @@ Unlike Prisma, Litestone does not create a shadow database. It builds a pristine
 - Works in read-only environments
 - Safe to run in CI without write access to the filesystem
 
-The diff covers tables, columns, indexes, foreign keys, STRICT, views and
-triggers.
+The diff covers tables, columns, indexes, foreign keys, STRICT, CHECKs, table
+uniques, views and triggers.
+
+### …and what it does not cover, which it now tells you
+
+That list is enumerated, and six issues of this package's history are one
+dimension arriving in the DDL emitter and not in the differ — each one reading
+as *schema is in sync* over a database that is not the declared one. So once
+the enumeration has had its say, the two `sqlite_master`s are compared whole
+and the leftovers are named:
+
+```
+[litestone] Database "main" is in sync on every dimension the migration differ
+            reads, and 1 object(s) still differ:
+              table account
+                declared: CREATE TABLE "account"(…,"email" TEXT NOT NULL UNIQUE)STRICT
+                live    : CREATE TABLE "account"(…,"email" TEXT NOT NULL UNIQUE COLLATE NOCASE)STRICT
+```
+
+**Nothing is applied and nothing is blocked.** There are two readings and
+litestone cannot tell them apart:
+
+- **The schema cannot express what the database has.** `litestone introspect`
+  is the adoption door, and a real database has a collation on its email
+  column, a `WITHOUT ROWID` table, or an index somebody wrote by hand. Say so
+  with `autoMigrate(db, null, { acceptResidue: true })`, which records the
+  acceptance rather than filtering the output.
+- **The differ is missing a dimension**, which is a defect in litestone — the
+  first thing this found was one (`FJS-718`: a foreign key's `ON UPDATE` was
+  emitted, parsed, introspected and then dropped by the comparison).
+
+It is not part of `hasChanges`: there is nothing here that could write a
+migration for a dimension it cannot see, and a change that never resolves would
+migrate on every boot for ever. The residue is recorded beside the DDL hash, so
+the startup fast path re-announces it for the price of one `SELECT`.
 
 ### Adding a column, and the two ways it cannot be done
 

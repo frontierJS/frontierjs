@@ -449,3 +449,135 @@ describe('log', () => {
     expect('log' in $ === false || true).toBe(true)   // reachable by name, not by key
   })
 })
+
+// ─── FJS-687 · the async context follows a timer; the call does not ────────
+//
+// `AsyncLocalStorage` propagates into every timer and microtask created inside
+// a call, and nothing marked the call over — so a `setTimeout` scheduled from a
+// hook found `$` answering the call it was scheduled from, thirty milliseconds
+// after that call had resolved. `$.db` was the client the transaction hook had
+// installed and it still accepted writes.
+//
+// The rows above ("the scope is gone after the call returns") could not see it:
+// they read `$` from the TEST's own async context, which the store never
+// entered. The leak is only visible from inside something the call scheduled.
+
+describe('a call that has ended (FJS-687)', () => {
+
+  // Schedule work inside a call and resolve it after the call is over.
+  function afterTheCall(schedule: (run: () => void) => void) {
+    let settle!: (v: unknown) => void
+    const later = new Promise(res => { settle = res })
+    return {
+      later,
+      arm: () => schedule(() => {
+        try { settle({ read: $.service }) } catch (err) { settle({ threw: (err as Error).message }) }
+      }),
+    }
+  }
+
+  test('`$` read from a timer the call scheduled throws, naming the call', async () => {
+    const probe = afterTheCall(run => { setTimeout(run, 5) })
+    const a = app(createService({
+      name: 'probe', methods: ['find'],
+      async find() { probe.arm(); return [] },
+    }))
+    await a.service('probe').find()
+
+    const out = await probe.later as { threw?: string; read?: string }
+    expect(out.read).toBeUndefined()
+    expect(out.threw).toMatch(/probe\.find/)
+    expect(out.threw).toMatch(/had finished/)
+    // The message has to point somewhere, or it is a refusal with no way out.
+    expect(out.threw).toMatch(/afterCommit|enqueue/)
+  })
+
+  test('a floating promise is the same hazard and gets the same refusal', async () => {
+    const probe = afterTheCall(run => { Promise.resolve().then(() => setTimeout(run, 5)) })
+    const a = app(createService({
+      name: 'probe', methods: ['find'],
+      async find() { probe.arm(); return [] },
+    }))
+    await a.service('probe').find()
+    expect((await probe.later as { threw: string }).threw).toMatch(/had finished/)
+  })
+
+  test('a call that THREW is just as over', async () => {
+    // Same hazard, and a `then` rather than a `finally` would miss it.
+    const probe = afterTheCall(run => { setTimeout(run, 5) })
+    const a = app(createService({
+      name: 'probe', methods: ['find'],
+      async find() { probe.arm(); throw new Error('boom') },
+    }))
+    await expect(a.service('probe').find()).rejects.toThrow('boom')
+    expect((await probe.later as { threw: string }).threw).toMatch(/had finished/)
+  })
+
+  test('an afterCommit effect still reads `$` — the control', async () => {
+    // The span deliberately covers the drain. A marker that ended the call too
+    // early would break this and satisfy every row above it.
+    let seen: string | undefined
+    const a = app(createService({
+      name: 'probe', methods: ['find'],
+      async find(ctx: any) { ctx.afterCommit(() => { seen = $.service }); return [] },
+    }))
+    await a.service('probe').find()
+    expect(seen).toBe('probe')
+  })
+
+  test('an inner call ending does not end the outer one', async () => {
+    let outerAfter: string | undefined
+    const inner = createService({ name: 'inner', methods: ['find'], async find() { return [] } })
+    const outer = createService({
+      name: 'outer', methods: ['find'],
+      async find(ctx: any) {
+        await ctx.app.service('inner').find()
+        outerAfter = $.service      // must still be the outer call
+        return []
+      },
+    })
+    const a = app(inner, outer)
+    await a.service('outer').find()
+    expect(outerAfter).toBe('outer')
+  })
+
+  test('the second call on one service is not refused by the first one ending', async () => {
+    // The marker lives on the CONTEXT, which is per call — a marker on the
+    // service or the store would make an app work exactly once.
+    const a = app(createService({
+      name: 'probe', methods: ['find'], async find() { return [$.service] },
+    }))
+    // `find` answers the list envelope; the rows are what this is about.
+    expect((await a.service('probe').find() as { data: string[] }).data).toEqual(['probe'])
+    expect((await a.service('probe').find() as { data: string[] }).data).toEqual(['probe'])
+  })
+
+  test('`ctx.locals.db` is the request client again once the transaction settles', async () => {
+    // It was left assigned, so an effect or a timer running after the commit
+    // held what a reader believes is "the transaction".
+    const db: any = await createClient({
+      db: ':memory:',
+      schema: 'model Post { id Int @id\n title String\n @@gate("0.0.0.0") }',
+    })
+    let before: unknown, during: unknown
+    const a: any = createApp({
+      db,
+      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+    })
+    a.services.register(createService({
+      name: 'posts', model: 'Post', transactional: true, methods: ['run'],
+      async run(ctx: any) {
+        during = ctx.locals.db
+        ctx.afterCommit(() => { before = ctx.locals.db })
+        ctx.dispatch = false
+        return { ok: true }
+      },
+    }))
+    await a.service('posts').call('run')
+    // Litestone hands the callback the same client it was called on, so the
+    // two are equal by identity here — what this pins is that the assignment
+    // is UNDONE, which is what an app with a distinct tx client depends on.
+    expect(during).toBeDefined()
+    expect(before).toBe(during)
+  })
+})

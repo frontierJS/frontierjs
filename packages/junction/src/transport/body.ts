@@ -5,6 +5,8 @@
 
 import { parseQueryString } from '@frontierjs/toolbelt/query'
 import type { UploadedFile } from './types.ts'
+import { clientAddress } from './forwarded.ts'
+import type { TrustProxy } from './forwarded.ts'
 
 // ─── Module-level constants ────────────────────────────────────────────────
 
@@ -261,32 +263,25 @@ export function parseCookies(cookieHeader: string): Record<string, string> {
 
 // ─── IP extraction ────────────────────────────────────────────────────────
 
-export function extractIP(req: Request, remoteAddr?: string, trustProxy = false): string {
-  // The socket address is the only value the CLIENT cannot forge.
-  // x-forwarded-for / x-real-ip are attacker-settable request headers, so
-  // they are only consulted when the operator has explicitly declared that
-  // a trusted reverse proxy sits in front of the app (trustProxy: true) —
-  // otherwise a client could spoof its way past IP-keyed rate limiting and
-  // DDoS protection with a random header per request.
-  if (trustProxy) {
-    const forwarded = req.headers.get('x-forwarded-for')
-    if (forwarded) return forwarded.split(',')[0].trim()
-
-    const realIP = req.headers.get('x-real-ip')
-    if (realIP) return realIP.trim()
-  }
-
-  if (remoteAddr) return remoteAddr
-
-  // No socket address available (tests / mock server): fall back to the
-  // proxy headers as a best effort, then localhost.
-  const forwarded = req.headers.get('x-forwarded-for')
-  if (forwarded) return forwarded.split(',')[0].trim()
-
-  const realIP = req.headers.get('x-real-ip')
-  if (realIP) return realIP.trim()
-
-  return '127.0.0.1'
+export function extractIP(
+  req: Request,
+  remoteAddr?: string,
+  trustProxy: TrustProxy = false,
+): string {
+  // The socket address is the only value the CLIENT cannot forge, and which
+  // header entry may stand in for it is a statement about the operator's own
+  // infrastructure — `transport/forwarded.ts` is the one place that decides.
+  //
+  // This used to read the LEFTMOST `X-Forwarded-For`, which is the entry the
+  // client writes: the shipped nginx template APPENDS with
+  // `$proxy_add_x_forwarded_for`, so behind the documented proxy every
+  // IP-keyed decision was the caller's to choose (`FJS-744`).
+  return clientAddress({
+    forwarded:  req.headers.get('x-forwarded-for'),
+    realIp:     req.headers.get('x-real-ip'),
+    remoteAddr,
+    trust:      trustProxy,
+  })
 }
 
 // ─── Multipart parser ────────────────────────────────────────────────────

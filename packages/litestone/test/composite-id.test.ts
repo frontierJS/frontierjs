@@ -208,3 +208,92 @@ describe('the key\'s order survives a round trip through the database', () => {
     expect(d.tableDiffs).toEqual([])
   })
 })
+
+// ─── FJS-694 · a tuple key is not a unique column ─────────────────────────
+//
+// `expandCompositeId` stamps `@id` on every member, so every downstream read of
+// *which column identifies a row* answered with one of them — and one member of
+// a tuple identifies nothing. Three separate faults came out of that, and the
+// worst is silent.
+
+describe('a member of a tuple key does not identify a row (FJS-694)', () => {
+
+  const SCHEMA = `model Membership {
+  userId Int
+  teamId Int
+  role   String @default("member")
+  @@id([userId, teamId])
+}
+`
+
+  const client = () => createClient({ resolveFrom: '/tmp', db: ':memory:', schema: SCHEMA })
+
+  it('the default ordering is the KEY, not a column called id', async () => {
+    // `normaliseOrderBy` defaults to the literal `id`, which it must — it is a
+    // pure function with no model in scope. A composite-keyed model has no such
+    // column, so every derived list over one answered
+    // `400 Unknown orderBy field 'id'` and was unreachable.
+    const db: any = await client()
+    expect(db.membership.orderTotal(undefined)).toEqual([{ userId: 'asc' }, { teamId: 'asc' }])
+  })
+
+  it('the tiebreaker appends the WHOLE key, not its first column', async () => {
+    const db: any = await client()
+    expect(db.membership.orderTotal({ role: 'asc' }))
+      .toEqual([{ role: 'asc' }, { userId: 'asc' }, { teamId: 'asc' }])
+  })
+
+  it('ordering by one key column is still completed — this is the silent one', async () => {
+    // It used to be treated as already total, because that column carries `@id`.
+    const db: any = await client()
+    expect(db.membership.orderTotal({ userId: 'asc' }))
+      .toEqual([{ userId: 'asc' }, { teamId: 'asc' }])
+  })
+
+  it('a cursor walk over one key column serves every row', async () => {
+    // The assertion the three above exist for. Three rows sharing a userId,
+    // paged two at a time: the cursor said `userId > 1`, every remaining row
+    // shares that userId, and page two came back EMPTY. One row was lost with
+    // no error and no gap — the class the tiebreaker exists to prevent.
+    const db: any = await client()
+    for (const teamId of [1, 2, 3]) await db.membership.create({ data: { userId: 1, teamId } })
+
+    const seen: string[] = []
+    let cursor: string | undefined
+    for (let page = 0; page < 5; page++) {
+      const p = await db.membership.findManyCursor({ limit: 2, orderBy: { userId: 'asc' }, cursor })
+      seen.push(...p.items.map((r: any) => `${r.userId}/${r.teamId}`))
+      if (!p.hasMore) break
+      cursor = p.nextCursor
+    }
+    expect(seen).toEqual(['1/1', '1/2', '1/3'])
+  })
+
+  it('a single-column key is still a unique column — the control', async () => {
+    // The fix must not stop `@id` on one field from being what it is, or every
+    // ordinary model pays for the tuple case.
+    const db: any = await createClient({
+      resolveFrom: '/tmp', db: ':memory:',
+      schema: 'model Post {\n  id Int @id @default(autoincrement())\n  title String\n}\n',
+    })
+    expect((db as any).post.orderTotal({ title: 'asc' }))
+      .toEqual([{ title: 'asc' }, { id: 'asc' }])
+    // Already total: nothing appended.
+    expect((db as any).post.orderTotal({ id: 'desc' })).toEqual([{ id: 'desc' }])
+  })
+
+  it('a @unique column still breaks the tie on a tuple-keyed model', async () => {
+    // A column that IS unique on its own needs no key appended after it.
+    const db: any = await createClient({
+      resolveFrom: '/tmp', db: ':memory:',
+      schema: `model Membership {
+  userId Int
+  teamId Int
+  slug   String @unique
+  @@id([userId, teamId])
+}
+`,
+    })
+    expect(db.membership.orderTotal({ slug: 'asc' })).toEqual([{ slug: 'asc' }])
+  })
+})

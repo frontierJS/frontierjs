@@ -648,12 +648,24 @@ export async function Command({ file, arg, flag, emit }) {
             if (stepCacheKey) _cacheSet(stepCacheKey, { run: stepRun, metadata: stepMeta })
           }
 
-          // Build step context — inherits parent flags + shared config
+          // Build step context — inherits parent flags + shared config.
+          //
+          // `filePath` and `printPlan` are REBOUND to the step. Spread from the
+          // orchestrator they name `index.md`, so a step asking to render its
+          // own prose silently rendered the orchestrator's and reported success
+          // — the wrong answer rather than a missing feature, and the reason a
+          // step's prose could not be its narration (`FJS-725`).
           const stepContext = {
             ...config,
-            config: config.config,  // shared mutable state
-            arg:    {},
-            flag:   config.flag,
+            config:   config.config,  // shared mutable state
+            arg:      {},
+            flag:     config.flag,
+            filePath: stepFile,
+            printPlan: () => printPlanFromFile(stepFile, {
+              ...config.vars,
+              ...config.arg,
+              ...config.flag,
+            }),
           }
           stepContext.run  = stepRun.bind(stepContext)
           stepContext.echo = config.echo

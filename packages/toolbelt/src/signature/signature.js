@@ -35,11 +35,14 @@
  *   sha256(body)  a bodyless request signs the hash of the empty string, so
  *                 every request is signed the same way
  *
- * The version rides in the signature VALUE (`v2-sha256=…`). A v1 signer against
- * a v2 verifier is refused BY NAME rather than as a mismatch, because every
- * deployed Outpost verifies the old string and *signature does not match* is
- * the same sentence a wrong secret produces — hours of looking at the wrong
- * half.
+ * The version rides in the signature VALUE (`v1-sha256=…`), and it is there
+ * before it is needed. A signer one version behind produces a perfectly
+ * well-formed digest of a string this side no longer builds, so with no marker
+ * the answer is *signature does not match* — the same sentence a wrong secret
+ * produces, and the wrong half to spend a fleet-wide outage on. Nothing outside
+ * this repo signs anything yet, so v1 is the only version that has ever been
+ * emitted; the machinery is what a second one will cost, which is a prefix and
+ * a branch rather than a scheme.
  *
  * The receiver must recompute this exact string. That is the whole contract,
  * and it is why the parts are joined with a newline rather than concatenated:
@@ -71,10 +74,9 @@ export async function sha256Hex(body) {
 }
 
 /** The scheme label the signature value carries. Bumped when the canonical string changes. */
-export const SIGNATURE_VERSION = 2
+export const SIGNATURE_VERSION = 1
 
-const V1_PREFIX = 'sha256='
-const V2_PREFIX = 'v2-sha256='
+const PREFIX = 'v1-sha256='
 
 /**
  * RFC 3986 percent-encoding.
@@ -210,7 +212,7 @@ export async function signRequest({ secret, method, path, query, body = '', pref
     method, path, query, timestamp: ts, nonce, bodyHash: await sha256Hex(body),
   }))
   return {
-    [`${prefix}-Signature`]: `${V2_PREFIX}${sig}`,
+    [`${prefix}-Signature`]: `${PREFIX}${sig}`,
     [`${prefix}-Timestamp`]: ts,
     [`${prefix}-Nonce`]:     nonce,
   }
@@ -269,20 +271,17 @@ export async function verifyRequest({
   if (skew > toleranceSeconds)
     return { ok: false, reason: `timestamp is ${skew}s out, tolerance is ${toleranceSeconds}s` }
 
-  // Version before secret. A v1 signer produces a perfectly well-formed digest
-  // of a string this side no longer builds, so without this the answer is
+  // Version before digest. A signer on another version produces a well-formed
+  // digest of a string this side does not build, so without this the answer is
   // `signature does not match` — the same sentence a wrong secret gives, which
-  // is the wrong half to go looking at while an old Outpost 401s every call.
-  if (!signature.startsWith(V2_PREFIX)) {
-    if (signature.startsWith(V1_PREFIX))
-      return { ok: false, reason: 'signature version 1 is no longer accepted; query is now signed' }
-    return { ok: false, reason: 'signature is not in a version this side understands' }
-  }
+  // is the wrong half to go looking at while a fleet 401s every call.
+  if (!signature.startsWith(PREFIX))
+    return { ok: false, reason: `signature is not v${SIGNATURE_VERSION}, which is the only version this side understands` }
 
   const expected = await hmacHex(secret, canonicalRequest({
     method, path, query, timestamp, nonce, bodyHash: await sha256Hex(body),
   }))
-  if (!timingSafeEqual(signature.slice(V2_PREFIX.length), expected))
+  if (!timingSafeEqual(signature.slice(PREFIX.length), expected))
     return { ok: false, reason: 'signature does not match' }
 
   // Last, and only once the signature is known good: a replay check that runs

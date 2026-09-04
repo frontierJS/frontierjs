@@ -116,7 +116,12 @@ let seq = 0
 const mint = (prefix: string) => `${prefix}_${(++seq).toString().padStart(4, '0')}${Math.random().toString(36).slice(2, 8)}`
 
 export function startPspSink(): { stop(): void; port: number } {
-  let failNext = false
+  // How many more calls answer 500. A COUNT rather than a boolean, because an
+  // outage that heals on the second attempt is not an outage: conduit replays a
+  // request the caller declared `replayable`, so a one-shot failure is repaired
+  // before the shop ever sees it and the drive asserting the shop's outage
+  // reporting had nothing to report. `?times=` says how long the bad minute is.
+  let failFor = 0
 
   // A stale sink from a previous run answers on this port and Bun's own error
   // points at Bun.serve, which reads as "the example is broken". Two API
@@ -226,15 +231,18 @@ export function startPspSink(): { stop(): void; port: number } {
         if (path === '/v1/intents' && req.method === 'DELETE') {
           intents.clear()
           replays.clear()
-          failNext = false
+          failFor = 0
           return Response.json({ ok: true })
         }
 
         // A provider having a bad minute. `send()` reports this as
         // `server_error`, retryable — the branch nothing else exercises.
         if (path === '/fail-next' && req.method === 'POST') {
-          failNext = true
-          return Response.json({ ok: true })
+          const times = Number(url.searchParams.get('times') ?? 1)
+          // `times=0` disarms, which is how a drive staging a long outage puts the
+          // provider back before the section after it.
+          failFor = Number.isFinite(times) && times >= 0 ? Math.floor(times) : 1
+          return Response.json({ ok: true, times: failFor })
         }
 
         // ── The API half. Signed, and refused otherwise ──────────────────
@@ -268,8 +276,8 @@ export function startPspSink(): { stop(): void; port: number } {
           const { ok, raw } = await signed()
           if (!ok) return Response.json({ error: 'invalid signature' }, { status: 401 })
 
-          if (failNext) {
-            failNext = false
+          if (failFor > 0) {
+            failFor--
             return Response.json({ error: 'temporarily unavailable' }, { status: 500 })
           }
 
@@ -300,8 +308,8 @@ export function startPspSink(): { stop(): void; port: number } {
           const { ok, raw } = await signed()
           if (!ok) return Response.json({ error: 'invalid signature' }, { status: 401 })
 
-          if (failNext) {
-            failNext = false
+          if (failFor > 0) {
+            failFor--
             return Response.json({ error: 'temporarily unavailable' }, { status: 500 })
           }
 
@@ -395,8 +403,8 @@ export function startPspSink(): { stop(): void; port: number } {
             return Response.json({ ...prior, replayed: true }, { status: 200 })
           }
 
-          if (failNext) {
-            failNext = false
+          if (failFor > 0) {
+            failFor--
             return Response.json({ error: 'temporarily unavailable' }, { status: 500 })
           }
 

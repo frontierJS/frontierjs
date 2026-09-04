@@ -1,5 +1,283 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-03 — one column of a tuple key identifies nothing
+
+`FJS-694`. 4207 tests, 0 fail. Typecheck clean.
+
+`expandCompositeId` stamps `@id` on every member of an `@@id([a, b])`, so every
+downstream read of *which column identifies a row* answered with one of them.
+Three faults, and the one that matters is silent.
+
+**A cursor walk lost rows.** `orderBy: { userId }` on `@@id([userId, teamId])`
+was treated as already a total order, because that column carries `@id`. Three
+rows sharing a userId, paged two at a time: the first page served two, the
+cursor said `userId > 1`, and page two came back EMPTY. One row gone, no error
+and no gap — the exact class the tiebreaker exists to prevent.
+
+**The default ordering named a column that does not exist.** `normaliseOrderBy`
+defaults to the literal `id`, which it must — it is a pure function with no
+model in scope — so the default belongs at the caller that has one. Without it
+every derived list over a tuple-keyed model was `400 Unknown orderBy field 'id'`
+and simply unreachable.
+
+**The tiebreaker appended the key's first column only**, which is still not a
+total order. It appends the whole key now, or none of it.
+
+`_keyCols()` reads the model ATTRIBUTE rather than the fields, because the key's
+column order is stated only there — and that order is the one fact `@id` per
+field cannot carry, which `test/composite-id.test.ts`'s fixed point already
+pins. **`$primaryKey(accessor)` is the same answer for the layer above**: the
+sixth sibling of `$checkWhere`/`$checkOrderBy`/`$protectedFields`, `[]` for an
+unknown accessor, identical on every flavour of client. Junction reads it to
+refuse a one-value `get` by name.
+
+## 2026-09-03 — a policy comparison follows SQLite's rules rather than JavaScript's
+
+`FJS-713`, `FJS-723`. 4199 pass (6 new).
+
+A row policy is compiled twice — `read`/`update`/`delete` into a WHERE, `create`
+and the post-update check into JavaScript — and the two disagreed about
+comparison itself. SQLite applies the COLUMN's affinity to the other operand and
+then orders by storage class; `===` does neither.
+
+The filed shape was the framework's own: a `SessionContext` carries `userId` as
+TEXT, so on any model keyed by an `Int` the owner read their own row over HTTP
+with a 200 and was then graded out of the broadcast for it.
+
+**It was one pairing of a class.** An oracle over column type × operator ×
+operand — read against create, the same predicate both ways — disagreed on **54
+of 594 cells**, in both directions and on every operator, plus two more in `in`:
+
+```
+String  "5"   ==  5        sql=T js=F     affinity: TEXT pulls 5 to '5'
+Int     5     ==  "5"      sql=T js=F     affinity: NUMERIC pulls '5' to 5
+Boolean true  ==  1        sql=T js=F     the column stores 0/1
+Int     5     <   "abc"    sql=T js=F     class order: INTEGER below TEXT
+String  "abc" >   5        sql=T js=F     'abc' > '5' once 5 is text
+Int     5     in  ['5']    sql=T js=F     membership is equality repeated
+```
+
+That measurement is what refused the narrower fix. The issue offered coercing
+`id` in junction's `toDataPrincipal`; it closes four of those cells and leaves
+fifty, and being junction-only it says nothing to a job calling `$readAs` or to
+a policy naming any other claim. The fix is in litestone, where both halves
+live.
+
+`compare()` now puts a JS value in the storage class the binder would have given
+it (a boolean is 0/1, a `Date` its ISO text), applies the column's affinity by
+SQLite's own rules, and orders by class. The affinity comes from `sqlType` —
+the DDL emitter's own function — so it cannot drift from the column that gets
+built.
+
+**Two things it deliberately does not do.** A value that is neither a number nor
+a string after all that keeps JavaScript's answer: two distinct Buffers rank
+EQUAL under a class comparison, so `==` would start answering TRUE for them.
+And nothing changed in the SQL half, which was right all along.
+
+The grading path's own fixture used a `String` id column with a comment saying
+the divergence was deliberate and belonged elsewhere. It is an `Int` now, so
+that suite is green on the shape the framework actually produces.
+
+**`FJS-723`, found by measuring the fix.** `$readAs` runs once per broadcast
+cohort, so a comparison's cost is multiplied by the audience — which is why the
+per-call cost was measured at all. It was 17.15 µs on a 188-model schema against
+2.22 µs on a one-model schema, *before* any of this. The cause was a memoisation
+that never applied: `ctx.models` is keyed by MODEL NAME and all six `$` siblings
+looked it up by ACCESSOR, so every call fell through to a scan of the model list
+that lower-cased a name per model. Indexed once under both spellings, and the
+derivation is `modelToAccessor` rather than the second inline copy of it that
+was there — checked over 1,672 model names from the corpus and the scale
+fixture, the two agree on every one.
+
+```
+                     before      affinity fix     + accessor index
+  1 model            2.22 µs       2.41 µs            2.5 µs
+  51 models          5.92 µs       6.24 µs            2.0 µs
+  188 models        17.15 µs      19.12 µs            3.8 µs
+```
+
+5 of the 6 new named tests fail with the fix stubbed. The sixth is the negative
+control — a genuine type mismatch stays unequal — which is what a control is
+for.
+
+## 2026-09-03 — attribute legality asked of a facet rather than of a pair
+
+`FJS-721`. 4194 pass (23 new).
+
+The parser refuses `@unique` over a randomly-encrypted column, with a good
+message, because somebody hit it. The same class one attribute over was ruled
+nowhere — and a rule written per PAIR is a rule somebody has to remember to
+write, over a hundred-word surface. Three, each re-measured before it was
+written:
+
+```
+@unique on a @computed field        vanished with no diagnostic
+@@unique([c]) over one              SQLite refuses the whole table at boot:
+                                    "expressions prohibited in PRIMARY KEY and
+                                    UNIQUE constraints" — naming nothing you wrote
+@scale(2) @default(12.99)           DEFAULT 12.99 into an INTEGER column; the
+                                    first row that takes it is refused at runtime
+@relation across two databases      an FK SQLite resolves nowhere; every create
+                                    throws "no such table"
+```
+
+They are derived from one question now — *what does the column physically
+hold*: `none` (`@computed`, `@transient`), `expression` (`@derived`, `@from`),
+`ciphertext`, `plain`. `@generated` is deliberately outside the set, being a
+real column.
+
+**The boundary that decided what did NOT land here is worth more than the
+rules.** `F24` also names `@@fts` over an encrypted column, and `advise.js`
+already owns it — whose own contract is that *every rule in it parses*. Adding
+it to the parser made that rule unreachable and broke its own test. So: this
+file is what cannot be EXPRESSED, `advise` is what is legal and WRONG, and the
+line is now written down where both would be reached for.
+
+`F24`'s remaining item does not reproduce: a validator on an `@encrypted`
+column emits no table CHECK, so nothing is judged against ciphertext.
+
+Measured against the corpus and both apps — 1,777 models, zero refusals — which
+is the only body of input large enough to say a legality rule does not
+over-refuse. Negative controls: 11 of the 23 new tests fail with the facet
+function stubbed to `'plain'`, 1 with the cross-database rule stubbed.
+
+## 2026-09-03 — verbs × rules, and the verb that applied none of them
+
+`FJS-720`. 4177 pass (104 new).
+
+`makeTable` is one closure whose method bodies each hand-restate the rule
+sequence — `buildPolicyFilter` at eighteen sites, soft-delete injection at
+thirteen — so a rule is added at roughly fifteen call sites and a missed one is
+silent. `test/verbs-rules.test.ts` is the grid underneath `matrix.test.ts`:
+
+    A VERB THAT CAN REACH A ROW MUST APPLY EVERY RULE THAT GUARDS IT.
+
+Twenty verbs × five row-reaching rules, one schema per rule so a cell names the
+rule it is about (`FJS-351`), and the verdict never read off the verb's own
+return value — a count, a row, a boolean and a throw are four vocabularies, and
+reading them is how a probe grades itself. Every cell asks the SYSTEM what the
+caller could reach or move.
+
+**It found one hole, in the verb every sibling was right about.** With
+`@@allow('update', ownerId == auth().id)`:
+
+```
+update()      → null          refused
+updateMany()  → {count: 1}    skipped it
+upsertMany()  → wrote it
+```
+
+…and with `@@allow('create', …)`, `create()` and `createMany()` both threw
+`AccessDeniedError` on a row owned by somebody else while `upsertMany` inserted
+it. It wrote a `@@hasTemplates` template row too.
+
+**The two halves needed different rules**, which is why the fix is not one line.
+A row that will INSERT is a create and one that will conflict is an update, so
+the presence lookup a logged model already pays for is now paid whenever the
+model has policies; the insert half calls `checkCreatePolicy` and refuses the
+batch whole like `createMany`; and the update half rides SQLite's own
+`ON CONFLICT … DO UPDATE … WHERE`, where an unqualified column is the EXISTING
+row — the same predicate `updateMany` puts in its WHERE, narrowing rather than
+throwing.
+
+Fixing it exposed a fourth: `count` was incremented per row handed in rather
+than per row moved, so a guarded skip was reported as a write — which the seal
+branch three lines above already refuses to do.
+
+Not reachable over HTTP: junction mounts no `upsertMany`, and single `upsert`
+was correct in both halves.
+
+Negative controls: 1 of the new tests fails with the create check stubbed, 4
+with the `DO UPDATE` guard stubbed, 1 with the honest count stubbed.
+
+## 2026-09-03 — one predicate, two interpreters, and a real oracle between them
+
+`FJS-719`. 4073 pass (41 new).
+
+Nothing held the policy language's two compilers together but testing — the
+file's own comments log three prior drifts, and `FJS-195` is the canonical
+shape: a row that create allows and read then hides. `test/policy-interpreters.test.ts`
+puts the SAME predicate over the SAME rows and asks both halves, which is an
+oracle rather than a restatement: 29 expression forms × 3 principals × 5 rows,
+plus the clock, a `check()` delegation and a `@@deny` standing beside an
+`@@allow`.
+
+**It found one on its first run, and it is the meta-flaw stated exactly.** The
+create half is evaluated against the PAYLOAD, so a column SQLite computes from
+the row reads `undefined` there:
+
+```
+model Doc {
+  big Boolean? @derived(qty > 5)
+  @@allow('read',   big == true)     // SQL — answers it perfectly
+  @@allow('create', big == true)     // JS  — undefined, so nobody can create
+}
+```
+
+The startup check that catches this **already existed and was enumerated**: it
+refuses `@computed` and `@transient` by name, both of which are not columns at
+all, so the read half is broken too and its sentence is about the read. The
+three kinds that ARE columns — `@derived`, `@generated`, `@from` — had no rule.
+Refused at build now, and derived from the facet (*a value SQLite computes from
+the row*) rather than from a list. `@system` is deliberately untouched: it
+reaches the payload through `system: ['col']`, so a create policy naming one is
+answerable.
+
+**Two cells are pinned as still broken.** `FJS-713` — SQLite applies the
+column's affinity to a bound parameter and JS `===` does not, so a String column
+against a numeric claim reads TRUE and creates FALSE. Filed by another session
+against `$readAs`; this is the same cause reached through create-vs-read, so it
+is asserted here with its id rather than filed again. Fixing it turns those
+cells red and says to promote them.
+
+## 2026-09-03 — the migration differ gets a catch-all, and it found the seventh missed dimension on its first run
+
+`FJS-717`, `FJS-718`, ruled `FJS-D186`. 4032 pass (13 new).
+
+`diffSchemas` compares a list of dimensions somebody wrote down. Six issues of
+this package's history are one dimension arriving in the DDL emitter and not in
+that list — generated columns, CHECK, table uniques, index order, index sorts,
+index predicates — and every one of them reads the same way: *schema is in
+sync*, over a database that is not the declared one.
+
+So once the enumeration has had its say, the two `sqlite_master`s are compared
+whole and the leftovers are named:
+
+```
+[litestone] Database "main" is in sync on every dimension the migration differ
+            reads, and 1 object(s) still differ:
+              table account
+                declared: CREATE TABLE "account"(…,"email" TEXT NOT NULL UNIQUE)STRICT
+                live    : CREATE TABLE "account"(…,"email" TEXT NOT NULL UNIQUE COLLATE NOCASE)STRICT
+```
+
+**The first thing it named was a live one.** `ddl.js` emits `ON UPDATE`, the
+parser reads `onUpdate:` on a `@relation`, `introspect` records it off
+`PRAGMA foreign_key_list` — and `fkKey` built its comparison string out of
+`onDelete` alone. `onUpdate: Cascade` → `Restrict` compared equal and the live
+foreign key kept the old action (`FJS-718`).
+
+**It is not part of `hasChanges` and it does not block.** Nothing here could
+write a migration for a dimension it cannot see, so counting it as a change
+generates an empty migration and finds the same difference on the next boot for
+ever. And the commonest cause is not a defect: `litestone introspect` is the
+adoption door, so a real database has a `COLLATE NOCASE` on its email column or
+a hand-written index — things this language cannot say. `acceptResidue: true` is
+the caller stating it, beside the `acceptDataLoss` it is modelled on.
+
+**Measured before the shape was chosen, twice.** A raw text comparison fires on
+162 of 694 objects across the corpus schemas after an ordinary v1 → v2
+migration — every one of them the spacing `ALTER TABLE ADD COLUMN` leaves in the
+stored statement, and not one of them a difference. Normalised around
+punctuation: 0 of 694, 0 on a fresh build of all nine corpus schemas, and 0 on
+both real databases in this repo. And normalising inside `introspect` cost 18 ms
+of a 75 ms introspection on the 188-model fixture, every object of it one that
+then compared equal — stored raw and normalised only where two disagree, it is
+1 ms.
+
+Negative controls: 4 of the 13 new tests fail with the tripwire stubbed, 2 with
+the `onUpdate` repair stubbed.
+
 ## 2026-09-02 — `$merge`: changing one key of a document
 
 `FJS-D176`. 3993 pass (30 new).
@@ -65,6 +343,47 @@ race-free, and it reaches no open tab.
 `validateTypedJson` grew a `mode`, defaulting to `full`, so every existing
 caller is unchanged.
 
+
+## 2026-09-03 — the envelope names the key
+
+`FJS-714`, `FJS-715`, `FJS-716`, ruled `FJS-D183`. 4019 pass (18 new), typecheck
+clean.
+
+`F18` of the foundation audit. `v1.` encoded the FORMAT version — the one thing
+about a stored value that never changes — and omitted the one that does.
+`$rotateKey` runs **one transaction per database**, so a crash between two
+commits left a schema in two keys under a single global key setting, with
+nothing able to say which value was under which and no way to resume.
+
+**`v2.<kid>.<payload>`** — the kid a domain-separated HMAC of the key, truncated
+to eight hex characters, which identifies a key without being one.
+`createClient({ previousEncryptionKeys })` is the read-only ring; the old key
+stays on it after a rotation, which is what makes a partial one survivable, and
+re-running finishes it. An unknown kid still tries the ring: **GCM's tag is the
+authority and the kid is only the order.**
+
+**A caller-supplied `v1.`-prefixed string was stored VERBATIM** in an
+`@encrypted` column and read back as `null` (`FJS-715`). One `isCiphertext`
+checked three characters and gated the HASH path too, so a `v1.` value skipped
+hashing and `@hashed` held something that is not a digest. Now the mode must
+match, the value must VERIFY, and a non-system caller may not send one at all.
+
+**A decrypt that failed set the column to `null`** (`FJS-716`) — a wrong answer
+rather than a missing one. It is raised, naming the model, the field, the kid
+wanted, the kids held and `previousEncryptionKeys`; none of those strings is a
+key. One column still degrades and the schema declares it:
+`@secret(rotate: false)` is an acknowledged loss, so raising there would make
+the whole row unreadable to punish a column the app already gave up.
+
+**Two things measuring found that the finding did not name.** A deterministic
+encoding is a function of the key, so making a half-rotated schema *supported*
+would have made every equality filter over a not-yet-rotated row answer nothing
+— the operand is widened across the ring at all four spellings of equality. And
+the payload is **byte-identical across versions**, so every deterministic and
+`@hashed` lookup **in every existing app** would have silently stopped matching
+after the upgrade; no suite here could see it, because every one builds a fresh
+database. `legacyForm` emits the v1 twin, and a simulated pre-upgrade database
+is now a test.
 
 ## 2026-09-02 — a bulk write cannot reach around the state machine
 

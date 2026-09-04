@@ -332,6 +332,18 @@ t('demos.prerendered', {
   showroom5:  countIn('showroom5', /role="tab"/g),           // every feature row
   journey:    countIn('journey',   /class="ex[ "]/g),        // seventeen explanations
   landscape:  countIn('landscape', /class="entry[ "]/g),     // twenty-one projects
+  tutor:      countIn('tutor',     /class="card lesson[ "]/g), // the four lessons
+})
+
+// The tutorial page's argument is that the tutorial runs, so its samples are
+// transcripts of runs rather than prose about them. A paraphrase would be the
+// one thing on this site that has never been executed — these two strings come
+// out of a real lesson and a real refusal.
+t('tutor.transcripts', {
+  probe:   bodyOf('tutor').includes('the row is in db/app.db'),
+  // Asked without the step number: glow marks `01-` as a token of its own, so
+  // the literal line is not one contiguous string in the HTML.
+  refusal: bodyOf('tutor').includes('preflight refused'),
 })
 
 // landscape used to fetch its data on load, so the page a crawler read said

@@ -24,7 +24,7 @@ the useful question is which project made the same bet and is further along.
 
 Answering it turned up a gap worth recording on its own: **Ash Framework is
 cited nowhere in this repository.** Grepped across `IDEAS/`, `DECISIONS.md`,
-`ARCHITECT.md`, `PHILOSOPHY.md` and `PROS_AND_CONS.md` — zero occurrences. It is
+`ARCHITECT.md`, `PHILOSOPHY.md` and `IDEAS/pros-and-cons.md` — zero occurrences. It is
 the single most relevant project in existence to this one.
 
 ---

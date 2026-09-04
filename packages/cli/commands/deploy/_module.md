@@ -399,7 +399,13 @@ const lockRefusal = async (lock, { verb = 'deploy' } = {}) => {
 // a tidy-up: only one writer at a time, and the new container's entrypoint opens
 // the database to migrate. That costs a 3–10s gap and it is the correct trade.
 // Litestream is unaffected — it checkpoints the WAL when `_replaced` stops.
-const swapContainer = (context, { host, container, image, apiPort, dbPath, envFile, build, log }) => {
+// `deployConf` is an OPTION rather than a read off `context.config`, like every
+// other value here — and it was neither for as long as this function existed:
+// `dockerLogArgs(deployConf)` below named a variable in no scope it can see, so
+// every real deploy threw `ReferenceError: deployConf is not defined` while
+// building the `docker run` line. By then the running container had been renamed
+// to `_replaced` and stopped, and the new one was never started (`FJS-726`).
+const swapContainer = (context, { host, container, image, apiPort, dbPath, envFile, build, deployConf, log }) => {
   const machine  = machineFor(context, host)
   const replaced = `${container}_replaced`
 

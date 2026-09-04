@@ -36,10 +36,22 @@ afterAll(() => server.stop(true))
 const url = () => `http://localhost:${server.port}/hook`
 
 async function makeApp(events: string[] = ['*']) {
-  const app = await createTestApp({ users: [{ id: 'u1', role: 'admin' }] })
+  // `isAdmin`, not `role: 'admin'`: managing registrations needs level 5 and
+  // `sessionGateLevel` reads the standing fields rather than an app's own
+  // `role` column, which grades 4 however it is spelled.
+  const app = await createTestApp({ users: [{ id: 'u1', role: 'admin', isAdmin: true }] })
   // A retryInterval an hour out keeps the background scheduler from firing
   // mid-test; every retry below is driven explicitly.
-  app.configure(webhooks({ events, retryInterval: 3_600_000 }))
+  //
+  // `targets` is off because the receiver above is a real server on localhost,
+  // which is exactly what the SSRF guard refuses (`FJS-681`). Saying so here is
+  // the point: these tests are about delivery mechanics, and the guard has its
+  // own file. Nothing else in the repo turns it off.
+  app.configure(webhooks({
+    events,
+    retryInterval: 3_600_000,
+    targets: { allowHttp: true, allowPrivate: true },
+  }))
   await app._startForTest()
   return app as typeof app & { webhooks: NonNullable<typeof app.webhooks> }
 }
@@ -450,13 +462,15 @@ describe('plugin wiring', () => {
         const reg = { id: 'r1', url: u, events: e, secret: 's', active: true, createdAt: 0 }
         registrations.push(reg); return reg
       },
-      unregister: async () => {}, list: async () => registrations as never[],
+      unregister: async () => {}, setActive: async () => {}, list: async () => registrations as never[],
       getRegistration: async () => null, findForEvent: async () => [],
       createDelivery: async () => ({}) as never, updateDelivery: async () => {},
       pendingRetries: async () => [], getDeliveries: async () => [], getDelivery: async () => null,
     }
 
-    app.configure(webhooks({ events: [], store: store as never }))
+    // The destination is not what this test is about, and `.test` does not
+    // resolve — which the target guard correctly refuses.
+    app.configure(webhooks({ events: [], store: store as never, targets: { allowPrivate: true } }))
     await app.webhooks!.register('https://x.test', ['a'])
 
     expect(registrations).toHaveLength(1)

@@ -76,6 +76,29 @@ export function presence(channelId, options = {}) {
   function onSync(payload)   { if (!_left) push((payload.members ?? []).map(normaliseMember)) }
   function onJoin(payload)   { if (!_left) push([..._rawMembers, normaliseMember(payload.member)]) }
   function onLeave(payload)  { if (!_left) push(_rawMembers.filter(m => m.connectionId !== payload.member.connectionId)) }
+
+  // Several joins and leaves in one frame. Junction batches them per channel
+  // over a window, because a join used to send one frame to every existing
+  // member and N connections cost N x (N-1) frames — 251 500 of them for 500
+  // users (`FJS-703`). `presence:join`/`presence:leave` are still sent under
+  // `presenceFlushMs: 0`, so both are handled and neither is legacy.
+  //
+  // Leaves are applied BEFORE joins: a connection that left and rejoined
+  // inside one window is in both lists, and the other order removes the row it
+  // had just added.
+  function onDiff(payload) {
+    if (_left) return
+    const gone = new Set((payload.left ?? []).map(m => m.connectionId))
+    const kept = _rawMembers.filter(m => !gone.has(m.connectionId))
+    const here = new Set(kept.map(m => m.connectionId))
+    // Deduplicated against what is already held: a diff is what MOVED, and a
+    // reconnect can put a connection in a batch that a `presence:sync` already
+    // reported.
+    const added = (payload.joined ?? [])
+      .map(normaliseMember)
+      .filter(m => !here.has(m.connectionId))
+    push([...kept, ...added])
+  }
   function onUpdate(payload) {
     if (_left) return
     push(_rawMembers.map(m =>
@@ -90,6 +113,7 @@ export function presence(channelId, options = {}) {
   if (client) {
     client.on(`presence:sync:${channelId}`,   onSync)
     client.on(`presence:join:${channelId}`,   onJoin)
+    client.on(`presence:diff:${channelId}`,   onDiff)
     client.on(`presence:leave:${channelId}`,  onLeave)
     client.on(`presence:update:${channelId}`, onUpdate)
 
@@ -118,6 +142,7 @@ export function presence(channelId, options = {}) {
     if (client) {
       client.off(`presence:sync:${channelId}`,   onSync)
       client.off(`presence:join:${channelId}`,   onJoin)
+      client.off(`presence:diff:${channelId}`,   onDiff)
       client.off(`presence:leave:${channelId}`,  onLeave)
       client.off(`presence:update:${channelId}`, onUpdate)
       client.send({ type: 'unsubscribe', channel: channelId })

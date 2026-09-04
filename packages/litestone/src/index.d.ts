@@ -259,6 +259,15 @@ export interface CreateClientOptions {
    * "everybody" (`FJS-666`, `FJS-668`). `[]` is a statement; absent is silence.
    */
   claims?:        string[]
+  /**
+   * Keys this client can still READ and never writes. A rotation runs one
+   * transaction per DATABASE, so a crash between two commits leaves a schema in
+   * two keys — holding the old one is what makes that state readable, and the
+   * rotation resumable, rather than a loss (`FJS-714`). A deterministic
+   * equality filter is widened across the whole ring, or a not-yet-rotated row
+   * would silently match nothing.
+   */
+  previousEncryptionKeys?: string[]
   /** Plugins — GatePlugin, FileStorage, custom */
   plugins?:       Plugin[]
   /**
@@ -797,7 +806,16 @@ export declare function create(db: unknown, parseResult: ParseResult, label?: st
 export declare function apply(db: unknown, dir?: string, client?: AnyLitestoneClient): Promise<ApplyResult>
 export declare function status(db: unknown, dir?: string): MigrationRow[]
 export declare function verify(db: unknown, parseResult: ParseResult, dir?: string, opts?: { pluralize?: boolean }): VerifyResult
-export declare function autoMigrate(db: AnyLitestoneClient, parseResult?: ParseResult, opts?: { pluralize?: boolean }): Record<string, { state: string; applied?: number; sql?: string }>
+/** An object the live database and the schema disagree about in a way the differ cannot name. */
+export interface SchemaResidue {
+  type:     'table' | 'index' | 'trigger'
+  name:     string
+  table:    string
+  pristine: string | null
+  live:     string | null
+}
+
+export declare function autoMigrate(db: AnyLitestoneClient, parseResult?: ParseResult, opts?: { pluralize?: boolean; force?: boolean; acceptDataLoss?: boolean; acceptResidue?: boolean }): Record<string, { state: string; applied?: number; sql?: string; reason?: string; residue?: SchemaResidue[] }>
 export declare function listMigrationFiles(dir: string): string[]
 export declare function unmatchedMigrationFiles(dir: string): string[]
 export declare function describeSkipped(skipped: string[]): string

@@ -32,6 +32,7 @@
 
 import { createLitestoneAuth } from '@frontierjs/auth'
 import { shops, DEFAULT_SHOP } from '../../api/src/core/db.ts'
+import { requireServers } from './lib/preflight.mjs'
 
 const API   = process.env.API_URL ?? 'http://localhost:8110'
 /**
@@ -51,13 +52,7 @@ const HOST  = `${SHOP}.shop.test`
  *  default — a host that names a shop is a caller who meant that shop. */
 const GHOST = 'nosuchshop.shop.test'
 
-try {
-  const r = await fetch(`${API}/api/health`)
-  if (!r.ok) throw new Error(`HTTP ${r.status}`)
-} catch (e) {
-  console.error(`Cannot reach the api (bun run api) at ${API} — ${e.message}`)
-  process.exit(1)
-}
+await requireServers([['the api (bun run api)', `${API}/api/health`]])
 
 let pass = 0, fail = 0
 function check(name, actual, expected) {

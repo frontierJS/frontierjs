@@ -5,6 +5,7 @@
 
 import { join, resolve } from 'node:path'
 import { existsSync }      from 'node:fs'
+import type { TrustProxy } from '../transport/forwarded.ts'
 
 // ─── App config interface ─────────────────────────────────────────────────
 // Extend this in your app's config/types.ts
@@ -44,6 +45,22 @@ export interface AppConfig {
       maxAge:     number
     }
     powered:      string
+    /**
+     * How many proxies stand in front of this app, or which ones.
+     *
+     *   false      the socket address alone. The default.
+     *   true       one trusted hop — what the shipped nginx template is.
+     *   <n>        n trusted hops.
+     *   [...]      trusted proxies, by address or CIDR (IPv4 and IPv6).
+     *
+     * It has to be declared, and being absent is not neutral in either
+     * direction: unset behind a proxy keys the rate limiter and the DDoS
+     * guard on the PROXY's address, so every caller in the world shares one
+     * bucket; set wrongly, the caller picks their own key. The option existed
+     * on the transport and reached it from nowhere — no config key, and
+     * `app.ts` never passed one (`FJS-744`).
+     */
+    trustProxy?:  TrustProxy
     // Security headers. On unless declared false — the opt-out an app writes
     // as `http: { helmet: false }`, which app.ts has always read and this
     // shape did not declare, so the typed form of the documented opt-out was
@@ -70,6 +87,41 @@ export interface AppConfig {
     // that could name its own header could name Authorization, and the
     // caller's identity is established at upgrade.
     callHeaders?: string[]
+    // What one WebSocket may do. Every bound above stops at the upgrade, so
+    // without these the transport junction PREFERS is the cheapest way to
+    // exhaust it (`FJS-705`). See `WsLimits` in transport/http.ts for what each
+    // one is and why its default is the number it is.
+    ws?: {
+      maxFrameBytes?:       number
+      maxPayloadLength?:    number
+      maxFramesPerSecond?:  number
+      maxInFlight?:         number
+      maxConnectionsPerIp?: number
+      maxConnections?:      number
+    }
+  }
+
+  // What happens between SIGTERM and the process going away.
+  //
+  // Separate from `http.drainTimeout`, which bounds one step of it: that is how
+  // long a socket gets, these are how long the whole thing gets and what
+  // happens when it does not finish. A hung plugin shutdown used to end with
+  // the process exiting **0** — every timer unref'd, the loop empty, node
+  // leaving successfully — with the queue, the outbox and the database close
+  // all skipped and nothing said. Zero is what an orchestrator reads as a clean
+  // stop (`FJS-693`).
+  shutdown?: {
+    // Whole-shutdown deadline. Past it the process exits 1 rather than waiting.
+    // Default 15000ms.
+    timeout?: number
+    // Per-plugin `shutdown()` deadline. One plugin that never settles must not
+    // take the rest of the list with it. Default 5000ms.
+    pluginTimeout?: number
+    // Install `unhandledRejection` / `uncaughtException` handlers that log,
+    // stop the app and exit 1. Skipped where the app has already installed its
+    // own — a framework replacing the application's crash policy is worse than
+    // not having one. Default true.
+    crashHandlers?: boolean
   }
 
   // Cache

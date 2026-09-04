@@ -28,6 +28,13 @@ tests/autoload.test.ts            autoload against a real fixture directory
 tests/junction-integration.test.ts  the plugin against a real booted Junction app
 tests/job-context.test.ts         who a job runs as, against a real app + auth
 tests/declaration.test.ts         what a job file declares: its cron, and its name
+tests/hardening.test.ts           the admin surface, and four processes on one jobs.db
+tests/ownership.test.ts           two instances: heartbeat, recovery, one cron fire
+tests/timeout.test.ts             a bounded attempt, and the orphan it announces
+tests/stated-id.test.ts           dispatch({ id }) as the idempotency `unique` is not
+tests/outbox-relay.test.ts        junction's outbox handed over under the row's id
+tests/cron-dst.test.ts            the hours a clock change adds and removes
+tests/scale.test.ts               the query plans /metrics, /health and list depend on
 tests/fixtures/jobs/              committed *.job.ts fixtures for autoload
 tests/fixtures/cron-jobs/         a job file that declares its own schedule
 tests/fixtures/bad-jobs/          a job whose name disagrees with its file
@@ -37,7 +44,8 @@ tests/fixtures/bad-jobs/          a job whose name disagrees with its file
 
 | | |
 |---|---|
-| Tests | **92 pass, 0 fail**, 4 files (`bun run test`) — verified. See `CHANGES.md` 2026-08-06 for the three defects `example/` found, and 2026-08-16 for the job principal |
+| Tests | **220 pass, 0 fail**, 12 files (`bun run test`) — verified. See `CHANGES.md` 2026-08-06 for the three defects `example/` found, 2026-08-16 for the job principal, 2026-09-02 for what two processes on one jobs.db could not survive, and 2026-09-03 for what the admin surface cost at 1M rows |
+| Known flake | `tests/cron-dst.test.ts` › the two *two instances over one jobs.db* cases fail intermittently, with `unable to open database file` under them. Pre-existing and measured against a HEAD copy — `FJS-729` |
 | Typecheck | **clean, 0 errors, no baseline** (`bun run typecheck`) — verified |
 | Public exports | `createCaravan`, `defineJob`, plus types — verified |
 | Who a job runs as | the principal recorded at `dispatch()`, **re-resolved** through `app.runAs` when it runs. Nobody asked → `createApp({ system })`. `tests/job-context.test.ts` |

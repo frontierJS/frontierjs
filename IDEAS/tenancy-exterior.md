@@ -1,6 +1,6 @@
 ---
 id: tenancy-exterior
-status: argued
+status: shipped
 dated: 2026-08-25
 ---
 

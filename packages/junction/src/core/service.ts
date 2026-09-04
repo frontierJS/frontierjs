@@ -5,7 +5,8 @@
 // Services are registered in the app and called by the transport.
 
 import type { ServiceContext, ServiceMethod } from './context.ts'
-import { requestMeta, reenterAs, enterCall, runInServiceCall, withCallEffects } from './context.ts'
+import { requestMeta, reenterAs, enterCall, runInServiceCall, withCallEffects, commitScope, runInCommitScope } from './context.ts'
+import type { CommitScope } from './context.ts'
 import { claimIdempotency } from './idempotency.ts'
 import { diagnostic, isDiagnosticMode } from './diagnostics.ts'
 import {
@@ -601,7 +602,9 @@ async function _callService(
   // not, and a hook that queues an effect must not be the thing that throws.
   if (typeof ctx.afterCommit !== 'function') withCallEffects(ctx)
 
-  let pipelineError: unknown = null
+  let pipelineError: unknown  = null
+  let methodSucceeded         = false
+  let openScope: CommitScope | undefined = undefined
 
   try {
     // Marked for the whole pipeline, hooks included: a write from an `after`
@@ -610,6 +613,16 @@ async function _callService(
     // announced, which is what it exists to catch.
     await runInServiceCall(service.name, () => runPipeline(ctx, resolvedPipeline, async () => {
       const raw = await methodFn(ctx)
+      // The method returned, so any write it made is real. Recorded here rather
+      // than inferred from `pipelineError` below, because with no transaction
+      // open a LATER hook throwing does not undo it (`FJS-688`).
+      methodSucceeded = true
+      // Captured HERE and not at the announcement point below, which runs after
+      // the pipeline has returned — by which time the transaction hook's ALS
+      // scope has closed and every call would read `undefined`. That is not a
+      // detail: it made a rolled-back write announce, because the deferral
+      // looked unnecessary.
+      openScope = commitScope()
       // - null/undefined     → null (transport returns 204)
       // - already an envelope → as-is (cache hit, hook-set result)
       // - anything else       → wrap
@@ -699,8 +712,41 @@ async function _callService(
   const eventName = AUTO_EVENT_MAP[method as string]
     ?? (isCustom ? (method as string) : undefined)
 
-  if (!ctx.error && !pipelineError && eventName) {
-    const past = eventName
+  // ── When is a write DONE, and who says so ─────────────────────────────
+  //
+  // Two different answers, and this used to use neither. With a transaction
+  // open the rows are durable when the OUTERMOST one commits, which is not
+  // here; without one they are durable the moment the method returned, so a
+  // later `after` hook throwing does not take them back — the row was
+  // committed, the caller was told 500, and nothing announced (`FJS-688`).
+  //
+  // `ctx.error` is an app deliberately failing the call and stays fatal to the
+  // announcement in both readings: a hook that sets it is saying the call did
+  // not happen, whatever the database did.
+  // `methodSucceeded` decides WHETHER — a hook that answered before the method
+  // ran wrote nothing. The scope decides WHEN: with one open the work is handed
+  // over and the commit drains it, so a rollback discards it and there is no
+  // second condition to keep in step.
+  //
+  // `ctx.error` is deliberately NOT consulted. `runPipeline` sets it on every
+  // throw, so it cannot tell an app failing the call apart from a later hook
+  // blowing up — and without a transaction the row is committed either way, so
+  // suppressing the announcement leaves the database, the caller and every open
+  // tab holding three different beliefs about one write (`FJS-688`).
+  // The OWNER drains its own scope the moment its transaction commits, which is
+  // before this line — so it announces here as an untransacted call would, and
+  // only the calls nested inside it hand their work over.
+  const owned    = _commitScopeOwners.get(ctx)
+  // The cast is TypeScript's control-flow analysis, not a claim: `openScope` is
+  // assigned only inside the callback `runPipeline` is handed, which tsc cannot
+  // prove ever runs, so it narrows the reference back to its `undefined`
+  // initializer and every use below collapses to `never`.
+  const scope = (owned ? undefined : openScope) as CommitScope | undefined
+  const durable  = methodSucceeded && (owned ? owned.committed : true)
+  const announce = durable && eventName
+
+  const doAnnounce = async () => {
+    const past = eventName as string
 
     // ctx.dispatch is the ONE suppression/override switch, honoured by both
     // consumers: `false` announces nothing, any other value replaces the
@@ -741,6 +787,19 @@ async function _callService(
     }
   }
 
+  if (announce) {
+    if (scope) {
+      // The name goes in before the drain, not at it: litestone buffers a
+      // transaction's write events to the commit, so the tap sees them with
+      // the OUTERMOST call's span in force and its `announcingService()`
+      // comparison misses. `announced` is what it asks instead.
+      scope.announced.add(service.name)
+      scope.announcements.push(doAnnounce)
+    } else {
+      await doAnnounce()
+    }
+  }
+
   // ── after commit ──────────────────────────────────────────────────
   //
   // The phase an `after` hook is not. `after` runs in sequence with the other
@@ -757,10 +816,21 @@ async function _callService(
   //
   // Before `idem.settle` for the reason the announcement is: a replay must not
   // be told the call is finished while its effects are still running.
+  // `pipelineError`, not `durable`: an effect follows the CALL's verdict, which
+  // is `FJS-089`'s ruling and is the opposite of the announcement's. A client
+  // told the call failed must not also get the email — where a SUBSCRIBER must
+  // still be told the row moved, because it did. Two different questions about
+  // one throw, and they take different answers.
   if (!ctx.error && !pipelineError && ctx._afterCommit?.length) {
     const queued = ctx._afterCommit
     ctx._afterCommit = []
-    for (const fn of queued) {
+    // Under a transaction these belong to the commit, not to this call. Handed
+    // over rather than run: a nested call's effect used to fire while the outer
+    // transaction was still open, and on the rollback path it fired for a row
+    // that no longer exists — an email sent about a cancelled order
+    // (`FJS-682`). The scope discards them if the transaction rolls back.
+    if (scope) { scope.effects.push(...queued) }
+    else for (const fn of queued) {
       try {
         await fn()
       } catch (err) {
@@ -810,7 +880,20 @@ async function _callService(
   idem?.settle(!ctx.error && !pipelineError, ctx.result)
 
   // Re-throw any pipeline error AFTER telemetry / cleanups have run.
-  if (pipelineError) throw pipelineError
+  //
+  // A throw AFTER the method, with no transaction to take the write back, is
+  // the one failure whose row is still there — so the error says so. A client's
+  // natural answer to a 500 is to retry, and retrying a create that succeeded
+  // writes a second row; `committed: true` is what lets it re-read instead
+  // (`FJS-688`). Only where it is TRUE: a hook that failed the call before the
+  // method ran wrote nothing, and a transaction rolled its write back.
+  if (pipelineError) {
+    if (durable && !scope && pipelineError && typeof pipelineError === 'object') {
+      const e = pipelineError as { data?: Record<string, unknown> }
+      e.data = { ...(e.data ?? {}), committed: true }
+    }
+    throw pipelineError
+  }
 }
 
 // ─── Base service — Litestone adapter ─────────────────────────────────────
@@ -1113,6 +1196,17 @@ export function resolveTransactional(
   return wanted.filter(m => !NON_TRANSACTIONAL_METHODS.has(m))
 }
 
+// The call whose transaction hook OPENED the commit scope, and whether that
+// transaction committed. The owner drains the scope itself the moment the
+// commit returns, so its own announcement is not deferred into a queue that has
+// already been emptied — which means the owner is also the one call that has to
+// be told the transaction rolled back, since `methodSucceeded` is true either
+// way and the rows are gone.
+//
+// A WeakMap rather than a `__` field on `ctx.locals`: this is junction's own
+// bookkeeping and nothing above it has any business reading it.
+const _commitScopeOwners = new WeakMap<object, { committed: boolean }>()
+
 function transactionScopeHook(serviceName: string, decl: TransactionalDeclaration): AroundHook {
   return markDerived(async function transactionScope(ctx: ServiceContext, next: () => Promise<void>) {
     // Registered on `all` and filtered here rather than expanded into a
@@ -1131,14 +1225,57 @@ function transactionScopeHook(serviceName: string, decl: TransactionalDeclaratio
         `The scope comes from the Litestone client — build the app with createApp({ db }), or drop the declaration. ` +
         `Silently running without one would report a transaction nobody opened.`
       )
-    await db.$transaction(async (tx) => {
-      // The whole trick, and the reason this is a framework hook rather than a
-      // recipe: the method and every later hook must WRITE through the tx
-      // client. Omit this by hand and the transaction is empty, the writes
-      // commit outside it, and every test still passes.
-      ctx.locals.db = tx
-      await next()
-    })
+    const runTransaction = db.$transaction.bind(db)
+    const outer = ctx.locals.db
+    try {
+      // The scope is opened OUTSIDE `$transaction` so a throw inside it still
+      // finds one to discard — and reused where one is already open, which is
+      // what makes the outermost transaction the owner of every effect and
+      // every announcement below it (`FJS-682`).
+      await runInCommitScope(async (scope, owns) => {
+        const ownership = owns ? { committed: false } : null
+        if (ownership) _commitScopeOwners.set(ctx, ownership)
+        await runTransaction(async (tx) => {
+          // The whole trick, and the reason this is a framework hook rather than a
+          // recipe: the method and every later hook must WRITE through the tx
+          // client. Omit this by hand and the transaction is empty, the writes
+          // commit outside it, and every test still passes.
+          ctx.locals.db = tx
+          await next()
+        })
+
+        if (!ownership) return
+        ownership.committed = true
+        // Committed. Announce first, then run the effects — the same order
+        // `callService` uses outside a transaction, so a subscriber and an
+        // effect see one sequence however the write was wrapped.
+        const { announcements, effects } = scope
+        scope.announcements = []
+        scope.effects       = []
+        for (const announce of announcements) {
+          try { await announce() }
+          catch (e) { console.error(`[Junction] a deferred announcement threw after commit: ${(e as Error)?.message}`) }
+        }
+        for (const effect of effects) {
+          try { await effect() }
+          catch (e) {
+            console.error(
+              `[Junction] afterCommit callback threw after the transaction committed: ${(e as Error)?.message}. ` +
+              `The call succeeded and was announced; this effect did not run.`)
+          }
+        }
+      })
+    } finally {
+      // Put the request's own client back. It was left assigned, so anything
+      // reading `ctx.locals.db` after the transaction settled — an
+      // `afterCommit` effect, a timer a hook scheduled — held a client whose
+      // transaction was closed, and it still accepted writes (`FJS-687`).
+      //
+      // RESTORED rather than nulled: an effect running after the commit
+      // legitimately wants a working client, and that is exactly the one it
+      // should get — the request's, outside the transaction that has finished.
+      ctx.locals.db = outer
+    }
   })
 }
 

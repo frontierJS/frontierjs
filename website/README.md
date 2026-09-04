@@ -51,6 +51,22 @@ handing off to something deeper rather than trying to be it.
 | `#vision`   | Vision   | Slices, offline-first, one target axis                                  |
 | `#start`    | Start    | Install, run an example, read next                                      |
 
+## The tutorial page
+
+`/tutor/` is the one page here that sells a COMMAND rather than the framework,
+and it is held to a stricter version of *show, don't claim*: every sample on it
+is a transcript of a real run or a verbatim lift from the step that produced it.
+A paraphrase of `fli tutor`'s output would be the one thing on this site that has
+never been executed — on the page whose whole argument is that the tutorial
+executes. `site/test/verify.mjs` asserts two of those strings survive into the
+built page (`tutor.transcripts`), because a sample rewritten into nicer prose
+looks identical from every other angle.
+
+It carries no `publishes:` line and should not gain one: it reads no data, so
+there is nothing for the build's publish check to fail closed on, and
+`publishes: 0` would silence a proof rather than raise a bar (`fli check`'s
+`static-publishes-0`).
+
 ## Principles for anything added here
 
 - **Show, don't claim.** Every assertion should be backed by code the reader can

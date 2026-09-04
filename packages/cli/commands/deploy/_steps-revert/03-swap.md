@@ -18,6 +18,7 @@ const { container, replaced } = swapContainer(context, {
   apiPort,
   dbPath:  deployConf.db?.path ?? `${serverPath}/db`,
   envFile: deployConf.api?.env ?? `${serverPath}/.env.production`,
+  deployConf,
   log,
 })
 

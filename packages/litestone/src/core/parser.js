@@ -5090,6 +5090,116 @@ function validate(schema) {
     }
   }
 
+  // ── Attribute legality, asked of FACETS rather than of pairs ────────────────
+  //
+  // The block above is one pair — `@unique` × `@encrypted` — ruled once, with a
+  // good message. The same failure recurs one attribute over and was ruled
+  // nowhere: `@@fts` over the same column builds an index that can never match,
+  // and `@unique` over a field with no column vanishes (`FJS-721`). A rule
+  // written per pair is a rule somebody has to remember to write, and the
+  // surface is a hundred words.
+  //
+  // So the question is asked of a field once and the rules read the answer:
+  // `storage` is what the column PHYSICALLY holds, which is what any mechanism
+  // reading the column has to be true of.
+  //
+  // What belongs HERE is what cannot be expressed at all — a table SQLite
+  // refuses to create, a DEFAULT the first insert rejects, a foreign key that
+  // resolves nowhere. What is merely legal and WRONG belongs in `advise.js`,
+  // whose own contract is that every rule in it parses, and which already owns
+  // `@@fts` over an encrypted column. A rule in both places is a rule the
+  // second owner can never reach.
+  const fieldStorage = (field) => {
+    const has = (k) => field.attributes?.some(a => a.kind === k)
+    if (has('computed') || has('transient')) return 'none'
+    if (has('from') || has('derived'))       return 'expression'
+    if (has('encrypted') || has('secret') || has('hashed')) return 'ciphertext'
+    return 'plain'
+  }
+  for (const model of schema.models) {
+    const byName = new Map(model.fields.map(f => [f.name, f]))
+    const storageOf = (name) => { const f = byName.get(name); return f ? fieldStorage(f) : null }
+
+    // A constraint or an index is over a COLUMN. `@computed` has none at all,
+    // and `@derived`/`@from` are carried in the SELECT rather than stored — so
+    // the declaration either vanishes with no diagnostic (`@unique`, which is
+    // emitted as a column constraint on a column that is not emitted) or takes
+    // the whole table down at boot with SQLite's own words about something
+    // nobody wrote: `@@unique([c])` over a `@computed` field is
+    // `expressions prohibited in PRIMARY KEY and UNIQUE constraints`, measured.
+    // `@generated` is a real column and is deliberately not in this set.
+    const NO_COLUMN = { none: 'is @computed, so it is derived in JS after the row is read and there is no column',
+                        expression: 'is computed by SQLite from the row rather than stored, so there is no column to constrain' }
+    const reason = (name) => NO_COLUMN[storageOf(name)]
+    for (const field of model.fields) {
+      const why = reason(field.name)
+      if (why && field.attributes.some(a => a.kind === 'unique'))
+        errors.push(`Model '${model.name}', field '${field.name}': @unique cannot be enforced — it ${why}. ` +
+                    `Store the value (@generated makes it a real column), or constrain the columns it is computed from`)
+    }
+    for (const attr of model.attributes) {
+      const label = attr.kind === 'uniqueIndex' || attr.kind === 'partialUnique' ? '@@unique'
+                  : attr.kind === 'index' ? '@@index'
+                  : attr.kind === 'id' && Array.isArray(attr.fields) ? '@@id'
+                  : null
+      if (!label) continue
+      for (const name of attr.fields ?? []) {
+        const why = reason(name)
+        if (!why) continue
+        errors.push(`Model '${model.name}': ${label}([${(attr.fields ?? []).join(', ')}]) cannot be built — ` +
+                    `'${name}' ${why}. Store the value (@generated makes it a real column), or name the ` +
+                    `columns it is computed from`)
+      }
+    }
+
+    // A default is written into the DDL verbatim, so it has to be a value the
+    // COLUMN can hold. `@scale`/`@money` is the case that bites: the column is
+    // an INTEGER of minor units, so `@default(12.99)` emits `DEFAULT 12.99`
+    // into it and STRICT refuses the first defaulted insert —
+    // `cannot store REAL value in INTEGER column`, at runtime, naming no
+    // schema line. The boundary already refuses a fraction a caller SENDS;
+    // this is the same rule for the value the schema sends.
+    for (const field of model.fields) {
+      const scale = field.attributes.find(a => a.kind === 'scale' || a.kind === 'money')
+      const def   = field.attributes.find(a => a.kind === 'default')
+      const raw = def?.value?.kind === 'number' ? def.value.value : def?.value
+      if (!scale || typeof raw !== 'number' || Number.isInteger(raw)) continue
+      const places = scale.kind === 'money' ? 2 : scale.places
+      const minor  = Math.round(raw * 10 ** (places ?? 2))
+      errors.push(
+        `Model '${model.name}', field '${field.name}': @default(${raw}) is not a value this column can hold — ` +
+        `${scale.kind === 'money' ? '@money' : `@scale(${places})`} stores a whole number of MINOR units in an ` +
+        `INTEGER column, so the default is written as ${raw} and the first row that takes it is refused by ` +
+        `SQLite. Write it in minor units: @default(${minor})`)
+    }
+  }
+
+  // A foreign key names a table, and a table lives in one FILE. A relation
+  // whose two ends are assigned to different `database` blocks parses clean,
+  // emits an FK into whichever file the child is in, and throws
+  // `no such table` on every create — measured. Refused here because the two
+  // `@@db` assignments are the only place this is decidable.
+  {
+    const dbOf = (m) => m.attributes.find(a => a.kind === 'db')?.name ?? 'main'
+    const modelByName = new Map(schema.models.map(m => [m.name, m]))
+    for (const model of schema.models) {
+      if (model.attributes.some(a => a.kind === 'external')) continue
+      for (const field of model.fields) {
+        const rel = field.attributes.find(a => a.kind === 'relation')
+        if (!rel?.fields?.length) continue          // the owning side only
+        const target = modelByName.get(typeof field.type === 'string' ? field.type : field.type?.name)
+        if (!target || target.attributes.some(a => a.kind === 'external')) continue
+        if (dbOf(model) === dbOf(target)) continue
+        errors.push(
+          `Model '${model.name}', field '${field.name}': a relation cannot cross databases — ` +
+          `'${model.name}' is in database '${dbOf(model)}' and '${target.name}' is in '${dbOf(target)}'. ` +
+          `A foreign key names a table and a table lives in one file, so this emits a key SQLite resolves ` +
+          `nowhere and every create throws 'no such table'. Put both models in one database, or drop the ` +
+          `@relation and carry the id as a plain column`)
+      }
+    }
+  }
+
   // ── @@index(where:) — a partial index ───────────────────────────────────────
   //
   // What a predicate may CONTAIN is not a grammar question, and writing one here

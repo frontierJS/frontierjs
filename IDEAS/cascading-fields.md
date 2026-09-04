@@ -1,6 +1,6 @@
 ---
 id: cascading-fields
-status: idea
+status: proposed
 dated: 2026-08-04
 ---
 

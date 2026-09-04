@@ -232,7 +232,7 @@ class EventEmitter {
       try { h(...args) } catch {}
     })
     // Synthetic 'connection' event — fires on any connection state change
-    if (event === 'connect' || event === 'disconnect' || event === 'reconnecting') {
+    if (event === 'connect' || event === 'disconnect' || event === 'reconnecting' || event === 'resync') {
       this._handlers.get('connection')?.forEach((h) => {
         try { h(event, ...args) } catch {}
       })
@@ -824,6 +824,51 @@ export class JunctionClient extends EventEmitter {
   private _serverBuild: string | null = null
   private _staleFired = false
 
+  // Whether a socket has ever reached `connected`, and when the current outage
+  // began. Together they separate a first connection — which has missed
+  // nothing, because there was nothing to miss — from a RE-connection, which
+  // by construction has (`FJS-701`).
+  private _everConnected = false
+  private _downSince: number | null = null
+
+  /**
+   * The socket is up and the server has finished registering it.
+   *
+   * **A reconnect is a GAP, and it used to be a silent one.** The server
+   * queues nothing for an absent socket, so every write between the drop and
+   * this frame reached this client and nobody else's copy of it — and
+   * `resource.stale`, which exists to count exactly this, read 0 with nothing
+   * on screen saying anything was missing (`FJS-701`).
+   *
+   * **There is no sequence number in the frames and this deliberately does not
+   * add one.** A seq would let a client that missed nothing skip the reload,
+   * and the case where that matters most is a DEPLOY — where the server
+   * restarted and every counter reset, so everybody reloads anyway. What it
+   * would cost is a stamp on six encode paths including the per-cohort graded
+   * one, where getting it wrong is a gap reported as no gap. A reconnect is
+   * rare; a reload is one query.
+   *
+   * Extracted from the socket's own `onmessage` so it can be driven without a
+   * server: the branch it came from is unreachable in a test, which is why the
+   * silent half of this went unnoticed.
+   */
+  _noteConnected(msg: Record<string, unknown> = {}): void {
+    this._wsReady = true
+    this._noteServerBuild(msg[BUILD_FIELD])
+    this.emit('connect')
+
+    if (this._everConnected) {
+      this.emit('resync', { downMs: this._downSince ? Date.now() - this._downSince : 0 })
+    }
+    this._everConnected = true
+    this._downSince     = null
+  }
+
+  /** The outage started. `??=` so a retry that fails does not restart the clock. */
+  _noteDisconnected(): void {
+    this._downSince ??= Date.now()
+  }
+
   /** The build this client was shipped as, or null if nothing stamped one. */
   get build(): string | null { return this._build }
 
@@ -1089,14 +1134,29 @@ export class JunctionClient extends EventEmitter {
     // One refetch per burst — each answers the whole list, so N events landing
     // together are one question, not N.
     let refetchQueued = false
-    const refetch = (): void => {
+    const refetch = (delayMs = 0): void => {
       if (refetchQueued || lastQuery === null) return
       refetchQueued = true
       setTimeout(() => {
         refetchQueued = false
         void load(lastQuery ?? {}, lastParams).catch(() => {})
-      }, 0)
+      }, delayMs)
     }
+
+    // ── A reconnect reloads, and it is JITTERED ────────────────────────────
+    // The server queues nothing for an absent socket, so a list that was live
+    // across a drop is missing whatever happened in the window and has no way
+    // to learn what (`FJS-701`). `refetch` is the same answer this store
+    // already gives `changed` and an undecidable record — *some unknown rows
+    // moved* — and it is the only sound one, since nothing here knows what it
+    // did not receive.
+    //
+    // The jitter is not politeness. A reconnect storm is exactly the event this
+    // fires on: a deploy drops every socket at once, so an unjittered reload is
+    // every client in the fleet querying in the same tick, which is `FJS-703`'s
+    // shape one layer up. Up to 2s, which is short against a person noticing
+    // and long against a herd.
+    this.on('resync', () => refetch(Math.random() * 2000))
 
     // ── Where in the list, and whether this list can say ────────────────────
     // Membership is only half the question (`FJS-011`); a row also has a
@@ -1603,6 +1663,7 @@ export class JunctionClient extends EventEmitter {
       this._wsReady = false
       this._ws = null
       this.connected = false
+      this._noteDisconnected()
       this.emit('disconnect', e.code)
 
       // Reject any pending WS calls
@@ -1647,9 +1708,7 @@ export class JunctionClient extends EventEmitter {
       // connMap registration are complete. Only now is it safe to send
       // service calls — the server has the auth context for this socket.
       if (type === 'connected') {
-        this._wsReady = true
-        this._noteServerBuild(msg[BUILD_FIELD])
-        this.emit('connect')
+        this._noteConnected(msg)
         return
       }
 

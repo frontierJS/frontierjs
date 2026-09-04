@@ -663,7 +663,12 @@ export function verify(db, parseResult, dir = './migrations', { pluralize = fals
   const liveSchema = introspect(db)
   const diffResult = diffSchemas(pristineSchema, liveSchema, parseResult, 'main', { pluralize })
 
-  if (!diffResult.hasChanges) return { state: 'in-sync', message: '✓ schema is in sync' }
+  // A residue is not drift the migration system can resolve, so the state stays
+  // `in-sync` and the leftovers ride along — a caller that does not read them
+  // is where it was, and one that does can say what the differ could not.
+  if (!diffResult.hasChanges) return diffResult.residue.length
+    ? { state: 'in-sync', message: summariseDiff(diffResult), residue: diffResult.residue }
+    : { state: 'in-sync', message: '✓ schema is in sync' }
 
   // Check if there are pending migrations that would explain the diff
   const rows    = status(db, dir)
@@ -704,8 +709,9 @@ export function verify(db, parseResult, dir = './migrations', { pluralize = fals
 //
 // For production use the file-based migration system (create / apply / status).
 
-const AUTO_META_TABLE = '_litestone_meta'
-const AUTO_HASH_KEY   = 'autoMigrate.ddlHash'
+const AUTO_META_TABLE  = '_litestone_meta'
+const AUTO_HASH_KEY    = 'autoMigrate.ddlHash'
+const AUTO_RESIDUE_KEY = 'autoMigrate.residue'
 
 function readAutoHash(rawDb) {
   try {
@@ -722,6 +728,50 @@ function writeAutoHash(rawDb, hash) {
       AUTO_HASH_KEY, hash
     )
   } catch { /* advisory — a read-only DB just skips the fast path next time */ }
+}
+
+// The residue is recorded beside the hash rather than withholding it. The hash
+// is what makes "call this on every startup" free, and it is also the guard two
+// replicas race on, so a state that suppresses it buys an announcement with a
+// double migration. Recorded, the fast path can re-announce for the price of
+// one SELECT — which is what a difference nothing can migrate needs: saying it
+// once and going quiet is how it stops being known.
+function readAutoResidue(rawDb) {
+  try {
+    const v = rawDb.query(`SELECT value FROM "${AUTO_META_TABLE}" WHERE key = ?`).get(AUTO_RESIDUE_KEY)?.value
+    const parsed = v ? JSON.parse(v) : null
+    return Array.isArray(parsed) && parsed.length ? parsed : null
+  } catch { return null }
+}
+
+function writeAutoResidue(rawDb, residue) {
+  try {
+    rawDb.run(`CREATE TABLE IF NOT EXISTS "${AUTO_META_TABLE}" (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
+    if (!residue?.length) { rawDb.run(`DELETE FROM "${AUTO_META_TABLE}" WHERE key = ?`, AUTO_RESIDUE_KEY); return }
+    rawDb.run(
+      `INSERT INTO "${AUTO_META_TABLE}" (key, value) VALUES (?, ?)
+       ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+      AUTO_RESIDUE_KEY, JSON.stringify(residue)
+    )
+  } catch { /* advisory */ }
+}
+
+// One owner of the sentence, because the fast path and the full diff both say
+// it and a difference worded two ways reads as two different problems.
+function announceResidue(dbName, residue) {
+  const lines = residue.slice(0, 4).map(r =>
+    `              ${r.type} ${r.name}\n` +
+    `                declared: ${r.pristine ?? '(absent)'}\n` +
+    `                live    : ${r.live ?? '(absent)'}`)
+  console.warn(
+    `[litestone] Database "${dbName}" is in sync on every dimension the migration differ reads, and ` +
+    `${residue.length} object(s) still differ:\n` +
+    lines.join('\n') +
+    (residue.length > 4 ? `\n              … ${residue.length - 4} more` : '') +
+    `\n            Nothing was applied — a difference the differ cannot name is one it cannot write a ` +
+    `migration for. Either the schema cannot express what the database has (a collation, WITHOUT ROWID, ` +
+    `a hand-written index), in which case pass { acceptResidue: true }, or the differ is missing a ` +
+    `dimension, which is a defect in litestone.`)
 }
 
 // A column that leaves the schema takes its values with it, and a RENAME is a
@@ -758,7 +808,7 @@ function describeDataLoss(tableDiffs) {
 const lossLine = (l) => `${l.table}.${l.columns.join(', ')}` +
   (l.renameTo ? ` (renamed to "${l.renameTo}"?)` : '')
 
-export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force = false, acceptDataLoss = false } = {}) {
+export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force = false, acceptDataLoss = false, acceptResidue = false } = {}) {
   // Accept either a parseResult or pull it from db.$schema
   const parseResult = parseResultOrSchema ?? { schema: db.$schema, valid: true, errors: [] }
 
@@ -782,7 +832,10 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
     // (e.g. after out-of-band DDL changes to the live DB).
     const ddlHash = checksum(generateDDLForDatabase(parseResult.schema, dbName, { foreignKeys: true, pluralize }) + `|pluralize=${pluralize}`)
     if (!force && readAutoHash(rawDb) === ddlHash) {
-      results[dbName] = { state: 'in-sync', applied: 0 }
+      const held = acceptResidue ? null : readAutoResidue(rawDb)
+      if (acceptResidue) writeAutoResidue(rawDb, null)
+      if (held) announceResidue(dbName, held)
+      results[dbName] = held ? { state: 'in-sync', applied: 0, residue: held } : { state: 'in-sync', applied: 0 }
       continue
     }
 
@@ -826,6 +879,13 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
 
       if (!diffResult.hasChanges) {
         writeAutoHash(rawDb, ddlHash)
+        const residue = acceptResidue ? [] : diffResult.residue
+        writeAutoResidue(rawDb, residue)
+        if (residue.length) {
+          announceResidue(dbName, residue)
+          results[dbName] = { state: 'in-sync', applied: 0, residue }
+          continue
+        }
         results[dbName] = { state: 'in-sync', applied: 0 }
         continue
       }
@@ -952,6 +1012,19 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
       }
 
       results[dbName] = { state: 'migrated', applied: stmts.length, sql }
+
+      // The residue is re-derived AFTER applying, not carried over from the
+      // diff that planned it: the statements just run are what the enumeration
+      // had to say, so what is left over is only knowable once they have. It
+      // costs one more introspection on the boot that migrated, which is the
+      // boot that was never the cheap one.
+      try {
+        const after = diffSchemas(pristineSchema, introspect(rawDb), parseResult, dbName, { pluralize })
+        const residue = acceptResidue ? [] : after.residue
+        writeAutoResidue(rawDb, residue)
+        if (residue.length) { announceResidue(dbName, residue); results[dbName].residue = residue }
+      } catch { /* advisory — the migration applied, and this only names leftovers */ }
+
       // Auto-ANALYZE (bounded) — see migrations.apply() for rationale.
       try { rawDb.run('PRAGMA analysis_limit=400'); rawDb.run('ANALYZE') } catch { /* advisory */ }
     } finally {

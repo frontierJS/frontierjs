@@ -320,3 +320,59 @@ describe('a refusal fails the command', () => {
     expect(log.some(t => t.includes('No deploy block'))).toBe(true)
   })
 })
+
+// ─── A step narrates its OWN prose ────────────────────────────────────────────
+//
+// `stepContext` is spread from the orchestrator's, so before FJS-725 a step
+// calling `context.printPlan()` rendered `index.md`'s prose and reported
+// success. That is the wrong answer rather than a missing feature: nothing
+// fails, and the lesson text a reader sees belongs to a different file.
+//
+// Captured off stdout rather than off `emit`, because the prose renderer writes
+// to the terminal directly — which is also why no event assertion could have
+// seen this.
+
+describe('step prose', () => {
+
+  const captureStdout = async (fn) => {
+    const original = process.stdout.write
+    let text = ''
+    process.stdout.write = (chunk) => { text += chunk; return true }
+    try { await fn() } finally { process.stdout.write = original }
+    return text
+  }
+
+  test('printPlan() in a step renders the STEP file, not the orchestrator', async () => {
+    const file = resolve(__dir, 'fixtures/step-prose/index.md')
+    const out  = await captureStdout(() => runCommand(file, [], { step: 1 }))
+
+    expect(out).toContain('STEP-PROSE')
+    expect(out).not.toContain('ORCHESTRATOR-PROSE')
+  })
+
+  test('a step interpolates vars it set itself', async () => {
+    const file = resolve(__dir, 'fixtures/step-prose/index.md')
+    const out  = await captureStdout(() => runCommand(file, [], { step: 1 }))
+
+    expect(out).toContain('the learner')
+    expect(out).not.toContain('{{who}}')
+  })
+
+  test('context.filePath names the step', async () => {
+    const file   = resolve(__dir, 'fixtures/step-prose/index.md')
+    const events = await runCommand(file, [], { step: 2 })
+
+    expect(texts(events).join('\n')).toContain('filePath basename: 02-knows-its-file.md')
+  })
+
+  test('a full run narrates each step and never the orchestrator', async () => {
+    const file = resolve(__dir, 'fixtures/step-prose/index.md')
+    const out  = await captureStdout(() => runCommand(file))
+
+    // Both steps run. Only the one that asked to narrate prints, and what it
+    // prints is its own file — the orchestrator's prose reaches nobody.
+    expect(out).toContain('STEP-PROSE')
+    expect(out).not.toContain('ORCHESTRATOR-PROSE')
+  })
+
+})

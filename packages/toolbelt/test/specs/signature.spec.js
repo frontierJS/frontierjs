@@ -119,20 +119,21 @@ test('signature: a bodyless, queryless request still verifies', async function (
   assert.ok(result.ok, JSON.stringify(result))
 })
 
-test('signature: a version-1 signature is refused BY NAME', async function () {
-  // Every deployed Outpost signs v1. Refused as a mismatch it reads exactly like
-  // a wrong secret, which is the wrong half to spend an outage looking at.
+test('signature: a signature from another version is refused BY NAME', async function () {
+  // Refused as a mismatch it reads exactly like a wrong secret, which is the
+  // wrong half to spend an outage looking at. Nothing emits another version
+  // yet; this is what the marker buys on the day something does.
   const headers = await sign({ secret: SECRET, method: 'POST', path: '/exec' })
-  const v1 = { ...headers, 'X-Fjs-Signature': headers['X-Fjs-Signature'].replace(/^v2-/, '') }
+  const other = { ...headers, 'X-Fjs-Signature': headers['X-Fjs-Signature'].replace(/^v1-/, 'v2-') }
 
-  const result = await verify({ secret: SECRET, method: 'POST', path: '/exec', headers: v1 })
+  const result = await verify({ secret: SECRET, method: 'POST', path: '/exec', headers: other })
   assert.equal(result.ok, false)
-  assert.match(result.reason, /version 1 is no longer accepted/)
+  assert.match(result.reason, /only version this side understands/)
 })
 
 test('signature: the emitted signature carries its version', async function () {
   const headers = await sign({ secret: SECRET, method: 'POST', path: '/exec' })
-  assert.match(headers['X-Fjs-Signature'], /^v2-sha256=[0-9a-f]{64}$/)
+  assert.match(headers['X-Fjs-Signature'], /^v1-sha256=[0-9a-f]{64}$/)
 })
 
 test('signature: a part cannot swallow the separator', function () {

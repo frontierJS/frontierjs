@@ -1,5 +1,78 @@
 # Changes — @frontierjs/caravan
 
+## 2026-09-03 — the two endpoints an operator reaches when something is wrong
+
+FJS-698. 220 pass (17 new), typecheck clean.
+
+An audit put 1M terminal jobs plus 1k pending into a jobs.db and asked what the
+admin surface costs. Re-measured before anything was touched, and every number
+was worse than filed: `stats()` **1009ms** per scrape and per health probe,
+`list()` page one **685ms**, the cleanup sweep holding the write lock for
+**11 551ms**, and the file still 142.6MB after its million rows were deleted.
+
+**The aggregate's defect was a WHERE clause, not a missing index.** It carried
+`status IN ('pending','running','done','failed','cancelled')` — every status
+there is — so it selected nothing out and steered SQLite onto the status index
+with a temp b-tree for the grouping. Deleting it drops the scrape to **134ms**,
+answered from `jobs_poll`, which already leads with `(queue, status)`. The
+covering index the finding proposed was measured and refused: it buys 17ms, and
+while the filter is there SQLite ignores it and gets slower (1274ms). A status
+this build does not know is still excluded, by `aggregateStats`, which is where
+that judgement belongs — the SQL was the second place saying it.
+
+**`/health` was paying the whole scan for one number.** Readiness reads
+`oldestRunningMs` and nothing else, and that comes from `oldestRunning`, a query
+costing 0.0ms. It asks that query now: 1009ms to nothing, on the endpoint
+somebody hits *because* the app is already in trouble.
+
+**The list needed a statement change before an index could help.**
+`($queue IS NULL OR queue = $queue)` is planned once, before anything is bound,
+so SQLite has to allow for the parameter being null and never seeks on the
+column it filters. One statement per filter shape now, over three indexes —
+`jobs_status_created` replacing `jobs_status`, plus `jobs_queue_created` and
+`jobs_created`. Every shape is 0.0–0.4ms, `status=running` with nothing running
+included: that one was **385ms even with the index**, and it is the first thing
+anybody asks when work has stopped moving.
+
+**The sweep is batched at 10 000 and yields between passes**, taking the longest
+lock hold from 11 551ms to **117ms** — during which, before, every dispatch and
+every claim in every process waited. Both halves matter: batching without the
+yield slices only the lock, since a synchronous loop still holds this process
+for the whole sweep. The batch size is measured and is not monotonic — 1 000
+gives 550ms and 10.1s total, 50 000 gives 1338ms and 14.4s — so it is a number
+to re-measure rather than reason about.
+
+**Two bugs in the fix, both caught by measuring it.** Splitting the list
+statement regressed the common case: `queue=mail`, a third of the rows, went
+0.1ms → 263ms, because seeking `jobs_poll` on queue and then sorting 333k rows
+is worse than walking `jobs_created` and filtering. That is what
+`jobs_queue_created` is for. And `PRAGMA auto_vacuum = INCREMENTAL` set *after*
+the WAL switch reads back as 2 on that connection and **0 on the next open** —
+going from `none` needs a rewrite SQLite will only do on a database with nothing
+in it, and it reports success either way, so the reclaim was a silent no-op for
+the life of the file. It is set before the mode change now, and a database that
+already exists keeps its setting: changing it means a full VACUUM, which takes a
+lock and a second copy of the file, and is the operator's call.
+
+**What it costs, priced rather than assumed.** The three list indexes take the
+file from 142.6MB to 244.3MB at 1M rows, and a dispatch from 0.095ms to 0.135ms
+(10 519/s → 7 416/s) — against a queue whose steady state is single-digit
+rows/s, on a table a person reads while an incident is running.
+
+**`PLANNED` in `db.ts` is the one owner of the SQL whose plan must not
+regress.** A prepared statement stringifies with its parameters expanded to
+their last bound values, so `status = ?` comes back as `status = NULL` and plans
+the opposite way — a test cannot read the text off the statement, and a copy of
+the string would grade SQLite rather than this module and would keep passing
+after the module changed. Every assertion in `tests/scale.test.ts` is a query
+plan or a row count and none is a duration.
+
+**Residual, stated.** The aggregate is still linear in the retention window
+(134ms at 1M rows) and the hourly sweep pass with nothing to delete costs
+~500ms. The cached aggregate the finding also suggested was refused: a TTL below
+the scrape interval helps a single scraper not at all, and `stats()` is public
+API a test can dispatch against and then assert on.
+
 ## 2026-09-02 — the seven things two processes on one jobs.db could not survive
 
 FJS-674, FJS-675, FJS-676, FJS-695, FJS-696, FJS-697, FJS-699. 203 pass (15

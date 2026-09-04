@@ -1,6 +1,6 @@
 ---
 id: server-only-boundary
-status: idea
+status: proposed
 dated: 2026-08-06
 ---
 

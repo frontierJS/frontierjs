@@ -192,7 +192,17 @@ export function createMachine({ host, exec, transport = null, path = null }) {
   // silently fails is exactly what `withCwd`'s `|| exit 1` exists to refuse.
   // `describe` is what --dry prints. Without it every step of a deploy reads as
   // the same line — `ssh host sh -s` — since the script is on stdin.
-  const call = (script, { cwd = null, stdio = 'inherit', ...opts } = {}) => {
+  // STDIN IS PIPED AND THE REST IS INHERITED, and the three cannot be collapsed
+  // to `'inherit'`. `execSync` with `stdio: 'inherit'` IGNORES `input` on node —
+  // stdin is the parent's, `sh -s` reads EOF and exits 0 having run nothing — and
+  // HONOURS it on bun. The script travels on stdin, so under node every
+  // `machine.run` in the pipeline was a silent no-op that reported success: the
+  // mkdir that creates `.fli`, the swap, the lock release, all of it. `fli`'s
+  // shebang is `#!/usr/bin/env node`, so that is what a global install does; CI
+  // never saw it because the deploy phase invokes `bun <fli>` explicitly
+  // (`FJS-738`). Piping stdin alone delivers the script on both runtimes and
+  // keeps the operator's view of stdout and stderr.
+  const call = (script, { cwd = null, stdio = ['pipe', 'inherit', 'inherit'], ...opts } = {}) => {
     const body = withCwd(script, cwd)
     return exec({
       command:  cmd,

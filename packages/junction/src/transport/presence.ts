@@ -9,10 +9,28 @@ import type { Connection, PresenceMember } from './channels.ts'
 export interface PresenceDeps {
   broadcast:  (channelId: string, excludeConnId: string | null, event: string, data: unknown) => void
   sendToConn: (conn: Connection, event: string, data: unknown) => void
+  /**
+   * How long join and leave events are held before one `presence:diff` goes
+   * out to the channel. 0 sends each one immediately, which is what shipped.
+   *
+   * A timer and not a microtask: every socket opens in its own tick, so a
+   * reconnect storm is N separate ticks and a microtask batch would coalesce
+   * nothing. Presence is an affordance — a member appearing 50ms late is not a
+   * failure, and it is the difference between N frames per join and one per
+   * flush.
+   */
+  flushMs?:   number
 }
 
 export function createPresenceTracker(deps: PresenceDeps) {
   const presence = new Map<string, Map<string, PresenceMember>>()
+
+  // Pending join/leave per channel, and the timer that will flush it.
+  const pending = new Map<string, {
+    joined: PresenceMember[]
+    left:   PresenceMember[]
+    timer:  ReturnType<typeof setTimeout>
+  }>()
 
   function presenceFor(channelId: string): Map<string, PresenceMember> {
     let map = presence.get(channelId)
@@ -54,6 +72,57 @@ export function createPresenceTracker(deps: PresenceDeps) {
     return results
   }
 
+  /**
+   * Put one join or leave on the channel's pending diff.
+   *
+   * A connection that joins and leaves inside one window cancels out and no
+   * frame goes at all — which is what a flapping socket is, and announcing
+   * both halves of it is the amplifier this exists to remove.
+   */
+  function queueDiff(channelId: string, kind: 'joined' | 'left', member: PresenceMember): void {
+    const flushMs = deps.flushMs ?? 50
+    if (flushMs <= 0) {
+      deps.broadcast(channelId, kind === 'joined' ? member.connectionId : null,
+        kind === 'joined' ? 'presence:join' : 'presence:leave', { channelId, member })
+      return
+    }
+
+    let p = pending.get(channelId)
+    if (!p) {
+      p = { joined: [], left: [], timer: setTimeout(() => flushDiff(channelId), flushMs) }
+      // The timer must not hold the process open: a channel with a pending
+      // diff would otherwise keep a shutting-down app alive for the window.
+      p.timer.unref?.()
+      pending.set(channelId, p)
+    }
+
+    const other = kind === 'joined' ? p.left : p.joined
+    const at    = other.findIndex(m => m.connectionId === member.connectionId)
+    if (at !== -1) { other.splice(at, 1); return }
+
+    p[kind].push(member)
+  }
+
+  function flushDiff(channelId: string): void {
+    const p = pending.get(channelId)
+    if (!p) return
+    pending.delete(channelId)
+    clearTimeout(p.timer)
+    if (p.joined.length === 0 && p.left.length === 0) return
+
+    // Excludes nobody: a joiner already has the full roster from its own
+    // `presence:sync`, and a batch is about several connections at once, so
+    // there is no single connection to leave out.
+    deps.broadcast(channelId, null, 'presence:diff', {
+      channelId, joined: p.joined, left: p.left,
+    })
+  }
+
+  /** Flush everything now — for shutdown, and for a test that cannot wait. */
+  function flushAll(): void {
+    for (const channelId of [...pending.keys()]) flushDiff(channelId)
+  }
+
   function presenceJoin(conn: Connection, channelId: string): void {
     const session = conn.user
     if (!session?.userId) return   // anonymous — not tracked
@@ -75,8 +144,8 @@ export function createPresenceTracker(deps: PresenceDeps) {
       members: presenceMembers(channelId),
     })
 
-    // Broadcast presence:join to all other members
-    deps.broadcast(channelId, conn.id, 'presence:join', { channelId, member })
+    // Batched: N joins used to be N x (N-1) frames.
+    queueDiff(channelId, 'joined', member)
   }
 
   function presenceLeave(conn: Connection, channelId: string): void {
@@ -87,17 +156,17 @@ export function createPresenceTracker(deps: PresenceDeps) {
     map!.delete(conn.id)
     if (map!.size === 0) presence.delete(channelId)
 
-    // Broadcast presence:leave to remaining members
-    deps.broadcast(channelId, null, 'presence:leave', { channelId, member })
+    queueDiff(channelId, 'left', member)
   }
 
 
   return {
     presenceFor,
-    members: presenceMembers,
-    get:     presenceGet,
-    byUser:  presenceByUser,
-    join:    presenceJoin,
-    leave:   presenceLeave,
+    members:  presenceMembers,
+    get:      presenceGet,
+    byUser:   presenceByUser,
+    join:     presenceJoin,
+    leave:    presenceLeave,
+    flushAll,
   }
 }

@@ -110,6 +110,96 @@ src/
 
 ## What bites here
 
+- **A reconnect is a GAP, by construction, and it was a silent one.** The server
+  queues nothing for an absent socket, so every write between a drop and the
+  next `connected` frame reached this client and nobody else's copy of it — and
+  `resource.stale`, which exists to count exactly this, read 0 with nothing on
+  screen saying anything was missing (`FJS-701`). The client emits `resync` on
+  a `connected` frame that is not the FIRST one, and a live list answers it with
+  the `refetch` it already gives `changed`: *some unknown rows moved*, which is
+  the only sound answer, since nothing in a browser knows what it did not
+  receive. **The reload is jittered up to 2s and that is not politeness** — a
+  deploy drops every socket at once, so this fires fleet-wide together and an
+  unjittered reload is `FJS-703`'s shape one layer up.
+  **There is deliberately NO sequence number.** A seq would let a client that
+  missed nothing skip the reload, and the case where that matters most is a
+  deploy — where the server restarted and every counter reset, so everybody
+  reloads anyway. What it costs is a stamp on six encode paths including the
+  per-cohort graded one, where getting it wrong is a gap reported as no gap.
+  `_noteConnected`/`_noteDisconnected` are extracted from the socket's own
+  closures so the logic can be driven without a server; the branch they came
+  from is unreachable in a test, which is why the silent half went unnoticed.
+
+- **Presence is OPT-IN now, and it was the default for a feature most apps do
+  not use.** Every channel was wrapped unconditionally with no way off, and a
+  join sends the roster to the joiner AND a frame to every existing member — so
+  N connections cost N x (N-1) frames: 500 signed-in connections over two
+  channels produced 251 500 frames, 89.5MB out and 172MB of heap, which makes an
+  ordinary post-deploy reconnect fatal (`FJS-703`). `channels(setup, {
+  presence })` takes `false` (default), `true`, or a list of names and `pre:*`
+  patterns — a list is the shape to reach for, since presence belongs on the one
+  channel a room is and never on the ten a data-sync app announces model writes
+  over. **The two fixes answer different halves**: opt-in removes the cost from
+  apps that do not use it, and batching changes the exponent for the apps that
+  do. Join and leave are coalesced per channel over `presenceFlushMs` (50) into
+  one `presence:diff`; a **timer and not a microtask**, because every socket
+  opens in its own tick and a storm is N ticks, so a microtask batch coalesces
+  nothing. A connection that joins and leaves inside one window cancels out
+  entirely — which is what a flapping socket is. `presenceFlushMs: 0` restores a
+  frame per event and is a supported mode, so `presence:join`/`presence:leave`
+  are not legacy. **Sierra had to learn `presence:diff`** or presence silently
+  stops updating there, and it applies leaves BEFORE joins: a connection that
+  left and rejoined inside one window is in both lists.
+
+- **Every HTTP bound stops at the upgrade, so the socket needed its own.** The
+  body cap, the DDoS gate and the rate limiter all cover `fetch` and none of
+  them covers a frame — which made the transport junction PREFERS the cheapest
+  way to exhaust an app: 20 000 `find` frames answered in 1.1s took a victim's
+  latency from 9.2ms to 1093ms with the offending socket still open, and 3000
+  anonymous sockets were accepted in 2.2s (`FJS-705`). `http.ws` is the five
+  bounds. **Two of them are one number written twice on purpose**:
+  `maxFrameBytes` is what the APP accepts and is refused by name with a 1009,
+  `maxPayloadLength` is what the PROCESS will buffer and is the runtime's,
+  which closes with a bare 1006 and no reason — measured, and indistinguishable
+  from the network dropping, which is why the app's own limit sits below it and
+  answers first. `maxFrameBytes` follows `maxBodySize`, because a socket must
+  not be a wider door than a POST. **The rate and the in-flight cap are also
+  not one thing**: 100 frames a second against a service call taking a second
+  each is 100 concurrent calls. The connection cap is checked at the UPGRADE, so
+  a refusal is an HTTP status rather than a close code on a socket the client
+  believes it established — and the per-IP map deletes at zero, since a row per
+  address that ever connected is itself unbounded.
+- **A presence meta was whatever the client sent, and it went to every member.**
+  One 200KB frame produced 39.8MB of egress to 199 members in 114ms, and the
+  amplification factor is the channel's membership, so it grows with the
+  application's success and needs no privilege beyond being in the channel
+  (`FJS-704`). Three bounds, cheapest first: a token bucket per connection, a
+  byte cap on the serialised meta, then the app's own `presenceMeta(meta)` —
+  which is the only one that can know meta is `{ typing: boolean }`. **The two
+  refusals answer differently and that is deliberate**: an oversize meta is a
+  fixed property of the client's code, so it is told; a rate refusal is
+  transient, so it is dropped in silence — an error frame per refused update is
+  the same egress the cap exists to remove.
+
+- **A shutdown that does not finish used to exit 0.** With every remaining
+  timer unref'd the loop empties and node leaves *successfully*, so a plugin
+  whose `shutdown()` never settles ended in 54ms with the caravan pool, the
+  outbox relay and the litestone close all skipped and *Shutdown complete*
+  never printed — and zero is what an orchestrator reads as a clean stop, so
+  nothing anywhere reported it (`FJS-693`). Three bounds now, and the ref'd
+  timer is the load-bearing part of all three: `shutdown.pluginTimeout` per
+  plugin, `shutdown.timeout` for the whole thing then `exit(1)`, and crash
+  handlers that stop and exit 1 — installed only where
+  `process.listenerCount` says the app has not stated its own policy.
+- **`app.draining` is read by three surfaces and is why it is on the APP.**
+  `/health` answers 503 `draining`, the devtools console answers readiness on
+  its own port, and the transport puts `Connection: close` on every response so
+  a client holding a keep-alive socket does not send its next request into a
+  process that is closing. A flag in one closure makes the three disagree —
+  `_healthChecksApp`'s argument (`FJS-414`) applied to a second fact. It is
+  false for the whole life of a running app, which is what keeps
+  `_finalizeWithHeaders`'s no-op fast path intact.
+
 - **`update` is `patch` with an id REQUIRED, and it MERGES** (`FJS-D179`).
   Feathers' word for the verb is a full replace and this is not one: the write is
   litestone's `table.update`, so a `PUT` stating only `title` leaves every column
@@ -339,6 +429,55 @@ src/
   by name (measured: `POST /api/jobs/run/send-invoices` from `Origin:
   https://evil` answered `{"ok":true}`). A request carrying NEITHER header is not
   a browser and is left alone, which is what keeps `curl` and the drives working.
+- **A write is DONE at two different moments and `callService` used to know
+  neither.** With `transactional:` the rows belong to the OUTERMOST transaction,
+  so a nested call settled early — on the rollback path it ran an `afterCommit`
+  effect and broadcast a create for a row that had just been removed
+  (`FJS-682`). Without one they are durable the moment the METHOD returned, so a
+  later hook throwing leaves the row committed while the caller is told 500 and
+  nothing announces (`FJS-688`). The commit scope (`core/context.ts`) is the
+  owner now: opened by the transaction hook, REUSED where one is already open,
+  drained on commit and discarded on rollback.
+  **Three edges, and each is a way to get it wrong again.** The scope is
+  captured INSIDE the pipeline — the announcement point runs after it, where the
+  ALS scope has already closed. The call that OPENED the scope drains it itself
+  and does not defer into a queue it has emptied. And that call is the only one
+  that has to be told the transaction rolled back, because `methodSucceeded` is
+  true either way.
+  **The tap asks the scope, not the span**: litestone buffers a transaction's
+  write events to the COMMIT, so `announcingService()` sees the outermost call
+  and misses for every inner one — measured, three events for one nested create.
+  **`afterCommit` deliberately keeps the opposite answer to the announcement.**
+  It follows the CALL's verdict (`FJS-089`), so a client told the call failed
+  does not also get the email, while a subscriber is still told the row moved.
+- **A webhook registration is a destination somebody else chose, and every bound
+  on it was missing** (`FJS-681`). Measured: a `role: 'user'` shopper POSTed a
+  `*` subscription and got 201 with the signing secret; `169.254.169.254`,
+  `localhost:8503` (the devtools job runner), `file:///etc/passwd` and the
+  literal string `not-a-url` were all accepted as destinations; a 307 was
+  followed with the signature re-sent; and a subscriber whose deliveries all
+  died stayed active. **`manage` (default 5) is the standing**, graded with
+  `sessionGateLevel` — 403 for a caller who is merely too junior and 401 for a
+  stranger, which a client acts on differently. **`assertDeliverableTarget` is
+  the destination**, an ALLOW-list of schemes plus a public-address check over
+  every address a name answers with, run at registration AND before every
+  attempt — a name that resolved publicly an hour ago can resolve to loopback
+  now. A rebind BETWEEN the check and the connect is not closed and `url.ts`
+  says so: it needs the socket pinned to the graded address, and `fetch` has no
+  way to do that. `targets: { allowHttp, allowPrivate }` is the opt-out and the
+  only thing in this repo that turns it off is the delivery suite, whose
+  receiver is a real server on localhost.
+  **The payload is still ungraded** (`FJS-724`): a delivery carries the row as
+  the WRITER saw it, which is `FJS-631` one layer over — and `$readAs` does not
+  apply unchanged, because a subscriber is not a principal and there is nobody
+  to grade against.
+- **`sessionGateLevel` does not read `role`, and a test written against one
+  grades 4.** A standing is `isAdmin`/`isOwner`/`isSystemAdmin` plus the two
+  lifecycle fields; an app's own `role` column is not consulted whatever it
+  says. `StubUser` carries all five now, written onto the session **only when
+  stated** — absent means *this app does not model that stage* and only `null`
+  grades down, so defaulting them would move the standing of every test that
+  never mentioned one.
 - **`createFileStorage` is a SECOND owner of file storage and is hardened rather
   than trusted** (`FJS-692`). Litestone already ships the real `FileStorage`
   (local + S3, `@accept`, cleanup), so retiring this one is a ruling and not a
@@ -792,6 +931,49 @@ src/
   category nobody named. The cross-package rows are the ones that drift, and they
   are where `FJS-255` was found: the three lock errors declare `retryable` and no
   `status`, so each reaches a caller as a 500. `--check` in CI (`snapshots`).
+- **An internal caller's directives go under the `directives` key, and a flat
+  one is ignored.** `app.service('posts').find({ status: 'open' }, { directives:
+  { limit: 10 } })` — `CallOptions` is a closed type carrying `auth`,
+  `transport`, `locals` and `directives` only, so a bare `{ limit: 10 }` in the
+  second argument is not a directive and silently does nothing. Filters ride the
+  first argument, never the options. `transport` defaults to `'internal'`, and a
+  hook branching on it treats that as background work.
+- **`_find`/`_get`/`_create`/… bypass junction's hooks only, never a Litestone
+  gate.** They skip `autoValidate` and `autoFilter` with the rest of the
+  pipeline, so what reaches the Data boundary is unshaped, and `ctx.telemetryId`
+  is `undefined` on that path because `callService` never set one. They are not
+  dispatchable by name over `X-Service-Method`: `_customMethods` is the whole
+  allow-list, and a name absent from it is a 404 whatever the service object
+  holds.
+- **`kind` is the envelope's one discriminant.** `object` names the SERVICE in
+  both kinds (`'posts'`, never `'list'`), so `object === 'list'` is never true
+  and `'object' in value` is true of any record with a column called `object`.
+  Branch on `kind`. On the wire `$wrap=true` opts a single into the envelope and
+  `$wrap=false` unwraps everything, lists included.
+- **Litestone is an optional peer reached by dynamic `import()`, and junction
+  runs without it.** A static import anywhere under `src/` makes every
+  modelless app fail at load — the adapter and the manifest plugin import it
+  inside the function that needs it.
+- **`channel:` takes three shapes.** A string names the channel, `false` is the
+  declared opt-out (from `publishDefault` too), and a function `(data, ctx) =>
+  app.channel(…)` picks the target per write — the shape for a workspace or a
+  room, where the name is on the row.
+- **Plugin phases run breadth-first, and only `ready` is forgiving.** `register`
+  for every plugin, then `boot` for every plugin, then `ready` for every plugin,
+  and `shutdown` in reverse configure order. A throw in `register` or `boot` fails
+  `start()`. A throw in `ready` is logged and the app starts anyway, so anything
+  that must succeed belongs in `boot()`. `app._plugins` is complete by `boot()`
+  and holds only the plugins configured BEFORE yours during `register()`.
+  Configuring one plugin twice registers it twice — nothing deduplicates by
+  name.
+- **`opts.config` wins at the leaf.** `createApp({ config })` is deep-merged over
+  `defaultConfig`, and `junction.config.js` is merged under it at `start()`, so a
+  nested block in code overrides one field of the file's block rather than
+  replacing it — and the file cannot override a field the code stated.
+- **Security is opt-out and CORS is the exception.** `cors.origins` defaults to
+  `[]` and `'*'` is never applied for you. Helmet headers are on unless
+  `http: { helmet: false }`, and the DDoS gate and the rate limiter are off
+  until configured.
 
 ## The two contexts
 
@@ -878,8 +1060,32 @@ caller is rebuilt. A call whose principal *differs* re-scopes — which is what
 makes a sub-call issued as somebody else pass **that** principal to its own
 children rather than the request's.
 
+**The client's address is DECLARED, not discovered.** `X-Forwarded-For` is a
+list the caller can start and nginx appends to, so the leftmost entry is their
+claim and the rightmost is what the nearest proxy observed —
+`transport/forwarded.ts` reads the chain `[...x-forwarded-for, socket]` from the
+RIGHT, and how far back to believe it is `http.trustProxy`: `false` (socket
+alone), `true` (one hop, what the shipped nginx template is), `<n>` hops, or a
+list of trusted proxies by address or CIDR. Both directions are a real failure
+and neither is visible from the other — reading the leftmost hands the rate
+limiter its key to the caller, and leaving it unset behind a proxy gives the
+whole internet one bucket, which is what every deployed app had, because the
+option existed on the transport and reached it from no config key at all
+(`FJS-744`). A CIDR list only works if `::ffff:10.0.0.1` is read as the v4
+address it is, which is what a dual-stack listener reports.
+
+**A trace is CARRIED and never emitted.** `traceparent` and `tracestate` ride
+`RequestMeta` verbatim and unparsed: junction traces nothing itself, and what to
+do with the header belongs to whoever continues the trace — a parse here would be
+a second reading of the spec beside theirs. It is there because without it an
+outbound call has nothing to hang off and every one this process makes is the root
+of an unrelated trace; conduit's plugin is the first reader (`FJS-742`).
+`tracestate` is not decoration — a vendor's own position in the trace lives there,
+so dropping it breaks the chain for that vendor alone.
+
 **There are two stores and they are not interchangeable.** The REQUEST store
-holds `RequestMeta` — who, where from, correlation id, idempotency key — and is
+holds `RequestMeta` — who, where from, correlation id, idempotency key, and the
+caller's `traceparent`/`tracestate` where they sent one — and is
 opened by `enterRequest(src, fn)`, which is its one owner: five entry points
 establish a request and each used to build the meta by hand, which is how the
 socket path came to wrap nothing at all for its whole life and the test harness
@@ -933,6 +1139,27 @@ Two rules make a surface this broad safe, and neither of them is smallness.
   acceptable is a failure that is loud, immediate and names itself. Answering
   `undefined` would trade a loud bug for a silent one, which is the trade this
   exists to reverse.
+  **A call that has ENDED is outside it too**, and that half did not hold: an
+  `AsyncLocalStorage` store propagates into every timer and microtask created
+  inside a call, so a `setTimeout` scheduled from a hook found `$` answering the
+  call it was scheduled from, thirty milliseconds after that call had resolved
+  (`FJS-687`). `enterCall` marks the context over when it settles — on a
+  `finally`, because a call that threw is just as over — and the refusal names
+  the call and points at `afterCommit` and `enqueue`. **The marker is on the
+  CONTEXT**, which is per call: on the store or the service it would make an app
+  work exactly once. The span still covers the `afterCommit` drain, which runs
+  inside `_callService` and is the control that keeps the marker from being set
+  too early.
+
+**A captured `$.db` is still the client, and litestone is not where that is
+fixed.** `db.$transaction(fn)` hands the callback **the same object** — `tx ===
+db`, measured — because every scoped proxy passes itself, which is what makes
+`asSystem().$transaction(…)` keep its scope. So there is no settled proxy to
+refuse writes on, and refusing them would refuse every write an app makes after
+any transaction. What was actually wrong is that `transactionScopeHook` left
+`ctx.locals.db = tx` assigned; it restores the request's own client in a
+`finally` now, so anything reading it after the commit gets a working
+non-transaction client rather than what a reader believes is the transaction.
 
 **Resolved on every property read, never snapshotted.** `transactional:` assigns
 `ctx.locals.db = tx` before running the method, so a captured value is the wrong
@@ -1018,5 +1245,3 @@ it is the only drive that watches a SECOND tab, and nothing else can tell a real
 broadcast from a tab seeing its own echo. Anything touching either transport's
 context also wants `@frontierjs/testing`'s `bun run test`, whose parity runner
 puts one call down both and compares.
-
-`docs/ARCHITECTURE.md` is the depth doc.

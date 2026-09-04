@@ -25,61 +25,14 @@ flags:
 <script>
 import { existsSync, mkdirSync, writeFileSync } from 'fs'
 import { resolve, dirname } from 'path'
-import { createInterface } from 'readline'
 
-// ─── Prompt engine ────────────────────────────────────────────────────────────
-// Two modes:
-//   TTY   → readline per-prompt (characters echo as user types)
-//   Pipe  → buffer ALL stdin first, then answer prompts from the buffer
-//
-// The pipe mode avoids readline timing/close-event races entirely.
+// ─── Prompts ──────────────────────────────────────────────────────────────────
+// The engine that used to live here is `core/prompt.js` now — one owner,
+// because the other copy in this tree (`make/service.md`) disagreed with it
+// about whether readline may be used at all, and the tutorial needed the
+// question settled rather than copied a third time.
 
-const readStdin = () => new Promise((res) => {
-  if (process.stdin.isTTY) {
-    const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true })
-    res({ tty: true, rl })
-    return
-  }
-  let buf = ''
-  process.stdin.setEncoding('utf8')
-  process.stdin.on('data', c => { buf += c })
-  process.stdin.once('end', () => res({ tty: false, lines: buf.split('\n').map(l => l.trim()) }))
-})
-
-const createPrompts = (stdin) => {
-  if (!stdin.tty) {
-    // Piped mode: synchronously pop lines from buffer
-    let cursor = 0
-    const next = (prompt) => {
-      process.stdout.write(prompt + '\n')
-      return Promise.resolve(stdin.lines[cursor++] ?? '')
-    }
-    return {
-      ask:     async (prompt, fallback) => (fallback !== undefined && fallback !== '') ? fallback : (await next(prompt)) || null,
-      confirm: async (prompt)           => { const a = (await next(`${prompt} (y/n) › `)).toLowerCase(); return a === 'y' || a === 'yes' },
-      choose:  async (prompt, options)  => {
-        options.forEach((o, i) => process.stdout.write(`  ${i + 1}) ${o}\n`))
-        const idx = parseInt(await next(`  ${prompt} › `)) - 1
-        return options[idx] ?? options[0]
-      },
-      close: () => {}
-    }
-  }
-
-  // TTY mode: use readline for proper line echo
-  const rl = stdin.rl
-  const next = (prompt) => new Promise(r => rl.question(prompt, answer => r(answer.trim())))
-  return {
-    ask:     async (prompt, fallback) => (fallback !== undefined && fallback !== '') ? fallback : (await next(prompt)) || null,
-    confirm: async (prompt)           => { const a = await next(`${prompt} (y/n) › `); return a.toLowerCase() === 'y' || a.toLowerCase() === 'yes' },
-    choose:  async (prompt, options)  => {
-      options.forEach((o, i) => process.stdout.write(`  ${i + 1}) ${o}\n`))
-      const idx = parseInt(await next(`  › `)) - 1
-      return options[idx] ?? options[0]
-    },
-    close: () => rl.close()
-  }
-}
+const { createPrompts } = await import(new URL('file://' + global.fliRoot + '/core/prompt.js'))
 
 // ─── Collectors ───────────────────────────────────────────────────────────────
 
@@ -230,8 +183,7 @@ if (flag._spec) {
 }
 
 // ─── CLI path: interactive prompts ────────────────────────────────────────────
-const stdin = await readStdin()
-const p = createPrompts(stdin)
+const p = createPrompts()
 
 // ─── Step 1: title ────────────────────────────────────────────────────────────
 arg.title ??= await p.ask('Command title (namespace:command) › ')

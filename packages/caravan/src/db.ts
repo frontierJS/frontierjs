@@ -64,9 +64,34 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS jobs_poll
     ON jobs(queue, status, priority DESC, run_at);
 
-  -- Status index for list queries and cleanup
-  CREATE INDEX IF NOT EXISTS jobs_status
-    ON jobs(status);
+  -- Status, then recency. The second column is what an admin list needs: a
+  -- filtered list is WHERE status = ? ORDER BY created_at DESC LIMIT 50, and
+  -- with an index on status alone SQLite prefers jobs_created and walks the
+  -- whole table looking for rows a rare status has none of — status=running
+  -- with nothing running took 353ms over 1M rows. An equality seek is a prefix
+  -- match, so oldestRunning and the cleanup sweep keep the plan they had.
+  CREATE INDEX IF NOT EXISTS jobs_status_created
+    ON jobs(status, created_at DESC);
+
+  -- Queue, then recency. jobs_poll already leads with queue, but its second
+  -- column is status, so a queue-filtered list seeks the queue and then sorts
+  -- every row in it: 263ms for a queue holding a third of 1M rows. The three
+  -- list indexes are what make the admin list flat rather than fast-for-the-
+  -- shape-you-happened-to-ask. They cost about 18MB per million rows each and
+  -- one B-tree insert per dispatch, which is the right way round for a table
+  -- read by a person during an incident and written at single-digit rows/s.
+  CREATE INDEX IF NOT EXISTS jobs_queue_created
+    ON jobs(queue, created_at DESC);
+
+  -- Recency, for the unfiltered admin list — the default view. Without it the
+  -- ORDER BY is a full scan plus a temp b-tree: 680ms over 1M rows for a page
+  -- of 50, on a screen somebody opens because something is already wrong.
+  CREATE INDEX IF NOT EXISTS jobs_created
+    ON jobs(created_at DESC);
+
+  -- Strictly narrower than jobs_status_created and covering nothing it does
+  -- not. Dropped rather than kept: an index costs every insert and every claim.
+  DROP INDEX IF EXISTS jobs_status;
 
   -- Deduplication. A 'unique' key means "do not queue this twice AT ONCE" —
   -- it is a lock on work in flight, not an idempotency key for all time. The
@@ -163,6 +188,20 @@ export function openDb(
   // draining a batch can afford to wait, an API dispatching a job cannot
   // (`FJS-569` — and the wait blocks this process's event loop while it runs).
   db.exec(`PRAGMA busy_timeout = ${busyTimeout}`)
+
+  // BEFORE the WAL switch, and that ordering is the whole of whether it works.
+  // Going from `none` to `incremental` needs a rewrite SQLite will only do on a
+  // database with nothing in it yet, and it reports success either way — set
+  // after the mode change it reads back as 2 on this connection and 0 on the
+  // next open, so the sweep's reclaim is a silent no-op for the life of the
+  // file. Measured both orders.
+  //
+  // A database that already exists keeps its setting and its size: changing it
+  // means a full VACUUM, which takes a lock and a second copy of the file, and
+  // is the operator's call. The value is bounded anyway — the freelist is
+  // reused by the next million jobs, so this is only about a queue that has
+  // permanently shrunk.
+  db.exec('PRAGMA auto_vacuum = INCREMENTAL')
 
   // WAL mode — readers don't block writers, better concurrent performance.
   //
@@ -318,6 +357,86 @@ function wrap<R, P extends BindObject>(
     get: (p) => (s.get(prefixKeys(p)) as R | null) ?? null,
     all: (p) => (p ? s.all(prefixKeys(p)) : s.all()) as R[],
   }
+}
+
+/**
+ * One batch of the cleanup sweep. Measured rather than round: at 1 000 the
+ * per-pass overhead dominates (550ms longest lock hold, 10.1s total over 1M
+ * rows) and at 50 000 the subselect costs more than the batch saves (1338ms,
+ * 14.4s). The middle is 249ms and 5.3s — the shape is not monotonic, so this is
+ * a number to re-measure and not one to reason about.
+ */
+export const CLEANUP_BATCH = 10_000
+
+/**
+ * The statements whose QUERY PLAN is the thing that must not regress.
+ *
+ * Held here, and prepared from here, because `EXPLAIN QUERY PLAN` needs the
+ * text: a prepared statement stringifies with its parameters expanded to their
+ * last bound values, so `status = ?` comes back as `status = NULL` and plans
+ * the opposite way. A test that copied these strings instead would grade
+ * SQLite rather than this module, and would keep passing after the module
+ * changed.
+ */
+export const PLANNED = {
+  // No WHERE. The filter this used to carry enumerated every status there is,
+  // so it selected nothing out — and it steered SQLite onto the status index
+  // and a temp b-tree for the grouping: at 1M rows a 1009ms scan, on a path
+  // `registerMetricsSource` requires to be SYNCHRONOUS. Grouping the table
+  // whole is answered from jobs_poll, which already leads with (queue, status):
+  // 134ms, same rows. A status this build does not know is dropped by
+  // `aggregateStats`, which is where that judgement belongs.
+  stats: `
+    SELECT queue, status, COUNT(*) as count
+    FROM   jobs
+    GROUP  BY queue, status
+  `,
+
+  // One statement per FILTER SHAPE, rather than one carrying
+  // `($queue IS NULL OR queue = $queue)`.
+  //
+  // A statement is planned once, before anything is bound, so under the
+  // combined form SQLite cannot know whether the parameter will be null and
+  // must plan for the branch that matches every row — it never uses an index on
+  // the column being tested. Written out, it seeks. Measured over 1M rows:
+  // `status=running` with nothing running took 385ms combined and 0.1ms here,
+  // and that is the first query somebody runs when work has stopped moving.
+  listAll:    `SELECT * FROM jobs ORDER BY created_at DESC LIMIT $limit OFFSET $offset`,
+  listQueue:  `SELECT * FROM jobs WHERE queue = $queue ORDER BY created_at DESC LIMIT $limit OFFSET $offset`,
+  listStatus: `SELECT * FROM jobs WHERE status = $status ORDER BY created_at DESC LIMIT $limit OFFSET $offset`,
+  listBoth:   `SELECT * FROM jobs WHERE queue = $queue AND status = $status ORDER BY created_at DESC LIMIT $limit OFFSET $offset`,
+
+  // One BATCH of the sweep, not the whole of it. The statement this replaced
+  // deleted every expired row in one transaction, holding the write lock for
+  // 11.5s over 1M rows while every dispatch and every claim in every process
+  // waited on it. The caller loops until a pass changes nothing.
+  cleanup: `
+    DELETE FROM jobs
+    WHERE id IN (
+      SELECT id FROM jobs
+      WHERE status IN ('done', 'failed', 'cancelled')
+        AND (finished_at < $before OR finished_at IS NULL)
+      LIMIT ${CLEANUP_BATCH}
+    )
+  `,
+} as const
+
+/**
+ * Hand back pages the cleanup sweep freed, where the database can.
+ *
+ * A no-op unless `auto_vacuum` is INCREMENTAL, which only a database created
+ * since that pragma was added will be — asked rather than assumed, because
+ * `incremental_vacuum` on a database in any other mode is silently nothing and
+ * the caller would have no way to tell that from a reclaim of zero pages.
+ *
+ * Bounded per call: this holds a write lock like any other statement, and the
+ * sweep that calls it has just spent its budget being careful about exactly
+ * that.
+ */
+export function reclaimFreePages(db: Database, pages = 1_000): void {
+  const mode = db.query<{ auto_vacuum: number }, []>('PRAGMA auto_vacuum').get()
+  if (mode?.auto_vacuum !== 2) return
+  db.exec(`PRAGMA incremental_vacuum(${pages})`)
 }
 
 export function buildStatements(db: Database) {
@@ -487,14 +606,10 @@ export function buildStatements(db: Database) {
   // which is what an empty one reports. It counts the retention window rather
   // than all time — the cleanup sweep deletes terminal jobs past
   // `cleanupAfter`, and that is what makes it a rate instead of a total.
+  // Text and reasoning: PLANNED.stats.
   const statsByQueue = db.prepare<
     { queue: string; status: string; count: number }, []
-  >(`
-    SELECT queue, status, COUNT(*) as count
-    FROM   jobs
-    WHERE  status IN ('pending', 'running', 'done', 'failed', 'cancelled')
-    GROUP  BY queue, status
-  `)
+  >(PLANNED.stats)
 
   // How long the oldest in-flight job on each queue has been in flight.
   //
@@ -541,15 +656,23 @@ export function buildStatements(db: Database) {
 
   // ── List jobs ────────────────────────────────────────────────────────────────
 
-  const listJobs = wrap<JobRecord, {
-    queue: string | null; status: string | null; limit: number; offset: number
-  }>(db.prepare(`
-    SELECT * FROM jobs
-    WHERE ($queue IS NULL OR queue = $queue)
-      AND ($status IS NULL OR status = $status)
-    ORDER BY created_at DESC
-    LIMIT $limit OFFSET $offset
-  `))
+  // Four prepared statements and not a string built per call: a prepared
+  // statement is reused, and SQL assembled at the call site is where a
+  // caller-supplied name reaches a pattern. Text and reasoning: PLANNED.list*.
+  const listAll    = wrap<JobRecord, { limit: number; offset: number }>(db.prepare(PLANNED.listAll))
+  const listQueue  = wrap<JobRecord, { queue: string; limit: number; offset: number }>(db.prepare(PLANNED.listQueue))
+  const listStatus = wrap<JobRecord, { status: string; limit: number; offset: number }>(db.prepare(PLANNED.listStatus))
+  const listBoth   = wrap<JobRecord, { queue: string; status: string; limit: number; offset: number }>(db.prepare(PLANNED.listBoth))
+
+  const listJobs = {
+    all(p: { queue: string | null; status: string | null; limit: number; offset: number }): JobRecord[] {
+      const { queue, status, limit, offset } = p
+      if (queue != null && status != null) return listBoth.all({ queue, status, limit, offset })
+      if (queue != null)                    return listQueue.all({ queue, limit, offset })
+      if (status != null)                   return listStatus.all({ status, limit, offset })
+      return listAll.all({ limit, offset })
+    },
+  }
 
   // ── Ownership: heartbeat, recovery, pruning ─────────────────────────────────
   //
@@ -596,11 +719,8 @@ export function buildStatements(db: Database) {
 
   // ── Cleanup old terminal jobs ───────────────────────────────────────────────
 
-  const cleanup = wrap<void, { before: number }>(db.prepare(`
-    DELETE FROM jobs
-    WHERE status IN ('done', 'failed', 'cancelled')
-      AND (finished_at < $before OR finished_at IS NULL)
-  `))
+  // Text and reasoning: PLANNED.cleanup and CLEANUP_BATCH.
+  const cleanup = wrap<void, { before: number }>(db.prepare(PLANNED.cleanup))
 
   return {
     insert,

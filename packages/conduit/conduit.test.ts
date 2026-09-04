@@ -21,7 +21,7 @@ import {
   createNullResolver,
   withCache,
 } from './src/credentials.ts'
-import { createTraceContext } from './src/trace.ts'
+import { createTraceContext, parseTraceparent, traceIdFrom } from './src/trace.ts'
 import { ConduitStreamError } from './src/types.ts'
 import type {
   TargetDescriptor,
@@ -1432,7 +1432,7 @@ describe('WebSocket transport — auth on the upgrade', () => {
       await t.send({ target: target.id, method: 'POST', path: '/deploy' })
 
       const up = s.upgrades[0]
-      expect(up['x-fjs-signature']).toMatch(/^v2-sha256=[0-9a-f]{64}$/)
+      expect(up['x-fjs-signature']).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
       expect(up['x-fjs-timestamp']).toMatch(/^\d+$/)
       expect(up['x-fjs-nonce']).toBeDefined()
     } finally { t.destroy(); s.stop() }
@@ -1594,7 +1594,7 @@ describe('retry policy', () => {
     } finally { s.stop() }
   })
 
-  it('a 200 with an HTML body is a non-retryable server_error', async () => {
+  it('a 200 with an HTML body is a non-retryable invalid_response', async () => {
     let hits = 0
     const s = recorder(() => {
       hits++
@@ -1609,7 +1609,7 @@ describe('retry policy', () => {
       const result = await t.send({ target: target.id, method: 'GET', path: '/servers' })
 
       // Was: connection_failed { retryable: true } and four attempts
-      expect(result.error!.kind).toBe('server_error')
+      expect(result.error!.kind).toBe('invalid_response')
       expect(result.error!.retryable).toBe(false)
       expect(result.error!.message).toContain('text/html')
       expect(hits).toBe(1)
@@ -1654,7 +1654,7 @@ describe('retry policy', () => {
       const t = new HttpTransport(target, secrets(), { retry_limit: 3 })
 
       const result = await t.send({ target: target.id, method: 'GET' })
-      expect(result.error!.kind).toBe('server_error')
+      expect(result.error!.kind).toBe('invalid_response')
       expect(result.error!.retryable).toBe(false)
       expect(hits).toBe(1)
     } finally { s.stop() }
@@ -1691,17 +1691,17 @@ describe('hmac signing', () => {
   // Every bodyless command used to go out completely unsigned.
   it('signs a bodyless POST', async () => {
     const h = await headersFor({ method: 'POST', path: '/reboot' }, '')
-    expect(h.get('x-fjs-signature')).toMatch(/^v2-sha256=[0-9a-f]{64}$/)
+    expect(h.get('x-fjs-signature')).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
   })
 
   it('signs a DELETE', async () => {
     const h = await headersFor({ method: 'DELETE', path: '/servers/42' }, '')
-    expect(h.get('x-fjs-signature')).toMatch(/^v2-sha256=[0-9a-f]{64}$/)
+    expect(h.get('x-fjs-signature')).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
   })
 
   it('signs a GET', async () => {
     const h = await headersFor({ method: 'GET', path: '/status' }, '')
-    expect(h.get('x-fjs-signature')).toMatch(/^v2-sha256=[0-9a-f]{64}$/)
+    expect(h.get('x-fjs-signature')).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
   })
 
   it('emits a timestamp and nonce for replay rejection', async () => {
@@ -1733,7 +1733,7 @@ describe('hmac signing', () => {
       const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
       await t.send({ target: target.id, method: 'POST', path: '/deploy' })
 
-      expect(s.seen[0].headers.get('x-frontier-signature')).toMatch(/^v2-sha256=/)
+      expect(s.seen[0].headers.get('x-frontier-signature')).toMatch(/^v1-sha256=/)
       expect(s.seen[0].headers.get('x-fjs-signature')).toBeNull()
     } finally { s.stop() }
   })
@@ -1767,7 +1767,7 @@ describe('unix transport', () => {
       expect(req.method).toBe('DELETE')                          // was forced to POST
       expect(new URL(req.url).pathname).toBe('/servers/42')      // was `/${path ?? method}`
       expect(req.headers.get('x-custom')).toBe('1')              // was dropped
-      expect(req.headers.get('x-fjs-signature')).toMatch(/^v2-sha256=/) // was absent entirely
+      expect(req.headers.get('x-fjs-signature')).toMatch(/^v1-sha256=/) // was absent entirely
     } finally { server.stop(true) }
   })
 
@@ -2315,7 +2315,7 @@ describe('response validation', () => {
       const r = await c.send({ target: target.id, method: 'GET', validate: isServer })
 
       expect(r.data).toBeNull()
-      expect(r.error!.kind).toBe('server_error')
+      expect(r.error!.kind).toBe('invalid_response')
       expect(r.error!.retryable).toBe(false)
       expect(r.error!.message).toContain('numeric `id`')
       expect(r.error!.raw).toEqual({ error: 'quota exceeded' })
@@ -2347,7 +2347,7 @@ describe('response validation', () => {
         target: target.id, method: 'GET',
         validate: { validate() { validated = true; return { ok: false as const, errors: [] } } },
       })
-      expect(r.error!.kind).toBe('server_error')
+      expect(r.error!.kind).toBe('client_error')
       expect(validated).toBe(false)
     } finally { s.stop() }
   })
@@ -2810,7 +2810,7 @@ describe('HTTP transport — header precedence is case-insensitive (FJS-656)', (
       await t.send({ target: target.id, method: 'GET', headers: { 'x-fjs-signature': 'deadbeef' } })
 
       const sig = s.seen[0].headers.get('x-fjs-signature')
-      expect(sig).toMatch(/^v2-sha256=[0-9a-f]{64}$/)
+      expect(sig).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
       expect(sig).not.toContain('deadbeef')
     } finally { s.stop() }
   })
@@ -3324,15 +3324,15 @@ describe('hmac signing — the query is bound (FJS-678)', () => {
     expect(a.headers.get('x-fjs-signature')).not.toBe(b.headers.get('x-fjs-signature'))
   })
 
-  it('the signature carries its version, so an old signer is refused by name', async () => {
+  it('the signature carries its version, so another version is refused by name', async () => {
     const { headers, url } = await signedGet({ to: 'alice' })
-    expect(headers.get('x-fjs-signature')).toMatch(/^v2-sha256=[0-9a-f]{64}$/)
+    expect(headers.get('x-fjs-signature')).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
 
-    const v1 = new Headers(headers)
-    v1.set('x-fjs-signature', headers.get('x-fjs-signature')!.replace(/^v2-/, ''))
-    const result = await verify(v1, url, url.search)
+    const other = new Headers(headers)
+    other.set('x-fjs-signature', headers.get('x-fjs-signature')!.replace(/^v1-/, 'v2-'))
+    const result = await verify(other, url, url.search)
     expect(result.ok).toBe(false)
-    expect((result as { reason: string }).reason).toMatch(/version 1 is no longer accepted/)
+    expect((result as { reason: string }).reason).toMatch(/only version this side understands/)
   })
 })
 
@@ -3523,5 +3523,704 @@ describe('redirects (FJS-679)', () => {
     const reopened = createSQLiteStore(db)
     await reopened.init()
     expect((await reopened.list())[0]?.follow_redirects).toBe('same-origin')
+  })
+})
+
+// ─── FJS-684 · the kind says who is at fault ─────────────────
+//
+// Three consumers branch on `kind`: the retry decision, the `retryable` flag a
+// caravan job acts on, and the breaker's failure count. `server_error` used to
+// mean every non-2xx AND every unusable body, so all three were being told the
+// target is unwell by a target that answered correctly.
+//
+// Every refusal here is PAIRED with a 5xx doing the same thing, because a
+// taxonomy that stopped counting everything would pass any test that only
+// checks the new kinds (`FJS-351`).
+
+describe('fault taxonomy (FJS-684)', () => {
+  // Five identical sends against a breaker whose threshold is 2, then the
+  // state. Threshold 2 rather than the default 5 so a single missed carve-out
+  // is visible rather than borderline.
+  async function fiveAgainst(reply: (req: Request) => Response) {
+    const s = recorder(reply)
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({
+        credentials: secrets(), targets: [target],
+        retry_limit: 0, resilience: { failure_threshold: 2 },
+      })
+      await c.init()
+
+      let last!: Awaited<ReturnType<typeof c.send>>
+      for (let i = 0; i < 5; i++) last = await c.send({ target: target.id, method: 'GET' })
+
+      return { last, state: c.stats().breakers[target.id]?.state ?? 'closed' }
+    } finally { s.stop() }
+  }
+
+  it('five 404s do not open the breaker', async () => {
+    const { last, state } = await fiveAgainst(() => new Response('no such server', { status: 404 }))
+    expect(last.error!.kind).toBe('client_error')
+    expect(last.error!.retryable).toBe(false)
+    expect(state).toBe('closed')          // was 'open', and every later send shed
+  })
+
+  it('five 500s DO open the breaker — the control for the row above', async () => {
+    const { last, state } = await fiveAgainst(() => new Response('boom', { status: 500 }))
+    expect(last.error!.kind).toBe('circuit_open')   // shed by the third
+    expect(state).toBe('open')
+  })
+
+  it('a 4xx carries the body, which is the half a caller can act on', async () => {
+    // A validation report or a decline code is on the 4xx and nowhere else.
+    const s = recorder(() => Response.json({ error: 'card_declined' }, { status: 402 }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+      const r = await t.send({ target: target.id, method: 'POST', body: { amount: 1 } })
+      expect(r.error!.kind).toBe('client_error')
+      expect(String(r.error!.raw)).toContain('card_declined')
+    } finally { s.stop() }
+  })
+
+  it('an unusable body is not a target fault either', async () => {
+    // A captive portal, a proxy interstitial, a wrong content-type. The
+    // connection succeeded and a breaker cannot heal a misconfiguration.
+    const html = await fiveAgainst(() => new Response('<html>portal</html>', {
+      status: 200, headers: { 'content-type': 'text/html' },
+    }))
+    expect(html.last.error!.kind).toBe('invalid_response')
+    expect(html.state).toBe('closed')
+
+    const bad = await fiveAgainst(() => new Response('{not json', {
+      headers: { 'content-type': 'application/json' },
+    }))
+    expect(bad.last.error!.kind).toBe('invalid_response')
+    expect(bad.state).toBe('closed')
+  })
+})
+
+// ─── a truncated response · conduit-5 did NOT reproduce ─────
+//
+// The finding said a body shorter than its declared `content-length` is
+// delivered as a success. It is not, on this Bun: the reader RAISES, in all
+// three shapes a server can end early in (graceful FIN, shutdown, RST), and the
+// existing catch already turns that into a retryable `connection_failed` —
+// which is the right kind, because the bytes stopped rather than being wrong.
+//
+// What produced the original measurement is almost certainly the harness: a
+// `new Response(body, { 'content-length': '100' })` served through `Bun.serve`
+// has its content-length REWRITTEN to the real length, so the client sees a
+// consistent short response and correctly reports success. The declared length
+// never left the test. A raw `Bun.listen` is the only way to send one, and it
+// is what this pins — a guard on the length would be unreachable code carrying
+// a comment about a bug that is not there.
+
+describe('a truncated response', () => {
+  it('raises rather than delivering a short body, and is retryable', async () => {
+    const srv = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: {
+      data(sock) {
+        sock.write('HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 100\r\n\r\n12345')
+        setTimeout(() => sock.end(), 20)
+      },
+    } })
+    try {
+      const target = providerTarget({ address: `http://127.0.0.1:${srv.port}` })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+      const r = await t.send({ target: target.id, method: 'GET' })
+      expect(r.error!.kind).toBe('connection_failed')
+      expect(r.error!.retryable).toBe(true)
+    } finally { srv.stop(true) }
+  })
+})
+
+// ─── FJS-685 · a burst sheds rather than queueing ────────────
+
+describe('the default concurrency cap (FJS-685)', () => {
+  it('a burst past the cap sheds as overloaded, and the target stays healthy', async () => {
+    // Unbounded was not unbounded: it queued in the connection pool with the
+    // attempt timer running, so the wait came back as the TARGET's timeout and
+    // opened its breaker. Shedding is the honest answer.
+    const s = recorder(async () => { await Bun.sleep(120); return Response.json({ ok: true }) })
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({
+        credentials: secrets(), targets: [target],
+        retry_limit: 0, resilience: { max_concurrent: 4 },
+      })
+      await c.init()
+
+      const rs = await Promise.all(
+        Array.from({ length: 20 }, () => c.send({ target: target.id, method: 'GET' })))
+      const shed = rs.filter(r => r.error?.kind === 'overloaded')
+
+      expect(shed.length).toBe(16)
+      expect(rs.filter(r => r.error === null).length).toBe(4)
+      // Shed before dispatch, so it says nothing about the target.
+      expect(c.stats().breakers[target.id]?.state ?? 'closed').toBe('closed')
+    } finally { s.stop() }
+  })
+
+  it('a burst under the cap all succeeds — the control', async () => {
+    const s = recorder(async () => { await Bun.sleep(20); return Response.json({ ok: true }) })
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({
+        credentials: secrets(), targets: [target],
+        retry_limit: 0, resilience: { max_concurrent: 4 },
+      })
+      await c.init()
+      const rs = await Promise.all(
+        Array.from({ length: 4 }, () => c.send({ target: target.id, method: 'GET' })))
+      expect(rs.every(r => r.error === null)).toBe(true)
+    } finally { s.stop() }
+  })
+
+  it('the cap applies with no resilience block at all', async () => {
+    // The finding is the DEFAULT, not the knob — the knob already worked.
+    const c = createConduit({ credentials: secrets(), targets: [providerTarget()] })
+    await c.init()
+    expect(String((c as unknown as { resilience: { maxConcurrent: number } })
+      .resilience?.maxConcurrent ?? 64)).toBe('64')
+  })
+})
+
+// ─── FJS-710 conduit-12 · which network failure was it ───────
+
+describe('a connection failure names itself (FJS-710)', () => {
+  it('carries the code that separates a refused port from a bad hostname', async () => {
+    // DNS, refused, TLS and a mid-body reset are one kind and all retryable,
+    // which is right — and four different things to whoever reads the log.
+    const dead = providerTarget({ address: 'http://127.0.0.1:1' })
+    const t = new HttpTransport(dead, secrets(), { retry_limit: 0 })
+    const r = await t.send({ target: dead.id, method: 'GET' })
+    expect(r.error!.kind).toBe('connection_failed')
+    expect(r.error!.retryable).toBe(true)
+    expect(r.error!.message).toMatch(/\(\w+\)$/)   // …(ConnectionRefused)
+  })
+})
+
+// ─── Per-target policy ───────────────────────────────────────
+// Policy was conduit-wide, so one conduit carrying a card processor, a mail
+// sink and an outpost graded all three by one set of numbers — and a field
+// written onto a descriptor was dropped in silence (`FJS-728`). Every
+// assertion here is a PAIR: the target that declared a policy beside an
+// otherwise identical target on the same conduit that did not, because a
+// change that applied the number to everything would look identical from the
+// declaring side.
+
+function slowServer(delayMs: number) {
+  let hits = 0
+  const server = Bun.serve({
+    port: 0,
+    async fetch() {
+      hits++
+      await Bun.sleep(delayMs)
+      return Response.json({ ok: true })
+    },
+  })
+  return {
+    port: server.port,
+    url:  `http://localhost:${server.port}`,
+    hits: () => hits,
+    stop: () => server.stop(true),
+  }
+}
+
+describe('per-target policy', () => {
+  it('a target timeout applies to that target and not to its sibling', async () => {
+    const server = slowServer(200)
+    try {
+      const conduit = createConduit({
+        credentials: secrets(),
+        targets: [
+          providerTarget({
+            id: 'slow', address: server.url,
+            policy: { timeout_ms: 20, retry_limit: 0 },
+          }),
+          providerTarget({ id: 'patient', address: server.url }),
+        ],
+      })
+      await conduit.init()
+
+      const impatient = await conduit.send({ target: 'slow', method: 'GET', path: '/' })
+      expect(impatient.error?.kind).toBe('timeout')
+
+      // The control. Same server, same 200ms, no policy — so a timeout here
+      // would mean the number leaked onto the whole conduit.
+      const patient = await conduit.send({ target: 'patient', method: 'GET', path: '/' })
+      expect(patient.error).toBeNull()
+    } finally {
+      server.stop()
+    }
+  })
+
+  it('a target retry_limit is the number of attempts that reach the server', async () => {
+    let hits = 0
+    const server = Bun.serve({
+      port: 0,
+      fetch() { hits++; return new Response('boom', { status: 503 }) },
+    })
+    try {
+      const conduit = createConduit({
+        credentials: secrets(),
+        retry_limit: 0,
+        targets: [providerTarget({
+          id: 'flaky', address: `http://localhost:${server.port}`,
+          policy: { retry_limit: 2, deadline_ms: 10_000 },
+        })],
+      })
+      await conduit.init()
+
+      const res = await conduit.send({ target: 'flaky', method: 'GET', path: '/' })
+      expect(res.error?.kind).toBe('server_error')
+      // The conduit says 0 retries and the target says 2, so three attempts is
+      // the target winning. One attempt would be the conduit's number applied.
+      expect(hits).toBe(3)
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  it('a target concurrency cap sheds only that target', async () => {
+    const server = slowServer(100)
+    try {
+      const conduit = createConduit({
+        credentials: secrets(),
+        targets: [
+          providerTarget({ id: 'capped', address: server.url, policy: { max_concurrent: 1 } }),
+          providerTarget({ id: 'uncapped', address: server.url }),
+        ],
+      })
+      await conduit.init()
+
+      const capped = await Promise.all([
+        conduit.send({ target: 'capped', method: 'GET', path: '/' }),
+        conduit.send({ target: 'capped', method: 'GET', path: '/' }),
+      ])
+      expect(capped.filter(r => r.error?.kind === 'overloaded')).toHaveLength(1)
+      expect(capped.filter(r => r.error === null)).toHaveLength(1)
+
+      const uncapped = await Promise.all([
+        conduit.send({ target: 'uncapped', method: 'GET', path: '/' }),
+        conduit.send({ target: 'uncapped', method: 'GET', path: '/' }),
+      ])
+      expect(uncapped.every(r => r.error === null)).toBe(true)
+    } finally {
+      server.stop()
+    }
+  })
+
+  it('a target failure_threshold opens that target and leaves its sibling closed', async () => {
+    const dead = 'http://127.0.0.1:1'
+    const conduit = createConduit({
+      credentials: secrets(),
+      targets: [
+        providerTarget({ id: 'brittle', address: dead,
+          policy: { failure_threshold: 1, retry_limit: 0, timeout_ms: 200 } }),
+        providerTarget({ id: 'tolerant', address: dead,
+          policy: { retry_limit: 0, timeout_ms: 200 } }),
+      ],
+    })
+    await conduit.init()
+
+    await conduit.send({ target: 'brittle', method: 'GET', path: '/' })
+    const shed = await conduit.send({ target: 'brittle', method: 'GET', path: '/' })
+    expect(shed.error?.kind).toBe('circuit_open')
+
+    // Default threshold is 5, so the same two failures leave this one closed —
+    // the number is the target's, not the conduit's.
+    await conduit.send({ target: 'tolerant', method: 'GET', path: '/' })
+    const still = await conduit.send({ target: 'tolerant', method: 'GET', path: '/' })
+    expect(still.error?.kind).toBe('connection_failed')
+  })
+
+  it('grades a target this process never registered', async () => {
+    // The shared-store case: another replica wrote the descriptor, so there is
+    // no register() here and the policy is learned when the router reads it.
+    const store = createMemoryStore()
+    await store.init()
+    await store.set(providerTarget({
+      id: 'elsewhere', address: 'http://127.0.0.1:1',
+      policy: { failure_threshold: 1, retry_limit: 0, timeout_ms: 200 },
+    }))
+
+    const conduit = createConduit({ store, credentials: secrets() })
+    await conduit.init()
+
+    await conduit.send({ target: 'elsewhere', method: 'GET', path: '/' })
+    const shed = await conduit.send({ target: 'elsewhere', method: 'GET', path: '/' })
+    expect(shed.error?.kind).toBe('circuit_open')
+  })
+
+  it('refuses an unknown policy field by name', async () => {
+    const conduit = createConduit({ credentials: secrets() })
+    await conduit.init()
+
+    // The finding's own shape: the field was real, it was simply in the wrong
+    // place, and being ignored is what made a 1ms timeout answer a 300ms
+    // request as a success.
+    await expect(conduit.register(providerTarget({
+      id: 'typo', policy: { timeout: 1 } as unknown as Record<string, number>,
+    }))).rejects.toThrow(/unknown field 'timeout'/)
+
+    // The control — one character different and it is accepted.
+    await conduit.register(providerTarget({ id: 'typo', policy: { timeout_ms: 1 } }))
+    expect((await conduit.resolve('typo'))?.policy?.timeout_ms).toBe(1)
+  })
+
+  it('refuses a value that cannot mean anything', async () => {
+    const conduit = createConduit({ credentials: secrets() })
+    await conduit.init()
+
+    await expect(conduit.register(providerTarget({ id: 'bad', policy: { timeout_ms: 0 } })))
+      .rejects.toThrow(/'timeout_ms' must be a number >= 1/)
+    await expect(conduit.register(providerTarget({ id: 'bad', policy: { retry_limit: -1 } })))
+      .rejects.toThrow(/'retry_limit' must be an integer >= 0/)
+    // Infinity is a documented value for this one field and no other.
+    await expect(conduit.register(providerTarget({ id: 'bad', policy: { timeout_ms: Infinity } })))
+      .rejects.toThrow(/'timeout_ms'/)
+    await conduit.register(providerTarget({ id: 'ok', policy: { max_concurrent: Infinity } }))
+    expect((await conduit.resolve('ok'))?.policy?.max_concurrent).toBe(Infinity)
+  })
+
+  it('survives a restart of the SQLite registry, Infinity included', async () => {
+    const db    = new Database(':memory:')
+    const write = createConduit({ store: createSQLiteStore(db), credentials: secrets() })
+    await write.init()
+    await write.register(providerTarget({
+      id: 'persisted',
+      policy: { timeout_ms: 250, max_concurrent: Infinity },
+    }))
+
+    const read = createConduit({ store: createSQLiteStore(db), credentials: secrets() })
+    await read.init()
+    const back = await read.resolve('persisted')
+
+    expect(back?.policy?.timeout_ms).toBe(250)
+    // JSON.stringify writes Infinity as `null`, which reads back as *field
+    // absent* and silently restores the cap the target opted out of — the
+    // `FJS-657` shape one value deep.
+    expect(back?.policy?.max_concurrent).toBe(Infinity)
+  })
+})
+
+// ─── Replay refusal and idempotency ──────────────────────────
+// `retryable` is the flag the layer above conduit acts on — a caravan job
+// reads it and dispatches again. An unkeyed POST that conduit itself refused
+// to replay came back `retryable: true`, so the charge conduit declined to
+// repeat was repeated one layer up (`FJS-733`).
+
+describe('a request conduit will not replay', () => {
+  it('says so on the flag the caller acts on', async () => {
+    const server = slowServer(300)
+    try {
+      const conduit = createConduit({
+        credentials: secrets(),
+        targets: [providerTarget({
+          id: 'psp', address: server.url, policy: { timeout_ms: 30 },
+        })],
+      })
+      await conduit.init()
+
+      const post = await conduit.send({
+        target: 'psp', method: 'POST', path: '/charges', body: { amount: 500 },
+      })
+      expect(post.error?.kind).toBe('timeout')
+      expect(post.error?.retryable).toBe(false)
+      // The fact `retryable` was standing in for and cannot express: the
+      // request went out, and nobody knows whether it took the money.
+      expect(post.error?.indeterminate).toBe(true)
+
+      // The control. Same target, same timeout, a method that IS replayable —
+      // so the flag stays true and this is not a blanket suppression.
+      const get = await conduit.send({ target: 'psp', method: 'GET', path: '/charges' })
+      expect(get.error?.kind).toBe('timeout')
+      expect(get.error?.retryable).toBe(true)
+      expect(get.error?.indeterminate).toBeUndefined()
+    } finally {
+      server.stop()
+    }
+  })
+
+  it('a keyed POST stays retryable and is really replayed', async () => {
+    let hits = 0
+    const server = Bun.serve({
+      port: 0,
+      fetch() { hits++; return new Response('down', { status: 503 }) },
+    })
+    try {
+      const conduit = createConduit({
+        credentials: secrets(),
+        targets: [providerTarget({
+          id: 'psp', address: `http://localhost:${server.port}`,
+          policy: { retry_limit: 1, deadline_ms: 10_000 },
+        })],
+      })
+      await conduit.init()
+
+      const res = await conduit.send({
+        target: 'psp', method: 'POST', path: '/charges',
+        body: { amount: 500 }, idempotency_key: 'chg-1',
+      })
+      expect(res.error?.retryable).toBe(true)
+      expect(res.error?.indeterminate).toBeUndefined()
+      expect(hits).toBe(2)
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  it('does not call a connection that was never established indeterminate', async () => {
+    const conduit = createConduit({
+      credentials: secrets(),
+      targets: [providerTarget({
+        id: 'gone', address: 'http://127.0.0.1:1',
+        policy: { retry_limit: 0, timeout_ms: 500 },
+      })],
+    })
+    await conduit.init()
+
+    const res = await conduit.send({ target: 'gone', method: 'POST', path: '/', body: {} })
+    expect(res.error?.kind).toBe('connection_failed')
+    expect(res.error?.retryable).toBe(false)
+    // Nothing left the process, so the outcome is not open — a flag that fires
+    // on every network fault is one nobody reads.
+    expect(res.error?.indeterminate).toBeUndefined()
+  })
+})
+
+describe('the idempotency key', () => {
+  it('travels under the header the target names', async () => {
+    const rec = recorder(() => Response.json({ ok: true }))
+    try {
+      const conduit = createConduit({
+        credentials: secrets(),
+        targets: [
+          providerTarget({ id: 'paypal', address: rec.url,
+            idempotency: { header: 'PayPal-Request-Id' } }),
+          providerTarget({ id: 'stripe', address: rec.url }),
+        ],
+      })
+      await conduit.init()
+
+      await conduit.send({ target: 'paypal', method: 'POST', path: '/', body: {}, idempotency_key: 'k1' })
+      await conduit.send({ target: 'stripe', method: 'POST', path: '/', body: {}, idempotency_key: 'k1' })
+
+      expect(rec.seen[0]!.headers.get('paypal-request-id')).toBe('k1')
+      expect(rec.seen[0]!.headers.get('idempotency-key')).toBeNull()
+      // The control — the default is unchanged for a target that names nothing.
+      expect(rec.seen[1]!.headers.get('idempotency-key')).toBe('k1')
+    } finally {
+      rec.stop()
+    }
+  })
+
+  it('is minted per send, not per attempt, when the target declares auto', async () => {
+    const seen: Array<string | null> = []
+    const server = Bun.serve({
+      port: 0,
+      fetch(req) {
+        seen.push(req.headers.get('idempotency-key'))
+        return new Response('down', { status: 503 })
+      },
+    })
+    try {
+      const conduit = createConduit({
+        credentials: secrets(),
+        targets: [providerTarget({
+          id: 'auto', address: `http://localhost:${server.port}`,
+          idempotency: { auto: true },
+          policy: { retry_limit: 1, deadline_ms: 10_000 },
+        })],
+      })
+      await conduit.init()
+
+      const res = await conduit.send({ target: 'auto', method: 'POST', path: '/', body: {} })
+
+      // Two attempts under ONE key — a key minted per attempt is the duplicate
+      // the key exists to prevent.
+      expect(seen).toHaveLength(2)
+      expect(seen[0]).toBeTruthy()
+      expect(seen[0]).toBe(seen[1]!)
+      // And declaring it is what made the POST replayable at all.
+      expect(res.error?.retryable).toBe(true)
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  it('is not minted for a target that did not declare it', async () => {
+    const rec = recorder(() => Response.json({ ok: true }))
+    try {
+      const conduit = createConduit({
+        credentials: secrets(),
+        targets: [providerTarget({ id: 'plain', address: rec.url })],
+      })
+      await conduit.init()
+      await conduit.send({ target: 'plain', method: 'POST', path: '/', body: {} })
+      expect(rec.seen[0]!.headers.get('idempotency-key')).toBeNull()
+    } finally {
+      rec.stop()
+    }
+  })
+
+  it('refuses a spec that cannot work', async () => {
+    const conduit = createConduit({ credentials: secrets() })
+    await conduit.init()
+
+    await expect(conduit.register(providerTarget({ id: 'x', idempotency: { header: '  ' } })))
+      .rejects.toThrow(/'header' must be a non-empty string/)
+    await expect(conduit.register(providerTarget({
+      id: 'x', idempotency: { auto: 'yes' } as unknown as { auto: boolean },
+    }))).rejects.toThrow(/'auto' must be a boolean/)
+    await expect(conduit.register(providerTarget({
+      id: 'x', idempotency: { autoo: true } as unknown as { auto: boolean },
+    }))).rejects.toThrow(/unknown field 'autoo'/)
+  })
+})
+
+describe('a static target is refused by the same rules as a registered one', () => {
+  it('refuses same-origin redirects beside a per-request credential', async () => {
+    // register() carried this refusal and init() writes opts.targets straight
+    // through put(), so the way a provider is actually declared skipped it.
+    const conduit = createConduit({
+      credentials: secrets(),
+      targets: [providerTarget({
+        id: 'signed', auth: { type: 'hmac', ref: 'AGENT_SECRET' },
+        follow_redirects: 'same-origin',
+      })],
+    })
+    await expect(conduit.init()).rejects.toThrow(/cannot be combined with auth type 'hmac'/)
+  })
+
+  it('refuses an unknown policy field', async () => {
+    const conduit = createConduit({
+      credentials: secrets(),
+      targets: [providerTarget({
+        id: 'typo', policy: { timeout: 1 } as unknown as Record<string, number>,
+      })],
+    })
+    await expect(conduit.init()).rejects.toThrow(/unknown field 'timeout'/)
+  })
+})
+
+describe('a caller may assert a POST is safe to repeat', () => {
+  it('replays it without an idempotency key, and sends none', async () => {
+    let hits = 0
+    const seen: Array<string | null> = []
+    const server = Bun.serve({
+      port: 0,
+      fetch(req) {
+        hits++
+        seen.push(req.headers.get('idempotency-key'))
+        return new Response('down', { status: 503 })
+      },
+    })
+    try {
+      const conduit = createConduit({
+        credentials: secrets(),
+        targets: [providerTarget({
+          id: 'psp', address: `http://localhost:${server.port}`,
+          policy: { retry_limit: 1, deadline_ms: 10_000 },
+        })],
+      })
+      await conduit.init()
+
+      const res = await conduit.send({
+        target: 'psp', method: 'POST', path: '/intents', body: {}, replayable: true,
+      })
+      expect(hits).toBe(2)
+      expect(res.error?.retryable).toBe(true)
+      expect(res.error?.indeterminate).toBeUndefined()
+      // A DIFFERENT claim from a key: nothing asserts the target collapses
+      // duplicates, so no key is invented and none is sent.
+      expect(seen).toEqual([null, null])
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  it('the same request without the assertion is not replayed', async () => {
+    let hits = 0
+    const server = Bun.serve({
+      port: 0,
+      fetch() { hits++; return new Response('down', { status: 503 }) },
+    })
+    try {
+      const conduit = createConduit({
+        credentials: secrets(),
+        targets: [providerTarget({
+          id: 'psp', address: `http://localhost:${server.port}`,
+          policy: { retry_limit: 1, deadline_ms: 10_000 },
+        })],
+      })
+      await conduit.init()
+
+      const res = await conduit.send({ target: 'psp', method: 'POST', path: '/intents', body: {} })
+      expect(hits).toBe(1)
+      expect(res.error?.retryable).toBe(false)
+      expect(res.error?.indeterminate).toBe(true)
+    } finally {
+      server.stop(true)
+    }
+  })
+})
+
+// ─── Reading a trace, and deriving one ───────────────────────
+// Both halves of joining an outbound call to the request that caused it.
+// `parseTraceparent` continues a trace somebody else started; `traceIdFrom`
+// invents one where nobody did, and has to invent the SAME one twice.
+
+describe('parseTraceparent', () => {
+  const VALID = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'
+
+  it('reads a well-formed header', () => {
+    expect(parseTraceparent(VALID)).toEqual({
+      trace_id:  '4bf92f3577b34da6a3ce929d0e0e4736',
+      parent_id: '00f067aa0ba902b7',
+      sampled:   true,
+    })
+  })
+
+  it('reads the sampled bit rather than the whole byte', () => {
+    // Flags is a bit FIELD; only the low bit is `sampled`, and a collector
+    // setting another bit must not read as not-sampled.
+    expect(parseTraceparent(VALID.replace(/-01$/, '-00'))?.sampled).toBe(false)
+    expect(parseTraceparent(VALID.replace(/-01$/, '-03'))?.sampled).toBe(true)
+  })
+
+  it('refuses anything it cannot be sure of', () => {
+    // A version it has never seen may append fields — forwarding ids out of a
+    // format nobody here understands is worse than starting fresh.
+    expect(parseTraceparent(VALID.replace(/^00/, '01'))).toBeNull()
+    expect(parseTraceparent('00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7')).toBeNull()
+    // All-zero is the spec's own "invalid" value.
+    expect(parseTraceparent('00-' + '0'.repeat(32) + '-00f067aa0ba902b7-01')).toBeNull()
+    expect(parseTraceparent('00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa-01')).toBeNull()
+    expect(parseTraceparent('00-4BF92F3577B34DA6A3CE929D0E0E473X-00f067aa0ba902b7-01')).toBeNull()
+    expect(parseTraceparent(undefined)).toBeNull()
+  })
+})
+
+describe('traceIdFrom', () => {
+  it('takes a UUID as it stands', () => {
+    // The case that matters: junction mints correlation ids with
+    // crypto.randomUUID(), and a uuid with its dashes out IS a trace id.
+    const id = '018f2c4e-9b7a-7c3d-8e4f-1a2b3c4d5e6f'
+    expect(traceIdFrom(id)).toBe('018f2c4e9b7a7c3d8e4f1a2b3c4d5e6f')
+  })
+
+  it('folds anything else to a stable 32 hex', () => {
+    const a = traceIdFrom('req-abc-123')
+    expect(a).toMatch(/^[0-9a-f]{32}$/)
+    // The whole point: six calls in one request must not be six traces.
+    expect(traceIdFrom('req-abc-123')).toBe(a!)
+    expect(traceIdFrom('req-abc-124')).not.toBe(a)
+  })
+
+  it('answers null for nothing to derive from', () => {
+    expect(traceIdFrom(undefined)).toBeNull()
+    expect(traceIdFrom('')).toBeNull()
   })
 })

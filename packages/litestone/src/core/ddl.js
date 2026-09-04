@@ -99,7 +99,7 @@ export function isStrict(model) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function sqlType(fieldType) {
+export function sqlType(fieldType) {
   if (fieldType.array)           return 'TEXT'  // arrays stored as JSON text
   if (fieldType.kind === 'enum') return 'TEXT'
   return TYPE_MAP[fieldType.name] ?? 'TEXT'

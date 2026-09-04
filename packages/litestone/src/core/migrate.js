@@ -264,7 +264,40 @@ export function introspect(db) {
     schema.__triggers[t.name] = { table: t.tbl_name, sql: t.sql }
   }
 
+  // Everything above reads a NAMED dimension. This reads the statements whole,
+  // so the residue tripwire below has something to compare that no reader here
+  // had to remember to write. An object SQLite keeps no statement for — an
+  // implicit index behind a UNIQUE constraint — is not one anybody declared
+  // either; `tableUniques` is what reads those.
+  // Stored RAW and normalised only where two of them disagree: measured on the
+  // 188-model fixture, normalising here costs 18 ms of a 75 ms introspection
+  // and every object it touches is one that then compares equal anyway.
+  schema.__sql = {}
+  for (const r of db.prepare(`SELECT type, name, tbl_name, sql FROM sqlite_master`).all()) {
+    if (INTERNAL.test(r.name) || r.sql == null) continue
+    schema.__sql[`${r.type}:${r.name}`] = { table: r.tbl_name, sql: r.sql }
+  }
+
   return schema
+}
+
+// Two CREATE statements are the same statement when SQLite would build the same
+// object from them. `ALTER TABLE ADD COLUMN` appends the column text to the
+// stored statement in the spacing the ALTER used, so a table that migrated
+// perfectly still differs from the pristine one by a space before the closing
+// bracket — measured at 162 of 694 objects across the corpus schemas, every one
+// of them spacing and not one of them a difference. Whitespace around
+// punctuation therefore comes out on both sides.
+//
+// What this cannot tell apart is two statements differing only by whitespace
+// INSIDE a string literal. Nothing here emits one, and the alternative is a SQL
+// parser standing behind a tripwire whose whole value is not needing one.
+export function normaliseDdl(sql) {
+  return sql
+    .replace(/\s+/g, ' ')
+    .replace(/IF NOT EXISTS /gi, '')
+    .replace(/\s*([(),])\s*/g, '$1')
+    .trim()
 }
 
 // Two trigger definitions are the same trigger when SQLite would build the same
@@ -729,10 +762,15 @@ function diffUniques(pristineUniques, liveUniques) {
 
 // ─── FK diff ──────────────────────────────────────────────────────────────────
 
+// Both actions. `introspect` has always read `onUpdate` and this dropped it, so
+// a relation whose ON UPDATE moved compared equal — the enumeration's seventh
+// missed dimension, and the first thing the residue tripwire named. SQLite
+// reports NO ACTION for an unstated action on both sides, so an absent
+// `onUpdate` and an explicit one that means the same thing still compare equal.
 function fkKey(fk) {
   const from = Array.isArray(fk.from) ? fk.from.join(',') : fk.from
   const to   = Array.isArray(fk.to)   ? fk.to.join(',')   : fk.to
-  return `${from}→${fk.table}.${to}:${fk.onDelete ?? 'NO ACTION'}`
+  return `${from}→${fk.table}.${to}:${fk.onDelete ?? 'NO ACTION'}/${fk.onUpdate ?? 'NO ACTION'}`
 }
 
 function fksEqual(a, b) {
@@ -745,7 +783,7 @@ function fksEqual(a, b) {
 
 // ─── Full diff ────────────────────────────────────────────────────────────────
 
-const META_KEYS = new Set(['__views', '__triggers'])
+const META_KEYS = new Set(['__views', '__triggers', '__sql'])
 
 export function diffSchemas(pristine, live, parseResult, dbName = 'main', { pluralize = false } = {}) {
   // Filter the meta buckets out of the table name sets
@@ -957,6 +995,63 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
       .map(([name, v]) => ({ name, sql: v.sql }))
   }
 
+  // ── The residue tripwire ────────────────────────────────────────────────
+  //
+  // Everything above compares an ENUMERATED list of dimensions: columns,
+  // indexes, foreign keys, STRICT, CHECKs, table uniques, triggers, views. A
+  // dimension nobody added to that list is not reported as different — it is
+  // reported as IN SYNC, over a database that is not the declared one, and the
+  // history of that is six issues long, each one a dimension arriving in the
+  // emitter and not here (generated columns, CHECK, table uniques, index order,
+  // index sorts, index predicates).
+  //
+  // So once the enumeration has had its say, the two `sqlite_master`s are
+  // compared whole and the leftovers are named. It generates no migration and
+  // is deliberately NOT part of `hasChanges`: there is nothing in this file that
+  // could write one for a dimension it cannot see, and a change that never
+  // resolves would migrate on every boot for ever. What it produces is the one
+  // thing an enumeration cannot produce for itself — the statement that
+  // something is left over.
+  const settled = new Set(tableDiffs.map(d => d.name))
+  const named   = new Set([
+    ...changedTriggers.map(t => `trigger:${t.name}`),
+    ...droppedTriggers.map(t => `trigger:${t.name}`),
+  ])
+
+  const residue = []
+  const pSql = pristine.__sql ?? {}
+  const lSql = live.__sql ?? {}
+  for (const key of new Set([...Object.keys(pSql), ...Object.keys(lSql)])) {
+    if (named.has(key)) continue
+    const sep   = key.indexOf(':')
+    const type  = key.slice(0, sep)
+    const name  = key.slice(sep + 1)
+    // A view's whole text is already compared by `changedViews`, which is the
+    // one dimension here that was never an enumeration.
+    if (type === 'view') continue
+
+    const p = pSql[key]
+    const l = lSql[key]
+    const table = (p ?? l).table
+    // Only tables both sides have and this database owns. A table on one side
+    // only is `newTables`/`droppedTables`, which is a migration and is said.
+    if (!pristineNames.has(table) || !liveNames.has(table)) continue
+    if (settled.has(table) || externalNames.has(table)) continue
+
+    // An index or trigger the APP wrote exists in the live database and in no
+    // pristine one, by design — `diffIndexes` leaves those alone by this same
+    // test and this must not overturn it from behind.
+    if (!p) {
+      if (type === 'index'   && !ownedIndex(name, table)) continue
+      if (type === 'trigger' && !OWNED_TRIGGER.test(name)) continue
+    }
+    if (p?.sql === l?.sql) continue
+    const pn = p ? normaliseDdl(p.sql) : null
+    const ln = l ? normaliseDdl(l.sql) : null
+    if (pn === ln) continue
+    residue.push({ type, name, table, pristine: pn, live: ln })
+  }
+
   return {
     newTables,
     newMatViews,
@@ -966,6 +1061,7 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
     tableDiffs,
     changedTriggers,
     droppedTriggers,
+    residue,
     hasChanges: newTables.length > 0 || newMatViews.length > 0 ||
                 newViews.length > 0   || changedViews.length > 0 ||
                 droppedTables.length  > 0 || tableDiffs.length > 0 ||
@@ -1296,8 +1392,22 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
 
 // ─── Summary ──────────────────────────────────────────────────────────────────
 
+// One line per leftover, appended to whatever the enumeration said. Kept out of
+// the early return, because "in sync — no changes needed" is exactly the
+// sentence a residue makes false.
+function residueLines(diffResult) {
+  return (diffResult.residue ?? []).map(r =>
+    `  ! ${r.type} ${r.name}  (differs in a way the differ cannot name)\n` +
+    `      declared: ${r.pristine ?? '(absent)'}\n` +
+    `      live    : ${r.live ?? '(absent)'}`)
+}
+
 export function summariseDiff(diffResult) {
-  if (!diffResult.hasChanges) return '✓ schema is in sync — no changes needed'
+  const leftovers = residueLines(diffResult)
+  if (!diffResult.hasChanges)
+    return leftovers.length
+      ? ['✓ schema is in sync on every dimension the differ reads — and:', ...leftovers].join('\n')
+      : '✓ schema is in sync — no changes needed'
 
   const lines = []
 
@@ -1339,7 +1449,7 @@ export function summariseDiff(diffResult) {
   for (const t of diffResult.droppedTriggers ?? [])
     lines.push(`  - ${t.table}  trigger ${t.name}  (retired)`)
 
-  return lines.join('\n')
+  return [...lines, ...leftovers].join('\n')
 }
 
 // ─── Checksum ─────────────────────────────────────────────────────────────────

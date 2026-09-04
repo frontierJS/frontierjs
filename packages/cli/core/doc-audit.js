@@ -652,3 +652,116 @@ export function docInvariantRef({ root, rules = [] }) {
   }
   return { findings }
 }
+
+// ─── doc-status-stale ─────────────────────────────────────────────────────────
+//
+// A guiding document whose OPEN section lists something the register has ruled.
+//
+// This is the class the other four cannot see. `doc-cites-dead` grades a
+// citation that resolves to nothing, `doc-word-unknown` a word the language does
+// not have, `doc-claims-count` a number that has moved — all of them a claim that
+// is WRONG. This one grades a claim that is out of DATE: the citation resolves,
+// the word exists, the number is right, and the section around them says the
+// question is still open. `ARCHITECT.md` §5 called tenancy and the context shape
+// unsettled after `FJS-D05` and `FJS-D03` had ruled them, and every artefact in
+// the tree agreed with the file (`FJS-D187`).
+//
+// ── Two authorities, and both are the SECTION ───────────────────────────────
+//
+// The authority for *this is presented as open* is the HEADING, never a
+// sentence. A first cut graded any sentence pairing an id with an openness word
+// and reported three lines that were correct prose — `FJS-D06 §7` beside
+// *deferred* is a true statement about a ruling that settled one section and
+// deferred another, and a rule that fires on good prose is one somebody turns
+// off.
+//
+// The escape is the section too, and that is the part worth arguing. A section
+// that names what a ruling DECIDED anywhere in its body is a section whose
+// author had the register in hand, and the open question under it is the
+// narrower one the ruling left — which is what an open-questions section is FOR.
+// A section that cites an id and never says it was ruled is the failure: the
+// reader takes the heading at its word. Coarse on purpose, because the finer
+// version cannot tell those apart without reading what the paragraph argues,
+// which is `doc-audit.js`'s standing limit.
+//
+// A ruling struck in place is not settled for this purpose, so a document is
+// right to call it open. `ISSUES.md` ids are out of scope entirely: an open
+// defect under a heading that says *open* is a register doing its job.
+
+const OPEN_HEADING = [
+  'unsettled', 'not yet adopted', 'not adopted', 'under review', 'undecided',
+  'open question', 'not ruled', 'unruled', 'parked', 'to be decided',
+  'not settled', 'needs a ruling', 'awaiting a ruling', 'not yet named',
+]
+
+// A word that says a decision was TAKEN. Three things about the match are the
+// rule rather than tidiness. `settled` and `adopted` are absent on purpose:
+// *do not use them as settled vocabulary yet* and *not yet adopted* are how a
+// stale section describes itself, so either one as an escape reads the failure
+// as the fix. The left boundary is a NON-LETTER, because `unruled` and `unbuilt`
+// contain `ruled` and `built` and each is the opposite claim — `unbuilt` alone
+// silenced this rule against the section it was written for. And a negation in
+// front of the word is not an escape either.
+const SETTLED_RE =
+  /(?<![a-z])(?<!not )(?<!never )(?<!yet )(?:ruled|shipped|built|closed|decided|defers?|deferred|supersed\w*|withdrawn|refused|waits for)\b/i
+
+// Each ATX heading and the body under it, to the next heading of any level.
+// Setext headings are not read: nothing in this corpus uses them, and a reader
+// that guessed would call a table row a heading.
+function sections(text) {
+  const out = []
+  let cur   = null
+
+  text.split('\n').forEach((line, i) => {
+    const m = /^#{1,6}\s+(.*)$/.exec(line)
+    if (m) {
+      if (cur) out.push(cur)
+      cur = { heading: m[1], line: i + 2, body: '' }
+    } else if (cur) {
+      cur.body += line + '\n'
+    }
+  })
+  if (cur) out.push(cur)
+  return out
+}
+
+export function docStatusStale({ root }) {
+  // Guiding documents only. A register argues with itself by design, an
+  // assessment is dated and says so, and history is a record of what WAS open.
+  const GUIDING = new Set(['PHILOSOPHY.md', 'ARCHITECT.md', 'CLAUDE.md', 'VERIFYING.md'])
+
+  let decisions = null
+  try { decisions = readRegisters(root).decisions } catch { decisions = null }
+  if (!decisions?.length) return { skipped: 'no DECISIONS.md to grade a citation against' }
+
+  // Settled means the register holds it and has not struck it. `amended` is the
+  // register's own mark for a ruling reversed or withdrawn in place.
+  const settled = new Map()
+  for (const d of decisions) if (d.id && !d.amended) settled.set(d.id.toLowerCase(), d)
+
+  const findings = []
+  for (const doc of docCorpus(root, { history: false, registers: false, proposals: false })) {
+    if (!GUIDING.has(doc.rel.split(sep).pop())) continue
+
+    for (const sec of sections(maskFences(doc.text))) {
+      const open = OPEN_HEADING.find(w => sec.heading.toLowerCase().includes(w))
+      if (!open) continue
+      if (SETTLED_RE.test(sec.body)) continue
+
+      for (const m of sec.body.matchAll(/\bFJS-D\d+\b/g)) {
+        const hit = settled.get(m[0].toLowerCase())
+        if (!hit) continue
+        findings.push({
+          file: doc.path, line: sec.line + lineOf(sec.body, m.index) - 1,
+          message: `sits under "${sec.heading.trim().slice(0, 44)}" and DECISIONS.md holds \`${m[0]}\` as ` +
+                   `ruled — "${hit.title.slice(0, 64)}". Nothing in that section says so, so a reader takes ` +
+                   `the heading at its word and relitigates a settled question, and the argument that ` +
+                   `settled it is the one thing nobody reads twice. Move the row into what is ruled, or say ` +
+                   `in the section what the ruling decided and what it left open.`,
+        })
+      }
+    }
+  }
+
+  return { findings }
+}

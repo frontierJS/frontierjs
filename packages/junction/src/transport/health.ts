@@ -53,7 +53,9 @@ export interface HealthPluginOptions {
 // ─── Response shapes ──────────────────────────────────────────────────────
 
 export interface HealthResponse {
-  status:   'ok' | 'degraded' | 'down'
+  // `draining` is not a degree of unwell — it is *this process is leaving*,
+  // which is a different instruction to whatever is choosing between replicas.
+  status:   'ok' | 'degraded' | 'down' | 'draining'
   app:      string
   version:  string
   uptime:   number           // seconds since app.start()
@@ -157,6 +159,12 @@ export async function collectHealth(app: App, startedAt: number): Promise<Health
 
   const anyFail = Object.values(results).some(c => c.status === 'fail')
 
+  // A process that is leaving is not ready, whatever its checks say. Without
+  // this a request arriving during the drain was answered 200 and `/health`
+  // stayed 200 throughout, so a load balancer went on choosing a process that
+  // had already stopped accepting connections (`FJS-693`). Ahead of `anyFail`
+  // because it is the more specific answer: *going away* rather than *unwell*.
+
   // Read per REQUEST rather than off `app.config` directly. The app's own name
   // is the shape a tenant varies — one deployment, many customers, each of whom
   // thinks it is theirs — and `configFor` is where that becomes true for every
@@ -166,7 +174,7 @@ export async function collectHealth(app: App, startedAt: number): Promise<Health
   const cfg = app.configFor?.() ?? app.config
 
   return {
-    status:  anyFail ? 'degraded' : 'ok',
+    status:  app.draining ? 'draining' : anyFail ? 'degraded' : 'ok',
     app:     cfg?.name    ?? 'junction',
     version: cfg?.version ?? '',
     uptime:  Math.floor((Date.now() - startedAt) / 1000),
@@ -298,7 +306,20 @@ export function healthPlugin(opts: HealthPluginOptions = {}) {
           return ctx.json({ error: 'Unauthorized' }, 401)
 
         const body = await collectHealth(app, startedAt)
-        return ctx.json(body, body.status === 'ok' ? 200 : 503)
+        if (body.status === 'ok') return ctx.json(body, 200)
+        if (body.status !== 'draining') return ctx.json(body, 503)
+
+        // `Connection: close` on the way out, so a client holding a keep-alive
+        // socket opens a new one somewhere else rather than sending another
+        // request into a process that is closing. Built here rather than
+        // through `ctx.json`, which takes a status and no headers — widening
+        // that signature for one header on one route is the wrong end to
+        // change. Only while draining: a degraded app is still serving and its
+        // sockets are still good.
+        return new Response(JSON.stringify(body), {
+          status:  503,
+          headers: { 'content-type': 'application/json', connection: 'close' },
+        })
       })
 
       // ── GET /metrics ─────────────────────────────────────────────

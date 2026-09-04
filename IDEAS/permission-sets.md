@@ -1,6 +1,6 @@
 ---
 id: permission-sets
-status: argued
+status: shipped
 dated: 2026-08-24
 ---
 

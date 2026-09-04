@@ -3,8 +3,8 @@
 The mental model and its vocabulary. This is the *what*; the layers around it:
 `PHILOSOPHY.md` (the axioms — why), `DECISIONS.md` (dated rulings — settled),
 `CLAUDE.md` (the map — where), `ISSUES.md` (the gap between this document and the
-code, one id at a time). The twelve-package audit that measured that gap in
-2026-07/08 is `IDEAS/coherence-review.md`, argued and not adopted.
+code, one id at a time). `PHILOSOPHY.md` §VII says which kind of document this is
+and what a sentence in it may say.
 
 Do not paraphrase the vocabulary. Do not invent parallel terms.
 
@@ -24,18 +24,16 @@ Two further realms describe what an application *becomes*:
 
 | Realm      | Primary Noun           | Concern                            |
 | ---------- | ---------------------- | ---------------------------------- |
-| Deployment | **Manifest / Release** | How the application ships and runs |
+| Deployment | **Release**            | How the application ships and runs |
 | Testing    | **Suite / Test**       | How the application is verified    |
 
 A developer who understands Model, Service, Resource should be able to predict
 how any feature works before reading its docs. Keeping that model small is the
 point of the whole framework — predictability is the product.
 
-The full-repo audit confirmed the triad holds for *the application a developer
-writes*. It also found the vocabulary stops at the application boundary: the
-framework's own machinery (jobs, outbound targets, providers, rendering
-substrate) has concepts the table below cannot yet name — see §2's
-under-review list and `IDEAS/coherence-review.md`.
+The triad holds for *the application a developer writes*. The framework's own
+machinery — jobs, outbound targets, providers, the rendering substrate — has its
+own nouns, and the table below names the ones that are ruled.
 
 ---
 
@@ -61,6 +59,13 @@ Use the left column. Never the right.
 | **Chain of Responsibility** | pipeline, middleware stack, flow            |
 | **Signal**                  | observable, atom, ref, store (for the cell) |
 | **Projection**              | (nothing — new noun, see below)             |
+| **Guard**                   | hook (for a thing that only answers allow/deny) |
+| **Observer**                | hook, listener (for a thing that cannot act) |
+| **Provider**                | adapter, driver, integration                |
+| **Transport**               | channel (for the delivery medium)           |
+| **Target**                  | endpoint, integration, service (for a Conduit declaration) |
+| **Job**                     | task, worker, cron                          |
+| **Release**                 | manifest, deploy, build (for the immutable artefact) |
 
 Clarifications settled by the code:
 
@@ -69,24 +74,23 @@ Clarifications settled by the code:
   the Event row's "not" column, which was aimed at "signal" meaning
   *notification* and accidentally banned the word Mesa's runtime, docs and White
   Paper use for their core primitive. The ban now reads: never call an Event a
-  signal. A Signal never crosses a Boundary; an Event exists only to. (Ruled
-  2026-08-06 — `DECISIONS.md`.)
+  signal. A Signal never crosses a Boundary; an Event exists only to
+  (`FJS-D44`).
 - **Projection** is a *stored or served* second shape of the same truth — a
   materialised view, a serialised subset, a report. What a compiler or a
   component computes and throws away stays **derived**. If it has no independent
-  existence, it is not a Projection. (Ruled 2026-08-06.)
+  existence, it is not a Projection (`FJS-D46`).
 - **A custom service method is a Method, not an Action.** A Service answers
   CRUD plus whatever else it declares, in one `methods:` list; *custom* is the
   adjective for the ones the CRUD set does not name, and there is no noun for
   them. Dispatch is settled and unchanged: the `X-Service-Method` header,
-  case-preserved. On the browser client, `svc.invoke(name, id, data, query)`.
-  (Ruled 2026-08-15 — `DECISIONS.md`.)
+  case-preserved. On the browser client, `svc.invoke(name, id, data, query)`
+  (`FJS-D02`, `FJS-D07`).
 - **Policy has two meanings and will not get a third.** Gate = the ordinal
   per-operation check; policies = `@@allow`/`@@deny` row/field predicates. A
   proposed third sense ("declarative business rule vs imperative mechanism") is
-  refused — the words for that are already **Declaration** and **Hook**.
-  (Ruled 2026-08-06.)
-
+  refused — the words for that are already **Declaration** and **Hook**
+  (`FJS-D45`).
 - **Gate** is the ordinal per-operation level check (`@@gate`, resolved against
   the gate ladder, enforced by default when declared). Row/field predicates
   (`@@allow`/`@@deny`, compiled into SQL) are a second, orthogonal mechanism —
@@ -94,45 +98,40 @@ Clarifications settled by the code:
 - **The gate ladder** is the 0–9 scale (`STRANGER`…`LOCKED`) implemented as
   `LEVELS` in `packages/litestone/src/plugins/gate.js`. Named levels are the
   canonical way to write gates (`@@gate(read: READER, write: USER, …)`).
-- Model naming: **PascalCase, singular — always**; `@@external` models exempt.
-  (Ruled — `DECISIONS.md`.)
+- Model naming: **PascalCase, singular — always**; `@@external` models exempt
+  (`FJS-D42`).
+- **A Hook has three tiers and a new `on*` states its tier** (`FJS-D06`). A
+  **Hook** may mutate the arguments or halt the operation; a **Guard** answers
+  allow/deny and nothing else; an **Observer** receives and cannot act. There is
+  no fourth tier: a required single-slot callback is a Hook that throws.
+- **A Plugin attaches a capability; a Provider is a third party the app speaks
+  to** (`FJS-D06`). The registration unit is always Plugin, protocol and all.
+  `Adapter` is refused.
+- **A Channel is a broadcast set; the delivery medium is a Transport**
+  (`FJS-D06`).
+- **`Edge` is refused; `Boundary` is qualified at every use** — the Data
+  boundary, the app↔world boundary (`FJS-D06`).
+- **The Deployment noun is Release, and `Manifest` is ceded to MV3**
+  (`FJS-D06`). A Release is immutable and environment-independent; a **Pivot**
+  is the transition at which N-1 compatibility ends, and it is the same test for
+  a contract migration and a client retention window.
 
 **Two channels, kept separate.** When you *describe* the codebase, use these
 words and only these words. When you *evaluate* the vocabulary itself, do it
 explicitly — never silently substitute a better word into a description. The
 vocabulary is mandatory for describing and fully open for challenging.
 
-### Under review — found by the audit, not yet adopted
+### Not yet named
 
-These concepts exist in the code without names, or share a name that is doing
-two jobs. Arguments in `IDEAS/coherence-review.md`; status in `ISSUES.md`
-`FJS-D06`. Do not use them as settled vocabulary yet:
-
-- **Hook split** — Hook (may mutate/halt) / Guard (allow-deny) / Observer
-  (fire-and-forget) / Delegate (required single-slot). Today "Hook" covers
-  five mechanisms.
-- **Provider** — a swappable implementation of a contract (`IAuth`, mail
-  adapters, notification drivers, conduit transports). "A Plugin adds; a
-  Provider replaces."
-- **Job** (Caravan), **Target** (Conduit), **Envelope** (Junction's result
-  shape), **Transport** (delivery medium vs Channel's broadcast set).
 - **Component** (what the UI *is* — Mesa) beside Resource (what the UI *gets*),
-  and **Binding** (the reactive seam, `watchProxy`).
-- **Edge** (app↔world seam) vs Boundary (realm↔realm); Deployment noun →
-  **Release** (ceding "Manifest" to MV3); **Slice** (a package shape that
-  crosses all realms deliberately — auth, notifications).
-- **The Deployment realm's four nouns**, proposed in
-  `IDEAS/release-transitions.md` and unbuilt: a **Release** is immutable and
-  environment-independent (image, config values, secret *references*, schema
-  version, asset manifest, declared pivot); an **Environment** is mutable but
-  generational and provides bindings only; an **Audience** is a named set of
-  principals a Release may be served to — cohort routing, not a percentage
-  canary; a **Pivot** is the transition at which N-1 compatibility ends, which
-  is the same test for a contract migration, a client retention window and a
-  gradual rollout. Two open collisions before any of it is settled: Audience is
-  a set of principals and may belong to the Data realm beside the Trust
-  Hierarchy, and *binding* is already claimed by Mesa's reactive seam in the
-  list above.
+  and **Binding** (the reactive seam). `FJS-D06` §3 left these unruled.
+- **Envelope** for Junction's result shape. Unruled with the above.
+- **Slice** — a package that crosses all realms deliberately (auth,
+  notifications). Deferred until `fli add <slice>` is on the table or someone
+  outside this repo ships one (`FJS-D06` §7).
+- **Environment** and **Audience** in the Deployment realm — proposed in
+  `IDEAS/release-transitions.md`; *Audience* may belong to the Data realm beside
+  the gate ladder, and *binding* is already Mesa's word.
 
 ---
 
@@ -168,10 +167,9 @@ Standing rules the framework is designed against.
    is the audited bypass.
 7. **Real-time is core.** Every fact has one origin; change flows outward —
    origin → event → channel → binding. Any parallel sync mechanism or second
-   emitter for the same fact is a smell. (The current code is known to
-   fall short of this — three origins for "a row changed"; the consolidation
-   is sequenced in `IDEAS/coherence-review.md` §2, and its open half is
-   `FJS-010`.)
+   emitter for the same fact is a smell. A write that went through no service
+   is announced by the Data boundary's own tap, so the origin is the row and
+   never the caller.
 8. **The UI binds, it does not own.** The browser holds a reference to data,
    never a second copy of the data model.
 9. **Solve for the 80, leave an escape for the 20.** Every decision needs a
@@ -193,25 +191,26 @@ eliminated. **Intentional gaps** (genuinely different concerns) are respected
 ## 4. The Domain Map
 
 Beyond the application sits the FJS World — the operational environment.
-**This structure is not locked**, and the audit showed its main weakness:
-realm and domain are orthogonal axes, and several packages legitimately
-cross both (a possible second axis — the **Slice** — is under review).
+**This structure is not locked.** Realm and domain are orthogonal axes, and
+several packages legitimately cross both; a second axis, the Slice, is deferred
+(§2). Maturity per package is the map's to say (`CLAUDE.md` § Packages), not
+this document's.
 
-| Domain                           | Concern                                          | Actual tool(s)                          |
+| Domain                           | Concern                                          | Tool(s)                                 |
 | -------------------------------- | ------------------------------------------------ | --------------------------------------- |
-| 1 — Developer Interface          | CLI, editor tooling, scaffolds                   | `fli` (working) · frontierjs-vscode (stub) |
-| 2 — Database                     | Schema, migrations, ORM, gates                   | **Litestone** (shipped)                 |
-| 3 — Configuration & Secrets      | Env config, secrets, runtime context             | `frontier.config.js` + per-tool configs (unconsolidated) |
-| 4 — Integrations                 | Third-party connections                          | **Conduit** (shipped, narrow)           |
-| 5 — Automation & Orchestration   | Jobs, queues, schedules, workflows               | **Caravan** (working) · Orion (planned, absent) |
-| 6 — Authentication               | Identity, sessions, trust resolution             | `@frontierjs/auth` (working)            |
-| 7 — Observability                | Monitoring, logging, environment awareness       | Basecamp (planned, absent) · today: junction telemetry/health/devtools |
+| 1 — Developer Interface          | CLI, editor tooling, scaffolds                   | `fli` · frontierjs-vscode               |
+| 2 — Database                     | Schema, migrations, ORM, gates                   | **Litestone**                           |
+| 3 — Configuration & Secrets      | Env config, secrets, runtime context             | per-tool `config/`, `junction.config.js` |
+| 4 — Integrations                 | Third-party connections                          | **Conduit**                             |
+| 5 — Automation & Orchestration   | Jobs, queues, schedules, workflows               | **Caravan** · Orion (V2, `FJS-D14`)     |
+| 6 — Authentication               | Identity, sessions, trust resolution             | `@frontierjs/auth`                      |
+| 7 — Observability & Operations   | Monitoring, logging, fleet                       | Basecamp · Outpost · junction telemetry/health/devtools |
 | 8 — Application & Infrastructure | The application itself; contains the five realms | **Junction** (API) · **Sierra** (UI meta) · **Mesa** (UI substrate, leaf) |
 
-Placements the original map didn't anticipate: **jetty** (a browser-extension
+Placements the original map did not anticipate: **jetty** (a browser-extension
 application *container* — UI realm plus its own build/deploy surface),
-**css** (presentation — the UI realm's unbudgeted second concern), and
-**auth**/**notifications** as vertical Slices that ship a schema fragment, a
+**css** (presentation — the UI realm's second concern), and
+**auth**/**notifications** as vertical slices that ship a schema fragment, a
 service, a plugin, and a resource as one unit.
 
 Dependency direction across the core: `Litestone ← Junction ← Sierra`, with
@@ -221,32 +220,19 @@ Mesa a strict leaf. Never the reverse, in any package.
 
 ## 5. What Is Unsettled
 
-Report these accurately; don't treat them as bugs.
+Report these accurately; don't treat them as bugs. A defect is in `ISSUES.md`;
+what is here is a question the mental model has not answered.
 
-- **Authentication** — working; developer-facing API not finalized. Auth's own
-  `/auth/*` routes intentionally bypass the Service abstraction (login cannot
-  be gated by login).
-- **Multi-tenancy** — db-per-tenant implemented at the Litestone level; config
-  API under design; row-scoped tenancy has no primitive yet.
-- **Hook context shape** — ~~differs across realms~~ **ruled 2026-08-15
-  (`FJS-D03`): plural by design, documented per realm by LIFETIME, not
-  unified.** Junction's four-field split is `auth` frozen-propagates · `client`
-  read-only-propagates · `route` router-only · `locals` fresh-per-call, asserted
-  by running it (`junction/tests/context-contract.test.ts`). Path captures are
-  `ctx.route` in Junction and `page.params` in Sierra — one word per realm.
-  Work that outlives a request opens its own scope: `app.runAs(userId, fn)`.
-- **UI plugin system** — limited today.
-- **JSON Schema → UI** — drives `make()` only; validation and transformation
-  still to come.
-- **Query params** — `$limit`/`$offset` at UI/API vs `limit`/`offset` in
-  Litestone; the gap is exactly the `$` prefix (`$skip` exists nowhere).
-- **`@@strict`** — per-model escalation of read-warnings to errors: parked.
-- **Deployment** — the realm with no package. What a deploy may *promise* is
-  argued in `IDEAS/release-transitions.md` (five invariants, a phased build, and
-  two claims from the research that were falsified and are recorded as such);
-  what a Release may *be* is argued in `IDEAS/offline-first-and-release.md`
-  (artefact kinds). Neither is ruled. The one line both agree on: provisioning
-  must degrade to nothing, or the portable path becomes the special case.
+- **The Deployment realm's remaining nouns.** Release and Pivot are ruled and in
+  code; Environment and Audience are proposed (`IDEAS/release-transitions.md`)
+  and collide with words the Data realm and Mesa already hold (§2).
+- **Component and Binding.** The UI realm has one noun, Resource, for what the
+  UI *gets*; what it *is* has no ruled name (§2).
+- **Slice.** Two exist and both are this repo's; the word waits for a third
+  party (`FJS-D06` §7).
+- **Auth's routes.** `/auth/*` establishes a session and deliberately bypasses
+  the Service abstraction — login cannot be gated by login (`FJS-D20`). Whether
+  a second provider inherits that shape unchanged is not yet asked.
 
 ---
 

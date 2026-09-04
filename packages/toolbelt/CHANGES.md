@@ -37,14 +37,16 @@ own and it answers index/value pairs, so a list of pairs would canonicalise as
 its own `?` is split rather than signed whole, so a verifier reading a raw
 request URL and a signer holding the two apart reach the same string.
 
-**The version rides in the signature VALUE: `v2-sha256=…`, was `sha256=`.** A
-version is not decoration here. Every already-deployed Outpost signs v1 and
-computes a perfectly well-formed digest of a string this side no longer builds,
-so without a marker the answer is `signature does not match` — the same sentence
-a wrong secret gives, which is the wrong half to spend an outage on. A v1
-signature is now refused before the digest is compared, by name: *signature
-version 1 is no longer accepted; query is now signed*. Changing the canonical
-string again means bumping `SIGNATURE_VERSION` and the two prefixes beside it.
+**The version rides in the signature VALUE: `v1-sha256=…`, was `sha256=`.** A
+version is not decoration here, and it is carried before it is needed. A signer
+one version behind computes a perfectly well-formed digest of a string this side
+does not build, so with no marker the answer is `signature does not match` — the
+same sentence a wrong secret gives, which is the wrong half to spend a
+fleet-wide outage on. A signature carrying any other version is now refused
+before the digest is compared, by name. Nothing outside this repo signs
+anything, so **v1 stays v1**: the change here is that the value says so, and
+what a future canonical string will cost is `SIGNATURE_VERSION` and the prefix
+beside it rather than a scheme nobody can diagnose.
 
 Every in-tree signer and verifier moved together — conduit's http and websocket
 transports, junction's webhooks plugin, the Outpost's server and reporter,

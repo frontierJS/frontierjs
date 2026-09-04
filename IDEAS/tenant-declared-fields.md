@@ -1,6 +1,6 @@
 ---
 id: tenant-declared-fields
-status: idea
+status: proposed
 dated: 2026-09-01
 ---
 

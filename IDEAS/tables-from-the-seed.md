@@ -1,6 +1,6 @@
 ---
 id: tables-from-the-seed
-status: argued
+status: proposed
 dated: 2026-08-26
 ---
 

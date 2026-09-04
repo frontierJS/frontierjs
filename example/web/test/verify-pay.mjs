@@ -36,6 +36,7 @@
  */
 
 import { signRequest } from '@frontierjs/toolbelt/signature'
+import { requireServers } from './lib/preflight.mjs'
 
 const API  = process.env.API_URL ?? 'http://localhost:8110'
 const PSP  = process.env.PSP_URL ?? 'http://localhost:8112'
@@ -47,15 +48,7 @@ const HOOK_SECRET = process.env.SHOP_PSP_WEBHOOK_SECRET ?? 'dev-psp-webhook-secr
 /** What the SHOP signs with, so this drive can prove the provider checks it. */
 const SHOP_KEY    = process.env.SHOP_PSP_KEY ?? 'dev-psp-key'
 
-for (const [name, url] of [['api (bun run api)', `${API}/api/health`], ['the payment provider', `${PSP}/v1/intents`]]) {
-  try {
-    const r = await fetch(url)
-    if (!r.ok) throw new Error(`HTTP ${r.status}`)
-  } catch (e) {
-    console.error(`Cannot reach ${name} at ${url} — ${e.message}`)
-    process.exit(1)
-  }
-}
+await requireServers([['api (bun run api)', `${API}/api/health`], ['the payment provider', `${PSP}/v1/intents`]])
 
 /**
  * A stamp for this run's event ids.
@@ -361,8 +354,14 @@ try {
   // Through the PROVIDER, not through this file: `confirm` is the provider's
   // hosted page, and it signs and delivers the webhook itself. What this drive
   // signs by hand above is only the cases a provider will not produce on demand.
+  // `data=1` because this drive identifies its own job by the payload, and
+  // caravan's admin list redacts `data` to the literal string `[redacted]`
+  // unless asked. Without it `JSON.parse(j.data)` throws, the filter matches
+  // nothing, and the drive reports that no announcement was ever queued — for a
+  // job that ran and finished. `verify-jobs` and `verify-notify` already ask;
+  // this one was missed.
   const announcements = async () =>
-    (await json(await fetch(`${API}/api/jobs?limit=500`)) ?? [])
+    (await json(await fetch(`${API}/api/jobs?limit=500&data=1`)) ?? [])
       .filter(j => {
         if (j.name !== 'announce-payment') return false
         try { return JSON.parse(j.data)?.orderId === orderId } catch { return false }
@@ -459,7 +458,12 @@ try {
     ranOk:  !!finished,
     // Named, because a job that failed and is waiting to retry is `pending`
     // with an error on it — which reads exactly like one that has not started.
-    statuses: finished ? [...new Set(finished.map(j => j.status))] : (queued ?? []).slice(announcementsBefore).map(j => `${j.status}:${String(j.error ?? '').slice(0, 60)}`),
+    // `until` answers FALSE on timeout, not null, so `?? []` does not catch it
+    // and the fallback threw `false.slice is not a function` — which aborted the
+    // drive and reported the next twelve assertions as `undefined`, hiding what
+    // actually went wrong behind a TypeError.
+    statuses: finished ? [...new Set(finished.map(j => j.status))]
+      : (Array.isArray(queued) ? queued : []).slice(announcementsBefore).map(j => `${j.status}:${String(j.error ?? '').slice(0, 60)}`),
   })
 
   // ── 7. paying a paid order ────────────────────────────────────────────
@@ -521,7 +525,11 @@ try {
   // reason this goes through conduit: "the provider is having a bad minute"
   // and "our key is wrong" are one failed fetch and two different things to
   // tell a shopper.
-  await fetch(`${PSP}/fail-next`, { method: 'POST' })
+  // `times=9` and not one. `createIntent` declares `replayable: true` — minting
+  // an intent moves no money — so conduit replays it, and a provider that fails
+  // once heals before the shop ever sees it. An outage the shop reports is one
+  // that outlasts the retry ladder.
+  await fetch(`${PSP}/fail-next?times=9`, { method: 'POST' })
   const order3 = await newOrder('ORD-PAY-3', 500)
   const outage = await fetch(`${API}/api/payments`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-service-method': 'start' },
@@ -535,6 +543,9 @@ try {
     // refused the request is worse than no row at all.
     rows: ((await json(await fetch(`${API}/api/payments?orderId=${order3}`, { headers: auth })))?.data ?? []).length,
   })
+  // Put the provider back. A staged outage that outlasts its own section is
+  // every later assertion failing as this one's leftovers.
+  await fetch(`${PSP}/fail-next?times=0`, { method: 'POST' })
   await fetch(`${API}/api/orders/${order3}`, { method: 'DELETE', headers: auth })
 
   // ── 11. the declared surface ──────────────────────────────────────────

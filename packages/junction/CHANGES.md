@@ -1,5 +1,421 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-03 — which address do we believe
+
+`FJS-744`. 1885 pass. Typecheck clean.
+
+**`X-Forwarded-For` was read from the wrong end, and the option that gates it
+was wired to nothing.** `extractIP` took the leftmost entry; the nginx template
+this framework ships writes `$proxy_add_x_forwarded_for`, which APPENDS — so the
+leftmost is the caller's claim and the rightmost is what nginx observed. And
+`config.http` never declared `trustProxy` and `app.ts` never passed one, so it
+was permanently `false` in every deployed app: not the spoof but its mirror,
+every caller behind the proxy sharing the proxy's own bucket against the rate
+limiter and the DDoS guard. Neither half is visible from the other.
+
+**`transport/forwarded.ts` is the one owner now.** The chain is
+`[...x-forwarded-for, socket]`, read from the right:
+
+    false     the socket address alone — the default
+    true      one trusted hop, which is what the shipped template is
+    <n>       n trusted hops
+    [...]     trusted proxies by address or CIDR, IPv4 and IPv6
+
+Where to stop cannot be discovered, because every entry left of the trusted
+boundary is an unverified string — so it is declared, in `http.trustProxy`.
+
+Three things measured rather than assumed. An IPv4-mapped socket address
+(`::ffff:10.0.0.1`, what a dual-stack listener reports) is read as the v4
+address it is, or the `10.0.0.0/8` an operator wrote matches nothing and the
+list silently trusts nobody — which looks exactly like a correctly refused
+header. A prefix that is not a whole number of bytes is compared bit-wise;
+`172.16.0.0/12` is the private range that actually exists. And a v4 prefix does
+not match a v6 address. `x-real-ip` stands in only where there is no chain to
+read, since the same proxy wrote both and a caller can send it too.
+
+**Two committed tests asserted the unsafe behaviour while a third asserted the
+safe one**, and all three passed: `index.test.ts` had *prefers
+x-forwarded-for*, `p0-fixes.test.ts` had *ignores forwarded headers by
+default*, and the difference was that one supplied a socket address. The branch
+with no socket trusted headers unconditionally and was the one nothing covered.
+
+## 2026-09-03 — the trace the caller sent is carried
+
+`FJS-742`. 1864 pass.
+
+`RequestMeta` carries `traceparent` and `tracestate` now, read off the request's
+headers by the one function that knows which headers are read. **Carried, never
+emitted** — junction traces nothing itself. It is the value an outbound call
+needs to hang off the inbound one, and without it every call this process makes
+is the root of an unrelated trace: conduit had `createTraceContext` with nobody
+wiring it and no way to find the caller's trace if it had.
+
+Verbatim and unparsed on purpose. What to do with a `traceparent` belongs to
+whoever continues the trace, and a parse here would be a second reading of the
+spec beside theirs. `tracestate` is not decoration — a vendor's own position in
+the trace is carried there, so dropping it breaks the chain for that vendor
+alone. `reenterAs` carries both already, since it spreads the scope.
+
+## 2026-09-03 — when is a write done, and who says so
+
+`FJS-682`, `FJS-688`. 1863 pass (13 new).
+
+`callService` answered both questions by asking whether the pipeline threw, and
+that is the right owner in neither case. Measured on the shipped code first:
+
+```
+[rollback]   afterCommitRan=["inner effect"]  events=["posts:created"]
+             — for a row the rollback had already removed
+[nested tx]  events=["posts:created","outer:created","posts:created"]
+             — three for ONE inner create
+[688]        rowsInDb=1  events=[]  caller="GeneralError"
+             — the row is real, the caller is told it failed, tabs stay stale
+```
+
+**Under a transaction the rows belong to the OUTERMOST one**, so a nested call
+settled early — and on the rollback path it ran an effect and broadcast a create
+for a row that no longer existed. A third ALS store, the commit scope, is opened
+by the transaction hook and REUSED where one is already open, which is what makes
+the outermost transaction the owner. A nested call hands its announcement and its
+effects over; the commit drains them and a rollback discards them.
+
+The double-announce is the same fact one layer down: litestone buffers a
+transaction's write events to the COMMIT, so the tap sees them with the outermost
+call's span in force and its `announcingService()` comparison misses for every
+inner one. `announcedInCommitScope(name)` is that question asked of the
+transaction instead.
+
+**Without a transaction the rows are durable the moment the METHOD returned.** A
+later hook throwing does not take them back, so `methodSucceeded` is what the
+announcement asks, and the error carries `data: { committed: true }` — a client's
+natural answer to a 500 is to retry, and retrying a create that succeeded writes
+a second row. `ctx.error` is deliberately not consulted: `runPipeline` sets it on
+every throw, so it cannot tell an app failing the call apart from a later hook
+blowing up.
+
+**What did NOT change is the `afterCommit` effect.** It still follows the CALL's
+verdict — `FJS-089`'s ruling — so a client told the call failed does not also get
+the email, where a subscriber must still be told the row moved. Two questions
+about one throw with opposite answers. The first cut of this changed both, and an
+existing test caught it.
+
+**Three things the building turned up, each caught by a test rather than by
+reading.** The scope has to be captured INSIDE the pipeline: the announcement
+point runs after it, by which time the ALS scope has closed, so every call read
+`undefined` and a rolled-back write announced anyway. The call that OPENED the
+scope drains it itself and must not defer into a queue it has already emptied.
+And that same call is the one that has to be told the transaction rolled back,
+since `methodSucceeded` is true either way and the rows are gone.
+
+Negative controls, stubbed one at a time: **3 / 2 / 1 / 1**.
+
+## 2026-09-03 — a tuple-keyed model is listable, and naming one row says why not
+
+`FJS-694`. 1850 tests, 0 fail. Typecheck clean.
+
+`FJS-608` made create work for a model with `@@id([a, b])`, so a row could be
+MADE through the service and then never read back through it — the worst place
+for a gap to sit, since the schema parses, migrates and snapshots cleanly and
+the failure arrives at the first request.
+
+**The list is reachable now** and the fix is litestone's: the default ordering
+named a column called `id` that such a model does not have. The edge a window
+grows from is built from the whole key rather than half of it.
+
+**Naming ONE row is refused by name**, because it cannot be fixed here: a URL
+segment is one value and the key is several. The failure used to be the Data
+boundary's — *Unknown field 'id' in where for Membership.findUnique* — which
+reads as the schema being wrong rather than the request being unanswerable. It
+now names the key, offers the filter that answers the same question, and
+mentions the custom method that would take the whole key. **What a composite key
+should look like in a URL is not invented inside a 404 path**: it is a public
+shape and a decision, so this states the limit instead of guessing at a
+separator.
+
+`primaryKeyOf(ctx)` probes accessor spellings exactly as `getTable` does,
+because `model` is optional and the spelling that resolves is the one the client
+answers to. `$primaryKey` answers `[]` for an unknown accessor — the `$check*`
+family's contract, where *I cannot judge this* is not *this is wrong* — so a
+client that predates it is a miss rather than a throw.
+
+## 2026-09-03 — a webhook is a URL somebody else chose, and it had no bounds
+
+`FJS-681`. 1843 pass (27 new).
+
+A registration is a destination a caller names, which the app then makes an
+authenticated POST to from inside the network. Every bound on that was missing.
+Re-measured on today's code before anything was written:
+
+```
+a role:'user' shopper POSTs a '*' subscription   201, with the signing secret
+http://169.254.169.254/latest/meta-data/          accepted as a destination
+http://localhost:8503/api/jobs/1/retry            accepted (the devtools runner)
+file:///etc/passwd                                accepted
+the literal string "not-a-url"                    accepted
+a 307 from the receiver                           followed, signature re-sent
+a subscriber whose deliveries all die             stays active for ever
+```
+
+Anonymous was already 401, so *signed in* was the whole of the bar.
+
+**Four fixes.** `manage` (default 5) grades the routes with `sessionGateLevel`,
+junction's own ladder — 403 for a caller who is merely too junior and 401 for a
+stranger, because a client acts on those differently.
+`assertDeliverableTarget` is an ALLOW-list of schemes plus a public-address
+check over **every** address a name answers with. `redirect: 'manual'` makes a
+3xx a failed delivery carrying the location in its error. And
+`deactivateAfterDead` (default 3) turns off a registration whose recent
+deliveries all died — dead-lettering is per EVENT, so a receiver that has gone
+away otherwise costs seven attempts of every event for ever.
+
+**The destination is graded again before every attempt**, not only at
+registration: a name that resolved publicly when somebody registered it can
+resolve to loopback an hour later, and the retry ladder runs for a day. What
+that still does not close is a rebind between the check and the connect, which
+needs the socket pinned to the address that was graded — `fetch` gives no way
+to do that, so `url.ts` says so rather than implying otherwise.
+
+**Two things the fix turned up, both in the tests.** They were passing
+`role: 'admin'`, which `sessionGateLevel` does not read — a standing is not a
+column — so `StubUser` grew the five fields the ladder actually grades, written
+through only when stated, since an absent lifecycle field means *this app does
+not model that stage* and defaulting them would move every existing test's
+standing. And the guard does DNS, so the public control had to become an
+ADDRESS rather than `example.com`: a suite that needs the network to assert its
+control goes red on a machine without one.
+
+`IWebhookStore` gains `setActive` as a REQUIRED method rather than an optional
+one: a custom store that cannot deactivate would silently never deactivate, and
+a compile error is where that should be found.
+
+The lookup that guard does is **bounded** (3s, `lookupTimeoutMs`). It runs
+before every attempt and `dns.lookup` has no timeout of its own — it holds one
+of libuv's four thread-pool slots until the resolver answers, so a hung
+resolver would stall unrelated file I/O across the process rather than only
+this delivery. The fetch's own `AbortSignal.timeout` is downstream of it.
+
+Each fix has its own teeth. Stubbed one at a time they fail **3 / 15 / 1 / 2**
+of the 58 tests over this plugin.
+
+**What is deliberately not closed is the payload** (`FJS-724`). A delivery
+still carries the row as the writer saw it, which is `FJS-631`'s class one layer
+over — and the mechanism that closed it there does not apply unchanged, because
+a webhook subscriber is not a principal and there is nobody to grade against.
+Three shapes, one ruling, and a partial redaction that looks like a read gate
+would be worse than none.
+
+## 2026-09-03 — a reconnect is a gap, and it says so now
+
+`FJS-701`. 1821 tests, 0 fail. Typecheck clean.
+
+**The server queues nothing for an absent socket**, so every write between a
+drop and the next `connected` frame reached this client and nobody else's copy
+of it. Resubscription worked and the missed window simply vanished:
+`resource.stale`, which exists to count exactly this, read 0, and nothing on
+screen said anything was missing. The client emits **`resync`** on a `connected`
+frame that is not the first one, carrying how long it was down, and a live list
+answers it with the `refetch` it already gives `changed` — *some unknown rows
+moved*, which is the only sound answer, because nothing in a browser can know
+what it did not receive.
+
+**The reload is jittered up to 2s, and that is the load-bearing part.** A deploy
+drops every socket at once, so this fires across the whole fleet together — an
+unjittered reload is every client querying in one tick, which is `FJS-703`'s
+shape one layer up. A resource that never loaded does not fetch at all: there is
+no last query to re-ask, and a screen must not start querying because the
+network blipped.
+
+**There is deliberately no sequence number, and that is the decision rather than
+an omission.** A per-channel seq would let a client that missed nothing skip the
+reload. The case where that matters most is a deploy — and there the server
+restarted and every counter reset, so everybody reloads anyway. What it would
+cost is a stamp on six encode paths, including the per-cohort graded one where a
+publish is already re-encoded per audience, and getting it wrong there is a gap
+reported as no gap. A reconnect is rare and a reload is one query.
+
+`_noteConnected` and `_noteDisconnected` are extracted from the socket's own
+`onmessage`/`onclose` closures, which is what makes any of this testable: the
+branch they came from cannot be reached without a live server, and that is why
+the silent half of it went unnoticed for as long as it did. With the emit
+stubbed, 3 of the 6 new assertions fail.
+
+## 2026-09-03 — presence is opt-in, and a storm costs one frame per window
+
+`FJS-703`. junction 1810 tests, sierra 1146, 0 fail. Typecheck clean.
+
+**It was unconditional, unturnoffable and quadratic.** `channel()` wrapped join
+and leave for every channel there is, so every application paid for a feature
+most do not use — and a join sends the roster to the joiner AND a frame to every
+existing member, so N connections cost N x (N-1) frames. Measured at two
+channels per connection: 200 produced 40 600 frames and 14.3MB, 500 produced
+**251 500 frames, 89.5MB out and 172MB of heap**. The anonymous control is the
+diagnosis — 500 anonymous connections produced 1000 frames, because presence
+skips anonymous callers — so the cost is paid exactly by the signed-in users an
+application has, and a post-deploy reconnect is the ordinary event it makes
+fatal.
+
+**Two fixes, answering different halves.** `channels(setup, { presence })` takes
+`false` (the new default), `true`, or a list of exact names and `prefix:*`
+patterns; a list is the shape to reach for, because presence belongs on the one
+channel a document or a room is and never on the ten a data-sync app announces
+model writes over. That removes the cost entirely from every app that does not
+use presence. For the apps that do, join and leave are coalesced per channel
+over `presenceFlushMs` (default 50) into one `presence:diff`.
+
+**A timer and not a microtask**, which is the part worth knowing: every socket
+opens in its own tick, so a reconnect storm is N separate ticks and a microtask
+batch would coalesce nothing. Presence is an affordance — a member appearing
+50ms late is not a failure, and it is the difference between N frames per join
+and one per flush. A connection that joins and leaves inside one window cancels
+out and no frame goes at all, which is what a flapping socket is and what a
+storm is made of. `presenceFlushMs: 0` restores a frame per event, so
+`presence:join`/`presence:leave` are a supported mode rather than legacy.
+
+**Sierra learned `presence:diff`** in the same change, or presence silently
+stops updating in every app that renders it. It applies leaves BEFORE joins — a
+connection that left and rejoined inside one window is in both lists, and the
+other order removes the row it had just added — and deduplicates against what it
+already holds, since a reconnect can put a connection in a batch a
+`presence:sync` already reported.
+
+**What this does not fix**: each joiner still receives a full `presence:sync`,
+which is O(N) bytes per join and therefore O(N^2) bytes across a storm. That is
+one frame per join rather than N, so it is no longer the term that dominates,
+and making it a diff would mean the joiner asking for the roster instead of
+being sent it — a protocol change with a client round trip in it, which is a
+different decision.
+
+## 2026-09-03 — what one socket may do
+
+`FJS-705`, `FJS-704`. 1804 tests, 0 fail. Typecheck clean.
+
+**Every bound the HTTP transport has stopped at the upgrade** — the body cap,
+the DDoS gate, the rate limiter — so the transport junction prefers was the
+cheapest way to exhaust an application. Measured from one anonymous socket:
+20 000 `find` frames answered in 1.1s took a victim's latency from 9.2ms to
+1093ms with the offending socket still open and unthrottled, a 15MB frame took
+it to 49.8ms, and 3000 sockets were accepted in 2.2s. `http.ws` is five bounds,
+and three of the five are pairs that look like one knob and are not.
+
+**`maxFrameBytes` against `maxPayloadLength`.** The first is what the APP
+accepts and is refused by name — 1009, `frame_too_large`, with an error frame
+before the close. The second is what the PROCESS will buffer at all and is the
+runtime's: measured on Bun 1.3.11, an oversize frame closes with a bare 1006
+and no reason, which is indistinguishable from the network dropping. So the
+app's own limit sits below the runtime's and answers first. `maxFrameBytes`
+defaults to `maxBodySize` rather than to a number invented here, which is the
+whole argument for it: a socket must not be a wider door than a POST.
+
+**`maxFramesPerSecond` against `maxInFlight`.** The rate bounds arrivals and
+says nothing about outstanding work: 100 frames a second against a service call
+taking a second each is 100 concurrent calls, which is the shape that took the
+victim's latency to a second. A token bucket rather than a counter per window,
+because a window boundary lets twice the allowance through across it. The
+client is told once a second, not once per dropped frame — an error per refusal
+is the same egress the limit exists to remove — and the socket is NOT closed: a
+burst is a client catching up after a reconnect, and from one frame that is
+indistinguishable from an attacker.
+
+**`maxConnectionsPerIp` is checked at the UPGRADE**, so a refusal is a 503 the
+caller can read rather than a close code on a socket it believes it
+established. The per-IP map deletes at zero rather than leaving a row, since a
+row per address that ever connected is itself unbounded. `maxConnections` is
+unlimited by default: only an operator knows what the box holds, and a wrong
+guess here refuses real users.
+
+**A presence meta was whatever the client sent, stored and fanned out**
+(`FJS-704`). One 200KB frame produced 39.8MB of egress to 199 members in 114ms,
+and the amplification factor is the channel's membership, so it grows with the
+application's success — and it needs no privilege beyond being in the channel,
+which for a public channel is nobody's. Three bounds, cheapest test first: a
+token bucket per connection (`presenceUpdatesPerSecond`, 5), a byte cap on the
+serialised value (`presenceMetaBytes`, 4096), then `presenceMeta(meta)`, the
+app's own rule and the only one that can know meta is `{ typing: boolean }`.
+**The two refusals answer differently on purpose**: an oversize meta is a fixed
+property of the client's own code and is told, where a rate refusal is
+transient and is dropped in silence.
+
+Every refusal is paired in the tests with the same thing inside the limit, and
+with the bounds stubbed 5 of the 8 assertions fail — the 3 that pass are the
+controls, which is what a control is for.
+
+## 2026-09-03 — a call that has ended is outside it
+
+`FJS-687`. 1796 tests, 0 fail. Typecheck clean.
+
+**`$` did not refuse after the call was over, and the whole safety argument for
+an ambient object is that it refuses.** An `AsyncLocalStorage` store propagates
+into every timer and microtask created inside a call, and nothing marked the
+call over — so a `setTimeout(30ms)` scheduled from a hook found `$` answering
+`{ service: 'probe', method: 'find' }` long after that call had resolved, and
+`$.db` was the client the transaction hook installed. `enterCall` marks the
+context ended when its work settles, on a **`finally`** rather than a `then`,
+because a call that threw is just as over and leaves the same timer behind. The
+refusal names the call and points somewhere: capture the value before the call
+ends, or use `ctx.afterCommit(fn)`, or `ctx.enqueue(job, payload)` if the work
+must survive a crash.
+
+**The marker is on the CONTEXT**, which is per call. On the store or on the
+service it would make an app work exactly once. The span still covers the
+`afterCommit` drain and the outbox handoff, which run inside `_callService` —
+that is the control test, and a marker set at the end of the pipeline instead of
+the end of the call would satisfy every other assertion here.
+
+**`transactionScopeHook` puts the request's client back.** It assigned
+`ctx.locals.db = tx` and never restored it, so anything reading it after the
+transaction settled — an `afterCommit` effect, a timer a hook scheduled — held
+what a reader believes is the transaction. Restored rather than nulled: an
+effect running after the commit legitimately wants a working client, and the
+request's own, outside the finished transaction, is exactly the one it should
+get.
+
+**The finding's third fix is withdrawn, measured rather than argued.** It asked
+litestone to refuse writes on a settled transaction proxy. There is no such
+proxy: `db.$transaction(fn)` hands the callback **the same object** — `tx ===
+db` — because every scoped client passes itself, which is what makes
+`asSystem().$transaction(…)` keep its scope and what `FJS-237` is built on. A
+guard there would refuse every write an app makes after any transaction. The
+measured *write through a committed transaction's client* is real and is not a
+litestone defect: it is `db` doing what `db` does. The defect was junction's, in
+both places, and both are closed.
+
+## 2026-09-03 — a shutdown that does not finish cannot report success
+
+`FJS-693`. 1789 tests, 0 fail. Typecheck clean.
+
+**The measured failure was an exit code.** A plugin whose `shutdown()` never
+settles ended with the process exiting **0** in 54ms: the loop empties once
+every remaining timer is unref'd and node leaves successfully, with the caravan
+pool, the outbox relay and the litestone close all skipped and *Shutdown
+complete* never printed. Zero is what an orchestrator reads as a clean stop, so
+the skipped steps were invisible. Three bounds, and the fact that the deadline
+timer is **ref'd** is the load-bearing part of each — an unref'd one is the bug
+rather than the fix. `shutdown.pluginTimeout` (5s) bounds each plugin, logged
+and skipped rather than blocking the list; `shutdown.timeout` (15s) bounds the
+whole thing and then exits 1; and `unhandledRejection`/`uncaughtException`
+handlers stop the app and exit 1, where a rejected promise in a timer used to
+kill the process with `stop()` never running at all. The crash handlers are
+installed only where `process.listenerCount` says the app has not stated its
+own policy — a framework replacing an application's crash handling is worse
+than not having any — and `shutdown.crashHandlers: false` declines them.
+
+**`app.draining` is a state three surfaces read.** `/health` answers 503 with
+`status: 'draining'` and `Connection: close`, which is not a degree of unwell —
+it is *this process is leaving*, a different instruction to whatever is choosing
+between replicas. Before it, a request arriving during the drain was answered
+200 and `/health` stayed 200 throughout, so a load balancer kept sending traffic
+to a process that had stopped accepting connections. Every ordinary answer
+carries `Connection: close` while draining too, so a client already holding a
+keep-alive socket opens a new one somewhere else instead. On the APP rather than
+in a closure for `_healthChecksApp`'s reason (`FJS-414`): the devtools console
+answers readiness on its own port, and one surface disagreeing about whether
+this process is up is the whole failure. False for the life of a running app,
+so `_finalizeWithHeaders`'s no-op fast path is intact.
+
+**What is not done and why**: an in-flight request cut at `drainTimeout` still
+gets a cut socket rather than a 503 — the handler is mid-flight and there is no
+response to give it — and `app:shutdown` is still emitted rather than awaited.
+
 ## 2026-09-02 — a background write is graded like a published one, and one telemetry listener stops killing every signed-in call
 
 `FJS-672`, `FJS-673`, `FJS-700`, `FJS-702`, `FJS-677`, `FJS-691`, `FJS-692`.

@@ -55,6 +55,11 @@ export interface Connection {
   // misspelling on either side is a member that joins with no metadata and
   // nothing that says so.
   __joinMeta?: Record<string, unknown>
+
+  // Presence-update accounting for this connection (`FJS-704`). Token bucket,
+  // same shape and same reason as the socket's frame bucket: a per-window
+  // counter lets twice the allowance through across a boundary.
+  __presenceRate?: { tokens: number; refilled: number }
 }
 
 // Minimal interface used by Channel.send() broadcast loop.
@@ -327,7 +332,17 @@ export async function gradeRecipients(
 
 // ─── Channel manager ──────────────────────────────────────────────────────
 
-export function createChannelManager() {
+/** What the manager needs to know about presence. Resolved by `channels()`. */
+export interface PresencePolicy {
+  /** Is presence tracked for this channel at all? */
+  enabled: (channelId: string) => boolean
+  /** How long join/leave events are batched before one diff goes out. */
+  flushMs: number
+}
+
+export function createChannelManager(presencePolicy?: PresencePolicy) {
+
+  const _presencePolicy: PresencePolicy = presencePolicy ?? { enabled: () => false, flushMs: 50 }
 
   const channels    = new Map<string, Channel>()
   const connections = new Map<string, Connection>()
@@ -357,6 +372,7 @@ export function createChannelManager() {
   const _presence = createPresenceTracker({
     broadcast:  broadcastToChannel,
     sendToConn,
+    flushMs:    _presencePolicy.flushMs,
   })
   const presenceFor     = _presence.presenceFor
   const presenceMembers = _presence.members
@@ -418,7 +434,13 @@ export function createChannelManager() {
 
       // Wrap join/leave exactly once to automatically update presence.
       // __presenceWrapped guards against re-wrapping on repeated channel() calls.
-      if (!ch.__presenceWrapped) {
+      //
+      // Only where presence is DECLARED for this channel. It used to wrap every
+      // channel there is, so every application paid for a feature most of them
+      // do not use — and paid quadratically: 500 signed-in connections over two
+      // channels produced 251 500 frames, 89.5MB of egress and 172MB of heap,
+      // which makes an ordinary post-deploy reconnect fatal (`FJS-703`).
+      if (!ch.__presenceWrapped && _presencePolicy.enabled(name)) {
         ch.__presenceWrapped = true
 
         const originalJoin  = ch.join.bind(ch)
@@ -705,6 +727,68 @@ export interface ChannelsOptions {
   heartbeatInterval?: number
   /** How long a connection may say nothing before it is evicted. Default 40s. */
   heartbeatTimeout?:  number
+
+  /**
+   * The largest presence meta one connection may publish, in bytes of JSON.
+   * Default 4096.
+   *
+   * Whatever a client sent was stored and fanned out to every member with no
+   * cap and no shape, so **one connection was a 200x amplifier into any
+   * channel it belongs to**: a single 200KB frame produced 39.8MB of egress to
+   * 199 members in 114ms, and the factor is the channel's membership, so it
+   * grows with the application's success (`FJS-704`). It needs no privilege
+   * beyond being in the channel, which for a public channel is nobody's.
+   */
+  presenceMetaBytes?: number
+
+  /**
+   * Presence updates one connection may publish per second. Default 5.
+   *
+   * The size cap bounds one frame and this bounds the stream: 4KB at a
+   * thousand a second is the same amplifier with more steps.
+   */
+  presenceUpdatesPerSecond?: number
+
+  /**
+   * What a presence meta is allowed to BE. Given whatever the client sent, it
+   * answers the value to store, or throws to refuse.
+   *
+   * The size and rate bounds are the floor under any app; this is how an app
+   * says the thing neither of them can know — that meta is `{ typing: boolean }`
+   * and nothing else. Absent, any JSON inside the cap is accepted, which is the
+   * behaviour that shipped and is a reasonable default for a field whose whole
+   * purpose is application-defined.
+   */
+  presenceMeta?: (meta: Record<string, unknown>) => Record<string, unknown>
+
+  /**
+   * Which channels track presence. **Default `false` — none of them.**
+   *
+   * It used to be every channel there is, unconditionally and with no way off,
+   * so every application paid for a feature most do not use — and paid
+   * quadratically, since a join sends the roster to the joiner AND a frame to
+   * every existing member. Measured at two channels per connection: 200
+   * connections produced 40 600 frames and 14.3MB, and 500 produced **251 500
+   * frames, 89.5MB out and 172MB of heap**. A post-deploy reconnect of a few
+   * thousand users is the ordinary event that makes fatal (`FJS-703`).
+   *
+   * `true` is every channel, an array is exact names and `prefix:*` patterns.
+   * A list is the shape to reach for: presence is usually wanted on the one
+   * channel a document or a room is, and never on the ten a data-sync app
+   * announces model writes over.
+   */
+  presence?: boolean | string[]
+
+  /**
+   * How long join and leave events are batched before one `presence:diff`
+   * frame goes to the channel. Default 50ms; 0 restores a frame per event.
+   *
+   * This is the half that changes the exponent. Turning presence off fixes the
+   * apps that do not use it; an app that DOES use it still had N joins costing
+   * N x (N-1) frames, and batching makes a storm cost one frame per member per
+   * window instead.
+   */
+  presenceFlushMs?: number
 }
 
 export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Plugin {
@@ -716,7 +800,19 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
 
     register(app: App): void {
       // Create and attach the channel manager
-      const manager = createChannelManager()
+      // Resolved once, here, rather than read per channel: `channel()` runs on
+      // every publish and a pattern match per call is a cost with no reason.
+      const declared = opts.presence ?? false
+      const enabled =
+        declared === false ? () => false
+        : declared === true ? () => true
+        : (() => {
+            const exact    = new Set(declared.filter(p => !p.endsWith('*')))
+            const prefixes = declared.filter(p => p.endsWith('*')).map(p => p.slice(0, -1))
+            return (name: string) => exact.has(name) || prefixes.some(p => name.startsWith(p))
+          })()
+
+      const manager = createChannelManager({ enabled, flushMs: opts.presenceFlushMs ?? 50 })
       _manager = manager
       ;(app as unknown as Record<string, unknown>).channels = manager
 
@@ -999,9 +1095,53 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
             // Not in this channel — ignore
             if (!member) return
 
-            // Update meta if provided
-            if (parsed.meta && typeof parsed.meta === 'object') {
-              member.meta = parsed.meta as Record<string, unknown>
+            // Update meta if provided.
+            //
+            // Three bounds, and the order is the cheap test first: the rate
+            // needs no serialisation, the size needs one, and the app's own
+            // rule runs last and only on something already known to be small
+            // enough to be worth judging.
+            if (parsed.meta && typeof parsed.meta === 'object' && !Array.isArray(parsed.meta)) {
+              const rate = opts.presenceUpdatesPerSecond ?? 5
+              if (rate > 0) {
+                const now = Date.now()
+                const b = conn.__presenceRate ??= { tokens: rate, refilled: now }
+                b.tokens  = Math.min(rate * 2, b.tokens + ((now - b.refilled) / 1000) * rate)
+                b.refilled = now
+                // Dropped in silence rather than answered: an error frame per
+                // refused update is the same egress the cap exists to stop, and
+                // presence is an affordance — a `typing` indicator that misses
+                // a beat is not a failure the caller has to hear about.
+                if (b.tokens < 1) return
+                b.tokens -= 1
+              }
+
+              const raw   = parsed.meta as Record<string, unknown>
+              const bytes = Buffer.byteLength(JSON.stringify(raw) ?? '')
+              const cap   = opts.presenceMetaBytes ?? 4096
+              if (bytes > cap) {
+                // This one IS answered: it is a fixed property of the client's
+                // own code rather than a transient, so it will happen on every
+                // send until somebody is told.
+                manager._sendToConn(conn, 'error', {
+                  code:    'presence_meta_too_large',
+                  message: `Presence meta is ${bytes} bytes; this app accepts ${cap}`,
+                })
+                return
+              }
+
+              let meta = raw
+              if (opts.presenceMeta) {
+                try { meta = opts.presenceMeta(raw) } catch (err) {
+                  manager._sendToConn(conn, 'error', {
+                    code:    'presence_meta_refused',
+                    message: (err as Error).message,
+                  })
+                  return
+                }
+              }
+
+              member.meta = meta
               // Emit presence:update to other members
               manager._broadcastToChannel(channelId, connId, 'presence:update', {
                 channelId,
