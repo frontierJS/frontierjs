@@ -2211,7 +2211,7 @@ describe('test-files-run', () => {
 })
 
 describe('a styled value names a token the stylesheets define', () => {
-  // The declaration is dropped WHOLE, so this is not a wrong colour — it is no
+  // The declaration is dropped WHOLE, so this is not a wrong color — it is no
   // border at all, with the stylesheet present in the bundle and every selector
   // matching. It took this repo's own storefront apart while its drive stayed
   // green, because a drive asserts what a page says.

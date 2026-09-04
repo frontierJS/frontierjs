@@ -1,9 +1,9 @@
 <script>
   // Dot.mesa
-  // Coloured status indicator. Optionally pulses for live/active states.
+  // Colored status indicator. Optionally pulses for live/active states.
   //
   // `.feed-dot` is the vocabulary's dot: it reads --bg-mix, so every tone
-  // colours it. It carries a margin-top tuned for alignment inside a .feed
+  // colors it. It carries a margin-top tuned for alignment inside a .feed
   // item, which a standalone dot does not want — that is the one override
   // below.
   //

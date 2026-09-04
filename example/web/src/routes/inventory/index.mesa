@@ -236,7 +236,7 @@ title: Inventory
         <tr class="level-row" data-sku={r.sku} data-held={String(r.held)}>
           <td><Mono>{r.sku}</Mono></td>
           <td>{r.product}</td>
-          <td class="text-sm text-muted">{r.colour} · {r.size}</td>
+          <td class="text-sm text-muted">{r.color} · {r.size}</td>
           <td class="num" data-onhand={r.sku}>{r.onHand}</td>
           <td class="num">
             {#if r.held}<Pill tone="warning">{r.held}</Pill>{:else}<span class="text-muted">—</span>{/if}

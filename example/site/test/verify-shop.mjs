@@ -18,7 +18,7 @@
  * drive can see any of them:
  *
  *   1. **The buy box cannot bake.** The page carries every variant's sku,
- *      colour and size in the file; `variantId` and what is actually available
+ *      color and size in the file; `variantId` and what is actually available
  *      come from the shop. So the join happens in a browser, and a box that
  *      rendered before the shop answered would offer a button it cannot honor.
  *
@@ -230,7 +230,7 @@ let failed = 0
 try {
   // ─── 1. the box wakes up ────────────────────────────────────────────────
   //
-  // The join: baked colour/size from the file, variantId and availability from
+  // The join: baked color/size from the file, variantId and availability from
   // the shop. Until the second half lands the button is disabled and says so.
   await goto(`/products/${slug}/`)
 

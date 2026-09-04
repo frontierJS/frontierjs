@@ -12,7 +12,7 @@
 // Chained styles (`chalk.bold.underline`) are NOT supported; nothing here uses
 // them and supporting them costs the proxy this file exists to avoid.
 
-// Match chalk's default rather than picking our own: colour when stdout is a
+// Match chalk's default rather than picking our own: color when stdout is a
 // terminal, honouring NO_COLOR and FORCE_COLOR. A drive that pipes fli's output
 // and greps it would otherwise start seeing escape codes it never saw before.
 const enabled =

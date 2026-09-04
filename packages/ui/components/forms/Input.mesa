@@ -6,7 +6,7 @@
   //
   // `.field` goes on the <input> itself — it IS the control, not a wrapper.
   // Its invalid border comes from `:user-invalid` with no JS and no class,
-  // which is why the old ring-colour map is gone; only a *server* error needs
+  // which is why the old ring-color map is gone; only a *server* error needs
   // a tone, and Field owns that.
   //
   // Naked (inside an explicit Field):

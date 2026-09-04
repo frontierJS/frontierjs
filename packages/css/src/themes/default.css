@@ -3,7 +3,7 @@
  *
  * The theme every app boots into, so it is the one that decides what
  * "unstyled FrontierJS" looks like. It carries the full neutral ramp, the
- * grounds and the elevation rather than colours alone: the ramp shipped
+ * grounds and the elevation rather than colors alone: the ramp shipped
  * warm (#e7e3d8 rules) over neutral-gray surfaces, and a hairline that
  * disagrees with the surface it divides is what reads as unfinished.
  *
@@ -34,7 +34,7 @@
   /* ── Grounds and ink ────────────────────────────────────────────────
    * Three grounds rather than two. --app-bg used to fall back to
    * --surface-sunken, which made the page, the table head and every
-   * inset well one colour — so a white Card on the page had nothing but
+   * inset well one color — so a white Card on the page had nothing but
    * a hairline separating it, and the table head dissolved into the page
    * behind it. Sunken sits between the two now: the page is the deepest,
    * the card is white, and the head is the step between them.
@@ -55,7 +55,7 @@
    * The topbar is chrome and the page is not, so it takes --surface while
    * the page takes --app-bg. Stated rather than left to the fallback: the
    * fallback is --surface, which was right by accident while the two
-   * grounds were the same colour and is a decision now that they differ.
+   * grounds were the same color and is a decision now that they differ.
    */
   --topbar-bg: #ffffff;
 
@@ -64,7 +64,7 @@
    * a page ground this close in value, so the Block tier takes the
    * faintest of the three — enough to lift, not enough to float. The
    * floating ladder above it is retuned to match: the shipped defaults
-   * were tuned against a white page and disappear on a coloured one.
+   * were tuned against a white page and disappear on a colored one.
    *
    * Literals, not var(--shadow-sm): an alias in a theme resolves once
    * here and would not follow a nested theme.

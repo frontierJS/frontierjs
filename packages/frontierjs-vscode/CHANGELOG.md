@@ -30,7 +30,7 @@ First release. Litestone gets a language server; Mesa gets editor support.
 
 ### Mesa (`.mesa`)
 
-- **Syntax highlighting** with embedded JavaScript and CSS, plus colouring that
+- **Syntax highlighting** with embedded JavaScript and CSS, plus coloring that
   separates `let` (reactive), `const` (derived) and `var` (non-reactive).
 - **Hover**, **completions** (`$`, `{`, `:`, `|`, `<`) and the **outline** panel,
   which groups props and state.

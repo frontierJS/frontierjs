@@ -193,7 +193,7 @@ check('image URL serves bytes',    head.ok && head.headers.get('content-type'), 
 // nullable — assert it holds through the API, not just in SQLite.
 const dup = await fetch(`${API}/api/product-variants`, {
   method: 'POST', headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ productId: 1, sku: 'DRIVE-DUP', colour: 'Night Navy', size: 'm', price: 100 }),
+  body: JSON.stringify({ productId: 1, sku: 'DRIVE-DUP', color: 'Night Navy', size: 'm', price: 100 }),
 })
 check('anonymous variant write refused (@@gate)', dup.status, 401)
 
@@ -226,17 +226,17 @@ await goto('/products/1/', 'table.grid tbody tr', 4)
 await settleImages('img.hero, .swatch img')
 check('hero photograph decoded',
       await evaluate(`(document.querySelector('img.hero')?.naturalWidth ?? 0) > 0`), true)
-check('four colourway swatches',
+check('four colorway swatches',
       await evaluate(`document.querySelectorAll('.swatch').length`), 4)
 check('every swatch decoded',
       await evaluate(`[...document.querySelectorAll('.swatch img')].every(i => i.naturalWidth > 0)`), true)
-check('variant grid is 4 colours x 3 sizes',
+check('variant grid is 4 colors x 3 sizes',
       await evaluate(`[document.querySelectorAll('table.grid tbody tr').length,
                        document.querySelectorAll('table.grid thead th').length - 1]`), [4, 3])
 check('sizes are in enum order, not alphabetical',
       await evaluate(`[...document.querySelectorAll('table.grid thead th')].slice(1).map(th => th.textContent.trim())`),
       ['s', 'm', 'l'])
-check('the empty colourway says sold out',
+check('the empty colorway says sold out',
       await evaluate(`[...document.querySelectorAll('table.grid tbody tr')]
         .find(r => r.textContent.includes('Olive'))?.textContent.includes('sold out')`), true)
 check('twelve SKUs on screen',
@@ -244,9 +244,9 @@ check('twelve SKUs on screen',
 
 // A swatch is a real control, not a decorated div — clicking it changes the hero.
 //
-// Whichever swatch is NOT already chosen. The buy box picks a colourway on
+// Whichever swatch is NOT already chosen. The buy box picks a colorway on
 // load — the first one with stock — and it also owns the hero, so naming a
-// colour here would assert nothing on the run where that colour is the
+// color here would assert nothing on the run where that color is the
 // default.
 const before = await evaluate(`document.querySelector('img.hero')?.src ?? ''`)
 await evaluate(`([...document.querySelectorAll('.swatch')]
@@ -369,7 +369,7 @@ check('the chosen file previews before it is saved',
 await evaluate(`(document.querySelector('[data-add-photo-panel] [data-add-photo]').click(), true)`)
 
 // Asked of the API and not of the strip, because the strip is one swatch per
-// COLOURWAY: a second photograph of a colour that already has one adds no
+// COLORWAY: a second photograph of a color that already has one adds no
 // element, so counting them answers a question about the gallery's shape rather
 // than about whether anything uploaded. The row is the fact.
 const ALT = 'Chosen in a browser'

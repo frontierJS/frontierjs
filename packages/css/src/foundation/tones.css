@@ -119,7 +119,7 @@
  * 55% blend --tint-ink applies was measured against it here and does not
  * hold — sunset's warning lands at 4.05:1.
  *
- * The window cannot be derived, only declared: relative colour syntax
+ * The window cannot be derived, only declared: relative color syntax
  * exposes the channels of the tone, never those of the surface it will
  * land on, so a dark theme states the inverted pair.
  *

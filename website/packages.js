@@ -222,7 +222,7 @@ const PKGS = [
       code:'/* yours, unlayered — wins by definition */\n.btn { border-radius: 0 }',
       r:['!important','arbitrary-variant escape hatches'] },
     { k:'Contrast', v:'Fill and text derived together — AA by construction',
-      why:'Text colour is computed from the fill\'s own luminance, so any tone in any theme — including a brand colour added later — meets AA without being audited.',
+      why:'Text color is computed from the fill\'s own luminance, so any tone in any theme — including a brand color added later — meets AA without being audited.',
       r:['manual contrast audits','axe passes after the fact'] },
     { k:'State', v:'From <code>[aria-current]</code> and <code>:user-invalid</code>, never a class',
       why:'Styling keys off the accessibility state that has to be correct anyway. A tab cannot look selected while telling a screen reader otherwise.',

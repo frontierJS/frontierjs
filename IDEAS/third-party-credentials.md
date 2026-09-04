@@ -324,8 +324,8 @@ Descope, Okta and Semperis on nOAuth · Auth0 on OAuth CSRF · Supabase identity
 
 **The kit**
 
-- Brand sign-in buttons need brand colours, and Invariant 13 says style with a tone
-  and a treatment, never a colour. This is the one case where the colour is the
+- Brand sign-in buttons need brand colors, and Invariant 13 says style with a tone
+  and a treatment, never a color. This is the one case where the color is the
   requirement. Does `@frontierjs/ui` ship them, and under what exemption?
 
 ---

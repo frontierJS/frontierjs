@@ -82,7 +82,7 @@ export const langFor = (file, fallback = 'js') =>
  * they ignore is a second thing to keep in step for no gain. Measured against
  * the seventeen samples that DO state one, it agrees on nine and answers a
  * superset on five, which is the shape a guess should have: it only chooses
- * which rules to add, so being wrong mis-colours a line rather than changing
+ * which rules to add, so being wrong mis-colors a line rather than changing
  * a character.
  */
 const SNIFF = [

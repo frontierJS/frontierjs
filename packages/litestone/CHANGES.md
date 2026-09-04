@@ -4655,7 +4655,7 @@ it, so the day it changes is a red test rather than a surprise.
 declared set was lost from an imported file **and from the root one** — that
 merge is what every caller of `parseFile` validates. `litestone ddl`,
 `jsonschema`, `access` and `release` each refused `example`'s schema with
-*no valueset 'ProductColour' in this schema*, about a `valueset ProductColour`
+*no valueset 'ProductColor' in this schema*, about a `valueset ProductColor`
 forty lines above the binding. The running app was fine, which is why nothing
 caught it: `createClient` parses the text it is handed. One line in the merged
 literal, one in the schema literal, the shape `types` and `traits` already had.
@@ -4664,7 +4664,7 @@ literal, one in the schema literal, the shape `types` and `traits` already had.
 missing from a scoped set is two different things and only one may be added by
 typing it: one nobody has ever used, and one the list has retired. `open`
 created a row for both, so the second hit the source's `@unique` and the caller
-got `UNIQUE constraint failed: colour.name` — about a table they did not name,
+got `UNIQUE constraint failed: color.name` — about a table they did not name,
 saying the opposite of what happened. The `open` path now asks one unnarrowed
 read before creating anything, where the set declares a `scope` or a `where`,
 and refuses the ones that exist as `<value> is in <Source> but is not offered by

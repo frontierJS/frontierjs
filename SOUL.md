@@ -1,9 +1,9 @@
 # FrontierJS — Soul
 
-FrontierJS exists to make software **knowable**.
+FrontierJS exists to make systems **knowable** by constructing a concise mental model.
 
 Not smaller. Not more powerful. Not friendlier to configure. Knowable — meaning a
-developer can look at a piece of the system and correctly predict where it lives,
+developer can look at a piece of the system and correctly intuit where it lives,
 who owns it, and what happens when it changes, without having read the whole
 codebase first.
 

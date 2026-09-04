@@ -358,7 +358,7 @@ is a convenience artifact, not the product.
 │
 └── src/
 ├── index.css                      ← single entry point (one import covers all)
-├── utilities.css                  ← .text-* size + colour; late layer, beats
+├── utilities.css                  ← .text-* size + color; late layer, beats
 │                                     components                        (v0.10.1)
 │
 ├── foundation/ ─────────────────────────────────────────────────────
@@ -539,7 +539,7 @@ was off the ladder entirely. `test/specs/type.spec.js` now fails on any literal
 because each is deliberately relative to something.
 
 Rungs are **literal values**, never `--text-sm: var(--text-md)`: the alias trap
-that cost every focus ring its theme colour applies here identically.
+that cost every focus ring its theme color applies here identically.
 
 ### Breakpoints (literals, not tokens)
 ```
@@ -705,8 +705,8 @@ outside a surface composite, and they aren't chained onto it, they nest inside.
   (`--tone-l-min`/`--tone-l-max`, `--code-l-*` until v0.16), hue and chroma untouched — a no-op wherever
   the tone already reads, so a well-tuned theme is not flattened. A blend
   toward `--ink` also works, at 55%, and muddies everything equally
-- ⚠️ The window cannot be derived: relative colour syntax exposes the channels
-  of one origin colour, and the origin is the tone, not the surface. **A dark
+- ⚠️ The window cannot be derived: relative color syntax exposes the channels
+  of one origin color, and the origin is the tone, not the surface. **A dark
   theme must invert it**; `dark.css` and `basecamp.css` do, and `code: every
   token clears AA in theme-*` catches one that forgets
 - ✅ `code.spec.js` — 25 assertions against **real glow output**, injected by
@@ -794,13 +794,13 @@ outside a surface composite, and they aren't chained onto it, they nest inside.
 - ✅ Credit where the ideas came from, including the collision worth knowing:
   Every Layout's `Frame` is an aspect-ratio box and ours is the app shell
   tier; their `Sidebar` is a layout primitive and ours is the nav column
-- ✅ `code(src, 'txt')` now skips glow — a plain diagram was being coloured as
+- ✅ `code(src, 'txt')` now skips glow — a plain diagram was being colored as
   if "Bootstrap" and "Props" were identifiers
 
 ### The worked example — one button, three times (2026-08-08)
 - ✅ *The classic example: a button* replaces the one-line five-way sample.
   Every framework looks alike on a button until it needs a second variant,
-  and alike again until you need a colour it did not ship, so the section
+  and alike again until you need a color it did not ship, so the section
   walks one button through all three
 - ✅ Step 2 is a set — solid / outlined / small / disabled / busy — against
   **Bootstrap only**, the closest of the three and the one most readers know.
@@ -816,10 +816,10 @@ outside a surface composite, and they aren't chained onto it, they nest inside.
   field, alert. `comparePage.init` then measures the filled button in the
   reader's browser and writes the ratio into the prose: **7.10:1**,
   independently confirmed by a standalone probe. Nobody wrote that text
-  colour down; `#6d28d9` was the only value in the rule
+  color down; `#6d28d9` was the only value in the rule
 - ⚠️ The measurement goes through a canvas, not a regex. Chrome serialises
   the derived fill as `color(xyz-d65 …)` and parsing those floats as 8-bit
-  channels gives a plausible wrong answer for every colour
+  channels gives a plausible wrong answer for every color
 - ✅ One concession stated in the open: **Pico needs no class for a spinner**
   — `aria-busy="true"` draws it — where this wants the attribute *and*
   `loading`, because the attribute announces and the class draws
@@ -1128,7 +1128,7 @@ outside a surface composite, and they aren't chained onto it, they nest inside.
   argument it makes is that a tone and a density are the same idea pointed at
   different problems — one variable in, a whole system out — and that what
   separates them is one line of `@property`. Left half: `--bg-mix` → three
-  tints → a text colour branched on luminance, inside a boundary that stops.
+  tints → a text color branched on luminance, inside a boundary that stops.
   Right half: `--density` → twelve rungs → the same rung at three densities,
   inside boundaries that are crossed
 - ✅ **Every number is read or measured at render time.** The mix percentages
@@ -1212,7 +1212,7 @@ outside a surface composite, and they aren't chained onto it, they nest inside.
   five groups covering 26 classes — a property worth stating because it is
   checkable, and it is what "the column is useful" actually means. The last
   group to fall was four themes that genuinely override the same NUMBER of
-  tokens; they differ in which, so the row shows the colour instead
+  tokens; they differ in which, so the row shows the color instead
 - ⚠️ **A one- or two-declaration summary shows the VALUE, three or more shows
   only names, and there is no `+N` remainder.** A rule is attributed to every
   class its selector mentions — `.items` collects what `.items.menu .item`
@@ -1237,7 +1237,7 @@ outside a surface composite, and they aren't chained onto it, they nest inside.
   rather than the guide picking one
 - ⚠️ **A measurement said the pressed styling was backwards, and it was
   lying.** Reading `getComputedStyle` after clicking a toggle reported the
-  unpressed colours, because computed styles go stale after an attribute
+  unpressed colors, because computed styles go stale after an attribute
   change in this harness — the trap this package's own notes record. Measuring
   a freshly-rendered pressed button showed the rule was right all along. The
   fix was to the probe, not the CSS
@@ -1949,7 +1949,7 @@ the theme surface is now closed on everything press.css found.*
 
 **Motion** (`FJS-162`) — every transition in the package was a literal, so nine
 themes moved identically. Four rungs named for the job — `--motion-fast` (a
-colour changing), `--motion-base` (a control changing shape), `--motion-enter`
+color changing), `--motion-base` (a control changing shape), `--motion-enter`
 (overlays), `--motion-slow` (a measurement moving) — plus two loops,
 `--motion-spin` and `--motion-shimmer`, and three easings. **The sweep found one
 the grep did not**: `.skeleton`'s 1.4s shimmer. Two exclusions in the test are
@@ -1994,7 +1994,7 @@ applied it. Measured across 10 themes × 7 tones: a no-op on 53 of the 70 pairs,
 2.67:1 on `--surface-sunken`, and nine files use it as body text. The finding
 offered two ways out and the whole ramp moves, which is the first: fitting the
 failing rung alone puts it within 0.06 of the old `--ink-soft` and the three
-tiers collapse into two. Both rungs are the same colour scaled uniformly in
+tiers collapse into two. Both rungs are the same color scaled uniformly in
 linear RGB — chromaticity exact — so this is the identical sage, dark enough to
 read: `--ink-soft` 4.94 → 6.62 and `--ink-mute` 2.67 → 4.61 on the tightest
 ground, a 1.44× step between them. **notebook is now an ordinary member of
@@ -2085,7 +2085,7 @@ measures a **descendant** of the element carrying the token.
 
 1. **A default that is another token is a use-site fallback, never a `:root`
    declaration.** `--topbar-bg: var(--surface)` at `:root` resolves once and
-   inherits that colour past every `.theme-*`.
+   inherits that color past every `.theme-*`.
 2. **A token a theme must reach cannot be declared on the component.** The first
    `--table-border-width` was `.table { --table-border-width: var(--border-width) }`,
    which reads correctly and is unreachable from an ancestor — caught by the
@@ -2173,7 +2173,7 @@ what makes it one owner rather than two. The three variants read
 `var(--tone-ink, X)` and differ only in `X`: `.outlined` and `.link` take the
 brand accent through the same window, `.ghost` keeps `--ink-soft`.
 
-`.outlined`'s **border takes the same colour**, which the finding did not ask
+`.outlined`'s **border takes the same color**, which the finding did not ask
 for: a boundary at 1.99:1 is the variant not being drawn at all (WCAG 1.4.11,
 3:1). So does the loading spinner, via `--btn-ink`.
 
@@ -2206,7 +2206,7 @@ a consumer: every navigating button — `<a class="btn primary">New lead</a>`,
 `<a class="btn outlined">Open the list</a>` — rendered with a line through the
 label.
 
-The chip base sets layout, colour and contrast but never touched
+The chip base sets layout, color and contrast but never touched
 `text-decoration`, and the shipped demo only ever uses `<button>`, so nothing in
 the package exercised the case. A link-shaped button is not an edge case; it is
 half of all buttons in an app with routes.

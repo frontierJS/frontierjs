@@ -2577,7 +2577,7 @@ describe what the code does instead of what a real app would do.
 
 Verified in the REPL itself: `[0,0]` → A `+1 +1 ×2` → `[4,0]` → B `+1` →
 `[4,1]` → A `reset` → `[0,1]`, with each instance rendering its own accent
-colour delivered through context.
+color delivered through context.
 
 ## 2026-08-04 — the classSystem example taught a pattern that cannot work
 
@@ -2629,7 +2629,7 @@ Three things had to change together.
   once. A plain `.js` dependency is handed to the browser's own `import()`
   rather than the REPL's export-stripping path — it is a real ES module, so it
   gets real module semantics and brings its own graph.
-- **Styling.** `@frontierjs/ui` carries no colours; it is written in the
+- **Styling.** `@frontierjs/ui` carries no colors; it is written in the
   `@frontierjs/css` vocabulary (`btn primary`), so without that stylesheet it
   renders structurally perfect and completely unstyled — the failure mode this
   file has three entries about. `packages/css/dist/frontier.css` is linked, and

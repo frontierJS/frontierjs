@@ -3,12 +3,12 @@ title: Product
 ---
 <script>
   // One product family: its photographs, and the grid of buyable rows beneath
-  // it. This is the screen the variant split exists for — four colourways and
+  // it. This is the screen the variant split exists for — four colorways and
   // three sizes is twelve rows that no flat product table can show at all.
   //
-  // Nothing here lists a colour or a size. The option axes are read off the
+  // Nothing here lists a color or a size. The option axes are read off the
   // variants that arrived, in the order the schema declares for `size` and in
-  // seeded order for `colour`, so a fifth colourway appears here by being
+  // seeded order for `color`, so a fifth colorway appears here by being
   // created and not by anyone editing this file.
   import { products }        from '../../resources/Product.mesa'
   import { productVariants } from '../../resources/ProductVariant.mesa'
@@ -137,62 +137,62 @@ title: Product
   // Sizes sort by the ENUM's declaration order, which is the order they are
   // worn in; sorting them alphabetically would read l, m, one, s, xl.
   const sizeOrder = productVariants.fields.size.enum
-  $: colours = [...new Set(variants().map(v => v.colour))]
+  $: colors = [...new Set(variants().map(v => v.color))]
   $: sizes   = [...new Set(variants().map(v => v.size))]
                  .sort((a, b) => sizeOrder.indexOf(a) - sizeOrder.indexOf(b))
 
   const cellFor = (c, sz) =>
-    variants().find(v => v.colour === c && v.size === sz) ?? null
+    variants().find(v => v.color === c && v.size === sz) ?? null
 
-  // A photograph is of a COLOUR, so it hangs off one variant of that colour
-  // and is found here by matching the colour rather than the variant id —
+  // A photograph is of a COLOR, so it hangs off one variant of that color
+  // and is found here by matching the color rather than the variant id —
   // which is what lets one picture stand for every size it is cut in.
   function imageFor(c) {
-    const ids = new Set(variants().filter(v => v.colour === c).map(v => v.id))
+    const ids = new Set(variants().filter(v => v.color === c).map(v => v.id))
     return images().find(i => ids.has(i.variantId)) ?? null
   }
 
   // ── The buy box ──────────────────────────────────────────────────────────
   //
-  // Choosing a colour is choosing a colourway, so it moves the photograph too
+  // Choosing a color is choosing a colorway, so it moves the photograph too
   // — one piece of state and not two. The size list is narrowed to the sizes
-  // the chosen colour is actually cut in, because offering a combination the
+  // the chosen color is actually cut in, because offering a combination the
   // grid below shows as blank is offering something that cannot be bought.
-  let pickColour = null
+  let pickColor = null
   let pickSize   = null
   let qty        = 1
 
-  $: hero = (pickColour && imageFor(pickColour)) || images()[0] || null
+  $: hero = (pickColor && imageFor(pickColor)) || images()[0] || null
 
   // The first thing that can actually be bought, chosen once the rows arrive.
   // Reactive rather than set in `load()`: the variants come from a STORE, so a
   // repricing or a restock in another tab arrives after the load resolved.
   $: {
     const rows = variants()
-    if (rows.length && (pickColour === null || !colours.includes(pickColour))) {
-      pickColour = (rows.find(v => availOf(v) > 0) ?? rows[0]).colour
+    if (rows.length && (pickColor === null || !colors.includes(pickColor))) {
+      pickColor = (rows.find(v => availOf(v) > 0) ?? rows[0]).color
     }
   }
 
-  const sizesFor = (c) => variants().filter(v => v.colour === c)
+  const sizesFor = (c) => variants().filter(v => v.color === c)
                                     .map(v => v.size)
                                     .sort((a, b) => sizeOrder.indexOf(a) - sizeOrder.indexOf(b))
 
   $: {
-    const offered = pickColour ? sizesFor(pickColour) : []
+    const offered = pickColor ? sizesFor(pickColor) : []
     if (offered.length && (pickSize === null || !offered.includes(pickSize))) {
-      pickSize = offered.find(sz => availOf(cellFor(pickColour, sz)) > 0) ?? offered[0]
+      pickSize = offered.find(sz => availOf(cellFor(pickColor, sz)) > 0) ?? offered[0]
     }
   }
 
-  $: chosen = pickColour && pickSize ? cellFor(pickColour, pickSize) : null
+  $: chosen = pickColor && pickSize ? cellFor(pickColor, pickSize) : null
 
   // Everything the button needs to say, in one place. A disabled control with
   // no reason beside it is the shape people click twice and then reload.
   $: available = chosen ? availOf(chosen) : 0
 
   $: reason =
-      !chosen           ? 'That size is not cut in this colour'
+      !chosen           ? 'That size is not cut in this color'
     : !chosen.active    ? 'No longer on sale'
     // Sold out vs held. Both mean "you cannot have one", and they are different
     // sentences because one of them comes back on its own in twenty minutes and
@@ -273,7 +273,7 @@ title: Product
           <SectionHeader title="Add a photograph" />
           <ProductImageForm
             productId={Number(page.params.id)}
-            variantId={chosen?.id ?? null}   <!-- the colourway on screen, so a photograph lands on the one being looked at -->
+            variantId={chosen?.id ?? null}   <!-- the colorway on screen, so a photograph lands on the one being looked at -->
             ondone={() => productImages.load({ productId: Number(page.params.id) }, { limit: 50, orderBy: 'position' })}
           />
         </div>
@@ -281,14 +281,14 @@ title: Product
 
       {#if images().length > 1}
         <div class="strip">
-          {#each colours as c (c)}
+          {#each colors as c (c)}
             {#if imageFor(c)}
               <button
                 class="swatch"
                 type="button"
-                aria-pressed={pickColour === c}
+                aria-pressed={pickColor === c}
                 aria-label={`Choose ${c}`}
-                onclick={() => pickColour = c}
+                onclick={() => pickColor = c}
               >
                 <img src={imageFor(c).file} alt={imageFor(c).alt} loading="lazy" />
                 <span class="text-xs">{c}</span>
@@ -322,16 +322,16 @@ title: Product
       <div class="card buy">
         <div class="buy-row">
           <Select
-            id="buy-colour"
-            label="Colour"
-            options={colours}
+            id="buy-color"
+            label="Color"
+            options={colors}
             placeholder=""
-            bind:value={pickColour}
+            bind:value={pickColor}
           />
           <Select
             id="buy-size"
             label="Size"
-            options={pickColour ? sizesFor(pickColour) : []}
+            options={pickColor ? sizesFor(pickColor) : []}
             placeholder=""
             bind:value={pickSize}
           />
@@ -349,7 +349,7 @@ title: Product
             <span class="buy-price">{money(chosen.price * qty)}</span>
             <Mono>{chosen.sku}</Mono>
           {:else}
-            <span class="text-muted">Pick a colour and size</span>
+            <span class="text-muted">Pick a color and size</span>
           {/if}
         </div>
 
@@ -377,21 +377,21 @@ title: Product
   </div>
 
   <!-- ── The variant grid ─────────────────────────────────────────────────
-       Colour down, size across. A cell that no variant fills is a
+       Color down, size across. A cell that no variant fills is a
        combination the shop does not cut, which is a different thing from one
        it cut and sold out of — the first is blank, the second says 0. -->
-  <SectionHeader title="Variants" level={2} sub="one row per (colour, size) — the composite @@unique in db/schema.lite" />
+  <SectionHeader title="Variants" level={2} sub="one row per (color, size) — the composite @@unique in db/schema.lite" />
 
   <div class="table-scroll">
     <table class="grid">
       <thead>
         <tr>
-          <th scope="col">Colour</th>
+          <th scope="col">Color</th>
           {#each sizes as s (s)}<th scope="col">{s}</th>{/each}
         </tr>
       </thead>
       <tbody>
-        {#each colours as c (c)}
+        {#each colors as c (c)}
           <tr>
             <th scope="row">{c}</th>
             {#each sizes as s (s)}

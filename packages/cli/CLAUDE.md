@@ -280,7 +280,7 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   plate numbers and motifs are cosmetic and fall back rather than fail.
   **The page is written in `@frontierjs/css`** (Invariant 13) — Topbar, Card,
   Dialog, Table, Facts, Item, Badge, Pill, Field — and a TONE carries what a
-  colour used to: `danger` for an S1, `info` for a ruling, `muted` for a claimed
+  color used to: `danger` for an S1, `info` for a ruling, `muted` for a claimed
   folder. **A realm accent is the second axis** — identity, not status, which
   the vocabulary has no word for — so `--realm` is DERIVED from the tone tokens
   (mixed in oklab where seven tones cannot make nine) and used for a plate's

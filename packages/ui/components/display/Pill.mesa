@@ -37,7 +37,7 @@
 <span class={cx('pill', t)} style:font-size={fontSize || null} {class} {...$attributes}>
   {#if dot}
     <!--
-      currentColor, so it tracks the auto-contrast text colour chip.css
+      currentColor, so it tracks the auto-contrast text color chip.css
       derives rather than restating the tone and risking a mismatch.
     -->
     <span

@@ -87,7 +87,7 @@ h6, .h6 {
 /*
  * ── The .text-* utilities moved out in v0.10.1 ────────────────────
  *
- * Both the size scale and the colour utilities now live in utilities.css,
+ * Both the size scale and the color utilities now live in utilities.css,
  * in the `utilities` layer. In this file they shared the `components` layer
  * with .btn, which sets its own font-size — so every size modifier tied on
  * specificity and lost on source order. See utilities.css for the detail.

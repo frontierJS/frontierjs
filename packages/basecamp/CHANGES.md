@@ -519,7 +519,7 @@ overlap) and `params` written as `BlueprintParam` rows, because that list is an
 ordered form rather than a document. 31 params across the eight, and all three
 `ParamGenerator` values are exercised.
 
-**`brandColor` is set on one of the eight.** Four took their colour from the
+**`brandColor` is set on one of the eight.** Four took their color from the
 mock's own theme object (`T.blue`, `T.red`) — a design-system token, not a
 vendor's brand. Copying those would put this app's palette in a data column and
 call it somebody's identity, so they are null and the card falls back to its own
@@ -2586,7 +2586,7 @@ declared list and reads that service's own `total`.
 A widget's subject is a real relation (`serverId`, `appId`) with
 `onDelete: SetNull`, so a card whose machine was really deleted keeps its place
 and loses its subject. `config` is knobs, and an unknown key is refused by name.
-The pin is the workspace's, not the reader's, and says so. No colour column —
+The pin is the workspace's, not the reader's, and says so. No color column —
 `@frontierjs/css` styles by tone, and a stored hex is one the theme cannot
 follow.
 

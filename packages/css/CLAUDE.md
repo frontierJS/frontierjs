@@ -2,7 +2,7 @@
 
 **`@frontierjs/css`** — the styling language of the framework (Invariant 13).
 Semantics first: a **tone** (`danger`) and a **treatment** (`outlined`), never a
-colour and never a utility class. Plain CSS, no build step required.
+color and never a utility class. Plain CSS, no build step required.
 
 `bun run test` drives **headless Chrome** — needs Chrome on PATH or `$FJS_CHROME`.
 `bun run demo` serves the guide on :5173 (`$PORT` overrides).
@@ -137,11 +137,11 @@ test/run.js        the harness
   how a rule says what it looks like with no tone. Clamped rather than blended,
   which is measured both ways: `--tint-ink`'s 55% toward `--ink` leaves
   `sunset`/`warning` at 4.05:1. **A dark theme must invert the window**,
-  because relative colour syntax cannot read the surface a colour will land on;
+  because relative color syntax cannot read the surface a color will land on;
   `dark.css`, `basecamp.css` and `field.css` do, and a new one that forgets is
   caught by `contrast:` / `code: every token clears AA in theme-*`, not by
   anything visual. code.css writes the clamp out per role instead of reading
-  `--tone-ink`, because it needs six roles at once off six theme colours and
+  `--tone-ink`, because it needs six roles at once off six theme colors and
   `--tone-ink` is one tone per element.
 - **`theme-notebook`'s `--ink-mute` is 2.67:1 and under AA wherever it is
   text** — nine files use it. Pre-existing, `FJS-125`; the code theme reads it
@@ -286,15 +286,15 @@ test/run.js        the harness
   are dated and sourced instead, which is the closest available equivalent.
 - **`code(src, 'txt')` skips the highlighter.** glow has no "plain" mode — an
   unknown language still gets the common-word rules — so a diagram comes out
-  with `Bootstrap` coloured as a keyword unless you say `txt`.
+  with `Bootstrap` colored as a keyword unless you say `txt`.
 - **The compare page's worked example ships a live, UNSCOPED `<style>`.**
   `.brand { --bg-mix: #6d28d9 }` is injected with the section so the code
   sample and the preview are the same declaration — the claim being made is
   that one rule is enough, and scoping it would quietly weaken it. Nothing
   else in the guide uses `.brand`. `comparePage.init` then measures that
-  button's contrast in the reader's browser; the colours must go through a
+  button's contrast in the reader's browser; the colors must go through a
   canvas, because Chrome serialises the derived fill as `color(xyz-d65 …)`
-  and reading those floats as 8-bit channels is wrong for every colour.
+  and reading those floats as 8-bit channels is wrong for every color.
 
 - **A theme ships no selector, so every look is a token — and three of the
   four gaps were tokens that stopped at one element.** `--border-width` is
@@ -320,7 +320,7 @@ test/run.js        the harness
     strip's own weight: at 3px a literal 2px underline reads as a gap in the
     line.
 - **Motion is four rungs and two loops, named for the job.** `--motion-fast`
-  (a colour changing) · `--motion-base` (a control changing shape) ·
+  (a color changing) · `--motion-base` (a control changing shape) ·
   `--motion-enter` (overlays) · `--motion-slow` (a measurement moving), plus
   `--motion-spin` and `--motion-shimmer`. `theming.spec.js` sweeps every rule
   for a literal duration, with two exclusions that are the point rather than

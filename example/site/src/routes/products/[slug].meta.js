@@ -69,7 +69,7 @@ export async function load({ params }) {
     images: images.map(i => ({ src: i.file, alt: i.alt })),
     variants: variants.map(v => ({
       sku:    v.sku,
-      colour: v.colour,
+      color: v.color,
       size:   v.size,
       // The price as it was AT BUILD TIME. It is a snapshot and the page says
       // so — the island below asks the shop what it is now.

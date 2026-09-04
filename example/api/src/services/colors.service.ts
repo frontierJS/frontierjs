@@ -1,4 +1,4 @@
-// The colourway list behind `ProductVariant.colour`.
+// The colorway list behind `ProductVariant.color`.
 //
 // A service over the SOURCE of a value set, which is what makes the set
 // reachable from the browser at all: a picker asks this service for the list,
@@ -9,6 +9,6 @@
 // somebody maintains, not a thing the app has screens about.
 import { createBaseService } from '@frontierjs/junction'
 
-export function createColoursService() {
-  return createBaseService({ model: 'Colour', channel: 'colours' })
+export function createColorsService() {
+  return createBaseService({ model: 'Color', channel: 'colors' })
 }

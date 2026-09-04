@@ -25,7 +25,7 @@
       if (!panel) return
 
       // A selected chip drops `.outlined` so it takes .btn's filled skin, which
-      // carries its own readable text colour. Never set one without the other.
+      // carries its own readable text color. Never set one without the other.
       for (const b of chips) {
         const on = b.dataset.id === id
         b.setAttribute('aria-selected', String(on))

@@ -748,8 +748,8 @@ answer and the one that does not read as a broken widget.
   personal; a per-person pin needs the preferences store `UserSettingsView` is
   waiting on, and the screen says so rather than offering a control that looks
   private.
-- **No colour.** The mock stores a hex per board. `@frontierjs/css` styles by
-  tone, and a stored colour is one the theme cannot follow. The icon is an
+- **No color.** The mock stores a hex per board. `@frontierjs/css` styles by
+  tone, and a stored color is one the theme cannot follow. The icon is an
   emoji, which is content.
 - **`deploy_feed`'s subject is an App, not a project.** A deployment belongs to
   an app and carries no project id, so the mock's project filter would have been
@@ -1161,7 +1161,7 @@ what a screen has to be able to show:
   and seeding everybody would erase the *chosen* against *default* distinction
   the screen renders.
 
-`brandColor` is set on one of the eight. The other four the mock coloured took it
+`brandColor` is set on one of the eight. The other four the mock colored took it
 from its own theme object, which is a design-system token rather than a vendor's
 brand.
 

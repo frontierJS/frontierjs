@@ -179,17 +179,17 @@ test('text: the size scale exists and is monotonic', function () {
   });
 });
 
-test('text: size and colour utilities chain', function () {
+test('text: size and color utilities chain', function () {
   /*
    * They are separate axes on purpose — `.text-sm` is a size, `.text-muted`
-   * is a colour, and the demo needed both together on every meta line.
+   * is a color, and the demo needed both together on every meta line.
    */
   var both = el('<p class="text-sm text-muted">2 hours ago</p>');
   var sizeOnly = el('<p class="text-sm">2 hours ago</p>');
-  var colourOnly = el('<p class="text-muted">2 hours ago</p>');
+  var colorOnly = el('<p class="text-muted">2 hours ago</p>');
 
-  assert.equal(style(both, 'font-size'), style(sizeOnly, 'font-size'), 'the colour class changed the size');
-  assert.sameColor(style(both, 'color'), style(colourOnly, 'color'), 'the size class changed the colour');
+  assert.equal(style(both, 'font-size'), style(sizeOnly, 'font-size'), 'the color class changed the size');
+  assert.sameColor(style(both, 'color'), style(colorOnly, 'color'), 'the size class changed the color');
 });
 
 test('text: the small steps still clear AA on every theme', function () {
@@ -286,7 +286,7 @@ test('reset: a link carrying a component class is not underlined', function () {
 test('reset: a bare link in prose keeps its underline', function () {
   /*
    * The half a wider selector would break. `text-decoration: none` on `a`
-   * or on `*` would strip the underline from prose links too, and colour
+   * or on `*` would strip the underline from prose links too, and color
    * alone is not an accessible link affordance — so the reset is scoped to
    * `a:where([class])` and this is what says so.
    */
@@ -294,7 +294,7 @@ test('reset: a bare link in prose keeps its underline', function () {
   assert.equal(
     style(a, 'text-decoration-line'),
     'underline',
-    'the reset stripped the underline from an un-classed link — colour alone is not an affordance'
+    'the reset stripped the underline from an un-classed link — color alone is not an affordance'
   );
 });
 
@@ -381,7 +381,7 @@ test('surface: the hover border is mixed, so a toned card still responds', funct
   var border = rule.style.getPropertyValue('--surface-border');
   assert.ok(
     border.indexOf('color-mix') !== -1,
-    'the hover border is not a mix — a toned card will hover to its own resting colour'
+    'the hover border is not a mix — a toned card will hover to its own resting color'
   );
   assert.ok(
     border.indexOf('--bg-mix') !== -1,

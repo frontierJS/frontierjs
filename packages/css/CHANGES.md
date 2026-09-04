@@ -34,7 +34,7 @@ job (`FJS-D187`).
 
 ## 2026-08-27 — the default theme carries a ramp, a ground and an elevation
 
-`theme-default` was seven colours, every one of them the value `tokens.css`
+`theme-default` was seven colors, every one of them the value `tokens.css`
 already declares at `:root`. So the theme that every app boots into was a no-op,
 and what an unstyled FrontierJS app looked like was decided entirely by the
 package defaults — which are tuned to be neutral, not to be a design.
@@ -42,7 +42,7 @@ package defaults — which are tuned to be neutral, not to be a design.
 Measured on `example/`: white cards on a `#f5f5f5` page separated by a `#e7e3d8`
 hairline. The rules are WARM and the surfaces are NEUTRAL GRAY, which is the
 mismatch that reads as unfinished; `--app-bg` fell back to `--surface-sunken`,
-so the page, the table head and every inset well were one colour and a Card had
+so the page, the table head and every inset well were one color and a Card had
 nothing but that hairline holding it off the page; and `--surface-shadow: none`
 meant the Block tier was flat against it.
 

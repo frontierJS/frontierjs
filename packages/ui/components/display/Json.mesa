@@ -12,7 +12,7 @@
   // A key, a string and a number are marked with the elements `glow()` already
   // uses for them — <b>, <em>, <strong>, <i>, <sup> — inside a
   // `<code language="json">`, which is the exact shape @frontierjs/css's
-  // components/code.css themes. So this component makes no colour decision at
+  // components/code.css themes. So this component makes no color decision at
   // all: it retints with the theme, and a theme that sets its own --code-*
   // variables reaches the tree for free. A private palette here would be a
   // sixth thing to reconcile against eleven themes, and would be wrong in ten
@@ -571,7 +571,7 @@
     <sup>{units(v)}</sup>
     {#if !open}<span class="fjs-json-preview">{previewOf(v)}</span>{/if}
   {:else if v === null}
-    <!-- Keyword colour, not value colour: `true` and `null` are the language's
+    <!-- Keyword color, not value color: `true` and `null` are the language's
          own words, and reading them as strings is how a null gets mistaken for
          the text "null". -->
     <strong>null</strong>
@@ -1129,7 +1129,7 @@
 
   /* code[language] is display:block and scrolls on its own — correct for a
      block of source, wrong for one cell of a row that is already in a grid.
-     Only the token elements inside it are wanted here, for their colour. */
+     Only the token elements inside it are wanted here, for their color. */
   .fjs-json-key,
   .fjs-json-value {
     display:     inline;
@@ -1148,9 +1148,9 @@
 
   /*
    * The diff marks are the package's own — `<ins>`, `<del>` and `<dfn>` inside
-   * a `code[language]`, which `code.css` draws as a stripe with a coloured rule
+   * a `code[language]`, which `code.css` draws as a stripe with a colored rule
    * and a 14% tint off --code-ins / --code-del / --code-note. So this file
-   * makes no colour decision here either, and a theme that redefines those
+   * makes no color decision here either, and a theme that redefines those
    * three reaches the tree for free.
    *
    * The one thing to correct is the bleed: `.code` publishes its own horizontal

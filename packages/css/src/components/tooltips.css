@@ -49,7 +49,7 @@
 /*
  * .tooltip is in the chip lineage (chip.css), so it gets centered inline-flex
  * layout and the auto-contrast machinery — a toned tooltip keeps readable
- * text without anyone choosing a colour.
+ * text without anyone choosing a color.
  */
 .tooltip {
   --tone-fill: var(--bg-mix, var(--color-secondary));

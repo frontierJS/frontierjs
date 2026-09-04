@@ -90,7 +90,7 @@ title: New lead
 <!--
   The markup is as derived as the data. `field-group` per control, `field` on
   the control itself, `field-hint` for the type note, and the same `danger`
-  tone on a hint that a button or a card would take. No sizes, no colours.
+  tone on a hint that a button or a card would take. No sizes, no colors.
 -->
 <form class="card stack" style="max-width: 32rem" on:submit|preventDefault={save}>
   {#each plain as [name, rule]}

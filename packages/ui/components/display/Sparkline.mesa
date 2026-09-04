@@ -3,8 +3,8 @@
   // Compact SVG time-series chart. Polyline + optional area fill.
   // No axes, no labels — pure visual trend indicator.
   //
-  // Colour comes from the tone, via currentColor — so a Sparkline in a themed
-  // subtree recolours with the theme, instead of holding a private hex palette
+  // Color comes from the tone, via currentColor — so a Sparkline in a themed
+  // subtree recolors with the theme, instead of holding a private hex palette
   // that all six themes would have to be reconciled against by hand.
   //
   // Usage:

@@ -79,7 +79,7 @@ export const WebhookTestPanel = ({ path, nodeId, sampleData, onSampleCapture, ru
 
   useEffect(() => () => clearTimers(), [])
 
-  // ── colour & border shared ────────────────────────────────────────────────
+  // ── color & border shared ────────────────────────────────────────────────
   const accentCyan   = "var(--cyan)"
   const accentGreen  = "var(--green)"
   const accentAmber  = "var(--amber)"

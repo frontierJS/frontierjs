@@ -2833,7 +2833,7 @@ and an edit page, and until now each carried its own copy of the same ~180
 lines: an `Object.entries(resource.fields)` loop deciding control-per-type, a
 `pickers` block resolving a related service through a hand-rolled English
 pluraliser, an `errors` array, a `saving` flag, and a `<style>` block of hex
-colours. They had already drifted — one filtered `id` by name, the other asked
+colors. They had already drifted — one filtered `id` by name, the other asked
 the resource for its idField, and only one rendered a picker at all.
 
 `core/crud-templates.js` is now the one owner of what a generated page looks
@@ -2982,7 +2982,7 @@ socket opens at sign-in.
 ## 2026-08-19 — `project:view` is a page rather than a React bundle, and it stopped inventing data
 
 FJSChain was React 18 from a CDN — two `<script crossorigin>` tags, 486 inline
-`style:{}` objects, a 30-key colour palette, hand-compiled from an `FJSChain.jsx`
+`style:{}` objects, a 30-key color palette, hand-compiled from an `FJSChain.jsx`
 that is **in no checkout**. So the committed artefact could not be regenerated,
 and the page could not render at all without the network, which nothing else
 here needs.
@@ -2999,7 +2999,7 @@ mean what they say beside them.
 twenty nodes as three rows of cards and left the direction to two captions,
 which is not a chain — it is a list that happens to be in order. The arrows are
 back and they are CSS rather than glyphs, so they stretch with the gap and take
-the ink colour: a rule with a head on it between nodes, pointing right along the
+the ink color: a rule with a head on it between nodes, pointing right along the
 outgoing lane, left along the incoming one, down the two spines. Consecutive
 nodes of one realm sit in a tinted **band**, which is what makes four API nodes
 read as one stretch of the chain; the bands line up with the realm cards
@@ -3056,8 +3056,8 @@ of their own took away the air between the strip and the first panel. The strip
 and the views are siblings.
 
 **A tone does not reach anything inside the element carrying it.** `--bg-mix` is
-element-scoped, so all three realms drew in one colour until the tone went on
-the heading control too, and every elbow drew in the Data realm's colour until
+element-scoped, so all three realms drew in one color until the tone went on
+the heading control too, and every elbow drew in the Data realm's color until
 its rail derived the tone into an ordinary custom property first — which is the
 move `form-core.css` already makes to get a tone onto a checkbox. Twice in one
 page is what makes it worth writing down.
@@ -3081,7 +3081,7 @@ It is a term now, all the way down: **Shell, Topbar, Sidebar, Screen, Bar,
 Card, Field, Item, Badge, Pill, Kbd, Empty, Disclosure, Dialog, Drawer, Code**.
 What is left in a `<style>` block is what the vocabulary has no word for — the
 console a command streams into, the split it shares with the form, and the
-density a command tree needs that a Sidebar does not assume. **No colour is
+density a command tree needs that a Sidebar does not assume. **No color is
 written in the page at all**: an output level is a tone (`text-danger`,
 `text-success`), which is what makes the light themes work — the old
 console's `#d8d8d8` was invisible on anything but its own ground.
@@ -3951,12 +3951,12 @@ theme moves all nine at once. The two that mix to the same place are eight
 realms wearing nine names, which is why `testing` and `cross` are measured
 apart rather than assumed apart.
 
-**A tone carries the meaning a colour used to.** An S1 defect is `danger`, a
+**A tone carries the meaning a color used to.** An S1 defect is `danger`, a
 ruling is `info`, a claimed folder is `muted`, a fast CI phase is `success`. No
 hex is written for any of them, which is what makes the **nine themes** work —
 the topbar carries a picker over `default · dark · midnight · forest · sunset ·
 elite · basecamp · notebook · press`, remembered in `localStorage`. A test fails
-a colour literal in the page's own stylesheet, because that is the rule that
+a color literal in the page's own stylesheet, because that is the rule that
 would otherwise erode one convenience at a time.
 
 What is still hand-written is only what the vocabulary has no word for: the

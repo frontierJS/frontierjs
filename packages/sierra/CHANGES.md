@@ -798,7 +798,7 @@ wraps once (`FJS-429`).
 
 `FJS-436`. Two boundaries write a per-field refusal and they spell the field
 differently: junction's validator says `field`, litestone's `ValidationError`
-says `path: ['colour']`. `toFieldErrors` read the first only, so every entry
+says `path: ['color']`. `toFieldErrors` read the first only, so every entry
 from the second fell to the form-level message — a banner, away from the box it
 is about, with `<Form>` unable to mark it invalid.
 

@@ -8,7 +8,7 @@
  * all — which the component's own header says the old markup got wrong by
  * putting `on:click` on the `<th>`.
  *
- * Row tone is asked as a painted colour rather than a class, because that is
+ * Row tone is asked as a painted color rather than a class, because that is
  * where it went wrong before: stripe, hover and tone all set one row's
  * background, and a striped table used to lose its tones on every odd row.
  */

@@ -135,7 +135,7 @@ export async function openChrome({ windowSize = '1280,900', bootstrap } = {}) {
     '--headless=new', '--disable-gpu', '--no-sandbox',
     '--remote-debugging-port=0', `--user-data-dir=${profile}`,
     `--window-size=${windowSize}`,
-    // Specs read colour and geometry; a non-sRGB profile or a scrollbar taking
+    // Specs read color and geometry; a non-sRGB profile or a scrollbar taking
     // width makes a hit test land on the wrong element.
     '--force-color-profile=srgb', '--hide-scrollbars',
     'about:blank',

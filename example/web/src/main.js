@@ -4,7 +4,7 @@
 import 'virtual:sierra'
 
 // The design system. One import, no build step, no config. Nothing in this app
-// defines a colour, a radius or a spacing scale of its own.
+// defines a color, a radius or a spacing scale of its own.
 import '@frontierjs/css'
 
 import { getClient }    from '@frontierjs/sierra/junction'

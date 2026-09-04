@@ -19,7 +19,7 @@ replace. Deleting one breaks eight images on the promo page.
 
 They are kept here rather than beside the crops because a contact sheet is not a
 web asset: it is 1536×1024 of reference, and shipping it into `public/` would put
-a megabyte of wordmarks and colour swatches on a public origin for the sake of a
+a megabyte of wordmarks and color swatches on a public origin for the sake of a
 120px disc.
 
 | Sheet | What it holds |
@@ -46,7 +46,7 @@ The hexes below are the part that survives the sheets not being here.
 Copper Brown is a fill only — it is 2.41:1 on Dusk Navy and fails AA as text.
 Mesa Orange is 5.99:1 on that ground and 2.97:1 under white, which is why the
 promo page hands it to a chip as `--bg-mix` and lets `chip.css` derive the label
-colour rather than setting one.
+color rather than setting one.
 
 ## Re-cutting the crops
 
@@ -82,6 +82,6 @@ from the extra bytes. There is deliberately no script for it: this runs once whe
 the artwork changes, and a build step that needs an image library is a
 dependency the workspace does not otherwise have.
 
-The three discs are quantised to 128 colours after masking. They are painterly
+The three discs are quantised to 128 colors after masking. They are painterly
 and the banding is not visible; at full depth the three of them were 290K for
 240×240, which is more than the hero.

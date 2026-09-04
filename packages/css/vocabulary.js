@@ -281,7 +281,7 @@ const ANATOMY = {
   </div>
 </article>`,
     parts: [
-      ['.surface-header', 'A title strip. Shares the surface border colour, so dividers stay consistent', 'optional'],
+      ['.surface-header', 'A title strip. Shares the surface border color, so dividers stay consistent', 'optional'],
       ['.surface-body', 'The content, padded independently of the header and footer', 'optional'],
       ['.surface-footer', 'Actions. Where a Button row goes', 'optional'],
     ],
@@ -312,7 +312,7 @@ const ANATOMY = {
   </div>
 </article>`,
     parts: [
-      ['.alert-icon', 'The glyph. aria-hidden, because a colour and a symbol are not the message', 'optional'],
+      ['.alert-icon', 'The glyph. aria-hidden, because a color and a symbol are not the message', 'optional'],
       ['.alert-content', 'Everything else — a strong title, then prose'],
     ],
   },
@@ -343,7 +343,7 @@ const ANATOMY = {
     parts: [
       ['.tile-label', 'What is being measured'],
       ['.tile-value', 'The number, at display size'],
-      ['.tile-delta', 'The change. Takes a tone, which is the only place the colour is decided', 'optional'],
+      ['.tile-delta', 'The change. Takes a tone, which is the only place the color is decided', 'optional'],
     ],
   },
 
@@ -361,7 +361,7 @@ const ANATOMY = {
 </ol>`,
     parts: [
       ['.feed-item', 'One event. An <article> because each entry is self-contained'],
-      ['.feed-dot', 'The timeline marker. Reads --bg-mix, so any tone colours it'],
+      ['.feed-dot', 'The timeline marker. Reads --bg-mix, so any tone colors it'],
       ['.feed-content', 'When, and what'],
     ],
   },
@@ -687,10 +687,10 @@ const NOT_ANATOMY = {
   'gap-6xl': 'A gap utility',
   'clamp-1': 'A line-clamp utility', 'clamp-2': 'A line-clamp utility',
   'clamp-3': 'A line-clamp utility',
-  'text-body': 'A colour utility', 'text-muted': 'A colour utility',
-  'text-primary': 'A colour utility', 'text-info': 'A colour utility',
-  'text-success': 'A colour utility', 'text-warning': 'A colour utility',
-  'text-danger': 'A colour utility',
+  'text-body': 'A color utility', 'text-muted': 'A color utility',
+  'text-primary': 'A color utility', 'text-info': 'A color utility',
+  'text-success': 'A color utility', 'text-warning': 'A color utility',
+  'text-danger': 'A color utility',
   'theme-default': 'A theme', 'theme-dark': 'A theme', 'theme-midnight': 'A theme',
   'theme-forest': 'A theme', 'theme-sunset': 'A theme', 'theme-elite': 'A theme',
   'theme-basecamp': 'A theme', 'theme-notebook': 'A theme',

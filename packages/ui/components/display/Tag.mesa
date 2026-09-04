@@ -5,7 +5,7 @@
   //
   // This is `.pill.removable` in @frontierjs/css — the close button is part of
   // that component's anatomy (`.pill-close`), including its own --icon-size, so
-  // there is nothing to size or colour here.
+  // there is nothing to size or color here.
   //
   // Usage:
   //   <Tag onremove={() => removeTag(t)}>Design</Tag>

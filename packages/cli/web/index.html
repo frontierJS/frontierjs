@@ -34,7 +34,7 @@
  * Bar, Card, Field, Item, Badge, Disclosure, Dialog, Drawer, Code, Empty.
  *
  * Unlayered, so it beats every layer of the package without !important.
- * No colour is written here: a tone or a token says it instead.
+ * No color is written here: a tone or a token says it instead.
  */
 
 /*
@@ -263,7 +263,7 @@ button[data-health] {
 
 /* Keyboard selection is the same state a current nav link is in, and takes the
    same recipe — `.navlink[aria-current]`'s, which is a tint of the tone rather
-   than a colour. Hover alone was invisible: it lands on the ground the palette
+   than a color. Hover alone was invisible: it lands on the ground the palette
    is already drawn on. */
 .gui-palette-results .item[aria-current="true"] {
   background: color-mix(in srgb, var(--color-primary) 14%, var(--surface));
@@ -880,7 +880,7 @@ function mdToHtml(text) {
 // ─── Syntax highlighting ──────────────────────────────────────────────────────
 //
 // `@frontierjs/toolbelt/glow` marks each token with the ELEMENT that means it,
-// and @frontierjs/css themes those elements — so nothing here names a colour.
+// and @frontierjs/css themes those elements — so nothing here names a color.
 // A block is written with its source as text and painted afterwards, which is
 // what lets a block that arrives before glow does get painted when it lands.
 function codeBlock(source, lang) {
@@ -1387,7 +1387,7 @@ function handleEvent(event) {
 
 // ─── Output ───────────────────────────────────────────────────────────────────
 //
-// A level is a tone, not a colour: the console rethemes with the rest of the
+// A level is a tone, not a color: the console rethemes with the rest of the
 // page and `success` still means success on a light ground.
 const LEVEL_TONE = {
   output:  '',

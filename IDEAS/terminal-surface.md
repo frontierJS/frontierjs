@@ -28,16 +28,16 @@ chalk-compatible so call sites read the same after the swap. Compatibility was t
 right call for the swap and it inherited chalk's vocabulary along with it.
 
 So a call site says *red*. Nothing can retheme, nothing adapts to a light terminal,
-and the one accent colour in the CLI is a hex literal inside a renderer —
+and the one accent color in the CLI is a hex literal inside a renderer —
 `core/prose.js:33` paints inline code `#f5a623`, which is the only place that
 decision exists.
 
-**This repo has already ruled against colour-named vocabulary once.** Invariant 13:
-style with a tone (`danger`) and a treatment (`outlined`), never a colour. The
-argument that produced it — a colour name is a fact about one rendering and a tone
+**This repo has already ruled against color-named vocabulary once.** Invariant 13:
+style with a tone (`danger`) and a treatment (`outlined`), never a color. The
+argument that produced it — a color name is a fact about one rendering and a tone
 is a fact about the message — does not stop at the browser.
 
-**The second half is worse and is not about colour at all.** Booting basecamp in dev
+**The second half is worse and is not about color at all.** Booting basecamp in dev
 prints four prefix vocabularies in nine lines:
 
 ```
@@ -124,7 +124,7 @@ the steps together, a glyph per state, a spinner that resolves into a line. It i
 also the trap: see §7.
 
 **Charm** (`lipgloss`, `log`, `bubbletea`) is the only real design system for a
-terminal — adaptive colour against the terminal's own background, styles that
+terminal — adaptive color against the terminal's own background, styles that
 compose, structured logs with aligned key/value. Wrong language, right vocabulary.
 
 ---
@@ -241,7 +241,7 @@ anyone counted.
 
 ## See also
 
-- `CLAUDE.md` Invariant 13 — tone and treatment, never a colour; the argument this
+- `CLAUDE.md` Invariant 13 — tone and treatment, never a color; the argument this
   extends past the browser
 - `CLAUDE.md` Invariant 4 — one owner per translation; *an event becomes a line* has
   none

@@ -177,8 +177,8 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
     uses — `<b>` a key, `<em>` a value, `<strong>` a keyword, `<i>`
     punctuation, `<sup>` an annotation — inside a `<code language="json">`,
     which is the shape `code.css` themes. So it retints with the theme for free.
-    A theme that stops matching still renders a legible tree in ONE colour,
-    which is why the drive asserts the computed colours differ.
+    A theme that stops matching still renders a legible tree in ONE color,
+    which is why the drive asserts the computed colors differ.
   - **A row is selected by `data-path`, not by its text.** Two keys at two
     depths read identically, and a key that CONTAINS a dot is the shape that
     breaks a joined path — `['a.b']` and `['a','b']` are two nodes and one
@@ -271,7 +271,7 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
     `diffDocs` answers the merge, the per-path status, the previous value and
     the rows to open. The marks are the PACKAGE's — `<ins>`/`<del>`/`<dfn>`
     inside a `code[language]`, which `code.css` draws as stripes off
-    `--code-ins`/`--code-del`/`--code-note` — so this makes no colour decision
+    `--code-ins`/`--code-del`/`--code-note` — so this makes no color decision
     here either. Two shapes worth knowing: a changed leaf renders both sides,
     old above new, because a status word cannot say *changed from what*; and
     `--code-pad` is zeroed on the value cell, since the package bleeds a stripe
@@ -328,7 +328,7 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
     invented, so the rule lives in the component — but it varies the ring
     through the tokens rather than writing a second recipe.
   - **A filled state puts `.chip` on the element** and reads
-    `--fill`/`--on-fill`, so its text colour is derived against whatever tone a
+    `--fill`/`--on-fill`, so its text color is derived against whatever tone a
     theme defines instead of assumed white.
   - **A tinted state sets `--bg-mix` and reads `--tint-surface` /
     `--tint-rule` / `--tint-ink`.** Those are measured for contrast across

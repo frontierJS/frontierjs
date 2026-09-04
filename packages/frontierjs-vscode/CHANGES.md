@@ -11,7 +11,7 @@ for `.lite`/`.litestone` — cut from three design sheets, and `frontierjs.png`
 is the frontiersman rather than the same three lines at 128px.
 
 **The 16px render is what picked them, not the sheet.** Each sheet offered a
-file glyph, a circle badge and a monoline mark in five colourways, and at the
+file glyph, a circle badge and a monoline mark in five colorways, and at the
 size an explorer row actually uses most of that is a smudge — the frontiersman
 loses his hat and becomes an orange blob. The two that ship are single-idea
 silhouettes, checked at 16, 24 and 32 against a dark and a light ground before

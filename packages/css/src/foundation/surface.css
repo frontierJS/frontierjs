@@ -131,7 +131,7 @@
  * a `.card.danger` therefore hovered to the SAME red it already had, so a
  * toned card got no feedback but the 1px lift. Mixing takes whichever
  * border the card actually has and pulls it further toward its own tone,
- * so an untoned card goes brand-coloured and a danger card goes a deeper
+ * so an untoned card goes brand-colored and a danger card goes a deeper
  * red. One expression, both cases.
  *
  * The lift is 1px. Anything larger reads as the layout shifting rather

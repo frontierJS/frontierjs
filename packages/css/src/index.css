@@ -36,7 +36,7 @@
  *   layout      composition helpers (stack, cluster, center, split)
  *   components  btn, pill, badge, card, field, table, dialog, …
  *   patterns    block-tier layout patterns (bar, list, feed, disclosure)
- *   utilities   the escape hatch — .text-* size and colour. After
+ *   utilities   the escape hatch — .text-* size and color. After
  *               components on purpose: .btn sets a font-size, so a
  *               same-layer .text-lg lost to it and every size modifier
  *               was inert. See utilities.css.

@@ -49,7 +49,7 @@ A stylesheet cannot give you a focus-trapped dialog, a roving-tabindex
 tablist, a combobox, or a toast queue. This package is that half. Every
 component here draws itself with the css vocabulary and adds only behavior.
 
-**There is no second design system here.** No colour maps, no size scales, no
+**There is no second design system here.** No color maps, no size scales, no
 `tokens.css`. A component that wants to be red does not carry a red — it takes
 a tone.
 
@@ -68,7 +68,7 @@ Seven, from the css package, and they work on everything:
 
 Fill and text color are both derived from the tone's luminance, verified at
 zero WCAG AA failures across all 42 tone × theme combinations — so there is
-never a text colour to pick.
+never a text color to pick.
 
 `utils.js` exports `tone(name)`, which maps the older prop spellings onto the
 seven: `error` → `danger`, `red` → `danger`, `green` → `success`, `gray` →

@@ -104,7 +104,7 @@
 
   <!--
     Error — replaces the hint. role="alert" so it is announced when it
-    appears; `danger` sits here because that is the element whose colour
+    appears; `danger` sits here because that is the element whose color
     derives from it.
   -->
   {#if displayError}

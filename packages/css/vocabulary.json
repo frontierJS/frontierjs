@@ -454,7 +454,7 @@
       "parts": [
         [
           ".surface-header",
-          "A title strip. Shares the surface border colour, so dividers stay consistent",
+          "A title strip. Shares the surface border color, so dividers stay consistent",
           "optional"
         ],
         [
@@ -483,7 +483,7 @@
       "parts": [
         [
           ".alert-icon",
-          "The glyph. aria-hidden, because a colour and a symbol are not the message",
+          "The glyph. aria-hidden, because a color and a symbol are not the message",
           "optional"
         ],
         [
@@ -529,7 +529,7 @@
         ],
         [
           ".tile-delta",
-          "The change. Takes a tone, which is the only place the colour is decided",
+          "The change. Takes a tone, which is the only place the color is decided",
           "optional"
         ]
       ]
@@ -543,7 +543,7 @@
         ],
         [
           ".feed-dot",
-          "The timeline marker. Reads --bg-mix, so any tone colours it"
+          "The timeline marker. Reads --bg-mix, so any tone colors it"
         ],
         [
           ".feed-content",
@@ -860,13 +860,13 @@
     "clamp-1": "A line-clamp utility",
     "clamp-2": "A line-clamp utility",
     "clamp-3": "A line-clamp utility",
-    "text-body": "A colour utility",
-    "text-muted": "A colour utility",
-    "text-primary": "A colour utility",
-    "text-info": "A colour utility",
-    "text-success": "A colour utility",
-    "text-warning": "A colour utility",
-    "text-danger": "A colour utility",
+    "text-body": "A color utility",
+    "text-muted": "A color utility",
+    "text-primary": "A color utility",
+    "text-info": "A color utility",
+    "text-success": "A color utility",
+    "text-warning": "A color utility",
+    "text-danger": "A color utility",
     "theme-default": "A theme",
     "theme-dark": "A theme",
     "theme-midnight": "A theme",

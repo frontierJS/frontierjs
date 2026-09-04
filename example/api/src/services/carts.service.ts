@@ -33,7 +33,7 @@ type Variant  = { id: number, price: number, stock: number, active: boolean, sku
 type DisplayLine = LineRow & {
   sku:     string
   productId: number
-  colour:  string
+  color:   string
   size:    string
   /** What this shopper may raise the line to — on hand, less everybody ELSE's
    *  holds. Not `stock`: the number a stepper's max is set from is a question
@@ -587,7 +587,7 @@ export function createCartsService() {
       // not add up to what was charged.
       //
       // `description` is the sentence the shopper read, assembled the way the
-      // basket screen assembles it. A colourway renamed next year does not
+      // basket screen assembles it. A colorway renamed next year does not
       // un-sell this one.
       //
       // One `createMany`, not a loop: it is one write inside the checkout
@@ -603,7 +603,7 @@ export function createCartsService() {
         userId:      buyerId,
         variantId:   l.variantId,
         sku:         l.sku,
-        description: [l.product, [l.colour, l.size].filter(Boolean).join(' · ')]
+        description: [l.product, [l.color, l.size].filter(Boolean).join(' · ')]
           .filter(Boolean).join(' — '),
         quantity:    l.quantity,
         unitPrice:   l.unitPrice,
@@ -759,7 +759,7 @@ async function view(cart: CartRow, client: Record<string, any> = $.db) {
  * line itself is reached by the token policy.
  *
  * The image is the product's FIRST photograph rather than the variant's own,
- * which is a deliberate simplification: a colourway usually has one and a
+ * which is a deliberate simplification: a colorway usually has one and a
  * basket row is 40 pixels wide.
  */
 async function linesOf(cartId: number, client: Record<string, any> = $.db): Promise<DisplayLine[]> {
@@ -792,7 +792,7 @@ async function linesOf(cartId: number, client: Record<string, any> = $.db): Prom
       // The id and not the slug: /products/[id]/ is the route, and a basket
       // line linking to a URL the router cannot match is a dead row.
       productId: product.id ?? 0,
-      colour:  variant?.colour  ?? '',
+      color:   variant?.color   ?? '',
       size:    variant?.size    ?? '',
       // What the shopper may raise the quantity to. Read now rather than
       // remembered from when the line went in — the number on screen is the

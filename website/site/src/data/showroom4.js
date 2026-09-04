@@ -2,7 +2,7 @@
 //
 // `term` is the terminal transcript as [kind, text] pairs — 'c' a command,
 // 'o' its output, 'k' a checked result, 'm' a comment or a blank. The kind is
-// what the stylesheet colours, so a new kind needs a rule as well as a row.
+// what the stylesheet colors, so a new kind needs a rule as well as a row.
 
 export const PHASES = [
   {

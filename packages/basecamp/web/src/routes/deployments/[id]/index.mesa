@@ -148,7 +148,7 @@ title: Deployment
     driving — and it draws a connector line straight through its labels when
     used for anything else. A deployment is a chronological event stream that
     happens to you, which is what .feed is (css patterns/feed.css). The dot
-    reads --bg-mix, so a tone class colours it and no colour is named here.
+    reads --bg-mix, so a tone class colors it and no color is named here.
   -->
   <ol class="feed" id="deploy-steps">
     {#each steps as step}

@@ -183,19 +183,19 @@ and the fourth kind of sample — a transcript — could not be highlighted at a
 
 **`.lite`.** Both halves of a schema came out wrong. The generic attribute rule
 takes one `@`, so it matched at the second one and every `@@gate` rendered as a
-stray punctuation mark followed by an attribute. And a field's TYPE was coloured
+stray punctuation mark followed by an attribute. And a field's TYPE was colored
 only where the common keyword list happened to contain it case-insensitively:
 `Int` and `String` were lit, `DateTime`, `Json`, `Boolean` and a relation to
 another model were not. Matched by shape now — a capitalized word — so a new
 scalar and a relation both work with no edit here.
 
 **SQL.** Nothing in the common list is SQL and `--` was not read as a comment,
-so a `CREATE TABLE` was one unlit line with its string literals coloured. The
+so a `CREATE TABLE` was one unlit line with its string literals colored. The
 shape of DDL is its keywords, which were the only part not marked.
 
 **Shell, in the other direction.** `my`, `use`, `end`, `local`, `next`, `get`
 and `set` are all in the common list and all ordinary argument text, so
-`cd my-app` came out with `my` coloured as a keyword and `-app` as punctuation
+`cd my-app` came out with `my` colored as a keyword and `-app` as punctuation
 after it — the directory name a reader is meant to type, in three pieces, on an
 install command. `sh`/`bash`/`shell` join yaml/html/json in the keyword
 exclusion; what replaces the keywords is the COMMAND, which is the token
@@ -406,7 +406,7 @@ reports those same sizes and a `.mesa` import needs the Mesa build plugin —
 ## 2026-08-22 — `glow` gives JSON its three keywords (`FJS-405`)
 
 `true`, `false` and `null` were the only values in a highlighted JSON document
-with no colour at all. `getTags` withholds the COMMON_WORDS keyword pass from
+with no color at all. `getTags` withholds the COMMON_WORDS keyword pass from
 json, yaml and html — rightly, since every other bare word in a JSON document is
 inside a string — which left the three literals matched by nothing, so a `null`
 and a key spelled `"null"` rendered identically.

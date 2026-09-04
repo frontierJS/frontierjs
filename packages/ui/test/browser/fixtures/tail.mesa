@@ -2,7 +2,7 @@
   // tail.mesa — the last ten uncovered components.
   //
   // Mostly static markup, which is exactly why the questions asked of them
-  // are about ANNOUNCED state and PAINTED colour rather than about class
+  // are about ANNOUNCED state and PAINTED color rather than about class
   // names: a class list is what a render test can already see, and it is also
   // the thing that stays right while the stylesheet underneath it moves.
   import Badge         from '../../../components/display/Badge.mesa'

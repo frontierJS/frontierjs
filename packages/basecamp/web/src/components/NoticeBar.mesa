@@ -3,7 +3,7 @@
   //
   // The mock renders a stack of hand-styled divs against T.red / T.amber /
   // T.blue. Here a notice's priority is a TONE and the row is an `Alert` from
-  // @frontierjs/ui, so there is no colour in this file and none in the rules
+  // @frontierjs/ui, so there is no color in this file and none in the rules
   // that produced the notice (repo invariant 13).
   //
   // Dismissal is local and deliberately not persisted: a notice is a statement

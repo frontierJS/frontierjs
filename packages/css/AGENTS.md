@@ -17,9 +17,9 @@ Describe **what a thing is**, then **what is true about it**. Never how it looks
 <button class="btn outlined danger">Delete</button>
 ```
 
-`btn` is what it is. `outlined` and `danger` are true about it. No colour, no
+`btn` is what it is. `outlined` and `danger` are true about it. No color, no
 spacing, no size in the class list. If you are reaching for a class that names a
-pixel value or a hex colour, you are in the wrong package — see *Escape hatch*.
+pixel value or a hex color, you are in the wrong package — see *Escape hatch*.
 
 ---
 
@@ -92,7 +92,7 @@ feed dot, tile delta. Contrast is **derived** from the fill's luminance, not
 declared, so it is AA-safe on hues no theme has defined.
 
 Tones are element-scoped (`inherits: false`) — an untoned button inside a
-`danger` alert stays its own colour. You must tone each element you want toned.
+`danger` alert stays its own color. You must tone each element you want toned.
 
 ---
 
@@ -236,7 +236,7 @@ One class on any ancestor; they nest, because it is all custom-property
 inheritance. `theme-default` `theme-sunset` `theme-forest` `theme-midnight`
 `theme-dark` `theme-elite` `theme-basecamp`
 
-A theme overrides tokens, not just colours — Elite changes radii, weights,
+A theme overrides tokens, not just colors — Elite changes radii, weights,
 tracking and font family.
 
 ---
@@ -246,7 +246,7 @@ tracking and font family.
 1. Every element carries **at most one** Element class.
 2. Every Anatomy class is **nested inside** its owner, never chained onto it.
 3. Card/Dialog/Drawer/Popover use `surface-*` parts, not `card-*`.
-4. No colour, pixel, or size word in any class name.
+4. No color, pixel, or size word in any class name.
 5. State is an ARIA attribute, not a class.
 6. Every `<svg>` is inside an owned component or carries `icon`.
 7. Every modifier used appears in the scoping table against that Element.

@@ -119,7 +119,7 @@ title: Infrastructure graph
   $: view = project(graph, show)
 
   // A dashed edge is a membership and a solid one is traffic or placement —
-  // the only two things a line here can mean. No colour: the design system
+  // the only two things a line here can mean. No color: the design system
   // decides tone, and an SVG stroke is not one of the places it has a word
   // for (repo invariant 13).
   const DASH = { traffic: null, host: null, peer: '5 4', attach: '2 4' }

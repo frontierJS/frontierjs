@@ -122,7 +122,7 @@ test('layers: a .text-* utility beats a component that sets its own font-size', 
   var badge = el('<span class="badge text-xl">New</span>');
   assert.equal(style(badge, 'font-size'), '18px', '.badge.text-xl lost to .badge');
 
-  /* Colour is the other axis, and it has the same problem to avoid. */
+  /* Color is the other axis, and it has the same problem to avoid. */
   var delta = el('<div class="tile"><div class="tile-delta text-danger">d</div></div>');
   assert.sameColor(
     style(delta.firstChild, 'color'),

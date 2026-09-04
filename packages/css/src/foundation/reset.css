@@ -40,7 +40,7 @@
  *
  * Scoped to `a`, deliberately. `text-decoration: none` on `*` would erase
  * the underline from prose links too, which is a real accessibility
- * regression — colour alone is not an accessible link affordance — and it
+ * regression — color alone is not an accessible link affordance — and it
  * would do it silently. A bare `<a>` in a host app's markup keeps its
  * underline; only one that has been given a component class loses it.
  *

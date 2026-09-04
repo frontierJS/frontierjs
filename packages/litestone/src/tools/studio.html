@@ -26,7 +26,7 @@
  * Everything with a vocabulary term — Button, Badge, Pill, Field, Card, Tile,
  * Table, Tabs, Alert, Toast, Empty, Spinner, Disclosure, the whole Frame tier —
  * comes from the linked stylesheet. What is left here is what the design system
- * has no word for: the data grid's per-type cell colouring, the ER canvas, two
+ * has no word for: the data grid's per-type cell coloring, the ER canvas, two
  * syntax highlighters, the REPL, and the transform pipeline builder.
  *
  * These rules are UNLAYERED, so they beat every @layer the package declares
@@ -64,11 +64,11 @@
  *
  * Every value here comes off the brand board: the #00A7FF → #4CCBFF pair, the
  * #001117 / #1E232B / #2A313C dark ramp, #A6A0B7 for muted ink, Inter for the
- * interface. That is the whole theme — no component here restates a colour,
+ * interface. That is the whole theme — no component here restates a color,
  * so re-skinning Studio is editing this block and nothing else.
  */
 .theme-studio {
-  /* The mark, quantised to a 255-colour palette: 42KB of RGBA became 9.7KB and
+  /* The mark, quantised to a 255-color palette: 42KB of RGBA became 9.7KB and
      the two are indistinguishable at the size it is drawn. It is embedded
      because cli.js compiles to a single binary and cannot read a sibling file
      (see the note at the top of cli.js). Re-encode from src/tools/litestone-logo.png. */
@@ -160,7 +160,7 @@
 .logo-stone { fill: #0A1219; stroke: #2A313C; stroke-width: 0.7 }
 .logo-glow  { fill: url(#lsGlow) }
 .logo-vane  { fill: url(#lsVane) }
-/* The notches are cut in the stone's colour, so they read as gaps in the vane
+/* The notches are cut in the stone's color, so they read as gaps in the vane
    rather than as lines drawn on top of it. */
 .logo-notch { stroke: #0A1219; stroke-width: 0.9; stroke-linecap: round; fill: none }
 .logo-quill { stroke: #D6F1FF; stroke-width: 0.85; stroke-linecap: round }
@@ -341,7 +341,7 @@ th.sorted .sort-arrow,
 th.sort-active .sort-arrow { opacity: 1; color: var(--color-primary) }
 
 /*
- * Cell colour is TYPE, not tone: a null is not a warning and a number is not a
+ * Cell color is TYPE, not tone: a null is not a warning and a number is not a
  * success. The vocabulary's tones would say the wrong thing, so these read the
  * ink ramp plus two identity hues that mean nothing but "number" and "date".
  */
@@ -449,7 +449,7 @@ td:hover .copy-btn { opacity: 1 }
 }
 
 /*
- * Per-database identity colours. These are NOT tones — a second database is not
+ * Per-database identity colors. These are NOT tones — a second database is not
  * "info" and a third is not "warning". Seven arbitrary hues, assigned in
  * declaration order, meaning only "a different database from the last one".
  */
@@ -477,13 +477,13 @@ td:hover .copy-btn { opacity: 1 }
 .er-table-name { font-weight: 600; color: var(--color-primary) }
 .er-db-label   { margin-inline-start: auto }
 
-/* ─── Syntax colours ───────────────────────────────────────────────────── */
+/* ─── Syntax colors ───────────────────────────────────────────────────── */
 
 /*
  * Two hand-rolled highlighters — SQL in the migration diff and the query log,
  * JavaScript in the transform config. The package's own code theme reads
  * glow()'s ELEMENT markup (code.css) and cannot see a span with a class, so
- * these carry their own colours until the two highlighters are replaced by
+ * these carry their own colors until the two highlighters are replaced by
  * glow. Kept on the ink ramp and the tone tokens so a theme change reaches them.
  */
 .sql-kw  { color: var(--brand-blue-lit); font-weight: 600 }
@@ -783,7 +783,7 @@ td:hover .copy-btn { opacity: 1 }
 .ex-chips { display: flex; flex-wrap: wrap; gap: var(--space-2xs) }
 
 /* A diff half is tinted by what it means, and also labeled `gone` / `new` —
-   colour is not a label. */
+   color is not a label. */
 .ex-diff-out { border-inline-start: 3px solid var(--color-danger) }
 .ex-diff-in  { border-inline-start: 3px solid var(--color-success) }
 #exPreview:not(:empty) { margin-block-start: var(--space-md); display: grid; gap: var(--space-sm) }
@@ -2280,7 +2280,7 @@ function getDbClass(dbName, driver) {
   if (driver === 'jsonl')   return 'er-db-jsonl'
   if (driver === 'logger')  return 'er-db-logger'
   if (!dbName || dbName === 'main') return 'er-db-main'
-  // Assign stable colour slot based on alphabetical order of non-main sqlite dbs
+  // Assign stable color slot based on alphabetical order of non-main sqlite dbs
   const sqliteDbs = (schema?.databases ?? [])
     .filter(d => !d.driver || d.driver === 'sqlite')
     .filter(d => d.name !== 'main')
@@ -2587,7 +2587,7 @@ async function loadMigrations() {
 // Tone carries meaning in @frontierjs/css, so it is spent only where there is
 // something to say: STRANGER means unauthenticated callers reach this, SYSTEM
 // and LOCKED mean nothing short of asSystem() does. The levels in between are
-// the ordinary case and are left muted — a gradient of colour across 0–9 would
+// the ordinary case and are left muted — a gradient of color across 0–9 would
 // be editorialising about which gate is "good".
 
 let _access = null
@@ -4044,7 +4044,7 @@ let _liteValidateTimer = null
 function liteSetStatus(kind, text) {
   const dot  = document.getElementById('liteStatusDot')
   const span = document.getElementById('liteStatusText')
-  // The dot has no colour of its own — it paints --bg-mix, so the tone class
+  // The dot has no color of its own — it paints --bg-mix, so the tone class
   // is the whole statement and a new state needs no new rule.
   dot.className  = 'lite-status-dot ' + kind
   span.textContent = text

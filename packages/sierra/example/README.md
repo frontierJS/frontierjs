@@ -64,7 +64,7 @@ import '@frontierjs/css'
 
 **There is no `<style>` block left in this app.** The frame (`shell` / `topbar` /
 `screen`), the nav, the table, the form and the alerts are all vocabulary from
-the design system, so nothing here defines a colour, a radius or a spacing
+the design system, so nothing here defines a color, a radius or a spacing
 scale. Swap `theme-default` for `theme-dark`, `theme-forest`, `theme-midnight`,
 `theme-sunset` or `theme-elite` and the whole app follows — it is custom-property
 inheritance, not a stylesheet swap.
@@ -74,9 +74,9 @@ Two habits the system rewards, both visible in `web/src/routes/`:
 - **State comes from the platform.** The current nav item is
   `aria-current="page"`, not `class="on"` — the stylesheet keys off the
   attribute, so what a screen reader announces and what you see cannot drift.
-- **Tones are one vocabulary.** `danger` colours the delete button, a failed
-  field hint and the error alert; `success` colours the live-socket pill. Same
-  class, three components, no per-component colour list.
+- **Tones are one vocabulary.** `danger` colors the delete button, a failed
+  field hint and the error alert; `success` colors the live-socket pill. Same
+  class, three components, no per-component color list.
 
 ## Read in this order
 

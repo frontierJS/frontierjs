@@ -19,7 +19,7 @@
         const on = b.dataset.id === id
         b.setAttribute('aria-selected', String(on))
         // Dropping .outlined gives the chip .btn's filled skin, which carries
-        // its own readable text colour. Never set one without the other.
+        // its own readable text color. Never set one without the other.
         b.classList.toggle('outlined', !on)
       }
       for (const p of panels.children) p.classList.toggle('is-shown', p.dataset.id === id)

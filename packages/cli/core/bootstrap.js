@@ -332,7 +332,7 @@ export async function run(process) {
     const titleW = 20
     const aliasW = 12
 
-    // Colour helpers
+    // Color helpers
     const dim = (s) => chalk.dim(s)
     const green = (s) => chalk.green(s)
     const yellow = (s) => chalk.yellow(s)

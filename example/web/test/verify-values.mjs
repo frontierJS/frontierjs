@@ -1,8 +1,8 @@
 /**
  * web/test/verify-values.mjs — a declared value set, in a real browser.
  *
- * `valueset ProductColour { source Colour  value name  scope current }` and
- * `ProductVariant.colour @values(ProductColour, open)`. Everything else about
+ * `valueset ProductColor { source Color  value name  scope current }` and
+ * `ProductVariant.color @values(ProductColor, open)`. Everything else about
  * the feature is covered by unit tests on both sides of the wire; what nothing
  * else can reach is the claim the whole design rests on:
  *
@@ -13,7 +13,7 @@
  * because a `$scope` key survives junction's `autoFilter` on the way through.
  * A unit test on either side passes with the crossing broken.
  *
- * Signs in for nothing. `Colour` is `@@gate("0.4.4.5")`, so the offered list is
+ * Signs in for nothing. `Color` is `@@gate("0.4.4.5")`, so the offered list is
  * a public read, which keeps this drive out of the 10-per-15-minutes login
  * window the other five share.
  *
@@ -127,28 +127,28 @@ const t = (name, got, want) => results.push({ name, got, want })
 // What the schema says the column is. `open` is the strength that decides the
 // control: a picker cannot express "or type a new one".
 const rule = await evaluate(`
-  const f = window.variants.formFields().find(f => f.name === 'colour');
+  const f = window.variants.formFields().find(f => f.name === 'color');
   return { control: f?.control, set: f?.set, strength: f?.strength,
            allowNew: f?.allowNew, value: f?.valueField, scopes: f?.rule?.values?.scopes };
 `)
 t('control.kind',     rule.control,  'combobox')
-t('control.set',      rule.set,      'ProductColour')
+t('control.set',      rule.set,      'ProductColor')
 t('control.strength', rule.strength, 'open')
 t('control.allowNew', rule.allowNew, true)
 t('control.scopes',   rule.scopes,   ['current'])
-// `value name` rather than the id — what is stored is the colourway itself.
+// `value name` rather than the id — what is stored is the colorway itself.
 t('control.storesName', rule.value, 'name')
 
 // The picker's own request, made by the browser through the real client.
 const offered = await evaluate(`
-  const r = await window.variants.options('colour');
+  const r = await window.variants.options('color');
   return { labels: r.options.map(o => o.label), values: r.options.map(o => o.value) };
 `)
 
 // Read straight off the API, unscoped, so the two lists are compared rather
 // than a hardcoded one asserted — an `open` binding grows the table, so any
 // fixed expectation here goes stale on its own the first time a drive runs.
-const all     = (await (await fetch(`${API}/api/colours?$limit=100`)).json()).data
+const all     = (await (await fetch(`${API}/api/colors?$limit=100`)).json()).data
 const current = all.filter(c => !c.retired).map(c => c.name).sort()
 const retired = all.filter(c => c.retired).map(c => c.name)
 
@@ -172,16 +172,16 @@ await evaluate(`
 const refused = await evaluate(`
   const one = (await window.variants.service.find({}, { limit: 1 })).data[0];
   try {
-    await window.variants.save({ id: one.id, colour: ${JSON.stringify(retired[0] ?? 'Ochre')} }, { mode: 'patch' });
+    await window.variants.save({ id: one.id, color: ${JSON.stringify(retired[0] ?? 'Ochre')} }, { mode: 'patch' });
     return { threw: false };
   } catch (err) {
     const fe = window.variants.fieldErrors(err);
-    return { threw: true, fields: Object.keys(fe.fields ?? {}), message: fe.fields?.colour ?? fe.message ?? String(err)};
+    return { threw: true, fields: Object.keys(fe.fields ?? {}), message: fe.fields?.color ?? fe.message ?? String(err)};
   }
 `)
 t('refusal.threw',   refused.threw, true)
-t('refusal.field',   refused.fields, ['colour'])
-t('refusal.saysSet', /not offered by ProductColour/.test(refused.message ?? ''), true)
+t('refusal.field',   refused.fields, ['color'])
+t('refusal.saysSet', /not offered by ProductColor/.test(refused.message ?? ''), true)
 
 t('consoleNoise', noise.filter(n => !/favicon|autocomplete/i.test(n)), [])
 

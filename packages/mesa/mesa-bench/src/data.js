@@ -7,7 +7,7 @@ const adjectives = [
   'mushy','odd','unsightly','adorable','important','inexpensive','cheap',
   'expensive','fancy'
 ]
-const colours = [
+const colors = [
   'red','yellow','blue','green','pink','brown','purple','brown',
   'white','black','orange'
 ]
@@ -25,6 +25,6 @@ function _rnd(max) {
 export function buildData(count) {
   return Array.from({ length: count }, () => ({
     id:    _nextId++,
-    label: `${adjectives[_rnd(adjectives.length)]} ${colours[_rnd(colours.length)]} ${nouns[_rnd(nouns.length)]}`
+    label: `${adjectives[_rnd(adjectives.length)]} ${colors[_rnd(colors.length)]} ${nouns[_rnd(nouns.length)]}`
   }))
 }

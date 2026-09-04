@@ -5414,8 +5414,8 @@ function validate(schema) {
   // COMPOSITE only, and the asymmetry is the point. On one optional column
   // `@unique` has a single reading — unique when present — and every SQL
   // developer already holds it. On a tuple the reading is the tuple, and the
-  // shape that surfaced this was `@@unique([product, colour, size])`, where the
-  // no-colour/no-size variant is precisely the row a shop lists twice.
+  // shape that surfaced this was `@@unique([product, color, size])`, where the
+  // no-color/no-size variant is precisely the row a shop lists twice.
   //
   // Two answers now, and they are one word apart in English, so the sentence
   // has to separate them. `nullsDistinct: true` says *the rows that leave it

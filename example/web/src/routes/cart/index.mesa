@@ -197,7 +197,7 @@ title: Basket
 {:else if !cart.lines.length}
   <EmptyState
     title="Your basket is empty"
-    description="Pick a colour and a size on any product page."
+    description="Pick a color and a size on any product page."
   >
     {#snippet action()}
       <Button variant="primary" id="basket-shop" onclick={() => goto('/products/')}>Browse products</Button>
@@ -234,7 +234,7 @@ title: Basket
 
         <div class="what">
           <a href={`/products/${line.productId}/`} class="name">{line.product}</a>
-          <span class="text-sm text-muted">{line.colour} · {line.size}</span>
+          <span class="text-sm text-muted">{line.color} · {line.size}</span>
           <Mono>{line.sku}</Mono>
         </div>
 

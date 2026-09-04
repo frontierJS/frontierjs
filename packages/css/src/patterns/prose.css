@@ -25,7 +25,7 @@
  *
  * Prose sets ONLY what the package has no term for: measure, the muted ink
  * of body copy, and list indentation. It does not set a face, a size, a
- * weight or a colour that a term already owns — so `.prose h2` is not here,
+ * weight or a color that a term already owns — so `.prose h2` is not here,
  * because Heading owns h1–h6 and two owners for one property is the bug
  * Invariant 4 names. A heading inside a Prose is the package's heading rung,
  * unchanged.
@@ -33,7 +33,7 @@
  * That rule is what makes over-reach harmless. A `.prose` on a Pane reaches
  * every descendant `p` including one inside a Card, an Alert or a Field —
  * and since all this contributes is measure and ink, the ones that already
- * carry their own colour keep it, and the ones that do not were body copy
+ * carry their own color keep it, and the ones that do not were body copy
  * anyway. Anything that must not inherit the measure states its own.
  *
  * ── Spacing is NOT here ───────────────────────────────────────────────

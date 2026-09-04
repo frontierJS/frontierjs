@@ -4753,7 +4753,7 @@ function CreateProjectWizard({ onClose, onCreated, nav }) {
                 hint="Optional — shown on the project card."
               />
 
-              {/* Icon + colour */}
+              {/* Icon + color */}
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:20}}>
                 <div>
                   <label style={{display:'block',fontSize:12,color:T.sec,marginBottom:8,fontWeight:500}}>Icon</label>
@@ -4766,7 +4766,7 @@ function CreateProjectWizard({ onClose, onCreated, nav }) {
                   </div>
                 </div>
                 <div>
-                  <label style={{display:'block',fontSize:12,color:T.sec,marginBottom:8,fontWeight:500}}>Colour</label>
+                  <label style={{display:'block',fontSize:12,color:T.sec,marginBottom:8,fontWeight:500}}>Color</label>
                   <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>
                     {PROJECT_COLORS.map(c=>(
                       <button key={c} onClick={()=>setColor(c)} style={{width:26,height:26,borderRadius:'50%',background:c,border:color===c?`2.5px solid #fff`:'1.5px solid transparent',boxShadow:color===c?`0 0 0 2px ${c}`:'none',cursor:'pointer',transition:'all 0.12s'}}/>
@@ -9663,10 +9663,10 @@ function UserSettingsView({ nav }) {
                 </div>
               </div>
             </div>
-            <div style={{fontSize:11,color:T.sec,marginBottom:6}}>Initials colour</div>
+            <div style={{fontSize:11,color:T.sec,marginBottom:6}}>Initials color</div>
             <div style={{display:'flex',gap:7}}>
               {[T.purple,T.blue,T.green,T.amber,T.red,T.cyan,T.orange].map(c=>(
-                <button key={c} onClick={()=>toast.info('Colour saved','')} style={{width:28,height:28,borderRadius:'50%',background:c,border:c===T.purple?`2.5px solid #fff`:'1px solid transparent',cursor:'pointer'}}/>
+                <button key={c} onClick={()=>toast.info('Color saved','')} style={{width:28,height:28,borderRadius:'50%',background:c,border:c===T.purple?`2.5px solid #fff`:'1px solid transparent',cursor:'pointer'}}/>
               ))}
             </div>
           </Card>

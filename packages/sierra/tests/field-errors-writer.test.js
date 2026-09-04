@@ -85,7 +85,7 @@ describe('a hand-written rule renders like a declared one', () => {
 //
 // `FJS-436`. There are TWO producers of a per-field refusal and they name the
 // field differently. Junction's validator says `field`; litestone's
-// `ValidationError` says `path: ['colour']` — and litestone is the one that
+// `ValidationError` says `path: ['color']` — and litestone is the one that
 // carries every rule a browser cannot pre-check, because the check needs a
 // query or a stored row: a value set, a `@@transitions` move, a soft-deleted
 // `@unique`. Reading only `field` sent all of those to the form-level message,
@@ -104,8 +104,8 @@ describe('litestone speaks `path`, and it is the half a browser cannot pre-check
   }
 
   test('a path-shaped entry reaches its control', () => {
-    const err = new ValidationError([{ path: ['colour'], message: 'Ochre is not offered by ProductColour' }])
-    expect(toFieldErrors(err).fields).toEqual({ colour: 'Ochre is not offered by ProductColour' })
+    const err = new ValidationError([{ path: ['color'], message: 'Ochre is not offered by ProductColor' }])
+    expect(toFieldErrors(err).fields).toEqual({ color: 'Ochre is not offered by ProductColor' })
   })
 
   test('…through the two wrappings a hop adds', () => {
@@ -129,7 +129,7 @@ describe('litestone speaks `path`, and it is the half a browser cannot pre-check
   })
 
   test('`field` still wins where both are present', () => {
-    expect(toFieldErrors({ errors: [{ field: 'sku', path: ['colour'], message: 'Taken' }] }).fields)
+    expect(toFieldErrors({ errors: [{ field: 'sku', path: ['color'], message: 'Taken' }] }).fields)
       .toEqual({ sku: 'Taken' })
   })
 })

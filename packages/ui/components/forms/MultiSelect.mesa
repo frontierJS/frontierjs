@@ -671,7 +671,7 @@
     font-weight: 600;
   }
 
-  /* The matched run. Weight rather than a colour — the design system owns
+  /* The matched run. Weight rather than a color — the design system owns
      tone, and "this is why the row matched" is not one of them. */
   .fjs-multiselect-option mark {
     background: transparent;

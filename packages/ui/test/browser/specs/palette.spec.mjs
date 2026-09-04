@@ -5,7 +5,7 @@
  * things about it. This one asks the questions a screen cannot: whether the
  * component is STYLED from the design system (`FJS-129` — it shipped its own
  * `--cp-*` namespace, its own radius, its own font stack and five literal
- * colours, so a theme switch reached it partially and `.dense` not at all),
+ * colors, so a theme switch reached it partially and `.dense` not at all),
  * and whether the keyboard contract holds at the edges — the ends of the list,
  * and arrow keys crossing a group boundary. The second of those found that
  * `keydown` was handled twice per press, so every arrow key skipped a row and
@@ -177,7 +177,7 @@ export async function run(t) {
 
   // FJS-129: 21 custom properties, five of them defined without reading a
   // token — `--cp-radius: 12px`, `--cp-shadow: 0 24px 80px rgba(0,0,0,0.72)`,
-  // `--cp-font: 'SF Mono', …` — plus five literal colours. Each assertion
+  // `--cp-font: 'SF Mono', …` — plus five literal colors. Each assertion
   // below is one of those, asked as a measurement.
 
   // The token is read off document.body and not off documentElement: the
@@ -213,7 +213,7 @@ export async function run(t) {
   `), true, 'the backdrop dims by --scrim, the same token a <dialog> uses')
 
   const themed = await t.evaluate(`
-    // Read the TOKEN, not the resolved colour. The panel's background is
+    // Read the TOKEN, not the resolved color. The panel's background is
     // painted by the design system's own :where(.surface, ...) rule as
     // var(--surface-bg), and headless Chrome leaves a var-substituted paint
     // stale after an ancestor class change: the custom property updates and
@@ -245,7 +245,7 @@ export async function run(t) {
   t.ok(dense.tight < dense.loose, '.dense reaches the rows — the palette is on the space ladder')
 
   // The active row is the package's tint ramp rather than three hand-mixed
-  // colours: one input, and a fill/rule/ink already measured for contrast
+  // colors: one input, and a fill/rule/ink already measured for contrast
   // against every shipped theme.
   t.ok(await t.evaluate(`
     const row = document.querySelector('.fjs-cp-row--active');

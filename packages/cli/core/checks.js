@@ -2053,7 +2053,7 @@ const CHECKS = {
   // three: basecamp's `Deployment` declares `push -> pushing`,
   // `release -> deploying` and `rollback -> rolled_back @gate(5)`, and the
   // pipeline goes pending → building → success. All three states appear in the
-  // UI's tone maps, so three screens render a colour for a state that cannot
+  // UI's tone maps, so three screens render a color for a state that cannot
   // occur, and one of them carries an authority level for a move nothing makes.
   //
   // **A move that is not declared** throws `TransitionNotFoundError` (400) the

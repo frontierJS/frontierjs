@@ -3,10 +3,10 @@
   // Compact count or label badge. Can float over a parent element (absolute)
   // or render inline.
   //
-  // `.badge` is in the chip lineage, so its fill *and* its text colour are
+  // `.badge` is in the chip lineage, so its fill *and* its text color are
   // derived from the tone's luminance — that derivation is verified at 0 WCAG
   // AA failures across all 42 tone × theme combinations, which is why there is
-  // no text-colour choice to make here.
+  // no text-color choice to make here.
   //
   // Usage — inline:
   //   <Badge>3</Badge>

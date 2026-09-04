@@ -3871,11 +3871,11 @@ array of rows; un-narrowed, the hook set `created_at`/`updated_at` as properties
 of the ARRAY. `allow()` had the identical shape and filtered nothing on a bulk
 payload. Both map over the array now.
 
-**An error's stack never reset the terminal colour.** `line += '\n' + COLOR +
+**An error's stack never reset the terminal color.** `line += '\n' + COLOR +
 stack ?? fallback + RESET` parses as `(concatenation) ?? (…)`, and a
 concatenation is never nullish — so the fallback was dead and `RESET` sat on the
 wrong side of the operator. An error with no `.stack` logged the word
-`undefined`, and every line after ANY error stayed the error colour.
+`undefined`, and every line after ANY error stayed the error color.
 
 **`plugins/email/campaign/sender.ts` imported `App` one `../` short.** A
 type-only import, so it never failed at runtime and every type in that file was

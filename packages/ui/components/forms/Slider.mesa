@@ -104,7 +104,7 @@
 
   // ── Track tone ────────────────────────────────────────────────────────────
   // One tone class on the root; every part of the control reads --bg-mix, so
-  // the fill, the handle and the focus ring cannot disagree about the colour.
+  // the fill, the handle and the focus ring cannot disagree about the color.
 
   const t = toTone(color || tone)
 

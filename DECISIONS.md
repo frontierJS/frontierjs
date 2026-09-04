@@ -2783,7 +2783,7 @@ On one optional column `@unique` has a single reading — unique when present �
 and every SQL developer already holds it; two of this repo's own columns are
 that shape (`ProductVariant.barcode`, `Cart.handoffCode`) and both are correct.
 On a tuple the reading is the tuple. The shape that surfaced this was
-`@@unique([product, colour, size])`, where the no-colour/no-size variant is
+`@@unique([product, color, size])`, where the no-color/no-size variant is
 precisely the row a shop lists twice.
 
 **The opt-in is SQL's own word for what SQLite does.** Postgres 15 spells the
@@ -6221,7 +6221,7 @@ wherever the tone already reads**, so a theme that was fine stays looking like
 itself.
 
 The window is two tokens rather than a derivation because CSS cannot derive it:
-relative colour syntax exposes the channels of one origin colour, and the origin
+relative color syntax exposes the channels of one origin color, and the origin
 is the tone, not the surface it will land on. So a dark theme has to declare the
 inverted window, the way it already declares `color-scheme: dark`. `code: every
 token clears AA in theme-*` pins all eight.
@@ -6236,7 +6236,7 @@ whatever tone the element carries, declared on `*` like the tint ramp so it is
 guaranteed-invalid untoned and `var(--tone-ink, X)` states the untoned look. The
 blend was re-measured on that grid and still loses — `--tint-ink`'s 55% toward
 `--ink` puts `sunset`/`warning` at 4.05:1, where the clamp's worst case across
-all three variants is 6.02:1. `.outlined`'s border takes the same colour, which
+all three variants is 6.02:1. `.outlined`'s border takes the same color, which
 is WCAG 1.4.11 rather than 1.4.3: a boundary at 1.99:1 is the variant not being
 drawn.)*
 
@@ -6271,7 +6271,7 @@ inherits.
 
 *A default that is another token is a use-site fallback, never a `:root`
 declaration.* `--topbar-bg: var(--surface)` at `:root` resolves once, against
-`:root`'s own `--surface`, and inherits that colour past every `.theme-*`. The
+`:root`'s own `--surface`, and inherits that color past every `.theme-*`. The
 same alias trap `--ring` and `--badge-radius` are already written around.
 
 *A token a theme must reach cannot be declared on the component.* `.table {
@@ -6329,7 +6329,7 @@ initial-value, so on an untoned element it is guaranteed-invalid, each
 same mechanism means every element computes from its **own** tone, so nothing
 leaks into an untoned child.
 
-Every rendered colour in the package is byte-identical after the change —
+Every rendered color in the package is byte-identical after the change —
 verified in a browser against a captured baseline (toned/untoned Card, nested,
 dark theme, both lineages), not assumed. Five tests in `tones.spec.js` pin it,
 including one that overrides `--tint-surface` and asserts a Card follows.
@@ -6439,7 +6439,7 @@ the signal the name lost.
 ### <a id="fjs-d99"></a>2026-08-08 · `FJS-D99` — UnoCSS is supported alongside `@frontierjs/css`, not banned.
 Amends Invariant 13, which previously read "No UnoCSS, no utility classes,
 anywhere." The semantic half of the invariant stands unchanged and is the part
-that matters: style with a **tone** and a **treatment**, never a colour. What
+that matters: style with a **tone** and a **treatment**, never a color. What
 is withdrawn is the ban on an app *also* running Uno.
 
 The ban never described the package anyway. `packages/css/README.md` has
@@ -6712,7 +6712,7 @@ opposite of what the file is for.
 ### <a id="fjs-d192"></a>2026-09-03 · `FJS-D192` — house style is American spelling, not British. The rule flipped; the words did too, except where a word is data.
 
 The house-style line had said British spelling in prose since it was written,
-and it was followed: `behaviour`, `serialise`, `colour` and their kin spread
+and it was followed: `behavior`, `serialize`, `color` and their kin spread
 through every `.md` file, every code comment and every string in the repo as
 the convention worked as intended. Asked to change it, the honest fix is not a
 paragraph — a rule nobody reads until they trip on it is the shape `FJS-D187`
@@ -6736,20 +6736,40 @@ compares against an edited fixture is checking against itself). Every
 generator, so those regenerate on the next run of their command rather than
 being touched here.
 
-**Two words turned out not to be spelling at all.** `colour` is a live column
-on `example`'s `ProductVariant` — `db/schema.lite`, threaded through
-`carts.service.ts`, `inventory.service.ts`, `product-variants.service.ts`,
-`seed.ts`, the `Colourway` type and three `.mesa` screens. `cancelled` is a
-persisted enum value on four `@@transitions` models across `example` and
-`basecamp` (`OrderStatus`, `SubscriptionStatus`, `DeployStatus`, `JobStatus`).
-Renaming either is a schema migration — existing rows carry the string, and
-`fli release:check`'s expand/contract question applies — not a find-replace,
-so both are excluded from this ruling and stay British until someone runs
-that migration on purpose. `CLAUDE.md` § House style names the exception
-rather than leaving it to be rediscovered as a bug.
+**Two words turned out not to be spelling at all — one stayed British by
+choice, the other did not.** `colour` was a live column on `example`'s
+`ProductVariant`, and `cancelled` a persisted enum value on four
+`@@transitions` models across `example` and `basecamp` (`OrderStatus`,
+`SubscriptionStatus`, `DeployStatus`, `JobStatus`). Both were first excluded
+from this ruling on the same reasoning: a stored value's spelling is a schema
+question, not a prose one, and `fli release:check`'s expand/contract question
+applies to a renamed column the way it applies to any other. `cancelled`
+stays — nobody asked for it, and it is data in the same sense the corpus is.
+
+**Amended, same day: `colour` renamed too.** Nothing this schema declares has
+ever left this machine — no deployed release, no `fli release:check --strict`
+run against a prior one — so the migration concern above does not bind here;
+it would bind the day `example` or `basecamp` is actually deployed with a
+predecessor to stay compatible with. Renamed by hand rather than by the same
+mechanical pass, because `colour` and `colours` also appear as English prose
+throughout the design-system packages (`@frontierjs/css`, `@frontierjs/ui`)
+with no relation to this column, and the pass cannot tell "the field" from
+"the word" — `model Colour` → `Color`, `valueset ProductColour` → `ProductColor`,
+the `ProductVariant.colour` column → `color`, `colours.service.ts` →
+`colors.service.ts` (`createColoursService` → `createColorsService`), and
+every camelCase compound the word-boundary pass cannot reach on its own
+(`pickColour`, `colourOf`, `seedColours`, `colourOnly` — a bare `\bcolour\b`
+never matches inside them, since there is no boundary between two word
+characters). `example/db/migrations/main/20260823021906_initial.sql` stays
+untouched regardless — it is the historical record of DDL actually run, and
+editing a migration that already ran misstates what happened, machine-local
+database or not. The five generated snapshots under `example/db/` and
+`example/api/` were regenerated from their own commands, not hand-patched,
+per the paragraph above.
 
 *Lives in:* `CLAUDE.md` § House style · every `.md`/`.ts`/`.js`/`.mesa` file the
-swap touched.
+swap touched · `example/db/schema.lite`, `example/db/seed.ts`,
+`example/api/src/services/{carts,inventory,product-variants,colors}.service.ts`.
 
 ### <a id="fjs-d188"></a>2026-09-03 · `FJS-D188` — the tutorial is a command, and CI grades it
 
@@ -7436,13 +7456,13 @@ This closes `FJS-D14` — all four folders are named, two collapsed into
 `toolbelt`, two deferred.
 — `packages/toolbelt/` · `packages/orion/README.md` · `packages/oracle/README.md`.
 
-### <a id="fjs-d37"></a>2026-08-17 · `FJS-D37` — the terminal is a surface with a tone vocabulary, not a palette of colour names; `fli` output stays line-oriented; a TUI buys its engine.
+### <a id="fjs-d37"></a>2026-08-17 · `FJS-D37` — the terminal is a surface with a tone vocabulary, not a palette of color names; `fli` output stays line-oriented; a TUI buys its engine.
 Four rulings from one question, because `packages/cli/core/color.js` and the shape
 of a future TUI turn out to be the same decision asked twice.
 
-**§1 — output is styled with a tone, never a colour, and the table lives in
+**§1 — output is styled with a tone, never a color, and the table lives in
 `@frontierjs/toolbelt/tty`.** Invariant 13 already says this for the browser, and the
-argument it rests on — a colour name is a fact about one rendering, a tone is a fact
+argument it rests on — a color name is a fact about one rendering, a tone is a fact
 about the message — does not stop at the DOM. `color.js` is chalk-compatible by
 design, which was correct for dropping zx off the read-only paths (~85ms of a ~200ms
 invocation) and which inherited chalk's vocabulary as a side effect: call sites say

@@ -5,7 +5,7 @@ title: Products
   // The catalogue, one row per PRODUCT — the family, not the buyable thing.
   //
   // Which means every number in this table is an aggregate over a second
-  // table: a price is a range because four colourways may not agree, and stock
+  // table: a price is a range because four colorways may not agree, and stock
   // is a sum because the family does not have any. They are `@from` columns on
   // `Product`, so SQLite answers them on the row and this page reads them like
   // any other field.
@@ -226,7 +226,7 @@ title: Products
 />
 
 <p class="text-sm text-muted">
-  A price here is a RANGE and a stock a SUM, because neither belongs to the family — <code>ProductVariant</code> carries them, one row per <code>(colour, size)</code>. The thumbnail is a <code>File</code> column: the row holds a reference and the bytes come from the API's own storage.
+  A price here is a RANGE and a stock a SUM, because neither belongs to the family — <code>ProductVariant</code> carries them, one row per <code>(color, size)</code>. The thumbnail is a <code>File</code> column: the row holds a reference and the bytes come from the API's own storage.
 </p>
 
 <style>

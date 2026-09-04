@@ -32,7 +32,7 @@
 import { colorEnabled } from './logger.ts'
 
 // Env validation runs before an app — and therefore before its logger —
-// exists, so these are written straight to stderr. The colour gate is
+// exists, so these are written straight to stderr. The color gate is
 // logger.ts's rather than a second copy of the predicate.
 const YELLOW = colorEnabled ? '\x1b[33m' : ''
 const RED    = colorEnabled ? '\x1b[91m' : ''

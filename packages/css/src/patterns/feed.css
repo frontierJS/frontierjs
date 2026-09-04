@@ -17,7 +17,7 @@
  *
  * <ol> because chronological order is semantically meaningful. Each entry
  * is wrapped in <article> because each is a self-contained event unit.
- * The feed-dot reads --bg-mix, so any tone class colours it.
+ * The feed-dot reads --bg-mix, so any tone class colors it.
  */
 
 .feed {

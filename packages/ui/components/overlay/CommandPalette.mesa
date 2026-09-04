@@ -349,10 +349,10 @@
    * three shapes @frontierjs/css has no single term for, which is why this
    * block exists. What it is NOT is a second design system: the type ladder,
    * the space ladder (so `.dense` reaches the whole panel), the radii, the
-   * shadows, the rule colour and the scrim are all the package's.
+   * shadows, the rule color and the scrim are all the package's.
    *
    * The row's toned states go through the package's TINT ramp rather than
-   * hand-mixed colours: setting `--bg-mix` gives `--tint-surface`,
+   * hand-mixed colors: setting `--bg-mix` gives `--tint-surface`,
    * `--tint-rule` and `--tint-ink` on that element, already contrast-checked
    * across every theme (tones.css). Three `color-mix()` calls per state, in a
    * component nobody would think to re-measure, was the alternative.
@@ -486,8 +486,8 @@
    * house decision, not a per-component one, so a theme that stops shouting
    * stops shouting here too.
    */
-  /* The matched run. Weight rather than a colour — a row is already toned by
-     being active, and a second colour here competes with it. */
+  /* The matched run. Weight rather than a color — a row is already toned by
+     being active, and a second color here competes with it. */
   .fjs-cp-row mark {
     background: transparent;
     color: inherit;
@@ -529,7 +529,7 @@
   }
 
   /*
-   * The active row is the tint ramp, not three hand-mixed colours: --bg-mix
+   * The active row is the tint ramp, not three hand-mixed colors: --bg-mix
    * is the input and tones.css derives the fill, the rule and the ink from it
    * — already measured for contrast against every shipped theme.
    */
@@ -552,7 +552,7 @@
   /*
    * The stacked text block is `.item-text` / `.item-title` / `.item-sub`
    * from @frontierjs/css lists.css. What stays here is the palette's own:
-   * one line each, ellipsed, and the active row's colour shift.
+   * one line each, ellipsed, and the active row's color shift.
    *
    * A palette row is fixed-height by design — the list is navigated with
    * arrow keys, and a row that grows to two lines moves every row under it

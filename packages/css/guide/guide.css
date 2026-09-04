@@ -38,7 +38,7 @@
  *   --surface-sunken   #f3f1e9 against #f5f5f5, warm against neutral.
  *   --ring             `var(--color-primary)`, which is the alias trap
  *                      tokens.css forbids BY NAME: the var() resolves once
- *                      against :root and the computed colour then inherits
+ *                      against :root and the computed color then inherits
  *                      past every .theme-* override. focus.css reads
  *                      `var(--ring, var(--color-primary))` at the use site,
  *                      which is the form that follows a theme.
@@ -130,7 +130,7 @@
  * times, and each was free to drift from the others.
  *
  * They are quieter than an action button, so the tone is the ink ramp rather
- * than a colour: .btn.outlined reads --bg-mix for BOTH its text and its
+ * than a color: .btn.outlined reads --bg-mix for BOTH its text and its
  * border, so one variable moves the pair and hover just moves it again.
  * Setting `color` directly would leave the border behind.
  */
@@ -147,7 +147,7 @@
 .sg-search-trigger:hover {
   --bg-mix: var(--ink);
 }
-/* No term: a themed colour disc, sized to sit inside a Button's text row. */
+/* No term: a themed color disc, sized to sit inside a Button's text row. */
 .sg-theme-trigger-swatch {
   inline-size: 14px;
   block-size: 14px;
@@ -158,7 +158,7 @@
 /*
  * Size only. A `color` here would be the mistake the block above warns
  * about from the other side: the trigger tints text AND border from one
- * --bg-mix, so a child that states its own colour keeps it while the border
+ * --bg-mix, so a child that states its own color keeps it while the border
  * moves on hover, and the pair comes apart. Inheriting is what makes the
  * hover reach the whole button. `.sg-theme-trigger-name` was that mistake —
  * `color: var(--ink)` on the label, which is where --bg-mix HOVERS to, so
@@ -200,7 +200,7 @@
 .sg-theme-option[aria-pressed='true'] {
   background: color-mix(in srgb, var(--color-primary) 12%, var(--surface));
 }
-/* No term: a themed colour disc, and the tick that answers it. */
+/* No term: a themed color disc, and the tick that answers it. */
 .sg-theme-option-swatch {
   inline-size: 22px;
   block-size: 22px;
@@ -208,7 +208,7 @@
   border: 1px solid var(--rule);
   flex-shrink: 0;
 }
-/* .item-title carries the colour and size; only the weight is ours. */
+/* .item-title carries the color and size; only the weight is ours. */
 .sg-theme-option-name { font-weight: 500; }
 .sg-theme-option-check {
   color: var(--accent);
@@ -540,9 +540,9 @@
  * NOT a Badge, though an early pass at guide/AUDIT.md said it was. A Badge
  * is a categorical status: it carries text, pads around it, and derives its
  * ink from its fill through chip.css. This is an empty 18px square whose
- * whole content is a colour — no text to contrast against, and the padding
+ * whole content is a color — no text to contrast against, and the padding
  * and font sizing would be dead weight. The package ships no term for "a
- * colour, shown", because showing a colour is what a guide does and not
+ * color, shown", because showing a color is what a guide does and not
  * what an app does.
  */
 .sg-swatch {
@@ -976,7 +976,7 @@
  * decide: where this one sits, that it is smaller than body copy, and the
  * rest-state dimming below.
  *
- * `--bg-mix: var(--ink-soft)` rather than a colour: .btn.outlined reads that
+ * `--bg-mix: var(--ink-soft)` rather than a color: .btn.outlined reads that
  * one variable for both its text and its border, so this is the tonal recipe
  * being used, not overridden. A copy button is not a primary action, so it
  * borrows the ink ramp instead of a tone.
@@ -1005,7 +1005,7 @@
   opacity: 1;
 }
 /* Hover darkens the ink the tonal recipe is already reading, so the border
-   follows the text without naming a second colour. */
+   follows the text without naming a second color. */
 .sg-copy:hover { --bg-mix: var(--ink); }
 /* Confirmed. The accent is the guide's own, and it is set through --bg-mix
    for the same reason as above: one variable moves both. */
@@ -1048,7 +1048,7 @@
  *
  * The fill is not chosen here either — setting --bg-mix hands the work to
  * chip.css, so a pressed toggle gets the same derived, contrast-safe fill
- * and text colour as every other toned control.
+ * and text color as every other toned control.
  */
 .sg-kinds { gap: 6px; margin-block-end: 14px; }
 .sg-kind {
@@ -1066,7 +1066,7 @@
   background: rgba(255, 255, 255, 0.22);
   color: var(--on-fill);
 }
-/* The tone row's own colour, so seven rows that would read alike do not. */
+/* The tone row's own color, so seven rows that would read alike do not. */
 .sg-class-swatch {
   display: inline-block;
   inline-size: 11px;
@@ -1076,7 +1076,7 @@
   vertical-align: -1px;
   margin-inline-end: 4px;
 }
-/* A colour utility's swatch takes the colour the utility sets, not a tone. */
+/* A color utility's swatch takes the color the utility sets, not a tone. */
 .sg-class-swatch.text-body,.sg-class-swatch.text-muted,.sg-class-swatch.text-primary,
 .sg-class-swatch.text-info,.sg-class-swatch.text-success,.sg-class-swatch.text-warning,
 .sg-class-swatch.text-danger { background: currentColor; }

@@ -6,7 +6,7 @@
   //
   // Same `.alert` shape as Alert, plus `outlined` — the Treatment that means
   // "border only, no fill" on any surface. That is what makes a Callout read
-  // lighter than an Alert without inventing a second set of colours.
+  // lighter than an Alert without inventing a second set of colors.
   //
   // Usage:
   //   <Callout>Enable 2FA in Settings → Security before continuing.</Callout>

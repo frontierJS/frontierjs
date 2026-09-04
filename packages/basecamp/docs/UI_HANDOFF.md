@@ -163,13 +163,13 @@ inline hex styles. None of that is the stack.
 |---|---|
 | **Sierra** — file-tree routing, Vite build, `createResource` | React, react-router |
 | **Mesa** — `.mesa` components, signals | JSX, hooks |
-| **`@frontierjs/css`** — semantic classes, a tone + a treatment | inline `style={{}}`, hex colours, **UnoCSS / utility classes** |
+| **`@frontierjs/css`** — semantic classes, a tone + a treatment | inline `style={{}}`, hex colors, **UnoCSS / utility classes** |
 | **`@frontierjs/ui`** — 63 prebuilt Mesa components over the css vocabulary | hand-rolling buttons and tables |
 
 Invariant 13 is explicit: `@frontierjs/css` is the styling language, no utility
 classes anywhere. `packages/ui` shipped 55 of 63 components in Tailwind-style
 classes once and every one of them rendered unstyled. Style with a **tone**
-(`danger`) and a **treatment** (`outlined`), never a colour.
+(`danger`) and a **treatment** (`outlined`), never a color.
 
 Read `packages/sierra/example/` first — it is the working UI-over-Junction
 reference and is verified end to end.

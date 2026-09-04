@@ -48,15 +48,15 @@ async function behindBy(ahead: string, behind: string) {
 
 describe('a database that is ahead of the schema in hand', () => {
   test('is refused, and nothing is dropped', async () => {
-    const { result, old } = await behindBy('name String  colour String?', 'name String')
+    const { result, old } = await behindBy('name String  color String?', 'name String')
     expect(result.state).toBe('blocked')
     expect((await old.$rawDbs.main.query('PRAGMA table_info(widget)').all() as { name: string }[])
-      .map(c => c.name)).toContain('colour')
+      .map(c => c.name)).toContain('color')
     clean()
   })
 
   test('names both readings, because the diff cannot tell them apart', async () => {
-    const { result, said } = await behindBy('name String  colour String?', 'name String')
+    const { result, said } = await behindBy('name String  color String?', 'name String')
     expect(result.onlyDrops).toBe(true)
     expect(said).toContain('migrated by a NEWER schema')
     expect(said).toContain('run the current build instead')
@@ -70,7 +70,7 @@ describe('a database that is ahead of the schema in hand', () => {
   // advice. Without this the new branch is indistinguishable from one that
   // fires on every blocked migration.
   test('and a diff that also adds keeps the single reading', async () => {
-    const { result, said } = await behindBy('name String  colour String?', 'name String  shade String?')
+    const { result, said } = await behindBy('name String  color String?', 'name String  shade String?')
     expect(result.state).toBe('blocked')
     expect(result.onlyDrops).toBe(false)
     expect(said).not.toContain('migrated by a NEWER schema')
@@ -82,13 +82,13 @@ describe('a database that is ahead of the schema in hand', () => {
   // refusal is the only thing standing between them and the drop.
   test('the option still works when the removal was intended', async () => {
     const db  = join(tmp(), 'app.db')
-    const now = await createClient({ schema: WIDGET('name String  colour String?'), db })
+    const now = await createClient({ schema: WIDGET('name String  color String?'), db })
     autoMigrate(now)
     const old = await createClient({ schema: WIDGET('name String'), db })
     const res = autoMigrate(old, undefined, { acceptDataLoss: true })
     expect(res.main.state).not.toBe('blocked')
     expect((old.$rawDbs.main.query('PRAGMA table_info(widget)').all() as { name: string }[])
-      .map(c => c.name)).not.toContain('colour')
+      .map(c => c.name)).not.toContain('color')
     clean()
   })
 

@@ -94,7 +94,7 @@ a component is otherwise invisible to the app testing it.
 - **No visual check against the real stylesheet.** The render tests assert
   that `class="btn danger"` is present, not that it looks right — and the
   browser work found the limit of that: `Field` set its error tone on the
-  wrapper, which passed every assertion and coloured nothing, because
+  wrapper, which passed every assertion and colored nothing, because
   `--bg-mix` is registered `inherits: false`.
 - **Both token-divergent components are done.** `DatePicker` (`FJS-128`) is six
   declared properties in place of 107, `CommandPalette` (`FJS-129`) two in

@@ -112,7 +112,7 @@ export async function run(t) {
 
   // The end of a range is the accent; the days between it are the band. Both
   // rules are equally specific and the band's comes first, so a rule that sets
-  // only --bg-mix leaves the end painted in the BAND with the text colour of a
+  // only --bg-mix leaves the end painted in the BAND with the text color of a
   // fill — pale on pale, which reads as a rendering fault rather than a CSS one.
   const bandVsEnd = await t.evaluate(`
     const at = (n) => [...document.querySelectorAll('#stage button.fjs-dp-day')]
@@ -176,7 +176,7 @@ export async function run(t) {
   // FJS-128: this component used to declare 107 custom properties, 47 of them
   // defined without reading a single design token — its own six-rung radius
   // scale, its own font-size scale, `font-family: sans-serif`, eight literal
-  // colours, and four black base64 PNGs for the nav arrows. It compiled, it
+  // colors, and four black base64 PNGs for the nav arrows. It compiled, it
   // rendered, and a theme switch reached it partially at best. Each assertion
   // below is one of those failures, asked as a measurement.
 
@@ -192,7 +192,7 @@ export async function run(t) {
   `).then(r => r.same), true, 'the type face is the theme\'s --font-primary, not a hardcoded sans-serif')
 
   // A theme is nothing but tokens, so the only honest question is whether the
-  // painted colours move when the tokens do.
+  // painted colors move when the tokens do.
   const themed = await t.evaluate(`
     const panel = document.querySelector('#stage .fjs-dp-panel');
     const before = getComputedStyle(panel).backgroundColor;

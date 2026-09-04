@@ -5,7 +5,7 @@
  * all and no renderer but `<pre>{JSON.stringify(…)}</pre>`. Two things here
  * cannot be seen anywhere else:
  *
- *   - the tree's colours come from @frontierjs/css's code theme, which keys off
+ *   - the tree's colors come from @frontierjs/css's code theme, which keys off
  *     ELEMENTS inside `code[language]`. Nothing but a real browser can say
  *     whether that theme actually reached the tree, and a hand-written palette
  *     would look identical in the markup and wrong in ten of eleven themes.
@@ -138,7 +138,7 @@ export async function run(t) {
     return getComputedStyle(document.querySelector('#editor-tree .fjs-json-edit')).cursor;
   `), 'pointer', 'an editable value shows a pointer, not a text caret')
 
-  // The row band has to be a colour the block is not already painted in.
+  // The row band has to be a color the block is not already painted in.
   // `.code`'s ground IS `var(--code-bg, var(--surface-sunken))`, so the band was
   // `--surface-sunken` on `--surface-sunken`: the rule matched, the declaration
   // applied, and nothing changed — in every theme at once. Read the AUTHORED
@@ -165,18 +165,18 @@ export async function run(t) {
 
   // This component ships no palette: it marks tokens with the elements
   // `code.css` themes inside `code[language]`. If that selector ever stops
-  // matching, every token collapses to one inherited colour and the tree still
+  // matching, every token collapses to one inherited color and the tree still
   // renders — which is exactly the failure this asserts against.
   const painted = await t.evaluate(`
-    const colourOf = (sel) => getComputedStyle(document.querySelector(sel)).color;
+    const colorOf = (sel) => getComputedStyle(document.querySelector(sel)).color;
     return {
-      key:   colourOf('#viewer .fjs-json-key b'),
-      value: colourOf('#viewer .fjs-json-value em'),
-      punct: colourOf('#viewer .fjs-json-key i'),
+      key:   colorOf('#viewer .fjs-json-key b'),
+      value: colorOf('#viewer .fjs-json-value em'),
+      punct: colorOf('#viewer .fjs-json-key i'),
     };
   `)
   t.ok(painted.key !== painted.value,
-    `a key and a value are different colours (${painted.key} vs ${painted.value})`)
+    `a key and a value are different colors (${painted.key} vs ${painted.value})`)
   t.ok(painted.punct !== painted.key,
     `and punctuation is quieter than an identifier (${painted.punct} vs ${painted.key})`)
 
@@ -627,7 +627,7 @@ export async function run(t) {
     return { ins: of('#diffed ins'), del: of('#diffed del'), note: of('#diffed dfn') };
   `)
   t.ok(hues.ins !== hues.del && hues.del !== hues.note,
-    `added, removed and changed are three different colours (${hues.ins} · ${hues.del} · ${hues.note})`)
+    `added, removed and changed are three different colors (${hues.ins} · ${hues.del} · ${hues.note})`)
 
   // Nothing changed must look like nothing changed — no marks, and no branch
   // forced open by a difference that is not there.

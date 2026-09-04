@@ -232,7 +232,7 @@
     const onResize = () => { clearTimeout(t); t = setTimeout(render, 160) }
     addEventListener('resize', onResize)
 
-    // The ramp colours differ per theme, so a switch has to re-read them.
+    // The ramp colors differ per theme, so a switch has to re-read them.
     const onTheme = () => render()
     addEventListener('fjs:theme', onTheme)
 

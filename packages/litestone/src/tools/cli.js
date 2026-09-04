@@ -58,7 +58,7 @@ const IS_COMPILED = process.env.LITESTONE_COMPILED === '1'
 // read from src/tools/seeds/ so they exist in a compiled binary too.
 const BUILTIN_SEEDS = { calendar: SEED_CALENDAR_SQL }
 
-// ─── Colours ──────────────────────────────────────────────────────────────────
+// ─── Colors ──────────────────────────────────────────────────────────────────
 
 const c = {
   reset:  '\x1b[0m',  bold:   '\x1b[1m',  dim:    '\x1b[2m',

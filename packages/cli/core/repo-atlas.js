@@ -11,7 +11,7 @@
 // ── What is derived here and what is read ────────────────────────────────────
 //
 // Everything factual comes from the model. What this file adds is arrangement:
-// which card gets which number, which colour a realm carries, which motif is
+// which card gets which number, which color a realm carries, which motif is
 // drawn on a card. Those are cosmetic and fall back rather than fail — a
 // package this file has never heard of gets the neutral treatment and its own
 // number, never an empty card.
@@ -27,8 +27,8 @@
 //
 // The realm string comes from the root CLAUDE.md table and is written for
 // people: `Data / D2`, `UI substrate`, `D7 / app`. A bucket is only what
-// colours the card, so the keyword decides and the domain number is the
-// fallback. An unrecognised realm is `other`, which is a colour, not an error.
+// colors the card, so the keyword decides and the domain number is the
+// fallback. An unrecognised realm is `other`, which is a color, not an error.
 
 const BUCKET_BY_WORD = [
   [/testing/i,       'testing'],
@@ -53,7 +53,7 @@ const BUCKET_ORDER = ['data', 'api', 'ui', 'testing', 'tooling', 'cross', 'app',
 
 // ─── motifs ───────────────────────────────────────────────────────────────────
 //
-// A line drawing per card, in a 48×48 box, stroked in the card's own colour.
+// A line drawing per card, in a 48×48 box, stroked in the card's own color.
 // Named for the thing the package is, because the point of a plate in a field
 // manual is that you recognize the card before you read it. A package with no
 // motif of its own falls back to its bucket's.
@@ -371,7 +371,7 @@ function sameHome(where, card) {
 // art, and the field-manual display face. Everything else is a term: Card,
 // Table, Dialog, Facts, Item, Badge, Pill, Field, Topbar.
 //
-// A tone carries the meaning a colour used to. An S1 defect is `danger`, a
+// A tone carries the meaning a color used to. An S1 defect is `danger`, a
 // ruling is `info`, a claimed folder is `muted`; no hex is written for any of
 // them, which is what makes the nine themes work at all.
 //
@@ -780,7 +780,7 @@ function plate(card, model) {
 </a>`
 }
 
-// ─── realm colour ─────────────────────────────────────────────────────────────
+// ─── realm color ─────────────────────────────────────────────────────────────
 //
 // A tone says how to READ a thing — `danger` is a defect, `success` is a phase
 // that passed. A realm says which family it BELONGS to, which is a different
@@ -1459,7 +1459,7 @@ const STYLE = `
    The nine realms are the ATLAS's vocabulary, not the design system's — a
    category is an app's fact — so the theme itself carries none of them and
    they are named here instead, scoped to it. This is the one place in the
-   page a colour literal is written. Every other theme derives its nine from
+   page a color literal is written. Every other theme derives its nine from
    the tone tokens, which is what the fallbacks below do. */
 .theme-field{
   --realm-data:    #4fa8a0;
@@ -1539,7 +1539,7 @@ gap:var(--space-md);margin-top:var(--space-md)}
 stroke-linecap:round;stroke-linejoin:round;margin-bottom:var(--space-2xs)}
 .atlas-plate .surface-footer{display:flex;justify-content:space-between;align-items:center;gap:var(--space-2xs);flex-wrap:wrap}
 
-/* One strip, one segment per severity, sized by share. The colours are the
+/* One strip, one segment per severity, sized by share. The colors are the
    register's own tones, so a theme moves them with everything else. */
 .atlas-heat{display:flex;align-items:center;gap:var(--space-2xs);padding:0 var(--space-sm)}
 .atlas-track{display:flex;align-items:center;gap:1px;flex:1 1 auto;min-width:1.5rem}

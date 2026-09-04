@@ -194,7 +194,7 @@ diagram of itself rather than showing the fault.
 | `sg-sk-*` | 19 | wizard wireframes. Deliberately not real components — CLAUDE.md: drawing a Button and a Link the same way would say the choice is visual |
 | `sg-ax-*` | 16 | SVG text in the two-axes diagram. No CSS class applies to SVG text |
 | `sg-tonal-*` | 9 | the tone ramp, per step |
-| `sg-color-*` | 11 | colour ramps and swatch rows |
+| `sg-color-*` | 11 | color ramps and swatch rows |
 | `sg-scale-*` | 7 | the space ladder, drawn as bars |
 | `sg-typescale-*`, `sg-weight-*` | 8 | the type ladder and weight samples |
 | `sg-lineage-*` | 12 | the chip/surface lineage diagram |
@@ -453,7 +453,7 @@ register whose rows might not be debt is not a register:
 
 - **`sg-swatch` is not a Badge.** A Badge carries text, pads around it and
   derives its ink from its fill. This is an empty 18px square whose whole
-  content is a colour. The package has no term for *a colour, shown* — that is
+  content is a color. The package has no term for *a color, shown* — that is
   what a guide does, not what an app does.
 - **`sg-search-kbd` was never missing the Kbd term.** The element is already a
   `<kbd>` and `code.css` styles the ELEMENT, so the package was underneath it

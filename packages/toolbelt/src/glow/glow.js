@@ -48,7 +48,7 @@ const SPECIAL_WORDS = {
      type rule and the attribute rule below already cover. */
   lite: 'model|extend|valueset|tenancy|database|generator|strategy|column|claim|resolve|source|scope|where',
   /* Nothing in the common list is SQL, so a statement came out as one long
-     unlit line with its string literals coloured — the shape of DDL is its
+     unlit line with its string literals colored — the shape of DDL is its
      keywords, and they were the only part not marked. Uppercase by
      convention, matched case-insensitively like every other language here. */
   sql: 'select|insert|into|values|update|set|delete|create|alter|drop|table|view|index|unique|primary|foreign|key|references|autoincrement|constraint|check|integer|text|real|blob|numeric|boolean|timestamp|from|where|join|left|inner|outer|on|group|order|by|having|limit|offset|distinct|as|and|or|not|in|is|exists|case|when|then|else|end|asc|desc|with|union|all'
@@ -58,7 +58,7 @@ const SPECIAL_WORDS = {
  * A shell line is a command and its arguments. It has no keywords, and the
  * common word list is full of things that are ordinary argument text —
  * `my`, `use`, `end`, `local`, `next`, `get`, `set` — so `cd my-app` came out
- * with `my` coloured as a keyword and the rest of the directory name plain.
+ * with `my` colored as a keyword and the rest of the directory name plain.
  * getTags withholds the keyword pass from these languages; what is left is
  * the command itself, which is the token a reader is actually looking for.
  */
@@ -86,7 +86,7 @@ const RULES = {
      below withholds the COMMON_WORDS keyword pass from this language — rightly,
      since everything else in a document is a string, a number or punctuation.
      Without a rule of their own the three literals were the only values in a
-     highlighted document with no colour, so a `null` and a key spelled "null"
+     highlighted document with no color, so a `null` and a key spelled "null"
      rendered identically (FJS-405). Inside a string they are safe by position
      rather than by order: the string token starts at the quote, which is
      earlier, and renderRow drops a token that opens inside one already
@@ -106,7 +106,7 @@ const RULES = {
      followed by an attribute. Both forms are one rule here.
 
      The type is capitalized and the common keyword pass is case-insensitive,
-     so `Int`, `String` and `Float` were already coloured as keywords while
+     so `Int`, `String` and `Float` were already colored as keywords while
      `DateTime`, `Boolean`, `Json` and a `model`'s own name were not — the
      column that says what a field IS, half-lit down the page. Matched by
      shape rather than by a list, so a relation to another model gets the

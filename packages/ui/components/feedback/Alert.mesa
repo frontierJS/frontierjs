@@ -4,8 +4,8 @@
   // For the global floating alert driven by alertStore, see AlertProvider.mesa.
   //
   // Styling is @frontierjs/css: `.alert` is a surface, and one tone class
-  // colours the whole banner through the shared surface recipe. There is no
-  // colour map here — that is the point of a tone being one free-standing word.
+  // colors the whole banner through the shared surface recipe. There is no
+  // color map here — that is the point of a tone being one free-standing word.
   //
   // Usage:
   //   <Alert tone="danger" title="Save failed">

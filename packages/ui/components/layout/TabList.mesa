@@ -9,7 +9,7 @@
   //   'stretch'  — tabs share the width equally
   //
   // The tone goes on the tablist, not on a Tab: --bg-mix is element-scoped, so
-  // `<TabList tone="danger">` colours the whole strip and a tone on a single
+  // `<TabList tone="danger">` colors the whole strip and a tone on a single
   // tab would do nothing.
 
   import { tone as toTone, cx } from '../../utils.js'

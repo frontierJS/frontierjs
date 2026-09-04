@@ -40,7 +40,7 @@
     xs: '1.5rem', sm: '2rem', md: '2.25rem', lg: '2.75rem', xl: '3.5rem',
   }
 
-  // Status maps onto the tone vocabulary rather than a second colour list.
+  // Status maps onto the tone vocabulary rather than a second color list.
   const statusToneMap = {
     online:  'success',
     offline: 'muted',
@@ -57,7 +57,7 @@
     .join('')
 
   // Deterministic tone from the name, so the same person is always the same
-  // colour. Picking from the 7 tones rather than a private palette means the
+  // color. Picking from the 7 tones rather than a private palette means the
   // fill and the text contrast are both derived by chip.css.
   const autoTone = TONES[
     name.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % TONES.length

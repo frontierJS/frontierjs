@@ -10,7 +10,7 @@
 
   ─── Two sources, and the join is the point ───────────────────────────────
 
-  The page BAKES what exists — every active variant's sku, colour and size, in
+  The page BAKES what exists — every active variant's sku, color and size, in
   the file, at build time, so a crawler sees the whole grid. It cannot bake what
   you can have: availability is on-hand minus the unexpired holds, it changes by
   the minute, and a CDN will serve this file for a week.
@@ -26,21 +26,21 @@
 
   /** From the page, which read it at build time. */
   export let productId = null
-  /** `[{ sku, colour, size, price }]` — the baked grid. */
+  /** `[{ sku, color, size, price }]` — the baked grid. */
   export let variants  = []
 
   let live   = new Map()   // sku → { variantId, available, price, active }
   let state  = 'loading'   // loading | ready | offline
 
-  let colour = null
+  let color = null
   let size   = null
   let qty    = 1
 
-  // The colours in the order the shop listed them, de-duplicated. `[...new Set]`
+  // The colors in the order the shop listed them, de-duplicated. `[...new Set]`
   // and not a sort: a shop that wants Parchment before Olive says so by the SKU
   // order it returns, and re-sorting here would overrule it.
-  const colours = [...new Set(variants.map(v => v.colour).filter(Boolean))]
-  const sizesIn = (c) => variants.filter(v => v.colour === c).map(v => v.size)
+  const colors = [...new Set(variants.map(v => v.color).filter(Boolean))]
+  const sizesIn = (c) => variants.filter(v => v.color === c).map(v => v.size)
 
   $.onMount(async () => {
     try {
@@ -70,26 +70,26 @@
     }
   })
 
-  // Pick the first colour that has anything in it, then the first size in that
-  // colour that can actually be bought. A box that opens on a sold-out
+  // Pick the first color that has anything in it, then the first size in that
+  // color that can actually be bought. A box that opens on a sold-out
   // combination reads as a sold-out product.
   $: {
-    if (state === 'ready' && colour === null && colours.length) {
-      colour = colours.find(c => sizesIn(c).some(sz => availableOf(skuOf(c, sz)) > 0)) ?? colours[0]
+    if (state === 'ready' && color === null && colors.length) {
+      color = colors.find(c => sizesIn(c).some(sz => availableOf(skuOf(c, sz)) > 0)) ?? colors[0]
     }
   }
 
   $: {
-    const offered = colour ? sizesIn(colour) : []
+    const offered = color ? sizesIn(color) : []
     if (offered.length && (size === null || !offered.includes(size))) {
-      size = offered.find(sz => availableOf(skuOf(colour, sz)) > 0) ?? offered[0]
+      size = offered.find(sz => availableOf(skuOf(color, sz)) > 0) ?? offered[0]
     }
   }
 
-  const skuOf = (c, sz) => variants.find(v => v.colour === c && v.size === sz)?.sku ?? null
+  const skuOf = (c, sz) => variants.find(v => v.color === c && v.size === sz)?.sku ?? null
   const availableOf = (sku) => (sku && live.get(sku)?.available) ?? 0
 
-  $: sku    = colour && size ? skuOf(colour, size) : null
+  $: sku    = color && size ? skuOf(color, size) : null
   $: shelf  = sku ? live.get(sku) : null
   $: avail  = availableOf(sku)
   // The LIVE price where the shop answered one, the baked price otherwise. The
@@ -102,7 +102,7 @@
   $: reason =
       state === 'loading' ? 'Checking with the shop…'
     : state === 'offline' ? 'The shop could not be reached'
-    : !sku                ? 'That size is not cut in this colour'
+    : !sku                ? 'That size is not cut in this color'
     : !shelf?.active      ? 'No longer on sale'
     // Sold out and held are different sentences because one of them comes back
     // on its own in twenty minutes and the other does not. Telling a shopper
@@ -150,16 +150,16 @@
 <div class="card buy" id="buy-box">
   <div class="buy-grid">
     <div class="field-group">
-      <label for="buy-colour">Colour</label>
-      <select id="buy-colour" class="field" bind:value={colour}>
-        {#each colours as c}<option value={c}>{c}</option>{/each}
+      <label for="buy-color">Color</label>
+      <select id="buy-color" class="field" bind:value={color}>
+        {#each colors as c}<option value={c}>{c}</option>{/each}
       </select>
     </div>
 
     <div class="field-group">
       <label for="buy-size">Size</label>
       <select id="buy-size" class="field" bind:value={size}>
-        {#each (colour ? sizesIn(colour) : []) as sz}<option value={sz}>{sz}</option>{/each}
+        {#each (color ? sizesIn(color) : []) as sz}<option value={sz}>{sz}</option>{/each}
       </select>
     </div>
 
@@ -177,7 +177,7 @@
         {avail > 0 ? `${avail} available` : 'none available'}
       </span>
     {:else}
-      <span class="text-muted">Pick a colour and size</span>
+      <span class="text-muted">Pick a color and size</span>
     {/if}
   </p>
 

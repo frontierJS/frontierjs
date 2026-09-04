@@ -919,9 +919,9 @@ describe('a schema that imports another file', () => {
 model Variant {
   id        Int     @id
   productId Int
-  colour    String?
+  color    String?
   size      String?
-  @@unique([productId, colour, size])
+  @@unique([productId, color, size])
 }
 `
     writeFileSync(join(dir, 'schema.lite'), OLD, 'utf8')
@@ -931,8 +931,8 @@ model Variant {
 
     // Today's schema says it meant it, and adds a model.
     writeFileSync(join(dir, 'schema.lite'),
-      OLD.replace('@@unique([productId, colour, size])',
-                  '@@unique([productId, colour, size], nullsDistinct: true)') +
+      OLD.replace('@@unique([productId, color, size])',
+                  '@@unique([productId, color, size], nullsDistinct: true)') +
       `
 model Note { id Int @id  @@gate("2.4.4.5") }
 `, 'utf8')

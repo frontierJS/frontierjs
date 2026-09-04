@@ -85,7 +85,7 @@ export function createInventoryService() {
         orderBy: { sku: 'asc' },
         limit:   Math.min(Number(limit) || 500, 2000),
         include: { product: true },
-      }) as Array<{ id: number, sku: string, colour: string, size: string, active: boolean, product?: { id: number, name: string } }>
+      }) as Array<{ id: number, sku: string, color: string, size: string, active: boolean, product?: { id: number, name: string } }>
 
       // The holds are summed as the shop. An administrator MAY read them —
       // that is what the 5 in the gate says — but `levelsFor` is one function
@@ -100,7 +100,7 @@ export function createInventoryService() {
           return {
             variantId: v.id,
             sku:       v.sku,
-            colour:    v.colour,
+            color:     v.color,
             size:      v.size,
             active:    !!v.active,
             productId: v.product?.id   ?? null,

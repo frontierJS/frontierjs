@@ -4,7 +4,7 @@
 // list: the connectors are measured from where these land, and reordering the
 // array without moving the coordinates draws wires between the wrong boxes.
 //
-// T maps a step's tone to the colour its segment is drawn in.
+// T maps a step's tone to the color its segment is drawn in.
 
 export const T = {
   transport: 'var(--color-info)',

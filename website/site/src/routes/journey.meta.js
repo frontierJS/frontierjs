@@ -24,7 +24,7 @@ export async function load() {
     key: [
       ['Transport boundary', T.transport], ['Framework core', T.core],
       ['Data boundary', T.data], ['SQL', T.sql], ['Event / channel', T.event],
-    ].map(([label, colour]) => ({ label, colour })),
+    ].map(([label, color]) => ({ label, color })),
     total: STEPS.length,
   }
 }

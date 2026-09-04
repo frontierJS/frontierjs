@@ -224,7 +224,7 @@ siteName: Basecamp
   @frontierjs/ui: the frame (shell / topbar / sidebar / screen) and the nav
   (navlist / navlink / navlist-label) are vocabulary; the badges, pills,
   buttons, switcher, drawer and account menu are components. No <style> block,
-  no colour, no utility classes (repo invariant 13) — which is also why the
+  no color, no utility classes (repo invariant 13) — which is also why the
   topbar still crowds below ~600px: there is no way to say "drop this below md"
   without one, and the package refused to ship the vocabulary (FJS-338).
 -->

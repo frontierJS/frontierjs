@@ -11,7 +11,7 @@ import { block, sniff } from '../data/code.js'
 
 /* The page points at one run in each sample — the field the seam is about.
    That is glow's own mark syntax, •like this•, which @frontierjs/css draws;
-   it used to be a <u> in the sample text with a rule in the page to colour
+   it used to be a <u> in the sample text with a rule in the page to color
    it, which meant the sample was not the code. */
 
 const SAMPLES = {

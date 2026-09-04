@@ -69,7 +69,7 @@ Filed off this session rather than off the app. Both defects found here
 
 maid.tech HAS the semantic layer — `theme-primary`, `theme-danger`, `.btn.outlined`,
 `.btn.danger` — and independently arrived at tone + treatment, which is good evidence
-the invariant is right. It is also losing **578 raw colour utilities to 156 semantic
+the invariant is right. It is also losing **578 raw color utilities to 156 semantic
 ones**, about 4:1. A vocabulary that exists and is not enforced is a vocabulary that
 documents what the first six months intended.
 

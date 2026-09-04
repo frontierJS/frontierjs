@@ -20,16 +20,16 @@ const VARIANT = (opts = '') => `
 model Variant {
   id        Int     @id @default(autoincrement())
   productId Int
-  colour    String?
+  color    String?
   size      String?
-  @@unique([productId, colour, size]${opts})
+  @@unique([productId, color, size]${opts})
 }
 `
 
 describe('@@unique over a nullable column', () => {
   it('refuses at parse, naming every nullable member', async () => {
     const p = createClient({ db: ':memory:', schema: VARIANT() })
-    await expect(p).rejects.toThrow(/'colour', 'size' are optional/)
+    await expect(p).rejects.toThrow(/'color', 'size' are optional/)
     await expect(p).rejects.toThrow(/two NULLs never compare equal/)
   })
 
@@ -48,9 +48,9 @@ describe('@@unique over a nullable column', () => {
 model Variant {
   id        Int    @id @default(autoincrement())
   productId Int
-  colour    String @default("Default")
+  color    String @default("Default")
   size      String @default("One")
-  @@unique([productId, colour, size])
+  @@unique([productId, color, size])
 }
 ` })
     const sys = db.asSystem()
@@ -67,8 +67,8 @@ model Variant {
     await sys.variant.create({ data: { productId: 1 } })
     expect(await sys.variant.count()).toBe(2)
     // The index is still there for the rows that fill the tuple.
-    await sys.variant.create({ data: { productId: 2, colour: 'red', size: 'S' } })
-    await expect(sys.variant.create({ data: { productId: 2, colour: 'red', size: 'S' } }))
+    await sys.variant.create({ data: { productId: 2, color: 'red', size: 'S' } })
+    await expect(sys.variant.create({ data: { productId: 2, color: 'red', size: 'S' } }))
       .rejects.toThrow()
   })
 

@@ -99,7 +99,7 @@
   /*
    * The nav is the only place on this surface with bare <a>s, and bare means
    * the UA's own link blue: reset.css deliberately only unstyles `a:where([class])`,
-   * so a classless anchor keeps the browser's colour and underline. Four bright
+   * so a classless anchor keeps the browser's color and underline. Four bright
    * blue links over the promo hero were the loudest thing on the page.
    */
   .topbar-nav a {

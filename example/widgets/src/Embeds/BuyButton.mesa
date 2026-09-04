@@ -126,7 +126,7 @@
 
     <span class="what">
       <strong class="name" data-name>{item.product}</strong>
-      <span class="muted opts">{item.colour} · {item.size}</span>
+      <span class="muted opts">{item.color} · {item.size}</span>
     </span>
 
     <span class="price" data-price>{price}</span>

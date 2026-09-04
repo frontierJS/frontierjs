@@ -327,7 +327,7 @@ title: Order
           Two groups, and the split is the same one `isTerminal` already makes:
           a move that goes further along the lifecycle, and a move nothing comes
           back from. The label and the rule say that before the click does —
-          a tone alone leaves it to be inferred from a colour.
+          a tone alone leaves it to be inferred from a color.
         -->
         {#if forward.length}
           <DropdownLabel>Move it on</DropdownLabel>

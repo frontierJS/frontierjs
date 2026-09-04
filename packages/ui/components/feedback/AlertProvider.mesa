@@ -3,7 +3,7 @@
   // Global floating alert driven by alertStore.js. Mount once near the root.
   //
   // The same `.alert` as Alert.mesa, plus `raised`, portaled and pinned to the
-  // top center. One tone class colours it; there is no second palette for the
+  // top center. One tone class colors it; there is no second palette for the
   // floating variant.
   //
   // Usage:

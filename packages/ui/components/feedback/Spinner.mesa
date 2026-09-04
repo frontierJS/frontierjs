@@ -17,7 +17,7 @@
   import { tone as toTone, cx } from '../../utils.js'
 
   export let size  = 'md'      // 'xs' | 'sm' | 'md' | 'lg' | 'xl'
-  export let tone  = ''        // '' inherits the surrounding text colour
+  export let tone  = ''        // '' inherits the surrounding text color
   export let color = ''        // legacy alias for `tone`
   export let label = 'Loading' // announced by the live region below
 

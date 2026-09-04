@@ -435,7 +435,7 @@ export async function preview(configPath) {
     const row = '  ' + step.label.slice(0, 39).padEnd(40) + allTables.map(t => {
       if (step.dropped.has(t)) return dim('dropped'.padStart(colW))
       const n    = step.counts[t]
-      const prev = initialCounts[t]   // compare to source for colour
+      const prev = initialCounts[t]   // compare to source for color
       if (n === undefined) return ' '.repeat(colW)
       const str = String(n).padStart(colW)
       return n < prev ? red(str) : str

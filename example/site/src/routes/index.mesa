@@ -25,9 +25,9 @@ render: static
   when it is rendered as text. That last pair is the one a hand-rolled dark
   section always forgets: tones are tuned as fills behind white text and mostly
   fail as text on a dark ground, and nothing in CSS can derive the correction
-  because relative colour syntax cannot read the surface a colour will land on.
+  because relative color syntax cannot read the surface a color will land on.
 
-  What this file then overrides is the three surface COLOURS, to the brand's
+  What this file then overrides is the three surface COLORS, to the brand's
   Dusk Navy. Every derivation on top of them stays the package's.
 
   ── The brand ─────────────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ render: static
       <div class="cluster hero-cta">
         <!--
           `--bg-mix` is how a chip takes a hue the theme does not declare, and
-          chip.css derives the label colour from that fill's own luminance — so
+          chip.css derives the label color from that fill's own luminance — so
           Mesa Orange gets dark text rather than the white that would sit on it
           at 2.97:1. Setting `color` here by hand is what breaks that.
         -->
@@ -346,7 +346,7 @@ render: static
     gap: var(--space-lg);
   }
 
-  /* Mesa Orange, as a fill the chip lineage derives its own label colour from. */
+  /* Mesa Orange, as a fill the chip lineage derives its own label color from. */
   .hero-btn {
     --bg-mix: #e07b39;
   }

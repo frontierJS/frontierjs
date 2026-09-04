@@ -4,7 +4,7 @@
   // Used at the top of pages, settings sections, card groups.
   //
   // `.section-header` supplies the split layout; the heading levels and the
-  // .text-* utilities supply the type. Size and colour are separate axes in
+  // .text-* utilities supply the type. Size and color are separate axes in
   // @frontierjs/css and chain — `class="text-sm text-muted"` — which is why
   // the subtitle needs no size map of its own.
   //

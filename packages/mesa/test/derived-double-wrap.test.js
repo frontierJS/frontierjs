@@ -4,7 +4,7 @@
  * `FJS-424`. A derived `const` referenced on the right-hand side of an
  * assignment to a reactive `let` was emitted wrapped twice:
  *
- *   $$runtime.get($$runtime.get(cellFor))(pickColour, sz)
+ *   $$runtime.get($$runtime.get(cellFor))(pickColor, sz)
  *
  * `rewriteExpr` is applied at more than a dozen sites, and in several of them it
  * runs over text `rewriteAssignments` has already put it through — that function
@@ -64,16 +64,16 @@ describe('a derived is wrapped once, however it is reached', () => {
 
   test('inside a $: block, through a nested callback — the shape as reported', async () => {
     const js = await compile(`<script>
-  let rows = [{ colour: 'a', size: 's', stock: 1 }]
-  let pickColour = null
+  let rows = [{ color: 'a', size: 's', stock: 1 }]
+  let pickColor = null
   let pickSize = null
   const avail = (v) => (v?.stock ?? 0)
-  const cellFor = (c, sz) => rows.find(v => v.colour === c && v.size === sz) ?? null
-  const sizesFor = (c) => rows.filter(v => v.colour === c).map(v => v.size)
+  const cellFor = (c, sz) => rows.find(v => v.color === c && v.size === sz) ?? null
+  const sizesFor = (c) => rows.filter(v => v.color === c).map(v => v.size)
   $: {
-    const offered = pickColour ? sizesFor(pickColour) : []
+    const offered = pickColor ? sizesFor(pickColor) : []
     if (offered.length) {
-      pickSize = offered.find(sz => avail(cellFor(pickColour, sz)) > 0) ?? offered[0]
+      pickSize = offered.find(sz => avail(cellFor(pickColor, sz)) > 0) ?? offered[0]
     }
   }
 </script>

@@ -205,7 +205,7 @@ title: Environment
           <td><code>{app.type}</code></td>
           <!-- The tone is derived from the value, not chosen per row: a
                status is a fact, and 'error' is the only one that is bad
-               news. No colour is named here (invariant 13). -->
+               news. No color is named here (invariant 13). -->
           <td>
             <span class="pill" class:success={app.status === 'running'}
                                class:danger={app.status === 'error'}>{app.status}</span>

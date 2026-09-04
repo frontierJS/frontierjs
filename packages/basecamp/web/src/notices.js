@@ -14,7 +14,7 @@
 
 export const PRIORITY_ORDER = { critical: 0, warning: 1, info: 2 }
 
-// Tone, not colour — repo invariant 13. These map onto @frontierjs/css tones,
+// Tone, not color — repo invariant 13. These map onto @frontierjs/css tones,
 // so the mock's T.red / T.amber / T.blue never appear here.
 export const PRIORITY_TONE = { critical: 'danger', warning: 'warning', info: 'info' }
 

@@ -68,13 +68,13 @@ render: static
       <h2 class="h4">Options</h2>
       <table class="table" id="product-variants">
         <thead>
-          <tr><th>SKU</th><th>Colour</th><th>Size</th><th>Price</th><th>Availability</th></tr>
+          <tr><th>SKU</th><th>Color</th><th>Size</th><th>Price</th><th>Availability</th></tr>
         </thead>
         <tbody>
           {#each variants as v}
             <tr data-sku={v.sku}>
               <td><code>{v.sku}</code></td>
-              <td>{v.colour}</td>
+              <td>{v.color}</td>
               <td>{v.size}</td>
               <!-- The baked price. `data-baked` keeps the build's number
                    readable after the island has corrected the cell, which is

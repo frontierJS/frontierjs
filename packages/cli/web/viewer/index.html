@@ -27,8 +27,8 @@
  * Screen, Pane, Card, Tile, Item, Facts, Badge, Pill, Table, Code, Tabs, Alert,
  * Empty, Disclosure.
  *
- * Unlayered, so it beats every layer without !important. No colour is written
- * here: a realm carries a tone and the tone carries the colour.
+ * Unlayered, so it beats every layer without !important. No color is written
+ * here: a realm carries a tone and the tone carries the color.
  */
 
 [hidden] { display: none; }
@@ -71,7 +71,7 @@
 .rail {
   /*
    * --bg-mix is element-scoped and does not inherit, so an svg inside a toned
-   * rail read the fallback and every elbow drew in the Data realm's colour.
+   * rail read the fallback and every elbow drew in the Data realm's color.
    * The rail derives it into an ordinary custom property, which does inherit —
    * the same move form-core.css makes to get a tone onto a checkbox.
    */
@@ -79,7 +79,7 @@
 }
 .rail svg {
   /* The elbow takes the realm's tone through currentColor, so the loop is
-     drawn in the colour of the realm it turns through. */
+     drawn in the color of the realm it turns through. */
   color:       var(--rail-tone);
   flex-shrink: 0;
   opacity:     0.6;
@@ -111,7 +111,7 @@
 
 /*
  * The flow itself: a rule with a head on it. Written in CSS rather than as a
- * glyph so it stretches with the gap and takes the ink colour, and drawn with
+ * glyph so it stretches with the gap and takes the ink color, and drawn with
  * borders so there is no image to load and nothing to theme separately.
  */
 .flow {
@@ -241,7 +241,7 @@
 /*
  * The realm's own tone on its edge. A tinted `.card` alone did not separate the
  * three: --bg-mix does not inherit, so a Card's tone is a property of the Card
- * and every heading inside all three read as the same colour.
+ * and every heading inside all three read as the same color.
  */
 .realm {
   border-color: color-mix(in srgb, var(--bg-mix, var(--color-primary)) 45%, transparent);
@@ -262,7 +262,7 @@
 .realm-nouns {
   max-block-size: 16rem;
   overflow-y:     auto;
-  /* The one literal on the page, and it is not a colour: a mask reads the
+  /* The one literal on the page, and it is not a color: a mask reads the
      alpha channel, so the hue is never painted. */
   mask-image:     linear-gradient(to bottom, #000 calc(100% - 1.5rem), transparent);
 }
@@ -1360,7 +1360,7 @@ function setTheme(name) {
 
 // ─── Highlighting ─────────────────────────────────────────────────────────────
 // glow marks a token with the ELEMENT that means it and @frontierjs/css themes
-// those elements, so nothing here names a colour. `prefix: false` because SQL
+// those elements, so nothing here names a color. `prefix: false` because SQL
 // and CSS both start lines with characters glow would eat as diff markers.
 function paintCode(root = document) {
   if (!window.glow) return

@@ -66,7 +66,7 @@ const DEMO = {
 // ─── The catalogue ────────────────────────────────────────────────────────
 //
 // Thirteen products, one row per option combination beneath them, and one
-// photograph per colourway. Bigger than the four flat rows this file used to
+// photograph per colorway. Bigger than the four flat rows this file used to
 // write, deliberately: a variant table with one variant per product proves
 // nothing, and a filter bar over four rows has nothing to narrow.
 //
@@ -88,13 +88,13 @@ const APPAREL = ['s', 'm', 'l'] as const
 /// a range on screen, which is what keeps that honest.
 const SIZE_UPLIFT: Record<string, number> = { s: 0, m: 0, l: 2, xl: 4, xxl: 6 }   // dollars
 
-/// Which size carries the colourway photograph. A picture is of a COLOUR, and
-/// a colour spans every size it is cut in, so the image hangs off one variant
-/// and the product page finds it by matching colour rather than by id.
+/// Which size carries the colorway photograph. A picture is of a COLOR, and
+/// a color spans every size it is cut in, so the image hangs off one variant
+/// and the product page finds it by matching color rather than by id.
 const PHOTO_SIZE = 'm'
 
-type Colourway = {
-  colour: string
+type Colorway = {
+  color: string
   code:   string
   stock:  number
   image?: string
@@ -109,7 +109,7 @@ type SeedProduct = {
   /** DOLLARS. `cents()` converts at the write — see the header. */
   price:       number
   sizes:       readonly string[]
-  colours:     Colourway[]
+  colors:     Colorway[]
   active?:     boolean
 }
 
@@ -118,25 +118,25 @@ const CATALOGUE: SeedProduct[] = [
     slug: 'explorer-tee', name: 'FrontierJS Explorer Tee', brand: 'frontierjs',
     description: 'Heavyweight cotton, screen-printed front. The explorer walks first and finds what matters.',
     skuStem: 'FJS-TEE', price: 28, sizes: APPAREL,
-    colours: [
-      { colour: 'Night Navy', code: 'NVY', stock: 40, image: 'fjs-tee-navy.png'  },
-      { colour: 'Sandstone',  code: 'SND', stock: 32, image: 'fjs-tee-sand.png'  },
-      { colour: 'Clay',       code: 'CLY', stock: 18, image: 'fjs-tee-clay.png'  },
+    colors: [
+      { color: 'Night Navy', code: 'NVY', stock: 40, image: 'fjs-tee-navy.png'  },
+      { color: 'Sandstone',  code: 'SND', stock: 32, image: 'fjs-tee-sand.png'  },
+      { color: 'Clay',       code: 'CLY', stock: 18, image: 'fjs-tee-clay.png'  },
       // Deliberately empty. A shop with nothing out of stock cannot show you
       // what out of stock LOOKS like, and the sold-out path is the one that
       // breaks quietly.
-      { colour: 'Olive',      code: 'OLV', stock:  0, image: 'fjs-tee-olive.png' },
+      { color: 'Olive',      code: 'OLV', stock:  0, image: 'fjs-tee-olive.png' },
     ],
   },
   {
     slug: 'explorer-hoodie', name: 'FrontierJS Explorer Hoodie', brand: 'frontierjs',
     description: 'Brushed-back fleece, kangaroo pocket, print across the shoulders.',
     skuStem: 'FJS-HOOD', price: 65, sizes: APPAREL,
-    colours: [
-      { colour: 'Night Navy', code: 'NVY', stock: 22, image: 'fjs-hoodie-navy.png'  },
-      { colour: 'Sandstone',  code: 'SND', stock: 14, image: 'fjs-hoodie-sand.png'  },
-      { colour: 'Clay',       code: 'CLY', stock:  9, image: 'fjs-hoodie-clay.png'  },
-      { colour: 'Olive',      code: 'OLV', stock: 11, image: 'fjs-hoodie-olive.png' },
+    colors: [
+      { color: 'Night Navy', code: 'NVY', stock: 22, image: 'fjs-hoodie-navy.png'  },
+      { color: 'Sandstone',  code: 'SND', stock: 14, image: 'fjs-hoodie-sand.png'  },
+      { color: 'Clay',       code: 'CLY', stock:  9, image: 'fjs-hoodie-clay.png'  },
+      { color: 'Olive',      code: 'OLV', stock: 11, image: 'fjs-hoodie-olive.png' },
     ],
   },
 
@@ -144,31 +144,31 @@ const CATALOGUE: SeedProduct[] = [
     slug: 'junction-tee', name: 'Junction Tee', brand: 'junction',
     description: 'Routes. Resources. Resolved. Coal cotton, cream mark.',
     skuStem: 'JCT-TEE', price: 26, sizes: APPAREL,
-    colours: [{ colour: 'Coal', code: 'COL', stock: 36, image: 'junction-tee.png' }],
+    colors: [{ color: 'Coal', code: 'COL', stock: 36, image: 'junction-tee.png' }],
   },
   {
     slug: 'junction-hoodie', name: 'Junction Hoodie', brand: 'junction',
     description: 'Heavy hood, sleeve print down both arms.',
     skuStem: 'JCT-HOOD', price: 62, sizes: APPAREL,
-    colours: [{ colour: 'Coal', code: 'COL', stock: 16, image: 'junction-hoodie.png' }],
+    colors: [{ color: 'Coal', code: 'COL', stock: 16, image: 'junction-hoodie.png' }],
   },
   {
     slug: 'junction-cap', name: 'Junction Cap', brand: 'junction',
     description: 'Washed cotton six-panel, embroidered mark.',
     skuStem: 'JCT-CAP', price: 24, sizes: ['one'],
-    colours: [{ colour: 'Parchment', code: 'PCH', stock: 25, image: 'junction-cap.png' }],
+    colors: [{ color: 'Parchment', code: 'PCH', stock: 25, image: 'junction-cap.png' }],
   },
   {
     slug: 'junction-camp-mug', name: 'Junction Camp Mug', brand: 'junction',
     description: 'Enamel over steel. Takes a knock, takes the heat.',
     skuStem: 'JCT-MUG', price: 18, sizes: ['one'],
-    colours: [{ colour: 'Coal', code: 'COL', stock: 48, image: 'junction-mug.png' }],
+    colors: [{ color: 'Coal', code: 'COL', stock: 48, image: 'junction-mug.png' }],
   },
   {
     slug: 'junction-notebook', name: 'Junction Notebook', brand: 'junction',
     description: 'Hardback, dotted, elastic closure. Debossed mark.',
     skuStem: 'JCT-NOTE', price: 22, sizes: ['one'],
-    colours: [{ colour: 'Coal', code: 'COL', stock: 30, image: 'junction-notebook.png' }],
+    colors: [{ color: 'Coal', code: 'COL', stock: 30, image: 'junction-notebook.png' }],
   },
   {
     slug: 'junction-stickers', name: 'Junction Sticker Pack', brand: 'junction',
@@ -178,47 +178,47 @@ const CATALOGUE: SeedProduct[] = [
     // Product.active, and a filter with nothing on the far side of it is a
     // control nobody can tell works.
     active: false,
-    colours: [{ colour: 'Parchment', code: 'PCH', stock: 0, image: 'junction-sticker.png' }],
+    colors: [{ color: 'Parchment', code: 'PCH', stock: 0, image: 'junction-sticker.png' }],
   },
 
   {
     slug: 'litestone-tee', name: 'Litestone Tee', brand: 'litestone',
     description: 'Black on black, feather mark at the chest and a full print down the side.',
     skuStem: 'LST-TEE', price: 30, sizes: APPAREL,
-    colours: [{ colour: 'Black', code: 'BLK', stock: 27, image: 'litestone-tee.png' }],
+    colors: [{ color: 'Black', code: 'BLK', stock: 27, image: 'litestone-tee.png' }],
   },
   {
     slug: 'litestone-hoodie', name: 'Litestone Hoodie', brand: 'litestone',
     description: 'Midweight zip hood, tonal feather.',
     skuStem: 'LST-HOOD', price: 70, sizes: APPAREL,
-    colours: [{ colour: 'Black', code: 'BLK', stock: 12, image: 'litestone-hoodie.png' }],
+    colors: [{ color: 'Black', code: 'BLK', stock: 12, image: 'litestone-hoodie.png' }],
   },
   {
     slug: 'litestone-cap', name: 'Litestone Cap', brand: 'litestone',
     description: 'Unstructured cotton cap, feather at the front panel.',
     skuStem: 'LST-CAP', price: 24, sizes: ['one'],
-    colours: [{ colour: 'Black', code: 'BLK', stock: 19, image: 'litestone-cap.png' }],
+    colors: [{ color: 'Black', code: 'BLK', stock: 19, image: 'litestone-cap.png' }],
   },
   {
     slug: 'litestone-camp-mug', name: 'Litestone Camp Mug', brand: 'litestone',
     description: 'Matte black enamel, etched feather.',
     skuStem: 'LST-MUG', price: 19, sizes: ['one'],
-    colours: [{ colour: 'Black', code: 'BLK', stock: 41, image: 'litestone-mug.png' }],
+    colors: [{ color: 'Black', code: 'BLK', stock: 41, image: 'litestone-mug.png' }],
   },
   {
     slug: 'litestone-tote', name: 'Litestone Tote', brand: 'litestone',
     description: 'Heavy canvas, long handles, screen-printed feather.',
     skuStem: 'LST-TOTE', price: 20, sizes: ['one'],
-    colours: [{ colour: 'Black', code: 'BLK', stock: 33, image: 'litestone-tote.png' }],
+    colors: [{ color: 'Black', code: 'BLK', stock: 33, image: 'litestone-tote.png' }],
   },
 ]
 
-/// The colourway list — the source of `valueset ProductColour`.
+/// The colorway list — the source of `valueset ProductColor`.
 ///
 /// `Ochre` is here and retired on purpose: it is what the `@@scope(current)` on
 /// the set narrows away, so the picker on a variant form offers seven of these
 /// eight and the eighth is still the answer for the tees that ran in it.
-const COLOURS = [
+const COLORS = [
   { name: 'Default',    hex: '#9ca3af' },
   { name: 'Night Navy', hex: '#1e293b' },
   { name: 'Sandstone',  hex: '#d6c7ae' },
@@ -310,19 +310,19 @@ async function seedMoney() {
   }
 }
 
-async function seedColours() {
-  for (const c of COLOURS) {
-    if (await sys.colour.findFirst({ where: { name: c.name } })) continue
-    await sys.colour.create({ data: c })
+async function seedColors() {
+  for (const c of COLORS) {
+    if (await sys.color.findFirst({ where: { name: c.name } })) continue
+    await sys.color.create({ data: c })
   }
 }
 
 async function seedCatalogue() {
-  // Before the variants, and not only for the swatches: `colour` binds to
-  // ProductColour as `open`, so a variant naming a colourway that is not on the
+  // Before the variants, and not only for the swatches: `color` binds to
+  // ProductColor as `open`, so a variant naming a colorway that is not on the
   // list would ADD it — silently, with no hex, from a seed file. The list is
   // the thing being seeded here; a variant is a reference to it.
-  await seedColours()
+  await seedColors()
 
   // Guarded per PRODUCT rather than per table. The table guard the rest of this
   // file uses answers "has anything been seeded", which stops a thirteenth
@@ -339,7 +339,7 @@ async function seedCatalogue() {
       active:      p.active ?? true,
     } })
 
-    for (const c of p.colours) {
+    for (const c of p.colors) {
       for (const size of p.sizes) {
         // One SKU per row and it has to be unique across the whole shop, so it
         // carries every option that distinguishes the row. A one-size product
@@ -354,12 +354,12 @@ async function seedCatalogue() {
         const variant = await sys.productVariant.create({ data: {
           productId: product.id,
           sku:       `${p.skuStem}-${c.code}-${size.toUpperCase()}`,
-          colour:    c.colour,
+          color:    c.color,
           size,
           price:     cents(p.price + (SIZE_UPLIFT[size] ?? 0)),
         } })
 
-        // A zero-stock colourway is seeded deliberately (see OLV below) and
+        // A zero-stock colorway is seeded deliberately (see OLV below) and
         // there is nothing to record: `move()` refuses a delta of zero, because
         // a movement that moves nothing is a row that says nothing.
         if (c.stock > 0) await move(sys, variant.id, 'received', c.stock, {
@@ -377,8 +377,8 @@ async function seedCatalogue() {
           // Relative to the process CWD, which is the example root — the same
           // assumption `database audit` already makes about its own path.
           file:      `./db/seed-media/${c.image}`,
-          alt:       `${p.name} — ${c.colour}`,
-          position:  p.colours.indexOf(c),
+          alt:       `${p.name} — ${c.color}`,
+          position:  p.colors.indexOf(c),
         } })
       }
     }
@@ -925,7 +925,7 @@ async function orderLinesFor(items: Array<{ sku: string, quantity: number }>) {
     out.push({
       variantId:   variant.id,
       sku:         variant.sku,
-      description: `${product.name} — ${variant.colour} · ${variant.size}`,
+      description: `${product.name} — ${variant.color} · ${variant.size}`,
       quantity,
       unitPrice:   variant.price,
       lineTotal:   variant.price * quantity,

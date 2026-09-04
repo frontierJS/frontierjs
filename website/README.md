@@ -120,7 +120,7 @@ page ships a highlighter and no page owns a code palette.
 That is a change from how the site was written. Thirteen pages marked their
 samples up **by hand** — a `<b>` around every keyword, an `<em>` around every
 string — and four more carried a copy of the same regex with a slightly
-different keyword list, which is how three of them ended up not colouring
+different keyword list, which is how three of them ended up not coloring
 `interface`. So on the page whose own principle is *the code samples are the
 product*, the code was HTML: copying a sample out of the source gave you tags.
 

@@ -4,7 +4,7 @@
 import 'virtual:sierra'
 
 // The design system. One import, no build step, no config. Every class used
-// below this line comes from it, and nothing in this app defines a colour, a
+// below this line comes from it, and nothing in this app defines a color, a
 // radius or a spacing scale of its own (repo invariant 13).
 import '@frontierjs/css'
 

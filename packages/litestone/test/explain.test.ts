@@ -16,7 +16,7 @@ import { spawnSync } from 'child_process'
 
 const CLI = resolve(import.meta.dir, '..', 'src', 'tools', 'cli.js')
 
-/** Colour codes make every assertion a substring puzzle; strip them. */
+/** Color codes make every assertion a substring puzzle; strip them. */
 const plain = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
 
 function run(...args: string[]) {

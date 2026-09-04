@@ -32,8 +32,8 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
   debug: 0, info: 1, warn: 2, error: 3, silent: 99
 }
 
-// ─── ANSI colours ─────────────────────────────────────────────────────────
-// Colour when stdout is a terminal, honouring NO_COLOR and FORCE_COLOR. The
+// ─── ANSI colors ─────────────────────────────────────────────────────────
+// Color when stdout is a terminal, honouring NO_COLOR and FORCE_COLOR. The
 // pretty writer emitted escape codes unconditionally, so `bun run api > log`
 // recorded them as though they were log content.
 
@@ -173,7 +173,7 @@ export function consoleWriter(format: 'pretty' | 'json' = 'pretty'): LogWriter {
       // `('\n' + COLORS.error + stack) ?? (…)`: a concatenation is never nullish,
       // so the fallback was dead and RESET was on the wrong side of the operator
       // — an error with no `.stack` logged the word `undefined`, and every line
-      // after ANY error stayed the error colour.
+      // after ANY error stayed the error color.
       const detail = entry.error.stack ?? `${entry.error.name}: ${entry.error.message}`
       line += '\n' + COLORS.error + detail + RESET
     }

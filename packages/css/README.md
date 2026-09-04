@@ -88,8 +88,8 @@ takes a tone — no component maintains its own list.
 
 `primary` · `secondary` · `muted` · `info` · `success` · `warning` · `danger`
 
-**Contrast is derived, not declared.** Fill and text colour are both computed
-from the fill's relative luminance: bright hues keep their colour and take dark
+**Contrast is derived, not declared.** Fill and text color are both computed
+from the fill's relative luminance: bright hues keep their color and take dark
 text, everything else keeps white text and is dimmed just enough to earn it.
 Verified at **0 WCAG AA failures across all 42 tone × theme combinations** on
 each of `btn`, `pill` and `badge` — and, because it is a derivation rather than
@@ -97,7 +97,7 @@ a table, it holds for hues no theme has defined yet. `bun run test` checks that
 with eight invented ones.
 
 Tones are **element-scoped** (`@property … inherits: false`), so an untoned
-button inside a danger alert stays its own colour instead of turning red.
+button inside a danger alert stays its own color instead of turning red.
 
 ---
 
@@ -116,12 +116,12 @@ inheritance.
 `theme-dark` · `theme-elite` · `theme-basecamp` · `theme-notebook` ·
 `theme-press` · `theme-field`
 
-A theme overrides tokens, not just colours. **A theme ships no selector** —
+A theme overrides tokens, not just colors. **A theme ships no selector** —
 that is the contract, and it decides what a look can be: if a design needs a
 rule of its own, the token that would have carried it is missing.
 `themes/press.css` exists to probe exactly that.
 
-### What a theme can move, besides colour
+### What a theme can move, besides color
 
 | Token | Moves |
 | --- | --- |
@@ -307,7 +307,7 @@ never a class
 
 **Type** `h1`–`h6` · `text-xs` `text-sm` `text-md` `text-lg` `text-xl` ·
 `text-body` `text-muted` `text-primary` … 
-&nbsp;&nbsp;— size and colour are separate axes and chain: `class="text-sm text-muted"`
+&nbsp;&nbsp;— size and color are separate axes and chain: `class="text-sm text-muted"`
 
 **Accessibility** `visually-hidden` (+ `focusable`) · `skip-link` · the focus
 ring
@@ -371,7 +371,7 @@ blend toward the ink.
 
 The window is not the code theme's own. `--tone-ink` is the same derivation
 off whatever tone the element carries, and it is what `.btn.outlined`,
-`.btn.link` and a toned `.btn.ghost` colour their text with — those three
+`.btn.link` and a toned `.btn.ghost` color their text with — those three
 painted the raw tone until v0.16 and were under AA on 34 of the 72 tone ×
 theme pairs, as low as 1.19:1. Anything of your own that renders a tone as
 text wants it too:
@@ -384,7 +384,7 @@ text wants it too:
 like with no tone class.
 
 **A dark theme must invert the window**, because CSS cannot work it out —
-relative colour syntax exposes the channels of one origin colour, and the
+relative color syntax exposes the channels of one origin color, and the
 origin is the tone, not the surface it will land on:
 
 ```css
@@ -421,7 +421,7 @@ Every focusable thing in the package rings the same way, from one rule in
 
 ```css
 :root {
-  --ring:        var(--color-primary);  /* whole-theme ring colour   */
+  --ring:        var(--color-primary);  /* whole-theme ring color   */
   --ring-width:  2px;
   --ring-offset: 2px;                   /* negated for inset rings   */
 }
@@ -488,8 +488,8 @@ Where the platform already has the behavior, the system uses it —
 
 Chrome 119+ · Safari 16.4+ · Firefox 128+
 
-The system leans on `@property`, `color-mix()`, relative colour syntax and
-cascade layers. Older browsers degrade to flat colours and white text rather
+The system leans on `@property`, `color-mix()`, relative color syntax and
+cascade layers. Older browsers degrade to flat colors and white text rather
 than breaking, but they are not a target.
 
 ---

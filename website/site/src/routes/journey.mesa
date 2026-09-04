@@ -80,7 +80,7 @@ publishes: 0
       <h3>Legend</h3>
       <div class="key">
         {#each d.key as k}
-          <div><i style="background:{k.colour}"></i>{k.label}</div>
+          <div><i style="background:{k.color}"></i>{k.label}</div>
         {/each}
       </div>
     </div>

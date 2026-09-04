@@ -3,7 +3,7 @@
  * Newsprint letterpress: paper ground, serif headlines over a monospace body,
  * square corners, hard ink shadows with no blur.
  *
- * The other themes retune colour and, in elite's case, radius and face. This
+ * The other themes retune color and, in elite's case, radius and face. This
  * one exists to answer how far the token surface reaches on its own — it moves
  * the type scale, the leading ladder, the density axis, the ring, the rules and
  * the shadow shape, and touches no selector the package does not already ship.
@@ -12,8 +12,8 @@
  */
 
 .theme-press {
-  /* ── Colours ────────────────────────────────────────────────────────
-   * Primary is ink, not a brand hue: a press sheet has one colour and a
+  /* ── Colors ────────────────────────────────────────────────────────
+   * Primary is ink, not a brand hue: a press sheet has one color and a
    * second one it paid extra for, which is --color-secondary's vermilion.
    * chip.css derives chip text from the fill's luminance, so the fills are
    * safe by construction; these are additionally tuned to clear AA as TEXT

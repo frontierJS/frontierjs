@@ -12,7 +12,7 @@
  * nothing for a consumer to remember, and any highlighter that emits the
  * same shape is themed by this file for free.
  *
- * The colours are the package's own tones, read through a `--code-*`
+ * The colors are the package's own tones, read through a `--code-*`
  * override with the tone as the fallback rather than aliased at :root. An
  * alias would resolve once against :root and inherit past every .theme-*
  * (ruled 2026-08-02, the same trap as --ring), so highlighted code would
@@ -35,10 +35,10 @@
  * The clamp is written out per role here rather than read from
  * --tone-ink, because --tone-ink derives from --bg-mix — one tone per
  * element — and this palette needs six roles at once off six different
- * theme colours, one of them hue-shifted.
+ * theme colors, one of them hue-shifted.
  */
 
-/* One tone → one readable text colour. Written out per role rather than
+/* One tone → one readable text color. Written out per role rather than
    shared, because a custom property cannot take the tone as an argument. */
 
 /*
@@ -111,7 +111,7 @@ code, .code-inline {
 
   /*
    * --code-bg / --code-text with the surface pair as the fallback, for the
-   * same reason the syntax colours below are written that way: an alias at
+   * same reason the syntax colors below are written that way: an alias at
    * :root resolves once and inherits past every .theme-*, so a themed block
    * would keep the default palette. Read here, a theme or a consumer that
    * wants its own code palette sets the two variables and nothing else.
@@ -195,7 +195,7 @@ pre code[language] {
 /*
  * Every token element is neutralised first. <b>, <em>, <strong>, <i>,
  * <sup>, <u>, <ins>, <del> and <dfn> all carry a default weight, slant,
- * decoration or baseline shift, and glow uses them as colour carriers
+ * decoration or baseline shift, and glow uses them as color carriers
  * rather than for their usual emphasis — so italic strings, superscript
  * comments and struck-through diff lines are what you get without this.
  */
@@ -232,7 +232,7 @@ code[language] em {
 }
 
 /*
- * keyword, tag name, hex colour.
+ * keyword, tag name, hex color.
  *
  * A hue step off the theme's primary rather than a sixth literal: the
  * package has no violet tone, and every palette that does have one puts it

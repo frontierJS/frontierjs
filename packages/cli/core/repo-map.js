@@ -1135,7 +1135,7 @@ function esc(value) {
 // ─── style ────────────────────────────────────────────────────────────────────
 //
 // Three theme states, not two: an explicit choice stamps the root element, and
-// the default setting stamps nothing — so a colour defined only inside a media
+// the default setting stamps nothing — so a color defined only inside a media
 // query renders one theme's text on the other theme's ground.
 
 const STYLE = `

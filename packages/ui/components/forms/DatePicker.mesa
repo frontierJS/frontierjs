@@ -902,7 +902,7 @@
    * grid of round day cells with a range band bleeding between them — which
    * is why this block exists at all. Everything that is NOT that geometry is
    * read from the package: the type ladder, the space ladder (so `.dense`
-   * reaches the whole panel), the radii, the shadow ladder, the rule colour,
+   * reaches the whole panel), the radii, the shadow ladder, the rule color,
    * the tones, and the focus ring's own tokens.
    *
    * Four knobs, each one a design token. Override them on any ancestor.
@@ -1161,7 +1161,7 @@
     /*
      * `background` is restated because the band rule above already set it and
      * is equally specific — setting only --bg-mix leaves the end of a range
-     * painted in the band's colour with the text colour of a fill, which is
+     * painted in the band's color with the text color of a fill, which is
      * low-contrast and looks like a rendering fault rather than a CSS one.
      */
     --bg-mix:      var(--dp-accent);

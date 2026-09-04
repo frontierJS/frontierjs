@@ -80,10 +80,10 @@ name when it declares none.
 | before | `setShipping` | `validateInput` |
 | before | `checkout` | `validateInput` |
 
-### `colours` · model `Colour`
+### `colors` · model `Color`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`
-- **broadcasts on** — `colours`
+- **broadcasts on** — `colors`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

@@ -327,11 +327,11 @@ one walk.
 
 **It ships no palette for this either**, and for the reason the tree already
 had: `code.css` themes `<ins>`, `<del>` and `<dfn>` inside a `code[language]`
-as full-width stripes with a coloured rule and a 14% tint, off `--code-ins` /
+as full-width stripes with a colored rule and a 14% tint, off `--code-ins` /
 `--code-del` / `--code-note`. Three states, already measured across every
 shipped theme. A hand-drawn green and red here would have been a fourth thing
 to reconcile and wrong in most of them. The drive asserts the three resolve to
-three different colours, because a theme that stopped reaching them would
+three different colors, because a theme that stopped reaching them would
 render three identical stripes — which looks like a working diff and says
 nothing.
 
@@ -474,8 +474,8 @@ elements `glow()` already uses for them — `<b>`, `<em>`, `<strong>`, `<i>`,
 `@frontierjs/css`'s `components/code.css` themes. So the tree retints with the
 theme and a theme setting its own `--code-*` reaches it for free; a private
 palette would have been a sixth thing to reconcile against eleven themes. The
-drive asserts the computed colours differ, because a theme that stops matching
-still renders a perfectly legible tree in one colour.
+drive asserts the computed colors differ, because a theme that stops matching
+still renders a perfectly legible tree in one color.
 
 **A row carries `data-path`** — its own path, as JSON. Two keys at two depths
 can read identically, and a document with a key that CONTAINS a dot is the
@@ -505,7 +505,7 @@ which is the case it exists for.
 
 Filing `Json` also found `FJS-405`, fixed in `@frontierjs/toolbelt`: `glow`
 marked no keyword in JSON, so `true`, `false` and `null` were the only values in
-a highlighted document with no colour.
+a highlighted document with no color.
 
 **`editable` turns the tree into an editor**: edit a leaf, rename a key, remove
 a row, add a key or an item, at any depth, with the root carrying its own add
@@ -982,7 +982,7 @@ Dropdown flip case) is left alone.
 that did: `Button` and `Btn` render the same `.btn` and differ only in their
 defaults — the evidence `FJS-056` has been argued without — and `Label`, `Card`,
 `Table`, `Stat`, `Breadcrumbs`, `Progress`, `Spinner` and `Skeleton` all
-answered correctly on announced state and painted colour.
+answered correctly on announced state and painted color.
 
 ## 2026-08-16 — the Tabs family, opened in a browser (`FJS-313`)
 
@@ -1203,7 +1203,7 @@ saying what is happening.
 `FJS-129`, the sibling of the DatePicker work below: 276 lines with 21 custom
 properties in a `--cp-*` namespace, five of them defined without reading a
 token — `--cp-radius: 12px`, `--cp-font: 'SF Mono', …`,
-`--cp-shadow: 0 24px 80px rgba(0,0,0,0.72)` — plus five literal colours and
+`--cp-shadow: 0 24px 80px rgba(0,0,0,0.72)` — plus five literal colors and
 every padding and font-size in px, so a theme switch reached it partially and
 `.dense` not at all.
 
@@ -1222,7 +1222,7 @@ already ships**, which is the more interesting half:
 - The active row's three hand-mixed `color-mix()` calls are the package's TINT
   ramp: set `--bg-mix` and `--tint-surface` / `--tint-rule` / `--tint-ink`
   follow, already measured for contrast against every shipped theme. Three
-  colours nobody would think to re-measure, replaced by one input.
+  colors nobody would think to re-measure, replaced by one input.
 
 **The scrim became a token in `@frontierjs/css`.** The palette dimmed at 0.72
 while every `<dialog>` in the package dimmed at 0.45, and neither could be
@@ -1247,7 +1247,7 @@ so it moved with them.
 468 lines of local `<style>` declaring **107 custom properties, 47 of them
 defined without reading a single design token** — its own six-rung radius
 scale, its own font-size scale, `font-family: sans-serif`, eight literal
-colours, and four base64 PNG arrows. A theme switch reached it partially at
+colors, and four base64 PNG arrows. A theme switch reached it partially at
 best and `.dense` not at all. That is `FJS-128`, and the blocker on it was
 never the CSS: it was that this component had never been opened in a browser,
 so there was nothing to catch a rewrite going wrong.
@@ -1284,12 +1284,12 @@ ever appear as compounds of one — the file no longer writes a selector that
 reads like package vocabulary.
 
 The drive carries 30 assertions on it now, six of them the failures above asked
-as measurements: a theme switch moves the painted colours, `.dense` moves the
+as measurements: a theme switch moves the painted colors, `.dense` moves the
 padding, overriding `--dp-cell` moves the disc, the grid track and the band's
 bleed together, and the arrows are SVG rather than a background image. One
 defect came out of the rewrite itself and is pinned — the band rule and the
 range-end rule are equally specific and the band's comes first, so setting only
-`--bg-mix` on the end left it painted in the band with a fill's text colour.
+`--bg-mix` on the end left it painted in the band with a fill's text color.
 The screenshot caught it; the class assertions could not.
 
 ## 2026-08-16 — the kit has a browser drive of its own, and it found six defects on day one
@@ -1734,7 +1734,7 @@ Table.
 
 Five defects, all invisible to the compile and render suites:
 
-- **`Field` toned the wrapper, which colours nothing.** The error line was
+- **`Field` toned the wrapper, which colors nothing.** The error line was
   `<p class="field-hint">` inside `<div class="field-group danger">`, but
   `tones.css` registers `--bg-mix` with `inherits: false`, so a tone on an
   ancestor reaches nothing below it: every validation error rendered in the
@@ -1779,7 +1779,7 @@ scaffold it**, so every one of them rendered unstyled in any FrontierJS app.
 Deleted `tokens.css`, a third token vocabulary that only 2 of the 63
 components referenced.
 
-Per-component colour and size maps are gone. `utils.js` grew `tone()`, which
+Per-component color and size maps are gone. `utils.js` grew `tone()`, which
 maps the old `color=` / `type=` spellings onto the seven css tones, and
 `cx()`. Old prop values still work.
 

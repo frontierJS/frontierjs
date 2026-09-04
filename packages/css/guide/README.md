@@ -11,7 +11,7 @@ all:
 - **Reference → Footprint** — what the bundle weighs against Bootstrap, Bulma,
   Pico, Foundation and Open Props, and then the half that matters: where their
   class counts come from. 59% of Bootstrap's class names are the same ideas at
-  five widths and 34% of Bulma's are one colour helper at every step of a
+  five widths and 34% of Bulma's are one color helper at every step of a
   lightness ramp, against 12% here — which is the multiplication argument from
   **Why this one** stated as a number a reader can recount rather than agree
   with. Our figures are read from the live CSSOM as the page renders; theirs
@@ -118,7 +118,7 @@ secure-context only and `file://` is not one, so there is a textarea fallback.
 `code(src, lang)` highlights with glow; **`lang: 'txt'` skips it entirely**.
 There is no "no language" mode in glow — an unknown one still gets the
 common-word rules — so a plain diagram would come out with "Bootstrap"
-coloured as a keyword.
+colored as a keyword.
 
 `guide.js` is an **ES module**, because it imports `glow()` from
 `@frontierjs/toolbelt` by relative path to highlight the samples. `vocabulary.js`,

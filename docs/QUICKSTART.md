@@ -59,7 +59,7 @@ assume it rather than teaching it:
 | Register a plugin | `api/src/app.ts`, top to bottom, in order |
 | Add a page | `web/src/routes/` — the file tree is the route table |
 | Bind a page to data | `web/src/resources/` — one Resource per model |
-| Change how anything looks | Nothing here defines a colour. Use `@frontierjs/css`: a tone (`danger`) and a treatment (`outlined`) |
+| Change how anything looks | Nothing here defines a color. Use `@frontierjs/css`: a tone (`danger`) and a treatment (`outlined`) |
 
 A service context has `auth`, `client`, `route`, `locals`, `query` and
 `directives`. It has **no `ctx.params`** — that belongs to raw routes only, and

@@ -1821,8 +1821,8 @@ model AlertEvent {
 //   does not, so whoever opened the dashboard would run a query nobody graded.
 //   @@gate and @@allow grade a caller against a model, never against a string.
 //
-//   A colour. The mock stores a hex per dashboard; @frontierjs/css styles by
-//   tone, and a stored colour is one the theme cannot follow. The icon is an
+//   A color. The mock stores a hex per dashboard; @frontierjs/css styles by
+//   tone, and a stored color is one the theme cannot follow. The icon is an
 //   emoji, which is content rather than styling.
 
 model Dashboard {
@@ -1984,7 +1984,7 @@ model Blueprint {
   version        String     @trim @length(1, 40)
   image          String     @trim @length(1, 200)
 
-  // Presentational, and the one place this schema stores a colour. It is the
+  // Presentational, and the one place this schema stores a color. It is the
   // vendor's brand, which is data about a third party rather than a styling
   // decision — a tone (`danger`, `info`) cannot say *n8n pink*. The UI uses it
   // for the card's icon tile and nothing else; every other surface on the card

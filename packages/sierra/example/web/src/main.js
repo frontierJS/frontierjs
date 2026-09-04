@@ -5,7 +5,7 @@ import 'virtual:sierra'
 
 // The design system. One import, no build step, no config — every component
 // class used below this line comes from it, and nothing in this app defines a
-// colour, a radius or a spacing scale of its own.
+// color, a radius or a spacing scale of its own.
 import '@frontierjs/css'
 
 import { mount } from '@frontierjs/mesa/runtime'

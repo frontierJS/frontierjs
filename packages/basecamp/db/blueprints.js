@@ -8,7 +8,7 @@
 // form rather than a document.
 //
 // **`brandColor` is set only where the mock carried a literal.** Four of the
-// eight took their colour from the mock's own theme object (`T.blue`, `T.red`),
+// eight took their color from the mock's own theme object (`T.blue`, `T.red`),
 // which is a design-system token and not a vendor's brand — copying those would
 // put this app's palette in a data column and call it somebody's identity. Null
 // is the honest answer, and the card falls back to its own surface.

@@ -159,7 +159,7 @@ enum Size { one xs s m l xl xxl }
 ///
 /// That split is why `sku`, `price` and `barcode` are NOT on this model. They
 /// were, while every product was one buyable thing — and the moment one design
-/// carried four colourways, a price on the family had no answer.
+/// carried four colorways, a price on the family had no answer.
 
 // ─── What this shop did not write ─────────────────────────────────────────
 //
@@ -273,21 +273,21 @@ model Product {
   @@gate("0.4.4.5")
 }
 
-/// The colourways this shop has run. `ProductVariant.colour` stores the NAME
+/// The colorways this shop has run. `ProductVariant.color` stores the NAME
 /// rather than a foreign key, because the value has to outlive the row: a
-/// colourway that is retired is still what the navy tees in the warehouse are,
+/// colorway that is retired is still what the navy tees in the warehouse are,
 /// and a deleted row must not take that answer with it.
-model Colour {
+model Color {
   id         Int       @id
   name       String    @length(1, 30) @unique
   
-  /// For the swatch a picker draws. Optional — a colourway added by a merchant
+  /// For the swatch a picker draws. Optional — a colorway added by a merchant
   /// typing it into the variant form has no hex until somebody sets one.
   hex        String?   @length(4, 7)
   
   /// Out of the offered list, still on every variant that ran in it. This is
   /// what @@scope below reads, and it is why the set is a table and not an enum:
-  /// retiring a colourway is a row edit rather than a deploy.
+  /// retiring a colorway is a row edit rather than a deploy.
   retired    Boolean   @default(false)
   
   createdAt  DateTime  @default(now())
@@ -303,11 +303,11 @@ model Colour {
   @@gate("0.4.4.5")
 }
 
-/// The list behind `ProductVariant.colour`. `value name` rather than the id is
-/// the whole point: what is stored is the colourway, readable on its own, and
+/// The list behind `ProductVariant.color`. `value name` rather than the id is
+/// the whole point: what is stored is the colorway, readable on its own, and
 /// the row is the metadata about it.
-valueset ProductColour {
-  source Colour
+valueset ProductColor {
+  source Color
   value  name
   scope  current
 }
@@ -325,11 +325,11 @@ model ProductVariant {
   /// reason — see the note on `enum Size`. A product with nothing to choose
   /// takes the defaults, which is what Shopify spells "Default Title".
   ///
-  /// `colour` is the pair `size` is not: a stored STRING with a declared list
-  /// behind it. `open` is what makes it a colourway rather than an enum — the
+  /// `color` is the pair `size` is not: a stored STRING with a declared list
+  /// behind it. `open` is what makes it a colorway rather than an enum — the
   /// merchant picks one the shop has run before, and typing a new one adds it
   /// to the list instead of asking for a schema change and a deploy.
-  colour        String               @length(1, 30) @default("Default") @values(ProductColour, open)
+  color         String               @length(1, 30) @default("Default") @values(ProductColor, open)
   size          Size                 @default(one)
   
   price         Int                  @money(USD) @gte(0)
@@ -349,7 +349,7 @@ model ProductVariant {
   active        Boolean              @default(true)
   createdAt     DateTime             @default(now())
   
-  /// Stamped by `Product`'s cascade, and reachable on its own for a colourway
+  /// Stamped by `Product`'s cascade, and reachable on its own for a colorway
   /// that was a mistake. The ledger and the holds hanging off this row are not
   /// touched by either: they belong to the shelf, and what physically moved did
   /// not stop having happened.
@@ -362,7 +362,7 @@ model ProductVariant {
   
   /// One row per combination. Without it a second "navy / m" is a legal insert
   /// and the two rows fight over one shelf.
-  @@unique([productId, colour, size])
+  @@unique([productId, color, size])
   
   /// A picker over variants shows the SKU — the option columns are two fields
   /// and a label field is one, and a SKU is what the shop floor says out loud.
@@ -371,13 +371,13 @@ model ProductVariant {
   /// The storefront never asks for a variant it cannot sell: the product page,
   /// the buy box and the catalogue all read `{ productId, active: true }`, and
   /// the prerender runs that once per product. A plain index on `productId`
-  /// carries every retired colourway the shop has ever run, which is the half
+  /// carries every retired colorway the shop has ever run, which is the half
   /// nothing reads. The predicate is ANDed with `@@softDelete`'s own clause, so
   /// the index holds live active rows and the caller's query — which litestone
   /// narrows to live rows for them — matches it exactly.
   @@index([productId], where: active == true)
   
-  /// `(cascade)` reaches the photographs of THIS colourway and nothing else — a
+  /// `(cascade)` reaches the photographs of THIS colorway and nothing else — a
   /// flat-lay of the whole range names no variant, so its foreign key is null
   /// and it is not matched. The holds and the ledger below are not soft-delete
   /// tables at all, so the cascade cannot touch them by construction.
@@ -395,7 +395,7 @@ model ProductImage {
   productId  Int              @label("Product")
   product    Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
   
-  /// Null means "shows the family". A colourway shot names its variant, and a
+  /// Null means "shows the family". A colorway shot names its variant, and a
   /// flat-lay of the whole range names none.
   variantId  Int?             @label("Variant")
   variant    ProductVariant?  @relation(fields: [variantId], references: [id], onDelete: SetNull)
@@ -1122,7 +1122,7 @@ model Order {
 /// shopper was charged, and re-reading the first to render the second rewrites
 /// what past customers paid every time somebody edits the catalogue. Same for
 /// the wording: `description` is the sentence that was on the screen, and a
-/// colourway renamed next year does not un-sell this one.
+/// colorway renamed next year does not un-sell this one.
 ///
 /// The relation stays for the one thing a copy cannot do — link back to the
 /// product page — and it is `Restrict` for the reason `InventoryMovement`'s is:
@@ -1930,7 +1930,7 @@ model CartLine {
   cartId     Int             @label("Basket")
   cart       Cart            @relation(fields: [cartId], references: [id], onDelete: Cascade)
   
-  variantId  Int             @label("Variant") @required("Pick a size and colour")
+  variantId  Int             @label("Variant") @required("Pick a size and color")
   variant    ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
   
   quantity   Int             @gte(1) @lte(99) @default(1)

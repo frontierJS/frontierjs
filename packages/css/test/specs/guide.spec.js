@@ -120,8 +120,8 @@ var REPLACEABLE = {
  *   sg-swatch      an early draft of AUDIT.md called it a Badge. It is not:
  *                  a Badge carries text, pads around it and derives its ink
  *                  from its fill, and this is an empty 18px square whose
- *                  whole content is a colour. The package has no term for
- *                  "a colour, shown" because that is what a guide does.
+ *                  whole content is a color. The package has no term for
+ *                  "a color, shown" because that is what a guide does.
  *   sg-search-kbd  the element is already a <kbd> and code.css styles the
  *                  ELEMENT, so the Kbd term was never missing. The class
  *                  survives as the hook the narrow-viewport rule hides it
@@ -319,7 +319,7 @@ test('guide: --ring is not declared at :root anywhere in the guide', function ()
    *   and the computed value then inherits past any .theme-* override.
    *
    * So a guide that declares it pins every focus ring to one theme's
-   * colour. focus.css reads `var(--ring, var(--color-primary))` at the use
+   * color. focus.css reads `var(--ring, var(--color-primary))` at the use
    * site, which is the form that follows a theme switch.
    */
   var both = window.__FJS_GUIDE_CSS__ + '\n' + window.__FJS_INSTRUMENTS_CSS__;
@@ -563,9 +563,9 @@ test('guide: no .sg-* class renders identically to a shipped term', function () 
  *
  * Three terms produced 40 of the first run's 56 findings — `.feed`,
  * `.skeleton` and `.spinner`. Each is defined by properties a <div> probe
- * cannot read (background-image, animation, user-select, a border colour),
+ * cannot read (background-image, animation, user-select, a border color),
  * so each sits 1–5 properties from a bare div and EVERY one-line guide
- * class lands within 90% of it. `.sg-next-arrow` — a colour and a font-size
+ * class lands within 90% of it. `.sg-next-arrow` — a color and a font-size
  * — is not "90% of a skeleton" in any sense a reader would accept.
  *
  * The tempting fix is a threshold on how far the term itself sits from

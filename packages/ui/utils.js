@@ -133,7 +133,7 @@ export function nativeValidationGuard(el) {
  *
  * @frontierjs/css has exactly seven tones, and a tone is one free-standing
  * class that works on every element that takes one — a btn, a card, a <tr>,
- * a feed-dot. No component here keeps a colour list; they call tone().
+ * a feed-dot. No component here keeps a color list; they call tone().
  *
  * The aliases exist because component APIs in the wild say `type="error"`
  * or `color="red"`, and rewriting every call site is not the point. An
@@ -173,7 +173,7 @@ const TONE_ALIASES = {
 }
 
 /**
- * Resolve a colour-ish prop to one of the seven @frontierjs/css tones.
+ * Resolve a color-ish prop to one of the seven @frontierjs/css tones.
  * Returns '' when there is no sensible mapping, which means "untoned" —
  * every component in the package falls back to its own default that way.
  *

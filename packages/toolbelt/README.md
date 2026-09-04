@@ -184,7 +184,7 @@ glow('.btn { color: red }', { language: 'css', prefix: false })
 | `<i>` | punctuation |
 | `<b>` | identifier — property, function, key |
 | `<em>` | value — string, number, CSS custom property |
-| `<strong>` | keyword, tag name, hex colour |
+| `<strong>` | keyword, tag name, hex color |
 | `<label>` | `@rule`, decorator, `!important` |
 | `<ins>` `<del>` `<dfn>` | a whole line: added, removed, noted |
 | `<mark>` `<u>` | an author's highlight, an author's error |

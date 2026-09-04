@@ -267,7 +267,7 @@ describe('every write path that carries a payload runs the check', () => {
 // `FJS-434`. A value missing from a NARROWED set is two things and only one of
 // them may be added: one nobody has ever used, and one the list has deliberately
 // stopped offering. Creating the second hits the source's own `@unique` and the
-// caller is handed `UNIQUE constraint failed: colour.name` — SQLite's sentence,
+// caller is handed `UNIQUE constraint failed: color.name` — SQLite's sentence,
 // about a table they did not name, saying the opposite of what happened.
 //
 // Found by putting the feature into `example` rather than by a unit test, which
@@ -275,7 +275,7 @@ describe('every write path that carries a payload runs the check', () => {
 
 describe('open — a value the set has stopped offering', () => {
   const SCHEMA = `
-model Colour {
+model Color {
   id      Int     @id
   name    String  @unique
   retired Boolean @default(false)
@@ -283,29 +283,29 @@ model Colour {
   @@scope(current, retired == false)
 }
 
-valueset ProductColour { source Colour  value name  scope current }
+valueset ProductColor { source Color  value name  scope current }
 
 model Variant {
   id     Int    @id
   sku    String @unique
-  colour String @values(ProductColour, open)
+  color String @values(ProductColor, open)
 }
 `
 
   const fresh = async () => {
     const db = await createClient({ schema: SCHEMA, db: ':memory:' })
-    await db.colour.create({ data: { name: 'Navy' } })
-    await db.colour.create({ data: { name: 'Ochre', retired: true } })
+    await db.color.create({ data: { name: 'Navy' } })
+    await db.color.create({ data: { name: 'Ochre', retired: true } })
     return db
   }
 
   it('is refused by name, and says which list stopped offering it', async () => {
     const db = await fresh()
-    const err = await db.variant.create({ data: { sku: 'A', colour: 'Ochre' } }).catch(e => e)
+    const err = await db.variant.create({ data: { sku: 'A', color: 'Ochre' } }).catch(e => e)
 
     expect(err.name).toBe('ValidationError')
     expect(err.message).toContain('Ochre')
-    expect(err.message).toContain('ProductColour')
+    expect(err.message).toContain('ProductColor')
     // The half that was wrong: not SQLite's, and not about a missing value.
     expect(err.message).not.toContain('UNIQUE constraint')
     expect(err.message).toContain('not offered')
@@ -317,19 +317,19 @@ model Variant {
     // and the batch is refused — so adding the first one would leave a shared
     // list grown by a write that never landed.
     await db.variant.createMany({ data: [
-      { sku: 'A', colour: 'Seafoam' },
-      { sku: 'B', colour: 'Ochre' },
+      { sku: 'A', color: 'Seafoam' },
+      { sku: 'B', color: 'Ochre' },
     ] }).catch(() => {})
 
-    expect(await db.colour.count()).toBe(2)
+    expect(await db.color.count()).toBe(2)
     expect(await db.variant.count()).toBe(0)
   })
 
   it('still adds a value the source has never held', async () => {
     const db = await fresh()
-    await db.variant.create({ data: { sku: 'A', colour: 'Seafoam' } })
+    await db.variant.create({ data: { sku: 'A', color: 'Seafoam' } })
 
-    expect((await db.colour.findFirst({ where: { name: 'Seafoam' } }))?.retired).toBe(false)
+    expect((await db.color.findFirst({ where: { name: 'Seafoam' } }))?.retired).toBe(false)
     expect(await db.variant.count()).toBe(1)
   })
 
@@ -340,10 +340,10 @@ model Variant {
       schema: SCHEMA.replace('  scope current }', ' }').replace('@@scope(current, retired == false)', ''),
       db: ':memory:',
     })
-    await db.colour.create({ data: { name: 'Ochre', retired: true } })
-    await db.variant.create({ data: { sku: 'A', colour: 'Ochre' } })
+    await db.color.create({ data: { name: 'Ochre', retired: true } })
+    await db.variant.create({ data: { sku: 'A', color: 'Ochre' } })
 
-    expect(await db.colour.count()).toBe(1)
+    expect(await db.color.count()).toBe(1)
     expect(await db.variant.count()).toBe(1)
   })
 })

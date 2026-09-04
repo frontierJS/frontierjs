@@ -31,7 +31,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `OauthFlow` | model |
 | `OutboxMessage` | model |
 | `Product` | model |
-| `Colour` | model |
+| `Color` | model |
 | `ProductVariant` | model |
 | `ProductImage` | model |
 | `Customer` | model |
@@ -223,7 +223,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 **On create**: required — `name`, `slug`, `brand` · not accepted — `id`, `version`, `variantCount`, `priceFrom`, `priceTo`, `onHand`
 
-### `Colour`
+### `Color`
 
 - gate `read:0 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
 
@@ -249,7 +249,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `integer` | — | — | — | — |
 | `productId` | `integer` | yes | Product | — | `required` |
 | `sku` | `string` | yes | — | `minLength: 3` `maxLength: 20` | — |
-| `colour` | `string` = `"Default"` | — | — | `minLength: 1` `maxLength: 30` `x-values` | — |
+| `color` | `string` = `"Default"` | — | — | `minLength: 1` `maxLength: 30` `x-values` | — |
 | `size` | `Size` = `"one"` | — | — | — | — |
 | `price` | `integer` | yes | — | `minimum: 0` `x-money` | — |
 | `barcode` | `string`? | — | — | — | — |

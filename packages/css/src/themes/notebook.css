@@ -24,7 +24,7 @@
  * --ink-soft to make room keeps them separate — 6.62 / 4.61 on the
  * tightest ground, a 1.44x step between them.
  *
- * Both are the same colour scaled uniformly in linear RGB, the operation
+ * Both are the same color scaled uniformly in linear RGB, the operation
  * tokens.css and press.css already use for this: chromaticity is exact, so
  * this is the identical sage, only dark enough to read.
  *

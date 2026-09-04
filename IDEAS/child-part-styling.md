@@ -113,7 +113,7 @@ which was already inconsistent with the passthrough sitting beside it.
 Two kinds of class can be handed over, and only one is free.
 
 **A design-system class** (`dense`, `outlined`) is global and lands as-is. Invariant
-13 says this is how you style anyway — a tone and a treatment, never a colour — so
+13 says this is how you style anyway — a tone and a treatment, never a color — so
 this case covers most of the demand and could ship alone.
 
 **The parent's own scoped class** is the hard one. The parent's `<style>` compiles

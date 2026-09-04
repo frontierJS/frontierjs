@@ -96,7 +96,7 @@
 /// **No `parent` for tag groups.** A hierarchy is a second feature with its own
 /// questions (does a child inherit the parent's attachments? does filtering by a
 /// parent match children?) and neither has an obvious answer. `group` below is a
-/// flat string, which covers "these tags are colours and those are statuses"
+/// flat string, which covers "these tags are colors and those are statuses"
 /// without pretending to be a tree.
 model Tag {
   id        Int      @id
@@ -110,7 +110,7 @@ model Tag {
 
   name      String   @trim @length(1, 40) @label("Tag")
 
-  /// Flat, not a tree. "colour", "status", "priority" — what KIND of tag this
+  /// Flat, not a tree. "color", "status", "priority" — what KIND of tag this
   /// is, so a picker can offer one kind and a filter can ask for one.
   group     String?  @length(1, 40)
 
@@ -122,7 +122,7 @@ model Tag {
   createdAt DateTime @default(now())
 
   /// Unique per OWNER and per group, not globally: two tenants both having
-  /// `urgent` is correct, and so is a `red` colour tag beside a `red` status.
+  /// `urgent` is correct, and so is a `red` color tag beside a `red` status.
   ///
   /// Note what this cannot say if `group` is nullable — two NULLs never compare
   /// equal in SQL, so `(1, 'urgent', NULL)` would be admissible twice while the

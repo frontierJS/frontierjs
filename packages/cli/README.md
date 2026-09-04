@@ -371,7 +371,7 @@ fli gui --open         # and open a browser
 ```
 
 The GUI builds a form for every command out of its frontmatter — the same file,
-no second definition — and streams output live, coloured by log level.
+no second definition — and streams output live, colored by log level.
 
 | Method | Path | |
 |---|---|---|
@@ -416,7 +416,7 @@ at `~/.fli/completion-cache.json` that rebuilds when any command file changes.
 
 - **Nothing on the read-only path may import zx.** It is ~85ms of what was a
   ~200ms invocation, and `list`, `help`, `?` and completion wanted one thing from
-  it — colour, which is `core/color.js` now. That is also why `bootstrap.js`
+  it — color, which is `core/color.js` now. That is also why `bootstrap.js`
   imports `runtime.js` at the call site rather than at the top: a static import
   pulls zx back in for every `fli list`. A command body is unaffected, since its
   compiled shim imports `zx/globals` itself.

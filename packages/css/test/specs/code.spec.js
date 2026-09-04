@@ -74,9 +74,9 @@ test('code: inside a <pre> the container owns the type', function () {
 
 /* ── Neutralisation ────────────────────────────────────────────────── */
 
-test('code: token elements carry colour, not emphasis', function () {
+test('code: token elements carry color, not emphasis', function () {
   /*
-   * glow uses <em>, <strong> and <sup> as colour carriers rather than for
+   * glow uses <em>, <strong> and <sup> as color carriers rather than for
    * emphasis. Left alone they render italic strings, bold keywords and
    * superscript comments — in a monospace block that reads as a rendering
    * fault, and the raised baseline breaks the grid outright.
@@ -105,12 +105,12 @@ test('code: a diff line is not struck through or underlined', function () {
 
 /* ── The palette ───────────────────────────────────────────────────── */
 
-test('code: the six token roles are six different colours', function () {
+test('code: the six token roles are six different colors', function () {
   /*
    * A highlighter whose tokens all resolve to the same value is indis-
    * tinguishable from no highlighter, and every one of these reads through a
    * `var(--code-*, tone)` fallback — one typo in a variable name collapses a
-   * role onto the inherited colour with nothing to see in the CSS.
+   * role onto the inherited color with nothing to see in the CSS.
    */
   var c = block('css');
   var seen = {};
@@ -118,23 +118,23 @@ test('code: the six token roles are six different colours', function () {
   ['sup', 'i', 'b', 'em', 'strong', 'label'].forEach(function (tag) {
     var node = c.querySelector(tag);
     assert.ok(node, 'the sample has no <' + tag + '>');
-    var colour = style(node, 'color');
-    assert.ok(!seen[colour], '<' + tag + '> and <' + seen[colour] + '> are both ' + colour);
-    seen[colour] = tag;
+    var color = style(node, 'color');
+    assert.ok(!seen[color], '<' + tag + '> and <' + seen[color] + '> are both ' + color);
+    seen[color] = tag;
   });
 });
 
 test('code: the palette follows the theme, it is not pinned to :root', function () {
   /*
-   * The whole reason the colours are written `var(--code-name, <derived from
+   * The whole reason the colors are written `var(--code-name, <derived from
    * --color-primary>)` rather than aliased at :root. An alias resolves once
    * against :root's own value and inherits past every .theme-* — ruled
    * 2026-08-02 for --ring — so highlighted code would stay in the default
    * palette in every theme but one, and nothing would say so.
    *
    * Both tones are already inside the lightness window, so the clamp is a
-   * no-op and the identifier colour is the tone exactly. Compared through
-   * toRGB because a relative-colour result serialises as oklch().
+   * no-op and the identifier color is the tone exactly. Compared through
+   * toRGB because a relative-color result serialises as oklch().
    */
   var box = el('<div style="--color-primary: rgb(1, 2, 3)">' + GLOW.css + '</div>');
   var got = toRGB(style(box.querySelector('code[language] b'), 'color'));
@@ -164,7 +164,7 @@ test('code: the lightness clamp only acts when the tone needs it', function () {
 
 test('code: a --code-* override beats the tone it falls back to', function () {
   /* An override is taken as given — no clamp, no derivation. Someone who
-     names a colour has already decided. */
+     names a color has already decided. */
   var box = el('<div style="--code-name: rgb(4, 5, 6)">' + GLOW.css + '</div>');
   assert.equal(style(box.querySelector('code[language] b'), 'color'), 'rgb(4, 5, 6)');
 });
@@ -173,7 +173,7 @@ test('code: a --code-* override beats the tone it falls back to', function () {
 
 /*
  * Syntax highlighting is the one place a design system is tempted to spend
- * its contrast budget on prettiness: six colours on one background, all of
+ * its contrast budget on prettiness: six colors on one background, all of
  * them small monospace text. A palette derived from the tones inherits
  * whatever those tones were tuned for — a fill behind white text — which is
  * not the same job, so it has to be checked rather than assumed.
@@ -194,7 +194,7 @@ test('code: a --code-* override beats the tone it falls back to', function () {
        * notebook's --ink-mute is 2.67:1 against --surface-sunken, which
        * fails for every one of the nine files that use it as muted text.
        * Logged as a theme defect rather than compensated for here; the test
-       * below is what pins code.css to inventing no colour of its own.
+       * below is what pins code.css to inventing no color of its own.
        */
       ['b', 'em', 'strong', 'label'].forEach(function (tag) {
         var node = pre.querySelector('code[language] ' + tag);
@@ -210,7 +210,7 @@ test('code: a --code-* override beats the tone it falls back to', function () {
 
 test('code: comment and punctuation are the theme ink ramp, not new greys', function () {
   /*
-   * The counterpart to the AA tests above. Those cover the four colours this
+   * The counterpart to the AA tests above. Those cover the four colors this
    * file derives; these two it must NOT derive — inventing a gray here would
    * mean a theme could retune its ink ramp and have code blocks ignore it,
    * and would hide a theme whose muted ink does not read.
@@ -218,13 +218,13 @@ test('code: comment and punctuation are the theme ink ramp, not new greys', func
   var pre = themed('default', '<pre class="code">' + GLOW.css + '</pre>');
   var ramp = getComputedStyle(pre);
 
-  /* Through toRGB both ways: a computed colour serialises as rgb(), the
+  /* Through toRGB both ways: a computed color serialises as rgb(), the
      token as the hex the theme wrote. */
   function same(tag, token) {
     assert.equal(
       toRGB(style(pre.querySelector('code[language] ' + tag), 'color')).join(','),
       toRGB(ramp.getPropertyValue(token).trim()).join(','),
-      'the <' + tag + '> colour is not ' + token
+      'the <' + tag + '> color is not ' + token
     );
   }
   same('sup', '--ink-mute');
@@ -234,10 +234,10 @@ test('code: comment and punctuation are the theme ink ramp, not new greys', func
 
 /* ── The author's own markers ──────────────────────────────────────── */
 
-test('code: an error mark is a wavy underline, not a colour', function () {
+test('code: an error mark is a wavy underline, not a color', function () {
   /*
-   * `••text••` means wrong, and colour alone cannot say that inside a block
-   * where five other colours already mean something else.
+   * `••text••` means wrong, and color alone cannot say that inside a block
+   * where five other colors already mean something else.
    */
   var u = block('marked').querySelector('u');
   assert.ok(u, 'the sample has no <u>');
@@ -265,7 +265,7 @@ test('code: the three line callouts are told apart', function () {
 
     var bg = style(node, 'background-color');
     assert.ok(bg !== 'rgba(0, 0, 0, 0)', '<' + tag + '> has no tint');
-    assert.ok(!seen[bg], '<' + tag + '> and <' + seen[bg] + '> are the same colour');
+    assert.ok(!seen[bg], '<' + tag + '> and <' + seen[bg] + '> are the same color');
     seen[bg] = tag;
   });
 });

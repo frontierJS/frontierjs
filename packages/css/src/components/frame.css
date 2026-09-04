@@ -40,7 +40,7 @@
  *
  * They are use-site fallbacks rather than :root declarations because a
  * `--topbar-bg: var(--surface)` at :root resolves ONCE, against :root's
- * own --surface, and inherits that colour past every .theme-* — the
+ * own --surface, and inherits that color past every .theme-* — the
  * alias trap tokens.css rules on.
  *
  * ── What a token cannot do, and what to write instead ────────────────

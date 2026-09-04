@@ -47,7 +47,7 @@ column bound to it, so it is a fact about the set rather than about a field.
 
 | Set | Source | Value | Scope | Where |
 | --- | --- | --- | --- | --- |
-| `ProductColour` | `Colour` | `name` | `current` | — |
+| `ProductColor` | `Color` | `name` | `current` | — |
 
 ## Models
 
@@ -101,9 +101,9 @@ table `cart_line` · db `main` · gate `0.0.0.0`
 @@allow('update', token == auth().cartToken)
 ```
 
-### `Colour`
+### `Color`
 
-table `colour` · db `main` · gate `0.4.4.5`
+table `color` · db `main` · gate `0.4.4.5`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
@@ -764,7 +764,7 @@ table `product_variant` · db `main` · gate `0.4.4.5` · @@softDelete(cascade)
 | --- | --- | --- | --- | --- |
 | `active` | `Boolean` | no | `1` | — |
 | `barcode` | `String` | yes | — | unique |
-| `colour` | `String` | no | `'Default'` | `@values(ProductColour, open)` |
+| `color` | `String` | no | `'Default'` | `@values(ProductColor, open)` |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deletedAt` | `DateTime` | yes | — | — |
 | `id` | `Int` | no | — | id |
@@ -779,7 +779,7 @@ table `product_variant` · db `main` · gate `0.4.4.5` · @@softDelete(cascade)
 | `stock` | `Int` | no | `0` | — |
 
 ```
-@@unique(colour, productId, size)
+@@unique(color, productId, size)
 @@index(productId)
 ```
 

@@ -23,7 +23,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | --- | --- | --- | --- | --- |
 | `Cart` | 0 STRANGER | 0 STRANGER | 0 STRANGER | 5 ADMINISTRATOR |
 | `CartLine` | 0 STRANGER | 0 STRANGER | 0 STRANGER | 0 STRANGER |
-| `Colour` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `Color` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `Credential` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `CreditNote` | 1 VISITOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Customer` | 1 VISITOR | 4 USER | 4 USER | 5 ADMINISTRATOR |

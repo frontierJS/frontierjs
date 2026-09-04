@@ -240,7 +240,7 @@ test('glow: JSON has three keywords and they are not the strings that spell them
    * `getTags` withholds the COMMON_WORDS keyword pass from json, yaml and html
    * — rightly, since in a JSON document every other bare word is inside a
    * string. That left `true`, `false` and `null` as the only values in a
-   * highlighted document with no colour at all (FJS-405).
+   * highlighted document with no color at all (FJS-405).
    *
    * The half that matters is the negative one: a document where the same three
    * words appear inside strings has to come back with those strings whole.
@@ -277,7 +277,7 @@ test('glow: a .lite schema is highlighted as one', function () {
    * things a schema is made of both came out wrong: a model-level attribute
    * is written `@@gate` and the generic attribute rule can only take one
    * `@`, so it matched at the second one and left the first as a stray
-   * punctuation mark; and a field's TYPE was coloured only when the common
+   * punctuation mark; and a field's TYPE was colored only when the common
    * keyword list happened to contain it case-insensitively, so `Int` and
    * `String` were lit and `DateTime` and `Json` were not.
    */
@@ -302,14 +302,14 @@ test('glow: a shell line has a command and no keywords', function () {
   /*
    * `my`, `use`, `end`, `local`, `next`, `get` and `set` are all in the
    * common keyword list and all ordinary argument text, so `cd my-app` came
-   * out with `my` coloured as a keyword and `-app` as punctuation after it —
+   * out with `my` colored as a keyword and `-app` as punctuation after it —
    * the directory name the reader is meant to type, in three pieces.
    */
   const src = '$ npm create frontier@latest my-app && cd my-app --force'
   const out = glow(src, { language: 'sh', prefix: false })
 
   assert.equal(textOf(out), src)
-  assert.ok(!out.includes('<strong>my</strong>'), 'an argument word was coloured as a keyword')
+  assert.ok(!out.includes('<strong>my</strong>'), 'an argument word was colored as a keyword')
   assert.ok(out.includes('<b>my-app</b>'), 'a hyphenated argument was split')
   assert.ok(out.includes('<strong>npm</strong>'), 'the command is not marked')
   assert.ok(out.includes('<strong>cd</strong>'), 'the command after && is not marked')
@@ -325,7 +325,7 @@ test('glow: a SQL statement is highlighted by its keywords', function () {
   /*
    * The shape of DDL is its keywords, and they were the only part of it not
    * marked: nothing in the common word list is SQL, so a CREATE TABLE came
-   * out as one unlit line with its string literals coloured. `--` is the
+   * out as one unlit line with its string literals colored. `--` is the
    * line comment, which the generic `//` would have missed as well.
    */
   const src = [

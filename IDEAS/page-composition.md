@@ -43,9 +43,9 @@ UnoCSS shortcuts are the expression of it. `vocabulary.js` is the same artefact:
 54 terms, which element each is, and a `class` field present only when the class
 name is not the lowercased term.
 
-**Colour is never the API.** ksite's surfaces are `bg-dark` / `bg-tint`; ours are
+**Color is never the API.** ksite's surfaces are `bg-dark` / `bg-tint`; ours are
 a tone plus a treatment (Invariant 13). Neither system lets an author name a
-colour at the call site.
+color at the call site.
 
 **A base shape, composed into by everything above it.** ksite's `brick` is a
 Frame — and its own notes are explicit that `brick` covers only part of one:
@@ -72,7 +72,7 @@ Their `flow` and our `Stack` are the same component under two names.
 | --- | --- | --- |
 | `Frame` | `Surface` + `Chip` | We split the primitive in two, by lineage rather than by scale |
 | `brick` | `.surface` | Both are the block base every composite is built from |
-| `surface` (bg/overlay/color) | tone recipe in `surface.css` | Ours derives the text colour; see below |
+| `surface` (bg/overlay/color) | tone recipe in `surface.css` | Ours derives the text color; see below |
 | `spacing` | `--space-*` × `--density` | We have a third axis they do not |
 | `structure` | Layout tier | Same names as Every Layout on our side |
 | `alignment` | `.center`, `.split` | Partial — we have no `lefted`/`righted` |
@@ -101,7 +101,7 @@ so every surface needs a light and a dark variant chosen by the author, and a
 tone whose luminance sits near the middle is a judgement call nobody makes twice
 the same way. `chip.css` reads the fill's relative luminance out of the `y`
 channel of `xyz-d65` — which *is* WCAG's L, so no approximation is involved — and
-derives `--on-fill` from it. One tone name; the text colour is not an authoring
+derives `--on-fill` from it. One tone name; the text color is not an authoring
 decision. This is the single largest divergence in the package's favor.
 
 **Density is a third axis, and it inherits.** ksite has no counterpart. A tone is

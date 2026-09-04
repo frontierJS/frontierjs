@@ -130,11 +130,11 @@ CREATE TRIGGER "product_fts_update" AFTER UPDATE ON "product" BEGIN
   INSERT INTO "product_fts"(rowid, name, description) VALUES (new.id, new.name, new.description);
 END;
 
--- The colourways this shop has run. `ProductVariant.colour` stores the NAME
+-- The colorways this shop has run. `ProductVariant.color` stores the NAME
 -- rather than a foreign key, because the value has to outlive the row: a
--- colourway that is retired is still what the navy tees in the warehouse are,
+-- colorway that is retired is still what the navy tees in the warehouse are,
 -- and a deleted row must not take that answer with it.
-CREATE TABLE IF NOT EXISTS "colour" (
+CREATE TABLE IF NOT EXISTS "color" (
   "id" INTEGER NOT NULL PRIMARY KEY,
   "name" TEXT NOT NULL UNIQUE,
   "hex" TEXT,
@@ -222,7 +222,7 @@ CREATE TABLE IF NOT EXISTS "discount" (
 -- 
 -- Readable at 0, unlike a discount: a storefront has to OFFER these, and the
 -- prices are printed on the shipping page anyway. That difference — one table
--- public, its neighbour staff-only, both on the same screen — is the clearest
+-- public, its neighbor staff-only, both on the same screen — is the clearest
 -- statement in this schema that a gate answers *what kind of caller* and not
 -- *what kind of table*.
 CREATE TABLE IF NOT EXISTS "shipping_method" (
@@ -415,7 +415,7 @@ CREATE TABLE IF NOT EXISTS "product_variant" (
   "id" INTEGER NOT NULL PRIMARY KEY,
   "productId" INTEGER NOT NULL,
   "sku" TEXT NOT NULL UNIQUE,
-  "colour" TEXT NOT NULL DEFAULT 'Default',
+  "color" TEXT NOT NULL DEFAULT 'Default',
   "size" TEXT NOT NULL DEFAULT 'one',
   "price" INTEGER NOT NULL CHECK ("price" BETWEEN -9007199254740991 AND 9007199254740991),
   "barcode" TEXT UNIQUE,
@@ -424,7 +424,7 @@ CREATE TABLE IF NOT EXISTS "product_variant" (
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
   CHECK ("size" IN ('one', 'xs', 's', 'm', 'l', 'xl', 'xxl')),
-  UNIQUE ("productId", "colour", "size"),
+  UNIQUE ("productId", "color", "size"),
   FOREIGN KEY ("productId") REFERENCES "product" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_product_variant_productId" ON "product_variant" ("productId") WHERE ("deletedAt" IS NULL) AND ("active" = 1);
@@ -478,8 +478,8 @@ CREATE INDEX IF NOT EXISTS "idx_order_deletedAt" ON "order" ("deletedAt") WHERE 
 -- that bills and a shop that takes payments.
 -- 
 -- The shop never sees a card number. `providerRef` is a handle the provider
--- will honour, and the four columns beside it are what a person needs in order
--- to recognise which card they are looking at.
+-- will honor, and the four columns beside it are what a person needs in order
+-- to recognize which card they are looking at.
 -- 
 -- ─── The row is not uniformly secret, and that is the point ──────────────
 -- 
@@ -675,12 +675,12 @@ CREATE TABLE IF NOT EXISTS "inventory_movement" (
 -- 
 -- Every column below except the two ids is a value this row already has a
 -- relation to. That is not denormalisation for speed — it is that a line is a
--- statement about a MOMENT and its neighbours are statements about now. A
+-- statement about a MOMENT and its neighbors are statements about now. A
 -- variant's price is what the shop charges today; `unitPrice` is what this
 -- shopper was charged, and re-reading the first to render the second rewrites
 -- what past customers paid every time somebody edits the catalogue. Same for
 -- the wording: `description` is the sentence that was on the screen, and a
--- colourway renamed next year does not un-sell this one.
+-- colorway renamed next year does not un-sell this one.
 -- 
 -- The relation stays for the one thing a copy cannot do — link back to the
 -- product page — and it is `Restrict` for the reason `InventoryMovement`'s is:
@@ -753,7 +753,7 @@ CREATE TABLE IF NOT EXISTS "journal_entry" (
 
 -- One line. The quantity and the PRICE THE SHOPPER WAS SHOWN, which is not
 -- the same fact as the variant's price today — a basket left overnight must
--- either honour what it quoted or say out loud that it changed, and it can do
+-- either honor what it quoted or say out loud that it changed, and it can do
 -- neither if the number was never written down.
 CREATE TABLE IF NOT EXISTS "cart_line" (
   "id" INTEGER NOT NULL PRIMARY KEY,

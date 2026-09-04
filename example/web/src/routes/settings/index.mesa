@@ -146,7 +146,7 @@ title: Settings
 <!-- Editorial, not feedback: nothing just happened. Callout is the kit's
      component for a thing that is true on every visit — same `.alert` anatomy,
      `outlined` rather than filled, so it reads lighter without a second set of
-     colours. -->
+     colors. -->
 <Callout tone="info" title="Why none of this is in the schema">
   A preference is a fact about this browser, so it lives in
   <Mono>localStorage</Mono> — putting it in <Mono>db/schema.lite</Mono> would

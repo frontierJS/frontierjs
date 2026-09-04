@@ -57,7 +57,7 @@
  * straight on failed AA across most of the grid — .btn.outlined was under
  * 4.5:1 on 34 of the 72 tone x theme pairs, as low as 1.19:1. So they read
  * --tone-ink, the tone through the legibility window (tones.css), and the
- * border takes the same colour: a boundary at 1.99:1 is the variant not
+ * border takes the same color: a boundary at 1.99:1 is the variant not
  * being drawn at all.
  *
  * --btn-ink is the resolved answer as a NORMAL property, so the ::after

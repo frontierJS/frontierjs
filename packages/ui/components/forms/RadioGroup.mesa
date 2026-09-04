@@ -162,7 +162,7 @@
   }
   /*
    * Selected state from the checked input, not a class — and from the tint
-   * ramp rather than a hand-mixed colour. One input (`--bg-mix`) gives a fill
+   * ramp rather than a hand-mixed color. One input (`--bg-mix`) gives a fill
    * and a rule that are already measured for contrast against every shipped
    * theme; a local `color-mix()` is measured against none of them and nobody
    * re-measures one when a theme is added.

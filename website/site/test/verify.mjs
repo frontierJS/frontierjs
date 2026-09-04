@@ -461,7 +461,7 @@ try {
              padded: getComputedStyle(pre).paddingTop };
   `))
 
-  // {@html} put real elements in, not escaped text — and the colour on them is
+  // {@html} put real elements in, not escaped text — and the color on them is
   // @frontierjs/css's, which is the half a file-level check cannot see. The
   // page carries no code palette of its own now, so a keyword that is not
   // tinted means the design system's theme did not reach the sample at all.
@@ -479,7 +479,7 @@ try {
   `))
 
   // A token element must not keep its own meaning. code.css neutralises all
-  // nine, because glow uses them as colour carriers — without it every string
+  // nine, because glow uses them as color carriers — without it every string
   // is italic and every comment is superscript, which reads as a broken page.
   t('samples.neutralised', await evaluate(`
     const code = document.querySelector('pre.code code[language]');
@@ -496,7 +496,7 @@ try {
   `))
 
   // THE assertion. What must change is what a person sees, so this reads a
-  // rendered colour before and after — not a class name, which is the thing
+  // rendered color before and after — not a class name, which is the thing
   // that was wrong in both apps before FJS-308.
   t('theme.switches', await evaluate(`
     const read = () => ({
@@ -516,7 +516,7 @@ try {
   // and so did follow a retheme, but it made its own contrast decision; the
   // design system clamps every token into the tone-as-text window, which is
   // the reason a dark theme does not put dark code on a dark block. Both
-  // colours must move, and both must still differ from the block's own ink.
+  // colors must move, and both must still differ from the block's own ink.
   t('samples.followTheme', await evaluate(`
     const kw = () => {
       const c = document.querySelector('pre.code code[language]');
@@ -581,7 +581,7 @@ try {
   `))
 
   // The scoped styles bound through the layout AND the page, and the {@html}
-  // code samples are coloured by :global() rules — two different boundaries on
+  // code samples are colored by :global() rules — two different boundaries on
   // one page.
   t('pkg.styled', await evaluate(`
     // Not the first: .feat:first-child deliberately has no top border, so

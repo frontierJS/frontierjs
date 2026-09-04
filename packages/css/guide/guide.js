@@ -192,7 +192,7 @@ const BTN_VARS = [
  * ramp but not --paper, the guide's own page background, so under that theme
  * the page stayed cream while the body text went light — the guide was
  * unreadable in a theme whose stylesheet is correct. notebook's copy was one
- * colour and the word "Testing".
+ * color and the word "Testing".
  *
  * Only what the stylesheet cannot say lives here: the display name and the
  * one-line description.
@@ -429,7 +429,7 @@ function codeShell(src, inner) {
 function code(src, lang, extra) {
   /*
    * `txt` is the escape hatch: a diagram or a plain listing is not code, and
-   * glow will happily colour the word "Bootstrap" as a keyword and "Props"
+   * glow will happily color the word "Bootstrap" as a keyword and "Props"
    * as an identifier. There is no "no language" mode — an unknown one still
    * gets the common-word rules — so the highlighter is skipped entirely.
    */
@@ -1111,7 +1111,7 @@ function compositionPage() {
           So the resolution is just the cascade. Markup writes the leaf class
           only — <code>${esc('<span class="badge success">')}</code> — and the
           three sources meet on the element: structure from
-          <code>chip.css</code>, skin from <code>badges.css</code>, colour from
+          <code>chip.css</code>, skin from <code>badges.css</code>, color from
           whichever tone class is present.
         </p>
         <p>
@@ -1847,7 +1847,7 @@ function tintSteps() {
  * The two constants the contrast derivation turns on, read out of the
  * chip base's own `--fill` expression rather than restated.
  *
- * 0.35 is where the branch is: above it a hue keeps its colour and takes
+ * 0.35 is where the branch is: above it a hue keeps its color and takes
  * dark text, below it the fill is scaled down and keeps white. 0.1783 is
  * the luminance at which white text reaches 4.5:1.
  */
@@ -1972,9 +1972,9 @@ function axesDiagram() {
   <svg viewBox="0 0 960 646" class="sg-axes" role="img" aria-labelledby="axes-t axes-d">
     <title id="axes-t">The two axes of the system</title>
     <desc id="axes-d">
-      On the left, colour: one variable --bg-mix produces ${tints.length} tints, mixed at
+      On the left, color: one variable --bg-mix produces ${tints.length} tints, mixed at
       ${tints.map((s) => s.pct + '%').join(', ')} into --surface, --rule and --ink, plus a text
-      colour branched on the fill's own luminance. It is registered inherits: false, so it stops
+      color branched on the fill's own luminance. It is registered inherits: false, so it stops
       at the element that declares it. On the right, size: one number --density multiplies a
       ladder of ${rungs.length} space rungs from ${rungs[0].px}px to ${max}px. It is registered
       inherits: true, so it reaches every descendant. The same facts follow this diagram as
@@ -1983,8 +1983,8 @@ function axesDiagram() {
 
     <line x1="480" y1="52" x2="480" y2="604" class="sg-ax-rule" />
 
-    <!-- ── COLOUR ────────────────────────────────────────────────── -->
-    ${t(40, 36, 'COLOUR', 'sg-ax-eyebrow')}
+    <!-- ── COLOR ────────────────────────────────────────────────── -->
+    ${t(40, 36, 'COLOR', 'sg-ax-eyebrow')}
     ${t(40, 58, 'a fact about ONE element', 'sg-ax-head')}
 
     <rect x="166" y="96" width="140" height="40" rx="9" fill="var(--color-danger)" />
@@ -1992,8 +1992,8 @@ function axesDiagram() {
     ${fans}
     ${swatches}
 
-    <!-- the text colour is a branch, not a mix -->
-    ${t(40, 326, 'the text colour is a branch, not a fourth mix', 'sg-ax-dim')}
+    <!-- the text color is a branch, not a mix -->
+    ${t(40, 326, 'the text color is a branch, not a fourth mix', 'sg-ax-dim')}
     <rect x="40" y="340" width="190" height="44" rx="9" fill="var(--color-warning)" />
     ${t(135, 361, 'y > ' + (c.split || '0.35') + ' — keep the hue', 'sg-ax-mono sg-ax-mid')}
     ${t(135, 376, 'dark text', 'sg-ax-dim sg-ax-mid')}
@@ -2082,7 +2082,7 @@ function axesPage() {
         </p>
         <table class="table">
           <thead>
-            <tr><th style="width: 22%"></th><th style="width: 39%">Colour</th><th>Size</th></tr>
+            <tr><th style="width: 22%"></th><th style="width: 39%">Color</th><th>Size</th></tr>
           </thead>
           <tbody>
             <tr>
@@ -2092,7 +2092,7 @@ function axesPage() {
             </tr>
             <tr>
               <td><strong>the output</strong></td>
-              <td>${tints.length} tints, plus a derived text colour</td>
+              <td>${tints.length} tints, plus a derived text color</td>
               <td>${rungs.length} space rungs, ${rungs[0].px}px&ndash;${rungs[rungs.length - 1].px}px</td>
             </tr>
             <tr>
@@ -2122,7 +2122,7 @@ function axesPage() {
       )}
 
       ${section(
-        'What the colour axis derives',
+        'What the color axis derives',
         `
         <p>
           Three mixes and a branch, from one hue. The percentages are the
@@ -2138,13 +2138,13 @@ function axesPage() {
             .join('')}
         </dl>
         <p>
-          The text colour is not in that list because it is not a mix. It is a
+          The text color is not in that list because it is not a mix. It is a
           branch on the fill's own <strong>relative luminance</strong> — the
           <code>y</code> channel of <code>xyz-d65</code>, which is exactly WCAG's
           L, so no approximation is involved.
           ${
             c.split && c.target
-              ? `Above <code>${c.split}</code> a hue keeps its colour exactly and takes dark text.
+              ? `Above <code>${c.split}</code> a hue keeps its color exactly and takes dark text.
                  At or below it, white text is kept and the fill's luminance is scaled down to at
                  most <code>${c.target}</code> — the point where white reaches 4.5:1.`
               : ''
@@ -2152,7 +2152,7 @@ function axesPage() {
         </p>
         ${patternNote(`
           Scaling luminance uniformly is a scalar multiply on linear RGB, so it
-          preserves chromaticity exactly and only moves the colours that need
+          preserves chromaticity exactly and only moves the colors that need
           moving. That is why a brand hue survives the treatment instead of
           turning to mud &mdash; darkening a lime is what makes it olive.`)}`
       )}
@@ -5094,7 +5094,7 @@ tracking-wide   /* 0.05em  — uppercase labels, badges */`)}`
           <code>.text-center</code>, <code>.leading-snug</code> or
           <code>.tracking-wide</code> rule in any file here — they were Uno
           shortcuts through v0.5 and were not replaced when the config was
-          deleted. The package ships size and colour only.
+          deleted. The package ships size and color only.
         </p>
         <p>
           Bring Uno for the rest (see <strong>Install</strong>), or write the two
@@ -5922,7 +5922,7 @@ function densityFacts(names) {
  * Each theme's own primary, measured by applying the class to a probe.
  *
  * Four of the eight override the same NUMBER of tokens, which is true and
- * useless — they differ in which values, not how many. The colour is the
+ * useless — they differ in which values, not how many. The color is the
  * thing they actually are.
  */
 function themeFacts(names) {
@@ -6724,7 +6724,7 @@ function formsPage() {
               <label for="sg-email">Email</label>
               <input class="field" id="sg-email" type="email" required placeholder="you@example.com">
               <span class="field-hint">
-                Type something invalid, then click away — the field colours itself.
+                Type something invalid, then click away — the field colors itself.
               </span>
             </div>
           </div>`)}
@@ -6890,7 +6890,7 @@ function anatomyPage() {
         </p>
         <dl class="facts divided">
           ${Object.entries(NOT_ANATOMY)
-            .filter(([, why]) => !/^A (size|colour) utility$|^A theme$|^A direction modifier/.test(why))
+            .filter(([, why]) => !/^A (size|color) utility$|^A theme$|^A direction modifier/.test(why))
             .map(
               ([cls, why]) => `
           <dt><code>.${esc(cls)}</code></dt>
@@ -6901,7 +6901,7 @@ function anatomyPage() {
         <p>
           The families are excused as families: the eight
           <code>.theme-*</code>, the five <code>.text-*</code> sizes and six
-          colours, and Drawer's four <code>.from-*</code> directions. Every one
+          colors, and Drawer's four <code>.from-*</code> directions. Every one
           of them is listed by name, because a prefix rule is how
           <code>.alert-anything</code> gets in.
         </p>`
@@ -8049,7 +8049,7 @@ const LAYERS = [
   ["layout", "composition helpers: stack, cluster, center, split"],
   ["components", "btn, pill, badge, card, field, table, dialog …"],
   ["patterns", "the Block tier: bar, list, feed, disclosure"],
-  ["utilities", "the escape hatch: .text-* size and colour, .gap-*, .relative"],
+  ["utilities", "the escape hatch: .text-* size and color, .gap-*, .relative"],
   ["a11y", "the focus ring, .visually-hidden, .skip-link — last on purpose"],
 ];
 
@@ -9250,7 +9250,7 @@ function avatarPage() {
           The separating ring is an inset <code>box-shadow</code>, not a border
           — a border would eat into <code>--avatar-size</code> and make a
           grouped avatar smaller than a lone one at the same token value. It is
-          <code>--surface</code> coloured; on a tinted surface set
+          <code>--surface</code> colored; on a tinted surface set
           <code>--avatar-ring</code> to match.
         </p>
         ${preview(`
@@ -9626,20 +9626,20 @@ bun run demo
         <div class="table-wrap">
           <table class="table compact">
             <thead>
-              <tr><th>Element</th><th>Marks</th><th>Colour</th></tr>
+              <tr><th>Element</th><th>Marks</th><th>Color</th></tr>
             </thead>
             <tbody>
               <tr><td><code>&lt;sup&gt;</code></td><td>comment</td><td><code>--code-comment</code>, else <code>--ink-mute</code></td></tr>
               <tr><td><code>&lt;i&gt;</code></td><td>punctuation</td><td><code>--code-punct</code>, else <code>--ink-mute</code></td></tr>
               <tr><td><code>&lt;b&gt;</code></td><td>identifier — property, function, key</td><td><code>--code-name</code>, else <code>--color-primary</code></td></tr>
               <tr><td><code>&lt;em&gt;</code></td><td>value — string, number, custom property</td><td><code>--code-value</code>, else <code>--color-success</code></td></tr>
-              <tr><td><code>&lt;strong&gt;</code></td><td>keyword, tag name, hex colour</td><td><code>--code-keyword</code>, else a hue off <code>--color-primary</code></td></tr>
+              <tr><td><code>&lt;strong&gt;</code></td><td>keyword, tag name, hex color</td><td><code>--code-keyword</code>, else a hue off <code>--color-primary</code></td></tr>
               <tr><td><code>&lt;label&gt;</code></td><td><code>@rule</code>, decorator, <code>!important</code></td><td><code>--code-special</code>, else <code>--color-danger</code></td></tr>
             </tbody>
           </table>
         </div>
         <p>
-          None of those six is a literal colour: each is a tone read through a
+          None of those six is a literal color: each is a tone read through a
           <code>--code-*</code> override with the tone as the fallback, so the
           highlighting retints with the theme. Switch to Dark or Forest in the
           topbar and the block above follows. Declaring the aliases at
@@ -10355,7 +10355,7 @@ function learnPage() {
         `
         <p>
           Every question below is about behavior, placement or promise —
-          never about colour, size or border. That order is the system: pick
+          never about color, size or border. That order is the system: pick
           the term first and the look is three more decisions, all of which
           compose. Pick the look first and you end up with
           <code>class="card-small-blue-bordered"</code>.
@@ -10546,7 +10546,7 @@ const FRAMEWORKS = [
     write: 'JSX props, not classes',
     build: 'Required',
     behavior: 'Included — the point of it',
-    theming: '12-step colour scales, accent and gray',
+    theming: '12-step color scales, accent and gray',
     layers: 'Layerable',
     lock: 'React'
   },
@@ -10621,7 +10621,7 @@ function comparePage() {
         `
         <p>
           Every framework looks alike on a button until the button needs a
-          second variant, and alike again until you need a colour it did not
+          second variant, and alike again until you need a color it did not
           ship. So this walks one button through all three. Nothing below is
           a strawman — each is what that framework's own documentation tells
           you to write.
@@ -10638,7 +10638,7 @@ Bootstrap     <button class="btn btn-outline-danger">
 
 Bulma         <button class="button is-danger is-outlined">
 
-Pico CSS      <button class="outline">          <- no danger; you write the colour
+Pico CSS      <button class="outline">          <- no danger; you write the color
 
 FrontierJS    <button class="btn outlined danger">`, 'txt')}
         <p>
@@ -10677,7 +10677,7 @@ FrontierJS    <button class="btn outlined danger">`, 'txt')}
           announces and the class draws. Pico's is the better idea.
         </p>
 
-        <h3 class="h5">3. Now a colour the framework did not ship</h3>
+        <h3 class="h5">3. Now a color the framework did not ship</h3>
         <p>
           The client's purple, <code>#6d28d9</code>. Every project reaches
           this, usually in week one, and it is where the shapes come apart.
@@ -10708,7 +10708,7 @@ $custom-colors: ("brand": (#6d28d9, #fff));`, 'bash')}
         ${code(`/* FrontierJS — plain CSS in your own stylesheet, unlayered. */
 .brand { --bg-mix: #6d28d9; }`)}
         <p>
-          One declaration, no build step, and the text colour is not in it
+          One declaration, no build step, and the text color is not in it
           because it is not a decision — it is derived from that hue's
           luminance. The four <em>your call</em> comments above are the real
           cost of the other shape: each is a shade somebody has to pick, and
@@ -10823,8 +10823,8 @@ $custom-colors: ("brand": (#6d28d9, #fff));`, 'bash')}
         <h3 class="h5">1. Contrast is derived, not chosen</h3>
         <p>
           Every other framework here ships a palette somebody eyeballed. A
-          tone here sets one variable, and the text colour on top of it is
-          <em>computed</em> from that colour's relative luminance — so a hue
+          tone here sets one variable, and the text color on top of it is
+          <em>computed</em> from that color's relative luminance — so a hue
           no theme has defined yet still lands above 4.5:1.
         </p>
         <div class="alert info">
@@ -10982,7 +10982,7 @@ $custom-colors: ("brand": (#6d28d9, #fff));`, 'bash')}
           <dt>The platform</dt>
           <dd>
             Cascade layers, <code>@property</code>,
-            <code>color-mix()</code>, relative colour syntax,
+            <code>color-mix()</code>, relative color syntax,
             <code>:user-invalid</code>, <code>&lt;dialog&gt;</code>, the
             popover attribute. Most of what looks clever here is a browser
             feature being used rather than reimplemented.
@@ -10994,14 +10994,14 @@ $custom-colors: ("brand": (#6d28d9, #fff));`, 'bash')}
 /*
  * The worked example measures its own punchline.
  *
- * Step 3 claims a hand-declared tone gets a readable text colour without
+ * Step 3 claims a hand-declared tone gets a readable text color without
  * anyone choosing one. A page that only asserts that is a page nobody can
  * check, and the number would rot the first time the derivation changed.
  *
- * The colours have to go through a canvas rather than a regex: Chrome
+ * The colors have to go through a canvas rather than a regex: Chrome
  * serialises the derived fill as `color(xyz-d65 0.19 0.09 0.66)`, and
  * parsing those three floats as 8-bit channels gives a plausible, wrong
- * answer for every colour — which is exactly what it did the first time.
+ * answer for every color — which is exactly what it did the first time.
  */
 comparePage.init = function (root) {
   const btn = root.querySelector('#cmp-brand')
@@ -11034,7 +11034,7 @@ comparePage.init = function (root) {
     'Measured in your browser just now: the filled button above reads at ' +
     `<strong>${ratio.toFixed(2)}:1</strong>, which ` +
     (pass ? 'clears' : '<strong>fails</strong>') +
-    ' WCAG AA. Nobody wrote that text colour down — <code>#6d28d9</code> ' +
+    ' WCAG AA. Nobody wrote that text color down — <code>#6d28d9</code> ' +
     'was the only value in the rule.'
 }
 
@@ -11065,7 +11065,7 @@ comparePage.init = function (root) {
  * its CDN, gzip -9, no tree-shaking on any of them including ours — the
  * comparison is bundle-as-shipped. `classes` counts unique class names in
  * the file; `variants` counts those that are a breakpoint clone
- * (`-sm`/`-md`/`-lg`/`-tablet`/…) or a colour clone (`-primary-40-invert`),
+ * (`-sm`/`-md`/`-lg`/`-tablet`/…) or a color clone (`-primary-40-invert`),
  * which is the number the rest of the page is about.
  */
 const FOOTPRINT_DATE = '2026-08-10'
@@ -11079,7 +11079,7 @@ const FOOTPRINT = [
     gzip: 7026,
     classes: 2,
     breakpoint: 0,
-    colour: 0,
+    color: 0,
     note: 'Smaller because it ships no components at all — variables, and nothing that uses them.'
   },
   {
@@ -11090,7 +11090,7 @@ const FOOTPRINT = [
     gzip: 11496,
     classes: 16,
     breakpoint: 0,
-    colour: 0,
+    color: 0,
     note: 'The same weight as ours for 16 classes — it styles bare elements, so the weight buys polish rather than vocabulary.'
   },
   {
@@ -11101,7 +11101,7 @@ const FOOTPRINT = [
     gzip: 17578,
     classes: 456,
     breakpoint: 0,
-    colour: 9,
+    color: 9,
     note: 'The XY grid is most of it, and the breakpoint work is done in Sass rather than in shipped class names.'
   },
   {
@@ -11112,7 +11112,7 @@ const FOOTPRINT = [
     gzip: 30773,
     classes: 2031,
     breakpoint: 1202,
-    colour: 177,
+    color: 177,
     note: 'Includes the grid and the full utility API. Sass users ship far less than this; the CDN file is what most projects actually load.'
   },
   {
@@ -11123,8 +11123,8 @@ const FOOTPRINT = [
     gzip: 64958,
     classes: 3292,
     breakpoint: 1368,
-    colour: 1129,
-    note: 'v1.0 generates a full lightness ramp per colour per helper — <code>.has-background-primary-40-invert</code> and 1,128 siblings.'
+    color: 1129,
+    note: 'v1.0 generates a full lightness ramp per color per helper — <code>.has-background-primary-40-invert</code> and 1,128 siblings.'
   }
 ]
 
@@ -11233,28 +11233,28 @@ function footprintPage() {
    * separator before it, so they do not match. Ten is what the command
    * prints, so ten is what ships here.
    *
-   * The colour count is 13, and three of those are substring false
+   * The color count is 13, and three of those are substring false
    * positives the grep cannot avoid — `.bordered` contains "red",
-   * `.theme-dark` contains "dark", `.secondary` is not a colour name at
+   * `.theme-dark` contains "dark", `.secondary` is not a color name at
    * all. They are counted anyway. Every framework in the table gets the
    * same crude instrument pointed at it, and quietly exempting our own row
    * is the one edit that would make the comparison worthless.
    */
   const varRows = FOOTPRINT.concat([
-    { name: 'FrontierJS', classes, breakpoint: 10, colour: 13, ours: true }
+    { name: 'FrontierJS', classes, breakpoint: 10, color: 13, ours: true }
   ])
     .slice()
     .sort((a, b) => (a.classes || 0) - (b.classes || 0))
     .map((f) => {
       const total = f.classes || 0
-      const variants = (f.breakpoint || 0) + (f.colour || 0)
+      const variants = (f.breakpoint || 0) + (f.color || 0)
       const pct = total ? Math.round((variants / total) * 100) : 0
       return `
       <tr${f.ours ? ' class="success"' : ''}>
         <td>${f.ours ? '<strong>FrontierJS</strong>' : esc(f.name)}</td>
         <td>${total.toLocaleString()}</td>
         <td>${(f.breakpoint || 0).toLocaleString()}</td>
-        <td>${(f.colour || 0).toLocaleString()}</td>
+        <td>${(f.color || 0).toLocaleString()}</td>
         <td><strong>${pct}%</strong></td>
       </tr>`
     })
@@ -11324,7 +11324,7 @@ function footprintPage() {
           So the same class lists, split by what the names are:
           <strong>size-suffixed</strong> (<code>.col-md-6</code>,
           <code>.d-lg-none</code>, <code>.text-sm</code>) and
-          <strong>colour-worded</strong>
+          <strong>color-worded</strong>
           (<code>.has-background-primary-40-invert</code>).
         </p>
         <p>
@@ -11339,7 +11339,7 @@ function footprintPage() {
             <thead>
               <tr>
                 <th>Package</th><th>Classes</th>
-                <th>Size-suffixed</th><th>Colour-worded</th><th>Share</th>
+                <th>Size-suffixed</th><th>Color-worded</th><th>Share</th>
               </tr>
             </thead>
             <tbody>${varRows}</tbody>
@@ -11348,7 +11348,7 @@ function footprintPage() {
         <p>
           <strong>Well over half of Bootstrap's class names are the same
           handful of ideas at five widths</strong>, and a third of Bulma's are
-          one colour helper at every step of a lightness ramp. Neither is
+          one color helper at every step of a lightness ramp. Neither is
           waste on its own terms — a responsive grid is a real feature, and
           this package does not ship one. But it is where the number comes
           from, and it is why the number cannot stop growing.
@@ -11372,14 +11372,14 @@ function footprintPage() {
           One declaration, and it is the whole of what <code>danger</code>
           means. It works on a button, a card, a table row, a field, a badge
           and a feed dot, because none of those were told about it — they read
-          <code>--bg-mix</code> and derive their own fill and text colour from
+          <code>--bg-mix</code> and derive their own fill and text color from
           whatever is in it.
         </p>
         <p>
           The comparison is not that we wrote fewer classes. It is the
           exponent: <strong>a framework that names each combination needs one
           name per cell; one that keeps the axes separate needs one name per
-          axis.</strong> Adding a component to Bulma costs a class per colour
+          axis.</strong> Adding a component to Bulma costs a class per color
           per size. Adding one here costs roughly one class, because the tone,
           the treatment and the density already exist and already compose.
         </p>
@@ -11392,7 +11392,7 @@ function footprintPage() {
   .gap-xs  .gap-sm  .gap-md  .gap-lg  .gap-xl      one space rung each
   .text-xs .text-sm .text-md .text-lg .text-xl     one type rung each
 
-colour-worded (13)
+color-worded (13)
   .primary .secondary .success .warning .danger .info .muted   the 7 tones
   .text-primary .text-success .text-warning .text-danger .text-info
                                                    the same 7 as ink

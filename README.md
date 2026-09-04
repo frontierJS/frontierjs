@@ -58,7 +58,7 @@ surgery on the core:
 | [`@frontierjs/conduit`](./packages/conduit) | outbound | The one boundary anything leaving the process crosses — declared targets, `app.conduit.send()` |
 | [`@frontierjs/notifications`](./packages/notifications) | slice | A Notification class → an in-app record, a WebSocket event and an email |
 | [`@frontierjs/ui`](./packages/ui) | UI | 65 Mesa components over the design system. A `<Form>` that reads the schema |
-| [`@frontierjs/css`](./packages/css) | UI | The styling language — a tone and a treatment, never a colour. Plain CSS, no build step |
+| [`@frontierjs/css`](./packages/css) | UI | The styling language — a tone and a treatment, never a color. Plain CSS, no build step |
 | [`@frontierjs/email-kit`](./packages/email-kit) | UI | Table-based email components compiled by Mesa. An MJML replacement |
 | [`@frontierjs/jetty`](./packages/jetty) | UI | A browser extension as a surface of the app — MV3, Mesa-rendered |
 | [`@frontierjs/testing`](./packages/testing) | Testing | `createTestEnv`'s API tier — a real Junction app over the environment's own client |

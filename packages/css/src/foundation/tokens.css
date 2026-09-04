@@ -111,7 +111,7 @@
    *
    * The structural hairline: a Card's edge, a Field's border, a Table's
    * divider, the Topbar's rule under it. `--rule`/`--rule-strong` theme
-   * the border's COLOUR and `--*-radius` themes its corner, so a theme
+   * the border's COLOR and `--*-radius` themes its corner, so a theme
    * could go dark, warm or square and could not go heavy — the whole
    * stamped/neo-brutalist family needs 2–3px and could only get there by
    * shipping a selector, which is the one thing a theme must not do.
@@ -199,7 +199,7 @@
    * nowhere to say so. Four durations, because the package genuinely uses
    * four, and each is named for the JOB rather than for its length:
    *
-   *   --motion-fast   a colour, a border, a background changing
+   *   --motion-fast   a color, a border, a background changing
    *   --motion-base   a control changing shape — a switch, a chevron
    *   --motion-enter  something arriving or leaving (overlays.css)
    *   --motion-slow   a measurement moving — a progress bar
@@ -248,12 +248,12 @@
    * The lightness window a tone may occupy, in oklch, when it is rendered
    * as TEXT rather than as a fill. The tones are tuned as fills behind
    * white text and mostly fail the other job, so a component clamps into
-   * this range before colouring text with one — a no-op where the tone
+   * this range before coloring text with one — a no-op where the tone
    * already reads. `--tone-ink` in tones.css is the derivation; code.css
    * and buttons.css are the readers.
    *
    * These are the LIGHT-surface bounds. A dark theme must invert them,
-   * because CSS cannot work it out: relative colour syntax exposes the
+   * because CSS cannot work it out: relative color syntax exposes the
    * channels of the tone being transformed, never those of the surface it
    * will land on. dark.css, basecamp.css and field.css do; see tones.css.
    */

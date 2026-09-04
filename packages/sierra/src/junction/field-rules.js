@@ -1083,7 +1083,7 @@ export function toFieldErrors(err) {
 
 // Two boundaries name the offending field differently and both reach a form.
 // Junction's validator says `field`; litestone's `ValidationError` says
-// `path: ['colour']`, and it is the one that carries every rule a browser
+// `path: ['color']`, and it is the one that carries every rule a browser
 // cannot pre-check — a value set, a transition, a soft-deleted unique. Reading
 // only `field` sent all of those to the form-level message, where they render
 // away from the control they are about and `<Form>` cannot mark it invalid.

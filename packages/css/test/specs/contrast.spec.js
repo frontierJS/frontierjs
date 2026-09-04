@@ -3,7 +3,7 @@
  * jobs a tone has: as a solid fill under text, and as text itself.
  *
  * The two are separate derivations and fail apart. chip.css answers the
- * first (what colour goes ON this fill), tones.css the second (what this
+ * first (what color goes ON this fill), tones.css the second (what this
  * tone becomes when it IS the text). A component that mixes them up looks
  * right in the theme it was written in.
  *

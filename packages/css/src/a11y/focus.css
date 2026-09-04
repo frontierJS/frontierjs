@@ -111,7 +111,7 @@
 /*
  * ── The ring's style is a theme's, and the list is the guarantee ──────
  *
- * Width, offset and colour were tokens and `solid` was a literal, so a
+ * Width, offset and color were tokens and `solid` was a literal, so a
  * dashed or struck ring — a legitimate house choice — was unreachable.
  * The counter-argument is real and is why this is registered rather than
  * simply named: the ring is an accessibility guarantee in the last layer,

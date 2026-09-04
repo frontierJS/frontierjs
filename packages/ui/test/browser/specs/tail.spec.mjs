@@ -8,7 +8,7 @@
  * invisible to a string comparison of the HTML.
  *
  * So the assertions here are deliberately not class lists. A tone is asked for
- * as a painted colour, a loading state as `aria-busy`, a heading level as a
+ * as a painted color, a loading state as `aria-busy`, a heading level as a
  * tag name, and a decorative glyph as `aria-hidden`.
  */
 export const name = 'the display and feedback tail'
@@ -26,7 +26,7 @@ export async function run(t) {
   /* ── Badge and Pill ───────────────────────────────────────────────────── */
 
   // A tone is only real if it reaches the paint. Comparing two instances
-  // rather than asserting a literal colour keeps this true across all eleven
+  // rather than asserting a literal color keeps this true across all eleven
   // themes and any future palette change.
   const toned = await t.evaluate(`
     const c = (sel) => getComputedStyle(document.querySelector(sel)).backgroundColor;
@@ -44,7 +44,7 @@ export async function run(t) {
   t.ok(planTone, 'and carries the tone that plan implies')
 
   // The dot is drawn in currentColor so it tracks the auto-contrast text
-  // colour rather than restating the tone — and it is decorative, so it must
+  // color rather than restating the tone — and it is decorative, so it must
   // not be announced.
   const dot = await t.evaluate(`
     const el = document.querySelector('#pill-dot > [aria-hidden=true]');
@@ -52,7 +52,7 @@ export async function run(t) {
     const cs = getComputedStyle(el);
     return { bg: cs.backgroundColor, ink: getComputedStyle(el.parentElement).color };
   `)
-  t.ok(dot && dot.bg === dot.ink, 'a Pill dot is drawn in the text colour it sits in')
+  t.ok(dot && dot.bg === dot.ink, 'a Pill dot is drawn in the text color it sits in')
   t.is(await t.evaluate(`return ${text('#pill-dot')};`), 'Live',
     'and adds nothing to what is read out')
 

@@ -78,7 +78,7 @@ and nothing else. Read-only by nature, so `--readonly` needs no new case.
 
 Four views over one payload:
 
-**The gate matrix.** 37 models × R/C/U/D, one cell each, coloured by level rather
+**The gate matrix.** 37 models × R/C/U/D, one cell each, colored by level rather
 than printed as a string. The thing the markdown table cannot do is let you see the
 *shape* — which models are stricter on delete, which are readable by strangers, where
 one model breaks the pattern its neighbors follow. That is a glance in a grid and a

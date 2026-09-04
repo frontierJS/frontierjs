@@ -94,7 +94,7 @@ img.avatar {
  * because a border would eat into --avatar-size and make a grouped
  * avatar smaller than a lone one at the same token value.
  *
- * It is --surface coloured, so the group reads as separated cards on a
+ * It is --surface colored, so the group reads as separated cards on a
  * normal background — on a tinted surface, set --avatar-ring to match.
  */
 .avatars {
