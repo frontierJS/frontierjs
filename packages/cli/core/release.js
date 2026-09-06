@@ -162,6 +162,16 @@ export function mintRelease({
   if (!app)          throw new BindingError('a Release needs an app id — set deploy.app_id in frontier.config.js', 'app_id')
   if (!bindingsHash) throw new BindingError('a Release needs a bindings hash', 'bindings')
 
+  // litestone's ladder has a fourth rung this journal does not store. `pivot`
+  // answers one question — can Release N-1 still serve this database — and
+  // `unchanged` and `expand` are both yes, so the two are one value here.
+  // Normalized where the id is computed, or the hashed term and the stored
+  // column disagree about the same Release. Without it a release with no schema
+  // findings is dropped by `INSERT OR IGNORE` against the pivot CHECK, and the
+  // deploy dies one statement later on the transition's foreign key, naming
+  // neither the column nor the value.
+  if (pivot === 'unchanged') pivot = 'expand'
+
   // Named terms rather than a positional join: a joined string is one field
   // moving away from silently hashing the same as a different Release.
   const id = short(sha([

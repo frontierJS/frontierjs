@@ -8,7 +8,7 @@
 // So the tests are mostly about what DOES and DOES NOT move the id.
 
 import { describe, test, expect } from 'bun:test'
-import { mkdtempSync, writeFileSync, rmSync } from 'fs'
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'fs'
 import { tmpdir }                             from 'os'
 import { join }                               from 'path'
 
@@ -144,5 +144,38 @@ describe('what it says', () => {
 
   test('a contract says the pivot out loud', () => {
     expect(formatRelease(mintRelease(base({ pivot: 'contract' })))).toContain('only forward')
+  })
+})
+
+// ─── the fourth rung ─────────────────────────────────────────────────────────
+// litestone ranks a pivot `unchanged < expand < unknown < contract` and answers
+// the first one when a release moved no schema. The journal stores three, so an
+// unmapped `unchanged` is dropped by `INSERT OR IGNORE` against the pivot CHECK
+// and the deploy dies one statement later on the transition's foreign key —
+// which names neither the column nor the value. Graded against the shipped DDL
+// rather than against the mapping, because a test that asserted the rewrite
+// alone would still pass if the CHECK gained a fourth value tomorrow.
+
+describe('a pivot the journal cannot store', () => {
+  test('unchanged is minted as expand — both say N-1 can still serve', () => {
+    expect(mintRelease(base({ pivot: 'unchanged' })).pivot).toBe('expand')
+  })
+
+  test('and the id is the one expand would have minted, not a fourth', () => {
+    // The pivot is a term in the id hash. Normalizing after the hash would give
+    // one Release two ids depending on which word arrived.
+    expect(mintRelease(base({ pivot: 'unchanged' })).id)
+      .toBe(mintRelease(base({ pivot: 'expand' })).id)
+  })
+
+  test('every pivot mintRelease can answer is one the DDL accepts', () => {
+    const ddl = readFileSync(join(import.meta.dirname, '..', 'db', 'ddl.snapshot.sql'), 'utf8')
+    const allowed = /CHECK \("pivot" IN \(([^)]*)\)\)/.exec(ddl)?.[1]
+    expect(allowed).toBeTruthy()
+
+    // Every rung of litestone's ladder, put through the mint and checked against
+    // the constraint the target will actually apply.
+    for (const rung of ['unchanged', 'expand', 'unknown', 'contract'])
+      expect(allowed).toContain(`'${mintRelease(base({ pivot: rung })).pivot}'`)
   })
 })
