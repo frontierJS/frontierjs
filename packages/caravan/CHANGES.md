@@ -1,5 +1,45 @@
 # Changes — @frontierjs/caravan
 
+## A job records which request asked for it
+
+`actor_id` records WHO and `tenant_id` records WHICH TENANT, both resolved at
+dispatch and read back when the job runs. There was no third, so a job queued
+inside a request carried no id the request also had: the two halves of one unit
+of work appeared in a log with nothing in common and could not be joined.
+
+`correlation_id` is that sibling — the same column shape, the same `addColumn`
+migration, and the same rule the other two follow. **Absent is not null**:
+`'correlationId' in opts` rather than `??`, so `correlationId: null` is a caller
+saying this work belongs to no request (a cron fire, a boot enqueue) and saying
+nothing takes whatever the host reports. Junction supplies it as
+`app.correlationId()`, the third of `principal()` and `tenant()`.
+
+It is request-wide where the tenant is per-call, and deliberately: a service
+that re-resolves a tenant mid-request is still inside one request.
+
+`ctx.correlationId` is what a handler reads.
+
+
+## 2026-09-04 — the cron grammar moved out, and a schedule that cannot fire is refused
+
+`FJS-767`. The parser took the FIRST operator character it found and split on
+that alone, so `1-5,8` became a range 1-5 with the `,8` gone and `1-5/2` became
+the same with the `/2` gone — hours nobody asked for, hours they did ask for
+skipped, nothing said. It consulted no bound either, so `0 25 * * *`,
+`61 * * * *`, `0 0 32 * *`, `-5 * * * *` and `abc * * * *` all registered,
+appeared in `registrations()` and in `jobs.snapshot.md`, and ran zero times for
+the life of the process — `FJS-327`'s silence one layer down, where the schedule
+is not merely unobserved but unmatchable.
+
+The grammar is `@frontierjs/toolbelt/cron` now and is not restated here, because
+junction's `app.scheduler` parses the same expressions and the two disagreed
+about several of them. What stays is the half that is not the grammar: a named
+zone, and the wall-clock walk across a daylight boundary.
+
+`add()` already named the job in a field-count error and now names it in all of
+them, which is what makes a bad expression findable once a schedule can live in
+any `*.job.ts` file.
+
 ## 2026-09-03 — the two endpoints an operator reaches when something is wrong
 
 FJS-698. 220 pass (17 new), typecheck clean.

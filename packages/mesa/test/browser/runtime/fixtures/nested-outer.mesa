@@ -1,0 +1,23 @@
+<script>
+  // nested-outer.mesa — the tree an inner mount is planted INSIDE.
+  //
+  // `#wrap` sits between two delegation roots: this component's own root and
+  // whatever the spec mounts into `#inner-host`. A handler is stored on the
+  // element it was written on, so a walk that abandons the dispatch at the
+  // first inner root skips this one for ever (`FJS-833`).
+  let wrapHits  = 0
+  let siblingHits = 0
+</script>
+
+<div id="wrap" on:click={() => wrapHits++}>
+  <span id="inner-host"></span>
+  <button type="button" id="sibling" on:click={() => siblingHits++}>sibling</button>
+</div>
+
+<output id="wrap-hits">{wrapHits}</output>
+<output id="sibling-hits">{siblingHits}</output>
+
+<style>
+  #wrap { padding: 20px; background: #eee }
+  #inner-host { display: block; height: 40px }
+</style>

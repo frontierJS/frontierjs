@@ -247,3 +247,53 @@ describe('rewriteLayoutSlots — default slot prop declaration', () => {
     expect(rewriteLayoutSlots(src)).toBe(src)
   })
 })
+
+// ── a name the rewriter cannot express ───────────────────────────────────────
+//
+// A slot name becomes a snippet name, so it has to be a legal identifier. That
+// constraint used to live only in the MATCH: a tag whose name did not fit was
+// simply not rewritten, Mesa dropped the unknown element and everything inside
+// it, and the content and the fallback both vanished with nothing said
+// (`FJS-800`). `side-bar` and `page-header` are the natural spellings.
+
+describe('a slot name that is not a bare identifier', () => {
+  it('refuses a hyphenated name on the page side, naming the file', () => {
+    expect(() => rewriteMesaSlots('<mesa:slot name="side-bar">hi</mesa:slot>', 'src/routes/a.mesa'))
+      .toThrow(/src\/routes\/a\.mesa.*side-bar/s)
+  })
+
+  it('refuses a hyphenated name on the layout side', () => {
+    expect(() => rewriteLayoutSlots('<div><slot name="side-bar">fb</slot></div>', 'src/routes/_module.mesa'))
+      .toThrow(/side-bar/)
+  })
+
+  it('refuses a self-closing hyphenated slot, which rewrites through a different branch', () => {
+    expect(() => rewriteLayoutSlots('<div><slot name="page-header" /></div>'))
+      .toThrow(/page-header/)
+  })
+
+  it('refuses an expression name — the value is not knowable at compile time', () => {
+    expect(() => rewriteLayoutSlots('<div><slot name={x}>fb</slot></div>'))
+      .toThrow(/\{x\}/)
+  })
+
+  it('names a spelling that would work', () => {
+    expect(() => rewriteMesaSlots('<mesa:slot name="side-bar">hi</mesa:slot>'))
+      .toThrow(/'sideBar'/)
+  })
+
+  // The negative controls. A guard that refuses every slot satisfies every
+  // assertion above (`FJS-351`), so the legal spellings have to keep rewriting
+  // — including the two nameless forms, which carry no name to judge.
+  it('a legal name still rewrites, both sides', () => {
+    expect(rewriteMesaSlots('<mesa:slot name="sideBar">hi</mesa:slot>'))
+      .toContain("{provideSlot('sideBar', sideBar)}")
+    expect(rewriteLayoutSlots('<div><slot name="sideBar">fb</slot></div>'))
+      .toContain('__slot_sideBar')
+  })
+
+  it('a default slot carries no name and is untouched', () => {
+    expect(rewriteLayoutSlots('<div><slot /></div>')).toContain('{@render children?.()}')
+    expect(rewriteLayoutSlots('<div><slot>fallback</slot></div>')).toContain('{@render children?.()}')
+  })
+})

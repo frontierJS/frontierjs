@@ -163,6 +163,107 @@ model Doc {
     db.$close()
   })
 
+  // `FJS-D221` — one hop, and the same obligation `check()` has one block up.
+  // The two compilers reach a related row by different routes: a correlated
+  // scalar subquery in the WHERE, and a synchronous SELECT off the payload's
+  // foreign key. Nothing but this holds them together, and the SHAPES are where
+  // they can part company — a null parent, a null column on a real parent, a
+  // membership test whose list lives on the parent, and a mapped column.
+  it('agrees across one relation hop, in every operand shape', async () => {
+    const schema = `
+model Owner {
+  id        String   @id
+  userId    String?
+  ref       String   @map("reference")
+  editorIds String[]
+}
+model Doc {
+  id      String @id
+  ownerId String?
+  owner   Owner? @relation(fields: [ownerId], references: [id])
+  @@allow('read',   EXPR)
+  @@allow('create', EXPR)
+}
+`
+    const OWNERS = [
+      { id: 'o1', userId: 'u1',  ref: 'A',      editorIds: [] },
+      { id: 'o2', userId: 'u2',  ref: 'PUBLIC', editorIds: ['u1'] },
+      { id: 'o3', userId: null,  ref: 'B',      editorIds: [] },
+    ]
+    // r4 names NO parent, which is the row the two halves are likeliest to
+    // answer differently about: `check()` allows an absent foreign key on
+    // purpose, and a path must not — a missing parent is a missing VALUE.
+    const ROWS = [
+      { id: 'r1', ownerId: 'o1' },
+      { id: 'r2', ownerId: 'o2' },
+      { id: 'r3', ownerId: 'o3' },
+      { id: 'r4', ownerId: null },
+    ]
+
+    for (const expr of [
+      `owner.userId == auth().id`,
+      `auth().id == owner.userId`,
+      `owner.userId == null`,
+      `owner.userId != null`,
+      `owner.ref == 'PUBLIC'`,
+      `auth().id in owner.editorIds`,
+      `owner.userId == auth().id || owner.ref == 'PUBLIC'`,
+      `owner.userId != null ? owner.userId == auth().id : true`,
+    ]) {
+      const db  = await createClient({ schema: schema.replaceAll('EXPR', expr), db: ':memory:' })
+      const sys = db.asSystem()
+      for (const o of OWNERS) await sys.owner.create({ data: o })
+      for (const r of ROWS)   await sys.doc.create({ data: r })
+
+      for (const who of ['u1', 'u2']) {
+        const scoped   = db.$setAuth({ id: who })
+        const readable = new Set((await scoped.doc.findMany()).map((x: any) => x.id))
+        for (const r of ROWS) {
+          let created = false
+          try { await scoped.doc.create({ data: { ...r, id: `${r.id}-${who}` } }); created = true }
+          catch (e: any) { if (e.constructor.name !== 'AccessDeniedError') throw e }
+          expect({ expr, who, row: r.id, created })
+            .toEqual({ expr, who, row: r.id, created: readable.has(r.id) })
+        }
+      }
+      db.$close()
+    }
+  }, 30000)
+
+  // The pair for the block above. Agreement is cheap for a rule that admits
+  // nobody or everybody, so the grid has to be shown to SEPARATE rows — and
+  // separate them by the PARENT's column, since a rule keyed on the child's own
+  // `ownerId` would pass every assertion above with the hop compiled away.
+  it('one hop actually decides — the parent column is what admits the row', async () => {
+    const schema = `
+model Owner { id String @id  userId String? }
+model Doc {
+  id      String @id
+  ownerId String?
+  owner   Owner? @relation(fields: [ownerId], references: [id])
+  @@allow('read', owner.userId == auth().id)
+}
+`
+    const db  = await createClient({ schema, db: ':memory:' })
+    const sys = db.asSystem()
+    await sys.owner.create({ data: { id: 'o1', userId: 'u1' } })
+    await sys.owner.create({ data: { id: 'o2', userId: 'u2' } })
+    await sys.doc.create({ data: { id: 'mine',    ownerId: 'o1' } })
+    await sys.doc.create({ data: { id: 'theirs',  ownerId: 'o2' } })
+    await sys.doc.create({ data: { id: 'orphan',  ownerId: null } })
+
+    const read = async (who: string | null) =>
+      (await db.$setAuth(who ? { id: who } : null).doc.findMany()).map((x: any) => x.id).sort()
+
+    expect(await read('u1')).toEqual(['mine'])
+    expect(await read('u2')).toEqual(['theirs'])
+    // An absent parent is an absent VALUE, so the comparison is UNKNOWN and an
+    // @@allow keeps no row — the same answer the SQL half gives for free,
+    // because a scalar subquery over no row IS NULL.
+    expect(await read(null)).toEqual([])
+    db.$close()
+  })
+
   it('agrees with a @@deny standing beside the @@allow', async () => {
     const schema = `
 model Doc {

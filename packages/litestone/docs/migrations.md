@@ -479,21 +479,34 @@ below, because it is what lets the migration take it away.
 | Object  | Names Litestone owns                          |
 | ------- | --------------------------------------------- |
 | Trigger | `<table>_fts_*`, `<table>_updatedAt`          |
-| Index   | `idx_<table>_<fields>`                        |
+| Index   | `idx_<table>_<fields>`, `uniq_<table>_<fields>` |
 
 Anything else — a trigger or index you created in a JS migration or straight
 against the database — is left alone by an ordinary migration.
 
-Two consequences worth knowing:
+**Two prefixes, because an index and a constraint can be about the same
+columns.** `@@index([a])` is `idx_<table>_a` and `@@unique([a], where: …)` is
+`uniq_<table>_a` — a lookup and *at most one row where the predicate holds* are
+different things and a model may want both, which one derivation made
+undeclarable.
+
+Three consequences worth knowing:
 
 An index you name `idx_<table>_something` **is** treated as Litestone's, because
 that is the name it would generate for the same `@@index`. Name your own
-differently.
+differently. The same goes for `uniq_<table>_something`.
+
+**An index whose derived name changes is renamed** — one `DROP INDEX` and one
+`CREATE INDEX`, no rebuild. Litestone matches an index by its SHAPE (columns,
+sorts, uniqueness, predicate), so a matched pair whose names differ is one this
+build derives differently than the build that wrote the database. Your own index
+of the same shape is not touched: the rename only applies where the live name is
+one Litestone owns.
 
 **A table rebuild is destructive, and Litestone does not support carrying your
 own schema objects through one — so it refuses the rebuild rather than doing
 it.** A change needing a rebuild — dropping a column, changing a type, changing
-a foreign key, changing `@@strict` — drops the table, which takes every trigger
+a foreign key, changing `@@noStrict` — drops the table, which takes every trigger
 and index on it. Litestone's own are regenerable from the schema and are
 restated afterwards. Yours exist only in the live database, so there is nothing
 to restate them from.

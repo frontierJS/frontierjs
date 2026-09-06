@@ -982,13 +982,13 @@ silent one is a statement somebody makes on purpose.**
 
 **Ruled 2026-08-25: C** — `FJS-D140`, which carries the measurement and the
 spelling. `@@capabilities` covers writes and moves; `@@capabilities(all)` adds
-read, following `@guarded(all)` and `@allow('all', …)` rather than inventing a
+read, following `@guarded` and `@allow('all', …)` rather than inventing a
 token. A model that says nothing about read has its reads governed exactly as
 before.
 
-Still unruled and deliberately deferred is whether the gate *also* applies on a
-model that opts in — AND, OR, or exclusive-per-model — which § *Open questions*
-carries.
+Whether the gate *also* applies on a model that opts in was deferred here and is
+now ruled: `FJS-D146` says both, ANDed, with the gate as the floor. § *Open
+questions* carries the struck entry.
 
 ## The one model that keeps the ladder
 

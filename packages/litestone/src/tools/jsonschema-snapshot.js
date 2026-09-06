@@ -23,6 +23,10 @@ const KEYWORDS = [
   'format', 'pattern', 'minLength', 'maxLength',
   'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf',
   'minItems', 'maxItems', 'uniqueItems', 'const',
+  // Accounted for rather than left to the catch-all below, which names a key
+  // and drops its VALUE — and here the value is the whole content: `x-sortable`
+  // alone says a column cannot be sorted and not that it holds a JSON document.
+  'x-sortable', 'x-filterable',
 ]
 
 // Everything else on a property is either prose or already its own column.

@@ -215,7 +215,7 @@ describe('contract — the deploy is the pivot', () => {
   })
 
   it('a protection added — the column leaves every answer N-1 reads', () => {
-    const r = verdictOf(BASE, BASE.replace('note      String?', 'note String? @guarded(all)'))
+    const r = verdictOf(BASE, BASE.replace('note      String?', 'note String? @guarded'))
     expect(r.verdict).toBe('contract')
     expect(about(r, 'Order.note')!.detail).toContain('@guarded')
   })

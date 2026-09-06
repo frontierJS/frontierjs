@@ -28,7 +28,7 @@ const c = {
 // The v0.5 line or newer, and this is a refusal rather than a warning because
 // the failure it prevents is invisible from outside.
 //
-// Litestone emits STRICT tables (@@strict is on by default). Litestream 0.3.x
+// Litestone emits STRICT tables (strict is the default). Litestream 0.3.x
 // bundles a SQLite too old to parse that, so it starts, reports itself
 // replicating, and then loops forever on
 //

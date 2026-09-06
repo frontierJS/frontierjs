@@ -50,7 +50,7 @@ function subscriber(manager: Manager, channels: string[], user: unknown = null) 
  * `@@deny` over `auth().workspaceId`, and an absent claim is UNKNOWN, which
  * denies. Written as the three-valued comparison rather than as `!==` because
  * that is the whole of what the defect turned on — `undefined` refusing is
- * correct behaviour, not a bug in the boundary.
+ * correct behavior, not a bug in the boundary.
  */
 function tenantBoundary(strategy: 'row' | 'database' = 'row') {
   const asked: unknown[] = []

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // tools/init.ts
-// Junction project initialiser — run once to scaffold a new project.
+// Junction project initializer — run once to scaffold a new project.
 //
 // Asks a focused set of questions up-front, then generates a complete,
 // immediately-runnable project in one shot. No repair loops, no "press
@@ -186,7 +186,7 @@ if (fs.existsSync(path.join(cwd, 'package.json'))) {
   console.error(`  ${paint(c.bred, '✗')} ${paint(c.bwhite, `${cwd} already has a package.json`)}`)
   console.error()
   console.error(`  This looks like an existing project. Run ${paint(c.bcyan, 'bun run setup')} to audit it instead.`)
-  console.error(`  If you really want to reinitialise, delete package.json first.`)
+  console.error(`  If you really want to reinitialize, delete package.json first.`)
   console.error()
   process.exit(1)
 }
@@ -240,15 +240,34 @@ if (answers.db !== 'none') {
 
 // AI placeholder
 if (answers.extras.includes('ai')) {
+  // No backtick anywhere in this template: one inside a template literal ends
+  // the literal, and the parse error lands on a line further down.
   write('ai/index.ts', `// ai/index.ts
-// AI model adapter. See @frontierjs/junction docs for IAIModel interface.
-// Example with Anthropic:
+// An AI model adapter. Junction ships the SHAPE — IAIModel, AIBuilder,
+// AIRegistry — and no vendor, for the reason FJS-D215 gives: the boundary owns
+// the mechanism, and a vendor's API moves on the vendor's schedule.
 //
-//   import Anthropic from '@anthropic-ai/sdk'
-//   import { createAnthropicAdapter } from '@frontierjs/junction/ai'
-//   export const ai = createAnthropicAdapter({ apiKey: process.env.ANTHROPIC_API_KEY })
+// So the adapter lives here, and it reaches the vendor through app.conduit,
+// which is where the deadline, the retry, the auth header and the body encoding
+// are already declared per target:
 //
-// Then pass to createApp: createApp({ config, auth, ai })
+//   import { AIRegistry } from '@frontierjs/junction'
+//   import type { IAIModel } from '@frontierjs/junction/ai'
+//
+//   const model: IAIModel = {
+//     name: 'claude',
+//     async complete(req) {
+//       const res = await app.conduit.send('anthropic', {
+//         path: '/v1/messages',
+//         headers: { 'anthropic-version': '2023-06-01' },
+//         body: { model: 'claude-sonnet-5', max_tokens: req.maxTokens ?? 1024, messages: req.messages },
+//       })
+//       return { content: res.body.content[0].text, model: res.body.model }
+//     },
+//     async stream(req, onChunk) { throw new Error('not implemented') },
+//   }
+//
+//   export const ai = new AIRegistry().register(model)
 
 export const ai = undefined  // replace with your adapter
 `)

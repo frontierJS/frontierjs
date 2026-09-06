@@ -630,11 +630,19 @@ try {
 
   // ── 13. the authority is the SEED's, not a number in a service ─────────
   //
-  // `refund: paid -> refunded @gate(5)` in db/schema.lite. `gateAuth` grades
-  // CRUD and says nothing about a custom method, so `payments.refund` asks
-  // `db.order.transitions(row)` — which answers `allowed` for the caller in
-  // scope, off that same declaration. A level-4 user is refused by the seed's
-  // rule rather than by a comparison this file would have to keep in step.
+  // `refund: paid -> refunded @gate(5)` in db/schema.lite. `payments.refund`
+  // asks `db.order.transitions(row)` — which answers `allowed` for the caller
+  // in scope, off that same declaration. A level-4 user is refused by the
+  // seed's rule rather than by a comparison this file would have to keep in
+  // step.
+  //
+  // The two refusals are DIFFERENT statuses and that is the substance. A
+  // level-4 user authenticated and may not: 403. An anonymous caller never
+  // authenticated at all, and since `FJS-826` a custom method takes the model's
+  // read gate as a floor, so it is refused 401 before the body runs — the same
+  // answer every CRUD verb already gave a stranger, which is the alignment that
+  // finding was about. It was a 403 from the transition check when the request
+  // had already executed the handler to get there.
   const staff = await json(await fetch(`${API}/api/auth/login`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email: 'sam@shop.test', password: 'correct-horse-battery' }),
@@ -788,7 +796,7 @@ const expected = {
   // 403 from the SEED's `@gate(5)` on the transition, asked through
   // `transitions(row)` — not from a level compared in a service. Nothing moved
   // at the provider, because the check is before the money and not after it.
-  'refund.needsAnAdministrator': { level4: 403, anonymous: 403, refunded: 0, provider: 0 },
+  'refund.needsAnAdministrator': { level4: 403, anonymous: 401, refunded: 0, provider: 0 },
 
   // Money back, order untouched, shelf untouched.
   'refund.partial': { answered: 'HALF', recorded: 'HALF', status: 'succeeded', order: 'paid', stock: 'SOLD' },

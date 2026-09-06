@@ -141,10 +141,18 @@ describe('createTestEnv — the API tier', () => {
     // failures are downstream of the call that caused them.
     const e = await env()
     await e.system.account.create({ data: { id: 1, name: 'acme' } })
-    const made: any = await e.as(member).service('leads')
-      .create({ name: 'a', accountId: 1, auth: 'not a call option' })
-    // autoValidate strips the undeclared key; what matters is that the row was
-    // created as the member, which an options-shaped read would not have done.
+    // The refusal IS the evidence, and a better one than the strip that used to
+    // happen here: a 400 naming `auth` as not a field of Lead can only come
+    // from the key having been read as DATA and graded against the model
+    // (`FJS-889`). Read as options it would have vanished silently and this
+    // test would have passed on an empty payload.
+    await expect(
+      e.as(member).service('leads').create({ name: 'a', accountId: 1, auth: 'not a call option' })
+    ).rejects.toThrow(/auth.*is not a field of Lead/)
+
+    // Paired: the same call without the key still creates, as the member — so
+    // the refusal is about the key and not about the shape of the call.
+    const made: any = await e.as(member).service('leads').create({ name: 'a', accountId: 1 })
     expect(made.name).toBe('a')
     expect(made.id).toBeDefined()
     await e.close()

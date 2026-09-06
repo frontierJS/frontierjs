@@ -37,9 +37,31 @@
 
 import { getActivePort }                        from './active-port.js'
 import { createStore }                          from './store.js'
-import { runPhase, runAroundHooks, mergeHooks } from '@frontierjs/toolbelt/hooks'
+import { runPhase, runAroundHooks, mergeHooks,
+         hookContext, answered, hookChainMessage } from '@frontierjs/toolbelt/hooks'
 import { createMakeFromSchema, fieldShapes }    from '@frontierjs/toolbelt/jsonschema'
 import { matchesQuery }                         from '@frontierjs/toolbelt/match'
+
+/**
+ * Thrown when a hook pipeline ends with nobody having produced an answer — an
+ * `around` that forgot `next()`, an `around` that swallowed the failure, or an
+ * `error` hook that cleared `ctx.error` and set no result.
+ *
+ * Sierra throws the same sentence from a class of its own; the words have one
+ * owner in `@frontierjs/toolbelt/hooks` and the class does not, because each
+ * package's errors are its own surface.
+ */
+export class ResourceHookError extends Error {
+  constructor(service, method, phase, cause) {
+    super(hookChainMessage(service, method, phase))
+    this.name    = 'ResourceHookError'
+    this.service = service
+    this.method  = method
+    this.phase   = phase
+    // The failure the error hook discarded. Without it the original is gone.
+    if (cause !== undefined) this.cause = cause
+  }
+}
 
 /**
  * Create a resource wrapper for a remote service, routed through harbor.
@@ -231,7 +253,10 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     // Lazy subscribe on first use.
     attachEventSubs()
 
-    const ctx = {
+    // `hookContext`, not a literal: `result` remembers whether anything set it,
+    // which is the only thing separating a legitimate `null` from a pipeline no
+    // hook completed. See the throw after runAroundHooks.
+    const ctx = hookContext({
       service: serviceName,
       model,
       method,
@@ -242,7 +267,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       params:  {},       // client-side only — never sent to server
       result:  null,
       error:   null,
-    }
+    })
 
     const aroundList = [
       ...(_hooks.around?.all      ?? []),
@@ -270,10 +295,21 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       ]
       if (errorList.length) {
         for (const hook of errorList) await hook(ctx)
-        if (!ctx.error) return ctx.result // hook recovered
+        if (!ctx.error) {
+          // Recovered from what? A hook that clears the error and sets no
+          // result says the call succeeded and hands back the `null` the
+          // context was born with. The original failure rides on `cause`.
+          if (!answered(ctx)) throw new ResourceHookError(serviceName, method, 'error', err)
+          return ctx.result // hook recovered
+        }
       }
       throw ctx.error ?? err
     }
+
+    // Nothing threw and nothing answered: an `around` that returned without
+    // calling `next()`, or caught the failure and did not rethrow. Both used to
+    // resolve the call to `null`, which a screen reads as an answer.
+    if (!answered(ctx)) throw new ResourceHookError(serviceName, method, 'around')
 
     return ctx.result
   }

@@ -340,6 +340,125 @@ export function isPortInUse(p, address = '127.0.0.1') {
 }
 
 /**
+ * Which pids are LISTENING on a port, and what they are.
+ *
+ * Lived inside `commands/utils/killnode.md` until `ports:status` became the
+ * second caller. Two implementations of *what is holding this port* is how
+ * `fli kill` and `fli ps` come to disagree about the same number.
+ *
+ * `-sTCP:LISTEN` is the whole of it: without it lsof also reports every process
+ * with an open CONNECTION to the port, so a browser tab pointed at a dev server
+ * reads as something holding the port. lsof exits 1 with no output when nothing
+ * is listening, which is an answer and not a failure.
+ *
+ * Unix only. A platform with no lsof gets an empty list rather than a throw —
+ * `isPortInUse` already answered the question this only decorates.
+ */
+export function pidsOnPort(p) {
+  try {
+    const out = execSync(`lsof -ti tcp:${p} -sTCP:LISTEN`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString()
+    return [...new Set(out.split('\n').map(s => s.trim()).filter(Boolean))]
+  } catch { return [] }
+}
+
+/** The command line behind a pid, truncated. '' when it cannot be asked. */
+export function describeProcess(pid, max = 90) {
+  try {
+    return execSync(`ps -p ${pid} -o args=`, { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString().trim().slice(0, max)
+  } catch { return '' }
+}
+
+/**
+ * Every port this schema can NAME — the reserved tooling block, plus each
+ * assigned project across every category and env at service slot 0.
+ *
+ * Deliberately not every one of the 3,000 numbers the formula can produce: a
+ * port nothing here would ever hand out is not this schema's to report on, and
+ * probing three thousand sockets to say so is a second of somebody's life per
+ * run. Service slots above 0 are the same argument — they are handed out at
+ * runtime, so the lock file is what knows about them.
+ */
+export function knownPorts() {
+  const out = []
+  for (let p = GLOBAL_RANGE.first; p <= GLOBAL_RANGE.last; p++) {
+    const name = Object.keys(GLOBAL).find(k => GLOBAL[k] === p)
+    out.push({ port: p, env: 'dev', category: 'tooling', project: name ? `fli ${name}` : null, reserved: true })
+  }
+  for (const [project, projectId] of Object.entries(PROJECTS)) {
+    for (const env of Object.keys(ENV)) {
+      for (const category of Object.keys(CAT)) {
+        if (env === 'dev' && projectId === 0 && category === 'tooling') continue   // the reserved block, already above
+        out.push({ port: port(category, { env, projectId }), env, category, project, reserved: false })
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * Every listening TCP port on this machine, port → pids, from ONE lsof call.
+ *
+ * The alternative is `isPortInUse` per candidate, and the schema names 250 of
+ * them: measured at 4.4s, which is not a status command. One lsof is 0.8s and
+ * hands back the pid at the same time, so the walk below needs no second pass.
+ *
+ * Returns null — not an empty map — where lsof cannot be run, because *nothing
+ * is listening* and *nobody asked* have to be told apart: the first is an answer
+ * and the second means fall back to the socket probe.
+ */
+export function listeningPorts() {
+  let out
+  try {
+    out = execSync('lsof -nP -iTCP -sTCP:LISTEN', { stdio: ['ignore', 'pipe', 'ignore'] }).toString()
+  } catch (err) {
+    // lsof exits 1 with output when some sockets were unreadable, and 1 with
+    // none when it is missing. Only the second is a failure to answer.
+    out = String(err.stdout ?? '')
+    if (!out.trim()) return null
+  }
+  const map = new Map()
+  for (const line of out.split('\n').slice(1)) {
+    const cols = line.trim().split(/\s+/)
+    if (cols.length < 9) continue
+    const pid  = cols[1]
+    const addr = cols[cols.length - 2]           // NAME, with `(LISTEN)` after it
+    const m    = /:(\d+)$/.exec(addr)
+    if (!m) continue
+    const p = Number(m[1])
+    if (!map.has(p)) map.set(p, new Set())
+    map.get(p).add(pid)
+  }
+  return map
+}
+
+/**
+ * The half `getSessionStatus()` cannot see: ports that are HELD but were never
+ * claimed through the broker. Every tool in the reserved block is that shape —
+ * studio binds 8502 as a literal — and so is any app somebody started by hand,
+ * which is most of them. Reporting only the lock file answers "nothing here"
+ * while a port is busy, which is the one answer that sends somebody looking in
+ * the wrong place.
+ *
+ * Sorted by port. The probe answers in whatever order the OS hands them back,
+ * and a list that reorders itself between two runs cannot be diffed by eye.
+ */
+export async function busyKnownPorts() {
+  const known = knownPorts()
+  const live  = listeningPorts()
+
+  const hits = live
+    ? known.filter(k => live.has(k.port)).map(k => ({ ...k, pids: [...live.get(k.port)] }))
+    // No lsof: the socket probe still answers WHETHER, just not who.
+    : (await Promise.all(known.map(async k => (await isPortInUse(k.port, '127.0.0.1')) ? { ...k, pids: [] } : null)))
+        .filter(Boolean)
+
+  return hits
+    .map(k => ({ ...k, command: k.pids.length ? describeProcess(k.pids[0]) : '' }))
+    .sort((a, b) => a.port - b.port)
+}
+
+/**
  * Find the first free port in a category for a given env + project,
  * scanning service slots 0–9 in parallel for speed.
  */

@@ -78,6 +78,26 @@ export function createDocker({ run = spawnRun, workDir = '/var/lib/outpost/apps'
     return result.stdout.trim()
   }
 
+  /** How to name the bytes on the command line.
+   *
+   *  `name@sha256:…` is a REPO digest — what a registry answered when the image
+   *  was pushed or pulled. An image built on this machine has never been
+   *  pushed, so `digestOf` reports its Id instead, and `name@<id>` is a
+   *  reference no daemon can resolve: docker reads it as a pull, and a release
+   *  that had just built successfully failed with *pull access denied for
+   *  <name>*. Every V1 build-on-the-machine deploy did this, and nothing ran
+   *  the path — basecamp's own drive injects a fake docker (`FJS-919`).
+   *
+   *  A bare id IS a reference the daemon takes, so the local case addresses the
+   *  bytes directly and the registry case keeps `name@digest`. Asked of the
+   *  daemon rather than guessed at: both are `sha256:…` and nothing in the
+   *  string says which one this is. */
+  async function reference(image, digest) {
+    if (!isDigest(digest)) return image
+    const local = await run(['docker', 'image', 'inspect', '--format', '{{.Id}}', digest])
+    return local.exitCode === 0 ? digest : `${image}@${digest}`
+  }
+
   /** The bytes of a local image. `Id` rather than `RepoDigests[0]`: an image
    *  built here has never been pushed, so it has no repo digest at all — and
    *  the id IS a sha256 over the config, which is the identity this reports. */
@@ -150,7 +170,7 @@ export function createDocker({ run = spawnRun, workDir = '/var/lib/outpost/apps'
       if (port) argv.push('-p', `${port}:${config.containerPort ?? port}`)
       // Addressed by digest where one is known — the tag is a name and two
       // builds share it. This is the half `Deployment.builtImage` records.
-      argv.push(isDigest(digest) ? `${image}@${digest}` : image)
+      argv.push(await reference(image, digest))
 
       const containerId = await docker(argv)
       return { containerId, digest: digest ?? await digestOf(image) }

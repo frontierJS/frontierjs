@@ -143,10 +143,38 @@ describe('what the machine is asked to do', () => {
     const argv = fake.calls.map(c => c.join(' '))
     expect(argv.some(c => c.startsWith('git clone --depth 1 --branch main https://git.test/acme/web.git'))).toBe(true)
     expect(argv.some(c => c.startsWith('docker build -t acme-web'))).toBe(true)
-    // Started by digest, not by tag.
-    expect(argv.find(c => c.startsWith('docker run'))).toContain(`acme-web@${DIGEST}`)
+    // Started by the BYTES, and for an image built here that is the id on its
+    // own. `acme-web@<id>` is what this used to send, and it is a reference no
+    // daemon resolves: an image built on this machine has no REPO digest, so
+    // docker read the name@sha256 form as a pull and every git deploy failed
+    // with *pull access denied* having just built successfully (`FJS-919`).
+    expect(argv.find(c => c.startsWith('docker run'))).toContain(DIGEST)
+    expect(argv.find(c => c.startsWith('docker run'))).not.toContain(`acme-web@${DIGEST}`)
     // The old container is removed first, or the name is taken.
     expect(argv.some(c => c === 'docker rm -f fjs-app-1')).toBe(true)
+  })
+
+  test('and an image this machine does not hold is still addressed name@digest', async () => {
+    // The other half, and the reason the local case is asked of the daemon
+    // rather than assumed: both forms are `sha256:…` and nothing in the string
+    // says which one it is. A registry digest names bytes the daemon can pull;
+    // an id names bytes it already has.
+    const fake = fakeRunner({
+      'docker image inspect': { exitCode: 1, stderr: 'Error: No such image\n' },
+      'docker run':           { stdout: 'container-2\n' },
+    })
+    const server = createOutpostServer(CONFIG, {
+      docker:    createDocker({ run: fake.run, workDir: CONFIG.workDir }),
+      inspector: createInspector({ run: fake.run }),
+    })
+
+    const res = await send(server, 'POST', '/deploy', {
+      deployment_id: 'dep-2', app_id: 'app-2', image: 'acme-web', digest: DIGEST, config: {},
+    })
+    expect(res.status).toBe(200)
+
+    const argv = fake.calls.map(c => c.join(' '))
+    expect(argv.find(c => c.startsWith('docker run'))).toContain(`acme-web@${DIGEST}`)
   })
 
   test('a deploy of an image that exists elsewhere pulls it', async () => {

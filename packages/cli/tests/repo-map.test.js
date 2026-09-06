@@ -551,7 +551,7 @@ describe('ideas', () => {
     expect(backlog('idea-cols').count).toBe(5)
   })
 
-  test('the status column is written four ways and normalises to one', () => {
+  test('the status column is written four ways and normalizes to one', () => {
     const rows = backlog('idea-status').waves[0].rows
     expect(rows.map(r => r.status)).toEqual(['idea', 'defect', 'shipped', 'contested'])
   })
@@ -691,5 +691,40 @@ describe('the page', () => {
   test('the json is the same model the page renders', () => {
     const model = collect({ root: workspace() })
     expect(JSON.parse(renderJson(model)).snapshots[0].generator).toBe('litestone ddl --schema schema.lite')
+  })
+})
+
+// ─── ports ────────────────────────────────────────────────────────────────────
+//
+// The static assignment table is a SOURCE FILE of one workspace, and this page
+// is titled after whatever tree it was run over — so rendering it everywhere
+// printed `example` at 8010 and `basecamp` at 8020 as another project's own
+// ports, with nothing on the page saying they were not. Omitted the way every
+// other absent source is, and the control is this repo, which holds the file
+// and must still get the section.
+
+describe('ports', () => {
+
+  test('a workspace that does not hold the registry gets no section', () => {
+    const dir = tree('ports-foreign', {
+      'package.json': pkg({ name: 'acme' }),
+      'packages/thing/package.json': pkg({ name: 'thing', version: '1.0.0' }),
+    })
+    const model = collect({ root: dir })
+    expect(model.ports).toBeNull()
+
+    const html = renderHtml(model)
+    expect(html).not.toContain('8010')
+    expect(html).not.toContain('basecamp')
+  })
+
+  test('the workspace the registry belongs to still gets it', () => {
+    const dir = tree('ports-own', {
+      'package.json': pkg({ name: 'ws' }),
+      'packages/cli/core/ports.js': '// the registry lives here\n',
+    })
+    const model = collect({ root: dir })
+    expect(model.ports.rows.length).toBeGreaterThan(0)
+    expect(renderHtml(model)).toContain('8010')
   })
 })

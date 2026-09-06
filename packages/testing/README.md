@@ -27,6 +27,32 @@ test('a developer archives a lead', async () => {
 })
 ```
 
+## Doubles
+
+`createTestMailer()` is an `IMail` that keeps what it was given — `sent`, `last`,
+`to(address)` across `to`/`cc`/`bcc`, `failNext()` for the retry paths, `reset()`.
+
+```js
+import { createTestMailer } from '@frontierjs/testing'
+
+const mail = createTestMailer()
+const env  = await createTestEnv({ …, api: ({ db }) => buildApp(db, { mail }) })
+
+await env.as(admin).service('invitations').create({ email: 'new@acme.com' })
+expect(mail.to('new@acme.com')).toHaveLength(1)
+```
+
+It refuses exactly what the real mailer refuses — the address and header guards
+are imported, not restated. A double that accepted a message SMTP would reject is
+worse than no double: the test is green and the send fails in production.
+
+**There is no cache or storage double, deliberately.** `createMemoryCache()` from
+`@frontierjs/junction` is already an in-memory `ICache` held to the same contract
+as the SQLite driver, and `FileStorage({ provider: 'local' })` from
+`@frontierjs/litestone` is already the local implementation with the filesystem
+as its assertion surface. A second of either would be a second answer to one
+question.
+
 ## Why this is not `@frontierjs/litestone/testing`
 
 Litestone's `createTestEnv` owns the Data half and cannot own more: mounting a

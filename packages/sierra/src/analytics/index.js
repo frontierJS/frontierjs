@@ -35,35 +35,75 @@ export function initAnalytics(config) {
 
   // Defer init until after first user interaction or idle
   if (typeof window !== 'undefined') {
+    // Two paths race to start this — an interaction and a hard timer — and
+    // whichever loses used to run anyway: the handler removed its listeners and
+    // left the timer standing, so a person who scrolled inside five seconds got
+    // two vendor script tags and two afterNavigate handlers, and every
+    // navigation after that reported two pageviews. Inflated traffic in a
+    // dashboard, which nobody debugs as a framework bug (FJS-813). The guard is
+    // here rather than at each call site because the number of racing paths is
+    // the thing that changes.
+    let started = false
     const doInit = () => {
+      if (started) return
+      started = true
       _provider.init?.(config)
       // Wire pageview to afterNavigate
       afterNavigate(({ to }) => {
         _provider.pageview?.({
-          url: window.location.href,
+          // The ADDRESS, not the address bar. `location.href` carries the search
+          // string, and a password-reset or verification link is
+          // `/reset?token=…&email=…` — handed whole to whatever a custom
+          // provider does with it. The built-in providers only ever used `path`;
+          // a custom one is the third documented kind and receives this contract
+          // too.
+          url: pageUrl(),
           path: to.path,
           meta: to.node?.meta ?? {},
         })
       })
     }
 
-    if (config.trackLocalhost === false && window.location.hostname === 'localhost') {
-      return  // Skip on localhost
+    if (config.trackLocalhost === false && isLocalHost(window.location.hostname)) {
+      return  // Skip in development
     }
 
     // Lazy load — after idle or first interaction
     if ('requestIdleCallback' in window) {
-      requestIdleCallback(doInit, { timeout: 3000 })
+      window.requestIdleCallback(doInit, { timeout: 3000 })
     } else {
       const events = ['scroll', 'mousemove', 'keydown', 'touchstart']
+      const fallback = setTimeout(doInit, 5000)  // hard fallback
       const handler = () => {
+        clearTimeout(fallback)
         doInit()
         events.forEach(e => window.removeEventListener(e, handler))
       }
       events.forEach(e => window.addEventListener(e, handler, { once: true, passive: true }))
-      setTimeout(doInit, 5000)  // hard fallback
     }
   }
+}
+
+/** The page's address with the query string and fragment removed. */
+function pageUrl() {
+  const loc = window.location
+  return `${loc.origin ?? ''}${loc.pathname ?? ''}`
+}
+
+/**
+ * Is this hostname this machine?
+ *
+ * `=== 'localhost'` was the whole test, so `trackLocalhost: false` sent every
+ * page of a dev session to the vendor from `127.0.0.1` and from
+ * `example.localhost` — which is how `fli proxy` names every dev surface in this
+ * workspace. A LAN address is deliberately NOT here: the option is named for
+ * localhost and a suppression that quietly covers 10.x is a different option.
+ */
+function isLocalHost(hostname) {
+  if (!hostname) return false
+  const h = String(hostname).toLowerCase().replace(/^\[|\]$/g, '')
+  return h === 'localhost' || h.endsWith('.localhost') ||
+         h === '127.0.0.1' || h === '::1'
 }
 
 /**

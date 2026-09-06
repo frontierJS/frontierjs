@@ -216,7 +216,7 @@ the damage.
 It used to store the string `"[object Object]"`: the value reached the cipher
 through `String(obj)` rather than `JSON.stringify`, so the payload was gone
 *before* encryption happened. Everything around it worked, which is what made it
-dangerous — the column really was encrypted at rest, `@guarded(all)` was
+dangerous — the column really was encrypted at rest, `@guarded` was
 enforced, the write returned normally, nothing threw and nothing warned. Only the
 value was missing, and only on read-back.
 

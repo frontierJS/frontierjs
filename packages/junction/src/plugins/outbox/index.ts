@@ -16,16 +16,23 @@
 // without one would collect rows forever with nothing to deliver them to.
 
 import type { App, Plugin }  from '../../core/app.ts'
-import { deliverOutbox, sweepOutbox, pendingOutbox, assertOutboxShape, hasOutboxModel,
-         OUTBOX_MODEL } from '../../core/outbox.ts'
-import type { OutboxApi, DeliverOptions, DeliverResult } from '../../core/outbox.ts'
+import { deliverOutbox, sweepOutbox, outboxCounts, outboxPass, assertOutboxShape,
+         hasOutboxModel, OUTBOX_MODEL, DEFAULT_MAX_ATTEMPTS,
+         DEFAULT_RETRY_BACKOFF_MS } from '../../core/outbox.ts'
+import type { OutboxApi, OutboxCounts, DeliverOptions, DeliverResult } from '../../core/outbox.ts'
 
 export interface OutboxPluginOptions {
   /**
    * How often the recovery sweep runs, in ms. Default 5000.
    *
    * This is not the latency of an ordinary effect — a committed call kicks the
-   * relay immediately. It is how long a row left behind by a crash waits.
+   * relay immediately, against the one database it wrote the row through. It
+   * is how long a row left behind by a CRASH waits.
+   *
+   * Under `strategy database` that distinction is the whole cost model: the
+   * kick is one query, and this is one cold open per tenant per tick — 54 ms
+   * for 20 tenants, measured. An app with hundreds of them raises this, and
+   * pays for it only in how long a crashed process's rows sit.
    */
   intervalMs?:     number
   /** Rows per pass. Default 50. */
@@ -46,6 +53,26 @@ export interface OutboxPluginOptions {
    * question asked after something did not arrive.
    */
   retentionMs?:    number
+  /**
+   * How many attempts a row gets before it is DEAD. Default 10; `0` never
+   * gives up, which is what this did before there was a number.
+   *
+   * A row past the cap is not deleted and not marked: it stays with its
+   * `lastError`, stops matching the relay's query, and is counted as `dead`
+   * rather than `pending`. Dead is DERIVED from `attempts`, so raising this
+   * number revives every row it now covers — which is the way back for a poison
+   * row whose handler has since been fixed.
+   */
+  maxAttempts?:    number
+  /**
+   * The first retry delay, in ms, doubling per attempt and capped at an hour.
+   * Default 5000.
+   *
+   * Without one a failed row was retried on every tick of the relay's clock
+   * forever, so a queue that is refusing was asked twelve times a minute for
+   * as long as the process ran.
+   */
+  retryBackoffMs?: number
 }
 
 export function outbox(opts: OutboxPluginOptions = {}): Plugin {
@@ -53,9 +80,18 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
   const batch          = opts.batch          ?? 50
   const claimTimeoutMs = opts.claimTimeoutMs ?? 30_000
   const retentionMs    = opts.retentionMs    ?? 7 * 24 * 60 * 60 * 1_000
+  const maxAttempts    = opts.maxAttempts    ?? DEFAULT_MAX_ATTEMPTS
+  const retryBackoffMs = opts.retryBackoffMs ?? DEFAULT_RETRY_BACKOFF_MS
+
+  /** What every entry point into core/outbox.ts is graded by. */
+  const policy: DeliverOptions = { batch, claimTimeoutMs, maxAttempts, retryBackoffMs }
 
   let timer:   ReturnType<typeof setInterval> | null = null
   let running = false
+  // The timer runs the API's own pass rather than reaching for `app.outbox`:
+  // `claim()` refuses to overwrite, so on a second relay over one table that
+  // property is the FIRST relay's and this one's clock would drive it.
+  let api:     OutboxApi | null = null
 
   // What /metrics answers. Counters are cumulative since boot and cover BOTH
   // drivers — the timer and the post-commit kick — because `deliver` below is
@@ -68,6 +104,7 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
   let delivered  = 0
   let failed     = 0
   let pending    = 0
+  let dead       = 0
   let lastPassAt: string | null = null
 
   return {
@@ -75,9 +112,9 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
     requires: ['caravan'],
 
     register(app: App): void {
-      const api: OutboxApi = {
+      api = {
         async deliver(o: DeliverOptions = {}): Promise<DeliverResult> {
-          const result = await deliverOutbox(app, { batch, claimTimeoutMs, ...o })
+          const result = await deliverOutbox(app, { ...policy, ...o })
           delivered += result.delivered
           failed    += result.failed
           return result
@@ -89,7 +126,21 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
         // Every database the relay sweeps, summed — under
         // `strategy database` the rows are one file per tenant, and a count of
         // the app's own would have answered 0 for all of them.
-        pending: (): Promise<number> => pendingOutbox(app),
+        pending: async (): Promise<number> => (await outboxCounts(app, policy)).pending,
+        counts:  (): Promise<OutboxCounts> => outboxCounts(app, policy),
+
+        // ONE walk of the databases. Deliver, sweep and count used to be three
+        // calls and each resolved the registry itself, so a tenanted app
+        // opened every tenant three times per tick.
+        async pass(): Promise<DeliverResult & OutboxCounts> {
+          const result = await outboxPass(app, policy, retentionMs)
+          delivered += result.delivered
+          failed    += result.failed
+          pending    = result.pending
+          dead       = result.dead
+          lastPassAt = new Date().toISOString()
+          return result
+        },
       }
 
       // claim() refuses to overwrite, which is what stops two relays over one
@@ -105,7 +156,7 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
       // A source must be SYNCHRONOUS — `/metrics` assigns `fn()` straight into
       // the body, so a promise would serialize as `{}`.
       if (typeof app.registerMetricsSource === 'function')
-        app.registerMetricsSource('outbox', () => ({ pending, delivered, failed, lastPassAt }))
+        app.registerMetricsSource('outbox', () => ({ pending, dead, delivered, failed, lastPassAt }))
 
       // A relay that has stopped passing is an app that still answers every
       // request and quietly owes an unbounded number of effects, which is
@@ -113,9 +164,15 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
       // app configured rather than a number chosen here — three missed passes,
       // so a slow pass is not an outage. Silent until the first pass runs,
       // because *not started yet* is not *stuck*.
+      //
+      // A DEAD row fails it too, and that is the only thing here that reports a
+      // problem with the work rather than with the relay: an effect that has
+      // been given up on is owed and is never going to happen, which nothing
+      // else in this process will ever say out loud.
       if (typeof app.registerHealthCheck === 'function')
         app.registerHealthCheck('outbox', () =>
-          lastPassAt === null || Date.now() - Date.parse(lastPassAt) < intervalMs * 3)
+          dead === 0 &&
+          (lastPassAt === null || Date.now() - Date.parse(lastPassAt) < intervalMs * 3))
     },
 
     async boot(app: App): Promise<void> {
@@ -163,13 +220,7 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
     if (running) return
     running = true
     try {
-      await (app.outbox?.deliver() ?? deliverOutbox(app, { batch, claimTimeoutMs }))
-      if (retentionMs > 0) await sweepOutbox(app, retentionMs)
-
-      // After the pass, so it counts what this one could not take rather than
-      // what it was about to.
-      pending    = await (app.outbox?.pending() ?? Promise.resolve(0))
-      lastPassAt = new Date().toISOString()
+      await api!.pass()
     } catch (err) {
       app.logger?.error?.('[Junction] outbox relay pass failed', {
         error: (err as Error)?.message,

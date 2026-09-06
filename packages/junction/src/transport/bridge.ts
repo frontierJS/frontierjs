@@ -31,9 +31,11 @@ export type {
 }
 
 // ─── HTTP method → service method map ────────────────────────────────────
-// REST/Feathers semantics: PUT = full replace (update), PATCH = merge
-// (patch). PUT mapped to patch before update() existed; services that take
-// PUT traffic need an update method (db-backed services get one for free).
+// PUT -> update, PATCH -> patch. Both MERGE (`FJS-D179`): Feathers' word for
+// update is a full replace and this is not one, so a PUT stating only `title`
+// leaves every column it did not name where it was. What the id buys is that a
+// REST client's PUT can never reach patch's query path, which is a bulk write.
+// A service taking PUT traffic needs an update method; db-backed ones get one.
 const METHOD_MAP: Record<string, ServiceMethod> = {
   'GET':    'find',
   'POST':   'create',

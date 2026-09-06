@@ -1,7 +1,49 @@
 // ai/index.ts
-// AI model adapter — thin abstraction over LLM providers.
-// Same IAI interface regardless of provider.
-// Fluent builder API inspired by Total.js aimodel.js.
+// The SHAPE an AI model adapter satisfies, and the two things that compose over
+// it: a fluent request builder and a registry of named models.
+//
+// ── There is no vendor in here, and that is the whole design ──────────────
+//
+// It used to ship `createOpenAIModel` and `createAnthropicModel`: two hardcoded
+// vendor URLs, a hardcoded `anthropic-version`, a hardcoded `anthropic-beta`
+// naming a preview that went GA years ago, and a pair of bare `fetch` calls
+// with no deadline on the slowest request an app makes. `FJS-D153` had already
+// answered this for Conduit — *the boundary owns the mechanism, never the
+// vendor* — and every one of its three costs applied here unchanged: a vendor's
+// API bump would ship a junction release to every app, a connector's
+// dependencies would sit in front of every junction user, and a connector needs
+// a dev sink nobody had written. Junction has no vendor code left to go stale.
+//
+// ── Writing one ───────────────────────────────────────────────────────────
+//
+// An adapter is an object with `name`, `complete` and `stream`. It belongs in
+// the app, and it reaches the vendor through `app.conduit` rather than through
+// a `fetch` of its own — which is where the deadline, the retry, the breaker,
+// the auth header and the body encoding already live, each declared per target
+// rather than restated per provider:
+//
+//   app.conduit.register({
+//     name:     'anthropic',
+//     url:      'https://api.anthropic.com',
+//     encoding: 'json',
+//     auth:     { type: 'header', name: 'x-api-key', value: process.env.ANTHROPIC_API_KEY },
+//     timeoutMs: 120_000,
+//   })
+//
+//   export const claude: IAIModel = {
+//     name: 'claude',
+//     async complete(req) {
+//       const res = await app.conduit.send('anthropic', {
+//         path: '/v1/messages',
+//         headers: { 'anthropic-version': '2023-06-01' },
+//         body: { model: 'claude-sonnet-5', max_tokens: req.maxTokens ?? 1024, messages: req.messages },
+//       })
+//       return { content: res.body.content[0].text, model: res.body.model }
+//     },
+//     async stream(req, onChunk) { … },
+//   }
+//
+// `createApp({ ai })` takes an `AIRegistry`; `app.ai` is where it lands.
 
 // ─── IAI interface ────────────────────────────────────────────────────────
 
@@ -105,13 +147,21 @@ export class AIRegistry {
 
   private _models = new Map<string, IAIModel>()
 
-  register(model: IAIModel): void {
+  // Chainable, like the builder beside it, so `new AIRegistry().register(m)` is
+  // an expression a `createApp({ ai })` can take. It returned void, which made
+  // the one-line form in every doc set `ai` to undefined.
+  register(model: IAIModel): this {
     this._models.set(model.name, model)
+    return this
   }
 
   get(name: string): IAIModel {
     const model = this._models.get(name)
-    if (!model) throw new Error(`AI model "${name}" not registered`)
+    // Names what IS registered: the failure is almost always a spelling, and an
+    // empty registry and a typo are different mistakes.
+    if (!model) throw new Error(
+      `AI model "${name}" not registered. ` +
+      (this._models.size ? `Registered: ${this.list().join(', ')}` : 'No models are registered.'))
     return model
   }
 
@@ -121,226 +171,5 @@ export class AIRegistry {
 
   list(): string[] {
     return Array.from(this._models.keys())
-  }
-}
-
-// ─── OpenAI adapter ──────────────────────────────────────────────────────
-
-export interface OpenAIOptions {
-  apiKey:      string
-  model?:      string    // default: 'gpt-4o'
-  baseUrl?:    string    // for OpenAI-compatible APIs
-}
-
-export function createOpenAIModel(opts: OpenAIOptions): IAIModel {
-
-  const {
-    apiKey,
-    model:   defaultModel  = 'gpt-4o',
-    baseUrl: base          = 'https://api.openai.com/v1'
-  } = opts
-
-  async function post(body: unknown): Promise<unknown> {
-    const res = await fetch(`${base}/chat/completions`, {
-      method:  'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type':  'application/json'
-      },
-      body: JSON.stringify(body)
-    })
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({})) as { error?: { message?: string } }
-      throw new Error(`OpenAI error ${res.status}: ${err.error?.message ?? res.statusText}`)
-    }
-
-    return res.json()
-  }
-
-  function buildMessages(req: AIRequest): unknown[] {
-    const msgs: unknown[] = []
-    if (req.system) msgs.push({ role: 'system', content: req.system })
-    msgs.push(...req.messages)
-    return msgs
-  }
-
-  return {
-    name: opts.model ?? defaultModel,
-
-    async complete(req: AIRequest): Promise<AIResponse> {
-      const body: Record<string, unknown> = {
-        model:       req.model ?? defaultModel,
-        messages:    buildMessages(req),
-        max_tokens:  req.maxTokens  ?? 1024,
-        temperature: req.temperature ?? 0.7,
-      }
-
-      const result = await post(body) as {
-        choices: { message: { content: string } }[]
-        model:   string
-        usage:   { prompt_tokens: number; completion_tokens: number }
-      }
-
-      return {
-        content:      result.choices[0].message.content,
-        model:        result.model,
-        inputTokens:  result.usage.prompt_tokens,
-        outputTokens: result.usage.completion_tokens,
-      }
-    },
-
-    async stream(req: AIRequest, onChunk: (chunk: string) => void): Promise<AIResponse> {
-      const res = await fetch(`${base}/chat/completions`, {
-        method:  'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type':  'application/json'
-        },
-        body: JSON.stringify({
-          model:       req.model ?? defaultModel,
-          messages:    buildMessages(req),
-          max_tokens:  req.maxTokens  ?? 1024,
-          temperature: req.temperature ?? 0.7,
-          stream:      true,
-        })
-      })
-
-      if (!res.ok) throw new Error(`OpenAI stream error ${res.status}`)
-
-      let fullContent = ''
-      const reader    = res.body!.getReader()
-      const decoder   = new TextDecoder()
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const text = decoder.decode(value)
-        for (const line of text.split('\n')) {
-          if (!line.startsWith('data: ')) continue
-          const data = line.slice(6)
-          if (data === '[DONE]') break
-          try {
-            const parsed = JSON.parse(data) as { choices: { delta: { content?: string } }[] }
-            const chunk  = parsed.choices[0]?.delta?.content ?? ''
-            if (chunk) { fullContent += chunk; onChunk(chunk) }
-          } catch {}
-        }
-      }
-
-      return { content: fullContent, model: req.model ?? defaultModel }
-    }
-  }
-}
-
-// ─── Anthropic adapter ────────────────────────────────────────────────────
-
-export interface AnthropicOptions {
-  apiKey:      string
-  model?:      string    // default: 'claude-sonnet-4-6'
-}
-
-export function createAnthropicModel(opts: AnthropicOptions): IAIModel {
-
-  const {
-    apiKey,
-    model: defaultModel = 'claude-sonnet-4-6'
-  } = opts
-
-  async function post(body: unknown): Promise<unknown> {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method:  'POST',
-      headers: {
-        'x-api-key':         apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type':      'application/json'
-      },
-      body: JSON.stringify(body)
-    })
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({})) as { error?: { message?: string } }
-      throw new Error(`Anthropic error ${res.status}: ${err.error?.message ?? res.statusText}`)
-    }
-
-    return res.json()
-  }
-
-  return {
-    name: opts.model ?? defaultModel,
-
-    async complete(req: AIRequest): Promise<AIResponse> {
-      const body: Record<string, unknown> = {
-        model:      req.model ?? defaultModel,
-        messages:   req.messages,
-        max_tokens: req.maxTokens ?? 1024,
-      }
-
-      if (req.system) body.system = req.system
-
-      if (req.think) {
-        body.thinking = { type: 'enabled', budget_tokens: 8000 }
-      }
-
-      const result = await post(body) as {
-        content: { type: string; text?: string; thinking?: string }[]
-        model:   string
-        usage:   { input_tokens: number; output_tokens: number }
-      }
-
-      const textBlock  = result.content.find(b => b.type === 'text')
-      const thinkBlock = result.content.find(b => b.type === 'thinking')
-
-      return {
-        content:      textBlock?.text ?? '',
-        model:        result.model,
-        inputTokens:  result.usage.input_tokens,
-        outputTokens: result.usage.output_tokens,
-        thinkContent: thinkBlock?.thinking,
-      }
-    },
-
-    async stream(req: AIRequest, onChunk: (chunk: string) => void): Promise<AIResponse> {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method:  'POST',
-        headers: {
-          'x-api-key':         apiKey,
-          'anthropic-version': '2023-06-01',
-          'content-type':      'application/json',
-          'anthropic-beta':    'messages-2023-12-15'
-        },
-        body: JSON.stringify({
-          model:      req.model ?? defaultModel,
-          messages:   req.messages,
-          system:     req.system,
-          max_tokens: req.maxTokens ?? 1024,
-          stream:     true,
-        })
-      })
-
-      if (!res.ok) throw new Error(`Anthropic stream error ${res.status}`)
-
-      let fullContent = ''
-      const reader    = res.body!.getReader()
-      const decoder   = new TextDecoder()
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const text = decoder.decode(value)
-        for (const line of text.split('\n')) {
-          if (!line.startsWith('data: ')) continue
-          try {
-            const evt = JSON.parse(line.slice(6)) as { type: string; delta?: { text?: string } }
-            if (evt.type === 'content_block_delta' && evt.delta?.text) {
-              fullContent += evt.delta.text
-              onChunk(evt.delta.text)
-            }
-          } catch {}
-        }
-      }
-
-      return { content: fullContent, model: req.model ?? defaultModel }
-    }
   }
 }

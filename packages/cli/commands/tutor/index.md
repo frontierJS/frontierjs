@@ -1,6 +1,6 @@
 ---
 title: tutor:index
-description: The eight lessons, in order, and how far through them you are
+description: The lessons, in order, and how far through them you are
 alias: tutor
 examples:
   - fli tutor
@@ -18,13 +18,18 @@ flags:
 // alphabetical, which for a course is the one order that is wrong.
 const LESSONS = [
   ['tutor:app',    'An app that runs',              'nothing'],
+  ['tutor:tools',  'The four tools, and when',      'nothing'],
+  ['tutor:ui',     'A screen you did not write',    'Chrome'],
   ['tutor:access', 'Who may do what',               'nothing'],
   ['tutor:live',   'A change reaching somebody else','nothing'],
   ['tutor:jobs',   'Work that outlives the request','nothing'],
+  ['tutor:notify', 'Telling somebody something',    'nothing'],
   ['tutor:site',   'The public half',               'nothing'],
   ['tutor:deploy', 'A deploy you can take back',    'Docker · git'],
   ['tutor:change', 'The schema you already deployed','nothing'],
+  ['tutor:test',   'Knowing it is right',           'nothing'],
   ['tutor:fleet',  'A machine that takes orders',   'a checkout'],
+  ['tutor:adopt',  'A database you already have',   'nothing'],
 ]
 
 // Progress is a fact about a DIRECTORY, so there is nothing to report without
@@ -34,7 +39,7 @@ const ws = flag.workspace ? resolve(process.cwd(), flag.workspace) : null
 const doc = ws ? T.readJournal(ws) : null
 
 log.info('')
-log.info('  The tutorial — eight lessons, in order. Each runs the real commands and')
+log.info(`  The tutorial — ${LESSONS.length} lessons, in order. Each runs the real commands and`)
 log.info('  then asks the running world whether they worked.')
 log.info('')
 for (const [id, name, needs] of LESSONS) {

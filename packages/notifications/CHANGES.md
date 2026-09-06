@@ -2,6 +2,30 @@
 
 Newest first.
 
+## 2026-09-05 — the model ships
+
+`db/notification.lite`, exported as `./schema.lite` and packed by `files:`
+([`FJS-910`](../../ISSUES.md#fjs-910)). The model this package writes to existed
+only in the README: every app typed it out, and a column `drivers/inapp.ts`
+started naming that an app's copy did not have was detectable by nothing.
+`fli check`'s `package-model-drift` now RUNS against any app with this package
+installed, instead of skipping with *no dependency ships a .lite file*, and
+names a missing column with its line.
+
+**Appended, not imported.** The gate does not vary between apps, which is the
+usual argument for importing — but `userId`'s TYPE follows the app's own `User`
+key (`String` under `@frontierjs/auth`, `Int` under a rowid identity), and a
+column's type is the one thing `extend model` cannot change. An imported model
+would be wrong for a whole class of apps with no way for them to fix it, and
+wrong silently until the first insert.
+
+The file carries the reasoning that used to be spread across a README section
+and a reference model in litestone — why there is no `title`/`body`, no
+`channel`/`sentAt`, no `dismissedAt`, and what to do about `contextType`, which
+`fli check`'s `polymorphic-subject` asks every app to decide. That reference
+model is deleted: it existed because this package shipped nothing, and two
+copies of one model is the failure it was written to document.
+
 ## 2026-09-01 — a notification without a class, and the file names it
 
 70 tests (was 54 — 16 new, 1 file, 4 fixtures). Typecheck clean.

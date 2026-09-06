@@ -717,14 +717,14 @@ model Credential {
   id        Int       @id
   userId    String
   type      String
-  value     String    @guarded(all)
+  value     String    @guarded
   createdAt DateTime  @default(now())
 }
 
 model Session {
   id         String    @id @default(uuid())
   userId     String
-  token      String    @unique @guarded(all)
+  token      String    @unique @guarded
   expiresAt  DateTime
   createdAt  DateTime  @default(now())
 }
@@ -732,7 +732,7 @@ model Session {
 model Verification {
   id          Int       @id
   identifier  String
-  value       String    @guarded(all)
+  value       String    @guarded
   expiresAt   DateTime
   createdAt   DateTime  @default(now())
 }

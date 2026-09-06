@@ -218,7 +218,10 @@ const deployPlan = async (context, flag, { target, deployConf, doApi, doWeb, dig
       stdio:   'pipe', allowFailure: true,
     })
     try {
-      const verdict = JSON.parse(String(out ?? '').trim())
+      // Both paths in one read: on success `out` is the child's output, and on
+      // a non-zero exit `allowFailure` hands back the error, which carries the
+      // same bytes on `stdout`.
+      const verdict = JSON.parse(String(out?.stdout ?? out ?? '').trim())
       pivot    = verdict.verdict  ?? 'unknown'
       findings = verdict.findings ?? []
     } catch {}

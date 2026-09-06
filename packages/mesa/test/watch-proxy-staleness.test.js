@@ -13,9 +13,9 @@
 // reassignment of an object-valued property was broken, and only through the
 // proxy.
 //
-// The cache now keys on path AND the object that path currently holds, so it
-// self-heals however the value changed — including writes that bypassed the
-// proxy entirely.
+// The cache keys on the target object now, so it self-heals by construction
+// however the value changed — a new object is a new key — including writes that
+// bypassed the proxy entirely.
 
 import { describe, test, expect, beforeAll } from 'vitest'
 

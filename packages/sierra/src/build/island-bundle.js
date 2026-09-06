@@ -103,7 +103,11 @@ hydrateIslands(registry)
 export async function buildIslandBundle(opts) {
   const {
     islands, root, outDir, plugins = [], base = '/', viteBuild, theme = null,
-    minify = process.env.NODE_ENV === 'production',
+    // An island bundle is only ever built inside a `vite build`, so the answer
+    // is Vite's own default and not the ambient env — the sibling in
+    // `build/index.js` shipped an unminified production bundle off it
+    // (`FJS-799`). A caller that genuinely wants readable islands passes false.
+    minify = true,
   } = opts
 
   if (!islands.length) return null

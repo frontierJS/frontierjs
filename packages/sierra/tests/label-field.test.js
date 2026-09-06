@@ -4,7 +4,7 @@
  * Which column a picker SHOWS for a related row — the client half of
  * `@@label(field)`, which reaches here as `x-label-field`.
  *
- * A foreign key holds an id and nobody recognises an id. Before the
+ * A foreign key holds an id and nobody recognizes an id. Before the
  * declaration existed the only mechanism was a scan of eight hardcoded column
  * names, and each step down it is a worse answer that was given in silence
  * (`FJS-392`): a `Person` with `firstName`/`lastName` labels every option

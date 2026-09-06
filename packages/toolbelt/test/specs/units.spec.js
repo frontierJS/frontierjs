@@ -89,9 +89,12 @@ test('units: USD is the default', function () {
 })
 
 test('units: the currency decides the decimals, not the caller', function () {
-  // The reason this is Intl and not a symbol table. JPY has no minor unit, and
-  // every hand-rolled `toFixed(2)` invents one.
+  // JPY has no minor unit, and every hand-rolled `toFixed(2)` invents one.
   assert.equal(formatMoney(1235, 'JPY'), '¥1,235')
+  // ISO's exponent rather than the locale's convention, so one stored amount
+  // renders the same wherever it is read. CLDR prints the dinar with no
+  // decimals at all under node, which drops three quarters of this value.
+  assert.equal(formatMoney(1.234, 'IQD'), 'IQD\u00a01.234')
 })
 
 test('units: thousands are grouped', function () {
@@ -125,7 +128,7 @@ test('units: zero IS an answer', function () {
   assert.equal(formatMoney(0, 'USD'), '$0.00')
 })
 
-test('units: an unrecognised 3-letter code prints the code', function () {
+test('units: an unrecognized 3-letter code prints the code', function () {
   // Intl accepts any well-formed code and uses it where the symbol goes, which
   // is the honest rendering — it says which currency and admits it has no
   // glyph. The separator is a NO-BREAK SPACE (U+00A0), which is Intl's and not
@@ -151,23 +154,66 @@ test('units: a numeric string is a number here too', function () {
 
 // ─── Minor units ──────────────────────────────────────────────────────────────
 
-test('units: minorUnits reads the currency, not a table we ship', function () {
+test('units: minorUnits is ISO 4217, and the table is ours', function () {
   assert.equal(minorUnits('USD'), 2)
   assert.equal(minorUnits('JPY'), 0)      // the yen has no minor unit
   assert.equal(minorUnits('KWD'), 3)
   assert.equal(minorUnits('CLP'), 0)
+  assert.equal(minorUnits('CLF'), 4)      // a fund, and the only four
   assert.equal(minorUnits('usd'), 2)      // normalized
 })
 
+test('units: the codes the two runtimes answer differently (FJS-745)', function () {
+  // The measurement this table exists for. `resolvedOptions()` answers a
+  // DISPLAY question and these are the codes where CLDR's answer is not ISO's:
+  // node says the dinar has no decimal places, bun says three, and ISO says
+  // three. Stored at the wrong scale it is a thousand times out.
+  assert.equal(minorUnits('IQD'), 3)
+  // The other thirteen, where node says none and ISO says two.
+  for (const code of ['AFN', 'ALL', 'IRR', 'KPW', 'LAK', 'LBP', 'MGA',
+                      'MMK', 'RSD', 'SLL', 'SOS', 'SYP', 'YER'])
+    assert.equal(minorUnits(code), 2, `${code} is a two-place currency`)
+})
+
+test('units: the shipped table is not the host ICU table', function () {
+  // The negative control: with `supportedValuesOf` answering nothing and
+  // `NumberFormat` answering two places for everything, every value below is
+  // unchanged. Reading the host, all four move.
+  const values = Intl.supportedValuesOf
+  const fmt    = Intl.NumberFormat
+  try {
+    Intl.supportedValuesOf = () => []
+    Intl.NumberFormat      = function () {
+      return { resolvedOptions: () => ({ maximumFractionDigits: 2 }), format: () => '' }
+    }
+    assert.equal(isKnownCurrency('ZWG'), true)
+    assert.equal(minorUnits('JPY'), 0)
+    assert.equal(minorUnits('IQD'), 3)
+    assert.equal(knownCurrencies().size, 183)
+  } finally {
+    Intl.supportedValuesOf = values
+    Intl.NumberFormat      = fmt
+  }
+})
+
 test('units: an unknown code THROWS rather than answering two', function () {
-  // The whole reason `isKnownCurrency` exists. `Intl.NumberFormat` does not
-  // throw on `UDS` — it answers two decimal places — so a typo would take a
-  // plausible scale and be wrong by a hundred wherever the real currency has
-  // none. Answering here is what lets litestone refuse it at parse.
-  assert.throws(() => minorUnits('UDS'), /not a currency this runtime knows/)
-  assert.throws(() => minorUnits('BTC'), /not a currency this runtime knows/)
-  assert.throws(() => minorUnits('US'),  /not an ISO 4217 code/)
-  assert.throws(() => minorUnits(''),    /not an ISO 4217 code/)
+  // `Intl.NumberFormat` does not throw on `UDS` — it answers two decimal
+  // places — so a typo would take a plausible scale and be wrong by a hundred
+  // wherever the real currency has none. Answering here is what lets litestone
+  // refuse it at parse.
+  assert.throws(() => minorUnits('UDS'), /not an ISO 4217 currency/)
+  assert.throws(() => minorUnits('BTC'), /not an ISO 4217 currency/)
+  assert.throws(() => minorUnits('US'),  /three letters/)
+  assert.throws(() => minorUnits(''),    /three letters/)
+})
+
+test('units: a code with no minor unit is refused in its own words', function () {
+  // Known, and not an amount. Answering 2 would let `toMinor` invent a
+  // hundredth of a troy ounce; the sentence has to separate that from a typo,
+  // because the two have different ways out.
+  assert.throws(() => minorUnits('XAU'), /no minor unit/)
+  assert.throws(() => minorUnits('XXX'), /no minor unit/)
+  assert.equal(isKnownCurrency('XAU'), true)
 })
 
 test('units: isKnownCurrency separates a real code from a plausible one', function () {
@@ -175,15 +221,22 @@ test('units: isKnownCurrency separates a real code from a plausible one', functi
   assert.equal(isKnownCurrency('XXX'), true)    // ISO's own "no currency" code
   assert.equal(isKnownCurrency('UDS'), false)
   assert.equal(isKnownCurrency('BTC'), false)   // real money, not ISO 4217
+  // The pair the runtimes disagreed about: node's ICU carries Zimbabwe Gold and
+  // bun's does not, bun's carries the Austrian schilling and node's does not.
+  // A live currency was declarable on one runtime and a typo on the other.
+  assert.equal(isKnownCurrency('ZWG'), true)
+  assert.equal(isKnownCurrency('ATS'), false)   // withdrawn in 2002
 })
 
-test('units: the runtime knows a few hundred codes, and the odd ones are the point', function () {
+test('units: the table is a few hundred codes, and the odd ones are the point', function () {
   const known = knownCurrencies()
-  assert.ok(known.size > 150, `expected a full ISO list, got ${known.size}`)
+  assert.equal(known.size, 183)
   // If this ever shrinks to only two-decimal currencies, `@money` has silently
   // stopped deriving anything.
-  const odd = [...known].filter(c => minorUnits(c) !== 2)
-  assert.ok(odd.length > 10, `expected currencies with non-2 minor units, got ${odd.length}`)
+  const odd = [...known].filter(c => {
+    try { return minorUnits(c) !== 2 } catch { return false }
+  })
+  assert.equal(odd.length, 26)
 })
 
 test('units: the minor-unit conversion is the currency\'s, not a hundred', function () {
@@ -211,8 +264,8 @@ test('units: minor units round-trip through a formatter', function () {
 })
 
 test('units: an unknown code is refused in both directions', function () {
-  assert.throws(() => fromMinor(100, 'UDS'), /not a currency this runtime knows/)
-  assert.throws(() => toMinor(1, 'UDS'),     /not a currency this runtime knows/)
+  assert.throws(() => fromMinor(100, 'UDS'), /not an ISO 4217 currency/)
+  assert.throws(() => toMinor(1, 'UDS'),     /not an ISO 4217 currency/)
 })
 
 /* ── Rounding (`FJS-D154`) ─────────────────────────────────────────── */

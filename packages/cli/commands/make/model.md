@@ -92,10 +92,11 @@ export function create${pascalPlural}Service() {
     // this service is published there under its own name — the five CRUD
     // methods and any action you add.
     //
-    // NOTHING IS DELIVERED UNTIL A CONNECTION JOINS. Membership is the app's
-    // decision and Junction never makes it: a publish to a channel nobody
-    // joined succeeds and reaches nobody, with no error and no log. Join on
-    // connection with app.channel('${plural}').join(conn).
+    // NOTHING IS DELIVERED UNTIL A CONNECTION JOINS, and membership is the
+    // app's decision — Junction never makes it. api/src/core/channels.ts is
+    // where this app makes it, and it joins every channel a service declares,
+    // so this line is enough. Narrow it there, not here: a publish to a
+    // channel nobody joined succeeds and reaches nobody, with no error.
     //
     // Joining is a subscription and not a permission: each frame is graded
     // per recipient against this model's own @@gate and @@allow, so a

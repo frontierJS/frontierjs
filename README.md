@@ -201,7 +201,7 @@ One schema. One service declaration. One resource binding. Any component that im
 
 | Document                                                                              | Description                                                                     |
 | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| [Quickstart](./docs/QUICKSTART.md)                                                    | `fli tutor` — the eight lessons, and where to write what                         |
+| [Quickstart](./docs/QUICKSTART.md)                                                    | `fli tutor` — the thirteen lessons, and where to write what                         |
 | [Philosophy](./PHILOSOPHY.md)                                                         | Why FrontierJS exists — the axioms and decision tests above the architecture     |
 | [Architecture & Vocabulary](./ARCHITECT.md)                                           | The mental model (§1), the mandatory vocabulary (§2), the eight domains (§4)     |
 | [Decisions](./DECISIONS.md)                                                           | Dated rulings — read before relitigating any semantics                           |

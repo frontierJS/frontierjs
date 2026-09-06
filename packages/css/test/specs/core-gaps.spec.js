@@ -155,7 +155,7 @@ test('icon: the old .btn.icon markup no longer gets the square treatment', funct
   );
 
   var square = el('<button class="btn square" aria-label="Delete">' + SVG + '</button>');
-  /* Chrome serialises `aspect-ratio: 1` as "1 / 1". */
+  /* Chrome serializes `aspect-ratio: 1` as "1 / 1". */
   assert.equal(style(square, 'aspect-ratio'), '1 / 1', '.btn.square lost the square recipe');
 });
 

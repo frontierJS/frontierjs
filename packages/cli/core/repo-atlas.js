@@ -28,7 +28,7 @@
 // The realm string comes from the root CLAUDE.md table and is written for
 // people: `Data / D2`, `UI substrate`, `D7 / app`. A bucket is only what
 // colors the card, so the keyword decides and the domain number is the
-// fallback. An unrecognised realm is `other`, which is a color, not an error.
+// fallback. An unrecognized realm is `other`, which is a color, not an error.
 
 const BUCKET_BY_WORD = [
   [/testing/i,       'testing'],

@@ -13,7 +13,7 @@
 
 import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, getScoped, deriveSlug, changesNothing, ws, actor } from '../../core/resource.ts'
+import { db, getScoped, changesNothing, ws, actor } from '../../core/resource.ts'
 import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import deploymentRun from '../../jobs/deployment-run.job.ts'
@@ -303,7 +303,9 @@ export function createDeploymentsService(app: BasecampApp) {
     hooks: {
       before: {
         all:    [sessionScope(app)],
-        create: [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), deriveSlug],
+        // No deriveSlug: `Deployment` has neither `name` nor `slug`, so it was a
+        // hook that could never fire.
+        create: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         patch:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         // The engine's three. The standing was graded when `create` queued the

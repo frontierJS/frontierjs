@@ -323,6 +323,12 @@ function makeEnvExample(useAuth) {
     '# Database file. Use :memory: for tests.',
     'DATABASE_URL=./db/app.db',
     '',
+    '# Where the audit trail is written. A logger-driver database is a',
+    '# DIRECTORY of JSONL, and it is a variable for the same reason DATABASE_URL',
+    '# is: a deploy mounts a volume, and a literal path here writes the trail',
+    '# inside the container, where the next swap takes it.',
+    'AUDIT_PATH=./db/audit/',
+    '',
     '# App',
     'PORT=8100',
     'APP_URL=http://localhost:8100',
@@ -499,7 +505,7 @@ ${useApi
 - **Add a model:** \`fli scaffold Lead --fields "name:string email:email status:string"\`
 - **Background jobs:** add \`@frontierjs/caravan\` and configure under the \`caravan\` block in \`junction.config.js\`
 - **Outbound integrations:** add \`@frontierjs/conduit\` and place targets in \`api/src/conduit/\`
-- **Real-time:** add channels in \`api/src/core/channels.ts\` and wire in \`app.ts\`
+- **Real-time:** already wired — \`api/src/core/channels.ts\` decides who listens, and joins every channel a service declares
 `
 }
 
@@ -535,6 +541,7 @@ function makeApiAppTs(useAuth, useWeb) {
 
 import { createApp, requestLogger, correlationId, healthPlugin, manifestPlugin, channels } from '@frontierjs/junction'
 import { auth, authPlugin, authCleanup } from './core/auth.ts'
+import { joinChannels }     from './core/channels.ts'
 import { withDb }           from './core/hooks.ts'
 import { env }              from './core/env.ts'
 
@@ -574,7 +581,14 @@ app.configure(manifestPlugin())
 // Registers the /ws route. Without it the browser client has nothing to
 // upgrade to: it falls back to HTTP, which works, and reports itself
 // disconnected forever with no error anywhere.
-app.configure(channels())
+//
+// The callback is the other half and is just as silent when it is missing: a
+// service's \`channel:\` says where a write is announced, and until a
+// connection JOINS that channel the announcement reaches nobody. core/channels.ts
+// is where an app decides who listens to what.
+app.configure(channels((a) => {
+  a.channels!.on('connection', (session, conn) => joinChannels(a, session, conn))
+}))
 
 // ─── Auth routes ──────────────────────────────────────────────────────────
 // Mounts {apiPrefix}/auth/register, /auth/login, /auth/logout and the
@@ -612,6 +626,7 @@ export default app
 // The construction site — createApp + every plugin registration lives here.
 
 import { createApp, requestLogger, correlationId, healthPlugin, manifestPlugin, channels } from '@frontierjs/junction'
+import { joinChannels }                                  from './core/channels.ts'
 import { withDb }                                        from './core/hooks.ts'
 import { env }                                           from './core/env.ts'
 
@@ -645,8 +660,12 @@ app.configure(healthPlugin())
 app.configure(manifestPlugin())
 
 // ─── Real-time ────────────────────────────────────────────────────────────
-// Registers the /ws route the browser client upgrades to.
-app.configure(channels())
+// Registers the /ws route the browser client upgrades to. The callback is the
+// half that is silent without it: a write is announced on the channel its
+// service declares, and reaches nobody until a connection has joined one.
+app.configure(channels((a) => {
+  a.channels!.on('connection', (session, conn) => joinChannels(a, session, conn))
+}))
 
 // ─── Per-request db scoping ──────────────────────────────────────────────
 app.hooks({
@@ -675,6 +694,11 @@ export const env = defineEnv({
 
   // Database file path. Use ':memory:' for tests.
   DATABASE_URL: { type: 'string', default: './db/app.db' },
+
+  // The audit trail's directory. Declared for the same reason DATABASE_URL is:
+  // a logger-driver database is a directory of JSONL on disk, and a deploy has
+  // to be able to put it on the mounted volume without editing the schema.
+  AUDIT_PATH: { type: 'string', default: './db/audit/' },
 
   // fli auth:install generates this into .env. Declared so defineEnv can see it
   // — the name is one of three it warns about for length and placeholder values
@@ -740,7 +764,12 @@ const gate = new GatePlugin({
 // the app root by \`resolveFrom\` above. Passing it here would put the database
 // wherever the command was typed from.
 export const db = await createClient({
-  schema:        schemaPath,
+  // \`path:\`, not \`schema:\`. A path under \`schema:\` is read as one, but the two
+  // keys mean different things — a schema STRING has no directory, so a relative
+  // \`import\` in it resolves against nothing and is dropped — and no tool can tell
+  // which was meant from the outside: \`fli check\`'s \`schema-in-memory\` fires on
+  // the key, because that is all a source reader can see.
+  path:          schemaPath,
   resolveFrom:   'schema',
   encryptionKey: env.ENCRYPTION_KEY,
   plugins:       [gate],
@@ -761,6 +790,70 @@ import { withLitestoneDb } from '@frontierjs/junction/litestone'
 import { db } from './db.ts'
 
 export const withDb = withLitestoneDb(db)
+`
+}
+
+function makeApiCoreChannelsTs(useAuth) {
+  const notify = useAuth
+    ? `
+  // The in-app notification channel for one person. \`@frontierjs/notifications\`
+  // owns this spelling; an anonymous connection has none to join, which is the
+  // only reason this is not "join everything".
+  const who    = (session ?? {}) as Session
+  const userId = who.userId ?? who.id
+  if (userId) app.channel!(\`notifications:user:\${userId}\`).join(conn as never)
+`
+    : ''
+
+  // A parameter nothing reads is a type error under the tsconfig this scaffold
+  // ships, so the no-auth variant takes `_session` and declares no shape for it.
+  const sessionArg  = useAuth ? 'session' : '_session'
+  const sessionType = useAuth
+    ? `/** A session as this app can read one. Junction hands the handler \`unknown\`,
+ *  because what a session IS belongs to whichever auth provider issued it —
+ *  auth's own shape puts the id at \`userId\`, a hand-built principal puts it at
+ *  \`id\`, so both are read here and the wrong one is undefined, which joins
+ *  nothing and says nothing. */
+type Session = { userId?: string; id?: string }
+`
+    : ''
+
+  return `// api/src/core/channels.ts — who receives a broadcast.
+//
+// A service declares \`channel: 'notes'\` and Junction publishes every write on
+// it. Nothing is delivered until a CONNECTION has joined that channel, and
+// joining is this file's decision — the one an app makes and the framework
+// cannot.
+//
+// It exists because a channel nobody joined broadcasts into NOTHING. No error,
+// no log, no dropped frame: the publish succeeds, reaches an empty set, and the
+// symptom is a screen that never updates.
+//
+// Joining is a subscription and not a permission. A broadcast is not a SELECT,
+// so an \`@@allow\` — which compiles into a WHERE — could not reach one; junction
+// grades every frame per recipient at the Data boundary now, and shapes it. So
+// what is below is a list of what each connection LISTENS to, never of what it
+// may read, and a channel joined by somebody entitled to nothing delivers
+// nothing to them.
+//
+// Which is why the default is every channel a service declares: \`fli scaffold\`
+// writes \`channel:\` into each service it generates, and a list repeated here
+// by hand goes stale the first time you add a model. Narrow it when a channel
+// is genuinely nobody's business until they ask for it.
+
+import type { App } from '@frontierjs/junction'
+
+${sessionType}
+/** Everything one connection listens to. Called once, on connection. */
+export function joinChannels(app: App, ${sessionArg}: unknown, conn: unknown): void {
+  for (const service of app.services.values()) {
+    // Only the string form. A function \`channel:\` computes its target per
+    // publish, so there is no name here to join ahead of time — an app using
+    // one names the channels it wants below, by hand.
+    const declared = (service as { channel?: unknown }).channel
+    if (typeof declared === 'string') app.channel!(declared).join(conn as never)
+  }
+${notify}}
 `
 }
 
@@ -888,7 +981,7 @@ function makeSchemaLiteEmpty() {
 
 database main  { path env("DATABASE_URL", "./db/app.db") }
 
-database audit { path "./db/audit/" driver logger retention 90d }
+database audit { path env("AUDIT_PATH", "./db/audit/") driver logger retention 90d }
 
 `
 }
@@ -1618,6 +1711,7 @@ if (useApi) {
     ['api/src/core/env.ts',         makeApiEnvTs()],
     ['api/src/core/db.ts',          makeApiCoreDbTs()],
     ['api/src/core/hooks.ts',       makeApiCoreHooksTs()],
+    ['api/src/core/channels.ts',    makeApiCoreChannelsTs(useAuth)],
     ['api/config/junction.config.js', makeJunctionConfig(appName, useWeb)],
   )
 }
@@ -1693,6 +1787,44 @@ if (useExtension) {
   log.success(`Wrote ${extFiles.length} files in extension/`)
 }
 
+// ─── 9d. Link local packages, then install ────────────────────────────────────
+//
+// BEFORE the sub-commands, not after them, and the reason is `auth:install`:
+// it reads `user.lite` out of @frontierjs/auth by RESOLVING it, and with no
+// node_modules the resolve fails and it falls back to `bun add`, which is
+// always the REGISTRY's copy. So an app scaffolded `--source local` had the
+// published User model appended — measured on a fresh scaffold as an
+// `accountId Int?` where the tree says `String?` and, worse, no `@@auth`, which
+// leaves every claim in every policy ungraded (`FJS-666`, `FJS-737`). That is
+// `FJS-741` one step earlier in the same command: WHICH auth this app is
+// developed against has to be settled before anything reads out of it.
+//
+// `bun link` registers each package globally (idempotent) so the
+// `link:@frontierjs/*` specs resolve to live symlinks — edits to the tree are
+// then picked up with no reinstall.
+
+if (fjsSource === 'local') {
+  echo('')
+  log.info(`Linking ${neededPkgs.length} local @frontierjs package(s) from ${packagesDir}…`)
+  for (const p of neededPkgs) {
+    try {
+      context.exec({ command: 'bun link', cwd: pkgDir(p), stdio: 'pipe' })
+      log.info(`  → ${p}`)
+    } catch (e) {
+      log.warn(`  bun link failed for ${p}: ${e.message}`)
+    }
+  }
+}
+
+if (useInstall) {
+  try {
+    log.info('→ bun install')
+    context.exec({ command: 'bun install', cwd: finalTarget, stdio: 'inherit' })
+  } catch (e) {
+    log.warn(`bun install failed: ${e.message} — run it manually before fli dev`)
+  }
+}
+
 // ─── 10. Compose subcommands ──────────────────────────────────────────────────
 // At this point the directory has a package.json — fli's findProjectRoot will
 // resolve the new project as projectRoot from any cwd inside it.
@@ -1731,6 +1863,21 @@ if (useAuth) {
     log.error(`auth:install failed: ${e.message}`)
     log.error('  --auth did not happen — db/schema.lite has no User model and the app can register nobody.')
     throw e
+  }
+}
+
+// notifications:install — appends the Notification model the package requires.
+// `--with notifications` used to add the dependency and stop, so every app
+// copied the model out of node_modules by hand or found out at the first send
+// that `notification` is not a table in this schema. Warn and continue rather
+// than throw: unlike auth, nothing else in the scaffold depends on it, and an
+// app can run the command itself.
+if (withPkgs.includes('notifications')) {
+  try {
+    log.info('→ notifications:install')
+    runFli(context, ['notifications:install'], finalTarget)
+  } catch (e) {
+    log.warn(`notifications:install failed: ${e.message} — run it yourself before the first app.notify()`)
   }
 }
 
@@ -1776,34 +1923,6 @@ if (useGit) {
     log.success('Git repository initialized')
   } catch (e) {
     log.warn(`git init step failed: ${e.message} — skipping`)
-  }
-}
-
-// ─── 11.5 Link local @frontierjs packages (source=local) ──────────────────────
-// Register each needed package as a global bun link (idempotent) so the
-// `link:@frontierjs/*` specs in package.json resolve to live symlinks on install.
-// Edits to the package sources are then picked up with no reinstall.
-if (fjsSource === 'local') {
-  echo('')
-  log.info(`Linking ${neededPkgs.length} local @frontierjs package(s) from ${packagesDir}…`)
-  for (const p of neededPkgs) {
-    try {
-      context.exec({ command: 'bun link', cwd: pkgDir(p), stdio: 'pipe' })
-      log.info(`  → ${p}`)
-    } catch (e) {
-      log.warn(`  bun link failed for ${p}: ${e.message}`)
-    }
-  }
-}
-
-// ─── 12. bun install ──────────────────────────────────────────────────────────
-
-if (useInstall) {
-  try {
-    log.info('→ bun install')
-    context.exec({ command: 'bun install', cwd: finalTarget, stdio: 'inherit' })
-  } catch (e) {
-    log.warn(`bun install failed: ${e.message} — run it manually before fli dev`)
   }
 }
 
@@ -1855,7 +1974,11 @@ const envFile = resolve(finalTarget, '.env')
 const keySet  = existsSync(envFile) &&
   /^[ \t]*ENCRYPTION_KEY[ \t]*=[ \t]*\S/m.test(readFileSync(envFile, 'utf8'))
 if (!keySet) {
-  echo('  fli keygen aes --name ENCRYPTION_KEY --env    # .env needs a key before the API starts')
+  // --format hex, and it is load-bearing: keygen defaults to base64, litestone
+  // parses this variable as HEX, and a base64 key therefore decodes to zero
+  // bytes and is refused with a sentence about a key length. Advice that fails
+  // when taken is worse than none.
+  echo('  fli keygen aes --format hex --name ENCRYPTION_KEY --env   # .env needs a key before the API starts')
 }
 echo('  bun run dev')
 echo('')

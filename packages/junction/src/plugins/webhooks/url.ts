@@ -56,7 +56,7 @@ function isPrivateV6(ip: string): boolean {
   if (s === '::1' || s === '::' ) return true
   // An IPv4 address wearing a v6 coat — `::ffff:127.0.0.1` and the NAT64
   // prefix both reach v4, so they are graded as the v4 address they carry.
-  // `new URL()` normalises the mapped form to hex (`::ffff:7f00:1`), so
+  // `new URL()` normalizes the mapped form to hex (`::ffff:7f00:1`), so
   // matching only the dotted spelling accepts loopback written the other way.
   const mapped = /^(?:::ffff:|::|64:ff9b::)/.test(s) ? s.replace(/^(?:::ffff:|64:ff9b::|::)/, '') : null
   if (mapped) {

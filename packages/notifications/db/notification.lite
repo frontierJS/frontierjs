@@ -1,0 +1,84 @@
+// ─── @frontierjs/notifications — the model an app owns ───────────────────────
+//
+// One model, and the app's rather than this package's — the same split
+// @frontierjs/auth makes between user.lite and auth.lite. It is APPENDED to the
+// app's own db/schema.lite rather than imported, because everything an app does
+// next happens here: a relation back to its own User, a tenant key under row
+// tenancy, @@log(audit), a column its own bell menu wants, and the constraint
+// on contextType that only the app can know.
+//
+// What this package does with it is narrower than what the app does: it writes
+// rows through asSystem() and reads none. So the file ships to be COPIED, and
+// `fli check`'s `package-model-drift` grades the copy against it — a column
+// this package starts writing that an app's copy does not have is named there
+// rather than discovered at the first send.
+//
+// This file is REAL .lite and parses standalone against a host declaring
+// `database main`.
+//
+// ─── What is deliberately NOT here ──────────────────────────────────────────
+//
+// No `title` and no `body`. A notification is an EVENT plus a payload, and the
+// words are rendered from `type` + `data` at the moment of display — which is
+// what lets one stored row be an email in English, a line in a dropdown, and a
+// push in Spanish. Storing the sentence freezes all three at write time and
+// makes a copy change a migration.
+//
+// No `channel` and no `sentAt`. Delivery is a TRANSPORT concern and a transport
+// is not this row: one notification fans out to in-app, email and whatever else
+// is registered, so a delivery column here would be one of N answers. In this
+// framework a *channel* is junction's broadcast set (FJS-D06).
+//
+// No `dismissedAt` beside `readAt`. Read and dismissed is a product decision
+// rather than a shape one; add it when a screen distinguishes them.
+
+model Notification {
+  id          Int       @id
+  // String, not Int: @frontierjs/auth issues uuid ids. An app whose own User.id
+  // is an Int changes this to match — that is a deliberate deviation, and the
+  // drift rule is baselined to say so.
+  userId      String
+  // The notification's stable name — its file name, or the `type:` it states.
+  // Not a foreign key and not an enum: adding a notification type is a file,
+  // never a migration.
+  type        String
+  // Whatever the inApp formatter built. Shape varies by type, which is why the
+  // browser reads `type` to choose a renderer.
+  data        Json
+  // A loose reference to what the notification is ABOUT, with no foreign key by
+  // design: it points at more than one table, so a notification survives the
+  // deletion of the row it refers to without a cascade.
+  //
+  // Nothing constrains contextType here because this package cannot know what
+  // an app's contexts are. `fli check`'s `polymorphic-subject` asks the app to
+  // decide: constrain the column where the set is known
+  // (@@check("contextType IN ('Order', 'Invoice')") or a declared value set),
+  // or baseline that rule where the set grows with every model. An enum is the
+  // strongest of those — it emits a table CHECK, so a migration, a seed and
+  // asSystem() are all held to it, and it reaches the browser as a set a picker
+  // renders rather than a text box.
+  //
+  // Spelt contextType/contextId because the in-app driver names those. The
+  // reference catalogue prefers subjectType/subjectId for anything NEW; here
+  // the package has already chosen, and a rename is a migration plus a package
+  // change.
+  contextType String?
+  contextId   Int?
+  // null = unread. The one column a recipient writes, which is what the U in
+  // the gate below is for.
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@db(main)
+  // R.C.U.D. Read is open and the row policy scopes it to your own rows;
+  // create is SYSTEM, because the only writer is this package through
+  // asSystem(); update is USER, which is a recipient marking one as read;
+  // delete is SYSTEM.
+  //
+  // Create is 8 and NOT 9. `9` is LOCKED — a wall asSystem() does not pass
+  // either — so a 9 in the create slot would stop this package from ever
+  // writing a row.
+  @@gate("0.8.4.8")
+  @@allow('read',   userId == auth().id)
+  @@allow('update', userId == auth().id)
+}

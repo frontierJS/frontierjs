@@ -1,4 +1,5 @@
 import { isIndexExpression, predicateToLite } from '../core/migrate.js'
+import { mapIdentifiers } from '../core/ddl.js'
 // src/introspect.js — Entity Generator
 // Reverse-engineers an existing SQLite database into a .lite schema file.
 //
@@ -62,6 +63,15 @@ function toCamelCase(str) {
 function toPascalCase(str) {
   const camel = toCamelCase(str)
   return camel.charAt(0).toUpperCase() + camel.slice(1)
+}
+
+// Model name → the table `ddl.js` would derive for it, with no @@map. The
+// forward direction of the function below, restated rather than imported so
+// this tool keeps its one dependency on the schema core; if they ever disagree
+// the schema names a table that is not there, which is the failure the caller
+// of this uses it to prevent.
+function tableNameFromModel(modelName) {
+  return modelName.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
 }
 
 // Table name → PascalCase singular model name
@@ -154,8 +164,17 @@ function detectEnumFromCheck(tableSql, columnName) {
 // Is this predicate exactly the clause @@softDelete already adds to every index
 // on the model? Then it round-trips as a plain @@index — and MUST, because
 // declaring it is refused as a line with no effect.
+// Either spelling of the column, because `@map` means the FIELD is `deletedAt`
+// and the COLUMN this reads is whatever the schema named — a schema written
+// against an existing database spells it `deleted_at` and the clause in the
+// index is the column's (`FJS-761`). One owner, shared with the detection at
+// the top of the model, or the two disagree about whether a model soft-deletes
+// and the clause is then read as part of the author's own predicate.
+const SOFT_DELETE_COLS = ['deletedAt', 'deleted_at']
+const SOFT_DELETE_RE   = `"?(?:${SOFT_DELETE_COLS.join('|')})"?`
+
 function isSoftDeleteClause(where) {
-  return /^\(?\s*"?deletedAt"?\s+IS\s+NULL\s*\)?$/i.test(where ?? '')
+  return new RegExp(`^\\(?\\s*${SOFT_DELETE_RE}\\s+IS\\s+NULL\\s*\\)?$`, 'i').test(where ?? '')
 }
 
 // SQLite's words for a referential action are not .lite's, and the translation
@@ -183,7 +202,7 @@ const FK_ACTION = {
 // can run twice.
 function declaredPredicate(where, hasSoftDelete) {
   if (!where || !hasSoftDelete) return where
-  const m = /^\s*\(?\s*"?deletedAt"?\s+IS\s+NULL\s*\)?\s+AND\s+\(([\s\S]+)\)\s*$/i.exec(where)
+  const m = new RegExp(`^\\s*\\(?\\s*${SOFT_DELETE_RE}\\s+IS\\s+NULL\\s*\\)?\\s+AND\\s+\\(([\\s\\S]+)\\)\\s*$`, 'i').exec(where)
   return m ? m[1] : where
 }
 
@@ -329,7 +348,7 @@ export function introspectToLite(db, { camelCase = true } = {}) {
     }
 
     // Detect soft delete
-    const hasSoftDelete = columns.some(c => c.name === 'deletedAt' || c.name === 'deleted_at')
+    const hasSoftDelete = columns.some(c => SOFT_DELETE_COLS.includes(c.name))
 
     lines.push(`model ${modelName} {`)
 
@@ -435,10 +454,12 @@ export function introspectToLite(db, { camelCase = true } = {}) {
             'dropped whole — @unique without the predicate is STRONGER than the source')
       }
 
-      // camelCase columns that differ from their DB name
-      if (camelCase && fieldName !== col.name) {
-        attrs.push(`@map("${col.name}")`)
-      }
+      // camelCase columns that differ from their DB name.
+      //
+      // Carried, not a gap: `@map` names the column the engine reads and writes
+      // (`FJS-761`), so the camelCase reading is the one this tool defaults to
+      // and the schema it writes reads the database it came from.
+      if (camelCase && fieldName !== col.name) attrs.push(`@map("${col.name}")`)
 
       // A generated column reads like an ordinary one and is not one — nothing
       // writes it. Emitting it bare would produce a schema that says the column
@@ -468,6 +489,16 @@ export function introspectToLite(db, { camelCase = true } = {}) {
 
     // Model-level attributes
     const modelAttrs = []
+
+    // The name is derived BACKWARDS here and forwards by `ddl.js`, and the two
+    // are not inverses: `orders` → `Order` → `order`. Every plural-table
+    // database — which is Rails, Django, Laravel and most hand-written SQL —
+    // therefore produced a schema whose every model named a table that does not
+    // exist, and the first read was `no such table`. `@@map` is the escape
+    // hatch, stated whenever the round trip does not land back on the real
+    // name, which is the only fact this can check.
+    if (tableNameFromModel(modelName) !== tableName)
+      modelAttrs.push(`  @@map("${tableName}")`)
 
     if (!strict) modelAttrs.push('  @@noStrict')
     if (hasSoftDelete) modelAttrs.push('  @@softDelete')
@@ -568,6 +599,80 @@ export function introspectToLite(db, { camelCase = true } = {}) {
         modelAttrs.push(`  // NOTE: index "${idx.name}" was partial — WHERE (${declared}). `
                       + `A plain index answers the same rows and is only larger; the predicate is not one .lite can hold.`)
       }
+    }
+
+    // ─── uniqueness the TABLE declares ───────────────────────────────────
+    //
+    // `email TEXT UNIQUE` and `UNIQUE (a, b)` build IMPLICIT indexes, whose
+    // `sql` in `sqlite_master` is NULL — so the index walk above reaches
+    // neither, and both were dropped with nothing said. A database adopted
+    // through this door then declared no uniqueness at all, and `--strict`
+    // passed: the one construct whose absence a later `db push` would ENFORCE
+    // by rebuilding the table without it.
+    //
+    // `PRAGMA index_list` is where they are, which is the same reader the
+    // migration differ uses for the same blind spot one layer over. `origin`
+    // separates them: 'pk' is the primary key (already emitted), 'c' is an
+    // explicit CREATE UNIQUE INDEX (the walk above has it), 'u' is a table
+    // constraint and is what this carries.
+    const declaredUniques = (tableData.uniques ?? []).filter(u => u.origin === 'u')
+
+    for (const u of declaredUniques) {
+      const fields = u.cols.map(nameOf)
+      // A single column is said on the field, where a reader looks for it —
+      // unless the walk above already put it there off an explicit index.
+      if (fields.length === 1) {
+        const line = lines.findIndex(l => new RegExp(`^  ${fields[0]}\\s`).test(l))
+        if (line !== -1 && !/@unique/.test(lines[line])) lines[line] += '  @unique'
+        continue
+      }
+      // A composite naming a NULLABLE column is refused at parse (`FJS-D130`),
+      // and a schema that will not parse is not an import. The database has the
+      // constraint either way, so it is handed over rather than approximated.
+      const nullable = u.cols.filter(c => columns.find(col => col.name === c && !col.notnull))
+      if (nullable.length) {
+        gap('table-unique', modelName, null, `UNIQUE (${u.cols.join(', ')})`,
+            `dropped — a composite @@unique naming a nullable column (${nullable.map(nameOf).join(', ')}) is a parse error`)
+        modelAttrs.push(`  // FIXME: the table declares UNIQUE (${u.cols.join(', ')}), and .lite refuses a composite `
+                      + `@@unique over a nullable column — two NULLs never compare equal, so the constraint holds `
+                      + `only where nobody doubted it. State nullsDistinct: true to mean it, or move the column into a where:.`)
+        continue
+      }
+      modelAttrs.push(`  @@unique([${fields.join(', ')}])`)
+    }
+
+    // ─── CHECK ───────────────────────────────────────────────────────────
+    //
+    // Carried only when every identifier in it survives unrenamed. The stored
+    // text names COLUMNS and `@@check` is written in FIELD names, so a table
+    // whose columns were camelCased would emit an expression naming columns
+    // that no longer exist under those spellings — a schema that builds a
+    // constraint against the wrong thing is worse than one that says it could
+    // not carry it. The enum detector has already consumed `col IN (...)`.
+    // A CHECK that became an ENUM has already been carried, in the one form
+    // this language has for it — the column's type. Emitting it again as a
+    // @@check would restate the same rule twice, and the second copy names
+    // string literals the enum has since given names to.
+    const asEnum = new Set(columns
+      .filter(c => columnEnumMap[`${tableName}.${c.name}`])
+      .map(c => c.name))
+
+    for (const expr of tableData.checks ?? []) {
+      if (!expr) continue
+      if ([...asEnum].some(c => new RegExp(`(^|[^\\w"])"?${c}"?\\s+IN\\s*\\(`, 'i').test(expr))) continue
+
+      // `@@check` is written in FIELD names, and a camelCase reading renames the
+      // columns it references — so the expression is rewritten into the names
+      // this model actually declares. `mapIdentifiers` is the same walk `ddl.js`
+      // runs in the other direction when it emits the constraint, which is what
+      // makes the round trip exact; a word this table has no column for is a
+      // function or a keyword and is left alone.
+      const byColumn = new Map(columns.map(c => [c.name, nameOf(c.name)]))
+      const rewritten = mapIdentifiers(expr, (id) => {
+        const field = byColumn.get(id)
+        return field && field !== id ? field : null
+      })
+      modelAttrs.push(`  @@check(${JSON.stringify(rewritten)})`)
     }
 
     for (const line of lostUnique) modelAttrs.push(line)

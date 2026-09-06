@@ -258,6 +258,36 @@ export function sqliteRow({ db, sql, params = [], expect, name, run = runArgv })
   return fail(label, expect ? 'the rows to match' : 'at least one row', `${rows.length} row(s)`, r.stdout.slice(0, 400))
 }
 
+/** Run statements against a SQLite file — the write half of `sqliteRow`, and
+ *  through the same subprocess for the same reason.
+ *
+ *  `fli` runs on NODE (its own shebang), and `bun:sqlite` cannot be imported
+ *  there: a step that opened a database in-process worked under `bun fli.js` and
+ *  failed for every person who typed `fli`, with an ESM loader error naming a
+ *  protocol rather than the lesson. Bun is a hard requirement of the framework
+ *  anyway — the app runs on it — so shelling out to it is the honest answer, and
+ *  it makes both directions runner-independent.
+ *
+ *  The two `bun -e` traps `sqliteRow` documents apply here unchanged: the first
+ *  argument is at argv[1], and an uncaught throw exits 0 with nothing on stderr,
+ *  so the script catches and sets its own code.
+ */
+export function sqliteExec({ db, statements, name, run = runArgv }) {
+  const label  = name ?? `${statements.length} statement(s)`
+  const script =
+    'try {' +
+    '  const { Database } = require("bun:sqlite");' +
+    '  const d = new Database(process.argv[1]);' +
+    '  for (const sql of JSON.parse(process.argv[2])) d.run(sql);' +
+    '  d.close();' +
+    '  console.log("ok");' +
+    '} catch (e) { console.error(String((e && e.message) || e)); process.exit(1) }'
+
+  const r = run('bun', ['-e', script, db, JSON.stringify(statements)])
+  if (r.code !== 0) return fail(label, 'every statement to run', r.stderr || r.error || `exit ${r.code}`)
+  return ok(label, 'every statement to run', `${statements.length} applied`)
+}
+
 // ─── docker ───────────────────────────────────────────────────────────────────
 
 export function dockerRunning({ container, name, run = runArgv }) {
@@ -287,6 +317,32 @@ export function commandExists({ bin, name, run = runArgv }) {
   return fail(label, `${bin} on PATH`, 'it is not installed, or not on this PATH')
 }
 
+// ─── a command, run ───────────────────────────────────────────────────────────
+//
+// The exit code AND what it printed, because the two answer different
+// questions: `bun test` with no test files exits 0, and `litestone mutate`
+// exits 0 whatever the score. A step asserting only the code is asserting that
+// the binary exists.
+//
+// argv, never a shell string, for `runArgv`'s reason.
+
+export function command({ bin, args = [], cwd, env, needle, expect = 0, name, describe, run = runArgv }) {
+  const label = name ?? `${bin} ${args.join(' ')}`
+  const r     = run(bin, args, { cwd, ...(env ? { env: { ...process.env, ...env } } : {}) })
+  const out   = `${r.stdout}\n${r.stderr}`.trim()
+  const tail  = out.split('\n').slice(-25).join('\n')
+
+  if (r.code !== expect)
+    return fail(label, describe ?? `exit ${expect}`, `exit ${r.code}${r.error ? ` — ${r.error}` : ''}`, tail)
+
+  if (needle === undefined) return ok(label, describe ?? `exit ${expect}`, `exit ${r.code}`, out)
+
+  const found = needle instanceof RegExp ? needle.test(out) : out.includes(needle)
+  return found
+    ? ok(label, describe ?? String(needle), 'it is in the output', out)
+    : fail(label, describe ?? String(needle), 'it is not in the output', tail)
+}
+
 // ─── the diagnosis ────────────────────────────────────────────────────────────
 //
 // The whole deliverable of a failed step. A stack trace tells somebody learning
@@ -298,6 +354,44 @@ export function commandExists({ bin, name, run = runArgv }) {
 
 // The leading mark is the LOGGER's — `context.log.error` prints its own ✗, and
 // a mark here too gave every failed step a `✗ ✗`. What this owns is the block.
+// ─── the page ─────────────────────────────────────────────────────────────────
+//
+// A page is a PROCESS, so these take one already open rather than opening their
+// own: launching Chrome per assertion costs half a second each, and a lesson
+// that opened five would be five browsers. `core/browser.js` owns the launch;
+// the lesson owns the lifetime, the same split it makes for a server.
+
+/** Evaluate an expression in the page until it satisfies `expect`.
+ *
+ *  Retried by default, because a page is asynchronous in a way an HTTP response
+ *  is not: the markup arrives, then the module, then the mount, then the fetch
+ *  the mount made. Asking once asks before the answer exists. */
+export async function pageEval({ page, ask, expect, describe, name, retries = 20, everyMs = 250 }) {
+  const label = name ?? ask
+  let last, err
+  for (let i = 0; i < retries; i++) {
+    try { last = await page.eval(ask); err = null }
+    catch (e) { err = e; last = undefined }
+    if (!err && (expect ? expect(last) : Boolean(last)))
+      return { ...ok(label, describe ?? 'the page to answer', JSON.stringify(last)), value: last }
+    if (i < retries - 1) await wait(everyMs)
+  }
+  if (err) return fail(label, describe ?? 'the page to answer', `it threw: ${err.message}`)
+  return fail(label, describe ?? 'the page to answer', `it answered ${JSON.stringify(last)}`,
+    page.errors.length ? page.errors.slice(-5).join('\n') : undefined)
+}
+
+/** Nothing threw and nothing was logged as an error while the page was open.
+ *
+ *  Its own probe, because a component that throws while rendering still leaves a
+ *  PARTIAL tree — so an assertion about what is on the page walks straight past
+ *  a broken render and reports it as working. */
+export function pageClean({ page, name = 'the page reported no errors' }) {
+  if (!page.errors.length) return ok(name, 'no exceptions and no console errors', 'none')
+  return fail(name, 'no exceptions and no console errors',
+    `${page.errors.length}`, page.errors.slice(0, 8).join('\n'))
+}
+
 export function formatFailure(result, { likely, reproduce, continues = [] } = {}) {
   const pad   = (label) => `    ${label.padEnd(10)}`
   const lines = [result.name]

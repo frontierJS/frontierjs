@@ -114,7 +114,7 @@ Four words, and they are not a ladder. This table is the whole decision.
 - **`@guarded`** — locked both directions, `asSystem()` only. Not a level:
   `@guarded(5)` does not parse. A **required** `@guarded` column makes the
   model uncreatable below level 8.
-- **`@secret`** — exactly `@encrypted @guarded(all)`. Writing both by hand is
+- **`@secret`** — exactly `@encrypted @guarded`. Writing both by hand is
   this word spelled out.
 
 Above the columns sit two model-level words that answer different questions:
@@ -147,7 +147,6 @@ Ranked by how often training data produces them.
 | `take:` / `skip:` in a query | `limit:` / `offset:` — both are refused by name |
 | `datasource` / `generator` blocks | `database <name> { … }` |
 | `@db.VarChar(80)` | `@length(0, 80)` |
-| `@@softDeleteCascade` | `@@softDelete(cascade)` — the old word is removed |
 | `@@index([deletedAt])` beside `@@softDelete` | nothing — the index is implied, and declaring it is **refused by name** as a duplicate |
 | snake_case columns | verbatim camelCase, or `@map("column_name")` |
 | a service hook checking a role | `@@gate` / `@@allow` |

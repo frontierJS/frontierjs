@@ -59,7 +59,7 @@ export function createBackupsService(app: BasecampApp) {
      * Ask for one now.
      *
      * Refuses while another is in flight. Two concurrent `VACUUM INTO`s on one
-     * database are not a corruption risk — SQLite serialises them — but they are
+     * database are not a corruption risk — SQLite serializes them — but they are
      * two archives of the same bytes taken a second apart, and the second one
      * doubles how long the first takes for no reason anybody would want.
      */

@@ -1,5 +1,18 @@
 # Changes — @frontierjs/jetty
 
+## 2026-09-05 — a hook that breaks the chain is refused by name (`FJS-823`)
+
+The same two lines sierra had, hand-copied: `return ctx.result` after the around
+chain, and again on error-hook recovery. An `around` that forgot `next()`, one
+that swallowed the failure, and an `error` hook that cleared `ctx.error` without
+setting a result all answered the `null` the context was born with.
+
+The detection is `@frontierjs/toolbelt/hooks`' `hookContext`/`answered` and the
+message is its `hookChainMessage`, so the two packages cannot drift on which
+phase or the way out. The Error class stays here — each package's errors are its
+own surface — and `ResourceHookError` is exported from `src/resources/index.js`.
+Four cases in `test/phase3.test.js`, each paired with the legitimate hook.
+
 ## 2026-08-26 — a pushed record is graded against the loaded query (`FJS-493`)
 
 The store upserted every record its channel delivered. But a record is an

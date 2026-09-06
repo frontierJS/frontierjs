@@ -23,19 +23,45 @@
 
 import { swapInstances } from './swap.js'
 
-const _registry = new Map()   // id → Set<entry>
+// Exported so a test can see what the registry HOLDS. The leak below is
+// invisible from the swap, which drops a detached entry either way.
+export const _registry = new Map()   // id → Set<entry>
+
+/**
+ * Drop entries whose anchor has left the document.
+ *
+ * An entry retains a detached anchor, the marker, the props and the block for
+ * the life of the tab, and until this the only thing that removed one was a
+ * swap — which runs only when that file is edited. Every route change, every
+ * `{#if}` that tears a component down and every list re-render added one that
+ * nothing would ever collect.
+ */
+function prune(set, id) {
+  for (const entry of set) {
+    if (!entry.hmrMark || !entry.anchor?.isConnected) set.delete(entry)
+  }
+  if (!set.size) _registry.delete(id)
+}
 
 export function __mesa_register(id, hmrMark, anchor, props, block, fn) {
   if (!_registry.has(id)) _registry.set(id, new Set())
+  const set = _registry.get(id)
+  // On the way in, so a component that mounts and unmounts repeatedly — a route
+  // the developer keeps navigating back to — cannot accumulate.
+  prune(set, id)
   const entry = { hmrMark, anchor, props, block, fn }
-  _registry.get(id).add(entry)
+  _registry.set(id, set)
+  set.add(entry)
   return () => {
-    const set = _registry.get(id)
     if (set) { set.delete(entry); if (!set.size) _registry.delete(id) }
   }
 }
 
 export function __mesa_hot_update(id, newFn) {
+  // Every id, not just this one: an edit is the only moment a component the
+  // developer has navigated away from and will not mount again is reachable.
+  for (const [key, set] of _registry) prune(set, key)
+
   const entries = _registry.get(id)
   if (!entries?.size) {
     // Nothing to swap in place. Invalidating this module escalates to the full

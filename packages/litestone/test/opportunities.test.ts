@@ -73,7 +73,7 @@ describe('credential-column-in-plain-text', () => {
   })
 
   test('@guarded grades DOWN rather than clearing — it is an access lock, not at rest', () => {
-    const f = found(`model Session { id Int @id  token String @guarded(all) }`, ID)
+    const f = found(`model Session { id Int @id  token String @guarded }`, ID)
     expect(f.map(x => x.confidence)).toEqual(['possible'])
     expect(f[0].message).toContain('plaintext at rest')
   })

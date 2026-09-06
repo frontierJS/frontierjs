@@ -12,33 +12,18 @@
  * a build emits one HTML file per route. So a prerendered site got the script
  * on its home page and every other page flashed, which reads as an intermittent
  * bug rather than a missing file (`FJS-501`). The number of pages is not
- * something this step can know in advance, so it asks the directory.
+ * something this step can know in advance, so it asks the directory — through
+ * `html-files.js`, which the two steps beside it in the pipeline also ask.
  *
  * Only runs when theme config is present in sierra.config.js.
  */
 
-import { readFile, writeFile, readdir } from 'fs/promises'
-import { join, relative } from 'path'
+import { readFile, writeFile } from 'fs/promises'
+import { relative } from 'path'
+import { htmlFiles } from './html-files.js'
 // From theme/script.js, not theme/index.js: this runs in Node during the
 // build, and theme/index.js pulls in the client signal runtime.
 import { buildThemeScript } from '../theme/script.js'
-
-/** Every .html under dir, at any depth. `assets/` holds no pages. */
-async function htmlFiles(dir, base = dir) {
-  const out = []
-  let entries
-  try { entries = await readdir(dir, { withFileTypes: true }) } catch { return out }
-  for (const e of entries) {
-    const full = join(dir, e.name)
-    if (e.isDirectory()) {
-      if (e.name === 'assets' || e.name === 'node_modules') continue
-      out.push(...await htmlFiles(full, base))
-    } else if (e.name.endsWith('.html')) {
-      out.push(full)
-    }
-  }
-  return out
-}
 
 /**
  * @param {object} themeConfig — sierra.config.js theme object

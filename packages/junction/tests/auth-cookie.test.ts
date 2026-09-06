@@ -186,7 +186,11 @@ describe('session from a cookie, over the WebSocket upgrade', () => {
   // silent — with no error anywhere, because an unauthenticated socket is a
   // legitimate state. That is the failure this test exists for.
 
-  const PORT = 3396
+  // Port 0, read back after start(). A fixed port here was `FJS-900`: several
+  // files in this package bound the same one and bun runs them in ONE process,
+  // so an app answered while a previous file's app on that port was still
+  // shutting down. Never hard-code a port in this package's tests.
+  let PORT = 0
 
   function connect(headers: Record<string, string>) {
     const ws = new WebSocket(`ws://localhost:${PORT}/sock`, { headers } as any)
@@ -206,7 +210,7 @@ describe('session from a cookie, over the WebSocket upgrade', () => {
 
   it('the socket knows who you are from the cookie', async () => {
     const app = createApp({
-      config: { ...defaultConfig, port: PORT, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      config: { ...defaultConfig, port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
       auth: oneTokenAuth('tok-ws', { userId: 'wsuser' }),
     })
     app.http.setAuthCookie('session')
@@ -214,6 +218,7 @@ describe('session from a cookie, over the WebSocket upgrade', () => {
       open(ctx: any) { ctx.send(JSON.stringify({ userId: ctx.user?.userId ?? null })) },
     })
     await app.start()
+    PORT = (app as unknown as { http: { port: number } }).http.port
 
     try {
       const authed = connect({ cookie: 'session=tok-ws' })

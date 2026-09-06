@@ -23,6 +23,87 @@
  * which is not a fact with two owners but two facts.
  */
 
+/*
+ * Did anything actually produce an answer?
+ *
+ * Three ordinary hook mistakes end the pipeline with nothing having run: an
+ * `around` that returns without calling `next()`, an `around` that catches the
+ * failure and does not rethrow, and an `error` hook that clears `ctx.error`
+ * without setting a result. All three then resolve the call to the `result`
+ * the context was BORN with — `null` — which reads to a caller as an answer.
+ * `(await r.service.find()).data` is a TypeError one hop from the mistake, and
+ * the stack names the app's own screen.
+ *
+ * `null` is also a legitimate answer (a `get` for a row that is not there), so
+ * the value cannot be the test. What separates them is whether anything ever
+ * ASSIGNED it, which is why `result` is an accessor rather than a field: an
+ * assignment by the transport, by an `around` short-circuiting on purpose, or
+ * by a recovering `error` hook all count, and only a chain nobody completed
+ * leaves it untouched.
+ */
+const TOUCHED = Symbol('toolbelt.hooks.resultAssigned')
+
+/**
+ * A hook context whose `result` remembers whether it was ever set.
+ *
+ * Pure: answers a NEW object and does not touch `base`. `result` stays
+ * enumerable and reads back as an ordinary property, so a hook spreading the
+ * context still copies the value — it just copies it as a plain field, which
+ * is what a spread of any accessor does.
+ *
+ * @param {object} base  the context's fields, `result` included
+ * @returns {object}
+ */
+export function hookContext(base) {
+  let value = base?.result ?? null
+  const ctx = { ...base }
+  Object.defineProperty(ctx, TOUCHED, { value: false, writable: true, enumerable: false })
+  Object.defineProperty(ctx, 'result', {
+    enumerable: true,
+    configurable: true,
+    get: () => value,
+    set: (v) => { value = v; ctx[TOUCHED] = true },
+  })
+  return ctx
+}
+
+/**
+ * Has anything set `ctx.result`? False for a context from anywhere but
+ * `hookContext`, so a caller that has not adopted it is never told its
+ * pipeline broke.
+ *
+ * @param {object} ctx
+ * @returns {boolean}
+ */
+export function answered(ctx) {
+  return ctx?.[TOUCHED] === true
+}
+
+/**
+ * What to tell someone whose pipeline ended without an answer.
+ *
+ * The WORDS live here and the Error class does not: this package's license is
+ * that every export is a pure function (`FJS-D26`), and both callers want an
+ * error of their own type carrying their own fields. What would drift between
+ * two hand-written messages is the half that matters — which phase, and the
+ * two ways out — so that is the half with one owner.
+ *
+ * @param {string} service
+ * @param {string} method
+ * @param {'around'|'error'} phase
+ * @returns {string}
+ */
+export function hookChainMessage(service, method, phase) {
+  const way = phase === 'error'
+    ? 'An error hook cleared ctx.error but set no ctx.result, so the failure was '
+      + 'discarded and nothing replaced it. Set ctx.result to what the call should '
+      + 'resolve to, or leave ctx.error alone to let it throw.'
+    : 'An around hook returned without calling next(), or caught the failure and did '
+      + 'not rethrow. Call next(), set ctx.result to short-circuit with an answer, or '
+      + 'rethrow.'
+  return `${service}.${method}: the ${phase} hooks ended the call without an answer. ${way}`
+}
+
 /** Run a list of hooks in order, awaiting each. An empty or absent list is a no-op. */
 export async function runHooks(list, ctx) {
   if (!list?.length) return

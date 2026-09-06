@@ -223,9 +223,13 @@ defaults to whatever `dev` is, and the path in it is relative to `locRoot`.
   it had copied one. `injectHMR(js, id, root, clientId)` takes the client id,
   since each plugin serves the client at a virtual id of its own. **Ask
   `canInject` first**: the two patterns it tests are shapes of the compiler's
-  OUTPUT, and a `.replace()` whose pattern stops matching is silent — failing
-  closed keeps a file on the full-reload path instead of shipping half a
-  boundary. **`__setMark` goes on the NEW function**, the one handed to
+  OUTPUT, and a `.replace()` whose pattern stops matching is silent. **Failing
+  closed is injecting NO accept**: an injected one makes the module self-accept,
+  so Vite escalates nothing and a boundary that cannot swap swallows every edit
+  instead of falling back to a reload (`FJS-865`). The CLIENT is asked the same
+  question before a boundary is injected, since a stub client behind a live
+  accept is that same silence. **`__setMark` goes on the NEW function**, the one
+  handed to
   `__mesa_hot_update`; setting it on the old module's leaves the new
   `__hmrMark` undefined, so the first update registers `hmrMark: undefined` and
   the second drops the entry as stale — HMR worked once per page load and then
@@ -237,24 +241,33 @@ defaults to whatever `dev` is, and the path in it is relative to `locRoot`.
   path. `client-source.js` is the one owner of that join and fails closed. The
   split exists because jetty performs the same swap (`FJS-259`) — which is also
   why `swap.js` carries **no `import.meta` and no imports**: jetty bundles it
-  into MV3 content scripts, and those are classic scripts (`FJS-030`).
+  into MV3 content scripts, and those are classic scripts (`FJS-030`). **The
+  registry the client keeps is swept on the way in and on every update**, not
+  only by the swap: a swap runs when that one file is edited, so a route
+  navigated away from left its marker, anchor, props and block retained for the
+  life of the tab (`FJS-875`).
 - **A Vite plugin test runs in Node, not happy-dom.** This package's vitest
   environment is happy-dom, whose global `URL` makes
   `fileURLToPath(new URL('./devtools.html', import.meta.url))` throw *must be of
   scheme file* — against a path that is perfectly fine in a real dev server. Put
-  `// @vitest-environment node` at the top of the file. The four plugin suites
-  are `vite-plugin` (hooks), `vite-devtools` (the route, against both copies of
-  it), `vite-compiler-resolution` (a stub compiler is the point there, nowhere
-  else) and `vite-server`, which starts a real dev server in middleware mode —
-  the only one that can see a hook that is never REACHED.
+  `// @vitest-environment node` at the top of the file. The plugin suites are
+  `vite-plugin` (hooks), `vite-devtools` (the route, against both copies of it,
+  and neither of them in a build), `vite-compiler-resolution` (a stub compiler
+  is the point there and in the two below, nowhere else), `vite-hmr-failclosed`
+  (the boundary REFUSING — the shape `canInject` rejects, and a client that
+  cannot be assembled), and the two that start a real dev server in middleware
+  mode, `vite-server` and `vite-server-failclosed` — the only ones that can see
+  a hook that is never REACHED, or ask Vite what it concluded about a module it
+  served.
 - **`css` on the compiler is a DESTINATION, not a switch.** Truthy inlines the
   scoped rules as `$$runtime.addStyles(id, …)`; falsy extracts them onto
   `ctx.css.result` and emits nothing, so a caller that does not place them has
   silently dropped every style. Both Vite plugins inline. The Vite plugin's own
   `css: false` therefore means *drop the block*, and says so (`FJS-291`).
-- **The compiler is resolved ONCE per module instance**, not per plugin. Two
-  plugins in one Vite config share whichever compiler was asked for first, so a
-  second instance's `compilerPath` is ignored in silence.
+- **The compiler is resolved once per PLUGIN INSTANCE.** Two plugins in one
+  Vite config — the ordinary case (`FJS-D16`) — each keep the compiler they
+  asked for. A memo at module scope handed the second whichever compiler
+  resolved first and dropped its `compilerPath` in silence (`FJS-880`).
 - **A running dev server never re-transforms.** Editing `compiler.js` invalidates
   nothing in a server that is already up — restart it, or the fix "does not work".
   In-repo consumers must import mesa by **relative path**, not `@frontierjs/mesa`:
@@ -364,4 +377,4 @@ drives over one harness, shared with `@frontierjs/ui` (`drive.mjs`,
 
 `bun run test` — which now includes the two gating browser drives — then,
 because SSR and hydration fail apart, both of `example`: `bun run verify` and
-`bun run verify:public`. See the root `CLAUDE.md` §Running things.
+`bun run verify:site`. See the root `CLAUDE.md` §Running things.

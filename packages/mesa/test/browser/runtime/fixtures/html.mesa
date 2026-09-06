@@ -1,0 +1,25 @@
+<script>
+  // html.mesa — {@html}, the one construct that parses caller data as markup.
+  //
+  // Everything asserted here happens at runtime and nothing about it is visible
+  // in the emitted module, which is where the whole suite had been looking:
+  // `setInnerHTML` tracks the nodes it injected and removes them on the next
+  // run, and deleting that removal keeps every substring assertion green while
+  // every reactive {@html} appends instead of replacing (FJS-869).
+  let markup = '<b class="mark">one</b>'
+  let count = 0
+
+  function replace() { markup = '<i class="mark">two</i>'; count++ }
+  function grow()    { markup = '<b class="mark">a</b><b class="mark">b</b>'; count++ }
+  function clear()   { markup = ''; count++ }
+  function nullify() { markup = null; count++ }
+</script>
+
+<div id="host">before{@html markup}after</div>
+
+<p id="runs">{count}</p>
+
+<button type="button" id="replace" on:click={replace}>replace</button>
+<button type="button" id="grow"    on:click={grow}>grow</button>
+<button type="button" id="clear"   on:click={clear}>clear</button>
+<button type="button" id="nullify" on:click={nullify}>nullify</button>

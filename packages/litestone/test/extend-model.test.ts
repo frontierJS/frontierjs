@@ -11,7 +11,7 @@
 // models in and edit them.
 //
 // A copy stops being the package's the first time either side moves, and
-// NOTHING FAILS: basecamp's carried `@guarded(all)` where the package writes
+// NOTHING FAILS: basecamp's carried `@guarded` where the package writes
 // `@secret`, so every OAuth token it stored was in plain text, with 137 green
 // tests either side of the divergence. That is the failure this feature is
 // measured against, and it is why every rule below refuses rather than resolves.
@@ -36,7 +36,7 @@ model User {
 model Session {
   id        String   @id @default(uuid())
   userId    String
-  token     String   @unique @guarded(all)
+  token     String   @unique @guarded
   expiresAt DateTime
   @@db(main)
   @@gate("8")
@@ -129,7 +129,7 @@ describe('extend model refuses', () => {
 
   test('a field the model already declares', () => {
     // Redefining a package's column is the copy this feature exists to remove:
-    // it is how `@secret` became `@guarded(all)` and nobody noticed.
+    // it is how `@secret` became `@guarded` and nobody noticed.
     const err = bad(HOST + `extend model Session { token String }`)
     expect(err).toContain("field 'token' is already declared")
   })
@@ -166,7 +166,7 @@ describe('extend model across an import', () => {
 model Session {
   id        String   @id @default(uuid())
   userId    String
-  token     String   @unique @guarded(all)
+  token     String   @unique @guarded
   expiresAt DateTime
   @@db(main)
   @@gate("8")

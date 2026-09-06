@@ -149,12 +149,12 @@ open editor correctly stale after one lands.
 @guarded                         system-context column: stripped from every read, refused on
                                  every write, and refused in a where/orderBy/distinct/cursor
                                  — naming it recovers it — unless asSystem()
-@guarded(all)                    the same, and an explicit select cannot unlock the read
+@guarded                    the same, and an explicit select cannot unlock the read
 @encrypted                       AES-256-GCM at rest — hidden from a non-system read, and
                                  writable by a non-system caller
 @encrypted(deterministic: true)  IV derived from the value — equality WHERE works, and it reads back
 @hashed                          HMAC-SHA256, one-way — matchable in a WHERE, never readable
-@secret                          @encrypted + @guarded(all) + @log(auditDb)
+@secret                          @encrypted + @guarded + @log(auditDb)
 @secret(rotate: false)           same but excluded from $rotateKey — and therefore
                                  unreadable after one, since the key swap is global.
                                  $rotateKey refuses while one exists
@@ -587,8 +587,7 @@ model Person {
                                  are each refused BY NAME at parse. A @generated one is the
                                  case it exists for. Undeclared, the client guesses from
                                  eight conventional column names and says that it guessed
-@@strict                         SQLite STRICT mode (default)
-@@noStrict                       opt out of STRICT mode
+@@noStrict                       opt out of STRICT mode (strict is the default)
 ```
 
 ### Conditional uniqueness (`@@unique(where:)`)

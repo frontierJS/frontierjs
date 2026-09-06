@@ -170,7 +170,7 @@ const PROBE = `
 
   // Everything the loader said, in order. A subsumed island used to reach
   // mount() with a detached anchor and get logged as a load failure — correct
-  // behaviour, reported as breakage.
+  // behavior, reported as breakage.
   out.islandLog = (window.__islandLog ?? []).filter(m => m.includes('[Sierra islands]'));
 
   document.title = 'RESULT' + JSON.stringify(out);

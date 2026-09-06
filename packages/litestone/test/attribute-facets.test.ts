@@ -82,6 +82,16 @@ describe('a default the column cannot hold', () => {
     refuses(`model D { id Int @id\n  p Int @money(USD) @default(12.99) }`, /@default\(1299\)/)
   })
 
+  it('states the value in the CURRENCY minor units, not in hundredths', () => {
+    // The yen's minor unit is the yen and the dinar has three, so a suggestion
+    // built from a fixed 100 is advice that is wrong by a hundred one way and a
+    // thousand the other.
+    refuses(`model D { id Int @id\n  p Int @money(JPY) @default(1.5) }`, /@default\(2\)/)
+    refuses(`model D { id Int @id\n  p Int @money(KWD) @default(1.5) }`, /@default\(1500\)/)
+    // A bare @money is the app's own currency and is not knowable here.
+    refuses(`model D { id Int @id\n  p Int @money @default(12.99) }`, /@default\(1299\)/)
+  })
+
   it('accepts the same default written in minor units', () => {
     accepts(`model D { id Int @id\n  p Int @scale(2) @default(1299) }`)
     accepts(`model D { id Int @id\n  p Int @money(USD) @default(1299) }`)

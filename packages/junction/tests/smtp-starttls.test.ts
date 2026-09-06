@@ -13,12 +13,9 @@
 // two questions that actually failed, and neither needs one.
 
 import { describe, it, expect } from 'bun:test'
-import { dirname, join }        from 'node:path'
-import { fileURLToPath }        from 'node:url'
 
-import { SmtpError } from '../src/mail/smtp.ts'
+import { SmtpError, sendMail } from '../src/mail/smtp.ts'
 
-const HERE = dirname(fileURLToPath(import.meta.url))
 
 describe('the socket API the mailer depends on', () => {
 
@@ -51,37 +48,57 @@ describe('the socket API the mailer depends on', () => {
 describe('a server that advertises STARTTLS', () => {
 
   it('is answered with an upgrade attempt, not a TypeError', async () => {
-    // Run OUT OF PROCESS, and that is not incidental. `tests/email.test.ts`
-    // calls `mock.module()` on the smtp shim, which re-exports this module and
-    // whose replacement is process-wide and never undone — so an in-process
-    // version of this test passed alone and graded a mock inside the suite,
-    // reaching the real client not once.
+    // In process. It ran in a subprocess for its whole life because
+    // `tests/email.test.ts` called `mock.module()` on the smtp shim, which
+    // re-exports this module and whose replacement bun applies process-wide and
+    // never undoes — so an in-process version passed alone and graded a mock
+    // inside the suite, reaching the real client not once. The sender takes an
+    // injected transport now and that file mocks nothing, so the fork has no
+    // cause left (`FJS-908`).
     //
-    // The child stands up a minimal SMTP server that greets, advertises
-    // STARTTLS and accepts the command, then does nothing: there is no
-    // certificate here, so the handshake cannot complete. WHICH failure is the
-    // assertion — a TLS or connection error means the upgrade was attempted, a
-    // TypeError about a missing method means it was not.
-    const proc = Bun.spawnSync({
-      cmd: ['bun', join(HERE, 'fixtures', 'smtp-starttls-probe.ts')],
-      cwd: HERE,
-      stdout: 'pipe',
-      stderr: 'pipe',
+    // The server greets, advertises STARTTLS and accepts the command, then does
+    // nothing: there is no certificate here, so the handshake cannot complete.
+    // WHICH failure is the assertion — a TLS or connection error means the
+    // upgrade was attempted, a TypeError about a missing method means it was
+    // not.
+    const seen: string[] = []
+    const server = Bun.listen({
+      hostname: '127.0.0.1',
+      port:     0,
+      socket: {
+        open(sock) { sock.write('220 test.invalid ESMTP\r\n') },
+        data(sock, data: Buffer) {
+          const line = data.toString('utf8').trim()
+          seen.push(line.split(' ')[0]!.toUpperCase())
+
+          if (line.toUpperCase().startsWith('EHLO'))   sock.write('250-test.invalid\r\n250-STARTTLS\r\n250 AUTH PLAIN LOGIN\r\n')
+          else if (line.toUpperCase() === 'STARTTLS')  sock.write('220 Ready to start TLS\r\n')
+          else                                         sock.write('502 Not implemented\r\n')
+        },
+        close() {}, error() {},
+      },
     })
 
-    const out = proc.stdout.toString().trim()
-    expect(out, proc.stderr.toString()).not.toBe('')
+    let message = ''
+    try {
+      await sendMail(
+        { host: '127.0.0.1', port: server.port, user: 'u', pass: 'p' },
+        { from: 'a@test.invalid', to: 'b@test.invalid', subject: 's', text: 't' },
+      )
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err)
+    } finally {
+      server.stop(true)
+    }
 
-    const result = JSON.parse(out.split('\n').pop()!) as { seen: string[]; message: string }
-
-    // The branch ran at all, which is what stops the line below passing vacuously.
-    expect(result.seen).toContain('STARTTLS')
+    // The branch ran at all, which is what stops the lines below passing vacuously.
+    expect(seen).toContain('STARTTLS')
 
     // Deliberately not an assertion that it FAILED. Whether a handshake against
     // a server with no certificate fails, and how fast, is the platform's
     // business. The failure MODE is what this test owns.
-    expect(result.message).not.toMatch(/is not a function/)
-    expect(result.message).not.toMatch(/startTls/)
+    expect(message).not.toMatch(/is not a function/)
+    expect(message).not.toMatch(/startTls/)
   }, 30_000)
 
   it('SmtpError is what a refusal surfaces as', () => {

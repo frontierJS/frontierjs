@@ -105,7 +105,7 @@ describe('the rollback list', () => {
 })
 
 describe('short', () => {
-  test('is Docker’s own width, and normalises the prefix', () => {
+  test('is Docker’s own width, and normalizes the prefix', () => {
     expect(short(A)).toBe('sha256:' + 'a'.repeat(12))
     expect(short('a'.repeat(64))).toBe('sha256:' + 'a'.repeat(12))
     expect(short(undefined)).toBe('')

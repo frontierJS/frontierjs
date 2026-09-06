@@ -311,7 +311,7 @@ const page = `<!doctype html>
  *
  * getComputedStyle during a transition returns the *interpolated* value,
  * so a property that is mid-flight reads as its old value — and Chrome
- * serialises an interpolating color in oklab(), which makes it look like a
+ * serializes an interpolating color in oklab(), which makes it look like a
  * different value again. Both bit this suite: .btn transitions box-shadow,
  * so a just-focused button reported its resting shadow re-serialized, and
  * the assertion blamed the CSS.

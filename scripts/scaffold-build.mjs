@@ -283,6 +283,32 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
     if (b2.status !== 0) return fail('bun run build failed after `fli scaffold Note`', b2.output)
     log('  ✓ a model scaffolded into it, and it still builds')
 
+    // ── 7 · the OTHER surface ────────────────────────────────
+    // `bun run build` is `web/`, and for the life of `fli make:site` that was
+    // the only generated surface anything executed — so every file it wrote was
+    // broken, four separate ways, and nothing here could see it (`FJS-758`).
+    // The generated `site/` is a second Vite root with its own config, its own
+    // entry and its own prerender pass; none of that is reachable from the SPA
+    // build, and three of the four defects only appear under `bun --bun` with
+    // the app's own `.env`, which is what `fli site:build` arranges.
+    const mkSite = run('bun', [fli, 'make:site'], { cwd: app })
+    if (mkSite.status !== 0) return fail('fli make:site failed on a freshly scaffolded app', mkSite.output)
+
+    for (const rel of ['site/config/sierra.config.js', 'site/config/vite.config.js', 'site/src/main.js', 'site/src/routes/index.mesa']) {
+      if (!existsSync(join(app, rel))) return fail(`fli make:site exited 0 and wrote no ${rel}`, mkSite.output)
+    }
+
+    const sb = run('bun', [fli, 'site:build'], { cwd: app })
+    if (sb.status !== 0) return fail('fli site:build failed on a freshly scaffolded app', sb.output)
+
+    // A zero exit is not the assertion here either, and for a sharper reason
+    // than the SPA's: a static build whose loader opened the WRONG database
+    // prerenders every page with no rows in it and exits 0 (`FJS-449`). Ask for
+    // the file.
+    const siteIndex = join(app, 'site', 'dist', 'index.html')
+    if (!existsSync(siteIndex)) return fail(`fli site:build exited 0 and wrote no ${siteIndex}`, sb.output)
+    log('  ✓ the site surface builds, and wrote a page')
+
     return findings
 
   } finally {
@@ -517,9 +543,27 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
 
     mkdirSync(join(srv, 'db'), { recursive: true })
     copyFileSync(join(app, '.env'), join(srv, '.env.production'))
-    // The keys `01b-env-check` compares against .env.example. Named here rather
-    // than by disabling the check: a deploy that skips it is not this pipeline.
-    appendFileSync(join(srv, '.env.production'), `PORT=3000\nAPP_URL=http://127.0.0.1:${PORT}\n`)
+    // `01b-env-check` compares this file against the app's own `.env.example`,
+    // and the check stays on: a deploy that skips it is not this pipeline. What
+    // does NOT stay is a hand-written copy of the key list — it drifted the
+    // moment the scaffold gained `AUDIT_PATH`, the tutor's copy of the same
+    // recipe was updated and this one was not, and the cycle refused at step 2
+    // for a week without reaching the resume it exists to test. So the keys are
+    // READ from `.env.example`; only the ones whose value has to be real are
+    // written by hand, and a key already set above keeps the value it has.
+    const already = new Map(
+      readFileSync(join(srv, '.env.production'), 'utf8')
+        .split('\n').filter((l) => l.includes('=') && !l.trimStart().startsWith('#'))
+        .map((l) => [l.slice(0, l.indexOf('=')).trim(), l]))
+    const declared = existsSync(join(app, '.env.example'))
+      ? readFileSync(join(app, '.env.example'), 'utf8')
+        .split('\n').filter((l) => l.includes('=') && !l.trimStart().startsWith('#'))
+        .map((l) => [l.slice(0, l.indexOf('=')).trim(), l.trim()])
+      : []
+    const fill = declared.filter(([k]) => !already.has(k) && k !== 'PORT' && k !== 'APP_URL')
+    appendFileSync(join(srv, '.env.production'),
+      `PORT=3000\nAPP_URL=http://127.0.0.1:${PORT}\n` +
+      (fill.length ? fill.map(([, line]) => line).join('\n') + '\n' : ''))
     log('  ✓ scaffolded, and cloned into a server directory on this machine')
 
     // ── 1 · deploy ────────────────────────────────────────

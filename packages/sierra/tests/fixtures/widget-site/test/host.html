@@ -22,8 +22,36 @@
   <!-- The element form: no init call, no host JavaScript at all. -->
   <mt-counter data-start="5"></mt-counter>
 
+  <!-- A host element the widget CANNOT mount into, deliberately first.
+       `attachShadow` throws on an element that already holds a CLOSED root, and
+       an unguarded mountAll loop then abandons every element after this one —
+       on this run and on every MutationObserver run after it. It is first
+       because that is the only position where the blast radius is visible. -->
+  <div id="poison" class="mt-counter" data-start="1"></div>
+  <script>
+    // Inline and not deferred: this has to run before the widget scripts do.
+    document.getElementById('poison').attachShadow({ mode: 'closed' })
+    // What a merchant would have to see. A guard that swallows the failure is
+    // the version nobody can debug, so the report is asserted beside the mount.
+    window.__widgetLog = []
+    for (const level of ['error', 'warn']) {
+      const original = console[level].bind(console)
+      console[level] = (...args) => { window.__widgetLog.push(args.map(String).join(' ')); original(...args) }
+    }
+  </script>
+
   <!-- The selector form: markup that predates the element, kept working. -->
-  <div class="mt-counter" data-start="100"></div>
+  <div id="legacy" class="mt-counter" data-start="100"></div>
+
+  <!-- The kit, inside a shadow root. `@frontierjs/css` declares its tokens on
+       :root, which matches nothing in a shadow tree — so every var() in the
+       styling language resolves empty in the one surface that always has one. -->
+  <mt-kit></mt-kit>
+
+  <!-- Somewhere to move a mounted widget to. A host page that reparents a node
+       — a tab strip, a sortable list, a framework re-rendering its tree —
+       fires disconnectedCallback then connectedCallback. -->
+  <div id="elsewhere"></div>
 
   <!-- The directory-form widget, with a prop. -->
   <mt-lead-form data-pid="ABC-1"></mt-lead-form>
@@ -35,6 +63,7 @@
        and a same-origin script tag is the one arrangement no customer has. -->
   <script defer src="{{EMBEDS}}/Counter.js"></script>
   <script defer src="{{EMBEDS}}/LeadForm.js"></script>
+  <script defer src="{{EMBEDS}}/Kit.js"></script>
   <!-- The same script twice: a tag manager firing again, a page including the
        snippet in two places. Must not produce two widgets in one box. -->
   <script defer src="{{EMBEDS}}/Counter.js"></script>

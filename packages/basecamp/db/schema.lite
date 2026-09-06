@@ -214,7 +214,10 @@ enum RunStatus      { pending running success failed timeout }
 // from one place (2026-08-06).
 enum AlertSeverity  { info warning critical }
 enum AlertSubject   { server volume }
-enum ActorKind      { user api_key system }
+// `support` is a session like `user` is, and is its own kind because the two
+// answer different questions of the same row: with it, `actorId` is the
+// OPERATOR and `onBehalfOfId` is the person they were acting as.
+enum ActorKind      { user api_key system support }
 
 // Where an alert is delivered. Each kind reads a different shape out of
 // NotificationChannel.config and a different credential out of its Secret —
@@ -359,7 +362,7 @@ model User {
   // basecampGateLevel() grades it too. core/session-auth.ts is what puts it on
   // the session.
   //
-  // `@guarded(all)` because the gate reads it: the model gates update at
+  // `@guarded` because the gate reads it: the model gates update at
   // USER(4), so without this any signed-in caller writes the column their own
   // level is computed from and lands on the hub tier. Granting it is the hub's
   // act and the hub writes through asSystem(), which passes; every read that
@@ -414,7 +417,7 @@ model User {
 // reports a model with no tenant column.
 //
 // A copy stops being the package's the first time either side moves, and
-// nothing here can fail: the copies had `@guarded(all)` on the OAuth token
+// nothing here can fail: the copies had `@guarded` on the OAuth token
 // columns where the package writes `@secret`, so turning OAuth on would have
 // stored every provider access and refresh token unencrypted, with this app's
 // whole suite green either side of the divergence.
@@ -623,7 +626,7 @@ model WorkspaceMember {
 // one of them is never read. `@@log(audit)` is what survives either way.
 //
 // The token is the credential — whoever holds it may join. So it is
-// `@guarded(all)`: written and read through `asSystem()` only, absent from
+// `@guarded`: written and read through `asSystem()` only, absent from
 // every scoped read the way `Session.token` is, which means the invitations
 // list a screen renders cannot leak the one thing that matters. It is stored
 // verbatim rather than hashed because it must be looked up BY, and a 32-byte
@@ -654,7 +657,7 @@ model Invitation {
   // it has to be unique across the installation rather than within a tenant.
   // The other 22 uniques on scoped models here are per-tenant and say so by
   // carrying `workspaceId` or a key that reaches it.
-  token        String        @unique(global) @guarded(all)
+  token        String        @unique(global) @guarded
   expiresAt    DateTime
 
   invitedBy    String?
@@ -679,7 +682,7 @@ model Invitation {
 // to a machine or a provider.
 //
 // VISION.md constraint 7 says Basecamp holds secrets but never shows them —
-// `@guarded(all)` is that constraint enforced at the Data boundary, so the
+// `@guarded` is that constraint enforced at the Data boundary, so the
 // value cannot be read out even by a caller allowed to list the secret.
 
 model Secret {
@@ -972,7 +975,7 @@ model OutpostNonce {
 // Conduit, and only then forgets the row.
 //
 // No `workspaceId`, for the reason ServerEvent has none: a volume is
-// meaningless without its server, and denormalising the tenancy fact onto it
+// meaningless without its server, and denormalizing the tenancy fact onto it
 // would make two owners of one answer. Scope is the join — the same two
 // indexed queries `servers.feed` runs.
 model Volume {
@@ -1915,9 +1918,19 @@ model AuditEvent {
   workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   actorId     String?
-  // WHO acted. Three kinds and `hooks.ts` writes all three, so this is a closed
+  // WHO acted. Four kinds and `hooks.ts` writes all four, so this is a closed
   // set and says so.
   actorType   ActorKind  @default(user)
+  /// SUPPORT MODE — who the operator was acting AS.
+  ///
+  /// `actorId` stays the person who really did it, which is the opposite of
+  /// what every hand-rolled impersonation records and is the whole complaint in
+  /// `FJS-142`. Null outside an episode.
+  ///
+  /// NOT `subjectId`, which on this model is the ROW that was acted on. The
+  /// framework's own trail uses `subjectId` for the PERSON, in the sense a data
+  /// subject is a person; this table already spent the word, so it uses another.
+  onBehalfOfId String?
   action      String
   // WHAT was acted on, written as the SERVICE name (`hooks.ts`). Deliberately a
   // String and not an enum: the set grows with every service, so an enum here

@@ -137,7 +137,7 @@ export function nativeValidationGuard(el) {
  *
  * The aliases exist because component APIs in the wild say `type="error"`
  * or `color="red"`, and rewriting every call site is not the point. An
- * unrecognised name resolves to '' rather than guessing, so a typo renders
+ * unrecognized name resolves to '' rather than guessing, so a typo renders
  * untoned (the component's own default) instead of silently wrong.
  */
 export const TONES = [

@@ -1568,7 +1568,7 @@ describe('Volume — observed, not declared', () => {
   }
 
   test('carries no workspaceId — its tenancy is the join through its server', () => {
-    // Asserted against the DDL, because a denormalised copy added later would
+    // Asserted against the DDL, because a denormalized copy added later would
     // make two owners of one answer and every query would still work. The
     // service's scope (`serversOf`) is written on the assumption there is no
     // other route to a volume's workspace.

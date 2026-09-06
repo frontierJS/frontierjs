@@ -319,7 +319,7 @@ describe('createEffect', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('createWritableSignal', () => {
-  it('initialises from derivation', () => {
+  it('initializes from derivation', () => {
     const [items] = createSignal(['a', 'b'])
     const [sel] = createWritableSignal(() => items()[0])
     expect(sel()).toBe('a')
@@ -1489,8 +1489,8 @@ describe('mount()', () => {
     const instance = mount(anchor, comp)
     expect(container.textContent).toBe('hello')
 
-    // destroy() removes the anchor; DOM cleanup is the component's own responsibility
-    expect(() => instance.destroy()).not.toThrow()
+    instance.destroy()
+    expect(container.textContent).toBe('')
   })
 
   it('throws a descriptive error when anchor has no parentNode', () => {
@@ -1516,8 +1516,73 @@ describe('mount()', () => {
     expect(container.textContent).toBe('AB')
 
     instance.destroy()
-    // destroy() only removes the anchor comment; DOM cleanup is component's responsibility
-    expect(container.querySelectorAll('span').length).toBeGreaterThanOrEqual(0)
+    expect(container.querySelectorAll('span').length).toBe(0)
+  })
+
+  /*
+   * FJS-890 — `destroy()` names a teardown and for the whole life of the
+   * runtime performed three of its parts: it removed the anchor, released the
+   * delegation root and released the styles, and left the render standing. Two
+   * callers hand-rolled the missing sweep (Sierra's widget runtime and its
+   * island loader), and the symptom in the first was that a host page MOVING an
+   * element duplicated the widget, once per move, forever.
+   *
+   * The range is `(label, anchor)` exclusive and it starts empty: `mount`
+   * inserts its anchor at `label.nextSibling` before the component runs, and a
+   * component appends before its anchor. Both facts are asserted here, because
+   * the sweep is only sound while they hold.
+   */
+  it('destroy() removes only what it rendered, not what stood beside it', () => {
+    const container = div()
+    const before = span(); before.textContent = 'before'
+    const anchor = document.createComment('')
+    const after = span(); after.textContent = 'after'
+    container.append(before, anchor, after)
+
+    const comp = (__anchor) => { const el = span(); el.textContent = 'mine'; __anchor.before(el) }
+    const instance = mount(anchor, comp)
+    expect(container.textContent).toBe('beforemineafter')
+
+    instance.destroy()
+    expect(container.textContent).toBe('beforeafter')
+  })
+
+  it('destroy() is idempotent', () => {
+    const container = div()
+    const label = document.createComment('')
+    container.appendChild(label)
+    const trailing = span(); trailing.textContent = 'trailing'
+    container.appendChild(trailing)
+
+    const instance = mount(label, (__anchor) => {
+      const el = span(); el.textContent = 'mine'; __anchor.before(el)
+    })
+    instance.destroy()
+    expect(container.textContent).toBe('trailing')
+
+    // The forward walk cannot find the anchor the second time. It must remove
+    // nothing rather than run to the end of the parent taking every following
+    // sibling with it.
+    instance.destroy()
+    expect(container.textContent).toBe('trailing')
+  })
+
+  it('destroy() removes nothing when the anchor is already gone', () => {
+    const container = div()
+    const label = document.createComment('')
+    container.appendChild(label)
+
+    const instance = mount(label, (__anchor) => {
+      const el = span(); el.textContent = 'mine'; __anchor.before(el)
+    })
+    const sibling = span(); sibling.textContent = 'not mine'
+    container.appendChild(sibling)
+    // A host page cleared the anchor out from under us. The range is no longer
+    // decidable, so the sweep must decline rather than guess at its far end.
+    instance.$dom.remove()
+
+    instance.destroy()
+    expect(container.textContent).toBe('minenot mine')
   })
 })
 

@@ -1,5 +1,803 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-05 — `tutor:fleet` releases something, and finds two reasons it could not
+
+Half B. The lesson stopped at *a command from the control plane ran on this
+machine*, which is the smaller half: a **release** is the thing a control plane
+exists for. Step 7 gives the app a git source — a repository made on disk, since
+`POST /deploy` hands `source.repo` to `git clone` and a path is a legal git URL
+— creates a Deployment, and waits for the pipeline that basecamp dispatches to
+its own queue.
+
+**The assertion is the digest, and then the agreement.** `Deployment.builtImage`
+has to carry a `sha256:` the MACHINE reported (a stub answers `null`, which is
+why it is asked), a container has to be running here under the app's name, and
+the two have to be the same bytes. A release that cannot say which bytes are
+serving has not been shown to have released anything. `BASECAMP_STUB_OUTPOST` is
+never set.
+
+**Two defects, both of which made a real release impossible, and neither of
+which any suite could see** — basecamp's own drive injects a fake docker:
+[`FJS-919`](../../ISSUES.md#fjs-919), outpost addressing a locally built image
+as `name@<image-id>`, which docker reads as a pull; and
+[`FJS-920`](../../ISSUES.md#fjs-920), basecamp omitting `app_id` from `/deploy`,
+so the container was named for the deployment while every other route addressed
+the app.
+
+Two environment facts are stops rather than failures, the shape step 1 already
+uses for a missing basecamp: no docker at all, and a workspace the DAEMON cannot
+read — a private `/tmp` makes `docker build` answer *unable to prepare context*
+about a directory that is plainly there, and the lesson says which flag fixes it
+rather than reporting a broken release.
+
+## 2026-09-05 — `fli notifications:install`, and the resolver three commands got wrong
+
+`--with notifications` added the dependency and stopped, so every app that took
+it copied `model Notification` out of `node_modules` by hand or found out at the
+first `app.notify()` that `notification` is not a table in this schema. Now that
+the package ships the model ([`FJS-910`](../../ISSUES.md#fjs-910)) there is
+something to install, and `fli notifications:install` appends it, retargets
+`@@db(main)` under `--db`, pushes, and prints the wiring — the mailer first,
+because the plugin refuses the wrong order at startup. `fli new --with
+notifications` runs it; an app that adds the package later runs it itself, which
+is the case that had no answer at all.
+
+**Appended rather than imported**, and the command says why: `OutboxMessage` is
+machinery an app never writes, so `fli outbox:install` imports it by name;
+`Notification` is the app's, and `userId`'s type follows the app's own user key.
+
+**Found by writing it — the fourth copy of a function only one copy of which was
+right** ([`FJS-918`](../../ISSUES.md#fjs-918)). `fli outbox:install` and `fli
+backfill:install` resolved with `createRequire(<app>/package.json).resolve(spec)`,
+which `fli auth:install`'s header already documents as unsound: bun answers it
+out of its GLOBAL INSTALL CACHE. Measured here, in an app with no `node_modules`
+at all — the old form answers `~/.bun/install/cache/@frontierjs/auth@1.0.3/db/user.lite`
+and `shippedFile` answers null. `core/app-schema.js` owns the question now, all
+three commands call it, and the reasoning lives on the function instead of in
+one command's header where the other two could not read it.
+
+## 2026-09-05 — Two ways a workspace tool answered for a tree it had not read
+
+`fli register:check` graded a register it could not parse. The readers are keyed
+to the `FJS-` prefix, so a project keeping its registers under another one parses
+to nothing — and every rule below is asked of the records that parsed, which
+makes a file none of them came from a file all of them pass: an `ACME-1` table
+was answered `0 open · ✓ every register agrees with itself`. `readRegisters`
+reports `unparsed` now, and `unparsed-record` is an error naming the line. The
+refusal already there separated *no register at this root* from *an empty one*;
+this separates an empty one from an unreadable one, which is the state an
+adopting project starts in. Counted, never parsed — a record minted out of a line
+the reader rejected is a guess at the thing the report exists to name
+(`FJS-916`).
+
+`fli ws:map` rendered the static port assignments into whatever workspace it was
+run from, so a page titled after somebody else's monorepo carried `example` at
+8010 and `basecamp` at 8020 as that project's own. The table is a source file of
+one workspace: the section now renders only where that file is in the tree being
+mapped, and is omitted the way every other absent source already is. `ws:atlas`
+reads the same model through `model.ports?.rows` and matches by card key, so it
+never showed the wrong numbers — which is why the leak survived on the page
+nobody diffs (`FJS-917`).
+
+
+## 2026-09-05 — The backup step names no cause of its own
+
+`05-backup` printed *the container must carry db/schema.lite* under a failure
+the container disproves: the schema is plainly there, and the command that read
+it is the one that reported (`FJS-574`, `FJS-232` cited wrongly). `litestone
+backup` prints which database it could not copy and why, immediately above, and
+it is the only thing that knows — so the step points at that rather than
+restating a diagnosis that outlives every change to the reasons. The by-hand
+line is now the command that actually ran, not `--help`.
+
+
+## 2026-09-05 — `fli ps` answers the question its name asks
+
+It read `~/.fli/sessions.lock` and nothing else, so it printed *No active
+sessions* while a port was genuinely held. Every tool in the reserved
+8500–8509 block is that shape — `fli db:studio` binds 8502 as a literal and
+claims no session — and so is any app somebody started by hand, which is most
+of them. The one command for *what is using my ports* was blind to the case that
+sends people looking in the wrong place.
+
+It now reports two things: **what is holding a port**, from probing every port
+the schema can name and decoding each hit back into *env · category · project*
+with the process named; and **what the broker handed out**, as before.
+`--sessions` is the old output alone, `--json` returns `{busy, sessions}`.
+
+`knownPorts()` is the reserved block plus each assigned project across every
+category and env at slot 0 — not the 3,000 numbers the formula can produce,
+because a port nothing would ever hand out is not this schema's to report on.
+
+**One `lsof` rather than 250 socket probes.** The first cut probed each port with
+`isPortInUse` and took 4.4s, which is not a status command; `listeningPorts()`
+takes one `lsof -nP -iTCP -sTCP:LISTEN`, runs in 1.16s, and hands back the pid in
+the same call so there is no second pass. It returns `null` rather than an empty
+map where lsof cannot be run, because *nothing is listening* and *nobody asked*
+have to be told apart — the second falls back to the socket probe. Output is
+sorted by port so two runs can be diffed by eye.
+
+`pidsOnPort` and `describeProcess` moved out of `commands/utils/killnode.md` into
+`core/ports.js`, which `fli kill` now imports. Two implementations of *what is
+holding this port* is how the command that kills it and the command that lists
+it come to disagree about the same number.
+
+## 2026-09-05 — two rules that disagreed about one column
+
+`@frontierjs/notifications` began shipping its model
+([`FJS-910`](../../ISSUES.md#fjs-910)), which put `package-model-drift` in front
+of a case it had never seen: an app that has taken `polymorphic-subject`'s
+advice. That rule asks an app to constrain a bare `String` discriminator, and a
+package cannot ship the constraint because it cannot know the app's set — so the
+constrained column then read as drift, and `example` was the first app to be
+told off for doing the recommended thing. A bare scalar the app tightens into an
+enum or a declared set is not drift now. **Nullability is**: `String?` → `String`
+refuses a write the package legitimately makes, which is exactly what the rule
+is for, and so is a different scalar or a dropped attribute — three controls,
+because a fix that accepted every difference would look like one that worked.
+
+`package-model-drift`'s advice also stopped being auth-shaped. It said *import
+the model instead*, which is right for `Credential` and wrong for the two models
+a package means an app to COPY — advice that fails when taken, one tier down
+from `proof-target`'s argument. It names both shapes now.
+
+## 2026-09-05 — `deploy:local` builds from any directory, and the journal cycle can reach the resume
+
+`FJS-544` and `FJS-595`, re-probed against a real daemon.
+
+`docker build` was given an ABSOLUTE context and a RELATIVE `-f`, with `context.exec` carrying
+no `cwd`, so it inherited the process's. Docker resolves `-f` against the caller's cwd, so the
+build worked only when somebody happened to be standing in the app root and failed everywhere
+else with `resolve : lstat deploy: no such file or directory`.
+
+What made it read as something else: the existence check three screens above resolves the same
+path absolute, so the check passed and the build failed — which looks exactly like *the
+Dockerfile was written and docker cannot read it*. Measured, the absolute form builds from
+anywhere to the identical digest, so the fix cannot change the image. The `--dry` line printed
+a different command from the one that runs, and now prints the same one.
+
+`04-build-api` keeps its relative `-f` deliberately: it runs on the target with an explicit
+`cwd` and a relative context, where the two agree. Grading both call sites the same way is how
+a correct one gets *fixed* into a broken one, so that is an assertion of its own now.
+
+**And the pipeline could not reach its own sharpest test.** `deployJournalCycle` — the only
+thing in the repo that runs `fli deploy` at all — refused at step 2 of 12, because
+`01b-env-check` found `AUDIT_PATH` missing from `.env.production`. The key list was written by
+hand beside a comment saying it was named there on purpose, and it drifted the moment the
+scaffold gained that key: the tutor's copy of the same recipe was updated, this one was not.
+The check stays on — a deploy that skips it is not this pipeline — but the cycle now READS the
+declared keys out of the app's own `.env.example`, so the list it seeds and the list the check
+compares cannot disagree. Only the values that must be real are still written by hand, and a
+key already set keeps what it has.
+
+With that cleared the cycle runs all twelve assertions with zero findings, including *the rerun
+continued the same transition rather than opening a second* — which is `FJS-595`, fixed on
+2026-08-29 by `readLiveTransition` and left open in the register for a week because nothing
+could run far enough to see it.
+
+## 2026-09-05 — the debt an inherited schema comes with, and the rule that could not see it
+
+`tutor:adopt` ended with the app serving a legacy row and said nothing about
+what happens next, which for an adopted app is always the same thing: rules the
+app was not written against. `check-baseline.json` existed, `--adopt` and
+`--update` existed, and no lesson mentioned either.
+
+Step 6 is the one finding the adopted app has, and the lesson does NOT fix it.
+`ActivityLog.subject_type` holds the name of whatever a row is about, and that
+set grows with every model the app gains — which is the case the rule's own
+message names as legitimate. So it is debt, kept deliberately, and the step is
+about keeping it without letting it grow: `--adopt` records it, a second pair
+fails the check naming the number it was allowed, `--update` is offered the same
+rise and refuses it, and taking the model out again leaves the ceiling at one.
+Five assertions, all measured before they were written — including that the
+finding **still prints** under a baseline, because a baseline that silenced it
+would be the wrong mechanism.
+
+`--adopt` and `--update` are two verbs because they are two decisions, and the
+lesson says so where the difference is visible rather than in a flag
+description.
+
+**And the panel had to learn the same word** ([`FJS-913`](../../ISSUES.md#fjs-913)).
+`fli gui`'s check panel counted raw findings, so the app this lesson leaves —
+green by its own `bun run check`, carrying one recorded finding — was reported as
+broken by the surface beside it. `/api/check` reads the baseline per scope now
+and answers `ok`, `baseline` and a `within` on every finding; `tutor:tools`
+grades the verdict rather than the count. It surfaced because the course re-runs
+lesson 2 after the last lesson, which is the only place the two orders meet.
+
+**A third substring guard, in the step above.** `05-serve` appended the adopted
+models unless the schema already said `model Order` — so a second run against a
+DIFFERENT legacy database adopted nothing while every assertion above it passed.
+It keys on the block's own marker now and REPLACES it, which is what made the
+new step's finding appear on a re-run at all.
+
+**Found by writing it: `polymorphic-subject` was blind to snake_case**
+([`FJS-912`](../../ISSUES.md#fjs-912)). It matched a camelCase pair only, so the
+legacy `activity_log(subject_type, subject_id)` the lesson adds — the shape a
+Rails polymorphic association has, and what `litestone introspect --no-camel`
+emits — was not a pair as far as the rule was concerned. The population the rule
+exists for was the one it could not see, and the tutorial's own step is what
+surfaced it: the check that should have reported the new table reported nothing.
+Both spellings now, with the id looked up in the SAME one, and the mixed pair is
+the control that keeps the fix from over-reaching.
+
+## 2026-09-05 — a lesson for the thing an app has to SAY
+
+`@frontierjs/notifications` had no tutorial coverage of any kind, and neither
+did the mail path under it: `app.notify`, `defineNotification` and `IMail`
+appear in no lesson. `tutor:notify` is eight steps and twenty assertions, and it
+sits after `tutor:jobs` — the two are the same argument from different ends, and
+the last thing this one asserts points back at the other.
+
+The four beats are chosen for what a reader cannot find out by reading:
+
+**One send, two transports.** A single `app.notify(...)` writes a row through
+`asSystem()` and renders an email, and the row's `type` is `NoteAdded` — a
+string that appears nowhere in the file that produced it, because the FILE names
+the notification. Asserted as the row's type, not as a row count.
+
+**Renaming the file renames the type, silently.** `type` is a column, and every
+row already written keeps the name it was written under. The lesson renames the
+file, sends again, and reads a database that now has two names for one thing —
+then states `type:` and watches the loader report the divergence in its own
+words. Nothing warns about the rename itself, which is the point: it cannot tell
+a deliberate one from a typo.
+
+**A transport with no formatter refuses before anything is delivered**, so a
+two-transport notification cannot half-land. The assertion is an ABSENCE
+measured against a count taken a moment earlier — no row, no mail — paired with
+the identical request once the transport is taken out again, because a refusal
+with no control beside it is also what a broken app does. And the response
+carries `data: { committed: true }`: the note the hook fired on was written
+before the hook ran and is still there, which is the argument for putting work
+that can fail in a job.
+
+**An app can be asked what it can send with nothing sent** — `app.notifications`,
+a claim, read through a route the lesson writes.
+
+The mailer is written in the lesson rather than installed, nine lines, appending
+JSONL: `IMail` is one method, and mail a lesson cannot read back is not an
+assertion. Swapping it for `createSmtpMailer` changes nothing that sends.
+
+**Found by running it.** The step that states `type:` guarded on
+`src.includes('type:')`, and the file's own header comment says *the file names
+the type: NoteAdded* — so the guard read as already-done, the edit never
+happened, and the failure surfaced two assertions later as the loader being
+blamed. Same shape as the `editSchema` substring bug the course run found: a
+guard that asks a whole file whether it contains a string is asking the wrong
+question. It matches the statement now.
+
+**And found by the course**, which is the half a lesson run alone cannot see:
+the model the lesson writes tripped `fli check`'s `polymorphic-subject` —
+`contextType` says what `contextId` points at, and with no foreign key nothing
+refuses a value naming nothing. It surfaced two lessons later as `tutor:tools`
+failing its *the check panel is clean* assertion, blaming a panel that was
+telling the truth. The lesson constrains the one column that can be and says
+why; `@frontierjs/notifications`' README now says the same, since the model it
+hands out is the one every app copies ([`FJS-910`](../../ISSUES.md#fjs-910)).
+
+The insert renumbers `site` through `adopt` — the heading in each lesson, the
+`Lesson N done` line in each finish step, and the next-lesson pointer out of
+`tutor:jobs` — which `fli check`'s `tutor-order` and `tutor-lesson-named` grade,
+so a missed one is an error rather than a stale sentence.
+
+## 2026-09-04 — the tutorial is taken as a course, and four things only that could find
+
+Every lesson ran in a workspace of its own, and the documented way to take the
+tutorial is `--workspace ~/somewhere`, kept, twelve lessons in order — which
+nothing ran. The `tutor` phase now does both: each lesson alone under `--tmp`
+(does it work from a clean start), then the whole course in ONE workspace, then a
+replay and a `--restart` over the app the twelve left behind.
+
+**Four failures on its first run, and every one of them was invisible to the
+isolated runs.**
+
+**A lesson destroyed the workspace's `.env`.** `tutor:deploy` wrote the
+CONTAINER's environment over the app's own — a freshly minted `ENCRYPTION_KEY`,
+`DATABASE_URL=/db/app.db` (a path inside a mounted volume, not on this machine)
+and `NODE_ENV=production`. Fine while that lesson was the only thing in the
+workspace; in a course it makes every later `fli db:*` open a database at the
+filesystem root, changes what the app will do, and makes every `@encrypted`
+value an earlier lesson wrote unreadable. The container's environment is written
+beside the workspace now, which is where `05-origin` copies it from, and the key
+is KEPT where there is one.
+
+**`fli tutor:adopt` was broken for every user.** Its second step opened the
+legacy database with `await import('bun:sqlite')`, and `fli` runs on NODE — its
+own shebang. It worked in CI because CI invokes `bun fli.js`, and failed for
+anybody who typed `fli`, with an ESM loader error naming a protocol rather than
+the lesson. `probe.sqliteExec` is the write half of `probe.sqliteRow`, through
+the same `bun -e` subprocess, so both directions are runner-independent.
+
+**A deploy after `fli db:push` refuses, correctly, and nothing said so.** Lesson
+1 builds its model with push, which writes tables and no migration file — push's
+own output says exactly that — and a deploy replays FILES, so the container died
+with *the migration history does not build the schema this app declares*. The
+lesson catches the history up where the app was already there, with
+`db:migrate --create-only` and `db:baseline`, and says why.
+
+**Two lessons had assertions keyed on a gate a later lesson raises.**
+`tutor:test` wrote a test that read back through `env.db` — a stranger — and
+hard-coded *Note reads at STRANGER(0)*; both are true of a scaffolded app and
+false three lessons on. The read goes through `env.system` now, for the same
+reason the factory writes through it, and the level is READ OUT OF THE SCHEMA
+rather than written down, which is what the lesson is arguing for in the first
+place.
+
+**`editSchema`'s *already done* test was a substring search over the whole
+file.** It asked whether the TARGET text appeared anywhere before deciding there
+was nothing to do — so the moment another model carried `@@gate("0.4.4.6")`,
+which `tutor:adopt` gives the models it adopts, it returned `already` and edited
+nothing. Two lessons steer on that call, and both then read their verdicts
+backwards. *Already done* is a question about `from`, not about `to`: absent
+`from` with `to` present is still `already`, which is the case the guard was
+written for.
+
+**`tutor:change` left the app's schema ahead of its database.** Every step there
+edits `db/schema.lite` and nothing writes a table, so `priority` was declared and
+not built — and the next thing to write a Note through the API, three lessons
+later, was refused with `table note has no column named priority` by a page that
+has nothing to do with that lesson. It applies the expand at the end now, which
+is what the verdict it just printed says to do; and its baseline step normalises
+the column out first, so a second run in one workspace does not compare against
+its own result.
+
+**A scaffolded app's audit trail was written inside the container.**
+`fli check`'s `log-db-unbound` fires on every app the scaffold writes as soon as
+`make:deploy` gives it a deploy block: `database audit` had a LITERAL path, so
+the deploy cannot point it at the mounted volume and the next swap takes the
+trail with the rows in it. Nothing fails while it is wrong. The scaffold writes
+`path env("AUDIT_PATH", "./db/audit/")` now, `.env`, `.env.example` and
+`defineEnv` carry the variable, and the generated Dockerfile says to bind it
+beside `DATABASE_URL`.
+
+`tutor:adopt`'s last assertion also went stale in the good direction:
+[`FJS-761`](../../ISSUES.md) landed, so the camelCase reading is clean under
+`--strict` and `@map` is applied. The beat now asserts the two halves that have
+to be true together — it passes `--strict`, AND it records the rename — because
+a reading that camelCased a column and forgot to say so would also exit 0 and
+would name a column that is not there.
+
+## 2026-09-04 — the register reads newest first, and now says so
+
+`DECISIONS.md` ran newest-first in seven sections of nine and stated it nowhere,
+so the other two had drifted: the original ascending run sat at the foot with
+every later ruling prepended above it, 24 adjacent pairs out of order across 182
+rulings. The convention is in the file's preamble now, together with the fact
+that makes it necessary — **ids are not in date order and never were**, since an
+id is issued when a question is filed and the ruling can answer it weeks later,
+so the date on the heading is the only ordering fact a reader has.
+
+The sections were sorted by date, descending and stable. The reorder was proved
+rather than eyeballed: the multiset of lines, the byte count and the set of
+ruling ids are each identical before and after, so nothing but position moved.
+
+`ruling-order` is the rule that keeps it, a **warning** rather than an error
+because the register does not contradict itself here and a ruling deliberately
+placed beside the one it amends is a legitimate reason to sit out of order that
+no rule can see. Reported against the later ruling, which is the one that moves
+up, and reset at every section boundary — sections are subject areas and have no
+order between them, which is its second negative control.
+
+Two smaller ones alongside. The format example at the top of the file used
+`FJS-D40`, a real id, so a grep for that ruling found two hits; it is `FJS-D00`
+now. And § Open closed on a hand-written count of the rows waiting in
+`ISSUES.md`, which was three short — deleted rather than corrected, since
+nothing regenerates it.
+
+## 2026-09-04 — a ruling that is in force says nothing
+
+`PHILOSOPHY.md` §VII required a status word on every ruling. Nothing enforced it
+and no ruling carried one, so the rule sat at the tier that governs every other
+document and graded nothing. Implementing it as written meant stamping
+`accepted` on 180 of 182 headings — a restatement of the file's own name, and
+one that would leave the ruling which has stopped being true reading exactly
+like the 179 around it (`FJS-D196`, which amends §VII in the same commit).
+
+**Absence means in force.** `RULING_STATUS` is `superseded-by`, `amended-by` and
+`withdrawn`, written under the heading and nowhere further down, because a
+register is read by scanning headings and a retirement announced in paragraph
+nine is one the reader has already walked past. `proposed` is not in the set: an
+undecided question lives in `ISSUES.md` § Needs a decision, so it has no referent
+in `DECISIONS.md`.
+
+**A retirement names what replaced it**, a ruling or the issue that moved it —
+`FJS-690` narrowed what `FJS-D74` ruled and closed with no ruling id, and forcing
+one into existence for every such fix is ceremony. The citation is graded like
+any other, so a status naming an id no register holds is `unknown-ref`.
+
+The `ruling-status` rule reports the two ways a written status can be useless: a
+word outside the set, and a retirement naming nothing. `withdrawn` is exempt from
+the second because nothing replacing it is the content. Absence is not graded at
+all, which is the half that matters — a rule firing on it would print 180
+findings and be removed within a week.
+
+**Six rulings were believed retired in prose and four were.** Each was verified
+against the amending ruling and the code before anything was marked, and two of
+the six did not survive: `FJS-D64` refuses an `afterCommit` PHASE and never the
+method, so `ctx.afterCommit` existing is not a contradiction; and the ruling
+thought to have amended `FJS-D132` rules an adjacent question, while the one that
+really amends it is `FJS-D135`, which `VISION.md` §17 already records. `FJS-D62`
+supersedes a ruling that was never committed, so it now says so rather than
+citing something no reader can find.
+
+## 2026-09-04 — a check that could only pass
+
+`fli register:check` answered `0 open · 0 rulings · ✓ every register agrees
+with itself` from any directory holding no register — which is every package in
+this workspace, and the root `CLAUDE.md` tells everyone to cd into a package
+before running anything. From the repo root the same command reported 70 open
+and 180 rulings (`FJS-768`).
+
+**The tolerance was deliberate and the hole was underneath it.** `readRegisters`
+treats a missing register as absent rather than fatal, because a consuming app
+has no `IDEAS/` and inventing one is worse than reporting none. What it could
+not say is the difference between a register that is empty and a register that
+is not at this root: both are three empty lists. It now reports `sources` — the
+register files the root actually holds, asked of the tree rather than inferred
+from what parsed — and `runRegisterCheck` refuses a root holding none of them,
+naming the directory and what it looked for.
+
+**The refusal is in the engine rather than in each caller**, because a caller
+that has to remember to ask is the same hole one layer up. The two callers are
+the command and `scripts/ci.mjs`; CI passes the repo root, so CI was the only
+invocation that was ever honest.
+
+Asserted as a pair: a project keeping only `ISSUES.md` is graded on it and
+passes, a directory with none is refused. A check that rejected a thin register
+would be as wrong as one that passed an empty directory, and from the refused
+side the two look identical. The report now names what it read, so a small count
+reads as a small register.
+
+**`cross-register-id` is the second hole, and it is the one the first fix could
+not see.** `duplicate-id` keys on `kind:id`, so a `FJS-D##` appearing once as
+the question in `ISSUES.md` and once as the ruling in `DECISIONS.md` is exempt —
+an exemption that assumes the pair are the same subject. `FJS-D183` was the
+encryption envelope in one file and the transaction scope in the other, and every
+rule passed it (`FJS-D195`). The new rule reports an open decision question whose
+id already names a ruling, without trying to tell the two causes apart: either
+the ruling answers this row and nothing closed it, or it answers something else
+and the id was issued twice. Both are wrong, the fixes differ, and only a person
+can say which it is — so the message names both. Its negative control is an open
+question with no ruling of its own, which is the ordinary state of every
+unanswered one.
+
+## 2026-09-04 — `fli tutor:ui`, and a page the cli can open
+
+Lesson 3, and the first thing in the tutorial that renders anything. Eleven
+lessons taught Data, API and Deployment by asking the running world, and the UI
+realm — three packages — had one step in lesson 1: a person finished the course
+having never seen a form.
+
+**The lesson's spine is a before and an after.** It opens `/notes/create/` in
+Chrome and asserts the generated form — one control per writable column, the
+control each TYPE implies (asserted as a map, because three controls of the
+wrong kind is the same number as three of the right kind), and nothing for
+`id`, `createdAt` or `updatedAt`, which reach the client read-only. Then it adds
+**one attribute to one column** of `db/schema.lite`, touches no `.mesa` file,
+and reloads: `minlength="3"` and `maxlength="80"` are on a real `<input>`. The
+same empty submit that was a legal write before the attribute is now refused in
+the browser — and the assertion is not that a message appeared but that **the
+row count over HTTP did not move**, because an error message is renderable by a
+page that also wrote the row. Last step types into the three boxes and reads
+the row out of the DATABASE, then checks the list page draws it.
+
+**`core/browser.js` is a page driver, and it is small on purpose.** Mesa's
+`test/browser/drive.mjs` is a spec RUNNER and is not published (`files:` is
+`src` and `mesa-vite`), so an app that installed the framework has no harness at
+any path — and what a probe needs is one question and one answer. Launch,
+navigate, `eval`, close, plus the page's own exceptions collected, because a
+component that throws while rendering still leaves a partial tree and every
+assertion about what IS on the page walks past it. `probe.pageEval` and
+`probe.pageClean` are the two probes over it, and both take an already-open page:
+a lesson that launched Chrome per assertion would be five browsers.
+
+Three traps it encodes. `--remote-debugging-port=0` with the URL read off
+stderr, since a fixed 9222 is the developer's own Chrome and attaching would
+drive their real profile. A temp profile swept on exit and on a signal. And a
+single silent retry when an evaluate lands in a navigation — a form flow
+navigates by design, and that failure is about the CONTEXT rather than the page,
+which reads to a caller as the assertion being wrong.
+
+**`$FJS_CHROME` is authoritative rather than preferred**: somebody who names a
+binary names it for a reason, so a variable pointing at nothing answers null and
+the lesson stops naming the variable, instead of silently running a different
+browser. No Chrome at all is a `stop` and not a failure — a fact about the
+machine — and CI skips the lesson by name with `FJS_CI_REQUIRE_CHROME=1` to make
+that fatal.
+
+## 2026-09-04 — the tutorial's order is graded against itself
+
+`fli tutor` is a course, and a course is an ORDER. That order was written in
+three places that could disagree: `index.md`'s LESSONS array, each lesson's own
+`## Lesson N —` heading, and each lesson's finish step naming the next one to
+run. Nothing held them together, and inserting a lesson at position 2 cost
+twenty hand edits across eleven files.
+
+`core/tutorial.js` reads the course — the reader/renderer split `proofs.js` and
+`preflight.js` already make — and two rules grade it, split the way the proof
+table is and for the same reason. **`tutor-order`** is an error: naming a lesson
+that has no command file, a heading whose number is not the index position, a
+pointer at the wrong lesson, a non-final lesson that names none, or a final one
+that points onward. There is no reading of any of those that is correct — a
+wrong heading misleads and a wrong pointer is advice that fails when it is
+taken. **`tutor-lesson-named`** is a warning: a lesson the index does not list,
+a `steps:` directory that is not there, a `_steps-*` nobody claims. A lesson
+reached another way can be deliberate.
+
+**It found a real dead end on its first run.** `tutor:fleet` named no next
+lesson, so a person following the pointers stopped at 10 of 11 — and the
+*where to go from here* block was on lesson 10 rather than on the last one,
+along with a reference to "the journal in lesson 3" that had meant `tutor:deploy`
+before the renumber. All three fixed.
+
+## 2026-09-04 — `skill-pointer`, and skills in the document corpus
+
+The root `CLAUDE.md` moved three of its sections behind `.claude/skills/` and
+kept a name for each. A skill loads by that name, so a renamed directory leaves
+the pointer reading as it did with nothing behind it — `proof-target`'s failure
+one document up — and nothing graded it. `skill-pointer` resolves every name
+CLAUDE.md gives, in prose and in the realm table's Skill column, to a `SKILL.md`
+whose frontmatter `name:` agrees, because the Skill tool registers under the
+frontmatter and not the directory.
+
+`docCorpus` now walks `.claude/skills`, so the ids, paths and Invariant numbers a
+skill cites are graded by the same rules as any document, and `SKILL.md` is
+map-tier for `doc-map-narration`. Before this a skill could cite a retired id or
+a renumbered Invariant with the `registers` phase green.
+
+## 2026-09-04 — `fli tutor:tools`, and a scaffold that stops warning about itself
+
+Lesson 2, on the four surfaces whose whole job is to report on an app: `fli gui`
+(8500), `fli db:studio` (8502), junction's `devtools()` console (8503) and `fli
+project:view` (8501). Twenty assertions, ~5s warm, and it is the only thing in
+the repo that starts any of them and then asks them something.
+
+**The GUI is the front door and the lesson says so** — it is the one surface that
+knows about the other three, lists everything startable in the project, probes
+which of them is up, and runs `fli check` without anybody remembering the
+command. Its liveness assertion is graded by AGREEMENT rather than by `up`: the
+port comes out of the ports table, so the GUI knows where the API is supposed to
+be before the app has ever started, and running the API elsewhere makes `down`
+the correct answer. The lesson probes that same port itself and requires the two
+verdicts to match, which is false for a page reporting whatever it was told last
+— in either direction, and at any port, which is what lets CI run it off the
+assigned slot.
+
+The other three each carry the failure they exist for. The studio is asserted on
+the FILE and the ROW together, because either alone is satisfiable by a studio
+pointed at the wrong database — an empty one has a path and a stale one has
+rows. The console is asserted on a PAIR, one call allowed and one refused,
+because a feed that reported everything as fine and one that reported everything
+as broken look identical from a single call. The viewer is asserted on the chain
+and on the environment panel, after writing the `surface.snapshot.md` it reads —
+services are read off that snapshot and never scanned for, because a hook chain
+resolves at construction.
+
+**Every tool is shown reporting a FAULT as well as a clean state**, which is the
+same rule the refusal pair follows: a dashboard saying *nothing wrong* is
+indistinguishable from one that cannot say anything. The GUI's check panel is
+handed a `.mesa` in `src/resources/` holding only markup — neither PascalCase
+singular nor carrying a `<script module>`, so it breaks two named rules at once
+— and the file is removed and the panel asked again. The studio's drift panel is
+asked before an edit, after one, and after the revert; the edit is a COMMENT, so
+nothing about the database moves and what is being shown is the real thing
+behind *I added a column and the app cannot see it* — the running process is on
+the schema it read at boot.
+
+`--no-open` is threaded through `fli db:studio` (the flag was accepted and
+answered *flag not defined — ignoring*), and `startServer` in the tutor's module
+learned an `argv` form, since a tool is run against an app rather than from
+inside it and there is no package script to name.
+
+**Found by running it**: every app `fli new` writes carried a `fli check` warning
+about itself. The generated `api/src/core/db.ts` passed its schema PATH under
+`createClient({ schema })`, which litestone reads as a path and `schema-in-memory`
+reports on the key — all a source reader can see. The two keys are not synonyms:
+a schema STRING has no directory, so a relative `import` in it resolves against
+nothing and is dropped. Now `path:`, which is the spelling litestone's own error
+message asks for, and a fresh scaffold reports no findings.
+
+## 2026-09-04 — a build context docker cannot read, refused where it is decidable
+
+A deploy failed with `open Dockerfile: no such file or directory` about a file
+the shell reads in the same directory in the same script. The filed cause was a
+dot-prefixed directory anywhere in `path`. It is not: one tree copied to eight
+paths and built on docker 29.6.1 shows `~/vis/.deep/app` building and
+`/tmp/vis/app` failing, and what separates them is that docker here is the
+SNAP, whose `home` interface grants everything under the user's home except a
+hidden directory directly under it, and nothing outside home at all.
+
+The two readings disagree in both directions, which is why the string rule was
+the wrong remedy — it passes `/tmp/build`, which fails, and refuses
+`/srv/.apps/myapp`, which builds on the docker.com packages. And the machine
+that decides is the builder, which under a declared `deploy.builder` is not this
+laptop.
+
+So `04-build-api` asks it, before the vendor and the upload: `docker build
+--check` resolves and parses the dockerfile and builds nothing. Graded on the
+error text rather than the exit status, because `--check` also exits non-zero
+for a lint warning and an older docker refuses the flag in different words. One
+cause has two sentences depending on how far the read got, so what is graded is
+*docker says no such file* about a path the shell has just read.
+
+`deploy:doctor` was named in the finding and is not the owner: it never contacts
+a machine.
+
+## 2026-09-04 — `fli tutor:adopt`, the door for a database you already have
+
+Lesson 10. Six steps, ~3s, and the only lesson that does not begin with
+`fli new` writing your models: it begins with a SQLite database made by raw SQL,
+with plural `snake_case` tables and rows already in it.
+
+It reads that database into a schema, and the half worth the lesson is the
+second output — every construct the reading could not carry, graded `changed`,
+`lost` or `noted`, with `--strict` failing on `changed` alone. Then it checks
+the reading against itself: build a database from the schema, read THAT, and
+require the same text. That property catches what a substring assertion cannot
+— a default whose quotes double on every pass, a predicate that nests deeper
+each time — and it is run against the learner's own database rather than
+described.
+
+The payoff is `GET /api/orders` answering the row written in step 2 by raw SQL,
+through a schema read out of the database that held it, with nothing migrated:
+adopting is not a schema change.
+
+Its last assertion is a **refusal**. `migrate baseline` is how you eventually
+say *this database already holds what these migrations build*, and it compares
+before it records — here it declines, naming the two lines the reading did not
+get to the letter. One is cosmetic (`INTEGER PRIMARY KEY` is nullable as
+declared) and one is not (`@default(now())` writes ISO-8601 where the column has
+been writing SQLite's own format), which is what the first hour after an import
+is for.
+
+Writing it found four defects in `litestone introspect` and two in the scaffold.
+`fli new --no-auth` printed `fli keygen aes --name ENCRYPTION_KEY --env` as the
+next step — and keygen defaults to **base64** while litestone parses that
+variable as **hex**, so following the instruction gave a key that decodes to
+zero bytes and an app that still would not start. Advice that fails when taken
+is worse than none; the hint says `--format hex` now.
+
+## 2026-09-04 — an option `context.exec` does not have
+
+`FJS-537`. 1755 + 39 pass. Typecheck clean.
+
+`config.exec` spread its options straight into `execSync`, where an
+unrecognised key changes nothing — the child writes to the terminal under the
+default `stdio: 'inherit'` and the call answers `null`. It is refused by name
+now, the way `createClient` refuses an unknown option: a typo in an options bag
+is a statement the author just made, and forwarding it makes the mistake
+indistinguishable from the default. The message names every unknown key, and
+for `capture` it names the pipe it was reaching for.
+
+**Writing the corpus guard found a second live instance, which is why one is
+worth writing.** `allowFailure: true` is passed by `deploy/doctor.md` and
+`deploy/_module.md` and was never implemented either, so `execSync` threw on the
+non-zero exit and `config.exec` rethrew: `fli deploy:doctor` died with a stack
+trace exactly when its migration check should have said *fail*. Measured both
+ways against a scratch app whose `db/migrations/` does not build its schema.
+The same call site read `probe?.exitCode ?? probe?.code`, neither of which
+`execSync` puts anywhere, so on the path that did not throw the code read `0`
+and the check could only ever pass.
+
+`allowFailure` is implemented: the thrown error IS the answer, `status` the exit
+code and `stdout`/`stderr` what the child wrote, so a caller reads the same two
+keys on both paths. A signal still stops everything — Ctrl+C is not a probe
+result.
+
+The corpus half is the one with teeth. Commands are markdown, so a compile is
+not a run; every `exec({…})` in every shipped command is read and its keys
+graded. It needed rewriting mid-flight: a line scanner passed when
+`capture: true` was put back on a ONE-LINE call, which is the shape that started
+this, so it is a character scan over key position that skips strings and
+template literals.
+
+## 2026-09-03 — `fli tutor:test`, and something that grades the checks
+
+Lesson 8. Six steps, ~20s, no server and no browser — every assertion is a real
+database built from the app's own schema.
+
+Its subject is the thing that is unusual here: most of what you would write
+tests for has already been **declared**, and a declaration can be executed. Four
+calls run every gate at every declared level for read, create, update and
+delete; every `@guarded` / `@encrypted` / `@secret` column, read back; every
+validator, either side of its boundary; every `@@allow` / `@@deny`, against rows
+on both sides of its predicate. No fixtures, no assertions to author.
+
+Then the step that grades those: `litestone mutate` breaks the schema on purpose
+and runs the checks derived from the ORIGINAL against a database built from the
+mutant. A survivor is a hole and it names itself — on a scaffolded app, 40
+mutants, 70% killed, and the twelve survivors printed with their kinds.
+
+Two things it teaches that a reader would otherwise meet as a bug.
+
+**A factory writes through a real client, so it is graded.** `Note` creates at
+USER(4) and a factory with no principal is a stranger, so `.asSystem()` is not a
+shortcut — a fixture belongs below the boundary, or a gate that refuses the
+caller refuses the arrangement too.
+
+**`actingAs` is handed a session, not a row.** The scaffolded resolver grades on
+`isAdmin` and the table has `role`; `sessionFields` is what turns one into the
+other, and it runs at sign-in rather than when a test hands a row over. So
+`actingAs(adminRow)` grades 4, and a test asserting a refusal there passes for
+entirely the wrong reason. The lesson writes both spellings and asserts they
+differ.
+
+`tutor:fleet` becomes lesson 9. `probe.command` is new — an argv, its exit code
+AND what it printed, because `bun test` with no test files exits 0 and
+`litestone mutate` exits 0 whatever the score.
+
+Found while writing it: `tutor:jobs` anchored its edit on the literal
+`app.configure(channels())`, which the scaffold no longer writes.
+
+## 2026-09-03 — a scaffolded app gets the auth that is installed
+
+`fli new` links and installs BEFORE it composes its sub-commands, and
+`auth:install` reads `user.lite` out of the app's own `node_modules` rather than
+asking the resolver for it.
+
+Every scaffolded app was running an auth schema nobody had installed. The
+appended `model User` came from `@frontierjs/auth@1.0.3` in
+`~/.bun/install/cache/` — `accountId Int?` where the tree says `String?`, and no
+`@@auth`, which leaves every claim in every policy ungraded: a misspelling then
+compiles to NULL, read as *nobody* by the SQL half and *everybody* by the JS
+half (`FJS-759`, `FJS-666`).
+
+Three defects, each hiding the next:
+
+**The order.** `auth:install` ran before the link and the install, so the app had
+no `node_modules` when the model was read — `FJS-741` one step earlier in the
+same command.
+
+**Bun resolves out of its cache.** `fli` runs on bun, and bun's
+`require.resolve` falls back to the global install cache when an app has no
+`node_modules`. The *is it installed* test therefore passed against a package
+that was not, answering whatever version the machine happened to have downloaded
+once. Nothing said a word.
+
+**Bun memoises a resolution for the life of the process**, so re-resolving after
+`auth:install`'s own `bun install` returned the same cached answer — which is
+why checking the directory and resolving anyway is not a fix.
+
+`resolveFromApp` now reads the `exports` map from
+`node_modules/@frontierjs/auth/package.json` and joins the target itself. A
+`link:`ed package is a symlink there and is read through it, so the question is
+*installed here* rather than *resolvable from here*.
+
+`fli tutor:access` loses the step that was adding `@@auth` by hand.
+
+## 2026-09-03 — a scaffolded app joins its own channels
+
+`fli new` writes **`api/src/core/channels.ts`** and wires it into `api/src/app.ts`.
+
+Before this the scaffold declared `channel:` on every generated service,
+configured the `channels()` plugin, and joined no connection to anything — so
+every write announced into an empty set. Both halves of that are silent: a
+publish to a channel nobody joined succeeds and reaches nobody, with no error
+and no log, and the symptom is a screen that never updates. The generated
+README pointed at `api/src/core/channels.ts` for the fix, which the scaffold did
+not write (`FJS-752`).
+
+**It joins every channel a service declares**, read off `app.services` at
+connection time rather than from a list kept by hand — `fli scaffold` writes
+`channel:` into each service it generates, and a second copy of those names goes
+stale on the first new model. Only the string form: a function `channel:`
+computes its target per publish, so there is no name to join ahead of time.
+
+Joining everything declared is the right default only because joining is no
+longer a GRANT. A broadcast is not a `SELECT`, so an `@@allow` cannot reach one;
+junction grades and shapes every frame per recipient at the Data boundary
+(`FJS-631`). The generated comment says that. The one it replaced told the
+author to work around behavior junction has not had for a release — and the same
+stale sentence was on `publishToChannels` in junction's own source, corrected
+there too.
+
+`fli tutor:live` taught the gap on purpose and now teaches the mechanism: step 4
+asserts the frame arriving out of the box and names the two files that make it,
+and step 5 is its negative control — the callback taken back out, the same
+publish from the same caller reaching nobody, and the file restored on every
+path out including a refused probe.
+
 ## 2026-09-03 — the tutorial waits for you
 
 **The default is a walk-through.** Every step now prints its prose, says what it

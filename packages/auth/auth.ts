@@ -47,6 +47,11 @@ export function createLitestoneAuth(
   const {
     encryptionKey,
     sessionTtl           = '30 days',
+    // A support episode's ceiling, and it is short on purpose: the way back is
+    // a column, so an operator who walks away leaves an open door for exactly
+    // this long. An app raises it deliberately; nothing lets a caller ask for
+    // more than it.
+    supportTtl           = '30 minutes',
     passwordResetTtl     = '1 hour',
     emailVerificationTtl = '24 hours',
     onPasswordResetRequested,
@@ -244,6 +249,20 @@ export function createLitestoneAuth(
     }
   }
 
+  /**
+   * Is this session's support episode still running?
+   *
+   * One owner for the comparison, because two places ask it and they must agree:
+   * `verifySession` decides whether the token resolves to the subject, and
+   * `startSupport` decides whether a new episode may begin. Reading the column in
+   * one and the clock in the other is what made a lapsed episode unclearable.
+   */
+  function liveEpisode(session: { impersonatingUserId?: unknown; impersonationEndsAt?: unknown }): boolean {
+    return Boolean(session.impersonatingUserId)
+      && session.impersonationEndsAt != null
+      && new Date(session.impersonationEndsAt as string) > new Date()
+  }
+
   // ─── IAuth ────────────────────────────────────────────────────────────────
 
   return {
@@ -273,6 +292,43 @@ export function createLitestoneAuth(
         }
       })
       if (session) {
+        // ── Support mode ────────────────────────────────────────────────
+        //
+        // The token is the OPERATOR's and the principal it answers is the
+        // SUBJECT's, which is the whole of how an episode is bounded: every
+        // layer above this line grades the subject, so an operator cannot
+        // exceed what the person they are helping could do and nothing has to
+        // remember to check.
+        //
+        // The expiry is read HERE rather than left to the sweep. A cron makes
+        // an episode end eventually; this makes it end.
+        //
+        // A subject who no longer exists, or an episode that has lapsed, leaves
+        // the operator resolving as themselves — the columns are a modifier on
+        // their own session and an inapplicable modifier drops away. Answering
+        // null instead would sign an operator out of their own account because
+        // somebody else was deleted.
+        if (liveEpisode(session)) {
+          const subject = await sys.user.findUnique({ where: { id: session.impersonatingUserId } })
+          if (subject) return {
+            // `toContext` and not `sessionFor`, though they build the same
+            // thing: `sessionFor` is documented as never being wired to
+            // anything a request can name, and keeping that true is worth more
+            // than the one line it saves. The id here comes off a stored column
+            // that only an authorised start could write, not off the request.
+            ...toContext(subject, 'session'),
+            sessionId: String(session.id),
+            support: {
+              operatorId: String(session.userId),
+              // The episode IS this session's excursion, so its id is the
+              // session's. A minted one would be a second thing to keep in step.
+              episodeId:  String(session.id),
+              reason:     String(session.impersonationReason ?? ''),
+              endsAt:     session.impersonationEndsAt,
+            },
+          }
+        }
+
         const user = await sys.user.findUnique({ where: { id: session.userId } })
         // The session id travels on the context so a service can tell which of
         // the caller's sessions is the one asking — without ever being handed
@@ -307,6 +363,109 @@ export function createLitestoneAuth(
     async sessionFor(userId: string): Promise<SessionContext | null> {
       const user = await sys.user.findUnique({ where: { id: userId } })
       return user ? toContext(user, 'created') : null
+    },
+
+    // ── startSupport / endSupport ────────────────────────────────────────
+    //
+    // Support mode: an operator acts as somebody else, bounded at that
+    // person's own standing and recorded against the operator's name.
+    //
+    // WHO MAY is not decided here. These take a token that has already been
+    // resolved by the caller above them, and the route is where the app's
+    // guard runs — this package has no way to grade an operator, and a level
+    // hard-coded here would be a second answer to a question the app already
+    // answers once. The refusals that ARE here are the ones no app should be
+    // able to opt out of: no subject, no reason, no self, no chaining.
+    //
+    // Both are single writes to the operator's own row. There is nothing to
+    // mint and nothing to revoke, which is why there is no way back to lose.
+
+    async startSupport(
+      token:   string,
+      subjectId: string,
+      reason:  string,
+      ttl?:    string,
+    ): Promise<{ endsAt: string }> {
+      const session = await sys.session.findFirst({
+        where: { token, expiresAt: { gt: new Date() } }
+      })
+      if (!session) throw new InvalidTokenError('No live session for this token')
+
+      // Chaining is refused rather than nested. An operator already inside an
+      // episode is resolving as the subject, so a second start would record
+      // the SUBJECT as the operator of the next one — the trail would name a
+      // person who did nothing.
+      //
+      // **Asked with the CLOCK, the same way `verifySession` asks it.** A lapsed
+      // episode leaves its columns set until something clears them, and reading
+      // the column alone made a lapse permanent: the session resolves as the
+      // operator again — correctly, since resolution reads the clock — and every
+      // start after that is refused for an episode nobody is in. There is no way
+      // out of that state a person could find (`example`: `verify:support`).
+      if (session.impersonatingUserId && liveEpisode(session))
+        throw new AuthConfigError('Already in a support session — end it before starting another')
+
+      if (String(session.userId) === String(subjectId))
+        throw new AuthConfigError('Cannot start a support session against yourself')
+
+      if (!reason?.trim()) throw new AuthConfigError('A support session needs a reason')
+
+      const subject = await sys.user.findUnique({ where: { id: subjectId } })
+      if (!subject) throw new UserNotFoundError(`No user '${subjectId}'`)
+
+      // The app may ask for less than the ceiling and never for more. A
+      // requested ttl is a preference; the cap is the rule.
+      const cap  = new Date(expiresAt(supportTtl))
+      const want = ttl ? new Date(expiresAt(ttl)) : cap
+      const endsAt = (want < cap ? want : cap).toISOString()
+
+      await sys.session.update({
+        where: { id: session.id },
+        data:  {
+          impersonatingUserId: String(subjectId),
+          impersonationReason: reason.trim(),
+          impersonationEndsAt: endsAt,
+        },
+      })
+
+      // The trail already has the write — Session carries @@log(audit), so the
+      // stamp above is an entry with `before` and `after`, and the token is
+      // @guarded so it is redacted there. This says the same thing in the
+      // vocabulary a person reads the trail with, and is what a start that was
+      // REFUSED would need if refusals are ever recorded.
+      await audit('support.started', {
+        model:   'Session',
+        records: [String(session.id)],
+        actorId: String(session.userId),
+        meta:    { subjectId: String(subjectId), reason: reason.trim(), endsAt },
+      })
+
+      return { endsAt }
+    },
+
+    async endSupport(token: string): Promise<{ ended: boolean }> {
+      const session = await sys.session.findFirst({ where: { token } })
+      if (!session?.impersonatingUserId) return { ended: false }
+
+      // An explicit null clears (Invariant 9). Ending twice is a no-op rather
+      // than an error: the second call is what a reconnecting tab sends.
+      await sys.session.update({
+        where: { id: session.id },
+        data:  {
+          impersonatingUserId: null,
+          impersonationReason: null,
+          impersonationEndsAt: null,
+        },
+      })
+
+      await audit('support.ended', {
+        model:   'Session',
+        records: [String(session.id)],
+        actorId: String(session.userId),
+        meta:    { subjectId: String(session.impersonatingUserId) },
+      })
+
+      return { ended: true }
     },
 
     // ── login ────────────────────────────────────────────────────────────
@@ -629,7 +788,7 @@ export function createLitestoneAuth(
       })
       if (!pending) throw new InvalidTokenError('Invalid or expired link token')
 
-      // Single use, claimed before anything it authorises.
+      // Single use, claimed before anything it authorizes.
       await sys.verification.delete({ where: { id: pending.id } })
 
       const user = await sys.user.findFirst({ where: { email: pending.identifier } })

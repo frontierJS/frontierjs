@@ -85,7 +85,7 @@ model Note {
     const err = await refusal(model(`  @@allow('read', auth().cartToken == ownerId)`))
     expect(err).toContain('Claims:')
     expect(err).toContain('isStaff (@@auth User)')
-    expect(err).toContain("createClient({ claims: ['cartToken'] })")
+    expect(err).toContain('`claim cartToken`')
   })
 })
 
@@ -161,11 +161,46 @@ model Note {
   })
 
   // The one source that has to be stated: a value resolved PER REQUEST is on no
-  // row and in no schema, so nothing can derive it.
+  // row, so nothing can derive it. It is declared in the SCHEMA, because a tool
+  // holding the file and not the app is the caller that has to grade it too
+  // (`FJS-772`); `createClient({ claims })` is the same statement made in code.
   test('a declared claim is accepted, and the same claim undeclared is not', async () => {
     const schema = AUTH_USER + note('auth().cartToken == ownerId')
     expect(await build(schema, { claims: ['cartToken'] })).toBeTruthy()
     expect(await refusal(schema)).toContain("'cartToken' is not a claim")
+  })
+
+  test('a schema-declared claim needs no createClient option', async () => {
+    const schema = 'claim cartToken\n' + AUTH_USER + note('auth().cartToken == ownerId')
+    expect(await build(schema)).toBeTruthy()
+    // The control: the SAME schema without the line, built the same way. A fix
+    // that admitted every claim would pass the row above on its own.
+    expect(await refusal(AUTH_USER + note('auth().cartToken == ownerId')))
+      .toContain("'cartToken' is not a claim")
+  })
+
+  test('a schema-declared claim is named as such in the refusal of another', async () => {
+    const err = await refusal('claim cartToken\n' + AUTH_USER + note('auth().deviceId == ownerId'))
+    expect(err).toContain('cartToken (claim)')
+  })
+
+  test('claim alone switches the set on, with no @@auth model', async () => {
+    // The claim block is a statement in its own right, exactly as `claims: []`
+    // is: a schema that names one has said what its principal carries, so
+    // everything ELSE it names is graded from that moment.
+    const bare = `claim cartToken
+model User { id Int @id  isStaff Boolean @default(false) }
+model Note {
+  id      Int @id @default(autoincrement())
+  ownerId Int
+  @@allow('read', auth().isStff == true)
+}`
+    expect(await refusal(bare)).toContain("'isStff' is not a claim")
+  })
+
+  test('the same claim declared twice is refused', async () => {
+    const err = await refusal('claim cartToken\nclaim cartToken\n' + AUTH_USER + note('auth().cartToken == ownerId'))
+    expect(err).toContain("claim 'cartToken' is declared twice")
   })
 })
 

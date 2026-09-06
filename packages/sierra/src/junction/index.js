@@ -31,7 +31,7 @@ export {
   createResource, createStore, createMakeFromSchema,
   buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildVersion,
-  validateAgainstFields, normalizeBlanks, coerceToSchema, ResourceValidationError,
+  validateAgainstFields, normalizeBlanks, coerceToSchema, ResourceValidationError, ResourceHookError,
   // A thrown value → per-field messages, and the two questions a 409 raises.
   // `resource.fieldErrors(err)` is the same function reached through a
   // resource; these are for the screens that have no resource to reach it
@@ -46,6 +46,8 @@ export {
   controlFor, defaultControlFor, formFieldList, labelFieldFor, labelFieldInfo,
   registerControl, unregisterControl, registeredControls,
 } from './resource.js'
+// The live stores' half of a token change — see _tokenChanged below.
+import { resetResourcesForIdentityChange } from './resource.js'
 
 // ─── Module-level refs (set by initJunction) ──────────────────────────────────
 
@@ -91,10 +93,17 @@ export let whenReady = Promise.resolve()
  *
  * @property {boolean} connected     true when the WebSocket is open
  * @property {object|null} reconnecting  null when stable, { attempt, delay } otherwise
+ * @property {{client: string, server: string}|null} stale
+ *        null until the server states a build this bundle is not, then the two
+ *        ids. A shell renders it the way it renders `connected` —
+ *        `{#if status.stale}<a href="/">A new version is available</a>{/if}`.
+ *        Set at most once per page: the client fires `stale` once, because a
+ *        banner that reappears on every request is one nobody reads.
  */
 export const status = {
   connected: false,
   reconnecting: null,
+  stale: null,
 }
 
 // The writer's handle. watchProxy is cached per object and idempotent, so this
@@ -128,6 +137,13 @@ export function getClient() {
  *  now — in either direction (`FJS-041`). */
 function _tokenChanged(token) {
   invalidatePrefetch()
+  // And the same for every live store, for the same reason one layer over: a
+  // Resource is created once at import (Invariant 18), so its store lives for
+  // the tab and any component still mounted keeps rendering it. On a shared
+  // machine that is the previous person's rows on the next person's screen,
+  // until their own load() resolves and indefinitely on any screen whose load()
+  // never runs — sign-out is a goto(), not a reload (FJS-786).
+  resetResourcesForIdentityChange()
   // A deliberate sign-out closes the socket rather than reopening it as a
   // stranger: an anonymous connection serves no purpose and would fire
   // 'connect' after the person has left.
@@ -238,6 +254,15 @@ function _wrapDebug(client) {
  *        the server's `apiPrefix`. Default '' — services at /{service}.
  * @param {string} [config.authPrefix] The auth plugin's own prefix, default
  *        '/auth' — relative to apiPrefix, as the plugin's option is.
+ * @param {boolean} [config.cookieAuth]
+ *        Which credential the server issues. Forwarded verbatim to
+ *        `createJunctionClient` and it MUST match
+ *        `createAuthPlugin(auth, { cookieAuth: true })` on the API — the browser
+ *        cannot see the server's source and there is nothing here to derive it
+ *        from, so it is declared. Left false, the client answers
+ *        `hasCredential === !!token`, which is false for a signed-in cookie-mode
+ *        caller: no boot restore, no socket, and a sign-out that never reaches
+ *        the server (FJS-787).
  * @param {boolean|'verbose'} [config.debug]
  *        `true`      — log every service call with request/response payloads
  *        `'verbose'` — additionally log every client event
@@ -260,6 +285,25 @@ function buildId() {
   }
 }
 
+/**
+ * Does `path` fall under a declared public route?
+ *
+ * A trailing `*` is a SEGMENT boundary, not a string prefix. It was the latter,
+ * so `/blog*` covered `/blogadmin` and `/blog-internal` — and the guard's
+ * public branch returns before the boot restore is awaited, so a route that
+ * merely shared a prefix skipped the whole guard. Invariant 6 caps what that
+ * costs (the Data boundary refuses the same caller whatever this decides), but
+ * a list whose only job is to name exceptions must not widen itself.
+ *
+ * The base matches on its own too: `'/docs*'` covers `/docs` and `/docs/a`.
+ */
+export function isPublicRoute(rule, path) {
+  const p = String(path ?? '')
+  if (!String(rule ?? '').endsWith('*')) return p === rule
+  const base = String(rule).slice(0, -1)
+  return p === base || p === `${base}/` || p.startsWith(base.replace(/\/?$/, '/'))
+}
+
 export function initJunction(config) {
   if (!config?.url) return
 
@@ -280,6 +324,11 @@ export function initJunction(config) {
     // localStorage in its own login() while the client kept its copy in
     // memory, so the two halves of "signed in" could disagree.
     tokenStorage:  localTokenStore(tokenKey),
+    // Which credential the server issues. The client's `hasCredential` is the
+    // one question three mechanisms here ask — the boot restore, the socket
+    // branch below, and junction's own signOut — and without this it answers
+    // `!!token`, which is false for a signed-in cookie-mode caller.
+    cookieAuth:    config.cookieAuth === true,
     // Only when the app renamed them on the server — see AuthPluginOptions.services.
     ...(config.authServices ? { authServices: config.authServices } : {}),
     // Which build this bundle IS.
@@ -313,9 +362,14 @@ export function initJunction(config) {
     _wrapDebug(client)
   }
 
-  // Configure the fetch wrapper to auto-attach auth token
+  // Configure the fetch wrapper to auto-attach auth token.
+  //
+  // The CLIENT is handed over, not the storage key. Reading localStorage here
+  // was the second owner the comment above refuses — the same bug under a
+  // different name — and it is also the half that cannot answer cookie mode,
+  // where there is no token to read and the credential rides a cookie.
   configureFetch({
-    tokenKey,
+    client,
     baseUrl: config.baseUrl,
   })
 
@@ -337,6 +391,16 @@ export function initJunction(config) {
 
   client.on('reconnecting', (info) => {
     _status.reconnecting = info
+  })
+
+  // This bundle is not the build the server is on. The whole `x-fjs-build`
+  // channel — the CLI's stamp, the response header, the socket's `connected`
+  // frame — exists so a browser left open across a deploy can be told, and it
+  // ended here: `build:` was passed so `stale` COULD fire and nothing listened
+  // (FJS-812). Recorded rather than acted on, because whether that is a banner,
+  // a prompt or a silent reload is the app's answer and not this module's.
+  client.on('stale', (builds) => {
+    _status.stale = builds
   })
 
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -402,11 +466,7 @@ export function initJunction(config) {
 
   if (auth.publicRoutes) {
     beforeNavigate(async ({ to }) => {
-      const isPublic = auth.publicRoutes.some(r =>
-        r.endsWith('*')
-          ? to.path.startsWith(r.slice(0, -1))
-          : to.path === r
-      )
+      const isPublic = auth.publicRoutes.some(r => isPublicRoute(r, to.path))
 
       if (isPublic) return true
 

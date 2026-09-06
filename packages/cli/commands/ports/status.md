@@ -1,11 +1,12 @@
 ---
 title: ports:status
-description: Show all active FLI port sessions and their status
+description: What is holding every port this workspace can name, plus the broker's own sessions
 alias: ps
 examples:
   - fli ps
   - fli ports:status
   - fli ports:status --clean
+  - fli ports:status --sessions
 flags:
   clean:
     type: boolean
@@ -15,25 +16,64 @@ flags:
     type: boolean
     description: Output as JSON
     defaultValue: false
+  sessions:
+    type: boolean
+    description: Only the broker's lock file — skip probing the schema's ports
+    defaultValue: false
 ---
 
 <script>
 import { resolve } from 'path'
 </script>
 
-Shows every project currently registered in `~/.fli/sessions.lock`,
-along with their assigned ports and whether the process is still alive.
+Two questions, because the answer to one of them was misleading on its own.
 
-Use `--clean` to prune stale entries left by crashed processes.
+**What is actually holding a port.** Every port the schema can name — the
+reserved 8500–8509 tooling block and each assigned project across every
+category and env — probed against the OS, then decoded back into *env ·
+category · project* and named with the process holding it. This is the half the
+lock file cannot see: `fli db:studio` binds 8502 as a literal and claims no
+session, as does any app somebody started by hand, so a status built on the
+broker alone answered *no active sessions* while a port was busy and sent people
+looking in the wrong place.
+
+**What the broker has handed out.** `~/.fli/sessions.lock` — projects that took
+a dynamic slot, their ports, and whether the process is still alive. `--clean`
+prunes entries left by a crashed one, and `--sessions` shows only this half.
+
+`fli kill <port>` is what to do about a port you want back; it names the process
+before it signals it, and reads the same `pidsOnPort` this does.
 
 ```js
-const { getSessionStatus, readLock, releaseSession, decode } = await import(resolve(global.fliRoot, 'core/ports.js'))
+const { getSessionStatus, releaseSession, busyKnownPorts } = await import(resolve(global.fliRoot, 'core/ports.js'))
 
 const sessions = getSessionStatus()
+const busy     = flag.sessions ? [] : await busyKnownPorts()
 
 if (flag.json) {
-  echo(JSON.stringify(sessions, null, 2))
+  echo(JSON.stringify({ busy, sessions }, null, 2))
   return
+}
+
+// ── What is holding a port right now ────────────────────────────────────────
+if (!flag.sessions) {
+  echo('')
+  if (!busy.length) {
+    echo('  No port this workspace can name is in use.\n')
+  } else {
+    echo(`  ${busy.length} port${busy.length === 1 ? '' : 's'} in use\n`)
+    for (const b of busy) {
+      const what = b.reserved
+        ? (b.project ?? 'reserved tooling slot')
+        : `${b.project} · ${b.category} · ${b.env}`
+      echo(`  ●  ${String(b.port).padEnd(6)} ${what}`)
+      // The pid is what makes the line actionable — without it the answer is
+      // "something has it", which is what the caller already knew.
+      if (b.command) echo(`     ${'pid ' + b.pids.join(', ')}  ${b.command}`)
+      else           echo(`     (no lsof here — the port answers, the process cannot be named)`)
+    }
+    echo('')
+  }
 }
 
 if (!sessions.length) {
@@ -45,7 +85,7 @@ const alive  = sessions.filter(s => s.alive)
 const stale  = sessions.filter(s => !s.alive)
 
 echo('')
-echo(`  ${alive.length} active  ·  ${stale.length} stale\n`)
+echo(`  broker sessions — ${alive.length} active  ·  ${stale.length} stale\n`)
 
 for (const s of sessions) {
   const status  = s.alive ? '↑' : '✗'

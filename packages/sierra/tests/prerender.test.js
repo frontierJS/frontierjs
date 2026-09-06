@@ -12,7 +12,7 @@
  */
 
 import { describe, test, expect } from 'vitest'
-import { resolve, dirname } from 'path'
+import { resolve, dirname, sep } from 'path'
 import { fileURLToPath } from 'url'
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'fs'
 
@@ -39,6 +39,34 @@ describe('fillPath', () => {
 
   test('leaves a static path alone', () => {
     expect(fillPath('/about/', {})).toBe('/about/')
+  })
+
+  // A param fills ONE path segment, and the filled path is joined onto outDir.
+  // `getStaticPaths()` returns whatever a database column holds.
+
+  test('a param that is a path is refused, naming the route and the value', () => {
+    // `join` resolves `..` normally, so this wrote an HTML file outside the
+    // build output — on the build machine's disk.
+    expect(() => fillPath('/products/:slug/', { slug: '../../../../etc/cron.d/evil' }))
+      .toThrow(/slug.*products.*etc\/cron\.d\/evil/s)
+    expect(() => fillPath('/products/:slug/', { slug: 'a/b' })).toThrow(/not a segment/)
+    expect(() => fillPath('/products/:slug/', { slug: '..' })).toThrow(/directory reference/)
+  })
+
+  test('an EMPTY param is refused, because it overwrites the parent page', () => {
+    // The quiet half of the same defect: '' fills to /products//, which
+    // collapses to products/index.html — the catalogue's own page, replaced by
+    // one product, build exit 0, a tick printed beside it. A nullable slug
+    // column or an import that did not fill one is all it takes.
+    expect(() => fillPath('/products/:slug/', { slug: '' })).toThrow(/empty/)
+  })
+
+  test('an ordinary slug still fills — including one with hyphens and unicode', () => {
+    // The negative control: a check that refused every param satisfies the two
+    // rows above and emits no catalogue at all (`FJS-351`).
+    expect(fillPath('/products/:slug/', { slug: 'navy-tee' })).toBe('/products/navy-tee/')
+    expect(fillPath('/products/:slug/', { slug: 'caf\u00e9-au-lait' })).toBe('/products/caf\u00e9-au-lait/')
+    expect(fillPath('/products/:id/', { id: 42 })).toBe('/products/42/')
   })
 })
 
@@ -250,6 +278,47 @@ describe('pathsForRoute', () => {
     }, ROOT)
     expect(out).toEqual([])
   })
+})
+
+describe('prerenderRoutes — two pages, one file (FJS-822)', () => {
+
+  // A scaffolded app rather than the committed fixture, because the whole
+  // question is what getStaticPaths() returns and the fixture's is on disk.
+  async function buildWith(slugs) {
+    const root = tmpDir('sierra-dupe-')
+    mkdirSync(resolve(root, 'src/routes/products/[slug]'), { recursive: true })
+    writeFileSync(resolve(root, 'src/routes/products/[slug]/index.mesa'),
+      `---\nrender: static\n---\n<script>export let data = null</script>\n<h1>{data?.slug ?? ''}</h1>\n`)
+    writeFileSync(resolve(root, 'src/routes/products/[slug]/index.meta.js'),
+      `export async function getStaticPaths() { return ${JSON.stringify(slugs.map(slug => ({ slug })))} }\n` +
+      `export async function load({ params }) { return { slug: params.slug } }\n`)
+
+    const { renderComponent } = await import('@frontierjs/mesa/render-component.js')
+    const { scan } = await import('../src/scanner/index.js')
+    const tree = await scan('src/routes', { cwd: root })
+    const warnings = []
+    const res = await prerenderRoutes({
+      tree, root, outDir: tmpDir('sierra-dupe-out-'), renderComponent,
+      warn: m => warnings.push(m),
+    })
+    return { res, warnings }
+  }
+
+  // Refused rather than warned, and the message names both entries. A warning
+  // scrolls past and the build still exits 0, so the losing page is absent from
+  // the site with a log line as the only evidence.
+  test('the same slug twice is refused, rather than one page silently replacing the other', async () => {
+    await expect(buildWith(['a', 'a'])).rejects.toThrow(/named '\/products\/a\/' twice/)
+  }, 30_000)
+
+  test('two distinct slugs stay silent', async () => {
+    // The negative control: a duplicate check that fired on every page would
+    // satisfy the row above and make the warning worthless.
+    const { res, warnings } = await buildWith(['a', 'b'])
+    expect(warnings.join('\n')).not.toMatch(/both write|twice/)
+    expect(res.written.sort()).toEqual(
+      ['products/a/index.html', 'products/b/index.html'].map(p => p.split('/').join(sep)))
+  }, 30_000)
 })
 
 describe('prerenderRoutes', () => {

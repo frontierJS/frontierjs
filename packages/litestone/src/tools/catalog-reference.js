@@ -9,7 +9,7 @@
 // It is NOT `docs/schema.md`, which is a narrative tour and stays hand-written.
 // The measurement that says both are needed: forty of the words had no entry
 // anywhere else in `docs/` — no heading, no table row, no bullet. They appear
-// inside samples or not at all, so `@trim`, `@@strict` and `@@index` were
+// inside samples or not at all, so `@trim`, `@@noStrict` and `@@index` were
 // undocumented in the only sense that matters, which is that you could not look
 // them up. A hand-written A–Z would have gone the same way, silently: the
 // editor extension's hand-written word list had drifted twenty-nine words before
@@ -28,7 +28,7 @@
 
 import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, GROUPS, POSITIONS,
          POSITION_RULES, positionsOf, typed, grouped, probeFor, docFor,
-         UNDOCUMENTED } from '../core/catalog.js'
+         UNDOCUMENTED, synonymsFor } from '../core/catalog.js'
 import { VISIBILITY, PER_CALLER, RULES } from '../core/advise.js'
 
 /**
@@ -102,6 +102,12 @@ function entry(row, depth, push) {
       ? `- **Cannot sit with** — ${row.excludes.map(w => `\`${row.level === 'model' ? '@@' : '@'}${w}\``).join(', ')}`
       : null,
     row.note ? `- **Note** — ${mdText(row.note)}` : null,
+    // What a reader types when they do not know this word. On the page as well
+    // as in the search, because a curated list is only reviewable where it can
+    // be read beside the word it claims to be another name for.
+    synonymsFor(row).length
+      ? `- **Also typed** — ${synonymsFor(row).map(sy => `\`${sy}\``).join(' · ')}`
+      : null,
     // The page this word is a page of. `seeAlso` only ever leads to another
     // word, so without this every reader dead-ends at the blurb.
     docFor(row)

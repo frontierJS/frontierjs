@@ -37,6 +37,7 @@ const CSS = `
 .fjs-badge-ws,.fjs-badge-websocket{background:#312e81;color:#a5b4fc}
 .fjs-badge-http{background:#1c3a2a;color:#6ee7b7}
 .fjs-badge-internal{background:#292524;color:#a8a29e}
+.fjs-badge-other{background:#292524;color:#a8a29e}
 .fjs-req-user{color:#666;min-width:50px}
 .fjs-req-dur{display:flex;align-items:center;gap:4px;min-width:80px;color:#888}
 .fjs-dur-bar{height:6px;background:#4c1d95;border-radius:2px;display:inline-block}

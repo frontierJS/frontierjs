@@ -31,6 +31,28 @@ let _defs = {}
 /** @type {Record<string, object>} model name → definition (models only) */
 let _models = {}
 
+/**
+ * The same models as `_models`, in UPDATE mode.
+ *
+ * Litestone generates a create schema and an update schema and they are
+ * different documents. Three facts exist only in the update one, and every one
+ * of them is about a WRITE the browser is about to make:
+ *
+ *   `@immutable`            → `readOnly` + `x-litestone-kind: 'immutable'`
+ *   `@immutable` + `@seals` → `x-litestone-seal`
+ *   `@version`              → the property at all, `readOnly`
+ *
+ * The build asked for one mode and got the default, `create`, so `stripReadOnly`
+ * left an `@immutable` column in a patch payload and the Data boundary refused
+ * it BY NAME — the person told to leave a field out of a payload they never
+ * assembled, which is the failure `stripReadOnly` exists to end reappearing one
+ * attribute along — and `sealedFields()` answered `[]` for every row of every
+ * model, so the seal mechanism was inert in every real app (`FJS-807`).
+ *
+ * @type {Record<string, object>}
+ */
+let _updateModels = {}
+
 /** @type {Record<string, string>} accessor / service name → model name */
 let _index = {}
 
@@ -51,10 +73,15 @@ function _looksLikeModel(def) {
  * @param {string[]} [modelNames] which of those entries are models. Omitted →
  *        fall back to "has properties", which is right for every case except a
  *        `type T { … }` declaration; the build always passes the real list.
+ * @param {object} [updatePatch] what the UPDATE-mode schema differs by, per
+ *        model — see `diffSchemaModes`. Omitted (an older build, or a schema
+ *        passed by hand) → the update tables are the create ones, which is the
+ *        behavior before `FJS-807` and degrades rather than fails.
  */
-export function registerSchemas(defs, modelNames) {
+export function registerSchemas(defs, modelNames, updatePatch) {
   _defs = defs ?? {}
   _models = {}
+  _updateModels = {}
   _index = {}
 
   const names = modelNames ?? Object.keys(_defs).filter(n => _looksLikeModel(_defs[n]))
@@ -63,6 +90,7 @@ export function registerSchemas(defs, modelNames) {
     const def = _defs[modelName]
     if (!def) continue
     _models[modelName] = def
+    _updateModels[modelName] = applySchemaModePatch(def, updatePatch?.[modelName])
 
     const accessor = modelName.charAt(0).toLowerCase() + modelName.slice(1)
     // Every spelling a caller might reasonably use: the model name as declared,
@@ -95,6 +123,109 @@ export function registerSchemas(defs, modelNames) {
     const tablePlural = _pluralOf(table)
     _index[tablePlural] = _index[tablePlural] ?? modelName
   }
+}
+
+// ── The two schema modes, stated once and a delta ─────────────────────────────
+//
+// The browser needs both the create schema and the update schema, and shipping
+// both whole would double the largest thing in this bundle: measured over
+// `example`'s 70 models, the create `$defs` is 99.7 KB raw / 27.5 KB gzipped and
+// a second copy costs +102.3 KB / +26.3 KB. A structural DELTA between them
+// costs +17.4 KB / +2.0 KB — thirteen times less over the wire — because the
+// two documents differ on 39 of 70 models and, within those, on a handful of
+// properties each.
+//
+// **The delta is computed, never written.** A hand-kept table of "what update
+// mode changes" would be a second implementation of litestone's mode rules
+// living in this package, and it would go wrong silently the day litestone
+// grows a fourth mode difference. Diffing the two generated documents carries a
+// new one automatically and cannot describe anything litestone did not emit.
+//
+// The two halves have one home for that reason: the build calls `diffSchemaModes`
+// and the browser calls `applySchemaModePatch`, and a round-trip assertion over
+// the real app schemas is what stops the format drifting between them.
+
+/**
+ * What the update-mode `$defs` differ from the create-mode ones by.
+ *
+ * Per model: the properties whose JSON is not identical (carried whole — a
+ * key-level diff would save bytes and cost a merge rule), the property names
+ * update mode drops, `required` when it differs (`null` where update has none),
+ * and any other top-level key. A model with no differences is absent.
+ *
+ * @param {object} createDefs
+ * @param {object} updateDefs
+ * @returns {object} model name → patch
+ */
+export function diffSchemaModes(createDefs, updateDefs) {
+  const patch = {}
+  const same  = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+
+  for (const [name, u] of Object.entries(updateDefs ?? {})) {
+    const c = (createDefs ?? {})[name]
+    if (!c) { patch[name] = { whole: u }; continue }
+
+    const entry = {}
+
+    const props = {}
+    for (const [key, value] of Object.entries(u.properties ?? {})) {
+      if (!same(c.properties?.[key], value)) props[key] = value
+    }
+    if (Object.keys(props).length) entry.properties = props
+
+    const removed = Object.keys(c.properties ?? {}).filter(k => !(k in (u.properties ?? {})))
+    if (removed.length) entry.removed = removed
+
+    if (!same(c.required, u.required)) entry.required = u.required ?? null
+
+    for (const key of new Set([...Object.keys(c), ...Object.keys(u)])) {
+      if (key === 'properties' || key === 'required') continue
+      if (!same(c[key], u[key])) (entry.meta ??= {})[key] = u[key] ?? null
+    }
+
+    if (Object.keys(entry).length) patch[name] = entry
+  }
+
+  return patch
+}
+
+/**
+ * Rebuild one update-mode definition from its create-mode one and the delta.
+ *
+ * The inverse of `diffSchemaModes` for one entry. No patch means the two modes
+ * agree about this model, so the create definition IS the update one — which is
+ * also what an older build or a hand-passed schema gets, and is the behavior
+ * before `FJS-807`.
+ *
+ * @param {object} createDef
+ * @param {object} [patch]
+ * @returns {object|null}
+ */
+export function applySchemaModePatch(createDef, patch) {
+  if (!createDef) return patch?.whole ?? null
+  if (!patch) return createDef
+  if (patch.whole) return patch.whole
+
+  const out = { ...createDef }
+
+  if (patch.properties || patch.removed) {
+    const props = { ...(createDef.properties ?? {}) }
+    for (const name of patch.removed ?? []) delete props[name]
+    Object.assign(props, patch.properties ?? {})
+    out.properties = props
+  }
+
+  if ('required' in patch) {
+    if (patch.required == null) delete out.required
+    else out.required = patch.required
+  }
+
+  for (const [key, value] of Object.entries(patch.meta ?? {})) {
+    if (value == null) delete out[key]
+    else out[key] = value
+  }
+
+  return out
 }
 
 /**
@@ -182,6 +313,20 @@ export function suggestModel(name) {
 export function schemaFor(...names) {
   const key = modelNameFor(...names)
   return key ? _models[key] : null
+}
+
+/**
+ * The same model in UPDATE mode — what a PATCH may carry.
+ *
+ * Falls back to the create definition when the build emitted no delta, so a
+ * caller can use this unconditionally.
+ *
+ * @param   {...string} names  candidates, first match wins
+ * @returns {object|null}
+ */
+export function updateSchemaFor(...names) {
+  const key = modelNameFor(...names)
+  return key ? (_updateModels[key] ?? _models[key] ?? null) : null
 }
 
 /**

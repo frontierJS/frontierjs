@@ -124,16 +124,17 @@ $: selectedCity = cities[0]        // writable derived — re-derives when citie
 > **RULE 1** — `$:` annotations are top-level scope only — never inside functions, blocks,
 > or callbacks.
 
-> **RULE 2** — The compiler detects derived values. Any top-level `const` that references
-> another reactive variable is automatically derived and recomputes when dependencies change.
+> **RULE 2** — The compiler detects derived values. A top-level `const` is derived when it
+> transitively depends on something that can MOVE — a `let`, a prop, a `$context` read, an
+> awaited value, or a watched import. Every other `const` is static.
 
 ### 2.2 `const` — Derived / Static
 
 A top-level `const` is either a static value or a compiler-detected derived value. If it
-references other reactive variables, the compiler automatically re-derives it when
-dependencies change. The developer cannot manually assign to it — but the compiler can
-re-derive it. This is not a contradiction: `const` means the developer cannot override it,
-not that the value never changes.
+reaches a value that can move, the compiler automatically re-derives it when that value
+changes. The developer cannot manually assign to it — but the compiler can re-derive it.
+This is not a contradiction: `const` means the developer cannot override it, not that the
+value never changes.
 
 ```js
 const double = count * 2              // derived — reruns when count changes
@@ -141,6 +142,19 @@ const isDark = theme === 'dark'       // derived from theme
 const cities = await getCities(state) // async-derived — reruns when state changes
 const MAX = 100                       // static — no reactive deps, inlined as literal
 ```
+
+*Something that can move* is the load-bearing half, and the closure is transitive:
+
+```js
+const a = 1                           // static
+const b = a                           // static — a cannot move
+const c = b + page                    // derived — reaches `let page`
+```
+
+Deriving is not free, because it makes the initializer LAZY. A `const` whose initializer
+has a side effect — `const handle = subscribe(channelId)` — runs it only if something
+reads the const, so promoting one nothing reads means the subscription never happens.
+Nothing warns and the value is correct everywhere it IS read (`FJS-D212`).
 
 ### 2.3 `var` — Non-Reactive Sampler
 
@@ -194,9 +208,14 @@ export let selected            // no default — undefined until parent provides
 
 ### 3.2 `export const` — Immutable Prop
 
-The parent can pass a value. The component **cannot** reassign it — the compiler enforces
-this as an error. The value is derived from the parent's binding and recomputes if the parent
-passes a new value. Use for values the component should treat as read-only configuration.
+What `export let` compiles to, minus the setter: the same tracked signal, with the
+initializer as the fallback when the parent passes nothing. The component **cannot**
+reassign it — a write is a compile error naming the prop, and `bind:this` hands the
+parent a read-only accessor that throws.
+
+**Immutable describes the component, not time.** A later value from the parent still
+reaches it and the component re-renders; freezing at mount is `export var` (§3.3), and
+is a stale screen wherever it is not what was meant.
 
 ```js
 export const sku      = 'WGT-001'   // component cannot do: sku = 'other'
@@ -222,7 +241,8 @@ export var region  = 'US'      // stable for the component's lifetime
 | `export const p` | ✗ Compiler error | Child cannot reassign — nothing to bind back |
 | `export var p`   | ✗ Compiler error | Child ignores parent updates — binding is inert |
 
-> **RULE 22** — `bind:` is only valid on `export let` props.
+> **RULE 22** — `bind:` is only valid on `export let` props. `export const` is
+> read-only on the child side (§3.2), so there is nothing to bind back.
 
 The table above is the *child* side. The parent side has a matching requirement:
 the variable being bound must be a writable top-level `let`, since the child's
@@ -700,7 +720,7 @@ const Page = (anchor) => {
 
 | Scaffolding | Times the component ran for ONE page |
 |---|---|
-| `createEffect` + `dispose()` | **1001** — one thousand copies of the markup, then the cycle cap |
+| `createEffect` + `dispose()` | **101** — a hundred copies of the markup, then the per-node cycle cap |
 | `createRoot` + `dispose()` | **1** |
 
 The `createEffect` version also reports `Update cycle detected … two reactive statements
@@ -1262,9 +1282,9 @@ binding target must be `let` (or `export let` on the parent side).
 <!-- After mount: canvas is the HTMLCanvasElement -->
 ```
 
-**On components** — sets the variable to the component's exported interface: all
-`export let` props and exported functions declared in the child's script. The DOM root
-element is not exposed.
+**On components** — sets the variable to the component's exported interface: every
+declared prop and every exported function in the child's script. The DOM root element is
+not exposed. A `export const` prop reads like any other and refuses a write (§3.2).
 
 ```js
 // Counter.mesa
@@ -1289,13 +1309,17 @@ component always gives the exported API, never a DOM node.
 
 ### 10.3 Group Binding — `bind:group`
 
+Checkboxes — the signal is an array:
+
 ```html
-<!-- Checkboxes — signal is an array -->
 <script>let selected = []</script>
 <input type="checkbox" bind:group={selected} value="apples">
 <input type="checkbox" bind:group={selected} value="bananas">
+```
 
-<!-- Radios — signal is a scalar -->
+Radios — the signal is a scalar:
+
+```html
 <script>let size = 'M'</script>
 <input type="radio" bind:group={size} value="S">
 <input type="radio" bind:group={size} value="M">
@@ -1306,16 +1330,16 @@ component always gives the exported API, never a DOM node.
 ### 10.4 Class Directive — `class:name`
 
 ```html
-<div class:active={isActive}>
-<div class:dark>                    <!-- shorthand: applies when variable 'dark' is truthy -->
+<div class:active={isActive}></div>
+<div class:dark></div>              <!-- shorthand: applies when variable 'dark' is truthy -->
 ```
 
 ### 10.5 Style Directive — `style:prop`
 
 ```html
-<div style:color={textColor}>
-<div style:font-size="{size}px">    <!-- mixed value with units -->
-<div style:display>                 <!-- shorthand -->
+<div style:color={textColor}></div>
+<div style:font-size="{size}px"></div>   <!-- mixed value with units -->
+<div style:display></div>                <!-- shorthand -->
 ```
 
 ### 10.6 Element Lifecycle — `{@attach}`
@@ -1443,7 +1467,7 @@ this component file.
     bind:innerWidth={width}
     bind:scrollY={scrollPos}
     bind:online={isOnline}
->
+/>
 ```
 
 Bindable: `innerWidth`, `innerHeight`, `outerWidth`, `outerHeight`, `scrollX`, `scrollY`,
@@ -1454,8 +1478,8 @@ Bindable: `innerWidth`, `innerHeight`, `outerWidth`, `outerHeight`, `scrollX`, `
 Bind event listeners to `document` or `document.body`.
 
 ```html
-<mesa:document on:visibilitychange={handleVisibility}>
-<mesa:body on:mouseenter={startTracking} on:mouseleave={stopTracking}>
+<mesa:document on:visibilitychange={handleVisibility} />
+<mesa:body on:mouseenter={startTracking} on:mouseleave={stopTracking} />
 ```
 
 ### 12.3 `<mesa:head>`
@@ -1716,9 +1740,16 @@ const price = cart.items[index].price     // trigger set: [cart, index]
 const total = cart[dynamicKey].total      // trigger set: [cart, dynamicKey]
 ```
 
-> **RULE 12** — Template path references are always safe. The compiler wraps all member
-> expression chains in the template with optional chaining and a nullish coalescing fallback.
-> `cart.user.prefs.theme` generates `cart?.user?.prefs?.theme ?? ''` — zero runtime errors.
+> **RULE 12** — A template path is an ordinary expression and the compiler does not rewrite
+> it. `cart.user.prefs.theme` compiles to `cart.user.prefs.theme`, and a missing intermediate
+> throws where it is read. A nullish VALUE renders empty: `{user.middleName}` paints nothing
+> rather than the word `undefined`.
+
+The optional-chaining rewrite this rule once promised was withdrawn rather than implemented
+(`FJS-D208`): under it a misspelled path and a genuinely absent value are indistinguishable,
+both rendering an empty cell that reports nothing. Guard the path yourself where a level may
+legitimately be absent — `{#if cart.user}` around it, or `{cart.user?.prefs?.theme}` written
+by hand, which says in the source that you meant it.
 
 ---
 
@@ -1911,8 +1942,9 @@ $.inspect(count).with(console.trace)   // custom logger — replaces default
 ## 18. Markdown and Frontmatter
 
 Mesa treats `.md` files as first-class components. A `.md` file is a Mesa component whose
-template is Markdown-processed HTML. Everything else — the script block, template
-expressions, Mesa component tags, `{#if}`, `{#each}` — works identically to `.mesa` files.
+template is Markdown-processed HTML. The script block, Mesa component tags, `{#if}`,
+`{#each}` and attribute values work identically to `.mesa` files. **Interpolation in PROSE
+is the one thing that does not** — see 18.4.
 
 ### 18.1 Frontmatter
 
@@ -1970,7 +2002,37 @@ Here is an interactive counter:
 And some more content.
 ```
 
-### 18.4 Block Directives in Markdown
+### 18.4 `{…}` in Prose Is a Path
+
+> **RULE 63** — In a `.md` file, `{…}` in PROSE interpolates a bare path — an identifier or
+> a member chain — and nothing else. Any other content is literal text, and `\{` is the
+> escape for a brace that would otherwise open one. An attribute value is unchanged and
+> still takes any expression, as does every `{…}` in a `.mesa` file.
+
+Prose is not written as template source, so a brace an author never meant as an expression
+was compiled as one and the reader was served the result:
+
+```md
+A set {1, 2, 3} of numbers.     → "A set 3 of numbers."   (a comma operator)
+if x { y } then z               → "if x  then z"          (a free identifier)
+```
+
+Neither errored — both are valid JavaScript — and `FJS-D208`'s `?? ''` made the second
+quieter still. Both are now the prose the author wrote. What is given up is `{a + b}`
+inside a `.md`; a `<script>`-computed `const` covers it.
+
+```md
+{title}                → interpolates
+{post.author?.name}    → interpolates
+{ title }              → prose — a path carries no spaces
+{items[0]}             → prose — an index is not a member chain
+\{title}               → renders "{title}"
+```
+
+An UNCLOSED brace is still a compile error, in `.md` as in `.mesa`. That failure is loud,
+which is not the one this rule is about (`FJS-D213`).
+
+### 18.5 Block Directives in Markdown
 
 `{#if}`, `{#each}`, and other block directives work in Markdown body:
 
@@ -1984,7 +2046,7 @@ And some more content.
 {/each}
 ```
 
-### 18.5 `client:*` Directives
+### 18.6 `client:*` Directives
 
 A `client:*` directive on a component says when an island is MOUNTED on the client. It
 is not hydration — nothing adopts the prerendered DOM; the loader clears the marked
@@ -2054,7 +2116,7 @@ Out of scope here, and Sierra's: the loader itself, per-island bundling, and
 resolving a component *name* to a module to import — which is what the
 `.islands` array returned by `renderComponent` is for.
 
-### 18.6 Compilation API
+### 18.7 Compilation API
 
 ```js
 import { compile, compileSource, compileFile } from '@mesa/compiler'
@@ -2165,7 +2227,7 @@ at module load time.
 > **RULE 20** — There is no hydration. A server render is HTML and nothing else: the
 > comment anchors compiled output relies on are stripped from it, no reactive graph is
 > serialized, and no client adopts server-rendered DOM. What ships is the island seam
-> (§18.5) — `island()` in the runtime wraps a `client:*` call site in comment markers on
+> (§18.6) — `island()` in the runtime wraps a `client:*` call site in comment markers on
 > the server, and a loader outside Mesa (Sierra's) clears the range and does a fresh
 > `mount()` into it. Async data is the loader's to fetch again.
 
@@ -2265,7 +2327,8 @@ components hydrate to their initial render and serialize cleanly.
 | Convention | Rule |
 |---|---|
 | File extension | `.mesa` for components, `.md` for Markdown components |
-| Component naming | PascalCase — `CartItem.mesa` exports `CartItem` |
+| Component naming | PascalCase — `CartItem.mesa` exports `CartItem`. A namespaced name is a dotted tag: `<Icons.Star />` calls `Icons.Star`, and `_` and `$` are legal in a tag name for the same reason — they are legal in a JavaScript identifier. Lowercase, a dotted tag is a compile error, since it can only have meant a component |
+| Whitespace | Collapsed to a single space everywhere except `<pre>` and `<textarea>` and their descendants, where whitespace IS the content |
 | Store files | Plain `.js` — lowercase, no `.mesa` extension |
 | Multiple root elements | Fully supported — components may have any number of top-level elements |
 | CSS scoping | Styles in `<style>` block are component-scoped by default — the scope class is appended to the selector's SUBJECT, so a component can style its own root and cannot reach into a child (RULE 55) |
@@ -2324,7 +2387,7 @@ components hydrate to their initial render and serialize cleanly.
 | 25 | `$context` provides and consumes must be at the top level of the script block |
 | 25a | `const` context consumers always track the provider; `let` initializes at mount then is independent; `var` snapshots at mount only |
 | 25b | `$context.<key>` is a compile step and therefore script-only; the imperative `$context.use` / `.provide` works anywhere (`FJS-477`) |
-| 26 | `client:*` directives are stripped by the Mesa core compiler — build-layer concern. `{ islands: true }` emits the call site through `$$runtime.island()`, which wraps it in island markers in a **server render only** (§18.5) |
+| 26 | `client:*` directives are stripped by the Mesa core compiler — build-layer concern. `{ islands: true }` emits the call site through `$$runtime.island()`, which wraps it in island markers in a **server render only** (§18.6) |
 | 27 | `{#key expr}` destroys and recreates content on every change of `expr` |
 | 28 | `{#snippet name(args)}` defines a reusable template fragment; `{@render name(args)}` mounts it |
 | 29 | Snippets close over outer reactive variables; args are plain values, not signals |
@@ -2359,13 +2422,14 @@ components hydrate to their initial render and serialize cleanly.
 | 53 | The compiler REPORTS and the build DECIDES — `compileSource` collects diagnostics and throws only on a parse failure |
 | 54 | `createRoot(fn)` gives ownership without tracking — for anything that owns a lifetime (see §5) |
 | 55 | Scoped CSS appends the hash to the selector's SUBJECT — a component styles its own root, and reaches no child's markup. Cross a boundary with `:global(...)` |
-| 56 | An instance `<script>` exports exactly two things: `export let` (a prop) and `export function` (a method on the instance API). Every other export form is a compiler error — module scope is `<script module>` |
+| 56 | An instance `<script>` exports props and methods and nothing else, in four forms: `export let` (a writable prop), `export const` (a prop the child may not write), `export function` (a method on the instance API) and `export var` — a prop SNAPSHOTTED at mount, which the parent's later values never reach (§3.3). `var` is the one form whose behavior cannot be read off its keyword: `let` reads *mutable* and `const` reads *the child may not write it*, and `var` reads *the same as let, older*, which is the opposite of what it does. `export default`, `export *` and a bare `export { … }` are compiler errors — module scope is `<script module>` |
 | 57 | `<mesa:element this={expr}>` takes a non-empty tag name; changing it rebuilds the element. A tag selector in a scoped `<style>` cannot match it |
 | 58 | An unknown `mesa:` name is a compiler error, never a silently dropped element |
 | 59 | `prev` holds a reference — a replaced object gives a genuine previous value, an object mutated in place gives the same reference for both |
 | 60 | Auto-tracked effects run on mount and cannot be deferred — they discover their dependencies by running; only the explicit-dependency form defers |
 | 61 | Within a flush everything that builds the DOM runs before user effects — a `$:` effect observes the DOM as it is after the change it reacts to |
 | 62 | The initial run of an auto-tracked effect happens during setup, before the template exists; only updates are ordered after the DOM |
+| 63 | In a `.md` file `{…}` in PROSE is a bare path — an identifier or a member chain — and anything else is literal text, with `\{` the escape; attributes and `.mesa` are unchanged |
 
 ---
 
@@ -2432,7 +2496,7 @@ export const cart = { items: [], total: 0 }
 </script>
 
 <!-- Global keyboard shortcut -->
-<mesa:window on:keydown|self={handleKey}>
+<mesa:window on:keydown|self={handleKey} />
 
 <!-- Reactive head -->
 <mesa:head>

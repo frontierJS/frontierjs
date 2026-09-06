@@ -95,7 +95,7 @@ const authOptions = {
   // ── Where a minted token becomes an email ──────────────────────────────
   //
   // A Delegate (`FJS-D06` §1): auth hands over the only copy of the token that
-  // will ever be in plain text — the column is `@guarded(all)` the moment it is
+  // will ever be in plain text — the column is `@guarded` the moment it is
   // written — and this is the one chance to put it in front of a person.
   //
   // `app` is referenced lazily rather than captured: this object is built before
@@ -332,6 +332,23 @@ app.configure(createAuthPlugin(auth, {
   loginRateLimit: { max: 100, window: '15 minutes' },
   services:       { level: shopGateLevel },
   cookieAuth:     COOKIE_AUTH,
+
+  // ── Support mode ────────────────────────────────────────────────────────
+  //
+  // Absent, the routes refuse — so this is the whole of what turns it on, and
+  // it is one shop's answer rather than the framework's. An admin may act as a
+  // shopper to see what they see; nobody may act as another admin, because the
+  // ceiling is the SUBJECT's standing and standing in for an admin grants
+  // admin, which is the god mode this exists to replace.
+  //
+  // The subject is read through `asSystem()`: `User` reads at USER(4) and its
+  // row policy is *your own row or staff*, so grading a subject with the
+  // operator's own client would answer about the operator.
+  canStartSupport: async (operator: { isAdmin?: boolean }, subjectId: string) => {
+    if (operator?.isAdmin !== true) return false
+    const subject = await db.asSystem().user.findUnique({ where: { id: subjectId } })
+    return subject != null && subject.role !== 'admin'
+  },
   // Only when the session can come back. The plugin refuses the pair outright
   // otherwise — a flow that completes and signs nobody in is the failure it
   // exists to prevent.

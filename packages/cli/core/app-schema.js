@@ -83,6 +83,54 @@ export function declaredModels(text) {
 }
 
 /**
+ * One shipped file, resolved out of the APP's own node_modules.
+ *
+ * `fli` is global, so a package an app depends on is not beside the CLI, and
+ * three install commands each grew their own answer to that. Two of them
+ * resolved with `createRequire(app/package.json).resolve(specifier)`, which is
+ * the mechanism the third one's header documents as unsound and which this
+ * exists to stop copying:
+ *
+ *   • `fli` runs on bun, and bun's `require.resolve` falls back to its global
+ *     install CACHE when an app has no node_modules — so it answers a path
+ *     inside `~/.bun/install/cache/@frontierjs/auth@1.0.3/` for an app where
+ *     the package is not installed at all, and what gets appended to the app's
+ *     schema is whatever version happened to be in that cache (`FJS-666` was
+ *     found this way: an `accountId Int?` where the tree says `String?`, and no
+ *     `@@auth`, which leaves every claim in every policy ungraded).
+ *   • bun memoises a resolution for the life of the process, so re-resolving
+ *     after a `bun install` returns the same cached answer — which is why this
+ *     cannot be fixed by checking the directory and then resolving anyway.
+ *
+ * So the question is *installed HERE*, not *resolvable from here*: the
+ * directory has to exist under the app's node_modules, and the subpath is read
+ * out of that package's own `exports` map rather than guessed at. A `link:`ed
+ * package is a symlink and is read through it, which is the shape every app in
+ * this repo has.
+ *
+ * @param   {string} root    the app root — the directory whose node_modules counts
+ * @param   {string} pkg     '@frontierjs/auth'
+ * @param   {string} subpath './schema.lite', as the exports map spells it
+ * @returns {{file: string, text: string} | null}
+ */
+export function shippedFile(root, pkg, subpath) {
+  const dir = join(root, 'node_modules', pkg)
+  if (!existsSync(dir)) return null
+
+  try {
+    const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+    const target   = manifest.exports?.[subpath]
+    if (typeof target !== 'string') return null
+
+    const file = join(dir, target)
+    if (!existsSync(file)) return null
+    return { file, text: readFileSync(file, 'utf8') }
+  } catch {
+    return null
+  }
+}
+
+/**
  * Every `.lite` a dependency ships, asked of its `exports` map and of nothing
  * else. A package that exports none ships none as far as this is concerned.
  */

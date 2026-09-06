@@ -75,7 +75,12 @@ function buildLlmsTxt(config, routeTable) {
     lines.push(`## Pages`)
     lines.push(``)
     for (const { path, title, description: desc } of pages) {
-      const label = title ? `[${title}](${path})` : path
+      // A markdown link target is not free text: a `)` or a space in a slug
+      // ends the link early and the rest of the line becomes prose. Same
+      // encoder as the sitemap's, for the same reason — the path comes from a
+      // `getStaticPaths()` param (`FJS-822`).
+      const href  = path.split('/').map(encodeURIComponent).join('/')
+      const label = title ? `[${title}](${href})` : href
       const hint  = desc ? `: ${desc}` : ''
       lines.push(`- ${label}${hint}`)
     }

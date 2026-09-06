@@ -151,7 +151,7 @@ describe('recognition by err.name', () => {
     expect(toFrameworkError(err).data).toEqual({ email: 'required' })
   })
 
-  it('an unrecognised name is a 500', () => {
+  it('an unrecognized name is a 500', () => {
     expect(toFrameworkError(named('SomeRandomError'))).toBeInstanceOf(GeneralError)
   })
 })

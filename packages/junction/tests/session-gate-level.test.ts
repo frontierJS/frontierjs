@@ -4,35 +4,65 @@
 // 0–7 access scale. Litestone owns the scale; each caller owns the mapping from
 // its own user shape onto it.
 //
-// It exists because Litestone's default, FrontierGateGetLevel, grades a
-// different shape — verifiedAt → activatedAt → role → isAdmin/isOwner — that a
-// SessionContext overlaps on `role` alone, and `role` is tested third. A
-// session with no verifiedAt therefore graded as VISITOR(1) whatever it
-// carried, so @@gate could not authorize a write for a LOGGED-IN user:
-//
-//   403  "Post.create" requires level 4, user has level 1
-//
-// returned after Junction's own gateAuth hook had already approved the request.
+// It is `@frontierjs/toolbelt/gate`'s `gradeStanding` under Junction's name, and
+// Litestone's `FrontierGateGetLevel` is the same binding. It was a hand copy on
+// both sides of a boundary Litestone cannot cross, and it drifted: 8 of the 216
+// combinations of the fields a session carries graded CREATOR(3) there and
+// USER(4) here (`FJS-520`, ruled `FJS-D197`).
 //
 // The load-bearing rule is that absence is not an objection: `undefined` means
 // the app does not model that stage, `null` means it does and this user has not
 // reached it. Getting that backwards is what made every app look unverified.
+//
+// `role` is the exception and is read for PRESENCE, which is the branch that
+// drifted. The kit's own spec walks the whole 216; what is asserted here is
+// that Junction's export is that function and grades a Junction session.
 
 import { describe, test, expect } from 'bun:test'
 import { sessionGateLevel, LEVELS } from '../src/core/litestone.ts'
+import { gradeStanding, LEVELS as KIT_LEVELS } from '@frontierjs/toolbelt/gate'
 import type { SessionContext } from '../src/auth/types.ts'
 
+// `role` is on the fixture because a real SessionContext carries one:
+// `@frontierjs/auth`'s User ships `role String @default("user")` and the session
+// builder copies it. Omitting it here made every test in this file also a test
+// of the role branch by accident, which is the branch the two graders drifted
+// on — see `the role branch` below, where it is asked deliberately.
 const session = (over: Partial<SessionContext> = {}): SessionContext => ({
-  userId: 'u1', userType: 'user', authMethod: 'session', ...over,
+  userId: 'u1', userType: 'user', authMethod: 'session', role: 'user', ...over,
 })
 
 describe('the scale matches Litestone\'s', () => {
   test('values are the wire numbers @@gate is written against', () => {
-    // A drift here silently re-grades every gated model in every app.
+    // A drift here silently re-grades every gated model in every app. It cannot
+    // drift now — this is the kit's own object, not a mirror of it — and the
+    // literals stay because they are the wire values the @@gate grammar fixes,
+    // so a change to the KIT has to fail here too.
     expect(LEVELS).toMatchObject({
       STRANGER: 0, VISITOR: 1, READER: 2, CREATOR: 3,
       USER: 4, ADMINISTRATOR: 5, OWNER: 6, SYSADMIN: 7,
     })
+  })
+
+  test('it is the kit\'s ladder and not a copy of it', () => {
+    expect(LEVELS).toBe(KIT_LEVELS)
+    expect(sessionGateLevel).toBe(gradeStanding)
+  })
+})
+
+describe('the role branch', () => {
+  // The pair that could not be asked while the two graders were separate: the
+  // old test named *agrees with junction sessionGateLevel* lived in litestone,
+  // imported only litestone, and used a fixture carrying `role`.
+  test('a session with no role is a CREATOR, and one with a role is a USER', () => {
+    const { role, ...noRole } = session()
+    expect(sessionGateLevel(noRole as SessionContext)).toBe(LEVELS.CREATOR)
+    expect(sessionGateLevel(session())).toBe(LEVELS.USER)
+  })
+
+  test('standing still outranks it', () => {
+    const { role, ...noRole } = session()
+    expect(sessionGateLevel({ ...noRole, isAdmin: true } as SessionContext)).toBe(LEVELS.ADMINISTRATOR)
   })
 })
 

@@ -85,7 +85,7 @@ describe('@guarded — the value cannot be recovered by asking about it', () => 
 
   it('covers @secret, which was protected only by the encryption under it', async () => {
     const { as } = await seeded()
-    // @secret expands to @encrypted @guarded(all). The filter refusal it used
+    // @secret expands to @encrypted @guarded. The filter refusal it used
     // to get was the ENCRYPTED half — ciphertext under a random IV can never
     // equal a plaintext — which says nothing about the guard and does not
     // extend to a sort.
@@ -198,7 +198,7 @@ describe('@guarded — filterability is still a fact about the schema', () => {
 })
 
 describe('@guarded — a credential lookup is a system read', () => {
-  // A Session, Invitation or ApiKey token is `@guarded(all)` and found BY its
+  // A Session, Invitation or ApiKey token is `@guarded` and found BY its
   // value, so this is the one legitimate `where` over a guarded column. It goes
   // through asSystem() — auth and basecamp already did, and the alternative
   // (allowing bare equality on a caller's client) would keep them working while
@@ -208,7 +208,7 @@ describe('@guarded — a credential lookup is a system read', () => {
     model Invite {
       id    Int    @id
       email String
-      token String @unique @guarded(all)
+      token String @unique @guarded
     }
   `
 

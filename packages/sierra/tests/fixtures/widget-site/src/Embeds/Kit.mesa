@@ -1,0 +1,15 @@
+<script module>
+  // Invariant 13: `@frontierjs/css` is the styling language, and a widget is a
+  // surface. This widget exists to ask whether the kit's tokens survive the one
+  // boundary a widget always crosses — the shadow root.
+  export const widget = {}
+</script>
+
+<script>
+  // The REAL file, by relative path rather than a copy in this fixture: the
+  // claim is about the shipped stylesheet, and a copy would agree with itself
+  // forever after the shipped one regressed.
+  import '../../../../../../css/src/foundation/tokens.css'
+</script>
+
+<button id="kit">kit</button>

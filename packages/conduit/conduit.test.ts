@@ -22,7 +22,7 @@ import {
   withCache,
 } from './src/credentials.ts'
 import { createTraceContext, parseTraceparent, traceIdFrom } from './src/trace.ts'
-import { ConduitStreamError } from './src/types.ts'
+import { ConduitStreamError, CONDUIT_ERROR_KINDS } from './src/types.ts'
 import type {
   TargetDescriptor,
   ConduitRequest,
@@ -442,7 +442,7 @@ describe('HTTP transport — never throws', () => {
     expect(result.error!.kind).toBe('invalid_request')
   })
 
-  it('an unserialisable body is not retried', async () => {
+  it('an unserializable body is not retried', async () => {
     const cyclic: Record<string, unknown> = {}
     cyclic.self = cyclic
 
@@ -1639,7 +1639,7 @@ describe('retry policy', () => {
 
   // Not tested: a response with NO content-type at all and a non-JSON body,
   // which falls through to the JSON.parse failure below. `new Response(…, {
-  // headers: { 'content-type': '' } })` does not produce it — Bun normalises
+  // headers: { 'content-type': '' } })` does not produce it — Bun normalizes
   // the header back to text/plain — and a test that cannot construct its own
   // premise is theater.
 
@@ -3971,7 +3971,7 @@ describe('a request conduit will not replay', () => {
     }
   })
 
-  it('does not call a connection that was never established indeterminate', async () => {
+  it('a connection that was never established is neither indeterminate nor permanent', async () => {
     const conduit = createConduit({
       credentials: secrets(),
       targets: [providerTarget({
@@ -3983,10 +3983,13 @@ describe('a request conduit will not replay', () => {
 
     const res = await conduit.send({ target: 'gone', method: 'POST', path: '/', body: {} })
     expect(res.error?.kind).toBe('connection_failed')
-    expect(res.error?.retryable).toBe(false)
     // Nothing left the process, so the outcome is not open — a flag that fires
     // on every network fault is one nobody reads.
     expect(res.error?.indeterminate).toBeUndefined()
+    // And the same fact answers the other flag. Declining to replay used to
+    // squash this to false, which told a caller a refused connection would
+    // never work.
+    expect(res.error?.retryable).toBe(true)
   })
 })
 
@@ -4222,5 +4225,145 @@ describe('traceIdFrom', () => {
   it('answers null for nothing to derive from', () => {
     expect(traceIdFrom(undefined)).toBeNull()
     expect(traceIdFrom('')).toBeNull()
+  })
+})
+
+// ─── FJS-739 · retryable is about THIS request ───────────────
+//
+// One question, asked of every kind: may the caller send this again. It is
+// false only where the request may already have been applied, which is the
+// fact `indeterminate` carries — so the two are asserted together, never
+// apart. Declining to REPLAY used to answer it as well, and that squash
+// reached faults the same function had already concluded carried no bytes: a
+// 429 is the target refusing, a refused connection never opened, and load shed
+// at admission never left the process. Every one of them came back
+// `retryable: false`, which is what a caravan job drops work on.
+//
+// The FJS-733 rows are the control and they are the reason the flip is safe: a
+// 500 or a timeout on an unkeyed POST stays false, because nobody knows whether
+// the charge landed.
+
+describe('retryable (FJS-739)', () => {
+  const creds = () => createStaticResolver({ HETZNER_TOKEN: 'htz-token-abc' })
+
+  // An unkeyed POST — the shape `declineReplay` acts on. A GET never reaches it,
+  // so asking both is what separates "the kind decided this" from "the squash did".
+  async function post(reply: (req: Request) => Response | Promise<Response>) {
+    const s = recorder(reply)
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({ credentials: creds(), targets: [target], retry_limit: 0 })
+      await c.init()
+      const r = await c.send({ target: target.id, method: 'POST', path: '/x', body: { a: 1 } })
+      return r.error!
+    } finally { s.stop() }
+  }
+
+  it('a 429 on an unkeyed POST is retryable — the target refused, nothing was applied', async () => {
+    const e = await post(() => new Response('{}', { status: 429, headers: { 'retry-after': '1' } }))
+    expect(e.kind).toBe('rate_limited')
+    expect(e.retryable).toBe(true)
+    expect(e.indeterminate).toBeUndefined()
+  })
+
+  it('a 500 on an unkeyed POST is NOT — the control the row above is only safe beside', async () => {
+    const e = await post(() => new Response('boom', { status: 500 }))
+    expect(e.kind).toBe('server_error')
+    expect(e.retryable).toBe(false)
+    expect(e.indeterminate).toBe(true)
+  })
+
+  it('a timeout on an unkeyed POST is NOT either — the second FJS-733 control', async () => {
+    const s = recorder(async () => { await Bun.sleep(200); return Response.json({ ok: 1 }) })
+    try {
+      const target = providerTarget({ address: s.url, policy: { timeout_ms: 40, retry_limit: 0 } })
+      const c = createConduit({ credentials: creds(), targets: [target], retry_limit: 0 })
+      await c.init()
+      const e = (await c.send({ target: target.id, method: 'POST', path: '/x', body: { a: 1 } })).error!
+      expect(e.kind).toBe('timeout')
+      expect(e.retryable).toBe(false)
+      expect(e.indeterminate).toBe(true)
+    } finally { s.stop() }
+  })
+
+  it('a 404 stays permanent, and for its own reason rather than the squash', async () => {
+    // The negative control on the other side: nothing was applied here either,
+    // and it is still not retryable — the same request gets the same 404. If
+    // `indeterminate` were the whole rule this row would have flipped too.
+    const e = await post(() => new Response('nope', { status: 404 }))
+    expect(e.kind).toBe('client_error')
+    expect(e.retryable).toBe(false)
+    expect(e.indeterminate).toBeUndefined()
+  })
+
+  it('load shed at admission is retryable — both kinds, neither of which left the process', async () => {
+    // circuit_open. Its own message names the seconds to wait, which is the
+    // sentence a permanent flag contradicted.
+    const s = recorder(() => new Response('boom', { status: 500 }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({
+        credentials: creds(), targets: [target], retry_limit: 0,
+        resilience: { failure_threshold: 2, reset_ms: 10_000 },
+      })
+      await c.init()
+      for (let i = 0; i < 2; i++) await c.send({ target: target.id, method: 'GET' })
+      const shed = (await c.send({ target: target.id, method: 'GET' })).error!
+      expect(shed.kind).toBe('circuit_open')
+      expect(shed.retryable).toBe(true)
+      expect(shed.indeterminate).toBeUndefined()
+    } finally { s.stop() }
+
+    // overloaded. A free slot is all it wants.
+    const slow = recorder(async () => { await Bun.sleep(300); return Response.json({ ok: 1 }) })
+    try {
+      const target = providerTarget({ address: slow.url })
+      const c = createConduit({
+        credentials: creds(), targets: [target], retry_limit: 0,
+        resilience: { max_concurrent: 1 },
+      })
+      await c.init()
+      const inflight = c.send({ target: target.id, method: 'GET' })
+      await Bun.sleep(30)
+      const shed = (await c.send({ target: target.id, method: 'GET' })).error!
+      expect(shed.kind).toBe('overloaded')
+      expect(shed.retryable).toBe(true)
+      await inflight
+    } finally { slow.stop() }
+  })
+
+  // ── the completeness tripwire ────────────────────────────────────────────
+  //
+  // The rows above are the ones a defect was found in. This is the one that
+  // fails when a kind is ADDED: a taxonomy entry nobody decided `retryable`
+  // for reads exactly like one that was decided, which is how three of them
+  // came to be wrong at once. Walked off `CONDUIT_ERROR_KINDS`, which the type
+  // derives from, so the list cannot drift from the union.
+  it('every kind in the taxonomy has a stated answer', () => {
+    const ANSWER: Record<string, 'transient' | 'permanent' | 'depends'> = {
+      // Nothing was dispatched, and the condition clears on its own.
+      circuit_open:      'transient',
+      overloaded:        'transient',
+      rate_limited:      'transient',
+      // The target is unwell. Retryable in itself; false on a request conduit
+      // will not replay, which is what `depends` means here.
+      server_error:      'depends',
+      timeout:           'depends',
+      connection_failed: 'depends',
+      // The same request gets the same answer, forever.
+      target_not_found:  'permanent',
+      auth_failed:       'permanent',
+      not_implemented:   'permanent',
+      client_error:      'permanent',
+      invalid_response:  'permanent',
+      invalid_request:   'permanent',
+      redirected:        'permanent',
+      stream_error:      'permanent',
+    }
+    const missing = CONDUIT_ERROR_KINDS.filter(k => !(k in ANSWER))
+    expect(missing).toEqual([])
+    // And nothing here names a kind that no longer exists.
+    const stale = Object.keys(ANSWER).filter(k => !(CONDUIT_ERROR_KINDS as readonly string[]).includes(k))
+    expect(stale).toEqual([])
   })
 })

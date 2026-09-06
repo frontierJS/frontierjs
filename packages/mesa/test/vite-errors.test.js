@@ -8,8 +8,10 @@
 //
 // Sierra's plugin has failed the transform on `analysis.errors` since 2026-08-05
 // (DECISIONS § UI substrate). This asserts Mesa's own plugin agrees, in both
-// modes: a build fails through `this.error`, dev returns a module that throws so
-// Vite's overlay fires.
+// modes, through one path: `this.error`. Dev used to return a module whose body
+// was a `throw`, which never reached the overlay — the module is served 200, so
+// Vite has nothing to raise, and the ES linker rejects it for having no default
+// export before the throw can run (FJS-836).
 
 import { describe, test, expect } from 'vitest'
 import mesaPlugin from '../mesa-vite/index.js'
@@ -46,14 +48,13 @@ describe('the vite plugin fails on compiler errors', () => {
     expect(r.reported[0].plugin).toBe('mesa')
   })
 
-  test('dev emits a throwing module so the overlay fires', async () => {
+  test('dev reports the same way and emits nothing', async () => {
     const r = await transform('serve', INERT)
-    expect(r.threw).toBeUndefined()
-    expect(r.code).toMatch(/^throw new Error\(/)
-    expect(r.code).toContain('does nothing')
-    // The message is interpolated into a template literal — an unescaped
-    // backtick from a diagnostic would close it and ship a syntax error.
-    expect(() => new Function(r.code)).not.toThrow()
+    expect(r.code).toBeUndefined()
+    expect(r.reported).toHaveLength(1)
+    expect(r.reported[0].message).toContain('1 error(s) in T.mesa')
+    expect(r.reported[0].message).toContain('does nothing')
+    expect(r.reported[0].plugin).toBe('mesa')
   })
 
   test('a clean component still compiles in both modes', async () => {

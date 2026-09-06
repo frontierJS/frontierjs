@@ -1,0 +1,42 @@
+<script>
+  // each-dup-key.mesa — a DECLARED key that repeats.
+  //
+  // `FJS-325` changed the DEFAULT key to the index, which closed the accidental
+  // collision and left this one exactly as it was: the blocks Map deduped, one
+  // row's block was orphaned in the DOM and never disposed, and removing the
+  // duplicate from the data did not repair the list because the stale key was
+  // still in the new key set (`FJS-856`).
+  let items = [
+    { id: 1, label: 'a' },
+    { id: 1, label: 'b' },
+    { id: 2, label: 'c' }
+  ]
+
+  function fix() {
+    items = [{ id: 1, label: 'a' }, { id: 2, label: 'c' }]
+  }
+
+  function relabel() {
+    items = [
+      { id: 1, label: 'A' },
+      { id: 1, label: 'B' },
+      { id: 2, label: 'C' }
+    ]
+  }
+
+  function reorder() {
+    items = [
+      { id: 2, label: 'c' },
+      { id: 1, label: 'a' },
+      { id: 1, label: 'b' }
+    ]
+  }
+</script>
+
+<ul id="dup">
+  {#each items as it (it.id)}<li>{it.label}</li>{/each}
+</ul>
+
+<button type="button" id="relabel" on:click={relabel}>relabel</button>
+<button type="button" id="reorder" on:click={reorder}>reorder</button>
+<button type="button" id="fix" on:click={fix}>fix</button>

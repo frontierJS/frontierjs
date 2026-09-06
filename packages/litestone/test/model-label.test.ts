@@ -106,7 +106,7 @@ ${withField(decl, target)}`
   }
 
   it('says how to fix the non-String case rather than only refusing it', () => {
-    // A number IS sometimes what a person recognises (an invoice number), so
+    // A number IS sometimes what a person recognizes (an invoice number), so
     // the refusal names the route: compose a String from it.
     expect(errorsFor(withField('num Int')).join('\n')).toContain('@generated(`{num}`)')
   })

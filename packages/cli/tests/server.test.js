@@ -663,6 +663,19 @@ describe('GET /api/check', () => {
     expect(scopes.some(s => s.ran > 0)).toBe(true)
   })
 
+  test('every scope carries the verdict fli check would exit on', async () => {
+    // The panel used to answer findings and nothing else, so an app carrying
+    // declared debt in a check-baseline.json read as broken here while its own
+    // `bun run check` was green — the report disagreeing with the command it
+    // runs. `ok` is that verdict, and `baseline` is null where none is declared.
+    const { scopes } = await (await fetch(`${base}/api/check`)).json()
+    for (const s of scopes) {
+      expect(typeof s.ok).toBe('boolean')
+      expect(s.baseline === null || typeof s.baseline.ok === 'boolean').toBe(true)
+      for (const f of s.findings) expect(typeof f.within).toBe('boolean')
+    }
+  })
+
   test('the workspace scope is asked as well as each app', async () => {
     // The same two passes `scripts/ci.mjs`'s `structure` phase makes, so a rule
     // loosened for one is loosened for both.

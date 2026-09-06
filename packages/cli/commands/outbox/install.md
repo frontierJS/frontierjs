@@ -38,13 +38,14 @@ import { pathToFileURL }                            from 'node:url'
 
 const PKG = '@frontierjs/junction'
 
-const resolveFromApp = (root, subpath) => {
-  try {
-    return createRequire(pathToFileURL(resolve(root, 'package.json'))).resolve(subpath)
-  } catch {
-    return null
-  }
-}
+// `core/app-schema.js` owns *is this shipped file installed HERE* — one owner,
+// because this used to resolve with `createRequire(...).resolve(specifier)` and
+// bun answers that from its global install CACHE for a package the app does not
+// have. See the note on `shippedFile`.
+const { shippedFile } = await import(resolve(global.fliRoot, 'core/app-schema.js'))
+
+const resolveFromApp = (root, subpath) =>
+  shippedFile(root, PKG, `.${subpath.slice(PKG.length)}`)?.file ?? null
 
 const schemaBlock = (db) => `
 // ─── Outbox — installed by fli outbox:install ────────────────────────────────

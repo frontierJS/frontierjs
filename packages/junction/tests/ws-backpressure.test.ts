@@ -130,7 +130,11 @@ describe('the send queue — a dropped frame is held, not lost', () => {
 
 describe('a burst big enough to drop frames still delivers every one', () => {
 
-  const PORT  = 3396
+  // Port 0, read back after start(). A fixed port here was `FJS-900`: several
+  // files in this package bound the same one and bun runs them in ONE process,
+  // so an app answered while a previous file's app on that port was still
+  // shutting down. Never hard-code a port in this package's tests.
+  let PORT = 0
   const ROOM  = 'ws:1'
   const FRAME = 200_000     // 200KB × 200 = 40MB, well past Bun's ~16.9MB
   const COUNT = 200
@@ -141,7 +145,7 @@ describe('a burst big enough to drop frames still delivers every one', () => {
   test('200 × 200KB down one socket: all 200 arrive', async () => {
     app = createApp({
       config: {
-        port: PORT,
+        port: 0,
         database: { url: '', log: false },
         services: { dir: '/nonexistent' },
         // The held queue has to cover what Bun drops — 20MB of it here. The
@@ -155,6 +159,7 @@ describe('a burst big enough to drop frames still delivers every one', () => {
       a.channels.on('connection', (_s: unknown, conn: unknown) => { a.channel(ROOM).join(conn) })
     }))
     await app.start()
+    PORT = (app as unknown as { http: { port: number } }).http.port
 
     const client = createJunctionClient({ url: `http://localhost:${PORT}` })
     let received = 0

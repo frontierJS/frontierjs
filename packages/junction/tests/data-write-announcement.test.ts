@@ -415,3 +415,85 @@ describe('a transition announces (FJS-463)', () => {
     expect(frames.map(f => f.event)).toEqual(['orders patched'])
   })
 })
+
+describe('two services over one model (FJS-765)', () => {
+  // The index used to be model → ONE service, last claim wins, and the
+  // suppression compared against that winner. So the LOSER was silently
+  // unsubscribed from every write it did not make itself: measured on two
+  // services over one `Order`, a write through the winner announced only the
+  // winner, and an `asSystem()` write announced only the winner. Which of the
+  // two won was registration order, so it moved when a file was renamed.
+  //
+  // Every assertion is a PAIR — both names, both directions — because a fix
+  // that announced to nobody, or that announced the same write twice under one
+  // name, would pass any test that only counted the missing one.
+
+  async function twoServices() {
+    const db  = await createClient({ db: ':memory:', schema: SCHEMA })
+    const app = createApp({ db: db as never })
+    app.services.register(createService({ name: 'orders',  model: 'Order', db: db as never }))
+    app.services.register(createService({ name: 'orders2', model: 'Order', db: db as never }))
+    await app._startForTest()
+
+    const seen: string[] = []
+    for (const e of ['orders:created', 'orders2:created', 'orders:updated', 'orders2:updated'])
+      app.events.on(e, (row: { id: number }) => { seen.push(`${e}#${row.id}`) })
+    return { db: db as never as Record<string, never> & Record<string, unknown>, app, seen }
+  }
+
+  test('a write through EITHER service reaches both, once each', async () => {
+    const { app, seen } = await twoServices()
+
+    await app.service('orders').create({ id: 1, status: 'draft' })
+    await tick()
+    expect(seen.sort()).toEqual(['orders2:created#1', 'orders:created#1'])
+    seen.length = 0
+
+    // The direction that used to announce nothing to `orders`.
+    await app.service('orders2').create({ id: 2, status: 'draft' })
+    await tick()
+    expect(seen.sort()).toEqual(['orders2:created#2', 'orders:created#2'])
+  })
+
+  test('a write through NO service reaches both', async () => {
+    const { db, app, seen } = await twoServices()
+    await (db as never as { asSystem: () => { order: { create: (a: unknown) => Promise<unknown> } } })
+      .asSystem().order.create({ data: { id: 3, status: 'draft' } })
+    await tick()
+    expect(seen.sort()).toEqual(['orders2:created#3', 'orders:created#3'])
+  })
+
+  test('one service over one model still announces exactly once', async () => {
+    // The control that keeps the pair above honest: the fix must not turn every
+    // ordinary app's single announcement into two.
+    const { app, seen } = await mkApp()
+    await app.service('orders').create({ status: 'draft' })
+    await tick()
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toStartWith('orders:created#')
+  })
+
+  test('a DECLARED model is the only spelling that service claims', async () => {
+    // A service named for one model and declaring another used to be claimed by
+    // both — its name-derived claim stayed in the index beside the declared
+    // one. Harmless while a key held one name and a wrong announcement now that
+    // every claimant gets one.
+    const db  = await createClient({ db: ':memory:', schema: SCHEMA })
+    const app = createApp({ db: db as never })
+    app.services.register(createService({ name: 'orders', model: 'Audit', db: db as never }))
+    await app._startForTest()
+
+    const seen: string[] = []
+    app.events.on('orders:created', (row: { id: number }) => { seen.push(`orders#${row.id}`) })
+
+    await (db as never as { asSystem: () => Record<string, { create: (a: unknown) => Promise<unknown> }> })
+      .asSystem().order.create({ data: { id: 4, status: 'draft' } })
+    await tick()
+    expect(seen).toEqual([])          // an Order write is not this service's
+
+    await (db as never as { asSystem: () => Record<string, { create: (a: unknown) => Promise<unknown> }> })
+      .asSystem().audit.create({ data: { id: 5, note: 'x' } })
+    await tick()
+    expect(seen).toEqual(['orders#5'])  // the declared one is
+  })
+})

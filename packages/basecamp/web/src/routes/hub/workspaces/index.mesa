@@ -145,9 +145,9 @@ title: Hub workspaces
 
 <article class="alert info">
   <div class="alert-content">
-    The mock also offers <strong>Impersonate</strong>. It is not built: minting a session as
-    somebody else needs a trail that keeps saying who is really acting, a way back that cannot
-    be forgotten, and a rule for what an impersonator may not do. A half-built one is
-    credential sharing with a button (<code>FJS-142</code>).
+    The mock offers <strong>Impersonate</strong> here, per workspace. It is built and it is on
+    the <a class="navlink" href="/hub/users/">users</a> screen instead, because an episode is
+    against a PERSON: a workspace is not somebody you can act as, and picking one would still
+    leave the question of which of its members.
   </div>
 </article>

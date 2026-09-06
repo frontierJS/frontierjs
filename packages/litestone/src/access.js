@@ -183,7 +183,7 @@ function describeModel(model, derivedNames = []) {
   }
 }
 
-// @secret expands at parse time to @encrypted + @guarded(all) and keeps its own
+// @secret expands at parse time to @encrypted + @guarded and keeps its own
 // attribute, so a @secret field carries all three. Report the one that was written.
 function fieldProtection(attrs) {
   if (attrs.some(a => a.kind === 'secret'))    return '@secret'
@@ -195,7 +195,7 @@ function fieldProtection(attrs) {
   // The pair is spellable and means both halves: invisible to a client AND
   // unwritable by one. Report it as written rather than letting one hide the
   // other — the snapshot is where a reader learns which locks a column carries.
-  if (guarded)                                 return (guarded.level === 'all' ? '@guarded(all)' : '@guarded') + (system ? ' @system' : '')
+  if (guarded)                                 return '@guarded' + (system ? ' @system' : '')
   if (system)                                  return '@system'
   return null
 }

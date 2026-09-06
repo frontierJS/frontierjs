@@ -24,7 +24,7 @@ if (context.config.abort) {
 
 context.config.journal.settle('succeeded')
 
-log.success('Lesson 2 done — a gate that refuses, a policy that filters, a column that drops')
+log.success('Lesson 4 done — a gate that refuses, a policy that filters, a column that drops')
 log.info('')
 log.info(`  ${app}`)
 log.info('')

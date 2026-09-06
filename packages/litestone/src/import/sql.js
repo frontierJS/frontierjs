@@ -15,6 +15,7 @@
 //     SET, ACL — so the reader is a whitelist and records what it skipped
 
 import { singularize } from '@frontierjs/toolbelt/inflect'
+import { mapIdentifiers } from '../core/ddl.js'
 import { detectPolymorphic } from './polymorphic.js'
 import { BIGINT_EMITTED, namesATable } from './wide-int.js'
 import { predicateToLite } from '../core/migrate.js'
@@ -404,29 +405,6 @@ const KEYWORDS = /^(is|not|null|and|or|in|between|like|true|false|any|all|exists
 // Walk the expression, rewriting bare identifiers and leaving every quoted
 // literal exactly as it is. `replace` cannot do this: a regex has no way to know
 // it is inside a string.
-function mapIdentifiers(expr, fn) {
-  let out = '', i = 0
-  while (i < expr.length) {
-    const ch = expr[i]
-    if (ch === "'") {
-      const end = expr.indexOf("'", i + 1)
-      const stop = end === -1 ? expr.length : end + 1
-      out += expr.slice(i, stop); i = stop; continue
-    }
-    if (ch === '"') {
-      const end = expr.indexOf('"', i + 1)
-      const stop = end === -1 ? expr.length : end + 1
-      const id = expr.slice(i + 1, end === -1 ? expr.length : end)
-      const mapped = /^[a-z_]\w*$/i.test(id) ? fn(id) : null
-      out += mapped ?? expr.slice(i, stop); i = stop; continue
-    }
-    const word = expr.slice(i).match(/^[a-z_][a-z0-9_]*/i)
-    if (word) { out += fn(word[0]) ?? word[0]; i += word[0].length; continue }
-    out += ch; i++
-  }
-  return out
-}
-
 function emitIndex(idx, t, cols, gap) {
   const names = idx.cols.map(c => c.replace(/\s+(ASC|DESC)$/i, '').trim())
   if (names.some(n => !cols.has(n))) {

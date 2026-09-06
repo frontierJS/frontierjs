@@ -24,8 +24,8 @@ it re-resolved when it runs. Survives a restart.
 
 | Job | Queue | Schedule | Zone | Attempts | Retry delay | Timeout |
 | --- | --- | --- | --- | --- | --- | --- |
-| `announce-payment` | `fulfilment` | on dispatch | — | 5 | 30000, 120000, 600000 | **none** |
-| `book-courier` | `fulfilment` | on dispatch | — | 5 | 60000, 300000, 1800000 | 30000ms |
+| `announce-payment` | `fulfillment` | on dispatch | — | 5 | 30000, 120000, 600000 | **none** |
+| `book-courier` | `fulfillment` | on dispatch | — | 5 | 60000, 300000, 1800000 | 30000ms |
 | `calculate-payslip` | `default` | on dispatch | — | 3 | default | **none** |
 | `collect-invoice` | `default` | on dispatch | — | 4 | default | **none** |
 | `dun-subscriptions` | `default` | `0 6 * * *` | — | 3 | default | **none** |

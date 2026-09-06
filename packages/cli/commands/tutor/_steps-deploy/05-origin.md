@@ -19,7 +19,7 @@ if (!await narrate(context)) return
 
 context.config.__step = 5
 
-if (!needs(context, ['appDir', 'serverDir'], { from: { appDir: '02-app', serverDir: '03-target' } })) return
+if (!needs(context, ['appDir', 'serverDir', 'deployEnv'], { from: { appDir: '02-app', serverDir: '03-target', deployEnv: '02-app' } })) return
 
 const app = context.config.appDir
 const srv = context.config.serverDir
@@ -43,7 +43,9 @@ if (!await must(context, {
 })) return
 
 mkdirSync(join(srv, 'db'), { recursive: true })
-copyFileSync(join(app, '.env'), join(srv, '.env.production'))
+// The container's environment, not the app's — `02-app` writes it beside the
+// workspace so a course does not lose its own `.env` to a deploy.
+copyFileSync(context.config.deployEnv, join(srv, '.env.production'))
 // PORT is the container's own, inside it; APP_URL is what the app tells the
 // world it is. The deploy's env check compares the keys here against
 // .env.example, so a missing one stops the deploy before it builds anything.

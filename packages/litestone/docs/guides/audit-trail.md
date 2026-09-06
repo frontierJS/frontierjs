@@ -30,7 +30,7 @@ model User {
   email     String    @unique
   name      String?
   role      String    @default("member")
-  apiKey    String?   @secret           // @encrypted + @guarded(all) + auto-logged to audit
+  apiKey    String?   @secret           // @encrypted + @guarded + auto-logged to audit
 
   @@log(audit)     // log every create/update/delete
 }
@@ -181,7 +181,7 @@ Produces entries with `field: 'salary'` for reads (via `asSystem()`) and writes.
 
 ```prisma
 model User {
-  apiKey String? @secret    // @encrypted + @guarded(all) + auto-logged
+  apiKey String? @secret    // @encrypted + @guarded + auto-logged
 }
 ```
 

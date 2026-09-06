@@ -91,7 +91,7 @@ model Vault {
   after:  { id: 7, name: 'prod', apiKey: '[redacted]' }, ... }
 ```
 
-This is what makes `@secret`'s expansion safe. `@secret` is `@encrypted + @guarded(all) + @log(<first logger db>)`, so **declaring a logger database is on its own enough to start logging every `@secret` field in the schema** — without redaction that would write plaintext to a file sitting next to a correctly-encrypted database row, with none of the column's read protections.
+This is what makes `@secret`'s expansion safe. `@secret` is `@encrypted + @guarded + @log(<first logger db>)`, so **declaring a logger database is on its own enough to start logging every `@secret` field in the schema** — without redaction that would write plaintext to a file sitting next to a correctly-encrypted database row, with none of the column's read protections.
 
 Two details worth knowing:
 
@@ -154,7 +154,7 @@ The auto-generated model name for a logger database is `<dbName>Logs` — `audit
 
 ```prisma
 model User {
-  apiKey String? @secret                 // @encrypted + @guarded(all) + @log(audit)
+  apiKey String? @secret                 // @encrypted + @guarded + @log(audit)
   token  String? @secret(rotate: false)  // same, but excluded from $rotateKey
 }
 ```

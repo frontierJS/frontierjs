@@ -15,6 +15,7 @@
 
 import { resolve, isAbsolute } from 'path'
 import { existsSync } from 'fs'
+import { readdir, rm } from 'fs/promises'
 import { pathToFileURL } from 'url'
 import { mesaPlugin } from './mesa-plugin.js'
 import { devtoolsPlugin } from './devtools-plugin.js'
@@ -195,7 +196,13 @@ function buildBaseConfig(config, sierraPlugins, userPlugins) {
       ...userPlugins,
     ],
     server: {
-      port: parseInt(process.env.PORT ?? '3000'),
+      // `FLI_PORT_FE` first — that is the name the port broker sets
+      // (`packages/cli/core/ports.js`); `PORT` is what this file always read and
+      // is nobody's answer. And `strictPort`, because vite otherwise hops to the
+      // next free port in SILENCE, so the second app's drive tests the first
+      // app's app. An app overrides both in its own config (`FJS-821`).
+      port: parseInt(process.env.FLI_PORT_FE ?? process.env.PORT ?? '3000'),
+      strictPort: true,
       host: !!process.env.VITE_HOST_APP,
       open: false,
       hmr: {
@@ -205,7 +212,12 @@ function buildBaseConfig(config, sierraPlugins, userPlugins) {
     build: {
       outDir,
       cssCodeSplit: false,
-      minify: process.env.NODE_ENV === 'production',
+      // No `minify` here. Vite's own default for a BUILD is 'esbuild' whatever
+      // NODE_ENV says, so the override could only ever turn minification OFF —
+      // and any shell or CI exporting NODE_ENV=development then shipped a
+      // 140 KB production bundle where 53 KB was built, carrying the readable
+      // route table with it. `FJS-473`'s shape one file over: the ambient
+      // signal is not the question (`FJS-799`).
     },
   }
 
@@ -443,6 +455,9 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
         // script tag on the pages that use them. A page with no island keeps
         // shipping zero JavaScript.
         if (pre.islands?.length) {
+          // What is in `assets/` before the island build, so what it ADDED can
+          // be taken back out if it fails.
+          const assetsBefore = await listAssets(outDir)
           try {
             const { build: viteBuild } = await import('vite')
             const bundle = await buildIslandBundle({
@@ -463,13 +478,26 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
               )
             }
           } catch (err) {
-            // Loud, and not fatal to the rest of the build: the pages exist and
-            // are correct, they are just inert. Silence here would ship a site
-            // whose buttons do nothing with a green build log.
-            console.error(
-              `\n  [Sierra] Island bundling FAILED — the prerendered pages are correct but ` +
-              `their islands will not mount:\n    ${err.stack ?? err.message}`
-            )
+            // THROWN, not logged. This used to be caught and continued on the
+            // argument that the pages are correct and merely inert — and ten
+            // lines below, the sibling failure (a static route that threw while
+            // rendering) throws with the opposite argument written into its own
+            // comment: *a deploy with a missing page and a green log*. For a
+            // storefront whose buy button is an island, inert is a shop that
+            // cannot take money, and CI reads the exit code and not the log. A
+            // site that genuinely does not need islands already has the escape:
+            // `islands: false`, which never reaches this branch (`FJS-821`).
+            //
+            // The wreckage goes with it. `emptyOutDir: false` is correct — the
+            // main build's output is already there — but it also meant a failed
+            // island build left orphan chunks in the PUBLISHED directory, one of
+            // them still carrying an unresolvable bare specifier.
+            await removeOrphanIslandChunks(outDir, assetsBefore)
+            err.message =
+              `[Sierra] Island bundling FAILED — the prerendered pages rendered, but ` +
+              `their islands would not mount, so the site would ship inert.\n` +
+              `    ${err.message}`
+            throw err
           }
         }
         // A page that TRIED and threw is a broken build, not a page that opted
@@ -598,3 +626,23 @@ function flattenTree(node) {
 
 // Named exports for unit testing
 export { deepMerge as _deepMerge }
+
+/**
+ * Filenames currently in the build's `assets/` directory.
+ *
+ * The island bundle is a SECOND Vite build into the same `outDir` with
+ * `emptyOutDir: false`, so its output cannot be told from the main build's by
+ * looking — only by comparing before and after.
+ */
+async function listAssets(outDir) {
+  return new Set(await readdir(resolve(outDir, 'assets')).catch(() => []))
+}
+
+/** Remove what the island build added, after it failed. */
+async function removeOrphanIslandChunks(outDir, before) {
+  const after = await listAssets(outDir)
+  for (const name of after) {
+    if (before.has(name)) continue
+    await rm(resolve(outDir, 'assets', name), { force: true }).catch(() => {})
+  }
+}

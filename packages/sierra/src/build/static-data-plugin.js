@@ -36,9 +36,14 @@
 
 import { resolve } from 'path'
 import { statSync }  from 'fs'
-import { pathToFileURL } from 'url'
+import { importFresh } from '../scanner/import-fresh.js'
 
 const ENDPOINT = '/__sierra/static-data'
+
+// absolute companion path → the mtime it was last imported at, and the module
+// that import produced. The cache this middleware always claimed to have.
+const lastStamp = new Map()
+const lastMod   = new Map()
 
 /**
  * @param {import('./index.js').SierraConfig} config
@@ -65,25 +70,80 @@ export function staticDataPlugin(config, sierraContext) {
           res.end(JSON.stringify(body))
         }
 
+        // Two refusals, and the second is the one the first cannot make.
+        //
+        // What is being protected is not the RESPONSE — that is unreadable
+        // cross-origin already — but the SIDE EFFECT, because `load()` is by
+        // design where an app reads its own database and may `fetch()` a URL it
+        // was handed (`FJS-821`). Dev only, and `VITE_HOST_APP` binds this to
+        // 0.0.0.0, so the page driving it need not be on this machine.
+        //
+        // GET only: a cross-origin `<form>` POST is a SIMPLE request, so no
+        // preflight asks this server whether it wants the call.
+        if (req.method !== 'GET') return next()
+
+        // …and a GET from another SITE, which the verb check cannot cover:
+        // `<img src>`, `<script src>` and a top-level form GET are all simple
+        // GETs and none of them sends an `Origin` header to read.
+        // `Sec-Fetch-Site` is what answers it — set by the browser, and a page
+        // can neither forge nor suppress it. Absent means a caller that is not
+        // a browser (curl, a test), which is not the threat; `none` is a typed
+        // URL or a bookmark.
+        const site = req.headers['sec-fetch-site']
+        if (site && site !== 'same-origin' && site !== 'none') {
+          return send(403, { error: 'cross-site request refused' })
+        }
+
         try {
           const url     = new URL(req.url, 'http://localhost')
           const routeId = url.searchParams.get('route')
           const pageUrl = url.searchParams.get('url') ?? '/'
-          let params    = {}
-          try { params = JSON.parse(url.searchParams.get('params') ?? '{}') } catch { params = {} }
+          let sent      = {}
+          try { sent = JSON.parse(url.searchParams.get('params') ?? '{}') } catch { sent = {} }
 
           const node = findNode(sierraContext.tree, routeId)
           if (!node)          return send(404, { error: `no such route: ${routeId}` })
           if (!node.companion) return send(404, { error: `${routeId} has no companion` })
 
+          // Only a route that DECLARES `render: static`. This endpoint exists
+          // because a static route's companion never enters the browser graph;
+          // a route that does not declare it has its loader in the graph
+          // already and reaches it there. Without the check the endpoint runs
+          // the companion of any route in the tree, which is a second way into
+          // code the client route table deliberately imports differently.
+          if (node.meta?.render !== 'static') {
+            return send(404, { error: `${routeId} is not a render: static route` })
+          }
+
+          // Only the params the ROUTE declares, and each one a string, which is
+          // what a path capture is. The client sends them because the router
+          // has already matched the URL — but *the client sends them* is not a
+          // reason to hand a `load()` an arbitrary object, and `__proto__` in
+          // that object reached it (`FJS-821`).
+          const params = Object.create(null)
+          for (const name of node.params ?? []) {
+            const v = sent?.[name]
+            if (typeof v === 'string' || typeof v === 'number') params[name] = String(v)
+          }
+
           // Keyed by the companion's own mtime, so editing a `load()` is picked
           // up on the next navigation without restarting the server — and the
           // modules it IMPORTS stay cached, which is what keeps the app's
           // database client from being rebuilt on every page view.
+          //
+          // The mtime is a key HERE rather than a query on the specifier: bun
+          // does not include a query string in the module cache key, so
+          // `?t=${mtime}` under `bun --bun vite` — the runtime this surface's
+          // dev server is required to be — never missed at all, and the header
+          // above promised an edit was picked up when it never was (`FJS-806`).
           const abs = resolve(root, node.companion)
           let stamp = 0
           try { stamp = statSync(abs).mtimeMs } catch { /* it will fail on import */ }
-          const mod = await import(`${pathToFileURL(abs).href}?t=${stamp}`)
+          const mod = stamp === lastStamp.get(abs) && lastMod.has(abs)
+            ? lastMod.get(abs)
+            : await importFresh(abs)
+          lastStamp.set(abs, stamp)
+          lastMod.set(abs, mod)
 
           const load = mod?.load ?? mod?.default?.load
           if (typeof load !== 'function') return send(200, { data: null, head: null })
@@ -97,10 +157,16 @@ export function staticDataPlugin(config, sierraContext) {
 
           // head() is in the same module and the router asks for it after the
           // data, so it is answered on the same round trip rather than a second.
+          // A throwing head() is NOT swallowed, because the build does not
+          // swallow it: there it skips the page, and a skipped page fails the
+          // build (`FJS-439`). Answering `head: null` in dev made one question
+          // have two answers, and the dev one hid the failure until deploy —
+          // which is the wrong way round for the half a person is looking at.
+          // It falls to the catch below, the same as a load() that threw.
           let head = null
           const headFn = mod?.head ?? mod?.default?.head
           if (typeof headFn === 'function') {
-            try { head = await headFn({ params, data, url: pageUrl }) } catch { head = null }
+            head = await headFn({ params, data, url: pageUrl })
           }
 
           send(200, { data, head })
@@ -109,7 +175,7 @@ export function staticDataPlugin(config, sierraContext) {
           // A 500 with no sentence here reads in the browser as the dev server
           // being broken, which is the wrong thing to go and look at.
           server.config.logger.error(
-            `[Sierra] static-data: load() threw for ${req.url}\n${err?.stack ?? err?.message ?? err}`
+            `[Sierra] static-data: the companion threw for ${req.url}\n${err?.stack ?? err?.message ?? err}`
           )
           send(500, { error: String(err?.message ?? err) })
         }

@@ -490,7 +490,7 @@ export class Factory {
 //
 //   new UserFactory(db).admin().createMany(3)
 //
-// A subclass declares `traits` as an instance field, which initialises only AFTER
+// A subclass declares `traits` as an instance field, which initializes only AFTER
 // super() returns — that is the sole reason Factory's constructor returns a Proxy.
 // Here everything is known up front, so traits are installed in the constructor and
 // the Proxy never has to fire.

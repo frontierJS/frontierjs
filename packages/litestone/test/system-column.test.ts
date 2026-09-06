@@ -56,7 +56,7 @@ describe('the declaration', () => {
   it('composes with @guarded — the pair could not be spelled at all before', () => {
     // Invisible to a client AND unwritable by one. `@guarded` alone answers both
     // halves for a column nobody may READ either; this is the other combination.
-    expect(parse(`model T { id Int @id  c String? @guarded(all) @system }`).valid).toBe(true)
+    expect(parse(`model T { id Int @id  c String? @guarded @system }`).valid).toBe(true)
   })
 
   it("refuses @allow('write', …) beside it — one says nobody, the other says it depends", () => {

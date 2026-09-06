@@ -19,8 +19,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { createApp, channels, defaultConfig }        from '../index.ts'
 import { createJunctionClient }                      from '../src/client/index.ts'
 
-const PORT = 3397
-const WS   = `ws://localhost:${PORT}/ws`
+// Port 0, read back after start(). A fixed port here was `FJS-900`: several
+// files in this package bound the same one and bun runs them in ONE process,
+// so an app answered while a previous file's app on that port was still
+// shutting down. Never hard-code a port in this package's tests.
+let PORT = 0
+const WS = () => `ws://localhost:${PORT}/ws`
 
 // Scaled down from the shipped 15s/40s. Same ratio, so the eviction under
 // test is the shipped one and not a different race.
@@ -32,7 +36,7 @@ let app: any
 beforeAll(async () => {
   app = createApp({
     config: {
-      port:     PORT,
+      port:     0,
       database: { url: '', log: false },
       services: { dir: '/nonexistent' },
       http:     { ...defaultConfig.http, drainTimeout: 250 },
@@ -40,6 +44,7 @@ beforeAll(async () => {
   })
   app.configure(channels(undefined, { heartbeatInterval: INTERVAL, heartbeatTimeout: TIMEOUT }))
   await app.start()
+  PORT = app.http.port
 })
 
 afterAll(async () => { await app?.stop() })
@@ -48,7 +53,7 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 /** Raw socket recording every frame and every close, answering nothing. */
 function raw(opts: { pong?: boolean } = {}) {
-  const ws = new WebSocket(WS)
+  const ws = new WebSocket(WS())
   const frames: any[] = []
   let closed: { code: number; reason: string } | null = null
 

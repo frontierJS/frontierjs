@@ -1,5 +1,26 @@
 # Changes
 
+## 2026-09-05 — a form that has already written its row does not offer the button again
+
+`FJS-823`.
+
+A failure AFTER the row was written is a different failure, and a caller cannot tell them
+apart from the outside: an `after` hook whose analytics call throws once shows *save failed*
+over a row that exists, and the person presses Save again. There are then two rows.
+
+The resource marks the error (`err.committed`), `toFieldErrors` carries it, and `<Form>` takes
+it as a bindable `committed` prop: `submit()` returns early while it is set, so a caller can
+render *saved, but a later step did not finish — reload before editing again* instead of a
+button. `COMMITTED_MESSAGE` is exported beside `STALE_WRITE_MESSAGE` for an app that wants the
+sentence or wants to replace it.
+
+Two placements are load-bearing. It is read off the ERROR and not only off the mapper, because
+a caller's own `mapErrors` does not know about the flag and would drop it, which puts the
+button back over a written row. And it is cleared by `reset()` rather than by `clearErrors()`:
+it is a fact about a row that exists, not a message about a value, so dropping it with the
+messages would restore exactly the duplicate it exists to prevent. A reset is the caller
+saying this form is now about something else.
+
 ## 2026-09-03 — a frozen column on a document that has been issued
 
 `FJS-628`. 889 passing in the browser drive. `example`: `verify` 58/58.

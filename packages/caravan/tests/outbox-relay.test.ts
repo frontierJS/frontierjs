@@ -260,10 +260,13 @@ describe('what /metrics is told', () => {
     const metrics = () =>
       (app as unknown as { _metricsSources: Map<string, () => unknown> })
         ._metricsSources.get('outbox')!() as
-          { pending: number; delivered: number; failed: number; lastPassAt: string | null }
+          { pending: number; dead: number; delivered: number; failed: number
+            lastPassAt: string | null }
 
     // boot() runs one pass before the first tick, so the numbers exist already.
-    expect(metrics()).toEqual({ pending: 0, delivered: 0, failed: 0, lastPassAt: expect.any(String) })
+    expect(metrics()).toEqual({
+      pending: 0, dead: 0, delivered: 0, failed: 0, lastPassAt: expect.any(String),
+    })
 
     await owe(db)
     await owe(db)
@@ -287,7 +290,40 @@ describe('what /metrics is told', () => {
       ._metricsSources.get('outbox')!() as { delivered: number; failed: number }
     expect(m).toMatchObject({ delivered: 0, failed: 1 })
   })
+
+  it('a row past the cap moves from pending to dead, and fails readiness', async () => {
+    // Two numbers rather than one: a dead row is owed forever, so counting it
+    // as pending keeps that number off zero for the life of the app — which is
+    // what a readiness probe and an operator both read as *the relay is
+    // behind*. `dead` is the only thing in this process that says an effect is
+    // never going to happen.
+    const { app, db } = await bootApp({ maxAttempts: 2, retryBackoffMs: 1, intervalMs: 60_000 })
+    ;(app.jobs as { dispatch: unknown }).dispatch = async () => { throw new Error('queue is down') }
+
+    const health = (app as unknown as { _healthChecks: Map<string, () => boolean> })
+      ._healthChecks.get('outbox')!
+    const metrics = () =>
+      (app as unknown as { _metricsSources: Map<string, () => unknown> })
+        ._metricsSources.get('outbox')!() as { pending: number; dead: number }
+
+    await owe(db)
+    await app.outbox!.pass()
+    expect(metrics()).toMatchObject({ pending: 1, dead: 0 })
+    expect(health()).toBe(true)
+
+    // Past the cap. The row is still here — it is not deleted and not marked;
+    // it simply stops matching the relay's query.
+    await db.asSystem().outboxMessage.updateMany({
+      where: { deliveredAt: null }, data: { nextAttemptAt: new Date(0) },
+    })
+    await app.outbox!.pass()
+
+    expect(metrics()).toMatchObject({ pending: 0, dead: 1 })
+    expect(health()).toBe(false)
+    expect(await db.asSystem().outboxMessage.count()).toBe(1)
+  })
 })
+
 
 describe('retention', () => {
 

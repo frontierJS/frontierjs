@@ -134,6 +134,12 @@
   export let dirty      = false
   export let submitted  = false       // a submit has been attempted
 
+  // The write LANDED and something after it did not — an `after` hook that
+  // threw. The row exists, so the one thing this form must not do is offer the
+  // button again: the person presses it and there are two rows (`FJS-823`).
+  // Bindable so a caller can show their own "saved, reload" affordance.
+  export let committed  = false
+
   const idField = resource?.context?.idField ?? 'id'
 
   // A blank seeded from the schema when the caller did not supply a record.
@@ -353,8 +359,13 @@
   function _map(err) {
     const fn = mapErrors ?? resource?.fieldErrors
     // No unwrapper: say the one true thing rather than guess at a shape.
-    if (!fn) return { fields: {}, message: err?.message ?? 'Request failed' }
-    return fn(err) ?? { fields: {}, message: '' }
+    const committedErr = err?.committed === true
+    if (!fn) return { fields: {}, message: err?.message ?? 'Request failed', committed: committedErr }
+    // `committed` off the error, never only off the mapper: a caller's own
+    // `mapErrors` does not know about the flag and would drop it, which puts
+    // the button back over a written row.
+    const out = fn(err) ?? { fields: {}, message: '' }
+    return { ...out, committed: out.committed === true || committedErr }
   }
 
   /**
@@ -413,7 +424,8 @@
   export async function submit(e) {
     // Also called programmatically, where there is no event.
     e?.preventDefault?.()
-    if (submitting || disabled) return undefined
+    // The row is already written. See `committed`.
+    if (submitting || disabled || committed) return undefined
 
     submitted = true
     formError = ''
@@ -455,6 +467,9 @@
       return result
     } catch (err) {
       const mapped = _map(err)
+      // Before the field messages, because a committed failure has none and the
+      // form must stop accepting a submit whatever else it shows.
+      if (mapped.committed) committed = true
       _server   = mapped.fields  ?? {}
       formError = mapped.message ?? ''
       _recompute()
@@ -473,6 +488,12 @@
     record    = { ...pristine }
     dirty     = false
     submitted = false
+    // Cleared here and not in clearErrors(): `committed` is a fact about a row
+    // that exists, not a message about a value. Dropping it with the messages
+    // would put the button back over a row that is already written, which is
+    // the duplicate this flag exists to prevent. A reset is the caller saying
+    // this form is now about something else.
+    committed = false
     clearErrors()
   }
 

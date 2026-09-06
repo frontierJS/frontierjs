@@ -157,19 +157,22 @@ function buildCacheHooks(
     return tenant ? `${base}:t=${tenant}` : base
   }
 
-  // Results are cloned on BOTH store and read. The cache must never hand out
-  // a live reference: after-hooks (protect(), custom shapers) mutate ctx.result
-  // in place, and a shared reference would let them corrupt the cached copy —
-  // or worse, let a copy cached before protect() ran serve unstripped fields
-  // (e.g. password hashes) to later callers.
+  // Isolation is the CACHE's contract, not this hook's: after-hooks (protect(),
+  // custom shapers) mutate ctx.result in place, and a driver handing back a
+  // live reference would let them corrupt the cached copy. Cloning here as
+  // well was a second answer to that, and only the driver's can be true of a
+  // driver this hook has never heard of (`FJS-898`).
   const checkCache: HookFn = (ctx) => {
     const hit = resolveCache(ctx).get(getKey(ctx))
-    if (hit !== undefined) ctx.result = structuredClone(hit)
+    if (hit !== undefined) ctx.result = hit
   }
 
   const storeResult: HookFn = (ctx) => {
-    if (ctx.result !== null) {
-      resolveCache(ctx).set(getKey(ctx), structuredClone(ctx.result), ttl)
+    // `undefined` as well as null: a method that answered nothing has no
+    // result to cache, and set() refuses one because get() could not read it
+    // back apart from a miss.
+    if (ctx.result != null) {
+      resolveCache(ctx).set(getKey(ctx), ctx.result, ttl)
     }
   }
 
@@ -662,6 +665,14 @@ async function _callService(
   // observability tools see failed calls. (Was outside try/finally before;
   // a thrown pipeline would skip the emit entirely.)
   if (t) {
+    // `ctx.error` alone is not what failed. hooks.ts sets it inside runCore, so
+    // it covers a before hook, the method and an after hook — and an AROUND hook
+    // wraps all three, which means its throw never reaches that assignment.
+    // gateAuth is an around hook, so every auth refusal an app makes was emitted
+    // as `status: 'ok'`: the console whose whole job is what happened to this
+    // call agreed with the app that nothing had gone wrong, and a 401 was
+    // indistinguishable from a 200 in the feed.
+    const failed = ctx.error ?? (pipelineError ? toFrameworkError(pipelineError) : null)
     const event: TelemetryEvent = {
       telemetryId: ctx.telemetryId,
       service:     service.name,
@@ -670,12 +681,12 @@ async function _callService(
       userId:      ctx.auth.user?.userId ?? null,
       id:          ctx.id,
       durationMs:  Date.now() - start,
-      status:      ctx.error ? 'error' : 'ok',
-      ...(ctx.error ? {
+      status:      failed ? 'error' : 'ok',
+      ...(failed ? {
         error: {
-          name:    ctx.error.name,
-          message: ctx.error.message,
-          code:    ctx.error.code,
+          name:    failed.name,
+          message: failed.message,
+          code:    failed.code,
         }
       } : {}),
     }
@@ -862,7 +873,14 @@ async function _callService(
   // is already durable, and the sweep is the backstop that makes that safe.
   if (!ctx.error && !pipelineError && ctx._outbox?.length) {
     ctx._outbox = []
-    void ctx.app?.outbox?.deliver().catch((err: unknown) => {
+    // Named DATABASE, not a walk. The row was written through this call's own
+    // client, so under `strategy database` the kick is one query against one
+    // tenant — where an unnamed pass resolves the whole registry to find the
+    // file it already had in hand (`FJS-778`).
+    void ctx.app?.outbox?.deliver({
+      db:     ctx.locals?.db,
+      tenant: ctx.locals?.tenantId ?? null,
+    }).catch((err: unknown) => {
       // A failed pass is not a failed call: the row is committed and owed, and
       // the next sweep will try again. Loud, because a relay that cannot reach
       // its queue at all is silent otherwise.
@@ -939,6 +957,14 @@ export interface BaseServiceOptions {
    * was a write that worked.
    */
   methods?:  MethodPolicy
+  /**
+   * Per-method levels, already read off a `methods:` list.
+   *
+   * `createService` passes these rather than its own `methods:`, because the
+   * base carries none of the custom functions and would refuse every name it
+   * was handed. Absent, the base reads its own `methods:`.
+   */
+  methodGates?: Record<string, number>
 
   /**
    * Hook pipeline. Carried through onto the returned object.
@@ -1362,6 +1388,22 @@ export const READ_ONLY_METHODS: readonly string[] = ['find', 'get']
 export interface MethodDeclaration {
   method: string
   input?: string
+  /**
+   * The standing this method requires, on the 0–9 ladder.
+   *
+   * A custom method's authority is the one thing about it that cannot be
+   * derived: `availability` and `refund` sit on the same service over the same
+   * model, and nothing in the schema separates them. So the floor is derived —
+   * a caller must at least be able to READ the model, which is what `find`
+   * already requires — and anything above that floor is stated here.
+   *
+   * Absent means the floor. It is not *unguarded*: a method that writes is
+   * still refused at the Data boundary by the model's own `@@gate`. What
+   * stating it buys is the refusal happening BEFORE the method body runs,
+   * which for anything with a side effect ahead of its first write is the
+   * whole difference (`FJS-826`).
+   */
+  gate?: number
 }
 
 export type MethodEntry  = string | MethodDeclaration
@@ -1384,8 +1426,36 @@ export function methodEntryName(entry: MethodEntry, serviceName: string): string
     return entry.method
   throw new TypeError(
     `[Junction] service '${serviceName}': every methods entry must be a method name ` +
-    `or { method, input }, got ${JSON.stringify(entry)}`
+    `or { method, input, gate }, got ${JSON.stringify(entry)}`
   )
+}
+
+/**
+ * The `gate:` declarations in a `methods:` list, keyed by method name.
+ *
+ * Refused rather than coerced: a gate is a number on the 0–9 ladder, and a
+ * string or a level outside it is a statement about access that does not mean
+ * anything, which is the one kind of typo that must not be guessed at.
+ */
+export function collectMethodGates(
+  declared:    MethodPolicy | undefined,
+  serviceName: string,
+): Record<string, number> {
+  const out: Record<string, number> = {}
+  if (!declared || declared === 'readOnly') return out
+
+  for (const entry of declared) {
+    if (typeof entry === 'string' || entry?.gate === undefined) continue
+    const name = methodEntryName(entry, serviceName)
+    const gate = entry.gate
+    if (typeof gate !== 'number' || !Number.isInteger(gate) || gate < 0 || gate > 9)
+      throw new TypeError(
+        `[Junction] service '${serviceName}': ${name} declares gate ${JSON.stringify(gate)}, ` +
+        `which is not a level. It is a whole number 0–9, the same ladder @@gate uses.`
+      )
+    out[name] = gate
+  }
+  return out
 }
 
 /**
@@ -1549,7 +1619,7 @@ export function createBaseService(
   //     it unless a request-scoped client is already there (withLitestoneDb
   //     always wins).
 
-  const { model, name, hooks, db, paginate, allowBulk, bulkMax, idField, softDelete, cache, schema, channel, methods, transactional } = opts
+  const { model, name, hooks, db, paginate, allowBulk, bulkMax, idField, softDelete, cache, schema, channel, methods, methodGates, transactional } = opts
 
   const base = createLitestoneBase({
     model,
@@ -1663,7 +1733,12 @@ export function createBaseService(
   // second time.
   const derived = (...fns: Hook[]): Hook[] => fns.map(markDerived)
 
-  const gateHook = markDerived(gateAuthAround(model))
+  // The per-method levels a `methods:` list declares. The floor `gateAuthAround`
+  // derives needs no declaration; this is only what sits above it.
+  const gateHook = markDerived(gateAuthAround(
+    model,
+    methodGates ?? collectMethodGates(methods, name ?? model ?? 'service'),
+  ))
 
   const derivedHooks: HookMap = {
     around: { all: [gateHook] },
@@ -1994,7 +2069,7 @@ export interface ServiceDefinition {
    *
    * **Cost:** `BEGIN IMMEDIATE` holds SQLite's single write lock for the whole
    * pipeline, `after` hooks included, so an `after` hook doing network I/O
-   * serialises every write in the app behind it. Off by default for that reason.
+   * serializes every write in the app behind it. Off by default for that reason.
    */
   transactional?: TransactionalDeclaration
 
@@ -2129,6 +2204,12 @@ export function createService(def: ServiceDefinition): Service {
     softDelete: def.softDelete as string | undefined,
     schema:     def.schema     as import('./litestone.ts').LitestoneJsonSchema | undefined,
     hooks:      def.hooks,
+    // The GATES only, never the methods list: the base carries none of the
+    // custom functions, so handing it `methods:` makes it refuse every name the
+    // outer definition owns. What it needs is the levels, for the hook it
+    // builds — without them the declaration parsed, was reported, and enforced
+    // nothing, which is the shape of the defect it exists to fix.
+    methodGates: collectMethodGates(def.methods, (def.name as string) ?? '(unnamed)'),
   })
   const baseHooks = (base as unknown as { hooks?: HookMap }).hooks
 
@@ -2506,12 +2587,13 @@ export class ServiceRegistry {
  *
  * No-ops unless BOTH are true: the channels plugin is loaded (it stamps the
  * manager on every context), and the service declared `publish`. Broadcasting
- * is opt-in on purpose — `@@allow` row policies are enforced when a row is
- * READ, and a broadcast does not re-evaluate them per subscriber, so a default
- * of "announce everything" would hand every connection in a channel rows it
- * could never have fetched. Feathers has the same split: its core publishes
- * nothing without a publisher, and its *generator* writes one for you.
- * Junction's `fli make:*` scaffolds do the same.
+ * is opt-in because a channel name is a decision about WHO is listening that
+ * only the app can make, not because a frame would be ungraded: a broadcast is
+ * not a SELECT, so `@@allow` — which compiles into a WHERE — cannot reach one,
+ * and every frame is graded per recipient at the Data boundary instead
+ * (`gradeRecipients`, `db.$readAs`). Feathers has the same split: its core
+ * publishes nothing without a publisher, and its *generator* writes one for
+ * you. Junction's `fli make:*` scaffolds do the same.
  *
  * A service declaring NOTHING falls through to the app-level default
  * (`app.channels.publishDefault(fn)`), which is null unless an app registered

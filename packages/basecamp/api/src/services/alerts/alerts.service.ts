@@ -17,7 +17,7 @@
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, findScoped, getScoped, deriveSlug, narrowPatch, changesNothing, ws, actor }
+import { db, findScoped, getScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 
@@ -206,7 +206,8 @@ export function createAlertsService(app: BasecampApp) {
       before: {
         all:    [sessionScope(app)],
         // Authoring a rule is an admin act: a rule decides who gets woken up.
-        create: [requireWorkspaceRole(app, 'admin', 'owner'), deriveSlug],
+        // No deriveSlug: `AlertRule` has no `slug` column.
+        create: [requireWorkspaceRole(app, 'admin', 'owner')],
         patch:  [requireWorkspaceRole(app, 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
         // Where a rule delivers is part of authoring it — changing it decides

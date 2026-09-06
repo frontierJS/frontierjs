@@ -77,7 +77,7 @@ describe('methods: entries', () => {
 
   test('an entry that is neither is refused by name', () => {
     expect(() => methodEntryName({ input: 'PayOrder' } as never, 'orders'))
-      .toThrow(/must be a method name or \{ method, input \}/)
+      .toThrow(/must be a method name or \{ method, input, gate \}/)
     expect(() => methodEntryName(7 as never, 'orders')).toThrow(/orders/)
   })
 

@@ -320,6 +320,86 @@ function warnRefusedAll(label: string, accessor: string, size: number, hint = ''
 }
 
 /**
+ * The cohort a principal belongs to.
+ *
+ * `FJS-D175` says two tabs of one person are one verdict and one frame, and the
+ * key that expressed it was `conn.user` — an OBJECT. Nothing upstream shares
+ * one: `_wsOpen` calls `verifySession` per socket and `@frontierjs/auth`
+ * answers `{ ...toContext(user), sessionId }`, a fresh object each time. So no
+ * two sockets ever collapsed, and the cohort was a per-connection loop wearing
+ * the word cohort — measured, 100 sockets of ONE user asked the Data boundary
+ * 100 times where one shared object asks once, which puts every real
+ * application on `FJS-D175`'s 445.6 µs number rather than its 49.8 µs one.
+ *
+ * Keyed on the principal's VALUE instead, because that is what decides the
+ * answer: `$readAs` grades the gate, the row policy and the field policies out
+ * of the principal's own fields, and `sessionGateLevel` reads five more of
+ * them. Two principals that serialize identically cannot be graded
+ * differently — which is the property a hash would only approximate, and is why
+ * this is a full canonical string rather than a digest.
+ *
+ * Serialization is REFUSED rather than approximated where the value is not
+ * plainly data: anything with a prototype of its own — a function, a symbol, a
+ * Map, a class instance — plus a cycle or anything past a small depth, answers
+ * null and the caller falls back to the object itself, which is the behavior
+ * this replaces. Collapsing two principals that
+ * are not the same is the one mistake here that delivers a row to somebody who
+ * may not read it, so every uncertainty resolves the other way.
+ */
+function stableKey(v: unknown, depth = 0): string | null {
+  if (depth > 6) return null
+  if (v === null) return 'null'
+  const t = typeof v
+  if (t === 'string')  return JSON.stringify(v)
+  if (t === 'number' || t === 'boolean') return String(v)
+  if (t === 'undefined') return 'undefined'
+  if (t === 'bigint') return `${v}n`
+  if (v instanceof Date) return `d:${v.getTime()}`
+  if (Array.isArray(v)) {
+    const parts: string[] = []
+    for (const item of v) {
+      const k = stableKey(item, depth + 1)
+      if (k === null) return null
+      parts.push(k)
+    }
+    return `[${parts.join(',')}]`
+  }
+  // The one refusal, and it covers everything that is not plainly data: a
+  // function, a symbol, a Map, a class instance — each has a prototype of its
+  // own, and each can carry behavior two structurally equal copies do not
+  // share. Stated once here rather than as a list of types, because a list is
+  // a thing to keep up to date and this is a property.
+  const proto = Object.getPrototypeOf(v)
+  if (proto !== Object.prototype && proto !== null) return null
+  const keys = Object.keys(v as object).sort()
+  const parts: string[] = []
+  for (const key of keys) {
+    const k = stableKey((v as Record<string, unknown>)[key], depth + 1)
+    if (k === null) return null
+    parts.push(`${JSON.stringify(key)}:${k}`)
+  }
+  return `{${parts.join(',')}}`
+}
+
+// Memoised on the session OBJECT, which is the one thing identity is good for
+// here: `verifySession` runs once per socket and the object it answers does not
+// change while that socket is open, so the serialization is paid once per
+// connection instead of once per connection per publish. Weak, so it is
+// collected with the socket and holds nothing open.
+const _cohortKeys = new WeakMap<object, unknown>()
+
+function principalKey(user: unknown): unknown {
+  if (user === null || user === undefined) return ANON
+  if (typeof user !== 'object') return `p:${stableKey(user) ?? String(user)}`
+  const memo = _cohortKeys.get(user)
+  if (memo !== undefined) return memo
+  const k   = stableKey(user)
+  const key = k === null ? user : `p:${k}`
+  _cohortKeys.set(user, key)
+  return key
+}
+
+/**
  * Who, of everyone subscribed, may see this — in cohorts.
  *
  * `null` means grading was never APPLICABLE (no Data boundary, no model, a
@@ -368,7 +448,11 @@ export async function gradeRecipients(
   // person in two workspaces is one principal on one socket and holds a
   // different tenant in each. Without a resolver the inner map has exactly one
   // entry and this is the flat map it used to be.
-  const byPrincipal = new Map<unknown, Map<string, ClaimGroup>>()
+  // The principal is carried beside its key, because the key is now a string
+  // and the grading needs the value: `toDataPrincipal` in row mode and
+  // `sessionGateLevel` in gate mode both read the session's own fields. Any
+  // member of a cohort will do — they serialized identically.
+  const byPrincipal = new Map<unknown, { user: unknown; byClaims: Map<string, ClaimGroup> }>()
   const seen = new Set<Connection>()
   let live = 0
   for (const ch of targets) {
@@ -376,24 +460,24 @@ export async function gradeRecipients(
       if (conn.socket.readyState !== 1 || seen.has(conn)) continue
       seen.add(conn)
       live++
-      const key    = conn.user ?? ANON
+      const key    = principalKey(conn.user)
       const claims = claimsFor ? resolveClaims(claimsFor, ch.name, conn) : null
       const sig    = claims ? JSON.stringify(claims) : ''
-      let byClaims = byPrincipal.get(key)
-      if (!byClaims) byPrincipal.set(key, byClaims = new Map())
-      const entry = byClaims.get(sig)
+      let group = byPrincipal.get(key)
+      if (!group) byPrincipal.set(key, group = { user: conn.user ?? null, byClaims: new Map() })
+      const entry = group.byClaims.get(sig)
       if (entry) entry.conns.push(conn)
-      else byClaims.set(sig, { claims, conns: [conn] })
+      else group.byClaims.set(sig, { claims, conns: [conn] })
     }
   }
 
   const out: Cohort[] = []
-  for (const [key, byClaims] of byPrincipal) for (const { claims, conns } of byClaims.values()) {
+  for (const [key, group] of byPrincipal) for (const { claims, conns } of group.byClaims.values()) {
     if (mode === 'gate') {
       // The gate alone. Nothing here is a row, so there is no policy to ask and
       // no field to shape — the question is whether this caller may read the
       // model at all.
-      if (sessionGateLevel(key === ANON ? null : (key as never)) < (readLevel as number)) continue
+      if (sessionGateLevel(key === ANON ? null : (group.user as never)) < (readLevel as number)) continue
       out.push({ conns, frame: encodeEventFrame(event, payload) })
       continue
     }
@@ -408,7 +492,7 @@ export async function gradeRecipients(
     // are one boundary: change either and ask whether the other needs it.
     // Claims are merged OVER the principal: the resolver is answering about this
     // channel, and the principal was built where the channel was not known.
-    const base = key === ANON ? null : toDataPrincipal(key)
+    const base = key === ANON ? null : toDataPrincipal(group.user as never)
     const who  = claims ? { ...(base as object ?? {}), ...claims } : base
     try { visible = await db.$readAs(accessor, payload, who) }
     catch { continue }                      // undecidable: refuse, never widen
@@ -460,8 +544,37 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
   // ── Presence tracking — extracted to presence.ts ────────────────────
   // The tracker owns the presence maps and the join/sync/leave broadcast
   // protocol; the manager supplies the send primitives.
+
+  /**
+   * A presence frame goes to the channel's ROSTER, not to its connections.
+   *
+   * The two are not the same set: the tracker records nobody with no `userId`,
+   * so an anonymous connection the app joined to a channel is deliberately
+   * invisible in every roster — and then received `presence:join` and
+   * `presence:update` for everyone else through the plain channel fan-out,
+   * naming their user id and whatever meta the app publishes (`FJS-811`, found
+   * by tests/client-presence.test.ts). It could never assemble a roster from
+   * them, since a sync it is not sent, so this was disclosure with no feature
+   * on the other side of it.
+   *
+   * One owner, because the leak was in two places and the second — the meta
+   * update — looks nothing like the first.
+   */
+  function broadcastToPresence(channelId: string, excludeConnId: string | null, event: string, data: unknown): void {
+    const ch = channels.get(channelId)
+    if (!ch) return
+    const roster = _presence.presenceFor(channelId)
+    const msg = encodeEventFrame(event, data)
+    for (const conn of ch.connections) {
+      if (conn.id === excludeConnId) continue
+      if (!roster.has(conn.id)) continue
+      if (conn.socket.readyState === 1) wsSend(conn.socket, msg)
+    }
+  }
+
   const _presence = createPresenceTracker({
-    broadcast:  broadcastToChannel,
+    broadcast:  (channelId, excludeConnId, event, data) =>
+      broadcastToPresence(channelId, excludeConnId, event, data),
     sendToConn,
     flushMs:    _presencePolicy.flushMs,
   })
@@ -583,8 +696,39 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
       return conn
     },
 
+    // ── disconnectSession ───────────────────────────────────────────
+    //
+    // Close every socket a given session holds.
+    //
+    // A session is resolved ONCE, at upgrade, and the principal it produced is
+    // handed to every frame after that — so a change to what that session means
+    // reaches HTTP on the next request and reaches an open socket never. The
+    // case it was written for is support mode: an operator who ends an episode
+    // stops acting as the subject over HTTP and keeps acting as them down a
+    // connection nobody re-asked.
+    //
+    // Blunt rather than careful, deliberately. Re-resolving a live connection
+    // in place would mean rebuilding a principal underneath frames that are
+    // already in flight; closing it costs a reconnect the client already knows
+    // how to do, and the reconnect resolves the session afresh.
+    //
+    // Answers how many it closed, because *nothing to close* and *nothing
+    // happened* are the same silence otherwise.
+    disconnectSession(sessionId: string, reason = 'session changed'): number {
+      let closed = 0
+      for (const conn of connections.values()) {
+        if (conn.user?.sessionId !== sessionId) continue
+        closed++
+        // Through the ordinary path: it deletes the connection, leaves its
+        // channels, and closes the socket. A raw close would leave the manager
+        // holding a connection whose socket is gone.
+        void this.handleDisconnect(conn.id, reason)
+      }
+      return closed
+    },
+
     // Called by _wsClose AND by heartbeat eviction
-    async handleDisconnect(connId: string): Promise<void> {
+    async handleDisconnect(connId: string, reason = 'connection evicted'): Promise<void> {
       const conn = connections.get(connId)
       if (!conn) return
 
@@ -596,7 +740,7 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
       // zombie whose subsequent calls ran with conn = null (silently losing
       // the authenticated user).
       try {
-        if (conn.socket.readyState === 1) conn.socket.close(1001, 'connection evicted')
+        if (conn.socket.readyState === 1) conn.socket.close(1001, reason)
       } catch {}
 
       // channel.leave is wrapped — triggers presenceLeave per channel automatically
@@ -770,6 +914,7 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
       return presenceGet(channelId, connId)
     },
     _presenceMembers:      presenceMembers,
+    _broadcastToPresence:  broadcastToPresence,
     _broadcastToChannel:   broadcastToChannel,
     _sendToConn:           sendToConn,
 
@@ -1240,8 +1385,9 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
               }
 
               member.meta = meta
-              // Emit presence:update to other members
-              manager._broadcastToChannel(channelId, connId, 'presence:update', {
+              // To the ROSTER — see broadcastToPresence. A connection presence
+              // does not track is not a member and is told nothing about one.
+              manager._broadcastToPresence(channelId, connId, 'presence:update', {
                 channelId,
                 connectionId: connId,
                 meta:         member.meta,
@@ -1252,6 +1398,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
             // (including sender's own — possibly updated — entry)
             manager._sendToConn(conn, 'presence:sync', {
               channelId,
+              you:     connId,
               members: manager._presenceMembers(channelId),
             })
             return

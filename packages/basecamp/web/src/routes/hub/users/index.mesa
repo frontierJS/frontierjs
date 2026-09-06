@@ -23,11 +23,20 @@ title: Hub users
   //   Create a bot — an account with no password and no inbox, which exists to
   //     own an API key. Until it existed, CI's key was a person's key.
   //
+  //   Act as — a bounded, audited episode. The operator's own session resolves
+  //     to the subject until they stop or it lapses, every write is filed under
+  //     the OPERATOR with the subject beside it, and the credential paths refuse
+  //     from inside one. A system administrator may not be a subject: the
+  //     ceiling is the subject's standing, so standing in for one would be the
+  //     god mode this replaces.
+  //
   //   Invite a human — NOT built. It is invite → accept, which needs a token
   //     model, mail through conduit and a signed-out acceptance route the
   //     navigation guard lets through (`FJS-032`). Minting a human here would
   //     be an admin creating an account with a password only they know.
   import { session } from '../../../session.js'
+  import { getClient, refresh } from '@frontierjs/sierra/junction'
+  import { goto } from '@frontierjs/sierra/router'
   import { hub } from '../../../resources/Hub.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -109,6 +118,38 @@ title: Hub users
     title: isSystemAdmin ? `${label(u)} is a system administrator` : `${label(u)} is no longer a system administrator`,
     body:  isSystemAdmin ? 'They can see and act on every workspace.' : 'The hub is no longer theirs to open.',
   })
+
+  // ── Act as ────────────────────────────────────────────────────────────
+  //
+  // The reason is REQUIRED — the route refuses without one — and it is asked
+  // for here rather than defaulted, because a default reason is a field that
+  // records nothing while looking like it records something.
+  //
+  // Two refusals are the server's and are not restated as disabled buttons: an
+  // operator who is not a system administrator, and a subject who is one. The
+  // second is why the button is hidden for a sysadmin row anyway — a control
+  // that is always refused is worse than absent — but the refusal itself lives
+  // where it is enforced.
+  async function actAs(u) {
+    const reason = prompt(`Why are you acting as ${label(u)}?`)
+    if (!reason?.trim()) return
+
+    error = null; busy = u.id
+    try {
+      await getClient().auth.startSupport(u.id, reason.trim())
+      // The server closed this session's sockets, so the client reconnects and
+      // resolves afresh; `refresh()` is what re-reads who the caller now is.
+      await refresh()
+      // Away from the hub deliberately: the subject is not a system
+      // administrator, so this screen is not theirs to see and the navigation
+      // guard would bounce it anyway.
+      goto('/')
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
 
   async function createBot() {
     error = null; busy = 'bot'
@@ -243,6 +284,12 @@ title: Hub users
                 <Button variant="ghost" tone="danger" disabled={busy === u.id}
                         aria-label={`Suspend ${label(u)}`}
                         onclick={() => setStatus(u, 'suspended')}>Suspend</Button>
+              {/if}
+
+              {#if u.kind === 'human' && !u.isSystemAdmin && u.status === 'active'}
+                <Button variant="ghost" disabled={busy === u.id}
+                        aria-label={`Act as ${label(u)}`}
+                        onclick={() => actAs(u)}>Act as</Button>
               {/if}
 
               {#if u.kind === 'human'}

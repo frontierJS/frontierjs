@@ -55,6 +55,15 @@ beforeAll(async () => {
     ].join('\n'),
     'utf8'
   )
+
+  // A markup-only page — no <script> of any kind. The exact thing
+  // auto-imported components exist for, and the shape that had nowhere to put
+  // an import: the statement was prepended as TEMPLATE text (`FJS-796`).
+  await writeFile(
+    join(TMP, 'src/plain.mesa'),
+    '<h1>Hello</h1>\n<Card title="x" />\n',
+    'utf8'
+  )
 })
 
 afterAll(async () => {
@@ -75,6 +84,11 @@ describe('auto-import through a real Vite build', () => {
         build: {
           outDir: join(TMP, 'dist'),
           emptyOutDir: true,
+          // Unminified, because every assertion below names an identifier and
+          // esbuild renames them. Sierra no longer overrides Vite's minify
+          // default (`FJS-799`), so a build is minified unless a caller says
+          // otherwise — and this test is about what reached the graph.
+          minify: false,
           lib: { entry: join(TMP, 'src/entry.mesa'), formats: ['es'], fileName: 'entry' },
         },
       },
@@ -92,5 +106,35 @@ describe('auto-import through a real Vite build', () => {
     expect(code).toContain('input')       // TextField.mesa, two directories deep
     expect(code).toContain('toUpperCase') // shout(), used in the <script>
     expect(code).toContain('money')       // money(), used in a {…} expression
+  }, 60_000)
+
+  test('a script-less page gets a script block, not an import rendered as text', async () => {
+    const config = createSierraViteConfig({
+      target: 'widget',
+      autoImport: { components: ['src/components/UI'] },
+      vite: {
+        root: TMP,
+        logLevel: 'silent',
+        build: {
+          outDir: join(TMP, 'dist-plain'),
+          emptyOutDir: true,
+          minify: false,
+          lib: { entry: join(TMP, 'src/plain.mesa'), formats: ['es'], fileName: 'plain' },
+        },
+      },
+    })
+
+    const result = await build(config)
+    const output = Array.isArray(result) ? result[0].output : result.output
+    const code = output.filter(c => c.type === 'chunk').map(c => c.code).join('\n')
+
+    // The component reached the graph…
+    expect(code).toContain('card')
+    // …and the import statement is nowhere in a template literal. Mesa emits
+    // the page's markup as `template(\`…\`)`, so the import appearing there is
+    // exactly the failure: the words rendered onto the page.
+    for (const tpl of code.matchAll(/template\(`([^`]*)`/g)) {
+      expect(tpl[1]).not.toContain('import Card')
+    }
   }, 60_000)
 })

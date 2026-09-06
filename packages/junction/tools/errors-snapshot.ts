@@ -193,7 +193,7 @@ export async function renderErrorsSnapshot(): Promise<string> {
 
   out.push('## The classes')
   out.push('')
-  out.push('Throw one of these anywhere and the transport serialises it. Status is set in')
+  out.push('Throw one of these anywhere and the transport serializes it. Status is set in')
   out.push('the constructor, so a class is its status.')
   out.push('')
   out.push('| Class | Status | Default message |')

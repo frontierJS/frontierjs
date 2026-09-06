@@ -359,6 +359,12 @@ Both return an unsubscribe function. Guards run on the boot navigation too — t
 are in place before it runs. A guard therefore protects a direct page load and a refresh,
 not just client-side navigation.
 
+**They run on the Back button as well.** A refusal there puts the address bar back where
+it was, because the browser has already moved by the time popstate fires and a URL naming
+the page the guard just declined is the same lie as no guard at all. A redirect must be a
+path on this origin, and ten redirects without landing is reported as a loop rather than
+recursed.
+
 ### Prefetching
 
 Add the attribute to a link:
@@ -375,8 +381,12 @@ capped at 32 entries, and expire after 30s.
 A prefetched `load()` runs with the same `fetch` a navigated one does — `sierraFetch`,
 which attaches the session token — so a protected route prefetches as the person who is
 signed in. And because a payload is an answer to *what may this person see*, the cache is
-dropped on `login()`, on `logout()` and on a mid-session 401: prefetching cannot serve one
-identity's data to another. The route chunks survive that, being nobody's in particular.
+dropped on any change of identity — a sign-in, a sign-out, a mid-session 401 — so
+prefetching cannot serve one identity's data to another. The route chunks survive that,
+being nobody's in particular. **A route the router would never render at that URL is not
+prefetched**: one declaring `redirect` or `spread` is skipped, and guards are deliberately
+not run on hover, since they are app functions that may await, redirect and have side
+effects.
 
 ### Named slots
 
@@ -431,8 +441,13 @@ export async function getStaticPaths() {        // static builds only
 }
 ```
 
-- `fetch` is `sierraFetch` — it attaches the Junction auth token automatically, so the
-  page never needs to know whether Junction is wired.
+- `fetch` is `sierraFetch` — it attaches the session automatically, so the page never
+  needs to know whether Junction is wired. **It attaches it to the app's own origin and
+  to nothing else**: a relative URL is the app's by construction, and an absolute one is
+  checked against the page's origin, the API's and the configured `baseUrl`. A page
+  geocoding a postcode with it is not handing that vendor a replayable session. In cookie
+  mode there is no token to attach and the request carries `credentials: 'include'` to
+  that same audience instead.
 - Returning a string starting with `/` performs a redirect.
 - A thrown error lands in `page.error` and the router **stays on the route** so the page
   can render its own error state. Data failures are not routing failures — there is no
@@ -467,7 +482,17 @@ simply take the HTTP path.
 <span class:online={status.connected}></span>
 ```
 
-`status` is a plain object (`{ connected, reconnecting }`) — same contract as `page`.
+`status` is a plain object (`{ connected, reconnecting, stale }`) — same contract as
+`page`.
+
+`status.stale` is `null` until the server states a build this bundle is not, then
+`{ client, server }`. It is set at most once per page — a banner that reappears on every
+request is one nobody reads — and it is recorded rather than acted on, because whether
+that is a banner, a prompt or a silent reload is the app's answer:
+
+```html
+{#if status.stale}<a href="/">A new version is available</a>{/if}
+```
 
 ### Resources
 
@@ -504,18 +529,38 @@ export const leads = createResource('leads', {
   optionsQuery: { directives: { orderBy: 'name', limit: 500 } },  // what a picker asks for
 })
 
-await leads.save(record)                     // create — the record has no id
-await leads.save(row)                        // patch  — it has one
+await leads.save(record)                     // create — this row does not exist yet
+await leads.save(row)                        // patch  — it does
 await leads.save(row, { mode: 'create' })    // force it
 ```
 
-`save()` is **the one owner of the write**. `auto` decides off the model's OWN id field,
-which is why the decision lives here and not in a component: a caller answering it with
-the literal `id` on a model keyed by something else creates a duplicate row while looking
-like an edit. `upsert` is an alias of `auto`, not a fourth thing. `<Form {resource} />`
-calls exactly this, and everything the pipeline does — coercion, blank-stripping,
-validation, the `@version` this screen read, the resource's own hooks — happens on the way
-through.
+`save()` is **the one owner of the write**, and it is record-shaped: you hand it the whole
+record and it works out both the call and the payload. That is why the decision lives here
+and not in a component — a caller answering it with the literal `id` on a model keyed by
+something else creates a duplicate row while looking like an edit. `upsert` is an alias of
+`auto`, not a fourth thing. `<Form {resource} />` calls exactly this, and everything the
+pipeline does — coercion, blank-stripping, validation, the `@version` this screen read,
+the resource's own hooks — happens on the way through.
+
+**A patch sends what CHANGED against the row this resource read.** `<Form record={row}>`
+hands back the whole row, and sending it whole makes a PATCH a PUT: a column the screen
+never rendered — `formFields({ except })`, a hand-written form, a column added to the
+`.lite` after the screen was — would ride along at the value it held when the form opened
+and overwrite whoever wrote to it meanwhile, with nothing said. A key is compared, never
+tested for truthiness, so an explicit `null` still travels and still clears; a diff omits
+a key and never substitutes one. With no baseline — a record this resource never fetched
+— the whole record goes up, which is what every patch did before.
+
+**`service.patch(id, data)` is the escape and is unchanged: it sends what you hand it.**
+The line is that `save()` takes a record and `patch()` takes a payload.
+
+**`auto` asks whether the row exists, and the schema says how to ask.** Where the server
+assigns the key, the id being present means it came from a row. Where the caller supplies
+it — a `String @id` a person types — the id is in the create schema by design, so presence
+proves nothing and the question is instead whether this resource has read that id; a miss
+creates, and a create over a key already taken is refused by the key's own uniqueness.
+`mode: 'patch'` with a blank id is refused rather than sent, because a patch with no id is
+a write over every row the caller can reach.
 
 Both declared reads are `{ query, directives }`. It is `detailQuery` rather than plain
 `query` because `query` means FILTERS at every other boundary here (Invariant 10).
@@ -790,24 +835,32 @@ normalization runs first, so validation judges what will actually be sent.
 
 ### Auth
 
-```js
-login(token)    // persist + authenticate the client
-logout()        // clear the token and close the socket
-```
-
-A `401` from any service call fires the client's `unauthorized` event, which clears the
-token and redirects to `auth.redirectTo`. Route protection is declarative:
+`session` is the UI half — a reactive object (`user`, `level`, `checked`, `error`)
+alongside `ready`, `signIn`, `signUp` and `signOut`; the wire half is `client.auth`. A `401` from any service call fires the
+client's `unauthorized` event, which clears the credential and redirects to
+`auth.redirectTo`. Route protection is declarative:
 
 ```js
 junction: {
   url: '…',
+  cookieAuth: true,                      // only if the server issues a cookie
   auth: { publicRoutes: ['/login/', '/blog/*'], redirectTo: '/login/', returnPath: true },
 }
 ```
 
-The guard checks token *presence*, not validity — validity is the server's job.
+The guard awaits the boot restore and then checks credential *presence*, not validity —
+validity is the server's job. A trailing `*` is a **segment boundary**: `'/blog/*'` covers
+`/blog/` and everything under it and does not cover `/blogadmin`.
+
+**`cookieAuth` must match the server.** `createAuthPlugin(auth, { cookieAuth: true })` on
+the API has a twin here, because the browser cannot see the server's source and there is
+nothing to derive it from. Left off against a cookie-mode server, the client answers
+"signed out" for a signed-in caller: no boot restore, no socket, and a sign-out that never
+reaches the server while telling the person it did.
 
 ### Presence
+
+Who else is on a channel, as a signal:
 
 ```html
 <script>
@@ -818,6 +871,27 @@ The guard checks token *presence*, not validity — validity is the server's job
 <p>{members.count} here</p>
 {#each members.others as m}<span>{m.meta.name}</span>{/each}
 ```
+
+The value is `{ members, others, self, count }`. `members.updateMeta(meta, { debounce })`
+publishes a new meta for this connection — a cursor position, a "typing" flag — and
+`members.leave()` stops; a component that called `presence()` at init scope leaves
+automatically on destroy. Two views of the same channel on one page are refcounted, so the
+first to unmount does not release the channel the second is still showing.
+
+**What this cannot do is the part to know.** Channel MEMBERSHIP is the server's, decided by
+the app's own `channels(setup)` calling `channel.join(conn)`; nothing a browser sends joins
+a channel. What `presence()` sends is *here is my meta, send me the roster*, so a channel
+this connection was never joined to answers nothing — in silence, which is exactly what a
+misspelt channel id looks like. **An anonymous connection is never tracked**: presence keys
+off a session's user, so a signed-out socket neither appears in a roster nor receives one.
+And `self` is the server's own statement about which member this connection is, so until
+the first `presence:sync` lands every member is an *other* — the safe way round for an
+avatar strip.
+
+Presence is socket-only and has no HTTP fallback: it is a fact about a live connection, and
+a request that opens and closes one has nothing to be present in. A reconnect re-announces
+every channel this client had announced, because the server keys presence by connection id
+and a new socket is a new connection with no meta and no roster.
 
 ---
 
@@ -835,7 +909,7 @@ Everything in `sierra.config.js`:
 | `document` | — | `static` only — the document a prerendered page is wrapped in: `{ bodyClass, lang }`. The build's own CSS assets are linked automatically |
 | `routeTable.output` | `'config/routes.js'` | where the generated route table is written |
 | `schema` | auto-detect | path to the `.lite` file, or `false` |
-| `junction` | — | `{ url, apiPrefix, authPrefix, tokenKey, auth, services, debug, onConnect, … }` |
+| `junction` | — | `{ url, apiPrefix, authPrefix, tokenKey, cookieAuth, auth, services, debug, onConnect, … }` |
 | `theme` | — | `{ default, persist, attribute, key }` |
 | `analytics` | — | `{ provider }` — `'plausible'`, `'gtm'`, or a custom `{ init, pageview, track }` |
 | `devtools` | — | `{ port, position, n1Threshold }` |

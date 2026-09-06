@@ -7,7 +7,8 @@
   "license": "MIT",
   "main": "./index.ts",
   "exports": {
-    ".": "./index.ts"
+    ".": "./index.ts",
+    "./schema.lite": "./db/notification.lite"
   },
   "keywords": [
     "frontierjs",
@@ -28,6 +29,7 @@
   },
   "files": [
     "*.ts",
+    "db",
     "drivers",
     "README.md",
     "LICENSE"

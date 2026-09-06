@@ -133,6 +133,23 @@ export function createServersService(app: BasecampApp) {
     channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
+    // Declared because `heartbeat` has to be, and a `methods:` list is the
+    // whole surface or it is a narrowing — so every verb this service answers
+    // is named here. `gate: 0` on the heartbeat is the outpost: it holds no
+    // session and authenticates by HMAC at the transport, so the read-gate
+    // floor a custom method otherwise takes would refuse the one caller it is
+    // for (`FJS-826`). The signature is what guards it, and it is checked
+    // before this service is reached.
+    methods: [
+      // `update` and `restore` are the BASE's, written nowhere in this file — a
+      // `methods:` list is the whole surface, so leaving them out silently
+      // stopped answering them. `surface.snapshot.md` is what caught it.
+      'find', 'get', 'create', 'update', 'patch', 'remove', 'restore',
+      'events', 'feed', 'sync', 'logEvent',
+      'reboot', 'drain', 'undrain',
+      { method: 'heartbeat', gate: 0 },
+    ],
+
     // ── find ──────────────────────────────────────────────────────────
     async find() {
       const status = $.query.status as string | undefined
@@ -254,7 +271,7 @@ export function createServersService(app: BasecampApp) {
     // machines did.
     //
     // `ServerEvent` has no `workspaceId` of its own, deliberately: an event is
-    // meaningless without its server, and denormalising the workspace onto it
+    // meaningless without its server, and denormalizing the workspace onto it
     // would be a second owner of the tenancy fact. So the scope is a join —
     // the server ids in this workspace, then the events on them. Two queries,
     // both indexed, instead of N+1 over the network.

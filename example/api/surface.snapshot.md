@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-37 services · 32 routes · 10 plugins · prefix /api
+37 services · 36 routes · 10 plugins · prefix /api
 ```
 
 ## App hooks
@@ -630,8 +630,12 @@ once; everything else was registered by hand or by a plugin.
 | POST | `/api/auth/password-reset/confirm` | raw |
 | POST | `/api/auth/password-reset/request` | raw |
 | POST | `/api/auth/register` | raw |
+| POST | `/api/auth/support/end` | raw |
+| POST | `/api/auth/support/start` | raw |
 | GET | `/api/channels/stats` | raw |
 | GET | `/api/health` | raw |
+| GET | `/api/health/live` | raw |
+| GET | `/api/health/ready` | raw |
 | GET | `/api/jobs` | raw |
 | GET | `/api/jobs/{id}` | raw |
 | POST | `/api/jobs/{id}/cancel` | raw |

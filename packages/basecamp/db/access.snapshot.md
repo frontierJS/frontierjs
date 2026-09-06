@@ -400,20 +400,20 @@ rather than refusing the row.
 | --- | --- | --- |
 | `ApiKey` | `credentialId` | `@system` |
 | `ApiKey` | `tokenHint` | `@system` |
-| `Credential` | `value` | `@guarded(all)` |
+| `Credential` | `value` | `@guarded` |
 | `Credential` | `accessToken` | `@secret` |
 | `Credential` | `refreshToken` | `@secret` |
-| `Invitation` | `token` | `@guarded(all)` |
-| `OauthFlow` | `state` | `@guarded(all)` |
-| `OauthFlow` | `verifier` | `@guarded(all)` |
+| `Invitation` | `token` | `@guarded` |
+| `OauthFlow` | `state` | `@guarded` |
+| `OauthFlow` | `verifier` | `@guarded` |
 | `Secret` | `data` | `@encrypted` |
-| `Session` | `token` | `@guarded(all)` |
+| `Session` | `token` | `@guarded` |
 | `User` | `emailVerified` | `@allow('write', auth().isAdmin)` |
 | `User` | `role` | `@allow('write', auth().isAdmin)` |
 | `User` | `kind` | `@allow('write', auth().isSystemAdmin)` |
 | `User` | `status` | `@allow('write', auth().isSystemAdmin)` |
 | `User` | `isSystemAdmin` | `@allow('write', auth().isSystemAdmin)` |
-| `Verification` | `value` | `@guarded(all)` |
+| `Verification` | `value` | `@guarded` |
 
 ## State transitions
 

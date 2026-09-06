@@ -11,7 +11,7 @@
 // SQLite ALTER TABLE constraints:
 //   Simple ALTER:  add nullable col, add col with DEFAULT, add/drop index
 //   Full rebuild:  drop col, change type, change NOT NULL, change DEFAULT,
-//                  change PK, change FK, change CHECK, add @@strict,
+//                  change PK, change FK, change CHECK, change @@noStrict,
 //                  add/drop/reorder a UNIQUE the table declares itself
 
 import { generateDDL, generateDDLForDatabase, generateTableDDL, generateIndexDDL, generateModelDDL, generateViewDDL, modelToTableName , detectM2MPairs, generateJoinTableDDL, isStoredField } from './ddl.js'
@@ -727,14 +727,52 @@ function indexKey(idx) {
 //
 // Join and side tables need no exception: their generated indexes exist
 // identically in pristine and live, so they never reach `dropped`.
-const ownedIndex = (name, table) => name.startsWith(`idx_${table}_`)
+//
+// TWO prefixes, because a partial `@@unique` is a `CREATE UNIQUE INDEX` and
+// takes `uniq_<table>_<fields>` so that it can coexist with an `@@index` over
+// the same columns (`FJS-614`). Both are litestone's.
+const ownedIndex = (name, table) =>
+  name.startsWith(`idx_${table}_`) || name.startsWith(`uniq_${table}_`)
 
 function diffIndexes(pristineIdxs, liveIdxs, table) {
   const pm = new Map(pristineIdxs.map(i => [indexKey(i), i]))
   const lm = new Map(liveIdxs.map(i => [indexKey(i), i]))
+
+  // A pair that matches on shape and differs on NAME is one litestone renamed:
+  // the name is derived, so a difference means this build derives it
+  // differently than the build that wrote the database. It is a drop and a
+  // create, which is what any other index change costs.
+  //
+  // The name is deliberately NOT part of `indexKey`. A HAND-MADE index of the
+  // same shape under another name matches today and is left alone; keying on
+  // the name would make it `foreign` and create litestone's beside it, so a
+  // database would carry two identical indexes and pay for both on every write.
+  // `ownedIndex` is what separates the two cases, and it is asked of the LIVE
+  // name — the one litestone would be dropping.
+  // Grouped rather than looked up in `lm`, which keeps one entry per key: a
+  // database can hold two indexes of one shape (litestone's, and a hand-made
+  // copy), and picking whichever landed in the map last would decide a rename
+  // on insertion order.
+  const byKey = new Map()
+  for (const i of liveIdxs) {
+    const k = indexKey(i)
+    if (!byKey.has(k)) byKey.set(k, [])
+    byKey.get(k).push(i)
+  }
+  const renamedLive = []
+  const renamed = pristineIdxs.filter(p => {
+    const same = byKey.get(indexKey(p)) ?? []
+    if (same.some(l => l.name === p.name)) return false      // already the right name
+    const owned = same.find(l => ownedIndex(l.name, table))
+    if (!owned) return false
+    renamedLive.push(owned)
+    return true
+  })
+
   return {
-    added:   pristineIdxs.filter(i => !lm.has(indexKey(i))),
-    dropped: liveIdxs.filter(i => !pm.has(indexKey(i)) && ownedIndex(i.name, table)),
+    added:   pristineIdxs.filter(i => !lm.has(indexKey(i))).concat(renamed),
+    dropped: liveIdxs.filter(i => !pm.has(indexKey(i)) && ownedIndex(i.name, table))
+                     .concat(renamedLive),
     foreign: liveIdxs.filter(i => !pm.has(indexKey(i)) && !ownedIndex(i.name, table)),
   }
 }

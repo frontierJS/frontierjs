@@ -44,7 +44,7 @@
 
 import { spawnSync }                       from 'node:child_process'
 import { createRequire }                   from 'node:module'
-import { existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, readdirSync, rmSync } from 'node:fs'
 import { join, dirname, relative }         from 'node:path'
 import { fileURLToPath }                   from 'node:url'
 import { tmpdir }                          from 'node:os'
@@ -57,6 +57,7 @@ import { runChecks, findApps, formatFindings } from '../packages/cli/core/checks
 import { checkSnapshots }                      from '../packages/cli/core/snapshots.js'
 import { runRegisterCheck, RULES as REGISTER_RULES } from '../packages/cli/core/register-check.js'
 import { FJS_PACKAGES, APP_DEV_DEPS }          from '../packages/cli/core/app-config.js'
+import { findChrome }                          from '../packages/cli/core/browser.js'
 
 // Packs the working tree and builds a scaffolded app against it. Its own file
 // because the mechanism needs more explaining than the phase does.
@@ -487,8 +488,18 @@ function structure() {
 // the phase — and being thin is a legitimate place to be on the way somewhere.
 
 function registers() {
-  const from   = phase('registers')
-  const result = runRegisterCheck({ root: ROOT })
+  const from = phase('registers')
+
+  // The engine refuses a root holding no register rather than grading it clean.
+  // Reported as a phase failure and not a stack, because the thing to say is
+  // which directory was read.
+  let result
+  try {
+    result = runRegisterCheck({ root: ROOT })
+  } catch (err) {
+    fail(String(err.message))
+    return
+  }
 
   // A warning counts here too, now that every one of them is zero: `72 unnamed
   // rulings` was a backlog and a NEW one is a regression. The clock rule is the
@@ -1200,12 +1211,26 @@ function tutor() {
   const WEB     = 7000
   const LESSONS = [
     { id: 'tutor:app',    args: ['--api-port', String(API), '--web-port', String(WEB)] },
+    // The four tools, on the test tier of the reserved global block: 8500-8509
+    // is dev/tooling, so 7500-7509 is the same slot one environment down. The
+    // lesson runs the API off its assigned port on purpose, which is the case
+    // its liveness assertion is written to survive.
+    { id: 'tutor:tools',  args: ['--api-port', String(API), '--gui-port', '7500',
+                                 '--view-port', '7501', '--studio-port', '7502',
+                                 '--devtools-port', '7503'] },
+    // A real browser, and the only lesson that needs one. Chrome is present for
+    // the css and ui suites, so this is the same requirement the `tests` phase
+    // already has rather than a new one.
+    { id: 'tutor:ui',     args: ['--api-port', String(API), '--web-port', String(WEB)], needsChrome: true },
     { id: 'tutor:access', args: ['--api-port', String(API)] },
     // Two sockets against one publish, a job that outlives its request, and a
     // public site built from the database. All three reuse the API slot: each
     // lesson stops what it started, and the phase runs them in order.
     { id: 'tutor:live',   args: ['--api-port', String(API)] },
     { id: 'tutor:jobs',   args: ['--api-port', String(API)] },
+    // Two transports off one send, and what a refusal leaves behind. Mail goes
+    // to a file the lesson reads back, so there is no mail server here.
+    { id: 'tutor:notify', args: ['--api-port', String(API)] },
     { id: 'tutor:site',   args: ['--api-port', String(API)] },
     // A real deploy to this machine: a container, a journal on disk, a revert.
     // 7103 is the next test-tier backend slot after the two `scaffoldAndDeploy`
@@ -1213,17 +1238,32 @@ function tutor() {
     { id: 'tutor:deploy', args: ['--port', '7103'], needsDocker: true },
     // No port at all — it is schema and verdicts, with nothing listening.
     { id: 'tutor:change', args: [] },
+    // Also portless: every assertion is a database built from the schema, and
+    // the last step mutates that schema and grades the checks against it.
+    { id: 'tutor:test',   args: [] },
     // The control plane and a machine reporting in to it. Basecamp is
     // `private: true`, so this lesson stops with a sentence and exits 0 for
     // anybody who installed from npm — here it runs, because there is a
     // checkout. 7120/7180 are basecamp's and outpost's own test-tier slots
     // (project 2 and project 8).
+    // Its second half BUILDS — a release, on this machine, through the same
+    // Outpost. No `needsDocker` here on purpose: the lesson stops with a
+    // sentence and exits 0 where there is no daemon, the way it already does
+    // for a missing basecamp, so the half that needs nothing still runs.
     { id: 'tutor:fleet',  args: ['--api-port', '7120', '--outpost-port', '7180'] },
+    // The other door: an existing SQLite database read into a schema, and an
+    // app serving a row that predates it. Back on the API slot, last because
+    // every lesson before it stops what it started.
+    { id: 'tutor:adopt',  args: ['--api-port', String(API)] },
   ]
 
   const daemon = spawnSync('docker', ['version', '--format', '{{.Server.Version}}'], { stdio: 'ignore' }).status === 0
 
-  const held = [API, WEB, 7120, 7180, ...(daemon ? [7103] : [])].filter(p => !portFree(p))
+  // Asked the way the lesson asks it, so the phase and the lesson cannot
+  // disagree about whether this machine has a browser.
+  const chrome = findChrome()
+
+  const held = [API, WEB, 7120, 7180, 7500, 7501, 7502, 7503, ...(daemon ? [7103] : [])].filter(p => !portFree(p))
   if (held.length) {
     note(`tutor phase SKIPPED — port ${held.join(' and ')} already in use. The lessons refuse a busy port rather than moving to the next one, so this is an environment fact rather than a finding.`)
     warn(`skipped — port ${held.join(', ')} in use`)
@@ -1242,6 +1282,19 @@ function tutor() {
       } else {
         note(`${lesson.id} SKIPPED — no Docker daemon. Set FJS_CI_REQUIRE_DOCKER=1 to make this a failure.`)
         warn(`${lesson.id} skipped — no Docker daemon`)
+      }
+      continue
+    }
+
+    // The same shape one requirement over. `FJS_CI_REQUIRE_CHROME=1` is what the
+    // workflow sets: a UI lesson that quietly stops running is exactly the hole
+    // it was written to close.
+    if (lesson.needsChrome && !chrome) {
+      if (process.env.FJS_CI_REQUIRE_CHROME === '1') {
+        fail(`${lesson.id} needs Chrome and FJS_CI_REQUIRE_CHROME=1`)
+      } else {
+        note(`${lesson.id} SKIPPED — no Chrome. Set FJS_CI_REQUIRE_CHROME=1 to make this a failure.`)
+        warn(`${lesson.id} skipped — no Chrome`)
       }
       continue
     }
@@ -1275,6 +1328,25 @@ function tutor() {
     fail(`${lesson.id} exited ${run.status}${daemonBlindHint(output, process.env.FJS_CI_WORKDIR || tmpdir())}`, output)
   }
 
+  // ── the course, taken as a course ──────────────────────────────────────────
+  //
+  // Every lesson above ran in a workspace of its own, and that is not how
+  // anybody takes a course: the documented way is `--workspace ~/somewhere`,
+  // kept, thirteen lessons in order — which until this ran nowhere.
+  //
+  // The two runs answer different questions and both are real. Alone, a lesson
+  // is asked whether it works from a clean start. Here it is asked whether it
+  // works after the eleven before it, and that is where the failures actually
+  // were: three assertions keyed on a gate, a length rule and a field policy
+  // that a LATER lesson edits, each fine in isolation and each wrong the moment
+  // the lessons share an app. Every one of those was found by hand.
+  //
+  // The tail is the other half of the same question. A lesson re-run must replay
+  // into no-ops, and `--restart` must rebuild against a schema three lessons
+  // have since moved — which is the shape the before-and-after in `tutor:ui` had
+  // to be made idempotent for.
+  if (clean(from)) course(LESSONS, { fli, daemon, chrome, verbose })
+
   for (const id of fixed) {
     if (update) {
       delete allowances.knownTutorFailures[id]
@@ -1288,7 +1360,48 @@ function tutor() {
   }
 
   if (update && fixed.length) saveAllowances()
-  if (clean(from)) ok('the tutorial runs, and every step proved itself')
+  if (clean(from)) ok('the tutorial runs in order, in one workspace, and every step proved itself')
+}
+
+/** Every lesson the machine can run, in the index's order, in ONE workspace —
+ *  then a replay and a `--restart` over the app they all left behind. */
+function course(LESSONS, { fli, daemon, chrome, verbose }) {
+  const dir = join(process.env.FJS_CI_WORKDIR || tmpdir(), `fjs-tutor-course-${process.pid}`)
+
+  const runLesson = (id, args, label) => {
+    const t0  = Date.now()
+    const run = spawnSync('bun', [fli, id, '--workspace', dir, '--yes', ...args], {
+      cwd: ROOT, encoding: 'utf8', stdio: verbose ? 'inherit' : 'pipe',
+      timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER,
+    })
+    const output = verbose ? '' : `${run.stdout ?? ''}${run.stderr ?? ''}`
+    if (run.status === 0) { ok(label, Date.now() - t0); return true }
+    fail(`${label} exited ${run.status}${daemonBlindHint(output, process.env.FJS_CI_WORKDIR || tmpdir())}`, output)
+    return false
+  }
+
+  // A lesson the machine cannot run is skipped here in silence: the per-lesson
+  // loop above has already said why, and saying it twice reads as two problems.
+  const runnable = LESSONS.filter(l => !(l.needsDocker && !daemon) && !(l.needsChrome && !chrome))
+
+  try {
+    for (const lesson of runnable)
+      if (!runLesson(lesson.id, lesson.args, `course · ${lesson.id}`)) return
+
+    // Second in the order, so what it is re-run against is eleven lessons of
+    // changes rather than its own.
+    const second = runnable[1]
+    if (second) runLesson(second.id, second.args, `course · ${second.id} again — replays into no-ops`)
+
+    // `--restart` is the harder one: it forgets what it finished and asks the
+    // same questions of an app that has moved underneath them.
+    const redo = runnable.find(l => l.id === 'tutor:ui') ?? runnable.find(l => l.id === 'tutor:access')
+    if (redo) runLesson(redo.id, [...redo.args, '--restart'], `course · ${redo.id} --restart on a schema that moved`)
+  } finally {
+    // A named workspace is never swept by a lesson — that is the contract for
+    // `--workspace`, and it is why this one has to be removed here.
+    try { rmSync(dir, { recursive: true, force: true }) } catch {}
+  }
 }
 
 // Is this port bindable RIGHT NOW. A child process rather than `net` here

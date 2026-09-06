@@ -56,7 +56,7 @@
  *   this. `params` now means path captures and nothing else.
  *
  *   ctx.directives is the separate, structured half of the wire request — how
- *   to SHAPE the answer, never which records. Junction's client serialises it
+ *   to SHAPE the answer, never which records. Junction's client serializes it
  *   into $limit/$offset/$orderBy/$select/$populate for both HTTP and WebSocket.
  *   Hooks set pagination here, and a view that needs a relation asks for it
  *   here:
@@ -135,24 +135,24 @@
 
 import { getClient } from '@frontierjs/sierra/junction'
 import {
-  schemaFor, modelNameFor, serviceNameFor, hasSchemas, allSchemas, resolveRef, suggestModel,
+  schemaFor, updateSchemaFor, modelNameFor, serviceNameFor, hasSchemas, allSchemas, resolveRef, suggestModel,
 } from './schema-registry.js'
 import {
   derefFieldSchema, buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
-  validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError,
+  validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError, ResourceHookError,
   toFieldErrors, controlFor, defaultControlFor, formFieldList, labelFieldFor, labelFieldInfo, matchesQuery, sealedFor,
   registerControl, unregisterControl, registeredControls,
 } from './field-rules.js'
 import { singularize } from '@frontierjs/toolbelt/inflect'
-import { runPhase, runAroundHooks, mergeHooks } from '@frontierjs/toolbelt/hooks'
+import { runPhase, runAroundHooks, mergeHooks, hookContext, answered } from '@frontierjs/toolbelt/hooks'
 import { createMakeFromSchema as makeFromSchema } from '@frontierjs/toolbelt/jsonschema'
 
 // Re-exported so `sierra/junction` stays the one import for resource work.
 export {
   buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
-  validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError,
+  validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError, ResourceHookError,
   toFieldErrors, controlFor, defaultControlFor, formFieldList, labelFieldFor, labelFieldInfo, matchesQuery, sealedFor,
   registerControl, unregisterControl, registeredControls,
 }
@@ -263,6 +263,68 @@ export function createStore(service, opts = {}) {
 // The two `labelFieldInfo` tiers that are guesses rather than conventions. A
 // model whose display column came from either has not said which one it is.
 const WEAK_LABEL = new Set(['scan', 'fallback'])
+
+// How many read rows one resource keeps as a patch baseline. Nothing reads more
+// than one at a time; the cap is here so a list screen paging a large table
+// cannot grow the map for the life of the tab. A miss costs a patch that
+// carries the whole record, which is what every patch carried before.
+const READ_CACHE_MAX = 200
+
+// ── The identity epoch ────────────────────────────────────────────────────────
+//
+// **Nothing a resource holds may outlive the person it was read for.**
+//
+// A Resource is created once, at import, in a resource file's `<script module>`
+// (Invariant 18), so everything it caches lives for the life of the TAB while
+// the principal is a thing that changes inside it — a sign-out, a "switch
+// account" button, a shared terminal, a support agent. Three caches were on the
+// wrong side of that line and all three are read before anything asks the
+// server again:
+//
+//   the live store  — a mounted list renders the previous person's rows until
+//                     their own `load()` resolves, and a layout that loads once
+//                     and outlives navigations makes that window arbitrarily long
+//   `_read`         — `version(id)` answers a revision the current caller never
+//                     read, which is the provenance failure `FJS-341` is about
+//   `_options`      — worse than a window, because a picker never asks again:
+//                     the second caller is offered a row their own row policy
+//                     hides, by id and by label, which for a `Customer` is a
+//                     person's name. Steady state, not a race.
+//
+// This package already learned the rule once and wired half of it:
+// `_tokenChanged` calls `invalidatePrefetch()` for `FJS-041` — *a payload
+// prefetched as somebody else must not be served to whoever is here now* — and
+// the three siblings were never joined to it (`FJS-786`).
+//
+// **The cache stays useful WITHIN a session**, which is the half a fix that
+// simply deleted it would fail: an epoch is bumped on a change of identity and
+// on nothing else, so a second render inside one session is still a hit and
+// costs no request.
+//
+// Sierra's junction module calls this from `_tokenChanged`. It is exported
+// rather than subscribed to from here because this module holds no client:
+// `getClient()` is imported from there, and a listener registered in the other
+// direction would be a second owner of *when the identity changed*.
+const _liveResources = new Set()
+
+/**
+ * Drop everything every live resource is holding on behalf of the previous
+ * principal — the live store, the remembered revisions, the cached picker
+ * lists, and the ids this resource has read.
+ *
+ * Called on a token change, in either direction. Not on a reconnect and not on
+ * a navigation: those do not change who is asking.
+ */
+export function resetResourcesForIdentityChange() {
+  for (const reset of _liveResources) {
+    try { reset() } catch (err) {
+      // One resource must not stop the others being cleared, and a resource
+      // left holding the previous person's rows is exactly the failure this
+      // exists to end — so it is said out loud rather than swallowed.
+      console.warn(`[resource] could not clear a resource on the identity change — ${err?.message ?? err}`)
+    }
+  }
+}
 
 // ── createResource ────────────────────────────────────────────────────────────
 
@@ -447,18 +509,24 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // so what is left is genuine ambiguity — `lens` is not the plural of `len`
   // and no rule can know — and a service deliberately named something other
   // than its model ('roster' over `model Person`).
+  // The UPDATE-mode definition of the same model, when the registry has one.
+  // A schema passed by hand carries one mode and this stays null, which reads
+  // as *the two modes agree* — the behavior before `FJS-807`.
+  let updateModel = null
+
   if (!schema) {
     const singular = singularize(serviceName)
 
     // Resolve the NAME, not just the shape. `model` defaults to the service
     // name, so without this `ctx.model` on a `statuses` resource read
     // 'statuses' — the service name wearing the label of the model name, which
-    // is what this field is documented to be. It also normalises an accessor
+    // is what this field is documented to be. It also normalizes an accessor
     // spelling ({ model: 'person' }) to the declared 'Person'.
     const resolvedName = modelNameFor(model, serviceName, singular)
     if (resolvedName) {
-      schema = schemaFor(resolvedName)
-      model  = resolvedName
+      schema      = schemaFor(resolvedName)
+      updateModel = updateSchemaFor(resolvedName)
+      model       = resolvedName
     }
 
     if (!schema && hasSchemas() && !modelless) {
@@ -512,6 +580,34 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // Per-field rules — empty when there is no schema, so a resource without one
   // reports no constraints rather than pretending everything is optional.
   const fields    = schema ? buildFieldRules(modelDef)  : {}
+
+  // ── The two write modes ─────────────────────────────────────────────────────
+  //
+  // A create schema and an update schema are different documents, and three of
+  // the differences are about a write this pipeline is making rather than about
+  // the shape of the model: `@immutable` is `readOnly` on an update and writable
+  // on a create, a sealing `@immutable` carries `x-litestone-seal` instead, and
+  // the `@version` column exists in the update schema alone.
+  //
+  // So a patch is judged against the update rules and a create against the
+  // create ones. Which table each caller reads is stated at every use below
+  // rather than resolved once, because the two answer differently for exactly
+  // the fields where getting it wrong is silent: an `@immutable` column left in
+  // a patch payload is refused BY NAME by the Data boundary — the person told
+  // to leave out a field they never assembled — and `make()` handed the update
+  // table would offer no box to type an `@immutable` value into at all, so the
+  // model would be uncreatable through a generated form (`FJS-807`).
+  //
+  // `formFields()` stays on the CREATE table: one resource serves both a create
+  // screen and an edit screen and the field SET is the same question for both.
+  // What an edit form needs beyond it is which columns are frozen for the row
+  // it opened on, and that is `sealedFields(record)`.
+  const updateFields = schema ? buildFieldRules(updateModel ?? modelDef) : {}
+
+  /** Which rule table judges this method's payload. */
+  function rulesFor(method) {
+    return method === 'patch' ? updateFields : fields
+  }
   const relations = schema ? buildRelations(modelDef)   : {}
   const gate      = schema ? buildGate(modelDef)        : null
   const stateSpec = schema ? buildTransitions(modelDef) : null
@@ -555,17 +651,70 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // correct answer: this screen is submitting values from an older revision. A
   // caller who has genuinely read the newer one sends it — an explicit version
   // always wins, and <Form record={row}> already edits the row whole.
-  const _versions = new Map()
+  //
+  // ── What it holds, and why it is bounded ──────────────────────────────────
+  //
+  // One entry per row this resource has read: the revision, and the row AS
+  // READ. The row is the baseline `save()` patches against — see save() — and
+  // is the one fact that makes *a patch of what changed* derivable rather than
+  // something a caller has to declare.
+  //
+  // A `find()` stamps every row of every page, so this is capped: a list screen
+  // paging a large table would otherwise accumulate one entry per row seen, for
+  // the life of the tab, on a map only ever read for the row being edited
+  // (`FJS-823`). Insertion-ordered eviction is the whole policy — a Map iterates
+  // in insertion order, so the oldest key is `keys().next()`. Re-reading a row
+  // re-inserts it, which is what keeps the row a form is sitting on alive
+  // across a list refresh.
+  //
+  // The cap is per resource and is generous against a form: nothing reads more
+  // than one row of this map at a time, and the failure of a miss is a patch
+  // that carries the whole record — today's behavior, which is safe.
+  const _read = new Map()
 
-  function _rememberVersions(result) {
-    if (!versionOf || !result) return
+  function _remember(id, row) {
+    if (_read.has(id)) _read.delete(id)
+    _read.set(id, row)
+    while (_read.size > READ_CACHE_MAX) _read.delete(_read.keys().next().value)
+  }
+
+  // The revision this resource last READ for a row, or null.
+  function _readVersion(id) {
+    if (!versionOf) return null
+    const v = _read.get(id)?.[versionOf]
+    return Number.isInteger(v) ? v : null
+  }
+
+  // ── Is the key the CALLER's to choose? ─────────────────────────────────────
+  //
+  // Litestone omits a server-assigned `@id` from the CREATE schema and offers a
+  // caller-supplied one like any other column (`FJS-608`, `isServerAssignedId`
+  // is the owner). So *is this key mine to type* is already on the wire, as the
+  // presence of the id column in create mode, and nothing here has to restate
+  // the three shapes litestone grades.
+  //
+  // It is the fact `save({ mode: 'auto' })` needs and did not have — see save().
+  const callerSuppliedId = !!(schema && modelDef?.properties
+    && Object.prototype.hasOwnProperty.call(modelDef.properties, idField))
+
+  // The ids this resource has READ, on a model whose key the caller types.
+  //
+  // Only then, because a server-assigned key answers *does this row exist* by
+  // being present at all and this set would grow one entry per row of every
+  // page for nothing.
+  const _seen = new Set()
+
+  function _rememberRows(result) {
+    if (!result) return
     const rows = Array.isArray(result) ? result
       : Array.isArray(result?.data) ? result.data
       : [result]
     for (const row of rows) {
       if (!row || typeof row !== 'object') continue
       const id = row[idField]
-      if (id != null && Number.isInteger(row[versionOf])) _versions.set(id, row[versionOf])
+      if (id == null) continue
+      if (callerSuppliedId) _seen.add(id)
+      _remember(id, row)
     }
   }
 
@@ -591,7 +740,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * unless the resource was created with `validate: false`.
    */
   function validate(data, mode = 'create') {
-    return validateAgainstFields(fields, data, mode)
+    return validateAgainstFields(rulesFor(mode === 'patch' ? 'patch' : 'create'), data, mode)
   }
 
   /**
@@ -642,7 +791,10 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // ── _call — full 4-phase pipeline ──────────────────────────────────────────
 
   async function _call(method, id, data, query = {}, directives = {}) {
-    const ctx = {
+    // `hookContext` rather than a literal: `result` remembers whether anything
+    // ever set it, which is the only thing separating a legitimate `null` from
+    // a pipeline no hook completed. See the throw after runAroundHooks.
+    const ctx = hookContext({
       service: serviceName,
       model,
       method,
@@ -653,7 +805,12 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       locals:  {},           // per-call scratch — never sent to server
       result:  null,
       error:   null,
-    }
+    })
+
+    // Did the server's half of this call complete? Read only by the catch
+    // below, and never true for a read: `find` and `get` write nothing, so
+    // "the write landed" is not a thing they can be half of.
+    let committed = false
 
     // Collect around hooks for this method
     const aroundList = [
@@ -681,22 +838,29 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       //
       // The version column is `readOnly` and is the one that must travel; the
       // block below is what puts it back on when the caller did not state one.
+      //
+      // Judged against the rules for THIS method: `@immutable` is `readOnly` on
+      // a patch and writable on a create, so a create judged by the update
+      // table could not be made and a patch judged by the create table sends a
+      // column the boundary refuses by name (`FJS-807`).
+      const rules = rulesFor(method)
+
       if (method === 'create' || method === 'patch') {
-        ctx.data = stripReadOnly(fields, ctx.data, { keep: versionOf ? [versionOf] : [] })
+        ctx.data = stripReadOnly(rules, ctx.data, { keep: versionOf ? [versionOf] : [] })
       }
 
       // Coercion first: '' must still look blank to normalize() below, and
       // Number('') is 0 — so this deliberately leaves empty strings alone.
       if (autoCoerce && (method === 'create' || method === 'patch')) {
-        ctx.data = coerce(ctx.data)
+        ctx.data = coerceToSchema(rules, ctx.data)
       }
 
       if (autoBlank && (method === 'create' || method === 'patch')) {
-        ctx.data = normalize(ctx.data)
+        ctx.data = normalizeBlanks(rules, ctx.data)
       }
 
       if (autoValidate && (method === 'create' || method === 'patch')) {
-        const problems = validate(ctx.data, method === 'create' ? 'create' : 'patch')
+        const problems = validateAgainstFields(rules, ctx.data, method === 'create' ? 'create' : 'patch')
         if (problems.length) throw new ResourceValidationError(serviceName, problems)
       }
 
@@ -706,7 +870,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       // a better failure than inventing a number that would silently win a race.
       if (versionOf && method === 'patch' && ctx.data && typeof ctx.data === 'object'
           && ctx.data[versionOf] == null) {
-        const known = _versions.get(ctx.id)
+        const known = _readVersion(ctx.id)
         if (known != null) ctx.data = { ...ctx.data, [versionOf]: known }
       }
 
@@ -730,9 +894,15 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         default:        ctx.result = await proxy.invoke(method, ctx.id, ctx.data, ctx.query); break
       }
 
+      // The write LANDED. Everything below this line can still throw, and a
+      // caller told only that the call failed presses Save again and makes a
+      // second row (`FJS-823`). The flag is set here rather than in the catch
+      // because here is the only place that knows the difference.
+      if (method !== 'find' && method !== 'get') committed = true
+
       // Record before the after-hooks, so a hook that reads the version off the
       // resource sees the one that just came back rather than the previous read.
-      _rememberVersions(ctx.result)
+      _rememberRows(ctx.result)
 
       // after
       await runPhase(_hooks, 'after', method, ctx)
@@ -741,6 +911,17 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     try {
       await runAroundHooks(aroundList, ctx, inner)
     } catch (err) {
+      // A failure AFTER the row was written is a different failure, and the
+      // caller cannot tell them apart from the outside: an `after` hook whose
+      // analytics call throws once shows "save failed" over a row that exists,
+      // and the person presses Save again. Marked on the error so
+      // `toFieldErrors` can say which one it is and `<Form>` can stop offering
+      // the button.
+      if (committed && err && typeof err === 'object') {
+        err.committed = true
+        if (err.result === undefined) err.result = ctx.result
+      }
+
       ctx.error = err
 
       const errorList = [
@@ -751,11 +932,26 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       if (errorList.length) {
         for (const hook of errorList) await hook(ctx)
         // error hook cleared ctx.error — treat as recovered
-        if (!ctx.error) return ctx.result
+        if (!ctx.error) {
+          // Recovered from what, though? A hook that clears the error and sets
+          // no result says the call succeeded and hands back the `null` the
+          // context was born with. The original failure is gone by then, so
+          // it is carried on `cause` — losing it is what makes this shape take
+          // an afternoon.
+          if (!answered(ctx)) throw new ResourceHookError(serviceName, method, 'error', err)
+          return ctx.result
+        }
       }
 
       throw ctx.error ?? err
     }
+
+    // Nothing threw and nothing answered: an `around` hook returned without
+    // calling `next()`, or caught the failure and did not rethrow. Both are
+    // ordinary mistakes and both used to resolve the call to `null`, which a
+    // screen reads as an answer — `(await r.service.find()).data` throws in the
+    // app's own code, one hop away, naming nothing that is wrong.
+    if (!answered(ctx)) throw new ResourceHookError(serviceName, method, 'around')
 
     return ctx.result
   }
@@ -783,8 +979,13 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     remove:  (id)            => _call('remove',  id,            null,  {}),
     restore: (id)            => _call('restore', id,            null,  {}),
 
-    /** create if no id, patch if has id */
-    upsert: (data) => data[idField]
+    /**
+     * Create or patch, deciding the same way `save()` does — `_writeMode` is
+     * the one owner, so a caller reaching the service proxy and a caller
+     * reaching `save()` cannot get different answers about one payload. This
+     * tested the id for TRUTHINESS, which additionally reads `0` as absent.
+     */
+    upsert: (data) => _writeMode(data) === 'patch'
       ? _call('patch',   data[idField], data, {})
       : _call('create',  null,          data, {}),
 
@@ -854,7 +1055,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   async function load(query, directives) {
     const stamp = ++_loadIssued
     const rows  = await junctionResource.load(query ?? {}, directives)
-    if (stamp === _loadIssued) _rememberVersions(rows)
+    if (stamp === _loadIssued) _rememberRows(rows)
     return rows
   }
 
@@ -881,7 +1082,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    */
   async function more() {
     const rows = await junctionResource.more()
-    _rememberVersions(rows)
+    _rememberRows(rows)
     return rows
   }
 
@@ -939,7 +1140,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   function version(idOrRow) {
     if (!versionOf) return null
     const id = idOrRow != null && typeof idOrRow === 'object' ? idOrRow[idField] : idOrRow
-    return _versions.get(id) ?? null
+    return _readVersion(id)
   }
 
   /**
@@ -980,8 +1181,21 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   }
 
   /**
-   * Which columns are frozen FOR THIS ROW — the `@immutable` ones on a model
-   * that seals, once the row has reached a sealed state.
+   * Which columns are frozen FOR THIS ROW.
+   *
+   * Two ways a column gets here and they are one question — *may this row still
+   * accept a value for this field* — asked of the model's UPDATE schema:
+   *
+   *   `@immutable`            — frozen the moment the row exists
+   *   `@immutable` + `@seals` — frozen once the row reaches a sealing state
+   *
+   * The method keeps the narrower name it was given: `@frontierjs/ui` already
+   * calls it through `lockedBy(form, name)`, which is the general word, and
+   * renaming the resource verb is a cross-package edit. The seal was only ever
+   * the half that could not be answered from the schema alone.
+   *
+   * Until `FJS-807` this answered `[]` for every row of every model, because
+   * the build shipped the CREATE schema and neither marker exists in it.
    *
    * Reached through the resource rather than imported, like `formFields` and
    * `options`, because `@frontierjs/ui` peers only on mesa and css and the rule
@@ -998,7 +1212,23 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   function sealedFields(record) {
     if (!record) return []
     const out = []
-    for (const [name, rule] of Object.entries(fields)) {
+    for (const [name, rule] of Object.entries(updateFields)) {
+      // The version column is `readOnly` and is the one that MUST travel, which
+      // is the same exception `stripReadOnly`'s keep list exists for. A caller
+      // deleting it from the payload turns every optimistic write into one the
+      // server refuses for having no revision.
+      if (name === versionOf) continue
+
+      // Frozen because the column may be written once — `@immutable` on a model
+      // that does not seal, which the update schema marks `readOnly` outright.
+      // Read against the CREATE table so a column that was never writable at
+      // all (`@system`, `@generated`, `@computed`, `@from`, a tenancy stamp) is
+      // not reported here: those are not frozen for this row, they are the
+      // server's on every row, and a form never offered a box for them.
+      if (rule?.readOnly && !fields[name]?.readOnly) { out.push(name); continue }
+
+      // Frozen because the row has REACHED the state that seals it — the
+      // answer no schema can carry, which is why it is asked of the record.
       if (sealedFor(rule, record)) out.push(name)
     }
     return out
@@ -1015,12 +1245,36 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // of them.
   const _labelWarned = new Set()
 
+  // One related resource per (model, service), for the life of this one.
+  //
+  // `createResource` is not a cheap call and it is not a pure one: it makes a
+  // junction resource, which makes a Store, binds it to the node registry,
+  // opens the socket and registers a `resync` listener that nothing can remove
+  // — junction's `resource()` hands back no dispose. So a picker that built one
+  // per render left a listener per render behind it, and after a single
+  // reconnect a form rendered 500 times fired 500 identical `find` requests
+  // (measured: 501 listeners, +1.4 MB). Every throwaway also carried its own
+  // `_options` and `_labelWarned`, so the label-guess warning documented as
+  // once-per-field was once per render, masked only because the outer cache
+  // short-circuits the REQUEST and never the construction.
+  const _related = new Map()
+
+  function relatedResource(service, modelName) {
+    const key = `${modelName ?? ''}|${service}`
+    let r = _related.get(key)
+    if (!r) {
+      r = createResource(service, { model: modelName })
+      _related.set(key, r)
+    }
+    return r
+  }
+
   /**
    * What a field's picker offers, and whether that is all of it.
    *
    * The relation already says which model answers (`x-relations` → `references`),
    * the registry says which service that model is served under, and the related
-   * model's own fields say which column a person recognises. So a picker over
+   * model's own fields say which column a person recognizes. So a picker over
    * `customerId` needs no name written anywhere:
    *
    *   const { options, total, truncated } = await orders.options('customerId')
@@ -1103,7 +1357,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       const key   = search ? null : `${fieldName}|${JSON.stringify(query ?? null)}|${labelField ?? ''}`
       if (key && !reload && _options.has(key)) return _options.get(key)
 
-      const setService = createResource(serviceNameFor(vs.model) ?? vs.model, { model: vs.model })
+      const setService = relatedResource(serviceNameFor(vs.model) ?? vs.model, vs.model)
       const pending = setService.service
         .getOptions(
           {
@@ -1140,8 +1394,19 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         error: `'${fieldName}' is neither an enum, a declared value set nor a foreign key` })
     }
 
+    // The cache is asked BEFORE anything is built, which is the order the value
+    // set branch above already uses. It was the other way round here, so a
+    // cached answer still cost a whole resource — see `relatedResource`.
+    //
+    // A searched result is NOT cached. The key would carry the term, so every
+    // keystroke would leave an entry behind for the life of the resource, and
+    // the answer is the one thing here guaranteed to be superseded a moment
+    // later. The unsearched list is the one worth holding.
+    const key = search ? null : `${fieldName}|${JSON.stringify(query ?? null)}|${labelField ?? ''}`
+    if (key && !reload && _options.has(key)) return _options.get(key)
+
     const relatedService = serviceNameFor(ref.model) ?? ref.model
-    const related        = createResource(relatedService, { model: ref.model })
+    const related        = relatedResource(relatedService, ref.model)
     const shown          = labelField ?? related.labelField
 
     // A guessed display column is the failure this cannot fix and can stop
@@ -1166,13 +1431,6 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       ...(query ?? {}),
       ...(search ? { [shown]: { contains: String(search) } } : {}),
     }
-
-    // A searched result is NOT cached. The key would carry the term, so every
-    // keystroke would leave an entry behind for the life of the resource, and
-    // the answer is the one thing here guaranteed to be superseded a moment
-    // later. The unsearched list is the one worth holding.
-    const key    = search ? null : `${fieldName}|${JSON.stringify(query ?? null)}|${labelField ?? ''}`
-    if (key && !reload && _options.has(key)) return _options.get(key)
 
     const pending = related.service
       .getOptions(filter, directives ?? { limit, orderBy: shown })
@@ -1211,14 +1469,28 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
   // ── save — the one owner of "write this record" ────────────────────────────
 
+  /** A text box cannot say "no value" and `make()` seeds `''`. Neither is an id. */
+  const _blankId = (v) => v == null || v === ''
+
+  /**
+   * Create or patch — the one place the question is answered. `service.upsert`
+   * reads it too, so the two verbs cannot drift.
+   */
+  function _writeMode(data) {
+    const id = data?.[idField]
+    if (_blankId(id)) return 'create'
+    if (!callerSuppliedId) return 'patch'
+    return _seen.has(id) ? 'patch' : 'create'
+  }
+
   /**
    * Write a record and answer the row the server returned.
    *
-   * `mode` decides which call it is: `auto` (the default) creates when the
-   * model's OWN id field is absent and patches when it is present, and naming
-   * `create` or `patch` forces one. `upsert` is an alias of `auto` — the two
-   * asked the same question, and keeping a second word for it is how a caller
-   * ends up believing the server has an upsert method it does not have.
+   * `mode` decides which call it is: `auto` (the default) asks whether this row
+   * already exists, and naming `create` or `patch` forces one. `upsert` is an
+   * alias of `auto` — the two asked the same question, and keeping a second
+   * word for it is how a caller ends up believing the server has an upsert
+   * method it does not have.
    *
    * The id field is the schema's, never the literal `id`. That is the whole
    * reason this is a resource verb: `<Form>` and every hand-written save had to
@@ -1226,15 +1498,80 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * keyed by something else CREATES a duplicate row while looking like an edit
    * (`FJS-316`). One owner, per Invariant 4.
    *
+   * ── How `auto` decides ────────────────────────────────────────────────────
+   *
+   * *Is the id present* is a sound proxy for *this row exists* only where the
+   * SERVER assigns the key, and litestone deliberately emits a caller-supplied
+   * `@id` in the create schema so a generated form has a box to type it into
+   * (`FJS-608`). Reading presence there routed what the person had just typed
+   * into a patch, so a generated create form over `Sku { code String @id }`
+   * could never create a row — it threw *Unknown field 'id' in where* — and
+   * left EMPTY it was worse, because `make()` seeds `''` and `'' != null`, so
+   * the form issued a patch over the whole COLLECTION (`FJS-808`).
+   *
+   * So there are two questions and the schema says which one to ask:
+   *
+   *   server-assigned key — presence, as before. An id the caller did not have
+   *                         and now does came from a row.
+   *   caller-supplied key — has THIS resource read that id? Which is the fact
+   *                         `auto` was trying to reconstruct: an edit form is
+   *                         opened on a row this resource fetched, and a create
+   *                         form is not. A miss creates, and a create over a key
+   *                         that is already taken is refused by the uniqueness
+   *                         of the key — loudly, and by the layer that owns it.
+   *
+   * A blank id is *absent* in both, and that is not a special case so much as
+   * the correction of one: a text box cannot express "no value" and `make()`
+   * seeds `''`, which is the same reason `blankToNull` exists.
+   *
+   * `mode: 'patch'` with no id is refused rather than sent. A patch with no id
+   * is a write over every row the caller can reach, and nothing between a form
+   * and the wire was standing in its way.
+   *
+   * ── What a patch CARRIES ──────────────────────────────────────────────────
+   *
+   * What CHANGED against the row this resource read — not the record it was
+   * handed. `save()` is a record-shaped verb: `<Form record={row}>` hands back
+   * the whole row, and sending it whole makes a PATCH a PUT. A column the
+   * caller may write but the screen never showed — `formFields({ except })`, a
+   * hand-written form, a column added to the `.lite` after the screen was
+   * written — then rides along at the value it held when the form opened, and
+   * overwrites whatever somebody else wrote to it while the form was open. The
+   * other person's change is gone with nothing said (`FJS-809`).
+   *
+   * `@version` catches that and is the right answer where it is declared, but
+   * it is opt-in — so before this, the correctness of every generated edit form
+   * depended on the model author having declared a column, and nothing checked
+   * it.
+   *
+   * The baseline is the row `_read` holds, which is the row this resource
+   * fetched and never a WS push (see `_rememberRows`) — the same provenance
+   * rule the version stamp follows, for the same reason. With no baseline the
+   * whole record goes up, which is what every patch did before: a miss is
+   * today's behavior and never a lost value.
+   *
+   * A key is compared and never tested for truthiness, so Invariant 9 holds: an
+   * explicit `null` differs from a non-null baseline, travels, and clears. What
+   * a diff does is OMIT a key — it never substitutes one.
+   *
+   * `service.patch(id, data)` is unchanged and is the escape: it sends what it
+   * is handed. The line is that this verb takes a record and that one takes a
+   * payload.
+   *
    * Everything else is already the pipeline's: `_call` coerces, blank-strips
    * and validates a create/patch payload, stamps the `@version` this screen
    * read, and runs the resource's own hooks. So a caller writes
    * `resource.save(record)` and inherits all of it.
    */
   async function save(data, { mode = 'auto', optimistic = false } = {}) {
-    const how = (mode === 'auto' || mode === 'upsert')
-      ? (data?.[idField] != null ? 'patch' : 'create')
-      : mode
+    const how = (mode === 'auto' || mode === 'upsert') ? _writeMode(data) : mode
+
+    if (how === 'patch' && _blankId(data?.[idField])) throw new Error(
+      `[${serviceName}] save({ mode: 'patch' }) needs a value for '${idField}' — the payload ` +
+      `carries ${data?.[idField] === '' ? 'an empty one' : 'none'}, and a patch with no id is a ` +
+      `write over every row this caller can reach. Pass the row's '${idField}', or save it as a ` +
+      `create.`
+    )
 
     if (how === 'create') {
       // A create cannot be optimistic here and saying so is better than
@@ -1249,10 +1586,37 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       return _call('create', null, data, {})
     }
 
-    const id = data?.[idField]
+    const id      = data?.[idField]
+    const payload = _changed(id, data)
+
     return optimistic
-      ? mutate(id, data, () => _call('patch', id, data, {}))
-      : _call('patch', id, data, {})
+      ? mutate(id, payload, () => _call('patch', id, payload, {}))
+      : _call('patch', id, payload, {})
+  }
+
+  /**
+   * The keys of `data` that differ from the row this resource read for `id`,
+   * plus the two that always travel — the key itself, which addresses the write
+   * and decides its mode, and the `@version` column, whose whole job is to ride
+   * along on a patch.
+   *
+   * Unknown baseline → `data` unchanged. Comparison is `!==`, so a value that
+   * is not a primitive is sent whenever the reference moved, which is every
+   * time a control replaced it and never when nothing touched it: `<Form>`
+   * rewrites the record as `{ ...record, [name]: value }`, so an untouched key
+   * is still the identical reference the read produced.
+   */
+  function _changed(id, data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return data
+    const base = _read.get(id)
+    if (!base || typeof base !== 'object') return data
+
+    const out = {}
+    for (const key of Object.keys(data)) {
+      if (key === idField || (versionOf && key === versionOf)) { out[key] = data[key]; continue }
+      if (!(key in base) || base[key] !== data[key]) out[key] = data[key]
+    }
+    return out
   }
 
   // ── mutate — the write that shows before it lands ───────────────────────────
@@ -1287,6 +1651,22 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       run ?? (() => _call('patch', id, intent, {}))
     )
   }
+
+  // Everything above that belongs to the person who is signed in, dropped
+  // together when that stops being the same person — see the identity epoch at
+  // the top of this file. Registered last, so the closure names state that is
+  // already built.
+  //
+  // `_related` and `_labelWarned` are deliberately NOT cleared: one is a
+  // construction cache whose whole purpose is that a resource is built once,
+  // and the other is a report about the SCHEMA. Neither holds a row.
+  _liveResources.add(() => {
+    _options.clear()
+    _read.clear()
+    _seen.clear()
+    store.set([])
+    stale.reset?.()
+  })
 
   return {
     service, store, stale, make, load, save, record, mutate,
@@ -1334,8 +1714,22 @@ function _emptyResource(name) {
     labelField:  'id',
     labelSource: 'fallback',
     gate:        null,
-    can:         () => true,
+    // Not routed through `canAtLevel`, and not because the answer for *no gate*
+    // is in doubt. That function answers *does the declared gate admit this
+    // level*, and permissive-when-unknown is right for it. The question here is
+    // a different one — *can this resource do that* — and this resource can do
+    // nothing: every verb above rejects with "Junction client not available".
+    // Saying yes offered a prerendered page and an SSR pass every gated control
+    // in the app, which is also what `session.level = 0` next door refuses to
+    // do for a caller with no session.
+    can:         () => false,
     transitions: () => [],
+    // A create form is making a draft and nothing is sealed, which is the same
+    // answer the real resource gives for no record. Missing entirely, it was
+    // absorbed by one optional chain at `<Form>`'s only call site, and the next
+    // caller written without one would have thrown on any form rendered before
+    // `initJunction` — a prerendered island, an SSR pass (`FJS-823`).
+    sealedFields: () => [],
     validate:  () => [],
     normalize: (data) => data,
     coerce:    (data) => data,

@@ -245,7 +245,7 @@ export function createHubService(app: BasecampApp) {
           id: u.id, email: u.email, name: u.displayName ?? u.name,
           kind: u.kind, status: u.status, isSystemAdmin: !!u.isSystemAdmin,
           emailVerified: !!u.emailVerified, createdAt: u.createdAt,
-          // Never the Credential rows themselves — `value` is @guarded(all) and
+          // Never the Credential rows themselves — `value` is @guarded and
           // a list of what proves an identity is not a list to render. The
           // count answers the only question the screen asks: can this actor
           // sign in at all, or is it a bot reachable through an API key.

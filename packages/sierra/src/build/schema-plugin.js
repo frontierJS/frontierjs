@@ -17,7 +17,9 @@
 import { resolve, dirname, isAbsolute } from 'path'
 import { existsSync, readFileSync } from 'fs'
 import { createRequire } from 'module'
+import { gzipSync } from 'zlib'
 import { pathToFileURL } from 'url'
+import { diffSchemaModes } from '../junction/schema-registry.js'
 
 /** Default locations, tried in order when `config.schema` isn't set. */
 const DEFAULT_PATHS = [
@@ -138,13 +140,64 @@ async function loadLitestone(root, warn, schemaPath) {
   }
 }
 
+// Maps whose keys are NAMES rather than JSON Schema keywords. `description` in
+// one of these is a column somebody declared — `Product.description` is a real
+// column of this repo's own example, and of four models in basecamp — so a walk
+// that filtered by key name alone would delete it from every generated form and
+// leave a build that says nothing. The annotation and the field are the same
+// word at different depths, which is the whole trap.
+const _NAME_KEYED = new Set([
+  'properties', '$defs', 'definitions', 'patternProperties', 'dependentSchemas',
+])
+
+/**
+ * Every `description` ANNOTATION out of a generated `$defs` table (`FJS-785`).
+ *
+ * A `///` comment is emitted at three depths — on a model, on a property, and
+ * inside a `$ref` target — so the walk is recursive rather than two loops, and
+ * a fourth depth arrives carried rather than missed. Nothing in the browser
+ * reads it: `field-rules.js` carries it into a field rule and no control
+ * renders it.
+ *
+ * A user-facing hint is a DECLARED attribute if it is ever wanted, not a doc
+ * comment repurposed — a comment addresses whoever edits the schema, which is
+ * what this repo's own comments show by quoting policy expressions.
+ *
+ * @param {object} defs  the `$defs` table (a name-keyed map)
+ * @returns {object} a new table; the input is not mutated
+ */
+export function stripProse(defs) {
+  return _stripNamed(defs)
+}
+
+/** A map from names to schema nodes: keys are untouched, values are schemas. */
+function _stripNamed(map) {
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return map
+  const out = {}
+  for (const [name, node] of Object.entries(map)) out[name] = _stripNode(node)
+  return out
+}
+
+/** A schema node: `description` is the annotation and comes out. */
+function _stripNode(node) {
+  if (Array.isArray(node)) return node.map(_stripNode)
+  if (!node || typeof node !== 'object') return node
+
+  const out = {}
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'description') continue
+    out[key] = _NAME_KEYED.has(key) ? _stripNamed(value) : _stripNode(value)
+  }
+  return out
+}
+
 /**
  * Read the .lite file and produce `$defs`.
  *
  * Returns null rather than throwing: a schema that doesn't parse should warn
  * and leave the app running on explicitly-passed schemas, not fail the build.
  *
- * @returns {Promise<{ defs: object, models: string[] } | null>}
+ * @returns {Promise<{ defs: object, models: string[], updatePatch: object } | null>}
  */
 export async function generateSchemas(schemaPath, warn, root = process.cwd()) {
   const litestone = await loadLitestone(root, warn, schemaPath)
@@ -188,8 +241,34 @@ export async function generateSchemas(schemaPath, warn, root = process.cwd()) {
     return null
   }
 
-  const json = generateJsonSchema(result.schema)
-  const defs = json?.$defs ?? {}
+  // Both write modes, because a form does both jobs and the two schemas are
+  // different documents. Asking for one and getting the default — `create` —
+  // is what left `@immutable` writable on every edit form and `x-litestone-seal`
+  // absent from every model in every real app (`FJS-807`).
+  //
+  // What crosses is the create table plus the DELTA to the update one: the
+  // second copy costs +26 KB gzipped on `example` and the delta costs +2 KB,
+  // and `diffSchemaModes` computes it from the two generated documents rather
+  // than restating litestone's mode rules here.
+  // Prose is dropped before either table is measured or diffed (`FJS-785`).
+  // A `///` comment is written for whoever edits the .lite file, and litestone
+  // emits it as `description` — so `example`'s notes, which quote policy
+  // expressions and explain the cart bearer-token scheme, were reaching an
+  // anonymous visitor's login page. `audience: 'client'` is the one owner of
+  // which FIELDS cross and it is doing its job; it was never asked about a doc
+  // comment, because a comment is not a field.
+  //
+  // The strip is here rather than there because this bundle is not the client
+  // audience: that describes what an API may answer an authenticated caller,
+  // and this is a static file anyone can fetch before signing in — the same
+  // question `static-safety.js` already owns for a prerendered page.
+  //
+  // It is also the large cut, not the cheap one: over `example` the whole
+  // payload is 120 429 bytes / 30 380 gzipped, and without `description`
+  // 53 841 / 6 820. The prose is 78% of what crosses compressed.
+  const defs        = stripProse(generateJsonSchema(result.schema)?.$defs ?? {})
+  const updateDefs  = stripProse(generateJsonSchema(result.schema, { mode: 'update' })?.$defs ?? {})
+  const updatePatch = diffSchemaModes(defs, updateDefs)
 
   // $defs holds models, enums, `type` declarations and FileRef side by side —
   // it is the whole document's definition table, not a list of models. Taking
@@ -204,7 +283,28 @@ export async function generateSchemas(schemaPath, warn, root = process.cwd()) {
   // browser can learn a field's enum values.
   const models = (result.schema?.models ?? []).map(m => m.name).filter(Boolean)
 
-  return { defs, models }
+  return { defs, models, updatePatch }
+}
+
+/**
+ * What `registerSchemas()` will cost in the bundle, raw and gzipped.
+ *
+ * The three arguments as `virtual-sierra.js` will serialize them, so the number
+ * moves when the emit does. gzip because that is what a browser downloads and
+ * the two differ by an order of magnitude on a table this repetitive.
+ *
+ * @param {{defs: object, models: string[], updatePatch: object}} generated
+ * @returns {string}
+ */
+function emittedSize({ defs, models, updatePatch }) {
+  const raw = JSON.stringify(defs).length
+            + JSON.stringify(models ?? null).length
+            + JSON.stringify(updatePatch ?? null).length
+  const gz = gzipSync(Buffer.from(
+    JSON.stringify(defs) + JSON.stringify(models ?? null) + JSON.stringify(updatePatch ?? null)
+  )).length
+  const kb = (n) => (n / 1024).toFixed(1) + ' KB'
+  return `${kb(raw)} (${kb(gz)} gzipped)`
 }
 
 /**
@@ -237,13 +337,21 @@ export function schemaPlugin(config, sierraContext) {
       const generated = await generateSchemas(schemaPath, warn, root)
       sierraContext.schemaDefs   = generated?.defs   ?? null
       sierraContext.schemaModels = generated?.models ?? null
+      sierraContext.schemaUpdate = generated?.updatePatch ?? null
       sierraContext.schemaPath   = schemaPath
 
       if (generated) {
+        // The SIZE, beside the model count. What crosses here is the largest
+        // single thing in the bundle and it took an audit to notice (`FJS-785`);
+        // a number in the build log is what makes the next person's complaint a
+        // measurement rather than a discovery. Refusing to project the table is
+        // a ruling (`FJS-D204`), and a ruling that hides its own cost is the
+        // shape that gets quietly reversed.
         console.log(
           `  [Sierra] schema: ${generated.models.length} model(s) from ` +
           `${schemaPath.replace(root + '/', '')} — ${generated.models.join(', ')}`
         )
+        console.log(`  [Sierra] schema: ${emittedSize(generated)} to the client`)
       }
     },
 
@@ -257,6 +365,7 @@ export function schemaPlugin(config, sierraContext) {
         const generated = await generateSchemas(schemaPath, warn, root)
         sierraContext.schemaDefs   = generated?.defs   ?? null
         sierraContext.schemaModels = generated?.models ?? null
+        sierraContext.schemaUpdate = generated?.updatePatch ?? null
 
         // virtual:sierra embeds the schemas, so it has to be rebuilt. A full
         // reload rather than an HMR update: make() defaults are read when a

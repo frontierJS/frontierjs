@@ -6,6 +6,24 @@
  *
  * In Mesa components, `const members = presence(...)` compiles to a reactive
  * const — template reads members.count, members.others etc. stay reactive.
+ *
+ * WHAT THE SERVER ACTUALLY DOES, because this module spoke to a client that
+ * did not exist for its whole life (`FJS-811`):
+ *
+ *   · Channel MEMBERSHIP is the app's, decided in its own `channels()` setup.
+ *     Nothing a browser sends joins a channel, so nothing here can. What
+ *     `client.presence.announce()` sends is *here is my meta, send me the
+ *     roster*, and a channel this connection was never joined to answers
+ *     nothing — in silence, which is why a screen showing no members is the
+ *     shape to expect when a channel is misspelled or presence is not enabled
+ *     for it.
+ *   · An ANONYMOUS connection is not tracked: junction's tracker returns early
+ *     for a session with no userId, so it neither appears in a roster nor
+ *     receives one.
+ *   · Frames arrive under their own names — `presence:sync`, `presence:join`,
+ *     `presence:diff`, `presence:leave`, `presence:update` — with the channel
+ *     inside the payload. There is no channel-suffixed event name; this module
+ *     used to bind five of them and heard nothing.
  */
 
 import { signal } from '../router/signals.js'
@@ -39,6 +57,35 @@ function buildSnapshot(memberList, connectionId) {
   }
 }
 
+// ── Who else on this page wants this channel ─────────────────────────────────
+//
+// One connection has one presence meta per channel, but a page can render
+// several views of the same one — an avatar strip in the header and a list in
+// the sidebar is the obvious pair. The first of those to unmount used to send
+// `unsubscribe` for the channel the other one is still showing (`FJS-824`), so
+// the count is held here: the release goes out when the LAST holder leaves.
+//
+// Module-level rather than per-client because there is one client per page.
+
+const _holders = new Map()
+
+function _hold(channelId) {
+  _holders.set(channelId, (_holders.get(channelId) ?? 0) + 1)
+}
+
+/** True when this was the last holder — i.e. the caller should release. */
+function _drop(channelId) {
+  const n = (_holders.get(channelId) ?? 0) - 1
+  if (n > 0) { _holders.set(channelId, n); return false }
+  _holders.delete(channelId)
+  return true
+}
+
+/** Test seam — a suite that boots several times must not inherit a count. */
+export function _resetPresenceHolders() {
+  _holders.clear()
+}
+
 // ── presence() ───────────────────────────────────────────────────────────────
 
 /**
@@ -56,9 +103,14 @@ function buildSnapshot(memberList, connectionId) {
  */
 export function presence(channelId, options = {}) {
   const client = getClient()
-  const connId = client?.connectionId ?? null
 
-  const sig = signal(buildSnapshot([], connId))
+  // Which member of the roster this connection IS. The server states it on
+  // `presence:sync` and nothing else can: a browser is never told its own
+  // connection id, so before the first sync arrives every member is an
+  // "other", which is the safe way round for an avatar strip.
+  let _selfId = null
+
+  const sig = signal(buildSnapshot([], null))
   let _rawMembers = []
   let _debounceTimer = null
   let _pendingMeta   = null
@@ -68,14 +120,17 @@ export function presence(channelId, options = {}) {
 
   function push(newList) {
     _rawMembers = newList
-    sig.set(buildSnapshot(newList, client?.connectionId ?? connId))
+    sig.set(buildSnapshot(newList, _selfId))
   }
 
   // ── Junction event handlers ──────────────────────────────────────────────
 
-  function onSync(payload)   { if (!_left) push((payload.members ?? []).map(normaliseMember)) }
-  function onJoin(payload)   { if (!_left) push([..._rawMembers, normaliseMember(payload.member)]) }
-  function onLeave(payload)  { if (!_left) push(_rawMembers.filter(m => m.connectionId !== payload.member.connectionId)) }
+  function onSync(payload) {
+    if (payload.you) _selfId = payload.you
+    push((payload.members ?? []).map(normaliseMember))
+  }
+  function onJoin(payload)   { push([..._rawMembers, normaliseMember(payload.member)]) }
+  function onLeave(payload)  { push(_rawMembers.filter(m => m.connectionId !== payload.member.connectionId)) }
 
   // Several joins and leaves in one frame. Junction batches them per channel
   // over a window, because a join used to send one frame to every existing
@@ -87,7 +142,6 @@ export function presence(channelId, options = {}) {
   // inside one window is in both lists, and the other order removes the row it
   // had just added.
   function onDiff(payload) {
-    if (_left) return
     const gone = new Set((payload.left ?? []).map(m => m.connectionId))
     const kept = _rawMembers.filter(m => !gone.has(m.connectionId))
     const here = new Set(kept.map(m => m.connectionId))
@@ -100,7 +154,6 @@ export function presence(channelId, options = {}) {
     push([...kept, ...added])
   }
   function onUpdate(payload) {
-    if (_left) return
     push(_rawMembers.map(m =>
       m.connectionId === payload.connectionId
         ? { ...m, meta: payload.meta ?? {} }
@@ -108,19 +161,35 @@ export function presence(channelId, options = {}) {
     ))
   }
 
-  // ── Subscribe with Junction ──────────────────────────────────────────────
+  const HANDLERS = {
+    'presence:sync':   onSync,
+    'presence:join':   onJoin,
+    'presence:diff':   onDiff,
+    'presence:leave':  onLeave,
+    'presence:update': onUpdate,
+  }
+
+  // One listener on the client's own re-emit, filtered by the channel the
+  // frame already carries. Junction emits every inbound push as
+  // `('event', name, data)` and has never emitted anything else, so binding
+  // five names — the shape this module shipped with — heard nothing at all.
+  function onEvent(name, data) {
+    if (_left) return
+    if (!data || data.channelId !== channelId) return
+    HANDLERS[name]?.(data)
+  }
+
+  // ── Announce with Junction ───────────────────────────────────────────────
 
   if (client) {
-    client.on(`presence:sync:${channelId}`,   onSync)
-    client.on(`presence:join:${channelId}`,   onJoin)
-    client.on(`presence:diff:${channelId}`,   onDiff)
-    client.on(`presence:leave:${channelId}`,  onLeave)
-    client.on(`presence:update:${channelId}`, onUpdate)
-
-    // Only send subscribe if authenticated
-    if (client.token || client.connected) {
-      client.send({ type: 'subscribe', channel: channelId, meta: options.meta })
-    }
+    client.on('event', onEvent)
+    _hold(channelId)
+    // Unconditional. This used to be gated on `client.token || client.connected`
+    // — which is false for every cookie-mode app, and false for the ordinary
+    // case of a component mounting before the socket is up. The client queues
+    // the announcement and re-sends it on every connect, because a reconnect is
+    // a new connection with no meta and no roster.
+    client.presence.announce(channelId, options.meta ?? {})
   }
 
   // ── leave() ──────────────────────────────────────────────────────────────
@@ -134,18 +203,15 @@ export function presence(channelId, options = {}) {
       clearTimeout(_debounceTimer)
       _debounceTimer = null
       if (client && _pendingMeta !== null) {
-        client.send({ type: 'subscribe', channel: channelId, meta: _pendingMeta })
+        client.presence.announce(channelId, _pendingMeta)
         _pendingMeta = null
       }
     }
 
     if (client) {
-      client.off(`presence:sync:${channelId}`,   onSync)
-      client.off(`presence:join:${channelId}`,   onJoin)
-      client.off(`presence:diff:${channelId}`,   onDiff)
-      client.off(`presence:leave:${channelId}`,  onLeave)
-      client.off(`presence:update:${channelId}`, onUpdate)
-      client.send({ type: 'unsubscribe', channel: channelId })
+      client.off('event', onEvent)
+      // Only when nothing else on this page is still showing the channel.
+      if (_drop(channelId)) client.presence.release(channelId)
     }
 
     push([])
@@ -163,10 +229,10 @@ export function presence(channelId, options = {}) {
         _debounceTimer = null
         const m = _pendingMeta
         _pendingMeta = null
-        if (!_left) client.send({ type: 'subscribe', channel: channelId, meta: m })
+        if (!_left) client.presence.announce(channelId, m)
       }, debounce)
     } else {
-      client.send({ type: 'subscribe', channel: channelId, meta })
+      client.presence.announce(channelId, meta)
     }
   }
 

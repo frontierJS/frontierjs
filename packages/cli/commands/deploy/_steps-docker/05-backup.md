@@ -62,10 +62,16 @@ try {
   // The step is `optional`, so the deploy continues into 06-swap and the new
   // container's entrypoint migrations. Say what was lost — a one-line warning
   // reads as though the snapshot exists.
+  //
+  // Name no CAUSE here. `litestone backup` prints which database it could not
+  // copy and why, immediately above this in the log, and it is the only thing
+  // that knows; a diagnosis written at this call site is a guess that outlives
+  // every change to the reasons, and points an operator at the wrong file
+  // (`FJS-574`).
   log.error(`Backup FAILED — the deploy will continue and run migrations with NO pre-deploy snapshot`)
-  log.info(`  the container must carry db/schema.lite for litestone to resolve databases (FJS-232)`)
-  const byHand = `docker exec ${container} sh -c 'cd /app && bunx litestone backup --help'`
-  log.info(`  check by hand:  ${machine.local ? byHand : `ssh ${host} "${byHand}"`}`)
+  log.info(`  litestone printed which database and why, just above`)
+  const byHand = `docker exec ${container} sh -c 'cd /app && bunx litestone backup ${destInner} --schema db/schema.lite'`
+  log.info(`  run it by hand:  ${machine.local ? byHand : `ssh ${host} "${byHand}"`}`)
   throw err
 }
 

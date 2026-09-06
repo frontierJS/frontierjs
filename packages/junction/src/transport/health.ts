@@ -48,7 +48,25 @@ export interface HealthPluginOptions {
   //     thirdParty: async () => { ... }
   //   }
   checks?: Record<string, () => boolean | Promise<boolean>>
+
+  /** ms a single readiness check may take before it is a failure naming
+   *  itself. Default 2000. A check calls something this process does not own,
+   *  so the only alternative to a bound is a probe that never answers — which
+   *  an orchestrator reads as the process being dead. */
+  checkTimeout?: number
 }
+
+/**
+ * The two questions an orchestrator asks, which are not one question.
+ *
+ * `live`  — should this process be RESTARTED? Nothing it depends on is
+ *           consulted, because restarting cannot fix somebody else's database
+ *           and doing it to every replica at once turns a blip into an outage.
+ *           A DRAINING process is still alive: killing it mid-drain is exactly
+ *           what the drain exists to avoid.
+ * `ready` — should traffic be SENT here? Every check, and draining is a no.
+ */
+export type HealthMode = 'live' | 'ready'
 
 // ─── Response shapes ──────────────────────────────────────────────────────
 
@@ -111,15 +129,37 @@ export interface MetricsResponse {
 // ─── Collectors ───────────────────────────────────────────────────────────
 // The two answers, separated from the routes that serve them.
 
-/** A check's result, timed and named — a throw is a failure carrying its message. */
-async function timedCheck(fn: () => boolean | Promise<boolean>): Promise<CheckResult> {
+export const DEFAULT_CHECK_TIMEOUT = 2000
+
+/**
+ * A check's result, timed, named and BOUNDED — a throw is a failure carrying
+ * its message, and so is taking too long.
+ *
+ * Nothing here cancels the check: a promise cannot be cancelled, so a hung
+ * probe goes on hanging and this stops WAITING for it. That is the same answer
+ * `http.requestTimeout` gives, for the same reason — announcing a deadline is
+ * possible, enforcing one is not.
+ */
+function timedCheck(fn: () => boolean | Promise<boolean>, timeoutMs: number): Promise<CheckResult> {
   const t = Date.now()
-  try {
-    const ok = await fn()
-    return { status: ok ? 'ok' : 'fail', latencyMs: Date.now() - t }
-  } catch (err) {
-    return { status: 'fail', latencyMs: Date.now() - t, error: (err as Error).message }
-  }
+  return new Promise<CheckResult>(resolve => {
+    let settled = false
+    const finish = (r: CheckResult) => { if (!settled) { settled = true; clearTimeout(timer); resolve(r) } }
+
+    const timer = setTimeout(
+      () => finish({ status: 'fail', latencyMs: Date.now() - t, error: `timed out after ${timeoutMs}ms` }),
+      timeoutMs,
+    )
+    if (timer.unref) timer.unref()
+
+    // `Promise.resolve().then(fn)` rather than calling fn() here: a check that
+    // throws SYNCHRONOUSLY would otherwise escape this promise entirely and
+    // reject the whole collection instead of being one failed row.
+    Promise.resolve().then(fn).then(
+      ok  => finish({ status: ok ? 'ok' : 'fail', latencyMs: Date.now() - t }),
+      err => finish({ status: 'fail', latencyMs: Date.now() - t, error: (err as Error).message }),
+    )
+  })
 }
 
 /**
@@ -136,8 +176,36 @@ async function timedCheck(fn: () => boolean | Promise<boolean>): Promise<CheckRe
  * — two surfaces disagreeing about one question, which is the whole of what
  * `FJS-414` was.
  */
-export async function collectHealth(app: App, startedAt: number): Promise<HealthResponse> {
-  const results: Record<string, CheckResult> = {}
+export async function collectHealth(
+  app: App,
+  startedAt: number,
+  opts: { mode?: HealthMode; checkTimeout?: number } = {},
+): Promise<HealthResponse> {
+
+  const mode      = opts.mode ?? 'ready'
+  const timeoutMs = opts.checkTimeout ?? DEFAULT_CHECK_TIMEOUT
+
+  // Read per REQUEST rather than off `app.config` directly. The app's own name
+  // is the shape a tenant varies — one deployment, many customers, each of whom
+  // thinks it is theirs — and `configFor` is where that becomes true for every
+  // reader at once instead of for whichever one was found again (`FJS-D126`).
+  //
+  // Not `$.config`: a health route is a raw route and holds no service call.
+  const cfg  = app.configFor?.() ?? app.config
+  // Field order follows `HealthResponse`'s own declaration, `checks` before
+  // `ts`, so the type and the wire read the same way round.
+  const meta = {
+    app:     cfg?.name    ?? 'junction',
+    version: cfg?.version ?? '',
+    uptime:  Math.floor((Date.now() - startedAt) / 1000),
+  }
+  const ts = () => new Date().toISOString()
+
+  // Liveness consults NOTHING. Answering here is the whole check: a process
+  // that runs this line is one a restart cannot improve. Draining is still
+  // alive on purpose — an orchestrator that kills a draining process is
+  // destroying the in-flight requests the drain exists to finish.
+  if (mode === 'live') return { status: 'ok', ...meta, checks: {}, ts: ts() }
 
   // Built-in: database check — only for a raw bun:sqlite handle (db.db.query).
   // Other clients don't expose that shape; probing them here reported a
@@ -152,10 +220,24 @@ export async function collectHealth(app: App, startedAt: number): Promise<Health
       return typeof query === 'function' ? { query: query.bind(rawDb!.db) } : null
     } catch { return null }
   })()
-  if (dbCheck) results.database = await timedCheck(() => { dbCheck.query('SELECT 1').get(); return true })
 
-  for (const [name, fn] of app._healthChecks    ?? new Map()) results[name] = await timedCheck(fn)
-  for (const [name, fn] of app._healthChecksApp ?? new Map()) results[name] = await timedCheck(fn)
+  // Collected into a Map before any of them runs, because the ORDER and the
+  // last-wins rule are properties of the list rather than of the running: a
+  // Map keeps a re-set key in its original position, so an app-declared name
+  // still replaces the plugin's without moving in the answer.
+  const entries = new Map<string, () => boolean | Promise<boolean>>()
+  if (dbCheck) entries.set('database', () => { dbCheck.query('SELECT 1').get(); return true })
+  for (const [name, fn] of app._healthChecks    ?? new Map()) entries.set(name, fn)
+  for (const [name, fn] of app._healthChecksApp ?? new Map()) entries.set(name, fn)
+
+  // Concurrently. Sequentially, a probe's latency was the SUM of every check,
+  // so an app grows its own timeout by adding a dependency — and one check
+  // that never settled meant the endpoint never answered at all, which reads
+  // to an orchestrator as a dead process rather than an unwell one.
+  const settled = await Promise.all(
+    [...entries].map(async ([name, fn]) => [name, await timedCheck(fn, timeoutMs)] as const),
+  )
+  const results: Record<string, CheckResult> = Object.fromEntries(settled)
 
   const anyFail = Object.values(results).some(c => c.status === 'fail')
 
@@ -164,22 +246,11 @@ export async function collectHealth(app: App, startedAt: number): Promise<Health
   // stayed 200 throughout, so a load balancer went on choosing a process that
   // had already stopped accepting connections (`FJS-693`). Ahead of `anyFail`
   // because it is the more specific answer: *going away* rather than *unwell*.
-
-  // Read per REQUEST rather than off `app.config` directly. The app's own name
-  // is the shape a tenant varies — one deployment, many customers, each of whom
-  // thinks it is theirs — and `configFor` is where that becomes true for every
-  // reader at once instead of for whichever one was found again (`FJS-D126`).
-  //
-  // Not `$.config`: a health route is a raw route and holds no service call.
-  const cfg = app.configFor?.() ?? app.config
-
   return {
-    status:  app.draining ? 'draining' : anyFail ? 'degraded' : 'ok',
-    app:     cfg?.name    ?? 'junction',
-    version: cfg?.version ?? '',
-    uptime:  Math.floor((Date.now() - startedAt) / 1000),
-    checks:  results,
-    ts:      new Date().toISOString(),
+    status: app.draining ? 'draining' : anyFail ? 'degraded' : 'ok',
+    ...meta,
+    checks: results,
+    ts:     ts(),
   }
 }
 
@@ -262,12 +333,77 @@ export function collectMetrics(app: App, startedAt: number): MetricsResponse {
   return body
 }
 
+// ─── Prometheus exposition ────────────────────────────────────────────────
+// `/metrics` is a CONVENTION before it is a path, and the convention carries a
+// format: a scraper sends `Accept: application/openmetrics-text…` and is handed
+// JSON, which it cannot read (measured). So the same resource answers in two
+// representations chosen by `Accept` — one collector, two renderings, rather
+// than a second endpoint with a second idea of what the numbers are.
+//
+// The mapping is one rule and it is deliberately narrow: **a number is a
+// metric and nothing else is**. A string (`nodeVersion`, `ts`) and an array
+// (the service list) are skipped rather than counted or stringified, because
+// the alternative is inventing a value the collector never stated. That rule
+// also bounds what a plugin's `registerMetricsSource` section can produce: a
+// per-service object of names and booleans emits nothing at all, so a section
+// cannot turn into a series per service by accident.
+//
+// No `# TYPE` is emitted. Whether a number is a counter or a gauge is not
+// derivable from its name, and a wrong TYPE is worse than an absent one —
+// Prometheus reads an untyped metric correctly and a mislabelled counter it
+// does not.
+
+const METRIC_PREFIX = 'junction_'
+
+/** A path through the metrics object becomes one metric name. */
+function metricName(path: string[]): string {
+  return METRIC_PREFIX + path
+    .join('_')
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '_')
+}
+
+export function renderPrometheus(m: MetricsResponse): string {
+  const lines: string[] = []
+
+  const walk = (value: unknown, path: string[]): void => {
+    if (typeof value === 'number') {
+      // A non-finite number has no exposition form that means what it says.
+      if (Number.isFinite(value)) lines.push(`${metricName(path)} ${value}`)
+      return
+    }
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) walk(v, [...path, k])
+  }
+
+  walk(m, [])
+  return lines.join('\n') + '\n'
+}
+
+/**
+ * Does this caller want the exposition format?
+ *
+ * Matching `text/plain` is what separates a scraper from a browser: a browser
+ * leads with `text/html` and never names text/plain, and curl sends the
+ * wildcard alone — so both keep the JSON that every existing reader of this
+ * endpoint (the devtools console, `fli gui`) is written against.
+ *
+ * The wildcard cannot be spelled in this comment: it ends with the two
+ * characters that close a block comment, so writing it here is a parse error
+ * pointing at a line further down.
+ */
+export function wantsPrometheus(accept: string | undefined): boolean {
+  return /openmetrics-text|text\/plain/i.test(accept ?? '')
+}
+
 // ─── Plugin factory ───────────────────────────────────────────────────────
 
 export function healthPlugin(opts: HealthPluginOptions = {}) {
 
-  const prefix    = opts.path ?? ''
-  const startedAt = Date.now()
+  const prefix       = opts.path ?? ''
+  const startedAt    = Date.now()
+  const checkTimeout = opts.checkTimeout ?? DEFAULT_CHECK_TIMEOUT
 
   // ── Auth guard ──────────────────────────────────────────────────
   async function isAuthorized(ctx: TransportContext): Promise<boolean> {
@@ -296,16 +432,24 @@ export function healthPlugin(opts: HealthPluginOptions = {}) {
         app._healthChecksApp.set(name, fn)
 
 
-      // ── GET /health ──────────────────────────────────────────────
-      // Returns 200 if all checks pass, 503 if any fail.
-      // Suitable as a Kubernetes readinessProbe / livenessProbe target,
-      // or as a load balancer health check URL.
+      // ── GET /health · /health/ready · /health/live ────────────────
+      //
+      // Two questions, and an orchestrator acts on them differently: a failed
+      // LIVENESS probe restarts the process, a failed READINESS probe stops
+      // sending it traffic. One endpoint could only ever answer one of them,
+      // so a third-party dependency going down restarted every replica — which
+      // cannot fix the third party and takes the app down with it.
+      //
+      // `/health` keeps answering readiness. It is what every deployment
+      // already points at, and readiness is the answer that was right for a
+      // load balancer all along; the split adds the two named paths rather
+      // than moving the one that exists.
 
-      app.get(`${prefix}/health`, async (ctx: TransportContext) => {
+      const answer = async (ctx: TransportContext, mode: HealthMode) => {
         if (!await isAuthorized(ctx))
           return ctx.json({ error: 'Unauthorized' }, 401)
 
-        const body = await collectHealth(app, startedAt)
+        const body = await collectHealth(app, startedAt, { mode, checkTimeout })
         if (body.status === 'ok') return ctx.json(body, 200)
         if (body.status !== 'draining') return ctx.json(body, 503)
 
@@ -320,7 +464,11 @@ export function healthPlugin(opts: HealthPluginOptions = {}) {
           status:  503,
           headers: { 'content-type': 'application/json', connection: 'close' },
         })
-      })
+      }
+
+      app.get(`${prefix}/health`,       ctx => answer(ctx as TransportContext, 'ready'))
+      app.get(`${prefix}/health/ready`, ctx => answer(ctx as TransportContext, 'ready'))
+      app.get(`${prefix}/health/live`,  ctx => answer(ctx as TransportContext, 'live'))
 
       // ── GET /metrics ─────────────────────────────────────────────
       // Full runtime snapshot. Always 200 — the data describes health,
@@ -330,7 +478,13 @@ export function healthPlugin(opts: HealthPluginOptions = {}) {
         if (!await isAuthorized(ctx))
           return ctx.json({ error: 'Unauthorized' }, 401)
 
-        return ctx.json(collectMetrics(app, startedAt), 200)
+        const body = collectMetrics(app, startedAt)
+        if (!wantsPrometheus(ctx.headers['accept'])) return ctx.json(body, 200)
+
+        return new Response(renderPrometheus(body), {
+          status:  200,
+          headers: { 'content-type': 'text/plain; version=0.0.4; charset=utf-8' },
+        })
       })
     }
   }

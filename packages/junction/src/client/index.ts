@@ -274,7 +274,7 @@ export class ServiceProxy<
    * server only when the app sets `apiPrefix: '/api'`. Junction's default is ''
    * (see registerServiceRoutes in core/app.ts) — so against a default app every
    * one of these requests 404'd. The prefix is now the client's, supplied once
-   * at construction and normalized the same way the server normalises its own.
+   * at construction and normalized the same way the server normalizes its own.
    */
   private get _base(): string {
     return `${this._client._apiPrefix}/${this.name}`
@@ -558,6 +558,42 @@ export class AuthClient {
     )
   }
 
+  // ── Support mode ───────────────────────────────────────────────────
+  //
+  // The operator's own token does not change and is not replaced: an episode is
+  // three columns on their session row, so there is no second credential to
+  // store and none to lose. What changes is who that token RESOLVES to, which
+  // is why both calls end with the socket closed by the server and reopened
+  // here — a connection resolved its principal at upgrade and would otherwise
+  // go on answering as whoever it was before.
+  //
+  // Neither returns the new principal. Who the caller is now is
+  // `account.get('me')`, which is the same question it always was, asked of the
+  // same place — a second answer here would be one more thing to keep in step.
+
+  /**
+   * Act as another user, bounded at THEIR standing and recorded against yours.
+   *
+   * Refused unless the app supplied `canStartSupport`, and refused with no
+   * reason. `ttl` is a request: the server's `supportTtl` is the ceiling and a
+   * longer one is capped rather than honored.
+   */
+  async startSupport(subjectId: string, reason: string, ttl?: string): Promise<{ subjectId: string; endsAt: string }> {
+    const res = await this._c._request(
+      'POST', `${this._prefix}/support/start`, { subjectId, reason, ...(ttl ? { ttl } : {}) }
+    ) as { subjectId: string; endsAt: string }
+    this._c.emit('support:started', res)
+    return res
+  }
+
+  /** Stop acting as anybody. A no-op where no episode is running, because that
+   *  is what a reconnecting tab sends. */
+  async endSupport(): Promise<{ ended: boolean }> {
+    const res = await this._c._request('POST', `${this._prefix}/support/end`, {}) as { ended: boolean }
+    this._c.emit('support:ended', res)
+    return res
+  }
+
   // ── OAuth — a navigation, not a request ───────────────────────────
   //
   // Every other method here is a `fetch()`. These are not, and cannot be: the
@@ -633,7 +669,11 @@ export class AuthClient {
    */
   async signOut(): Promise<{ revoked: boolean; error?: Error }> {
     let error: Error | undefined
-    if (this._c.token) {
+    // `hasCredential`, not `token`: in cookie mode the credential is an httpOnly
+    // cookie no script can read, so a token gate skips the one call that ends
+    // the session and still answers `{ revoked: true }` — the person is told the
+    // session was revoked while it stays valid in the jar (FJS-787).
+    if (this._c.hasCredential) {
       try {
         await this._c._request('POST', `${this._prefix}/logout`, {})
       } catch (err) {
@@ -770,6 +810,43 @@ export interface ApiKeyInfo {
   expiresAt?: string | null
 }
 
+// ─── PresenceClient — client.presence ───────────────────────────────────────
+//
+// The client half of the channel presence protocol. Two verbs and no state of
+// its own: the meta lives on the client, because the thing that invalidates it
+// is a reconnect.
+//
+// It is deliberately NOT called subscribe/unsubscribe even though those are the
+// frame types on the wire. `subscribe` does not subscribe — the server owns
+// channel membership and says so at transport/channels.ts, and `unsubscribe` is
+// a no-op there. Publishing the wire words as the public verbs would name the
+// one thing this cannot do.
+
+class PresenceClient {
+  constructor(private _client: JunctionClient) {}
+
+  /**
+   * Publish this connection's meta for a channel, and ask for its roster.
+   *
+   * Queued while the socket is down and re-sent on every connect, because a
+   * component that wants presence is mounted long before — and long after —
+   * any one socket. The answer comes back as a `presence:sync` event.
+   *
+   * The roster is entitled by CHANNEL MEMBERSHIP, which the app decides in its
+   * own `channels()` setup: a connection this app never joined to the channel
+   * is answered with nothing, and an anonymous connection is not tracked at
+   * all. Nothing here can widen that.
+   */
+  announce(channelId: string, meta: Record<string, unknown> = {}): void {
+    this._client._presenceSet(channelId, meta)
+  }
+
+  /** Stop publishing meta for a channel. Membership is not this client's to drop. */
+  release(channelId: string): void {
+    this._client._presenceClear(channelId)
+  }
+}
+
 // ─── JunctionClient ─────────────────────────────────────────────────────────
 
 export class JunctionClient extends EventEmitter {
@@ -855,6 +932,11 @@ export class JunctionClient extends EventEmitter {
   _noteConnected(msg: Record<string, unknown> = {}): void {
     this._wsReady = true
     this._noteServerBuild(msg[BUILD_FIELD])
+    // A reconnect is a NEW connection to the server, with no presence meta and
+    // no membership carried over, so every announcement this client has made
+    // has to be made again. Before `connect` fires, so a listener that reads a
+    // roster is not reading the previous socket's.
+    this._presenceAnnounce()
     this.emit('connect')
 
     if (this._everConnected) {
@@ -909,6 +991,17 @@ export class JunctionClient extends EventEmitter {
   private _cookieAuth: boolean
 
   private _services: Map<string, ServiceProxy<Record<string, unknown>>> = new Map()
+
+  /**
+   * The presence meta this connection has announced, per channel.
+   *
+   * Held here rather than by the caller because the thing that invalidates it
+   * is a RECONNECT, which no caller sees: the server keys presence by
+   * connection id, so a new socket is a new connection with no meta and no
+   * roster, and whatever announced it is long past the call that did.
+   */
+  private _presenceMeta: Map<string, Record<string, unknown>> = new Map()
+  private _presenceApi: PresenceClient | null = null
 
   /**
    * One node per row, keyed by model — the synced truth every view points at.
@@ -970,6 +1063,50 @@ export class JunctionClient extends EventEmitter {
   get auth(): AuthClient {
     if (!this._auth) this._auth = new AuthClient(this, this._authPrefix, this._authNames)
     return this._auth
+  }
+
+  /**
+   * Presence — who else is on this channel, and what this connection publishes
+   * about itself.
+   *
+   * Socket-only and it has no HTTP fallback: presence is a fact about a live
+   * connection, and a request that opens and closes one has nothing to be
+   * present in.
+   */
+  get presence(): PresenceClient {
+    if (!this._presenceApi) this._presenceApi = new PresenceClient(this)
+    return this._presenceApi
+  }
+
+  /**
+   * Send this connection's meta for one channel, or for every channel it has
+   * announced.
+   *
+   * The server's `subscribe` frame does NOT join a channel — the app decides
+   * membership — so this is *here is my meta, send me the roster*, and a frame
+   * naming a channel this connection is not in is dropped there in silence.
+   */
+  _presenceAnnounce(channelId?: string): void {
+    if (!this._wsReady || !this._ws) return
+    const ids = channelId === undefined ? [...this._presenceMeta.keys()] : [channelId]
+    for (const id of ids) {
+      if (!this._presenceMeta.has(id)) continue
+      this._ws.send(JSON.stringify({
+        type: 'subscribe', channel: id, meta: this._presenceMeta.get(id),
+      }))
+    }
+  }
+
+  _presenceSet(channelId: string, meta: Record<string, unknown>): void {
+    this._presenceMeta.set(channelId, meta)
+    this._presenceAnnounce(channelId)
+  }
+
+  _presenceClear(channelId: string): void {
+    if (!this._presenceMeta.delete(channelId)) return
+    if (this._wsReady && this._ws) {
+      this._ws.send(JSON.stringify({ type: 'unsubscribe', channel: channelId }))
+    }
   }
 
   setToken(token: string | null): void {
@@ -1210,13 +1347,23 @@ export class JunctionClient extends EventEmitter {
 
       const cmp = orderOf()
       if (!cmp) {
-        // No order to place it by. Appending is what this did before there was
-        // a comparator and is still the only defensible move — but the list can
-        // now be longer than the page it claims to be, so say so rather than
-        // trimming a row chosen at random. Dropping the row the user just
-        // created, to honor a page size, is the worse of the two.
+        // No order to place it by, so nothing here can know whether this row
+        // belongs on the page at all — which is the position page 2 is already
+        // in, and it takes the same answer: count it, do not guess.
+        //
+        // Appending unconditionally is what this did, and a live list then grew
+        // without bound — measured, 3000 pushes into a `load({}, { limit: 20 })`
+        // reached 3003 rows and took the process from 107 MB to 221 MB
+        // (`FJS-766`). Trimming instead would drop a server row chosen at
+        // random, which is worse than not showing it.
+        //
+        // It bounds GROWTH and nothing else. A row already on this page took
+        // the `present` branch in `apply` and never reaches here, so a patch to
+        // one still applies at any page size; and a page that is not yet full
+        // still appends, so the row the caller just created shows on the
+        // ordinary short list.
+        if (limit !== null && store.get().length >= limit) return stale.bump()
         store.upsert(record, idField)
-        if (limit !== null && store.get().length > limit) stale.bump()
         return
       }
 

@@ -48,7 +48,13 @@ export interface IMail {
 // ─── Mail builder ─────────────────────────────────────────────────────────
 // Fluent API — same feel as Total.js mail builder.
 
-import { assertMessageAddresses, assertHeaderValue } from './smtp.ts'
+import { assertMessageAddresses, assertHeaderValue, assertHeaderName } from './smtp.ts'
+
+// Re-exported because a test double implementing `IMail` has to accept exactly
+// what the real mailer accepts. A double that took a message SMTP would refuse
+// is worse than no double: the test passes and the send fails in production
+// (`FJS-904`). One owner for the rule, in `smtp.ts`; this is the door to it.
+export { assertMessageAddresses, assertHeaderValue, assertHeaderName } from './smtp.ts'
 
 export function createMessage(subject: string, html?: string): MailBuilder {
   return new MailBuilder(subject, html)
@@ -231,10 +237,32 @@ export interface SmtpMailerOptions {
   from:     string       // default sender address
   tls?:     boolean      // auto-true on port 465
   replyTo?: string
+  /** Per-read deadline for the SMTP conversation. Default 30s. */
+  timeoutMs?: number
+}
+
+/**
+ * The parts of a message that become header lines but are not addresses.
+ *
+ * Graded HERE as well as in the transport, which is what the address rules
+ * already do: at the adapter a mistake is cheapest to attribute, and — the
+ * reason this is not merely tidy — a refusal raised while building the MIME
+ * body happens with a socket already open and a session mid-transaction, where
+ * it read as a hang rather than as a refusal.
+ */
+function assertMessageHeaders(msg: MailMessage): void {
+  for (const [k, v] of Object.entries(msg.headers ?? {})) {
+    assertHeaderName(k)
+    assertHeaderValue(v, `headers.${k}`)
+  }
+  for (const a of msg.attachments ?? []) {
+    assertHeaderValue(a.filename, 'attachment.filename')
+    if (a.type !== undefined) assertHeaderValue(a.type, 'attachment.type')
+  }
 }
 
 export function createSmtpMailer(opts: SmtpMailerOptions): IMail {
-  const { host, port = 587, user, pass, from: defaultFrom, tls, replyTo: defaultReplyTo } = opts
+  const { host, port = 587, user, pass, from: defaultFrom, tls, replyTo: defaultReplyTo, timeoutMs } = opts
 
   return {
     async send(message: MailMessage): Promise<SendResult> {
@@ -242,8 +270,9 @@ export function createSmtpMailer(opts: SmtpMailerOptions): IMail {
       // The DEFAULTS are what will be sent, so they are what is graded — a
       // configured `from` reaches the wire exactly as a stated one does.
       assertMessageAddresses({ ...message, from: message.from ?? defaultFrom, replyTo: message.replyTo ?? defaultReplyTo })
+      assertMessageHeaders(message)
       await sendMail(
-        { host, port, user, pass, tls },
+        { host, port, user, pass, tls, timeoutMs },
         {
           from:     message.from    ?? defaultFrom,
           to:       message.to,
@@ -251,6 +280,14 @@ export function createSmtpMailer(opts: SmtpMailerOptions): IMail {
           html:     message.html,
           text:     message.text,
           replyTo:  message.replyTo ?? defaultReplyTo,
+          // The four the adapter used to leave out. They were declared on
+          // `MailMessage`, validated on the way in, and then dropped between
+          // here and the wire — so `sent` meant "sent, minus these" and the
+          // Resend adapter beside this one mapped every one of them.
+          cc:          message.cc,
+          bcc:         message.bcc,
+          headers:     message.headers,
+          attachments: message.attachments,
         }
       )
       return { id: crypto.randomUUID(), message: 'sent' }
@@ -262,9 +299,10 @@ export function createSmtpMailer(opts: SmtpMailerOptions): IMail {
       // handshake (and looking like a connection flood to the server).
       const { sendMailBatch } = await import('./smtp.ts')
       const results = await sendMailBatch(
-        { host, port, user, pass, tls },
+        { host, port, user, pass, tls, timeoutMs },
         messages.map(m => {
           assertMessageAddresses({ ...m, from: m.from ?? defaultFrom, replyTo: m.replyTo ?? defaultReplyTo })
+          assertMessageHeaders(m)
           return {
           from:    m.from    ?? defaultFrom,
           to:      m.to,
@@ -272,6 +310,10 @@ export function createSmtpMailer(opts: SmtpMailerOptions): IMail {
           html:    m.html,
           text:    m.text,
           replyTo: m.replyTo ?? defaultReplyTo,
+          cc:          m.cc,
+          bcc:         m.bcc,
+          headers:     m.headers,
+          attachments: m.attachments,
           }
         })
       )

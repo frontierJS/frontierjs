@@ -122,17 +122,69 @@ function parseScalar(raw) {
 
 // ─── Script block ─────────────────────────────────────────────────────────────
 
+// A `.md` body is content. Exactly one <script> may appear in it and it must be
+// the first thing after the frontmatter — that one is the component's instance
+// script, and nothing else is code.
+//
+// The match used to be unanchored: the FIRST <script> found anywhere, at any
+// depth, in any paragraph, was hoisted into the component factory and deleted
+// from the output. A static build then imported that module under Bun with full
+// filesystem, network and `process` access, and the page it produced looked
+// clean. Any pipeline prerendering authored or imported Markdown — a docs
+// directory, a CMS export, a contributed post — executed it.
+const LEADING_SCRIPT_RE = /^\s*<script([^>]*)>[\s\S]*?<\/script>/
+const ANY_SCRIPT_RE     = /<script([^>]*)>[\s\S]*?<\/script>/gi
+
+// `type` says whether a browser would run the block, but Mesa's compiler parses
+// whatever <script> it finds as JavaScript regardless. So a non-JS type is not a
+// safe passenger either — `<script type="application/ld+json">` left in the body
+// reaches the compiler and dies as a script parse error somewhere further down.
+// One rule covers both: a `.md` body carries no <script> but the leading one,
+// and that one has to be JavaScript.
+const JS_SCRIPT_TYPES = new Set([
+  '', 'module', 'text/javascript', 'application/javascript',
+  'text/ecmascript', 'application/ecmascript',
+])
+
+function scriptTypeOf(attrs) {
+  const m = /\btype\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrs || '')
+  return (m ? (m[1] ?? m[2] ?? m[3]) : '').trim().toLowerCase()
+}
+
+function refusal(attrs, why) {
+  return `<script${attrs}> in a Markdown body: ${why}. A .md carries one leading ` +
+    '<script> block, which is the component\'s script; put anything else in a ' +
+    'layout or a .mesa component.'
+}
+
 /**
- * Extract the first <script> block from Markdown body.
- * Returns { script: string (with tags), body: string (without script block) }.
+ * Extract the leading <script> block from a Markdown body.
+ *
+ * Returns { script, body, errors } — `errors` names every <script> refused, and
+ * a refused block is removed from the body so it can neither run nor reach the
+ * Mesa compiler as a second script.
  */
 function extractScript(body) {
-  const match = body.match(/(<script[^>]*>[\s\S]*?<\/script>)/)
-  if (!match) return { script: '', body }
-  return {
-    script: match[1],
-    body: body.slice(0, match.index) + body.slice(match.index + match[0].length)
+  const errors = []
+  let script   = ''
+  let rest     = body
+
+  const lead = LEADING_SCRIPT_RE.exec(body)
+  if (lead) {
+    rest = body.slice(lead[0].length)
+    if (JS_SCRIPT_TYPES.has(scriptTypeOf(lead[1]))) {
+      script = lead[0].trimStart()
+    } else {
+      errors.push(refusal(lead[1], 'a leading block is compiled as JavaScript, so it may not declare another type'))
+    }
   }
+
+  rest = rest.replace(ANY_SCRIPT_RE, (_, attrs) => {
+    errors.push(refusal(attrs, 'only the block before any content is the component\'s script'))
+    return ''
+  })
+
+  return { script, body: rest, errors }
 }
 
 /**
@@ -276,6 +328,11 @@ function decodeEntities(str) {
   })
 }
 
+// Carries `\{` across the Markdown step, which would otherwise strip the
+// backslash as a CommonMark escape and hand Mesa a live `{…}`. A private-use
+// codepoint, so no author text can collide with it.
+const BRACE_ESCAPE = '\uE0F1MESA_LBRACE\uE0F1'
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -293,7 +350,7 @@ export async function compileMd(source, config = {}) {
   const { frontmatter, body: afterFm } = parseFrontmatter(source)
 
   // 2. Script block
-  const { script: scriptBlock, body: mdBody } = extractScript(afterFm)
+  const { script: scriptBlock, body: mdBody, errors: scriptErrors } = extractScript(afterFm)
   const innerScript = scriptBlock
     ? fixUninitialized(
         scriptBlock
@@ -303,7 +360,10 @@ export async function compileMd(source, config = {}) {
     : ''
 
   // 3. Protect block-level Mesa directives
-  const { protected: protectedMd, map } = protect(mdBody)
+  //     `\{` is the escape for a literal brace (FJS-D213), and CommonMark eats
+  //     the backslash itself — `\{title}` reaches Mesa as `{title}` and
+  //     interpolates. Carried across the Markdown step as a sentinel instead.
+  const { protected: protectedMd, map } = protect(mdBody.replace(/\\\{/g, BRACE_ESCAPE))
 
   // 4. Markdown → HTML
   const rawHTML = await markdownToHTML(protectedMd, {
@@ -322,7 +382,10 @@ export async function compileMd(source, config = {}) {
     .replace(/<pre><code class="language-([^"]+)">([\s\S]*?)<\/code><\/pre>/g,
       (_, lang, encoded) => {
         // rehype already HTML-encoded the content — decode before passing to glow
-        const code = decodeEntities(encoded)
+        // Restored BEFORE glow: the sentinel is plain text, and glow tokenizes
+        // it apart, so restoring afterwards finds nothing to replace and the
+        // sentinel is served to the reader.
+        const code = decodeEntities(encoded).split(BRACE_ESCAPE).join('\\{')
         // Strip the class suffix rehype adds (e.g. "js mn3k01re1" → "js")
         const language = lang.split(' ')[0]
         const highlighted = glow(code.trimEnd(), { language, prefix: false, mark: false })
@@ -331,12 +394,15 @@ export async function compileMd(source, config = {}) {
     )
     // Fenced code blocks without a language: just escape {}
     .replace(/<pre><code>([\s\S]*?)<\/code><\/pre>/g, (_, content) =>
-      '<pre><code>' + content.replace(/\{/g, '&#123;').replace(/\}/g, '&#125;') + '</code></pre>'
+      '<pre><code>' + content.split(BRACE_ESCAPE).join('\\{').replace(/\{/g, '&#123;').replace(/\}/g, '&#125;') + '</code></pre>'
     )
     // Inline code: escape {}
     .replace(/<code([^>]*)>([\s\S]*?)<\/code>/g, (_, attrs, content) =>
-      `<code${attrs}>${content.replace(/\{/g, '&#123;').replace(/\}/g, '&#125;')}</code>`
+      `<code${attrs}>${content.split(BRACE_ESCAPE).join('\\{').replace(/\{/g, '&#123;').replace(/\}/g, '&#125;')}</code>`
     )
+    // Outside code, the escaped brace becomes a character reference — the one
+    // spelling of `{` that reaches the DOM as text and never opens a `{…}`.
+    .split(BRACE_ESCAPE).join('&#123;')
 
   // 6. Build merged <script> block
   const fmExports = frontmatterToExports(frontmatter, innerScript)
@@ -349,13 +415,24 @@ export async function compileMd(source, config = {}) {
     .filter(Boolean)
     .join('\n\n')
 
-  // 7. Compile as Mesa
-  const ctx = await compile(mesaSource, config)
+  // 7. Compile as Mesa. In prose `{…}` is a bare path and nothing else
+  //     (FJS-D213); `.mesa` is unchanged.
+  const ctx = await compile(mesaSource, { ...config, pathInterpolation: true })
 
   // 8. Attach metadata
   ctx.frontmatter  = frontmatter
   ctx.layout       = frontmatter.layout ?? null
   ctx.markdownHTML = safeHtml
+
+  if (scriptErrors.length) {
+    ctx.analysis ??= {}
+    ctx.analysis.errors ??= []
+    ctx.analysis.errors.push(...scriptErrors)
+    // Reported here as well as collected: compile() drains the error list to
+    // `warning` as its last act, and these are pushed after it has returned, so
+    // a caller watching only that channel would be told nothing.
+    scriptErrors.forEach((e) => ctx.warning?.({ message: e }))
+  }
 
   return ctx
 }

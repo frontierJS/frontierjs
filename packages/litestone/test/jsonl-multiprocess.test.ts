@@ -11,7 +11,7 @@
 // sit in it. Measured on the pre-fix code, and the numbers are in `CHANGES.md`.
 
 import { describe, test, expect, afterEach } from 'bun:test'
-import { mkdtempSync, rmSync, existsSync, writeFileSync, readFileSync, appendFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, existsSync, writeFileSync, readFileSync, appendFileSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -19,6 +19,7 @@ import { spawnSync } from 'node:child_process'
 import { Database } from 'bun:sqlite'
 import { createClient } from '../src/index.js'
 import { openIndexDb, withWriteLock, indexPathFor } from '../src/drivers/jsonl-index.js'
+import { compactJsonl } from '../src/tools/retention.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const dirs: string[] = []
@@ -275,6 +276,100 @@ describe('compaction', () => {
     expect(res?.removed).toBeGreaterThan(0)
     const { readdirSync } = await import('node:fs')
     expect(readdirSync(dir).filter(f => f.includes('.tmp'))).toEqual([])
+  })
+})
+
+describe('compaction keeps the index it was handed', () => {
+
+  // The shared SCHEMA's `Entry` has no DateTime, so `compactJsonl` finds no
+  // timestamp field, `timeOk` is true and it returns before the sweep. This one
+  // declares the column the retention window is read against.
+  const AGED = (dir: string) => `
+    database main  { path "${join(dir, 'main.db')}" }
+    database trail { path "${join(dir, 'trail.jsonl')}"  driver jsonl }
+    model Note  { id Int @id  body String }
+    model Entry {
+      id        String   @id @default(uuid())
+      actorId   String
+      body      String
+      createdAt DateTime @default(now())
+      @@db(trail)
+      @@index([actorId])
+    }`
+
+  /** The parsed model, so the shape the index is built from is the real one.
+   *  A hand-written literal is missing `attributes` and `rebuildIndex` throws
+   *  on it — which is itself the reason to ask the client. */
+  const entryModel = (db: { $schema: { models: Array<{ name: string }> } }) =>
+    db.$schema.models.find(m => m.name === 'Entry')
+
+  // The claim `FJS-D180` turns on, and nothing pinned it. The sidecar is in WAL
+  // and a live process holds it open; an unlink leaves `-wal`/`-shm` behind and
+  // that process's next write lands in an inode with no directory entry —
+  // answering ok the whole time, which is what makes WAL turn a crash into a
+  // lie. A rollback journal would have answered SQLITE_READONLY_DBMOVED, so the
+  // two are one decision and neither is visible from the other.
+  //
+  // Asserted as the INODE rather than as *the file exists*: unlink-then-recreate
+  // leaves a file there and is exactly the state being refused.
+  test('the same inode survives a sweep, rather than a fresh file in its place', async () => {
+    const dir  = tmp()
+    const file = join(dir, 'trail.jsonl')
+    const db   = await createClient({ db: join(dir, 'main.db'), schema: AGED(dir) })
+    const sys  = db.asSystem()
+    for (let i = 0; i < 20; i++) await sys.entry.create({ data: { actorId: 'x', body: `b${i}` } })
+
+    // An aged row at the FRONT — oldest-first, or `compactJsonl`'s cheap
+    // pre-check returns before the sweep and the inode assertion passes over
+    // a no-op.
+    const old = new Date(Date.now() - 400 * 86_400_000).toISOString()
+    const trail = readFileSync(file, 'utf8')
+    writeFileSync(file, JSON.stringify({ id: 'aged', actorId: 'x', body: 'old', createdAt: old }) + '\n' + trail)
+
+    const indexPath = indexPathFor(file)
+    const before    = statSync(indexPath).ino
+    expect(before).toBeGreaterThan(0)
+
+    const result = compactJsonl(file, entryModel(db), '90d', null)
+
+    expect(result).not.toBeNull()
+    expect(readFileSync(file, 'utf8').includes('"body":"old"')).toBe(false)
+    expect(statSync(indexPath).ino).toBe(before)
+  })
+
+  // The pair, and it took two goes to make it one. A compaction that did
+  // nothing keeps the inode too, so what must also hold is that the rows read
+  // back through the index are still their own after the rewrite moved them.
+  //
+  // The first version of this planted the aged line and then compacted, which
+  // put the file back to the byte layout the index was built over — so every
+  // offset was accidentally correct again and the test passed with the rebuild
+  // stubbed out. The index has to be built over the layout that INCLUDES the
+  // line about to be removed, or nothing here is measuring a rebuild.
+  test('and it rebuilds what the rewrite invalidated', async () => {
+    const dir  = tmp()
+    const file = join(dir, 'trail.jsonl')
+    const old  = new Date(Date.now() - 400 * 86_400_000).toISOString()
+    const now  = new Date().toISOString()
+
+    appendFileSync(file, JSON.stringify({ id: 'aged', actorId: 'keep', body: 'gone', createdAt: old }) + '\n')
+    for (let i = 0; i < 30; i++)
+      appendFileSync(file, JSON.stringify({ id: `k-${i}`, actorId: 'keep', body: `b${i}`, createdAt: now }) + '\n')
+
+    // Built from the file as it stands, aged line included — so every recorded
+    // offset is one line further in than it will be after the sweep.
+    const db  = await createClient({ db: join(dir, 'main.db'), schema: AGED(dir) })
+    const sys = db.asSystem()
+    expect(await sys.entry.findMany({ where: { actorId: 'keep' } })).toHaveLength(31)
+
+    compactJsonl(file, entryModel(db), '90d', null)
+
+    const rows = await sys.entry.findMany({ where: { actorId: 'keep' } })
+    // A stale offset answers another row's bytes or fails to parse at all, and
+    // both are visible here: 30 rows, each its own.
+    expect(rows).toHaveLength(30)
+    expect(rows.every((r: { actorId: string; body: string } | null) =>
+      r?.actorId === 'keep' && r.body.startsWith('b'))).toBe(true)
   })
 })
 

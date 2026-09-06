@@ -12,51 +12,71 @@ Standalone package — same pattern as `@frontierjs/auth`. No changes to Junctio
 
 ```bash
 bun add @frontierjs/notifications
+fli notifications:install
 ```
 
-Then add the model below to your `db/schema.lite` and migrate:
-
-```bash
-fli db:migrate
-```
+`notifications:install` appends the model this package ships to your
+`db/schema.lite` and pushes it. `fli new --with notifications` runs it for you.
+§ Schema below is what that model says and why.
 
 ---
 
 ## Schema
 
-The model this package expects in your `schema.lite`:
+One model, and it is the app's rather than this package's — the same split
+`@frontierjs/auth` makes between `user.lite` and `auth.lite`. It ships as a real `.lite` file so there is one copy of the text and an app's
+copy can be graded against it — `fli notifications:install` is what appends it.
+Read `db/notification.lite` for the column-by-column reasoning; the shape is:
 
 ```litestone
-model Notification {              // PascalCase singular → accessor db.notification
+model Notification {
   id          Int       @id
-  userId      String              // String, not Int — @frontierjs/auth issues uuid ids
-                                  // (use Int only if your own User.id is an Int)
-  type        String              // stable notification id, e.g. 'PaymentReceived'
-  data        Json                // payload built by the inApp formatter — varies by type
-  contextType String?             // optional: 'Order', 'Project', 'Invoice'
-  contextId   Int?                // optional: id of the related record (loose ref, no FK)
+  userId      String              // String, not Int — auth issues uuid ids
+  type        String              // the notification's stable name
+  data        Json                // whatever its formatter built
+  contextType String?             // a loose reference, with no foreign key
+  contextId   Int?
   readAt      DateTime?           // null = unread
   createdAt   DateTime  @default(now())
 
+  @@db(main)
   @@gate("0.8.4.8")
   @@allow('read',   userId == auth().id)
   @@allow('update', userId == auth().id)
 }
 ```
 
-Gate is RCUD: read=open (the row policy scopes it to your own records), create=SYSTEM
-(only `db.asSystem()`, which is what `notify()` uses), update=USER (mark as read),
-delete=SYSTEM.
+**It is copied rather than imported, on purpose.** Everything an app does next
+happens to this model — a relation back to its own `User`, a tenant key, a
+column its bell menu wants, `@@log(audit)` — and none of that is this package's
+to decide. What the copy costs is drift, which is why the file is exported:
+`fli check`'s `package-model-drift` compares your copy against it and names a
+column this package writes that yours does not have.
 
-**Eight, not nine.** `9` is LOCKED — an absolute wall that `asSystem()` does not pass
-either — so a `9` in the create slot would stop `notify()` from ever writing a row.
-`8` is SYSTEM. Comments use `//`; `--` is a parse error. Row policies are
+Gate is RCUD: read=open (the row policy scopes it to your own records),
+create=SYSTEM (only `db.asSystem()`, which is what `notify()` uses), update=USER
+(mark as read), delete=SYSTEM.
+
+**Eight, not nine.** `9` is LOCKED — an absolute wall that `asSystem()` does not
+pass either — so a `9` in the create slot would stop `notify()` from ever writing
+a row. `8` is SYSTEM. Comments use `//`; `--` is a parse error. Row policies are
 `@@allow`/`@@deny` with schema expressions (`auth().id`) — there is no `@@policy`
 attribute and no JS-string predicate.
 
-`type` stores the notification's stable identifier — its file name (`PaymentReceived.notification.ts`), or the `type:` it states. Not a foreign key, not an enum: adding a notification type requires no migration.
+`type` stores the notification's stable identifier — its file name
+(`PaymentReceived.notification.ts`), or the `type:` it states. Not a foreign key,
+not an enum: adding a notification type requires no migration.
 
-`contextType`/`contextId` are a loose polymorphic reference. No foreign key by design — notifications survive record deletion without cascades.
+`contextType`/`contextId` are a loose polymorphic reference. No foreign key by
+design — notifications survive record deletion without cascades.
+
+That is also why `fli check`'s `polymorphic-subject` asks about `contextType`:
+with no foreign key, nothing refuses a value that names nothing — not a
+migration, not a seed, not `asSystem()`. An app whose contexts are a known set
+constrains the one column that can be, `@@check("contextType IN ('Order',
+'Invoice')")` or a `@values` set; an app whose set grows with every model
+baselines the rule to say so. Either answer is fine and neither is the default,
+which is why the check asks.
 
 ---
 

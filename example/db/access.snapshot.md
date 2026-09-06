@@ -11,7 +11,7 @@ without a schema change you meant to make is a shipped security bug.
 
 ```
 39 models · 39 gated · 0 unrestricted
-13 with row policies · 21 with protected fields · 15 declared moves · 8 @system · 1 @seals
+13 with row policies · 20 with protected fields · 15 declared moves · 8 @system · 1 @seals
 ```
 
 ## Gates
@@ -112,7 +112,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 ### `OrderLine`
 
 - allow **read** — `auth().isStaff`
-- allow **read** — `userId == auth().id`
+- allow **read** — `order.userId == auth().id`
 
 ### `Payment`
 
@@ -151,7 +151,7 @@ rather than refusing the row.
 | `Cart` | `handoffCode` | `@guarded` |
 | `Cart` | `handoffExpires` | `@guarded` |
 | `CartLine` | `unitPrice` | `@system` |
-| `Credential` | `value` | `@guarded(all)` |
+| `Credential` | `value` | `@guarded` |
 | `Credential` | `accessToken` | `@secret` |
 | `Credential` | `refreshToken` | `@secret` |
 | `CreditNote` | `userId` | `@system` |
@@ -167,8 +167,8 @@ rather than refusing the row.
 | `Invoice` | `userId` | `@system` |
 | `InvoiceLine` | `userId` | `@system` |
 | `JournalEntry` | `postedAt` | `@system` |
-| `OauthFlow` | `state` | `@guarded(all)` |
-| `OauthFlow` | `verifier` | `@guarded(all)` |
+| `OauthFlow` | `state` | `@guarded` |
+| `OauthFlow` | `verifier` | `@guarded` |
 | `Order` | `subtotal` | `@system` |
 | `Order` | `discountCode` | `@system` |
 | `Order` | `discountLabel` | `@system` |
@@ -180,7 +180,6 @@ rather than refusing the row.
 | `Order` | `tax` | `@system` |
 | `Order` | `trackingCode` | `@system` |
 | `Order` | `userId` | `@system` |
-| `OrderLine` | `userId` | `@system` |
 | `Payment` | `actionUrl` | `@system` |
 | `Payment` | `userId` | `@system` |
 | `PaymentMethod` | `providerRef` | `@guarded` |
@@ -195,7 +194,7 @@ rather than refusing the row.
 | `Payslip` | `net` | `@system` |
 | `Payslip` | `employerCost` | `@system` |
 | `Payslip` | `sentAt` | `@system` |
-| `Session` | `token` | `@guarded(all)` |
+| `Session` | `token` | `@guarded` |
 | `Subscription` | `currentPeriodStart` | `@system` |
 | `Subscription` | `currentPeriodEnd` | `@system` |
 | `Subscription` | `cancelledAt` | `@system` |
@@ -204,7 +203,7 @@ rather than refusing the row.
 | `User` | `emailVerified` | `@allow('write', auth().isAdmin)` |
 | `User` | `role` | `@allow('write', auth().isAdmin)` |
 | `User` | `isStaff` | `@allow('write', auth().isAdmin)` |
-| `Verification` | `value` | `@guarded(all)` |
+| `Verification` | `value` | `@guarded` |
 
 ## State transitions
 

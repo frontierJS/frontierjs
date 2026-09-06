@@ -20,6 +20,32 @@ const _loadedComponents = new Map()
  * @param {string} routeId
  * @param {object} module — ES module object
  */
+/**
+ * Is this node a link, and where does it point?
+ *
+ * Two facts about an SVG `<a>` make the obvious spellings wrong, and both were
+ * measured in Chrome rather than assumed:
+ *
+ *   • `tagName` is `'a'`, lowercase. An HTML anchor in an HTML document is
+ *     uppercased; an SVG element keeps its qualified name. So `=== 'A'` walks
+ *     straight past an inline SVG link, and the click falls through to a full
+ *     page load with the router none the wiser.
+ *   • `.href` is an `SVGAnimatedString`, not a string — and a TRUTHY one, so a
+ *     guard that only checks for a value hands an object to whatever resolves
+ *     it and gets `[object SVGAnimatedString]`.
+ *
+ * `getAttribute('href')` is the one spelling both kinds answer, so it is the
+ * one used; the caller resolves it against the current URL, which is what makes
+ * a relative and a fragment href work (`FJS-790`).
+ *
+ * @param {any} el
+ * @returns {string|null} the raw href attribute, or null if this is not a link
+ */
+export function linkHrefOf(el) {
+  if (el?.tagName?.toUpperCase?.() !== 'A') return null
+  return el.getAttribute?.('href') ?? null
+}
+
 export function registerModule(routeId, module) {
   _loadedModules.set(routeId, module)
   if (module.default) {
@@ -282,16 +308,10 @@ export function hmrInvalidate(filePath) {
   // Clear from file→component map so resolveChain picks up new version
   _fileToComponent.delete(filePath)
 
-  // Clear chain caches for any route whose chain included this file
-  for (const [routeId, chain] of _chainCache) {
-    const hasFile = chain.some(e => {
-      // Match layout by file path or page by component
-      const comp = _fileToComponent.get(filePath)
-      return e.component === comp
-    })
-    // Always clear — simpler and safe; will be rebuilt on next nav
-    _chainCache.delete(routeId)
-  }
+  // Clear every chain cache. Narrowing it to the chains that actually contain
+  // this file would be the same work as rebuilding them, and a chain is rebuilt
+  // on the next navigation anyway.
+  _chainCache.clear()
 
   // Clear stable entry cache for this path
   _entryCache.delete(filePath)

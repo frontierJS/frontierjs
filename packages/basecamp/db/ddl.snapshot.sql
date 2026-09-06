@@ -243,6 +243,9 @@ CREATE TABLE IF NOT EXISTS "session" (
   "ipAddress" TEXT,
   "userAgent" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "impersonatingUserId" TEXT,
+  "impersonationReason" TEXT,
+  "impersonationEndsAt" TEXT,
   FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_session_userId" ON "session" ("userId");
@@ -501,12 +504,13 @@ CREATE TABLE IF NOT EXISTS "audit_event" (
   "workspaceId" TEXT,
   "actorId" TEXT,
   "actorType" TEXT NOT NULL DEFAULT 'user',
+  "onBehalfOfId" TEXT,
   "action" TEXT NOT NULL,
   "subjectType" TEXT NOT NULL,
   "subjectId" TEXT NOT NULL,
   "diff" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("actorType" IN ('user', 'api_key', 'system')),
+  CHECK ("actorType" IN ('user', 'api_key', 'system', 'support')),
   FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_audit_event_workspaceId" ON "audit_event" ("workspaceId");

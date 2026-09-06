@@ -16,6 +16,8 @@
 
 import { resolveRef, modelNameFor } from './schema-registry.js'
 import { DIRECTIVE_PARAMS }          from '@frontierjs/toolbelt/directives'
+import { levelPasses }               from '@frontierjs/toolbelt/gate'
+import { hookChainMessage }          from '@frontierjs/toolbelt/hooks'
 import { derefFieldSchema, fieldShape } from '@frontierjs/toolbelt/jsonschema'
 
 // `derefFieldSchema` is `@frontierjs/toolbelt/jsonschema`'s — the same walk
@@ -481,6 +483,31 @@ function _builtinControl(rule) {
     }
   }
 
+  // A SCALED integer — `@money(USD)` stores cents, `@scale(2)` stores
+  // hundredths — and the number a person types is in the other unit. The row
+  // below answers `{ control: 'input', step: 1 }` for an integer, which is the
+  // correct control for a count and a spinner that is out by a factor of a
+  // hundred for these: 42 typed into a `@money` box is forty-two CENTS, and
+  // nothing at any layer refuses it, because 42 is a legal value of the column.
+  //
+  // So there is no built-in answer here, and the table says so the way it says
+  // it for an array or a `Json` document — `control: null` plus a reason, which
+  // leaves the field IN `formFields()` with the sentence beside it rather than
+  // dropping it silently. What the control IS remains an app's decision
+  // (`FJS-D17`): the currency's symbol, whether the box is in major units, what
+  // a blank means, and — for `@scale` — what the number even measures, since
+  // `example`'s `Discount.value` is a percentage on half its rows and money on
+  // the other half. `registerControl` is asked before this table, so an app or
+  // a kit that has answered wins and this is only what happens when nobody has.
+  if (rule['x-money'] || rule['x-scale']) {
+    return {
+      control: null,
+      reason: rule['x-money']
+        ? '@money — register a control; the box is in major units and the column is minor'
+        : '@scale — register a control; the box is in decimals and the column is a scaled integer',
+    }
+  }
+
   switch (rule.type) {
     case 'boolean':
       return { control: 'checkbox' }
@@ -598,7 +625,7 @@ export function formFieldList(fields, { only, except, model } = {}) {
 /**
  * Which column of a related model a picker should SHOW, and how sure it is.
  *
- * A foreign key holds an id and nobody recognises an id, so something has to
+ * A foreign key holds an id and nobody recognizes an id, so something has to
  * choose the human column. `@@label(field)` in the seed is that answer, and it
  * arrives here as `x-label-field`; everything below it is a guess, kept because
  * a model that declared nothing still has to render something.
@@ -680,9 +707,13 @@ export function buildGate(schema) {
  * used is a worse and much quieter failure than showing one that errors, and
  * the server is the thing actually saying no.
  *
- * Levels are Litestone's 0–9 scale (STRANGER 0 … USER 4 … OWNER 6, SYSTEM 8).
- * A number is expected: mapping names to numbers here would be a hand-copy of
- * litestone's LEVELS and exactly the kind of duplicate that drifts.
+ * Levels are the 0–9 scale of `@frontierjs/toolbelt/gate` (STRANGER 0 … USER 4
+ * … OWNER 6, SYSTEM 8), and the comparison is that kit's `levelPasses` rather
+ * than a `>=` written here. The two are not the same function: 8 and 9 are
+ * SENTINELS, so `>=` renders a button for a LOCKED operation and hides one from
+ * the system context. Unreachable while every resolver clamps a caller to 0–7,
+ * which is what made it look like a style choice (`FJS-520`, ruled `FJS-D197`).
+ * A number is expected — mapping names to numbers is the kit's too.
  *
  * @param {object|null} gate       from buildGate()
  * @param {string} operation       'read'|'create'|'update'|'delete', or a
@@ -697,7 +728,7 @@ export function canAtLevel(gate, operation, level) {
   if (typeof need !== 'number') return true
   if (typeof level !== 'number') return true
 
-  return level >= need
+  return levelPasses(need, level)
 }
 
 // ── Transitions ───────────────────────────────────────────────────────────────
@@ -779,7 +810,7 @@ export function transitionsAt(spec, row, level) {
       let refusedBy = system ? 'system' : null
 
       if (allowed && gate != null && typeof level === 'number') {
-        allowed   = level >= gate
+        allowed   = levelPasses(gate, level)
         refusedBy = allowed ? null : 'gate'
       }
 
@@ -798,6 +829,26 @@ export class ResourceValidationError extends Error {
     this.name    = 'ResourceValidationError'
     this.service = service
     this.errors  = errors
+  }
+}
+
+/**
+ * Thrown when a resource's hook pipeline ends with nobody having produced an
+ * answer — an `around` that forgot `next()`, an `around` that swallowed the
+ * failure, or an `error` hook that cleared `ctx.error` and set no result.
+ *
+ * The words are `@frontierjs/toolbelt/hooks`' — jetty throws the same sentence
+ * from a class of its own, and a message written twice is a message that drifts.
+ */
+export class ResourceHookError extends Error {
+  constructor(service, method, phase, cause) {
+    super(hookChainMessage(service, method, phase))
+    this.name    = 'ResourceHookError'
+    this.service = service
+    this.method  = method
+    this.phase   = phase
+    // The failure the error hook discarded. Without it the original is gone.
+    if (cause !== undefined) this.cause = cause
   }
 }
 
@@ -995,6 +1046,15 @@ export const STALE_WRITE_MESSAGE =
   'This record changed while you were editing it. Reload to see the current version, then try again.'
 
 /**
+ * The sentence a form shows when the write landed and something after it did
+ * not. Exported for the same reason as the one above — an app matches it, or
+ * replaces it with its own wording.
+ */
+export const COMMITTED_MESSAGE =
+  'Your changes were saved, but a step after the save did not finish. ' +
+  'Reload before editing again — saving a second time would create a duplicate.'
+
+/**
  * The two revisions behind a stale write — the one the caller submitted, and the
  * one the row is at now. `null` for anything that is not a race, and for a race
  * whose error did not carry them.
@@ -1040,18 +1100,31 @@ export function toConflict(err) {
  * socket, a thrown string. That is not an empty result, it is a form-level
  * message, which is why this returns both halves.
  *
+ * `committed` is the third thing a form has to know and the one it cannot see:
+ * whether the write LANDED before the failure. An `after` hook that throws
+ * leaves the row written and the caller holding an error, so a form that offers
+ * Save again makes a second row. The resource marks the error (`err.committed`)
+ * and this reads it — a caller asking "what do I show" gets one answer, which
+ * is the whole reason this function is the owner.
+ *
  * @param {unknown} err
- * @returns {{ fields: Record<string,string>, message: string }}
+ * @returns {{ fields: Record<string,string>, message: string, committed: boolean }}
  *   `fields` is keyed for direct use as `<Field errors={…}>`; `message` is the
  *   form-level line, and is empty when the failure was entirely per-field.
  */
 export function toFieldErrors(err) {
   const fields = {}
   let message  = ''
+  const committed = err?.committed === true
+
+  // The write landed and something after it did not. Nothing per-field can be
+  // true of that — the payload was accepted — and the one thing the person must
+  // not be told is "it failed", because they will do it again.
+  if (committed) return { fields, message: COMMITTED_MESSAGE, committed }
 
   // A lost-update race has no field to blame and its raw message names a column
   // and two integers. Say the thing the person can act on instead.
-  if (isStaleWrite(err)) return { fields, message: STALE_WRITE_MESSAGE }
+  if (isStaleWrite(err)) return { fields, message: STALE_WRITE_MESSAGE, committed }
 
   for (const e of _errorList(err)) {
     const field = typeof e === 'object' && e !== null ? _fieldOf(e) : null
@@ -1078,7 +1151,7 @@ export function toFieldErrors(err) {
       : String(err ?? 'Request failed')
   }
 
-  return { fields, message }
+  return { fields, message, committed }
 }
 
 // Two boundaries name the offending field differently and both reach a form.
@@ -1105,6 +1178,13 @@ function _errorList(err) {
 
 // ── Coercion ──────────────────────────────────────────────────────────────────
 
+// A number as a PERSON types it, which is HTML's own valid-floating-point-number
+// grammar and deliberately not JavaScript's: a native `<input type="number">`
+// accepts `1e3` and reports `0x10` invalid, so reading them the same way is what
+// keeps the control and this table from disagreeing about the same box. No hex,
+// no binary, no octal, no separators, no `Infinity`.
+const NUMERIC = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/
+
 /**
  * Cast the strings a DOM control produces into the types the schema declares.
  *
@@ -1120,7 +1200,11 @@ function _errorList(err) {
  *     for an empty box is worse than the validation error. Blank handling is
  *     normalizeBlanks' job, and it runs after this.
  *   - A string that is not a clean number is left alone, so `validate()` can say
- *     so rather than passing NaN to the server.
+ *     so rather than passing NaN to the server. `integer` and `number` read the
+ *     SAME grammar for that (`NUMERIC`), which is the half that was missing:
+ *     `number` used bare `Number()`, so `0x10` became 16 and `0b101` became 5
+ *     in a price box while the identical string in a quantity box was refused
+ *     (`FJS-823`). One rule, one answer, whichever column it lands in.
  *   - Only string inputs are touched; a value already of the right type, or of
  *     some other type entirely, is left for validation to judge.
  *
@@ -1145,14 +1229,16 @@ export function coerceToSchema(fields, data) {
     const raw = data[name]
     if (typeof raw !== 'string' || raw === '') continue
 
-    if (rule.type === 'integer') {
-      if (/^[+-]?\d+$/.test(raw.trim())) write(name, Number(raw))
-      continue
-    }
-
-    if (rule.type === 'number') {
-      const n = Number(raw)
-      if (Number.isFinite(n)) write(name, n)
+    if (rule.type === 'integer' || rule.type === 'number') {
+      const text = raw.trim()
+      if (!NUMERIC.test(text)) continue
+      const n = Number(text)
+      if (!Number.isFinite(n)) continue
+      // The one thing that still separates the two: `1e3` is 1000 and lands in
+      // an Int column; `1.5` and `1e-3` are not integers and are left as text so
+      // `validate()` names the column rather than the server rounding it.
+      if (rule.type === 'integer' && !Number.isInteger(n)) continue
+      write(name, n)
       continue
     }
 

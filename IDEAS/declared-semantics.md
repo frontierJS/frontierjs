@@ -333,7 +333,7 @@ encoding has to stay one SQLite can order.
 - **Changing `n` is a migration that rescales every row**, which is the hard
   half. `@@transitions` and `@encrypted` both changed a column's meaning without
   ever needing to rewrite stored bytes; this one does. See the note under
-  *Relationship to the other files* about Projections.
+  *Relationship to the other files* about views.
 - **The wire.** `@frontierjs/toolbelt/query` deliberately keeps `'1.50'` as text
   (`FJS-D125` — a string is a number only if it round-trips), so `?price=1.50`
   arrives at the boundary as a string and the coercion is real work rather than
@@ -451,11 +451,12 @@ wants it.
 
 - `time-travel.md` — bitemporality is what makes `db:restore` unambiguous about
   which clock it rewinds.
-- `scoped-sql.md` — the derived view is a **Projection** (ruled 2026-08-06),
+- `scoped-sql.md` — the derived shape is a **`view`** (`FJS-D46` coined
+  *Projection* for it and was withdrawn 2026-09-04; the keyword had shipped),
   and a scaled column's storage encoding has to survive it. It is the same
-  question as *changing `n` rescales every row*, asked one layer up: a
-  projection over a scaled column has to know the scale, or it reads the stored
-  integer as the value.
+  question as *changing `n` rescales every row*, asked one layer up: a view over
+  a scaled column has to know the scale, or it reads the stored integer as the
+  value.
 - `state-machines.md` — `@@transitions`, the field-level half of item 4.
 - `compliance-from-the-seed.md` — the same argument (`@pii`/`@retain`) applied
   to a category this file does not cover.

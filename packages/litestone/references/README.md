@@ -4,7 +4,7 @@
 not imported, not installed by anything — a catalogue you read before writing a
 model that half a dozen apps have already written differently.
 
-The question these answer is *what columns does a `Notification` actually need*,
+The question these answer is *what columns does an `AuditEvent` actually need*,
 which is exactly the question that gets answered from memory at 11pm and then
 diverges between two apps in the same repo. Copy one into your `schema.lite` and
 edit it; that is the whole intended workflow.
@@ -52,7 +52,7 @@ disagree, the disagreement is the finding.
 
 **The polymorphic subject exists twice under two names.** `AuditEvent` in
 basecamp carries `subjectType` / `subjectId` with an `@@index` on the pair;
-`Notification` in `example` carries `contextType` / `contextId` for the same
+`Notification` in `@frontierjs/notifications` carries `contextType` / `contextId` for the same
 idea — *which row is this row about*. Two apps in one repo, one concept, two
 spellings, and nothing anywhere could have noticed.
 
@@ -60,12 +60,15 @@ The catalogue's preference is **`subjectType` / `subjectId`** for anything new.
 That is a recommendation for the next model, not a demand to migrate the two that
 exist: renaming a column is a migration, and neither is wrong.
 
-**`@frontierjs/notifications` writes to a model it does not ship.**
-`drivers/inapp.ts` calls `asSystem().notification.create()` naming five columns
-against a hand-written structural type that is the only description of the shape
-anywhere. `Notification.lite` here is that shape, written down. See
-`IDEAS/machinery-models.md` for whether it should be shipped rather than
-referenced — a separate question, deliberately not answered here.
+**`@frontierjs/notifications` wrote to a model it did not ship, and now it
+ships it.** `drivers/inapp.ts` calls `asSystem().notification.create()` naming
+five columns, and for a while the only description of that shape was a
+hand-written structural type plus a file in this folder. A reference model is
+the wrong home for a shape a package's own code depends on: the package changes
+a column, every app's copy is stale, and nothing can compare them. It ships
+`db/notification.lite` now, `fli check`'s `package-model-drift` grades an app's
+copy against it, and this catalogue's entry is a POINTER rather than a second
+copy — the same shape `User` and `Credential` already had.
 
 ## The running list
 
@@ -77,7 +80,7 @@ replace.
 | Group | Model | Status |
 | --- | --- | --- |
 | META | `AuditEvent` | **written** — basecamp |
-| COMMUNICATION | `Notification` | **written** — `example`, plus the driver's own column names |
+| COMMUNICATION | `Notification` | ships — `packages/notifications/db/notification.lite` is the reference |
 | META | `Tag` | **written** — no instance in this tree; the shape is argued rather than derived, and the file says so |
 | IDENTITY & ACCESS | `User` | ships — `packages/auth/db/user.lite` is the reference |
 | IDENTITY & ACCESS | `Credential` · `Session` · `Verification` · `OauthFlow` | ships — `packages/auth/db/auth.lite` |

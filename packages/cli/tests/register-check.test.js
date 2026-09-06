@@ -57,6 +57,9 @@ beforeAll(() => {
     '| Id | Pkg | Question | Detail |',
     '| --- | --- | --- | --- |',
     '| FJS-D01 | cli | **Should the thing be a thing?** | — |',
+    // The negative control for `cross-register-id`: an open question whose id
+    // names no ruling is the ordinary state of every unanswered one.
+    '| <a id="fjs-d02"></a>FJS-D02 | cli | **Should the other thing be a thing?** | — |',
     '',
     '## Closed',
     '| Id | Pkg | Title | Status | Verified | Detail |',
@@ -73,6 +76,23 @@ beforeAll(() => {
     '**2026-08-16 · `FJS-D01` — the thing is a thing.** Settled.',
     '',
     '**2026-08-17 · A ruling nobody named.** Also settled, unaddressably.',
+    '',
+    // A ruling in force says nothing, which is the state of nearly every one and
+    // the reason absence is not graded. The three below are the written cases.
+    '### <a id="fjs-d03"></a>2026-08-18 · `FJS-D03` — in force, and silent about it.',
+    'It says nothing, because being here is the statement.',
+    '',
+    '### <a id="fjs-d04"></a>2026-08-18 · `FJS-D04` — retired, and it names what replaced it.',
+    '**Status:** superseded-by [`FJS-D03`](#fjs-d03)',
+    '',
+    '### <a id="fjs-d05"></a>2026-08-18 · `FJS-D05` — retired, and it names nothing.',
+    '**Status:** superseded-by',
+    '',
+    '### <a id="fjs-d06"></a>2026-08-18 · `FJS-D06` — a word nobody declared.',
+    '**Status:** parked',
+    '',
+    '### <a id="fjs-d07"></a>2026-08-18 · `FJS-D07` — taken back, and nothing replaced it.',
+    '**Status:** withdrawn 2026-08-18 — the thing it escalated is gone.',
     '',
   ].join('\n'))
 
@@ -225,6 +245,127 @@ describe('exemptions', () => {
     expect(hits.some(h => h.id === 'FJS-D01')).toBe(false)
   })
 
+  // Sharing the id is legal; the question still being OPEN once the ruling
+  // exists is not. The pair is the rule: `duplicate-id` must stay silent on
+  // exactly the row `cross-register-id` reports, or the two are one rule
+  // written twice.
+  test('an open question whose id already names a ruling is reported', () => {
+    const hits = of(runRegisterCheck({ root: ROOT, today: TODAY }), 'cross-register-id')
+    expect(hits.map(h => h.id)).toEqual(['FJS-D01'])
+    expect(hits[0].detail).toContain('reissue')
+  })
+
+  test('an open question with no ruling of its own is not', () => {
+    const hits = of(runRegisterCheck({ root: ROOT, today: TODAY }), 'cross-register-id')
+    expect(hits.some(h => h.id === 'FJS-D02')).toBe(false)
+  })
+
+  // Absence is the answer for nearly every ruling, so it is the half that must
+  // stay silent — a rule firing on it would print 180 findings and be removed.
+  test('a ruling in force declares nothing and is not reported', () => {
+    const hits = of(runRegisterCheck({ root: ROOT, today: TODAY }), 'ruling-status')
+    expect(hits.some(h => h.id === 'FJS-D03')).toBe(false)
+  })
+
+  test('a status word outside the vocabulary is', () => {
+    const hits = of(runRegisterCheck({ root: ROOT, today: TODAY }), 'ruling-status')
+    const hit  = hits.find(h => h.id === 'FJS-D06')
+    expect(hit).toBeDefined()
+    expect(hit.message).toContain('parked')
+  })
+
+  test('a retirement that names nothing is, and one that names a ruling is not', () => {
+    const hits = of(runRegisterCheck({ root: ROOT, today: TODAY }), 'ruling-status')
+    expect(hits.map(h => h.id).sort()).toEqual(['FJS-D05', 'FJS-D06'])
+  })
+
+  // `withdrawn` names no successor BECAUSE there is none, which is the content
+  // rather than an omission. Paired with FJS-D05 above, where the same absence
+  // under `superseded-by` is the finding.
+  test('withdrawn names no successor and that is not a finding', () => {
+    const hits = of(runRegisterCheck({ root: ROOT, today: TODAY }), 'ruling-status')
+    expect(hits.some(h => h.id === 'FJS-D07')).toBe(false)
+  })
+
+  // Ordering is a claim about which ruling is current, so both halves are the
+  // rule: the section that runs newest-first must stay silent, and only the
+  // ruling that should move up is named.
+  test('a section out of date order is reported against the later ruling', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fli-order-'))
+    writeFileSync(join(root, 'DECISIONS.md'), [
+      '# Decisions', '', '## Rulings', '',
+      '### <a id="fjs-d01"></a>2026-08-10 · `FJS-D01` — the older one, on top.',
+      'Body.', '',
+      '### <a id="fjs-d02"></a>2026-08-20 · `FJS-D02` — the newer one, below it.',
+      'Body.', '',
+    ].join('\n'))
+    const hits = of(runRegisterCheck({ root, today: TODAY }), 'ruling-order')
+    expect(hits.map(h => h.id)).toEqual(['FJS-D02'])
+    expect(hits[0].message).toContain('2026-08-10')
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  test('newest first is not, and neither are two rulings of one date', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fli-order-ok-'))
+    writeFileSync(join(root, 'DECISIONS.md'), [
+      '# Decisions', '', '## Rulings', '',
+      '### <a id="fjs-d02"></a>2026-08-20 · `FJS-D02` — newest.', 'Body.', '',
+      '### <a id="fjs-d03"></a>2026-08-20 · `FJS-D03` — same day.', 'Body.', '',
+      '### <a id="fjs-d01"></a>2026-08-10 · `FJS-D01` — oldest.', 'Body.', '',
+    ].join('\n'))
+    expect(of(runRegisterCheck({ root, today: TODAY }), 'ruling-order')).toHaveLength(0)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  // Sections are subject areas with no order between them, so the newest ruling
+  // of a later section sitting under an older one is not a finding.
+  test('the order resets at a section boundary', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fli-order-sec-'))
+    writeFileSync(join(root, 'DECISIONS.md'), [
+      '# Decisions', '',
+      '## One', '',
+      '### <a id="fjs-d01"></a>2026-08-10 · `FJS-D01` — older section, older ruling.', 'Body.', '',
+      '## Two', '',
+      '### <a id="fjs-d02"></a>2026-08-20 · `FJS-D02` — later ruling, new section.', 'Body.', '',
+    ].join('\n'))
+    expect(of(runRegisterCheck({ root, today: TODAY }), 'ruling-order')).toHaveLength(0)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  // A ruling is sometimes overtaken by a shipped fix nobody wrote a ruling for.
+  // What the reader needs is a citation they can follow, and an issue is one.
+  test('a retirement may name an issue rather than a ruling', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fli-status-issue-'))
+    writeFileSync(join(root, 'ISSUES.md'), [
+      '## Closed',
+      '| Id | Pkg | Title | Status | Verified | Detail |',
+      '| --- | --- | --- | --- | --- | --- |',
+      '| <a id="fjs-690"></a>FJS-690 | cli | **The fix that moved it.** | closed | 2026-08-17 | — |',
+    ].join('\n'))
+    writeFileSync(join(root, 'DECISIONS.md'), [
+      '# Decisions', '', '## Rulings', '',
+      '### <a id="fjs-d01"></a>2026-08-18 · `FJS-D01` — overtaken by a fix.',
+      '**Status:** amended-by [`FJS-690`](ISSUES.md#fjs-690)', '',
+    ].join('\n'))
+    const result = runRegisterCheck({ root, today: TODAY })
+    expect(of(result, 'ruling-status')).toHaveLength(0)
+    expect(of(result, 'unknown-ref')).toHaveLength(0)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  test('a status pointing at an id no register holds is a citation fault', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fli-status-ref-'))
+    writeFileSync(join(root, 'DECISIONS.md'), [
+      '# Decisions', '', '## Rulings', '',
+      '### <a id="fjs-d01"></a>2026-08-18 · `FJS-D01` — retired by a ghost.',
+      '**Status:** superseded-by [`FJS-D99`](#fjs-d99)', '',
+    ].join('\n'))
+    const result = runRegisterCheck({ root, today: TODAY })
+    expect(of(result, 'ruling-status')).toHaveLength(0)
+    expect(of(result, 'unknown-ref').map(h => h.id)).toEqual(['FJS-D01'])
+    rmSync(root, { recursive: true, force: true })
+  })
+
   test('a paper with no frontmatter is not graded on values it never declared', () => {
     const result = runRegisterCheck({ root: ROOT, today: TODAY })
     expect(result.findings.some(f => f.id === 'unmigrated')).toBe(false)
@@ -262,12 +403,42 @@ describe('the report', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  test('a missing register is not a failure', () => {
-    const root = mkdtempSync(join(tmpdir(), 'fli-none-'))
+  // The two halves of one rule, and they have to be asserted together: a check
+  // that refused a thin register would be as wrong as one that passed an empty
+  // directory, and from the refused side the two look identical.
+
+  test('a register a project does not keep is not a failure', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fli-thin-'))
+    writeFileSync(join(root, 'ISSUES.md'), [
+      '## S1 — blockers',
+      '| <a id="fjs-001"></a>FJS-001 | cli | **Fine.** | open | 2026-08-17 | — |',
+    ].join('\n'))
+
     const result = runRegisterCheck({ root, today: TODAY })
     expect(result.errors).toEqual([])
     expect(result.warnings).toEqual([])
+    expect(result.sources).toEqual(['ISSUES.md'])
+    expect(result.counts.decisions).toBe(0)
     rmSync(root, { recursive: true, force: true })
+  })
+
+  test('a root with no register at all is refused, not passed', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fli-none-'))
+    expect(() => runRegisterCheck({ root, today: TODAY })).toThrow(/no register at/)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  // The case that was green: `fli` walks up to the nearest package root, so
+  // this command run from inside a package graded that package's directory and
+  // reported that every register agreed with itself.
+  test('a package directory inside this repo is refused rather than graded clean', () => {
+    expect(() => runRegisterCheck({ root: join(REPO, 'packages', 'cli'), staleDays: 0 }))
+      .toThrow(/no register at/)
+  })
+
+  test('the report names what it read', () => {
+    const text = formatRegisterCheck(runRegisterCheck({ root: ROOT, today: TODAY })).join('\n')
+    expect(text).toContain('read ISSUES.md')
   })
 
   test('the report names every rule that fired, once', () => {
@@ -297,5 +468,76 @@ describe('the repo it ships with', () => {
     // of them rather than as one.
     expect(of(result, 'dead-link').length).toBeLessThan(5)
     expect(of(result, 'malformed-date').length).toBe(0)
+  })
+})
+
+// ─── a register the reader could not read ─────────────────────────────────────
+//
+// The state between *no register here* and *a register that is empty*, and the
+// only one of the three that used to pass: the readers are keyed to one id
+// prefix, so a project keeping its registers under another one parses to
+// nothing and every rule below is asked of nothing. Both controls are the test
+// — an empty register is a project at the start and must stay green, and a
+// fenced example is the format documenting itself.
+
+describe('unparsed-record', () => {
+  let dir
+
+  const at = (files) => {
+    dir = mkdtempSync(join(tmpdir(), 'fli-unparsed-'))
+    for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, name), body)
+    return runRegisterCheck({ root: dir, staleDays: 0 })
+  }
+
+  afterAll(() => { try { rmSync(dir, { recursive: true, force: true }) } catch {} })
+
+  test('a table under another prefix is an error, not a clean sheet', () => {
+    const result = at({
+      'ISSUES.md': [
+        '## S1 — blockers',
+        '| Id | Pkg | Title | Status | Verified | Detail |',
+        '| --- | --- | --- | --- | --- | --- |',
+        '| `ACME-1` | web | **The thing broke.** measured | open | 2026-08-17 | — |',
+        '',
+      ].join('\n'),
+    })
+    expect(of(result, 'unparsed-record')).toHaveLength(1)
+    expect(of(result, 'unparsed-record')[0].line).toBe(4)
+    expect(result.counts.errors).toBeGreaterThan(0)
+  })
+
+  test('a register with no rows at all is a project at the start', () => {
+    const result = at({
+      'ISSUES.md': '# Issues\n\nNothing open.\n\n| Id | Pkg | Title | Status | Verified | Detail |\n| --- | --- | --- | --- | --- | --- |\n',
+    })
+    expect(of(result, 'unparsed-record')).toHaveLength(0)
+  })
+
+  test('a ruling heading under another prefix is read the same way', () => {
+    const result = at({
+      'DECISIONS.md': '## API design\n\n### 2026-08-16 · `ACME-D2` — the claim\n\nThe argument.\n',
+    })
+    expect(of(result, 'unparsed-record')).toHaveLength(1)
+    expect(of(result, 'unparsed-record')[0].file).toBe('DECISIONS.md')
+  })
+
+  test('a fenced example is the format documenting itself, never a record', () => {
+    const result = at({
+      'ISSUES.md': [
+        '# Issues',
+        '',
+        'A row is written like this:',
+        '',
+        '```',
+        '| ACME-1 | web | **The claim.** | open | 2026-08-17 | — |',
+        '```',
+        '',
+      ].join('\n'),
+    })
+    expect(of(result, 'unparsed-record')).toHaveLength(0)
+  })
+
+  test('this repo reads its own register whole', () => {
+    expect(of(runRegisterCheck({ root: REPO, staleDays: 0 }), 'unparsed-record')).toHaveLength(0)
   })
 })

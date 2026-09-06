@@ -10,17 +10,20 @@
   export let chain    // { component, ownParams, meta }[]
   export let depth    // current depth in chain
 
+  // A chain can be empty: nothing registered a component for the route. The
+  // router refuses that navigation now, naming the file — this is the belt, so
+  // the outlet renders nothing instead of throwing on an internal expression.
   const entry     = chain[depth]
-  const Component = entry.component
+  const Component = entry?.component
   const isLast    = depth === chain.length - 1
 
   // getRemountKey — for same-route param changes (e.g. /blog/a/ → /blog/b/).
   // The component at this depth is the same, but ownParams changed.
   function getRemountKey() {
     if (!isLast) return null
-    const remount = entry.meta?.remount
+    const remount = entry?.meta?.remount
     if (remount === false) return null
-    const own = entry.ownParams ?? []
+    const own = entry?.ownParams ?? []
     if (own.length === 0) return null
     if (remount === 'params') return JSON.stringify(page.params)
     return own.map(p => page.params[p]).join('/')

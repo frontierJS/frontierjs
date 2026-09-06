@@ -77,8 +77,8 @@ group('injectJettyHMR against real compiler output')
   let threw = null
   try { injectJettyHMR('export default function X(a, b, c) { return 1 }', '/app/src/X.mesa', '/app') }
   catch (e) { threw = e.message }
-  if (threw && /shape this plugin matches has moved/.test(threw)) ok('an unrecognised shape throws at build time, naming the cause')
-  else bad('an unrecognised shape throws at build time', threw ? `threw the wrong error: ${threw}` : 'did not throw')
+  if (threw && /shape this plugin matches has moved/.test(threw)) ok('an unrecognized shape throws at build time, naming the cause')
+  else bad('an unrecognized shape throws at build time', threw ? `threw the wrong error: ${threw}` : 'did not throw')
 }
 
 console.log()

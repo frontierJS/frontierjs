@@ -40,6 +40,8 @@ import { signRequest }         from '@frontierjs/toolbelt/signature'
 import { sessionGateLevel }    from '../../core/litestone.ts'
 import { assertDeliverableTarget, WebhookTargetError } from './url.ts'
 import type { TargetPolicy }   from './url.ts'
+import { shapeForAudience, sayUnowned } from './payload.ts'
+import type { ShapeResult }    from './payload.ts'
 
 // ─── Retry schedule ────────────────────────────────────────────────────────
 // Delays in ms after each failed attempt.
@@ -65,6 +67,20 @@ export interface WebhookRegistration {
   secret:    string          // shown once on creation; HMAC key
   active:    boolean
   createdAt: number          // unix ms
+
+  /**
+   * Who this registration speaks for — the principal that created it.
+   *
+   * Every delivery is graded as this audience (`FJS-D193`). An ID and never a
+   * session, so a registrant demoted since is graded at the standing they hold
+   * now, which is what caravan already does with the principal at `dispatch()`.
+   *
+   * `null` is *nobody* — registered by app code outside a request, which is the
+   * app acting on its own behalf and resolves through `createApp({ system })`.
+   * ABSENT is a different fact: a custom store that does not record an audience
+   * cannot answer, and its deliveries go out ungraded and say so.
+   */
+  subscriber?: string | number | null
 }
 
 export type DeliveryStatus = 'pending' | 'delivered' | 'failed' | 'dead'
@@ -86,7 +102,8 @@ export interface WebhookDelivery {
 
 export interface IWebhookStore {
   // Registration
-  register(url: string, events: string[], secret?: string): Promise<WebhookRegistration>
+  register(url: string, events: string[], secret?: string,
+           subscriber?: string | number | null): Promise<WebhookRegistration>
   unregister(id: string): Promise<void>
   // Stop delivering to a registration without forgetting it — a subscriber
   // that has stopped answering is not the same fact as one nobody wants, and
@@ -138,13 +155,21 @@ export function createSqliteWebhookStore(dbClient: DatabaseClient): IWebhookStor
     )
   `)
 
+  // Added after the table shipped, so an existing database needs the column
+  // rather than a new CREATE. A row written before it holds NULL, which reads
+  // as *registered by nobody* and is graded as a stranger — the fail-closed
+  // answer, and the one a delivery that stops arriving points at.
+  const hookCols = db.prepare(`PRAGMA table_info(webhooks)`).all() as Array<{ name: string }>
+  if (!hookCols.some(c => c.name === 'subscriber_id'))
+    db.run(`ALTER TABLE webhooks ADD COLUMN subscriber_id TEXT`)
+
   db.run(`CREATE INDEX IF NOT EXISTS wh_del_status ON webhook_deliveries(status, next_retry_at)`)
   db.run(`CREATE INDEX IF NOT EXISTS wh_del_webhook ON webhook_deliveries(webhook_id)`)
 
   // Prepared statements
   const stmtInsertHook = db.prepare(
-    `INSERT INTO webhooks (id, url, events, secret, active, created_at)
-     VALUES (?, ?, ?, ?, 1, ?)`
+    `INSERT INTO webhooks (id, url, events, secret, active, created_at, subscriber_id)
+     VALUES (?, ?, ?, ?, 1, ?, ?)`
   )
   const stmtDeleteHook = db.prepare(`DELETE FROM webhooks WHERE id = ?`)
   const stmtSetActive  = db.prepare(`UPDATE webhooks SET active = ? WHERE id = ?`)
@@ -203,7 +228,7 @@ export function createSqliteWebhookStore(dbClient: DatabaseClient): IWebhookStor
   // Row → object helpers
   type HookRow = {
     id: string; url: string; events: string; secret: string
-    active: number; created_at: number
+    active: number; created_at: number; subscriber_id: string | null
   }
   type DelRow = {
     id: string; webhook_id: string; event: string; payload: string
@@ -213,12 +238,13 @@ export function createSqliteWebhookStore(dbClient: DatabaseClient): IWebhookStor
 
   function rowToHook(r: HookRow): WebhookRegistration {
     return {
-      id:        r.id,
-      url:       r.url,
-      events:    JSON.parse(r.events) as string[],
-      secret:    r.secret,
-      active:    r.active === 1,
-      createdAt: r.created_at,
+      id:         r.id,
+      url:        r.url,
+      events:     JSON.parse(r.events) as string[],
+      secret:     r.secret,
+      active:     r.active === 1,
+      createdAt:  r.created_at,
+      subscriber: r.subscriber_id ?? null,
     }
   }
 
@@ -239,12 +265,13 @@ export function createSqliteWebhookStore(dbClient: DatabaseClient): IWebhookStor
 
   return {
 
-    async register(url, events, secret?): Promise<WebhookRegistration> {
+    async register(url, events, secret?, subscriber?): Promise<WebhookRegistration> {
       const id  = crypto.randomUUID()
       const sec = secret ?? generateSecret()
       const now = Date.now()
-      stmtInsertHook.run(id, url, JSON.stringify(events), sec, now)
-      return { id, url, events, secret: sec, active: true, createdAt: now }
+      const sub = subscriber == null ? null : String(subscriber)
+      stmtInsertHook.run(id, url, JSON.stringify(events), sec, now, sub)
+      return { id, url, events, secret: sec, active: true, createdAt: now, subscriber: sub }
     },
 
     async unregister(id) {
@@ -439,7 +466,13 @@ async function attemptDelivery(
 
 export interface WebhookManager {
   // Registration
-  register:   (url: string, events: string[], secret?: string) => Promise<WebhookRegistration>
+  //
+  // `subscriber` is who the registration speaks for and every delivery is
+  // graded as them (`FJS-D193`). Absent, it is the principal in scope — which
+  // is the caller for the HTTP route and nobody for app code at boot. State
+  // `null` to say *nobody* deliberately.
+  register:   (url: string, events: string[], secret?: string,
+               subscriber?: string | number | null) => Promise<WebhookRegistration>
   unregister: (id: string)  => Promise<void>
   list:       ()            => Promise<WebhookRegistration[]>
 
@@ -489,6 +522,12 @@ export interface WebhookOptions {
   // per event for ever unless something says stop.
   deactivateAfterDead?: number
 }
+
+// A registration whose audience is `undefined` — a custom store that does not
+// record one — cannot be keyed by that value beside a real `null`, and Map
+// treats the two as distinct keys already. The sentinel is for READING: it makes
+// the two cases visible at the call site rather than resting on a Map subtlety.
+const UNRECORDED = Symbol('audience not recorded')
 
 // ─── webhooks() plugin ─────────────────────────────────────────────────────
 
@@ -611,9 +650,40 @@ export function webhooks(opts: WebhookOptions): Plugin {
         const registrations = await store.findForEvent(eventName)
         const inFlight: Promise<void>[] = []
 
+        // One shaping per AUDIENCE rather than per registration — two
+        // destinations registered by one person read the same rows, and
+        // `$readAs` is the expensive half. `channels.ts` groups a broadcast the
+        // same way and for the same reason.
+        //
+        // A store that does not record an audience answers `undefined`, which
+        // is a different key from `null`: *cannot say* against *nobody*.
+        const shaped = new Map<unknown, ShapeResult>()
+
         for (const reg of registrations) {
+          const key = reg.subscriber === undefined ? UNRECORDED : reg.subscriber
+          let answer = shaped.get(key)
+          if (!answer) {
+            answer = await shapeForAudience({
+              db:       app.db,
+              app,
+              event:    eventName,
+              payload,
+              audience: reg.subscriber,
+            })
+            shaped.set(key, answer)
+          }
+
+          if (!answer.deliver) {
+            // Not recorded as pending either: a payload this audience may not
+            // read must not sit in a retry table for a day waiting to be sent.
+            app.events.emit('webhook:refused', {
+              event: eventName, webhookId: reg.id, reason: answer.reason,
+            })
+            continue
+          }
+
           try {
-            const delivery = await store.createDelivery(reg.id, eventName, payload)
+            const delivery = await store.createDelivery(reg.id, eventName, answer.payload)
             const attempt  = attemptAndRecord(reg, delivery)
             if (waitForDelivery) inFlight.push(attempt.catch(() => {}))
             else                 attempt.catch(() => {})
@@ -671,12 +741,23 @@ export function webhooks(opts: WebhookOptions): Plugin {
 
       const manager: WebhookManager = {
 
-        async register(url, events, secret) {
+        async register(url, events, secret, subscriber) {
           // Graded here rather than in the store, so a custom store cannot
           // arrive without the check — and again before every attempt, since
           // what a name resolves to is not fixed at registration.
           await assertDeliverableTarget(url, targets)
-          return store.register(url, events, secret)
+
+          // The audience is READ from the principal in scope and never taken
+          // from a caller's payload. `IAuth.sessionFor` must not be wired to
+          // anything a request can name, and a registration whose audience the
+          // registrant chose is exactly that: level 5 is the bar for making
+          // one, and it would then be the bar for receiving anything.
+          const who = subscriber === undefined
+            ? ((app.principal() as { userId?: string | number } | null)?.userId ?? null)
+            : subscriber
+
+          if (who === null) sayUnowned(url, app.db)
+          return store.register(url, events, secret, who)
         },
 
         async unregister(id) {
@@ -768,12 +849,16 @@ export function webhooks(opts: WebhookOptions): Plugin {
         const body = ctx.body as { url?: string; events?: string[]; secret?: string }
         if (!body?.url)           return ctx.json({ error: 'url required' }, 400)
         if (!body?.events?.length) return ctx.json({ error: 'events required' }, 400)
-        try { await assertDeliverableTarget(body.url, targets) }
+        // Through the manager, which owns the target check AND reads the
+        // audience off the principal in scope. Registering through the store
+        // here instead is how the route came to be the one registration path
+        // with no audience on it.
+        let hook: WebhookRegistration
+        try { hook = await manager.register(body.url, body.events, body.secret) }
         catch (err) {
           if (err instanceof WebhookTargetError) return ctx.json({ error: err.message }, 400)
           throw err
         }
-        const hook = await store.register(body.url, body.events, body.secret)
         return ctx.json(hook, 201)   // includes secret — the one and only time
       })
 

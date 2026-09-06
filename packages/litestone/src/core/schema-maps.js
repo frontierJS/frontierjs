@@ -269,7 +269,7 @@ export function schemaDeclaresAccessRules(schema) {
 // ─── Field policy map ─────────────────────────────────────────────────────────
 // Per model, per field:
 //   omit:      'lists' | 'all' | null
-//   guarded:   'select' | 'all' | null   — DECLARED @guarded/@secret only
+//   guarded:   true | false             — DECLARED @guarded/@secret only
 //   encrypted: { deterministic: bool } | null
 //   hashed:    bool
 //
@@ -303,7 +303,7 @@ export function buildFieldPolicyMap(schema) {
 
       map[model.name][field.name] = {
         omit:      omitAttr?.level    ?? null,
-        guarded:   guardedAttr?.level ?? null,
+        guarded:   !!guardedAttr,
         encrypted: encryptedAttr ? { deterministic: encryptedAttr.deterministic ?? false } : null,
         // @hashed is not a flavor of encrypted — no ciphertext, no decrypt, and it
         // strips from asSystem() too, which no other protection does.
@@ -691,7 +691,7 @@ export function buildEnumMap(schema) {
 
 
 // ─── Soft delete cascade map ──────────────────────────────────────────────────
-// { modelName: boolean } — true if @@softDeleteCascade is set on the model
+// { modelName: boolean } — true if the model declares @@softDelete(cascade)
 
 export function buildSoftDeleteCascadeMap(schema) {
   const map = {}
@@ -867,7 +867,7 @@ export function buildRelationMap(schema) {
 
 export function guardedKeysFor(model) {
   const out = new Set()
-  // @secret synthesises @guarded(all) onto the field at parse, so one condition
+  // @secret synthesises @guarded onto the field at parse, so one condition
   // answers both — the same single fact buildFieldPolicyMap reads for the write.
   for (const f of model.fields ?? [])
     if (f.attributes?.some(a => a.kind === 'guarded')) out.add(f.name)

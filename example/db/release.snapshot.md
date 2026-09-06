@@ -128,7 +128,7 @@ table `credential` · db `main` · gate `8`
 | `tokenExpiresAt` | `DateTime` | yes | — | — |
 | `type` | `String` | no | — | **required on write** |
 | `userId` | `String` | no | — | **required on write** |
-| `value` | `String` | no | — | @guarded(all) · **required on write** |
+| `value` | `String` | no | — | @guarded · **required on write** |
 
 ```
 @@index(type, value)
@@ -399,8 +399,8 @@ table `oauth_flow` · db `main` · gate `8`
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `provider` | `String` | no | — | **required on write** |
 | `returnTo` | `String` | yes | — | — |
-| `state` | `String` | no | — | unique · @guarded(all) · **required on write** |
-| `verifier` | `String` | no | — | @guarded(all) · **required on write** |
+| `state` | `String` | no | — | unique · @guarded · **required on write** |
+| `verifier` | `String` | no | — | @guarded · **required on write** |
 
 ```
 @@index(expiresAt)
@@ -462,14 +462,13 @@ table `order_line` · db `main` · gate `1.8.8.8` · @@softDelete
 | `quantity` | `Int` | no | — | **required on write** |
 | `sku` | `String` | no | — | **required on write** |
 | `unitPrice` | `Int` | no | — | **required on write** |
-| `userId` | `String` | yes | — | @system |
 | `variant` | `ProductVariant` | — | — | relation |
 | `variantId` | `Int` | no | — | **required on write** |
 
 ```
 @@index(orderId)
 @@allow('read', auth().isStaff)
-@@allow('read', userId == auth().id)
+@@allow('read', order.userId == auth().id)
 ```
 
 ### `OutboxMessage`
@@ -486,6 +485,7 @@ table `outbox_message` · db `main` · gate `8`
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `job` | `String` | no | — | **required on write** |
 | `lastError` | `String` | yes | — | — |
+| `nextAttemptAt` | `DateTime` | yes | — | — |
 | `payload` | `Json` | no | — | **required on write** |
 
 ```
@@ -557,6 +557,7 @@ table `payment_method` · db `main` · gate `1.8.8.8`
 | `userId` | `String` | yes | — | @system |
 
 ```
+@@unique(customerId), where: "isDefault" = 1
 @@index(customerId)
 @@allow('read', auth().isStaff)
 @@allow('read', userId == auth().id)
@@ -792,8 +793,11 @@ table `session` · db `main` · gate `8`
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `expiresAt` | `DateTime` | no | — | **required on write** |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `impersonatingUserId` | `String` | yes | — | — |
+| `impersonationEndsAt` | `DateTime` | yes | — | — |
+| `impersonationReason` | `String` | yes | — | — |
 | `ipAddress` | `String` | yes | — | — |
-| `token` | `String` | no | — | unique · @guarded(all) · **required on write** |
+| `token` | `String` | no | — | unique · @guarded · **required on write** |
 | `userAgent` | `String` | yes | — | — |
 | `userId` | `String` | no | — | **required on write** |
 
@@ -920,7 +924,7 @@ table `verification` · db `main` · gate `8`
 | `provider` | `String` | yes | — | — |
 | `purpose` | `VerificationPurpose` | no | — | **required on write** |
 | `subject` | `String` | yes | — | — |
-| `value` | `String` | no | — | unique · @guarded(all) · **required on write** |
+| `value` | `String` | no | — | unique · @guarded · **required on write** |
 
 ```
 @@index(expiresAt)

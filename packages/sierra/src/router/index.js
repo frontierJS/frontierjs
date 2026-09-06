@@ -23,11 +23,13 @@
  */
 
 import { watchProxy } from '@frontierjs/mesa/runtime'
-import { matchRoute, normalizePath, buildUrl, parseQueryParams } from './match.js'
+import {
+  matchRoute, normalizePath, buildUrl, parseQueryParams, caseInsensitiveNearMiss,
+} from './match.js'
 import { splitParams } from '@frontierjs/toolbelt/directives'
 import {
   registerModule, buildLayoutMap, registerFileComponent, hmrInvalidate, getComponents,
-  loadLayoutChain,
+  loadLayoutChain, linkHrefOf,
 } from './internals.js'
 import { sierraFetch } from '../fetch/index.js'
 import {
@@ -62,8 +64,38 @@ let _bootTitle = null
 let _options = {}
 let _layouts = {}
 
-// Scroll position storage — keyed by history.state.index
+// Scroll position storage — keyed by history.state.index.
+//
+// Bounded, because nothing else empties it: one entry per navigation for the
+// life of the tab, which a long session or a synthetic-entry SPA grows without
+// limit. Two evictions, and they answer different halves — a pushState DESTROYS
+// forward history, so every entry above the current index is unreachable and
+// deleting it is exact; the cap is for depth alone, and 50 is chosen because
+// browsers cap the session history around there, so an entry evicted by it is
+// one the Back button can no longer reach either.
 const _scrollPositions = new Map()
+const SCROLL_MEMORY = 50
+
+/* Test seams. The cap is invisible to every behavioral assertion about
+   scrolling — a map that grew without limit restores exactly the same offsets —
+   so its size is the only thing that can be asked. */
+export function _scrollMemorySize() { return _scrollPositions.size }
+export function _scrollMemoryHas(index) { return _scrollPositions.has(index) }
+
+function _rememberScroll(index, y) {
+  _scrollPositions.set(index, y)
+  for (const key of _scrollPositions.keys()) {
+    if (key > index) _scrollPositions.delete(key)
+  }
+  // Insertion order is not index order — a Back followed by a fresh navigation
+  // rewrites an earlier key — so the oldest ENTRY is not the deepest one.
+  while (_scrollPositions.size > SCROLL_MEMORY) {
+    _scrollPositions.delete(Math.min(..._scrollPositions.keys()))
+  }
+}
+
+// The window whose click and popstate listeners this module already holds.
+let _boundWindow = null
 
 // Guard/hook registries
 const _beforeGuards = []
@@ -75,6 +107,19 @@ const _afterHooks = []
 // ── Dev error reporter ───────────────────────────────────────────────────────
 // In dev, forwards errors to the Sierra overlay + terminal.
 // In prod, just console.errors.
+/*
+ * A path that resolved to the catch-all, or to nothing, when a route exists
+ * that differs from it only in case. Matching is case-sensitive (`FJS-D210`)
+ * and stays that way; what this adds is the sentence § IV asks for when a
+ * deliberate difference meets muscle memory — name the equivalent rather than
+ * refusing in silence. Empty string when there is nothing to say, so it
+ * concatenates into an existing message without a branch at the call site.
+ */
+function _nearMiss(normalized) {
+  const near = caseInsensitiveNearMiss(normalized, _tree)
+  return near ? ` — did you mean ${near}? Route matching is case-sensitive.` : ''
+}
+
 function _reportError(type, context, err) {
   const message = err?.message ?? String(err)
   const data = { type, file: context, message, stack: err?.stack }
@@ -269,11 +314,17 @@ export function initRouter(tree, components, loaders = {}, options = {}, layouts
       )
     }
 
-    // Listen for browser back/forward
-    window.addEventListener('popstate', _handlePopstate)
-
-    // Delegate link clicks
-    document.addEventListener('click', _handleClick)
+    // Bound once. initRouter used to add a click and a popstate listener on
+    // every call, and initPrefetch four more, so three inits — HMR of the boot
+    // module, a re-mounted micro-frontend, a test that boots twice — meant one
+    // click running three concurrent navigations (Invariant 11). Keyed on the
+    // window rather than a boolean because swapping globalThis.window is a test
+    // seam, and a bare flag would leave the new environment with no listeners.
+    if (_boundWindow !== window) {
+      _boundWindow = window
+      window.addEventListener('popstate', _handlePopstate)
+      document.addEventListener('click', _handleClick)
+    }
 
     // Navigate to current URL on boot.
     //
@@ -435,7 +486,12 @@ export function isActive(path, options = {}) {
   const target = normalizePath(path, _options.trailingSlash)
 
   if (exact) return current === target
-  return current.startsWith(target)
+  if (current === target) return true
+  // A prefix must end at a segment boundary. Under `trailingSlash: 'never'`
+  // nothing supplied one and a bare `startsWith` made `/leads` active on
+  // `/leads-archive`, so the wrong nav item highlighted; under 'always' the
+  // trailing slash was supplying it by accident, which is why it was invisible.
+  return current.startsWith(target.endsWith('/') ? target : target + '/')
 }
 
 /**
@@ -504,11 +560,65 @@ async function _applyTitle(node, loaderModule, params, url, data) {
 
 let _navigating = false
 
+// How many redirects one navigation may make before the router calls it a
+// loop. Two guards that redirect to each other — an auth guard sending /admin/
+// to /login/ and a signed-in guard sending it back — recursed unbounded: 501
+// invocations in 7 ms, no error, a tab that never settles.
+const MAX_REDIRECTS = 10
+
+// Which navigation is the live one. _navigate has four await points, so the
+// last one to FINISH used to commit rather than the last one STARTED: a slow
+// load() from a route the reader had already left overwrote the page they were
+// on and pushed its own URL into the address bar. The same stamp createResource
+// applies to its own loads (`FJS-082`) and junction's store applies to a push.
+let _navSeq = 0
+
+/**
+ * A redirect target is a path on this origin.
+ *
+ * `//evil.example.com/` and `http://evil.example.com/` are refused by the
+ * browser's own pushState, which left `page.pending` set — RouterView's loading
+ * snippet forever — and rejected `goto` with nothing catching it. Refused here
+ * by name instead. `/\` is protocol-relative to some browsers, so both slash
+ * shapes go.
+ */
+function _validRedirect(target) {
+  return typeof target === 'string' && target.charCodeAt(0) === 47 /* '/' */
+    && target[1] !== '/' && target[1] !== '\\'
+}
+
+/**
+ * Put the address bar back after a guard refuses a popstate.
+ *
+ * The browser has already moved by the time popstate fires, so a refusal that
+ * does not undo it leaves the URL naming the page the guard just declined —
+ * the same lie as not guarding at all. `history.go` fires a second popstate for
+ * the return trip, which navigates to the page the reader is already on; the
+ * guard sees that page and allows it, and the delta is then zero so a guard
+ * that refuses everything settles rather than looping.
+ */
+function _restoreHistory(index) {
+  const now = window.history.state?.index ?? 0
+  if (now !== index) window.history.go?.(index - now)
+}
+
 /**
  * Core navigation function. All navigation goes through here.
  */
-async function _navigate(url, { replace = false, scroll = true, isPopstate = false, _hmr = false } = {}) {
+async function _navigate(url, { replace = false, scroll = true, isPopstate = false, _hmr = false, _hops = 0 } = {}) {
   if (!_tree) return
+
+  if (_hops > MAX_REDIRECTS) {
+    _reportError('redirect', url, new Error(
+      `Redirect loop: more than ${MAX_REDIRECTS} redirects without landing, last to ${url}. ` +
+      'Two guards redirecting to each other is the usual cause.',
+    ))
+    _w().pending = null
+    _navigating = false
+    return
+  }
+
+  const seq = ++_navSeq
 
   // Split the FRAGMENT off first, then the search. Splitting on '?' against the
   // whole URL puts the fragment inside `search`, so `/leads/?status=open#top`
@@ -525,12 +635,21 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   const match = matchRoute(normalized, _tree, _options)
 
   if (!match) {
-    console.warn(`[Sierra] No route found for: ${normalized}`)
+    console.warn(`[Sierra] No route found for: ${normalized}${_nearMiss(normalized)}`)
     return
   }
 
   const _fromNode = page.route
   const toNode = match.node
+
+  // The catch-all swallowing a case-only miss is the quiet half: `match` is
+  // truthy, nothing warns, and the reader gets a Not Found page for a route
+  // that exists. Said once, here, rather than at each of the two call sites
+  // that reach a spread node.
+  if (toNode.meta?.spread) {
+    const near = _nearMiss(normalized)
+    if (near) console.warn(`[Sierra] ${normalized} matched the catch-all${near}`)
+  }
 
   // Build from context with the actual current URL (not just the route pattern).
   // page.route has .path = the pattern (/blog/:slug/), but the real URL
@@ -570,31 +689,64 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   }
 
   // Run before-navigation guards (skip during HMR re-navigation).
+  //
+  // Popstate is NOT exempt. It was, inside the same condition as the two blocks
+  // below, and only the HMR half was ever justified: the Back button walked past
+  // every guard an app had registered, while `meta.redirect` — sitting three
+  // lines lower, outside the fence — did fire on Back. One kind of routing
+  // refusal survived Back and the other did not. README §Guards promises the
+  // opposite and `FJS-D06` files `beforeNavigate` under Hook, the tier that may
+  // halt the operation. The server is still the boundary (Invariant 6); what was
+  // broken is the affordance, silently.
+  //
   // Snapshot the array: guards may await, and a registration landing during
   // that await would otherwise be picked up by the in-flight loop, so the same
   // navigation would be judged by a guard set that changed underneath it.
-  if (!isPopstate && !_hmr) {
+  const historyIndexBefore = _currentHistoryIndex
+  if (!_hmr) {
     for (const guard of [..._beforeGuards]) {
       const result = await guard({ from: fromContext, to: toContext })
 
-      if (result === false) return  // cancelled
+      if (result === false) {
+        if (isPopstate) _restoreHistory(historyIndexBefore)
+        return  // cancelled
+      }
 
       if (typeof result === 'string') {
-        // Redirect
-        return _navigate(result, { replace: true, scroll })
+        if (!_validRedirect(result)) {
+          _reportError('redirect', toNode.file ?? toNode.id, new Error(
+            `A guard returned ${JSON.stringify(result)} — a redirect target must be a path ` +
+            'on this origin.',
+          ))
+          return
+        }
+        // Redirect. On popstate the entry the browser moved to is the one being
+        // replaced, which is what a guard redirect means: the reader pressed
+        // Back to a page they may not have and lands on the one they may.
+        return _navigate(result, { replace: true, scroll, _hops: _hops + 1 })
       }
     }
   }
 
+  // A newer navigation started while a guard was awaiting.
+  if (seq !== _navSeq) return
+
   // Save current scroll position before navigating away
   if (!isPopstate && !_hmr) {
     const currentIndex = window.history.state?.index ?? _currentHistoryIndex
-    _scrollPositions.set(currentIndex, window.scrollY)
+    _rememberScroll(currentIndex, window.scrollY)
   }
 
   // Handle redirects from route meta
   if (toNode.meta?.redirect) {
-    return _navigate(toNode.meta.redirect, { replace: true, scroll })
+    if (!_validRedirect(toNode.meta.redirect)) {
+      _reportError('redirect', toNode.file ?? toNode.id, new Error(
+        `redirect: ${JSON.stringify(toNode.meta.redirect)} — a redirect target must be a path ` +
+        'on this origin.',
+      ))
+      return
+    }
+    return _navigate(toNode.meta.redirect, { replace: true, scroll, _hops: _hops + 1 })
   }
 
   // Set pending route
@@ -624,6 +776,22 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
       _navigating = false
       return
     }
+  }
+
+  // Nothing registered a component for this route. The navigation used to commit
+  // anyway — no build error, no load error, `page.error` null — and then
+  // ChainRenderer threw on `chain[0].component`, naming an internal expression
+  // and no file. A route file that is all `<script module>` (the Resource shape,
+  // Invariant 18, dropped into routes/ by mistake) arrives exactly this way.
+  // Refused here because this is the last frame that still knows which FILE it
+  // was; ChainRenderer's own guard is the belt.
+  if (!getComponents().has(toNode.id)) {
+    _reportError('component', toNode.file ?? toNode.id, new Error(
+      `Route ${toNode.id} registered no component — a route file needs a default export.`,
+    ))
+    _w().pending = null
+    _navigating = false
+    return
   }
 
   // Chain must be complete before activeRoute is committed below, or
@@ -680,11 +848,13 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
             fetch: sierraFetch,
           })
 
-          // load() can return a redirect string
-          if (typeof loadedData === 'string' && loadedData.startsWith('/')) {
+          // load() can return a redirect string. Anything that is not a path on
+          // this origin stays DATA — a load() returning a plain string is legal,
+          // so this is a shape test rather than a refusal.
+          if (_validRedirect(loadedData)) {
             _w().pending = null
             _navigating = false
-            return _navigate(loadedData, { replace: true, scroll })
+            return _navigate(loadedData, { replace: true, scroll, _hops: _hops + 1 })
           }
         }
       }
@@ -706,20 +876,35 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
     }
   }
 
-  // Update history
-  if (!isPopstate) {
-    _previousHistoryIndex = _currentHistoryIndex
+  // Superseded while load() was in flight. Everything below is irreversible —
+  // the address bar, then the commit — and `pending` is left alone because the
+  // navigation that overtook this one owns it now.
+  if (seq !== _navSeq) return
 
-    if (replace) {
-      const idx = window.history.state?.index ?? _currentHistoryIndex
-      window.history.replaceState({ index: idx }, '', normalized + search + hash)
+  // Update history. Wrapped because pushState is the one call here a browser can
+  // refuse: a target it reads as cross-origin throws SecurityError, and an
+  // unwrapped throw left `pending` set, so RouterView rendered the app's loading
+  // snippet forever and `goto` rejected with nothing catching it.
+  try {
+    if (!isPopstate) {
+      _previousHistoryIndex = _currentHistoryIndex
+
+      if (replace) {
+        const idx = window.history.state?.index ?? _currentHistoryIndex
+        window.history.replaceState({ index: idx }, '', normalized + search + hash)
+      } else {
+        _currentHistoryIndex++
+        window.history.pushState({ index: _currentHistoryIndex }, '', normalized + search + hash)
+      }
     } else {
-      _currentHistoryIndex++
-      window.history.pushState({ index: _currentHistoryIndex }, '', normalized + search + hash)
+      _previousHistoryIndex = _currentHistoryIndex
+      _currentHistoryIndex = window.history.state?.index ?? 0
     }
-  } else {
-    _previousHistoryIndex = _currentHistoryIndex
-    _currentHistoryIndex = window.history.state?.index ?? 0
+  } catch (err) {
+    _reportError('navigation', normalized + search + hash, err)
+    _w().pending = null
+    _navigating = false
+    return
   }
 
   // Commit all signals atomically
@@ -867,7 +1052,14 @@ function findCatchAll(node) {
  * Handle browser back/forward button.
  */
 function _handlePopstate(event) {
-  const url = window.location.pathname + window.location.search
+  // The FRAGMENT, for the same reason the boot navigation carries it: without
+  // it `_handleScroll` takes the isPopstate branch and restores a saved offset,
+  // so Back to `/docs/#install` lands on the page and not on the anchor.
+  // `FJS-447` fixed the boot half and left this one. `|| ''` because a test
+  // double is a plain object and a missing `hash` concatenates the string
+  // "undefined" onto every URL.
+  const hash = window.location.hash || ''
+  const url = window.location.pathname + window.location.search + hash
   _navigate(url, { isPopstate: true, scroll: true })
 }
 
@@ -881,21 +1073,27 @@ function _handleClick(event) {
   if (event.defaultPrevented) return
   if (event.button !== 0) return
 
-  // Find closest <a> tag
-  const a = event.composedPath().find(el => el.tagName === 'A')
+  // Find the closest link — HTML or SVG. `linkHrefOf` owns the difference; an
+  // SVG anchor's tagName is lowercase and its `.href` is not a string.
+  const a = event.composedPath().find(el => linkHrefOf(el) !== null)
   if (!a) return
 
-  const href = a.getAttribute('href')
+  const href = linkHrefOf(a)
   if (!href) return
 
   // Skip non-navigation attributes
   if (a.hasAttribute('target')) return
   if (a.hasAttribute('download')) return
 
-  // Parse the href
+  // Parse the href against the CURRENT URL, not the origin. `location.origin`
+  // is scheme and host with no path, so every relative and every fragment href
+  // resolved to the site root — `<a href="#comments">` clicked on /blog/my-post/
+  // navigated to `/`, and so did `./`, `../other/`, `?draft=1` and `edit/`.
+  // prefetch.js is handed `a.href`, which the DOM has already resolved, and is
+  // right about the same concept for that reason.
   let url
   try {
-    url = new URL(href, window.location.origin)
+    url = new URL(href, window.location.href)
   } catch {
     return
   }
@@ -906,8 +1104,44 @@ function _handleClick(event) {
   // Skip mailto/tel etc
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return
 
+  const trailingSlash = _options.trailingSlash ?? 'always'
+  const normalized = normalizePath(url.pathname, trailingSlash)
+
+  // A fragment on the page the reader is already on is not a navigation. Run
+  // through _navigate it re-imports the route, re-runs load() and remounts
+  // nothing — an in-page table of contents re-fetching the page it is a table
+  // of contents for.
+  if (
+    url.hash &&
+    normalized === normalizePath(window.location.pathname, trailingSlash) &&
+    url.search === window.location.search
+  ) {
+    event.preventDefault()
+    _previousHistoryIndex = _currentHistoryIndex
+    _currentHistoryIndex++
+    window.history.pushState(
+      { index: _currentHistoryIndex }, '', normalized + url.search + url.hash,
+    )
+    const target = document.getElementById(url.hash.slice(1))
+    if (target) target.scrollIntoView()
+    return
+  }
+
+  // Match BEFORE cancelling the browser's own navigation. preventDefault used to
+  // run above the match, so a click on any same-origin URL the route table does
+  // not cover — a file the app serves at /downloads/report.csv, a link into a
+  // sibling surface — was eaten: the catch-all rendered, or in an app without
+  // one nothing happened at all and the console said `No route found`.
+  //
+  // The catch-all does not count as cover here. It is the answer for a URL
+  // somebody TYPED or a goto the app made, not for a link the app itself wrote
+  // to a URL it does not route — and an app that serves its own index.html for
+  // unknown paths still lands on the catch-all, one full page load later.
+  if (!_tree) return
+  const match = matchRoute(normalized, _tree, _options)
+  if (!match || match.node.meta?.spread) return
+
   event.preventDefault()
 
-  const path = url.pathname + url.search + url.hash
-  _navigate(path, { scroll: true })
+  _navigate(normalized + url.search + url.hash, { scroll: true })
 }

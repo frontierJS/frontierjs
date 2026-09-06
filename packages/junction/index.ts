@@ -98,8 +98,8 @@ export { createEventBus }                                         from './src/ev
 export type { IEventBus, EventHandler }                           from './src/events/index.ts'
 
 // ─── Cache ────────────────────────────────────────────────────────────────
-export { createMemoryCache, createSqliteCache }                   from './src/cache/index.ts'
-export type { ICache, CacheStats, MemoryCacheOptions }            from './src/cache/index.ts'
+export { createMemoryCache, createSqliteCache, CacheValueError }  from './src/cache/index.ts'
+export type { ICache, CacheStats, MemoryCacheOptions, SqliteCacheOptions } from './src/cache/index.ts'
 
 // ─── Scheduler ────────────────────────────────────────────────────────────
 
@@ -116,7 +116,7 @@ export { createResendMailer, createSmtpMailer, mailerPlugin, createMessage, Mail
 export type { IMail, MailMessage, MailAttachment, SendResult, SmtpMailerOptions, ResendOptions } from './src/mail/index.ts'
 
 // ─── AI ───────────────────────────────────────────────────────────────────
-export { AIRegistry, AIBuilder, createOpenAIModel, createAnthropicModel } from './src/ai/index.ts'
+export { AIRegistry, AIBuilder }                                   from './src/ai/index.ts'
 export type { IAIModel, AIRequest, AIResponse, AIMessage }               from './src/ai/index.ts'
 
 // ─── Result envelope ──────────────────────────────────────────────────────

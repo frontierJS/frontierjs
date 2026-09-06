@@ -26,7 +26,7 @@
 // disappearing is then read as evidence.
 //
 // **No `workspaceId` on the model**, for the reason `ServerEvent` has none: a
-// volume is meaningless without its server, and denormalising the tenancy fact
+// volume is meaningless without its server, and denormalizing the tenancy fact
 // onto it makes two owners of one answer. So the scope is a join — the server
 // ids in this workspace, then the volumes on them. The shared helpers in
 // core/resource.ts cannot be used here for exactly that reason; `serversOf()`
@@ -142,7 +142,10 @@ export function createVolumesService(app: BasecampApp) {
     // corresponded to until this line existed. `create`, `update` and `patch`
     // are all absent on purpose: a volume is what an outpost last reported, and
     // editing the record edits the picture rather than the machine.
-    methods: ['find', 'get', 'remove', 'usage', 'report', 'prune'],
+    // `report` is the outpost's: no session, HMAC at the transport, so it
+    // states gate 0 rather than taking a custom method's read-gate floor
+    // (`FJS-826`).
+    methods: ['find', 'get', 'remove', 'usage', 'prune', { method: 'report', gate: 0 }],
 
     // ── find ──────────────────────────────────────────────────────────
     async find() {

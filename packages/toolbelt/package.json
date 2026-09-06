@@ -1,14 +1,22 @@
 {
   "name": "@frontierjs/toolbelt",
   "version": "0.1.1",
-  "description": "FrontierJS pure-function kits — zero dependencies, no I/O, importable from any package",
+  "description": "FrontierJS pure-function kits \u2014 zero dependencies, no I/O, importable from any package",
   "type": "module",
   "scripts": {
     "test": "bun test/run.js",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "exports": {
+    "./cron": {
+      "types": "./src/cron/cron.d.ts",
+      "default": "./src/cron/cron.js"
+    },
     "./directives": "./src/directives/directives.js",
+    "./gate": {
+      "types": "./src/gate/gate.d.ts",
+      "default": "./src/gate/gate.js"
+    },
     "./glow": "./src/glow/glow.js",
     "./history": "./src/history/history.js",
     "./hooks": "./src/hooks/hooks.js",
@@ -19,6 +27,10 @@
     "./query": {
       "types": "./src/query/query.d.ts",
       "default": "./src/query/query.js"
+    },
+    "./redact": {
+      "types": "./src/redact/redact.d.ts",
+      "default": "./src/redact/redact.js"
     },
     "./search": "./src/search/search.js",
     "./signature": "./src/signature/signature.js",

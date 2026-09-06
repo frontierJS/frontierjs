@@ -1,5 +1,32 @@
 # Changes — @frontierjs/testing
 
+## `createTestMailer()` — and the two doubles that are deliberately absent
+
+`batteries-13` asked for doubles for mail, storage and cache. Asked of the code
+rather than of the list, only one of the three was missing.
+
+`createMemoryCache()` from `@frontierjs/junction` is already an in-memory
+`ICache`, held to the SQLite driver's contract by a conformance suite that runs
+one body against both. `FileStorage({ provider: 'local' })` from
+`@frontierjs/litestone` is already the local implementation, and its assertion
+surface is the filesystem, which a test can read. A second of either would be a
+second answer to the same question, and the two would drift.
+
+Mail had nothing: no `IMail` without a mail server, and *what was sent* existed
+nowhere, so any suite asking whether an invitation reached an address had to
+stand up an MTA. `createTestMailer()` records `sent`, answers `last`, finds a
+message by any recipient including `cc` and `bcc`, and can be made to fail —
+the retry and outbox paths need failures.
+
+Its sharp edge is what it refuses. It applies the same address and header guards
+the real path does, imported from `@frontierjs/junction/mail` rather than
+restated, because a double that accepts a message SMTP would reject is worse than
+no double: the test is green and the send fails in production.
+
+The other two are named in the module header rather than shipped, so that
+completing the set later is a decision somebody makes rather than a gap they
+fill.
+
 ## 2026-08-17 — first consumer, and it found the thing this package exists to find
 
 `packages/basecamp/api/test/services.test.ts` is the first code anywhere to

@@ -35,7 +35,10 @@ CREATE TABLE IF NOT EXISTS "session" (
   "expiresAt" TEXT NOT NULL,
   "ipAddress" TEXT,
   "userAgent" TEXT,
-  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "impersonatingUserId" TEXT,
+  "impersonationReason" TEXT,
+  "impersonationEndsAt" TEXT
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_session_userId" ON "session" ("userId");
 CREATE INDEX IF NOT EXISTS "idx_session_expiresAt" ON "session" ("expiresAt");
@@ -87,7 +90,8 @@ CREATE TABLE IF NOT EXISTS "outbox_message" (
   "deliveredAt" TEXT,
   "attempts" INTEGER NOT NULL DEFAULT 0,
   "lastError" TEXT,
-  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "nextAttemptAt" TEXT
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_outbox_message_deliveredAt_createdAt" ON "outbox_message" ("deliveredAt", "createdAt");
 CREATE INDEX IF NOT EXISTS "idx_outbox_message_claimedAt" ON "outbox_message" ("claimedAt");
@@ -352,7 +356,7 @@ CREATE TABLE IF NOT EXISTS "pay_rate" (
   CHECK (toAmount IS NULL OR fromAmount < toAmount),
   CHECK (effectiveTo IS NULL OR effectiveFrom < effectiveTo)
 ) STRICT;
-CREATE UNIQUE INDEX IF NOT EXISTS "idx_pay_rate_kind_fromAmount" ON "pay_rate" ("kind", "fromAmount") WHERE "effectiveTo" IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_pay_rate_kind_fromAmount" ON "pay_rate" ("kind", "fromAmount") WHERE "effectiveTo" IS NULL;
 
 -- One period's payroll, for everybody employed in it.
 -- 
@@ -503,6 +507,7 @@ CREATE TABLE IF NOT EXISTS "payment_method" (
   FOREIGN KEY ("customerId") REFERENCES "customer" ("id") ON DELETE RESTRICT
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_payment_method_customerId" ON "payment_method" ("customerId");
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_payment_method_customerId" ON "payment_method" ("customerId") WHERE "isDefault" = 1;
 
 -- A basket, and the one model in this app owned by NOBODY.
 -- 
@@ -558,7 +563,7 @@ CREATE TABLE IF NOT EXISTS "plan_version" (
   CHECK (effectiveTo IS NULL OR effectiveFrom < effectiveTo),
   FOREIGN KEY ("planId") REFERENCES "plan" ("id") ON DELETE RESTRICT
 ) STRICT;
-CREATE UNIQUE INDEX IF NOT EXISTS "idx_plan_version_planId" ON "plan_version" ("planId") WHERE "effectiveTo" IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_plan_version_planId" ON "plan_version" ("planId") WHERE "effectiveTo" IS NULL;
 
 -- What somebody is paid, over the interval it was true for.
 -- 
@@ -608,7 +613,7 @@ CREATE TABLE IF NOT EXISTS "pay_window" (
   CHECK (effectiveTo IS NULL OR effectiveFrom < effectiveTo),
   FOREIGN KEY ("employeeId") REFERENCES "employee" ("id") ON DELETE RESTRICT
 ) STRICT;
-CREATE UNIQUE INDEX IF NOT EXISTS "idx_pay_window_employeeId" ON "pay_window" ("employeeId") WHERE "effectiveTo" IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_pay_window_employeeId" ON "pay_window" ("employeeId") WHERE "effectiveTo" IS NULL;
 
 -- A photograph. The bytes live in object storage and this column holds the
 -- reference — `File` is the type that means that, and `FileStorage` in
@@ -674,7 +679,7 @@ CREATE TABLE IF NOT EXISTS "inventory_movement" (
 -- ─── Why the columns are copies ──────────────────────────────────────────
 -- 
 -- Every column below except the two ids is a value this row already has a
--- relation to. That is not denormalisation for speed — it is that a line is a
+-- relation to. That is not denormalization for speed — it is that a line is a
 -- statement about a MOMENT and its neighbors are statements about now. A
 -- variant's price is what the shop charges today; `unitPrice` is what this
 -- shopper was charged, and re-reading the first to render the second rewrites
@@ -702,7 +707,6 @@ CREATE TABLE IF NOT EXISTS "order_line" (
   "quantity" INTEGER NOT NULL,
   "unitPrice" INTEGER NOT NULL CHECK ("unitPrice" BETWEEN -9007199254740991 AND 9007199254740991),
   "lineTotal" INTEGER NOT NULL CHECK ("lineTotal" BETWEEN -9007199254740991 AND 9007199254740991),
-  "userId" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
   FOREIGN KEY ("orderId") REFERENCES "order" ("id") ON DELETE CASCADE,

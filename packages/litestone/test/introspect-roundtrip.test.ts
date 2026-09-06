@@ -47,6 +47,7 @@ import { parse }                      from '../src/core/parser.js'
 import { generateDDL }                from '../src/core/ddl.js'
 import { splitStatements }            from '../src/core/migrate.js'
 import { introspectToLite, generateLiteSchema } from '../src/tools/introspect.js'
+import { COMMITTED, FETCHED, SCALE } from './fixtures/corpus/tiers.js'
 
 // ─── the harness ─────────────────────────────────────────────────────────────
 
@@ -88,16 +89,41 @@ function roundTrip(src: string) {
 
 // ─── the property, over input nobody here wrote ──────────────────────────────
 
+// The roster is `fixtures/corpus/tiers.js` and may not be restated here: this
+// file held its own copy, and the copy is what made the suite unpassable on a
+// fresh clone (`FJS-009`). The tiers are the point — a fetched fixture is absent
+// on every clone and present on every machine that has run `fetch.mjs`, so a
+// floor built on the two together is a floor only some machines can meet.
 const FIXTURES = new URL('./fixtures/', import.meta.url).pathname
-const CORPUS   = ['calcom', 'discourse', 'documenso', 'erpnext', 'lago', 'mastodon', 'triggerdev']
-  .map(n => join(FIXTURES, 'corpus', `${n}.lite`))
-  .concat([join(FIXTURES, 'scale', 'openmrp.lite')])
-  .filter(existsSync)
+const litePath = (tier: string, n: string) => join(FIXTURES, tier, `${n}.lite`)
+
+const REQUIRED = [
+  ...COMMITTED.map(n => litePath('corpus', n)),
+  ...SCALE.map(n     => litePath('scale',  n)),
+]
+const CORPUS = [...REQUIRED, ...FETCHED.map(n => litePath('corpus', n))].filter(existsSync)
 
 describe('a generated schema builds the database it was read from', () => {
-  test('the corpus is here — an empty sweep is not a passing one', () => {
-    expect(CORPUS.length).toBeGreaterThanOrEqual(8)
+  // An empty sweep is not a passing one — and the floor is what git carries,
+  // derived from the roster rather than written as a number. The literal it
+  // replaces was 8, which counted the fetched pair and therefore could not be
+  // met by a clone.
+  test('every committed fixture is here, and is swept', () => {
+    const missing = REQUIRED.filter(p => !existsSync(p))
+    expect(missing).toEqual([])
+    // The other half, and the one a count cannot ask: a fixture that IS
+    // committed and that no list names is swept by nothing. `hrms` was exactly
+    // that — in git, absent from this file's own copy of the roster.
+    for (const p of REQUIRED) expect(CORPUS).toContain(p)
   })
+
+  // Named rather than silently not run, the way `corpus.test.ts` does it: a
+  // fetched fixture missing is a machine with no network, not a defect.
+  for (const n of FETCHED) {
+    const path = litePath('corpus', n)
+    if (!existsSync(path))
+      test.skip(`${n}: not fetched — run \`bun test/fixtures/corpus/fetch.mjs\``, () => {})
+  }
 
   for (const path of CORPUS) {
     const name = path.split('/').slice(-1)[0]

@@ -21,7 +21,8 @@
 // and Sierra calling `client.service(name)` where jetty calls
 // `harbor.request('service:call')` is two facts, not one with two owners.
 
-export { createResource }            from './resource.js'
+export { createResource,
+         ResourceHookError }         from './resource.js'
 export { createStore }               from './store.js'
 export { createMakeFromSchema }      from '@frontierjs/toolbelt/jsonschema'
 

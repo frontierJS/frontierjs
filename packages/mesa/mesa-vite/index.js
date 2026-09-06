@@ -53,10 +53,8 @@ const RESOLVED_INSPECT_ID     = '\0@frontierjs/mesa-inspect'
 
 // ─── Compiler resolution ──────────────────────────────────────────────────────
 
-let _compileSource = null
-
 /**
- * Lazily resolve and import the Mesa compiler.
+ * Resolve and import the Mesa compiler.
  *
  * The compiler is a sibling — this plugin ships inside @frontierjs/mesa — so
  * the answer is a relative path and there is nothing to hunt for. It is
@@ -68,21 +66,19 @@ let _compileSource = null
  * compiler by package name would serve a stale snapshot of it.
  *
  * `options.compilerPath` still wins, for a consumer testing a compiler build
- * that is not this one.
+ * that is not this one — and the answer is memoised per PLUGIN INSTANCE, never
+ * at module scope: two `mesa()` calls in one config are the ordinary case
+ * (`FJS-D16`), and a shared memo hands the second whichever compiler the first
+ * asked for, dropping its `compilerPath` with nothing said.
  */
-async function getCompileSource(options) {
-  if (_compileSource) return _compileSource
-
+async function resolveCompileSource(options) {
   const sibling    = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'compiler.js')
   const candidates = options.compilerPath ? [options.compilerPath, sibling] : [sibling]
 
   for (const c of candidates) {
     if (fs.existsSync(c)) {
       const mod = await import(pathToFileURL(c).href)
-      if (typeof mod.compileSource === 'function') {
-        _compileSource = mod.compileSource
-        return _compileSource
-      }
+      if (typeof mod.compileSource === 'function') return mod.compileSource
     }
   }
 
@@ -164,6 +160,30 @@ export default function mesaPlugin(options = {}) {
 
   /** True when Vite is in dev/serve mode */
   let isDev = false
+
+  /** The compiler, resolved once per PLUGIN INSTANCE — see resolveCompileSource. */
+  let compilerPromise = null
+  const getCompileSource = () => (compilerPromise ??= resolveCompileSource(options))
+
+  /**
+   * Can the HMR client be assembled at all? Asked before a boundary is injected,
+   * because the injected `import.meta.hot.accept` makes the module SELF-ACCEPT:
+   * Vite then escalates nothing, and if the client behind it is the no-op stub
+   * the accept swallows every edit forever. Failing closed means injecting no
+   * boundary, which is what leaves the file on the full-reload path.
+   */
+  let clientOk = null
+  const hmrClientAvailable = (ctx) => {
+    if (clientOk !== null) return clientOk
+    try {
+      hmrClientSource()
+      clientOk = true
+    } catch (err) {
+      clientOk = false
+      ctx.warn(`[mesa] HMR client unavailable — components stay on the full-reload path. ${err.message}`)
+    }
+    return clientOk
+  }
 
   const isMesaFile = (id) => extensions.some((e) => id.endsWith(e))
 
@@ -276,13 +296,19 @@ export default function mesaPlugin(options = {}) {
         try {
           return hmrClientSource()
         } catch (err) {
-          // A no-op client keeps the build alive and puts every component on
-          // the full-reload path, which is survivable. Being quiet about it is
-          // not: the symptom is an edit that appears to do nothing.
+          // A stub that does nothing is not the full-reload path, it is the
+          // absence of one: the boundary injected into the component makes the
+          // module self-accept, so Vite escalates nothing and a no-op update
+          // handler loses every edit in silence. Reload instead. transform()
+          // asks `hmrClientAvailable` first, so reaching this means the join
+          // broke after the server came up.
           this.warn(`[mesa] HMR client unavailable — components will full-reload. ${err.message}`)
           return `
 export function __mesa_register() { return () => {} }
-export function __mesa_hot_update() {}
+export function __mesa_hot_update(id) {
+  console.warn('[Mesa HMR] client unavailable (' + id + ') — reloading')
+  location.reload()
+}
 `
         }
       }
@@ -335,7 +361,7 @@ export function __mesa_hot_update() {}
 
       let compileSource
       try {
-        compileSource = await getCompileSource(options)
+        compileSource = await getCompileSource()
       } catch (e) {
         this.warn(e.message)
         return null
@@ -362,20 +388,13 @@ export function __mesa_hot_update() {}
           )
         })
       } catch (e) {
-        const formatted = formatError(e, id)
-        if (isDev) {
-          // In dev: emit as a module that throws so the error overlay fires
-          const msg = (formatted.message ?? 'Mesa compile error')
-            .replace(/\\/g, '\\\\').replace(/`/g, '\\`')
-          const frame = (formatted.frame ?? '')
-            .replace(/\\/g, '\\\\').replace(/`/g, '\\`')
-          return {
-            code: `throw new Error(\`[Mesa] ${msg}\\n${frame}\`)`,
-            map:  null
-          }
-        }
-        // In build: fail the build
-        this.error(formatted)
+        // Dev and build alike: raise. A module body that throws is never
+        // reached — every importer writes `import X from './X.mesa'`, so the ES
+        // linker rejects the module for a missing `default` before a line of it
+        // runs, and the developer is told their own import is wrong. Raising
+        // makes Vite answer the module request 500, which is the only thing the
+        // dev client will put in the error overlay.
+        this.error(formatError(e, id))
         return null
       }
 
@@ -390,11 +409,7 @@ export function __mesa_hot_update() {}
         const detail = ctx.analysis.errors.map((e) => `  • ${e}`).join('\n')
         const message =
           `[Mesa] ${ctx.analysis.errors.length} error(s) in ${rel}:\n${detail}`
-        if (isDev) {
-          const esc = (s) => s.replace(/\\/g, '\\\\').replace(/`/g, '\\`')
-          return { code: `throw new Error(\`${esc(message)}\`)`, map: null }
-        }
-        this.error({ id, plugin: 'mesa', message })
+        this.error({ id, plugin: 'mesa', message, stack: '' })
         return null
       }
 
@@ -413,7 +428,7 @@ export function __mesa_hot_update() {}
       // depends on are shapes of the compiler's OUTPUT, and a `.replace()` whose
       // pattern stops matching is silent. Failing closed here keeps the file on
       // the old full-reload path instead of shipping half a boundary.
-      if (isDev && hmr && id.endsWith('.mesa') && canInject(js)) {
+      if (isDev && hmr && id.endsWith('.mesa') && canInject(js) && hmrClientAvailable(this)) {
         js = injectHMR(js, id, root, VIRTUAL_CLIENT_ID)
       }
 
@@ -422,29 +437,15 @@ export function __mesa_hot_update() {}
 
     // ── HMR ───────────────────────────────────────────────────────────────────
 
-    async handleHotUpdate({ file, modules, read, server: s }) {
+    async handleHotUpdate({ file, modules, server: s }) {
       if (!isMesaFile(file)) return undefined
 
-      // Re-compile on change to catch errors early and show overlay
-      let compileSource
-      try {
-        compileSource = await getCompileSource(options)
-      } catch (_) {
-        return modules
-      }
-
-      // A throwaway compile, for the throw alone — the module Vite asks for
-      // afterwards is built by transform(). `css: false` keeps the scoped rules
-      // out of output nobody reads.
-      const source = await read()
-      try {
-        await compileSource(source, { filename: file, css: false })
-      } catch (e) {
-        // Send error to browser overlay — use server.hot in Vite 8, ws as fallback
-        const hot = s?.hot ?? s?.ws
-        hot?.send({ type: 'error', err: formatError(e, file) })
-        return []   // suppress default HMR behavior
-      }
+      // No compile here. transform() raises on a broken file, so the module
+      // request the invalidation below provokes answers 500 and the dev client
+      // raises the overlay from that. A second compile would double the
+      // per-save cost of an 8600-line compiler and be a second owner of "is
+      // this file broken" — one that saw a throw and never `analysis.errors`,
+      // so an inert `$: { }` reached the browser with no overlay at all.
 
       // Explicitly invalidate every affected module so Vite 8 re-runs
       // transform() and the browser gets fresh compiled output.
@@ -480,17 +481,24 @@ export function __mesa_hot_update() {}
 export function mesaDevtools() {
   const devtoolsHtmlPath = fileURLToPath(new URL('./devtools.html', import.meta.url))
 
+  /** True when Vite is in dev/serve mode */
+  let isDev = false
+
   return {
     name:    'mesa-devtools',
     enforce: 'pre',
 
+    configResolved(config) {
+      isDev = config.command === 'serve'
+    },
+
     // Resolve + load the BroadcastChannel relay virtual module
     resolveId(id) {
-      if (id === VIRTUAL_DEV_CLIENT_ID) return RESOLVED_DEV_CLIENT_ID
+      if (isDev && id === VIRTUAL_DEV_CLIENT_ID) return RESOLVED_DEV_CLIENT_ID
     },
 
     load(id) {
-      if (id !== RESOLVED_DEV_CLIENT_ID) return null
+      if (!isDev || id !== RESOLVED_DEV_CLIENT_ID) return null
       return `
 (function() {
   if (typeof window === 'undefined') return
@@ -517,8 +525,13 @@ export function mesaDevtools() {
 `
     },
 
-    // Inject the dev client into every HTML page
+    // Inject the dev client into every HTML page — in DEV only. The src is a
+    // virtual id nothing emits as an asset, so a shipped page requests a module
+    // that is not there; on the SPA-fallback servers this framework deploys
+    // with, the 404 answers index.html as text/html and the browser rejects it
+    // as a module with a second, unrelated-looking error.
     transformIndexHtml() {
+      if (!isDev) return []
       return [{
         tag:      'script',
         attrs:    { type: 'module', src: VIRTUAL_DEV_CLIENT_ID },

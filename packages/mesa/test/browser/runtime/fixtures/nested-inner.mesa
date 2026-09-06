@@ -1,0 +1,7 @@
+<script>
+  // nested-inner.mesa — the second mount, with a delegation root of its own.
+  let innerHits = 0
+</script>
+
+<button type="button" id="inner-btn" on:click={() => innerHits++}>inner</button>
+<output id="inner-hits">{innerHits}</output>

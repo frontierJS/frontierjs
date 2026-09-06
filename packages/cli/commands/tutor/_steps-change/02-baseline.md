@@ -23,10 +23,12 @@ copy of the schema as it stands. In a real project it is a git ref
 (`--from v1.4.0`, or `--from HEAD~1`), which is the same comparison with the
 old version fetched rather than kept.
 
-One detail that matters more than it looks: the copy lives **beside** the
-schema. A `.lite` file resolves its `import` lines against its own directory, so
-a baseline copied to a temp directory silently loses every imported model — and
-the comparison then reports the whole of `@frontierjs/auth` as newly added.
+The copy lives beside the schema, and where it lives is worth one sentence: a
+`.lite` file resolves its `import` lines against its own directory, so a
+baseline kept somewhere else is asking about files that are not there. It is
+read from the schema's directory when its own has no answer, and says so — but
+a baseline that brought its own imports keeps them, because those are the ones
+that release actually had.
 
 ```js
 if (!await narrate(context)) return
@@ -61,6 +63,18 @@ if (!await must(context, probe.fileContains({
 // than assumed, since the alternative is a lesson whose last step depends on
 // which lessons you ran before it.
 editSchema(context, '@@gate("4.4.4.6")', '@@gate("0.4.4.6")')
+
+// The same normalisation for the column this lesson adds. Running it twice in
+// one workspace would otherwise capture a baseline that ALREADY has `priority`,
+// and step 3's expand would be graded `unchanged` — a lesson reporting that
+// nothing happened because it had already happened.
+//
+// Written directly rather than through `editSchema`, whose contract is *the
+// target wins where it is already there* — and every schema already contains
+// the empty string, so a removal expressed that way is a no-op every time.
+const before = readFileSync(schemaFile(context), 'utf8')
+const without = before.replace(/^[ \t]*priority[ \t]+Int\??[ \t]*\r?\n/m, '')
+if (without !== before) writeFileSync(schemaFile(context), without, 'utf8')
 
 copyFileSync(schemaFile(context), join(app, 'db', 'before.lite'))
 

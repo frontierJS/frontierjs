@@ -82,6 +82,12 @@ core/
                 ships what a subtree copy does not, and grading on the context
                 copy alone refuses every multi-stage build here. Pure — the
                 caller reads the files, so the suite needs no daemon
+  docker-context.js  can the BUILDER's docker read the build context at all —
+                asked with `docker build --check`, which parses and builds
+                nothing, because the answer is a property of that machine's
+                docker packaging and not of the path (a snap sees nothing
+                outside its user's home, `/tmp` included). Pure grader, one
+                probe script; the suite needs no daemon
   revert.js     can serving state be put back, and what stops it — seven
                 refusals, four of them with no override because they are not
                 judgement calls. All of them reported, never just the first. It
@@ -171,6 +177,19 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   Pass `env:` on the `context.exec` call instead. This is what made `fli new
   --auth` unable to finish (`FJS-343`), and the assignment that failed had been
   written specifically to fix that symptom.
+- **`context.exec` refuses an option it does not have, and reading the child's
+  output is `stdio`.** It takes `command`, `dry`, `describe` and `allowFailure`,
+  plus what `execSync` understands, and anything else throws by name — an
+  unrecognised key used to be spread through and silently ignored, which is
+  what made `capture: true` parse `''` and print *Failed — check output above*
+  under the output it was meant to read (`FJS-537`). Ask for a pipe:
+  `stdio: ['ignore', 'pipe', 'inherit']`. **`allowFailure: true` answers the
+  thrown error instead of rethrowing** — `status` is the exit code and
+  `stdout`/`stderr` are what the child wrote, so a probe reads the same two keys
+  whether it succeeded or not; `exitCode` and `code` are neither of them there.
+  A signal still stops everything. `tests/exec-options.test.js` reads every
+  `exec({…})` in every shipped command, because a command is markdown and a
+  compile is not a run.
 - **Never shell out to a bare `fli`.** That is a GLOBAL install, present on the
   machine of anyone who has run `bun add -g` and on no CI runner, in no
   container, and for nobody arriving through `npm create frontier`. It is also

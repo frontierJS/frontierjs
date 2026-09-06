@@ -128,7 +128,11 @@ describe('a call header rides both transports', () => {
 
 describe('the server merges only what the app declared', () => {
 
-  const PORT = 3397
+  // Port 0, read back after start(). A fixed port here was `FJS-900`: several
+  // files in this package bound the same one and bun runs them in ONE process,
+  // so an app answered while a previous file's app on that port was still
+  // shutting down. Never hard-code a port in this package's tests.
+  let PORT = 0
   let app: ReturnType<typeof createApp> | undefined
   afterAll(async () => { await app?.stop() })
 
@@ -137,7 +141,7 @@ describe('the server merges only what the app declared', () => {
 
     app = createApp({
       config: {
-        port: PORT,
+        port: 0,
         database: { url: '', log: false },
         services: { dir: '/nonexistent' },
         http: { ...defaultConfig.http, drainTimeout: 250, callHeaders: ['X-Cart-Token'] },
@@ -149,6 +153,7 @@ describe('the server merges only what the app declared', () => {
     }))
     app.configure(channels(() => {}))
     await app.start()
+    PORT = (app as unknown as { http: { port: number } }).http.port
 
     const client = createJunctionClient({ url: `http://localhost:${PORT}` })
     client.setCallHeader('x-cart-token', 'tok-declared')

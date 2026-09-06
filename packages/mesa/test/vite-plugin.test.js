@@ -166,10 +166,15 @@ describe('compiler warnings', () => {
   // script analysis, so a warning the template emitter pushes later (this one)
   // never reaches `this.warn`. Reading the callback alone would report a clean
   // compile for a component the compiler had something to say about.
-  test('reach the module as comments even when this.warn never fires', async () => {
+  test('reach both the module and this.warn', async () => {
     const { code, warnings } = await transform(WARNS, `${ROOT}/W.mesa`)
 
-    expect(warnings).toHaveLength(0)
+    // Both channels, because each covers what the other cannot: `this.warn`
+    // reaches the terminal at build time, the comment reaches whoever opens
+    // the served module. The template emitter's warnings used to reach neither
+    // — the drain ran before the template was built (FJS-845).
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('<mesa:boundary> has no async-derived')
     expect(code).toContain('// ⚠ Mesa: <mesa:boundary> has no async-derived')
     parses(code)
   })
@@ -384,7 +389,15 @@ describe('handleHotUpdate', () => {
     expect(server.invalidated).toEqual(modules)
   })
 
-  test('a parse error goes to the overlay and suppresses the update', async () => {
+  // The concern here has not changed — a file that does not compile must not
+  // leave the page running code built from it, and the author must be told —
+  // but the mechanism has. The hook no longer compiles: it invalidates, Vite
+  // re-requests, and `transform` raises, so the module request answers 500 and
+  // the client raises the overlay from that. Compiling here as well made this
+  // hook a second owner of *is this file broken*, and it was the owner that
+  // read only a throw, so a collected error (an inert `$: { }`) reached the
+  // browser with no overlay at all (FJS-876).
+  test('a parse error invalidates and reports through nobody here', async () => {
     const server = fakeServer()
     const result = await hook()({
       file:    `${ROOT}/Broken.mesa`,
@@ -393,30 +406,35 @@ describe('handleHotUpdate', () => {
       server
     })
 
-    // [] rather than the modules: pushing a broken module would remount every
-    // instance from source that does not compile.
-    expect(result).toEqual([])
-    expect(server.invalidated).toHaveLength(0)
-    expect(server.sent).toHaveLength(1)
-    expect(server.sent[0].type).toBe('error')
-    expect(server.sent[0].err.plugin).toBe('mesa')
-    expect(server.sent[0].err.id).toBe(`${ROOT}/Broken.mesa`)
-    expect(server.sent[0].err.message).toContain('Unexpected token')
+    expect(result).toEqual([{ id: 'a' }])
+    expect(server.sent).toHaveLength(0)
   })
 
-  test('falls back to server.ws where server.hot is absent', async () => {
-    const server = fakeServer()
-    const ws     = { send: (m) => server.sent.push(m) }
-    delete server.hot
+  test('and the raise the browser actually sees comes from transform', async () => {
+    const r = await transform('<script>let a = (</script><p>x</p>', `${ROOT}/Broken.mesa`)
+    expect(r.code).toBeNull()
+    expect(r.errors).toHaveLength(1)
+    expect(r.errors[0].plugin).toBe('mesa')
+    expect(r.errors[0].id).toBe(`${ROOT}/Broken.mesa`)
+    expect(r.errors[0].message).toContain('Unexpected token')
+  })
 
-    await hook()({
-      file:    `${ROOT}/Broken.mesa`,
-      modules: [],
-      read:    async () => '<script>let a = (</script><p>x</p>',
-      server:  { ...server, ws }
-    })
-
-    expect(server.sent).toHaveLength(1)
-    expect(server.sent[0].type).toBe('error')
+  // Was a `server.hot ?? server.ws` compatibility case. The hook sends on
+  // neither channel now, so the surface it covered is gone rather than moved —
+  // asserted, because a hook that quietly regained a sender would put the
+  // second owner back.
+  test('sends on no channel, whichever one the server has', async () => {
+    for (const server of [fakeServer(), (() => {
+      const s = fakeServer(); const ws = { send: (m) => s.sent.push(m) }
+      delete s.hot; return { ...s, ws, sent: s.sent }
+    })()]) {
+      await hook()({
+        file:    `${ROOT}/Broken.mesa`,
+        modules: [],
+        read:    async () => '<script>let a = (</script><p>x</p>',
+        server
+      })
+      expect(server.sent).toHaveLength(0)
+    }
   })
 })

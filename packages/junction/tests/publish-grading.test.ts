@@ -24,7 +24,7 @@
 // gets asked about, how many times, and what goes on the wire.
 
 import { describe, test, expect } from 'bun:test'
-import { createChannelManager } from '../src/transport/channels.ts'
+import { createChannelManager, gradeRecipients } from '../src/transport/channels.ts'
 import type { ServiceContext } from '../src/transport/bridge.ts'
 
 type Manager = ReturnType<typeof createChannelManager>
@@ -136,6 +136,12 @@ describe('a broadcast is graded per recipient', () => {
 })
 
 describe('cohorts', () => {
+  // The row above shares ONE object between the two tabs, which is what made
+  // this suite agree with a transport that never collapsed anything: `_wsOpen`
+  // calls `verifySession` per socket and `@frontierjs/auth` answers
+  // `{ ...toContext(user), sessionId }`, a fresh object every time. Measured
+  // before the fix, 100 sockets of one user asked the Data boundary 100 times.
+  // So every assertion below hands each connection its OWN object.
   test('two connections of ONE person are graded once and both receive it', async () => {
     // Phoenix names the cost this avoids: intercepting a broadcast means "the
     // broadcast will be encoded N times instead of a single shared encoding".
@@ -281,5 +287,149 @@ describe('the principal has to be translated', () => {
 
     expect(asked.length).toBe(1)
     expect((asked[0] as any).id).toBe('u-owner')
+  })
+})
+
+// ─── the cohort key is the principal's VALUE ─────────────────────────────────
+//
+// `FJS-712` / `realtime-9`. Keyed on object identity the cohort was a
+// per-connection loop wearing the word cohort. Every row here builds a fresh
+// object per socket, which is what the transport does.
+//
+// The refusals are the half that matters: collapsing two principals that are
+// not the same delivers a row to somebody who may not read it, so each
+// collapse below is paired with a case that must NOT collapse.
+describe('the cohort key is the principal value, not the object', () => {
+  const many = (manager: Manager, n: number, make: (i: number) => unknown) =>
+    Array.from({ length: n }, (_, i) => subscriber(manager, 'orders', make(i), 's' + i))
+
+  test('100 sockets of one person, each with its own session object, ask once', async () => {
+    const manager = createChannelManager()
+    const subs    = many(manager, 100, () => ({ userId: 'u-owner', isStaff: true }))
+    const { asked, db } = boundary(() => ROW)
+
+    await publishOnce(manager, db)
+
+    expect(asked.length).toBe(1)
+    // A fix that grades once and delivers once is the failure this pairs with.
+    expect(subs.every(x => x.rows().length === 1)).toBe(true)
+  })
+
+  // The control. A key that collapsed everything would pass the row above and
+  // hand one person's row to the other.
+  test('two people whose sessions differ in ONE field are still two cohorts', async () => {
+    const manager = createChannelManager()
+    const staff  = subscriber(manager, 'orders', { userId: 'u-1', isStaff: true },  'a')
+    const buyer  = subscriber(manager, 'orders', { userId: 'u-1', isStaff: false }, 'b')
+    const { asked, db } = boundary((p) => (p.isStaff ? ROW : null))
+
+    await publishOnce(manager, db)
+
+    expect(asked.length).toBe(2)
+    expect(staff.rows()).toEqual([ROW])
+    expect(buyer.rows()).toEqual([])
+  })
+
+  test('the key order a session was built in does not split a cohort', async () => {
+    const manager = createChannelManager()
+    subscriber(manager, 'orders', { userId: 'u-1', isStaff: true }, 'a')
+    subscriber(manager, 'orders', { isStaff: true, userId: 'u-1' }, 'b')
+    const { asked, db } = boundary(() => ROW)
+
+    await publishOnce(manager, db)
+
+    expect(asked.length).toBe(1)
+  })
+
+  test('a Date is compared by its instant, and two instants are two cohorts', async () => {
+    const at = 1756900000000
+    const manager = createChannelManager()
+    subscriber(manager, 'orders', { userId: 'u-1', verifiedAt: new Date(at) },     'a')
+    subscriber(manager, 'orders', { userId: 'u-1', verifiedAt: new Date(at) },     'b')
+    subscriber(manager, 'orders', { userId: 'u-1', verifiedAt: new Date(at + 1) }, 'c')
+    const { asked, db } = boundary(() => ROW)
+
+    await publishOnce(manager, db)
+
+    expect(asked.length).toBe(2)
+  })
+
+  test('a nested claim bag collapses by value', async () => {
+    const manager = createChannelManager()
+    subscriber(manager, 'orders', { userId: 'u-1', roles: ['a', 'b'], org: { id: 7 } }, 'a')
+    subscriber(manager, 'orders', { userId: 'u-1', roles: ['a', 'b'], org: { id: 7 } }, 'b')
+    subscriber(manager, 'orders', { userId: 'u-1', roles: ['b', 'a'], org: { id: 7 } }, 'c')
+    const { asked, db } = boundary(() => ROW)
+
+    await publishOnce(manager, db)
+
+    // An array is ordered, so `['b','a']` is a different value and not a
+    // different spelling of the same one.
+    expect(asked.length).toBe(2)
+  })
+
+  // The three shapes serialization refuses. Each falls back to the object
+  // itself, which is the behavior this replaced — never to a collapse.
+  test('a session carrying a function is not collapsed with a structural twin', async () => {
+    const manager = createChannelManager()
+    subscriber(manager, 'orders', { userId: 'u-1', can: () => true }, 'a')
+    subscriber(manager, 'orders', { userId: 'u-1', can: () => true }, 'b')
+    const { asked, db } = boundary(() => ROW)
+
+    await publishOnce(manager, db)
+
+    expect(asked.length).toBe(2)
+  })
+
+  test('a class instance is not treated as its fields', async () => {
+    class Session { constructor(public userId: string) {} }
+    const manager = createChannelManager()
+    subscriber(manager, 'orders', new Session('u-1'), 'a')
+    subscriber(manager, 'orders', new Session('u-1'), 'b')
+    const { asked, db } = boundary(() => ROW)
+
+    await publishOnce(manager, db)
+
+    expect(asked.length).toBe(2)
+  })
+
+  test('a cycle answers rather than throwing, and does not collapse', async () => {
+    const cyclic = () => { const u: any = { userId: 'u-1' }; u.self = u; return u }
+    const manager = createChannelManager()
+    subscriber(manager, 'orders', cyclic(), 'a')
+    subscriber(manager, 'orders', cyclic(), 'b')
+    const { asked, db } = boundary(() => ROW)
+
+    await publishOnce(manager, db)
+
+    expect(asked.length).toBe(2)
+  })
+
+  // A count-only `changed` announcement is graded by the GATE alone, and the
+  // gate reads a session's own fields. Handed the cohort key — a string — it
+  // grades every caller as a stranger, which is a refusal that looks exactly
+  // like a gate doing its job, so it is asserted as a pair.
+  test('gate mode grades a real session, not the key', async () => {
+    const gated = (decideRow: unknown = ROW) => ({
+      $schema:      { models: [{ name: 'Order', attributes: [{ kind: 'gate', value: '5' }] }] },
+      $readGrading: () => 'graded' as const,
+      $readAs:      async () => decideRow,
+    })
+
+    const manager = createChannelManager()
+    const staff = many(manager, 3, () => ({ userId: 'u-1', isAdmin: true, activatedAt: new Date(0), verifiedAt: new Date(0) }))
+    subscriber(manager, 'orders', null, 'anon')
+
+    // Gate mode is `sendGraded`'s parameter and not something a payload can
+    // say, so it is asked of the grader directly.
+    const graded = await gradeRecipients(
+      [manager.channel('orders')], 'orders changed', { count: 3 },
+      { db: gated(), accessor: 'order' }, 'gate')
+
+    const reached = (graded ?? []).flatMap(c => c.conns.map(x => x.id))
+    expect(reached.sort()).toEqual(staff.map(x => x.conn.id).sort())
+    expect(reached).not.toContain('anon')
+    // One verdict, one encoding, three sockets.
+    expect(graded?.length).toBe(1)
   })
 })

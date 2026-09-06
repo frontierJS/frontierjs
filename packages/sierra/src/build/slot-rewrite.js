@@ -12,10 +12,53 @@
  *   And imports `page` from sierra/router if needed.
  */
 
+
+// A slot name is a snippet name: both rewriters expand it into `{#snippet X()}`
+// or `__slot_X`, so it has to be a legal JS identifier. That constraint used to
+// live only in the MATCH — a tag whose name did not fit was simply not
+// rewritten, and Mesa then dropped an unknown element and everything inside it,
+// so `<mesa:slot name="side-bar">` lost its content, `<slot name="side-bar">`
+// lost its fallback, and neither compiler said a word (`FJS-800`). `side-bar`
+// and `page-header` are the natural spellings, and the package's "an unknown
+// `mesa:*` name is an error" does not reach this: `mesa:slot` IS known — it is
+// the attribute that did not match.
+const SLOT_NAME_RE = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/
+
+function assertSlotNames(source, tag, file) {
+  const tagRe = new RegExp(`<${tag}(\\s[^>]*)?>`, 'g')
+  let m
+  while ((m = tagRe.exec(source)) !== null) {
+    const attrs = m[1] ?? ''
+    const name = attrs.match(/\bname\s*=\s*(?:"([^"]*)"|'([^']*)'|\{([^}]*)\})/)
+    if (!name) continue
+
+    const expression = name[3] !== undefined
+    const value = name[1] ?? name[2] ?? name[3]
+    if (!expression && SLOT_NAME_RE.test(value)) continue
+
+    const where = file ? `${file}: ` : ''
+    const err = new Error(
+      `[Sierra] ${where}<${tag}> name ${expression ? `{${value}}` : `"${value}"`} is not a legal slot name. ` +
+      `A slot compiles to a snippet, so the name must be a bare identifier — ` +
+      `letters, digits, _ and $, not starting with a digit, and not an expression. ` +
+      `Write it as '${suggestSlotName(value)}'.`
+    )
+    err.code = 'SIERRA_BAD_SLOT_NAME'
+    throw err
+  }
+}
+
+function suggestSlotName(value) {
+  const camel = String(value).replace(/[^a-zA-Z0-9_$]+(.)?/g, (_, c) => (c ? c.toUpperCase() : ''))
+  return /^[a-zA-Z_$]/.test(camel) ? camel : `slot${camel}`
+}
+
 /**
  * Rewrite <mesa:slot name="X">content</mesa:slot> on PAGE files.
  */
-export function rewriteMesaSlots(source) {
+export function rewriteMesaSlots(source, file = null) {
+  assertSlotNames(source, 'mesa:slot', file)
+
   const slotRe = /<mesa:slot\s+name="([a-zA-Z_$][a-zA-Z0-9_$]*)"\s*>([\s\S]*?)<\/mesa:slot>/g
   const foundNames = []
 
@@ -43,7 +86,9 @@ export function rewriteMesaSlots(source) {
  * <slot />  (default slot — children)
  *   → {@render children?.()}
  */
-export function rewriteLayoutSlots(source) {
+export function rewriteLayoutSlots(source, file = null) {
+  assertSlotNames(source, 'slot', file)
+
   // Named slot with content: <slot name="X">fallback</slot>
   const namedWithFallback = /<slot\s+name="([a-zA-Z_$][a-zA-Z0-9_$]*)"\s*>([\s\S]*?)<\/slot>/g
   // Named slot self-closing: <slot name="X" />

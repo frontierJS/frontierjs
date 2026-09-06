@@ -338,6 +338,11 @@ describe('the numbers already in files', () => {
     const model = workspace('ports', {
       'example/package.json': JSON.stringify({ name: 'example', scripts: { verify: 'node v.mjs' } }),
       'example/db/schema.lite': 'model Post {\n  id String @id\n}\n',
+      // The assignment table is a source file of ONE workspace, and the name
+      // `example` means project 1 in that one alone — so the fixture holds it,
+      // or the page would be printing this repo's numbers over a tree that has
+      // never heard of them.
+      'packages/cli/core/ports.js': '// the registry lives here\n',
     })
     // `example` is project 1 in the registry: dev front 8010, back 8110.
     expect(dossierOf(renderAtlas(model), 'example')).toContain('8010 front · 8110 back')

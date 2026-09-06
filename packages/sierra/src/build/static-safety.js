@@ -40,15 +40,30 @@
  * resolution — including the regular-plural rules — so this file resolves
  * through it rather than lower-casing by hand and drifting.
  *
+ * A second wrinkle, and it was a hole rather than a wrinkle: the tap fires per
+ * TABLE, from inside `makeTable`'s closure. A child resolved by `include:` is
+ * read inside the PARENT's own statement and reaches no child table, so the
+ * read set held the parent alone and a gated child was published while the
+ * report called the page proven (`FJS-781`). The query's `include`/`select` is
+ * expanded through `client.$relations` here, and a relation that cannot be
+ * expanded is refused rather than scored.
+ *
  * ── Fail closed ───────────────────────────────────────────────────────────
  *
  * A route whose reads cannot be OBSERVED is not a route that is known to be
  * safe. If a route pulls data and no tap could be installed, the build fails
- * asking for a declaration rather than assuming the best. Fail-open would have
- * let exactly the clever route we are worried about slip through silently,
- * which is the failure mode being fixed.
+ * asking for the client to be wired rather than assuming the best. Fail-open
+ * would have let exactly the clever route we are worried about slip through
+ * silently, which is the failure mode being fixed.
  *
- * The escape is a written, per-route acknowledgement — never a global flag —
+ * `publishes:` is NOT the escape from that branch and used not to be an escape
+ * at all — it became one because every fail-closed branch was guarded on
+ * `!declared.declared`, which is true of any legal value including `0`. The two
+ * questions are separated now: `publishes: N` says how high a gate this page's
+ * contents may sit behind, and answers nothing about whether the build could
+ * see them (`FJS-782`).
+ *
+ * That escape is a written, per-route acknowledgement — never a global flag —
  * so publishing gated data becomes a thing somebody wrote down and a reviewer
  * can see in a diff:
  *
@@ -112,24 +127,101 @@ export function gateReadLevel(tableOrModel) {
   return { model, level: typeof need === 'number' ? need : 0 }
 }
 
+/** How deep a nested include/select is followed before it is called unresolved. */
+const MAX_RELATION_DEPTH = 12
+
+/**
+ * Follow a query's `include`/`select` through the schema's relation map.
+ *
+ * `$tapQuery` used to fire once per CALL, for the table the verb was called on.
+ * A child resolved by `include:` is a SEPARATE statement against the child
+ * table — measured — but it was reported nowhere, so `db.customer.findMany({
+ * include: { invoices: true } })` recorded `customer` alone and a level-4
+ * `Invoice` was published while the build's own report called the page proven
+ * (`FJS-781`). The recorder has the client, so the relation is expanded here.
+ *
+ * Litestone reports those statements now (`FJS-891`), so an include target
+ * arrives on its own event as well. This expansion is kept and is not
+ * redundant: it is a DERIVATION from the relation map where the event is an
+ * OBSERVATION, it follows a `select` that names a relation, and it is what
+ * records an unresolvable key as unresolved rather than silently unscored.
+ * Two sources for one fact, and this is the fail-closed one.
+ *
+ * Anything that cannot be expanded is recorded as unresolved rather than
+ * scored. An `include` key names a relation by construction, so a key the map
+ * does not carry — an older client with no `$relations`, a table whose model
+ * cannot be resolved, a relation added since — is a read whose gate is unknown.
+ * A `select` key is usually a scalar column and is only followed when the map
+ * says it is a relation, or every ordinary `select` would be refused.
+ */
+function expandRelations(model, node, relations, models, unresolved, depth = 0) {
+  if (!node || typeof node !== 'object') return
+  if (depth > MAX_RELATION_DEPTH) { unresolved.add(`${model ?? '?'}: include nested deeper than ${MAX_RELATION_DEPTH}`); return }
+
+  for (const key of ['include', 'select']) {
+    const sub = node[key]
+    if (!sub || typeof sub !== 'object') continue
+
+    for (const [name, value] of Object.entries(sub)) {
+      if (value === false || value == null) continue
+
+      // `_count: { select: { orders: true } }` reads the child rows to count
+      // them. A count over a gated table is a fact about that table, so its
+      // keys are expanded the same way the relation itself would be.
+      if (name === '_count') {
+        expandRelations(model, value, relations, models, unresolved, depth + 1)
+        continue
+      }
+
+      const rel = model && relations ? relations[model]?.[name] : undefined
+      if (rel && rel.targetModel) {
+        models.add(rel.targetModel)
+        expandRelations(rel.targetModel, value, relations, models, unresolved, depth + 1)
+        continue
+      }
+
+      // An `include` key is a relation or it is nothing. A `select` key that
+      // carries a nested object is one too — a scalar is `true`.
+      if (key === 'include' || (value && typeof value === 'object'))
+        unresolved.add(`${model ?? '?'}.${name}`)
+    }
+  }
+}
+
 /**
  * Create a recorder that collects every model a Litestone client reads.
  *
+ * `taps` is a COUNT and not a boolean because the two facts it was carrying are
+ * different: *a client was watched* and *this route's reads were seen*. The tap
+ * is installed on the one client the build config named, so a `load()` that
+ * constructs its own reads with a tap still installed and an empty read set —
+ * a pass that proves nothing (`FJS-782`). A count lets the caller report that
+ * state instead of scoring it.
+ *
  * @param {object|null} client  a Litestone client, or null when none is wired
- * @returns {{ tapped: boolean, models: Set<string>, stop: () => void }}
+ * @returns {{ taps: number, models: Set<string>, unresolved: Set<string>, stop: () => void }}
  */
 export function createReadRecorder(client) {
   const models = new Set()
+  const unresolved = new Set()
 
   if (!client || typeof client.$tapQuery !== 'function') {
-    return { tapped: false, models, stop() {} }
+    return { taps: 0, models, unresolved, stop() {} }
   }
 
+  // Read once: it is a schema-derived constant, and asking per query would be
+  // a proxy trap on every read of every page.
+  let relations = null
+  try { relations = client.$relations ?? null } catch { relations = null }
+
   const stop = client.$tapQuery(event => {
-    if (event && event.model) models.add(String(event.model))
+    if (!event || !event.model) return
+    const table = String(event.model)
+    models.add(table)
+    expandRelations(modelNameFor(table), event.args, relations, models, unresolved)
   })
 
-  return { tapped: true, models, stop: typeof stop === 'function' ? stop : () => {} }
+  return { taps: 1, models, unresolved, stop: typeof stop === 'function' ? stop : () => {} }
 }
 
 /**
@@ -172,15 +264,25 @@ export function declaredPublishLevel(meta) {
 /**
  * Decide whether a route may be published.
  *
+ * `publishes: N` answers ONE question — how high a gate this page's contents
+ * may sit behind. It used to answer a second by accident: every fail-closed
+ * branch below was guarded on `!declared.declared`, which is true for any legal
+ * value including `0`. So `publishes: 0` — the most conservative statement the
+ * key can make — read as *stop asking whether you could observe me* and was the
+ * strongest form of the escape hatch (`FJS-782`). An UNPROVABLE route is now
+ * refused whatever N is: a declaration about what a page contains cannot stand
+ * in for the ability to see what it contains.
+ *
  * @param {object}  o
  * @param {string}  o.routeId     for the message
  * @param {object}  o.meta        route frontmatter
  * @param {Set<string>} o.models  table/model names read while building it
- * @param {boolean} o.tapped      was a recorder actually installed?
+ * @param {Set<string>|string[]} [o.unresolved]  reads whose gate could not be resolved
+ * @param {number}  o.taps        how many clients a recorder was installed on
  * @param {boolean} o.readsData   does the route have a load/getStaticPaths?
- * @returns {{ ok: boolean, message: string|null, published: Array<{model:string, level:number}> }}
+ * @returns {{ ok: boolean, message: string|null, published: Array<{model:string, level:number}>, observedNothing?: boolean }}
  */
-export function checkRoute({ routeId, meta, models, tapped, readsData }) {
+export function checkRoute({ routeId, meta, models, unresolved = [], taps = 0, readsData }) {
   const declared = declaredPublishLevel(meta)
 
   if (declared.error)
@@ -189,10 +291,10 @@ export function checkRoute({ routeId, meta, models, tapped, readsData }) {
   const allowed = declared.level
 
   // ── Unprovable ──────────────────────────────────────────────────────
-  // The route pulls data and nothing watched it. An explicit declaration is
-  // the author taking responsibility for what is in the page; without one
-  // there is no basis on which to call the output safe.
-  if (readsData && !tapped && !declared.declared) {
+  // The route pulls data and nothing watched it. There is no basis on which to
+  // call the output safe, and no declaration can supply one — `publishes:` says
+  // what the author believes is in the page, which is the claim being checked.
+  if (readsData && taps === 0) {
     return {
       ok: false,
       published: [],
@@ -201,18 +303,15 @@ export function checkRoute({ routeId, meta, models, tapped, readsData }) {
         `   reads data in its .meta.js, and the build could not observe what it read,\n` +
         `   so it cannot be shown to be safe to publish.\n` +
         `   Wire the Litestone client into the build (sierra config \`db\`) so reads can\n` +
-        `   be checked, or declare what this page publishes:\n` +
-        `\n` +
-        `       ---\n` +
-        `       render: static\n` +
-        `       publishes: 0     # 0 = public data only\n` +
-        `       ---\n`,
+        `   be checked.\n` +
+        `   \`publishes:\` does not answer this — it says how high a gate this page may\n` +
+        `   publish from, which is the claim the build has no way to check here.\n`,
     }
   }
 
   // ── Observed reads ──────────────────────────────────────────────────
   const published = []
-  const unknown   = []
+  const unknown   = [...unresolved]
   const over      = []
 
   for (const raw of models) {
@@ -222,17 +321,20 @@ export function checkRoute({ routeId, meta, models, tapped, readsData }) {
     if (level > allowed) over.push({ model, level })
   }
 
-  if (unknown.length && !declared.declared) {
+  // Refused whatever `publishes:` says, for the reason above: a read the build
+  // cannot resolve to a gate is a read it cannot grade, and a number about the
+  // page's contents is not an answer to *what did this page read*.
+  if (unknown.length) {
     return {
       ok: false,
       published,
       message:
         `${routeId} — render: static\n` +
-        `   read ${unknown.map(u => `\`${u}\``).join(', ')}, which the schema does not describe,\n` +
-        `   so its gate is unknown and the page cannot be shown to be safe.\n` +
-        `   Declare what this page publishes if that read is deliberate:\n` +
-        `\n` +
-        `       publishes: 0\n`,
+        `   read ${unknown.map(u => `\`${u}\``).join(', ')}, whose gate the build could not\n` +
+        `   resolve, so the page cannot be shown to be safe.\n` +
+        `   A relation named in \`include:\` that the schema does not carry, or a table the\n` +
+        `   schema does not describe. Read it as a plain query on the model instead, so the\n` +
+        `   build can see which model it is.\n`,
     }
   }
 
@@ -259,7 +361,15 @@ export function checkRoute({ routeId, meta, models, tapped, readsData }) {
     }
   }
 
-  return { ok: true, message: null, published }
+  // Reads data, a tap was installed, and nothing was seen. Reported rather than
+  // refused: a `load()` that fetches an absolute URL and touches no database is
+  // legitimate and common, and refusing it would refuse the majority case to
+  // catch the minority one. But the minority one is real — a `load()` that
+  // constructs its OWN Litestone client reads with the build's tap installed
+  // and contributes nothing to this set — and it looked exactly like a pass.
+  const observedNothing = !!readsData && taps > 0 && published.length === 0
+
+  return { ok: true, message: null, published, observedNothing }
 }
 
 /**

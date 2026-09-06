@@ -67,7 +67,7 @@ context.config.container = `${context.config.app}-api`
 context.vars.container   = context.config.container
 ```
 
-## Lesson 6 — deploying it, and taking it back
+## Lesson 9 — deploying it, and taking it back
 
 This is the lesson almost no framework tutorial has, and the reason is always
 the same: they cannot give you a server.

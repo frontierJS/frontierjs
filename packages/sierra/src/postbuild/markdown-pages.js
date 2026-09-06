@@ -165,14 +165,22 @@ function extractFrontmatter(html, routeMeta = {}) {
 
 /**
  * @param {object}   config   — sierra.config.js
- * @param {object}   routeTable — { indexed, tree }
+ * @param {string[]} pages    — the site's page URLs, as `runPostBuild` computed
+ *                              them: the route table's indexed list on an SPA,
+ *                              and the URLs actually PRERENDERED on a static
+ *                              target
  * @param {string}   outDir
  * @param {object}   [routeMetaMap] — path → meta object
  */
-export async function generateMarkdownPages(config, routeTable, outDir, routeMetaMap = {}) {
+export async function generateMarkdownPages(config, pages, outDir, routeMetaMap = {}) {
   if (!config.markdownPages) return null
 
-  const indexed = (routeTable.indexed ?? []).filter(
+  // The caller's list, filtered only for what cannot be a file. It used to be
+  // handed the route TABLE and re-derive `routeTable.indexed` here, which is
+  // the pre-`FJS-502` answer and skips every prerendered page a dynamic route
+  // produced (`FJS-822`). A prerendered URL is concrete by construction, so
+  // the filter removes nothing there and still does its old job on an SPA.
+  const indexed = (pages ?? []).filter(
     p => !p.includes(':') && !p.includes('*')
   )
 

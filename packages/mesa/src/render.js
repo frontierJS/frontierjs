@@ -44,8 +44,11 @@ import { setRenderEnvironment, createRoot, flushSync } from './runtime.js'
 
 let _win = null
 
-// All browser globals happy-dom provides — including parent/top which
-// happy-dom references internally during DOM operations like appendChild.
+// The browser globals compiled output may reach for, installed when the window
+// has one — `requestIdleCallback` and `cancelIdleCallback` are on the list and
+// happy-dom 20 has neither, so naming a global here is a request rather than a
+// promise. parent/top are here because happy-dom references them internally
+// during DOM operations like appendChild.
 const GLOBALS = [
   'document', 'window', 'navigator', 'location', 'history',
   'parent', 'top', 'self',
@@ -114,27 +117,104 @@ export function resetRenderer() {
 // page — hydration does not exist yet (v1.1) — so they are stripped. When
 // hydration lands it will need them, and this is the single place that decides.
 //
-// The patterns are deliberately narrow. `<!--[if mso]>` and friends survive:
-// they have no space after `<!--`, and email templates emit them through
-// `{@html}` on purpose.
-const _ANCHOR_PATTERNS = [
-  /<!--mesa-root-->/g,   // the root anchor this renderer inserts
-  /<!---->/g,            // empty block anchors and markers
-  /<!-- [^>]* -->/g,     // named anchors, e.g. <!-- mesa:hmr:App -->
-]
+// Stripped in the DOM, and never over the serialized string. A regex cannot
+// tell an anchor from those same characters inside an attribute VALUE, which
+// legitimately carries raw `<` and `>` — happy-dom escapes only `&` and `"`
+// there, correctly per HTML5. An alt text or a product description holding a
+// comment lost it, and because a match could span the closing quote, the
+// attribute BETWEEN two such values was deleted whole. Text nodes escape, so
+// they were safe, which is what made the server and the client disagree about
+// the same data.
 
-function _stripAnchors(html) {
-  let out = html
-  for (const re of _ANCHOR_PATTERNS) out = out.replace(re, '')
-  return out.trim()
+// An anchor by its comment data. `mesa-island` markers and `[if mso]`
+// conditionals have no leading space and survive — the first is read by a
+// loader, the second is what an email template emitted `{@html}` for.
+function _isAnchorComment(data) {
+  if (data === 'mesa-root' || data === '') return true
+  // A named anchor is written `<!-- name -->`, so its data is space-padded.
+  return data.length >= 2 && data.startsWith(' ') && data.endsWith(' ')
 }
 
+// A hand walk rather than a TreeWalker: happy-dom changed what `SHOW_COMMENT`
+// filters to between the versions this package has pinned, and a walker that
+// quietly matches nothing leaves every anchor in the page.
+function _collectAnchors(node, out) {
+  for (let n = node.firstChild; n; n = n.nextSibling) {
+    if (n.nodeType === 8) {
+      if (_isAnchorComment(n.data)) out.push([n, n.parentNode, n.nextSibling])
+    } else if (n.nodeType === 1) {
+      _collectAnchors(n, out)
+    }
+  }
+}
+
+// Lift the anchors out, serialize, put them back. They go back because the
+// render is disposed after this returns and a block directive's cleanup reads
+// `anchor.parentNode` — serializing is not a reason to tear its DOM out from
+// under it. Reverse order on the way back, so an anchor whose recorded next
+// sibling is another anchor finds it already reinserted.
+function _serializeWithoutAnchors(container) {
+  const found = []
+  _collectAnchors(container, found)
+  for (const [n, parent] of found) parent.removeChild(n)
+  const html = container.innerHTML
+  for (let i = found.length - 1; i >= 0; i--) {
+    const [n, parent, next] = found[i]
+    parent.insertBefore(n, next)
+  }
+  return html.trim()
+}
+
+// The one owner of "this value is going into HTML". `'` is in the set because
+// the name promises safety anywhere and an attribute may be single-quoted; a
+// caller that has to remember which sinks this covers is a sink somebody forgets.
 export function escapeHTML(str) {
   return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+// ─── Render failures ──────────────────────────────────────────────────────────
+
+// A component that throws mid-render used to arrive as a bare `new Error(msg)`:
+// the original stack was dropped, so the one frame that names the compiled
+// module — and therefore the `.mesa` file and the component function — was gone
+// by the time anyone read it. The message named the identifier or the attribute
+// and nothing else, which for a prerender of hundreds of pages is a failure with
+// no address. The cause is kept and its stack appended.
+
+const _MISSING_GLOBAL = /^(\w+) is not defined$/
+
+// `initRenderer` installs what happy-dom can answer for; anything else a browser
+// has is absent, and the ReferenceError does not say that a build has no
+// browser. Two shapes need a different sentence, so the hint is per shape rather
+// than a list of global names, which would go stale against happy-dom.
+function _hintFor(err) {
+  const missing = err instanceof ReferenceError && _MISSING_GLOBAL.exec(err.message)?.[1]
+  if (missing) {
+    return `\n\n\`${missing}\` does not exist during a server render — a build has no browser. ` +
+      `Guard the read with \`typeof ${missing} !== 'undefined'\` and render the server branch, ` +
+      'or move it into `$.onMount`, which does not run here (RULE 19).'
+  }
+  if (/setAttribute/.test(err.message ?? '')) {
+    return '\n\nA spread carried an attribute NAME the DOM refuses. A browser refuses the same ' +
+      'name, so nothing was injected — the cost is the whole page. Drop or rename the key where ' +
+      'the spread is built.'
+  }
+  return ''
+}
+
+export function renderFailure(cause, label) {
+  const where = label ? ` in ${label}` : ''
+  const err = new Error(
+    `[Mesa renderToHTML] Component threw during render${where}: ${cause?.message ?? cause}${_hintFor(cause)}`,
+    { cause }
+  )
+  if (cause?.stack) err.stack += '\n\nCaused by: ' + cause.stack
+  return err
 }
 
 // ─── Main renderer ────────────────────────────────────────────────────────────
@@ -175,6 +255,9 @@ export function escapeHTML(str) {
  * @param {boolean}  [options.full]  — wrap in a full <!DOCTYPE html> page
  * @param {boolean}  [options.keepAnchors] — keep Mesa's comment anchors in the
  *                                           output (needed once hydration lands)
+ * @param {string}   [options.label] — what to call this component in a failure
+ *                                     message. Diagnostic only; nothing reads it
+ *                                     otherwise.
  * @returns {Promise<string>}
  */
 export async function renderToHTML(ComponentFactory, props = {}, options = {}) {
@@ -193,9 +276,12 @@ export async function renderToHTML(ComponentFactory, props = {}, options = {}) {
   }
 
   // Use global.document (= _win.document installed by initRenderer) so the
-  // container shares a document with the component's nodes — happy-dom throws
-  // on cross-document adoption. The container is attached to the body because
-  // block directives read `anchor.parentNode` and bail when it is null.
+  // container shares a document with the component's nodes: the compiled
+  // templates were cloned from whatever `global.document` was at module load,
+  // and happy-dom 20 adopts across documents without complaining, so a
+  // mismatch here is a wrong page rather than a throw. The container is
+  // attached to the body because block directives read `anchor.parentNode` and
+  // bail when it is null.
   const doc       = global.document
   const container = doc.createElement('div')
   const anchor    = doc.createComment('mesa-root')
@@ -209,20 +295,19 @@ export async function renderToHTML(ComponentFactory, props = {}, options = {}) {
         ComponentFactory(anchor, props ?? {}, null)
       } catch (e) {
         dispose()
-        throw new Error(`[Mesa renderToHTML] Component threw during render: ${e.message}`)
+        throw renderFailure(e, options.label)
       }
       // Settle the graph before serializing. Derivations and render effects run
       // eagerly on creation, but anything a block queued during setup is still
       // pending, and an unflushed queue would also outlive the dispose below.
       flushSync()
-      html = container.innerHTML
+      html = options.keepAnchors ? container.innerHTML : _serializeWithoutAnchors(container)
       dispose()
     })
   } finally {
     try { doc.body.removeChild(container) } catch (_) {}
   }
 
-  if (!options.keepAnchors) html = _stripAnchors(html)
   return options.full ? wrapPage(html, options) : html
 }
 
@@ -237,15 +322,19 @@ export function wrapPage(bodyHTML, options = {}) {
     meta         = {},
   } = options
 
-  const cssTag     = css ? `  <link rel="stylesheet" href="${css}">` : ''
+  // Every attribute sink here escapes. `title` and `meta` did and the three URL
+  // sinks did not, so a `"` in a stylesheet path closed the attribute and the
+  // rest of the value became markup — in a file a static build serves to
+  // everyone, and beside an escaped value that made the omission look deliberate.
+  const cssTag     = css ? `  <link rel="stylesheet" href="${escapeHTML(css)}">` : ''
   const metaTags   = Object.entries(meta)
     .map(([n, c]) => `  <meta name="${escapeHTML(n)}" content="${escapeHTML(c)}">`)
     .join('\n')
   const scriptTags = scripts
-    .map((s) => `  <script type="module" src="${s}"></script>`)
+    .map((s) => `  <script type="module" src="${escapeHTML(s)}"></script>`)
     .join('\n')
   const loaderTag  = islandLoader
-    ? `  <script type="module" src="${islandLoader}"></script>`
+    ? `  <script type="module" src="${escapeHTML(islandLoader)}"></script>`
     : ''
 
   const headExtras  = [metaTags, cssTag].filter(Boolean).join('\n')

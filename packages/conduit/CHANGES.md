@@ -1,5 +1,38 @@
 # Changes — @frontierjs/conduit
 
+## 2026-09-04 — `retryable` says only whether THIS request may be sent again
+
+`FJS-739`, ruled `FJS-D194`. 290 tests, 0 fail. Typecheck clean.
+
+`FJS-733` found the dangerous direction and fixed it: a request conduit will not
+replay came back `retryable: true`, a job acted on the flag, and a charge was
+repeated. The squash it added went wider than its own argument, which is *the
+request went out and nobody knows whether it was applied* — the fact
+`declineReplay` computes under the name `indeterminate`, and correctly withholds
+from a 429 and from a refused connection before squashing both anyway. Two more
+sites never went through that function: load shed at admission wrote
+`retryable: false` as a literal, for `circuit_open` — whose own message names the
+seconds to wait — and for `overloaded`.
+
+Measured, four of five rows wrong. The three that never left the process are the
+sharpest: they cannot have been applied, and two of them clear on their own.
+
+`indeterminate` decides the flag now. Where nothing was applied a fault keeps
+whatever its own kind said, which leaves a 404 permanent — the control that says
+the rule is not *transient means retryable*. `FJS-733`'s 500 and timeout rows are
+asserted beside every flip, because wrong toward `true` is a double charge and is
+much worse than wrong toward `false`.
+
+**The consumer this was costing.** `example`'s `collect-invoice` throws on
+`retryable` and logs-and-returns otherwise, so five failures opened the breaker
+and every send for the next thirty seconds was an outage reported as permanent:
+the invoice written off in a `console.error`, the job green.
+
+**`CONDUIT_ERROR_KINDS` is new and the type derives from it.** Three kinds were
+wrong at once because a kind with no stated answer reads exactly like a decided
+one; the suite walks the array, so a kind added without one fails.
+
+
 ## 2026-09-03 — an outbound call carries the request that caused it
 
 `FJS-742`. 290 tests, 0 fail. Typecheck clean.

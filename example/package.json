@@ -18,6 +18,7 @@
     "reset": "rm -rf db/shops db/shops-registry.db db/audit db/public db/jobs.db db/jobs.db-shm db/jobs.db-wal && bun run db:seed",
     "verify:ui": "node web/test/verify-ui.mjs",
     "verify:users": "node web/test/verify-users.mjs",
+    "verify:support": "node web/test/verify-support.mjs",
     "verify:values": "node web/test/verify-values.mjs",
     "verify:live": "node web/test/verify-live.mjs",
     "verify:jobs": "node web/test/verify-jobs.mjs",

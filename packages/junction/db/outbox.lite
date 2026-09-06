@@ -21,32 +21,47 @@
 // Keep @@db(main) spelled exactly — it is what that substitution matches on.
 
 model OutboxMessage {
-  id           String    @id @default(uuid())
+  id            String    @id @default(uuid())
 
   /// The caravan job name to dispatch. A handler must be registered for it —
   /// an unknown name is a row that can never be delivered.
-  job          String
+  job           String
 
   /// What the handler receives. The whole payload, not a reference to one:
   /// a row id read back later has already changed.
-  payload      Json
+  payload       Json
 
   /// WHO asked, recorded at enqueue and re-resolved when the job runs — so a
   /// durable effect names the same principal an immediate dispatch would.
   /// Null is the app's own work.
-  actorId      String?
+  actorId       String?
 
   /// Taken by a relay that intends to deliver this row. Stale claims are
   /// retaken: a process that dies mid-handoff must not hold a row forever.
-  claimedAt    DateTime?
+  claimedAt     DateTime?
 
   /// Set once the job is queued. The row stays for inspection until the
   /// retention sweep takes it.
-  deliveredAt  DateTime?
+  deliveredAt   DateTime?
 
-  attempts     Int       @default(0)
-  lastError    String?
-  createdAt    DateTime  @default(now())
+  /// How many times a relay has TAKEN this row, counted at the claim so a
+  /// process that dies mid-handoff still spends one. Past the relay's
+  /// `maxAttempts` the row is dead: it stays here with its `lastError`, it is
+  /// reported as dead rather than pending, and nothing tries it again until an
+  /// operator raises the cap or resets the count.
+  attempts      Int       @default(0)
+  lastError     String?
+  createdAt     DateTime  @default(now())
+
+  /// When this row may be tried again. Null is *now* — a row that has never
+  /// failed. A failed attempt sets it forward, doubling per attempt, so a queue
+  /// that is refusing is not asked again on every tick of the relay's clock.
+  ///
+  /// LAST in the model deliberately: SQLite's ADD COLUMN appends, so a database
+  /// written before this column carries it at the end, and the migration differ
+  /// compares the table's text — declared anywhere else, every upgraded app
+  /// reports a residue it can never resolve.
+  nextAttemptAt DateTime?
 
   @@db(main)
   @@gate("8")

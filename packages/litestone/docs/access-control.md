@@ -50,6 +50,7 @@ auth().field          — field on auth object (e.g. auth().id, auth().role)
 auth() != null        — authenticated check
 now()                 — current UTC timestamp, ONE instant per evaluation
 check(field)          — delegates to related model's read policy
+relation.column       — a column ONE relation away (to-one only)
 field == value        field != value  field > value  field >= value  field < value  field <= value
 value in list         membership — the list is always the RIGHT operand
 cond ? a : b          a value chosen by a condition — see below
@@ -106,7 +107,8 @@ Note: 'isStff' is not a claim the principal carries — in @@allow/@@deny
 'auth().isStff == true'.
   Claims: activatedAt, capabilities, id, isAdmin, isOwner, isStaff (@@auth User),
           isSystemAdmin, role, verifiedAt
-  A claim resolved per request is declared with createClient({ claims: ['isStff'] }).
+  A claim that is on no row is declared in the schema — a top-level `claim isStff`.
+  The app still resolves the VALUE per request.
 ```
 
 It matters because a misspelling is not inert. An absent claim is `NULL`, and
@@ -120,15 +122,23 @@ The set has four sources:
 | --- | --- |
 | **the framework's eight** | `id` and `capabilities`, plus the six the default gate resolver grades a caller by — `role`, `isAdmin`, `isOwner`, `isSystemAdmin`, `verifiedAt`, `activatedAt`. A standing is not a column: an app whose ladder tops out at `isAdmin` has no such field on `User`, because auth puts it on the session |
 | **the `@@auth` model's columns** | whatever your app carries onto the session out of its own principal row — `isStaff`, `plan` |
-| **`tenancy { claim }`** | the one claim the schema itself declares |
-| **`createClient({ claims: [...] })`** | a claim resolved PER REQUEST — a cart token, an impersonation. It is on no row and in no schema, so nothing can derive it |
+| **`tenancy { claim }`** | the tenant claim, named by the tenancy block |
+| **a top-level `claim`** | a claim resolved PER REQUEST — a cart token, an impersonation. It is on no row, so nothing can derive it: the schema names it, the app resolves the value |
+| **`createClient({ claims: [...] })`** | the same statement made in code, for a claim an app adds to a schema it does not own |
 
-```js
-const db = await createClient({
-  path:   './db/schema.lite',
-  claims: ['cartToken'],       // read by `@@allow('read', token == auth().cartToken)`
-})
 ```
+claim cartToken            // read by `@@allow('read', token == auth().cartToken)`
+```
+
+**Declare it in the schema rather than only at `createClient`.** A tool that has
+the file and not the app — `litestone studio`, `litestone tinker`, `fli auth:*` —
+builds a client off `schema.lite` alone and cannot see your call, so a claim
+named only there made every one of those tools refuse a schema that was correct
+(`FJS-772`). The name is the schema's; the value stays the app's.
+
+A claim declared and read by no policy is reported by `litestone advise` — the
+other direction is a startup refusal, so this is the half that can go silent
+after a rename.
 
 **It grades only when there is a set to grade against.** A schema declaring no
 `@@auth` and a client passing no `claims` have said nothing, so nothing is
@@ -139,8 +149,8 @@ refused — and that is announced once rather than assumed:
 createClient() was passed no claims. …
 ```
 
-Mark your principal model `@@auth` to switch it on. `claims: []` is itself a
-statement — the framework's eight and nothing else — where leaving the option
+Mark your principal model `@@auth` to switch it on, or declare a `claim`. Either
+one is a statement about what the principal carries, and so is `claims: []` — the framework's eight and nothing else — where leaving the option
 off is silence.
 
 ### An absent claim is UNKNOWN, in both halves
@@ -411,6 +421,60 @@ A self-relation has no way to express *readable if its parent is* — there is n
 recursion in a compiled predicate — so the answer there is a column every row
 carries, compared directly.
 
+### Naming a column one relation away — `relation.column`
+
+A policy may name a column on the model this one belongs to, written as a path.
+
+```prisma
+model OrderLine {
+  order   Order  @relation(fields: [orderId], references: [id])
+  orderId String
+  @@allow('read', order.userId == auth().id)   // the lines of my own orders
+}
+```
+
+Before this the shape had nowhere to live but a **copy** of the id on the child,
+kept in step by whichever transaction wrote both — a second origin for one fact,
+where nothing declares the two are the same fact and the failure when they
+diverge is a row readable by the wrong person (`FJS-D221`). The relation's key
+is known at compile time, so the join is derivable and the copy was a
+restatement.
+
+It compiles to a correlated **scalar subquery** and reaches the parent by its
+referenced key, so the plan is a key lookup rather than a scan per row. On
+`create` — where there is no `WHERE` to correlate against — the row is looked up
+through the foreign key in the payload, the way `check()` is.
+
+**An absent parent is an absent VALUE**, and that is the one place this differs
+from `check()`. A missing foreign key **allows** under `check(parent)`, because
+a row naming no parent is not a row naming somebody else's; a path yields a
+value, so a missing parent is `NULL`, an `@@allow` keeps no row and an `@@deny`
+fires. Both compilers answer that identically, and a scalar subquery over no row
+is `NULL` for free.
+
+**One hop.** `a.b.c` is a parse error naming the rule, because transitive is N
+joins the author cannot see, per policy, per query — and a policy that is slow
+is a policy an app routes around, which is how the copy comes back wearing a
+service method. Put the rule on the model the first hop reaches, or carry the
+value.
+
+Refused at startup, each naming the column:
+
+| Written | Why |
+| --- | --- |
+| `docs.id == …` | a to-many. *Any child matches* is a different question and is not expressible yet |
+| `owner.usrId == …` | not a field on the target model — the message lists the target's fields, not this one's |
+| `owner.tag == …` where `tag` is `@computed`/`@transient` | no column to correlate on |
+| `owner.tok == …` where `tok` is `@encrypted`/`@hashed`/`@secret` | the column holds an encoding, so the comparison would match nothing — an empty screen with a 200 |
+| `auth().id in owner.userId` | `in` takes a list on the right, and the target column is a scalar |
+| `@derived(owner.vip == true)` | a derived field is one value for the row; use `@from(owner, vip)` |
+| `@@index([qty], where: owner.vip == true)` | an index predicate reads the row it is about and nothing else |
+
+**`verifyRowPolicies` reports a crossed policy as not-graded**, by name, the same
+as `check()`. The grader makes one row and what admits it is on another, so
+*skipped* and *graded, and every row landed on one side* would otherwise read
+identically from the summary while only one of them is a broken policy.
+
 ### Field-level policies
 
 ```prisma
@@ -578,9 +642,13 @@ the owner.
 > gates 403'd the whole API. The `role` check also ran ahead of the standing
 > checks, so a system admin with no role string graded `CREATOR(3)`.
 
-Junction's `sessionGateLevel()` is the same function for the same purpose on the
-other side of the dependency boundary (Litestone cannot import Junction). They
-are a hand copy — change one, change both.
+Junction's `sessionGateLevel()` is the same BINDING, not a copy of it: both are
+`gradeStanding` from `@frontierjs/toolbelt/gate`, which is substrate below the
+dependency graph and so importable from either side (`FJS-D197`). They were a
+hand copy, each carrying a comment saying *change one, change both*, and they
+drifted — a signed-in caller with no `role` graded CREATOR(3) here and USER(4)
+there, so one `@@gate("4")` read was a 403 or a 200 depending on which resolver
+the app had installed.
 
 ### @@gate syntax
 

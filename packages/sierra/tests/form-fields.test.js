@@ -347,7 +347,7 @@ describe('serviceNameFor — the crossing a relation needs', () => {
 
 describe('resource.options — a picker filled from the relation', () => {
 
-  test('asks the related service, and maps id → the column a person recognises', async () => {
+  test('asks the related service, and maps id → the column a person recognizes', async () => {
     _rows = [{ id: 7, name: 'Ada', email: 'ada@example.com' }, { id: 9, name: 'Grace' }]
     const orders = createResource('orders', { model: 'Order' })
 

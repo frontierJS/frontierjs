@@ -1,0 +1,46 @@
+<script>
+  // SupportBanner.mesa — you are acting as somebody else, and here is the way out.
+  //
+  // In the SHELL rather than on the hub screens, because an episode is global:
+  // the operator navigates the whole app as the subject, so a banner that only
+  // rendered where the episode was started is missing from every screen where
+  // forgetting it matters. It is the one piece of chrome that must not be
+  // dismissible.
+  //
+  // Rendered from `session.user.support` and from nothing else — a field the
+  // server put on the principal, not a flag this app kept beside it. A banner
+  // derived from local state is one that survives the episode ending.
+
+  import Alert  from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import { session } from '../session.js'
+  import { getClient, refresh } from '@frontierjs/sierra/junction'
+
+  let busy = false
+
+  $: support = session.user?.support ?? null
+
+  async function stop() {
+    busy = true
+    try {
+      await getClient().auth.endSupport()
+      // The server closes this session's sockets on both edges, so the client
+      // reconnects and resolves afresh. What it does NOT do is tell us who the
+      // caller is now — that is `account.get('me')`, the same question asked of
+      // the same place, which is what refresh() is.
+      await refresh()
+    } finally {
+      busy = false
+    }
+  }
+</script>
+
+{#if support}
+  <Alert tone="warning" title="You are acting as another user">
+    Everything you do is recorded against your own name, and this ends
+    automatically. Reason: {support.reason}
+    <Button size="sm" tone="warning" disabled={busy} onclick={stop}>
+      {busy ? 'Stopping…' : 'Stop'}
+    </Button>
+  </Alert>
+{/if}

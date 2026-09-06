@@ -234,11 +234,12 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/notifications`
 
-`packages/notifications` · ships `LICENSE` `README.md` `builders.ts` `define.ts` `drivers/` `errors.ts` `index.ts` `loader.ts` `notification.ts` `notify.ts` `package.json` `plugin.ts` `state.ts` `types.ts`
+`packages/notifications` · ships `LICENSE` `README.md` `builders.ts` `db/` `define.ts` `drivers/` `errors.ts` `index.ts` `loader.ts` `notification.ts` `notify.ts` `package.json` `plugin.ts` `state.ts` `types.ts`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
 | exports | `.` | `index.ts` | yes |
+| exports | `./schema.lite` | `db/notification.lite` | yes |
 | main | `main` | `index.ts` | yes |
 
 - peers — `@frontierjs/junction`: `^0.1.0`
@@ -298,7 +299,11 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
+| exports | `./cron (types)` | `src/cron/cron.d.ts` | yes |
+| exports | `./cron (default)` | `src/cron/cron.js` | yes |
 | exports | `./directives` | `src/directives/directives.js` | yes |
+| exports | `./gate (types)` | `src/gate/gate.d.ts` | yes |
+| exports | `./gate (default)` | `src/gate/gate.js` | yes |
 | exports | `./glow` | `src/glow/glow.js` | yes |
 | exports | `./history` | `src/history/history.js` | yes |
 | exports | `./hooks` | `src/hooks/hooks.js` | yes |
@@ -308,6 +313,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./match` | `src/match/match.js` | yes |
 | exports | `./query (types)` | `src/query/query.d.ts` | yes |
 | exports | `./query (default)` | `src/query/query.js` | yes |
+| exports | `./redact (types)` | `src/redact/redact.d.ts` | yes |
+| exports | `./redact (default)` | `src/redact/redact.js` | yes |
 | exports | `./search` | `src/search/search.js` | yes |
 | exports | `./signature` | `src/signature/signature.js` | yes |
 | exports | `./units` | `src/units/units.js` | yes |

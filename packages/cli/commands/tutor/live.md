@@ -46,7 +46,7 @@ context.config.apiPort = flag['api-port']
 context.vars.apiPort   = context.config.apiPort
 ```
 
-## Lesson 3 — a change reaching somebody else
+## Lesson 5 — a change reaching somebody else
 
 Everything so far has been one caller asking one question and getting one
 answer. This lesson is the other direction: a row is written **here**, and a

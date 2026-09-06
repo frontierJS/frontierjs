@@ -31,15 +31,56 @@ if (!built) {
 
 context.config.appDir = dir
 
-// The container mounts a volume at /db, so DATABASE_URL names a path INSIDE it
-// rather than the app directory this file sits in.
+// The environment the CONTAINER runs with, written beside the workspace rather
+// than over the app's own `.env`.
+//
+// The container mounts a volume at /db, so its DATABASE_URL names a path inside
+// that volume — which is not a path on this machine. Writing it into the app's
+// `.env` was fine while this lesson was the only thing in the workspace and
+// destroys a course: every later `fli db:*` opens `/db/app.db` at the
+// filesystem root, `NODE_ENV=production` changes what the app will do, and a
+// freshly minted key makes every `@encrypted` value an earlier lesson wrote
+// unreadable.
+//
+// The key is KEPT where there is one, for the same reason: the deployed app and
+// the local one should be able to read the same rows.
 const { randomBytes } = await import('node:crypto')
-writeFileSync(join(dir, '.env'),
-  `ENCRYPTION_KEY=${randomBytes(32).toString('hex')}\nDATABASE_URL=/db/app.db\nNODE_ENV=production\n`)
+const envFile = join(dir, '.env')
+const existing = existsSync(envFile) ? readFileSync(envFile, 'utf8') : ''
+const key = existing.match(/^ENCRYPTION_KEY=(\S+)/m)?.[1] ?? randomBytes(32).toString('hex')
+
+const deployEnv = join(context.config.ws.dir, 'deploy.env')
+writeFileSync(deployEnv, `ENCRYPTION_KEY=${key}\nDATABASE_URL=/db/app.db\nAUDIT_PATH=/db/audit/\nNODE_ENV=production\n`)
+
+// A fresh app scaffolded without auth has no `.env` at all, and the local half
+// of the lesson still needs a key.
+if (!existing) writeFileSync(envFile, `ENCRYPTION_KEY=${key}\nDATABASE_URL=./db/app.db\n`)
 
 if (!await must(context, probe.fileExists({ path: join(dir, 'package.json'), name: 'the app is on disk' }), {
   likely: 'fli new did not finish — its output is above',
 })) return
 
-remember(context, '02-app', { appDir: dir })
+// ── the history a deploy replays ────────────────────────────────────────────
+//
+// A deploy runs `litestone migrate apply`, which replays migration FILES. Lesson
+// 1 built its model with `fli db:push`, which writes tables and no file — that
+// is what push is for, and its own output says so — so an app that has been
+// through the earlier lessons has a schema its history does not build, and the
+// container refuses to start with *the migration history does not build the
+// schema this app declares*.
+//
+// This is the catch-up push tells you to run, and it is only needed for an app
+// that was already here: `fli new` leaves a history that matches.
+if (built) {
+  log.info('this app was built with `fli db:push`, which writes no migration file —')
+  log.info('catching the history up, because a deploy replays files rather than a schema')
+  // `--create-only`: the tables are already there, so applying the delta would
+  // be `ALTER TABLE ADD COLUMN` against a column that exists. `db:baseline` is
+  // the other half — it records the files as applied without running them, and
+  // refuses to record a lie.
+  context.exec({ command: `${context.fli} db:migrate --create-only`, cwd: dir })
+  context.exec({ command: `${context.fli} db:baseline`, cwd: dir })
+}
+
+remember(context, '02-app', { appDir: dir, deployEnv })
 ```

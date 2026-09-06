@@ -145,6 +145,7 @@ import { TIME_PATTERNS } from './core/validate.js'
 import { dependsOnClock } from './core/policy.js'
 import { capabilitiesForModel } from './core/capabilities.js'
 import { isServerAssignedId } from './core/ids.js'
+import { filterableKeysFor, sortableKeysFor } from './core/query.js'
 import { sealedStates } from './core/seal.js'
 
 export function generateJsonSchema(schema, options = {}) {
@@ -260,8 +261,38 @@ export function generateJsonSchema(schema, options = {}) {
 
 // ─── Per-model schema ─────────────────────────────────────────────────────────
 
+// What a caller may SORT and FILTER by, answered from the same two functions the
+// Data boundary refuses with — `$checkOrderBy` and `$checkWhere` are the runtime
+// half of this and there is one owner for both (Invariant 4). Without it a
+// generated table renders a sortable header for a column whose sort throws, which
+// a hand-written one gets right only by its author knowing (`FJS-553`/`FJS-554`).
+//
+// ONLY THE EXCEPTIONS ARE EMITTED. Absent means yes, and a string says why not —
+// most columns are ordinary, and this ships in a bundle whose size is already an
+// argument (`FJS-785`). The two are separate keys because they are separate
+// answers: a `@from` field does both, a `@computed` field neither, an `@@fts`
+// `$search` filters and cannot be ordered by.
+function queryabilityFor(model) {
+  const { sortable, computed, transient, opaque } = sortableKeysFor(model)
+  const { filterable, encrypted }                 = filterableKeysFor(model)
+  return (name) => {
+    const out = {}
+    if (!sortable.has(name)) {
+      out['x-sortable'] = opaque.get(name) ?? (computed.has(name) ? 'computed'
+                        : transient.has(name) ? 'transient' : 'unknown')
+    }
+    if (!filterable.has(name)) {
+      out['x-filterable'] = computed.has(name)  ? 'computed'
+                          : transient.has(name) ? 'transient'
+                          : encrypted.has(name) ? 'encrypted' : 'unknown'
+    }
+    return out
+  }
+}
+
 function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   const { mode, includeDeletedAt, includeTimestamps, inlineEnums, audience } = opts
+  const queryable = queryabilityFor(model)
   const properties = {}
   const required   = []
 
@@ -366,15 +397,14 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     const isId = field.attributes.find(a => a.kind === 'id')
     if (isId && mode === 'create' && isServerAssignedId(field, model)) continue
 
-    // @guarded(all) / @secret fields — excluded for client audience entirely
-    const isGuardedAll = field.attributes.some(a => a.kind === 'guarded' && a.level === 'all')
-                      || field.attributes.some(a => a.kind === 'secret')
-    if (isGuardedAll && audience === 'client') continue
-
-    // @guarded (level: 'select') — excluded from write schemas for client audience
-    // These fields are readable via explicit select but not writable by clients
-    const isGuarded = field.attributes.some(a => a.kind === 'guarded' && a.level === 'select')
-    if (isGuarded && audience === 'client' && (mode === 'create' || mode === 'update')) continue
+    // @guarded / @secret — excluded for the client audience entirely, in every
+    // mode. There were two branches here, and the second advertised a bare
+    // @guarded column in the client's READ schema on the strength of a
+    // distinction the runtime never made: an explicit select does not unlock a
+    // guarded column and never did (`FJS-D205`), so the schema was offering a
+    // field no client can be answered.
+    const isGuarded = field.attributes.some(a => a.kind === 'guarded' || a.kind === 'secret')
+    if (isGuarded && audience === 'client') continue
 
     const fieldSchema = fieldToJsonSchema(field, schema, enumDefs, inlineEnums, audience, typeDefs)
 
@@ -512,6 +542,12 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       }
     }
   }
+
+  // Applied over the assembled properties rather than inside the loop: @from,
+  // @derived, @version and @computed each emit and `continue`, so a per-field
+  // call reaches none of them — and @computed is the case this exists for. A
+  // fifth virtual kind gets the right answer without touching this.
+  for (const name of Object.keys(properties)) Object.assign(properties[name], queryable(name))
 
   const result = {
     type:       'object',

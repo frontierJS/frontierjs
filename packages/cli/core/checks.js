@@ -49,6 +49,7 @@ import { runnables }              from './runnables.js'
 import { appSchemaModels, shippedSchemas } from './app-schema.js'
 import { readProofs, resolveRun } from './proofs.js'
 import { readPreambles, resolveNeeds } from './preflight.js'
+import { readCourse }             from './tutorial.js'
 import { declaredLogDatabases }        from './db-preflight.js'
 import { hostCollisions }              from './proxy.js'
 import { docWordUnknown, docCitesDead, docClaimsCount, docInvariantRef,
@@ -139,6 +140,12 @@ export const RULES = [
     title: 'every step a drive says to start first is a script that exists' },
   { id: 'dev-host-unique',      scope: 'repo', severity: 'error', invariant: null,
     title: 'no two surfaces derive the same dev name' },
+  { id: 'tutor-order',          scope: 'repo', severity: 'error', invariant: null,
+    title: 'the tutorial agrees with itself about what order it is in' },
+  { id: 'tutor-lesson-named',   scope: 'repo', severity: 'warn',  invariant: null,
+    title: 'every lesson is one the tutorial index lists' },
+  { id: 'skill-pointer',        scope: 'repo', severity: 'error', invariant: null,
+    title: 'every skill CLAUDE.md names is a SKILL.md whose frontmatter agrees' },
 
   // The notes, graded against the tree — `core/doc-audit.js`. Prose is the one
   // artefact here with no compiler, no test and no snapshot behind it, and it is
@@ -1890,6 +1897,92 @@ const CHECKS = {
   // `strictPort` exists for, one layer up, and it is silent in the same way:
   // the page works, and it is the wrong app.
 
+  // ── the course ─────────────────────────────────────────────────────────────
+  //
+  // Eleven commands in one directory become a COURSE by having an order, and
+  // the order is stated in three places: `index.md`'s LESSONS array, each
+  // lesson's own `## Lesson N —` heading, and each lesson's finish step naming
+  // the next one to run. Nothing held them together, and inserting a lesson at
+  // position 2 costs twenty hand edits across eleven files.
+  //
+  // Split the way the proof table is, and for the same reason. Naming something
+  // that is not there, or contradicting the order, is never right — a heading
+  // with the wrong number misleads and a pointer at the wrong lesson is advice
+  // that fails when it is taken. A lesson the index does not list can be
+  // deliberate, so it is a warning.
+
+  'tutor-order': ({ root }) => {
+    const course = readCourse(root)
+    if (!course) return { skipped: 'no commands/tutor — not the workspace that ships the tutorial' }
+    if (!course.order.length) return { skipped: 'tutor/index.md declares no LESSONS' }
+
+    const index    = join(course.dir, 'index.md')
+    const byId     = new Map(course.lessons.map(l => [l.id, l]))
+    const findings = []
+
+    course.order.forEach((id, i) => {
+      const lesson = byId.get(id)
+      if (!lesson) {
+        findings.push({ file: index, line: 1,
+          message: `the index lists \`${id}\` and there is no command file declaring that title. ` +
+                   'Somebody running the tutorial in the order it states reaches a command that does not exist.' })
+        return
+      }
+
+      const position = i + 1
+      if (lesson.heading !== null && lesson.heading !== position)
+        findings.push({ file: join(course.dir, lesson.file), line: lesson.headingLine,
+          message: `this lesson calls itself Lesson ${lesson.heading} and the index has it at ${position}. ` +
+                   'The number is what a reader counts by, and every other lesson\'s prose refers to it.' })
+
+      const expected = course.order[i + 1] ?? null
+      if (lesson.next === expected) return
+
+      const where = lesson.finishFile ?? join(course.dir, lesson.file)
+      if (!lesson.finishFile)
+        findings.push({ file: join(course.dir, lesson.file), line: 1,
+          message: `${lesson.stepsName} has no finish step, so this lesson names no next one. ` +
+                   `The index has \`${expected ?? 'nothing'}\` after it.` })
+      else if (expected && !lesson.next)
+        findings.push({ file: where, line: 1,
+          message: `this lesson names no next one, and the index has \`${expected}\` after it. ` +
+                   'A person following the pointers stops here.' })
+      else if (!expected)
+        findings.push({ file: where, line: lesson.nextLine,
+          message: `this is the last lesson the index lists and it points at \`${lesson.next}\`.` })
+      else
+        findings.push({ file: where, line: lesson.nextLine,
+          message: `this lesson points at \`${lesson.next}\` and the index has \`${expected}\` after it. ` +
+                   'Two orders, and the one a person follows is this one.' })
+    })
+
+    return { findings }
+  },
+
+  'tutor-lesson-named': ({ root }) => {
+    const course = readCourse(root)
+    if (!course) return { skipped: 'no commands/tutor — not the workspace that ships the tutorial' }
+
+    const listed   = new Set(course.order)
+    const findings = []
+
+    for (const l of course.lessons) {
+      if (!listed.has(l.id))
+        findings.push({ file: join(course.dir, l.file), line: 1,
+          message: `\`${l.id}\` is a lesson that tutor/index.md does not list, so \`fli tutor\` never ` +
+                   'names it and nothing points at it. Add it to LESSONS, or say why it is reached another way.' })
+      if (!l.hasStepsDir)
+        findings.push({ file: join(course.dir, l.file), line: 1,
+          message: `\`${l.id}\` declares \`steps: ${l.stepsName}\` and there is no such directory beside it.` })
+    }
+
+    for (const orphan of course.orphanSteps)
+      findings.push({ file: join(course.dir, orphan), line: 1,
+        message: `${orphan} is a step directory no lesson claims with \`steps:\`, so nothing runs it.` })
+
+    return { findings }
+  },
+
   'dev-host-unique': ({ root }) => {
     const rows = safeRunnables(root)
     if (!rows.length) return { skipped: 'no runnables — nothing to derive a name from' }
@@ -2027,9 +2120,9 @@ const CHECKS = {
   // or a policy is the app's business too. Changing the package's own column is
   // the class that costs something, and it is silent by construction: the
   // package's code goes on writing to a column whose declaration it no longer
-  // recognises, and nothing anywhere compares a copy to its original.
+  // recognizes, and nothing anywhere compares a copy to its original.
   //
-  // Measured: basecamp's copy of `Credential` had `@guarded(all)` where auth
+  // Measured: basecamp's copy of `Credential` had `@guarded` where auth
   // writes `@secret` on the two OAuth token columns, so turning OAuth on there
   // would have stored every provider access and refresh token unencrypted. Its
   // 137 tests were green either side of the divergence (`FJS-483`).
@@ -2205,14 +2298,16 @@ const CHECKS = {
         for (const [column, declared] of theirs.columns) {
           const here = ours.columns.get(column)
           if (here === declared) continue
+          if (here !== undefined && narrowsScalar(declared, here)) continue
 
           findings.push({
             file: schema.path,
             line: ours.columnLines.get(column) ?? ours.line,
             message: here === undefined
               ? `model ${name} is a copy of ${dep.pkg}'s and is missing its column '${column}' ` +
-                `(${declared}). That package's own code still writes to it. Import the model ` +
-                `instead and add what is yours with \`extend model\`.`
+                `(${declared}). That package's own code still writes to it. Add the column — or, ` +
+                `where the package means its model to be imported rather than copied, import it ` +
+                `and put what is yours in an \`extend model\`.`
               : `model ${name} is a copy of ${dep.pkg}'s and declares '${column}' differently — ` +
                 `the package says \`${declared}\`, this says \`${here}\`. If the deviation is ` +
                 `deliberate, say so here and baseline this rule; if it is drift, it is silent ` +
@@ -2292,12 +2387,22 @@ const CHECKS = {
         for (const c of r[1].split(',')) owned.add(c.trim())
 
       for (const f of fields) {
-        const base = f.name.match(/^(.*?)(?:Type|Kind|Class)$/)?.[1]
+        // Both spellings, because the population this rule is FOR is the one
+        // that spells it the other way: a pair with no foreign key arrives in a
+        // schema read out of somebody's existing database (`litestone
+        // introspect --no-camel`, a Rails `subject_type`/`subject_id`), and a
+        // match on camelCase alone reported every one of those as having no
+        // pair at all.
+        const camel = f.name.match(/^(.*?)(?:Type|Kind|Class)$/)?.[1]
+        const snake = f.name.match(/^(.*?)_(?:type|kind|class)$/)?.[1]
+        const base  = camel ?? snake
         // A String and only a String — an enum-typed one is already answered,
         // which is the whole of what this rule asks for.
         if (!base || f.type !== 'String' || f.array) continue
 
-        const id = byName.get(`${base}Id`) ?? byName.get(`${base}ID`)
+        const id = camel
+          ? (byName.get(`${base}Id`) ?? byName.get(`${base}ID`))
+          : (byName.get(`${base}_id`) ?? byName.get(`${base}_ID`))
         if (!id || owned.has(id.name) || !SCALARS.has(id.type)) continue
 
         // Already told what it may hold. `@values` counts: it is a declared set
@@ -2545,6 +2650,7 @@ const CHECKS = {
   'doc-map-narration': ({ root }) => docMapNarration({ root }),
   'doc-unchecked-count': ({ root }) => docUncheckedCount({ root, countables: [...COUNTABLES, checkRulesCountable(RULES)] }),
   'invariant-enforcer': ({ root }) => invariantEnforcer({ root }),
+  'skill-pointer':      ({ root }) => skillPointer({ root }),
 }
 
 // ─── reading source ───────────────────────────────────────────────────────────
@@ -2775,6 +2881,33 @@ function shippedTokens(root) {
 // of whitespace collapsed — so realigning a column of attributes is not a
 // finding and adding one is. A `//` comment is cut, because a comment is not
 // part of what the column means.
+// A package's bare `String` tightened by the app into a declared set — an enum
+// or a `@values` — is not drift, and reporting it would be two rules pulling
+// against each other: `polymorphic-subject` asks an app to constrain exactly
+// this kind of column, and a package cannot ship the constraint because it
+// cannot know the app's set. Both store TEXT, so the column the package writes
+// is the column it declared; what the app took on is that a value outside its
+// own set is refused, which is what it asked for.
+//
+// NULLABILITY is not narrowing and is still reported: `String?` → `String`
+// makes a write the package makes legal fail, which is the drift this rule is
+// for. A different scalar is not narrowing either.
+const SCALAR_TYPES = new Set(['String', 'Int', 'Float', 'Boolean', 'DateTime', 'Json', 'Decimal', 'BigInt', 'Bytes'])
+
+function narrowsScalar(theirs, ours) {
+  const split = (d) => {
+    const [type, ...rest] = d.split(' ')
+    return { base: type.replace(/[?[\]]/g, ''), optional: type.includes('?'), list: type.includes('[]'), rest: rest.join(' ') }
+  }
+  const t = split(theirs)
+  const o = split(ours)
+
+  if (!SCALAR_TYPES.has(t.base)) return false     // only a bare scalar can be narrowed
+  if (SCALAR_TYPES.has(o.base)) return false      // scalar → scalar is a change, not a narrowing
+  if (t.optional !== o.optional || t.list !== o.list) return false
+  return t.rest === o.rest
+}
+
 function declaredColumns(text) {
   const lines  = text.split('\n')
   const models = new Map()
@@ -3132,6 +3265,67 @@ export function formatFindings(findings, root) {
     }
   }
   return out
+}
+
+// ─── skill-pointer ────────────────────────────────────────────────────────────
+//
+// The root `CLAUDE.md` keeps a NAME for each section it moved behind
+// `.claude/skills/` — `data-hazards` (`.claude/skills/`) in prose, and the
+// realm table's Skill column. A skill loads by that name, so a directory
+// renamed out from under the pointer leaves the sentence reading exactly as it
+// did with nothing behind it: `proof-target`'s failure, one document up. The
+// frontmatter is the other half — the Skill tool registers a skill under
+// `name:` rather than under the directory, so the two disagreeing is a skill
+// the pointer can name and the tool cannot find.
+//
+// Only the pointer is graded. Whether the skill still SAYS what the sentence
+// promises is a judgement; whether the file is there is a fact, and it is the
+// half that rots. A skill CLAUDE.md never names is not reported: a skill fires
+// off its own description, and a pointer is one way in rather than the only one.
+
+const SKILL_PROSE = /`([a-z][a-z0-9-]*)`\s*\(`\.claude\/skills\/`\)/g
+
+function skillPointer({ root }) {
+  const claude = join(root, 'CLAUDE.md')
+  if (!existsSync(claude)) return { skipped: 'no root CLAUDE.md' }
+  const text  = readFileSync(claude, 'utf8')
+  const lines = text.split('\n')
+  const named = new Map()
+
+  for (const m of text.matchAll(SKILL_PROSE))
+    if (!named.has(m[1])) named.set(m[1], text.slice(0, m.index).split('\n').length)
+
+  // A table whose header has a Skill column: every row's cell in that column.
+  let col = -1
+  lines.forEach((line, i) => {
+    if (!line.startsWith('|')) { col = -1; return }
+    const cells = line.split('|').slice(1, -1).map(c => c.trim())
+    if (col === -1) { col = cells.findIndex(c => /^skill$/i.test(c)); return }
+    if (/^-+$/.test(cells[col] ?? '')) return
+    const m = /^`([a-z][a-z0-9-]*)`$/.exec(cells[col] ?? '')
+    if (m && !named.has(m[1])) named.set(m[1], i + 1)
+  })
+
+  if (!named.size) return { skipped: 'CLAUDE.md names no skill' }
+
+  const findings = []
+  for (const [name, line] of named) {
+    const file = join(root, '.claude', 'skills', name, 'SKILL.md')
+    if (!existsSync(file)) {
+      findings.push({ file: claude, line,
+        message: `names the skill \`${name}\` and \`.claude/skills/${name}/SKILL.md\` is not in the tree. ` +
+                 `The sentence reads the same with nothing behind it — point it at what replaced the ` +
+                 `skill, or put the skill back.` })
+      continue
+    }
+    const front = /^---\n([\s\S]*?)\n---/.exec(readFileSync(file, 'utf8'))
+    const declared = /^name:\s*(\S+)\s*$/m.exec(front?.[1] ?? '')?.[1]
+    if (declared !== name) findings.push({ file, line: 1,
+      message: `is named \`${name}\` by CLAUDE.md and declares \`name: ${declared ?? '(none)'}\`. The Skill ` +
+               `tool registers it under the frontmatter, so the pointer names a skill the tool cannot ` +
+               `find — make the two agree.` })
+  }
+  return { findings }
 }
 
 // ─── invariant-enforcer ───────────────────────────────────────────────────────

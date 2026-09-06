@@ -36,7 +36,7 @@ if (context.config.abort) {
 
 context.config.journal.settle('succeeded')
 
-log.success('Lesson 6 done — deployed, redeployed, reverted, and reverted back')
+log.success('Lesson 9 done — deployed, redeployed, reverted, and reverted back')
 log.info('')
 log.info(`  ${app}`)
 log.info('')

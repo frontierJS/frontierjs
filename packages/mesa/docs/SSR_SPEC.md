@@ -298,15 +298,15 @@ unchanged.
 >
 > **Two traps for whoever writes the loader.**
 > - `createTreeWalker(root, NodeFilter.SHOW_COMMENT)` is the right
->   implementation and works in Chrome (verified). Under **happy-dom 14.12.3**
->   it filters to nothing — `SHOW_ALL` does surface comments — so a loader
->   tested only against this repo's SSR harness would silently find zero
->   islands.
+>   implementation and works in Chrome. It filtered to nothing under happy-dom
+>   14.12.3, which is fixed as of 20 — but a loader is tested against whatever
+>   version is installed, so `SHOW_ALL` remains the safer reach and this line
+>   remains a reason to check rather than a rule.
 > - The payload escapes every `-` and `>` out of the JSON. Only `-->`
->   terminates a comment per spec, but happy-dom ends one at the **first `>`**,
->   which split a marker in two and made `JSON.parse` throw on the fragment. A
->   prop value of `a --> b <!-- c > d` now round-trips exactly through both
->   parsers.
+>   terminates a comment per spec, and happy-dom 20 agrees — a marker holding
+>   `a --> b <!-- c > d` round-trips as one comment. The escaping stays because
+>   a real browser is the other parser and the payload is written once for both,
+>   not because either one currently mis-parses it.
 >
 > **Still open, and still Sierra's:** the loader itself, per-island bundling,
 > and name→module resolution. `sierraContext.islandMap` remains unconsumed —
@@ -439,6 +439,40 @@ and W2's premise fell:
   and they are what would have caught the `<slot />` hole.
 - Verify by running, not by reading. Several things in this repo were documented
   accurately and wired to nothing; `ctx.islands` is one of them.
+
+## What a browser global answers, and why nothing says so
+
+A server render runs inside happy-dom, so the browser globals are **present and
+answering** rather than absent. Measured under happy-dom 20:
+
+| Read | Answer on the server |
+| --- | --- |
+| `window.innerWidth` / `innerHeight` | `1280` / `1024` |
+| `navigator.userAgent` | `Node.js/22` (not a browser UA) |
+| `matchMedia('(min-width: 900px)').matches` | `false` — every query, regardless |
+| `window.devicePixelRatio` | `1` |
+| `localStorage` | **absent** — a read throws `localStorage is not defined` |
+
+So a component that branches on viewport width bakes the desktop branch into the
+page, and a component that branches on a media query bakes the false one. Both
+are plausible pages. Neither reports.
+
+**That silence is deliberate** (`FJS-D214`). Every neighbouring rule here is
+silent by design — `{@attach}` does not run on the server, `$.onMount` is inert,
+`watchProxy` is off (`FJS-146`, RULE 19) — and a diagnostic on a global read
+would fire on every page of a prerender of hundreds, which is how a console
+stops being read. The failure is real and rare; the noise would be constant.
+
+**Write the branch so the server answer is the safe one**, or move it behind
+`$.onMount`, or make the component an island. The mobile-first shape is not a
+style preference here: the server always answers with the wide viewport, so a
+layout that starts narrow and widens is correct in the baked page and a layout
+that starts wide and narrows is not.
+
+`localStorage` is the one that fails loudly rather than quietly, and the error
+now names the component and the `.mesa` file it came from (`FJS-872`). Guard it
+with `typeof localStorage !== 'undefined'`, which works — the global is genuinely
+undefined rather than a throwing accessor.
 
 ## Consumer contract
 

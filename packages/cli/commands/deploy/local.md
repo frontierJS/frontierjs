@@ -63,7 +63,7 @@ if (!existsSync(envFilePath)) {
 
 if (flag.dry) {
   log.dry(`Would vendor: ${GENERATED_DIR}/ (manifest + any link:/workspace: package)`)
-  log.dry(`Would build: docker build -t ${tag} -f ${dockerfile} .`)
+  log.dry(`Would build: docker build -t ${tag} -f ${dockerfilePath} ${context.paths.root}`)
   log.dry(`Would run:   docker run -d --name ${container} -p 127.0.0.1:${port}:3000 ...`)
   return
 }
@@ -122,8 +122,16 @@ if (!bcFindings.length) {
 }
 
 // ─── Build ────────────────────────────────────────────────────────────────────
+//
+// `-f` is the ABSOLUTE path, not the configured string. Docker resolves `-f`
+// against the caller's cwd while the context here is absolute, and `exec` runs
+// with whatever cwd the process happens to hold — so the relative form built
+// only when somebody happened to be standing in the app root, and failed
+// anywhere else with `resolve : lstat deploy: no such file or directory`. The
+// existence check above already resolves it, so the check passed and the build
+// failed, which reads as *the Dockerfile was written and docker cannot read it*.
 log.info(`Building ${tag} from ${dockerfile}...`)
-context.exec({ command: `docker build -t ${tag} -f ${dockerfile} ${context.paths.root}` })
+context.exec({ command: `docker build -t ${tag} -f ${dockerfilePath} ${context.paths.root}` })
 log.success(`Image built → ${tag}`)
 
 // ─── Run ──────────────────────────────────────────────────────────────────────

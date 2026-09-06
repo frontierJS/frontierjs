@@ -160,7 +160,7 @@ describe('Notes service', () => {
         .send({ title: `Note ${i}`, body: 'body' })
     }
     const res  = await request(app).get('/api/notes')
-    // List envelope uses `offset` (not `skip`) — the framework normalises
+    // List envelope uses `offset` (not `skip`) — the framework normalizes
     // pagination fields when wrapping results.
     const body = res.body as { total: number; data: unknown[]; limit: number; offset: number }
     expect(res.status).toBe(200)

@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**101 words** — 11 declarations · 63 field attributes · 27 model attributes.
+**100 words** — 12 declarations · 63 field attributes · 25 model attributes.
 
 ## Declarations
 
@@ -19,6 +19,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `import` | "path" [into <database>] |  |
 | `database` | <name> { path · driver · replication · retention · maxSize · model } | driver: sqlite · jsonl · logger |
 | `tenancy` | { strategy database \| row, … } | strategy: database · row |
+| `claim` | <name> |  |
 | `model` | <PascalCaseSingular> { … } |  |
 | `view` | <name> { fields… @@sql(…) [@@materialized] [@@refreshOn([…])] [@@db(…)] } |  |
 | `enum` | <Name> { values… } |  |
@@ -48,7 +49,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@hardDelete` | Compute a value |  |  |  |  |
 | `@keep` | Compute a value |  |  |  |  |
 | `@omit` | Hide or lock a value | [(all)] |  | level: all |  |
-| `@guarded` | Hide or lock a value | [(all)] | on a model's field · on a trait's field |  |  |
+| `@guarded` | Hide or lock a value |  | on a model's field · on a trait's field |  |  |
 | `@system` | Hide or lock a value |  |  |  |  |
 | `@immutable` | Hide or lock a value |  |  |  |  |
 | `@sealed` | Hide or lock a value |  |  |  |  |
@@ -108,12 +109,10 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@map` | Shape the table | ("table_name") | in a model |  |  |
 | `@@label` | Shape the table | (<field>) |  |  | parses as `labelField` |
 | `@@external` | Shape the table |  |  |  |  |
-| `@@strict` | Shape the table |  |  |  |  |
 | `@@noStrict` | Shape the table |  |  |  |  |
 | `@@fts` | Shape the table | ([field, …][, tokenize: unicode61\|ascii\|porter\|trigram]) | in a model | tokenize: unicode61 · ascii · porter · trigram |  |
 | `@@capabilities` | Decide who may | [(all)] |  | scope: all |  |
 | `@@softDelete` | Shape the table | [(cascade)] |  | mode: cascade |  |
-| `@@softDeleteCascade` | Shape the table |  |  |  | **removed** — use `softDelete` |
 | `@@hasTemplates` | Shape the table | [(<field>)] |  |  |  |
 | `@@gate` | Decide who may | ("<read>.<create>.<update>.<delete>" \| "<n>") |  |  |  |
 | `@@allow` | Decide who may | ('read'\|'create'\|'update'\|'delete'\|'all', <expression>[, message]) |  |  |  |

@@ -1,6 +1,6 @@
 // core/pragmas.js — the wait every SQLite connection owes a second writer.
 //
-// SQLite serialises writers with a file lock. A connection that finds the lock
+// SQLite serializes writers with a file lock. A connection that finds the lock
 // held either WAITS or fails immediately with `SQLITE_BUSY`, and which one it
 // does is `busy_timeout` — zero by default, so *fails immediately* is what a
 // connection gets unless somebody says otherwise.

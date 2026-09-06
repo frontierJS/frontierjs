@@ -73,7 +73,7 @@ describe('x-labels → rule.options', () => {
     })
 
     // Unchanged from before this feature — a bare string array, which is one
-    // of the two shapes Select.mesa already normalises.
+    // of the two shapes Select.mesa already normalizes.
     expect(controlFor(rules.bare)).toEqual({ control: 'select', options: ['a', 'b'] })
   })
 })

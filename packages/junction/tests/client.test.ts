@@ -881,7 +881,7 @@ describe('apiPrefix', () => {
     restore()
   })
 
-  it('normalises a prefix the way the server does', async () => {
+  it('normalizes a prefix the way the server does', async () => {
     for (const prefix of ['api', '/api', 'api/', '/api/']) {
       const { restore, mock: m } = mockFetch({ id: '1' })
       await createJunctionClient({ url: 'http://localhost:3000', apiPrefix: prefix })

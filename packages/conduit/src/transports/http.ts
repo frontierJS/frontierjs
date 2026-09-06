@@ -216,6 +216,13 @@ export class HttpTransport extends BaseTransport {
    * is set for the faults that leave that open and not for the ones that do
    * not — a 429 is the target refusing, and a connection that was never
    * established carried no bytes.
+   *
+   * Which is why it, and not the refusal to replay, decides the flag. Squashing
+   * every declined replay answered `retryable: false` to a 429 and to a refused
+   * connection — faults this function has already concluded carried no bytes —
+   * and a caravan job reading that drops recoverable work for good. `retryable`
+   * is a statement about THIS request, so a fault that was never applied stays
+   * whatever its own kind said it was.
    */
   private declineReplay(result: ConduitErrorResponse): ConduitErrorResponse {
     const err  = result.error
@@ -229,8 +236,7 @@ export class HttpTransport extends BaseTransport {
       meta: result.meta,
       error: {
         ...err,
-        retryable: false,
-        ...(indeterminate ? { indeterminate: true } : {}),
+        ...(indeterminate ? { retryable: false, indeterminate: true } : {}),
         message: indeterminate
           ? `${err.message} — not replayed: no idempotency key, and the request may already have been applied`
           : `${err.message} — not replayed: no idempotency key`,
@@ -555,7 +561,7 @@ export class HttpTransport extends BaseTransport {
 
   // Maps a ConduitRequest method to a valid HTTP verb, or null if it is not
   // one. ConduitRequest.method is a free string to support non-HTTP protocols
-  // ("exec", "logs"), but on an HTTP target an unrecognised verb is a mistake:
+  // ("exec", "logs"), but on an HTTP target an unrecognized verb is a mistake:
   // silently coercing it to POST turned a typo ('GTE') into a live write
   // against a control plane. Callers get invalid_request instead.
   protected resolveMethod(method: string): string | null {

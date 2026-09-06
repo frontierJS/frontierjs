@@ -7,7 +7,7 @@
  * feeds in, and the failures named are the ones a copy actually had.
  */
 
-import { pluralize, singularize } from '../../src/inflect/inflect.js'
+import { pluralize, singularize, IRREGULAR } from '../../src/inflect/inflect.js'
 
 /* ── Regular rules ─────────────────────────────────────────────────── */
 
@@ -20,7 +20,7 @@ test('inflect: the regular rules, both directions', function () {
     ['box', 'boxes'],
     ['church', 'churches'],
     ['dish', 'dishes'],
-    ['quiz', 'quizzes'.replace('zz', 'z')], // quizes — one z, English disagrees, the rule does not
+    ['waltz', 'waltzes'],         // a real -z stem; `quiz` doubles and is in the table
   ]
   pairs.forEach(function ([one, many]) {
     assert.equal(pluralize(one), many, 'pluralize(' + one + ')')
@@ -36,17 +36,38 @@ test('inflect: a vowel before y just takes an s', function () {
 /* ── The irregular table ───────────────────────────────────────────── */
 
 test('inflect: every irregular round-trips', function () {
-  const table = {
-    person: 'people', child: 'children', man: 'men', woman: 'women',
-    tooth: 'teeth', foot: 'feet', mouse: 'mice', goose: 'geese',
-    ox: 'oxen', leaf: 'leaves', life: 'lives', knife: 'knives',
-    index: 'indices', matrix: 'matrices', vertex: 'vertices',
-    analysis: 'analyzes', basis: 'bases', crisis: 'crises',
-    datum: 'data', medium: 'media', criterion: 'criteria',
-  }
-  Object.entries(table).forEach(function ([one, many]) {
+  /*
+   * The table is READ from the module rather than restated. A copy here grades
+   * nothing — one find/replace rewrote the entry and this assertion together,
+   * so both sides agreed on `analyzes` and the suite stayed green. Reading it
+   * also means an entry added later is round-tripped without touching a test.
+   */
+  Object.entries(IRREGULAR).forEach(function ([one, many]) {
     assert.equal(pluralize(one), many, 'pluralize(' + one + ')')
     assert.equal(singularize(many), one, 'singularize(' + many + ')')
+  })
+})
+
+test('inflect: the table says what English says', function () {
+  /*
+   * The other half, and the one the round trip cannot make: a table full of
+   * invented plurals round-trips perfectly. These are hand-written because they
+   * ARE the oracle — the assertion is that the module agrees with English, so
+   * anything derived from the module would be the module agreeing with itself.
+   */
+  ;[['analysis', 'analyses'], ['basis', 'bases'], ['crisis', 'crises'],
+    ['half', 'halves'], ['shelf', 'shelves'], ['wife', 'wives'],
+    ['thief', 'thieves'], ['self', 'selves'], ['quiz', 'quizzes'],
+    ['person', 'people'], ['child', 'children'], ['criterion', 'criteria'],
+  ].forEach(function (pair) {
+    assert.equal(pluralize(pair[0]), pair[1], 'pluralize(' + pair[0] + ')')
+  })
+
+  // The control: an `-f` that does NOT take `-ves`, so the list stayed a list.
+  // A rule over the ending would answer `rooves` and `chieves` and pass every
+  // assertion above.
+  ;['roof', 'chief', 'belief', 'proof', 'chef'].forEach(function (w) {
+    assert.equal(pluralize(w), w + 's', 'pluralize(' + w + ') took -ves')
   })
 })
 
@@ -60,7 +81,7 @@ test('inflect: an irregular that a regular rule also matches still wins', functi
   assert.equal(pluralize('index'), 'indices')
   assert.equal(pluralize('matrix'), 'matrices')
   assert.equal(pluralize('vertex'), 'vertices')
-  assert.equal(pluralize('analysis'), 'analyzes')
+  assert.equal(pluralize('analysis'), 'analyses')
   assert.equal(pluralize('basis'), 'bases')
   assert.equal(pluralize('crisis'), 'crises')
   assert.equal(pluralize('ox'), 'oxen')
@@ -130,7 +151,7 @@ test('inflect: -ses splits by a list, because no ending can split it', function 
   // The irregular table is consulted first and still wins.
   assert.equal(singularize('bases'), 'basis')
   assert.equal(singularize('crises'), 'crisis')
-  assert.equal(singularize('analyzes'), 'analysis')
+  assert.equal(singularize('analyses'), 'analysis')
 })
 
 test('inflect: the plural of a word ending in s comes back to it', function () {

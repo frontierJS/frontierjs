@@ -33,7 +33,24 @@
   box-sizing: border-box;
 }
 
-:root {
+/*
+ * `:host` beside `:root`, because a shadow tree has no document element.
+ *
+ * `:root` matches `<html>` and nothing else, so a stylesheet folded into a
+ * shadow root — which is what a Sierra widget IS, one script carrying its own
+ * CSS into a root on somebody else's page — declares these on no element at
+ * all, and every `var(--…)` below resolves empty. The failure is partial and
+ * therefore confusing: `box-sizing` and the `--space-*` rules are on `*` and do
+ * cross, so a widget styled with this kit renders as a transparent box with the
+ * spacing right, having shipped the whole kit to do it. Invariant 13 says this
+ * is the styling language; it has to work in every surface that has one.
+ *
+ * `:host` matches nothing in a document, so this is a no-op there — and inside
+ * a shadow root it declares the tokens on the host element, from which they
+ * inherit into the tree exactly as `:root`'s do in a page.
+ */
+:root,
+:host {
   /*
    * Lets a keyword be interpolated, which is what makes `height: 0` to
    * `height: auto` animatable at all — the thing CSS could not do for

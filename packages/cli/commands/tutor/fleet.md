@@ -51,9 +51,9 @@ context.vars.apiPort     = context.config.apiPort
 context.vars.outpostPort = context.config.outpostPort
 ```
 
-## Lesson 8 — one control plane, one machine
+## Lesson 12 — one control plane, one machine
 
-Lesson 6 deployed from your laptop with `fli deploy`: you hold the ssh key, you
+Lesson 7 deployed from your laptop with `fli deploy`: you hold the ssh key, you
 type the command, and the machine is a target. That is one release story and it
 is the right one for one app on one box.
 
@@ -62,16 +62,21 @@ fleet as rows — and **Outpost** is the process a machine runs so the control
 plane has hands on it. Nobody types a deploy; somebody clicks one, and a job
 sends a signed command to a machine that agreed to take orders.
 
-Four things get built, in this order:
+Five things get built, in this order:
 
 - a control plane, on its own database, with nothing in it
 - a **Server** row — the machine as a noun, before anything is on it
 - a real Outpost, on this machine, reporting in
 - a command, sent from the control plane, that really runs here
+- a **release** — sources built into an image on that machine, and the bytes
+  recorded
 
-The last one is the whole lesson. Everything before it is arranging for a
-machine to be reachable, and *reachable* turns out to have a precise meaning
-that a row cannot express.
+The last two are the lesson. Everything before them is arranging for a machine
+to be reachable, and *reachable* turns out to have a precise meaning that a row
+cannot express.
+
+The release needs Docker, because it builds one; without a daemon the lesson
+stops there and says so.
 
 **This lesson needs a checkout.** Basecamp is not published — it is an
 application built on the framework rather than a part of it — so the first step

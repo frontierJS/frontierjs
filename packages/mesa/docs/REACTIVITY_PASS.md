@@ -97,8 +97,13 @@ downstream effect runs → **0**, and 25–37% faster wall-clock.
 - `_runNode` contains per-node errors. `_flush` drains `_queue` into a snapshot
   before running anything, so an escaping exception didn't just skip the effect
   that threw — every node after it was dropped and never re-notified.
-- `_MAX_FLUSH_PASSES = 1000` + `_reportCycle`. A cyclic effect pair used to spin
-  forever with no output; it now bails with a message naming the likely cause.
+- `_MAX_NODE_RUNS = 100` + `_halt`. A cyclic effect pair used to spin forever
+  with no output; it now bails with a message naming the node that repeated.
+  The budget is per NODE and not per flush pass, because the derived layer
+  settles one DOM-depth per pass — so a pass budget cannot tell a cycle from a
+  deep chain of memos and accused the second of being the first (`FJS-851`).
+  `_MAX_FLUSH_WORK` is the backstop under it, for work that keeps creating
+  fresh nodes rather than re-running existing ones.
 
 ### 3. Watch trie — one rule for both proxy engines
 

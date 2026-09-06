@@ -1,33 +1,25 @@
 /**
- * defer-js.js — Add defer attribute to script tags in index.html
+ * defer-js.js — Add defer attribute to script tags on every page.
  *
  * When build.deferJS: true in sierra.config.js, Sierra adds `defer`
- * to all non-module script tags in index.html that don't already have
- * it. Module scripts are already deferred by default.
+ * to all non-module script tags that don't already have it. Module scripts
+ * are already deferred by default.
  *
  * This is a simple post-build pass — it doesn't reorder or
  * otherwise modify the scripts.
+ *
+ * It named `index.html`, which is the whole output of an SPA and one page out
+ * of N on a static target — `FJS-501` one file along from where that was fixed
+ * (`FJS-822`). The pages come from `html-files.js`, which the other two
+ * HTML-rewriting steps in this pipeline also ask.
  */
 
 import { readFile, writeFile } from 'fs/promises'
-import { join } from 'path'
+import { relative } from 'path'
+import { htmlFiles } from './html-files.js'
 
-/**
- * @param {string} outDir
- * @returns {Promise<string|null>}
- */
-export async function deferJsLoading(outDir) {
-  const indexPath = join(outDir, 'index.html')
-
-  let html
-  try {
-    html = await readFile(indexPath, 'utf8')
-  } catch {
-    return null
-  }
-
-  // Add defer to <script src="..."> tags that don't have type="module",
-  // async, or defer already
+/** Add `defer` to one document's eligible script tags. */
+function deferScripts(html) {
   let count = 0
   const result = html.replace(
     /<script\b([^>]*)>/gi,
@@ -42,9 +34,32 @@ export async function deferJsLoading(outDir) {
       return `<script${attrs} defer>`
     }
   )
+  return { result, count }
+}
 
-  if (count === 0) return null
+/**
+ * @param {string} outDir
+ * @returns {Promise<string|null>}
+ */
+export async function deferJsLoading(outDir) {
+  const pages = await htmlFiles(outDir)
+  let total = 0
+  const touched = []
 
-  await writeFile(indexPath, result, 'utf8')
-  return `Deferred ${count} script tag${count === 1 ? '' : 's'} in index.html`
+  for (const path of pages) {
+    let html
+    try { html = await readFile(path, 'utf8') } catch { continue }
+
+    const { result, count } = deferScripts(html)
+    if (count === 0) continue
+
+    await writeFile(path, result, 'utf8')
+    total += count
+    touched.push(relative(outDir, path))
+  }
+
+  if (total === 0) return null
+
+  const where = touched.length === 1 ? touched[0] : `${touched.length} pages`
+  return `Deferred ${total} script tag${total === 1 ? '' : 's'} in ${where}`
 }

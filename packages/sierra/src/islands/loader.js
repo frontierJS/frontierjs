@@ -147,11 +147,9 @@ function liveAncestor(island) {
  * it. Module-level rather than threaded through `hydrateIslands`, because
  * `mountIsland` is exported and has to be correct when called on its own.
  *
- * `handle.destroy()` removes the mount anchor and releases the delegation root.
- * It does not dispose the component's effects — Mesa's `mount` does not own a
- * reactive root (VISION RULE 54's `createRoot` is not applied there), so that
- * is a runtime limitation, not something this file can fix. The nodes those
- * effects write to are removed either way.
+ * `handle.destroy()` removes the mount anchor, releases the delegation root and
+ * disposes the component's reactive root, so an island mounted over stops
+ * running rather than merely losing its nodes.
  */
 const _mounted = new Set()
 

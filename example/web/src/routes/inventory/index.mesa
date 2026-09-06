@@ -103,7 +103,7 @@ title: Inventory
     { key: 'reference', label: 'Reference' },
   ]
 
-  // A movement carries `variantId` and nothing a person recognises, so the SKU
+  // A movement carries `variantId` and nothing a person recognizes, so the SKU
   // is resolved from the variants this screen already loaded. Not an `include`
   // on the service: the ledger is a plain `find`, and adding a join to it would
   // be inventing a shape for one screen.

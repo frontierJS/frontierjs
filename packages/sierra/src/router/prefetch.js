@@ -11,7 +11,9 @@
  *   2. The route's data (by running load() with a no-op fetch)
  *
  * Already-prefetched routes are skipped. Prefetch never fires
- * for external URLs or URLs that don't match any route.
+ * for external URLs, for URLs that don't match any route, or for a route the
+ * router would never render at that URL — one carrying `meta.redirect` or
+ * `meta.spread`. Guards are NOT run; see prefetchHref().
  *
  * A prefetched load() runs with the same `fetch` a navigated one does —
  * `sierraFetch`, which attaches the session token. It used to be handed
@@ -24,7 +26,7 @@
  */
 
 import { matchRoute, normalizePath } from './match.js'
-import { loadLayoutChain } from './internals.js'
+import { loadLayoutChain, linkHrefOf } from './internals.js'
 import { sierraFetch } from '../fetch/index.js'
 
 // URLs already prefetched this session.
@@ -126,6 +128,12 @@ export function _resetPrefetch() {
   _prefetchCache.clear()
 }
 
+// The document whose delegated listeners this module already holds. Four
+// listeners were added on every initPrefetch call, so three inits gave three of
+// each (Invariant 11). Keyed on the document rather than a boolean for the same
+// reason the router keys on the window: swapping globalThis is a test seam.
+let _boundDocument = null
+
 // Shared references set by initPrefetch
 let _tree = null
 let _components = {}
@@ -168,19 +176,27 @@ export function initPrefetch(tree, components, loaders, options, layouts = {}) {
 
   const onIntent = (e) => {
     const a = e.target?.closest?.('a[prefetch]')
-    if (!a || !a.href) return
+    if (!a) return
+    // Not `a.href`: the selector `a[prefetch]` matches an SVG anchor too, and
+    // its `.href` is a truthy SVGAnimatedString rather than a string — so the
+    // old guard passed and `[object SVGAnimatedString]` went out as a URL.
+    const href = absoluteHrefOf(a)
+    if (!href) return
     const mode = modeOf(a)
     if (mode === 'hover' || mode === 'mousedown' || mode === 'immediate') {
-      prefetchHref(a.href)
+      prefetchHref(href)
     }
   }
 
   // capture: true so we still see the event when something downstream stops
   // propagation. passive: true because we never preventDefault here.
-  document.addEventListener('mouseover',  onIntent, { capture: true, passive: true })
-  document.addEventListener('focusin',    onIntent, { capture: true, passive: true })
-  document.addEventListener('touchstart', onIntent, { capture: true, passive: true })
-  document.addEventListener('mousedown',  onIntent, { capture: true, passive: true })
+  if (_boundDocument !== document) {
+    _boundDocument = document
+    document.addEventListener('mouseover',  onIntent, { capture: true, passive: true })
+    document.addEventListener('focusin',    onIntent, { capture: true, passive: true })
+    document.addEventListener('touchstart', onIntent, { capture: true, passive: true })
+    document.addEventListener('mousedown',  onIntent, { capture: true, passive: true })
+  }
 
   // ── visible + immediate ───────────────────────────────────────────────────
   // Both need to find links without user intent. Sweep once now, and again
@@ -195,6 +211,25 @@ export function initPrefetch(tree, components, loaders, options, layouts = {}) {
  *
  * Called on boot and after each navigation. Exported so the router can drive it.
  */
+/*
+ * Where does this link point, absolutely?
+ *
+ * `a[prefetch]` matches an SVG anchor as readily as an HTML one, and an SVG
+ * anchor's `.href` is a truthy `SVGAnimatedString` — so every reader below used
+ * to pass its guard and hand `[object SVGAnimatedString]` to the fetcher. There
+ * are three of them (delegated intent, the idle queue, the intersection
+ * observer) and fixing the one the bug was reported at would have left two.
+ */
+function absoluteHrefOf(el) {
+  const href = linkHrefOf(el)
+  if (!href) return null
+  try {
+    return new URL(href, window.location.href).href
+  } catch {
+    return null
+  }
+}
+
 export function scanPrefetchLinks() {
   if (typeof document === 'undefined') return
   for (const el of document.querySelectorAll('a[prefetch]')) {
@@ -225,7 +260,7 @@ function _drainImmediate() {
     const el = _immediateQueue.shift()
     _immediateActive++
     const run = () => {
-      Promise.resolve(prefetchHref(el.href))
+      Promise.resolve(prefetchHref(absoluteHrefOf(el)))
         .catch(() => {})
         .finally(() => { _immediateActive--; _drainImmediate() })
     }
@@ -247,7 +282,7 @@ function observeVisible(el) {
     _visibleObserver = new IntersectionObserver(entries => {
       for (const entry of entries) {
         if (entry.isIntersecting) {
-          prefetchHref(entry.target.href)
+          prefetchHref(absoluteHrefOf(entry.target))
           _visibleObserver.unobserve(entry.target)
         }
       }
@@ -266,7 +301,11 @@ export async function prefetchHref(href) {
 
   let url
   try {
-    url = new URL(href, window.location.origin)
+    // Resolved against the current URL for the same reason _handleClick is:
+    // `location.origin` carries no path. Callers hand this `a.href`, already
+    // absolute, so nothing here depended on the difference — the two readers of
+    // one concept now say it the same way.
+    url = new URL(href, window.location.href)
   } catch {
     return
   }
@@ -279,6 +318,24 @@ export async function prefetchHref(href) {
   if (!match) return
 
   const { node } = match
+
+  // Two kinds of route the router will never render at this URL, so warming
+  // them is a round trip spent on a page nobody lands on.
+  //
+  //   • `meta.redirect` — _navigate replaces the URL before it renders anything,
+  //     so the payload cached here is keyed to a URL that is never committed.
+  //   • `meta.spread`   — _handleClick declines to intercept it at all, so the
+  //     click that follows the hover is a full page load.
+  //
+  // A GUARD is deliberately not consulted, and this is the boundary rather than
+  // an oversight: `_beforeGuards` are app functions that may await, may redirect
+  // and may have side effects, so running them on hover is worse than the fetch
+  // it would save. A guard does not gate a prefetch — an app that must not issue
+  // the request at all puts the check inside `load()`, which is the one function
+  // both paths run. What protects the DATA is the server, which grades the
+  // request either way; a refusal makes load() throw and is never cached.
+  if (node.meta?.redirect || node.meta?.spread) return
+
   const cacheKey = `${node.id}:${pathname}${url.search}`
 
   // Skip if this URL was already prefetched. Keyed per-URL so every slug of a

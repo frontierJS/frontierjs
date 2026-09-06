@@ -31,7 +31,7 @@
    * by `expandMsoPlaceholders()` in ../render.js.
    *
    * Percent-encoding rather than raw text in the attribute, because happy-dom
-   * does not escape `"` when it serialises an attribute value — the payload's
+   * does not escape `"` when it serializes an attribute value — the payload's
    * own quotes would close the attribute and scatter the VML back across the
    * tag as separate attributes. encodeURIComponent leaves no `<`, `>` or `"`
    * for anything downstream to interpret.

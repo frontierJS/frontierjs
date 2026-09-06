@@ -95,7 +95,7 @@ describe('a check() cycle is refused at startup', () => {
     // Not the two-model advice: pointing "one side" at its own columns is not
     // available to a model delegating to itself, and SQL here has no recursion.
     expect(err!.message).toContain('self-relation')
-    expect(err!.message).toContain('denormalise')
+    expect(err!.message).toContain('denormalize')
   })
 
   test('the operation is followed, so a cycle through check(field, op) is seen', async () => {

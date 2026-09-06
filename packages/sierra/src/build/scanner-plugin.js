@@ -190,7 +190,12 @@ export function scannerPlugin(config, sierraContext) {
         const rel = relative(root, file).replace(/\\/g, '/')
         const role = classify(rel)
 
-        if (role !== 'route' && role !== 'layout') return
+        // A COMPANION counts. `meta` exported from a `*.meta.js` is merged into
+        // the node's meta and inherited by every page under a layout, so
+        // editing a title there changes the tree — and returning early here was
+        // the second half of why it appeared to change nothing: the reader did
+        // not miss the module cache either (`FJS-821`, `FJS-806`).
+        if (role !== 'route' && role !== 'layout' && role !== 'companion') return
 
         // A body edit leaves the tree identical, so the route table is unchanged
         // and there is nothing for virtual:sierra to pick up — mesa-plugin's

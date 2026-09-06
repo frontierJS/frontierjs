@@ -35,7 +35,8 @@ title: Basket
   // Path watches, because `cart` is a plain object with a stable identity —
   // the same shape `session` and `status` have. Listing the fields is what
   // makes this component re-render when a call comes back.
-  $: (cart.lines, cart.count, cart.total, cart.busy, cart.error, cart.receipt, cart.heldUntil)
+  $: (cart.lines, cart.count, cart.total, cart.busy, cart.error, cart.receipt,
+      cart.heldUntil, cart.holdMinutes)
   // The breakdown's own paths. Listed rather than covered by `cart.total`,
   // because a code that changes only the discount line — a fixed 5 off a
   // basket already below the free-shipping threshold — moves four of these and

@@ -16,7 +16,7 @@
 //
 // **Two of these methods run with no session, and that is the feature.** The
 // person accepting is by definition not yet a member, and may not yet exist.
-// The token IS the credential: 32 random bytes, `@guarded(all)` so no scoped
+// The token IS the credential: 32 random bytes, `@guarded` so no scoped
 // read can answer it, looked up through `asSystem()` because there is no
 // principal to scope by. Everything a token cannot decide — is the workspace
 // still there, is it suspended, has the invitation expired — is decided here,
@@ -175,7 +175,14 @@ export function createInvitationsService(app: BasecampApp) {
     // The whole surface, declared. Without `methods:` the Litestone base
     // answers `patch` and `put` too, and a patch of this model is a caller
     // moving their own expiry or their own role.
-    methods: ['find', 'create', 'remove', 'resend', 'preview', 'accept'],
+    // `preview` and `accept` state gate 0 because they run with NO SESSION and
+    // that is the feature — the invitee has no account yet, which is what the
+    // invitation is for. The model is `@@gate("5")`, so without this they take a
+    // custom method's read-gate floor and the one caller they exist for is
+    // refused (`FJS-826`). What guards them is the token in the link.
+    methods: ['find', 'create', 'remove', 'resend',
+              { method: 'preview', gate: 0 },
+              { method: 'accept',  gate: 0 }],
 
     /**
      * Open invitations for this workspace, newest first.
@@ -185,7 +192,7 @@ export function createInvitationsService(app: BasecampApp) {
      * silently drops what has lapsed answers "no" to a question it was not
      * asked. `expiresAt` is on every row, so the screen says which are dead.
      *
-     * The token is not here: `db()` is the CALLER's client and `@guarded(all)`
+     * The token is not here: `db()` is the CALLER's client and `@guarded`
      * means the column is absent from a scoped read entirely, not redacted.
      */
     async find() {
@@ -210,7 +217,7 @@ export function createInvitationsService(app: BasecampApp) {
         throw new Conflict(`${email} already has an open invitation — resend it or revoke it first`)
 
       // asSystem, and the token generated HERE rather than stamped onto
-      // $.data: `token` is `@guarded(all)`, which puts it outside the
+      // $.data: `token` is `@guarded`, which puts it outside the
       // create-mode JSON Schema, and that schema is closed — so a stamped token
       // is refused as an unknown key before the write is ever attempted.
       const token = mintToken()
@@ -398,7 +405,7 @@ export function createInvitationsService(app: BasecampApp) {
         // caller who is not a member yet and may not exist yet, which is the
         // entire population this service is for.
         all:    [sessionScope(app, { except: ['preview', 'accept'] })],
-        // refuseGrantAboveOwn runs AFTER stampInvitation, which normalises the
+        // refuseGrantAboveOwn runs AFTER stampInvitation, which normalizes the
         // role — and it is here because an invitation is the second way to hand
         // out standing: an admin inviting an address they own as `owner` signs
         // in as that account and holds level 6 (`FJS-410`).

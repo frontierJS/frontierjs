@@ -424,7 +424,7 @@ export async function changePlan(
 export type DeclineKind = 'soft' | 'hard'
 
 /** The codes a provider sends, mapped onto the only two things a shop can DO.
- *  Unknown codes are soft, deliberately: an unrecognised decline is not a
+ *  Unknown codes are soft, deliberately: an unrecognized decline is not a
  *  reason to stop trying, and treating it as one turns every new code the
  *  provider invents into a cancelled subscription. */
 const HARD_DECLINES = new Set([

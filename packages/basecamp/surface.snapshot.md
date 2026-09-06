@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-32 services · 27 routes · 9 plugins · prefix (none)
+32 services · 31 routes · 9 plugins · prefix (none)
 ```
 
 ## App hooks
@@ -58,7 +58,7 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `deriveSlug` → `autoValidate` |
+| before | `create` | `anonymous` → `autoValidate` |
 | before | `patch` | `anonymous` → `autoValidate` |
 | before | `remove` | `anonymous` |
 | before | `attachChannel` | `anonymous` |
@@ -170,8 +170,8 @@ name when it declares none.
 
 ### `cleanup` · model `CleanupRun`
 
-- **methods** — `find`, `get`, `usage`, `targets`, `report`, `run`, `startRun`, `finishRun`
-- **custom methods** — `usage`, `targets`, `report`, `run`, `startRun`, `finishRun`
+- **methods** — `find`, `get`, `usage`, `targets`, `run`, `startRun`, `finishRun`, `report`
+- **custom methods** — `usage`, `targets`, `run`, `startRun`, `finishRun`, `report`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -245,7 +245,7 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `deriveSlug` → `autoValidate` |
+| before | `create` | `anonymous` → `autoValidate` |
 | before | `patch` | `anonymous` → `autoValidate` |
 | before | `remove` | `anonymous` |
 | before | `startRun` | `anonymous` |
@@ -265,7 +265,7 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `deriveSlug` → `autoValidate` |
+| before | `create` | `anonymous` → `autoValidate` |
 | before | `patch` | `anonymous` → `autoValidate` |
 | before | `remove` | `anonymous` |
 | before | `uploadCert` | `anonymous` |
@@ -385,7 +385,7 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `deriveSlug` → `autoValidate` |
+| before | `create` | `anonymous` → `autoValidate` |
 | before | `patch` | `anonymous` → `autoValidate` |
 | before | `remove` | `anonymous` |
 | before | `trigger` | `anonymous` |
@@ -514,8 +514,8 @@ name when it declares none.
 
 ### `servers` · model `Server`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `reboot`, `drain`, `undrain`, `sync`, `heartbeat`, `logEvent`
-- **custom methods** — `events`, `feed`, `reboot`, `drain`, `undrain`, `sync`, `heartbeat`, `logEvent`
+- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `sync`, `logEvent`, `reboot`, `drain`, `undrain`, `heartbeat`
+- **custom methods** — `events`, `feed`, `sync`, `logEvent`, `reboot`, `drain`, `undrain`, `heartbeat`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -547,8 +547,8 @@ name when it declares none.
 
 ### `volumes` · model `Volume`
 
-- **methods** — `find`, `get`, `remove`, `usage`, `report`, `prune`
-- **custom methods** — `usage`, `report`, `prune`
+- **methods** — `find`, `get`, `remove`, `usage`, `prune`, `report`
+- **custom methods** — `usage`, `prune`, `report`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -610,9 +610,13 @@ once; everything else was registered by hand or by a plugin.
 | POST | `/auth/password-reset/confirm` | raw |
 | POST | `/auth/password-reset/request` | raw |
 | POST | `/auth/register` | raw |
+| POST | `/auth/support/end` | raw |
+| POST | `/auth/support/start` | raw |
 | GET | `/auth/workspace` | raw |
 | GET | `/channels/stats` | raw |
 | GET | `/health` | raw |
+| GET | `/health/live` | raw |
+| GET | `/health/ready` | raw |
 | GET | `/metrics` | raw |
 | DELETE | `/setup` | raw |
 | POST | `/setup` | raw |

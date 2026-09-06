@@ -1,5 +1,497 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-05 — the sitemap advertised a URL that answers 404 (`FJS-456`)
+
+`move404` RENAMES `404/index.html` to `404.html`, so by the time the sitemap is
+written `/404/` is not a not-found page being indexed — it is a URL that answers
+404. `NOT_FOUND_URL` is exported from `move-404.js` and filtered out where
+`indexed` is computed, which is one variable every downstream step reads;
+putting the exclusion inside `generateSitemap` would have left `generateLlms`
+and `generateMarkdownPages` each needing their own.
+
+The rename also left `404/` behind, empty — a published URL nobody meant to
+publish, and a directory listing on a host that serves one. `rmdir` follows it
+now and ignores failure, because a non-empty directory is somebody else's file.
+
+The row's headline — dynamic pages missing from the sitemap — was fixed earlier
+and never closed. Measured on `example/site`: 17 URLs including all twelve
+products, where the filing measured 3.
+
+Its third part is split out as `FJS-904` rather than closed with it: a
+`target: static` build ships the whole SPA client, and walking reachability from
+the prerendered HTML puts **204 KB of 312 KB — 65% — unreachable from any page
+the build emitted**, the SPA entry alone being 124 KB. `tests/tools/reach.mjs`
+is the probe.
+
+## 2026-09-05 — a shadow root the host owns, and a sourcemap cached for a year (`FJS-825`)
+
+**`el.shadowRoot ?? el.attachShadow()` cannot tell our root from theirs.** A
+host page that had already attached an open root to the element got the widget's
+stylesheet in its own `adoptedStyleSheets` and Mesa's delegation scoped to its
+content — the isolation a shadow root is FOR, running in neither direction. The
+widget nests now: a wrapper inside their root, carrying a root of its own,
+removed whole on unmount through `entry.wrapper`, because the existing sweep
+walks the root we mounted INTO and cannot reach a node one level up.
+
+Refusing the element was the other option and is worse — a widget that silently
+does not appear on a page where it could. Nesting keeps it working and makes the
+teardown exact.
+
+**The reparent path had to keep its exact shape.** Reusing our own root is what
+`FJS-817` fixed, and an extra wrapper there would change what every `:host > *`
+rule selects. So `Symbol.for('sierra.widget.ownsShadowRoot')` marks a root this
+widget attached, and it outlives the marks map — `unmount` deletes that, and on
+a remount the marker is the only thing left that separates our own empty root
+from one the host page attached and filled.
+
+**`isHashedAsset` anchored on the final extension**, so
+`island-CatalogList-C_TQPJ-f.js.map` read as unhashed: the eight characters
+before `.map` are `3d4.js`, which holds a `.`. A sourcemap for a
+content-addressed file was revalidated on every load while the file beside it
+was cached for a year. The extension segment repeats now, and the refusal is
+unchanged — `my-file-name.js.map` still fails on the same eight.
+
+Stub-measured: moving into the host's root fails 4 of the drive's 46, removing
+the ownership marker 2, the single-extension pattern 1 of `widget-serve`, and
+dropping the leading `-` anchor 2 there and 1 in `site-serve`. Two things worth
+recording. The drive's new section first dereferenced a null under the stub and
+aborted the whole probe — 34 failures for a defect in one section; it is
+null-safe now. And a comment in it carried a backtick inside the probe's
+template literal, which is the trap the root `CLAUDE.md` names: the file failed
+to PARSE, at a line well past the comment.
+
+## 2026-09-05 — the dev data endpoint, and a robots.txt line every crawler discarded (`FJS-822`)
+
+**Three refusals, and two of them are the half a verb check cannot make.** A
+cross-site GET is refused by `Sec-Fetch-Site`: `<img src>`, `<script src>` and a
+top-level form GET are all simple GETs and none sends an `Origin` to read, while
+the browser sets this one and a page can neither forge nor suppress it. Absent
+means a caller that is not a browser, `none` is a typed URL — both allowed,
+which is the whole of why the check is not `!== 'same-origin'`. What is
+protected is not the response, unreadable cross-origin already, but the side
+effect: `load()` is by design where an app reads its own database.
+
+A route that does not declare `render: static` is refused too. This endpoint
+exists because a static route's companion never enters the browser graph; any
+other route's loader is in the graph already, so running it here was a second
+way into code the route table imports differently.
+
+**A throwing `head()` now fails the request.** The build skips the page for it
+and a skipped page fails the build (`FJS-439`); dev answered `head: null`, so
+one question had two answers and the dev one hid the failure until deploy.
+
+**robots.txt's `Sitemap:` is absolute.** A relative one is not a sitemap a
+crawler tries and fails to fetch — it is a line every crawler discards, so the
+default advertised nothing while looking in the output exactly like a site that
+had. With no `siteUrl` the line is omitted and the postbuild line says which
+happened, because the two are worth the same to a crawler and only one of them
+admits it.
+
+Stub-measured, each beside a control: the cross-site check removed fails 1 of
+14, a check refusing anything but `same-origin` fails **11**, the route-kind
+check 1, the swallowed `head()` 1. The robots fix needed a second row and the
+measurement is why — with `siteUrl` dropped at the CALL SITE, every unit case
+for it still passed. That is `FJS-473`'s lesson, which `postbuild.test.js`
+already names for `generateSitemap`, reproduced one function along.
+
+## 2026-09-05 — an island mounted over now stops running (`FJS-890`)
+
+Mesa's `mount()` owns a reactive root, so `handle.destroy()` disposes the component's effects
+as well as removing its nodes. `islands/loader.js`'s `disposeWithin` gets that for free and its
+comment — which explained in writing that the effects survive, as a runtime limitation this
+file could not fix — is gone.
+
+The widget runtime's sweep in `unmount` STAYS. It is answering a different question: what the
+element held BEFORE the mount, which Mesa has no way to know, and which is what keeps a
+reparented host from remounting beside whatever the first pass left.
+
+## 2026-09-05 — the router: an SVG link, a scroll map that never emptied, and case (`FJS-820`, `FJS-D210`)
+
+**The SVG link was two facts and only one was reported.** An SVG `<a>` reports
+`tagName` `'a'` in its own case, so `=== 'A'` walked past it and the click fell
+through to a full page load. Measured in Chrome rather than inferred — and the
+same probe turned up the second: its `.href` is a truthy `SVGAnimatedString`,
+not a string, so `prefetch.js`'s three readers each passed a `!a.href` guard and
+handed `[object SVGAnimatedString]` to the fetcher. `linkHrefOf` in
+`router/internals.js` is now the one owner of *is this a link, and where does it
+point*, and `absoluteHrefOf` folds the three prefetch readers into one — fixing
+the entrance the bug was found at would have left two.
+
+**`_scrollPositions` never emptied.** `_rememberScroll` evicts on two axes that
+answer different halves: a pushState destroys forward history, so every entry
+above the current index is unreachable and deleting it is exact; the cap of 50 is
+for depth alone, chosen because browsers cap session history around there, so an
+entry it evicts is one the Back button can no longer reach either.
+
+**Matching is now case-sensitive (`FJS-D210`).** It was the only one of four
+readers of *which route is this* that was not — `isActive`, the prefetch cache
+key, `page.path` and the filename a static build writes are all case-sensitive,
+so `/ADMIN/` rendered in the SPA, reported itself as not active, cached under its
+own key, and 404'd on the static host. The refusal alone was not enough: a
+case-only miss is NAMED at both entrances, and the second is the one that
+mattered — an app with a catch-all has a truthy match, so nothing warned and the
+reader got Not Found for a route that exists.
+
+Stub-measured, each beside a control that must not move. Worth recording: the
+control for the scroll cap **passed the stub the first time** — a map cleared on
+every navigation still holds the entry just written, so the control had to span
+more than one navigation before it could see the difference.
+
+## 2026-09-05 — a hook that breaks the chain is refused by name (`FJS-823`)
+
+An `around` hook that returns without calling `next()`, one that catches the
+failure and does not rethrow, and an `error` hook that clears `ctx.error` and
+sets nothing all ended `_call` with no result — and it resolved to the `null`
+the context was born with. A screen reads that as an answer:
+`(await r.service.find()).data` throws a TypeError in the app's own code, one
+hop from the mistake.
+
+`null` is a legitimate answer as well (a `get` for a row that is not there), so
+the fix tracks the ASSIGNMENT rather than the value — `hookContext` and
+`answered` from `@frontierjs/toolbelt/hooks`, shared with jetty, which had both
+lines hand-copied. `ResourceHookError` names the phase and says the two ways
+out, and the error-phase form carries the discarded failure on `cause`: the
+original is gone by then, and without it the report is only "your hook is wrong"
+while the outage is invisible.
+
+Every refusal in `tests/resource-hook-chain.test.js` is paired with the
+legitimate hook one line away — an `around` that short-circuits WITH an answer,
+one that answers `null` on purpose, an `error` hook that recovers with a
+fallback — because a guard that refused both would make the phase useless for
+what it is for. Stub-measured: the around check removed fails 3 of 12 and the
+controls hold, the error check 1, and `hookContext` swapped for a plain object
+(the guard that refuses everything) fails 7 — which only the controls can see.
+
+## 2026-09-05 — `save()` patches what CHANGED
+
+`FJS-809`, `FJS-808`. 81 files / 1409 tests, green.
+
+`save()` is a record-shaped verb — `<Form record={row}>` hands back the whole row — and it
+sent that row whole, which makes a PATCH a PUT. A column the screen never rendered
+(`formFields({ except })`, a hand-written form, a column added to the `.lite` after the
+screen was written) rode along at the value it held when the form opened and overwrote
+whatever somebody else had written to it meanwhile. The other person's change went with
+nothing said.
+
+`@version` catches that and is the right answer where it is declared, but it is opt-in: the
+correctness of every generated edit form depended on the model author having declared a
+column, and nothing checked it.
+
+**The baseline is the row this resource READ**, which `_read` already holds for the version
+stamp — so the fix is derived rather than declared, and needs no new option, no new noun and
+no argument at the call site. Three proposals were on the table and the other two both
+restated something: `save(data, { only })` puts *which columns this form writes* beside the
+rendered list where a disagreement is silent, and a dirty diff inside `<Form>` fixes one
+instance of the class and cannot reach a hand-written `resource.save(row)` at all.
+
+Invariant 9 holds and is the reason the comparison is `!==` rather than a truthiness test: a
+diff OMITS a key and never substitutes one, so an explicit `null` against a non-null
+baseline differs, travels, and clears. With no baseline the whole record goes up, which is
+what every patch did before — a miss is the old behavior and never a lost value.
+`service.patch(id, data)` is unchanged and is the escape: **this verb takes a record, that
+one takes a payload.**
+
+**`auto` now asks whether the row exists rather than whether an id is present.** Presence is
+a sound proxy only where the SERVER assigns the key, and litestone deliberately emits a
+caller-supplied `@id` in the create schema so a generated form has a box to type it into
+(`FJS-608`). Reading presence there routed what the person had just typed into a patch, so a
+create form over `Sku { code String @id }` could never make a row — it threw *Unknown field
+'id' in where* — and left EMPTY it was worse, because `make()` seeds `''` and `'' != null`,
+so the form issued a patch over the whole COLLECTION. For those models the question is
+whether this resource has read that id; a miss creates, and a create over a key already
+taken is refused loudly by the layer that owns uniqueness. `mode: 'patch'` with a blank id is
+refused by name rather than sent. `service.upsert` reads the same `_writeMode`, so the two
+verbs cannot drift, and it no longer tests the id for TRUTHINESS, which additionally read `0`
+as absent.
+
+## 2026-09-05 — the browser gets the schema's shape and none of its prose
+
+`FJS-785`, ruled `FJS-D204`. `FJS-807` in the same pass.
+
+A doc comment is not an affordance. `description` was 78% of the compressed schema bundle —
+130 strings, 22 124 characters on models and 34 411 on fields — shipped to an anonymous
+visitor in a static file before authentication, read by nothing.
+
+Measured through a real `bun run build` of `example`, against the same build with the strip
+stubbed to the identity: the emitted payload went 29.7 KB → **6.7 KB** gzipped, and the app's
+own entry chunk 79.52 KB → **56.17 KB**. **23.35 KB gzipped, 29% of everything the app
+ships, with no feature behind it.**
+
+`stripProse` is a schema-AWARE walk, and the version that was not is now the negative
+control. Filtering by key name alone deletes `Product.description` — a real column of
+`example` and of four models in basecamp — from every generated form on a build that says
+nothing, which is the finding's own disease reproduced by its fix. `_NAME_KEYED`
+(`properties`, `$defs`, `definitions`, `patternProperties`, `dependentSchemas`) marks the
+maps whose keys are columns somebody declared; everywhere else `description` is an
+annotation and goes. Stubbed to the identity, 5 of the 12 tests fail; stubbed to the naive
+walk, 3 fail and all three are the control.
+
+**Every build now logs the emitted size beside the model count.** A refusal that hides its
+own price gets reversed.
+
+A PROJECTION over the model set was refused in the same ruling and the refusal is the part
+worth keeping: a build-time scan of `createResource` sites is a second and weaker statement
+of which models an app uses, `createResource('anything')` would start depending on how the
+call site spelled it, and a miss renders an EMPTY FORM on a green build. It would also prune
+`createResource`'s own *Known models:* diagnostic, so the error message would lie about what
+the schema declares.
+
+**Both write modes cross now** (`FJS-807`). A create schema and an update schema are
+different documents in three ways that matter to a form: `@immutable` is writable on a create
+and `readOnly` on an update, a sealing `@immutable` carries `x-litestone-seal` instead, and
+the `@version` column exists in the update schema alone. Only the create table shipped, so
+`sealedFields(record)` answered `[]` for every row of every model, and `_call` judged a patch
+by create rules — sending a column the Data boundary refuses BY NAME, telling the person to
+leave out a field they never assembled. `_call` picks the table off the method now;
+`formFields()` stays on the create table, because one resource serves both screens and the
+field SET is the same question for each.
+
+## 2026-09-05 — `presence()` speaks to the client that exists
+
+`FJS-811`, `FJS-824`.
+
+`@frontierjs/sierra/presence` threw `TypeError: client.send is not a function` on its first
+line for its whole life, and its test suite passed throughout, because that suite invented
+the client it graded — including an `emit` that dispatched `presence:sync:workspace:1`, one
+of five channel-suffixed names junction has never emitted. Frames arrive under their own
+names (`presence:sync`, `:join`, `:diff`, `:leave`, `:update`) with the channel inside the
+payload, so the module heard nothing at all.
+
+The file is rebuilt against the real `createJunctionClient`, in two halves: a real Junction
+app in a bun subprocess with **two real sockets on one channel**, which is the only
+arrangement that can say whether presence works, and the diff/leave/dedupe reducers driven by
+pushing the frame shapes the first half proves the server sends.
+
+**What it cannot do is documented rather than worked around.** Channel membership is the
+app's, decided in its own `channels(setup)`; nothing a browser sends joins a channel, so
+`client.presence.announce()` means *here is my meta, send me the roster* and a channel this
+connection was never joined to answers nothing, in silence — which is what a misspelt channel
+id looks like. An anonymous connection is never tracked. Junction gained `client.presence`
+(`announce` / `release`, deliberately not the wire's `subscribe`/`unsubscribe`, which do not
+subscribe) and states `you` on the sync frame, the only frame sent to exactly one connection
+and therefore the only one that can carry it — without it nothing can split a roster into
+self and others, because a browser is never told its connection id. Until the first sync
+lands every member is an *other*, which is the safe way round for an avatar strip.
+
+The announcement is unconditional and re-sent on every connect. It was gated on
+`client.token || client.connected`, which is false for every cookie-mode app and for the
+ordinary case of a component mounting before the socket is up; a reconnect is a new
+connection with no meta and no roster, so the client re-announces every channel it holds.
+
+**Two views of one channel are refcounted** (`FJS-824`). An avatar strip in the header and a
+list in the sidebar are one connection's one meta, and the first to unmount used to send the
+release for the channel the other was still showing.
+
+## 2026-09-05 — nothing a resource holds outlives the person it was read for
+
+`FJS-786`.
+
+A Resource is created once, at import, in a resource file's `<script module>` (Invariant 18),
+so everything it caches lives for the life of the TAB while the principal is a thing that
+changes inside it — a sign-out, a switch-account button, a shared terminal, a support agent.
+Three caches were on the wrong side of that line and all three are read before anything asks
+the server again: the live store, so a mounted list renders the previous person's rows until
+their own `load()` resolves; `_read`, so `version(id)` answers a revision the current caller
+never read; and `_options`, which is worse than a window because a picker never asks again —
+the second caller is offered a row their own row policy hides, by id and by label, which for
+a `Customer` is a person's name.
+
+This package had already learned the rule and wired half of it: `_tokenChanged` calls
+`invalidatePrefetch()` for `FJS-041`. The three siblings are joined to it now. The cache
+stays useful WITHIN a session, which is the half a fix that simply deleted it would fail —
+the epoch is bumped on a change of identity and on nothing else.
+
+## 2026-09-05 — a credential has one audience
+
+`FJS-788`, `FJS-787`, plus the public-route wildcard and `signOut`.
+
+**`sierraFetch` attached the session token to whatever URL it was handed.** `load()` is given
+it and the docs tell a page to use it, so a page geocoding a postcode or reading a CDN's JSON
+handed that vendor a replayable session. A relative URL cannot leave this origin; an absolute
+one is now checked against the page's own origin, the API's and the configured `baseUrl`, and
+anything unresolvable answers no.
+
+It is handed the CLIENT rather than a storage key. Reading `localStorage` here was a second
+owner of the token — the same bug the client's own `tokenStorage` exists to end — and it is
+the half that cannot answer cookie mode, where there is no token and the credential rides a
+cookie. In that mode the request now carries `credentials: 'include'`, scoped to the same
+audience: without it every `load()` was anonymous the moment the API was a separate origin,
+which is the deployed arrangement, and for a list that is a 200 with an empty array rather
+than a refusal anybody notices.
+
+**`junction.cookieAuth` is forwarded to the client** (`FJS-787`). The browser cannot see the
+server's source and there is nothing to derive it from, so `createAuthPlugin(auth, {
+cookieAuth: true })` has a twin in `sierra.config.js`. Left off, the client answers
+`hasCredential === !!token` — false for a signed-in cookie-mode caller — so there was no boot
+restore, no socket, and a sign-out that skipped the one call that ends the session while
+answering `{ revoked: true }`.
+
+**A trailing `*` in `auth.publicRoutes` is a segment boundary**, not a string prefix. It was
+the latter, so `/blog*` covered `/blogadmin` and `/blog-internal`, and the guard's public
+branch returns before the boot restore is awaited — a route that merely shared a prefix
+skipped the whole guard. Invariant 6 caps what that costs, but a list whose only job is to
+name exceptions must not widen itself.
+
+**`signOut()` clears in a `finally`.** It held only because junction's own `signOut` catches
+internally; an app supplying its own auth surface would leave a person looking at a signed-in
+UI with no session. The refusal still propagates, which is the half a `catch` would have
+eaten.
+
+## 2026-09-05 — `status.stale`
+
+`FJS-812`.
+
+The whole `x-fjs-build` channel — the CLI's stamp, the response header, the socket's
+`connected` frame — exists so a browser left open across a deploy can be told, and it ended
+here: `build:` was passed to the client so `stale` COULD fire and nothing listened.
+`status.stale` is `null` until the server states a build this bundle is not, then
+`{ client, server }`, and a shell renders it the way it renders `connected`. Set at most once
+per page, because a banner that reappears on every request is one nobody reads. Recorded
+rather than acted on: whether that is a banner, a prompt or a silent reload is the app's
+answer and not this module's.
+
+## 2026-09-05 — the router commits the navigation last STARTED
+
+`FJS-791`, `FJS-789`, `FJS-790`, `FJS-820`.
+
+`_navigate` has four await points, so the last navigation to FINISH committed rather than the
+last one started: a slow `load()` from a route the reader had already left overwrote the page
+they were on and pushed its own URL into the address bar. A sequence stamp — the same shape
+`createResource` applies to its own loads (`FJS-082`) and junction's store applies to a push
+— is checked after the guards and again immediately before the history write, which is the
+first irreversible line.
+
+**`beforeNavigate` runs on the Back button** (`FJS-789`). It did not, sitting inside the same
+condition as the scroll save, while `meta.redirect` three lines below it did — one kind of
+routing refusal survived Back and the other did not, where the README promises the opposite
+and `FJS-D06` files `beforeNavigate` under Hook, the tier that may halt the operation. A
+refusal on popstate puts the address bar back with `history.go`, because the browser has
+already moved and a URL naming the page the guard just declined is the same lie as not
+guarding at all; the return trip's own popstate lands on the page the reader is already on,
+so a guard that refuses everything settles rather than looping.
+
+**An `href` resolves against the current page** (`FJS-790`). `new URL(href,
+window.location.origin)` carries no path, so `<a href="#comments">` clicked on
+`/blog/my-post/` navigated to `/`, and so did `./`, `../other/`, `?draft=1` and `edit/`. A
+fragment on the page already showing is now a pushState and a `scrollIntoView` rather than a
+re-import and a re-run of `load()`.
+
+**The route is matched BEFORE the browser's navigation is cancelled.** `preventDefault` ran
+above the match, so a click on any same-origin URL the route table does not cover — a file
+the app serves at `/downloads/report.csv`, a link into a sibling surface — was eaten: the
+catch-all rendered, or in an app without one nothing happened and the console said *No route
+found*. The catch-all deliberately does not count as cover here; it is the answer for a URL
+somebody typed, not for a link the app itself wrote to a URL it does not route.
+
+Three more in the same file. A redirect target must be a path on this origin — `//evil` and
+`/\evil` are refused by pushState itself, which left `page.pending` set (RouterView's loading
+snippet, forever) and rejected `goto` with nothing catching it; ten redirects without landing
+is a reported loop rather than unbounded recursion, where two guards redirecting to each
+other made 501 calls in 7 ms and said nothing; and a route registering no component is
+refused in `_navigate`, the last frame that still knows which FILE it was, rather than in
+`ChainRenderer` naming an internal expression. `isActive` matches on a segment boundary, so
+`/leads` no longer highlights on `/leads-archive`. And `initRouter` binds its click and
+popstate listeners once per window rather than once per call, or three boots — an HMR of the
+boot module, a re-mounted micro-frontend, a suite that boots twice — meant one click running
+three concurrent navigations (Invariant 11).
+
+## 2026-09-05 — five shapes the build used to emit and now refuses
+
+`FJS-796` … `FJS-801`, `FJS-819`, `FJS-821`.
+
+Each names its file. A `getStaticPaths()` param that is empty, a path, `.`/`..` or carrying a
+NUL, and two entries that fill one output file (the empty one collapses onto the parent page
+and overwrites it; a URL that walks out of the tree writes a file anywhere the build can
+reach). A `<slot name>` that is not an identifier. Two route files mapping to one URL. A
+frontmatter alias bomb — 10 000 values, counted by a walk that aborts at the budget, because
+stringifying to measure has already paid the cost: 205 MB in 1576 ms became a refusal in
+5 ms. And a widget tag that is not a legal custom element name, checked before the first Vite
+call and again in `fli make:widget`.
+
+They are refusals rather than warnings for one reason: every one of them BUILT, and what
+shipped was a page silently overwritten, a component that renders as nothing, or a script
+nobody notices is missing.
+
+Two more from the same pass. The scanner stats a symlink and keys visited directories by
+REALPATH, so `loop -> .` is skipped and named rather than hanging, and `matchRoute` defines
+its param instead of assigning it, so `[__proto__].mesa` yields a readable param. Minify is
+decided by the build rather than by `NODE_ENV`, so a dev-flavored environment no longer ships
+an unminified widget.
+
+## 2026-09-05 — the toolbar renders text somebody else wrote
+
+`FJS-820`.
+
+Every value in the devtools panels arrives over an unauthenticated WebSocket, and the toolbar
+sits at `z-index: 2147483647` on the page where the app's own tokens live. Four hand copies
+of an `esc()` helper had been applied to six of the eight interpolations that needed one, and
+the two misses were not the same miss: `transport` reached a `class=""` attribute and
+`log.level` reached a text position, in different files, written by whoever last copied the
+helper. The helper also escaped three characters, so even the six covered sites were unsafe
+inside an attribute.
+
+`src/devtools/html.js` is a tagged template that escapes every `${}` by default — five
+characters — with `classSuffix()` and `num()` beside it; a nested `html` result carries a
+marker and passes through raw, so markup composes without an opt-out a plain string could
+reach. A default-escaping tag makes the omission unwritable rather than merely fixed, which
+is what the disease needs. 13 of the 15 new tests fail with it stubbed; the two that hold are
+the negative controls, because a renderer that dropped the field would satisfy any assertion
+that only checks for the absence of the injected element. The dev overlay's own four `data-*`
+attributes were escaping nothing at all and are escaped now.
+
+Sibling defects in the same files: `waterfall.js` threw on a string duration, and
+`requests.js` put a raw `durationMs` into both a text position and `style="width:"`.
+
+## 2026-09-05 — both static origins answer like servers
+
+`FJS-753`'s shape, and the widget half beside it.
+
+`src/serve/http-answers.js` is what the two share — `methodAnswer`, `byteRange`, `compressed`,
+`bodyAnswer` — and what they do NOT share stays deliberate: `site/serve.js` sends no CORS
+because it serves documents a browser navigates to, and `widget/serve.js` exists for the
+cross-origin case.
+
+Both gzip a compressible body of 1 KB or more with `Vary: Accept-Encoding`. Measured on
+`example`'s own built widget: 25 282 → 10 437 bytes, 41%, at 0.47 ms per response. Not
+cached, because these servers already read the file per request and a cache would be the only
+state in either. `site/serve.js` gained real single-range support (206 and 416, suffix and
+open-ended forms); a range and an encoding never combine, since a range's offsets are into
+the identity representation. `OPTIONS` is 204, a wrong verb is 405 **with `Allow`**, and
+`widget/serve.js` answers `Access-Control-Max-Age`.
+
+## 2026-09-05 — a widget's mount mark belongs to the element
+
+`FJS-814`, `FJS-818`, `FJS-815`, `FJS-817`, `FJS-825`. `test:widgets` 25 → 36 assertions,
+green.
+
+The mark that says *this element is mounted* was a module-scoped `WeakMap`, so two copies of
+the runtime on one page each believed they owned the element. It is on the ELEMENT now, under
+`Symbol.for('sierra.widget')`, keyed by tag.
+
+`mountGuarded` wraps each element's mount in a try/catch, reports the failure and marks the
+element failed, so the observer does not retry it on every mutation — one hostile or broken
+element used to take the whole page's widgets down with it (24 of 36 assertions fail with the
+guard removed). `adoptCss` prefers a constructable stylesheet and falls back to `<style>`,
+which is what makes the kit work under a strict CSP. `unmount(el, tag)` sweeps the root back
+to the snapshot it held before the mount, so a host's pre-attached content survives, and drops
+the adopted sheet. An element holding a widget's tag that this runtime did not stamp is warned
+about; a stamped one stays silent, which is the double-load control.
+
+Props are read ONCE, at mount, and that is now stated in the module header and in the
+scaffold's own comment rather than being folklore.
+
+## 2026-09-04 — a screen's gate verdict is the boundary's function
+
+`canAtLevel` and `transitionsAt` compared with `level >= need`, which is not what
+the Data boundary does: 8 and 9 are SENTINELS, so `>=` renders a button for a
+LOCKED operation and hides one from the system context. Both use
+`levelPasses` from `@frontierjs/toolbelt/gate` now — the same binding Litestone
+enforces with, reachable because the kit is substrate below the dependency graph
+and this module still imports no client (`FJS-520`, ruled `FJS-D197`).
+
+Unreachable today, since every resolver clamps a caller to 0–7, which is what
+made a hand-spelled `>=` look like a style choice.
+
 ## 2026-09-03 — `resource.sealedFields(record)`
 
 `FJS-628`. 1146 passing.

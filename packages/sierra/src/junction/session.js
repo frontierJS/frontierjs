@@ -182,9 +182,16 @@ async function _attempt(run) {
  * because the network was down.
  */
 export async function signOut() {
-  const result = await _client.auth.signOut()
-  clear()
-  return result
+  // `finally`, because the promise above is not this module's to trust. It held
+  // only because junction's own signOut catches internally and answers
+  // `{revoked:false, error}`; an app that supplies its own auth surface, or a
+  // change on junction's side, would leave a person looking at a signed-in UI
+  // with no session.
+  try {
+    return await _client.auth.signOut()
+  } finally {
+    clear()
+  }
 }
 
 /** Drop what we know locally. The client's own token is cleared by signOut. */

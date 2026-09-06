@@ -11,10 +11,45 @@
  *   sitemap:
  *     priority: 0.8
  *     changefreq: weekly
+ *
+ * ── Two encoders, and they are not the same one ───────────────────────────
+ *
+ * A prerendered URL comes from a `getStaticPaths()` param, so a slug decides
+ * what reaches this file. `tools-&-hardware` is not a hostile string, and a
+ * sitemap containing a raw `&` is not a partly-wrong sitemap — it is not XML,
+ * so a crawler rejects the whole file and every URL in it (`FJS-822`).
+ *
+ *   • The PATH is percent-encoded per segment, because `<loc>` must be a valid
+ *     URL and a space or a `<` is not one.
+ *   • The RESULT is XML-escaped, because `&` is legal in a URL path and is not
+ *     legal as itself in XML text.
+ *
+ * Doing either alone leaves a file a crawler refuses.
  */
 
 import { writeFile } from 'fs/promises'
 import { join } from 'path'
+
+/** XML text escaping. `<loc>` is text content, not an attribute. */
+function xmlEscape(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+/**
+ * Percent-encode a URL path, segment by segment.
+ *
+ * Per segment rather than `encodeURI` over the whole thing: `encodeURI` leaves
+ * `%` alone, so a slug containing one emits an invalid escape, and it leaves a
+ * `/` inside a segment alone, which would change what the URL points at.
+ */
+function encodePath(path) {
+  return String(path).split('/').map(encodeURIComponent).join('/')
+}
 
 /**
  * @param {string[]} indexed   — indexed route paths from the route table
@@ -34,7 +69,7 @@ export async function generateSitemap(indexed, outDir, siteUrl = '', routeMeta =
 
     return [
       `  <url>`,
-      `    <loc>${base}${path}</loc>`,
+      `    <loc>${xmlEscape(base + encodePath(path))}</loc>`,
       `    <lastmod>${today}</lastmod>`,
       `    <changefreq>${changefreq}</changefreq>`,
       `    <priority>${priority}</priority>`,

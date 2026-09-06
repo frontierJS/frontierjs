@@ -204,7 +204,7 @@ describe('tracing a context file to the final image', () => {
     expect(t).toMatchObject({ ships: false, stagesHolding: [] })
   })
 
-  test('joinPath normalises .. and duplicate separators', () => {
+  test('joinPath normalizes .. and duplicate separators', () => {
     expect(joinPath('/app', './x/../y')).toBe('/app/y')
     expect(joinPath('/app/', '/abs')).toBe('/app/abs')
   })

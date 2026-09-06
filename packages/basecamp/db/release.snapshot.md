@@ -21,7 +21,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | Enum | Members |
 | --- | --- |
 | `AccountType` | `individual` · `organization` |
-| `ActorKind` | `api_key` · `system` · `user` |
+| `ActorKind` | `api_key` · `support` · `system` · `user` |
 | `AlertSeverity` | `critical` · `info` · `warning` |
 | `AlertSubject` | `server` · `volume` |
 | `AppStatus` | `deploying` · `error` · `running` · `starting` · `stopped` · `stopping` · `unknown` |
@@ -309,6 +309,7 @@ table `audit_event` · db `main` · gate `5.8.9.9`
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `diff` | `Json` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `onBehalfOfId` | `String` | yes | — | — |
 | `subjectId` | `String` | no | — | **required on write** |
 | `subjectType` | `String` | no | — | **required on write** |
 | `workspace` | `Workspace` | — | — | relation |
@@ -452,7 +453,7 @@ table `credential` · db `main` · gate `8`
 | `type` | `String` | no | — | **required on write** |
 | `user` | `User` | — | — | relation |
 | `userId` | `String` | no | — | **required on write** |
-| `value` | `String` | no | — | @guarded(all) · **required on write** |
+| `value` | `String` | no | — | @guarded · **required on write** |
 
 ```
 @@index(type, value)
@@ -808,7 +809,7 @@ table `invitation` · db `main` · gate `5`
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `invitedBy` | `String` | yes | — | — |
 | `role` | `WorkspaceRole` | no | `'developer'` | — |
-| `token` | `String` | no | — | unique · @guarded(all) · **required on write** |
+| `token` | `String` | no | — | unique · @guarded · **required on write** |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `workspace` | `Workspace` | — | — | relation |
 | `workspaceId` | `String` | no | — | **required on write** |
@@ -997,8 +998,8 @@ table `oauth_flow` · db `main` · gate `8`
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `provider` | `String` | no | — | **required on write** |
 | `returnTo` | `String` | yes | — | — |
-| `state` | `String` | no | — | unique · @guarded(all) · **required on write** |
-| `verifier` | `String` | no | — | @guarded(all) · **required on write** |
+| `state` | `String` | no | — | unique · @guarded · **required on write** |
+| `verifier` | `String` | no | — | @guarded · **required on write** |
 
 ```
 @@index(expiresAt)
@@ -1295,8 +1296,11 @@ table `session` · db `main` · gate `8`
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `expiresAt` | `DateTime` | no | — | **required on write** |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `impersonatingUserId` | `String` | yes | — | — |
+| `impersonationEndsAt` | `DateTime` | yes | — | — |
+| `impersonationReason` | `String` | yes | — | — |
 | `ipAddress` | `String` | yes | — | — |
-| `token` | `String` | no | — | unique · @guarded(all) · **required on write** |
+| `token` | `String` | no | — | unique · @guarded · **required on write** |
 | `user` | `User` | — | — | relation |
 | `userAgent` | `String` | yes | — | — |
 | `userId` | `String` | no | — | **required on write** |
@@ -1353,7 +1357,7 @@ table `verification` · db `main` · gate `8`
 | `provider` | `String` | yes | — | — |
 | `purpose` | `VerificationPurpose` | no | — | **required on write** |
 | `subject` | `String` | yes | — | — |
-| `value` | `String` | no | — | unique · @guarded(all) · **required on write** |
+| `value` | `String` | no | — | unique · @guarded · **required on write** |
 
 ```
 @@index(expiresAt)

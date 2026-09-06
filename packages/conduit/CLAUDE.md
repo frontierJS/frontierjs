@@ -68,7 +68,10 @@ src/
   kind means deciding all three columns**: retryable, breaker, and what a caller
   can do with it — the four carve-outs here (`rate_limited`, `redirected`,
   `client_error`, `invalid_response`) each exist because one of the three
-  disagreed with the word they were under.
+  disagreed with the word they were under. **`CONDUIT_ERROR_KINDS` is the array
+  the union derives from**, so the suite can walk it: a kind added with no
+  `retryable` answer beside it reads exactly like a decided one, which is how
+  three of them came to be wrong at once.
 - **The junction plugin wires `trace` by default, and everything it needed was
   already here.** `createTraceContext` existed with no caller, junction holds
   the correlation id on `requestMeta()`, and the default header is already
@@ -79,17 +82,25 @@ src/
   none, the trace id is DERIVED from the correlation id, because a random one
   per call makes six calls from one request six unrelated traces. A uuid needs
   no derivation — dashes out, it is already a trace id.
-- **A replay conduit refuses must not come back `retryable`.** The ladder
-  returns a non-idempotent request with no idempotency key rather than replaying
-  it, and the flag it hands back is what the layer above acts on — `example`'s
-  mailer copies it onto a thrown Error and a caravan job retries on it, so the
-  charge conduit declined to repeat was repeated one layer up (`FJS-733`).
-  `declineReplay` is the single owner of that judgement. **`indeterminate` is
-  the separate fact**: the request went out and nobody knows whether it was
-  applied. Never set where nothing left the process — Bun says
-  `ConnectionRefused` for a refused port AND an unresolvable name, and `CERT_*`
-  is a prefix — because a flag that fires on every network fault is one nobody
-  reads; everything else is on the over-reporting side deliberately.
+- **`retryable` is a statement about THIS request, and `indeterminate` decides
+  it.** False only where the request may already have been applied — which is
+  what `indeterminate` means: the request went out and nobody knows. Never set
+  where nothing left the process — Bun says `ConnectionRefused` for a refused
+  port AND an unresolvable name, and `CERT_*` is a prefix — because a flag that
+  fires on every network fault is one nobody reads; everything else is on the
+  over-reporting side deliberately. **A replay conduit refuses is one case of
+  the rule, not a rule beside it**: the ladder returns a non-idempotent request
+  with no idempotency key rather than replaying it, and the layer above acts on
+  the flag — `example`'s mailer copies it onto a thrown Error and a caravan job
+  retries on it, so the charge conduit declined to repeat was repeated one layer
+  up (`FJS-733`). `declineReplay` owns that judgement and applies it to the
+  indeterminate faults alone; squashing every declined replay answered
+  `retryable: false` to a 429 and to a refused connection, and load shed at
+  admission said the same of `circuit_open` and `overloaded` — three answers
+  about requests that were certainly never applied, two of which clear on their
+  own, and `collect-invoice` wrote an invoice off on each of them
+  (`FJS-739`, `FJS-D194`). A 404 stays permanent under the rule, which is what
+  says it is not *transient means retryable*.
 - **`replayable` and `idempotency_key` are two different claims.** A key asserts
   the TARGET collapses duplicates; `replayable: true` asserts that repeating the
   request is harmless. Minting a payment intent is the case for the second and

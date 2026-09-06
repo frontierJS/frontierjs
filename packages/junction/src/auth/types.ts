@@ -30,6 +30,30 @@ export interface SessionContext {
    */
   credentialId?: string
 
+  /**
+   * SUPPORT MODE — this session resolves to the subject, and an operator is
+   * standing behind it.
+   *
+   * Set by a provider that supports impersonation; absent everywhere else. The
+   * principal itself is the subject's, which is what bounds an episode at the
+   * subject's own level without anything having to check — so this is the only
+   * place the operator survives, and the audit trail reads it through
+   * `installLogContext` to record who really acted.
+   *
+   * `episodeId` is the operator's own session id. Derived rather than minted:
+   * an episode is one session's excursion, and a second identifier for it would
+   * be a second thing to keep in step.
+   *
+   * There is no `subjectId` here because this object hangs off the subject's
+   * principal — `userId` beside it is the answer.
+   */
+  support?: {
+    operatorId: string
+    episodeId:  string
+    reason:     string
+    endsAt:     Date | string
+  } | null
+
   // ── Standing, for @@gate ──────────────────────────────────────────────
   // Read by sessionGateLevel() (core/litestone.ts) to grade a caller on
   // Litestone's 0–7 scale. All optional, and the distinction between
@@ -115,6 +139,23 @@ export interface IAuth {
   confirmPasswordReset?(token: string, newPassword: string): Promise<void>
   requestEmailVerification?(userId: string):           Promise<void>
   verifyEmail?(token: string):                         Promise<SessionContext>
+
+  /**
+   * SUPPORT MODE — start an episode on the session this token belongs to.
+   *
+   * Optional: a provider that cannot impersonate does not implement it, and the
+   * route answers 400 by name the way every other optional method does.
+   *
+   * **It decides nothing about who may.** The token is the OPERATOR's own and
+   * stays theirs; the provider refuses only what no app should be able to allow
+   * (no reason, yourself, an episode inside an episode). Whether this caller may
+   * impersonate that subject is the app's answer, given to the route as a guard.
+   */
+  startSupport?(token: string, subjectId: string, reason: string, ttl?: string): Promise<{ endsAt: string }>
+
+  /** End the episode on this token. A no-op where there is none, because that is
+   *  what a reconnecting tab sends. */
+  endSupport?(token: string): Promise<{ ended: boolean }>
 
   // API Keys
   createApiKey(userId: string, opts?: ApiKeyOptions):  Promise<{ key: string; id: string }>

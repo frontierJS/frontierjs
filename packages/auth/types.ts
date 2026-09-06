@@ -15,6 +15,13 @@ export interface LitestoneAuthOptions {
   // How long a session token lives. Default: '30 days'
   sessionTtl?: string
 
+  // The ceiling on a support episode. Default: '30 minutes'.
+  //
+  // A cap and not a default duration: a caller may ask for less and never for
+  // more. The way back is a column rather than a credential, so an operator who
+  // walks away mid-episode leaves it open for exactly this long.
+  supportTtl?: string
+
   // How long a password reset token lives. Default: '1 hour'
   passwordResetTtl?: string
 
@@ -221,6 +228,26 @@ export interface AuthServicesOptions {
 // ─── createAuthPlugin options ─────────────────────────────────────────
 
 export interface AuthPluginOptions {
+  /**
+   * SUPPORT MODE — may this operator act as this subject?
+   *
+   * **Guard tier** (`FJS-D06`): it answers allow/deny and may not shape the
+   * call. **Absent refuses**, so impersonation is never something an app
+   * acquires by upgrading a dependency — `POST /auth/support/start` answers 403
+   * naming this option until somebody writes one.
+   *
+   * The operator is the caller's own principal. An app whose principal carries
+   * a capability set writes one line:
+   *
+   *   canStartSupport: (op) => op.capabilities?.includes('support') ?? false
+   *
+   * It is not a `@capability` on the column, and the reason is `FJS-519`'s
+   * shape: every write to `Session` goes through `asSystem()`, which drops the
+   * grid along with every other rule, so a capability declared there would be
+   * enforced by nothing. The grant is asked for here, where there is a caller.
+   */
+  canStartSupport?: (operator: SessionContext, subjectId: string) => boolean | Promise<boolean>
+
   // Route prefix. Default: '/auth'
   prefix?: string
 

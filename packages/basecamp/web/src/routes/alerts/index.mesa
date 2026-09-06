@@ -125,9 +125,13 @@ title: Alerts
       // `condition` is Json in the schema and a threshold in the UI. One shape
       // is built here rather than asking a person to type JSON — and the
       // service is what refuses a severity it does not recognize.
+      //
+      // `threshold` is dropped rather than spread: it is a control on this form
+      // and not a column, so sending it names nothing the model declares.
+      const { threshold, ...rest } = data
       const created = await alerts.service.create({
-        ...data,
-        condition: { operator: 'gt', threshold: Number(data.threshold ?? 0) },
+        ...rest,
+        condition: { operator: 'gt', threshold: Number(threshold ?? 0) },
       })
       toasts.success(`${created.name} created`)
       creating = false

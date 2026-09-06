@@ -403,7 +403,11 @@ function buildTypedJsonClauses(colExpr, where, typeDecl, path, params, typedJson
 // document whether it equals 'x'. It is the same fact a text operator needs, so
 // it is one map rather than one per question.
 
-export function buildWhere(where, params, fromExprMap = null, tableAlias = null, typedJsonMap = null, relFilter = null, fieldKinds = null) {
+// `columnMap` is a mapped model's field → column, threaded rather than folded
+// into `fromExprMap` because the two mean different things at the one identifier
+// point below: a `@from` field is a SUBQUERY and self-qualifying, where a mapped
+// field is an ordinary column that still takes the table alias.
+export function buildWhere(where, params, fromExprMap = null, tableAlias = null, typedJsonMap = null, relFilter = null, fieldKinds = null, columnMap = null) {
   if (!where) return ''
   if (typeof where === 'string') return where
 
@@ -466,17 +470,17 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
 
   for (const [key, val] of Object.entries(where)) {
     if (key === 'AND') {
-      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds)).filter(Boolean)
+      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap)).filter(Boolean)
       if (parts.length) clauses.push(`(${parts.join(' AND ')})`)
       continue
     }
     if (key === 'OR') {
-      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds)).filter(Boolean)
+      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap)).filter(Boolean)
       if (parts.length) clauses.push(`(${parts.join(' OR ')})`)
       continue
     }
     if (key === 'NOT') {
-      const inner = buildWhere(val, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds)
+      const inner = buildWhere(val, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap)
       if (inner) clauses.push(`NOT (${inner})`)
       continue
     }
@@ -536,7 +540,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
     // Subqueries are self-qualifying (they reference `t.` internally), so we
     // never prepend an extra alias prefix to them.
     const isFromExpr = fromExprMap?.[key] != null
-    const col = isFromExpr ? fromExprMap[key] : `${aliasPrefix}${quoteIdent(key)}`
+    const col = isFromExpr ? fromExprMap[key] : `${aliasPrefix}${quoteIdent(columnMap?.[key] ?? key)}`
 
     if (val === null) { clauses.push(`${col} IS NULL`); continue }
 
@@ -644,7 +648,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
           clauses.push(operand ? `json_array_length(${col}) = 0` : `json_array_length(${col}) > 0`)
           break
         case 'equals':
-          // The exact set, in order. json() on both sides normalises whitespace,
+          // The exact set, in order. json() on both sides normalizes whitespace,
           // so a row a JS migration wrote as `[ "x", "y" ]` still matches.
           if (isArrayCol && Array.isArray(operand)) {
             push(JSON.stringify(operand))
@@ -677,13 +681,23 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
           // which sends the reader looking for the wrong thing (FJS-206). The
           // column is the diagnosis, and both ways forward are stated.
           const untypedJson = fieldKinds?.get(key) === 'json' && !typedJsonMap?.[key]
-          throw new Error(
+          // A ValidationError for the reason stated at the top of this loop: an
+          // operator that does not exist is a caller error and junction answers
+          // 400. It was the one refusal here that stayed a bare Error, so
+          // `?status[nope]=1` — caller-supplied text — came back a 500 blaming
+          // the server, on a modelled service as readily as a modelless one.
+          throw new ValidationError([{ path: ['where', key], message:
             `Unknown where operator "${op}" on field "${key}"` +
+            // The valid list comes off WHERE_OPS, which already exists for the
+            // typed-JSON walk and is exactly this switch's cases — asserted, so
+            // an operator added to one and not the other is a test failure
+            // rather than a message that quietly lies.
+            (untypedJson ? '' : ` — one of: ${[...WHERE_OPS].sort().join(', ')}`) +
             (untypedJson
               ? ` — "${key}" is an untyped Json column, so there is no declared shape to traverse and "${op}" ` +
                 `was read as an operator. Declare @type(...) on the column to filter by path, or filter it as ` +
                 `it stands with $raw: where: { $raw: sql\`json_extract("${key}", '$.${op}') = ...\` }`
-              : ''))
+              : '') }])
         }
       }
     }
@@ -745,13 +759,14 @@ function rawOrderPart(val, outParams) {
   return val.sql.trim()
 }
 
-export function buildOrderBy(orderBy, outParams = []) {
+export function buildOrderBy(orderBy, outParams = [], columnMap = null) {
   if (!orderBy) return ''
   const items = Array.isArray(orderBy) ? orderBy : [orderBy]
   const parts  = []
   for (const item of items) {
-    for (const [col, dir] of Object.entries(item)) {
-      if (col === '$raw') { parts.push(rawOrderPart(dir, outParams)); continue }
+    for (const [field, dir] of Object.entries(item)) {
+      const col = columnMap?.[field] ?? field
+      if (field === '$raw') { parts.push(rawOrderPart(dir, outParams)); continue }
       // Relation orderBy — { relation: { field: 'asc' } } — handled separately
       if (dir !== null && typeof dir === 'object') {
         // Object form: { field: { dir: 'asc', nulls: 'last' } }
@@ -1076,7 +1091,7 @@ function _walkRelationOrder(relName, spec, currentModel, currentAlias, relationM
 //   - FK columns needed for include resolution are injected into the SQL SELECT
 //     and then stripped from results unless the user also selected them
 
-export function parseSelectArg(select, modelName, relationMap, computedSets, include, fromSets, computedFns) {
+export function parseSelectArg(select, modelName, relationMap, computedSets, include, fromSets, computedFns, columnMap = null) {
   if (!select) return null
 
   const tableRels      = relationMap?.[modelName] ?? {}
@@ -1189,7 +1204,7 @@ export function parseSelectArg(select, modelName, relationMap, computedSets, inc
   const sqlCols = needsAllDbCols
     ? '*'
     : Object.keys(dbFields).length > 0
-      ? Object.keys(dbFields).map(c => `"${c}"`).join(', ')
+      ? Object.keys(dbFields).map(c => `"${columnMap?.[c] ?? c}"`).join(', ')
       : '"_no_cols_"'  // edge case: only computed/relation fields selected
 
   return { sqlCols, relationSelects, requestedFields, injectedFKs, needsAllDbCols, requestedFrom }
@@ -1258,12 +1273,74 @@ export function encodeCursor(values) {
   return Buffer.from(JSON.stringify(values)).toString('base64url')
 }
 
-export function decodeCursor(token) {
-  try {
-    return JSON.parse(Buffer.from(token, 'base64url').toString('utf8'))
-  } catch {
-    throw new Error(`Invalid cursor token`)
+/**
+ * Read a cursor back, and GRADE it against the ordering it is being used with.
+ *
+ * A cursor arrives from a caller — `?$after=…` — so it is caller-supplied text
+ * whatever it looks like, and every shape that is not one this list minted used
+ * to be accepted: measured, a token holding the wrong keys, an empty object, an
+ * array, a bare number or an object value all answered **0 rows with a 200**,
+ * and one holding `null` answered the WHOLE TABLE by silently paging from the
+ * start again. Only a token that failed to parse said anything, and it said it
+ * as a bare `Error`, which reaches a caller as a 500.
+ *
+ * `fields` is what `cursorFields` computed for THIS query, which is the same
+ * function `cursorFor` minted the token with — so the key set is derived rather
+ * than restated, and the case that actually happens is caught for free: a
+ * client holds an `endCursor`, the person changes the sort, and the next page
+ * is graded against an ordering that did not mint it. Without the check that is
+ * an empty list, which is indistinguishable from the end of the data.
+ *
+ * A `ValidationError` rather than a bare one, for `buildWhere`'s reason above:
+ * a token the caller sent is a caller error, and junction maps the name to a
+ * 400. A 500 would say the server broke.
+ *
+ * There is deliberately **no signature**. The columns compared are `fields`,
+ * which comes from the server's own `orderBy` and never from the token — only
+ * the VALUES are read out of it, and each is bound as a parameter against a
+ * column the caller is already able to filter on. A forged cursor can therefore
+ * say nothing that `?col[gt]=…` does not, and signing would buy a key to rotate
+ * in exchange for nothing.
+ */
+export function decodeCursor(token, fields = null) {
+  const refuse = (message) => {
+    throw new ValidationError([{ path: ['$after'], message }])
   }
+
+  let value
+  try {
+    value = JSON.parse(Buffer.from(token, 'base64url').toString('utf8'))
+  } catch {
+    refuse('is not a cursor this list minted — hand back an `endCursor` verbatim, unmodified')
+  }
+
+  // `null` is the one that answered the whole table: it decodes, it is falsy,
+  // and the cursor clause was then simply omitted.
+  if (value === null || typeof value !== 'object' || Array.isArray(value))
+    refuse(`decoded to ${value === null ? 'null' : Array.isArray(value) ? 'an array' : typeof value}, ` +
+           'and a cursor is an object of sort-key values')
+
+  // Ungraded, this is the old behavior: a token from another ordering reads
+  // every value as `undefined`, binds NULL, and answers an empty page.
+  if (fields) {
+    const want = fields.map(f => f.col)
+    const have = Object.keys(value)
+    const missing = want.filter(c => !(c in value))
+    const extra   = have.filter(c => !want.includes(c))
+    if (missing.length || extra.length) refuse(
+      `was minted for a different ordering — this list is ordered by ${want.join(', ')}` +
+      (missing.length ? `, and the cursor names ${missing.join(', ')} nowhere` : '') +
+      (extra.length   ? `, and carries ${extra.join(', ')} which it does not sort by` : '') +
+      '. Reload the first page.')
+  }
+
+  // A value is bound as a parameter, so a structure is a bind SQLite refuses —
+  // a 500 for a token somebody edited.
+  for (const [col, v] of Object.entries(value))
+    if (v !== null && (typeof v === 'object' || typeof v === 'function')) refuse(
+      `holds a ${Array.isArray(v) ? 'list' : 'structure'} for "${col}", and a sort key is a single value`)
+
+  return value
 }
 
 // Parse orderBy into a consistent array of { col, dir } objects.
@@ -1289,11 +1366,30 @@ export function normaliseOrderBy(orderBy) {
         if (typeof dir === 'object') return dir.dir != null  // object form with dir key
         return true
       })
-      .map(([col, dir]) => ({
-        col,
-        dir: (typeof dir === 'object' ? dir.dir : dir).toUpperCase(),
-      }))
+      .map(([col, dir]) => {
+        const d = (typeof dir === 'object' ? dir.dir : dir).toUpperCase()
+        return { col, dir: d, nulls: nullsPosition(dir, d) }
+      })
   )
+}
+
+/**
+ * Where NULLs sit in this field's order — `'FIRST'` or `'LAST'`.
+ *
+ * Carried rather than assumed, because `orderBy` can state it
+ * (`{ col: { dir: 'asc', nulls: 'last' } }`) and `buildOrderBy` emits it. The
+ * default is SQLite's own, measured: a plain `ASC` puts NULLs first and a plain
+ * `DESC` puts them last. A cursor that guessed the other way would resume from
+ * the wrong side of the nulls and lose every row on one side of them.
+ */
+export function nullsPosition(dir, resolved) {
+  if (dir !== null && typeof dir === 'object' && dir.nulls) {
+    const n = dir.nulls.toUpperCase()
+    if (n !== 'FIRST' && n !== 'LAST')
+      throw new Error(`orderBy nulls must be 'first' or 'last', got: ${dir.nulls}`)
+    return n
+  }
+  return resolved === 'DESC' ? 'LAST' : 'FIRST'
 }
 
 // Build the cursor WHERE clause for multi-field tuple comparison.
@@ -1306,40 +1402,103 @@ export function normaliseOrderBy(orderBy) {
 //
 // which correctly continues from that position in either direction.
 
-export function buildCursorWhere(fields, cursorValues, params) {
+export function buildCursorWhere(fields, cursorValues, params, columnMap = null) {
   if (!cursorValues || !fields.length) return ''
 
-  // For a single field, simple comparison
-  if (fields.length === 1) {
-    const { col, dir } = fields[0]
-    const op = dir === 'ASC' ? '>' : '<'
-    params.push(cursorValues[col])
-    return `"${col}" ${op} ?`
+  // ── NULL is not comparable, and that is the whole of this function ─────────
+  //
+  // `"col" > NULL` is NULL, which matches nothing — so resuming from a row
+  // whose sort value is null used to serve the rows before it and then stop:
+  // measured on six rows with three nulls, page 1 answered three rows and
+  // `hasMore: true`, page 2 answered NOTHING, both with a 200 (`FJS-780`).
+  // Half the table never served, and nothing anywhere said so.
+  //
+  // So each field contributes two predicates rather than one comparison, and
+  // both of them have to know where NULLs sit in THIS field's order — which is
+  // `nulls`, carried from the caller's own `orderBy` and defaulted to SQLite's
+  // behavior rather than guessed (see `nullsPosition`).
+  //
+  //   EQUAL  — the row is tied with the cursor on this field. NULL is tied
+  //            with NULL here, which `= ?` never says.
+  //   AFTER  — the row comes strictly after the cursor on this field. Which
+  //            way that runs depends on the direction AND on whether the nulls
+  //            are still ahead:
+  //              cursor value is null  → everything non-null is after it, but
+  //                                      only if the nulls come FIRST;
+  //                                      if they come LAST, nothing does.
+  //              cursor value is not   → the ordinary comparison, plus the
+  //                                      nulls where they come LAST.
+  //
+  // The chain over them is unchanged and is the standard one:
+  //   ( A₁ ) OR ( E₁ AND A₂ ) OR ( E₁ AND E₂ AND A₃ ) …
+  //
+  // One loop for one field and for many. The single-field fast path that used
+  // to sit here was the same comparison written twice, and only the multi-field
+  // copy would have been fixed.
+
+  const quote = (col) => `"${columnMap?.[col] ?? col}"`
+
+  // Where the NULLs sit for this field. Stated by `cursorFields`; defaulted
+  // here to SQLite's own so a hand-built field list cannot silently get DESC's
+  // answer wrong — the direction decides it, not the absence of a key.
+  const nullsOf = ({ dir, nulls }) => nulls ?? (dir === 'DESC' ? 'LAST' : 'FIRST')
+
+  /** The row is tied with the cursor on this field. */
+  const equal = (f) => {
+    const v = cursorValues[f.col]
+    if (f.nullable && (v === null || v === undefined)) return `${quote(f.col)} IS NULL`
+    params.push(v)
+    return `${quote(f.col)} = ?`
   }
 
-  // Multi-field: build OR chain of progressively more specific conditions
-  // ( A < a ) OR ( A = a AND B > b ) OR ( A = a AND B = b AND C > c ) ...
+  /**
+   * The row comes strictly after the cursor on this field — `null` where
+   * nothing can.
+   *
+   * A column that cannot hold NULL takes the plain comparison and nothing else:
+   * the NULL-aware form costs an `OR`, and an `OR` is what stops SQLite using
+   * the index a keyset scan exists for. So the cost lands only on the columns
+   * that actually have the problem.
+   */
+  const after = (f) => {
+    const { col, dir } = f
+    const v = cursorValues[col]
+
+    if (!f.nullable) { params.push(v); return `${quote(col)} ${dir === 'ASC' ? '>' : '<'} ?` }
+
+    const nulls = nullsOf(f)
+    // Sitting ON a null: everything non-null follows it, but only where the
+    // nulls come first. Where they come last, nothing on this field does.
+    if (v === null || v === undefined)
+      return nulls === 'LAST' ? null : `${quote(col)} IS NOT NULL`
+
+    params.push(v)
+    const cmp = `${quote(col)} ${dir === 'ASC' ? '>' : '<'} ?`
+    // The nulls sort after every value, so they are still to come.
+    return nulls === 'LAST' ? `(${cmp} OR ${quote(col)} IS NULL)` : cmp
+  }
+
   const clauses = []
-
   for (let i = 0; i < fields.length; i++) {
-    const parts = []
-
-    // Equality conditions for all fields before position i
-    for (let j = 0; j < i; j++) {
-      params.push(cursorValues[fields[j].col])
-      parts.push(`"${fields[j].col}" = ?`)
-    }
-
-    // Comparison for field at position i
-    const { col, dir } = fields[i]
-    const op = dir === 'ASC' ? '>' : '<'
-    params.push(cursorValues[col])
-    parts.push(`"${col}" ${op} ?`)
-
+    // Built in SQL order so the params land in the order the text binds them —
+    // positional binds, so this ordering is the correctness. `mark` is where
+    // this disjunct's params start, because a disjunct that turns out to be
+    // empty has to take its own binds back with it.
+    const mark  = params.length
+    const parts = fields.slice(0, i).map(equal)
+    const tail  = after(fields[i])
+    // Nothing can come after the cursor on this field, so this disjunct is
+    // empty. Dropped whole: the equality prefix on its own matches the cursor's
+    // OWN row and everything tied with it, which is a page that repeats.
+    if (tail === null) { params.length = mark; continue }
+    parts.push(tail)
     clauses.push(`(${parts.join(' AND ')})`)
   }
 
-  return clauses.join(' OR ')
+  // Never `''`: an empty string reaches the caller as *no cursor clause*, which
+  // is the whole table from the start — the shape a `null` cursor used to take.
+  // `0` is *the scan is finished*, which is what an exhausted position means.
+  return clauses.length ? clauses.join(' OR ') : '0'
 }
 
 // Extract cursor values from a row given the orderBy fields
@@ -1463,7 +1622,7 @@ function _buildWindowExpr(alias, spec) {
     return spec.count === '*' || spec.count === true ? 'COUNT(*)' : `COUNT("${spec.count}")`
   }
 
-  throw new Error(`window "${alias}": unrecognised window function spec. Use rowNumber, rank, denseRank, lag, lead, sum, avg, min, max, count, firstValue, lastValue.`)
+  throw new Error(`window "${alias}": unrecognized window function spec. Use rowNumber, rank, denseRank, lag, lead, sum, avg, min, max, count, firstValue, lastValue.`)
 }
 
 function _buildOverClause(spec) {
@@ -1514,4 +1673,95 @@ function _sqlLit(val) {
   if (val === null) return 'NULL'
   if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`
   return String(val)
+}
+
+// ─── which keys a caller may name ─────────────────────────────────────────────
+//
+// Two questions with different answers, which is why they stay two functions:
+// a `@from` field filters AND sorts, a `@computed` field does neither, and an
+// `@@fts` `$search` filters and cannot be ordered by.
+//
+// They live here rather than in client.js because `generateJsonSchema` answers
+// the same question to the BROWSER and may not import the query client — that
+// pulls in `bun:sqlite`, and sierra's build runs in plain Node. One owner, two
+// readers (Invariant 4).
+
+// Which keys of a model may appear in a where, split by WHY not — the sibling of
+// sortableKeysFor, and the same reason for existing: a caller that refuses has to
+// say which kind of wrong it is.
+//
+// A relation IS filterable (`posts: { some: … }`), so relations stay in.
+export function filterableKeysFor(model) {
+  const filterable   = new Set()
+  const computed     = new Set()
+  const encrypted    = new Set()
+  // Every field whose column holds encoded bytes, matchable or not. A `where`
+  // rewrites a matchable one before comparing; policy.js has no such step, so
+  // inside a policy predicate EVERY kind compares plaintext against stored bytes.
+  const encryptedAny = new Set()
+  const transient    = new Set()
+  for (const f of model.fields) {
+    if (f.attributes?.some(a => a.kind === 'encrypted' || a.kind === 'secret' || a.kind === 'hashed')) encryptedAny.add(f.name)
+    if (f.attributes?.some(a => a.kind === 'computed')) { computed.add(f.name); continue }
+    // @transient has no column at all, so this is the same hazard as @computed
+    // — an identifier SQLite cannot bind is read as a string literal.
+    if (f.attributes?.some(a => a.kind === 'transient')) { transient.add(f.name); continue }
+    // Plain @encrypted stores AES-GCM ciphertext under a RANDOM IV, so a plaintext
+    // comparison cannot match any row — see rewriteEncryptedWhere, which already
+    // proves this and compiles a contradiction. `deterministic: true` derives the IV
+    // from the value and @hashed digests it; both are stable, so both ARE comparable.
+    if (f.attributes?.some(a => a.kind === 'hashed')) { filterable.add(f.name); continue }
+    const enc = f.attributes?.find(a => a.kind === 'encrypted' || a.kind === 'secret')
+    if (enc && !enc.deterministic) { encrypted.add(f.name); continue }
+    filterable.add(f.name)
+  }
+  return { filterable, computed, encrypted, encryptedAny, transient }
+}
+
+// Which keys of a model may appear in an orderBy, split three ways so the
+// caller can say WHY a key was refused. One definition, asked by both the ORM
+// wrapper and $checkOrderBy.
+// A column whose stored TEXT is a storage detail rather than the value. SQLite
+// orders by that text, so the answer is always plausible and never the one
+// asked for — `[10]` sorts before `[9]`, a Json document sorts by whichever key
+// serialized first, and ciphertext reshuffles on every re-encryption. One
+// bucket, because the question is not what sorting *within* the value would mean
+// but whether the column may be a sort key at all, and the answer is no.
+export const OPAQUE_SORT = {
+  array:     `an array column, stored as a JSON document — sorting it orders rows by that text, so '[10]' sorts before '[9]' and a re-serialized row moves`,
+  json:      `a Json column, stored as a document — sorting it orders rows by the serialized text, so the order is by whichever key serialized first`,
+  file:      `a File column, stored as a reference document — sorting it orders rows by that JSON text, not by anything about the file`,
+  encrypted: `@encrypted — sorting it orders rows by ciphertext, which is meaningless, and stable only where the IV is derived from the value`,
+  hashed:    `@hashed — sorting it orders rows by the digest, which is stable and equally meaningless`,
+}
+
+export function opaqueSortKind(f) {
+  if (f.attributes?.some(a => a.kind === 'hashed')) return 'hashed'
+  if (f.attributes?.some(a => a.kind === 'encrypted' || a.kind === 'secret')) return 'encrypted'
+  if (f.type?.array)            return 'array'
+  if (f.type?.name === 'Json')  return 'json'
+  if (f.type?.name === 'File')  return 'file'
+  return null
+}
+
+export function sortableKeysFor(model) {
+  const sortable  = new Set()
+  const relations = new Set()
+  const computed  = new Set()
+  const transient = new Set()
+  const opaque    = new Map()
+  for (const f of model.fields) {
+    // An implicit many-to-many is `Tag[]` — an array in the AST and a join table
+    // in SQLite, so it must be claimed here or the array bucket below takes it
+    // and `orderBy: { tags: { _count: 'asc' } }` stops compiling.
+    if (f.type?.kind === 'relation' || f.type?.kind === 'implicitM2M') { relations.add(f.name); continue }
+    if (f.attributes?.some(a => a.kind === 'computed')) { computed.add(f.name); continue }
+    if (f.attributes?.some(a => a.kind === 'transient')) { transient.add(f.name); continue }
+    // @edge values live on a side table the ORDER BY cannot reach.
+    if (f.attributes?.some(a => a.kind === 'edge' || a.kind === 'scoped')) continue
+    const opaqueKind = opaqueSortKind(f)
+    if (opaqueKind) { opaque.set(f.name, opaqueKind); continue }
+    sortable.add(f.name)
+  }
+  return { sortable, relations, computed, transient, opaque }
 }

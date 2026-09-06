@@ -301,6 +301,13 @@ export function createConduit(
 
     // Load shedding happens before anything else — the whole point is that
     // a request against a known-bad target costs nothing.
+    //
+    // Retryable, and both halves of that are load-bearing. Nothing left the
+    // process, so this request certainly was not applied — the one fact
+    // `declineReplay` withholds the flag for. And both conditions clear on
+    // their own: `circuit_open` names the seconds in its own message,
+    // `overloaded` wants a free slot. Shed as permanent, a caravan job threw
+    // away work that a wait of one reset window would have completed.
     const admission = resilience.admit(req.target)
     if (!admission.ok) {
       return reject<T>(req, {
@@ -308,7 +315,7 @@ export function createConduit(
         target:    req.target,
         protocol:  null,
         message:   admission.message,
-        retryable: false,
+        retryable: true,
       })
     }
 

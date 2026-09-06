@@ -63,7 +63,7 @@ Two deliberate deviations from the shipped fragment, each noted in the schema:
 
 1. **`accountId` is `String`, not `Int`.** `Account.id` is a uuid; `Int` cannot
    hold it. Safe for `auth.ts`, which only ever does `String(user.accountId)`.
-2. **`@secret` → `@guarded(all)`** on the `Credential` and `Session` token
+2. **`@secret` → `@guarded`** on the `Credential` and `Session` token
    columns. Not for a logging reason — log entries redact protected
    fields (Invariant 7), so `@secret` is safe here. What still defers it is
    encryption: `@secret` implies `@encrypted`, and `Session.token` is looked up
@@ -252,7 +252,7 @@ Two properties worth knowing, both verified by running:
   here aimed at the app rather than at its callers. `db/seed.js --force` cannot
   clear the table and lets the workspace FK cascade do it.
 
-`Secret.data` is `@encrypted`, which implies `@guarded(all)`: an ADMIN listing
+`Secret.data` is `@encrypted`, which implies `@guarded`: an ADMIN listing
 secrets gets `id`, `name`, `kind` and **no `data` key at all**, `asSystem()`
 gets the plaintext, and the SQLite file holds only `v1.Kz9wXnW5…`. That is
 constraint 7 ("secrets are held, never shown") enforced at the Data boundary

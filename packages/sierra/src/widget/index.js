@@ -33,6 +33,13 @@
  * strings and the widget parses what it needs. JSON in an attribute works
  * (`data-fields='["a","b"]'`) and is the caller's to parse — guessing here would
  * make `data-pid="007"` a number.
+ *
+ * **They are read once, at mount.** The element declares no `observedAttributes`,
+ * so a host page that rewrites `data-sku` after the widget is up changes nothing.
+ * A prop reaching a mounted component would have to be a signal the host can
+ * write, which is a reactive surface across an embed boundary and is not what a
+ * `data-*` attribute is. A host that needs a different widget replaces the
+ * element; a host that needs a live value gives the widget an endpoint to read.
  */
 
 import { mount } from '@frontierjs/mesa/runtime'
@@ -56,8 +63,42 @@ import { mount } from '@frontierjs/mesa/runtime'
  */
 export const CSS_MARK = '@sierra-widget'
 
-/** Already mounted, keyed by host element. Mounting twice is the common bug. */
-const _mounted = new WeakMap()
+/**
+ * Where *this host element already carries this widget* is recorded.
+ *
+ * **On the ELEMENT, under a global symbol** — not in a module-scoped `WeakMap`.
+ * Each copy of a widget script carries its own copy of this module, so a
+ * module-scoped map says "not yet" in both copies and the second one mounts a
+ * second component into the same box. The element form never showed it because
+ * its guard is `customElements`, which is the document's and not the module's;
+ * the selector form had no such guard and double-mounted, on exactly the page
+ * the fixture builds to test it. `Symbol.for` is the same kind of registry as
+ * `customElements`: one entry per realm, whoever asks.
+ *
+ * Keyed by TAG rather than a single flag, because two different widgets whose
+ * selectors both match one element are two widgets, not a collision.
+ */
+const MARK = Symbol.for('sierra.widget')
+
+/*
+ * Set on an element whose shadow root THIS widget attached. It outlives the
+ * marks map, which `unmount` deletes — on a remount that map is gone and this
+ * is the only thing left that separates our own empty root from one the host
+ * page attached and filled.
+ */
+const OWNED = Symbol.for('sierra.widget.ownsShadowRoot')
+
+/** `tag → { instance, root, kept, sheet, wrapper }`, or a failed marker. */
+function marksOn(el) {
+  let m = el[MARK]
+  if (!m) {
+    m = new Map()
+    // Non-enumerable, so a host page walking its own element's keys does not
+    // trip over ours.
+    Object.defineProperty(el, MARK, { value: m, configurable: true })
+  }
+  return m
+}
 
 /** kebab-case, so a component name reaches HTML as a legal tag. */
 export function kebab(name) {
@@ -73,8 +114,12 @@ export function kebab(name) {
  * `booking` with no prefix is not a legal tag, and saying so beats registering
  * nothing and leaving the page blank.
  */
+export function isLegalTag(tag) {
+  return /^[a-z][a-z0-9._]*-[a-z0-9._-]*$/.test(String(tag))
+}
+
 function assertTag(tag) {
-  if (!/^[a-z][a-z0-9._]*-[a-z0-9._-]*$/.test(tag)) {
+  if (!isLegalTag(tag)) {
     throw new Error(
       `[Sierra widget] "${tag}" is not a valid custom element name — it must contain a dash ` +
       `and start with a lowercase letter. Set widgets.prefix (e.g. 'mt-') or name the widget ` +
@@ -90,34 +135,92 @@ function propsFrom(el) {
 }
 
 /**
+ * The bundle's stylesheet, into `root`.
+ *
+ * A CONSTRUCTABLE sheet first, with `<style>` as the fallback. A host page with
+ * `style-src 'self'` — a bank, a government site, anything behind a WAF —
+ * blocks an injected `<style>` element and nothing here can observe it: Mesa's
+ * own component styles arrive through `adoptedStyleSheets`, which CSP does not
+ * gate, so the widget renders half-styled and only the HOST page's
+ * `securitypolicyviolation` records why.
+ *
+ * Returns the sheet so `unmount` can take it back off the root; the `<style>`
+ * fallback is removed with the rest of the rendered range.
+ */
+function adoptCss(root, css) {
+  if (!css) return null
+  if (root.adoptedStyleSheets && typeof CSSStyleSheet === 'function') {
+    try {
+      const sheet = new CSSStyleSheet()
+      sheet.replaceSync(css)
+      root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet]
+      return sheet
+    } catch { /* an engine without constructable sheets, or a stylesheet it refuses */ }
+  }
+  const style = document.createElement('style')
+  style.textContent = css
+  root.appendChild(style)
+  return null
+}
+
+/**
  * Mount `Component` into `el`, once.
  *
  * The shadow root is reused when one is already attached — a script that runs
  * twice (two copies on a page, a re-injected tag) must not produce two widgets
  * in one box, and a host that pre-attached a root of its own is honored.
+ *
+ * What was in the root BEFORE this mount is recorded, because that is what
+ * `unmount` must leave behind: Mesa's `destroy()` removes its anchor comment
+ * and releases delegation and styles, and leaves the rendered DOM standing.
  */
 function mountInto(el, Component, opts) {
-  if (_mounted.has(el)) return _mounted.get(el)
+  const seen = marksOn(el)
+  const prior = seen.get(opts.tag)
+  if (prior) return prior.instance
 
-  const root = opts.shadow === false
-    ? el
-    : (el.shadowRoot ?? el.attachShadow({ mode: 'open' }))
+  // Three cases, and only the third is new.
+  //
+  // A shadow root this widget attached is reused — that is the reparent path
+  // (`FJS-817`), and its shape must not change. A root the HOST attached is a
+  // different thing wearing the same property: appending into it puts the
+  // widget's stylesheet into `adoptedStyleSheets` of a root the host owns and
+  // scopes Mesa's delegation to their content, so the isolation the shadow
+  // root is FOR runs in neither direction. There, the widget attaches a root
+  // of its own to a wrapper inside theirs — nested, isolated, and removed
+  // whole on unmount.
+  let wrapper = null
+  let root
+  if (opts.shadow === false) {
+    root = el
+  } else if (el.shadowRoot && el[OWNED]) {
+    root = el.shadowRoot
+  } else if (el.shadowRoot) {
+    wrapper = document.createElement('div')
+    el.shadowRoot.appendChild(wrapper)
+    root = wrapper.attachShadow({ mode: 'open' })
+  } else {
+    root = el.attachShadow({ mode: 'open' })
+    // Survives unmount deliberately: the marks map does not, and on a remount
+    // this is the only thing that can tell our empty root from the host's.
+    Object.defineProperty(el, OWNED, { value: true, configurable: true })
+  }
 
   // A host page's element may already hold markup — a spinner, a no-JS
   // fallback, or this widget from a previous mount. Clear it: what renders here
   // is the component, not the component plus whatever was in the way.
   if (opts.shadow === false) el.replaceChildren()
 
+  // Whatever a host that pre-attached its own root put there stays theirs.
+  // Empty when we just made the root, which is every case but `shadow: false`.
+  const kept = [...root.childNodes]
+
   // The bundle's own stylesheet, folded into the script at build time and put
   // here rather than in the document — see widgetCssPlugin. Mesa's component
   // styles do NOT come through here: mount() registers the shadow root as a
   // style root and they arrive through adoptedStyleSheets. This is everything
   // else the widget imported.
-  if (opts.css) {
-    const style = document.createElement('style')
-    style.textContent = opts.css
-    root.appendChild(style)
-  }
+  const sheet = adoptCss(root, opts.css)
 
   const label = document.createComment('widget')
   root.appendChild(label)
@@ -130,15 +233,62 @@ function mountInto(el, Component, opts) {
     root,
   })
 
-  _mounted.set(el, instance)
+  seen.set(opts.tag, { instance, root, kept, sheet, wrapper })
   return instance
 }
 
-function unmount(el) {
-  const instance = _mounted.get(el)
-  if (!instance) return
-  _mounted.delete(el)
-  try { instance.destroy() } catch { /* a host removing the node mid-teardown */ }
+/**
+ * Mount, and survive one host element being impossible to mount into.
+ *
+ * `mountAll` is a loop over elements a stranger's page owns. One of them may
+ * already hold a CLOSED shadow root (`attachShadow` throws), or the component
+ * may throw in its own render — and an unguarded loop then means no widget
+ * AFTER it on that page ever mounts, on every future MutationObserver run too.
+ *
+ * The failure is recorded on the element so the observer does not retry it on
+ * every mutation, and it is REPORTED: a mount that swallowed this silently is
+ * the failure a merchant cannot debug.
+ */
+function mountGuarded(el, Component, opts) {
+  try {
+    return mountInto(el, Component, opts)
+  } catch (err) {
+    marksOn(el).set(opts.tag, { instance: null, failed: true })
+    console.error(`[Sierra widget] <${opts.tag}> could not mount into`, el, err)
+    return null
+  }
+}
+
+/**
+ * Take this widget back off `el`, leaving the element as it was found.
+ *
+ * `instance.destroy()` is Mesa's and now disposes the reactive root as well as
+ * removing what it rendered. The sweep below stays because it is answering a
+ * different question: what this element held BEFORE the mount, which Mesa has
+ * no way to know. A host page that REPARENTS the element fires
+ * `disconnectedCallback` then `connectedCallback`, and the sweep is what keeps
+ * the remount from appending beside anything the first pass left.
+ */
+function unmount(el, tag) {
+  const seen = el[MARK]
+  const entry = seen?.get(tag)
+  if (!entry) return
+  seen.delete(tag)
+  if (!entry.instance) return
+
+  try { entry.instance.destroy() } catch { /* a host removing the node mid-teardown */ }
+  try {
+    for (const node of [...entry.root.childNodes]) {
+      if (!entry.kept.includes(node)) node.remove()
+    }
+    if (entry.sheet && entry.root.adoptedStyleSheets) {
+      entry.root.adoptedStyleSheets = entry.root.adoptedStyleSheets.filter(s => s !== entry.sheet)
+    }
+    // A root nested inside the host's own goes whole. The sweep above cannot
+    // reach it: it walks the root we mounted INTO, and the wrapper is a sibling
+    // of the host's content one level up.
+    entry.wrapper?.remove()
+  } catch { /* the root itself is gone, which is the same outcome */ }
 }
 
 /**
@@ -165,18 +315,34 @@ export function embed(Component, options = {}) {
     name = 'widget', prefix = '', selector = null, shadow = true, props = {}, css = '',
   } = options
   const tag = assertTag(options.tag ?? `${prefix}${kebab(name)}`)
-  const opts = { shadow, props, css: String(css).startsWith(CSS_MARK) ? '' : css }
+  const opts = { tag, shadow, props, css: String(css).startsWith(CSS_MARK) ? '' : css }
 
   // ── The custom element ────────────────────────────────────────────────
   // Guarded on the registry rather than on a flag of our own: two widget
   // scripts on one page each carry their own copy of this module, so a
   // module-level flag would say "not yet" in both and the second registration
   // would throw where the page is otherwise fine.
-  if (typeof customElements !== 'undefined' && !customElements.get(tag)) {
-    customElements.define(tag, class extends HTMLElement {
-      connectedCallback() { mountInto(this, Component, opts) }
-      disconnectedCallback() { unmount(this) }
-    })
+  // The class is STAMPED, which is what makes the two indistinguishable cases
+  // distinguishable: a second copy of this script finds a Sierra widget on the
+  // tag and says nothing, while a tag taken by the host page's own component —
+  // or by another vendor on the default prefix — is reported. v2 of a widget
+  // loaded beside v1 lands in the silent half by construction, since the class
+  // it finds is a Sierra one; only a prefix separates those.
+  if (typeof customElements !== 'undefined') {
+    const held = customElements.get(tag)
+    if (!held) {
+      const Widget = class extends HTMLElement {
+        connectedCallback() { mountGuarded(this, Component, opts) }
+        disconnectedCallback() { unmount(this, tag) }
+      }
+      Widget.__sierraWidget = tag
+      customElements.define(tag, Widget)
+    } else if (held.__sierraWidget !== tag) {
+      console.warn(
+        `[Sierra widget] <${tag}> is already defined by this page and is not a Sierra widget, ` +
+        `so this widget will not render. Set widgets.prefix (e.g. 'mt-') to a tag nobody else claims.`
+      )
+    }
   }
 
   // ── The selector form ─────────────────────────────────────────────────
@@ -188,13 +354,31 @@ export function embed(Component, options = {}) {
   const mountAll = () => {
     if (!selector || typeof document === 'undefined') return []
     const found = [...document.querySelectorAll(selector)]
-    for (const el of found) mountInto(el, Component, opts)
+    for (const el of found) mountGuarded(el, Component, opts)
     return found
+  }
+
+  // A removed node is torn down as well as an added one. The element form gets
+  // this from `disconnectedCallback`; the selector form has no lifecycle of its
+  // own, so a host SPA that removes the node left the component, its effects and
+  // its subscriptions running with nothing pointing at them. `unmount` is a
+  // no-op for a node this runtime never mounted, so an unrelated removal costs a
+  // WeakMap miss — which is why every removed subtree can be swept blindly.
+  const unmountRemoved = records => {
+    for (const rec of records) {
+      for (const node of rec.removedNodes) {
+        if (node.nodeType !== 1) continue
+        if (node.matches?.(selector)) unmount(node, tag)
+        // The node removed may be an ANCESTOR of the widget rather than the
+        // widget: a host that empties a container never touches our element.
+        node.querySelectorAll?.(selector).forEach(el => unmount(el, tag))
+      }
+    }
   }
 
   if (selector && typeof MutationObserver !== 'undefined') {
     mountAll()
-    observer = new MutationObserver(() => mountAll())
+    observer = new MutationObserver(records => { unmountRemoved(records); mountAll() })
     // documentElement rather than body: a script in <head> runs before <body>
     // exists, and observing a null target throws.
     observer.observe(document.documentElement, { childList: true, subtree: true })
@@ -209,10 +393,10 @@ export function embed(Component, options = {}) {
       observer?.disconnect()
       observer = null
       if (selector && typeof document !== 'undefined') {
-        for (const el of document.querySelectorAll(selector)) unmount(el)
+        for (const el of document.querySelectorAll(selector)) unmount(el, tag)
       }
       if (typeof document !== 'undefined') {
-        for (const el of document.querySelectorAll(tag)) unmount(el)
+        for (const el of document.querySelectorAll(tag)) unmount(el, tag)
       }
     },
   }

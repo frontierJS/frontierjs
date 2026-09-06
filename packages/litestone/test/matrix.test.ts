@@ -85,7 +85,7 @@ model Cell {
   enc   String?  @encrypted
   encs  String?  @encrypted(deterministic: true)
   hsh   String?  @hashed
-  lock  String?  @guarded(all)
+  lock  String?  @guarded
   sys   String?  @system
   tmp   String?  @transient
   comp  String?  @computed
@@ -134,7 +134,7 @@ const CALLER_WRITABLE = Object.fromEntries(
 // something meaningless: on an array column the bare array IS the list of
 // elements, so wrapping it again asks about an array of arrays.
 //
-// `system: true` reads through `asSystem()`. `@encrypted` implies `@guarded(all)`
+// `system: true` reads through `asSystem()`. `@encrypted` implies `@guarded`
 // (encryption.md), so any other client is testing the guard rather than the
 // encryption, and every cell would say `guarded` instead of what it means.
 

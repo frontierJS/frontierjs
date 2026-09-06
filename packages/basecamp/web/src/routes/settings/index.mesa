@@ -46,7 +46,10 @@ title: Your settings
   import Table      from '@frontierjs/ui/components/display/Table.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
 
-  $: session.user
+  // The standing pill reads the membership row out of `session.workspaces` and
+  // picks it with `session.workspaceId`; watching `session.user` alone leaves it
+  // showing the previous workspace's role after a switch.
+  $: (session.user, session.workspaces, session.workspaceId)
 
   let me        = null
   let kinds     = []

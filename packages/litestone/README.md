@@ -88,7 +88,7 @@ The comparison is organized around what you can **declare** in the schema and wh
 | **Relation-based policy checks** | ✓ | ✗ | ✗ | ✓ |
 | **Level-based access control** (GatePlugin) | ✓ | ✗ | ✗ | ✗ |
 | **Field-level encryption at rest** (`@encrypted` / `@secret`) | ✓ | ✗ | ✗ | ✗ |
-| **Hidden / guarded fields** (`@guarded`, `@guarded(all)`) | ✓ | ✗ | ✗ | ✗ |
+| **Hidden / guarded fields** (`@guarded`, `@guarded`) | ✓ | ✗ | ✗ | ✗ |
 | **System-mode bypass** (`asSystem()`) | ✓ | ✗ | ✗ | partial ⁶ |
 
 ### Lifecycle — what happens automatically over a row's life
@@ -311,12 +311,12 @@ model User {
 @system                          the application writes it, its caller does not. Readable by
                                  anyone, refused by name on every write. See below
 @guarded                         excluded unless asSystem() — and refused on write, too
-@guarded(all)                    the same; an explicit select cannot unlock the read
+@guarded                    the same; an explicit select cannot unlock the read
 @encrypted                       AES-256-GCM at rest — hidden from a non-system read, and
                                  still WRITABLE by a non-system caller
 @encrypted(deterministic: true)  encrypted equality search, and the value still reads back
 @hashed                          HMAC-SHA256, one-way — matchable, never readable
-@secret                          @encrypted + @guarded(all) + @log(audit) + $rotateKey
+@secret                          @encrypted + @guarded + @log(audit) + $rotateKey
 @secret(rotate: false)           the same but excluded from key rotation — and therefore
                                  unreadable after one. $rotateKey refuses while one exists
 @allow('read'|'write'|'all', expr)   field-level conditional visibility
@@ -380,8 +380,7 @@ model User {
 @@updatedBy                      the same pair for updates
 @@tenant(none)                   under `tenancy { strategy row }`: this model spans tenants
 @@tenant(column: "accountId")    …or is scoped by a column of its own
-@@strict                         SQLite STRICT mode (on by default)
-@@noStrict                       opt out of STRICT mode
+@@noStrict                       opt out of SQLite STRICT mode (on by default)
 @@map("table_name")              custom DB table name
 @@db(dbName)                     assign model to a named database block
 @@external                       table managed outside Litestone — queryable but skip DDL/migrations
@@ -956,7 +955,7 @@ model User {
   ssn    String  @encrypted                        // AES-256-GCM, guarded — asSystem() only
   email  String  @encrypted(deterministic: true)   // equality WHERE works, and it reads back
   pwHash String  @hashed                           // one-way — matchable, never readable
-  apiKey String  @secret                           // @encrypted + @guarded(all) + @log(audit)
+  apiKey String  @secret                           // @encrypted + @guarded + @log(audit)
 }
 ```
 

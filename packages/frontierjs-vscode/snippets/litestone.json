@@ -229,12 +229,6 @@
   "@guarded": {
     "prefix": "@guarded",
     "body": ["@guarded"],
-    "description": "Exclude unless asSystem()"
-  },
-
-  "@guarded(all)": {
-    "prefix": "@guardedall",
-    "body": ["@guarded(all)"],
     "description": "Exclude from reads and writes unless asSystem()"
   },
 
@@ -259,7 +253,7 @@
   "@secret": {
     "prefix": "@secret",
     "body": ["@secret"],
-    "description": "@encrypted + @guarded(all) + @log(audit)"
+    "description": "@encrypted + @guarded + @log(audit)"
   },
 
   "@log": {
@@ -401,7 +395,7 @@
   },
 
   "@@softDelete(cascade)": {
-    "prefix": "@@softDeleteCascade",
+    "prefix": "@@softDelete(cascade)",
     "body": ["@@softDelete(cascade)"],
     "description": "Soft delete with cascade to FK children"
   },

@@ -20,13 +20,15 @@ import { generateRouteTable, renderRouteTable } from './generate-route-table.js'
  * @param {object} options
  * @param {string} [options.trailingSlash='always']
  * @param {string} [options.cwd=process.cwd()]
+ * @param {(msg: string) => void} [options.warn] — where the walker reports a
+ *        symlink cycle it skipped
  * @returns {Promise<import('./build-tree.js').RouteNode>}
  */
 export async function scan(routesDir, options = {}) {
   const { cwd = process.cwd(), trailingSlash = 'always' } = options
 
   const absRoutesDir = resolve(cwd, routesDir)
-  const files = await walk(absRoutesDir, cwd)
+  const files = await walk(absRoutesDir, cwd, { warn: options.warn })
 
   // Only pass files that are under the routes dir
   const routeFiles = files.filter(f => f.startsWith(routesDir.replace(/\\/g, '/')))

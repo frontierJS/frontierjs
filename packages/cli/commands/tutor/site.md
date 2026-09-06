@@ -47,7 +47,7 @@ context.config.apiPort = flag['api-port']
 context.vars.apiPort   = context.config.apiPort
 ```
 
-## Lesson 5 — the public half
+## Lesson 8 — the public half
 
 An app has two audiences and they want opposite things. The console you have
 been building is behind a sign-in, is allowed to be slow, and must be current.

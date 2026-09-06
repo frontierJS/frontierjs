@@ -59,6 +59,10 @@ if (serveOnly) {
       mountBare: (name, props = {}) => evaluate(
         `return await window.mesaMountBare(${JSON.stringify(fixture(name))}, ${JSON.stringify(props)});`
       ),
+      /** Tear the current mount down WITHOUT clearing the stage, so a spec can
+       *  read what `destroy()` left behind. `mesaUnmount` cannot answer that:
+       *  it clears the stage itself. */
+      destroy: () => evaluate('return window.mesaDestroy();'),
       /** Everything console.warn has been handed since the last mount. */
       warnings: () => evaluate('return { v: window.mesaWarnings.slice() };').then((r) => r.v),
     }),

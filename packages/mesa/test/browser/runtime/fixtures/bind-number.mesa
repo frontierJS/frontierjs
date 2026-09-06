@@ -1,0 +1,21 @@
+<script>
+  // bind-number.mesa — what the bound variable HOLDS after a keystroke.
+  //
+  // `el.value` is a string on every control, so a numeric input handed the
+  // signal "12" where the component had put 12 (`FJS-857`). The proof has to
+  // be a real keystroke: setting the value from code never goes through the
+  // input handler at all, which is why every round-trip test passed.
+  let qty = 1
+  let vol = 5
+  let text = 'a'
+</script>
+
+<input type="number" id="qty" bind:value={qty} />
+<input type="range"  id="vol" bind:value={vol} min="0" max="10" />
+<input type="text"   id="text" bind:value={text} />
+
+<output id="qty-type">{typeof qty}</output>
+<output id="qty-plus">{qty + 1}</output>
+<output id="vol-type">{typeof vol}</output>
+<output id="text-type">{typeof text}</output>
+<output id="text-val">{text}</output>

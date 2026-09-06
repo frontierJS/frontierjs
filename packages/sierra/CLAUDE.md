@@ -82,6 +82,50 @@ src/
 
 ## What bites here
 
+- **A shadow root on the host element is not necessarily OURS.** `el.shadowRoot
+  ?? el.attachShadow()` reads a root the host page attached as one to move into,
+  which puts the widget's stylesheet in their `adoptedStyleSheets` and scopes
+  delegation to their content. `Symbol.for('sierra.widget.ownsShadowRoot')` is
+  what separates them and it deliberately outlives the marks map, which
+  `unmount` deletes. A foreign root gets a nested one; our own is reused
+  unchanged, because an extra wrapper would move every `:host > *` rule.
+- **`isHashedAsset` matches a REPEATED extension.** `…-C_TQPJ-f.js.map` is
+  hashed and a pattern anchored on the last segment says otherwise, so a
+  sourcemap was revalidated forever beside a file cached for a year.
+- **`/__sierra/static-data` refuses three ways, and `Sec-Fetch-Site` is the one
+  a verb check cannot cover.** `<img src>`, `<script src>` and a top-level form
+  GET are all simple GETs sending no `Origin`. The check allows an ABSENT header
+  (not a browser) and `none` (a typed URL) — narrowing it to `same-origin` alone
+  breaks every test and every curl. It also refuses a route that does not
+  declare `render: static`, and lets a throwing `head()` fail the request,
+  because the build skips the page for one and a skipped page fails the build.
+- **A `Sitemap:` line takes an ABSOLUTE URL.** A relative one is discarded by
+  every crawler rather than fetched and failed, so it looks in the output
+  exactly like a site that advertised its sitemap. With no `siteUrl` the line is
+  omitted deliberately.
+- **Route matching is CASE-SENSITIVE** (`FJS-D210`). It was not, and it was the
+  only one of four readers of *which route is this* that was not — `isActive`,
+  the prefetch cache key, `page.path` and the filename a static build writes are
+  all case-sensitive, so `/ADMIN/` rendered in the SPA and 404'd on the static
+  host. A case-only miss is NAMED rather than merely refused, at both entrances:
+  the quiet one is an app with a catch-all, where the match is truthy and
+  nothing warned at all.
+- **An SVG `<a>` is a link and neither obvious spelling finds it.** `tagName` is
+  `'a'` in its own case, and `.href` is a truthy `SVGAnimatedString` rather than
+  a string — so `=== 'A'` misses it and `if (!a.href)` passes it through as an
+  object. `linkHrefOf` (`router/internals.js`) is the one owner; the click
+  handler and all three prefetch readers go through it.
+- **A hook that breaks the chain throws `ResourceHookError`; it does not answer
+  `null`.** An `around` that returns without calling `next()`, one that catches
+  the failure and does not rethrow, and an `error` hook that clears `ctx.error`
+  without setting a result all end `_call` with nothing having produced an
+  answer. `null` is what the context is born with, so a screen read it as one and
+  `(await r.service.find()).data` threw in the app's own code. `null` is also a
+  legitimate answer for a missing row, so the test is whether anything ASSIGNED
+  it — `ctx` comes from `hookContext` (`@frontierjs/toolbelt/hooks`) and
+  `answered(ctx)` reports it. **Short-circuiting is still supported and is the
+  point of the phase**: set `ctx.result`, `null` included. The error-phase form
+  carries the discarded failure on `cause`.
 - **On a static target, dev shows the site with its data now — but the loader
   runs on the SERVER, and the server must be bun.** A `render: static` route's
   `load()` is build-time by definition and its companion may never enter the
@@ -131,25 +175,71 @@ src/
   at all; the second click asked for the first one. The list trails the URL by
   one action, and it presents as a wrong sort DIRECTION rather than as a stale
   read.
+- **The router commits the navigation last STARTED, not the last to finish.**
+  `_navigate` has four await points, so a slow `load()` from a route the reader
+  had already left overwrote the page they were on and pushed its own URL into the
+  address bar (`FJS-791`). A sequence stamp is checked after the guards and again
+  immediately before the history write, which is the first irreversible line.
+  Three refusals live in the same function: a redirect target — a guard's or a
+  `meta.redirect` — must be a path on this origin, since `//evil` and `/\evil` are
+  refused by pushState itself and left `page.pending` set forever; ten redirects
+  without landing is a reported loop rather than unbounded recursion (two guards
+  redirecting to each other made 501 calls in 7 ms and said nothing); and a route
+  registering no component is refused HERE, the last frame that still knows which
+  FILE it was, rather than in `ChainRenderer` naming an internal expression.
+- **`beforeNavigate` runs on the Back button** (`FJS-789`). It did not, inside the
+  same fence as the scroll save, while `meta.redirect` three lines below it did —
+  one kind of routing refusal survived Back and the other did not, where the README
+  promises the opposite and `FJS-D06` files `beforeNavigate` under Hook, the tier
+  that may halt the operation. A refusal on popstate puts the address bar back with
+  `history.go`: the browser has already moved, and a URL naming the page the guard
+  just declined is the same lie as not guarding at all.
+- **A link's `href` resolves against the CURRENT page, and the route table is
+  consulted BEFORE `preventDefault`.** `new URL(href, location.origin)` carries no
+  path, so `#comments`, `./`, `../other/`, `?draft=1` and `edit/` all navigated to
+  the site root (`FJS-790`). And cancelling above the match ate every same-origin
+  URL the table does not cover — a file the app serves at `/downloads/report.csv`,
+  a link into a sibling surface — into the catch-all, or in an app without one into
+  nothing at all. A fragment on the page already showing is a pushState and a
+  `scrollIntoView`, never a re-navigation. `initRouter` binds its click and
+  popstate listeners ONCE, keyed on the window rather than a flag so a swapped
+  `globalThis.window` still gets them, or three boots mean one click running three
+  concurrent navigations (Invariant 11).
 
-- **The `@version` a patch carries is the one this screen READ, and a push does
-  not move it.** Recorded off every call result and off a `load()` that was not
-  superseded — never off the store. Recording off the store was the right answer
-  to the wrong question: a WS push reaches it as an upsert and never passes
-  through a call result, but it moves the number while moving nothing the person
-  is looking at, so a save from a screen holding a DRAFT carried a revision
-  nobody there had read and won the race optimistic locking exists to lose.
-  Measured in basecamp — the other person's write erased, the guard in place, no
-  error anywhere (`FJS-341`). `load()` carries its own stamp because a store
-  notification has no provenance: a `set()` from a winning load and an `upsert()`
-  from a push arrive as the same event, and junction's stamp (`FJS-082`) governs
-  the store, not this. The cost is a 409 where a silent success used to be, and
-  it is the correct answer; a caller who really has read the newer revision
-  states it, which `<Form record={row}>` already does by editing the row whole.
+- **A patch carries what CHANGED against the row this screen READ.** `save()` is
+  record-shaped — `<Form record={row}>` hands back the whole row, and sending it
+  whole makes a PATCH a PUT: a column the screen never showed rides along at the
+  value it held when the form opened and overwrites whoever wrote to it in the
+  meantime, with nothing said (`FJS-809`). The baseline is `_read`, one entry per
+  row this resource FETCHED, capped at 200 and evicted oldest-first; a miss sends
+  the whole record, which is what every patch did before, so the failure mode is
+  the old behavior and never a lost value. Keys are compared with `!==`, so
+  Invariant 9 holds — a diff OMITS a key and never substitutes one, and an
+  explicit `null` differs from a non-null baseline, travels, and clears.
+  `service.patch(id, data)` is the escape and sends what it is handed: this verb
+  takes a record, that one takes a payload.
+- **Neither the baseline nor the `@version` moves on a push.** Both are recorded
+  off a call result and off a `load()` that was not superseded, never off the
+  store: a WS push arrives as an upsert without passing through a call result, so
+  a save from a screen holding a DRAFT would carry a revision nobody there had
+  read and win the race optimistic locking exists to lose — measured in basecamp,
+  the other person's write erased, the guard in place, no error anywhere
+  (`FJS-341`). The cost is a 409 where a silent success used to be.
   **`resource.conflict(err)` is what makes that 409 something a screen can act
   on** — `{ model, field, expected, actual }`, the numbers `fieldErrors()`
   deliberately replaces with a sentence, for a *reload* against *overwrite*
   prompt.
+- **`save({ mode: 'auto' })` asks whether the row EXISTS, and the schema decides
+  how.** A server-assigned key answers by presence, as it always did. A
+  caller-supplied `@id` is in the CREATE schema deliberately (`FJS-608`), so
+  presence there is the value the person just typed: a generated create form over
+  `Sku { code String @id }` issued a patch and threw *Unknown field 'id' in
+  where*, and left blank it was worse — `make()` seeds `''`, so the form patched
+  the whole COLLECTION (`FJS-808`). For those models the question is *has this
+  resource read that id*, and a miss creates, where the key's own uniqueness
+  refuses loudly. `mode: 'patch'` with a blank id is now refused by name rather
+  than sent. `service.upsert` reads the same `_writeMode`, so the two cannot
+  drift.
 
 - **The route table is committed, because a naming convention leaves no other
   trace.** `sierra routes --config config/sierra.config.js` writes
@@ -173,17 +263,13 @@ src/
   table (`@frontierjs/toolbelt/directives`), so `resource.load(page.query,
   page.directives)` is a whole URL-driven list with nothing to translate. **The
   VALUES come from the sibling module** — `@frontierjs/toolbelt/query`, which
-  Junction's transport and its client also read (`FJS-D125`). `parseQueryParams`
-  used to have its own `coerce()` and inferred with `Number(value)`, so `?sku=007`
-  was the number 7 — the guess this package's own widget props already refuse for
-  `data-pid="007"` — while Junction's transport did not infer at all, so a filter
-  typed into the URL bar and the same filter sent by the client meant different
-  things and both answered a 200 (`FJS-450`). A string is a number only if
-  `String(Number(v)) === v`; `?code="5"` is the escape. `buildUrl` writes with the
-  same encoder, so a URL this package builds parses back as what was put in —
-  dropping an EMPTY filter stays its own decision, because a filter box nobody
-  typed in should not add a parameter. Both
-  names are in `PAGE_RESERVED` — a route declaring `query:` in frontmatter is
+  Junction's transport and its client also read (`FJS-D125`): a string is a number
+  only if `String(Number(v)) === v`, so `?sku=007` is the string it looks like and
+  `?code="5"` is the escape, and a filter typed into the URL bar means what the
+  same filter sent by the client means (`FJS-450`). `buildUrl` writes with that
+  encoder, so a URL this package builds parses back as what was put in — dropping
+  an EMPTY filter stays its own decision, because a filter box nobody typed in
+  should not add a parameter. Both names are in `PAGE_RESERVED` — a route declaring `query:` in frontmatter is
   warned about rather than silently overwritten. They are only reassigned when
   the search actually changed, because a layout outlives a navigation and would
   otherwise re-ask the server on every one under it. Search params used to be
@@ -199,9 +285,9 @@ src/
   guessing. **A `changed` push is that same answer arrived at from the other
   end** — a bulk write or a `select: false` write announces a count and no row
   (`FJS-307`), so there is nothing for the matcher to judge and the store
-  reloads. Sierra needs no wiring for it; `client.resource()` owns it. Its operators are the ones the server accepts and its null semantics
-  are SQL's, not JavaScript's — that agreement is the whole reason it lives in
-  the leaf module.
+  reloads. Sierra needs no wiring for it; `client.resource()` owns it. Its
+  operators are the server's and its null semantics are SQL's, not JavaScript's,
+  which is the whole reason it lives in the leaf module.
 - **`field-rules.js` is deliberately a leaf** — no Junction-client import, so it
   runs in plain Node and can be *compared* against Junction's server rules rather
   than being a copy of them. Keep it that way. It is also why the **control
@@ -211,7 +297,7 @@ src/
   package, and `@frontierjs/ui`'s own form suite imports the real table by
   relative path instead of deciding for itself what a `Float` is.
 - **A write drops the columns the server owns, and `@version` is the one that
-  must survive it.** `stripReadOnly(fields, data, { keep })` runs FIRST in
+  must survive it.** `stripReadOnly(rules, data, { keep })` runs FIRST in
   `_call`'s create/patch pipeline — before coerce, blank and validate, so nothing
   downstream judges a value that is not going to be sent. It exists because
   `readOnly` had two readers (a generated form does not offer the control,
@@ -225,6 +311,30 @@ src/
   no field rule behind it is left alone; a `@transient` and a custom method's own
   argument are both legitimate, and guessing there is how a strip becomes the
   thing that breaks a working app.
+- **A create and a patch are judged by DIFFERENT rule tables, and the build ships
+  both.** `@immutable` is writable on a create and `readOnly` on an update, a
+  sealing `@immutable` carries `x-litestone-seal` instead, and the `@version`
+  column exists in the update schema alone — so `_call` picks the table off the
+  method (`rulesFor`) for strip, coerce, blank and validate alike. Judged by the
+  wrong one, a create over an `@immutable` column has no box to type into and a
+  patch sends a column the Data boundary refuses BY NAME (`FJS-807`).
+  `formFields()` stays on the CREATE table: one resource serves both screens and
+  the field SET is the same question for each. What an edit form needs beyond it
+  is `sealedFields(record)`, which answered `[]` for every row of every model
+  while only the create schema crossed.
+- **The browser is handed the schema's shape and none of its PROSE**
+  (`FJS-D204`). `stripProse` drops `description` as a JSON Schema ANNOTATION at
+  every depth and never as a NAME — `properties`, `$defs`, `definitions`,
+  `patternProperties` and `dependentSchemas` are keyed by columns somebody
+  declared, and a walk that filtered by key name alone deleted
+  `Product.description` from every generated form on a build that says nothing.
+  Measured on `example`: the emitted payload went 29.7 KB → 6.7 KB gzipped and
+  the app's entry chunk 79.52 KB → 56.17 KB, so 23.35 KB — 29% of everything it
+  ships — with no feature behind it. Every build logs the emitted size, because a
+  refusal that hides its own price gets reversed. A PROJECTION over the model set
+  was refused in the same ruling: a build-time scan of `createResource` sites is a
+  second and weaker statement of which models an app uses, and a miss renders an
+  empty form on a green build.
 - **`schema-plugin.js` loads the `.lite` with `parseFile`, because a schema may
   import another one.** It read the root file and called `parse`, so a split
   schema reached the browser as a `$defs` table with the imported models missing
@@ -245,26 +355,25 @@ src/
   columns are not offered to the registry (the Data boundary refuses the write,
   so the form could not submit) and `defaultControlFor(rule)` is the built-in
   table alone, for a resolver extending rather than restating it.
-- **The theme is a CLASS on `<html>`, from a list the app declares.** It used
-  to be `data-theme`, which `@frontierjs/css` reads nowhere — so `setTheme`
-  changed an attribute and no pixel, both apps wrote their own applier, and
-  `@frontierjs/ui` shipped a second dead switcher (`FJS-308`, now deleted).
-  `theme: { themes, default, system, persist, key, apply }`; `setTheme` refuses
-  a name the app did not declare and prints the list. **The element is not a
-  knob**: the no-flash script runs in `<head>`, where `<body>` does not exist
-  yet, so a `target: 'body'` would only bring the flash back. `apply:
-  'attribute'` keeps the old spelling for an app that wants it.
-- **`format: date-time` answers `datetime`, not `input`.** A `Date` has no zone
-  so `<input type="date">` round-trips it and a type attribute is the whole
-  answer; a `DateTime` is an instant and `datetime-local` is a wall clock, so
-  the value has to be converted at each edge — that is a control, and
-  `@frontierjs/ui` binds the name to `DateTimeInput` (`FJS-079`). The row used
-  to answer a bare text box with a comment saying why.
+- **The theme is a CLASS on `<html>`, from a list the app declares.**
+  `theme: { themes, default, system, persist, key, apply }`; `setTheme` refuses a
+  name the app did not declare and prints the list. A `data-theme` attribute is
+  what `@frontierjs/css` reads nowhere, so that spelling changed an attribute and
+  no pixel (`FJS-308`); `apply: 'attribute'` keeps it for an app that wants it.
+  **The element is not a knob**: the no-flash script runs in `<head>`, where
+  `<body>` does not exist yet, so `target: 'body'` would only bring the flash
+  back.
 - **A field the table has no control for comes back with `control: null` and a
   reason** — an array, a `Json` column, a `readOnly` field, a name the model does
   not have. Filtering those out here would make a column added to `.lite`
   disappear from a form with nothing saying so, which is the bug the generated
-  list exists to end.
+  list exists to end. **`@money` and `@scale` are on that list**, and they are the
+  ones that look answerable: the integer row returns `{ control: 'input', step: 1 }`,
+  which is right for a count and out by a factor of a hundred here — 42 typed into
+  a `@money` box is forty-two CENTS and no layer refuses it, because 42 is a legal
+  value of the column. What the control IS stays the app's (`FJS-D17`): the
+  symbol, whether the box is in major units, and for `@scale` what the number even
+  measures.
 - **`find()` answers the list envelope; `findData()` is the rows.** And the FIRST
   argument to `find` is the filter — `find({ limit: 100 })` filters on a column
   named `limit`, which matches nothing and says nothing (`FJS-109`).
@@ -277,22 +386,77 @@ src/
   rather than judging on token presence, the guess that let an expired token
   render a protected page and 401 afterwards. `session.level` is the server's
   grading and is null unless the app configured `services: { level }` on the
-  auth plugin.
+  auth plugin. `signOut()` clears in a `finally`, so a refusal still propagates
+  and cannot leave a person looking at a signed-in UI with no session.
+- **`junction.cookieAuth` is declared on both sides or the app is signed out.**
+  The browser cannot see the server's source and there is nothing to derive it
+  from, so `createAuthPlugin(auth, { cookieAuth: true })` has a twin in
+  `sierra.config.js`. Left off, the client answers `hasCredential === !!token`,
+  which is false for a signed-in cookie-mode caller: no boot restore, no socket,
+  and a sign-out that never reaches the server while telling the person it did
+  (`FJS-787`).
+- **A trailing `*` in `auth.publicRoutes` is a SEGMENT boundary.** It was a string
+  prefix, so `/blog*` covered `/blogadmin`, and the guard's public branch returns
+  before the boot restore is awaited — a route that merely shared a prefix skipped
+  the whole guard. `isPublicRoute(rule, path)` is the one owner; `'/docs*'` still
+  covers `/docs` itself. Invariant 6 caps what that cost, but a list whose only
+  job is to name exceptions must not widen itself.
+- **`sierraFetch` attaches the session to the app's OWN origin and to nothing
+  else.** `load()` is handed it and the docs tell a page to use it, so a page
+  geocoding a postcode or reading a vendor's JSON was handing that vendor a
+  replayable session (`FJS-788`). A relative URL is ours by construction; an
+  absolute one is checked against the page's origin, the client's, and the
+  configured `baseUrl`, and anything unresolvable answers no. It is handed the
+  CLIENT rather than a storage key, because storage is a second owner of the token
+  and cannot answer cookie mode at all — where there is no token and the
+  credential rides a cookie, this sends `credentials: 'include'` to that same
+  audience.
+- **`status.stale` is where the `x-fjs-build` channel ends.** `{ client, server }`
+  once the server states a build this bundle is not, then never again — a banner
+  that reappears on every request is one nobody reads. Recorded rather than acted
+  on: whether that is a banner, a prompt or a silent reload is the app's answer
+  (`FJS-812`).
+- **Nothing a resource holds may outlive the person it was read for.** A Resource
+  is created once at import (Invariant 18), so its live store, its read baselines
+  and its picker lists live for the TAB while the principal is a thing that changes
+  inside it. A token change in either direction clears all three, beside the
+  prefetch cache this package already dropped for the same reason (`FJS-041`,
+  `FJS-786`). The picker cache was the worst of them and not a race at all: it
+  never asks again, so the second caller was offered rows their own row policy
+  hides, by id and by label. The epoch is bumped on identity and on nothing else,
+  so a second render inside one session is still a hit.
+- **`presence()` works, and what it CANNOT do is the half to know** (`FJS-811`).
+  It bound five channel-suffixed event names junction has never emitted, so the
+  module heard nothing for its whole life; frames arrive under their own names —
+  `presence:sync`, `:join`, `:diff`, `:leave`, `:update` — with the channel inside
+  the payload. **Membership is the APP's**, decided in its `channels(setup)`: what
+  `client.presence.announce()` sends is *here is my meta, send me the roster*, and
+  a channel this connection was never joined to answers nothing, in SILENCE, which
+  is the shape to expect from a misspelt channel or presence not enabled for it.
+  An anonymous connection is never tracked — junction's tracker returns early
+  without a `userId` — so it neither appears in a roster nor receives one. `self`
+  is the server's statement (`you`, on the sync frame, the only frame sent to one
+  connection) and is the only thing that can split the roster, so until the first
+  sync every member is an *other*, which is the safe way round for an avatar
+  strip. Two views of one channel on a page are refcounted here, because the first
+  to unmount used to release the channel the second was still showing (`FJS-824`).
 - **A prefetch runs `load()` with `sierraFetch`, the same fetch a navigation
   uses, and its cache is dropped whenever the identity changes.** It used to use
   `window.fetch`, so a protected route prefetched signed-out and the 401 was
   cached and then served (`FJS-041`). Two rules follow for anything touching
   this file: one fetch path, and `invalidatePrefetch()` on any new place a token
   is set or cleared — payloads go, the per-URL gate goes with them, chunks stay.
-- **A widget lives in its own SURFACE, `widgets/`, not in `web/`.** A peer of
-  `api/` and `web/` at the app root, with the same six folders and its own Vite
-  root — every path in `widgets/config/sierra.config.js` is relative to it, and
-  `sierra widgets` is run from there. The separation is not tidiness: the config
-  is a different target, the tests are host pages rather than routes, and the
-  release is static files on an origin a stranger's page links to, shipped when
-  the pages embedding it are ready. An app may have this surface and no `web/`.
-  `fli make:widget <Name>` creates it; `core/widget-surface.js` in the CLI owns
-  its shape.
+  **A node carrying `meta.redirect` or `meta.spread` is skipped**: the router will
+  never render it at that URL, so the prefetch is spent on an answer nothing uses.
+  Guards are deliberately NOT run — they are app functions that may await,
+  redirect and have side effects, which costs more on hover than the round trip
+  it saves.
+- **`widgets/` and `site/` are Vite ROOTS of their own** (Invariant 3), which is
+  the fact that reaches this package: every path in
+  `widgets/config/sierra.config.js` is relative to that directory, `sierra widgets`
+  and `sierra site` are run from there, and `@` resolves per root. `fli make:widget`
+  and `fli make:site` create them; `core/widget-surface.js` and
+  `core/site-surface.js` in the CLI own their shape.
 - **A widget is N builds, not one, and `vite build` is not what makes them.**
   A widget is loaded by a `<script src>` on a page with no bundler, so each one
   must be a complete IIFE with its runtime and its CSS inside it — and Vite's
@@ -313,15 +477,6 @@ src/
     Same-origin is the one arrangement no customer of a widget has, and it
     hides every CORS answer the deployment depends on. Serving them from the
     module that ships is what makes those headers testable at all.
-- **A prerendered site lives in its own SURFACE, `site/`, not in `web/`.** A peer
-  of `api/` and `web/` with the same six folders and its own Vite root. Three
-  answers differ from the SPA's — the build prerenders and checks what it may
-  publish, the tests run against FILES rather than a running app, the release is
-  a bucket with no server behind it — and a fourth decides it: **one Vite root is
-  one `dist/`, and `vite build` empties `outDir`**, so a static target folded into
-  `web/` is deleted by the next SPA build with nothing said. That is how this
-  repo's own example shipped for months (`FJS-451`, `FJS-D127`). `fli make:site`
-  creates it; `core/site-surface.js` in the CLI owns its shape.
 - **`target: 'static'` is the SPA's Vite config plus a prerender pass, so `vite
   dev` on a site surface serves an SPA.** Dev is client-routed and the build is
   files. Everything that makes the target what it is — the publish check, one
@@ -337,6 +492,24 @@ src/
   indexes. It sends **no CORS**, deliberately — this origin serves documents a
   browser navigates to, and the API is what a page's islands call. That is the
   opposite of `widget/serve.js`, whose whole job is the cross-origin case.
+- **The build refuses five shapes it used to emit, each naming its file.** A
+  `getStaticPaths()` param that is empty, a path, `.`/`..` or carrying a NUL, and
+  two entries that fill one output file; a `<slot name>` that is not an identifier;
+  two route files mapping to one URL; a frontmatter alias bomb (10,000 values,
+  counted by a walk that aborts at the budget — 205 MB in 1576 ms became a refusal
+  in 5 ms); and a widget tag that is not a legal custom element name. They are
+  refusals rather than warnings for one reason: every one of them BUILT, and what
+  shipped was a page silently overwritten, a component that renders as nothing, or
+  a script nobody notices is missing.
+- **The devtools panels compose markup through `src/devtools/html.js` and may not
+  interpolate a raw string.** A tagged template that escapes every `${}` by
+  default — five characters, where the four hand copies of the old `esc()` did
+  three and were therefore unsafe in an attribute even at the six sites they had
+  reached. The two they had not reached were a `class=""` attribute and a text
+  position, in different files, written by whoever last copied the helper, so the
+  fix that makes the omission unwritable is the one this disease needs
+  (`FJS-820`). A nested `html` result passes through raw, so markup still
+  composes.
 - **In a Vite plugin here, `command` off `configResolved` is what says build or
   dev — never `this.environment.mode`.** Vite 8 reports `dev` there for a dev
   server, so a `!== 'serve'` test is true in both and the build-only branch runs
@@ -372,22 +545,17 @@ src/
   node_modules COPY bun leaves for a workspace dep, which is the last install's
   snapshot. **A miss is not fatal** — HMR turns off and edits full-reload, the
   same thing `canInject` does for a shape it cannot wrap — which means the wiring
-  breaks QUIETLY and no unit test would notice. `tests/hmr-boundary.test.js`
-  boots a real dev server and asks the two questions that wiring answers: did a
-  `.mesa` come back with a boundary, and does `/@frontierjs/sierra/hmr-client`
-  serve Mesa's client (checked on a line only Mesa's copy has).
-- **So is the inspector.** `data-fjs-loc` is stamped by Mesa's compiler and read
-  by `mesa-vite/inspect-client.js`; this package serves that source at
-  `/@frontierjs/sierra/inspect-client` and injects the script into the shell,
-  dev only. `mesaPlugin({ inspect: false })` turns off both ends at once — the
-  client is the attribute's only reader. What proves it is Mesa's Vite drive:
-  the source served here is the source run there.
+  breaks QUIETLY and no unit test would notice, so `tests/hmr-boundary.test.js`
+  boots a real dev server and asks both halves of it.
+- **So is the inspector.** This package serves Mesa's own
+  `inspect-client.js` at `/@frontierjs/sierra/inspect-client` and injects it into
+  the shell, dev only; `mesaPlugin({ inspect: false })` turns off both ends, since
+  that client is the only reader of the `data-fjs-loc` the compiler stamps.
 - **A missing auto-import does not fail a build.** Mesa compiles a reference to
-  an undefined name without complaint, so the symptom is a component that
-  renders as nothing. Only what reached the bundle separates *injected* from
-  *silently skipped* — `tests/auto-import-build.test.js` asserts on chunk
-  content for that reason, and its assertions were checked against a negative
-  control rather than trusted for passing.
+  an undefined name without complaint, so the symptom is a component that renders
+  as nothing, and only what reached the BUNDLE separates *injected* from *silently
+  skipped* — which is why `tests/auto-import-build.test.js` asserts on chunk
+  content.
 
 ## The contexts in this package
 
@@ -430,28 +598,20 @@ nowhere else per-call to live. A closed-over variable is the wrong shape (two
 `find()` in flight share it); an `around` hook and a signal is the right shape
 for a whole-call concern like a loading flag.
 
-It was called `params`, which put **three** different things in this package
-behind one word — path captures, the wire's directives, and this.
-
-**One word each now.** `params` is path captures. `locals` is scratch. The
-second argument to `find`/`load`/`getOptions` and the field on the hook context
-are both **`directives`** — the word `page.directives`, `ctx.directives` at the
-API boundary and `@frontierjs/toolbelt/directives` all already used, so a view
-no longer receives `page.directives` and has to pass them as `params`
-(Invariant 10). `optionsQuery` and `detailQuery` both take `{ query, directives }` — the picker's read and the detail view's, declared beside the model rather than at every call site (`FJS-D114`). The write is `save(data, { mode })`, the one owner of create-or-patch: `auto` reads the MODEL's id field, `upsert` is an alias of it, and `<Form>` calls it rather than picking a service method.
-
-Junction's browser client moved with it (`FJS-290`): its second argument is a
-`QueryDirectives`, declared once in `junction/src/core/directives.ts` and read
-by the bridge, the client and — through `page.directives` — this package. So the
-object a router hands a view is the object the resource takes and the object the
-client sends, under one name, with no translation between them.
+**One word each.** `params` is path captures, `locals` is scratch, and the second
+argument to `find`/`load`/`getOptions` — like the field on the hook context and
+junction's own `QueryDirectives` (`FJS-290`) — is **`directives`** (Invariant 10).
+`optionsQuery` and `detailQuery` both take `{ query, directives }`, declared beside
+the model rather than at every call site (`FJS-D114`). The write is
+`save(data, { mode })`, the one owner of create-or-patch, which `<Form>` calls
+rather than picking a service method.
 
 ---
 
 ## Proving a change
 
 `bun run test` + `bun run test:safety`, then in `example/`: `verify` and
-`verify:build` for router/resource/build; `verify:public` for anything touching
+`verify:build` for router/resource/build; `verify:site` for anything touching
 prerender, islands or static-safety. **`bun run test:widgets` for anything
 touching `src/widget/` or `build/widget-build.js`** — it builds the fixture and
 drives a plain host page in Chrome, which is the only place shadow isolation,

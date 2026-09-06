@@ -368,7 +368,9 @@ function renderValue(v) {
   if (typeof v === 'boolean') return `<span class="bool">${v}</span>`
   if (typeof v === 'number')  return `<span class="num">${v}</span>`
   if (typeof v === 'string')  return `<span class="str">${esc(JSON.stringify(v).slice(0, 80))}</span>`
-  if (Array.isArray(v)) return `<span class="arr">[${v.map(x => flatValue(x)).join(', ').slice(0, 80)}]</span>`
+  // esc, like every sibling branch: a member is app data, and this page is
+  // served from the app's own dev origin.
+  if (Array.isArray(v)) return `<span class="arr">[${esc(v.map(x => flatValue(x)).join(', ').slice(0, 80))}]</span>`
   return `<span class="obj">${esc(JSON.stringify(v).slice(0, 80))}</span>`
 }
 

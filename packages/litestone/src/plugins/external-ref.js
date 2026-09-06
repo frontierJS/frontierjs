@@ -198,13 +198,13 @@ export class ExternalRefPlugin extends Plugin {
   _stashMap = new WeakMap()
 
   _stash(ctx, model, field, ref) {
-    if (!this._stashMap.has(ctx)) this._stashMap.set(ctx, new Map())
-    this._stashMap.get(ctx).set(`${model}.${field}`, ref)
+    if (!this._stashMap.has(ctx._flavor ?? ctx)) this._stashMap.set(ctx._flavor ?? ctx, new Map())
+    this._stashMap.get(ctx._flavor ?? ctx).set(`${model}.${field}`, ref)
   }
 
   _unstash(ctx, model, field) {
-    const ref = this._stashMap.get(ctx)?.get(`${model}.${field}`)
-    this._stashMap.get(ctx)?.delete(`${model}.${field}`)
+    const ref = this._stashMap.get(ctx._flavor ?? ctx)?.get(`${model}.${field}`)
+    this._stashMap.get(ctx._flavor ?? ctx)?.delete(`${model}.${field}`)
     return ref
   }
 
@@ -319,7 +319,7 @@ export class ExternalRefPlugin extends Plugin {
     const cleanups = []
     for (const [field, opts] of Object.entries(fields)) {
       if (opts.isArray) {
-        const stash = this._stashMap.get(ctx)
+        const stash = this._stashMap.get(ctx._flavor ?? ctx)
         if (!stash) continue
         const prefix = `${model}.${field}[`
         for (const [k, ref] of stash.entries()) {

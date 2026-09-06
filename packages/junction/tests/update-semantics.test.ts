@@ -152,13 +152,28 @@ describe('what update IS — patch with an id required', () => {
     expect(JSON.stringify(res.body)).toMatch(/title/)
   })
 
-  test('and an undeclared key is still dropped rather than written', async () => {
+  test('and a key that names no column is a 400 naming it', async () => {
+    // It was a silent 200 with the key dropped until FJS-889. A PUT is where
+    // that cost most: the caller sent a field and watched the write succeed
+    // without it.
     const { app } = await appWith()
     const row = await made(app, '/plains')
 
     const res = await request(app).put(`/plains/${row.id}`).send({ title: 'B', nope: 1 })
 
+    expect(res.status).toBe(400)
+    expect(JSON.stringify(res.body)).toMatch(/nope/)
+  })
+
+  test('…while a column the caller may not WRITE is dropped in silence', async () => {
+    // The pair. Refusing this one would break every client that PUTs back a
+    // row it fetched, which is the commonest REST idiom there is.
+    const { app } = await appWith()
+    const row = await made(app, '/plains')
+
+    const res = await request(app).put(`/plains/${row.id}`).send({ title: 'B', id: 9999 })
+
     expect(res.status).toBe(200)
-    expect(res.body).not.toHaveProperty('nope')
+    expect((res.body as { id: number }).id).toBe(row.id)
   })
 })

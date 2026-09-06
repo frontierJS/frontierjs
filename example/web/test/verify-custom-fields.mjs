@@ -55,7 +55,7 @@ import { readFileSync }  from 'node:fs'
 import { spawn }         from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { createClient }  from '@frontierjs/litestone'
-import { db, APP_CLAIMS, ENCRYPTION_KEY } from '../../api/src/core/db.ts'
+import { db, ENCRYPTION_KEY } from '../../api/src/core/db.ts'
 import { allocateSlot, compileSegment, projectSlots, matchesAudience, POOL }
   from '../../api/src/domain/shop/custom-fields.ts'
 import { discountProblem, priceBasket } from '../../api/src/domain/shop/pricing.ts'
@@ -255,7 +255,6 @@ try {
   const probe = await createClient({
     path:      fileURLToPath(new URL('../../db/schema.lite', import.meta.url)),
     databases: ':memory:',
-    claims:    APP_CLAIMS,
     // Resolving the imports brings `@frontierjs/auth`'s `@encrypted` columns in
     // with them, which the probe never saw while they were being dropped.
     encryptionKey: ENCRYPTION_KEY,

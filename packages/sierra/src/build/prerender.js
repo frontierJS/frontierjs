@@ -53,7 +53,7 @@
  * `load()` that needs no network at all — the common case — needs nothing.
  */
 
-import { resolve, dirname, join, relative } from 'path'
+import { resolve, dirname, join, relative, sep } from 'path'
 import { mkdir, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { pathToFileURL } from 'url'
@@ -96,12 +96,32 @@ export function layoutChainFor(routeFile, routesDirAbs) {
 /**
  * Substitute `:param` segments in a route path.
  * '/blog/:slug/' + { slug: 'hello' } → '/blog/hello/'
+ *
+ * A param is ONE path segment, and that is checked here rather than assumed.
+ * `getStaticPaths()` returns whatever a database column holds and the filled
+ * path is joined onto `outDir`, where `join` resolves `..` normally — so a
+ * slug of `../../../../etc/cron.d/evil` wrote an HTML file outside the output
+ * directory, on the build machine. The quieter half is the same three
+ * functions: `''` fills to `/products//`, which collapses to
+ * `products/index.html` — the catalogue's own page, replaced by one product,
+ * with the build exiting 0 and printing a tick beside it.
  */
 export function fillPath(routePath, params) {
   return routePath.replace(/:([A-Za-z0-9_]+)/g, (whole, name) => {
     const v = params?.[name]
     if (v == null) throw new Error(`missing param '${name}' for route '${routePath}'`)
-    return String(v)
+    const s = String(v)
+    const refuse = why => {
+      throw new Error(
+        `param '${name}' for route '${routePath}' is ${JSON.stringify(s)} — ${why}. ` +
+        `A getStaticPaths() param fills ONE path segment and names one output file.`
+      )
+    }
+    if (s === '')                refuse('empty, which collapses onto the parent page and overwrites it')
+    if (/[/\\]/.test(s))         refuse('a path, not a segment')
+    if (s === '.' || s === '..') refuse('a directory reference')
+    if (s.includes('\0'))        refuse('carrying a NUL byte')
+    return s
   })
 }
 
@@ -366,6 +386,13 @@ export async function prerenderRoutes(opts) {
   // emitted, and this is the only place that knows (`FJS-502`).
   const urls = []
   const skipped = []
+  // Output file → the URL that wrote it. Two getStaticPaths() entries filling
+  // to one file is silent otherwise: last write wins, exit 0, a tick printed.
+  const writtenFrom = new Map()
+  // …and collected rather than thrown at the first one, for the same reason the
+  // static-safety gate below is: a catalogue with four colliding rows should
+  // print four lines, not make the author rebuild three more times.
+  const collisions = []
 
   const safetyOn = !!schemaDefs
   if (safetyOn) installSchemas(schemaDefs, schemaModels)
@@ -508,9 +535,41 @@ export async function prerenderRoutes(opts) {
       })
 
       const file = join(outDirAbs, outputFileFor(urlPath))
+      // Belt to `fillPath`'s braces: what a URL SAYS is checked there, and
+      // this is what the join actually RESOLVED to. A path that leaves the
+      // output directory is a file written on the build machine, so it stops
+      // the build rather than being skipped.
+      if (file !== outDirAbs && !file.startsWith(outDirAbs + sep))
+        throw new Error(
+          `[Sierra] ${node.id}: '${urlPath}' resolves to '${file}', outside the build output ` +
+          `'${outDirAbs}'. A prerendered page is written by its URL, so a URL that walks out ` +
+          `of the tree writes a file anywhere the build can reach.`
+        )
+
+      const rel = relative(outDirAbs, file)
+      // Two getStaticPaths() entries that fill to one file. Refused rather than
+      // warned, alongside the empty-param case in fillPath: one file is one
+      // page, so the second entry does not produce a bad page, it produces no
+      // page — and a build that exits 0 ships a catalogue one product short
+      // with the evidence in a log CI does not read (`FJS-803`).
+      //
+      // The escape is in the app and there is deliberately no option for it: a
+      // route's URL is its identity, so two entries claiming one URL is a
+      // question the build cannot answer — `getStaticPaths()` picks which row
+      // wins, or gives the two rows different paths.
+      const prevUrl = writtenFrom.get(rel)
+      if (prevUrl !== undefined) {
+        collisions.push(prevUrl === urlPath
+          ? `   ${node.id}: getStaticPaths() named '${urlPath}' twice, and both entries fill ` +
+            `${rel}. Deduplicate the rows it returns.`
+          : `   ${node.id}: '${urlPath}' and '${prevUrl}' both fill ${rel}. Two entries name one ` +
+            `output file, so only one of those pages can exist.`)
+        continue
+      }
+      writtenFrom.set(rel, urlPath)
+
       await mkdir(dirname(file), { recursive: true })
       await writeFile(file, doc, 'utf8')
-      const rel = relative(outDirAbs, file)
       written.push(rel)
       urls.push(urlPath)
 
@@ -541,14 +600,24 @@ export async function prerenderRoutes(opts) {
     } finally {
       if (recorder) {
         recorder.stop()
+        const routeId = node.file ? relative(root, resolve(root, node.file)) : node.id
         const verdict = checkRoute({
-          routeId:   node.file ? relative(root, resolve(root, node.file)) : node.id,
-          meta:      node.meta,
-          models:    recorder.models,
-          tapped:    recorder.tapped,
-          readsData: _readsData,
+          routeId,
+          meta:       node.meta,
+          models:     recorder.models,
+          unresolved: recorder.unresolved,
+          taps:       recorder.taps,
+          readsData:  _readsData,
         })
         if (!verdict.ok) violations.push(verdict.message)
+        // Not a violation — a `load()` that only fetches an absolute URL is
+        // legitimate and reads nothing here. But so is one that built its own
+        // Litestone client, whose reads the build's tap never saw, and the two
+        // are the same silence (`FJS-782`).
+        if (verdict.observedNothing)
+          warn(`${routeId}: reads data in its .meta.js and the build observed no model read. ` +
+               `If its load() queries a database, it is doing so through a client this build ` +
+               `was not given, and what it publishes has not been checked.`)
         safetyRows.push({
           route:     node.path ?? node.id,
           allowed:   declaredPublishLevel(node.meta).level,
@@ -562,6 +631,22 @@ export async function prerenderRoutes(opts) {
   // Thrown, not warned. A warning scrolls past in CI and the file is written
   // anyway — and once a public artifact exists it has been served, cached and
   // indexed, so there is no recovering from "we saw the warning later".
+  // Refused for the reason below, and refused SEPARATELY from the safety gate:
+  // a collision is a build that produced fewer pages than it was asked for, not
+  // a page that must not be published, and reporting the two together would
+  // make one message answer two questions.
+  if (collisions.length) {
+    throw new Error(
+      `[Sierra] ${collisions.length} getStaticPaths() ` +
+      `${collisions.length > 1 ? 'entries' : 'entry'} write an output file another entry ` +
+      `already wrote:\n\n` +
+      collisions.join('\n') +
+      `\n   Why this is refused rather than warned: the page that lost is simply absent\n` +
+      `   from the site, the build otherwise exits 0, and the only evidence is a line in\n` +
+      `   a log. One output file is one page.\n`
+    )
+  }
+
   if (violations.length) {
     throw new Error(
       `[Sierra] ${violations.length} route${violations.length > 1 ? 's' : ''} ` +

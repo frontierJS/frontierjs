@@ -128,7 +128,7 @@ validates, and a select that silently drops an option.
 - `RunStatus` — `pending`, `running`, `success`, `failed`, `timeout`
 - `AlertSeverity` — `info`, `warning`, `critical`
 - `AlertSubject` — `server`, `volume`
-- `ActorKind` — `user`, `api_key`, `system`
+- `ActorKind` — `user`, `api_key`, `system`, `support`
 - `ChannelKind` — `slack`, `pagerduty`, `email`, `webhook`
 - `FlagType` — `boolean`, `variant`
 - `WidgetKind` — `server_fleet`, `server_health`, `app_status`, `deploy_feed`, `job_history`, `activity_feed`, `alert_status`, `service_health`, `stat_counter`
@@ -172,6 +172,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `expiresAt` | `string` | yes | — | `format: "date-time"` | — |
 | `ipAddress` | `string`? | — | — | — | — |
 | `userAgent` | `string`? | — | — | — | — |
+| `impersonatingUserId` | `string`? | — | — | — | — |
+| `impersonationReason` | `string`? | — | — | — | — |
+| `impersonationEndsAt` | `string`? | — | — | `format: "date-time"` | — |
 
 **On create**: required — `userId`, `expiresAt` · not accepted — `id`
 
@@ -224,7 +227,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `username` | `string`? | — | — | — | — |
 | `displayName` | `string`? | — | — | — | — |
 | `avatarUrl` | `string`? | — | — | — | — |
-| `scopes` | `json` = `[]` | — | — | — | — |
+| `scopes` | `json` = `[]` | — | — | `x-sortable: "json"` | — |
 | `isSystemAdmin` | `boolean` = `false` | — | — | — | — |
 
 **On create**: required — `email` · not accepted — `id`
@@ -270,7 +273,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
 | `type` | `WorkspaceType` = `"team"` | — | — | — | — |
 | `ownerId` | `string` | yes | — | — | — |
-| `settings` | `json` = `{}` | — | — | — | — |
+| `settings` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
 | `status` | `WorkspaceStatus` = `"active"` | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
@@ -288,7 +291,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `workspaceId` | `string` | yes | — | — | — |
 | `userId` | `string` | yes | — | — | — |
 | `role` | `WorkspaceRole` = `"viewer"` | — | — | — | — |
-| `capabilities` | `Capability[]` = `[]` | — | — | — | — |
+| `capabilities` | `Capability[]` = `[]` | — | — | `x-sortable: "array"` | — |
 | `invitedBy` | `string`? | — | — | — | — |
 | `invitedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `acceptedAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -322,7 +325,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
 | `kind` | `SecretKind` = `"generic"` | — | — | — | — |
-| `data` | `string` = `"{}"` | — | — | — | — |
+| `data` | `string` = `"{}"` | — | — | `x-sortable: "encrypted"` `x-filterable: "encrypted"` | — |
 | `isVerified` | `boolean` = `false` | — | — | — | — |
 | `createdBy` | `string`? | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
@@ -343,7 +346,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `credentialId` | `string`? | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
 | `tokenHint` | `string` | — | — | `x-litestone-kind` | — |
-| `scopes` | `string[]` = `[]` | — | — | — | — |
+| `scopes` | `string[]` = `[]` | — | — | `x-sortable: "array"` | — |
 | `expiresAt` | `string`? | — | — | `format: "date-time"` | — |
 | `revokedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `lastUsedAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -386,11 +389,11 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `outpostVersion` | `string`? | — | — | — | — |
 | `outpostUrl` | `string`? | — | — | — | — |
 | `lastHeartbeatAt` | `string`? | — | — | `format: "date-time"` | — |
-| `plan` | `json` = `{}` | — | — | — | — |
-| `actualSpecs` | `json`? | — | — | — | — |
-| `health` | `json`? | — | — | — | — |
-| `dockerState` | `json`? | — | — | — | — |
-| `labels` | `json` = `{}` | — | — | — | — |
+| `plan` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
+| `actualSpecs` | `json`? | — | — | `x-sortable: "json"` | — |
+| `health` | `json`? | — | — | `x-sortable: "json"` | — |
+| `dockerState` | `json`? | — | — | `x-sortable: "json"` | — |
+| `labels` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
 
 **On create**: required — `name`, `slug` · not accepted — `id`
 
@@ -405,7 +408,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `serverId` | `string` | yes | — | — | — |
 | `kind` | `string` | yes | — | — | — |
 | `message` | `string` | yes | — | — | — |
-| `metadata` | `json` = `{}` | — | — | — | — |
+| `metadata` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
 
 **On create**: required — `serverId`, `kind`, `message` · not accepted — `id`
 
@@ -434,7 +437,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `mountPoint` | `string`? | — | — | — | — |
 | `sizeBytes` | `integer` = `0` | — | — | — | — |
 | `inUse` | `boolean` = `false` | — | — | — | — |
-| `containers` | `string[]` = `[]` | — | — | — | — |
+| `containers` | `string[]` = `[]` | — | — | `x-sortable: "array"` | — |
 | `createdOnServer` | `string`? | — | — | `format: "date-time"` | — |
 | `discoveredAt` | `string` | — | — | `format: "date-time"` | — |
 | `lastSeenAt` | `string` | — | — | `format: "date-time"` | — |
@@ -456,7 +459,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `type` | `string` = `"mesh"` | — | — | — | — |
 | `cidr` | `string` = `"10.0.0.0/16"` | — | — | — | — |
 | `provider` | `string` = `"netbird"` | — | — | — | — |
-| `config` | `json` = `{}` | — | — | — | — |
+| `config` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `name`, `slug` · not accepted — `id`, `version`
@@ -491,8 +494,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
 | `description` | `string`? | — | — | — | — |
 | `status` | `string` = `"active"` | — | — | — | — |
-| `tags` | `json` = `[]` | — | — | — | — |
-| `metadata` | `json` = `{}` | — | — | — | — |
+| `tags` | `json` = `[]` | — | — | `x-sortable: "json"` | — |
+| `metadata` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `name`, `slug` · not accepted — `id`, `version`
@@ -516,7 +519,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
 | `tier` | `EnvironmentTier` = `"development"` | — | — | — | — |
 | `isProtected` | `boolean` = `false` | — | — | — | — |
-| `variables` | `json` = `[]` | — | — | — | — |
+| `variables` | `json` = `[]` | — | — | `x-sortable: "json"` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `projectId`, `name`, `slug` · not accepted — `id`, `version`
@@ -540,8 +543,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
 | `type` | `AppType` = `"container"` | — | — | — | — |
 | `status` | `AppStatus` = `"unknown"` | — | — | — | — |
-| `source` | `json` = `{}` | — | — | — | — |
-| `config` | `json` = `{}` | — | — | — | — |
+| `source` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
+| `config` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
 | `port` | `integer`? | — | — | — | — |
 | `isPublic` | `boolean` = `false` | — | — | — | — |
 
@@ -633,7 +636,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `author` | `string`? | — | — | — | — |
 | `builtImage` | `string`? | — | — | — | — |
 | `previousDeploymentId` | `string`? | — | — | — | — |
-| `configSnapshot` | `json` = `{}` | — | — | — | — |
+| `configSnapshot` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
 | `triggeredBy` | `string`? | — | — | — | — |
 | `queuedAt` | `string` | — | — | `format: "date-time"` | — |
 | `startedAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -682,7 +685,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `cronExpression` | `string`? | — | — | — | — |
 | `nextRunAt` | `string`? | — | — | `format: "date-time"` | — |
 | `trigger` | `string` = `"manual"` | — | — | — | — |
-| `triggerConfig` | `json` = `{}` | — | — | — | — |
+| `triggerConfig` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
 | `timeoutSeconds` | `integer` = `300` | — | — | — | — |
 | `retryLimit` | `integer` = `3` | — | — | — | — |
 | `retryCount` | `integer` = `0` | — | — | — | — |
@@ -707,7 +710,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `durationMs` | `integer`? | — | — | — | — |
 | `exitCode` | `integer`? | — | — | — | — |
 | `error` | `string`? | — | — | — | — |
-| `output` | `json` = `{}` | — | — | — | — |
+| `output` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
 
 **On create**: required — `jobId` · not accepted — `id`
 
@@ -789,11 +792,11 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `string` | — | — | — | — |
 | `serverId` | `string` | yes | — | — | — |
 | `status` | `RunStatus` = `"pending"` | — | — | — | — |
-| `targets` | `string[]` = `[]` | — | — | — | — |
+| `targets` | `string[]` = `[]` | — | — | `x-sortable: "array"` | — |
 | `keepImages` | `integer` = `3` | — | — | `minimum: 0` `maximum: 50` | — |
 | `requestedBy` | `string`? | — | — | — | — |
 | `freedBytes` | `integer` = `0` | — | — | — | — |
-| `detail` | `json` = `{}` | — | — | — | — |
+| `detail` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
 | `error` | `string`? | — | — | — | — |
 | `startedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `finishedAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -814,8 +817,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `key` | `string` | yes | — | `minLength: 1` `maxLength: 120` | — |
 | `description` | `string`? | — | — | — | — |
 | `type` | `FlagType` = `"boolean"` | — | — | — | — |
-| `tags` | `string[]` = `[]` | — | — | — | — |
-| `variants` | `json` = `[]` | — | — | — | — |
+| `tags` | `string[]` = `[]` | — | — | `x-sortable: "array"` | — |
+| `variants` | `json` = `[]` | — | — | `x-sortable: "json"` | — |
 | `isEnabled` | `boolean` = `false` | — | — | — | — |
 | `rollout` | `integer` = `100` | — | — | `minimum: 0` `maximum: 100` | — |
 | `createdBy` | `string`? | — | — | — | — |
@@ -852,7 +855,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
 | `kind` | `ChannelKind` | yes | — | — | — |
-| `config` | `json` = `{}` | — | — | — | — |
+| `config` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
 | `secretId` | `string`? | — | — | — | — |
 | `isActive` | `boolean` = `true` | — | — | — | — |
 | `lastTestAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -877,7 +880,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `description` | `string`? | — | — | — | — |
 | `severity` | `AlertSeverity` = `"warning"` | — | — | — | — |
 | `metricName` | `string` | yes | — | — | — |
-| `condition` | `json` = `{}` | — | — | — | — |
+| `condition` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
 | `isActive` | `boolean` = `true` | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
@@ -953,7 +956,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `kind` | `WidgetKind` | yes | — | — | — |
 | `serverId` | `string`? | — | — | — | — |
 | `appId` | `string`? | — | — | — | — |
-| `config` | `json` = `{}` | — | — | — | — |
+| `config` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
 | `cols` | `integer` = `1` | — | — | `minimum: 1` `maximum: 3` | — |
 | `position` | `integer` = `0` | — | — | — | — |
 
@@ -970,10 +973,11 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `workspaceId` | `string`? | — | — | `x-litestone-kind` | — |
 | `actorId` | `string`? | — | — | — | — |
 | `actorType` | `ActorKind` = `"user"` | — | — | — | — |
+| `onBehalfOfId` | `string`? | — | — | — | — |
 | `action` | `string` | yes | — | — | — |
 | `subjectType` | `string` | yes | — | — | — |
 | `subjectId` | `string` | yes | — | — | — |
-| `diff` | `json`? | — | — | — | — |
+| `diff` | `json`? | — | — | `x-sortable: "json"` | — |
 
 **On create**: required — `action`, `subjectType`, `subjectId` · not accepted — `id`
 
@@ -1002,7 +1006,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `cpuLimit` | `string`? | — | — | `minLength: 1` `maxLength: 16` | — |
 | `memLimit` | `string`? | — | — | `minLength: 1` `maxLength: 16` | — |
 | `notes` | `string`? | — | — | `minLength: 0` `maxLength: 1000` | — |
-| `links` | `json` = `[]` | — | — | — | — |
+| `links` | `json` = `[]` | — | — | `x-sortable: "json"` | — |
 | `deprecatedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `revision` | `integer` | — | — | `x-litestone-kind` | — |
 

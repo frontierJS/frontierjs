@@ -29,7 +29,8 @@ import { fileURLToPath } from 'node:url'
 import { parse } from '../src/core/parser.js'
 import { deriveAccess } from '../src/access.js'
 import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, lookup, typed, grouped, GROUPS,
-         POSITIONS, POSITION_RULES, positionsOf, probeFor, DOCS, UNDOCUMENTED, docFor } from '../src/core/catalog.js'
+         POSITIONS, POSITION_RULES, positionsOf, probeFor, DOCS, UNDOCUMENTED, docFor,
+         SYNONYMS, synonymsFor, bySynonym, TIERS, tierFor } from '../src/core/catalog.js'
 import { TRAIT_FORBIDDEN_FIELD_ATTRS, TRAIT_FORBIDDEN_MODEL_ATTRS,
          TYPE_FORBIDDEN_FIELD_ATTRS, ALLOWED_TOKENIZERS, ON_DELETE_ACTIONS,
          DATABASE_DRIVERS } from '../src/core/parser.js'
@@ -340,6 +341,112 @@ describe('catalog shape', () => {
         expect({ pair: `${row.word}/${ref}`, back: other?.excludes?.includes(row.word) ?? false })
           .toEqual({ pair: `${row.word}/${ref}`, back: true })
       }
+  })
+})
+
+// ─── when you meet a word ─────────────────────────────────────────────────────
+//
+// The tier is a judgment and no test grades the CHOICE — the lists are
+// hand-maintained. What is graded is that a choice EXISTS for every word, which
+// is the half that rots on its own: an attribute added next month is untiered,
+// and an untiered word is indistinguishable from a situational one everywhere
+// it is read.
+
+describe('tiers', () => {
+  const live = CATALOG.filter(r => !r.removed)
+  const keys = Object.values(TIERS).flat()
+
+  test('every word is tiered — a new one fails here until somebody says', () => {
+    const untiered = live.filter(r => !keys.includes(`${r.level}:${r.word}`))
+      .map(r => typed(r))
+    expect(untiered).toEqual([])
+  })
+
+  test('no word is in two tiers', () => {
+    const seen = new Set<string>()
+    const dups = keys.filter(k => (seen.has(k) ? true : (seen.add(k), false)))
+    expect(dups).toEqual([])
+  })
+
+  test('no tier names a word that is gone', () => {
+    const orphans = keys.filter(k => !live.some(r => `${r.level}:${r.word}` === k))
+    expect(orphans).toEqual([])
+  })
+
+  // A removed word is not a word you meet, so it is not on the ladder at all.
+  test('a removed word is not tiered', () => {
+    for (const row of CATALOG.filter(r => r.removed)) expect(tierFor(row)).toBeNull()
+  })
+
+  test('tierFor answers the list it is in, and null for a word in none', () => {
+    expect(tierFor(lookup('@id')!)).toBe('essential')
+    expect(tierFor({ level: 'field', word: 'nosuchthing' } as any)).toBeNull()
+  })
+})
+
+// ─── what a person types when they do not know the word ───────────────────────
+//
+// The list is the one thing here that cannot be derived — it is a fact about
+// readers, not about the language — so it is graded instead. Every rule below
+// is a way the list can be wrong while still looking like coverage.
+
+describe('synonyms', () => {
+  const live    = CATALOG.filter(r => !r.removed)
+  const words   = new Set(live.map(r => r.word.toLowerCase()))
+  const entries = Object.entries(SYNONYMS).flatMap(([k, list]) => list.map(sy => [k, sy] as const))
+
+  // The search a reader actually uses, restated once: word, blurb, arity.
+  const direct = (sy: string) => live.filter(r =>
+    r.word.toLowerCase().includes(sy) || r.blurb.toLowerCase().includes(sy) || (r.arity ?? '').toLowerCase().includes(sy))
+
+  test('every key names a row that exists', () => {
+    const orphans = Object.keys(SYNONYMS).filter(k => !live.some(r => `${r.level}:${r.word}` === k))
+    expect(orphans).toEqual([])
+  })
+
+  test('a synonym is never a word — it would shadow the real one', () => {
+    expect(entries.filter(([, sy]) => words.has(sy)).map(([k, sy]) => `${sy} (${k})`)).toEqual([])
+  })
+
+  test('a synonym belongs to one row — two owners is a coin toss', () => {
+    const seen = new Map<string, string>()
+    const dups: string[] = []
+    for (const [k, sy] of entries) {
+      if (seen.has(sy)) dups.push(`${sy}: ${seen.get(sy)} and ${k}`)
+      seen.set(sy, k)
+    }
+    expect(dups).toEqual([])
+  })
+
+  // The delete test, executed. A synonym the blurb already carries adds nothing
+  // and reads as coverage — `sum` finds @from today and must not be listed.
+  test('a synonym the existing search already finds is dead weight', () => {
+    const dead = entries
+      .filter(([k, sy]) => direct(sy).some(r => `${r.level}:${r.word}` === k))
+      .map(([k, sy]) => `${sy} (${k} is already found by it)`)
+    expect(dead).toEqual([])
+  })
+
+  test('every synonym resolves to its row, and nothing else does', () => {
+    for (const [k, sy] of entries) {
+      const row = bySynonym(sy)
+      expect(row && `${row.level}:${row.word}`).toBe(k)
+    }
+    expect(bySynonym('zzznothing')).toBeNull()
+  })
+
+  test('the case that started it: aggregate and rollup are @from', () => {
+    // FJS-772's neighbor — measured before the list existed, both found nothing
+    // while `sum` found @from, so the gap was vocabulary rather than language.
+    expect(bySynonym('aggregate')!.word).toBe('from')
+    expect(bySynonym('rollup')!.word).toBe('from')
+    expect(direct('aggregate')).toEqual([])
+    expect(direct('sum').map(r => r.word)).toContain('from')
+  })
+
+  test('synonymsFor answers per row, and empty for a row with none', () => {
+    expect(synonymsFor(lookup('@from')!)).toContain('aggregate')
+    expect(synonymsFor(lookup('@id')!)).toEqual([])
   })
 })
 

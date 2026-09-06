@@ -36,7 +36,7 @@ describe('litestone explain', () => {
     expect(status).toBe(0)
     expect(out).toContain('@guarded')
     expect(out).toContain('(all)')
-    expect(out).toContain('internalScore Int @guarded(all)')
+    expect(out).toContain('internalScore Int @guarded')
   })
 
   test('it says where a word is legal only when that is not the ordinary answer', () => {

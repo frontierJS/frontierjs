@@ -31,11 +31,14 @@ import { createService, createBaseService } from './service.ts'
 import type { CacheDeclaration } from './service.ts'
 import type { HookMap } from './hooks.ts'
 import { NotFound, BadRequest, Unauthorized, Forbidden } from './errors.ts'
+import { fieldError } from './field-errors.ts'
 import type { ServiceContext, QueryDirectives } from './context.ts'
 import { clampPage } from './directives.ts'
 import { announcingService, announcedInCommitScope, freezeUser, requestMeta, currentCall } from './context.ts'
 import { toBulkFailure, partitionBulk, BULK_FAILURES, type BulkFailure } from './envelope.ts'
 import { singularize } from '@frontierjs/toolbelt/inflect'
+import { gradeStanding, levelPasses, LEVELS } from '@frontierjs/toolbelt/gate'
+import type { GradableUser } from '@frontierjs/toolbelt/gate'
 import { normalizeOrderBy, type SortParam } from './sort.ts'
 
 // Module augmentation: typing ctx.locals.db without forcing a hard
@@ -387,18 +390,32 @@ export function accessorCandidates(accessor: string): string[] {
  * there is no query whose answer separates the two meanings of `[]`.
  */
 export function resolveAccessor(client: unknown, accessor: string): string {
+  return accessorIfModel(client, accessor) ?? accessor
+}
+
+/**
+ * The same walk, answering `null` where `resolveAccessor` answers the input.
+ *
+ * Two callers want different things from one lookup. A validator wants a name
+ * to pass on and a miss is harmless, so it takes the input back. Anything
+ * deciding whether a rule is APPLICABLE cannot use that answer — an accessor
+ * that named no model is indistinguishable from one that named itself, and
+ * `$readGrading` answers `graded` for an unknown accessor by design, so a
+ * `webhook:test` event would be refused as if a policy had judged it.
+ */
+export function accessorIfModel(client: unknown, accessor: string): string | null {
   let models: Array<{ name: string }> | undefined
   // Reading an unknown property off a Litestone client throws by design, so
   // even a plain field read is a guarded one here (see autoFilter).
   try {
     models = (client as { $schema?: { models?: Array<{ name: string }> } })?.$schema?.models
-  } catch { return accessor }
-  if (!Array.isArray(models)) return accessor
+  } catch { return null }
+  if (!Array.isArray(models)) return null
 
   const candidates = accessorCandidates(accessor)
   const camel = (n: string) => n.charAt(0).toLowerCase() + n.slice(1)
   const model = models.find(m => candidates.includes(camel(m.name)))
-  return model ? camel(model.name) : accessor
+  return model ? camel(model.name) : null
 }
 
 export interface LitestoneServiceOptions {
@@ -1146,6 +1163,43 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
  */
 type JsonSchemaMode = 'create' | 'update' | 'full'
 
+// ─── What an adapter cache is keyed on ────────────────────────────────────
+//
+// Everything cached below is derived from the SCHEMA — the generated JSON
+// Schema, the compiled validators, a model's column set, its `@version` column,
+// its gate levels, whether it is row-scoped. None of it depends on who is
+// asking.
+//
+// They were keyed on the CLIENT, and junction resolves a principal per request,
+// so `$setAuth(user)` hands back a fresh proxy every time and every one of them
+// missed on every call. Measured on the 188-model fixture: a create cost
+// **7.38 ms** with a fresh principal and **0.49 ms** with one reused — 6.9 ms
+// of rederivation per write, most of it `generateJsonSchema` (`FJS-777`).
+//
+// `$schema` is the parsed schema object and litestone shares it BY REFERENCE
+// across every flavor — root, `$setAuth`, `asSystem`, `$scopedBy` all answer the
+// same object — so it is the identity these caches always meant. Two clients
+// over one schema share the entries, which is correct for exactly the same
+// reason: what is cached is a fact about the schema.
+//
+// Falls back to the client itself where there is no `$schema` (a stand-in, a
+// non-Litestone db), which is the behavior every one of these had before.
+// Reading an unknown property off a Litestone client THROWS rather than
+// answering undefined, so the probe is a throwing expression and is caught —
+// the same trap `autoFilter` documents at its own `$checkWhere` probe.
+
+// A non-object client cannot key a WeakMap at all, so it gets one shared entry
+// rather than a crash. Nothing reaches here with one — every caller narrows
+// first — and the alternative is a signature that lies about what it accepts.
+const NO_CLIENT: object = Object.freeze({})
+
+function schemaKey(client: unknown): object {
+  if (!client || typeof client !== 'object') return NO_CLIENT
+  let schema: unknown
+  try { schema = (client as { $schema?: unknown }).$schema } catch { return client }
+  return (schema && typeof schema === 'object') ? schema as object : client
+}
+
 const _jsonSchemaFor = new WeakMap<object, Map<JsonSchemaMode, Promise<LitestoneJsonSchema | null>>>()
 
 let _warnedNoValidation = false
@@ -1167,8 +1221,9 @@ function _deriveJsonSchema(
   const c = client as { $schema?: unknown } | null
   if (!c || typeof c !== 'object' || !c.$schema) return Promise.resolve(null)
 
-  let byMode = _jsonSchemaFor.get(c as object)
-  if (!byMode) { byMode = new Map(); _jsonSchemaFor.set(c as object, byMode) }
+  const key = schemaKey(c)
+  let byMode = _jsonSchemaFor.get(key)
+  if (!byMode) { byMode = new Map(); _jsonSchemaFor.set(key, byMode) }
 
   const cached = byMode.get(mode)
   if (cached) return cached
@@ -1248,6 +1303,70 @@ export function resolveDefsKey(
   return null
 }
 
+/**
+ * Every field name the model declares, read off the parsed schema.
+ *
+ * NOT the union of the generated documents: `createdAt` and `updatedAt` are in
+ * no mode create/update/read emits, so a client echoing back a row it fetched
+ * sends two keys the documents cannot vouch for. Derived from `$schema` so
+ * nothing here restates what a model has.
+ */
+function modelFieldNames(schema: unknown, defsKey: string): Set<string> {
+  const models = (schema as { models?: Array<{ name?: string, fields?: Array<{ name?: string }> }> })?.models
+  const model  = Array.isArray(models) ? models.find(m => m?.name === defsKey) : null
+  return new Set((model?.fields ?? []).map(f => f?.name).filter((n): n is string => typeof n === 'string'))
+}
+
+/**
+ * The keys of `input` that name nothing the model declares.
+ *
+ * A dotted key is excluded here for `FJS-658`'s reason — `settings.commute`
+ * names a field and the Data boundary answers it, in its own sentence.
+ */
+export function unknownKeys(input: unknown, fields: Set<string>): string[] {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return []
+  return Object.keys(input as Record<string, unknown>).filter(k => {
+    const dot = k.indexOf('.')
+    return !fields.has(dot > 0 ? k.slice(0, dot) : k)
+  })
+}
+
+/**
+ * Refuse the keys of ONE row that name nothing the shape declares.
+ *
+ * Per row rather than over the whole payload, so a bulk write partitions the
+ * way every other row error does — a wholesale throw would make partial success
+ * unreachable for exactly the mistake most likely to appear in one row of a
+ * hundred.
+ *
+ * There is no *did you mean*, and that is a refusal rather than an oversight:
+ * litestone owns the typo hint (it is what `$checkWhere` carries back) and
+ * exports neither of its two `editDistance` copies, so writing a third here
+ * would be a new origin for the one thing this file must not invent. The
+ * sentence names the key, the shape, and the way to accept it instead.
+ */
+export function checkUnknownKeys(
+  ctx:    ServiceContext,
+  row:    unknown,
+  fields: Set<string>,
+  what:   string,
+  escape: string,
+): void {
+  // Fail OPEN on an empty set. A service over a view, an `@@external` model or
+  // no model at all resolves to no fields, and refusing every key there would
+  // turn a shape this cannot see into a shape nothing can call.
+  if (!fields.size) return
+  const bad = unknownKeys(row, fields)
+  if (!bad.length) return
+
+  throw fieldError(
+    bad.map(field => ({
+      field,
+      message: `is not a field of ${what}. ${escape}`,
+    })),
+  )
+}
+
 const _compiledFor = new WeakMap<object, Map<string, {
   create:    import('./schema.ts').CompiledSchema
   patch:     import('./schema.ts').CompiledSchema
@@ -1255,6 +1374,13 @@ const _compiledFor = new WeakMap<object, Map<string, {
    *  validation. Read off the generated schema at compile time, so a model with
    *  none pays one empty array for the life of the client. */
   transient: string[]
+  /** Every field the MODEL declares, writable or not. The strip is right about
+   *  a column a caller may not write — `id` on create, `createdAt`, a
+   *  `@guarded` — and wrong about a word that is not a column at all, which can
+   *  never come to mean anything. Only this set separates the two. */
+  fields:    Set<string>
+  /** The model's own name, for the sentence a refusal writes. */
+  model:     string
 } | null>>()
 
 // Accessors already warned about, per client.
@@ -1295,8 +1421,9 @@ function _warnUnvalidated(
 ): void {
   if (!_hasTable(client, accessor)) return
 
-  let seen = _warnedUnvalidated.get(client)
-  if (!seen) { seen = new Set(); _warnedUnvalidated.set(client, seen) }
+  const key = schemaKey(client)
+  let seen = _warnedUnvalidated.get(key)
+  if (!seen) { seen = new Set(); _warnedUnvalidated.set(key, seen) }
   if (seen.has(accessor)) return
   seen.add(accessor)
 
@@ -1322,7 +1449,7 @@ function _warnUnvalidated(
 // fail-open on the thing that enforces access.
 
 // A WeakSet rather than a property on the function: it adds nothing a spread,
-// a serialiser or an equality check can see, and membership follows the
+// a serializer or an equality check can see, and membership follows the
 // function itself — which is what survives being copied between hook maps.
 const _derivedHooks = new WeakSet<Function>()
 
@@ -1363,8 +1490,9 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
     ])
     if (!jsonSchema || !updateSchemaDoc) return
 
-    let perModel = _compiledFor.get(client as object)
-    if (!perModel) { perModel = new Map(); _compiledFor.set(client as object, perModel) }
+    const key = schemaKey(client)
+    let perModel = _compiledFor.get(key)
+    if (!perModel) { perModel = new Map(); _compiledFor.set(key, perModel) }
 
     if (!perModel.has(accessor)) {
       const defsKey = resolveDefsKey(jsonSchema, accessor, client.$schema)
@@ -1383,6 +1511,8 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
             patch:     createSchema(jsonSchemaToJunctionSchema(
                          defsKey, withVersionProperty(jsonSchema, updateSchemaDoc, defsKey), 'update')),
             transient: transientFields(jsonSchema, defsKey),
+            fields:    modelFieldNames(client.$schema, defsKey),
+            model:     defsKey,
           })
         } catch (err) {
           perModel.set(accessor, null)
@@ -1400,14 +1530,22 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
 
     if (!ctx.data) throw new BadRequest('Request body is required')
 
+    const one = (row: unknown): Record<string, unknown> => {
+      checkUnknownKeys(
+        ctx, row, compiled.fields, compiled.model,
+        'Declare it `@transient` on the model if a caller should be able to send it.',
+      )
+      return compiled[mode].parse(row) as Record<string, unknown>
+    }
+
     // Bulk: validate element-wise and PARTITION. parse() rejects an array
     // outright ("Expected an object"), so this hook used to 400 every bulk
     // create before the service saw it; throwing on the first bad row would
     // make partial success unreachable. Rejected rows are parked for the
     // service to report in errors[].
     ctx.data = Array.isArray(ctx.data)
-      ? partitionBulk(ctx, ctx.data, row => compiled[mode].parse(row) as Record<string, unknown>)
-      : compiled[mode].parse(ctx.data)
+      ? partitionBulk(ctx, ctx.data, one)
+      : one(ctx.data)
 
     liftTransient(ctx, compiled.transient)
   }
@@ -1455,8 +1593,9 @@ export function validateInput(defsKey: string, serviceName: string, method: stri
     const jsonSchema = await _deriveJsonSchema(client, 'create')
     if (!jsonSchema) return
 
-    let perKey = _compiledInputs.get(client as object)
-    if (!perKey) { perKey = new Map(); _compiledInputs.set(client as object, perKey) }
+    const ck = schemaKey(client)
+    let perKey = _compiledInputs.get(ck)
+    if (!perKey) { perKey = new Map(); _compiledInputs.set(ck, perKey) }
 
     let compiled = perKey.get(defsKey)
     if (!compiled) {
@@ -1486,12 +1625,23 @@ export function validateInput(defsKey: string, serviceName: string, method: stri
 
     if (!ctx.data) throw new BadRequest('Request body is required')
 
+    // A declared `type` has no unwritable half: every property IS the surface,
+    // so the compiled schema's own key set is the field set.
+    const declared = new Set(Object.keys(schema._schema))
+    const one = (row: unknown): Record<string, unknown> => {
+      checkUnknownKeys(
+        ctx, row, declared, `type ${defsKey}`,
+        `Add it to \`type ${defsKey}\` in the seed if this method should accept it.`,
+      )
+      return schema.parse(row) as Record<string, unknown>
+    }
+
     // Element-wise for a bulk payload, exactly as autoValidate does — parse()
     // rejects an array outright, so a custom method taking a list would 400 on
     // every call.
     ctx.data = Array.isArray(ctx.data)
-      ? partitionBulk(ctx, ctx.data, row => schema.parse(row) as Record<string, unknown>)
-      : schema.parse(ctx.data)
+      ? partitionBulk(ctx, ctx.data, one)
+      : one(ctx.data)
   }
 }
 
@@ -1611,8 +1761,9 @@ async function modelColumns(client: unknown, accessor: string): Promise<Set<stri
   const c = client as { $schema?: unknown } | null
   if (!c || typeof c !== 'object') return null
 
-  let perModel = _columnsFor.get(c as object)
-  if (!perModel) { perModel = new Map(); _columnsFor.set(c as object, perModel) }
+  const key = schemaKey(c)
+  let perModel = _columnsFor.get(key)
+  if (!perModel) { perModel = new Map(); _columnsFor.set(key, perModel) }
   if (perModel.has(accessor)) return perModel.get(accessor)!
 
   const jsonSchema = await _deriveJsonSchema(client)
@@ -1637,8 +1788,9 @@ async function modelVersionField(client: unknown, accessor: string): Promise<str
   const c = client as { $schema?: unknown } | null
   if (!c || typeof c !== 'object') return null
 
-  let perModel = _versionFor.get(c as object)
-  if (!perModel) { perModel = new Map(); _versionFor.set(c as object, perModel) }
+  const key = schemaKey(c)
+  let perModel = _versionFor.get(key)
+  if (!perModel) { perModel = new Map(); _versionFor.set(key, perModel) }
   if (perModel.has(accessor)) return perModel.get(accessor)!
 
   const jsonSchema = await _deriveJsonSchema(client)
@@ -1786,7 +1938,19 @@ function warnOnce(key: string, message: string): void {
 // gateAuth. A client without $checkWhere (a stand-in, a non-Litestone db)
 // resolves to no problems and this no-ops.
 
-interface WhereKeyProblem { key: string, suggestion: string | null, allowed: string[] }
+interface WhereKeyProblem {
+  key:         string
+  suggestion:  string | null
+  allowed:     string[]
+  /** Where it sat — `customer.is.nope`. The bare key when it is top level. */
+  path?:       string
+  /** The model it was graded against, which is the TARGET through a relation. */
+  model?:      string | null
+  /** Why it was refused. `unknown` is a typo; anything else is a real field. */
+  reason?:     string
+  /** Litestone's own sentence, with `%MODEL%` still in it. */
+  message?:    string
+}
 
 export function autoFilter(accessorOpt: string | undefined) {
   // Named for the same reason as gateAuth — see the note there.
@@ -1820,14 +1984,37 @@ export function autoFilter(accessorOpt: string | undefined) {
 
     // Name every bad key, not just the first — a caller fixing a filter one
     // round trip at a time is the thing the silent 200 already put them through.
+    //
+    // A key found through a RELATION reports its PATH and the model it was
+    // graded against, because `allowed` is that model's column list: saying
+    // *filterable fields on orders* while listing Customer's is a sentence that
+    // sends the reader to the wrong schema (`FJS-776`).
+    const where = (p: WhereKeyProblem) => p.path ?? p.key
+    const named = (p: WhereKeyProblem) => p.message?.replace('%MODEL%', p.model ?? accessor) ?? ''
+
+    // A key refused for a REASON is not an unknown key, and Litestone already
+    // wrote the sentence. Saying *unknown filter key* about an `@encrypted`
+    // column sends the caller to look for a typo in a name that is spelled
+    // correctly — the reason is the whole answer, and this layer had been
+    // throwing it away and re-deriving a worse one.
+    const explained = problems.filter(p => p.reason && p.reason !== 'unknown')
+    if (explained.length) {
+      throw new BadRequest(
+        explained.map(p => `${where(p)}: ${named(p)}`).join(' · '),
+        explained.map(p => ({ field: where(p), message: named(p) })),
+      )
+    }
+
     const detail = problems.map(p =>
-      `'${p.key}'${p.suggestion ? ` — did you mean '${p.suggestion}'?` : ''}`).join(', ')
-    const valid = problems[0].allowed.join(', ')
+      `'${where(p)}'${p.suggestion ? ` — did you mean '${p.suggestion}'?` : ''}`).join(', ')
+    const first = problems[0]
+    const on    = first.model && first.model !== accessor ? first.model : accessor
+    const valid = first.allowed.join(', ')
     throw new BadRequest(
       `Unknown filter ${problems.length > 1 ? 'keys' : 'key'} ${detail}. ` +
-      `Filterable fields on ${accessor}: ${valid}. ` +
+      `Filterable fields on ${on}: ${valid}. ` +
       `Paging and sorting are directives, not filters — use $limit, $offset, $orderBy, $select.`,
-      problems.map(p => ({ field: p.key, message: `Unknown filter key '${p.key}'` })),
+      problems.map(p => ({ field: where(p), message: `Unknown filter key '${where(p)}'` })),
     )
   }
 }
@@ -2000,8 +2187,9 @@ function _gateLevels(
   const c = client as { $schema?: { models?: { name: string; attributes?: { kind: string; value?: unknown }[] }[] } } | null
   if (!c || typeof c !== 'object' || !c.$schema) return null
 
-  let perModel = _gateFor.get(c as object)
-  if (!perModel) { perModel = new Map(); _gateFor.set(c as object, perModel) }
+  const key = schemaKey(c)
+  let perModel = _gateFor.get(key)
+  if (!perModel) { perModel = new Map(); _gateFor.set(key, perModel) }
   if (perModel.has(accessor)) return perModel.get(accessor) ?? null
 
   // Match any accepted spelling of the accessor. Matching the literal string
@@ -2073,6 +2261,48 @@ export function gateAuth(accessor: string | undefined, op: GateOp) {
 }
 
 /**
+ * The standing a CUSTOM method requires, and where its floor comes from.
+ *
+ * A method the CRUD map does not name used to be gated by nothing here, which
+ * is not the same as being unguarded — a body that writes is still refused at
+ * the Data boundary by the model's own `@@gate`. What it cost is that the
+ * refusal arrived AFTER the body had run: measured, an anonymous `POST` with
+ * `X-Service-Method: refund` against a `@@gate("5.5.5.5")` model executed the
+ * handler, charged the card, and only then took a 403 from the first write —
+ * where every CRUD verb on the same service answered 401 having run nothing
+ * (`FJS-826`).
+ *
+ * The floor is DERIVED and it is the model's READ gate: to call anything on a
+ * service you must at least be able to see the model, which is exactly what
+ * `find` already requires. Nothing else about a custom method is derivable —
+ * `availability` and `refund` sit on one service over one model — so above the
+ * floor it is declared, `methods: [{ method: 'refund', gate: 5 }]`.
+ *
+ * Deliberately NOT the strictest of the write gates, which was the first shape
+ * tried: measured against this repo's own apps it would have shut the public
+ * storefront's `ProductVariant.availability` and every verb of the guest
+ * basket, both of which sit on read-gate-0 models on purpose.
+ */
+function customGateFloor(levels: Record<GateOp, number>): number {
+  return levels.read
+}
+
+/** Said once per method, never per request — a refusal an attacker can repeat. */
+const _floorWarned = new Set<string>()
+
+function warnFloorRefusal(service: string, method: string, need: number): void {
+  const key = `${service}.${method}`
+  if (_floorWarned.has(key)) return
+  _floorWarned.add(key)
+  console.warn(
+    `[Junction] ${key}() refused a caller with no session: it is a custom method, ` +
+    `so it takes the model's read gate (${need}) as its floor. If this method is ` +
+    `authenticated by something other than a session — a signed machine-to-machine ` +
+    `call, a webhook — say so: methods: [{ method: '${method}', gate: 0 }].`
+  )
+}
+
+/**
  * The same refusal, as an AROUND hook — which is the position it has to hold.
  *
  * A before hook cannot lead the chain: `resolvePipelines` runs `before.all`
@@ -2092,7 +2322,11 @@ const OP_FOR_METHOD: Record<string, GateOp> = {
   patch: 'update', update: 'update', remove: 'delete',
 }
 
-export function gateAuthAround(accessor: string | undefined) {
+export function gateAuthAround(
+  accessor: string | undefined,
+  /** Levels declared per method — `methods: [{ method, gate }]`. */
+  declared: Record<string, number> = {},
+) {
   // Aliased before the returned function shadows the name. Keeping the name is
   // not cosmetic: DERIVED_HOOKS, the telemetry waterfall and every committed
   // surface.snapshot.md read a hook by it.
@@ -2100,11 +2334,44 @@ export function gateAuthAround(accessor: string | undefined) {
   const checks = new Map<GateOp, (ctx: ServiceContext) => void>()
 
   return async function gateAuth(ctx: ServiceContext, next: () => Promise<void>): Promise<void> {
-    const op = OP_FOR_METHOD[ctx.method as string]
+    const method = ctx.method as string
+    const op     = OP_FOR_METHOD[method]
+
     if (op) {
       let check = checks.get(op)
       if (!check) { check = make(accessor, op); checks.set(op, check) }
       check(ctx)
+    } else {
+      const levels = _gateLevels(ctx.locals.db, accessor ?? ctx.service)
+      if (levels) {
+        const need = declared[method] ?? customGateFloor(levels)
+        if (need > 0) {
+          // A stranger and a caller who is merely too junior are different
+          // answers and a client acts on them differently — a 401 is what a
+          // browser client responds to by discarding its token. Same split the
+          // webhooks plugin makes.
+          if (!ctx.auth?.user) {
+            // The 401 body stays generic — it is written for a caller, and
+            // naming the declaration in it would hand an attacker the shape of
+            // the fix. The actionable sentence goes to the OPERATOR's log
+            // instead, once per method, because the case it covers is real and
+            // otherwise reads as an unexplained break: a method authenticated
+            // by something that is NOT a session — a signed machine-to-machine
+            // call, an outpost heartbeat — has no principal by design and takes
+            // the floor for a reason that does not apply to it.
+            warnFloorRefusal(ctx.service, method, need)
+            throw new Unauthorized('Authentication required')
+          }
+          // The LEVEL is only graded where it was declared. The floor is a
+          // presence check, exactly as `find` is: how far above `read` a caller
+          // stands is the Data boundary's to answer, and re-deciding it here
+          // would be a second reading of the model's own gate.
+          if (declared[method] !== undefined && !levelPasses(need, sessionGateLevel(ctx.auth.user)))
+            throw new Forbidden(
+              `'${ctx.service}.${method}' requires level ${need}, ` +
+              `caller has level ${sessionGateLevel(ctx.auth.user)}`)
+        }
+      }
     }
     await next()
   }
@@ -2113,25 +2380,17 @@ export function gateAuthAround(accessor: string | undefined) {
 // ─── Session → gate level ─────────────────────────────────────────────────
 
 /**
- * Litestone's access-level scale, mirrored.
+ * The access-level scale.
  *
- * Deliberately a local copy rather than an import: `@frontierjs/litestone` is
- * an optional peer dependency here, and junction's own resolution of it is a
- * different build from the one an app passes in. These are wire values, fixed
- * by the @@gate grammar — see litestone's src/plugins/gate.js.
+ * It was a local copy, on the reasoning that `@frontierjs/litestone` is an
+ * optional peer here and junction's resolution of it is a different build from
+ * the one an app passes in. Both halves of that were true and the conclusion
+ * was a fourth copy of a ladder that had already drifted (`FJS-D197`). The kit
+ * answers it: `@frontierjs/toolbelt/gate` is substrate below the dependency
+ * graph, so this is the one litestone reads and not a mirror of it, and nothing
+ * about the peer resolution changed.
  */
-export const LEVELS = {
-  STRANGER:      0,
-  VISITOR:       1,
-  READER:        2,
-  CREATOR:       3,
-  USER:          4,
-  ADMINISTRATOR: 5,
-  OWNER:         6,
-  SYSADMIN:      7,
-  SYSTEM:        8,   // asSystem() only — never returned by a getLevel()
-  LOCKED:        9,
-} as const
+export { LEVELS } from '@frontierjs/toolbelt/gate'
 
 /**
  * Grade a Junction session on Litestone's 0–7 scale.
@@ -2148,19 +2407,21 @@ export const LEVELS = {
  *
  * ─── Why this exists ──────────────────────────────────────────────────────
  *
- * Litestone owns the SCALE. Each caller owns the mapping from its own user
- * shape onto that scale, and Junction's shape is SessionContext.
+ * It is `@frontierjs/toolbelt/gate`'s `gradeStanding` under the name Junction
+ * has always exported, and Litestone's `FrontierGateGetLevel` is the same
+ * binding from the other side. It was written here because Litestone owns the
+ * scale and cannot be imported the other way, so each realm graded its own
+ * session shape — which made it a HAND COPY carrying a comment on both sides
+ * saying *change one, change both*.
  *
- * Litestone's own default, FrontierGateGetLevel, grades a different shape:
- * verifiedAt → activatedAt → role → isAdmin/isOwner/isSystemAdmin. A
- * SessionContext overlaps it on `role` alone, and `role` is tested third — so
- * a session with no verifiedAt graded as VISITOR (1) no matter what it
- * carried, and @@gate could not authorize a write for a *logged-in* user:
- *
- *   403  "Post.create" requires level 4, user has level 1
- *
- * returned after Junction's own gateAuth hook had already approved the
- * request. Two gates disagreeing about who the caller is.
+ * They drifted. 8 of the 216 combinations of the fields a session carries
+ * graded CREATOR(3) in Litestone and USER(4) here, all of them a signed-in
+ * caller with no `role`, so one `@@gate("4")` read was a 403 or a 200 depending
+ * on which resolver the app had installed — and which one that was is not
+ * obvious, since a schema declaring any `@@gate` auto-installs Litestone's
+ * rather than this (`FJS-520`, ruled `FJS-D197`). The kit is substrate, below
+ * the dependency graph, so both realms import one definition and neither
+ * imports the other.
  *
  * ─── The rule ─────────────────────────────────────────────────────────────
  *
@@ -2175,49 +2436,30 @@ export const LEVELS = {
  *   isSystemAdmin                  → SYSADMIN      (7)
  *   isOwner                        → OWNER         (6)
  *   isAdmin                        → ADMINISTRATOR (5)
+ *   signed in, no role             → CREATOR       (3)
  *   anything else that authenticated → USER        (4)
  *
  * Role strings are NOT interpreted. 'admin' means whatever an app decides it
- * means, and guessing would hand out level 5 on a string match. Apps that
- * grade by role wrap this:
+ * means, and guessing would hand out level 5 on a string match — so the column
+ * is read for PRESENCE and nothing else, and a caller the app has given no role
+ * may submit but not manage. Apps that grade by role wrap this:
  *
  *   getLevel: (u) => u?.role === 'staff' ? LEVELS.ADMINISTRATOR : sessionGateLevel(u)
  */
 /**
- * What sessionGateLevel() actually reads.
+ * What `sessionGateLevel()` reads — the kit's type, re-exported rather than
+ * declared a second time.
  *
- * Structural on purpose. Typing the parameter as SessionContext would have been
- * the obvious choice and would not have composed: Litestone types GatePlugin's
- * getLevel as `(user: LitestoneAuth | null, model: string) => number`, so a
- * SessionContext-only signature is not assignable and every app would need a
- * cast at the one line this whole fix exists to make clean. This shape is a
- * supertype of both — SessionContext passes, LitestoneAuth passes.
+ * Structural on purpose, and that reasoning now lives beside the function it
+ * describes: typing the parameter as `SessionContext` would not compose,
+ * because Litestone types GatePlugin's `getLevel` as
+ * `(user: LitestoneAuth | null, model: string) => number` and a
+ * SessionContext-only signature is not assignable to it. The kit's shape is a
+ * supertype of both.
  */
-export interface GradableUser {
-  verifiedAt?:    Date | string | null
-  activatedAt?:   Date | string | null
-  isAdmin?:       boolean
-  isOwner?:       boolean
-  isSystemAdmin?: boolean
-}
+export type { GradableUser } from '@frontierjs/toolbelt/gate'
 
-export function sessionGateLevel(
-  user?: GradableUser | null
-): number {
-  if (!user) return LEVELS.STRANGER
-
-  // Explicit standing wins over the lifecycle: an owner who never completed
-  // an activation step is still the owner.
-  if (user.isSystemAdmin) return LEVELS.SYSADMIN
-  if (user.isOwner)       return LEVELS.OWNER
-  if (user.isAdmin)       return LEVELS.ADMINISTRATOR
-
-  // `null` is the app saying "modeled, not reached". `undefined` is silence.
-  if (user.verifiedAt  === null) return LEVELS.VISITOR
-  if (user.activatedAt === null) return LEVELS.READER
-
-  return LEVELS.USER
-}
+export const sessionGateLevel: (user?: GradableUser | null) => number = gradeStanding
 
 /**
  * A Junction session as Litestone's `auth()` sees it.
@@ -2621,7 +2863,7 @@ export function membershipClaim(opts: MembershipClaimOptions): DescribedResolver
       ...(standingName && opts.standing ? { [standingName]: row[opts.standing] } : {}),
       // An absent column and an empty grant are the same answer and both are
       // legitimate — a membership that holds no capabilities is what a fresh
-      // viewer is — so this normalises rather than refusing. What it will not do
+      // viewer is — so this normalizes rather than refusing. What it will not do
       // is emit a non-list: litestone throws by name on one, naming this
       // resolver, and a JSON column read back as `null` is the ordinary case.
       ...(opts.capabilities ? { capabilities: asCapabilityList(row[opts.capabilities]) } : {}),
@@ -2904,6 +3146,12 @@ export function installLogContext(db: unknown): (() => void) | null {
       // that is the one the rows were actually written under. `meta.tenant` is
       // the other direction — work that STATED its tenant with no request.
       tenant:        (call?.locals?.tenantId as string | undefined) ?? meta?.tenant ?? null,
+      // Support mode. The session resolves to the SUBJECT, so nothing below
+      // this line knows an operator exists — the trail would file every
+      // impersonated write under the person it was done to, which is the
+      // failure the feature exists to prevent.
+      operatorId:    meta?.user?.support?.operatorId ?? null,
+      episodeId:     meta?.user?.support?.episodeId  ?? null,
     }
   })
 }
@@ -2977,12 +3225,20 @@ export function announceDataWrites(
 
   const PAST: Record<string, string> = { create: 'created', update: 'updated', remove: 'removed' }
 
-  // model name → service name, built on first use: services are registered
-  // during the start phases and this installer runs before them.
-  let index: Map<string, string> | null = null
+  // model name → EVERY service over it, built on first use: services are
+  // registered during the start phases and this installer runs before them.
+  //
+  // A SET and not one name (`FJS-765`). Keyed to a single service, whichever
+  // claimed a spelling last owned the model and every other service over it was
+  // silently unsubscribed from writes it did not make itself — measured on two
+  // services over one `Order`: a write through the winner announced only the
+  // winner, and an `asSystem()` write announced only the winner, so the loser's
+  // subscribers held a stale row with nothing said. Which one won was
+  // registration order, so it moved when a file was renamed.
+  let index: Map<string, Set<string>> | null = null
   const warned = new Set<string>()
 
-  const serviceFor = (model: string): string | undefined => {
+  const servicesFor = (model: string): string[] => {
     if (!index) {
       index = new Map()
       // ── Every spelling, not one ──────────────────────────────────────────
@@ -3004,28 +3260,32 @@ export function announceDataWrites(
       // can take (Invariant 2, the same table `getTable` and `_gateLevels`
       // walk), so both are expanded through it rather than through a rule
       // written again here.
-      const claim = (spelling: string | undefined, name: string, wins: boolean) => {
+      const claim = (spelling: string | undefined, name: string) => {
         if (!spelling) return
         for (const candidate of accessorCandidates(spelling)) {
           const key = candidate.toLowerCase()
-          if (wins || !index!.has(key)) index!.set(key, name)
+          let set = index!.get(key)
+          if (!set) index!.set(key, set = new Set())
+          set.add(name)
         }
       }
-      // The service NAME first, then the declared `model:` over the top: a
-      // file that says which model it is wins over the one derived from its
-      // URL, which is the only order under which declaring one can never make
-      // things worse.
-      for (const name of app.services.list()) claim(name, name, false)
+      // A DECLARED `model:` is the only spelling that service claims; a service
+      // that declares none is claimed by its own name. Two passes with the
+      // declared one overriding was the old shape and it left the derived claim
+      // standing, so a service named `orders` over `model: 'Invoice'` went on
+      // receiving `Order` writes — harmless while one name won a key and an
+      // extra wrong announcement now that every claimant gets one.
       for (const name of app.services.list()) {
         const svc = app.services.get(name) as { model?: string } | undefined
-        if (svc?.model && svc.model !== name) claim(svc.model, name, true)
+        claim(svc?.model ?? name, name)
       }
     }
     const key = model.toLowerCase()
     // The singular fallback covers a model whose name pluralises irregularly
     // in a way no service name reached — `singularize` and `accessorCandidates`
     // are the same table, so this is one more lookup and not a second rule.
-    return index.get(key) ?? index.get(singularize(key).toLowerCase())
+    const hit = index.get(key) ?? index.get(singularize(key).toLowerCase())
+    return hit ? [...hit] : []
   }
 
   // ── A background write is graded exactly as a published one is ──────────
@@ -3100,20 +3360,21 @@ export function announceDataWrites(
     // service — so a subscriber has one event to handle either way, and the
     // browser store's custom-method branch already merges it as a patch.
     if (e.event === 'transition') {
-      const name = serviceFor(e.model)
-      if (!name || !e.transition) return
-      if (announcedInCommitScope(name) || announcingService() === name) return
+      if (!e.transition) return
       const record = e.record
-      // No row to hand over — the same position a `select: false` write is in
-      // below, and it takes the same answer rather than a guess.
-      if (record === null || record === undefined) {
-        const detail = { model: e.model, operation: e.transition, count: e.count ?? 1 }
-        app.events?.emit(`${name}:changed`, detail)
-        sendToChannel(name, 'changed', detail, 'gate')
-        return
+      for (const name of servicesFor(e.model)) {
+        if (announcedInCommitScope(name) || announcingService() === name) continue
+        // No row to hand over — the same position a `select: false` write is in
+        // below, and it takes the same answer rather than a guess.
+        if (record === null || record === undefined) {
+          const detail = { model: e.model, operation: e.transition, count: e.count ?? 1 }
+          app.events?.emit(`${name}:changed`, detail)
+          sendToChannel(name, 'changed', detail, 'gate')
+          continue
+        }
+        app.events?.emit(`${name}:${e.transition}`, record)
+        sendToChannel(name, e.transition, record)
       }
-      app.events?.emit(`${name}:${e.transition}`, record)
-      sendToChannel(name, e.transition, record)
       return
     }
 
@@ -3125,8 +3386,7 @@ export function announceDataWrites(
     // harmless and a handler that appends or counts or raises a toast is not
     // (the rule `refuseDoubleBroadcast` enforces for the service path).
     if (e.transition) return
-    const name = serviceFor(e.model)
-    if (!name) return
+    const row = e.result
     // The write is already covered by callService's announcement point — but
     // only for the service that call is running. A write to ANOTHER model from
     // inside a hook (the audit row an orders hook writes) is not covered by
@@ -3142,9 +3402,9 @@ export function announceDataWrites(
     // every inner one — measured, three events for one nested create
     // (`FJS-682`). `announcedInCommitScope` is the same question asked of the
     // transaction rather than of the call.
-    if (announcedInCommitScope(name) || announcingService() === name) return
+    for (const name of servicesFor(e.model)) {
+      if (announcedInCommitScope(name) || announcingService() === name) continue
 
-    const row = e.result
     // ── A write with no row to hand over ──────────────────────────────────
     // Two arrive here and they are the same problem: a bulk statement answers
     // `{count}` and never built the rows, and a `select: false` write skipped
@@ -3155,18 +3415,19 @@ export function announceDataWrites(
     // One name for all three operations, because the only honest answer on the
     // other side is the same for each: ask the query again. Which operation it
     // was travels in the payload for a bus subscriber that cares.
-    if (row === null || row === undefined) {
-      const detail = { model: e.model, operation: e.operation ?? past, count: e.count ?? null }
-      app.events?.emit(`${name}:changed`, { ...detail, where: e.where })
-      // `where` stops at the bus, which is in-process. A channel goes to every
-      // subscribed browser and a filter is made of the caller's own values —
-      // `deleteMany({ where: { resetToken } })` would put one on the wire.
-      sendToChannel(name, 'changed', detail, 'gate')
-      return
-    }
+      if (row === null || row === undefined) {
+        const detail = { model: e.model, operation: e.operation ?? past, count: e.count ?? null }
+        app.events?.emit(`${name}:changed`, { ...detail, where: e.where })
+        // `where` stops at the bus, which is in-process. A channel goes to every
+        // subscribed browser and a filter is made of the caller's own values —
+        // `deleteMany({ where: { resetToken } })` would put one on the wire.
+        sendToChannel(name, 'changed', detail, 'gate')
+        continue
+      }
 
-    app.events?.emit(`${name}:${past}`, row)
-    sendToChannel(name, past, row)
+      app.events?.emit(`${name}:${past}`, row)
+      sendToChannel(name, past, row)
+    }
   })
 }
 
@@ -3424,8 +3685,9 @@ function isRowScoped(client: unknown, accessor: string): boolean {
   const c = client as { $schema?: { models?: Array<{ name: string; attributes?: Array<{ generated?: string }> }> } } | null
   if (!c || typeof c !== 'object' || !c.$schema?.models) return false
 
-  let per = _rowScoped.get(c as object)
-  if (!per) { per = new Map(); _rowScoped.set(c as object, per) }
+  const key = schemaKey(c)
+  let per = _rowScoped.get(key)
+  if (!per) { per = new Map(); _rowScoped.set(key, per) }
   if (per.has(accessor)) return per.get(accessor)!
 
   const candidates = accessorCandidates(accessor)
@@ -3546,6 +3808,17 @@ interface LiJsonProp {
   pattern?:          string
   default?:          unknown
   readOnly?:         boolean
+}
+
+/**
+ * The seed's generated JSON Schema for an app, or null where there is no
+ * Litestone client. Exported so the OpenAPI generator can resolve a declared
+ * `input:` type NAME into a shape without deriving it a second way — the
+ * derivation, its cache and its dynamic import of litestone stay here, which
+ * is the whole reason this module is the adapter.
+ */
+export function appJsonSchema(app: { db?: unknown }, mode: JsonSchemaMode = 'create'): Promise<LitestoneJsonSchema | null> {
+  return _deriveJsonSchema(app?.db, mode)
 }
 
 export function jsonSchemaToJunctionSchema(

@@ -47,7 +47,7 @@ context.config.apiPort = flag['api-port']
 context.vars.apiPort   = context.config.apiPort
 ```
 
-## Lesson 4 — work that outlives the request
+## Lesson 6 — work that outlives the request
 
 Some work should not happen while somebody is waiting. Sending mail, calling a
 payment provider, rebuilding a thumbnail, anything that can fail and should be

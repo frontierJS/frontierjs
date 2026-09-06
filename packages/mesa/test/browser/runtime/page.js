@@ -66,6 +66,19 @@ window.mesaMountBare = async (specifier, props = {}) => {
   return true
 }
 
+/** Destroy the current mount and nothing else.
+ *
+ *  `mesaUnmount` clears the stage after destroying, which is what a harness
+ *  wants and makes the handle's own teardown unassertable — the stage is empty
+ *  either way. A spec asking what `destroy()` took away calls this instead and
+ *  reads the stage afterwards. */
+window.mesaDestroy = () => {
+  if (!current) throw new Error('mesaDestroy(): nothing is mounted')
+  current.destroy()
+  current = null
+  return true
+}
+
 window.mesaUnmount = () => {
   if (current) { current.destroy(); current = null }
   stage.replaceChildren()

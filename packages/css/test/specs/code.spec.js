@@ -134,7 +134,7 @@ test('code: the palette follows the theme, it is not pinned to :root', function 
    *
    * Both tones are already inside the lightness window, so the clamp is a
    * no-op and the identifier color is the tone exactly. Compared through
-   * toRGB because a relative-color result serialises as oklch().
+   * toRGB because a relative-color result serializes as oklch().
    */
   var box = el('<div style="--color-primary: rgb(1, 2, 3)">' + GLOW.css + '</div>');
   var got = toRGB(style(box.querySelector('code[language] b'), 'color'));
@@ -218,7 +218,7 @@ test('code: comment and punctuation are the theme ink ramp, not new greys', func
   var pre = themed('default', '<pre class="code">' + GLOW.css + '</pre>');
   var ramp = getComputedStyle(pre);
 
-  /* Through toRGB both ways: a computed color serialises as rgb(), the
+  /* Through toRGB both ways: a computed color serializes as rgb(), the
      token as the hex the theme wrote. */
   function same(tag, token) {
     assert.equal(

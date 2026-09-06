@@ -85,17 +85,19 @@ function _scheduleFlush() {
 // the same ordering — so a render triggered by an effect still lands before any
 // effects it in turn triggers.
 //
-// Ahead of both tiers, the derived layer is settled to a fixpoint. Memos
-// propagate from their recompute rather than from their invalidation (see
-// createMemo), so a memo whose value actually moved can dirty another memo.
-// Draining that to quiescence first means renders and user effects in this
-// generation read derivations that have stopped moving, and a chain of memos
-// resolves within one generation instead of one link per generation.
+// Ahead of both tiers, the derived layer is settled. Memos propagate from
+// their recompute rather than from their invalidation (see createMemo), so a
+// memo whose value actually moved can dirty another memo, and running that
+// layer first means renders and user effects in this generation read
+// derivations that have stopped moving. It settles one DOM-depth at a time
+// rather than to quiescence — see the note inside the loop.
 function _flush() {
   _microtaskPending = false
-  let passes = 0
+  _flushGen++
+  _flushWork = 0
+  _halted = false
   while (_queue.size > 0) {
-    if (++passes > _MAX_FLUSH_PASSES) return _reportCycle()
+    if (_halted) break
 
     // Mark everything pending in this generation, so a node can ask whether an
     // ANCESTOR of its own is waiting to run. A counter and a field rather than
@@ -150,10 +152,11 @@ function _flush() {
       for (const node of derived) if (!_ownerPending(node, gen)) (ready ??= []).push(node)
       if (!ready) break
 
-      if (++passes > _MAX_FLUSH_PASSES) return _reportCycle()
       for (const node of ready) _queue.delete(node)
       for (const node of ready) _runNode(node)
+      if (_halted) break
     }
+    if (_halted) break
 
     const pending = [..._queue]
     _queue.clear()
@@ -177,8 +180,10 @@ function _flush() {
     // is either disposed (and `_run` is a no-op) or free to proceed. Each pass
     // runs at least the outermost pending node, so this terminates in tree
     // depth rather than node count.
+    if (_halted) break
     if (deferred) for (const node of deferred) if (!node._disposed) _queue.add(node)
   }
+  if (_halted) _queue.clear()
 }
 
 let _pendGen = 0
@@ -220,6 +225,17 @@ function _domDepth(node) {
 // error per node keeps one broken effect from silently desynchronising the rest
 // of the page, which is the same choice Solid, Svelte and Vue make.
 function _runNode(node) {
+  if (_halted) return
+  // Budget per NODE, not per pass. A chain of derivations settles one link per
+  // pass, so a pass budget declares a deep graph cyclic and tells its author to
+  // hunt a cycle that is not there (`FJS-851`); the same node running over and
+  // over inside one flush is what a cycle actually looks like.
+  if (node._runGen !== _flushGen) { node._runGen = _flushGen; node._runCount = 0 }
+  if (++node._runCount > _MAX_NODE_RUNS) return _halt(node, 'cycle')
+  // Backstop for the shape the per-node budget cannot see: work that keeps
+  // creating FRESH nodes, where nothing repeats and nothing terminates either.
+  if (++_flushWork > _MAX_FLUSH_WORK) return _halt(node, 'runaway')
+
   const comps = _compStack.length
   const ctxs = _contextStack.length
   try {
@@ -255,24 +271,46 @@ function _unwindComponents(compDepth, ctxDepth) {
 
 // A reactive graph that never settles would otherwise spin inside _flush
 // forever, freezing the tab with no output at all — the worst possible failure
-// mode, since there is nothing to search for. Bail out loudly instead. The cap
-// is far above any legitimate graph: settling normally takes a handful of
-// passes, and the memo fixpoint collapses derivation chains into one.
-const _MAX_FLUSH_PASSES = 1000
+// mode, since there is nothing to search for. Bail out loudly instead.
+//
+// Measured against a node rather than against the flush. Depth and cyclicity
+// are different facts and a pass counter cannot tell them apart: the derived
+// layer runs one DOM-depth per pass on purpose, so a chain of a thousand memos
+// costs a thousand passes while never running a node twice.
+const _MAX_NODE_RUNS = 100
+const _MAX_FLUSH_WORK = 1_000_000
 
-function _reportCycle() {
+let _flushGen = 0
+let _flushWork = 0
+let _halted = false
+
+function _nodeName(n) {
+  return n?._fn?.name || (n?._isDerived ? '<derivation>' : '<anonymous effect>')
+}
+
+function _halt(node, kind) {
+  _halted = true
   const pending = [..._queue]
   _queue.clear()
-  const sample = pending
-    .slice(0, 3)
-    .map((n) => n._fn?.name || (n._isDerived ? '<derivation>' : '<anonymous effect>'))
-    .join(', ')
-  console.error(
-    `[Mesa] Update cycle detected — the reactive graph did not settle after ${_MAX_FLUSH_PASSES} ` +
-    `passes, so ${pending.length} pending node(s) were dropped to keep the page responsive. ` +
-    `This almost always means two reactive statements write each other's signals, ` +
-    `e.g. \`$: a = b + 1\` alongside \`$: b = a + 1\`. Still pending: ${sample}`
-  )
+  const sample = pending.slice(0, 3).map(_nodeName).join(', ')
+  const dropped = pending.length
+    ? `The update was abandoned to keep the page responsive and ${pending.length} pending ` +
+      `node(s) were dropped. Still pending: ${sample}`
+    : 'The update was abandoned to keep the page responsive.'
+  if (kind === 'cycle') {
+    console.error(
+      `[Mesa] Update cycle detected — \`${_nodeName(node)}\` ran ${_MAX_NODE_RUNS} times in a ` +
+      `single flush, so it is being re-triggered by its own effects. This almost always means ` +
+      `two reactive statements write each other's signals, e.g. \`$: a = b + 1\` alongside ` +
+      `\`$: b = a + 1\`. ${dropped}`
+    )
+  } else {
+    console.error(
+      `[Mesa] Runaway update — one flush ran ${_MAX_FLUSH_WORK} nodes without settling, and no ` +
+      `single node repeated, so the graph is growing rather than looping: something reached in ` +
+      `this update is creating new effects or memos on every pass. ${dropped}`
+    )
+  }
 }
 
 /**
@@ -338,6 +376,12 @@ export function createEffect(fn, opts) {
   try {
     node._run()
   } catch (e) {
+    // The node subscribed to everything it read before the throw and is already
+    // on the owner's children, and the throw escapes before the return — so the
+    // caller has no disposer for it. Left alone it re-runs a body that has
+    // already failed on the next write, and inside a root component nothing
+    // ever collects it (`FJS-879`).
+    _disposeNode(node, true)
     _unwindComponents(comps, ctxs)
     throw e
   }
@@ -396,6 +440,10 @@ function _makeNode(fn) {
     _children: [],
     _owner: _owner,
     _disposed: false,
+    // An effect node has a body, so its owner's body is what built it and its
+    // owner's next run is what replaces it. The inert owner nodes a block
+    // creates carry no `_fn` and are managed by that block instead.
+    _selfOwned: true,
     _notify() {
       _queue.add(this)
       _scheduleFlush()
@@ -408,10 +456,17 @@ function _makeNode(fn) {
       if (this._disposed) return
       // On re-run: clear reactive subscriptions and previous cleanups so we
       // re-subscribe to the correct signals on this run.
-      // IMPORTANT: do NOT dispose _children here.
+      //
+      // Effects this body created ITSELF go with them. The body re-creates
+      // them, so keeping the previous run's meant one live child per re-run,
+      // all of them subscribed and all of them running — fifty re-runs, fifty
+      // stale effects, nothing warning (`FJS-852`).
+      //
+      // IMPORTANT: do NOT dispose the other _children here.
       //
       // Children (branchNode in ifBlock, blockNode in keyBlock, nested components)
-      // have their own lifecycle managed by the block that created them:
+      // are inert owner nodes — no `_fn`, so `_selfOwned` is false — and have
+      // their own lifecycle managed by the block that created them:
       //   - ifBlock calls _removeBlock() → _disposeNode(branchNode) when branch changes
       //   - keyBlock calls _remove() → _disposeNode(blockNode) when key changes
       //   - pop_component() disposes the component rootNode on unmount
@@ -421,6 +476,12 @@ function _makeNode(fn) {
       // contained ChainRendererInner's keyBlock effect — before the early-return
       // `if (next === current) return` check. The DOM stayed but all effects
       // tracking params inside that branch were permanently gone.
+      for (let i = this._children.length - 1; i >= 0; i--) {
+        const child = this._children[i]
+        if (!child._selfOwned) continue
+        _disposeNode(child, false)
+        this._children.splice(i, 1)
+      }
       for (let i = this._cleanups.length - 1; i >= 0; i--) _safeCall(this._cleanups[i])
       this._cleanups = []
       for (const sig of this._deps) sig._subs.delete(this)
@@ -1023,12 +1084,44 @@ export function bindText(el, fn) {
 // DOM properties that should be set directly on the element rather than via
 // setAttribute. Setting these as attributes either doesn't work or coerces
 // the value to a string in ways that break boolean semantics.
+// `innerHTML`, `textContent` and `innerText` are NOT here. As DOM properties
+// they made `<div innerHTML={h}>` parse `h` as markup — a second spelling of
+// {@html} that reads as an ordinary attribute, where {@html} is a construct a
+// reader stops at (`FJS-D206`). They fall through to setAttribute, where an
+// `innerHTML=` attribute is inert.
 const _DOM_PROPS = new Set([
-  'value', 'checked', 'selected', 'indeterminate', 'innerHTML', 'textContent',
-  'innerText', 'scrollTop', 'scrollLeft', 'selectedIndex', 'defaultValue',
+  'value', 'checked', 'selected', 'indeterminate',
+  'scrollTop', 'scrollLeft', 'selectedIndex', 'defaultValue',
   'defaultChecked', 'volume', 'currentTime', 'playbackRate', 'muted',
   'loop', 'autoplay', 'controls', 'open',
 ])
+
+// ─── URL attributes ───────────────────────────────────────────────────────────
+// The four attributes whose VALUE is executed when its scheme says so. A URL
+// out of a user-editable column — a profile website, a link in a comment, a
+// redirect target read off a row — reaches these the way any other bound
+// attribute does, so `javascript:` there is script in the app's own origin.
+// `formAction` is on the list because a spread's keys come from data and an
+// object literal carries the IDL spelling. The static renderer runs this module
+// too, or a prerendered file would ship what the browser refuses (FJS-858).
+const _URL_ATTRS = new Set(['href', 'src', 'action', 'formaction', 'formAction'])
+
+// A URL parser drops ASCII whitespace and C0 controls before it reads a scheme,
+// so `Java\nscript:` and ` JaVaScRiPt:` are the same URL to a browser. Stripped
+// for the TEST only — nothing rewrites the value that gets written.
+const refusedURL = (name, value) =>
+  _URL_ATTRS.has(name) && value != null &&
+  /^(?:javascript:|data:text\/html)/.test(('' + value).replace(/[\u0000-\u0020]/g, '').toLowerCase())
+
+// Named rather than dropped, for the reason a refused spread key is named: an
+// attribute that quietly stops arriving is what FJS-612 cost.
+const warnRefusedURL = (el, name, value, via = '') => {
+  console.warn(
+    `[Mesa] ${via}${name} refused on <${el.tagName?.toLowerCase() ?? '?'}> and the attribute was ` +
+    `dropped: ${JSON.stringify(('' + value).slice(0, 80))} names a scheme that executes. ` +
+    `A URL from data cannot be a script.`
+  )
+}
 
 // The DOM props whose EMPTY state is a value rather than the absence of an
 // attribute. `el.value` and `el.checked` stop tracking their attribute the
@@ -1036,7 +1129,7 @@ const _DOM_PROPS = new Set([
 // typed on screen — a component that legitimately re-renders with no value
 // (a form reset, a cleared field) kept showing the old text while its state
 // said otherwise, and nothing anywhere reported a disagreement.
-const _TEXT_DOM_PROPS = new Set(['value', 'innerHTML', 'textContent', 'innerText', 'defaultValue'])
+const _TEXT_DOM_PROPS = new Set(['value', 'defaultValue'])
 const _BOOL_DOM_PROPS = new Set([
   'checked', 'selected', 'indeterminate', 'defaultChecked', 'muted',
   'loop', 'autoplay', 'controls', 'open',
@@ -1185,7 +1278,27 @@ export function bindInput(el, name, get, set) {
   }
 
   const readFn = name === 'checked' ? () => !!get() : get
-  const handler = () => set(el[name])
+
+  // `el.value` is a string whatever the control is, so a numeric input handed
+  // the bound variable "12" on the first keystroke: `qty + 1` became "121",
+  // `qty > 10` compared lexicographically, and the value posted to an API was
+  // refused by a `type: integer` schema one realm away (`FJS-857`). By the
+  // TYPE of the element and not an author opt-in — nobody writes
+  // `<input type="number">` meaning a string.
+  //
+  // An empty or unparseable box yields `undefined` — "no value yet", which is
+  // what an unassigned `let` already holds and what the write direction
+  // renders back as an empty box. `null` would mean the author cleared it,
+  // which is not what a half-typed `-` says.
+  const readEl = () => {
+    const v = el[name]
+    if (name !== 'value') return v
+    const t = el.type
+    if (t !== 'number' && t !== 'range') return v
+    if (typeof el.valueAsNumber !== 'number') return v
+    return v === '' || Number.isNaN(el.valueAsNumber) ? undefined : el.valueAsNumber
+  }
+  const handler = () => set(readEl())
   addEvent(el, 'input', handler)
   // Also listen to 'change' — color/date/range inputs may only fire 'change',
   // not 'input', while the picker is open. Deduplication is handled by batching.
@@ -1395,16 +1508,22 @@ function _makeDelegatedHandler(root) {
     const prop = '__' + event.type
     const path = event.composedPath()
 
-    // The NEAREST registered root owns the event. Roots nest whenever two
-    // mounted trees sit at different depths — one island directly in <main>,
-    // another inside a <div> in that <main> — and the event bubbles through
-    // both, so without this every handler in the deeper tree ran once per
-    // ancestor root: one click, two increments. Found by a Sierra island in a
-    // scroll container; the same shape is ordinary on any real page.
-    for (let i = 0; i < path.length; i++) {
-      const node = path[i]
-      if (node === root) break
-      if (_delegateRoots.has(node)) return
+    // Ownership is decided per NODE, not per event. The nearest registered
+    // root at or above a node owns that node's handler, so this root owns
+    // everything between itself and the deepest root below it on the path.
+    //
+    // Roots nest whenever two mounted trees sit at different depths — an app
+    // at the page container, an island inside it — and the event bubbles
+    // through both. Abandoning the dispatch at the first inner root stopped
+    // the double fire (one click, two increments) and killed every handler
+    // written on a wrapper BETWEEN the two, for ever: a handler is stored on
+    // the element it was written on, and no root nearer than this one exists
+    // for it (`FJS-833`).
+    let rootIndex = path.indexOf(root)
+    if (rootIndex < 0) rootIndex = path.length
+    let floor = -1
+    for (let i = rootIndex - 1; i >= 0; i--) {
+      if (_delegateRoots.has(path[i])) { floor = i; break }
     }
 
     // `currentTarget` is the element the handler is WRITTEN on, which is what
@@ -1415,9 +1534,8 @@ function _makeDelegatedHandler(root) {
     // per node and dropped again after, so a native listener further up the
     // same dispatch still reads its own.
     try {
-      for (let i = 0; i < path.length; i++) {
+      for (let i = floor + 1; i < rootIndex; i++) {
         const node = path[i]
-        if (node === root) break
         const handler = node[prop]
         if (handler) {
           Object.defineProperty(event, 'currentTarget', { configurable: true, get: () => node })
@@ -1504,6 +1622,7 @@ export function portal(getTarget, blockFactory) {
   let nodes = []
   let currentTarget = null
   let unregisterRoot = null
+  let contentNode = null
 
   createEffect(() => {
     const target = getTarget()
@@ -1513,9 +1632,33 @@ export function portal(getTarget, blockFactory) {
     // Remove from old target
     nodes.forEach((n) => n.parentNode?.removeChild(n))
     unregisterRoot?.()
+    if (contentNode) _disposeNode(contentNode, true)
+
+    // A target-scoped owner, the same shape ifBlock's branch node has. Built
+    // straight under this effect instead, the portal's content is what the
+    // effect's own body created — so the next evaluation of `to={…}` disposes
+    // it, and the early return above means it is not rebuilt: an alert that
+    // showed once and then never changed its text again.
+    contentNode = {
+      _fn: null,
+      _deps: new Set(),
+      _cleanups: [],
+      _children: [],
+      _owner: _owner,
+      _notify() {},
+      _run() {}
+    }
+    if (_owner) _owner._children.push(contentNode)
 
     // Build fresh DOM and insert into new target
-    const $dom = withContext(blockFactory)
+    const prevOwner = _owner
+    _owner = contentNode
+    let $dom
+    try {
+      $dom = withContext(blockFactory)
+    } finally {
+      _owner = prevOwner
+    }
     nodes = $dom.nodeType === Node.DOCUMENT_FRAGMENT_NODE
       ? [...$dom.childNodes]
       : [$dom]
@@ -1536,6 +1679,7 @@ export function portal(getTarget, blockFactory) {
   onCleanup(() => {
     nodes.forEach((n) => n.parentNode?.removeChild(n))
     unregisterRoot?.()
+    if (contentNode) { _disposeNode(contentNode, true); contentNode = null }
   })
 }
 
@@ -2126,16 +2270,50 @@ export function mount(label, component, option) {
   // the stacks must not be left corrupted for the next mount.
   const comps = _compStack.length
   const ctxs = _contextStack.length
+  // The component's own owner node is created by push_component and parented to
+  // whatever `_owner` is at the time. A root mount runs outside every effect, so
+  // without a root here that is null: the node is reachable from nothing, and
+  // `destroy()` can dispose neither the effects nor the graph nor the onDestroy
+  // callbacks. Every long-lived caller had compensated by hand — mesa's own
+  // tests write `disposeRoot(); instance.destroy()` — which is the shape that
+  // says the handle is missing half a teardown.
+  let disposeRoot = () => {}
   try {
-    component(anchor, option?.props ?? {}, null)
+    createRoot((dispose) => {
+      disposeRoot = dispose
+      component(anchor, option?.props ?? {}, null)
+    })
   } catch (e) {
     _unwindComponents(comps, ctxs)
+    disposeRoot()
     throw e
   }
   return {
     $dom: anchor,
     find(sel) { return anchor.parentNode?.querySelector(sel) },
     destroy() {
+      // What this mount rendered is everything between the node we were handed
+      // and the anchor inserted after it. That range starts EMPTY — the anchor
+      // goes in at `label.nextSibling` before the component runs — and a
+      // component appends before its anchor, so the range is the render and
+      // nothing else. It is walked here rather than recorded at mount because
+      // block content queued during setup lands at anchors already inside the
+      // range, i.e. after mount() has returned.
+      //
+      // Collect first, remove only on reaching the anchor. A walk that never
+      // meets it — destroy called twice, the anchor removed by a host, the
+      // label reparented — would otherwise take every following sibling of the
+      // label with it.
+      const rendered = []
+      let reached = false
+      for (let n = label.nextSibling; n; n = n.nextSibling) {
+        if (n === anchor) { reached = true; break }
+        rendered.push(n)
+      }
+      // Effects before DOM: a cleanup may reach for the node it was attached
+      // to, and disposal removes no DOM of its own.
+      disposeRoot()
+      if (reached) for (const n of rendered) n.remove()
       anchor.remove()
       cleanupDelegation()
       cleanupStyles()
@@ -2503,6 +2681,11 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
   // prevKeys: key[] — the last rendered key order, parallel to the DOM order
   let blocks   = new Map()
   let prevKeys = []
+  // Original key → the stand-in keys its repeats were filed under last render,
+  // so a duplicated row keeps its block instead of being rebuilt every time.
+  // Rebuilt each render from the duplicates that are still there, so it empties
+  // itself the moment the data stops repeating.
+  let dupKeys = null
   let elseNode      = null
   let elseNodeFirst = null   // first DOM node of the else block (for removal)
   let elseNodeLast  = null   // last DOM node of the else block
@@ -2676,6 +2859,7 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
         }
       }
       prevKeys = []
+      dupKeys  = null
       _showElse()
       return
     }
@@ -2684,22 +2868,49 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
     const newKeys = array.map((item, i) => keyFn(item, i))
     const oldLen  = prevKeys.length
 
-    // Duplicate key check — fires in dev builds or when window.__MESA_DEV__ is set.
-    // Duplicate keys corrupt the reconciler (Map overwrites, blocks claimed twice).
-    if (typeof process === 'undefined' || process?.env?.NODE_ENV !== 'production') {
-      const seen = new Set()
-      for (let i = 0; i < newKeys.length; i++) {
-        const k = newKeys[i]
-        if (seen.has(k)) {
-          console.warn(
-            `[Mesa] {#each} duplicate key "${k}" at index ${i}. ` +
-            `Each item must have a unique key — use a unique id instead of the value itself.`
-          )
-          break  // one warning is enough per render
-        }
-        seen.add(k)
+    // ── Duplicate keys ──────────────────────────────────────────────────────
+    //
+    // A declared key that repeats is corruption, not a slow path. `blocks` is a
+    // Map, so the second row's block replaced the first under the same key and
+    // the first was orphaned: in the DOM, never disposed, unreachable. The
+    // removal pass then declined to take it away, because the key it was filed
+    // under was still in the new key set — so deleting the duplicate from the
+    // data never repaired the list (`FJS-856`).
+    //
+    // Every repeat after the first is filed under a stand-in key of its own,
+    // reused across renders so a duplicated row keeps its DOM, and dropped the
+    // moment the data stops repeating — at which point the stale row is a key
+    // nothing asks for and the ordinary removal pass takes it.
+    //
+    // `keyCount` is the render's key set as well, which the removal pass below
+    // would otherwise build a second time.
+    const keyCount = new Map()
+    let stillDup = null
+    let warnedDup = false
+    for (let i = 0; i < newLen; i++) {
+      const k = newKeys[i]
+      const n = keyCount.get(k)
+      if (n === undefined) { keyCount.set(k, 1); continue }
+      keyCount.set(k, n + 1)
+
+      if (!warnedDup && (typeof process === 'undefined' || process?.env?.NODE_ENV !== 'production')) {
+        warnedDup = true
+        console.warn(
+          `[Mesa] {#each} duplicate key "${k}" at index ${i}. ` +
+          `Each item must have a unique key — use a unique id instead of the value itself.`
+        )
       }
+
+      const held = dupKeys?.get(k)
+      const stand = held?.[n] ?? { $dup: n }
+      if (!stillDup) stillDup = new Map()
+      let kept = stillDup.get(k)
+      if (!kept) { kept = []; stillDup.set(k, kept) }
+      kept[n] = stand
+      newKeys[i] = stand
+      keyCount.set(stand, 1)
     }
+    dupKeys = stillDup
 
     // ── Fast path: first render ─────────────────────────────────────────────
     if (oldLen === 0) {
@@ -2743,8 +2954,7 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
 
     // ── Destroy removed blocks ──────────────────────────────────────────────
     // Any old key not present in the new key set is removed now.
-    // Build a Set of new keys for O(1) lookup.
-    const newKeySet = new Set(newKeys)
+    const newKeySet = keyCount
     for (let i = j; i <= a_end; i++) {
       const key = prevKeys[i]
       if (!newKeySet.has(key)) {
@@ -3474,9 +3684,12 @@ export function restProps(props, declared) {
   // Element — so passing a `{#snippet children}` to a component built around
   // `<slot />` threw from inside spreadAttributes and took the render with it.
   const skip = new Set([...(declared ?? []), 'class', '$class', 'children'])
+  // OWN keys only. A caller spreading a class instance, or a payload built with
+  // Object.create, hands over an object whose prototype carries data — and a
+  // `for…in` walk paints every one of those onto the element as an attribute.
   const pick = (src) => {
     const out = {}
-    if (src) for (const k in src) if (!skip.has(k)) out[k] = src[k]
+    if (src) for (const k of Object.keys(src)) if (!skip.has(k)) out[k] = src[k]
     return out
   }
 
@@ -3534,10 +3747,67 @@ function _protoDescs(el) {
   return descs
 }
 
+/*
+ * The keys a spread may not carry.
+ *
+ * A spread's KEYS come from data — `{...record}` over a fetched row, and
+ * `{...$attributes}` through every kit component — while an authored
+ * `innerHTML=` names itself in the source the way `{@html}` does. So the
+ * descriptor test below, which routes anything with a setter to the property,
+ * turned a remote party's object key into a markup parse.
+ *
+ * Refused rather than dropped-and-forgotten: a spread that silently stops
+ * carrying a key is what FJS-612 cost.
+ */
+const _SPREAD_REFUSED = new Set(['innerHTML', 'outerHTML', 'srcdoc', 'text'])
+
 export function spreadAttributes(el, fn) {
   const propDescs = _protoDescs(el)
   let prev = {}
+  // A spread's KEYS come from data, so one of them can be a string the DOM
+  // refuses as an attribute name. `setAttribute` answers that with a thrown
+  // `InvalidCharacterError`, and an unguarded throw here escapes the effect and
+  // takes the whole page render down over one key. Skipping is the same move
+  // this function already makes for a getter-only property, and for the same
+  // reason. The DOM is asked rather than a name pattern restated here, because
+  // a second definition of *what is a legal attribute name* would be wrong in
+  // exactly the cases that matter (FJS-872).
   const _set = (k, v) => {
+    try { _setOne(k, v) } catch (e) {
+      if (e?.name !== 'InvalidCharacterError') throw e
+      console.warn(
+        `[Mesa] {...spread} — the DOM refused ${JSON.stringify(k)} as an attribute name on ` +
+        `<${el.tagName?.toLowerCase() ?? '?'}>, so it was skipped and nothing was written. ` +
+        `A spread's keys come from data; this one is not a name an attribute can have.`
+      )
+    }
+  }
+  const _setOne = (k, v) => {
+    if (_SPREAD_REFUSED.has(k)) {
+      if (v != null) {
+        console.warn(
+          `[Mesa] {...spread} — ${k} refused on <${el.tagName?.toLowerCase() ?? '?'}>. ` +
+          `A spread's keys come from data, so this one parses that data as markup. ` +
+          `Write {@html} where the markup is the author's own.`
+        )
+      }
+      return
+    }
+    if (refusedURL(k, v)) {
+      warnRefusedURL(el, k, v, '{...spread} — ')
+      el.removeAttribute(k)
+      return
+    }
+    // An `on*` key holding a FUNCTION is the forwarded handler the block below
+    // exists for. Holding a string it is a handler COMPILED FROM DATA, which is
+    // the same sink one door along.
+    if (k.length > 2 && k[0] === 'o' && k[1] === 'n' && v != null && typeof v !== 'function') {
+      console.warn(
+        `[Mesa] {...spread} — ${k} refused on <${el.tagName?.toLowerCase() ?? '?'}>: ` +
+        `got ${typeof v}, and a non-function handler is source code. Pass the function itself.`
+      )
+      return
+    }
     if (k === 'style') { el.style.cssText = v ?? ''; return }
     // A function is never a meaningful attribute string. `<Btn onclick={fn}>`
     // forwarded through {...$attributes} used to reach the DOM as
@@ -3731,18 +4001,42 @@ function _watchSubscribe(node, key) {
 // if declared, then each ancestor up to the root. Firing only the immediate
 // parent, as the string version did, meant `$: a` saw `a.e` but not `a.b.c`: a
 // subtree watch that worked at depth one and silently stopped at depth two.
+// Everything BENEATH it as well: replacing the object at `page.data` changes
+// the value of `page.data.title`, and walking upward alone left that watch
+// silent, so a router that swaps the whole payload on navigation rendered the
+// previous page (`FJS-832`). The subtree is the DECLARED watches under the
+// written key — a key nobody declared has no node and no descendants, which is
+// the hot case and costs the walk nothing.
 function _watchFire(node, key) {
-  let n = _watchChild(node, key) || node
+  const child = _watchChild(node, key)
+  if (child) _watchFireSubtree(child)
+  let n = child ? child.parent : node
   while (n) {
     if (n.sig) n.sig.fire()
     n = n.parent
   }
 }
 
-// Two-level registry: WeakMap<rootObj, Map<path, Proxy>>
-// Keyed by (rootObj, path) to prevent cross-component contamination.
-const _nestedProxyCache = new WeakMap() // rootObj → Map<childPath, { target, node, proxy }>
-const _rootProxyCache   = new WeakMap() // rootObj → rootProxy
+function _watchFireSubtree(n) {
+  if (n.sig) n.sig.fire()
+  for (const c of n.children.values()) _watchFireSubtree(c)
+}
+
+// One proxy per raw object per store. Keyed by the TARGET rather than by the
+// path it was reached along, because a path key gives one object two proxies
+// the moment it is reachable twice — `state.selected = state.items[0]` then
+// made `state.selected === state.items[0]` false, `indexOf` -1, `Set.has`
+// false and an {#each} keyed on the object rebuild every row.
+//
+// The path key was carrying a second job: the watch NODE, which differs per
+// path and is what a read subscribes to and a write fires. That moves onto the
+// entry as a list — an object reached at two paths is genuinely at both, so
+// reads subscribe to both covers and writes notify both, which is a superset of
+// what the path-keyed version did rather than a narrowing.
+//
+// The outer key is the store's trie root, so entries die with the store and a
+// local `let`'s proxies cannot be reached from an imported store's.
+const _proxyRegistry    = new WeakMap() // trieRoot → WeakMap<target, { proxy, nodes }>
 const _proxyToRoot      = new WeakMap() // proxy → rootObj (reverse, for unproxy)
 const _signalRegistry   = new WeakMap() // rootObj → root watch node
 
@@ -3758,31 +4052,32 @@ const _ARRAY_MUTATORS = new Set([
   'copyWithin'
 ])
 
-function _getNestedProxy(rootObj, path, target, node) {
-  if (!_nestedProxyCache.has(rootObj)) _nestedProxyCache.set(rootObj, new Map())
-  const cache = _nestedProxyCache.get(rootObj)
+function _storeProxies(trieRoot) {
+  let m = _proxyRegistry.get(trieRoot)
+  if (!m) _proxyRegistry.set(trieRoot, m = new WeakMap())
+  return m
+}
 
-  // Keyed by path AND the object that path currently holds. Caching on path
-  // alone meant that replacing an object-valued property left the old child
-  // proxy in place forever:
-  //
-  //   cart.items = ['c']
-  //   cart.items        // → ['c']        (raw object, correct)
-  //   proxy.items       // → ['a','b']    (stale child proxy)
-  //
-  // so a template reading `{cart.items}` rendered the previous value after any
-  // reassignment. Primitives were unaffected, which made it look intermittent.
-  // Comparing the cached target self-heals however the value changed, including
-  // writes that bypassed the proxy, and covers descendants too — their targets
-  // differ as soon as the parent is replaced.
-  // `node` is part of the identity too: the same object reachable at two paths
-  // needs a proxy per path, because each carries a different watch node.
-  const hit = cache.get(path)
-  if (hit && hit.target === target && hit.node === node) return hit.proxy
-
-  const proxy = _buildProxy(target, rootObj, node, path)
-  cache.set(path, { target, node, proxy })
-  return proxy
+// The one door to a child proxy. A cache hit merges the node the value was
+// reached through, so an alias registers its watch position without minting a
+// second proxy. A replaced value self-heals for free: a new object is a new key.
+//
+// `byTarget` is passed rather than looked up, and the child path is joined on a
+// MISS only: both run once per nested read on every render, and a WeakMap
+// lookup plus a string concat there is the whole read cost of the store.
+function _proxyFor(obj, byTarget, node, pathPrefix, key) {
+  const hit = byTarget.get(obj)
+  if (hit) {
+    if (hit.nodes[0] !== node && !hit.nodes.includes(node)) hit.nodes.push(node)
+    return hit.proxy
+  }
+  const path = key === undefined ? pathPrefix
+             : pathPrefix ? `${pathPrefix}.${key}` : key
+  const entry = { proxy: null, nodes: [node] }
+  entry.proxy = _buildProxy(obj, byTarget, entry, path)
+  byTarget.set(obj, entry)
+  _proxyTarget.set(entry.proxy, obj)
+  return entry.proxy
 }
 
 // proxy → the raw object it wraps. Used to strip proxies back out on write; the
@@ -3807,6 +4102,29 @@ function _isOpaque(v) {
     v instanceof RegExp || v instanceof Promise ||
     v instanceof WeakMap || v instanceof WeakSet || v instanceof Error ||
     v instanceof ArrayBuffer || ArrayBuffer.isView(v)
+  )
+}
+
+// A Map, a Set or a Date reached through watched state is inert, and inert is
+// indistinguishable from broken from the outside: `state.tags = new Set()` then
+// `state.tags.add('x')` compiles clean, runs clean and renders nothing. The
+// contents live in internal slots no trap observes, so making them reactive is
+// a different question; saying so is not. Once per value, the shape
+// `_warnAccessorWatch` uses for a watch that can never fire.
+const _warnedOpaque = new WeakSet()
+function _warnOpaqueWatch(value, path) {
+  if (typeof console === 'undefined' || !console.warn) return
+  const kind = value instanceof Map ? 'Map'
+             : value instanceof Set ? 'Set'
+             : value instanceof Date ? 'Date'
+             : null
+  if (!kind || _warnedOpaque.has(value)) return
+  _warnedOpaque.add(value)
+  console.warn(
+    `[Mesa] ${path || 'a watched property'} holds a ${kind}, which is inert state: ` +
+    `mutating it in place notifies nothing and re-renders nothing. Replace the ` +
+    `whole value instead (e.g. \`s = new ${kind}(s)\` after the change), or keep ` +
+    `it in a plain object or array.`
   )
 }
 
@@ -3856,9 +4174,7 @@ function _unwrapValue(v, seen) {
   return out ?? v
 }
 
-function _buildProxy(obj, rootObj, node, pathPrefix) {
-  if (typeof obj !== 'object' || obj === null) return obj
-
+function _buildProxy(obj, byTarget, entry, pathPrefix) {
   // Accessors must run with the proxy as `this` so their own reads subscribe —
   // `get full() { return this.first + ' ' + this.last }` was invoked against the
   // raw object, so nothing inside it was ever tracked and the value froze.
@@ -3866,34 +4182,44 @@ function _buildProxy(obj, rootObj, node, pathPrefix) {
   // with a proxy receiver cannot touch its private fields.
   const viaReceiver = _isPlainContainer(obj)
 
-  const proxy = new Proxy(obj, {
+  return new Proxy(obj, {
     get(target, key, receiver) {
       // Symbols are protocol lookups (Symbol.iterator, Symbol.toPrimitive…),
       // never watchable state — they must not create subscriptions or paths.
       if (typeof key === 'symbol') return target[key]
       const value = viaReceiver ? Reflect.get(target, key, receiver) : target[key]
+      const nodes = entry.nodes
       if (Array.isArray(target) && _ARRAY_MUTATORS.has(key) && typeof value === 'function') {
         return (...args) => {
           const result = target[key].apply(target, args)
           // A mutator changes the container itself, so fire from this node up.
-          let n = node
-          while (n) { if (n.sig) n.sig.fire(); n = n.parent }
+          for (let i = 0; i < nodes.length; i++) {
+            for (let n = nodes[i]; n; n = n.parent) if (n.sig) n.sig.fire()
+          }
           return result
         }
       }
       // Subscribe the current reactive effect to the watch covering this
       // property. This wires template bindings (bindText(() => proxy.count))
       // to re-run when a covering watch fires.
-      if (_listener) _watchSubscribe(node, key)
-      if (typeof value === 'object' && value !== null && !_isOpaque(value)) {
-        const childPath = pathPrefix ? `${pathPrefix}.${key}` : key
-        return _getNestedProxy(rootObj, childPath, value, _watchDescend(node, key))
+      if (_listener) for (let i = 0; i < nodes.length; i++) _watchSubscribe(nodes[i], key)
+      if (typeof value === 'object' && value !== null) {
+        if (!_isOpaque(value)) {
+          const child = _proxyFor(value, byTarget, _watchDescend(nodes[0], key), pathPrefix, key)
+          // An aliased parent puts the child at as many positions as the parent
+          // has; the loop is skipped in the ordinary single-position case.
+          for (let i = 1; i < nodes.length; i++)
+            _proxyFor(value, byTarget, _watchDescend(nodes[i], key), pathPrefix, key)
+          return child
+        }
+        _warnOpaqueWatch(value, pathPrefix ? `${pathPrefix}.${key}` : key)
       }
       return value
     },
     set(target, key, value) {
       target[key] = _unwrapValue(value)
-      if (typeof key !== 'symbol') _watchFire(node, key)
+      if (typeof key !== 'symbol')
+        for (const n of entry.nodes) _watchFire(n, key)
       return true
     },
     // Without this trap `delete obj.k` reached the raw object directly and fired
@@ -3902,12 +4228,11 @@ function _buildProxy(obj, rootObj, node, pathPrefix) {
     deleteProperty(target, key) {
       const had = Object.prototype.hasOwnProperty.call(target, key)
       delete target[key]
-      if (had && typeof key !== 'symbol') _watchFire(node, key)
+      if (had && typeof key !== 'symbol')
+        for (const n of entry.nodes) _watchFire(n, key)
       return true
     }
   })
-  _proxyTarget.set(proxy, obj)
-  return proxy
 }
 
 export function watchProxy(obj) {
@@ -3924,10 +4249,9 @@ export function watchProxy(obj) {
   // thing to write. Idempotent is the only safe behavior here.
   if (_proxyToRoot.has(obj)) return obj
 
-  if (_rootProxyCache.has(obj)) return _rootProxyCache.get(obj)
   if (!_signalRegistry.has(obj)) _signalRegistry.set(obj, _watchNode(null))
-  const proxy = _buildProxy(obj, obj, _signalRegistry.get(obj), '')
-  _rootProxyCache.set(obj, proxy)
+  const root = _signalRegistry.get(obj)
+  const proxy = _proxyFor(obj, _storeProxies(root), root, '')
   _proxyToRoot.set(proxy, obj)   // reverse map for unproxy
   return proxy
 }
@@ -3986,17 +4310,6 @@ export function watchPath(obj, path) {
   }
   return node.sig.tuple
 }
-
-/**
- * Build a proxy for a LOCAL let variable's object that fires caller-supplied
- * setter functions when specific paths are mutated, and subscribes the
- * current reactive effect when paths are read.
- *
- * @param {object} obj       The object to proxy
- * @param {object} signalMap Map of dotPath → [readFn, fireFn].
- *                           '' means whole-object watch.
- * @returns {Proxy}
- */
 
 /**
  * unproxy — unwrap a Mesa watch proxy to its underlying plain object.
@@ -4080,10 +4393,15 @@ function _defaultInspect(label, values, prev) {
   }
 }
 
+/**
+ * Watch proxy for a LOCAL `let` — the compiler hands the watches over as a flat
+ * { dotPath: [read, fire] } map with '' for the whole object.
+ */
 export function localWatchProxy(obj, signalMap) {
   if (!_isClient) return obj // Rule 19: path watches are no-ops on server
   if (typeof obj !== 'object' || obj === null) return obj
-  return _buildLocalProxy(obj, signalMap, _localTrie(signalMap))
+  const root = _localTrie(signalMap)
+  return _proxyFor(obj, _storeProxies(root), root, '')
 }
 
 // The compiler hands local watches over as a flat { dotPath: [read, fire] } map
@@ -4113,49 +4431,6 @@ function _localTrie(signalMap) {
   _watchRefreshCover(root)
   _localTrieCache.set(signalMap, root)
   return root
-}
-
-function _buildLocalProxy(obj, signalMap, node) {
-  if (typeof obj !== 'object' || obj === null) return obj
-
-  // Same reasoning as _buildProxy — see the comments there.
-  const viaReceiver = _isPlainContainer(obj)
-
-  const proxy = new Proxy(obj, {
-    get(target, key, receiver) {
-      if (typeof key === 'symbol') return target[key]
-      const value = viaReceiver ? Reflect.get(target, key, receiver) : target[key]
-
-      if (Array.isArray(target) && _ARRAY_MUTATORS.has(key) && typeof value === 'function') {
-        return (...args) => {
-          const result = target[key].apply(target, args)
-          let n = node
-          while (n) { if (n.sig) n.sig.fire(); n = n.parent }
-          return result
-        }
-      }
-
-      if (_listener) _watchSubscribe(node, key)
-
-      if (typeof value === 'object' && value !== null && !_isOpaque(value)) {
-        return _buildLocalProxy(value, signalMap, _watchDescend(node, key))
-      }
-      return value
-    },
-    set(target, key, value) {
-      target[key] = _unwrapValue(value)
-      if (typeof key !== 'symbol') _watchFire(node, key)
-      return true
-    },
-    deleteProperty(target, key) {
-      const had = Object.prototype.hasOwnProperty.call(target, key)
-      delete target[key]
-      if (had && typeof key !== 'symbol') _watchFire(node, key)
-      return true
-    }
-  })
-  _proxyTarget.set(proxy, obj)
-  return proxy
 }
 
 // ─── ASYNC STATE ──────────────────────────────────────────────────────────────
@@ -4607,10 +4882,33 @@ function islandPayload(props, meta) {
   if (props && typeof props === 'object' && Object.keys(props).length) payload.props = props
 
   const dropped = []
+  const retyped = []
+  // Holder object -> the path that reached it, so a warning can name
+  // `nested.inner` rather than `inner`: the walk is depth-first over the whole
+  // payload and a bare key from it is indistinguishable from a top-level prop
+  // (an array index arrives as `0`).
+  const paths = new WeakMap()
   let json
   try {
-    json = JSON.stringify(payload, (key, value) => {
+    // A `function`, not an arrow, and that is the whole mechanism: JSON.stringify
+    // calls a replacer with `this` bound to the HOLDER, so `this[key]` is the
+    // value before `toJSON` ran. `value` is what will be written. The two
+    // disagreeing is the class of bug JSON reports nothing about — a Date
+    // prerenders as a Date and mounts as a string, a Map and a Set arrive as
+    // `{}` — and the loader cannot recover it, because by then a Date IS a
+    // string and a Map IS `{}`.
+    json = JSON.stringify(payload, function (key, value) {
       if (typeof value === 'function' || typeof value === 'symbol') { dropped.push(key); return undefined }
+      const raw = this?.[key]
+      const at = key === '' ? '' : Array.isArray(this) ? `${paths.get(this) ?? ''}[${key}]`
+        : paths.get(this) ? `${paths.get(this)}.${key}` : key
+      if (value && typeof value === 'object') paths.set(value, at)
+      // Map and Set are their own case: they carry no `toJSON`, so the replacer
+      // is handed the collection itself and the retype test below cannot see
+      // them — `raw === value` right up to the point JSON writes `{}`, because
+      // neither has an enumerable own property to write.
+      if (raw instanceof Map || raw instanceof Set) retyped.push(`${at} (${raw.constructor.name} -> {})`)
+      else if (raw && typeof raw === 'object' && raw !== value) retyped.push(`${at} (${raw.constructor?.name ?? 'object'} -> ${typeof value})`)
       return value
     })
   } catch (e) {
@@ -4631,15 +4929,25 @@ function islandPayload(props, meta) {
       `Pass serializable props to an island, or mount it from the client instead.`
     )
   }
+  if (retyped.length) {
+    console.warn(
+      `[Mesa island] <${payload.component}> — ${retyped.join(', ')} changed type in the island marker. ` +
+      `The server render holds the original value and the client mounts the JSON one, so this island's ` +
+      `text changes when it wakes up — which reads as the component being wrong. ` +
+      `Convert at the call site (a Date to \`.toISOString()\`, a Map or Set to an array or object), ` +
+      `or mount this island from the client.`
+    )
+  }
   // Escape every `-` and `>` out of the payload.
   //
   // Only `-->` (and `--!>`) actually terminates a comment per the HTML spec, so
-  // escaping `--` would be enough for a conforming parser. It is not enough in
-  // practice: happy-dom 14.12.3 — the parser this package's own SSR tests use —
-  // ends a comment at the FIRST `>`, so a prop value containing one truncated
-  // the marker into two, and `JSON.parse` then threw on a fragment. Leaving no
-  // `>` in the payload at all makes it read identically under both rules, which
-  // is worth six bytes per occurrence.
+  // escaping `--` is enough for a conforming parser, and both parsers this
+  // marker crosses are conforming today — happy-dom ended a comment at the
+  // FIRST `>` in 14.12.3, which truncated a marker carrying one and made
+  // `JSON.parse` throw on the fragment, and 20 does not. The `>` escape stays
+  // anyway: the payload is written once for two parsers, only one of which this
+  // package pins, and six bytes per occurrence is cheaper than finding out
+  // again from a broken island.
   //
   // Both substitutions are inside JSON strings by construction — a number
   // cannot contain `-` except a leading minus or an exponent, neither of which
@@ -4829,6 +5137,22 @@ export function template(html, flags) {
 
 // ── dynamicElement() — the template factory behind <mesa:element> ────────────
 
+/*
+ * Tag names a dynamic element may not take.
+ *
+ * `this={tag}` is an expression, so the tag comes from data. Each of these
+ * ACTS on insertion rather than rendering: a `<script>` built with
+ * createElement is not parser-inserted, so appending the authored children and
+ * inserting it EXECUTES them — with a `{code}` interpolation inside, the pair
+ * is eval with two data inputs, and it survives SSR into whatever public file
+ * `target: 'static'` writes. `<style>` runs the children as CSS, `<base>` and
+ * `<meta http-equiv>` redirect the whole page, and `<link>`, `<iframe>`,
+ * `<object>` and `<embed>` fetch and run something the copied attributes name.
+ */
+const _DYNAMIC_TAG_REFUSED = new Set([
+  'script', 'style', 'base', 'link', 'meta', 'iframe', 'object', 'embed',
+])
+
 /**
  * Build one instance of `<mesa:element this={tag}>`.
  *
@@ -4850,6 +5174,13 @@ export function template(html, flags) {
 export function dynamicElement(tagFn, tplFn) {
   return () => {
     const tag = tagFn()
+    if (typeof tag === 'string' && _DYNAMIC_TAG_REFUSED.has(tag.toLowerCase())) {
+      throw new Error(
+        `[Mesa] <mesa:element this={…}> — <${tag.toLowerCase()}> refused. A dynamic tag is ` +
+        `markup, not a script host: this element acts when it is inserted, and the tag came ` +
+        `from an expression. Write the element literally where it is the author's own.`
+      )
+    }
     if (typeof tag !== 'string' || !tag) {
       throw new Error(
         `[Mesa] <mesa:element this={…}> — expected a tag name, got ${
@@ -4936,6 +5267,12 @@ export function set_attribute(el, name, value) {
   // An attribute is a string, so an object became "[object Object]" and the
   // binding could never hand it back. bindInput() reads __value first.
   if (name === 'value' && el.tagName === 'OPTION') el.__value = value
+
+  if (refusedURL(name, value)) {
+    warnRefusedURL(el, name, value)
+    el.removeAttribute(name)
+    return
+  }
 
   // `aria-expanded={false}` must WRITE "false" rather than remove the attribute.
   // These four are the ARIA states whose default is **undefined**, not false,

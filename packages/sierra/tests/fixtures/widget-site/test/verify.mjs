@@ -103,8 +103,9 @@ const headerChecks = {
 
 const server = createServer(async (req, res) => {
   const url = req.url.split('?')[0]
-  if (url === '/') {
-    const page = (await readFile(join(HERE, 'host.html'), 'utf8'))
+  if (url === '/' || url === '/csp') {
+    const file = url === '/csp' ? 'host-csp.html' : 'host.html'
+    const page = (await readFile(join(HERE, file), 'utf8'))
       .replaceAll('{{EMBEDS}}', widgetOrigin.url)
     res.writeHead(200, { 'Content-Type': 'text/html' })
     res.end(page)
@@ -160,9 +161,16 @@ const PROBE = `
   out.hostBg     = getComputedStyle(hostBtn).backgroundColor;
 
   // ── the selector form ─────────────────────────────────────────────────
-  const legacy = el('div.mt-counter');
+  const legacy = el('#legacy');
   out.legacyMounted = await until(() => !!inside(legacy, '#counter'));
   out.legacyProp    = inside(legacy, '#counter')?.textContent;
+  // The same script twice, on the SELECTOR form. The element form is guarded by
+  // customElements — the document's registry, which both copies of the module
+  // see; the selector form was guarded by a module-scoped WeakMap, which each
+  // copy has its own of, so the second copy mounted a second component into the
+  // same box. This page has always built that case and always measured the
+  // other node.
+  out.selectorNodes = legacy.shadowRoot.querySelectorAll('#counter').length;
 
   // ── the directory form, and an imported stylesheet ────────────────────
   const lead = el('mt-lead-form');
@@ -189,6 +197,136 @@ const PROBE = `
   out.lateMounted = await until(() => !!inside(late, '#counter'));
   out.lateProp    = inside(late, '#counter')?.textContent;
 
+  // ── one host element that cannot be mounted into ──────────────────────
+  // #poison holds a CLOSED shadow root, so attachShadow throws. It is FIRST in
+  // the document, so an unguarded loop abandons #legacy and every widget after
+  // it. Both halves are asserted: the ones after it mount, AND the failure was
+  // reported — a guard that swallowed it is the failure a merchant cannot debug.
+  out.poisonReported = (window.__widgetLog ?? []).some(m => m.includes('could not mount'));
+
+  // ── a host page that MOVES a mounted widget ───────────────────────────
+  // Mesa's destroy() removes the mount anchor and leaves the rendered DOM, so a
+  // reparent used to append a second live widget beside the first — once per
+  // move, forever, each with its own state and its own traffic.
+  const mover = document.createElement('mt-counter');
+  mover.dataset.start = '7';
+  document.body.appendChild(mover);
+  await until(() => !!inside(mover, '#counter'));
+  inside(mover, '#counter').click();
+  el('#elsewhere').appendChild(mover);
+  await sleep(50);
+  out.movedNodes = mover.shadowRoot.querySelectorAll('#counter').length;
+  // A move that cleared the root and did not remount passes the count alone.
+  inside(mover, '#counter')?.click();
+  out.movedText = inside(mover, '#counter')?.textContent;
+
+  // ── a host page that REMOVES a selector-form widget ───────────────────
+  // The element form tears down through disconnectedCallback. The selector form
+  // has no lifecycle of its own, so a host SPA that removed the node left the
+  // component, its effects and its subscriptions running with nothing pointing
+  // at them. The observer watches removals now, not only additions.
+  const doomed = document.createElement('div');
+  doomed.className = 'mt-counter';
+  doomed.dataset.start = '3';
+  el('#elsewhere').appendChild(doomed);
+  await until(() => !!inside(doomed, '#counter'));
+  out.removedMountedFirst = doomed.shadowRoot.querySelectorAll('#counter').length;
+
+  // Removed as part of a SUBTREE, which is what a host framework actually does:
+  // it empties a container and never touches our element itself.
+  const wrapper = document.createElement('div');
+  el('#elsewhere').appendChild(wrapper);
+  wrapper.appendChild(doomed);
+  await sleep(30);
+  wrapper.remove();
+  await sleep(50);
+  out.removedTornDown = doomed.shadowRoot.querySelectorAll('#counter').length;
+
+  // The control: a sibling that was never removed is still mounted and still
+  // live. A teardown that swept every widget on the page would pass the row
+  // above and break the app.
+  const survivor = document.createElement('div');
+  survivor.className = 'mt-counter';
+  survivor.dataset.start = '1';
+  el('#elsewhere').appendChild(survivor);
+  await until(() => !!inside(survivor, '#counter'));
+  inside(survivor, '#counter').click();
+  out.survivorText = inside(survivor, '#counter')?.textContent;
+
+  // ── a shadow root the HOST already attached ───────────────────────────
+  // Reading el.shadowRoot and falling back to attachShadow treats a root the
+  // host page made as one of ours. Appending into it puts the widget's
+  // stylesheet into THEIR adoptedStyleSheets and scopes Mesa's delegation to
+  // their content, so the isolation the shadow root is for runs in neither
+  // direction. The widget nests a root of its own inside theirs instead.
+  const pre = document.createElement('div');
+  pre.className = 'mt-counter';
+  pre.dataset.start = '7';
+  const hostRoot = pre.attachShadow({ mode: 'open' });
+  hostRoot.innerHTML = '<p id="host-own">the host page put this here</p>';
+  const hostSheets = hostRoot.adoptedStyleSheets.length;
+  el('#elsewhere').appendChild(pre);
+
+  // It still mounts — refusing the element would be a widget that silently
+  // does not appear on a page where it could.
+  out.preMounted = await until(() => !!hostRoot.querySelector('div')?.shadowRoot);
+  // Null-safe on purpose. A dereference here aborts the whole probe, so a
+  // regression in this one section would report as every row after it failing
+  // too — which is what a first measurement of it actually did.
+  const nested = hostRoot.querySelector('div')?.shadowRoot ?? null;
+  out.preRendered = nested ? nested.querySelectorAll('#counter').length : -1;
+
+  // The host's own content is untouched, and their root did not adopt our
+  // stylesheet. This is the assertion the whole change is for.
+  out.preHostContent = hostRoot.querySelector('#host-own')?.textContent;
+  out.preHostSheets  = hostRoot.adoptedStyleSheets.length - hostSheets;
+  // …and ours DID land, one level down. Without this the row above passes for
+  // a widget that simply never got a stylesheet.
+  out.preOwnSheets   = !!nested && nested.adoptedStyleSheets.length > 0;
+
+  // Taken back off, the wrapper goes whole — the sweep walks the root we
+  // mounted into and cannot reach a node one level up.
+  pre.remove();
+  await sleep(50);
+  out.preWrapperGone   = hostRoot.querySelectorAll('div').length;
+  out.preHostSurvived  = hostRoot.querySelector('#host-own')?.textContent;
+
+  // ── @frontierjs/css inside a shadow root ──────────────────────────────
+  // Invariant 13's kit declares its tokens on :root, which matches nothing in a
+  // shadow tree. Read the TOKEN, not a computed background: a background passes
+  // on any theme change, and the mechanism is whether the declaration lands.
+  const kit = el('mt-kit');
+  out.kitMounted   = await until(() => !!inside(kit, '#kit'));
+  out.kitToken     = getComputedStyle(inside(kit, '#kit')).getPropertyValue('--color-primary').trim();
+  // And it must not have leaked into the page that hosts it.
+  out.kitTokenLeak = getComputedStyle(el('#host-button')).getPropertyValue('--color-primary').trim();
+
+  return out;
+})()
+`
+
+const CSP_PROBE = `
+(async () => {
+  const out = { cspViolations: [] };
+  document.addEventListener('securitypolicyviolation', e => out.cspViolations.push(e.violatedDirective));
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const until = async (fn, ms = 4000) => {
+    for (let w = 0; w < ms; w += 25) { if (fn()) return true; await sleep(25); }
+    return false;
+  };
+  const inside = (host, sel) => host?.shadowRoot?.querySelector(sel);
+
+  const counter = document.querySelector('mt-counter');
+  out.cspMounted = await until(() => !!inside(counter, '#counter'));
+  // Mesa's own scoped style — adoptedStyleSheets, never gated by CSP. If this
+  // one goes red the page proves nothing about the imported sheet beside it.
+  out.cspScopedBg = getComputedStyle(inside(counter, '#counter')).backgroundColor;
+
+  const lead = document.querySelector('mt-lead-form');
+  await until(() => !!inside(lead, '.lead-form'));
+  // The IMPORTED stylesheet — the one that used to arrive as a <style> element
+  // and be dropped in silence.
+  out.cspImportedBorder = getComputedStyle(inside(lead, '.lead-form')).borderTopColor;
   return out;
 })()
 `
@@ -240,7 +378,19 @@ const { result } = await send('Runtime.evaluate', {
   expression: PROBE, awaitPromise: true, returnByValue: true,
 }, session)
 
-const got = { ...fileChecks, ...headerChecks, ...(result?.result?.value ?? {}) }
+// ── the same widgets, on a host page with a strict CSP ────────────────────────
+// A bank, a government site, anything behind a WAF: `style-src 'self'` blocks an
+// injected <style> element and nothing in the widget can observe it, because
+// Mesa's own scoped styles arrive through adoptedStyleSheets and are not gated.
+// So it half-renders. The page asserts BOTH stylesheets under one policy — a fix
+// that broke both would look like a fix that broke neither.
+await send('Page.navigate', { url: `${origin}/csp` }, session)
+await new Promise(r => setTimeout(r, 1500))
+const { result: csp } = await send('Runtime.evaluate', {
+  expression: CSP_PROBE, awaitPromise: true, returnByValue: true,
+}, session)
+
+const got = { ...fileChecks, ...headerChecks, ...(result?.result?.value ?? {}), ...(csp?.result?.value ?? {}) }
 
 chrome.kill()
 server.close()
@@ -251,7 +401,7 @@ await widgetOrigin.close()
 const EXPECTED = {
   // Two widgets in, two scripts out — and nothing else. A .css beside them is a
   // request the host page was never told to make.
-  emitted:            ['Counter.js', 'LeadForm.js'],
+  emitted:            ['Counter.js', 'Kit.js', 'LeadForm.js'],
   hasModuleSyntax:    false,   // IIFE — a classic <script> can run it
   hasOwnCss:          true,    // the component's <style>, inside the script
   leadHasImportedCss: true,    // an imported stylesheet, folded in
@@ -280,8 +430,40 @@ const EXPECTED = {
   leadAfterClick:     'sent',
 
   counterNodes:       1,                 // the script ran twice; one widget
+  selectorNodes:      1,                 // …and the selector form, which is the half that failed
   lateMounted:        true,
   lateProp:           'count: 42',
+
+  // One element on the page cannot be mounted into. Everything after it still
+  // mounts (legacyMounted, leadMounted, kitMounted above), and it was reported.
+  poisonReported:     true,
+
+  movedNodes:         1,                 // a reparent is one widget, not two
+  movedText:          'count: 8',        // …and it is a fresh, live mount: props re-read, click counts
+
+  // FJS-825 — the selector form had no teardown at all.
+  removedMountedFirst: 1,                 // it really was mounted before removal
+  removedTornDown:     0,                 // …and removing its ancestor tore it down
+  survivorText:       'count: 2',         // the control: an untouched sibling is still live
+
+  // A shadow root the HOST attached — the widget nests rather than moving in.
+  preMounted:      true,
+  preRendered:     1,
+  preHostContent:  'the host page put this here',
+  preHostSheets:   0,      // their root adopted nothing of ours
+  preOwnSheets:    true,   // …and ours landed one level down, so 0 above means isolated
+  preWrapperGone:  0,      // the nested root is removed whole
+  preHostSurvived: 'the host page put this here',
+
+  kitMounted:         true,
+  kitToken:           '#0d83dd',         // @frontierjs/css, resolved inside a shadow root
+  kitTokenLeak:       '',                // and not leaked into the host page
+
+  cspMounted:         true,
+  cspScopedBg:        'rgb(0, 128, 0)',  // adoptedStyleSheets: never gated, the control
+  cspImportedBorder:  'rgb(0, 0, 255)',  // the imported sheet, under style-src 'self'
+  cspViolations:      [],
+
   errors:             [],
 }
 

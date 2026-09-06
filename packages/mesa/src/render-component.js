@@ -58,7 +58,7 @@ import { readFile, writeFile, unlink, mkdir } from 'fs/promises'
 import { existsSync, unlinkSync, readdirSync, statSync } from 'fs'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { compileSource } from './compiler.js'
-import { initRenderer, renderToHTML } from './render.js'
+import { initRenderer, renderToHTML, escapeHTML } from './render.js'
 import { inlineCSS }     from './css-inliner.js'
 
 // ── Module-level renderer init guard ─────────────────────────────────────────
@@ -242,6 +242,47 @@ function isMesaSpecifier(spec) {
   return spec.endsWith('.mesa') || spec.endsWith('.md')
 }
 
+// ── The runtime the temp module runs against ──────────────────────────────────
+// A compiled module imports the runtime by BARE specifier, which Node resolves
+// from wherever the temp file was written. `options.tmpDir` therefore chooses
+// which COPY of `runtime.js` executes, and a caller pointing it into its own
+// tree (Sierra does, on every build) gets a different module object from the one
+// `render.js` called `setRenderEnvironment(true, false)` on. Nothing fails: the
+// rendering copy computed `_isClient` from `typeof document`, and the happy-dom
+// globals are installed BEFORE the import, so it believes it is in a browser and
+// every RULE 19 guard is off — `{@attach}` runs, `$.onMount` runs, and `island()`
+// emits no markers at all. The specifier is rewritten to this file's own sibling
+// so the two halves cannot be two files.
+const RUNTIME_SPECIFIERS = new Set([
+  '@frontierjs/mesa/runtime.js',
+  '@frontierjs/mesa/runtime',
+])
+
+let _runtimePath
+function runtimePath() {
+  if (_runtimePath === undefined) {
+    try {
+      // `path.dirname(fileURLToPath(...))` and not `new URL('./runtime.js', ...)`:
+      // under a happy-dom test environment the global URL is the DOM's, and
+      // node's fileURLToPath refuses an instance it did not make, so the whole
+      // suite fell back to the bare specifier without a render failing.
+      _runtimePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'runtime.js')
+    } catch {
+      // import.meta.url was rewritten by a bundler to a non-file URL. Leaving
+      // the bare specifier is the old behavior and still works whenever the two
+      // copies coincide, so this warns rather than failing a render that renders.
+      _runtimePath = null
+      console.warn(
+        '[Mesa renderComponent] could not resolve this package\'s own runtime.js; ' +
+        'temp modules keep the bare specifier and may execute a DIFFERENT copy of ' +
+        'the runtime, where server-render guards are off ({@attach} runs, islands ' +
+        'emit no markers).'
+      )
+    }
+  }
+  return _runtimePath
+}
+
 /**
  * Resolve an aliased specifier to an absolute path, or null if none matches.
  *
@@ -308,6 +349,28 @@ function resolveMesaImport(spec, importer) {
   }
 }
 
+/**
+ * Refuse a tree in which any file collected compiler errors.
+ *
+ * One throw for the whole tree, naming every file and every error under it. A
+ * prerender walks hundreds of components and each error is independent of the
+ * others, so failing at the first one costs a full rebuild per error.
+ *
+ * It throws rather than answering an array because an array is a channel a
+ * caller has to remember to read, which is the fail-open this closes: the Vite
+ * plugin read `analysis.errors` and the prerender did not, and nothing said so.
+ */
+function refuseCompileErrors(problems) {
+  if (!problems?.length) return
+  const detail = problems
+    .map((p) => `${p.file}\n${p.errors.map((e) => `  \u2022 ${e}`).join('\n')}`)
+    .join('\n')
+  const n = problems.reduce((a, p) => a + p.errors.length, 0)
+  throw new Error(
+    `[Mesa renderComponent] ${n} compile error(s) in ${problems.length} file(s):\n${detail}`
+  )
+}
+
 async function compileTree(filePath, visited = new Map(), tempFiles = [], opts = {}, sourceOverride = null) {
   const canonical = path.resolve(filePath)
 
@@ -343,6 +406,20 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
     throw new Error(`[Mesa renderComponent] Compile error in ${canonical}:\n${err.message}`)
   }
 
+  // A compile that COLLECTED errors is a compile that failed. `compileSource`
+  // only throws for the failures the parser cannot walk past; everything else
+  // — `bind:this` on a non-`let`, `{@const}` with no assignment, an unknown
+  // `<mesa:*>`, `export default` in an instance script — lands in
+  // `analysis.errors`, which the Vite plugin reads and this path never did, so
+  // a prerender emitted the broken component's markup and said nothing.
+  //
+  // Collected across the whole tree rather than thrown here: a prerender that
+  // dies on file 300 of 400 naming one file makes the author run it 400 times.
+  // `renderComponent` throws once, at the entry, naming every file.
+  if (ctx.analysis?.errors?.length && opts.problems) {
+    opts.problems.push({ file: canonical, errors: [...ctx.analysis.errors] })
+  }
+
   let js  = ctx.result
   // De-scope CSS — but only for the targets that INLINE it.
   //
@@ -371,7 +448,15 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
   // lets the runtime's `addStyles` find a style already present in the document
   // and inject nothing — which is only possible because the hash is
   // content-addressed and therefore identical across compilations.
+  //
+  // Deduped by that id on the way up the tree, and `css` below is derived from
+  // the deduped list rather than concatenated separately. The id is a hash of
+  // the style content and nothing else, so two components with byte-identical
+  // CSS share one — which is what makes the dedupe sound, and is the whole
+  // reason the hash is content-addressed. Concatenating blindly shipped a
+  // design system's one style block once per component that used it.
   const styles = cssRaw ? [{ id: cssId, css }] : []
+  const seen   = new Set(cssId && cssRaw ? [cssId] : [])
 
   const modules = new Map([[canonical, js]])
 
@@ -399,6 +484,12 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
     // package. Applied here rather than in each branch because the two must not
     // be able to disagree about where `@/x` points.
     const spec = applyAlias(m[2], opts.alias) ?? m[2]
+
+    if (RUNTIME_SPECIFIERS.has(spec)) {
+      const abs = runtimePath()
+      if (abs) rewrites.push({ match: m[0], prefix: m[1], tmpPath: abs, suffix: m[3] })
+      continue
+    }
 
     // A RELATIVE import of something that is not a Mesa file — a sibling store,
     // a formatter, a table of constants — is rewritten to an absolute path.
@@ -430,15 +521,22 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
     }
     const depPath = resolveMesaImport(spec, canonical)
     const child = await compileTree(depPath, visited, tempFiles, opts)
-    css += '\n' + child.css
     for (const [k, v] of child.modules) modules.set(k, v)
     islands.push(...child.islands)
-    styles.push(...child.styles)
+    for (const s of child.styles) {
+      // A style with no id cannot be compared, so it is always kept.
+      if (s.id && seen.has(s.id)) continue
+      if (s.id) seen.add(s.id)
+      styles.push(s)
+    }
     rewrites.push({ match: m[0], prefix: m[1], tmpPath: child.tmpPath, suffix: m[3] })
   }
 
+  // A function replacement, because `$$` in a replacement STRING means one `$`
+  // and the runtime is imported as `$$runtime` — the namespace would come out
+  // `$runtime` and every call in the module would be a ReferenceError.
   for (const { match, prefix, tmpPath: childTmp, suffix } of rewrites) {
-    js = js.replace(match, prefix + childTmp + suffix)
+    js = js.replace(match, () => prefix + childTmp + suffix)
   }
 
   // Write temp file.
@@ -455,15 +553,43 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
     _liveTemp.add(tmpPath)
   }
 
-  return { tmpPath, css, tempFiles, modules, islands, styles }
+  return { tmpPath, css: styles.map((s) => s.css).join('\n'), tempFiles, modules, islands, styles }
 }
 
 // ── HTML rendering ────────────────────────────────────────────────────────────
+
+/**
+ * Point a render failure's stack back at the `.mesa` files it came from.
+ *
+ * Every module in the tree executes from a temp `.mjs` in a scratch directory,
+ * so the one frame that names the failing component names a path nobody wrote
+ * and nobody can open. The frame itself carries the component function's name,
+ * which is why rewriting the path is enough to identify it — and the innermost
+ * rewritten frame is named in the message, because a prerender of hundreds of
+ * pages reports one line and the reader may never see the stack.
+ */
+function attributeToSource(err, sources) {
+  if (!sources?.size || typeof err?.stack !== 'string') return err
+  let culprit = null
+  err.stack = err.stack.replace(/(?:file:\/\/)?(\/\S*?\.mjs)/g, (m, p) => {
+    const src = sources.get(p)
+    if (!src) return m
+    culprit ??= src
+    return src
+  })
+  if (culprit) {
+    const line = `[Mesa renderComponent] ${path.basename(culprit)} threw during render — ${culprit}`
+    err.stack   = line + '\n' + err.stack
+    err.message = line + '\n' + err.message
+  }
+  return err
+}
+
 /**
  * Execute a compiled component in the Mesa runtime and return its HTML.
  * Also extracts named module exports (e.g. `export const subject`).
  */
-async function executeComponent(tmpPath, props) {
+async function executeComponent(tmpPath, props, { label, sources } = {}) {
   const mod = await import(tmpPath)
   const fn  = mod.default
 
@@ -477,7 +603,12 @@ async function executeComponent(tmpPath, props) {
   // noticing — nothing exercised it. Delegating also picks up root disposal,
   // which this copy never had: rendering N pages left N live effect sets
   // subscribed to any module-scope signal they read.
-  const html = await renderToHTML(fn, props)
+  let html
+  try {
+    html = await renderToHTML(fn, props, { label })
+  } catch (err) {
+    throw attributeToSource(err, sources)
+  }
 
   // Named exports: <script module> exports are real ES module-level exports.
   // export const/let inside the component function are props, not module exports.
@@ -509,9 +640,9 @@ function wrapEmailDoc(bodyHTML, { subject = '', preservedCSS = '', bgcolor = '#f
   <!--[if mso]>
   <xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch><o:AllowPNG/></o:OfficeDocumentSettings></xml>
   <![endif]-->${styleBlock}
-  <title>${subject ? subject.replace(/</g,'&lt;') : ''}</title>
+  <title>${subject ? escapeHTML(subject) : ''}</title>
 </head>
-<body style="margin:0;padding:0;word-spacing:normal;background-color:${bgcolor};">
+<body style="margin:0;padding:0;word-spacing:normal;background-color:${escapeHTML(bgcolor)};">
   <div role="article" aria-roledescription="email" lang="en" style="text-size-adjust:100%;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
 ${bodyHTML}
   </div>
@@ -768,6 +899,7 @@ export async function renderComponent(source, options = {}) {
       : filePath + '.mesa'
 
     let modules, css, treeIslands
+    const problems = []
     // Pass source directly — no temp .mesa file needed at entry point.
     // tempFiles is tracked and cleaned even though noEmit should leave it empty:
     // this call used to pass a throwaway [] and drop it, so every js-target
@@ -775,7 +907,7 @@ export async function renderComponent(source, options = {}) {
     const tempFiles = []
     try {
       const result = await compileTree(
-        srcPath, new Map(), tempFiles, { compileOptions: _compileOptions, tmpDir: _tmpDir, descope: _descope, alias, noEmit: true }, source
+        srcPath, new Map(), tempFiles, { compileOptions: _compileOptions, tmpDir: _tmpDir, descope: _descope, alias, noEmit: true, problems }, source
       )
       modules     = result.modules
       css         = result.css
@@ -783,6 +915,7 @@ export async function renderComponent(source, options = {}) {
     } finally {
       await cleanTempFiles(tempFiles)
     }
+    refuseCompileErrors(problems)
 
     const cleanModules = new Map()
     const entryKey     = path.basename(srcPath)
@@ -807,17 +940,25 @@ export async function renderComponent(source, options = {}) {
   // compileTree will still create temp .mjs files for compiled output,
   // but only for the compiled JS, never a duplicate .mesa temp file.
   const tempFiles = []
+  const problems  = []
   let html, namedExports, css, unocss_css, preWrapHTML, treeIslands, treeStyles
 
   try {
     // 1. Compile recursively — sourceOverride means rootPath doesn't need to exist on disk
-    const tree = await compileTree(rootPath, new Map(), tempFiles, { compileOptions: _compileOptions, tmpDir: _tmpDir, descope: _descope, alias }, source)
+    const visited = new Map()
+    const tree = await compileTree(rootPath, visited, tempFiles, { compileOptions: _compileOptions, tmpDir: _tmpDir, descope: _descope, alias, problems }, source)
+    refuseCompileErrors(problems)
+
+    // Temp path back to the file it was compiled from, so a stack can name a
+    // component rather than a scratch file.
+    const sources = new Map()
+    for (const [canonical, { tmpPath }] of visited) sources.set(tmpPath, canonical)
     css = tree.css.trim()
     treeIslands = tree.islands
     treeStyles  = tree.styles
 
     // 2. Execute the component
-    const rendered = await executeComponent(tree.tmpPath, data)
+    const rendered = await executeComponent(tree.tmpPath, data, { label: path.basename(rootPath), sources })
     html         = rendered.html
     preWrapHTML  = rendered.html   // saved for plain-text generation after try block
     namedExports = rendered.namedExports
@@ -869,7 +1010,7 @@ export async function renderComponent(source, options = {}) {
       // itself and wants the styles per component rather than as one blob —
       // see `result.styles`. Sierra's prerenderer does exactly that, so that
       // each block can carry its component's scope hash as an `id` and the
-      // runtime's `addStyles` recognises it as already present. Without the
+      // runtime's `addStyles` recognizes it as already present. Without the
       // opt-out the caller has no way to suppress this copy, and the page ends
       // up carrying the same rules twice.
       if (allCSS.trim() && styleTag !== false) {

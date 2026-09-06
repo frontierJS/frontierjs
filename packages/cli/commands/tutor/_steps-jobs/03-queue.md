@@ -37,10 +37,15 @@ const appTs = join(context.config.appDir, 'api', 'src', 'app.ts')
 let   src   = readFileSync(appTs, 'utf8')
 
 if (!src.includes('createCaravan')) {
-  const CONFIGURE = 'app.configure(channels())'
+  // Matched rather than compared: the scaffold configures the channels plugin
+  // with a connection handler, and an app that has narrowed that down to a bare
+  // `channels()` is still the same anchor. A literal would report either shape
+  // as *a file that has been changed under the lesson*.
+  const CONFIGURE = (src.match(/app\.configure\(channels\(\([\s\S]*?\n\}\)\)/)
+                  ?? src.match(/app\.configure\(channels\(\)\)/))?.[0]
   const imports   = [...src.matchAll(/^import .*$/gm)]
 
-  if (!src.includes(CONFIGURE) || imports.length === 0) {
+  if (!CONFIGURE || imports.length === 0) {
     await must(context, {
       ok:    false,
       name:  'api/src/app.ts has the place this step edits',

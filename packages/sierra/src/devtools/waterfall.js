@@ -3,6 +3,8 @@
  * Plain DOM helpers, no framework.
  */
 
+import { html, num } from './html.js'
+
 export function renderWaterfall(request, { n1Threshold = 3 } = {}) {
   const rows = []
 
@@ -22,7 +24,7 @@ export function renderWaterfall(request, { n1Threshold = 3 } = {}) {
   }
 
   for (const row of all) {
-    const ms      = row.durationMs ?? row.duration ?? 0
+    const ms      = num(row.durationMs ?? row.duration)
     const pct     = Math.min(100, Math.round((ms / totalMs) * 100))
     const key     = `${row.service ?? ''}:${row.method ?? row.operation ?? ''}`
     const isN1    = opCounts[key] > n1Threshold
@@ -46,17 +48,12 @@ export function buildWaterfallEl(request, opts) {
   for (const row of rows) {
     const el = document.createElement('div')
     el.className = 'fjs-wf-row' + (row.isN1 ? ' fjs-wf-n1' : '')
-    el.innerHTML =
-      `<span class="fjs-wf-label">${esc(row.label)}</span>` +
-      `<span class="fjs-wf-bar"><span style="width:${row.pct}%"></span></span>` +
-      `<span class="fjs-wf-ms">${row.ms.toFixed(1)}ms</span>` +
-      `<span class="fjs-wf-detail">${esc(row.detail)}</span>`
+    el.innerHTML = String(html`<span class="fjs-wf-label">${row.label}</span>` +
+      html`<span class="fjs-wf-bar"><span style="width:${num(row.pct)}%"></span></span>` +
+      html`<span class="fjs-wf-ms">${row.ms.toFixed(1)}ms</span>` +
+      html`<span class="fjs-wf-detail">${row.detail}</span>`)
     frag.appendChild(el)
   }
 
   return frag
-}
-
-function esc(s) {
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
 }

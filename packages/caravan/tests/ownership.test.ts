@@ -155,7 +155,7 @@ describe('recovery across instances', () => {
     stmts.insert.run({
       id: 'orphan', queue: 'default', name: 'work', data: '{}', status: 'pending',
       priority: 0, max_attempts: 3, retry_delay: null, unique_key: null,
-      run_at: Date.now(), created_at: Date.now(), actor_id: null, tenant_id: null,
+      run_at: Date.now(), created_at: Date.now(), actor_id: null, tenant_id: null, correlation_id: null,
     })
     raw.exec(`UPDATE jobs SET status = 'running', owner_id = 'ghost' WHERE id = 'orphan'`)
     raw.close()
@@ -178,7 +178,7 @@ describe('recovery across instances', () => {
     stmts.insert.run({
       id: 'stalled', queue: 'default', name: 'work', data: '{}', status: 'pending',
       priority: 0, max_attempts: 3, retry_delay: null, unique_key: null,
-      run_at: Date.now(), created_at: Date.now(), actor_id: null, tenant_id: null,
+      run_at: Date.now(), created_at: Date.now(), actor_id: null, tenant_id: null, correlation_id: null,
     })
     raw.exec(`UPDATE jobs SET status = 'running', owner_id = 'gone' WHERE id = 'stalled'`)
     // Last said it was alive a minute ago; the default lease is 30s.
@@ -201,7 +201,7 @@ describe('recovery across instances', () => {
     stmts.insert.run({
       id: 'held', queue: 'default', name: 'work', data: '{}', status: 'pending',
       priority: 0, max_attempts: 3, retry_delay: null, unique_key: null,
-      run_at: Date.now(), created_at: Date.now(), actor_id: null, tenant_id: null,
+      run_at: Date.now(), created_at: Date.now(), actor_id: null, tenant_id: null, correlation_id: null,
     })
     raw.exec(`UPDATE jobs SET status = 'running', owner_id = 'alive' WHERE id = 'held'`)
     raw.exec(`INSERT INTO job_owners (id, started_at, seen_at) VALUES ('alive', 0, ${Date.now()})`)
@@ -246,7 +246,7 @@ describe('a completion belongs to the instance that claimed it', () => {
     stmts.insert.run({
       id: 'j1', queue: 'default', name: 'work', data: '{}', status: 'pending',
       priority: 0, max_attempts: 3, retry_delay: null, unique_key: null,
-      run_at: Date.now(), created_at: Date.now(), actor_id: null, tenant_id: null,
+      run_at: Date.now(), created_at: Date.now(), actor_id: null, tenant_id: null, correlation_id: null,
     })
     stmts.claimNext.get({ queue: 'default', now: Date.now(), owner: 'A' })
 

@@ -76,10 +76,15 @@ describe('injectAutoImports', () => {
     expect(scriptContent).toContain('import Button from')
   })
 
-  test('prepends to source when no script tag', () => {
+  test('synthesises a script block when the file has none', () => {
     const source = `<Button />`
     const result = injectAutoImports(source, map)
-    expect(result.startsWith('import Button from')).toBe(true)
+    // A synthesised instance script, not bare text. Prepending the import
+    // statement to a script-less file put it where Mesa parses TEMPLATE
+    // content, so the page rendered the literal words `import Button from …`
+    // and called `Button` as an undefined free identifier (`FJS-796`).
+    expect(result.startsWith('<script>\nimport Button from')).toBe(true)
+    expect(result).toContain('</script>')
   })
 
   test('returns source unchanged when map is empty', () => {
@@ -414,5 +419,80 @@ describe('createSierraViteConfig with autoImport', () => {
     const cfg = createSierraViteConfig({ target: 'spa' })
     const names = cfg.plugins.map(p => p?.name).filter(Boolean)
     expect(names).not.toContain('sierra:auto-import')
+  })
+})
+
+// ─── a local binding the collector could not see ─────────────────────────────
+//
+// `collectBoundNames` matched `\b(?:const|let|var|function|class)\s+(\w+)` and
+// nothing else, so the commonest declaration form in JavaScript was invisible:
+// `const { page } = props` beside a registered `page` got a duplicate import
+// and the build died with *Identifier 'page' has already been declared (4:10)*
+// — naming a line the author never wrote, for an identifier they never
+// imported (`FJS-797`). Every row asserts the source comes back UNCHANGED,
+// which is the only shape that can tell *saw the binding* from *injected
+// something harmless*.
+
+describe('a local binding shadows a registered module name', () => {
+  const modules = new Map([
+    ['page',  { kind: 'named', from: '@frontierjs/sierra', imported: 'page' }],
+    ['money', { kind: 'named', from: '@frontierjs/toolbelt/units', imported: 'money' }],
+  ])
+
+  const unchanged = (src) => expect(injectAutoImports(src, modules)).toBe(src)
+
+  test('a destructured const', () => {
+    unchanged('<script>\n  const { page } = props\n  x(page)\n</script>')
+  })
+
+  test('a renamed destructure binds the RIGHT half', () => {
+    unchanged('<script>\n  const { data: page } = props\n  x(page)\n</script>')
+  })
+
+  test('a destructured array', () => {
+    unchanged('<script>\n  const [page, rest] = xs\n  x(page)\n</script>')
+  })
+
+  test('a rest element', () => {
+    unchanged('<script>\n  const { a, ...page } = props\n  x(page)\n</script>')
+  })
+
+  test('a function parameter', () => {
+    unchanged('<script>\n  function show(page) { return page.title }\n</script>')
+  })
+
+  test('a destructured function parameter', () => {
+    unchanged('<script>\n  function show({ page }) { return page.title }\n</script>')
+  })
+
+  test('an arrow parameter, parenthesised and bare', () => {
+    unchanged('<script>\n  const f = (page) => page.title\n</script>')
+    unchanged('<script>\n  const f = page => page.title\n</script>')
+  })
+
+  test('a catch parameter', () => {
+    unchanged('<script>\n  try { go() } catch (page) { report(page) }\n</script>')
+  })
+
+  test('an {#each … as} binding', () => {
+    unchanged('<ul>{#each rows as page}<li>{page.title}</li>{/each}</ul>')
+  })
+
+  test('an {#each … as} with an index', () => {
+    unchanged('<ul>{#each rows as page, i}<li>{page.title}</li>{/each}</ul>')
+  })
+
+  // The negative controls. A collector that treated every identifier as bound
+  // would satisfy every row above and inject nothing ever (`FJS-351`), so the
+  // unshadowed name still has to arrive — and a CONDITION is not a declaration,
+  // which is the over-inclusion this fix had to stop short of.
+  test('an unshadowed name is still imported', () => {
+    const out = injectAutoImports('<script>\n  const total = money(1)\n</script>', modules)
+    expect(out).toContain("import { money } from '@frontierjs/toolbelt/units'")
+  })
+
+  test('a name used only as an `if` condition is not treated as a parameter', () => {
+    const out = injectAutoImports('<script>\n  if (page) { go() }\n</script>', modules)
+    expect(out).toContain("import { page } from '@frontierjs/sierra'")
   })
 })

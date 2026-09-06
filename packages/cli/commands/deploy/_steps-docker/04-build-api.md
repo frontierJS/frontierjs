@@ -22,6 +22,28 @@ const machine     = machineFor(context, builder.host, builder.path)
 const target      = machineFor(context, host, serverPath)
 const buildPath   = builder.path
 
+// ─── Can docker READ this context? ───────────────────────────────────────────
+// Asked before the vendor and the upload, because a context docker cannot see
+// fails at the build with a sentence about a missing file that is plainly there
+// (`FJS-748`) — and everything between here and that build is wasted work.
+// `core/docker-context.js` carries the measurement and the reasons.
+const { contextProbe, parseProbe, contextRefusal } =
+  await import(new URL('file://' + global.fliRoot + '/core/docker-context.js'))
+
+let probeOut = null
+try { probeOut = machine.capture(contextProbe(dockerfile), { cwd: buildPath }) } catch {}
+
+if (probeOut !== null) {
+  const refusal = contextRefusal(parseProbe(probeOut), {
+    host: builder.host, dockerfile, contextPath: buildPath,
+  })
+  if (refusal) {
+    for (const [level, line] of refusal) log[level](line)
+    context.config.abort = true
+    return
+  }
+}
+
 // ─── Vendor, here rather than on the server ───────────────────────────────────
 // The Dockerfile installs from deploy/generated/, which is generated and
 // git-ignored — so step 02's `git pull` cannot produce it and the build would

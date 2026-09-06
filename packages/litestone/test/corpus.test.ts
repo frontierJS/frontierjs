@@ -17,29 +17,55 @@
 // It is therefore also the widest test of the SHIPPED importer: 1,377 models of
 // input nobody here wrote, through the same code an app runs.
 //
-// Six are committed and two are fetched on demand (`fixtures/corpus/README.md`
-// § What is committed says why, and says that the split is currently practice
-// rather than a ruling). An absent fixture is SKIPPED BY NAME rather than
-// silently not run. `LOCAL` is a third tier for a source that is neither: a
-// private schema converted by hand, which nobody else can regenerate — so its
-// skip says that instead of naming a fetch target that does not exist.
+// Which fixtures exist and on whose machine is `fixtures/corpus/tiers.js`, and
+// `introspect-roundtrip.test.ts` reads the same module — a roster written twice
+// drifts, and the copy that drifted made the suite unpassable on a fresh clone
+// (`FJS-009`). `fixtures/corpus/README.md` § What is committed says why the
+// split falls where it does. An absent fixture is SKIPPED BY NAME rather than
+// silently not run.
+//
+// A LOCAL fixture is also read from `$FJS_CORPUS_LOCAL` when the tree does not
+// hold it, because a private schema in the tree is a source file `.gitignore`
+// has to hide, and a hidden source file is the shape that made 20 files of a
+// build pipeline invisible to a fresh clone. Keeping it outside means the
+// hygiene sweep stays honest AND the target still runs. The override is LOCAL
+// only: pointing a committed fixture somewhere else would let a green run grade
+// bytes nobody reviewed.
 
 import { describe, test, expect } from 'bun:test'
-import { readFileSync, existsSync, rmSync } from 'node:fs'
+import { readFileSync, existsSync, rmSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Database } from 'bun:sqlite'
 import { parse, createClient, introspect, buildPristine, diffSchemas } from '../src/index.js'
+import { COMMITTED, FETCHED, LOCAL } from './fixtures/corpus/tiers.js'
 
-const dir      = new URL('./fixtures/corpus/', import.meta.url).pathname
-const COMMITTED = ['triggerdev', 'discourse', 'mastodon', 'lago', 'erpnext', 'hrms']
-const FETCHED   = ['calcom', 'documenso']
-const LOCAL     = ['maidtech']
+const dir = new URL('./fixtures/corpus/', import.meta.url).pathname
+
+// Where a LOCAL fixture may live instead of the tree. Trailing separator is not
+// assumed — an operator types a directory, not a prefix.
+const localDir = process.env.FJS_CORPUS_LOCAL
 
 const read = (name: string) => {
-  const p = `${dir}${name}.lite`
-  return existsSync(p) ? readFileSync(p, 'utf8') : null
+  const candidates = [`${dir}${name}.lite`]
+  if (localDir && LOCAL.includes(name)) candidates.push(join(localDir, `${name}.lite`))
+  for (const p of candidates) if (existsSync(p)) return readFileSync(p, 'utf8')
+  return null
 }
+
+// A fixture on disk that no tier names is swept by NOTHING, and that is the
+// half a count cannot ask: `hrms.lite` sat committed and unnamed by the
+// round-trip test's own copy of the roster for as long as the copy existed.
+// Asked against the DIRECTORY, because comparing the roster to a list derived
+// from the roster is a tautology that passes however wrong both are.
+describe('the roster names every fixture that is here', () => {
+  test('no .lite in fixtures/corpus/ is unaccounted for', () => {
+    const known   = new Set([...COMMITTED, ...FETCHED, ...LOCAL])
+    const onDisk  = readdirSync(dir).filter(f => f.endsWith('.lite')).map(f => f.replace(/\.lite$/, ''))
+    const unnamed = onDisk.filter(n => !known.has(n))
+    expect(unnamed).toEqual([])
+  })
+})
 
 describe('the corpus — schemas converted from real applications', () => {
   for (const name of [...COMMITTED, ...FETCHED, ...LOCAL]) {
@@ -47,7 +73,7 @@ describe('the corpus — schemas converted from real applications', () => {
 
     if (!source) {
       const how = LOCAL.includes(name)
-        ? 'a private source with no fetch target — convert it by hand'
+        ? 'a private source with no fetch target — convert it by hand, or set FJS_CORPUS_LOCAL to the directory holding it'
         : `run \`bun test/fixtures/corpus/fetch.mjs ${name}\``
       test.skip(`${name} — not present; ${how}`, () => {})
       continue

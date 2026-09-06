@@ -29,6 +29,12 @@ const SCHEMA = `
     -- An id rather than a session: the standing is re-resolved when the job
     -- runs, so a caller demoted in between is graded at what they hold then.
     actor_id      TEXT,
+    -- WHICH REQUEST asked for this work. Third sibling of actor_id and
+    -- tenant_id and the same lifecycle: resolved at dispatch, carried on the
+    -- row, read back when the job runs. Without it a job dispatched inside a
+    -- request could not be joined to it in a log or a trace -- the two halves
+    -- of one unit of work, and no id in common.
+    correlation_id TEXT,
     -- WHICH TENANT the work is for, where the app declares tenancy. Resolved
     -- at dispatch and re-bound when the job runs, so a handler reaches the same
     -- rows the request that asked for it could. NULL is honest and common: an
@@ -233,6 +239,7 @@ export function openDb(
     // a jobs table created before that column existed the index is a hard error
     // naming a column the same statement never adds.
     addColumn(db, 'actor_id')
+    addColumn(db, 'correlation_id')
     addColumn(db, 'tenant_id')
     addColumn(db, 'owner_id')
     db.exec(SCHEMA)
@@ -447,13 +454,13 @@ export function buildStatements(db: Database) {
     id: string; queue: string; name: string; data: string
     status: string; priority: number; max_attempts: number
     retry_delay: string | null; unique_key: string | null
-    run_at: number; created_at: number; actor_id: string | null
+    run_at: number; created_at: number; actor_id: string | null; correlation_id: string | null
     tenant_id: string | null
   }>(db.prepare(`
     INSERT INTO jobs
-      (id, queue, name, data, status, priority, max_attempts, retry_delay, unique_key, run_at, created_at, actor_id, tenant_id)
+      (id, queue, name, data, status, priority, max_attempts, retry_delay, unique_key, run_at, created_at, actor_id, tenant_id, correlation_id)
     VALUES
-      ($id, $queue, $name, $data, $status, $priority, $max_attempts, $retry_delay, $unique_key, $run_at, $created_at, $actor_id, $tenant_id)
+      ($id, $queue, $name, $data, $status, $priority, $max_attempts, $retry_delay, $unique_key, $run_at, $created_at, $actor_id, $tenant_id, $correlation_id)
   `))
 
   // ── Claim next job (atomic — uses RETURNING to avoid race conditions) ────────

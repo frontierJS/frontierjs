@@ -11,7 +11,7 @@
  * Chrome on PATH or $FJS_CHROME, same as the css package's harness.
  *
  * Two traps this harness has already hit:
- *   • NEVER return a bare `null` from a probe. CDP serialises it with no
+ *   • NEVER return a bare `null` from a probe. CDP serializes it with no
  *     `value` key, so it reads back as `undefined` and the assertion fails for
  *     a reason that has nothing to do with the page.
  *   • The drift badge is polled every 5s, so an assertion made immediately
@@ -35,7 +35,9 @@ const t = (name, actual, expected) => results.push({ name, actual, expected })
 
 // ─── the server, started and stopped by this file ─────────────────────────
 
-const studio = spawn('bunx', ['litestone', 'studio', '--schema', SCHEMA, '--port', PORT], {
+// `--no-open` or every run of this drive opens a tab on the desktop of
+// whoever is running it, over whatever they were typing into.
+const studio = spawn('bunx', ['litestone', 'studio', '--schema', SCHEMA, '--port', PORT, '--no-open'], {
   cwd: join(REPO, 'example'), stdio: ['ignore', 'pipe', 'pipe'], detached: true,
 })
 let studioOut = ''

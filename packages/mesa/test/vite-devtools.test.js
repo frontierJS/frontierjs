@@ -46,7 +46,25 @@ const PLUGINS = {
     p.configResolved({ root: '/app', command: 'serve' })
     return p
   },
-  'mesaDevtools()': () => mesaDevtools(),
+  'mesaDevtools()': () => {
+    const p = mesaDevtools()
+    p.configResolved({ root: '/app', command: 'serve' })
+    return p
+  },
+}
+
+/** The same two, configured for a production build. */
+const BUILT = {
+  'mesaPlugin()':   () => {
+    const p = mesaPlugin()
+    p.configResolved({ root: '/app', command: 'build' })
+    return p
+  },
+  'mesaDevtools()': () => {
+    const p = mesaDevtools()
+    p.configResolved({ root: '/app', command: 'build' })
+    return p
+  },
 }
 
 // ─── stand-ins ────────────────────────────────────────────────────────────────
@@ -198,5 +216,31 @@ describe.each(Object.entries(PLUGINS))('%s dev client', (_name, make) => {
     const p = make()
     expect(p.resolveId('/src/main.js') ?? null).toBeNull()
     expect(p.load('/src/main.js')).toBeNull()
+  })
+})
+
+// ─── and none of it in a production build ─────────────────────────────────────
+//
+// FJS-862. The dev client's `src` is a virtual id nothing emits as an asset, so
+// a shipped page requests a module that is not there — and on the SPA-fallback
+// servers this framework deploys with, that 404 answers index.html as
+// text/html, which the browser rejects as a module with a second error about
+// something else entirely. `mesaDevtools()` had no `configResolved` at all, so
+// every hook on it was unconditional.
+
+describe.each(Object.entries(BUILT))('%s in a build', (_name, make) => {
+
+  test('injects no script into the shipped HTML', () => {
+    expect(make().transformIndexHtml()).toEqual([])
+  })
+})
+
+describe('mesaDevtools() in a build', () => {
+
+  test('does not claim the dev-client id either', () => {
+    const plugin = BUILT['mesaDevtools()']()
+
+    expect(plugin.resolveId(DEV_CLIENT) ?? null).toBeNull()
+    expect(plugin.load('\0@frontierjs/mesa-dev-client')).toBeNull()
   })
 })

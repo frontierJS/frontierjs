@@ -87,6 +87,18 @@ const MESA_DYNAMIC_TAG = 'mesa-dynamic-element'
 export const LOC_ATTR = 'data-fjs-loc'
 
 /**
+ * A static attribute value on its way into the template string, which is parsed
+ * back by `innerHTML`. The emitter wraps every value in double quotes, so a `"`
+ * inside one — which only a single-quoted or unquoted source attribute can carry —
+ * closes the attribute early and the rest of the value is re-parsed as further
+ * attributes: `title='a" onmouseover="alert(1)'` ships a live handler.
+ *
+ * Only `"` is escaped. The value here is the attribute's SOURCE text, entities
+ * and all, so escaping `&` would turn an author's `&quot;` into `&amp;quot;`.
+ */
+const attrValue = (v) => String(v).replace(/"/g, '&quot;')
+
+/**
  * Offset → 1-based line/column, over a line-start index built once per compile.
  * A per-element scan is O(source) each and there is one call per element.
  */
@@ -130,6 +142,54 @@ const NON_DELEGATED_EVENTS = new Set([
 export function assert(condition, msg) {
   if (condition) return
   throw new Error(msg || 'AssertionError')
+}
+
+/**
+ * A parse failure carrying the SOURCE OFFSET it happened at. The offset is the
+ * half the parser has and the half a message cannot be given later: `compile()`
+ * turns it into `File.mesa:line:column` on the way out, because the parser
+ * knows neither the filename nor whether one exists.
+ *
+ * A diagnostic naming no line is one the author cannot act on, and until this
+ * existed every parse error in this file named none.
+ */
+export function parseError(msg, pos) {
+  const e = new Error(msg)
+  if (pos != null) e.pos = pos
+  return e
+}
+
+/** The same, thrown rather than returned, for use as an `assert` with a place. */
+function assertAt(condition, msg, pos) {
+  if (condition) return
+  throw parseError(msg, pos)
+}
+
+/**
+ * How a parse node is spelled back to the author. An error that names the
+ * construct the author WROTE sends them to the right line; one that names the
+ * close tag it wanted sends them to the wrong one, and `</undefined>` — which
+ * is what an unclosed `{#if}` used to report — sends them nowhere.
+ */
+function describeNode(node) {
+  if (!node) return 'the component'
+  switch (node.type) {
+    case 'root':          return 'the component'
+    // `<mesa:window>` is a name and an argument, and naming the half before
+    // the colon reports `<mesa>` — an element that does not exist and that the
+    // author cannot find by searching for it.
+    case 'node':          return `<${node.name}${node.elArg ? ':' + node.elArg : ''}>`
+    case 'if':            return `{${node.parts?.[0]?.value ?? '#if'}}`
+    case 'each':
+    case 'virtual-each':
+    case 'key':
+    case 'await':
+    case 'slot':
+    case 'fragment':
+    case 'block':         return `{${node.value}}`
+    case 'snippet':       return `{#snippet ${node.name}(…)}`
+    default:              return node.name ? `<${node.name}>` : `{${node.value ?? node.type}}`
+  }
 }
 
 export function Q(s, inlineTemplate) {
@@ -408,6 +468,35 @@ function updateExpr(node, setter, name) {
  * @param {object} accessorMap
  * @returns {string}
  */
+// ─── read-only props ─────────────────────────────────────────────────────────
+//
+// `export const x` is a prop the child may not write (FJS-D209). It compiles to
+// the same tracked signal `export let` does, so its accessor is
+// `$$runtime.get($$sig_x)` — and an assignment target rewritten as a read is
+// `$$runtime.get($$sig_x) = v`, which does not parse. The refusal therefore has
+// to happen in the two functions that rewrite an assignment target, and both
+// reach the same accessor map, so the register rides on it under a symbol
+// rather than on module state a concurrent compile would share.
+
+const READONLY_PROPS = Symbol.for('mesa.readonlyProps')
+
+function declareReadonlyProps(accessorMap, names) {
+  if (!accessorMap) return
+  accessorMap[READONLY_PROPS] = { names: new Set(names), written: new Set() }
+}
+
+function readonlyPropWrites(accessorMap) {
+  return [...(accessorMap?.[READONLY_PROPS]?.written ?? [])]
+}
+
+/** True when `name` is an `export const` prop and the write must be refused. */
+function noteReadonlyWrite(accessorMap, name, shadowed) {
+  const reg = accessorMap?.[READONLY_PROPS]
+  if (!reg || shadowed || !reg.names.has(name)) return false
+  reg.written.add(name)
+  return true
+}
+
 export function rewriteExpr(expr, accessorMap, setterMap) {
   if (!accessorMap || !expr) return expr
 
@@ -488,17 +577,26 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
     return names
   }
 
-  // let/const/function declared DIRECTLY in this block, plus a `for` head's own
-  // binding — `for (const row of rows)` shadows for the length of the loop.
+  // let/const/function/class declared DIRECTLY in this block, plus a `for`
+  // head's own binding — `for (const row of rows)` shadows for the length of
+  // the loop, and a `switch`'s own declarations live one level down under
+  // `cases`, which is why a bare `case 1: let n = 2` was never collected.
+  //
+  // One enumeration, read by every scope branch below. A second hand-written
+  // list is how `CatchClause` came to be known to `refuseDollarMisuse` and
+  // unknown here.
   const collectBlockDeclared = (node) => {
     const names = new Set()
     const fromDecl = (d) => {
       if (d?.type === 'VariableDeclaration') d.declarations.forEach((x) => addBound(x.id, names))
-      else if (d?.type === 'FunctionDeclaration' && d.id) names.add(d.id.name)
+      else if ((d?.type === 'FunctionDeclaration' || d?.type === 'ClassDeclaration') && d.id)
+        names.add(d.id.name)
     }
     if (Array.isArray(node.body)) node.body.forEach(fromDecl)
+    if (Array.isArray(node.cases)) node.cases.forEach((c) => c.consequent?.forEach(fromDecl))
     fromDecl(node.init)                              // for (let i = 0; …)
     fromDecl(node.left)                              // for (const x of …)
+    addBound(node.param, names)                      // catch (e) / catch ({ message })
     return names
   }
 
@@ -513,8 +611,13 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
     ) {
       const params = collectParams(n)
       const inner = new Set([...localScope, ...params, ...collectVars(n.body)])
+      // A function's own name is bound inside it, and `id` is a binding SITE
+      // in either case — walking it rewrote the declaration itself, so
+      // `const g = function f(){}` beside a `let f` emitted
+      // `function $$runtime.get($$sig_f)(){}`.
+      if (n.id) inner.add(n.id.name)
       for (const k of Object.keys(n)) {
-        if (k === 'start' || k === 'end' || k === 'type' || k === 'raw') continue
+        if (k === 'start' || k === 'end' || k === 'type' || k === 'raw' || k === 'id') continue
         const v = n[k]
         if (Array.isArray(v))
           v.forEach((item) => {
@@ -525,11 +628,31 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
       return // already handled all children
     }
 
+    // A class is a scope holding its own name, and `id` is a binding site — the
+    // same shape as a named function expression, and the same failure:
+    // `class Item {}` inside a component that also has a `let Item` emitted
+    // `class $$runtime.get($$sig_Item) {}`.
+    if (n.type === 'ClassDeclaration' || n.type === 'ClassExpression') {
+      const inner = n.id ? new Set([...localScope, n.id.name]) : localScope
+      if (n.superClass) walk(n.superClass, 'superClass', inner)
+      walk(n.body, 'body', inner)
+      return
+    }
+
+    // A catch binding shadows for the whole handler and is a binding site, so
+    // `catch (e)` beside a `let e` emitted `catch ($$runtime.get($$sig_e))`.
+    if (n.type === 'CatchClause') {
+      const inner = new Set([...localScope, ...collectBlockDeclared(n)])
+      walk(n.body, 'body', inner)
+      return
+    }
+
     // A block is a scope too — its own let/const/function shadow the outer
     // binding for the whole block, and a `for` head's binding shadows for the
     // loop.
     if (
       n.type === 'BlockStatement' ||
+      n.type === 'SwitchStatement' ||
       n.type === 'ForStatement' ||
       n.type === 'ForOfStatement' ||
       n.type === 'ForInStatement'
@@ -546,6 +669,17 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
         return
       }
     }
+
+    if (
+      n.type === 'AssignmentExpression' &&
+      n.left.type === 'Identifier' &&
+      noteReadonlyWrite(accessorMap, n.left.name, localScope.has(n.left.name))
+    ) return
+    if (
+      n.type === 'UpdateExpression' &&
+      n.argument.type === 'Identifier' &&
+      noteReadonlyWrite(accessorMap, n.argument.name, localScope.has(n.argument.name))
+    ) return
 
     // Rewrite assignments to reactive lets: x = val → $$set_x(val)
     if (setterMap && n.type === 'AssignmentExpression') {
@@ -683,24 +817,32 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
  *
  * @param {object} pe         parseText() result
  * @param {object} accessorMap
+ * @param {object} [opts]     `coerceNullish` — see below
  * @returns {string}  New template literal, e.g. `` `${$$sig_count()} items` ``
  */
-export function rewriteTextResult(pe, accessorMap) {
-  if (!accessorMap) return pe.result
+export function rewriteTextResult(pe, accessorMap, opts) {
+  const coerceNullish = opts?.coerceNullish === true
+  if (!accessorMap && !coerceNullish) return pe.result
   const result = []
   pe.parts.forEach((p) => {
     if (p.type === 'js') return
     if (p.type === 'exp') {
-      result.push({ ...p, value: rewriteExpr(p.value, accessorMap) })
+      result.push({ ...p, value: accessorMap ? rewriteExpr(p.value, accessorMap) : p.value })
     } else {
       const l = last(result)
       if (l?.type === 'text') l.value += p.value
       else result.push({ ...p })
     }
   })
+  // `?? ''` per interpolation, not once around the whole literal: the template
+  // stringifies each hole on its own, so `hi {x} there` prints `hi undefined
+  // there` however the outside is guarded. The parentheses are load-bearing —
+  // `${a || b ?? ''}` is a SyntaxError, so an un-parenthesised operand takes the
+  // whole module down (FJS-D208).
+  const hole = (v) => (coerceNullish ? `(${v}) ?? ''` : v)
   return (
     '`' +
-    result.map((p) => (p.type === 'text' ? Q(p.value) : '${' + p.value + '}')).join('') +
+    result.map((p) => (p.type === 'text' ? Q(p.value) : '${' + hole(p.value) + '}')).join('') +
     '`'
   )
 }
@@ -1271,7 +1413,7 @@ xNode.node = (data) =>
           if (p.value) p.value.split(/\s+/).forEach((c) => node.class.add(c))
           return
         }
-        if (p.value) ctx.write(` ${p.name}="${p.value}"`)
+        if (p.value) ctx.write(` ${p.name}="${attrValue(p.value)}"`)
         else ctx.write(` ${p.name}`)
       })
       // Every element in a component that has styles carries the scope class,
@@ -1380,13 +1522,18 @@ class Reader {
     while (!this.end() && /\s/.test(this.source[this.index])) this.index++
   }
   readString() {
+    const start = this.index
     const q = this.read()
-    assert(q === '"' || q === '`' || q === "'")
+    assert(q === '"' || q === '`' || q === "'", 'Expected a quoted value')
     let a = null,
       p,
       result = q
     while (true) {
       p = a
+      // Running off the end here means the closing quote is missing. `read()`
+      // says `EOF`, which names neither the string nor where it opened.
+      if (this.end()) throw parseError(
+        `Unterminated ${q} string, starting at: ` + this.source.substr(start, 30), start)
       a = this.read()
       result += a
       if (a === q && p !== '\\') break
@@ -1437,7 +1584,20 @@ export function parseHTML(source) {
       reader.source,
       start
     )
-    const end = parser.scan()
+    let end
+    try {
+      end = parser.scan()
+    } catch (e) {
+      // acorn names a position and nothing else, and the position is inside a
+      // file whose author has no reason to think the compiler was reading
+      // JavaScript at that offset at all. The offsets are already absolute
+      // into the source — the parser is constructed at `start` — so what is
+      // missing is only which block failed.
+      const err = new Error(`<script> does not parse — ${e.message}`)
+      err.loc = e.loc
+      err.pos = e.pos
+      throw err
+    }
     reader.index = end + 9
     return reader.sub(start, end)
   }
@@ -1463,16 +1623,37 @@ export function parseHTML(source) {
           continue
         }
         if (reader.readIf('</')) {
-          let name = reader.read(/^([^>]*)>/)
-          name = name.trim().split(':')[0]
+          const closeStart = reader.index - 2
+          const written = reader.read(/^([^>]*)>/).trim()
+          // The comparison is on the half before the colon — `<mesa:window>`
+          // opens a node named `mesa` — but the message quotes what the author
+          // wrote, or it names a tag that is in no file.
+          const name = written.split(':')[0]
+          // The close tag is almost never the problem — an unclosed {#if} or a
+          // forgotten </span> higher up is, and this is where it surfaces. So
+          // the message names the construct still OPEN, which is the line to go
+          // to. It used to name the tag it wanted, and interpolated `undefined`
+          // whenever the open construct was a block or the root.
           if (name)
-            assert(
+            assertAt(
               name === parent.name,
-              `Wrong close-tag: expected </${parent.name}> got </${name}>`
+              `</${written}> closes nothing here — ${describeNode(parent)} is still open. ` +
+              `Close it first.`,
+              closeStart
             )
           return
         }
         const tag = readTag(reader)
+        // A dotted tag is only meaningful as a namespaced component, and the
+        // capital is what makes it one. Lowercase, it emits an element the
+        // browser has never heard of and the author is sent to the close tag.
+        if (tag.name.includes('.') && !/^[A-Z]/.test(tag.name)) {
+          _parseErrors.push({
+            message: `<${tag.name}> is not a component — a namespaced component name ` +
+              `must be capitalized (<${tag.name[0].toUpperCase()}${tag.name.slice(1)} />).`,
+            pos: tag.start
+          })
+        }
         push(tag)
         if (tag.name === 'script') {
           let isJS = true
@@ -1514,6 +1695,7 @@ export function parseHTML(source) {
 
       if (reader.probe('{')) {
         if (reader.probe(/^\{[#/:@*]/)) {
+          const bindStart = reader.index
           const bind = parseBinding(reader)
           if (bind.value[0] !== '*') flushText()
           if (bind.value[0] === '*') {
@@ -1534,131 +1716,161 @@ export function parseHTML(source) {
           }
           if (v.startsWith('#virtual each ')) {
             // {#virtual each arr as item (key)} — windowed virtual list
-            const tag = { type: 'virtual-each', value: v.replace('#virtual ', '#'), mainBlock: [] }
+            const tag = { type: 'virtual-each', value: v.replace('#virtual ', '#'), mainBlock: [], start: bindStart }
             push(tag)
             go(tag, (n) => tag.mainBlock.push(n))
             continue
           }
           if (v === '/virtual') {
-            assert(parent.type === 'virtual-each', '/virtual outside #virtual each')
+            assertAt(parent.type === 'virtual-each',
+              `{/virtual} closes nothing — the open construct is ${describeNode(parent)}.`, bindStart)
             return
           }
           if (v.startsWith('#each ')) {
-            const tag = { type: 'each', value: v, mainBlock: [] }
+            const tag = { type: 'each', value: v, mainBlock: [], start: bindStart }
             push(tag)
             go(tag, (n) => tag.mainBlock.push(n))
             continue
           }
           if (v === ':else' && parent.type === 'each') {
-            assert(!parent.elseBlock)
+            assertAt(!parent.elseBlock,
+              `A second {:else} in ${describeNode(parent)}. A block has one else branch — ` +
+              `the earlier one would be silently discarded.`, bindStart)
             parent.elseBlock = []
             return go(parent, (n) => parent.elseBlock.push(n))
           }
           if (v === '/each') {
-            assert(parent.type === 'each', '/each outside #each')
+            assertAt(parent.type === 'each',
+              `{/each} closes nothing — the open construct is ${describeNode(parent)}.`, bindStart)
             return
           }
           if (v.startsWith('#if ')) {
-            const tag = { type: 'if', parts: [{ value: v, body: [] }] }
+            const tag = { type: 'if', parts: [{ value: v, body: [] }], start: bindStart }
             push(tag)
             go(tag, (n) => tag.parts[0].body.push(n))
             continue
           }
           if (v.startsWith('#key ')) {
-            const tag = { type: 'key', value: v, body: [] }
+            const tag = { type: 'key', value: v, body: [], start: bindStart }
             push(tag)
             go(tag, (n) => tag.body.push(n))
             continue
           }
           if (v === '/key') {
-            assert(parent.type === 'key', '/key outside #key')
+            assertAt(parent.type === 'key',
+              `{/key} closes nothing — the open construct is ${describeNode(parent)}.`, bindStart)
             return
           }
           if (v.startsWith('#snippet ')) {
             const rx = v.match(/^#snippet\s+(\w+)\s*\(([^)]*)\)/)
             assert(rx, `Invalid #snippet syntax: ${v}`)
-            const tag = { type: 'snippet', name: rx[1], rawArgs: rx[2].trim(), body: [] }
+            const tag = { type: 'snippet', name: rx[1], rawArgs: rx[2].trim(), body: [], start: bindStart }
             push(tag)
             go(tag, (n) => tag.body.push(n))
             continue
           }
           if (v === '/snippet') {
-            assert(parent.type === 'snippet', '/snippet outside #snippet')
+            assertAt(parent.type === 'snippet',
+              `{/snippet} closes nothing — the open construct is ${describeNode(parent)}.`, bindStart)
             return
           }
           if (v.match(/^:elif\s|^:else\s+if\s/)) {
-            assert(parent.type === 'if')
+            assertAt(parent.type === 'if',
+              `{${v}} outside {#if} — it is inside ${describeNode(parent)}.`, bindStart)
+            // Accepted and REORDERED before this: the branch was appended after
+            // the else, and the selector the runtime calls came out with an
+            // empty body, so the block could never choose a branch at all.
+            assertAt(!parent.elsePart,
+              `{${v}} after {:else}. The else branch is the last one — a condition ` +
+              `cannot be tested after it.`, bindStart)
             const part = { value: v, body: [] }
             parent.parts.push(part)
             return go(parent, (n) => part.body.push(n))
           }
           if (v === ':else') {
-            assert(parent.type === 'if', ':else outside #if')
+            assertAt(parent.type === 'if',
+              `{:else} outside {#if} — it is inside ${describeNode(parent)}.`, bindStart)
+            assertAt(!parent.elsePart,
+              'A second {:else} in {#if}. A block has one else branch — the earlier ' +
+              'one would be silently discarded.', bindStart)
             parent.elsePart = []
             return go(parent, (n) => parent.elsePart.push(n))
           }
           if (v === '/if') {
-            assert(parent.type === 'if', '/if outside #if')
+            assertAt(parent.type === 'if',
+              `{/if} closes nothing — the open construct is ${describeNode(parent)}.`, bindStart)
             return
           }
           if (v.startsWith('#await ')) {
-            const tag = { type: 'await', value: v, parts: { main: [] } }
+            const tag = { type: 'await', value: v, parts: { main: [] }, start: bindStart }
             push(tag)
             go(tag, (n) => tag.parts.main.push(n))
             continue
           }
           if (v.match(/^:then( |$)/)) {
-            assert(parent.type === 'await')
+            assertAt(parent.type === 'await',
+              `{${v}} outside {#await} — it is inside ${describeNode(parent)}.`, bindStart)
+            assertAt(!parent.parts.then,
+              'A second {:then} in {#await}. A block has one then branch — the earlier ' +
+              'one would be silently discarded.', bindStart)
             parent.parts.then = []
             parent.parts.thenValue = v
             return go(parent, (n) => parent.parts.then.push(n))
           }
           if (v.match(/^:catch( |$)/)) {
-            assert(parent.type === 'await')
+            assertAt(parent.type === 'await',
+              `{${v}} outside {#await} — it is inside ${describeNode(parent)}.`, bindStart)
+            assertAt(!parent.parts.catch,
+              'A second {:catch} in {#await}. A block has one catch branch — the earlier ' +
+              'one would be silently discarded.', bindStart)
             parent.parts.catch = []
             parent.parts.catchValue = v
             return go(parent, (n) => parent.parts.catch.push(n))
           }
           if (v === '/await') {
-            assert(parent.type === 'await')
+            assertAt(parent.type === 'await',
+              `{/await} closes nothing — the open construct is ${describeNode(parent)}.`, bindStart)
             return
           }
           if (v.match(/^#slot(:| |$)/)) {
-            const tag = { type: 'slot', value: v, body: [] }
+            const tag = { type: 'slot', value: v, body: [], start: bindStart }
             push(tag)
             go(tag)
             continue
           }
           if (v === '/slot') {
-            assert(parent.type === 'slot')
+            assertAt(parent.type === 'slot',
+              `{/slot} closes nothing — the open construct is ${describeNode(parent)}.`, bindStart)
             return
           }
           if (v.startsWith('#fragment:')) {
-            const tag = { type: 'fragment', value: v, body: [] }
+            const tag = { type: 'fragment', value: v, body: [], start: bindStart }
             push(tag)
             go(tag)
             continue
           }
           if (v === '/fragment') {
-            assert(parent.type === 'fragment')
+            assertAt(parent.type === 'fragment',
+              `{/fragment} closes nothing — the open construct is ${describeNode(parent)}.`, bindStart)
             return
           }
           if (v.match(/^#([\w\-]+)/)) {
             const name = v.match(/^#([\w\-]+)/)[1]
-            const tag = { type: 'block', value: v, name, body: [] }
+            const tag = { type: 'block', value: v, name, body: [], start: bindStart }
             push(tag)
             go(tag)
             continue
           }
           if (v.match(/^\/([\w\-]+)/)) {
             const name = v.match(/^\/([\w\-]+)/)[1]
-            assert(
+            assertAt(
               parent.type === 'block' && parent.name === name,
-              `Block mismatch: ${parent.name} vs ${name}`
+              `{/${name}} closes nothing — the open construct is ${describeNode(parent)}.`,
+              bindStart
             )
             return
           }
-          throw new Error('Unknown binding: ' + v)
+          throw parseError('Unknown binding: ' + v, bindStart)
         }
         addText(parseBinding(reader).raw)
         continue
@@ -1666,7 +1878,13 @@ export function parseHTML(source) {
       addText(reader.read())
     }
     flushText()
-    assert(parent.type === 'root', 'Unexpected EOF')
+    // `Unexpected EOF` alone named nothing. What the author needs is which
+    // construct is still open and where they opened it.
+    assertAt(
+      parent.type === 'root',
+      `Unexpected EOF: ${describeNode(parent)} is never closed.`,
+      parent.start
+    )
   }
 
   const root = { type: 'root', body: [] }
@@ -1677,14 +1895,19 @@ export function parseHTML(source) {
 
 function readTag(reader) {
   const start = reader.index
-  assert(reader.read() === '<')
-  let name = reader.read(/^[\da-zA-Z^\-]+/)
+  assertAt(reader.read() === '<', 'Expected a tag starting with <', start)
+  // `_`, `$` and `.` are legal in a JavaScript identifier and `.` is how a
+  // namespaced component is spelled. The class used to stop at all three and
+  // hand the remainder to parseAttributes, so `<Icons.Star />` called `Icons`
+  // with a prop named `.Star` and died at render naming a symbol nobody wrote.
+  let name = reader.read(/^[\da-zA-Z^\-_$]+(?:\.[\da-zA-Z^\-_$]+)*/)
   let elArg = null
   if (reader.readIf(':')) elArg = reader.read(/^[^\s>/]+/)
   const attributes = parseAttributes(reader, { closedByTag: true })
   let closedTag = false
   if (reader.readIf('/>')) closedTag = true
-  else assert(reader.readIf('>'), 'Expected >')
+  else assertAt(reader.readIf('>'),
+    `Unterminated <${name}${elArg ? ':' + elArg : ''}> tag — no > was found`, start)
   const voidTags = [
     'area',
     'base',
@@ -1715,58 +1938,79 @@ function readTag(reader) {
   }
 }
 
-export function parseText(source) {
-  let i = 0,
-    step = 0,
-    text = '',
-    exp = '',
-    q,
-    len = source.length
+/**
+ * Where the `{…}` starting at `start` ends — the offset just past its closing
+ * brace. THE ONE OWNER of what delimits a mustache.
+ *
+ * There were two, and they disagreed about `\`. `parseBinding` grabbed the raw
+ * span with one rule and `parseText` re-split the same text with a weaker one,
+ * so `{"\""}` was a compile error from a valid expression. Both were also wrong
+ * the same way about the rule they did share: testing *the previous character
+ * was not a backslash* makes an escaped backslash hide the quote that follows
+ * it, and `{"\\"}` ran to EOF.
+ */
+function scanExpression(source, start) {
+  assertAt(source[start] === '{', 'Expected an expression starting with {', start)
+  let i = start + 1
+  let depth = 1
+  let q = null
+  while (i < source.length) {
+    const a = source[i]
+    if (q) {
+      if (a === '\\') { i += 2; continue }   // a backslash escapes whatever follows it
+      if (a === q) q = null
+      i++
+      continue
+    }
+    if (a === '"' || a === "'" || a === '`') { q = a; i++; continue }
+    if (a === '{') depth++
+    else if (a === '}' && !--depth) return i + 1
+    i++
+  }
+  throw parseError(
+    'Unterminated {…} expression, starting at: ' + source.substr(start, 30), start)
+}
+
+// A bare path: an identifier or a member chain, and nothing else. What `{…}`
+// means in Markdown prose (FJS-D213) — `.mesa` still takes any expression.
+const BARE_PATH = /^[A-Za-z_$][A-Za-z0-9_$]*(?:\??\.[A-Za-z_$][A-Za-z0-9_$]*)*$/
+
+export function parseText(source, options = {}) {
+  const pathOnly = options.pathOnly === true
   const parts = []
-  let depth = 0
-  while (i < len) {
-    const a = source[i++]
-    if (step === 1) {
-      if (q) {
-        if (a === q) q = null
-        exp += a
-        continue
-      }
-      if (a === '"' || a === "'" || a === '`') {
-        q = a
-        exp += a
-        continue
-      }
-      if (a === '{') depth++
-      else if (a === '}') {
-        depth--
-        if (!depth) {
-          step = 0
-          const js = exp[0] === '*'
-          if (js) exp = exp.substring(1)
-          exp = exp.trim()
-          if (!exp) throw new Error('Wrong expression')
-          parts.push({ value: exp, type: js ? 'js' : 'exp' })
-          exp = ''
-          continue
-        }
-      }
-      exp += a
+  let text = ''
+  let i = 0
+  while (i < source.length) {
+    if (source[i] !== '{') {
+      text += source[i++]
       continue
     }
-    if (a === '{') {
-      depth++
-      if (text) {
-        parts.push({ value: text, type: 'text' })
-        text = ''
+    let end
+    if (pathOnly) {
+      // An unclosed brace in prose is a brace, not a parse failure.
+      try { end = scanExpression(source, i) }
+      catch (_) { text += source[i++]; continue }
+      if (!BARE_PATH.test(source.substring(i + 1, end - 1))) {
+        text += source.substring(i, end)
+        i = end
+        continue
       }
-      step = 1
-      continue
+    } else {
+      end = scanExpression(source, i)
     }
-    text += a
+    if (text) {
+      parts.push({ value: text, type: 'text' })
+      text = ''
+    }
+    let exp = source.substring(i + 1, end - 1)
+    const js = exp[0] === '*'
+    if (js) exp = exp.substring(1)
+    exp = exp.trim()
+    if (!exp) throw parseError('Empty {} expression in: ' + source, i)
+    parts.push({ value: exp, type: js ? 'js' : 'exp' })
+    i = end
   }
   if (text) parts.push({ value: text, type: 'text' })
-  assert(step === 0, 'Wrong expression in: ' + source)
 
   const staticText = !parts.some((p) => p.type === 'exp')
     ? parts.map((p) => (p.type === 'text' ? p.value : '')).join('')
@@ -1801,31 +2045,7 @@ export function parseText(source) {
 export const parseBinding = (source) => {
   const reader = new Reader(source)
   const start = reader.index
-  assert(reader.read() === '{', 'Bind error')
-  let a = null,
-    p,
-    q,
-    bkt = 1
-  while (true) {
-    p = a
-    a = reader.read()
-    if (q) {
-      if (a === q && p !== '\\') q = null
-      continue
-    }
-    if (a === '"' || a === "'" || a === '`') {
-      q = a
-      continue
-    }
-    if (a === '{') {
-      bkt++
-      continue
-    }
-    if (a === '}') {
-      bkt--
-      if (!bkt) break
-    } else continue
-  }
+  reader.index = scanExpression(reader.source, start)
   const raw = reader.sub(start)
   return { raw, value: raw.substring(1, raw.length - 1).trim() }
 }
@@ -1936,7 +2156,7 @@ export const parseAttributes = (source, option = {}) => {
 
 function collectRefs(node) {
   const refs = new Set()
-  const walk = (n, parentKey) => {
+  const walk = (n, parentKey, parent) => {
     if (!n || typeof n !== 'object') return
     if (n.type === 'Identifier') {
       // Skip identifiers that are non-computed property keys — they're names,
@@ -1944,18 +2164,19 @@ function collectRefs(node) {
       //   { name: 'Alice' }       → 'name' is a Property key, not a ref
       //   obj.name                → 'name' is a MemberExpression property, not a ref
       //   class { method() {} }   → 'method' is a MethodDefinition key, not a ref
-      if (parentKey !== 'key' && parentKey !== 'property') {
-        refs.add(n.name)
-      }
+      // A COMPUTED one is a read: `users[userId]` and `{ [k]: v }` name a
+      // variable, and skipping them left a derived that never recomputed.
+      const isName = (parentKey === 'key' || parentKey === 'property') && !parent?.computed
+      if (!isName) refs.add(n.name)
     }
     for (const k of Object.keys(n)) {
       if (k === 'start' || k === 'end' || k === 'type') continue
       const c = n[k]
-      if (Array.isArray(c)) c.forEach((i) => { if (i?.type) walk(i, k) })
-      else if (c?.type) walk(c, k)
+      if (Array.isArray(c)) c.forEach((i) => { if (i?.type) walk(i, k, n) })
+      else if (c?.type) walk(c, k, n)
     }
   }
-  walk(node, null)
+  walk(node, null, null)
   return refs
 }
 
@@ -2005,9 +2226,16 @@ function boundaryWatchSet(asyncVars, body) {
 
 function memberPath(node) {
   if (!node) return null
+  // `a?.b` parses as a ChainExpression wrapping the member, so a soft path
+  // reached here as an unrecognised node and was dropped — `$: store?.a`
+  // registered no watch at all, while `soft: p.includes('?.')` below and every
+  // `?.`-aware split in the emitter waited for a path that never arrived.
+  if (node.type === 'ChainExpression') return memberPath(node.expression)
   if (node.type === 'Identifier') return node.name
-  if (node.type === 'MemberExpression' && !node.computed)
-    return memberPath(node.object) + '.' + node.property.name
+  if (node.type === 'MemberExpression' && !node.computed) {
+    const base = memberPath(node.object)
+    return base === null ? null : base + (node.optional ? '?.' : '.') + node.property.name
+  }
   return null
 }
 
@@ -2620,6 +2848,22 @@ export function analyzeScript(raw, ast) {
       continue
     }
 
+    // `export default` / `export * from`. Neither carries a declaration, so
+    // the check below walked past both and the statement was emitted VERBATIM
+    // inside the component function — where acorn refuses it as 'import and
+    // export may only appear at the top level', at a line of generated code
+    // the author never wrote. The component itself is the module's default
+    // export; there is no second one to give away (RULE 56).
+    if (node.type === 'ExportDefaultDeclaration' || node.type === 'ExportAllDeclaration') {
+      const form = node.type === 'ExportDefaultDeclaration' ? 'export default' : 'export *'
+      errors.push(
+        `'${form}' — an instance <script> exports only \`export let\` (a prop) and ` +
+        `\`export function\` (a method); the component is already the module's ` +
+        `default export. Module-scope exports go in <script module>.`
+      )
+      continue
+    }
+
     // Every other export form. They were dropped in silence, which is how a
     // component could reference its own exported function from its template and
     // throw ReferenceError on the first interaction with nothing to read.
@@ -2912,16 +3156,42 @@ export function analyzeScript(raw, ast) {
           })
         } else {
           // Shape 3: $: (path1, path2)  — multi-path watch
-          flattenSeq(exprs).forEach((e) => {
-            const p = memberPath(e)
-            if (p)
-              watchPaths.push({
-                path: p,
-                soft: p.includes('?.'),
-                debugName,
-                nodeStart: node.start,
-                nodeEnd: node.end
+          //
+          // Everything here has to name a value. An element that names none is
+          // refused rather than dropped: `$: o.x, doThing()` reads as a
+          // watch+handler and is not one — a call is not a handler form (RULE
+          // 7) — so it used to compile clean, register the watch and silently
+          // discard the tail. `$: o.x, hits++` lost the author's statement
+          // outright (`FJS-846`'s sibling, `FJS-848`).
+          const flat = flattenSeq(exprs)
+          const unnamed = flat.filter((e) => !memberPath(e))
+          if (unnamed.length) {
+            unnamed.forEach((e) => {
+              const src = raw.slice(e.start, e.end)
+              const isLast = e === flat[flat.length - 1]
+              const deps = flat.slice(0, -1).map((d) => raw.slice(d.start, d.end)).join(', ')
+              errors.push({
+                message: isLast
+                  ? `'${src}' is the last element of a '$:' watch, which is the handler, and ` +
+                    `a handler must be a function (RULE 7). Write '$: ${deps}, () => ${src}'. ` +
+                    `As written it is neither a value to watch nor something that can be called, ` +
+                    `so nothing would run on a change.`
+                  : `'$: …' watches values, and '${src}' names none. Every element before the ` +
+                    `handler must be a variable or a dotted path.`,
+                pos: e.start
               })
+            })
+            continue
+          }
+          flat.forEach((e) => {
+            const p = memberPath(e)
+            watchPaths.push({
+              path: p,
+              soft: p.includes('?.'),
+              debugName,
+              nodeStart: node.start,
+              nodeEnd: node.end
+            })
           })
         }
         continue
@@ -2988,10 +3258,38 @@ export function analyzeScript(raw, ast) {
       })
     }
   }
-
   // ── Pass 2: detect deps and async ──────────────────────────────────────────
+  // Raw references first: the reactive set is a transitive closure over them, so
+  // every var's refs have to exist before any membership question is answerable.
+  const rawRefs = {}
+  for (const v of Object.values(vars)) {
+    if (!v.initNode && v._syntheticInit) {
+      try {
+        const syntheticAst = acorn.parseExpressionAt(v._syntheticInit, 0, { ecmaVersion: 'latest' })
+        rawRefs[v.name] = [...collectRefs(syntheticAst)]
+      } catch (_) {
+        rawRefs[v.name] = []  // unparseable synthetic — no deps
+      }
+      continue
+    }
+    if (!v.initNode) { rawRefs[v.name] = []; continue }
+    if (v.initNode.type === 'AwaitExpression') {
+      v.isAsync = true
+      rawRefs[v.name] = [...collectRefs(v.initNode.argument)]
+    } else {
+      rawRefs[v.name] = [...collectRefs(v.initNode)]
+    }
+  }
+
+  // Seed: the bindings that can MOVE on their own (FJS-D212). A `let` is a
+  // signal, every prop is a signal the parent can push to, a `$context` read
+  // moves when the provider does, and an awaited value arrives later. A local
+  // `const` over static values is none of those — promoting it made its
+  // initializer lazy, so `const handle = subscribe(id)` never subscribed when
+  // nothing read `handle`.
   const reactiveSet = new Set(
     Object.values(vars)
+      .filter((v) => v.kind === 'let' || v.isProp || v.isContextConsume || v.isAsync)
       .filter((v) => v.kind !== 'var')
       .map((v) => v.name)
   )
@@ -3002,29 +3300,62 @@ export function analyzeScript(raw, ast) {
     const root = p.path.replace(/\?\./g, '.').split('.')[0]
     if (!vars[root]) reactiveSet.add(root)  // only add imports, not local lets
   })
-  for (const v of Object.values(vars)) {
-    // Synthetic vars from pattern expansion have no initNode — parse initRaw instead.
-    if (!v.initNode && v._syntheticInit) {
-      try {
-        const syntheticAst = acorn.parseExpressionAt(v._syntheticInit, 0, { ecmaVersion: 'latest' })
-        v.deps = [...collectRefs(syntheticAst)].filter((r) => reactiveSet.has(r) && r !== v.name)
-        v.isDerived = v.deps.length > 0
-      } catch (_) {
-        // unparseable synthetic — leave deps empty
+  // A call to a binding THIS SCRIPT holds is a second door reactivity comes
+  // through, and it is invisible to the closure below. `useStore` hands back a
+  // getter, so `const rows = useStore(s).get` is a plain function and
+  // `Math.max(...rows().map(f))` reads a signal inside the call — which the
+  // blanket promotion covered by accident, through runtime auto-tracking, and
+  // which the narrowing dropped: `example`'s catalogue computed its price
+  // ceiling once against an empty store and every filter above it collapsed to
+  // one row.
+  //
+  // An IMPORTED function is not this door. `EXTERNAL_REACTIVITY.md` is the
+  // standing rule that state arriving from outside must be declared with `$:`,
+  // and a function is state; so `const handle = subscribe(id)` over an imported
+  // `subscribe` stays eager and keeps its side effect, which is what FJS-D212
+  // is for.
+  const callsLocal = (node) => {
+    let found = false
+    const walk = (n) => {
+      if (!n || typeof n !== 'object' || found) return
+      if (n.type === 'CallExpression' || n.type === 'NewExpression') {
+        let callee = n.callee
+        while (callee?.type === 'MemberExpression') callee = callee.object
+        if (callee?.type === 'Identifier' && vars[callee.name]) { found = true; return }
       }
-      continue
+      for (const k of Object.keys(n)) {
+        if (k === 'start' || k === 'end' || k === 'type' || k === 'raw') continue
+        const c = n[k]
+        if (Array.isArray(c)) c.forEach(walk)
+        else if (c && typeof c === 'object' && typeof c.type === 'string') walk(c)
+      }
     }
-    if (!v.initNode) continue
-    const isAwait = v.initNode.type === 'AwaitExpression'
-    if (isAwait) {
-      v.isAsync = true
-      v.deps = [...collectRefs(v.initNode.argument)].filter(
-        (r) => reactiveSet.has(r) && r !== v.name
-      )
-    } else {
-      v.deps = [...collectRefs(v.initNode)].filter((r) => reactiveSet.has(r) && r !== v.name)
+    walk(node)
+    return found
+  }
+  const opaqueLocalCall = new Set()
+  for (const v of Object.values(vars)) {
+    if (v.kind === 'var' || reactiveSet.has(v.name) || !v.initNode) continue
+    if (callsLocal(v.initNode)) { reactiveSet.add(v.name); opaqueLocalCall.add(v.name) }
+  }
+
+  // Closure: `const a = 1; const b = a; const c = b + page` promotes only `c`.
+  for (let changed = true; changed;) {
+    changed = false
+    for (const v of Object.values(vars)) {
+      if (v.kind === 'var' || reactiveSet.has(v.name)) continue
+      if ((rawRefs[v.name] || []).some((r) => r !== v.name && reactiveSet.has(r))) {
+        reactiveSet.add(v.name)
+        changed = true
+      }
     }
-    v.isDerived = v.deps.length > 0
+  }
+  for (const v of Object.values(vars)) {
+    v.deps = (rawRefs[v.name] || []).filter((r) => reactiveSet.has(r) && r !== v.name)
+    // A local call has no dependency the compiler can name — what it reads is
+    // decided inside the callee — so it is derived on the strength of the call
+    // alone and its dependencies are whatever the memo tracks at runtime.
+    v.isDerived = v.deps.length > 0 || opaqueLocalCall.has(v.name)
   }
 
   // ── Pass 3: annotate handlers and effects ──────────────────────────────────
@@ -3516,7 +3847,9 @@ export function processCSS(ctx) {
       return xNode('css-class', { classSet, prefix, suffix, id }, (ctx, n) => {
         // The separator is conditional: an element with no authored classes
         // would otherwise emit `class=" hash"` with a leading space.
-        const authored = [...n.classSet].join(' ')
+        // `class` is diverted out of the attribute list into this set and
+        // re-emitted here, so it never reaches the serializer's escape.
+        const authored = attrValue([...n.classSet].join(' '))
         ctx.write(`${n.prefix}${authored}${authored ? ' ' : ''}${n.id}${n.suffix}`)
       })
     },
@@ -3974,7 +4307,12 @@ export function buildBlock(data, option = {}) {
     body.forEach((n) => {
       if (n.type === 'text') {
         if (n.value.includes('{')) {
-          const pe = ctx.parseText(n.value)
+          // pathOnly is the PROSE rule only (FJS-D213), the same split
+          // coerceNullish makes below: an attribute is markup somebody wrote by
+          // hand, where a brace can only have been meant as an expression.
+          const pe = ctx.parseText(n.value, {
+            pathOnly: ctx.config?.pathInterpolation === true
+          })
           ctx.detectDependency(pe)
           let textNode
           if (pe.staticText != null) {
@@ -3982,7 +4320,10 @@ export function buildBlock(data, option = {}) {
           } else {
             textNode = tpl.push(' ')
             // Use rewriteTextResult so reactive variable references are read through signals.
-            const exp = ctx.accessors ? rewriteTextResult(pe, ctx.accessors) : pe.result
+            // coerceNullish is the TEXT rule only (FJS-D208): an attribute value
+            // still carries whatever it evaluates to, because `null` there means
+            // remove and `undefined` there means leave alone.
+            const exp = rewriteTextResult(pe, ctx.accessors ?? null, { coerceNullish: true })
             binds.push(
               xNode('bindText', { el: textNode.bindName(), exp }, (w, nd) => {
                 w.writeLine(`$$runtime.bindText(${nd.el}, () => (${nd.exp}));`)
@@ -4364,7 +4705,7 @@ export function buildBlock(data, option = {}) {
         })
         n.classes.forEach((c) => el.class.add(c))
         const _loc = ctx.locOf(n.start)
-        if (_loc) el.attributes.push({ name: LOC_ATTR, value: _loc.replace(/"/g, '&quot;') })
+        if (_loc) el.attributes.push({ name: LOC_ATTR, value: _loc })
         el.voidTag = n.voidTag
         if (!n.closedTag) go(n, false, el)
       } else if (n.type === 'each') {
@@ -5171,7 +5512,7 @@ export function makeVirtualEachBlock(data, option) {
  * `height=48 viewport="500px"` are documented (VISION §9.7) and used to land in
  * the item binding, where `row height=48` became the identifier list — so a
  * component written from the docs died as `Unexpected identifier 'height'`,
- * naming neither the block nor the option. An unrecognised option is refused by
+ * naming neither the block nor the option. An unrecognized option is refused by
  * name here rather than silently becoming part of the binding again.
  *
  * Scanned at bracket depth 0 only, so a destructuring default (`as { n = 1 }`)
@@ -6520,7 +6861,7 @@ export function emitScript(ctx) {
   // deep-mutation tracking, and a primitive has no depth. There is nothing to
   // lose by refusing and a silent failure to gain by allowing.
   //
-  // Conservative on purpose: only an initialiser that is VISIBLY a primitive
+  // Conservative on purpose: only an initializer that is VISIBLY a primitive
   // refuses. `let x = fetchCount()` returning a number has the same hole and is
   // not decidable here, and guessing would refuse `let rows = []`.
   const primitiveInit = (v) => {
@@ -6539,7 +6880,7 @@ export function emitScript(ctx) {
     ctx.analysis.errors.push(
       `'$: ${root}' watches a value that has no depth. '${root}' is a local \`let\`, which is ` +
       `already reactive on its own — the bare form is the DEEP-watch opt-in, and on a ` +
-      `${vars[root]?.initRaw === undefined ? 'variable with no initialiser' : `value like \`${vars[root].initRaw}\``} ` +
+      `${vars[root]?.initRaw === undefined ? 'variable with no initializer' : `value like \`${vars[root].initRaw}\``} ` +
       `there is nothing to watch inside. Left in, it switches '${root}' off: every read of it ` +
       `compiles to a plain variable and the component stops re-rendering when it changes. ` +
       `Delete the line — an assignment to '${root}' already notifies. ` +
@@ -6709,19 +7050,23 @@ export function emitScript(ctx) {
   // then apply the default lazily in code via untrack() after all vars exist.
   const props = Object.values(vars).filter((v) => v.isProp && v.kind === 'let')
   // Collect deferred defaults keyed by var name — emitted in step 5 after topoSort
+  // A prop's fallback is emitted into the head, which runs before any of the
+  // script's own declarations. A fallback that names one of them therefore
+  // reads a binding in its temporal dead zone, and the component throws
+  // `ReferenceError` at mount naming neither the prop nor the file — so it is
+  // applied in step 5b instead, once every declaration exists.
+  const defaultNeedsDeferring = (v, ctx) => {
+    if (!v.initRaw || !v.initNode) return false
+    return [...collectRefs(v.initNode)].some((r) => ctx.analysis.reactiveNames?.includes(r))
+  }
+
   const deferredPropDefaults = {}
 
   props.forEach((v) => {
     const sigR = `$$sig_${v.name}`,
       sigW = `$$set_${v.name}`
 
-    // Detect if the default references any reactive variable — if so it can't
-    // be evaluated in mod.head (those vars don't exist yet).
-    let hasReactiveDeps = false
-    if (v.initRaw && v.initNode) {
-      const defaultRefs = [...collectRefs(v.initNode)]
-      hasReactiveDeps = defaultRefs.some((r) => ctx.analysis.reactiveNames?.includes(r))
-    }
+    const hasReactiveDeps = defaultNeedsDeferring(v, ctx)
 
     if (!hasReactiveDeps) {
       // Simple default — safe to inline in head.
@@ -6739,7 +7084,7 @@ export function emitScript(ctx) {
           `const ${sigR} = $$runtime.track($$option.props?.${v.name}, void 0, void 0, __block);\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`
         )
       )
-      deferredPropDefaults[v.name] = { sigW, initRaw: v.initRaw }
+      deferredPropDefaults[v.name] = { sigR, sigW, initRaw: v.initRaw }
     }
 
     // Register with the component instance so $push/$apply work end-to-end.
@@ -6751,24 +7096,58 @@ export function emitScript(ctx) {
     ctx.setters[v.name] = sigW
   })
 
-  // export const props — immutable, passed in at mount, compiler-enforced read-only.
-  Object.values(vars)
-    .filter((v) => v.isProp && v.kind === 'const')
-    .forEach((v) => {
+  // export const props — what `export let` compiles to, minus the setter
+  // (FJS-D209). The signal is what makes a later value from the parent reach the
+  // child: a plain const froze the prop at mount, so a parent that re-rendered
+  // showed a stale child with nothing reporting it. Immutable describes the
+  // CHILD — a write here is refused at compile time, and through `bind:this` at
+  // runtime, because `componentApi` hands the parent `prop.set`.
+  const constProps = Object.values(vars).filter((v) => v.isProp && v.kind === 'const')
+  constProps.forEach((v) => {
+    const sigR = `$$sig_${v.name}`
+    // A deferred fallback is written straight into the signal rather than
+    // through a `$$set_` binding: FJS-D209 is that the child has no setter,
+    // and one declared here for the compiler's own use is one the child can
+    // spell. `export let` reuses its setter and needs no second mechanism.
+    if (defaultNeedsDeferring(v, ctx)) {
       mod.head.push(
         xNode.raw(
-          `const ${v.name} = $$option.props?.${v.name} !== undefined ? $$option.props.${
-            v.name
-          } : (${v.initRaw ?? 'undefined'});`
+          `const ${sigR} = $$runtime.track($$option.props?.${v.name}, void 0, void 0, __block);`
         )
       )
-      // Static accessor — reads as the plain variable name (no signal wrapper).
-    })
+      deferredPropDefaults[v.name] = { sigR, sigW: null, initRaw: v.initRaw }
+    } else {
+    const defaultExpr = v.initRaw ? rewriteExpr(v.initRaw, ctx.accessors) : 'undefined'
+    mod.head.push(
+      xNode.raw(
+        `const ${sigR} = $$runtime.track($$option.props?.${v.name} !== undefined ? $$option.props.${v.name} : ${defaultExpr}, void 0, void 0, __block);`
+      )
+    )
+    }
+    mod.head.push(
+      xNode.raw(
+        `$$runtime.makeExternalProperty('${v.name}', ${sigR}, () => { throw new Error("[Mesa] '${v.name}' is declared \`export const\` — a read-only prop (RULE 56)."); });`
+      )
+    )
+    if (ctx.config?.dev) {
+      mod.head.push(xNode.raw(`$$runtime.__dev?.r(${sigR}, '${v.name}', 'prop');`))
+    }
+    ctx.accessors[v.name] = `$$runtime.get(${sigR})`
+  })
+  declareReadonlyProps(ctx.accessors, constProps.map((v) => v.name))
 
   // export var props — snapshot at mount, frozen thereafter, no signal.
   Object.values(vars)
     .filter((v) => v.isProp && v.kind === 'var')
     .forEach((v) => {
+      if (defaultNeedsDeferring(v, ctx)) {
+        // Snapshot still means snapshot: step 5b runs before any effect, so the
+        // value taken is the one the declarations were initialised with.
+        mod.head.push(
+          xNode.raw(`let ${v.name} = $$option.props?.${v.name};`)
+        )
+        deferredPropDefaults[v.name] = { varName: v.name, initRaw: v.initRaw }
+      } else {
       mod.head.push(
         xNode.raw(
           `let ${v.name} = $$option.props?.${v.name} !== undefined ? $$option.props.${
@@ -6776,6 +7155,7 @@ export function emitScript(ctx) {
           } : (${v.initRaw ?? 'undefined'});`
         )
       )
+      }
     })
 
   // ── 4. $$async container ───────────────────────────────────────────────────
@@ -6791,10 +7171,64 @@ export function emitScript(ctx) {
   }
 
   // ── 5. Variables (topologically sorted, props already emitted) ────────────
+  //
+  // Class declarations are sorted here WITH the variables. A `class` binding
+  // does not hoist, so a declaration left with the trailing statements — after
+  // every declaration, whatever the source said — makes `const c = new C()`
+  // throw `Cannot access 'C' before initialization` on the first mount, with
+  // nothing said at compile time (`FJS-846`). What a class depends on is only
+  // what is evaluated when the declaration RUNS: the superclass, computed keys
+  // and the static half. A method body is deferred and orders nothing.
   const nonPropVars = Object.values(vars).filter((v) => !v.isProp)
-  const sorted = topoSort(nonPropVars)
+  const classDecls = ast.body
+    .filter((n) => n.type === 'ClassDeclaration' && n.id?.name)
+    .map((n) => ({ name: n.id.name, deps: [...classDeclTimeRefs(n)], classNode: n }))
+  const classNames = new Set(classDecls.map((c) => c.name))
+  const emittedClassStarts = new Set(classDecls.map((c) => c.classNode.start))
+
+  // Ordering-only edges. `v.deps` carries the REACTIVE names a memo subscribes
+  // to and is read as such further down, so a class name may not be added to
+  // it — the extra map is handed to the sort and goes no further.
+  const classEdges = {}
+  if (classNames.size) {
+    for (const c of classDecls) classEdges[c.name] = c.deps
+    for (const v of nonPropVars) {
+      const refs = v.initNode ? collectRefs(v.initNode) : new Set()
+      const named = [...refs].filter((r) => classNames.has(r))
+      if (named.length) classEdges[v.name] = named
+    }
+  }
+
+  const sorted = topoSort([...nonPropVars, ...classDecls], classEdges)
+
+  // A class and a declaration that need each other cannot both come first, so
+  // the sort picks one and the loser throws at mount. Say which two.
+  if (classNames.size) {
+    const declared = new Set(sorted.map((e) => e.name))
+    const seen = new Set()
+    for (const entry of sorted) {
+      for (const dep of classEdges[entry.name] || []) {
+        if (declared.has(dep) && !seen.has(dep)) {
+          ctx.analysis.errors.push(
+            `'${entry.name}' is evaluated before '${dep}', which it needs — a class declaration ` +
+            `and a declaration that uses it depend on each other, and one of them has to run first. ` +
+            `Move what '${dep}' needs out of the declaration, or into a function body, where it is ` +
+            `read when it is called rather than when the component mounts.`
+          )
+        }
+      }
+      seen.add(entry.name)
+    }
+  }
 
   sorted.forEach((v) => {
+    if (v.classNode) {
+      const src = raw.slice(v.classNode.start, v.classNode.end)
+      mod.code.push(xNode.raw(
+        rewriteExpr(rewriteAssignments(src, v.classNode, ctx), ctx.accessors)
+      ))
+      return
+    }
     const init = v.initRaw ?? 'undefined'
 
     if (v.kind === 'var') {
@@ -7013,12 +7447,14 @@ export function emitScript(ctx) {
   // Props whose defaults reference reactive vars are set here, after all
   // vars/memos have been emitted. Wrapped in untrack so reading the default
   // expression doesn't create a subscription on the prop's own signal.
-  Object.entries(deferredPropDefaults).forEach(([name, { sigW, initRaw }]) => {
+  Object.entries(deferredPropDefaults).forEach(([name, { sigR, sigW, varName, initRaw }]) => {
     const defaultExpr = rewriteExpr(initRaw, ctx.accessors)
+    const value = `$$runtime.untrack(() => (${defaultExpr}))`
+    const write = varName
+      ? `${varName} = ${value}`
+      : sigW ? `${sigW}(${value})` : `$$runtime.set(${sigR}, ${value})`
     mod.code.push(
-      xNode.raw(
-        `if ($$option.props?.${name} === undefined) ${sigW}($$runtime.untrack(() => (${defaultExpr})));`
-      )
+      xNode.raw(`if ($$option.props?.${name} === undefined) ${write};`)
     )
   })
 
@@ -7268,6 +7704,7 @@ export function emitScript(ctx) {
         : astNode
     if (node.type === 'ImportDeclaration') continue // already emitted
     if (node.type === 'ExportNamedDeclaration') continue // props handled above
+    if (emittedClassStarts.has(node.start)) continue // emitted with the declarations
     if (node.type === 'LabeledStatement') continue // $: forms handled above
     // $context.x = expr — converted to $$ctxProvide() calls above, skip raw emit
     if (contextProvideStarts.has(node.start)) continue
@@ -7423,14 +7860,36 @@ export function emitTransforms(ctx) {
 }
 
 /** Topological sort by dependency order. Deps before dependents. */
-function topoSort(vars) {
+/**
+ * What a class declaration reads at the moment the declaration RUNS.
+ *
+ * The superclass, every computed key, and the static half — a static field's
+ * initializer and a static block both run with the declaration. Method bodies
+ * and instance field initializers run later, so a name they read cannot order
+ * the declaration and is not collected.
+ */
+function classDeclTimeRefs(node) {
+  const refs = new Set()
+  const add = (n) => { if (n) for (const r of collectRefs(n)) refs.add(r) }
+  add(node.superClass)
+  for (const m of node.body?.body || []) {
+    if (m.computed) add(m.key)
+    if (m.type === 'StaticBlock') { add(m); continue }
+    if (m.static && m.type === 'PropertyDefinition') add(m.value)
+  }
+  refs.delete(node.id?.name)
+  return refs
+}
+
+function topoSort(vars, extraDeps) {
   const nameMap = Object.fromEntries(vars.map((v) => [v.name, v]))
   const visited = new Set(),
     result = []
   const visit = (v) => {
     if (visited.has(v.name)) return
     visited.add(v.name)
-    v.deps.forEach((dep) => {
+    const deps = extraDeps?.[v.name] ? [...v.deps, ...extraDeps[v.name]] : v.deps
+    deps.forEach((dep) => {
       if (nameMap[dep]) visit(nameMap[dep])
     })
     result.push(v)
@@ -7877,6 +8336,7 @@ export async function compile(source, config = {}) {
   if (config.loc === undefined) config.loc = !!config.dev
 
   const _locate = config.loc ? makeLocator(source) : null
+  let _diagLocate = null
   // Relative to the app's root so the DOM carries `src/pages/Home.mesa:12:3`
   // rather than an absolute path; the client puts the root back on before it
   // asks the dev server to open anything.
@@ -7897,6 +8357,17 @@ export async function compile(source, config = {}) {
       if (!_locate || index == null || !_locFile) return null
       const { line, column } = _locate(index)
       return `${_locFile}:${line}:${column}`
+    },
+    /**
+     * The same, for an error message rather than for `data-fjs-loc`. It does
+     * not consult `config.loc`: that switch is a dev affordance and a
+     * diagnostic naming no line is one nobody can act on.
+     */
+    posOf(index) {
+      if (index == null) return null
+      _diagLocate ??= makeLocator(source)
+      const { line, column } = _diagLocate(index)
+      return `${_locFile || '<mesa>'}:${line}:${column}`
     },
     // Present only when the file carried a `---` block. A caller that keeps its
     // own frontmatter parser (Sierra's scanner does) is unaffected; a caller
@@ -8016,7 +8487,19 @@ export async function compile(source, config = {}) {
   // ── Parse HTML ────────────────────────────────────────────────────────────
   await hook('dom:before')
   use_context(ctx, () => {
-    ctx.DOM = parseHTML(source)
+    // The parser knows the offset and cannot know the filename. This is the one
+    // place both are in scope, so it is where an offset becomes a place.
+    try {
+      ctx.DOM = parseHTML(source)
+    } catch (e) {
+      if (typeof e === 'string') e = new Error(e)
+      const at = e.pos != null ? ctx.posOf(e.pos) : null
+      if (at && !e._located) {
+        e.message = `${e.message} — ${at}`
+        e._located = true
+      }
+      throw e
+    }
   })
   await hook('dom')
 
@@ -8102,6 +8585,24 @@ export async function compile(source, config = {}) {
   assert(ctx.scriptNodes.length <= 1, 'Only one <script> block per component')
   assert(ctx.scriptModuleNodes.length <= 1, 'Only one <script module> block per component')
 
+  // `lang` / `language` / `type` decide how the parser READS a block, and a
+  // value that is not JavaScript makes it read the body as raw text. It was
+  // then handed to acorn anyway and traded for an empty program on the first
+  // type annotation, so `<script lang="ts">` was not unsupported — it was
+  // unnoticed, and the component shipped referencing names it no longer had.
+  for (const node of [...ctx.scriptNodes, ...ctx.scriptModuleNodes]) {
+    for (const a of node.attributes ?? []) {
+      if (!['lang', 'language', 'type'].includes(a.name)) continue
+      const v = String(a.value ?? '')
+      if (v.includes('javascript') || v.includes('ecmascript')) continue
+      throw new Error(
+        `<script ${a.name}="${v}"> — Mesa compiles JavaScript only, and this block ` +
+        `would be dropped whole. Remove the attribute` +
+        (v === 'module' ? `; a module block is spelled <script module>.` : '.')
+      )
+    }
+  }
+
   // `$` is the component instance's door and a <script module> block runs once
   // at import, outside any instance — there is nothing there for it to open.
   // Refused by name rather than left to fail as `$ is not defined` in a browser,
@@ -8122,6 +8623,27 @@ export async function compile(source, config = {}) {
       )
     }
   }
+
+  // A <script module> may export what it likes EXCEPT a default: the emitted
+  // module already carries `export default function <Component>`, so a second
+  // one is a duplicate acorn refuses — a syntax error in generated code, from a
+  // compile that reported success.
+  {
+    const moduleSrc = ctx.scriptModuleNodes[0]?.content ?? ''
+    if (moduleSrc.includes('export')) {
+      let ast = null
+      try {
+        ast = acorn.parse(moduleSrc, { sourceType: 'module', ecmaVersion: 'latest' })
+      } catch { ast = null }
+      if (ast?.body.some((n) => n.type === 'ExportDefaultDeclaration')) {
+        throw new Error(
+          `<script module> cannot 'export default' — the component is the module's ` +
+          `default export. Give it a name: 'export const x = …'.`
+        )
+      }
+    }
+  }
+
   await hook('dom:after')
 
   if (config.compact) compactDOM(ctx.DOM, config.compact === 'full')
@@ -8129,6 +8651,12 @@ export async function compile(source, config = {}) {
   // ── Parse + analyze script ────────────────────────────────────────────────
   await hook('js:before')
   let rawScript = ctx.scriptNodes[0]?.content || ''
+  // Where the script body begins in the `.mesa`, so acorn's offsets can be put
+  // back onto the file. `readTag` leaves `end` at the character after `>`.
+  const _scriptStart = ctx.scriptNodes[0]?.end ?? null
+  // The `$.context` rewrite below reprints the script, after which an offset
+  // into it means nothing.
+  let _scriptRegenerated = false
 
   // ── the bare spelling is gone (FJS-D132 phase 4) ─────────────────────────
   // `$$onMount` and its eleven siblings are reached through the door now. This
@@ -8182,7 +8710,10 @@ export async function compile(source, config = {}) {
         }
       }
       walk(ast)
-      if (changed) rawScript = astring.generate(ast)
+      if (changed) {
+        rawScript = astring.generate(ast)
+        _scriptRegenerated = true
+      }
     } catch {
       // A script that will not parse is reported by the parse below; leaving
       // rawScript untouched keeps that one message rather than adding a second.
@@ -8190,11 +8721,23 @@ export async function compile(source, config = {}) {
   }
 
   let scriptAST
+  let scriptParseError = null
   try {
     scriptAST = acorn.parse(rawScript, { sourceType: 'module', ecmaVersion: 'latest' })
   } catch (e) {
+    // An empty program is not a degraded compile, it is a different component:
+    // the template is compiled against a script that declares nothing, so
+    // `{n}` and `on:click={bump}` are emitted for a `let n` and a `function
+    // bump` that have silently stopped existing and the browser throws
+    // ReferenceError at mount. This was a warning, and `analysis.errors` is
+    // the only channel that fails a build.
     scriptAST = { type: 'Program', body: [], sourceType: 'module' }
-    ctx.warning({ message: 'Script parse error: ' + e.message })
+    // acorn's offset is into the script body; `_scriptStart` puts it back onto
+    // the `.mesa` so the line named is the line the author is looking at.
+    const at = (_scriptRegenerated || e.pos == null || _scriptStart == null)
+      ? null
+      : ctx.posOf(_scriptStart + e.pos)
+    scriptParseError = `<script> does not parse: ${e.message}${at ? ` — ${at}` : ''}`
   }
 
   ctx.script = { source: rawScript, ast: scriptAST, rootVariables: {}, rootFunctions: {} }
@@ -8214,12 +8757,28 @@ export async function compile(source, config = {}) {
   })
 
   ctx.analysis = analyzeScript(rawScript, scriptAST)
-  ctx.analysis.errors.forEach((e) => ctx.warning({ message: e }))
-  ctx.analysis.warnings.forEach((w) => ctx.warning({ message: `Warning: ${w}` }))
+  // A script diagnostic may carry the offset it happened at. Only here are the
+  // filename and the script's own start in scope, so the offset becomes a
+  // `File.mesa:line:column` on the way out — the same shape the template's
+  // parse errors take below. A regenerated script has no offsets to put back.
+  ctx.analysis.errors = ctx.analysis.errors.map((e) => {
+    if (typeof e === 'string') return e
+    const at = (!_scriptRegenerated && e.pos != null && _scriptStart != null)
+      ? ctx.posOf(_scriptStart + e.pos)
+      : null
+    return at ? `${e.message} — ${at}` : e.message
+  })
+  if (scriptParseError) ctx.analysis.errors.push(scriptParseError)
 
-  // Surface parse-time errors (e.g. @attach in text content)
+  // Parse-time errors join the list here; everything the template build finds
+  // joins it later. Nothing is reported until `reportAnalysis()` runs at the
+  // end — see there for why.
   if (ctx.DOM._parseErrors?.length) {
-    ctx.DOM._parseErrors.forEach(e => ctx.analysis.errors.push(e))
+    ctx.DOM._parseErrors.forEach((e) => {
+      if (typeof e === 'string') return ctx.analysis.errors.push(e)
+      const at = e.pos != null ? ctx.posOf(e.pos) : null
+      ctx.analysis.errors.push(at ? `${e.message} — ${at}` : e.message)
+    })
   }
 
   // A <style> block is extracted from the TOP LEVEL of the component only (the
@@ -8227,23 +8786,40 @@ export async function compile(source, config = {}) {
   // an {#if}, an {#each} — was neither collected as component CSS nor left in
   // the template: it vanished, with no error and no warning. A REPL example
   // shipped a spinner whose @keyframes never existed, and looked fine.
-  const _warnNestedStyle = (body) => {
+  //
+  // A nested <script> is the same shape one element along and was worse: the
+  // parser marks it a script node at any depth, the template build drops every
+  // script node, and only TOP-LEVEL ones are collected as the component's
+  // script — so the block vanished with nothing said, and whatever it declared
+  // was still read by the template as a free variable.
+  const _warnNestedBlock = (body) => {
     if (!Array.isArray(body)) return
     for (const n of body) {
       if (!n || typeof n !== 'object') continue
+      const at = n.start != null ? ctx.posOf(n.start) : null
+      const where = at ? ` — ${at}` : ''
       if (n.type === 'style') {
         ctx.analysis.warnings.push(
           '<style> must be at the top level of the component. This one is nested ' +
-          'inside a block and is DROPPED — its rules never reach the page.')
+          'inside a block and is DROPPED — its rules never reach the page.' + where)
         continue
       }
-      _warnNestedStyle(n.body)
-      _warnNestedStyle(n.elsePart?.body ?? n.elsePart)
-      _warnNestedStyle(n.elseBlock?.body ?? n.elseBlock)
-      if (Array.isArray(n.parts)) n.parts.forEach((p) => _warnNestedStyle(p.body))
+      if (n.type === 'script' || n.type === 'script-module') {
+        ctx.analysis.warnings.push(
+          '<script> must be at the top level of the component. This one is nested ' +
+          'inside a block and is DROPPED — it never runs, and anything it declares ' +
+          'is read by the template as an undeclared variable.' + where)
+        continue
+      }
+      _warnNestedBlock(n.body)
+      _warnNestedBlock(n.mainBlock)
+      _warnNestedBlock(n.elsePart?.body ?? n.elsePart)
+      _warnNestedBlock(n.elseBlock?.body ?? n.elseBlock)
+      if (Array.isArray(n.parts)) n.parts.forEach((p) => _warnNestedBlock(p.body))
+      else if (n.parts) for (const k of ['main', 'then', 'catch']) _warnNestedBlock(n.parts[k])
     }
   }
-  _warnNestedStyle(ctx.DOM.body)
+  _warnNestedBlock(ctx.DOM.body)
 
   // One spelling now, so one rule: a member is in use when the door is reached
   // for it. The five animation helpers used to be a hand-listed OR chain of
@@ -8454,12 +9030,43 @@ export async function compile(source, config = {}) {
   })
 
   await hook('build')
+
+  // Report ONCE, and last. This loop used to run immediately after
+  // `analyzeScript`, which is before `parseHTML`'s own errors were merged and
+  // before the template build has run at all — so `{@attach}` in text content,
+  // `<mesa:frobnicate>`, `bind:this` on a non-`let` and `{@const}` with no
+  // assignment all landed in `analysis.errors` after the only thing that reads
+  // them had finished. `mesa-vite` re-reads the list afterwards and was the
+  // entire safety net; every other caller saw silence.
+  // Collected during the two rewrite passes, reported here because a template
+  // expression is only rewritten once the build has run.
+  readonlyPropWrites(ctx.accessors).forEach((name) => {
+    ctx.analysis.errors.push(
+      `'${name}' is declared \`export const\` — a read-only prop. Assigning to it ` +
+      `in the child is refused (RULE 56); use \`export let ${name}\` if the ` +
+      `component needs to change it.`
+    )
+  })
+
+  ctx.analysis.errors.forEach((e) => ctx.warning({ message: e }))
+  ctx.analysis.warnings.forEach((w) => ctx.warning({ message: `Warning: ${w}` }))
+
   return ctx
 }
 
+// The elements where whitespace IS the content. Collapsing inside one destroys
+// every code block and ASCII diagram, and a <textarea> also loses the initial
+// value the source declared — and it happens in the compiler, so SSR and the
+// client are wrong identically and no hydration mismatch can report it.
+const PRESERVE_WHITESPACE = new Set(['pre', 'textarea'])
+
 function compactDOM(dom, full) {
-  const walk = (node) => {
+  const walk = (node, preserve) => {
     if (!node.body) return
+    if (preserve || (node.type === 'node' && PRESERVE_WHITESPACE.has(node.name))) {
+      node.body.forEach((n) => walk(n, true))
+      return
+    }
     node.body = node.body.filter((n) => {
       if (n.type !== 'text') return true
       if (full) n.value = n.value.replace(/\s+/g, ' ')
@@ -8478,9 +9085,9 @@ function compactDOM(dom, full) {
       else n.value = n.value.replace(/\n\s*/g, '')
       return n.value.length > 0
     })
-    node.body.forEach(walk)
+    node.body.forEach((n) => walk(n, false))
   }
-  walk(dom)
+  walk(dom, false)
 }
 
 // ─── 10. PLUGIN HOOKS ─────────────────────────────────────────────────────────

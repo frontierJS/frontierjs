@@ -8,7 +8,8 @@
  * and does nothing it claims.
  */
 
-import { runHooks, runAroundHooks, runPhase, mergeHooks } from '../../src/hooks/hooks.js'
+import { runHooks, runAroundHooks, runPhase, mergeHooks,
+         hookContext, answered, hookChainMessage } from '../../src/hooks/hooks.js'
 
 const push = (log, tag) => () => { log.push(tag) }
 
@@ -101,4 +102,58 @@ test('hooks: mergeHooks carries every phase, and invents none', function () {
   )
   assert.deepEqual(Object.keys(out), ['before', 'after', 'around', 'error'])
   assert.deepEqual(mergeHooks({}, {}), {}, 'nothing in, nothing out')
+})
+
+/* ── Did anything answer? ──────────────────────────────────────────── */
+
+test('hooks: a fresh context has not answered', async function () {
+  assert.equal(answered(hookContext({ result: null })), false)
+})
+
+test('hooks: setting result — to anything at all — counts as answering', async function () {
+  /*
+   * Including `null`, which is the case the flag exists for. A `get` for a row
+   * that is not there answers `null`, and a pipeline nobody completed also
+   * hands back `null`; the VALUE cannot tell them apart, so the assignment has
+   * to. Setting it to the same `null` it was born with still counts.
+   */
+  ;[null, undefined, 0, '', false, { rows: [] }].forEach(function (v) {
+    const ctx = hookContext({ result: null })
+    ctx.result = v
+    assert.equal(answered(ctx), true, 'assigning ' + JSON.stringify(v ?? String(v)))
+    assert.equal(ctx.result, v)
+  })
+})
+
+test('hooks: the context is a copy, and result reads back as an ordinary field', async function () {
+  // Pure: the caller's object is not touched, and the accessor is enumerable so
+  // a hook spreading the context still copies the value.
+  const base = { service: 'orders', result: null }
+  const ctx = hookContext(base)
+  ctx.result = { id: 1 }
+  assert.equal(base.result, null, 'the argument was mutated')
+  assert.equal(Object.keys(ctx).includes('result'), true)
+  assert.equal(JSON.stringify({ ...ctx }.result), '{"id":1}')
+})
+
+test('hooks: a context from anywhere else has never answered', async function () {
+  // A caller that has not adopted hookContext must never be told its pipeline
+  // broke — the flag is absent, not false, and the answer is the same.
+  assert.equal(answered({ result: { rows: [] } }), false)
+  assert.equal(answered(null), false)
+  assert.equal(answered(undefined), false)
+})
+
+test('hooks: the message names the phase and both ways out', async function () {
+  const around = hookChainMessage('orders', 'find', 'around')
+  assert.equal(around.includes('orders.find'), true)
+  assert.equal(around.includes('next()'), true)
+  assert.equal(around.includes('ctx.result'), true)
+
+  // The error phase is a different mistake with different ways out, so the two
+  // sentences must not converge — a single generic message is what this
+  // function exists to prevent.
+  const onError = hookChainMessage('orders', 'find', 'error')
+  assert.equal(onError.includes('ctx.error'), true)
+  assert.equal(onError === around, false)
 })

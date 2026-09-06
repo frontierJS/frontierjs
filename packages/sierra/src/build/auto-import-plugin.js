@@ -330,7 +330,23 @@ export function injectAutoImports(source, map) {
     return source.slice(0, idx) + '\n' + injected + '\n' + source.slice(idx)
   }
 
-  return injected + '\n\n' + source
+  // No instance script — SYNTHESISE one. Returning `injected + source` put the
+  // import statements where Mesa parses template content, so the page rendered
+  // the literal text `import Card from '…'` and called `Card` as an undefined
+  // free identifier, with the build exiting 0; with an interpolated name the
+  // braces became an interpolation (`FJS-796`). A markup-only page is the exact
+  // thing auto-imported components exist for, so refusing it is the wrong
+  // answer — it needs somewhere to put an import, and that is a script block.
+  //
+  // After a `<script module>` when there is one: that block runs once at import
+  // and the instance block is a peer of it, not a wrapper.
+  const moduleMatch = source.match(/<script\s+module[^>]*>[\s\S]*?<\/script>/i)
+  const block = `<script>\n${injected}\n</script>\n`
+  if (moduleMatch) {
+    const idx = source.indexOf(moduleMatch[0]) + moduleMatch[0].length
+    return source.slice(0, idx) + '\n' + block + source.slice(idx)
+  }
+  return block + '\n' + source
 }
 
 /** A component is a default import from a file path, not from a package. */
@@ -369,10 +385,83 @@ function collectBoundNames(source) {
   const declRe = /\b(?:const|let|var|function|class)\s+(\w+)/g
   while ((m = declRe.exec(code)) !== null) bound.add(m[1])
 
+  // Destructuring — `const { page } = props`, `let [a, b] = xs`, and the
+  // renamed and defaulted forms inside them. The identifier regex above sees
+  // only the form that starts with a bare name, which is not the commonest
+  // declaration in JavaScript: `const { page } = props` beside a registered
+  // `page` emitted a duplicate import and the build died with
+  // *Identifier 'page' has already been declared (4:10)*, naming a line the
+  // author never wrote and an identifier they never imported (`FJS-797`).
+  //
+  // Over-inclusive on purpose, which is the policy this whole function states:
+  // a name harvested from a pattern that turns out to be a property key costs
+  // one auto-import the author writes by hand, and the alternative costs a
+  // module that does not parse.
+  const patternRe = /\b(?:const|let|var)\s*([[{][\s\S]*?[\]}])\s*=/g
+  while ((m = patternRe.exec(code)) !== null) {
+    for (const name of patternNames(m[1])) bound.add(name)
+  }
+
+  // Function, arrow and catch parameters — `function f(page)`, `(page) =>`,
+  // `catch (page)`. Destructured parameters go through the same walk.
+  //
+  // Three narrow forms rather than one *identifier followed by a paren* arm:
+  // that arm also matches `if (page) {`, which binds nothing and would suppress
+  // a real auto-import — over-inclusive is the cheap direction here, but not so
+  // far that a condition reads as a declaration.
+  for (const re of [
+    /\bfunction\b[^(]*\(([^()]*)\)/g,
+    /\bcatch\s*\(([^()]*)\)/g,
+    /\(([^()]*)\)\s*=>/g,
+  ]) {
+    while ((m = re.exec(code)) !== null) {
+      for (const name of patternNames(m[1])) bound.add(name)
+    }
+  }
+
+  // A single bare parameter with no parentheses — `page => page.title`.
+  const arrowRe = /(^|[^.$\w])([A-Za-z_$][\w$]*)\s*=>/g
+  while ((m = arrowRe.exec(code)) !== null) bound.add(m[2])
+
+  // `{#each xs as page}` / `{#each xs as page, i}` / `{#each xs as { page }}`
+  // — a template binding is in scope for the block and shadows an import the
+  // same way a `const` does.
+  const asRe = /\{#(?:each|await)[\s\S]*?\bas\s+([^}\n]+)/g
+  while ((m = asRe.exec(source)) !== null) {
+    for (const name of patternNames(m[1])) bound.add(name)
+  }
+
   const snippetRe = /\{#snippet\s+(\w+)/g
   while ((m = snippetRe.exec(source)) !== null) bound.add(m[1])
 
   return bound
+}
+
+/** Reserved words a pattern walk must not mistake for a binding. */
+const NOT_A_BINDING = new Set([
+  'true', 'false', 'null', 'undefined', 'new', 'typeof', 'void', 'in', 'of',
+  'await', 'this', 'function', 'async', 'return',
+])
+
+/**
+ * Every identifier a destructuring pattern or a parameter list could bind.
+ *
+ * Over-inclusive by design: a property KEY (`{ b: c }` binds `c`, not `b`) and
+ * an identifier inside a default value are both harvested, because each costs
+ * one auto-import the author writes by hand while the miss costs a module that
+ * does not parse.
+ */
+function patternNames(text) {
+  const names = []
+  // `...` first: a rest element binds its name, and the leading dots would
+  // otherwise read as the member access the regex exists to skip.
+  const flat = String(text).replace(/\.\.\./g, ' ')
+  const re = /(^|[^.$\w])([A-Za-z_$][\w$]*)/g
+  let m
+  while ((m = re.exec(flat)) !== null) {
+    if (!NOT_A_BINDING.has(m[2])) names.push(m[2])
+  }
+  return names
 }
 
 /**

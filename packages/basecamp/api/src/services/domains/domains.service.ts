@@ -23,7 +23,7 @@
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, ws, actor }
+import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 
@@ -208,10 +208,9 @@ export function createDomainsService(app: BasecampApp) {
         all:    [sessionScope(app)],
         // A hostname decides where traffic lands and a certificate decides
         // whether it is private. Both are admin acts.
-        // deriveSlug must be a HOOK, not the first line of create():
-        // `model:` brings autoValidate with it, and workspaceId is required by
-        // the schema but never sent by a client.
-        create:      [requireWorkspaceRole(app, 'admin', 'owner'), deriveSlug],
+        // No deriveSlug: `Domain` has neither `name` nor `slug`, so it was a
+        // hook that could never fire.
+        create:      [requireWorkspaceRole(app, 'admin', 'owner')],
         patch:       [requireWorkspaceRole(app, 'admin', 'owner')],
         remove:      [requireWorkspaceRole(app, 'admin', 'owner')],
         uploadCert:  [requireWorkspaceRole(app, 'admin', 'owner')],

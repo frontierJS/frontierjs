@@ -28,7 +28,7 @@
 // An app adds what this file cannot know — a relation back to its own User,
 // @@log(audit), @@tenant(none) under row tenancy — with `extend model`, NOT by
 // pasting these models into its own schema. A copy stops being this file's the
-// first time either side moves and nothing fails: basecamp's had @guarded(all)
+// first time either side moves and nothing fails: basecamp's had @guarded
 // where this file writes @secret, so it stored every OAuth token in plain text
 // with its whole suite green. See litestone's docs/traits.md.
 
@@ -36,7 +36,7 @@ model Credential {
   id              String     @id @default(uuid())
   userId          String
   type            String
-  value           String     @guarded(all)
+  value           String     @guarded
   label           String?
   accessToken     String?    @secret
   refreshToken    String?    @secret
@@ -53,11 +53,30 @@ model Credential {
 model Session {
   id         String    @id @default(uuid())
   userId     String
-  token      String    @unique @guarded(all)
+  token      String    @unique @guarded
   expiresAt  DateTime
   ipAddress  String?
   userAgent  String?
   createdAt  DateTime  @default(now())
+
+  /// SUPPORT MODE — this session is an operator's, and while these are set it
+  /// resolves to somebody else.
+  ///
+  /// Three columns on the operator's OWN row rather than a second session or a
+  /// second model. A session minted for the subject would be a credential to
+  /// keep somewhere, swap for, and lose with the tab; clearing a column is a
+  /// way back that cannot be forgotten. The permanent record is the audit
+  /// trail, which this model already writes through @@log(audit) and which
+  /// outlives the row by construction — a second table recording the same
+  /// episode would be a second origin for it.
+  ///
+  /// `impersonationEndsAt` is READ AT RESOLUTION, so an episode stops applying
+  /// the instant it lapses whether or not anything has swept it. The reason is
+  /// required by the route and nullable here, for every row written before
+  /// these columns existed.
+  impersonatingUserId  String?
+  impersonationReason  String?
+  impersonationEndsAt  DateTime?
 
   @@db(main)
   @@gate("8")
@@ -82,7 +101,7 @@ model Verification {
   identifier  String
   /// The secret the caller presents, and what the row is found by. One meaning
   /// on every row.
-  value       String               @unique @guarded(all)
+  value       String               @unique @guarded
 
   /// oauthLink only: which identity is waiting to be attached once the address
   /// answers for itself. Null for the other two, which attach nothing.
@@ -116,11 +135,11 @@ model OauthFlow {
   /// Half of the browser binding. The other half is a cookie, and a flow found
   /// by this value ALONE is login CSRF — RFC 9700 requires the token be bound
   /// to the user agent, which a database row cannot do by itself.
-  state       String   @unique @guarded(all)
+  state       String   @unique @guarded
   provider    String
   /// PKCE code_verifier. Never leaves this process — it goes to the token
   /// endpoint and nowhere else.
-  verifier    String   @guarded(all)
+  verifier    String   @guarded
   /// Already checked against the app's allow-list when the flow started, so
   /// what is stored here is known good and the way back decides nothing.
   returnTo    String?

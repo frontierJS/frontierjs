@@ -28,6 +28,7 @@ export interface JobRecord {
   created_at:   number
   /** Who asked for the work. NULL when nobody did — cron, boot, standalone. */
   actor_id:     string | null
+  correlation_id: string | null
   /** Which tenant the work is for, where the app declares tenancy. NULL for an
    *  app that declares none and for work that is the app's own. */
   tenant_id:    string | null
@@ -86,6 +87,9 @@ export interface JobContext<T = unknown> extends Job<T> {
 
   /** The id recorded at dispatch. null when nobody asked — cron, boot. */
   actorId: string | null
+  /** The request this job was dispatched from, or null when there was none —
+   *  a cron fire, a boot enqueue, standalone use. */
+  correlationId: string | null
 
   /**
    * The tenant recorded at dispatch, re-bound for the length of the handler.
@@ -212,6 +216,9 @@ export interface DispatchOptions {
   delay?:    number
   /** Higher = picked up sooner within same queue. Default: 0 */
   priority?: number
+  /** The request that asked for this work. Junction fills it from the call in
+   *  scope; a standalone dispatch may state it. */
+  correlationId?: string
   /**
    * Deduplication key — a lock on work IN FLIGHT.
    *
@@ -480,6 +487,16 @@ export interface CaravanApp {
    * declares no tenancy never defines it.
    */
   tenant?: () => string | null
+
+  /**
+   * WHICH REQUEST is in scope right now — read at dispatch, beside the actor
+   * and the tenant.
+   *
+   * Optional for their reason. Without it a job dispatched inside a request
+   * carried no id the request also had, so the two halves of one unit of work
+   * could not be joined in a log or a trace.
+   */
+  correlationId?: () => string | null
 
   /**
    * Run the handler on behalf of a principal, re-resolved now.

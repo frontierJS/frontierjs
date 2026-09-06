@@ -65,6 +65,10 @@ declaration, not separate truths that happen to agree. The moment one of
 them is hand-maintained instead of generated, it has stopped being a
 projection and become a second origin in disguise.
 
+Finding two origins is a diagnosis, and the work after it is deciding which
+side can become a projection of the other. Where neither can, the fact has no
+home yet, and that is the finding.
+
 ### A projection must be legible
 *— from Axiom 1*
 
@@ -90,7 +94,9 @@ to ask — without documentation.
 A realm reaches another realm through a named checkpoint — a hook, a
 bridge, a typed contract — never by convention. Architecture written in
 prose is a wish; architecture written into the dependency graph and the
-test suite is a fact.
+test suite is a fact. Unclear ownership is the same diagnosis from the other
+side: where two places each half-own a capability, what is missing is the
+checkpoint between them rather than a rule about who defers.
 
 ### Concept economy
 *— from Axiom 2*
@@ -116,6 +122,13 @@ moment someone is listening hardest.
 **Ergonomics vs. strictness.** Strictness follows cost — never resolve this
 by temperament ("we're strict" / "we're friendly"); resolve it per-surface
 by what a mistake destroys.
+
+**Paved road vs. the workaround.** One blessed path, made excellent, taken
+without a second thought — and the escape hatch is instrumentation as much as
+relief. One developer leaving the road is an edge case; the same workaround in
+the same place, over and over, is a measurement of the road. A config flag
+added in answer widens the shoulder and records nothing: either the road
+changes, or the reason it does not is written down.
 
 **Batteries vs. smallness.** The core stays readable; the batteries stay
 owned. A battery may be large, but it must be *severable* — one owner, one
@@ -150,6 +163,7 @@ predict? In review, that breaks down into:
 
 - Does it introduce another origin of truth?
 - Does it enlarge the concept budget?
+- Is the complexity the problem's, or did we add it?
 - Does it reduce predictability?
 - Can it be derived instead of restated?
 - Does it have exactly one owner?
@@ -158,7 +172,9 @@ predict? In review, that breaks down into:
 - Can this be wrong without anything saying so — and if it can, what artefact
   makes it visible?
 
-If it belongs, every answer above will show it.
+If it belongs, every answer above will show it. Where two proposals both
+pass, the tiebreak is six months out: the one that lets a developer predict
+more from less knowledge.
 
 ---
 
@@ -205,15 +221,21 @@ document, then assessment. A ruling that must override an invariant amends the
 invariant in the same commit or does not land. Where two documents of one kind
 disagree, the one with the later date wins and the earlier is struck in place.
 
-**Status is a closed vocabulary, and it is one word in the frontmatter.** A ruling
-is `proposed`, `accepted`, `superseded-by` or `withdrawn`. A proposal is those
-four plus `partial` and `shipped` — the two build states between a decision and a
-fact, which a ruling does not need and a roadmap cannot do without. A document
-that READS the tree rather than proposing anything is `assessment`: it is on no
-lifecycle, it carries a date, and it is never cited as behavior. A file derived
-from the others and authoritative over none of them is `index`. *Parked*, *under
-review*, *not yet adopted*, *argued* and *idea* each meant one of these, and each
-let a settled question read as open.
+**Status is a closed vocabulary, and what carries it differs by kind.** A ruling
+in force says nothing: being in the register is the statement that it was
+decided, so a word is written only where that has stopped being the whole answer
+— `superseded-by`, `amended-by` or `withdrawn`, under the heading, naming what
+replaced it (`FJS-D196`). A proposal is on a lifecycle and carries one word in
+its frontmatter: `proposed`, `partial`, `shipped`, `superseded-by` or
+`withdrawn` — the two build states between a decision and a fact, which a ruling
+does not need and a roadmap cannot do without. A document that READS the tree
+rather than proposing anything is `assessment`: it is on no lifecycle, it carries
+a date, and it is never cited as behavior. A file derived from the others and
+authoritative over none of them is `index`. *Parked*, *under review*, *not yet
+adopted*, *argued* and *idea* each meant one of these, and each let a settled
+question read as open. *Accepted* is retired for the opposite reason: it was true
+of nearly every ruling, and a word that is almost always the same word cannot
+mark the one that is not.
 
 **A number in prose is generated or absent.** Components, tests, rules, models,
 drives. A count that nothing regenerates is wrong by the next commit and reads as

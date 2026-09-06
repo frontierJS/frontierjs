@@ -187,6 +187,14 @@ import "@frontierjs/auth/schema.lite"
 import "@frontierjs/junction/outbox.lite"
 import "./user.lite"
 
+// A claim a caller with NO SESSION holds, resolved per request off a declared
+// header. It is on no row, so `@@auth User` cannot name it, and `Cart`'s
+// `@@allow('read', token == auth().cartToken)` is a policy over it. Declared
+// here rather than only at `createClient` because a tool that has the schema
+// and not the app — `fli studio`, `litestone tinker` — grades the same names
+// the app does (`FJS-772`). The VALUE is still the app's, per request.
+claim cartToken
+
 model Product {
   id   Int    @id
   name String @length(1, 80) @unique
@@ -431,7 +439,7 @@ model Customer {
   /// column": the field is stripped from the response for anyone the policy
   /// rejects, without a line of service code saying so.
   ///
-  /// NOT @guarded — that is a system-context lock (@guarded / @guarded(all)),
+  /// NOT @guarded — that is a system-context lock (@guarded / @guarded),
   /// not a level, and it takes no numeric argument. @guarded(5) does not parse.
   notes       String?    @allow('read', auth().role == 'admin')
   
@@ -501,7 +509,7 @@ model Customer {
   /// a value of `fields`, one key along, and `fields` is read by anyone who may
   /// read the customer.
   ///
-  /// It was `@guarded(all)` and that was the wrong half of the pair: `@guarded`
+  /// It was `@guarded` and that was the wrong half of the pair: `@guarded`
   /// locks BOTH directions and has no hatch, so the hook that derives this
   /// column was refused for naming it and every customer create over HTTP was a
   /// 403 (`FJS-644`). `@system` is the one that means *the application writes
@@ -1116,7 +1124,7 @@ model Order {
 /// ─── Why the columns are copies ──────────────────────────────────────────
 ///
 /// Every column below except the two ids is a value this row already has a
-/// relation to. That is not denormalisation for speed — it is that a line is a
+/// relation to. That is not denormalization for speed — it is that a line is a
 /// statement about a MOMENT and its neighbors are statements about now. A
 /// variant's price is what the shop charges today; `unitPrice` is what this
 /// shopper was charged, and re-reading the first to render the second rewrites
@@ -1159,21 +1167,6 @@ model OrderLine {
   /// anything above it changes.
   lineTotal    Int             @money(USD) @gte(0) @label("Total")
   
-  /// A FOURTH copy, and the one that is not about the sale.
-  ///
-  /// The three above are copies because a price and a description are facts
-  /// about the moment of sale. This one is a copy for a duller reason: a row
-  /// policy compares columns on ITS OWN model against `auth()` and cannot name
-  /// one on a related model — `@@allow('read', order.userId == auth().id)` is a
-  /// parse error at the dot (`FJS-499`). So *the lines of my own orders* has
-  /// nowhere to live but here.
-  ///
-  /// Stated rather than hidden, because the cost is real: this column and
-  /// `Order.userId` can disagree, and nothing in the schema can stop them.
-  /// `carts.checkout` writes both inside one transaction, which is the whole of
-  /// what keeps them together.
-  userId       String?         @system
-  
   createdAt    DateTime        @default(now())
   
   /// Stamped by `Order`'s cascade and by nothing else — there is no path that
@@ -1194,11 +1187,20 @@ model OrderLine {
   @@gate("1.8.8.8")
   
   @@allow('read', auth().isStaff)
-  @@allow('read', userId == auth().id)
+  
+  /// *The lines of my own orders*, asked of the ORDER rather than of a column
+  /// here. The three copies above are facts about the moment of sale; a buyer's
+  /// id would not be one, and it is not stored.
+  ///
+  /// The bound is ONE hop (`FJS-D221`), which is why `Order.userId` is a
+  /// denormalised copy of `Customer.userId` and has to stay one: reaching the
+  /// customer from a line is two hops and is a parse error.
+  @@allow('read', order.userId == auth().id)
   
   @@softDelete
   
-  /// Every read of this table is "the lines of one order".
+  /// Every read of this table is "the lines of one order". It is also what the
+  /// policy above correlates on, so the hop is a key lookup rather than a scan.
   @@index([orderId])
 }
 
@@ -1272,17 +1274,17 @@ model PaymentMethod {
   expMonth   Int      @gte(1) @lte(12) @label("Expiry month")
   expYear    Int      @gte(2000) @lte(2100) @label("Expiry year")
 
-  /// Which one a renewal reaches for.
+  /// Which one a renewal reaches for, and *at most one per customer* is the
+  /// schema's to say — `@@unique([customerId], where: isDefault == true)` below.
   ///
-  /// **`FJS-603`'s second instance, and the one it did NOT close.** *At most one
-  /// default per customer* is `@@unique([customerId], where: isDefault == true)`
-  /// and the predicate is well inside what the attribute takes — but an index is
-  /// named for its COLUMNS and this model already declares `@@index([customerId])`
-  /// for the ordinary lookup, so the two derive one name and the parser refuses
-  /// the pair. The partial unique cannot replace the plain index either: it
-  /// covers only the default rows, which is exactly why `advise` does not count
-  /// one as coverage. So this stays in the transaction that attaches a card, and
-  /// the limitation is `FJS-614`.
+  /// `FJS-603`'s second instance. It needed `FJS-614` first: an index used to be
+  /// named for its COLUMNS alone, and this model already declares
+  /// `@@index([customerId])` for the ordinary lookup, so the two derived one
+  /// name and the parser refused the pair. Dropping the plain index was never
+  /// the way out — a partial unique covers only the rows its predicate admits,
+  /// which is why `advise` does not count one as foreign-key coverage — so the
+  /// rule lived in the transaction that attaches a card, where a second writer
+  /// could still make two.
   isDefault  Boolean  @default(false) @system @label("Default")
 
   createdAt  DateTime @default(now())
@@ -1307,6 +1309,12 @@ model PaymentMethod {
   @@allow('read', userId == auth().id)
 
   @@index([customerId])
+
+  /// At most one default card per customer, held by the database rather than by
+  /// the code that writes one. The lookup index above and this constraint are
+  /// different things over the same column and both are needed: this one admits
+  /// only the default rows.
+  @@unique([customerId], where: isDefault == true)
 
   @@log(audit)
 }

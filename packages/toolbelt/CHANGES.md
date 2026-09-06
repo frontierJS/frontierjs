@@ -1,5 +1,176 @@
 # Changes — @frontierjs/toolbelt
 
+## `/hooks` — a broken chain answered `null` and looked like an answer
+
+Three ordinary mistakes ended the pipeline with nothing having produced a
+result: an `around` that returns without calling `next()`, an `around` that
+catches the failure and does not rethrow, and an `error` hook that clears
+`ctx.error` without setting one. All three resolved the call to the `null` the
+context was born with, so `(await r.service.find()).data` threw a TypeError in
+the app's own screen, one hop from the mistake and naming nothing that is wrong.
+
+`null` is a legitimate answer too — a `get` for a row that is not there — so the
+value cannot be the test. `hookContext` makes `result` an accessor that
+remembers whether anything ASSIGNED it, and `answered(ctx)` reports it. An
+`around` that short-circuits on purpose still works, including one that answers
+`null`, because it assigns. A context from anywhere else answers `false`, so a
+caller that has not adopted it is never told its pipeline broke.
+
+`hookChainMessage` is the sentence. The Error class deliberately is NOT here:
+both callers throw a `ResourceHookError` of their own type, and this package
+exports only pure functions (`FJS-D26`). What drifts between two hand-written
+messages is which phase and the two ways out, and that is the half with an owner.
+
+Every refusal is paired with the legitimate hook one line away, because a guard
+that refused both would make the `around` phase useless for what it is for.
+Measured in sierra: removing the around check fails 3 of 12 and the controls
+hold; removing the error check fails 1; replacing `hookContext` with a plain
+object — the guard that refuses everything — fails 7, which only the controls
+can see.
+
+## `/inflect` — three wrong plurals, and the sweep that wrote one of them
+
+`pluralize('analysis')` answered `analyzes`. Not a gap in the rules: the commit
+that flipped this repo's prose from British to American spelling (`FJS-D192`)
+ran `analyse` → `analyze` across the tree, and the irregular table is not prose.
+It rewrote the entry **and the test asserting it** in the same pass, so nothing
+failed and `singularize('analyses')` fell through to `analyse` — a model name
+junction cannot resolve, which is a service with no `@@gate` and no validation.
+
+The other two were real gaps of the same shape. `quiz` doubles its `z` and now
+sits in the table; the `-f`/`-fe` stems (`half`, `shelf`, `wife`, `thief`,
+`self`, `wolf`, `calf`, `loaf`, `elf`, `sheaf`, `scarf`) are a closed LIST for
+`SES_BARE_S`'s reason — `leaf` is `leaves` and `roof` is `roofs`, and no ending
+tells them apart. The control in the spec is five `-f` words that must NOT take
+`-ves`, because a rule over the ending passes every positive assertion.
+
+**What changed structurally is the test.** `IRREGULAR` is exported and the
+round-trip case reads it, so an entry added later is covered without touching a
+test — and the correctness case is hand-written English, because that is the
+only half a copy of the table cannot supply. Measured: reintroducing `analyzes`
+leaves *every irregular round-trips* green and fails the corpus; so does
+dropping `half`.
+
+Proven where it counts rather than in the kit: every one of the **1737 model
+names** in this repo pluralized and singularized under both the old rules and
+the new, **0 moved**, and `litestone ddl --check` reports `ddl.snapshot.sql`
+current — a rule changed here renames tables. litestone 4332, junction 2149,
+sierra 1409, toolbelt 316.
+
+## `/redact` — what must never reach a log line
+
+Two questions look alike and only one had an owner. *Is this column protected by
+the schema* is `$protectedFields` and Invariant 7, settled. *Is this key a
+credential whatever the schema says* — `authorization`, `cookie`, `password` —
+is on no row and in no schema, and three packages asked it: junction's logger,
+`defineEnv`, and conduit, whose `connection_failed` carries a URL with userinfo.
+
+The kit owns the name set (`isSecretKey`), a separate per-segment rule for
+environment variables (`isSecretEnvName`, because `STRIPE_SECRET_KEY` is compound
+where a header is whole), `redactUrl`, and **the walk itself** as
+`redactBy(value, predicate)` — junction's `redactProtected` calls it with the
+schema's set, so there is one walker with two predicates rather than two walkers
+whose cycle guards drift apart.
+
+`redactUrl` does not require a well-formed scheme, which is the case it exists
+for: the value a message quotes is by definition the one that failed to parse.
+It keeps the user and the host, because which host refused is the content of the
+message. `key` alone does not qualify an env name, or `SORT_KEY` would be
+redacted and the feature turned off wholesale. `FJS-775`.
+
+## 2026-09-04 — `/gate`, the access ladder
+
+The 0–9 scale, `levelPasses` and `gradeStanding`. It was a hand copy at four
+places across a boundary that forbids the import: Litestone enforces a `@@gate`,
+Junction grades the caller it hands over, Sierra renders a screen from the same
+numbers in plain Node, and Invariant 1 stops two of the three from asking the
+first. Each copy carried a comment saying *change one, change both*.
+
+Measured over the 216 combinations of the fields a session carries, Litestone's
+grader and Junction's disagreed on **8** — all one branch, a signed-in caller
+with no `role` — and `GatePlugin`'s own constructor fallback disagreed with both
+on **212**, since it read nothing but *is there a user*. Zero after
+(`FJS-520`, ruled `FJS-D197`).
+
+The spec walks the whole grid and the whole 0–9 square rather than asking one
+grader about one caller, which is what the tripwire this replaces did: a test
+named *agrees with junction sessionGateLevel* imported only Litestone and used a
+fixture carrying `role`, the field whose absence is the disagreement.
+
+Ships a `.d.ts` — Junction re-exports the type, so it compiles under an app's
+own options.
+
+## 2026-09-04 — `/cron`, because two packages were parsing one grammar
+
+`FJS-767`. Caravan's scheduler and junction's `app.scheduler` each had a cron
+parser, and they were broken differently — so the same expression named two
+different schedules depending on which timer was holding it:
+
+    0 1-5,8 * * *      caravan: hours 1,2,3,4,5     junction: hours 1,8
+    0 1-5/2 * * *      caravan: hours 1,2,3,4,5     junction: every 2nd hour
+    0 25 * * *         both: parsed, then matched no minute, for ever
+
+Neither consulted a bound, and each took ONE operator per field — caravan the
+first operator character it found, junction the first branch that matched — so a
+compound term was silently truncated to whatever survived the split.
+
+The kit answers what an expression ADMITS and nothing about time: a Set per
+field, and whether a set of clock parts is in them. When a scheduler looks and
+in which zone stays with the scheduler, which is why `cronMatches` takes clock
+parts rather than a `Date`.
+
+Building sets is what makes both defects go away at once: every term is read,
+and every number is compared to its field's bounds as it goes in. On top of
+that, `*/0` is refused rather than computing `n % 0`; Sunday is 0 and 7, folded
+after parsing so `5-7` is Fri-Sun rather than the backwards range `5-0`; and a
+day of month no admitted month is long enough for — `0 9 31 2 *` — is refused,
+which is the last shape that could parse and never fire.
+
+## 2026-09-03 — the currency table is shipped, because ICU answers a different question
+
+`FJS-745`. 280 tests, 0 fail, under bun and under node alike. Typecheck clean.
+
+`/units` read two facts off the host and both were wrong to read there.
+
+`Intl.supportedValuesOf('currency')` answers **162 codes under node and 306
+under bun, differing on 145** — bun carries every withdrawn code back to the
+Austrian schilling, node carries `ZWG`, Zimbabwe Gold, which bun does not. So
+`isKnownCurrency('ZWG')` was true on one runtime and false on the other, and a
+`@money(ZWG)` column declared on a developer's machine was refused as a typo on
+the build server.
+
+The sharper one is `resolvedOptions().maximumFractionDigits`, which **disagrees
+on fourteen codes both runtimes carry**: node says the Iraqi dinar has no
+decimal places, bun says three, and ISO says three. A dinar amount is stored as
+a whole number of minor units, so the same column meant fils on one machine and
+dinars on the other — a factor of a thousand, with nothing raised at either end.
+
+Neither runtime is wrong. `maximumFractionDigits` answers how an amount is
+DISPLAYED, which is CLDR's question and is allowed to differ from ISO for a
+currency whose fractions have fallen out of use; `@money` derives its scale from
+how an amount is STORED, which is ISO 4217's exponent. Reading the storage
+answer off the display one would have been the same defect if the two hosts had
+agreed, and would have moved under anybody's next node upgrade.
+
+**So the table is the kit's now.** 183 active codes, the 26 exponents that are
+not 2, and 13 codes ISO gives no minor unit at all — the four metals, the
+reserved and bond codes, and `XXX` itself — which `minorUnits` refuses in their
+own words rather than answering the 2 that would let `toMinor` invent a
+hundredth of a troy ounce. `formatMoney` still asks `Intl` for the glyph, which
+side it sits on and the grouping, and pins the decimals to ISO's exponent, so
+one stored amount renders identically wherever it is read.
+
+The negative control is the test that matters: with `supportedValuesOf` stubbed
+to answer nothing and `NumberFormat` stubbed to answer two places for
+everything, every value is unchanged. Each half graded by removal, node/bun:
+the exponent table **3/2**, the code list **5/3**, the no-minor-unit refusal
+**1/1**, `formatMoney`'s pinning **1/0** — the last one moves only node, which
+is exactly the divergence it closes.
+
+A host ICU table was also a dependency this package's manifest cannot declare,
+and declaring nothing is the whole license `@frontierjs/toolbelt` has to be
+imported by litestone and mesa (`FJS-D26`).
+
 ## 2026-09-02 — the signature covers the query, and the signature says which version it is
 
 `FJS-678`. 277 tests, 0 fail. Typecheck clean.

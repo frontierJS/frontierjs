@@ -12,7 +12,7 @@ describe('createBuffer', () => {
 
   beforeEach(() => { buf = createBuffer({ requests: 5, logs: 5, events: 5 }) })
 
-  it('initialises empty', () => {
+  it('initializes empty', () => {
     expect(buf.requests.all()).toHaveLength(0)
     expect(buf.logs.all()).toHaveLength(0)
     expect(buf.events.all()).toHaveLength(0)

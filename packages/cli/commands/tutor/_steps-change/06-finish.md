@@ -19,7 +19,7 @@ if (context.config.abort) {
 
 context.config.journal.settle('succeeded')
 
-log.success('Lesson 7 done — expand, contract, and a change that touched no column')
+log.success('Lesson 10 done — expand, contract, and a change that touched no column')
 log.info('')
 log.info(`  ${app}`)
 log.info('')
@@ -27,7 +27,7 @@ log.info('  db/release.snapshot.md    the declared surface — commit it')
 log.info('  fli release:check --from <ref> --strict')
 log.info('                            the gate a branch that deploys puts in CI')
 log.info('')
-log.info('  fli tutor:fleet           next — basecamp, and a machine that takes orders')
+log.info('  fli tutor:test            next — the checks a schema already knows how to run')
 log.info('')
 
 if (ws.kind === 'temp' && !context.flag.keep) {

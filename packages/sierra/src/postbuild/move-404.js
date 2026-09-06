@@ -6,8 +6,19 @@
  * at the root of the output directory.
  */
 
-import { rename, access } from 'fs/promises'
+import { rename, access, rmdir } from 'fs/promises'
 import { join } from 'path'
+
+/**
+ * The URL this page stops being reachable at.
+ *
+ * Exported so `runPostBuild` can drop it from the site's page list rather than
+ * naming the string twice: the rename below takes the only file out of `404/`,
+ * so `/404/` is not a page afterwards and a sitemap listing it advertises a URL
+ * that answers 404 — a slightly worse thing than indexing a not-found page, and
+ * what the build actually shipped.
+ */
+export const NOT_FOUND_URL = '/404/'
 
 /**
  * @param {string} outDir — absolute path to Vite build output
@@ -25,5 +36,13 @@ export async function move404(outDir) {
   }
 
   await rename(src, dest)
+
+  // The rename leaves `404/` behind, empty. Harmless on a host that answers 404
+  // for it and a directory listing on one that does not, which is the whole of
+  // why it goes: an empty directory in a published site is a URL nobody meant
+  // to publish. Failure is ignored — a non-empty directory is somebody else's
+  // file and not this step's to delete.
+  await rmdir(join(outDir, '404')).catch(() => {})
+
   return '404.html ← 404/index.html'
 }

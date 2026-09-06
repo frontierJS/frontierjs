@@ -20,7 +20,7 @@ const AUTH_TOKEN = process.env.ANTHROPIC_AUTH_TOKEN
 
 if (!API_KEY && !AUTH_TOKEN) {
   console.warn(
-    '\n  No ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN set — the recogniser will answer 401.' +
+    '\n  No ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN set — the recognizer will answer 401.' +
     '\n  Catalogue browsing and the graph view work without one.\n'
   )
 }

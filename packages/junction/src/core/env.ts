@@ -30,6 +30,7 @@
 //   generateEnvExample(spec)  // returns the string
 
 import { colorEnabled } from './logger.ts'
+import { isSecretEnvName, redactUrl, REDACTED } from '@frontierjs/toolbelt/redact'
 
 // Env validation runs before an app — and therefore before its logger —
 // exists, so these are written straight to stderr. The color gate is
@@ -69,6 +70,16 @@ export interface EnvFieldSpec {
 
   /** Example value for .env.example generation. */
   example?:    string
+
+  /**
+   * Never quote this variable's value back in a message.
+   *
+   * Inferred from the NAME when absent — `STRIPE_SECRET_KEY`, `DATABASE_PASSWORD`
+   * and `GITHUB_TOKEN` are all secret without being told. State it where the
+   * name does not say so, and state `false` where the name says so wrongly (a
+   * `SORT_KEY`, a `PARTITION_KEY`).
+   */
+  secret?:     boolean
 }
 
 export type EnvSpec = Record<string, EnvFieldSpec>
@@ -137,6 +148,19 @@ export function checkEnvField(key: string, field: EnvFieldSpec, raw: string | un
 
   const fail = (error: string): EnvFieldResult => ({ value: undefined, error, warnings, present })
 
+  // What a message may say about the value it is refusing.
+  //
+  // A type failure quoted the value, so a malformed `DATABASE_URL` put its
+  // password on stderr at boot — and boot output is the most-pasted text there
+  // is (`FJS-709` `batteries-11`). Two rules, because the two leaks are shaped
+  // differently: a variable that IS a secret says nothing about its value, and a
+  // variable that CARRIES one in a URL keeps its user and host and loses the
+  // password. The host is the content of the message — a redaction that removes
+  // the answer with the secret is one the first person to debug a connection
+  // turns off.
+  const isSecret = field.secret ?? isSecretEnvName(key)
+  const quote = (v: string): string => isSecret ? REDACTED : redactUrl(v)
+
   let value: unknown = present ? raw : field.default
 
   if (field.required && !present && field.default === undefined)
@@ -154,7 +178,7 @@ export function checkEnvField(key: string, field: EnvFieldSpec, raw: string | un
     case 'number':
     case 'port': {
       const n = Number(strValue)
-      if (isNaN(n)) return fail(`${key}: expected a number, got "${strValue}"`)
+      if (isNaN(n)) return fail(`${key}: expected a number, got "${quote(strValue)}"`)
       if (type === 'port' && (n < 1 || n > 65535))
         return fail(`${key}: port must be between 1 and 65535, got ${n}`)
       value = n
@@ -165,19 +189,19 @@ export function checkEnvField(key: string, field: EnvFieldSpec, raw: string | un
       const t = strValue.toLowerCase()
       if (t === 'true' || t === '1' || t === 'yes') value = true
       else if (t === 'false' || t === '0' || t === 'no') value = false
-      else return fail(`${key}: expected boolean (true/false/1/0/yes/no), got "${strValue}"`)
+      else return fail(`${key}: expected boolean (true/false/1/0/yes/no), got "${quote(strValue)}"`)
       break
     }
 
     case 'url': {
       try { new URL(strValue); value = strValue }
-      catch { return fail(`${key}: expected a valid URL, got "${strValue}"`) }
+      catch { return fail(`${key}: expected a valid URL, got "${quote(strValue)}"`) }
       break
     }
 
     case 'json': {
       try { value = JSON.parse(strValue) }
-      catch { return fail(`${key}: expected valid JSON, got "${strValue.slice(0, 40)}..."`) }
+      catch { return fail(`${key}: expected valid JSON, got "${quote(strValue).slice(0, 40)}..."`) }
       break
     }
 
@@ -191,7 +215,7 @@ export function checkEnvField(key: string, field: EnvFieldSpec, raw: string | un
     if (field.maxLength !== undefined && value.length > field.maxLength)
       return fail(`${key}: must be at most ${field.maxLength} characters (got ${value.length})`)
     if (field.enum && !field.enum.includes(value))
-      return fail(`${key}: must be one of [${field.enum.join(', ')}], got "${value}"`)
+      return fail(`${key}: must be one of [${field.enum.join(', ')}], got "${quote(value)}"`)
   }
 
   // Graded BY NAME and only when the app declares them. Junction reads none of

@@ -21,7 +21,7 @@ if (context.config.abort) {
 
 context.config.journal.settle('succeeded')
 
-log.success('Lesson 5 done — a public site built ahead of time, and a check that says what it published')
+log.success('Lesson 8 done — a public site built ahead of time, and a check that says what it published')
 log.info('')
 log.info(`  ${app}`)
 log.info('')

@@ -485,7 +485,7 @@ function assertNoOrphans(rawDb) {
  * lock until its first write, so two processes booting against one file both
  * read, both decide the same migration is needed, and the loser applies
  * statements the winner has already applied — `duplicate column name`, measured
- * in 5 of 10 runs (`FJS-642`). Taking the lock up front serialises them; the
+ * in 5 of 10 runs (`FJS-642`). Taking the lock up front serializes them; the
  * `guard` is what makes the loser notice, because a lock alone only makes it
  * wait its turn to do the wrong thing.
  */

@@ -8,7 +8,7 @@
  * rule about what must NOT happen: on input an error may only be removed,
  * never revealed. Wire it the obvious way — re-validate on every keystroke —
  * and the first character typed into the first field lights up "required" on
- * three fields nobody has reached. That misbehaviour looks like working
+ * three fields nobody has reached. That misbehavior looks like working
  * validation in a screenshot and like a hostile form to a person.
  */
 export const name = 'Form — lifecycle'

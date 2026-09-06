@@ -219,6 +219,50 @@ describe('a window over HTTP', () => {
     expect(typeof body.endCursor).toBe('string')
     ;(db as any).$close(); await app.stop()
   })
+
+  // `FJS-779`. The token is caller-supplied text and was graded by nothing, so
+  // over the wire the four shapes below answered a 200 with an EMPTY LIST —
+  // which a client reads as the end of the data — except the malformed one,
+  // which answered 500. The grading is litestone's, because that is where the
+  // ordering is known; what is asserted here is the STATUS, which is the half
+  // neither package can answer alone.
+  test('a cursor this list did not mint is a 400, never an empty page', async () => {
+    const db  = await shop()
+    const app = await appWith(db)
+    const mint = (v: unknown) => Buffer.from(JSON.stringify(v)).toString('base64url')
+
+    const status = async (after: string) => {
+      const res = await app.http.fetch(new Request(
+        `http://localhost/items?$limit=3&$orderBy=id&$after=${encodeURIComponent(after)}`))
+      return { code: res.status, body: await res.json() as any }
+    }
+
+    for (const [name, after] of [
+      ['malformed',   'not-a-cursor'],
+      ['wrong keys',  mint({ nope: 1 })],
+      ['null',        mint(null)],
+      ['an array',    mint([1])],
+    ] as const) {
+      const { code, body } = await status(after)
+      expect(`${name}: ${code}`).toBe(`${name}: 400`)
+      expect(body.message).toMatch(/\$after/)
+      // Not an empty LIST wearing a 200, which is what each of these was. The
+      // body is an error — `data` on a 400 is the field-error list junction
+      // hands `<Form>`, so it names the parameter rather than holding rows.
+      expect(body.kind).toBeUndefined()
+      expect(body.data).toEqual([{ path: ['$after'], message: expect.any(String) }])
+    }
+
+    // Paired: the edge this list actually minted still pages, over the same
+    // transport. A boundary that refused every cursor would pass every row
+    // above and break the feature.
+    const first = await get(app, '/items?$limit=3&$orderBy=id')
+    const next  = await get(app, `/items?$limit=3&$orderBy=id&$after=${encodeURIComponent(first.endCursor)}`)
+    expect(next.data).toHaveLength(3)
+    expect(next.data.map((r: any) => r.id)).not.toEqual(first.data.map((r: any) => r.id))
+
+    ;(db as any).$close(); await app.stop()
+  })
 })
 
 // ─── the client half ──────────────────────────────────────────────────────────

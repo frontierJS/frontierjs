@@ -80,10 +80,10 @@ function renderOnClient(Comp, props = {}) {
 beforeAll(() => { initRenderer() })
 afterAll(() => { document.body.innerHTML = '' })
 
-describe('renderToHTML — the serialiser escapes (FJS-500)', () => {
+describe('renderToHTML — the serializer escapes (FJS-500)', () => {
   // A prerendered page is a FILE: public, CDN-cached, unrecallable. `{text}`
   // sets `textContent` at runtime and is the safest expression in the language,
-  // but SSR renders into happy-dom and serialises with `container.innerHTML` —
+  // but SSR renders into happy-dom and serializes with `container.innerHTML` —
   // and happy-dom 14.12.3 did not re-escape a text node on the way out, so
   // every string a static build baked in came out as live markup. Nothing in
   // Mesa's own code was wrong, which is why nothing here could see it: the
@@ -91,7 +91,7 @@ describe('renderToHTML — the serialiser escapes (FJS-500)', () => {
   //
   // These are assertions about a DEPENDENCY, so they belong in this repo's
   // suite rather than in a version range nobody reads. A downgrade, a second
-  // resolved copy, or a serialiser regression is a red test instead of a page
+  // resolved copy, or a serializer regression is a red test instead of a page
   // that ships an injected script.
 
   it('escapes markup arriving through a text interpolation', async () => {
@@ -212,8 +212,8 @@ describe('renderToHTML — the serialiser escapes (FJS-500)', () => {
   it('the two renderers agree about a hostile attribute', async () => {
     // The oracle this suite is built on: a renderer has no self-evident correct
     // output, but Mesa has two of them. The client sets the attribute through
-    // the DOM and never serialises; SSR sets the same attribute and then
-    // serialises. Comparing the two is what says the round trip added nothing
+    // the DOM and never serializes; SSR sets the same attribute and then
+    // serializes. Comparing the two is what says the round trip added nothing
     // and lost nothing.
     const Comp = await build(`<script>
   export let label = ''
@@ -793,6 +793,77 @@ describe('islands — client:* markers in SSR output', () => {
 
     expect(warn.some((w) => w.includes('cb dropped'))).toBe(true)
     expect(warn.some((w) => w.includes('could not be serialized'))).toBe(true)
+  })
+
+  /*
+   * FJS-805 — a prop that JSON RETYPES renders one value and mounts another.
+   *
+   * The dropped-value warning above covers what JSON refuses. This is the other
+   * half and it was silent: a Date prerenders as a Date (the server render holds
+   * the object) and mounts as a string, a Map and a Set arrive as `{}`. The
+   * loader cannot close it — by the time it sees the prop, a Date IS a string
+   * indistinguishable from one the author wrote — so the only place both values
+   * exist is the replacer, and it needs `this[key]`, which is why it is a
+   * `function` and not an arrow.
+   *
+   * Each acceptance is PAIRED with a value of the same shape that survives
+   * intact: a warning that fired on every object prop would satisfy any
+   * assertion that only checks the warning (FJS-351).
+   */
+  it('warns when a prop changes type on the way into the marker, naming its path', async () => {
+    const warn = []
+    const original = console.warn
+    console.warn = (m) => warn.push(String(m))
+    let html
+    try {
+      const src = `<script>\n  import Counter from './Counter.mesa'\n` +
+        `  const when = new Date('2020-01-02T03:04:05Z')\n` +
+        `  const m = new Map([['a', 1]])\n  const s = new Set([1, 2])\n` +
+        `  const deep = { inner: new Date('2021-01-01T00:00:00Z') }\n` +
+        `  const list = [new Date('2022-01-01T00:00:00Z')]\n` +
+        `</script>\n<div><Counter client:load when={when} m={m} s={s} deep={deep} list={list} /></div>`
+      html = (await ssr('I8', src)).html
+    } finally { console.warn = original }
+
+    const marker = findIslands(parse(html))[0].meta
+    // What the client will mount with — every one of these is a different type
+    // from what the server rendered against.
+    expect(marker.props.when).toBe('2020-01-02T03:04:05.000Z')
+    expect(marker.props.m).toEqual({})
+    expect(marker.props.s).toEqual({})
+
+    const retype = warn.find((w) => w.includes('changed type in the island marker'))
+    expect(retype).toBeTruthy()
+    expect(retype).toContain('<Counter>')
+    expect(retype).toContain('props.when (Date -> string)')
+    expect(retype).toContain('props.m (Map -> {})')
+    expect(retype).toContain('props.s (Set -> {})')
+    // A bare key is not a prop name: the walk is depth-first over the whole
+    // payload, so without a path these read as `inner` and `0`.
+    expect(retype).toContain('props.deep.inner (Date -> string)')
+    expect(retype).toContain('props.list[0] (Date -> string)')
+  })
+
+  it('says nothing about props JSON carries unchanged', async () => {
+    const warn = []
+    const original = console.warn
+    console.warn = (m) => warn.push(String(m))
+    let html
+    try {
+      const src = `<script>\n  import Counter from './Counter.mesa'\n` +
+        `  const obj = { a: 1, b: { c: 'two' } }\n  const list = [1, 'a', null, { d: 2 }]\n` +
+        `  const iso = '2020-01-02T03:04:05.000Z'\n` +
+        `</script>\n<div><Counter client:load obj={obj} list={list} iso={iso} n={5} t={true} z={null} /></div>`
+      html = (await ssr('I9', src)).html
+    } finally { console.warn = original }
+
+    // The negative control. Every prop here is an object, an array, a string
+    // that LOOKS like a serialized Date, or a primitive — the shapes a warning
+    // written as "this prop is an object" would fire on.
+    expect(warn.filter((w) => w.includes('changed type in the island marker'))).toEqual([])
+    const props = findIslands(parse(html))[0].meta.props
+    expect(props).toEqual({ obj: { a: 1, b: { c: 'two' } }, list: [1, 'a', null, { d: 2 }],
+                            iso: '2020-01-02T03:04:05.000Z', n: 5, t: true, z: null })
   })
 
   it('emits no markers on the client, even when compiled with islands:true', async () => {

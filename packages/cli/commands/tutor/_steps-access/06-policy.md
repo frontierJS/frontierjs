@@ -11,19 +11,14 @@ a fact about the row. That is `@@allow`, and it behaves differently on purpose:
 **a gate refuses, a policy filters.** A wrong policy is not an error — it is an
 empty screen with a 200. Read one as *which rows*, never as *which callers*.
 
-Two lines are added. The first is not a policy at all:
+One line makes a policy possible and is not one, and `fli new` has already
+written it — `@@auth` on `model User`, which names the model a caller **is**.
+Without it litestone can check no claim name, so a misspelling compiles to NULL:
+read as *nobody* by the SQL half and *everybody* by the JS half, which is a
+lockout on read and an open door on create from one typo. This step puts it in
+if it is missing, so a lesson run against an older app still works.
 
-```text
-@@auth
-```
-
-on `model User`, which names the model a caller IS. Without it litestone cannot
-check a claim name, and a misspelling compiles to NULL — read as *nobody* by the
-SQL half and *everybody* by the JS half, so one typo is a lockout on read and an
-open door on create. The app prints a warning about this at every boot until it
-is there.
-
-Then, on `model Note`:
+The policy itself, on `model Note`:
 
 ```text
 authorId  String?  @default(auth().id)
@@ -31,9 +26,9 @@ authorId  String?  @default(auth().id)
 @@allow('read', authorId == auth().id)
 ```
 
-The column stamps itself with whoever created the row. The policy compiles into
-the WHERE clause of every read. Two accounts, one list endpoint, two different
-answers — both 200.
+Two lines. The column stamps itself with whoever created the row, and the policy
+compiles into the WHERE clause of every read. Two accounts, one list endpoint,
+two different answers — both 200.
 
 ```js
 if (!await narrate(context)) return

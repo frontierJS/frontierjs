@@ -98,13 +98,13 @@ describe('the primary key is what decides a race', () => {
   // writes — and what that costs is one SQLite error which has to be told apart
   // from a real failure. Raised here for real rather than described.
 
-  it('recognises a duplicate insert on jobs.id', () => {
+  it('recognizes a duplicate insert on jobs.id', () => {
     const db    = openDb(':memory:')
     const stmts = buildStatements(db)
     const row = {
       id: 'outbox-1', queue: 'default', name: 'send-email', data: '{}',
       status: 'pending', priority: 0, max_attempts: 3, retry_delay: null,
-      unique_key: null, run_at: Date.now(), created_at: Date.now(), actor_id: null, tenant_id: null,
+      unique_key: null, run_at: Date.now(), created_at: Date.now(), actor_id: null, tenant_id: null, correlation_id: null,
     }
 
     stmts.insert.run(row)
@@ -127,7 +127,7 @@ describe('the primary key is what decides a race', () => {
       stmts.insert.run({
         id: 'outbox-2', queue: 'default', name: 'send-email', data: null,
         status: 'pending', priority: 0, max_attempts: 3, retry_delay: null,
-        unique_key: null, run_at: Date.now(), created_at: Date.now(), actor_id: null, tenant_id: null,
+        unique_key: null, run_at: Date.now(), created_at: Date.now(), actor_id: null, tenant_id: null, correlation_id: null,
       } as never)
     } catch (err) { raised = err }
 

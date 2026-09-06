@@ -69,8 +69,10 @@ export const BYTE_UNITS = Object.freeze(UNITS)
 //
 // It is `Intl.NumberFormat` and not a symbol table, because what separates
 // currencies is not the glyph: it is which side the glyph sits on, whether
-// there is a space, how the thousands are grouped and how many decimals the
-// currency HAS. JPY takes none and a hand-rolled `toFixed(2)` invents two.
+// there is a space and how the thousands are grouped. The decimals are the one
+// thing NOT taken from it — they are ISO's, below — because JPY takes none, a
+// hand-rolled `toFixed(2)` invents two, and the two runtimes do not agree about
+// several more.
 
 /**
  * An amount, as the string a person reads.
@@ -102,13 +104,20 @@ export function formatMoney(amount, currency = 'USD', opts = {}) {
 
   const code = String(currency || 'USD').toUpperCase()
 
+  // ISO's exponent, not the locale's convention. CLDR prints the Lebanese pound
+  // with no decimals and node and bun disagree about the dinar, so the same
+  // stored amount would render differently on the machine that reads it than on
+  // the one that wrote it. `null` where ISO states none, which leaves the
+  // formatter's own answer alone.
+  const digits = opts.decimals !== undefined ? opts.decimals : isoDigits(code)
+
   try {
     return new Intl.NumberFormat(opts.locale ?? 'en-US', {
       style:           'currency',
       currency:        code,
       currencyDisplay: 'narrowSymbol',
-      ...(opts.decimals !== undefined
-        ? { minimumFractionDigits: opts.decimals, maximumFractionDigits: opts.decimals }
+      ...(digits !== null
+        ? { minimumFractionDigits: digits, maximumFractionDigits: digits }
         : {}),
     }).format(n)
   } catch {
@@ -119,55 +128,87 @@ export function formatMoney(amount, currency = 'USD', opts = {}) {
   }
 }
 
-// ─── Minor units ──────────────────────────────────────────────────────────────
+// ─── ISO 4217 ─────────────────────────────────────────────────────────────────
 //
-// How many decimal places a currency HAS. The fact `@money` derives its scale
-// from, and the one `formatMoney` above already turns on: JPY has none, KWD has
-// three, and a hand-rolled `toFixed(2)` invents a minor unit the yen does not
-// have (`FJS-440`).
+// The table is SHIPPED and the host's is not consulted. Two measurements are why.
 //
-// Read off ICU rather than shipped as a table. Two platform facts do the work,
-// and both update with the runtime rather than with this package:
+// `resolvedOptions().maximumFractionDigits` answers a DISPLAY question — CLDR's
+// convention for how an amount is written — and `@money` asks a STORAGE one,
+// which is ISO 4217's exponent. They are different questions and the runtimes
+// answer them differently: node says the Iraqi dinar has 0 decimal places where
+// ISO says 3, and 0 for thirteen more where ISO says 2. A dinar amount written
+// on one machine and read on the other is out by a thousand.
 //
-//   Intl.supportedValuesOf('currency')  — 306 ISO 4217 codes, which is what
-//                                         makes a TYPO refusable
-//   resolvedOptions().maximumFractionDigits — the minor units
+// `Intl.supportedValuesOf('currency')` is not one list either. node reports 162
+// codes and bun 306 — they differ on 145: bun carries every withdrawn code back
+// to the Austrian schilling, node carries `ZWG`, which bun does not. So the same
+// `@money(ZWG)` parses on one runtime and is refused as a typo on the other.
 //
-// The first one is load-bearing. `Intl.NumberFormat` does NOT throw on an
-// unknown code — `ZZZ` and `BTC` both resolve to 2 decimals in silence — so a
-// mistyped `@money(UDS)` would take scale 2 and be wrong by a factor of a
-// hundred wherever the real currency has none. Asking whether ICU knows the code
-// is the only way to tell those apart, and there are 26 currencies where it
-// matters.
+// A host ICU table is a dependency the manifest cannot declare, and declaring
+// nothing is this package's whole license to be imported by litestone and mesa
+// (`FJS-D26`). Shipped, the answer moves when this package moves; read off the
+// host, it moves when somebody upgrades node.
+
+// ISO 4217 active codes — the currencies and funds, the four metals, the bond
+// and testing codes, and XXX itself. Being generous here is safe and being
+// host-dependent is not: a code ISO has withdrawn is still one somebody holds
+// rows in, and refusing it buys nothing.
+const ACTIVE = `
+  AED AFN ALL AMD ANG AOA ARS AUD AWG AZN BAM BBD BDT BGN BHD BIF BMD BND
+  BOB BOV BRL BSD BTN BWP BYN BZD CAD CDF CHE CHF CHW CLF CLP CNY COP COU
+  CRC CUC CUP CVE CZK DJF DKK DOP DZD EGP ERN ETB EUR FJD FKP GBP GEL GHS
+  GIP GMD GNF GTQ GYD HKD HNL HRK HTG HUF IDR ILS INR IQD IRR ISK JMD JOD
+  JPY KES KGS KHR KMF KPW KRW KWD KYD KZT LAK LBP LKR LRD LSL LYD MAD MDL
+  MGA MKD MMK MNT MOP MRU MUR MVR MWK MXN MXV MYR MZN NAD NGN NIO NOK NPR
+  NZD OMR PAB PEN PGK PHP PKR PLN PYG QAR RON RSD RUB RWF SAR SBD SCR SDG
+  SEK SGD SHP SLE SLL SOS SRD SSP STN SVC SYP SZL THB TJS TMT TND TOP TRY
+  TTD TWD TZS UAH UGX USD USN UYI UYU UYW UZS VED VES VND VUV WST XAF XAG
+  XAU XBA XBB XBC XBD XCD XCG XDR XOF XPD XPF XPT XSU XTS XUA XXX YER ZAR
+  ZMW ZWG ZWL
+`.trim().split(/\s+/)
+
+// Exponents that are not 2. Every other code in ACTIVE has two places.
+const MINOR_UNITS = {
+  BIF: 0, CLP: 0, DJF: 0, GNF: 0, ISK: 0, JPY: 0, KMF: 0, KRW: 0, PYG: 0,
+  RWF: 0, UGX: 0, UYI: 0, VND: 0, VUV: 0, XAF: 0, XOF: 0, XPF: 0,
+  BHD: 3, IQD: 3, JOD: 3, KWD: 3, LYD: 3, OMR: 3, TND: 3,
+  CLF: 4, UYW: 4,
+}
+
+// Codes ISO gives no minor unit at all — a troy ounce of gold, a bond-market
+// unit, the testing code. Known, and not an amount: there is no whole number of
+// them to store, so `minorUnits` refuses instead of answering the 2 that would
+// let `toMinor` invent a hundredth of an ounce.
+const NO_MINOR_UNIT = new Set([
+  'XAU', 'XAG', 'XPD', 'XPT', 'XBA', 'XBB', 'XBC', 'XBD', 'XDR', 'XSU', 'XUA',
+  'XTS', 'XXX',
+])
 
 let _known = null
 
-/** The ISO 4217 codes this runtime knows, as a Set. */
+/** The ISO 4217 codes, as a Set. The same set on every runtime. */
 export function knownCurrencies() {
-  if (_known) return _known
-  try {
-    _known = new Set(Intl.supportedValuesOf('currency'))
-  } catch {
-    // An older runtime without supportedValuesOf: everything is "known", which
-    // degrades to the pre-existing behavior rather than refusing every code.
-    _known = null
-  }
-  return _known ?? new Set()
+  return _known ??= new Set(ACTIVE)
 }
 
-/** Does this runtime recognize the code? Always true where ICU cannot be asked. */
+/** Is this an ISO 4217 code? */
 export function isKnownCurrency(code) {
-  const set = knownCurrencies()
-  if (!set.size) return true
-  return set.has(String(code ?? '').toUpperCase())
+  return knownCurrencies().has(String(code ?? '').toUpperCase())
 }
 
 /**
  * Decimal places for a currency — 2 for USD, 0 for JPY, 3 for KWD.
  *
- * Throws on a code this runtime does not know, because the alternative is
- * answering 2 for a typo. A caller that wants the lenient reading asks
- * `isKnownCurrency` first.
+ * ISO 4217's exponent, which is the STORAGE fact `@money` derives its scale
+ * from. Not what a locale prints: CLDR shows the Lebanese pound with no
+ * decimals because fractions of it are not used in practice, and the column
+ * still holds hundredths.
+ *
+ * Throws on a code ISO does not carry, because the alternative is answering 2
+ * for a typo — `Intl.NumberFormat` does not throw on `UDS` or `BTC`, it answers
+ * two places, and a mistyped `@money(UDS)` would then be wrong by a hundred
+ * wherever the real currency has none. A caller that wants the lenient reading
+ * asks `isKnownCurrency` first.
  *
  * @param {string} currency  ISO 4217, e.g. 'USD'
  * @returns {number}
@@ -177,10 +218,17 @@ export function minorUnits(currency) {
   if (!/^[A-Z]{3}$/.test(code))
     throw new Error(`minorUnits: '${currency}' is not an ISO 4217 code — three letters, e.g. 'USD'`)
   if (!isKnownCurrency(code))
-    throw new Error(`minorUnits: '${code}' is not a currency this runtime knows`)
+    throw new Error(`minorUnits: '${code}' is not an ISO 4217 currency`)
+  if (NO_MINOR_UNIT.has(code))
+    throw new Error(`minorUnits: '${code}' is an ISO 4217 code with no minor unit — a metal, a reserved code or a testing code, so there is no whole number of them to store`)
 
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: code })
-    .resolvedOptions().maximumFractionDigits
+  return isoDigits(code)
+}
+
+/** The exponent, or `null` where the code is not one ISO gives an amount to. */
+function isoDigits(code) {
+  if (!isKnownCurrency(code) || NO_MINOR_UNIT.has(code)) return null
+  return MINOR_UNITS[code] ?? 2
 }
 
 /**

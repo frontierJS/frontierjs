@@ -12,7 +12,7 @@
 // auth error raised from a SERVICE surfacing as a 500.
 
 import type { IAuth, SessionContext, App, Plugin, TransportContext } from '@frontierjs/junction'
-import { parseTtl, Unauthorized, BadRequest, rateLimitHook }        from '@frontierjs/junction'
+import { parseTtl, Unauthorized, BadRequest, Forbidden, rateLimitHook } from '@frontierjs/junction'
 import type { AuthPluginOptions }                                   from './types.ts'
 import { createAuthServices }                                       from './services.ts'
 import { OAUTH_STATE_COOKIE }                                      from './oauth.ts'
@@ -41,6 +41,7 @@ export function createAuthPlugin(
     registerRateLimit = { max: 5,  window: '15 minutes' },
     services          = {},
     oauth,
+    canStartSupport,
   } = opts
 
   // sessionTtl: prefer the explicit plugin opt, then read from the auth
@@ -260,6 +261,71 @@ export function createAuthPlugin(
         return ctx.json({ ok: true })
       })
 
+      // ── POST /auth/support/start ─────────────────────────────────────
+      //
+      // Support mode. A ROUTE and not a service, by `FJS-D20`'s line: it
+      // changes who this session resolves to, which is the one thing a service
+      // cannot do to itself.
+      //
+      // **Default refuse.** `canStartSupport` is a Guard (`FJS-D06`) — it
+      // answers allow/deny and may not shape the call — and an app that has not
+      // written one gets a 403 naming the option. Impersonation is not
+      // something to acquire by upgrading a dependency.
+      //
+      // The guard is handed the OPERATOR, which is `ctx.user` here because
+      // starting an episode from inside one is refused a layer down: while an
+      // episode is live `ctx.user` is the subject, and an app grading THAT
+      // would be asked whether the person being helped may impersonate.
+
+      app.post(`${prefix}/support/start`, async (ctx: TransportContext) => {
+        if (!ctx.user) throw new Unauthorized('Authentication required')
+        if (!auth.startSupport) throw new BadRequest('Support sessions are not supported by this auth provider')
+
+        const operator = ctx.user as SessionContext
+        const { subjectId, reason, ttl } = body(ctx) as { subjectId?: string; reason?: string; ttl?: string }
+        if (!subjectId) throw new BadRequest('subjectId is required')
+        if (!reason)    throw new BadRequest('reason is required')
+
+        if (!canStartSupport)
+          throw new Forbidden('Support sessions are not enabled — the app must supply canStartSupport')
+        if (!(await canStartSupport(operator, subjectId)))
+          throw new Forbidden('Not permitted to start a support session for this user')
+
+        const token = extractToken(ctx)
+        if (!token) throw new Unauthorized('Authentication required')
+
+        const { endsAt } = await auth.startSupport(token, subjectId, reason, ttl)
+        // Both edges close this session's sockets, for the reason django-hijack
+        // flushes the session on both: a socket resolved its principal at
+        // upgrade and is handed it for every frame after, so without this the
+        // operator's open tabs go on acting as whoever they were before the
+        // change — as themselves after a start, and as the SUBJECT after an
+        // end, which is the episode outliving itself.
+        closeSockets(app, operator.sessionId, 'support session started')
+        return ctx.json({ ok: true, subjectId, endsAt })
+      })
+
+      // ── POST /auth/support/end ───────────────────────────────────────
+      //
+      // Takes the TOKEN and not `ctx.user`, which during an episode is the
+      // subject — ending one by naming who you are acting as would be asking
+      // the wrong principal. No guard: getting out is never refused.
+
+      app.post(`${prefix}/support/end`, async (ctx: TransportContext) => {
+        const token = extractToken(ctx)
+        if (!token) throw new Unauthorized('Authentication required')
+        if (!auth.endSupport) throw new BadRequest('Support sessions are not supported by this auth provider')
+
+        // Read BEFORE ending: `ctx.user` is the subject while the episode is
+        // live, and `support.episodeId` is the operator's own session id, which
+        // is the thing holding the sockets.
+        const episodeId = (ctx.user as SessionContext | null)?.support?.episodeId
+
+        const { ended } = await auth.endSupport(token)
+        if (ended) closeSockets(app, episodeId, 'support session ended')
+        return ctx.json({ ok: true, ended })
+      })
+
       // ── GET /auth/email/verify?token= ────────────────────────────────
 
       app.get(`${prefix}/email/verify`, async (ctx: TransportContext) => {
@@ -468,13 +534,18 @@ export function createAuthPlugin(
 // So a declared field is a string or the request is a 400 naming it, and a key
 // not declared here does not travel. Presence is still each handler's own
 // question — this one only answers what KIND of thing arrived.
-const BODY_FIELDS = ['email', 'password', 'name', 'token'] as const
+const BODY_FIELDS = ['email', 'password', 'name', 'token', 'subjectId', 'reason', 'ttl'] as const
 
 interface AuthBody {
   email?:    string
   password?: string
   name?:     string
   token?:    string
+  // Support mode. A key that is not declared here does not travel, so a route
+  // added without adding its fields reads its whole payload as absent.
+  subjectId?: string
+  reason?:    string
+  ttl?:       string
 }
 
 function body(ctx: TransportContext): AuthBody {
@@ -528,6 +599,19 @@ function respond(
 // required on a TransportContext: these run against whatever the transport in
 // front of them built, and a hand-made context in a test has never had to be a
 // whole one.
+/**
+ * Close every socket this session holds, where the app has channels at all.
+ *
+ * Silent where it does not: `app.channels` is present only after
+ * `app.configure(channels(...))`, and an app with no live layer has nothing to
+ * close. Answering nothing is correct there — this is not a probe.
+ */
+function closeSockets(app: { channels?: { disconnectSession?: (id: string, reason?: string) => number } },
+                      sessionId: string | undefined, reason: string): void {
+  if (!sessionId) return
+  app.channels?.disconnectSession?.(sessionId, reason)
+}
+
 function extractToken(ctx: TransportContext): string | null {
   const header = ctx.headers?.authorization ?? ''
   if (header.startsWith('Bearer ')) return header.slice(7).trim()

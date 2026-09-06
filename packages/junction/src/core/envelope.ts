@@ -85,6 +85,19 @@ export type SingleResult<T = unknown> = ServiceResult<T>     & { kind: 'single' 
  * mistaken for one. The loose `'object' in value` check it replaces would
  * classify `{ object: 'satellite' }` — a perfectly ordinary row — as an
  * envelope and hand the caller its `data` (undefined) instead of the row.
+ *
+ * `errors` is the fourth signal and it is what keeps the guard structural. A row
+ * carrying `kind`, `object` AND `data` still matched — and `kind: 'list'` was the
+ * damaging half, because a list envelope is kept whole, so protect() stripped
+ * inside the row's `data` column and the row's own protected siblings went out
+ * intact. `single()` and `list()` always set `errors`; a row will not, and the
+ * pre-`kind` wire shape an older server sends (`{ object, data, total }`) fails
+ * on the discriminant before reaching here.
+ *
+ * Four signals rather than a Symbol brand, because the trigger was measured
+ * rather than argued: across every schema in this repo and the imported corpora,
+ * no model carries even two of the three columns together. The brand is the
+ * answer if one ever does.
  */
 export function isServiceResult<T = unknown>(value: unknown): value is ServiceResult<T> {
   if (value === null || typeof value !== 'object') return false
@@ -92,6 +105,7 @@ export function isServiceResult<T = unknown>(value: unknown): value is ServiceRe
   return (v.kind === 'single' || v.kind === 'list')
     && 'data'   in v
     && 'object' in v
+    && Array.isArray(v.errors)
 }
 
 /** True for a list envelope specifically. */

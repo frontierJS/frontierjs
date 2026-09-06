@@ -279,7 +279,7 @@ describe('two processes booting against one file', () => {
   test('the loser of a migration race reports in-sync, not a failure', async () => {
     // Both replicas diff, both decide the same migration is needed, and the
     // loser used to apply statements the winner had already applied —
-    // `duplicate column name`, 5 of 10 runs. `BEGIN IMMEDIATE` serialises them
+    // `duplicate column name`, 5 of 10 runs. `BEGIN IMMEDIATE` serializes them
     // and the guard is what makes the loser notice: a lock alone only makes it
     // wait its turn to do the wrong thing.
     const file = join(dir, 'race.db')

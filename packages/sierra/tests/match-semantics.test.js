@@ -17,7 +17,7 @@
  */
 
 import { describe, test, expect } from 'vitest'
-import { matchRoute, normalizePath } from '../src/router/match.js'
+import { matchRoute, normalizePath, caseInsensitiveNearMiss } from '../src/router/match.js'
 
 // ─── Fixture ──────────────────────────────────────────────────────────────────
 
@@ -74,9 +74,38 @@ describe('static segments', () => {
     expect(match('/leads/create/').node.id).toBe('leads.create')
   })
 
-  test('static segments compare case-insensitively', () => {
-    expect(match('/BLOG/').node.id).toBe('blog')
-    expect(match('/Leads/Create/').node.id).toBe('leads.create')
+  test('static segments compare case-SENSITIVELY (FJS-D210)', () => {
+    /*
+     * This matched case-insensitively for a long time, and it was the only one
+     * of four readers of *which route is this* that did — `isActive`, the
+     * prefetch cache key, `page.path` and the filename a static build writes
+     * are all case-sensitive. So `/BLOG/` rendered the blog page in the SPA,
+     * reported itself as not active, cached under its own key, and 404'd on a
+     * static host. Ruled in favor of the other three.
+     */
+    expect(match('/BLOG/').node.id).toBe('[...404]')
+    expect(match('/Leads/Create/').node.id).toBe('[...404]')
+  })
+
+  test('…and the exact spelling still matches', () => {
+    // The control. Making the comparison strict enough to refuse everything
+    // would satisfy the row above.
+    expect(match('/blog/').node.id).toBe('blog')
+    expect(match('/leads/create/').node.id).toBe('leads.create')
+  })
+
+  test('a case-only miss is NAMED, not merely refused', () => {
+    // § IV, familiarity vs precision: fail the muscle memory loudly and name
+    // the equivalent. A bare 404 for a path that plainly exists is the failure
+    // this half exists to prevent.
+    expect(caseInsensitiveNearMiss('/BLOG/', tree)).toBe('/blog/')
+    expect(caseInsensitiveNearMiss('/Leads/Create/', tree)).toBe('/leads/create/')
+  })
+
+  test('…and a path that is simply absent has no near miss', () => {
+    // The control that keeps the hint honest: one that answered a route for
+    // anything would turn every 404 into a wrong suggestion.
+    expect(caseInsensitiveNearMiss('/nothing-here/', tree)).toBe(null)
   })
 
   test('static beats dynamic at the same depth', () => {

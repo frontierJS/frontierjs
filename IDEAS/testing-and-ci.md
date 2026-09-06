@@ -235,7 +235,7 @@ to write, per model, for free:
 | Derived from | The test it generates |
 | --- | --- |
 | `@@gate("4")` | anonymous read is 401; level 3 create is 403; level 4 succeeds |
-| `@guarded(all)` | the column is **absent** — not null — from find, get, bulk read, and the WS broadcast |
+| `@guarded` | the column is **absent** — not null — from find, get, bulk read, and the WS broadcast |
 | `@length(2,60)` | property test: 1 rejected, 2 accepted, 60 accepted, 61 rejected |
 | `@email` / `@unique` | format rejection; second insert conflicts |
 | `onDelete: Cascade` | the children actually go |

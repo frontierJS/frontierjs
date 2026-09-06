@@ -40,7 +40,7 @@ export async function payPasswordCost(password: string): Promise<void> {
 // ─── API key generation + hashing ─────────────────────────────────────────
 // Raw key is returned once to the caller — never stored.
 // HMAC-SHA256 of the raw key is stored in credentials.value.
-// The field is also @guarded(all) so the hash never leaks in API responses.
+// The field is also @guarded so the hash never leaks in API responses.
 //
 // The HMAC key is the app's encryptionKey from LitestoneAuthOptions — not a
 // hardcoded constant. This ensures stored hashes cannot be brute-forced
@@ -62,7 +62,7 @@ export function hashApiKey(rawKey: string, secret: string): string {
 
 // ─── Verification tokens ──────────────────────────────────────────────────
 // Opaque random token — stored as-is in verifications.value.
-// The field is @guarded(all) so it never leaks in API responses.
+// The field is @guarded so it never leaks in API responses.
 
 export function generateToken(): string {
   return randomBytes(32).toString('base64url')

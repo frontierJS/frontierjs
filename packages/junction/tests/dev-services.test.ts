@@ -31,6 +31,8 @@ function capturingLogger(): ILogger {
     warn:  () => {},
     error: () => {},
     child: () => log,
+    level: 'debug',
+    setLevel: () => {},
   }
   return log
 }

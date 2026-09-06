@@ -46,7 +46,7 @@ context.config.apiPort = flag['api-port']
 context.vars.apiPort   = context.config.apiPort
 ```
 
-## Lesson 2 — who may do what
+## Lesson 4 — who may do what
 
 Authorization in FrontierJS is **declared in the schema**, not written in hooks.
 That sentence is easy to nod at and hard to believe, so this lesson does not

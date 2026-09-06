@@ -46,15 +46,24 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
     return null
   }
 
+  // The attribute is app-controlled — {@html} renders whatever the app was
+  // handed — and the value ends up on the editor's command line, so an
+  // absolute path is never taken from it. Only a relative path to a compiled
+  // source, no traversal, always joined onto the root the plugin baked in.
+  const LOC = /^[\\w./-]+\\.(mesa|md):\\d+:\\d+$/
+
   function absolute(loc) {
-    if (!ROOT || loc.startsWith('/')) return loc
+    if (!ROOT) return null
+    if (typeof loc !== 'string' || !LOC.test(loc) || loc.indexOf('..') !== -1) return null
     return ROOT.replace(/[\\\\/]+$/, '') + '/' + loc
   }
 
   function open(el) {
     const loc = el && el.getAttribute && el.getAttribute(ATTR)
     if (!loc) return false
-    fetch('/__open-in-editor?file=' + encodeURIComponent(absolute(loc)))
+    const file = absolute(loc)
+    if (!file) { console.warn('[mesa] refusing to open', loc); return false }
+    fetch('/__open-in-editor?file=' + encodeURIComponent(file))
       .catch((err) => console.warn('[mesa] open-in-editor failed', err))
     return true
   }
@@ -122,7 +131,7 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
     if (el) { e.preventDefault(); open(el) }
   }, true)
 
-  window.__fjsInspect = { open, locate: (el) => { const f = locatedFrom(el); return f && f.getAttribute(ATTR) }, root: ROOT }
+  window.__fjsInspect = { locate: (el) => { const f = locatedFrom(el); return f && f.getAttribute(ATTR) }, root: ROOT }
 
   console.log('%c[mesa] inspector ready — hold ${key} and click an element to open its source', 'color:#38bdf8')
 })()

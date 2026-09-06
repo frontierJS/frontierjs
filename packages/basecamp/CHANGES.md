@@ -1,5 +1,75 @@
 # Changes — Basecamp
 
+## 2026-09-05 — the container a release starts is named for the app
+
+`deployment-run.job.ts` called `/deploy` without `app_id`, and outpost names the
+container `fjs-${body.app_id ?? body.deployment_id}` — so every release started
+`fjs-<deployment>` while `/stop`, `/health-check` and `/logs`, which all send
+`app_id`, addressed `fjs-<app>` ([`FJS-920`](../../ISSUES.md#fjs-920)).
+
+Three consequences and none of them said anything: the health step failed on
+every release that reached it, the next release stopped nothing, and containers
+accumulated one per release under names no route could reach. The fallback in
+the route is what hid it — it made a missing field look like a naming choice.
+
+One line at the caller, where the protocol is written down. Found by
+`fli tutor:fleet`'s release half, the first thing to drive this pipeline against
+a real Outpost and a real daemon.
+
+## 2026-09-05 — Act as: the hub can stand in for a person, and the trail says who really did it
+
+210 tests, 0 fail. `verify:screens` 66/66.
+
+`FJS-142` is closed. `canStartSupport` is wired to the hub tier — `isSystemAdmin`,
+the same fact `requireSystemAdmin()` reads — and **a system administrator may not
+be a SUBJECT**: the ceiling is the subject's standing, so standing in for one
+grants the thing the feature replaces.
+
+**`AuditEvent` gains `onBehalfOfId` and a fourth `ActorKind`.** The framework's own
+trail files an episode under the operator; this app writes a second,
+application-level trail from `hooks.ts`, and without the same treatment the screen
+an operator actually reads would name the customer while the framework's file named
+the operator. `AuditEvent.subjectId` is the ROW acted on, so the person acted as
+takes another word.
+
+**The banner is in the shell, not on the hub screens.** An episode is global — the
+operator navigates the whole app as the subject — so a banner that only rendered
+where it was started is missing from every screen where forgetting it matters. It
+renders from `session.user.support` and from nothing else; a banner derived from
+local state is one that survives the episode ending.
+
+The workspaces screen's *Impersonate* alert points at the users screen. A workspace
+is not somebody you can act as, and picking one would still leave the question of
+which of its members.
+
+## 2026-09-05 — the settings standing pill follows a workspace switch (`FJS-894`)
+
+`$: session.user` was the whole watch and the pill reads the membership row out of
+`session.workspaces`, picked with `session.workspaceId`, so it kept showing the previous
+workspace's role. The compiler had been naming the exact watch to add for as long as the screen
+existed, into a channel nobody read (`FJS-845`, mesa).
+
+## 2026-09-05 — four hooks that did nothing, and a form key that never landed
+
+Found the moment junction started refusing a payload key that names no column
+(`FJS-889`) rather than dropping it.
+
+`deriveSlug` stamps `data.slug` from `data.name`. It was wired into the create
+pipeline of four services whose models have no `slug` column at all — `Job`,
+`AlertRule`, `Deployment` and `Domain` — so every one of them added a key the
+write discarded. Three OTHER services (`secrets`, `channels`, `flags`) carry a
+hand-written comment explaining they omit `deriveSlug` for exactly this reason,
+which is the tell: the rule was known and enforced by whoever happened to
+remember it. Two of the four (`Deployment`, `Domain`) have no `name` either, so
+the hook could not even fire.
+
+`/alerts/`'s create spread the whole form draft, including the `threshold`
+control it had already folded into `condition: { operator, threshold }`. The
+raw key went to the server on every rule created and was dropped there.
+
+Nothing behaved differently for any of this, which is the point — it was
+invisible for as long as the drop was silent.
+
 ## 2026-09-03 — every live screen in the app, off
 
 `FJS-749`, `FJS-D191`. The whole live layer had been dead: eighteen services

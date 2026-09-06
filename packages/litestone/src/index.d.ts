@@ -100,12 +100,25 @@ export interface LitestoneCtx {
 // ─── Query event ──────────────────────────────────────────────────────────────
 
 export interface QueryEvent {
+  /** The table the statement ran against. For an `include` that is the TARGET
+   *  of the relation, not the model the read started from. */
   model:     string
   database:  string
-  operation: string
+  /** One statement, one event. `include` and `include:count` are the second and
+   *  further SELECTs a relation hydration runs — they used to be reported
+   *  nowhere, so a hundred-row populate read as a single statement.
+   *
+   *  Kept in step with what the client actually emits by
+   *  `test/query-tap.test.ts`, which greps the call sites: a value emitted and
+   *  not declared here is a generated type that refuses a real event. */
+  operation: 'aggregate' | 'count' | 'create' | 'createMany' | 'delete' | 'deleteMany' | 'exists' | 'findFirst' | 'findMany' | 'findManyCursor' | 'findUnique' | 'groupBy' | 'include' | 'include:count' | 'remove' | 'removeMany' | 'restore' | 'search' | 'update' | 'updateMany' | 'upsert' | 'upsertMany'
   sql:       string
   params:    unknown[]
   duration:  number       // ms
+  rowCount:  number
+  /** The call's own arguments. Absent on `include`/`include:count`, which have
+   *  no caller arguments of their own — the arguments are the parent read's. */
+  args?:     Record<string, unknown>
   actorId:   number | string | null
 }
 
@@ -122,7 +135,7 @@ export interface QueryEvent {
  * - `none` — silent, deliberately. Not the same as having no subscribers.
  *
  * Precedence: the call's value → `createClient({ announce })` → `collection`.
- * An unrecognised value is refused by name (`InvalidAnnounceError`, 400).
+ * An unrecognized value is refused by name (`InvalidAnnounceError`, 400).
  */
 export type AnnounceMode = 'collection' | 'rows' | 'none'
 

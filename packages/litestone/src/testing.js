@@ -663,7 +663,7 @@ export async function createTestEnv(opts = {}) {
             if (rules.some(r => _hasCheckNode(r.expr))) {
               mismatches.push({
                 model: model.name, op, got: 'skipped', row: null,
-                message: `${model.name}.${op} — not graded: the policy uses check(), which delegates to another model's policy. Reported rather than guessed at`,
+                message: `${model.name}.${op} — not graded: the policy crosses a relation (check() or a path like 'parent.column'), so what admits the row is not a column on it. Reported rather than guessed at`,
               })
               continue
             }
@@ -2469,9 +2469,16 @@ async function _ensureParent(schema, model, field, value, chain) {
   try { await factory.createOne({ [parentKey]: value }) } catch { /* already there, or refused */ }
 }
 
+// A rule this grader cannot put a row on both sides of, because what decides is
+// not a column on the row being seeded. `check()` delegates to another model's
+// policy; a `path` (`FJS-D221`) reads a column one relation away — and the
+// factory makes one row, not a parent and a child arranged to disagree. Both
+// are reported as not-graded BY NAME, because *skipped* and *graded, and every
+// row landed on one side* read identically from the summary and only one of
+// them is a broken policy.
 function _hasCheckNode(node) {
   if (!node || typeof node !== 'object') return false
-  if (node.type === 'check') return true
+  if (node.type === 'check' || node.type === 'path') return true
   return Object.values(node).some(v => (Array.isArray(v) ? v.some(_hasCheckNode) : _hasCheckNode(v)))
 }
 

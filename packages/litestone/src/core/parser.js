@@ -4,7 +4,8 @@
 // a dependency: it ships pure functions and depends on nothing, which is what
 // lets litestone reach it without inverting the graph (`FJS-D26`).
 
-import { isKnownCurrency } from '@frontierjs/toolbelt/units'
+import { isKnownCurrency, minorUnits } from '@frontierjs/toolbelt/units'
+import { LEVEL_NAMES }                  from '@frontierjs/toolbelt/gate'
 import { expandCapabilityType } from './capabilities.js'
 // One owner for the range a value round-trips through a JS number in — the
 // validator's, so a refusal here and a refusal at the boundary name one number.
@@ -282,17 +283,12 @@ class ParseError extends Error {
 }
 
 // ─── Gate level names ─────────────────────────────────────────────────────────
-// The 0–9 scale, by name. One owner: @@gate's named form and @@transitions'
-// per-transition @gate() both read this, so a level can never mean two things.
-// Mirrors LEVELS in plugins/gate.js, which is the runtime-side copy.
-
-const LEVEL_NAMES = {
-  STRANGER: 0, VISITOR: 1, READER: 2, CREATOR: 3,
-  USER: 4, ADMINISTRATOR: 5, OWNER: 6,
-  SYSADMIN: 7,  // global system admin — real human, user.isSystemAdmin
-  SYSTEM:   8,  // asSystem() only
-  LOCKED:   9,  // absolute wall
-}
+// The 0–9 scale, by name — `@@gate`'s named form and `@@transitions`' per-move
+// `@gate()` both read it, so a level can never mean two things. It used to be a
+// copy of the runtime's, described here as mirroring it; the mirror is what
+// went wrong one file over (`FJS-D197`), so both come off the kit now and the
+// parse and the enforcement cannot disagree about what a name is worth.
+// (imported at the top of this file, beside the other toolbelt kit)
 
 // ─── @generated template compiler ─────────────────────────────────────────────
 //
@@ -399,7 +395,7 @@ class Parser {
   // ── Top level ───────────────────────────────────────────────────────────────
 
   parseSchema() {
-    const schema = { imports: [], databases: [], models: [], views: [], enums: [], functions: [], traits: [], types: [], valuesets: [], extends: [], tenancy: null }
+    const schema = { imports: [], databases: [], models: [], views: [], enums: [], functions: [], traits: [], types: [], valuesets: [], extends: [], claims: [], tenancy: null }
 
     while (!this.isEOF()) {
       const comments = this.docComments()
@@ -416,6 +412,15 @@ class Parser {
         if (schema.tenancy)
           throw new ParseError(`tenancy is declared twice — a schema has one tenancy block`, t)
         schema.tenancy = this.parseTenancy()
+      } else if (t.type === TK.IDENT && t.value === 'claim') {
+        // A claim that is on no row. `@@auth User` names every claim that IS a
+        // column; this names the rest, so a tool holding only the schema can
+        // grade `auth().x` the same way the app does. The VALUE still comes
+        // from the app at request time — this is the name and nothing else.
+        const c = this.parseClaim()
+        if (schema.claims.includes(c))
+          throw new ParseError(`claim '${c}' is declared twice`, t)
+        schema.claims.push(c)
       } else if (t.type === TK.IDENT && t.value === 'extend') {
         schema.extends.push(this.parseExtend(comments))
       } else if (t.type === TK.IDENT && t.value === 'model') {
@@ -433,7 +438,7 @@ class Parser {
       } else if (t.type === TK.IDENT && t.value === 'valueset') {
         schema.valuesets.push(this.parseValueSet(comments))
       } else {
-        throw new ParseError(`Unexpected token '${t.value}' — expected database, tenancy, model, extend, view, enum, function, trait, type, valueset, or import`, t)
+        throw new ParseError(`Unexpected token '${t.value}' — expected database, tenancy, claim, model, extend, view, enum, function, trait, type, valueset, or import`, t)
       }
     }
 
@@ -814,6 +819,12 @@ class Parser {
   // BEATS a `@@db` written in the imported file — a package shipping a fragment
   // has to spell some database, and only the importing app knows what its own
   // are called. See parseFile for how it composes with a nested import.
+  // claim <name>
+  parseClaim() {
+    this.eatIdent('claim')
+    return this.eat(TK.IDENT).value
+  }
+
   parseImport() {
     this.eatIdent('import')
     const path = this.eat(TK.STRING).value
@@ -865,7 +876,7 @@ class Parser {
   // Without this the only way to say it was to paste the models in and edit
   // them, which is what basecamp did for four models. A copy stops being the
   // package's the first time either side moves and nothing fails: the copy had
-  // `@guarded(all)` where the package says `@secret`, so basecamp stored every
+  // `@guarded` where the package says `@secret`, so basecamp stored every
   // OAuth token in plain text, and its own 137 tests were green throughout.
   //
   // The opposite direction of `@@trait`, and both exist: a trait is opted INTO
@@ -1134,22 +1145,36 @@ class Parser {
           this.eat(TK.LPAREN)
           const arg = this.eat(TK.IDENT).value
           this.eat(TK.RPAREN)
+          // `(lists)` is the one wrong spelling worth naming: it is what the bare
+          // form already means, and a second way to write one thing is what
+          // `@@strict` was deleted for (`FJS-D203`).
+          if (arg === 'lists') throw new ParseError(
+            `@omit(lists) is not a spelling — bare @omit already means "out of lists, present on a findUnique". ` +
+            `@omit(all) is the stronger one: out of every read unless a select names the column`, this.peek())
           if (arg !== 'all') throw new ParseError(`@omit only accepts (all) as an argument, got (${arg})`, this.peek())
           return { kind: 'omit', level: 'all' }
         }
         return { kind: 'omit', level: 'lists' }
       }
       case 'guarded': {
-        // @guarded      → absent unless explicitly selected AND system context
-        // @guarded(all) → absent unless system context (select cannot unlock)
+        // @guarded → absent unless system context, in both directions.
+        //
+        // It took an argument for a while and the argument did nothing: `(all)`
+        // and the bare form compiled to two branches with one body, and the
+        // write half never read the level at all (`FJS-D205`, `FJS-827`). What
+        // `(select)` was reaching for — a caller unlocking the column by naming
+        // it — is what `@omit(all)` means, and a lock a caller picks by asking
+        // more specifically is not a lock.
         if (this.check(TK.LPAREN)) {
           this.eat(TK.LPAREN)
           const arg = this.eat(TK.IDENT).value
           this.eat(TK.RPAREN)
-          if (arg !== 'all') throw new ParseError(`@guarded only accepts (all) as an argument, got (${arg})`, this.peek())
-          return { kind: 'guarded', level: 'all' }
+          throw new ParseError(
+            `@guarded takes no argument, got (${arg}). It is a system-context lock on read and write, ` +
+            `and (all) was its only accepted spelling — drop it. For a column a caller may read by naming ` +
+            `it in a select, the word is @omit(all)`, this.peek())
         }
-        return { kind: 'guarded', level: 'select' }
+        return { kind: 'guarded' }
       }
       case 'system': {
         // @system → anyone may READ it, only the system may write it.
@@ -1211,7 +1236,7 @@ class Parser {
       }
       case 'encrypted': {
         // @encrypted                       → AES-256-GCM under a random IV. Implies
-        //                                    @guarded(all). Not filterable.
+        //                                    @guarded. Not filterable.
         // @encrypted(deterministic: true)  → AES-256-GCM under an IV derived from the
         //                                    plaintext. Same value encrypts the same
         //                                    way, so equality filters work — and it is
@@ -1263,7 +1288,7 @@ class Parser {
       //                                  and still rotated. An API key is both.
       //
       // Expands at parse time (expandSecretAttributes) to:
-      //   @encrypted @guarded(all) @log(<first logger db>)   (log only if logger db declared)
+      //   @encrypted @guarded @log(<first logger db>)   (log only if logger db declared)
       // The { kind: 'secret', rotate } attr is kept for key rotation tracking.
       case 'secret': {
         let rotate        = true
@@ -1870,7 +1895,8 @@ class Parser {
   //   and      ::= not  ('&&' not)*
   //   not      ::= '!' not | primary
   //   primary  ::= '(' expr ')' | value [compOp value]
-  //   value    ::= auth() [.field] | now() | check(field [,op]) | null | bool | string | number | ident
+  //   value    ::= auth() [.field] | now() | check(field [,op]) | null | bool | string | number
+  //              | ident | ident '.' ident   (one relation hop — FJS-D221)
   //   compOp   ::= '==' | '!=' | '<' | '>' | '<=' | '>='
 
   // Named once so the parse error can list them, rather than a reader having to
@@ -2040,10 +2066,23 @@ class Parser {
       return { type: 'list', items }
     }
 
-    // field reference (any other identifier)
+    // field reference (any other identifier), or one hop across a relation.
+    //
+    // `order.userId` is a column on the model this one belongs to, and the
+    // compiler owns the join (`FJS-D221`). One hop, because transitive is N
+    // joins the author cannot see, per policy, per query — so `a.b.c` is
+    // refused HERE rather than compiled into something slow, which makes the
+    // bound discoverable from the mistake instead of from a decision record.
     if (t.type === TK.IDENT) {
       this.eat(TK.IDENT)
-      return { type: 'field', name: t.value }
+      if (!this.check(TK.DOT)) return { type: 'field', name: t.value }
+      this.eat(TK.DOT)
+      const field = this.eat(TK.IDENT).value
+      if (this.check(TK.DOT))
+        throw new ParseError(
+          `'${t.value}.${field}.…' crosses two relations. A policy may name a column ONE hop away — ` +
+          `put the rule on the model '${t.value}' points at, or carry the value on this model.`, this.peek())
+      return { type: 'path', rel: t.value, name: field }
     }
 
     throw new ParseError(`Expected a value in policy expression, got '${t.value ?? t.type}'`, t)
@@ -2275,7 +2314,6 @@ class Parser {
         this.eat(TK.RPAREN)
         return { kind: 'arc', fields, optional, message }
       }
-      case 'strict':   return { kind: 'strict' }    // legacy explicit opt-in
       case 'noStrict': return { kind: 'noStrict' }  // opt-out from default strict
       case 'fts': {
         // @@fts([field1, field2])                   — default tokenizer (unicode61)
@@ -2350,7 +2388,7 @@ class Parser {
         // a capability refusal on a write throws and names itself, while a
         // missing read capability composes with the policy layer into an empty
         // list with a 200. `all` is the widening token this language already
-        // uses — @guarded(all), @allow('all', …).
+        // uses — @omit(all), @allow('all', …).
         let read = false
         if (this.check(TK.LPAREN)) {
           this.eat(TK.LPAREN)
@@ -2364,8 +2402,6 @@ class Parser {
         }
         return { kind: 'capabilities', read }
       }
-      case 'softDeleteCascade':
-        throw new ParseError(`@@softDeleteCascade is no longer supported. Use @@softDelete(cascade) instead.`, this.peek())
       case 'hasTemplates': {
         // @@hasTemplates                       — adds isTemplate Boolean @default(false), filters it out by default
         // @@hasTemplates(field: "isPreset")    — same, but with a custom column name
@@ -2768,7 +2804,7 @@ class Parser {
           if (system)
             throw new ParseError(`@@transitions(${field}) '${name}': @system stated twice`, attr)
           // It takes no argument, and the shape somebody reaches for is the
-          // column's — `@guarded(all)`. Named rather than left to fail on the
+          // column's — `@guarded`. Named rather than left to fail on the
           // paren, which reports a missing comma somewhere else entirely.
           if (this.check(TK.LPAREN))
             throw new ParseError(
@@ -2958,7 +2994,7 @@ class Parser {
         // bidirectional layer on every read and write, which nothing in the
         // corpus asks for. `@label` is already the display override.
         //
-        // A quoted member that IS a legal identifier normalises to the bare
+        // A quoted member that IS a legal identifier normalizes to the bare
         // spelling, so `"Draft"` and `Draft` are one member rather than two —
         // the same reading `FJS-564` gave the redundant array default, and what
         // lets an importer quote everything and still emit a canonical schema.
@@ -3001,7 +3037,7 @@ class Parser {
   }
 }
 
-// ─── Policy operation normaliser ─────────────────────────────────────────────
+// ─── Policy operation normalizer ─────────────────────────────────────────────
 // Accepts: 'read', 'create', 'update', 'post-update', 'delete',
 //          'write' (= create+update+delete), 'all' (= all five),
 //          or comma-separated combos: 'update,delete'
@@ -3027,7 +3063,7 @@ function normalisePolicyOps(str, token) {
 
 // ─── @secret expansion ────────────────────────────────────────────────────────
 // Runs between parseSchema() and validate().
-// Synthesizes @encrypted, @guarded(all), and optionally @log(<loggerDb>) onto
+// Synthesizes @encrypted, @guarded, and optionally @log(<loggerDb>) onto
 // every field marked @secret, keeping the { kind: 'secret', rotate } attr for
 // key rotation tracking via db.$rotateKey().
 //
@@ -3447,11 +3483,11 @@ function expandSecretAttributes(schema) {
       const secretAttr = field.attributes.find(a => a.kind === 'secret')
       if (!secretAttr) continue
 
-      // Synthesize @encrypted + @guarded(all) unconditionally.
+      // Synthesize @encrypted + @guarded unconditionally.
       // If the field already had an explicit @encrypted or @guarded, this produces
       // duplicates — validate() catches those as conflict errors.
       field.attributes.push({ kind: 'encrypted', deterministic: !!secretAttr.deterministic })
-      field.attributes.push({ kind: 'guarded', level: 'all' })
+      field.attributes.push({ kind: 'guarded' })
 
       // Synthesize @log(<loggerDb>) — audit writes only by default.
       // reads:false matches @@log model-level default — reads are high-volume and opt-in.
@@ -3787,7 +3823,7 @@ function expandTenancy(schema) {
   //
   // A model that carries no tenant column but holds a foreign key to one that
   // does is not cross-tenant data — it is the same tenant's data, one hop away.
-  // Denormalising the column onto it is a schema change an app can make by
+  // Denormalizing the column onto it is a schema change an app can make by
   // hand; delegating to the parent's own rule is the one that needs no column
   // at all, and `check()` is exactly that delegation (FJS-282).
   //
@@ -4874,7 +4910,7 @@ function validate(schema) {
       if (field.attributes.filter(a => a.kind === 'encrypted').length > 1)
         errors.push(`Model '${model.name}', field '${field.name}': @secret already implies @encrypted — remove the explicit @encrypted`)
       if (field.attributes.filter(a => a.kind === 'guarded').length > 1)
-        errors.push(`Model '${model.name}', field '${field.name}': @secret already implies @guarded(all) — remove the explicit @guarded`)
+        errors.push(`Model '${model.name}', field '${field.name}': @secret already implies @guarded — remove the explicit @guarded`)
 
       // @secret on jsonl databases — not supported (inherits @encrypted restriction)
       const dbAttr = model.attributes.find(a => a.kind === 'db')
@@ -5164,7 +5200,15 @@ function validate(schema) {
       const def   = field.attributes.find(a => a.kind === 'default')
       const raw = def?.value?.kind === 'number' ? def.value.value : def?.value
       if (!scale || typeof raw !== 'number' || Number.isInteger(raw)) continue
-      const places = scale.kind === 'money' ? 2 : scale.places
+      // The suggested value is in the CURRENCY's minor units, which for the yen
+      // is the yen: suggesting `raw * 100` there is advice that is wrong by a
+      // hundred. A bare @money is the app's default currency and is not knowable
+      // here, so it keeps the two-place reading.
+      let places = scale.places
+      if (scale.kind === 'money') {
+        try { places = scale.currency ? minorUnits(scale.currency) : 2 }
+        catch { places = 2 }
+      }
       const minor  = Math.round(raw * 10 ** (places ?? 2))
       errors.push(
         `Model '${model.name}', field '${field.name}': @default(${raw}) is not a value this column can hold — ` +
@@ -5222,25 +5266,29 @@ function validate(schema) {
   for (const model of schema.models) {
     const seenIndexNames = new Map()
     for (const attr of model.attributes) {
-      // A partial @@unique is a CREATE UNIQUE INDEX, so it is in this loop and
-      // in this name space: it derives `idx_<table>_<fields>` like any other,
-      // and two declarations reaching one name is the same collision whichever
-      // attribute wrote them.
+      // A partial @@unique is a CREATE UNIQUE INDEX, so it is in this loop —
+      // but in its OWN name space, `uniq_<table>_<fields>`. The two are
+      // different kinds of thing over the same columns and both are legitimate
+      // on one model: the ordinary lookup, and *at most one row where the
+      // predicate holds*. Sharing the derivation made the second undeclarable
+      // (`FJS-614`).
       const partialUnique = attr.kind === 'partialUnique'
       if (attr.kind !== 'index' && !partialUnique) continue
-      const word = partialUnique ? '@@unique' : '@@index'
+      const word   = partialUnique ? '@@unique' : '@@index'
+      const prefix = partialUnique ? 'uniq' : 'idx'
 
-      // Two declarations over the same columns derive one name, predicate or not.
+      // Two declarations of the SAME kind over the same columns still derive one
+      // name, predicate or not.
       const derived = attr.fields.join('_')
-      if (seenIndexNames.has(derived)) {
-        const first = seenIndexNames.get(derived).kind === 'partialUnique' ? '@@unique' : '@@index'
+      const key     = `${prefix}:${derived}`
+      if (seenIndexNames.has(key)) {
         errors.push(
-          `Model '${model.name}': ${first}([${attr.fields.join(', ')}]) and ${word}([${attr.fields.join(', ')}]) derive the same ` +
-          `index name 'idx_<table>_${derived}', so the second cannot be created. Indexes are named for their columns and not for ` +
-          `their predicate — give them different column lists, or write one predicate covering both`)
+          `Model '${model.name}': two ${word}([${attr.fields.join(', ')}]) declarations derive the same ` +
+          `index name '${prefix}_<table>_${derived}', so the second cannot be created. An index is named for its columns and not ` +
+          `for its predicate — give them different column lists, or write one predicate covering both`)
         continue
       }
-      seenIndexNames.set(derived, attr)
+      seenIndexNames.set(key, attr)
 
       if (!attr.where) continue
 
@@ -5515,7 +5563,7 @@ function validate(schema) {
       if (field.attributes.some(a => a.kind === 'guarded'))
         errors.push(`Model '${model.name}', field '${field.name}': @allow conflicts with @guarded — use one or the other`)
       if (field.attributes.some(a => a.kind === 'secret'))
-        errors.push(`Model '${model.name}', field '${field.name}': @allow conflicts with @secret — @secret already implies @guarded(all)`)
+        errors.push(`Model '${model.name}', field '${field.name}': @allow conflicts with @secret — @secret already implies @guarded`)
     }
   }
 
@@ -5620,7 +5668,7 @@ function validate(schema) {
 
       if (money) {
         if (money.currency && !isKnownCurrency(money.currency))
-          errors.push(`${at}: @money(${money.currency}) — not a currency this runtime knows. The scale comes from the currency, so a code nobody recognises would silently take two places`)
+          errors.push(`${at}: @money(${money.currency}) — not an ISO 4217 currency. The scale comes from the currency, so a code nobody recognizes would silently take two places`)
 
         if (money.field) {
           const sibling = model.fields.find(f => f.name === money.field)
@@ -6380,6 +6428,7 @@ export function parseFile(filePath) {
     const importedTypes     = []
     const importedValuesets = []
     const importedExtends   = []
+    const importedClaims    = []
     let   importedTenancy   = null
 
     for (const imp of schema.imports) {
@@ -6421,6 +6470,7 @@ export function parseFile(filePath) {
         importedTypes.push(...(child.types ?? []))
         importedValuesets.push(...(child.valuesets ?? []))
         importedExtends.push(...(child.extends ?? []))
+        importedClaims.push(...(child.claims ?? []))
       }
     }
 
@@ -6447,6 +6497,10 @@ export function parseFile(filePath) {
       // the whole tree is merged, so a file may extend a model it is imported
       // BY as readily as one it imports.
       extends:   [...importedExtends,   ...(schema.extends ?? [])],
+      // A union, where tenancy above is a refusal: two files naming the same
+      // claim have said one thing, and a package fragment declaring the claim
+      // its own policies read is how an app gets it without restating it.
+      claims:    [...new Set([...importedClaims, ...(schema.claims ?? [])])],
     }
   }
 
@@ -6465,6 +6519,7 @@ export function parseFile(filePath) {
     types:     merged.types ?? [],
     valuesets: merged.valuesets ?? [],
     extends:   merged.extends ?? [],
+    claims:    merged.claims ?? [],
   }
 
   // Resolve traits before validation. resolveTraits mutates schema.models,

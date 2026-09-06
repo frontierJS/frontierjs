@@ -72,19 +72,24 @@ await must(context, probe.sqliteRow({
 
 ✗ 01-preflight refused — nothing after it ran`,
 
-  // The phase, as CI prints it. The eight times are one sequential run of the
-  // same eight commands the phase issues — not eight best-of numbers, and not a
-  // plausible-looking transcript. Lesson 6 is where the ninety seconds go: it
-  // builds real images.
+  // The phase, as CI prints it. The thirteen times are one sequential run of
+  // the same thirteen commands the phase issues — not thirteen best-of numbers,
+  // and not a plausible-looking transcript. tutor:deploy is where the
+  // minute-plus goes: it builds real images.
   CI: `─── tutor ─────────────────────────────────────────────
-  ✓ tutor:app (6.6s)
-  ✓ tutor:access (11.5s)
-  ✓ tutor:live (11.3s)
+  ✓ tutor:app (6.9s)
+  ✓ tutor:tools (8.5s)
+  ✓ tutor:ui (43.4s)
+  ✓ tutor:access (9.8s)
+  ✓ tutor:live (12.1s)
   ✓ tutor:jobs (6.8s)
-  ✓ tutor:site (8.3s)
-  ✓ tutor:deploy (87.5s)
-  ✓ tutor:change (4.7s)
-  ✓ tutor:fleet (2.9s)`,
+  ✓ tutor:notify (12.4s)
+  ✓ tutor:site (7.7s)
+  ✓ tutor:deploy (74.0s)
+  ✓ tutor:change (4.3s)
+  ✓ tutor:test (15.7s)
+  ✓ tutor:fleet (2.9s)
+  ✓ tutor:adopt (2.3s)`,
 }
 
 export async function load() {

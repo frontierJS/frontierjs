@@ -55,51 +55,33 @@ describe('createSystemSender', () => {
   })
 
   it('throws SystemEmailError when html and text are both missing', async () => {
-    // Mock sendMail to avoid real SMTP — Bun module exports are read-only,
-    // so we use mock.module() which patches the live binding.
-    mock.module('../src/plugins/email/system/smtp.ts', () => ({
-      sendMail: mock(async () => {}),
-      SmtpError: class extends Error {},
-    }))
-
+    // The transport is injected rather than mocked. `mock.module()` is applied
+    // PROCESS-WIDE by bun and never undone, so every one of these used to leave
+    // the replacement standing for whatever ran next (`FJS-908`).
     const sender = createSystemSender({
       from: 'sys@acme.com',
       smtp: { host: 'localhost', port: 587, user: 'u', pass: 'p' },
-    })
+    }, { transport: async () => {} })
 
     await expect(sender.send({ to: 'a@b.com', subject: 'x' }))
       .rejects.toBeInstanceOf(SystemEmailError)
   })
 
   it('wraps SMTP errors in SystemEmailError', async () => {
-    mock.module('../src/plugins/email/system/smtp.ts', () => ({
-      sendMail: mock(async () => {
-        throw Object.assign(new Error('auth failed'), { code: 535 })
-      }),
-      SmtpError,
-    }))
-
     const sender = createSystemSender({
       from: 'sys@acme.com',
       smtp: { host: 'localhost', port: 587, user: 'u', pass: 'p' },
-    })
+    }, { transport: async () => { throw Object.assign(new SmtpError('auth failed', 535), { code: 535 }) } })
 
     await expect(sender.send(makeMessage())).rejects.toBeInstanceOf(SystemEmailError)
   })
 
   it('applies plugin-level from when message has none', async () => {
     let capturedFrom: string | undefined
-    mock.module('../src/plugins/email/system/smtp.ts', () => ({
-      sendMail: mock(async (_cfg: unknown, msg: { from: string }) => {
-        capturedFrom = msg.from
-      }),
-      SmtpError: class extends Error {},
-    }))
-
     const sender = createSystemSender({
       from: 'default@acme.com',
       smtp: { host: 'localhost', port: 587, user: 'u', pass: 'p' },
-    })
+    }, { transport: async (_cfg, msg) => { capturedFrom = msg.from } })
 
     await sender.send(makeMessage({ from: undefined }))
     expect(capturedFrom).toBe('default@acme.com')
@@ -107,32 +89,20 @@ describe('createSystemSender', () => {
 
   it('message-level from overrides plugin default', async () => {
     let capturedFrom: string | undefined
-    mock.module('../src/plugins/email/system/smtp.ts', () => ({
-      sendMail: mock(async (_cfg: unknown, msg: { from: string }) => {
-        capturedFrom = msg.from
-      }),
-      SmtpError: class extends Error {},
-    }))
-
     const sender = createSystemSender({
       from: 'default@acme.com',
       smtp: { host: 'localhost', port: 587, user: 'u', pass: 'p' },
-    })
+    }, { transport: async (_cfg, msg) => { capturedFrom = msg.from } })
 
     await sender.send(makeMessage({ from: 'override@acme.com' }))
     expect(capturedFrom).toBe('override@acme.com')
   })
 
   it('returns EmailResult with status sent on success', async () => {
-    mock.module('../src/plugins/email/system/smtp.ts', () => ({
-      sendMail: mock(async () => {}),
-      SmtpError: class extends Error {},
-    }))
-
     const sender = createSystemSender({
       from: 'sys@acme.com',
       smtp: { host: 'localhost', port: 587, user: 'u', pass: 'p' },
-    })
+    }, { transport: async () => {} })
 
     const result = await sender.send(makeMessage())
     expect(result.status).toBe('sent')

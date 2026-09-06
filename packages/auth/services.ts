@@ -27,7 +27,7 @@
 // each method answers 400 by name, the way the /auth routes already do for
 // password reset.
 
-import { createService, BadRequest, Unauthorized, NotFound } from '@frontierjs/junction'
+import { createService, BadRequest, Unauthorized, Forbidden, NotFound } from '@frontierjs/junction'
 import type { IAuth, SessionContext, ServiceContext, Service } from '@frontierjs/junction'
 import type { AuthServicesOptions } from './types.ts'
 import type { AuthOAuth }           from './oauth.ts'
@@ -77,6 +77,32 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     return user
   }
 
+  /**
+   * SUPPORT MODE — the refusals, and they are what makes an episode bounded.
+   *
+   * An operator inside an episode resolves as the subject, so every method here
+   * would act on the subject's own account, which is mostly the point: reading
+   * their sessions and their connections is how you see what they see. What is
+   * NOT the point is the door out of the episode — a password changed, an API
+   * key minted, a session revoked — because each of those outlives the episode
+   * that produced it. Mint a key while impersonating and the ceiling has been
+   * escaped permanently, with the trail showing an ordinary key issue.
+   *
+   * A caller with no episode is unaffected, which is what every test of this
+   * asserts beside the refusal: a guard that refused everybody would look
+   * identical from the refused side (`FJS-351`).
+   *
+   * The subject is named in the message, because the operator has to know whose
+   * account they are being kept out of.
+   */
+  function refuseInSupport(user: SessionContext, what: string): void {
+    if (!user.support) return
+    throw new Forbidden(
+      `Cannot ${what} while acting as another user. End the support session first ` +
+      `(POST /auth/support/end) — this account's credentials are not yours to change.`
+    )
+  }
+
   /** A provider that does not implement this one says so by name, not by 500. */
   function need<K extends keyof AuthSurface>(method: K): NonNullable<AuthSurface[K]> {
     const fn = auth[method]
@@ -121,6 +147,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     // beside the hash it compares against.
     async changePassword(ctx: ServiceContext) {
       const user = caller(ctx)
+      refuseInSupport(user, 'change a password')
       const { currentPassword, newPassword } = (ctx.data ?? {}) as Record<string, string>
       if (!currentPassword) throw new BadRequest('currentPassword is required')
       if (!newPassword)     throw new BadRequest('newPassword is required')
@@ -148,6 +175,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
 
     async remove(ctx: ServiceContext) {
       const user = caller(ctx)
+      refuseInSupport(user, 'revoke a session')
       const id   = String(ctx.id)
       await need('revokeSession')(user.userId, id)
       // Ending the session that is asking is allowed — "sign out this device"
@@ -159,6 +187,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
 
     async revokeOthers(ctx: ServiceContext) {
       const user = caller(ctx)
+      refuseInSupport(user, 'revoke sessions')
       const revoked = await need('revokeSessions')(user.userId, { exceptSessionId: user.sessionId })
       return { revoked }
     },
@@ -179,6 +208,9 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     // an HMAC of it, so there is no second chance to read it.
     async create(ctx: ServiceContext) {
       const user = caller(ctx)
+      // The sharpest one. A key minted here authenticates as the subject for as
+      // long as it lives, which is the episode's ceiling escaped for good.
+      refuseInSupport(user, 'create an API key')
       const { name, scopes, expiresAt } = (ctx.data ?? {}) as {
         name?: string; scopes?: string[]; expiresAt?: string
       }
@@ -197,6 +229,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
 
     async remove(ctx: ServiceContext) {
       const user = caller(ctx)
+      refuseInSupport(user, 'revoke an API key')
       const id   = String(ctx.id)
       // The owner goes into the delete rather than being checked after a read:
       // the id comes from the caller, and matching on it alone revokes any key
@@ -223,6 +256,9 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
 
     async remove(ctx: ServiceContext) {
       const user = caller(ctx)
+      // Detaching a provider is a way somebody signs in, so it is the same
+      // class as the two above it.
+      refuseInSupport(user, 'remove a connection')
       // The caller's own id, never one from the payload — the same rule the
       // three services above hold to.
       return need('removeConnection')(user.userId, String(ctx.id))

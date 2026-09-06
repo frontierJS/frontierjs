@@ -203,6 +203,44 @@ button:is(.badge, .pill) { appearance: none; cursor: pointer }
   overscroll-behavior:   contain;
 }
 
+/* ── Collapsed rail ────────────────────────────────────────────────────────
+ *
+ * The whole frame is driven by `--sidebar-width` — `.shell.viewport` reads it —
+ * so collapsing is one custom property and the layout follows. Nothing is
+ * `display: none`: the labels go to `.visually-hidden`, which takes them off
+ * the screen and leaves them in the accessibility tree, so a collapsed rail
+ * still announces `Browse` rather than an unnamed link with a picture in it.
+ *
+ * The tables list and the Acting-as picker DO go away, because neither is
+ * usable at 3rem and both have a panel that owns them — the tables list is a
+ * picker for Browse, which has its own search.
+ */
+body.rail-collapsed { --sidebar-width: 3rem }
+
+body.rail-collapsed .sidebar-section { padding-inline: var(--space-2xs) }
+/* One rule does the hiding, and it is the vocabulary's own — copied rather than
+   reached for because a class cannot be added to text that is a bare child. */
+body.rail-collapsed .navlink-text,
+body.rail-collapsed .navlist-label {
+  position:    absolute;
+  inline-size: 1px;
+  block-size:  1px;
+  padding:     0;
+  margin:      -1px;
+  overflow:    hidden;
+  clip-path:   inset(50%);
+  white-space: nowrap;
+  border:      0;
+}
+body.rail-collapsed .sidebar-tables,
+body.rail-collapsed #authSelect { display: none }
+body.rail-collapsed .navlink { justify-content: center; padding-inline: 0 }
+body.rail-collapsed .sidebar-section:first-child { border-block-end: none; padding-block: 0 }
+
+/* Mirrored, so the icon says what the click will do rather than what the rail
+   currently is. */
+body.rail-collapsed #railToggle svg { transform: scaleX(-1) }
+
 .sidebar-section {
   border-block-end: 1px solid var(--rule);
   flex-shrink:      0;
@@ -257,8 +295,10 @@ button:is(.badge, .pill) { appearance: none; cursor: pointer }
 }
 
 /* A scrolling region that holds documents rather than a grid: Migrations,
-   Stats and the schema diff all stack blocks inside their own scroller. */
-#migPanel, #statsScroll, .lite-diff {
+   Stats, Explore and the schema diff all stack blocks inside their own
+   scroller. `.data-grid-wrap` is shared with the panels that hold a TABLE,
+   which wants its own edge — so the padding is named here, per panel. */
+#migPanel, #statsScroll, #exBody, .lite-diff {
   padding: var(--space-2xl);
   gap:     var(--space-2xl);
 }
@@ -391,6 +431,64 @@ td.cell-editing .field {
 .copy-btn { opacity: 0; transition: opacity 100ms }
 td:hover .copy-btn { opacity: 1 }
 
+/* ─── Overview ──────────────────────────────────────────────────────────── */
+
+/* A label and the names that answer it. Left as plain flex the names win every
+   time — `Hubs — three or more models point at them` wrapped to six lines beside
+   a value with room to spare — so the label is fixed and the names shrink. */
+.ov-row       { display: flex; align-items: baseline; gap: var(--space-lg) }
+.ov-row .ov-k { flex: 0 0 auto; white-space: nowrap }
+.ov-row .ov-v {
+  flex:          1 1 auto;
+  min-inline-size: 0;
+  text-align:    end;
+  color:         var(--ink-mute);
+  white-space:   nowrap;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+}
+.ov-facts {
+  display:     flex;
+  flex-wrap:   wrap;
+  gap:         var(--space-lg);
+  padding:     var(--space-lg) var(--space-2xl);
+  color:       var(--ink-mute);
+  font-size:   var(--text-xs);
+}
+.ov-facts b { color: var(--ink) }
+.ov-go { padding: var(--space-lg) var(--space-2xl); display: flex; justify-content: flex-end }
+
+/* Cards here hold different numbers of rows and the grid stretches them to the
+   tallest, which reads as three cards with something missing from two of them. */
+#ovBody .tiles { align-items: start }
+
+/* A directory, not a nav: the sentence is the content and the name is the
+   handle, so the name cannot be allowed to set the column width. */
+.ov-tools {
+  display:               grid;
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  gap:                   var(--space-xs);
+  padding:               var(--space-lg) var(--space-2xl) var(--space-2xl);
+}
+.ov-tool {
+  display:       flex;
+  flex-direction: column;
+  gap:           var(--space-3xs, 2px);
+  align-items:   start;
+  text-align:    start;
+  padding:       var(--space-lg);
+  border:        1px solid var(--rule);
+  border-radius: var(--radius-md, 6px);
+  background:    none;
+  color:         inherit;
+  font:          inherit;
+  cursor:        pointer;
+}
+.ov-tool:hover        { border-color: var(--color-primary); background: var(--surface-sunken) }
+.ov-tool:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px }
+.ov-tool-name { font-weight: 600 }
+.ov-tool-what { color: var(--ink-mute); font-size: var(--text-xs) }
+
 /* ─── Schema — ER diagram ──────────────────────────────────────────────── */
 
 .er-wrap {
@@ -462,6 +560,123 @@ td:hover .copy-btn { opacity: 1 }
 .er-db-logger { --er-accent: #FB923C }
 
 [class*="er-db-"].er-table { border-color: color-mix(in srgb, var(--er-accent) 30%, var(--rule-strong)) }
+
+/*
+ * Tier prominence. Two numbers off the FK edges the diagram already draws —
+ * how many models point AT this one, and how many it points at — and the four
+ * answers are named rather than scored. A blended score would rank the cards
+ * and be unable to say why, which is the one thing a reader opens this panel
+ * to find out.
+ *
+ * Placed after the per-database block: same specificity, later wins, so a tier
+ * can raise a border the database tone set.
+ */
+.er-table.er-hub {
+  border-color: var(--ink-mute);
+  border-width: 2px;
+  z-index:      3;
+}
+.er-table.er-hub .er-table-name  { font-weight: 700 }
+.er-table.er-leaf .er-table-name { font-weight: 400 }
+.er-table.er-isolate {
+  border-style: dashed;
+  opacity:      0.72;
+}
+.er-table.er-isolate:hover { opacity: 1 }
+.er-table.er-isolate .er-table-name { font-weight: 400; color: var(--ink-mute) }
+
+.er-tier-mark {
+  font-size:      var(--text-2xs);
+  color:          var(--ink-mute);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* The row overlay is a BAR, not a resized card: geometry already carries field
+   count (one row per field), and a second meaning on one channel is how a
+   reader stops being able to decode either. Log-scaled — row counts span orders
+   of magnitude and a linear bar renders every table but the largest as nothing. */
+.er-rows {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2xs);
+  padding:     var(--space-2xs) var(--space-lg);
+  border-block-end: 1px solid var(--rule);
+  font-size:   var(--text-2xs);
+  color:       var(--ink-mute);
+}
+.er-rows-track {
+  flex:          1;
+  block-size:    3px;
+  background:    var(--rule);
+  border-radius: 2px;
+  overflow:      hidden;
+}
+.er-rows-fill { block-size: 100%; background: var(--er-accent, var(--color-primary)) }
+
+/* A family's hue rides a SPINE on the inline-start edge rather than the card
+   body: the header tint is the database's and a second meaning on it would
+   leave neither readable. `--er-family` is a bare number so one custom property
+   serves the spine, the link and the legend swatch. */
+.er-table.er-fam {
+  border-inline-start-width: 4px;
+  border-inline-start-color: hsl(var(--er-family) 62% 52%);
+}
+.er-link-fam      { stroke: hsl(var(--er-family) 62% 52%); opacity: 0.85 }
+circle.er-link-fam { fill: hsl(var(--er-family) 62% 52%); stroke: none }
+
+/* Hover focus. Everything not touching the card under the pointer falls back,
+   rather than the neighbours being raised — raising cannot be seen against 40
+   cards that are already at full strength. */
+.er-focused .er-table:not(.er-near)          { opacity: 0.2 }
+.er-focused .er-link:not(.er-link-on)        { opacity: 0.05 }
+.er-focused .er-link-dot:not(.er-link-on)    { opacity: 0.05 }
+.er-focused .er-link.er-link-on              { stroke-width: 2.5; opacity: 1 }
+
+/* A pin has to look different from a hover or there is no way to tell a diagram
+   that is holding still from one that is waiting for the pointer to come back. */
+.er-table.er-pinned {
+  outline:        2px solid var(--color-primary);
+  outline-offset: 2px;
+  cursor:         default;
+}
+/* Out of flow. In the header it widened the card, and the FK lines are drawn
+   against measured geometry — so pinning moved every endpoint on that card and
+   left the curves pointing at where it used to end. */
+.er-table.er-pinned::after {
+  content:     'PINNED';
+  position:    absolute;
+  inset-block-end:   100%;
+  inset-inline-start: 0;
+  padding-block-end: 2px;
+  font-size:   var(--text-2xs);
+  color:       var(--color-primary);
+  letter-spacing: 0.06em;
+}
+.er-table, .er-link, .er-link-dot            { transition: opacity 120ms linear }
+
+.er-legend-fam {
+  display:       inline-block;
+  inline-size:   0.5rem;
+  block-size:    0.5rem;
+  border-radius: 2px;
+  margin-inline-end: 0.25rem;
+  background:    hsl(var(--er-family) 62% 52%);
+}
+
+.er-legend {
+  position:           absolute;
+  inset-block-start:  var(--space-2xl);
+  inset-inline-start: var(--space-2xl);
+  z-index:     10;
+  display:     flex;
+  gap:         var(--space-lg);
+  align-items: center;
+  padding:     var(--space-xs) var(--space-lg);
+  font-size:   var(--text-2xs);
+  color:       var(--ink-mute);
+}
+.er-legend b { color: var(--ink); font-weight: 600 }
 [class*="er-db-"] .surface-header {
   background:        color-mix(in srgb, var(--er-accent) 12%, transparent);
   border-block-end-color: color-mix(in srgb, var(--er-accent) 25%, transparent);
@@ -750,10 +965,12 @@ td:hover .copy-btn { opacity: 1 }
 .stats-db-section .tiles { margin-block-start: var(--space-lg) }
 
 /* ── Explore ──────────────────────────────────────────────────────────────
-   A box is a button because it navigates, and it is dimmed rather than
-   disabled when nothing is declared: `disabled` would take it off the tab order
-   and out of the accessibility tree, which is the exact opposite of a panel
-   whose subject is the words you have not found yet. */
+   A box is a button because it navigates, and it is never `disabled`: that
+   would take it off the tab order and out of the accessibility tree, which is
+   the exact opposite of a panel whose subject is the words you have not found
+   yet. Nothing declared is said by the COUNT and by nothing else — a word's
+   name and its description read the same whether or not this schema uses it,
+   because a faded card reads as unavailable rather than unused. */
 .ex-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
@@ -768,9 +985,58 @@ td:hover .copy-btn { opacity: 1 }
 }
 .ex-box:hover  { border-color: var(--rule-strong) }
 .ex-box:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px }
-.ex-box[data-empty="true"] { opacity: .55 }
-.ex-box[data-empty="true"]:hover { opacity: 1 }
 .ex-word  { font-family: var(--font-mono); font-weight: 600 }
+/* Which axis a question decides. The four read as one list otherwise, and
+   three of them answer one row of the visibility table while the fourth does
+   not — the eyebrow is where that is said per card rather than once above. */
+/* The table half of the toggle. The blurb is the one cell allowed to wrap, so a
+   row stays one line of scanning until the sentence needs two. */
+.ex-list-group + .ex-list-group { margin-block-start: var(--space-2xl) }
+.ex-list-head { margin: 0 0 var(--space-sm); font-size: var(--text-md) }
+/* Three tables, one set of columns. Auto layout sizes each table from its own
+   content, so `Declarations` (12 short words) and `Field attributes` (63, with
+   the longest names in the language) drew their boundaries in different places
+   and the three read as three tables rather than one index. Fixed layout plus a
+   colgroup makes the widths a declaration instead of an outcome; the blurb
+   column is the one left unsized, so it takes whatever is over. */
+.ex-list-group .table { table-layout: fixed; inline-size: 100% }
+.ex-list-group .table td { white-space: normal }
+.ex-list-group .table .ex-word { overflow-wrap: anywhere }
+/* The count badge carries "nobody uses this" and the row does not. Dimming a
+   BOX reads as texture; dimming a table row reads as disabled, which is the
+   opposite of a panel whose subject is the words you have not reached for. */
+.ex-list-group .table tr { cursor: pointer }
+/* An untiered word is the one state worth seeing at a glance: it means the
+   language grew and nobody has said where the word belongs yet. */
+.ex-tier { text-transform: capitalize }
+.ex-tier[data-tier="essential"] { color: var(--ink) }
+.ex-tier[data-tier="common"],
+.ex-tier[data-tier="situational"] { color: var(--color-muted) }
+.ex-tier[data-tier="none"] { color: var(--color-warning) }
+.ex-col-word  { inline-size: 14rem }
+.ex-col-tier  { inline-size: 8rem }
+.ex-col-group { inline-size: 11rem }
+.ex-col-used  { inline-size: 5rem }
+.ex-num { text-align: end; font-variant-numeric: tabular-nums }
+
+/* The interview's own grid. `.ex-grid`'s 13rem column is right for a word tile,
+   whose whole content is a name and a count; a question card holds two buttons
+   whose labels are sentences, and at 13rem the longest one is drawn PAST the
+   card's own edge — measured at 1408px: 2 of 8 buttons overhung, one by 23px.
+   The choices are a column of full-width buttons that wrap their text, so the
+   card sets the width and nothing can spill at any viewport. */
+.ex-interview { grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)) }
+.iv-choices { display: grid; gap: var(--space-2xs) }
+.iv-choices .btn { inline-size: 100%; white-space: normal; text-align: start }
+
+.ex-cat {
+  display:        block;
+  margin-block-end: var(--space-2xs);
+  font-size:      var(--text-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color:          var(--color-muted);
+}
 .ex-count { font-variant-numeric: tabular-nums }
 .ex-blurb { font-size: var(--text-sm); color: var(--color-muted); line-height: 1.4 }
 .ex-clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden }
@@ -845,6 +1111,13 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
 <div class="shell viewport">
 
 <header class="topbar">
+  <!-- Ahead of the logo because it acts on the rail below it, and a control
+       that moves something to its left belongs to the left. -->
+  <button class="btn outlined" id="railToggle" onclick="toggleRail()"
+          aria-controls="studioRail" aria-expanded="true" title="Collapse the sidebar (\)">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
+    <span class="visually-hidden">Collapse the sidebar</span>
+  </button>
   <span class="logo">
     <svg class="logo-mark" viewBox="0 0 20 26" aria-hidden="true">
       <!-- The mark, drawn rather than embedded: Studio is a single file with no
@@ -889,7 +1162,7 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
   </div>
 </header>
 
-<nav class="sidebar" aria-label="Studio">
+<nav class="sidebar" id="studioRail" aria-label="Studio">
 
   <div class="sidebar-section">
     <div class="navlist-label" id="authLabel">Acting as</div>
@@ -906,57 +1179,61 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
   <div class="sidebar-section">
     <div class="navlist-label" id="toolsLabel">Tools</div>
     <ul class="navlist" aria-labelledby="toolsLabel">
-      <li><a class="navlink" id="navBrowse" href="#browse" aria-current="page">
+      <li><a class="navlink" id="navOverview" href="#overview" aria-current="page">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+        <span class="navlink-text">Overview</span>
+      </a></li>
+      <li><a class="navlink" id="navBrowse" href="#browse">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
-        Browse
+        <span class="navlink-text">Browse</span>
       </a></li>
       <li><a class="navlink" id="navQuery" href="#query">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-        SQL Query
+        <span class="navlink-text">SQL Query</span>
       </a></li>
       <li><a class="navlink" id="navSchema" href="#schema">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-        Schema
+        <span class="navlink-text">Models</span>
       </a></li>
       <li><a class="navlink" id="navExplore" href="#explore">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-        Explore
+        <span class="navlink-text">Explore</span>
       </a></li>
       <li><a class="navlink" id="navAccess" href="#access">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        Access
+        <span class="navlink-text">Access</span>
       </a></li>
       <li><a class="navlink" id="navMigrations" href="#migrations">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
-        Migrations
+        <span class="navlink-text">Migrations</span>
       </a></li>
       <li><a class="navlink" id="navStats" href="#stats">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-        Stats
+        <span class="navlink-text">Stats</span>
       </a></li>
       <li><a class="navlink" id="navRepl" href="#repl">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-        REPL
+        <span class="navlink-text">REPL</span>
       </a></li>
       <li hidden id="navTenantsItem"><a class="navlink" id="navTenants" href="#tenants">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg>
-        Tenants
+        <span class="navlink-text">Tenants</span>
       </a></li>
       <li><a class="navlink" id="navQlog" href="#qlog">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="12" y2="13"/></svg>
-        Query Log
+        <span class="navlink-text">Query Log</span>
       </a></li>
       <li><a class="navlink" id="navTransform" href="#transform">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
-        Transform
+        <span class="navlink-text">Transform</span>
       </a></li>
       <li><a class="navlink" id="navPerf" href="#perf">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        Performance
+        <span class="navlink-text">Performance</span>
       </a></li>
       <li><a class="navlink" id="navLite" href="#lite">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-        schema.lite
+        <span class="navlink-text">Schema</span>
       </a></li>
     </ul>
   </div>
@@ -966,6 +1243,21 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
 <main class="screen" id="screen" tabindex="-1">
 
   <!-- ── Browse ─────────────────────────────────────────────────────────── -->
+  <!-- ── Overview ───────────────────────────────────────────────────────
+       The front door. Studio had eleven panels and landed on Browse, which
+       answers "what rows exist" — rarely anybody's first question, and never
+       the first question on an app you did not write.
+
+       It RE-DERIVES NOTHING. Every number here comes from the endpoint that
+       owns it and every row links to the panel that can act on it, because a
+       second place that decides whether a migration is pending is a second
+       place that can be wrong about it. -->
+  <article class="view" id="panelOverview" hidden>
+    <div class="data-grid-wrap stack" id="ovBody">
+      <div class="empty"><span class="spinner"></span></div>
+    </div>
+  </article>
+
   <article class="view relative" id="panelBrowse">
     <div class="bar">
       <span class="text-muted" id="browseTableLabel">Select a table →</span>
@@ -1042,15 +1334,31 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
     </div>
   </article>
 
-  <!-- ── Schema — ER diagram ────────────────────────────────────────────── -->
+  <!-- ── Models — the ER diagram. The nav said "Schema" for this and
+       "schema.lite" for the file, two labels a file extension apart where the
+       one called Schema was the one that is not it. `model` is the Data
+       realm's noun and this panel is one card per model. Ids are unchanged —
+       #schema still opens it — so every existing link still lands. -->
   <article class="view relative" id="panelSchema" hidden>
     <div class="er-wrap" id="erWrap">
-      <div class="er-canvas" id="erCanvas">
+      <div class="er-canvas" id="erCanvas" onclick="if (event.target === this) erPin(null)">
         <svg class="er-svg" id="erSvg"></svg>
       </div>
     </div>
+    <!-- The legend says what the prominence MEANS. Without it the tiers are a
+         style somebody chose; with it they are two numbers a reader can check
+         against the card in front of them. -->
+    <div class="er-legend surface raised">
+      <span><b>hub</b> 3+ point at it</span>
+      <span><b>connector</b> 1–2 do</span>
+      <span><b>leaf</b> none do</span>
+      <span><b>isolate</b> no relations</span>
+      <span>left → right is dependency</span>
+      <span id="erFamLegend"></span>
+    </div>
     <div class="er-controls">
-      <button class="btn outlined" onclick="erLayout()">⟳ Reset layout</button>
+      <button class="btn outlined" id="erRowsBtn" onclick="erToggleRows()" title="Overlay row counts — the data, which is a different question from the shape">▦ Rows</button>
+      <button class="btn outlined" onclick="_erDragged.clear(); erLayout(true)">⟳ Reset layout</button>
       <button class="btn outlined" onclick="erFitAll()">⊡ Fit all</button>
       <button class="btn outlined" onclick="erExport('svg')" title="Download the diagram as SVG">⬇ SVG</button>
       <button class="btn outlined" onclick="erExport('png')" title="Download the diagram as PNG">⬇ PNG</button>
@@ -1060,13 +1368,15 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
   <!-- ── Explore ────────────────────────────────────────────────────────── -->
   <!-- Every other panel answers "what did you declare". This one answers "what
        is this language, and what of it am I using" — so a word with nothing
-       behind it is dimmed and still opens its card, and only the count is
-       allowed to say zero. -->
+       behind it reads exactly like one in use, and only the count says so. -->
   <article class="view" id="panelExplore" hidden>
     <div class="bar">
       <strong>Explore</strong>
       <nav class="cluster" id="exCrumb" aria-label="Breadcrumb"></nav>
       <div class="spacer"></div>
+      <button class="btn ghost compact" id="exViewToggle" onclick="exToggleView()"
+              aria-pressed="false">Table</button>
+      <span class="cluster" id="exTierFilter" role="group" aria-label="Filter by when you meet a word"></span>
       <input class="field" type="search" id="exSearch" aria-label="Search the language"
              placeholder="Search the language…" oninput="exRender()">
       <span class="text-muted" id="exCounts">—</span>
@@ -1391,6 +1701,7 @@ async function api(path, body, method) {
 
 async function boot() {
   const info = await api('/info')
+  tenantsEnabled = !!info.tenantsEnabled
   if (info.tenantsEnabled) document.getElementById('navTenantsItem').hidden = false
   if (info.activeTenant) {
     activeTenantId = info.activeTenant
@@ -1419,6 +1730,12 @@ async function boot() {
   schema        = info.schema
   softDeleteMap = info.softDelete || {}
 
+  // Counts are keyed by MODEL name (getRowCounts walks $schema.models), so the
+  // diagram never has to derive a table name — that answer lives in
+  // `modelToTableName` on the server and may live in exactly one place.
+  erCounts   = info.counts || {}
+  _erMaxRows = Math.max(0, ...Object.values(erCounts))
+
   // Header stats
   const s = info.stats || {}
   document.getElementById('hdrSize').textContent  = fmtBytes(s.size  || 0)
@@ -1435,12 +1752,14 @@ async function boot() {
   // Load users into auth picker
   loadAuthUsers()
 
+  restoreRail()
+
   // Open the panel the URL names. showTool was bound to `hashchange` only, so
   // a link to #query landed on Browse and the hash sat there disagreeing with
   // the page — the file's own note says "a Studio link can name the panel it
   // opens", and until now it could not. A bare load has no hash and falls to
   // the default.
-  showTool(location.hash.slice(1) || 'browse')
+  showTool(location.hash.slice(1) || 'overview')
 }
 
 
@@ -2268,12 +2587,292 @@ function renderTableInto(id, columns, rows) {
   document.getElementById(id).innerHTML = html
 }
 
+// ── The rail ──────────────────────────────────────────────────────────────────
+//
+// Collapsed is a class on <body> and a custom property; `.shell.viewport` reads
+// `--sidebar-width`, so nothing here touches layout directly.
+//
+// The choice is per-BROWSER and survives a reload — somebody who collapses the
+// rail on a narrow laptop means it, and a preference that resets on every visit
+// is worse than none. localStorage can throw outright (a private window, site
+// data blocked), so every read and write is guarded and a failure means the
+// rail simply opens.
+const RAIL_KEY = 'litestone.studio.rail'
+
+function setRail(collapsed) {
+  document.body.classList.toggle('rail-collapsed', collapsed)
+  const btn = document.getElementById('railToggle')
+  if (btn) {
+    btn.setAttribute('aria-expanded', String(!collapsed))
+    btn.title = collapsed ? 'Expand the sidebar (\\)' : 'Collapse the sidebar (\\)'
+    btn.querySelector('.visually-hidden').textContent = collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'
+  }
+  // The diagram is drawn against MEASURED geometry and the canvas is sized off
+  // the frame, so a rail that moves without a redraw leaves every FK line
+  // ending where its card used to be.
+  if (typeof erDrawLines === 'function' && schema) requestAnimationFrame(erDrawLines)
+}
+
+function toggleRail() {
+  const now = !document.body.classList.contains('rail-collapsed')
+  setRail(now)
+  try { localStorage.setItem(RAIL_KEY, now ? '1' : '0') } catch { /* nothing to remember it with */ }
+}
+
+// A collapsed icon has an accessible name and no VISIBLE one, which leaves a
+// sighted mouse user with a picture and no way to ask what it is. The title is
+// taken from the label already in the markup rather than written twice.
+function nameRailIcons() {
+  for (const a of document.querySelectorAll('.sidebar .navlink')) {
+    const label = a.querySelector('.navlink-text')?.textContent.trim()
+    if (label && !a.title) a.title = label
+  }
+}
+
+function restoreRail() {
+  nameRailIcons()
+  let v = null
+  try { v = localStorage.getItem(RAIL_KEY) } catch { /* a fresh rail is the right default */ }
+  setRail(v === '1')
+}
+
+// `\` because it is unshifted, on every layout, and bound to nothing here.
+// Refused while a field has focus — a shortcut that eats a character typed into
+// the SQL box is a shortcut people turn off.
+addEventListener('keydown', e => {
+  if (e.key !== '\\' || e.metaKey || e.ctrlKey || e.altKey) return
+  const t = e.target
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return
+  e.preventDefault()
+  toggleRail()
+})
+
+// ── Overview ──────────────────────────────────────────────────────────────────
+//
+// The landing panel. Its whole job is to be the first screen on an app nobody
+// in the room wrote, and it answers four questions in the order people ask
+// them: what is wrong, what shape is this, who may read it, where is the data.
+//
+// It OWNS nothing. `/drift` decides what has drifted, `/perf/advisor` decides
+// what is slow, `/access` decides what is open, `erGraph()` decides what a hub
+// is — this reads those four and links to the panel that can act. A front page
+// that re-decided any of them would be a second answer to a question that
+// already has an owner, and the two would disagree on the day it mattered.
+//
+// Every load is fresh. A front page is looked at after doing something
+// elsewhere, so a cached one shows the world as it was before the thing you
+// just did.
+
+async function ovInit() {
+  const body = document.getElementById('ovBody')
+  body.innerHTML = '<div class="empty"><span class="spinner"></span></div>'
+  try {
+    // Four independent reads, in parallel. A slow advisor must not hold up the
+    // drift row, which is the one somebody came here for.
+    const [drift, advisor, access, tenants, info] = await Promise.all([
+      api('/drift').catch(() => null),
+      api('/perf/advisor').catch(() => null),
+      api('/access').catch(() => null),
+      tenantsEnabled ? api('/tenants').catch(() => null) : null,
+      api('/info').catch(() => null),
+    ])
+
+    // Counts are re-read rather than taken from boot. Opening a tenant
+    // re-points every data endpoint, so the snapshot taken at startup describes
+    // a DIFFERENT database — and the front page would report the registry's row
+    // counts under the tenant's name with nothing saying so.
+    if (info?.counts) {
+      erCounts   = info.counts
+      _erMaxRows = Math.max(0, ...Object.values(erCounts))
+    }
+    activeTenantId = info?.activeTenant ?? activeTenantId
+
+    body.innerHTML = ovAttention(drift, advisor, access, tenants) + ovFacts(tenants) + `<div class="tiles">`
+      + ovShape() + ovAccess(access) + ovData() + `</div>` + ovTools()
+  } catch (e) {
+    body.innerHTML = `<div class="alert danger"><div class="alert-content">${esc(e.message)}</div></div>`
+  }
+}
+
+// A row is an ITEM somebody can act on, and it carries the panel that acts.
+// Reporting a problem with no way through to its owner is how a dashboard
+// becomes something people stop reading.
+function ovItem(tone, text, tool, label) {
+  return `<li class="list-row">
+    <span class="badge ${tone}">${tone === 'danger' ? 'fix' : tone === 'warning' ? 'check' : 'note'}</span>
+    <span class="clamp-1" style="flex:1">${text}</span>
+    <button class="btn outlined" onclick="showTool('${tool}')">${esc(label)} →</button>
+  </li>`
+}
+
+function ovAttention(drift, advisor, access, tenants) {
+  const items = []
+
+  // The first thing to say on a fleet, because every other number on this page
+  // is about whichever database is open. Under `tenancy { strategy database }`
+  // the base database holds the registry and almost nothing else — every shop's
+  // rows are in its own file — so an unselected tenant reads as an app with no
+  // data in it, which is the wrong conclusion and an easy one to reach.
+  if (tenants?.enabled && !tenants.activeTenant) {
+    const n = tenants.tenants?.length ?? 0
+    items.push(ovItem('info',
+      `no tenant open — every count below is the BASE database, and ${n === 1 ? 'the one tenant keeps its rows' : `each of ${n} tenants keeps its rows`} in a file of its own`,
+      'tenants', 'Tenants'))
+  }
+
+  const m = drift?.migrations || {}
+  if (m.pending)  items.push(ovItem('warning', `<b>${m.pending}</b> migration${m.pending === 1 ? '' : 's'} pending — the database is behind the schema`, 'migrations', 'Migrations'))
+  if (m.modified) items.push(ovItem('danger',  `<b>${m.modified}</b> migration file${m.modified === 1 ? '' : 's'} edited after being applied`, 'migrations', 'Migrations'))
+  if (m.orphaned) items.push(ovItem('danger',  `<b>${m.orphaned}</b> applied migration${m.orphaned === 1 ? '' : 's'} with no file`, 'migrations', 'Migrations'))
+  if (drift?.file?.changed) items.push(ovItem('warning', `<code>${esc(drift.file.path)}</code> was edited since Studio started`, 'lite', 'Schema'))
+  if (drift?.snapshot?.exists === false)     items.push(ovItem('warning', 'no access snapshot is committed — nothing fails when access widens', 'access', 'Access'))
+  else if (drift?.snapshot?.current === false) items.push(ovItem('warning', 'the committed access snapshot is stale', 'access', 'Access'))
+
+  const red  = (advisor?.issues || []).filter(i => i.severity === 'red').length
+  const amber = (advisor?.issues || []).length - red
+  if (red)   items.push(ovItem('danger',  `<b>${red}</b> index${red === 1 ? '' : 'es'} the advisor calls missing`, 'perf', 'Performance'))
+  if (amber) items.push(ovItem('warning', `<b>${amber}</b> further advisor note${amber === 1 ? '' : 's'}`, 'perf', 'Performance'))
+
+  // A model nothing gates is not the same as a model gated at 0. The first is
+  // a question nobody answered; the second is an answer.
+  const ungated = (access?.models || []).filter(x => !x.gateSource && !x.external).map(x => x.name)
+  if (ungated.length) items.push(ovItem('warning',
+    `<b>${ungated.length}</b> model${ungated.length === 1 ? '' : 's'} declare no <code>@@gate</code> — ${esc(ungated.slice(0, 4).join(', '))}${ungated.length > 4 ? ' …' : ''}`,
+    'access', 'Access'))
+
+  if (!items.length) return `<article class="card outlined">
+    <div class="surface-header">Needs attention</div>
+    <div class="empty">Nothing to report — no drift, no advisor findings, every model gated.</div>
+  </article>`
+
+  return `<article class="card outlined">
+    <div class="surface-header">Needs attention <span class="badge ${items.some(i => i.includes('danger')) ? 'danger' : 'warning'}">${items.length}</span></div>
+    <ul class="rows divided">${items.join('')}</ul>
+  </article>`
+}
+
+// The facts that are true regardless of what is wrong. A bar rather than a
+// tile: they are a caption on the app, not four separate statistics.
+function ovFacts(tenants) {
+  const dbs = (schema?.databases?.length || 1)
+  const bits = [
+    `<b>${schema?.models?.length ?? 0}</b> models`,
+    `<b>${dbs}</b> database${dbs === 1 ? '' : 's'}`,
+    `<b>${Object.values(erCounts).reduce((a, b) => a + b, 0).toLocaleString()}</b> rows`,
+    document.getElementById('hdrSize')?.textContent ? `<b>${document.getElementById('hdrSize').textContent}</b> on disk` : '',
+    activeTenantId ? `tenant <b>${esc(activeTenantId)}</b>`
+      : tenants?.enabled ? `<b>base database</b> — no tenant open` : '',
+    document.body.classList.contains('readonly') ? '<b>read-only</b>' : '',
+  ].filter(Boolean)
+  return `<div class="ov-facts">${bits.map(b => `<span>${b}</span>`).join('<span>·</span>')}</div>`
+}
+
+// Every panel, and the QUESTION it answers.
+//
+// Not a second nav. The rail on the left carries names — `Transform`, `Explore`,
+// `REPL` — and a name is exactly what does not tell somebody opening Studio for
+// the first time which of thirteen panels to click. What is repeated here is
+// the destination; what is new is the sentence.
+//
+// The three cards above are FINDINGS and this is a DIRECTORY, so a panel
+// appearing in both is not a duplicate: one says "something is wrong over
+// there", this says "that is what over there is for".
+const OV_TOOLS = [
+  ['browse',     'Browse',      'Read and edit rows, as any user, with the gates on'],
+  ['query',      'SQL Query',   'Raw SQL against the open database'],
+  ['repl',       'REPL',        'Real client code — db.users.findMany({ limit: 10 }) — through the same boundary an app uses'],
+  ['schema',     'Models',      'The relations, drawn: hubs, families, and what touches what'],
+  ['lite',       'Schema',      'Edit schema.lite and see the migration it implies before applying it'],
+  ['explore',    'Explore',     'The language itself — every word, and which of them this schema uses'],
+  ['access',     'Access',      'Who may read, write and delete each model, and what a policy filters'],
+  ['migrations', 'Migrations',  'What is applied, what is pending, and what drifted'],
+  ['perf',       'Performance', 'Missing indexes, and EXPLAIN for a query you paste'],
+  ['qlog',       'Query Log',   'Every statement this Studio has run, as it runs'],
+  ['stats',      'Stats',       'Size, pages, WAL, disk by table — and key rotation'],
+  ['transform',  'Transform',   'Copy or reshape a database into another one, a step at a time'],
+  ['tenants',    'Tenants',     'The fleet — which database each tenant has, and which one is open'],
+]
+
+function ovTools() {
+  const rows = OV_TOOLS
+    .filter(([id]) => id !== 'tenants' || tenantsEnabled)
+    .map(([id, name, what]) => `<button class="ov-tool" onclick="showTool('${id}')">
+      <span class="ov-tool-name">${esc(name)}</span>
+      <span class="ov-tool-what">${esc(what)}</span>
+    </button>`).join('')
+  return `<article class="card outlined">
+    <div class="surface-header">Every panel, and what it answers</div>
+    <div class="ov-tools">${rows}</div>
+  </article>`
+}
+
+function ovShape() {
+  if (!schema) return ''
+  const g = erGraph(), f = erFamilies()
+  const n = t => schema.models.filter(m => g.tier[m.name] === t)
+  const hubs = n('hub').sort((a, b) => g.inDeg[b.name] - g.inDeg[a.name])
+  return `<article class="card outlined">
+    <div class="surface-header">Shape</div>
+    <ul class="rows divided">
+      <li class="list-row ov-row"><span class="ov-k">Hubs</span>
+        <span class="ov-v" title="three or more models point at them">${hubs.map(m => esc(m.name)).join(', ') || '—'}</span></li>
+      <li class="list-row ov-row"><span class="ov-k">Isolates</span>
+        <span class="ov-v" title="no relations either way">${n('isolate').length}</span></li>
+      <li class="list-row ov-row"><span class="ov-k">Families</span>
+        <span class="ov-v" title="a name stem two or more models share">${f.shared.join(', ') || '—'}</span></li>
+    </ul>
+    <div class="ov-go"><button class="btn outlined" onclick="showTool('schema')">Models →</button></div>
+  </article>`
+}
+
+function ovAccess(access) {
+  const models = access?.models || []
+  if (!models.length) return ''
+  // Read at 0 is the one worth naming on a front page: it is the level at which
+  // a signed-out stranger is answered, and it is the right answer for a public
+  // catalogue and the wrong one for everything else.
+  const open   = models.filter(m => m.gate?.read === 0 && !m.external)
+  const locked = models.filter(m => Math.max(...Object.values(m.gate || { x: 0 })) >= 9)
+  const rows = [
+    ['Readable signed out', 'answered to a caller with no session', open.length, open.map(m => m.name).join(', ')],
+    ['Locked',              'no level passes — asSystem() only',     locked.length, locked.map(m => m.name).join(', ')],
+    ['Row policy',          '@@allow / @@deny filters the result',   models.filter(m => m.policies && Object.keys(m.policies).length).length, ''],
+  ]
+  return `<article class="card outlined">
+    <div class="surface-header">Access</div>
+    <ul class="rows divided">${rows.map(([label, why, count, names]) => `
+      <li class="list-row ov-row"><span class="ov-k" title="${esc(why)}">${label}</span>
+        <span class="ov-v" title="${esc(names)}">${esc(names)}</span>
+        <span class="badge ${count ? 'info' : 'muted'}">${count}</span></li>`).join('')}</ul>
+    <div class="ov-go"><button class="btn outlined" onclick="showTool('access')">Access →</button></div>
+  </article>`
+}
+
+function ovData() {
+  const top = Object.entries(erCounts).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).slice(0, 8)
+  const max = top[0]?.[1] || 1
+  return `<article class="card outlined">
+    <div class="surface-header">Where the data is</div>
+    ${top.length ? `<ul class="rows divided">${top.map(([name, n]) => `
+      <li class="list-row count-row"><span class="clamp-1">${esc(name)}</span>
+        <span class="text-muted">${n.toLocaleString()}</span>
+        <progress class="progress" max="${max}" value="${n}"></progress></li>`).join('')}</ul>`
+      : '<div class="empty">Every table is empty.</div>'}
+    <div class="ov-go"><button class="btn outlined" onclick="showTool('browse')">Browse →</button></div>
+  </article>`
+}
+
 // ── Schema ────────────────────────────────────────────────────────────────────
 
 // ── ER Diagram ───────────────────────────────────────────────────────────────
 
 let erPositions = {}   // { modelName: { x, y } }
 let erDragging  = null // { el, ox, oy, startX, startY }
+// A card somebody moved is theirs. Everything else re-packs whenever the cards
+// change height — turning the row overlay on adds a bar to all forty of them,
+// and a layout that only placed NEW models would leave the whole diagram
+// overlapping by exactly one bar.
+const _erDragged = new Set()
 
 // Map each database name to a CSS class slot
 function getDbClass(dbName, driver) {
@@ -2290,6 +2889,192 @@ function getDbClass(dbName, driver) {
   return idx >= 0 ? `er-db-${idx + 1}` : 'er-db-main'
 }
 
+// ── The two numbers, and the four names they give ─────────────────────────────
+//
+// A diagram of 39 identical cards has no dimension: everything looks equally
+// important, so a reader has nowhere to start. What gives it one is already in
+// the picture — the FK edges. Two counts per model:
+//
+//   inDeg  — how many OTHER models point at it
+//   outDeg — how many it points at
+//
+// Deliberately NOT blended into a score. A score needs weights, the weights
+// have no authority behind them, nothing can ever fail because they are wrong,
+// and the ranking it produces cannot answer *why this card is big* — which is
+// the question the panel exists for. Four named tiers instead, each true or
+// false by inspection:
+//
+//   hub        three or more models point at it
+//   connector  one or two do
+//   leaf       none do, but it points at something
+//   isolate    no edges at all
+//
+// `isolate` is the one that pays. In `example` it is 11 of 39 — auth machinery,
+// the outbox, lookup tables — scattered through the old grid at full
+// prominence. They are the supporting cast and now they park together.
+//
+// Row counts are NOT in here. They measure the data, not the design; they are
+// all zero on a fresh app, which is exactly when a reader needs orientation
+// most; and the largest tables are usually the least architecturally
+// interesting (logs, jobs, events). They ride their own opt-in channel instead.
+let _erGraph = null, _erGraphFor = null
+let erCounts = {}, _erMaxRows = 0
+let tenantsEnabled = false
+
+function erGraph() {
+  if (_erGraph && _erGraphFor === schema) return _erGraph
+  const models = schema.models
+  const inDeg = {}, outDeg = {}, out = {}
+  for (const m of models) { inDeg[m.name] = 0; outDeg[m.name] = 0; out[m.name] = [] }
+
+  for (const m of models) {
+    // One edge per (source, target) PAIR. `createdBy` and `updatedBy` both
+    // reaching User is one model pointing at another, not two — the question
+    // is how many models depend on this one, not how many columns do.
+    const seen = new Set()
+    for (const f of m.fields) {
+      if (f.type.kind !== 'relation') continue
+      const rel = f.attributes.find(a => a.kind === 'relation')
+      if (!rel?.fields) continue                       // hasMany side — same edge, other end
+      const target = f.type.name
+      if (target === m.name || seen.has(target) || inDeg[target] == null) continue
+      seen.add(target)
+      out[m.name].push(target)
+      outDeg[m.name]++
+      inDeg[target]++
+    }
+  }
+
+  const tier = {}
+  for (const m of models) {
+    const i = inDeg[m.name], o = outDeg[m.name]
+    tier[m.name] = (!i && !o) ? 'isolate' : i >= 3 ? 'hub' : i === 0 ? 'leaf' : 'connector'
+  }
+
+  // Column = longest path along the FK direction, so a model always sits to the
+  // RIGHT of everything it points at and every line flows the same way. A
+  // circular FK is a real shape here (`Circular foreign key reference` is a
+  // startup note, not an error), so the walk treats a back-edge as depth 0 —
+  // deterministic given declaration order, which is what keeps the layout
+  // stable across reloads.
+  const depth = {}, state = {}
+  const walk = n => {
+    if (state[n] === 2) return depth[n]
+    if (state[n] === 1) return 0
+    state[n] = 1
+    let d = 0
+    for (const t of out[n]) d = Math.max(d, walk(t) + 1)
+    state[n] = 2
+    return (depth[n] = d)
+  }
+  for (const m of models) walk(m.name)
+
+  // Undirected, for the hover focus: *what touches this* has no direction.
+  const neighbors = {}
+  for (const m of models) neighbors[m.name] ??= new Set()
+  for (const m of models) for (const t of out[m.name]) { neighbors[m.name].add(t); neighbors[t].add(m.name) }
+
+  let maxDepth = 0
+  for (const m of models) if (tier[m.name] !== 'isolate') maxDepth = Math.max(maxDepth, depth[m.name])
+
+  _erGraphFor = schema
+  return (_erGraph = { inDeg, outDeg, depth, tier, maxDepth, neighbors })
+}
+
+// ── Families ──────────────────────────────────────────────────────────────────
+//
+// `Product` / `ProductVariant` / `ProductImage` are one subject and read as
+// three strangers. The FK edge between them is drawn, but at 34 lines on one
+// canvas following any single one is work.
+//
+// The stem is the first PascalCase WORD, and a stem becomes a family only when
+// two or more models share it — a family of one is not a family, and coloring
+// it would make the color mean nothing. `Customer` and `CustomField` split to
+// `Customer` and `Custom`, which is the answer wanted; `Payslip` and `PayRun`
+// split to `Payslip` and `Pay`, which is arguable and predictable, and
+// predictable is the half that matters.
+//
+// NOT a hash of the name. A hash destroys similarity by construction, which is
+// the whole property being asked for — `Product` and `ProductVariant` differ by
+// one character and would land at unrelated hues. And not a hash of the stem
+// either: a hash cannot promise two families look DIFFERENT, and nine families
+// drawn out of 360 degrees collide often enough to matter. The families are
+// sorted and walked by the golden angle instead, so they sit as far apart as N
+// families can, and adding a model to an existing one moves no color.
+//
+// Hue is identity here and never a tone — the same license the per-database
+// palette above takes, for the same reason and with the same limit: it says
+// "the same subject as that one" and nothing about good or bad.
+const ER_GOLDEN_ANGLE = 137.508
+
+function erStem(name) {
+  // PascalCase head. A leading run of capitals is one word (`APIKey` → `API`),
+  // and a name that is not PascalCase at all (`auditLogs`) is its own stem.
+  const m = /^([A-Z][a-z0-9]*|[A-Z]+(?![a-z])|[a-z0-9]+)/.exec(name)
+  return m ? m[1] : name
+}
+
+let _erFamilies = null, _erFamiliesFor = null
+
+function erFamilies() {
+  if (_erFamilies && _erFamiliesFor === schema) return _erFamilies
+  const members = {}
+  for (const m of schema.models) (members[erStem(m.name)] ??= []).push(m.name)
+
+  const shared = Object.keys(members).filter(k => members[k].length > 1).sort()
+  const hue = {}, stem = {}
+  shared.forEach((k, i) => { hue[k] = Math.round(i * ER_GOLDEN_ANGLE) % 360 })
+  for (const m of schema.models) {
+    const k = erStem(m.name)
+    if (hue[k] != null) stem[m.name] = k
+  }
+  _erFamiliesFor = schema
+  return (_erFamilies = { stem, hue, members, shared })
+}
+
+// The row overlay. Off by default: it answers a different question from the
+// rest of the panel and turning it on is how a reader says which one they are
+// asking.
+let _erShowRows = false
+
+// Set once the cards have been laid out against MEASURED heights.
+let _erMeasured = false
+
+function erInit() {
+  if (_erMeasured || !schema) return
+  _erMeasured = true
+  erLayout(true)
+
+  // The legend names the families rather than saying "color means a family".
+  // A reader looking at a spine wants to know WHICH one, and the stem is the
+  // only thing that answers it — the card says `ProductVariant` and the family
+  // is `Product`, which is not the same word.
+  const f = erFamilies()
+  const el = document.getElementById('erFamLegend')
+  if (el) el.innerHTML = f.shared.length
+    ? f.shared.map(k => `<span class="er-tier-mark" style="--er-family:${f.hue[k]}"><span class="er-legend-fam"></span>${esc(k)}</span>`).join(' ')
+    : ''
+}
+
+function erToggleRows() {
+  _erShowRows = !_erShowRows
+  const btn = document.getElementById('erRowsBtn')
+  if (btn) btn.className = _erShowRows ? 'btn primary' : 'btn outlined'
+  renderSchema()
+}
+
+function erRowsBar(name) {
+  if (!_erShowRows) return ''
+  const n   = (erCounts && erCounts[name]) ?? 0
+  const max = _erMaxRows || 1
+  // log, because a table with 4 rows beside one with 400k is invisible linearly
+  const pct = n <= 0 ? 0 : Math.max(4, Math.round(Math.log10(n + 1) / Math.log10(max + 1) * 100))
+  return `<div class="er-rows">
+    <span>${n.toLocaleString()}</span>
+    <span class="er-rows-track"><span class="er-rows-fill" style="inline-size:${pct}%"></span></span>
+  </div>`
+}
+
 function renderSchema() {
   if (!schema) return
   const canvas = document.getElementById('erCanvas')
@@ -2299,7 +3084,8 @@ function renderSchema() {
   svg.innerHTML = ''
 
   const models = schema.models
-  erLayout(false)
+  const g      = erGraph()
+  const fams   = erFamilies()
 
   for (const model of models) {
     const dbAttr = model.attributes?.find(a => a.kind === 'db')
@@ -2308,9 +3094,16 @@ function renderSchema() {
     const driver = dbDef?.driver ?? 'sqlite'
     const dbClass = getDbClass(dbName, driver)
 
+    const tier = g.tier[model.name]
+    const fam  = fams.stem[model.name]
     const el = document.createElement('div')
-    el.className = `surface raised er-table ${dbClass}`
+    el.className = `surface raised er-table ${dbClass} er-${tier}${fam ? ' er-fam' : ''}`
     el.dataset.model = model.name
+    el.dataset.tier  = tier
+    if (fam) {
+      el.dataset.family = fam
+      el.style.setProperty('--er-family', fams.hue[fam])
+    }
     el.style.left = (erPositions[model.name]?.x ?? 40) + 'px'
     el.style.top  = (erPositions[model.name]?.y ?? 40) + 'px'
 
@@ -2322,13 +3115,22 @@ function renderSchema() {
     // Show DB label only in multi-DB mode and only when it's not main
     const showDbLabel = multiDb && dbName !== 'main'
 
+    // The tier is stated on the card as well as drawn. A reader who can see
+    // that a card is prominent still cannot see WHY, and `4 in` is the whole
+    // reason — it is the number the tier was read off, not a restatement of it.
+    const inDeg = g.inDeg[model.name]
+    const mark  = tier === 'isolate' ? 'unlinked'
+                : tier === 'leaf'    ? `${g.outDeg[model.name]} out`
+                : `${inDeg} in`
+
     let html = `<div class="surface-header">
       <span class="er-table-name">${esc(model.name)}</span>
+      <span class="er-tier-mark" title="${tier === 'isolate' ? 'no relations either way' : tier === 'leaf' ? 'nothing points at this model' : inDeg + ' model(s) point at this one'}">${mark}</span>
       ${isSoft ? '<span class="badge info">soft</span>' : ''}
       ${hasFts  ? '<span class="badge warning">fts5</span>' : ''}
       ${isAuto  ? '<span class="badge muted">auto</span>' : ''}
       ${showDbLabel ? `<span class="badge er-db-label">${esc(dbName)}</span>` : ''}
-    </div>`
+    </div>${erRowsBar(model.name)}`
 
     for (const field of model.fields) {
       if (field.type.kind === 'relation') continue
@@ -2351,69 +3153,122 @@ function renderSchema() {
 
     el.innerHTML = html
 
+    // Hover focus. The static channels answer *where do I look*; this answers
+    // *what touches THIS one*, which no amount of tier or hue can, because the
+    // question is about one card and is asked one card at a time.
+    el.addEventListener('mouseenter', () => erFocus(model.name))
+    el.addEventListener('mouseleave', () => erFocus(null))
+
     // Drag support
     el.addEventListener('mousedown', e => {
       if (e.target.tagName === 'BUTTON') return
-      erDragging = { el, ox: el.offsetLeft, oy: el.offsetTop, startX: e.clientX, startY: e.clientY }
+      erDragging = { el, ox: el.offsetLeft, oy: el.offsetTop, startX: e.clientX, startY: e.clientY, moved: false }
       e.preventDefault()
+    })
+
+    // Click pins the focus. A drag ends in a click event too, so the pin is
+    // refused unless the pointer stayed still — 3px, because a mouse moves a
+    // little under a real finger and a pin that needs a perfectly still hand is
+    // a pin nobody can hit.
+    el.addEventListener('click', () => {
+      if (_erDragMoved) return
+      erPin(_erPinned === model.name ? null : model.name)
     })
 
     canvas.appendChild(el)
   }
 
-  // Draw FK lines after layout
-  requestAnimationFrame(erDrawLines)
+  // A re-render replaces every card, so a pin has to be re-applied or it
+  // survives in the variable and nowhere a reader can see.
+  if (_erPinned) requestAnimationFrame(() => erPin(_erPinned))
+
+  // Layout runs AFTER the cards are in the DOM. Column packing stacks by
+  // measured height, and a 26-field card is four times a 6-field one — the
+  // fixed row pitch this replaced overlapped every tall model with the one
+  // below it.
+  erLayout(false)
 }
 
-function erLayout(reset = true) {
-  if (!schema) return
-  const models = schema.models
-  const gapX = 260, gapY = 320, padX = 40, padY = 60
+// A pin is a focus that outlives the pointer. Hover cannot survive a scroll —
+// the canvas is 3000px tall and the pointer leaves the card on the way — so the
+// interactive channel was only usable on whatever happened to be on screen.
+let _erPinned = null, _erDragMoved = false
 
-  if (multiDb && schema.databases?.length > 1) {
-    // Group by database — each database gets its own column cluster
-    const dbOrder = schema.databases.map(d => d.name)
-    const groups  = {}
-    for (const m of models) {
-      const db = m.attributes?.find(a => a.kind === 'db')?.name ?? 'main'
-      if (!groups[db]) groups[db] = []
-      groups[db].push(m)
-    }
-    let colOffset = 0
-    for (const dbName of dbOrder) {
-      const grpModels = groups[dbName] ?? []
-      if (!grpModels.length) continue
-      const cols = Math.max(1, Math.ceil(Math.sqrt(grpModels.length)))
-      grpModels.forEach((m, i) => {
-        if (!reset && erPositions[m.name]) return
-        erPositions[m.name] = {
-          x: padX + (colOffset + (i % cols)) * gapX,
-          y: padY + Math.floor(i / cols) * gapY,
-        }
-      })
-      colOffset += cols + 0.6   // gap between database groups
-    }
-  } else {
-    // Single-DB: simple grid
-    const gridCols = Math.ceil(Math.sqrt(models.length))
-    models.forEach((m, i) => {
-      if (!reset && erPositions[m.name]) return
-      erPositions[m.name] = {
-        x: padX + (i % gridCols) * gapX,
-        y: padY + Math.floor(i / gridCols) * gapY,
-      }
-    })
-  }
-
-  // Update DOM
+function erPin(name) {
+  _erPinned = name
+  erFocus(name)
   const canvas = document.getElementById('erCanvas')
   if (!canvas) return
-  for (const m of models) {
-    const el = canvas.querySelector(`[data-model="${m.name}"]`)
-    if (el) {
-      el.style.left = erPositions[m.name].x + 'px'
-      el.style.top  = erPositions[m.name].y + 'px'
+  for (const el of canvas.querySelectorAll('.er-table'))
+    el.classList.toggle('er-pinned', !!name && el.dataset.model === name)
+}
+
+// Esc is the way out that needs no target. Clicking the canvas is the other,
+// and it is on the canvas rather than the wrap so a click on a card — which
+// bubbles — does not immediately unpin what it just pinned.
+addEventListener('keydown', e => { if (e.key === 'Escape' && _erPinned) erPin(null) })
+
+function erFocus(name) {
+  const canvas = document.getElementById('erCanvas')
+  if (!canvas || erDragging) return          // dragging is not browsing
+  if (_erPinned && name !== _erPinned) return   // a pin outranks the pointer
+  const cards = canvas.querySelectorAll('.er-table')
+  const links = canvas.querySelectorAll('.er-link, .er-link-dot')
+  if (!name) {
+    canvas.classList.remove('er-focused')
+    for (const el of cards) el.classList.remove('er-near')
+    for (const el of links) el.classList.remove('er-link-on')
+    return
+  }
+  const near = erGraph().neighbors[name] ?? new Set()
+  canvas.classList.add('er-focused')
+  for (const el of cards)
+    el.classList.toggle('er-near', el.dataset.model === name || near.has(el.dataset.model))
+  for (const el of links)
+    el.classList.toggle('er-link-on', el.dataset.from === name || el.dataset.to === name)
+}
+
+// reset: true — place every card, drags included (the Reset layout button).
+//        false — re-pack everything the reader has not moved by hand.
+function erLayout(reset = true) {
+  if (!schema) return
+  const canvas = document.getElementById('erCanvas')
+  if (!canvas) return
+  const g = erGraph()
+  const padX = 40, padY = 60, colGap = 120, rowGap = 32, fallbackW = 180, fallbackH = 140
+
+  // One column per depth, isolates parked in a lane of their own past the end.
+  // Database identity is NOT what columns mean any more — it is the card tone,
+  // and it was the only thing position carried before, which left the strongest
+  // channel on the page spending itself on a fact already shown in color.
+  const columns = []
+  for (const m of schema.models) {
+    const col = g.tier[m.name] === 'isolate' ? g.maxDepth + 1 : g.depth[m.name]
+    ;(columns[col] ??= []).push(m)
+  }
+
+  let x = padX
+  for (const list of columns) {
+    if (!list) continue
+    let y = padY, widest = fallbackW
+    for (const m of list) {
+      const el = canvas.querySelector(`[data-model="${m.name}"]`)
+      const h  = el?.offsetHeight || fallbackH
+      const w  = el?.offsetWidth  || fallbackW
+      // Within a column, declaration order. The author already grouped these
+      // models when they wrote the file, and that grouping is the only signal
+      // here nobody had to derive.
+      if (reset || !_erDragged.has(m.name)) erPositions[m.name] = { x, y }
+      y += h + rowGap
+      if (w > widest) widest = w
     }
+    x += widest + colGap
+  }
+
+  for (const m of schema.models) {
+    const el = canvas.querySelector(`[data-model="${m.name}"]`)
+    const pos = erPositions[m.name]
+    if (el && pos) { el.style.left = pos.x + 'px'; el.style.top = pos.y + 'px' }
   }
   requestAnimationFrame(erDrawLines)
 }
@@ -2433,6 +3288,7 @@ function erFitAll() {
 
 function erDrawLines() {
   if (!schema) return
+  const fams   = erFamilies()
   const svg    = document.getElementById('erSvg')
   const canvas = document.getElementById('erCanvas')
   if (!svg || !canvas) return
@@ -2448,22 +3304,40 @@ function erDrawLines() {
       const toEl   = canvas.querySelector(`[data-model="${field.type.name}"]`)
       if (!fromEl || !toEl) continue
 
-      const fx = fromEl.offsetLeft + fromEl.offsetWidth
-      const fy = fromEl.offsetTop  + fromEl.offsetHeight / 2
-      const tx = toEl.offsetLeft
+      // Which side each end leaves from is decided per pair, not fixed. The
+      // layout puts a model to the right of everything it points at, so the
+      // common case is source-right → target-left — but a card can be dragged
+      // anywhere, and a hard-coded pair of sides draws a line that loops back
+      // through both cards to reach an edge behind it.
+      const fy = fromEl.offsetTop + fromEl.offsetHeight / 2
       const ty = toEl.offsetTop   + toEl.offsetHeight / 2
+      const leftward = toEl.offsetLeft + toEl.offsetWidth / 2 < fromEl.offsetLeft + fromEl.offsetWidth / 2
+      const fx = leftward ? fromEl.offsetLeft : fromEl.offsetLeft + fromEl.offsetWidth
+      const tx = leftward ? toEl.offsetLeft + toEl.offsetWidth : toEl.offsetLeft
 
       // Bezier curve
       const cx = (fx + tx) / 2
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-      path.setAttribute('class', 'er-link')
+      // An edge whose two ends are the same subject is drawn in that subject's
+      // hue. It is the same fact as the spine said twice, on purpose: the spine
+      // is what you scan and the line is what you follow, and the pair is what
+      // makes `Order → OrderLine` legible in a field of 34 crossing links.
+      const fam = fams.stem[model.name] && fams.stem[model.name] === fams.stem[field.type.name]
+        ? fams.stem[model.name] : null
+      path.setAttribute('class', 'er-link' + (fam ? ' er-link-fam' : ''))
+      if (fam) path.style.setProperty('--er-family', fams.hue[fam])
+      path.dataset.from = model.name
+      path.dataset.to   = field.type.name
       path.setAttribute('d', `M${fx},${fy} C${cx},${fy} ${cx},${ty} ${tx},${ty}`)
       svg.appendChild(path)
 
       // Dots at endpoints
       for (const [px, py] of [[fx, fy],[tx, ty]]) {
         const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
-        dot.setAttribute('class', 'er-link-dot')
+        dot.setAttribute('class', 'er-link-dot' + (fam ? ' er-link-fam' : ''))
+        if (fam) dot.style.setProperty('--er-family', fams.hue[fam])
+        dot.dataset.from = model.name
+        dot.dataset.to   = field.type.name
         dot.setAttribute('cx', px)
         dot.setAttribute('cy', py)
         dot.setAttribute('r', 3)
@@ -2491,13 +3365,20 @@ document.addEventListener('mousemove', e => {
   const { el, ox, oy, startX, startY } = erDragging
   const newX = Math.max(0, ox + e.clientX - startX)
   const newY = Math.max(0, oy + e.clientY - startY)
+  if (Math.abs(e.clientX - startX) > 3 || Math.abs(e.clientY - startY) > 3) erDragging.moved = true
   el.style.left = newX + 'px'
   el.style.top  = newY + 'px'
   erPositions[el.dataset.model] = { x: newX, y: newY }
   requestAnimationFrame(erDrawLines)
 })
 
-document.addEventListener('mouseup', () => { erDragging = null })
+document.addEventListener('mouseup', () => {
+  // `click` fires after `mouseup`, so the verdict has to outlive the drag by
+  // one event rather than be read off `erDragging`, which is already null.
+  _erDragMoved = !!erDragging?.moved
+  if (erDragging?.moved) _erDragged.add(erDragging.el.dataset.model)
+  erDragging = null
+})
 
 // ── Migrations ────────────────────────────────────────────────────────────────
 
@@ -3236,6 +4117,109 @@ function exInstances(word) {
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 
+// Cards or a table, over the same set of words. Two shapes of one list rather
+// than two lists: the box grid is for finding a word you have not met, and the
+// table is for the reader who knows roughly where it is and wants it in one
+// screen. Both come out of `exWordList`, so a set of words cannot be drawn one
+// way here and another way there.
+let _exList = false
+const EX_TIERS = ['essential', 'common', 'situational']
+let _exTiers = new Set(EX_TIERS)
+
+function exToggleTier(tier) {
+  if (_exTiers.has(tier)) _exTiers.delete(tier)
+  else _exTiers.add(tier)
+  exRender()
+}
+
+function exAllTiers() { _exTiers = new Set(EX_TIERS); exRender() }
+
+/** The tier filter, drawn from the same list the words are graded against. */
+function exTierPills() {
+  return EX_TIERS.map(t => {
+    const on = _exTiers.has(t)
+    const n  = _catalog.filter(r => r.tier === t).length
+    // On is a TONE and off is the muted one, because two states of one control
+    // have to differ by more than a border a filter row is full of.
+    return `<button type="button" class="pill ${on ? 'primary' : 'muted'}" aria-pressed="${on}"
+      onclick="exToggleTier('${t}')">${t[0].toUpperCase() + t.slice(1)} <span class="ex-count">${n}</span></button>`
+  }).join('')
+}
+
+// An untiered word is never filtered out: it is the state that means somebody
+// has to look, so hiding it behind a filter is the one thing it must not do.
+function exTierPasses(r) { return !r.tier || _exTiers.has(r.tier) }
+
+function exToggleView() {
+  _exList = !_exList
+  const b = document.getElementById('exViewToggle')
+  b.textContent = _exList ? 'Cards' : 'Table'
+  b.setAttribute('aria-pressed', String(_exList))
+  exRender()
+}
+
+// The three the language itself has, in the order the reference reads them.
+const EX_LEVELS = [
+  ['schema', 'Declarations'],
+  ['field',  'Field attributes'],
+  ['model',  'Model attributes'],
+]
+
+/** One set of words, drawn the way the toggle says. */
+function exWordList(all, use, blurbFor = (r) => r.blurb) {
+  const rows = all.filter(exTierPasses)
+  if (!rows.length)
+    return `<div class="empty"><span class="empty-text">${
+      _exTiers.size ? `Nothing here is ${[..._exTiers].join(' or ')}.` : 'Every tier is filtered out.'
+    }</span>
+      <button class="btn outlined compact" onclick="exAllTiers()">Show every tier</button></div>`
+  if (!_exList) return `<div class="ex-grid">${rows.map(r => exWordBox(r, use, blurbFor)).join('')}</div>`
+  return EX_LEVELS.map(([level, title]) => {
+    const mine = rows.filter(r => r.level === level).sort((a, b) => a.word.localeCompare(b.word))
+    if (!mine.length) return ''
+    return `<div class="ex-list-group"><h3 class="ex-list-head">${esc(title)}</h3>
+      <table class="table striped hover compact">
+        <colgroup><col class="ex-col-word"><col class="ex-col-tier"><col class="ex-col-group"><col class="ex-col-used"><col></colgroup>
+        <thead><tr><th>Word</th><th>When</th><th>Group</th><th class="ex-num">Used</th><th>What it does</th></tr></thead>
+        <tbody>${mine.map(r => exWordRow(r, use, blurbFor)).join('')}</tbody>
+      </table></div>`
+  }).join('')
+}
+
+function exWordBox(r, use, blurbFor = (x) => x.blurb) {
+  const n = use.get(r.level + ':' + r.word) || 0
+  return exBox({
+    word:  exTyped(r.level, r.word),
+    count: n,
+    blurb: blurbFor(r),
+    empty: n === 0,
+    go:    exGoFor(r),
+  })
+}
+
+function exWordRow(r, use, blurbFor = (x) => x.blurb) {
+  const n = use.get(r.level + ':' + r.word) || 0
+  // The card badges a word the language has dropped. Without the same badge
+  // here the table would be the one place a dropped word reads as live.
+  // The row is the target, and the word is a real button so the table is
+  // reachable by keyboard — a `tr` with an onclick is not.
+  return `<tr onclick="${exGoFor(r)}">
+    <td><button type="button" class="btn ghost compact ex-word"
+        onclick="event.stopPropagation();${exGoFor(r)}">${esc(exTyped(r.level, r.word))}</button></td>
+    <td class="ex-tier" data-tier="${esc(r.tier ?? 'none')}">${esc(r.tier ?? '—')}</td>
+    <td class="text-muted">${esc(_exGroups[r.group] ?? r.group)}${
+      r.removed ? ` <span class="badge danger">removed</span>` : ''}</td>
+    <td class="ex-num"><span class="badge ${n ? 'info' : 'muted'}">${n}</span></td>
+    <td class="ex-blurb">${esc(blurbFor(r))}</td>
+  </tr>`
+}
+
+function exGoFor(r) {
+  return r.level === 'schema'
+    ? `exGo({kind:'top',word:'${r.word}'})`
+    : `exGo({kind:'word',word:'${r.word}',level:'${r.level}'})`
+}
+
 function exGo(view) {
   _exView    = view
   _exPreview = null
@@ -3255,6 +4239,7 @@ function exRender() {
     `${used} of ${rows.length} words in use`
 
   exCrumbs()
+  document.getElementById('exTierFilter').innerHTML = exTierPills()
   body.innerHTML =
       q                        ? exSearch(q, use)
     : _exView.kind === 'word'  ? exWordCard(_exView.word, _exView.level, use)
@@ -3287,25 +4272,23 @@ function exCrumbs() {
 
 function exHome(use) {
   const top = _catalog.filter(r => r.level === 'schema')
-  const boxes = top.map(r => {
-    const n = use.get('schema:' + r.word) || 0
-    return exBox({
-      word:  r.word,
-      count: n,
-      blurb: r.blurb,
-      empty: n === 0,
-      go:    `exGo({kind:'top',word:'${r.word}'})`,
-    })
-  }).join('')
 
-  return `
-    <section class="stack">
+  // Card mode arrives at an attribute through its GROUP, because a wall of 63
+  // boxes is not a place to start looking. The table skips the grouping — it is
+  // for the reader who already knows roughly what they want and would rather
+  // scan than click, so it draws every word at once, by level and then A–Z.
+  const index = _exList
+    ? `<section class="stack">${exWordList(_catalog, use)}</section>`
+    : `<section class="stack">
       <div class="section-header"><h2>Declarations</h2>
-        <span class="text-muted">the nine words a .lite file can begin a block with</span></div>
-      <div class="ex-grid">${boxes}</div>
+        <span class="text-muted">the ${top.length} words a .lite file can begin a block with</span></div>
+      ${exWordList(top, use)}
     </section>
     ${exGroupSection(use, 'field', 'Field attributes', 'what a column can be told to do')}
-    ${exGroupSection(use, 'model', 'Model attributes', 'what a table can be told to do')}
+    ${exGroupSection(use, 'model', 'Model attributes', 'what a table can be told to do')}`
+
+  return `
+    ${index}
     <section class="stack">
       <div class="section-header"><h2>Coming the other way</h2>
         <span class="text-muted">a question rather than an index</span></div>
@@ -3325,9 +4308,10 @@ function exHome(use) {
 function exGroupSection(use, level, title, sub) {
   const groups = []
   for (const key of Object.keys(_exGroups)) {
-    const rows = _catalog.filter(r => r.level === level && r.group === key)
+    const rows = _catalog.filter(r => r.level === level && r.group === key && exTierPasses(r))
     if (rows.length) groups.push({ key, rows })
   }
+  if (!groups.length) return ''
   const boxes = groups.map(g => {
     const used = g.rows.filter(r => (use.get(level + ':' + r.word) || 0) > 0).length
     return exBox({
@@ -3347,7 +4331,7 @@ function exGroupSection(use, level, title, sub) {
 }
 
 function exBox({ word, count, blurb, empty, go, mono = true }) {
-  return `<button type="button" class="ex-box" data-empty="${empty}" onclick="${go}">
+  return `<button type="button" class="ex-box" onclick="${go}">
     <span class="cluster">
       <span class="${mono ? 'ex-word' : ''}">${esc(String(word))}</span>
       <span class="spacer"></span>
@@ -3423,18 +4407,7 @@ function exInstanceCard(word, i) {
 }
 
 function exGroupDetail(level, group, use) {
-  const rows = _catalog.filter(r => r.level === level && r.group === group)
-  const boxes = rows.map(r => {
-    const n = use.get(level + ':' + r.word) || 0
-    return exBox({
-      word:  exTyped(level, r.word),
-      count: n,
-      blurb: r.blurb,
-      empty: n === 0,
-      go:    `exGo({kind:'word',word:'${r.word}',level:'${level}'})`,
-    })
-  }).join('')
-  return `<div class="ex-grid">${boxes}</div>`
+  return exWordList(_catalog.filter(r => r.level === level && r.group === group), use)
 }
 
 function exWordCard(word, level, use) {
@@ -3476,9 +4449,18 @@ function exCard(row, count) {
   </article>`
 }
 
+// A synonym is searched like the word itself and is REPORTED, because a reader
+// who typed `aggregate` has to leave knowing the word is @from — a silent hit
+// answers the question and teaches nothing. Which synonym matched rides on the
+// row so the box can say it (`catalog.js` § SYNONYMS is the list).
+function exSynonymHit(r, q) {
+  return (r.synonyms ?? []).find(sy => sy.includes(q)) ?? null
+}
+
 function exSearch(q, use) {
-  const hit = _catalog.filter(r =>
-    r.word.toLowerCase().includes(q) || r.blurb.toLowerCase().includes(q) || (r.arity || '').toLowerCase().includes(q))
+  const direct = r =>
+    r.word.toLowerCase().includes(q) || r.blurb.toLowerCase().includes(q) || (r.arity || '').toLowerCase().includes(q)
+  const hit = _catalog.filter(r => direct(r) || exSynonymHit(r, q))
   const names = []
   for (const w of ['model', 'view', 'enum', 'type', 'function', 'database'])
     for (const i of exInstances(w))
@@ -3487,17 +4469,11 @@ function exSearch(q, use) {
   if (!hit.length && !names.length)
     return `<div class="empty"><span class="empty-text">Nothing in the language or the schema matches “${esc(q)}”.</span></div>`
 
-  const wordBoxes = hit.map(r => exBox({
-    word:  exTyped(r.level, r.word),
-    count: use.get(r.level + ':' + r.word) || 0,
-    blurb: r.blurb,
-    empty: !(use.get(r.level + ':' + r.word) || 0),
-    go:    `exGo({kind:'${r.level === 'schema' ? 'top' : 'word'}',word:'${r.word}',level:'${r.level}'})`,
-  })).join('')
+  const blurbFor = (r) => direct(r) ? r.blurb : `“${exSynonymHit(r, q)}” is this word. ${r.blurb}`
 
   return `
     ${hit.length ? `<section class="stack"><div class="section-header"><h2>Words</h2></div>
-      <div class="ex-grid">${wordBoxes}</div></section>` : ''}
+      ${exWordList(hit, use, blurbFor)}</section>` : ''}
     ${names.length ? `<section class="stack"><div class="section-header"><h2>Declared here</h2></div>
       <div class="ex-grid">${names.map(n => exInstanceCard(n.w, n.i)).join('')}</div></section>` : ''}`
 }
@@ -3833,11 +4809,11 @@ async function exAdvise() {
 }
 
 const IV_QUESTIONS = [
-  { key: 'callerReads',  q: 'Does a request get this value back?',
+  { key: 'callerReads',  cat: 'Read',    q: 'Does a request get this value back?',
     yes: 'Yes — it comes out in a read', no: 'No — a caller never sees it' },
-  { key: 'callerWrites', q: 'May a request put a value in it?',
+  { key: 'callerWrites', cat: 'Write',   q: 'May a request put a value in it?',
     yes: 'Yes — a caller sends it', no: 'No — only the application writes it' },
-  { key: 'stored',       q: 'Is there a column for it?',
+  { key: 'stored',       cat: 'Storage', q: 'Is there a column for it?',
     yes: 'Yes — it is stored', no: 'No — nothing is written down' },
 ]
 
@@ -3845,10 +4821,10 @@ function exInterview() {
   const a = _ivAnswer
   const asked = IV_QUESTIONS.filter(q => a[q.key] !== null).length
 
-  const questions = IV_QUESTIONS.map(({ key, q, yes, no }) => `
+  const questions = IV_QUESTIONS.map(({ key, cat, q, yes, no }) => `
     <div class="ex-card stack">
-      <b>${esc(q)}</b>
-      <div class="cluster">
+      <div><span class="ex-cat">${esc(cat)}</span><b>${esc(q)}</b></div>
+      <div class="iv-choices">
         <button class="btn ${a[key] === true  ? 'primary' : 'outlined'}" onclick="exAnswer('${key}', true)">${esc(yes)}</button>
         <button class="btn ${a[key] === false ? 'primary' : 'outlined'}" onclick="exAnswer('${key}', false)">${esc(no)}</button>
       </div>
@@ -3856,8 +4832,9 @@ function exInterview() {
 
   const perCaller = `
     <div class="ex-card stack">
-      <b>Does the answer depend on WHO is asking?</b>
-      <div class="cluster">
+      <div><span class="ex-cat">Audience — not part of the row</span>
+        <b>Does answer depend on WHO is asking?</b></div>
+      <div class="iv-choices">
         <button class="btn ${a.perCaller ? 'primary' : 'outlined'}" onclick="exAnswer('perCaller', true)">Yes — some callers, not others</button>
         <button class="btn ${a.perCaller ? 'outlined' : 'primary'}" onclick="exAnswer('perCaller', false)">No — the same for everyone</button>
       </div>
@@ -3867,7 +4844,7 @@ function exInterview() {
     <section class="stack">
       <div class="section-header"><h2>Which word do I want?</h2>
         <span class="text-muted">three answers, one row of the visibility table</span></div>
-      <div class="ex-grid">${questions}${perCaller}</div>
+      <div class="ex-grid ex-interview">${questions}${perCaller}</div>
     </section>
     ${asked < 3 ? `<div class="alert info"><div class="alert-content">
         ${3 - asked} more to answer.</div></div>` : exInterviewAnswer()}`
@@ -4003,13 +4980,13 @@ function exTyped(level, word) {
 
 // ── Tool navigation ───────────────────────────────────────────────────────────
 
-const TOOLS = ['browse','query','schema','explore','access','migrations','stats','repl','qlog','tenants','transform','perf','lite']
+const TOOLS = ['overview','browse','query','schema','explore','access','migrations','stats','repl','qlog','tenants','transform','perf','lite']
 
 // The tool is in the location hash, so back/forward work and a Studio link can
 // name the panel it opens. The nav is anchors for the same reason: a <div
 // onclick> is not reachable by keyboard and announces nothing.
 function showTool(tool) {
-  if (!TOOLS.includes(tool)) tool = 'browse'
+  if (!TOOLS.includes(tool)) tool = 'overview'
   if (location.hash.slice(1) !== tool) location.hash = tool
   for (const t of TOOLS) {
     // [hidden] rather than a class: an unstyled Studio still shows one panel.
@@ -4018,6 +4995,11 @@ function showTool(tool) {
     if (t === tool) link.setAttribute('aria-current', 'page')
     else            link.removeAttribute('aria-current')
   }
+  // A hidden element measures 0, so the column packing that runs at boot stacks
+  // every card on a fallback height and a 26-field model lands under the one
+  // below it. The first reveal is the first moment a height is real.
+  if (tool === 'overview')   ovInit()
+  if (tool === 'schema')     erInit()
   if (tool === 'explore')    exInit()
   if (tool === 'access')     acInit()
   if (tool === 'migrations') loadMigrations()

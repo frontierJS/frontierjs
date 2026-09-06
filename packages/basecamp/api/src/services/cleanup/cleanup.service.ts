@@ -98,7 +98,11 @@ export function createCleanupService(app: BasecampApp) {
     // updated by the job; `create` and `patch` from the wire would let a
     // caller record a sweep that never happened, which is the one thing this
     // model exists to rule out.
-    methods: ['find', 'get', 'usage', 'targets', 'report', 'run', 'startRun', 'finishRun'],
+    // `report` is the outpost's: no session, HMAC at the transport, so it
+    // states gate 0 rather than taking a custom method's read-gate floor
+    // (`FJS-826`).
+    methods: ['find', 'get', 'usage', 'targets', 'run', 'startRun', 'finishRun',
+              { method: 'report', gate: 0 }],
 
 
     // ── startRun / finishRun — the engine's writes ───────────────────
@@ -336,7 +340,7 @@ export function createCleanupService(app: BasecampApp) {
 
       if (serverId && !fleet.has(serverId)) throw new NotFound(`Server '${serverId}' not found`)
 
-      // Refused by NAME, never quietly dropped. A target nothing recognises is
+      // Refused by NAME, never quietly dropped. A target nothing recognizes is
       // a target nothing deletes, and a sweep that silently did four of the
       // five things asked of it reads as a sweep that did all five.
       const targets = data.targets?.length

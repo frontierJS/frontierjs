@@ -233,6 +233,65 @@ src/
   false for the whole life of a running app, which is what keeps
   `_finalizeWithHeaders`'s no-op fast path intact.
 
+- **The AI battery is a shape, not a provider** (`FJS-D215`). `IAIModel`,
+  `AIBuilder` and `AIRegistry` stay; `createOpenAIModel` and
+  `createAnthropicModel` are gone, with the hardcoded hosts, the 2023
+  `anthropic-beta` and the two `fetch` calls that had no deadline. An app's
+  adapter reaches its vendor through `app.conduit`, where the deadline and the
+  auth header are declared per target rather than restated per provider.
+
+- **A custom method is documented as a HEADER, not as a path, and the spec is
+  graded by calling it.** `/{service}/{id}/{method}` answered 404 for its whole
+  life — the wire dispatches `POST /{service}/{id}` on `X-Service-Method` — and
+  CRUD verbs were documented whatever `methods:` allowed, so six documented
+  operations were three 405s and a 404 (`FJS-902`). What a service answers now
+  comes from `describe().methods`. **The header is the only address and that is
+  ruled** (`FJS-D218`): a second path form would be a second place for the gate,
+  the idempotency claim and the allow-list to be applied, and the collapsed
+  operation is a fact about OpenAPI rather than about the design. `tests/openapi-round-trip.test.ts` calls every
+  documented operation against the app that produced the spec, which is the only
+  shape that catches drift nobody predicted. The docs page is hand-written HTML
+  with two caller-supplied values in it and its CDN reference is PINNED.
+
+- **`/health` is readiness, `/health/live` is liveness, and they disagree during a
+  drain.** A failed liveness probe restarts the process and a failed readiness
+  probe stops traffic, so one endpoint answering both restarted every replica when
+  a third party went down (`FJS-901`). Liveness consults nothing — a draining
+  process is still alive, or the orchestrator kills the drain. Checks are
+  concurrent and bounded (`checkTimeout`, 2000ms); one that never settled meant no
+  answer at all. `/metrics` renders Prometheus exposition when `Accept` asks and
+  JSON otherwise; only NUMBERS become metrics, which is what bounds cardinality.
+
+- **A cache value is JSON, and both drivers are held to it by ONE test body.**
+  The memory driver and the SQLite one disagreed eleven measured ways —
+  reference semantics against value semantics, a `Date` back as a `Date` or as a
+  string, `clear()` answering a count or 0, `clear(prefix)` a substring or a
+  prefix, FIFO eviction — so swapping the driver, which is the only reason there
+  is an interface, changed answers (`FJS-898`). One codec now decides what a
+  value may be, and it decides by JSON, because a Litestone row already IS JSON
+  and so is every response and every frame. Anything JSON would silently lose
+  throws at `set()` naming the key and the way out; the memory driver stores the
+  ENCODED value, which is what makes `get()` hand back something a caller cannot
+  mutate the cache through. `getOrSet` is the read-through and is single-flight.
+  Do not hand-clone around it — `buildCacheHooks` did, and a hook's clone cannot
+  be true of a driver it has never heard of. `tests/cache-conformance.test.ts`
+  runs one body against both; a test per driver cannot see a divergence at all.
+
+- **A payload key that names no field of the model is a 400; a field the caller
+  may not WRITE is still dropped in silence** (`FJS-889`). The strip is
+  mass-assignment protection and is right about the second kind — `id` on a
+  create, `createdAt`, a `@guarded` column, every one of which a client PUTting
+  back a row it fetched sends on every write. It was wrong about the first:
+  `{ title, titel: 'typo' }` answered 201 with the typo gone, which is a write
+  the caller believed had happened. The field set is read off `$schema.models`
+  and **not** off the generated documents — `createdAt` and `updatedAt` are in
+  no mode `create`/`update`/`read` emits, so a document-derived set would refuse
+  exactly the legitimate echo above. Checked per ROW, so a bulk write still
+  partitions; a declared `input:` type is the same rule against its own
+  properties. The escape is `@transient` and the refusal names it. There is no
+  *did you mean*: litestone owns the typo hint and exports neither of its two
+  `editDistance` copies, and a third would be a new origin for it.
+
 - **`update` is `patch` with an id REQUIRED, and it MERGES** (`FJS-D179`).
   Feathers' word for the verb is a full replace and this is not one: the write is
   litestone's `table.update`, so a `PUT` stating only `title` leaves every column
@@ -394,13 +453,21 @@ src/
   `db.$readAs(accessor, row, principal)` at the Data boundary — the rule is
   declared there and a second implementation of it is a second answer to who may
   read — and this owns the fan-out and nothing else.
-  **The unit is a COHORT**, keyed on the principal's object identity, because
-  the term that multiplies is the ENCODING and not the verdict: Phoenix says so
-  about `handle_out` ("encoded N times instead of a single shared encoding") and
-  measured here it is 288 ns against 684 ns. Two tabs of one person are one
-  verdict and one frame; a hashed key would collide two people. Over 100
-  connections — 14.9 µs where the model needs no grading, 49.8 µs for one
-  cohort, 445.6 µs for 100 distinct principals.
+  **The unit is a COHORT**, keyed on the principal's VALUE — a canonical
+  serialization of the session, memoised on the object `verifySession`
+  answered — because the term that multiplies is the ENCODING and not the
+  verdict: Phoenix says so about `handle_out` ("encoded N times instead of a
+  single shared encoding") and measured here it is 288 ns against 684 ns. Two
+  tabs of one person are one verdict and one frame; a hashed key would collide
+  two people, and OBJECT identity collapsed nothing at all, because
+  `verifySession` runs per socket and answers a fresh object every time
+  (`FJS-764`). Over 100 connections — 14.9 µs where the model needs no grading,
+  49.8 µs for one cohort, 445.6 µs for 100 distinct principals; against a real
+  Data boundary, 100 sockets of ONE person went 606.7 µs → 75.5 µs when the key
+  stopped being the object. Serialization REFUSES anything with a prototype of
+  its own — a class instance, a Map, a function — and falls back to the object,
+  because collapsing two principals that are not the same is the one mistake
+  here that delivers a row to somebody who may not read it.
   **Three things are deliberately NOT graded and none is a hole**: a model
   `$readGrading` calls `open` (gate 0, no read policy, no field policy — a
   catalogue), a LIST payload (a bulk write announces a COUNT, which names no
@@ -448,6 +515,15 @@ src/
   irregular — graded to nobody, silently. A channel that grades to nobody warns
   once per service, because a correct refusal and a misresolved accessor look
   identical from the send side.
+  **The index is model → a SET of services, and a DECLARED `model:` is the only
+  spelling that service claims** (`FJS-765`). Holding one name per model, the
+  suppression compared against the winner and every OTHER service over that
+  model was told nothing — measured on two services over one `Order`, a write
+  through the loser announced only the winner and an `asSystem()` write announced
+  only the winner, with registration order deciding which. The declared-only
+  claim is the second half: the old build made the name-derived claim first and
+  let the declared one override the key it named, so a service called `orders`
+  over `model: 'Invoice'` went on receiving `Order` writes.
 - **`typeof db.x` on a Litestone client is a THROWING expression, and a
   `$setAuth` proxy carries fewer `$`-members than the root** (`FJS-673`). The
   probe is `'x' in db`, and answering it is only half the job: `$tapQuery`,
@@ -515,10 +591,27 @@ src/
   way to do that. `targets: { allowHttp, allowPrivate }` is the opt-out and the
   only thing in this repo that turns it off is the delivery suite, whose
   receiver is a real server on localhost.
-  **The payload is still ungraded** (`FJS-724`): a delivery carries the row as
-  the WRITER saw it, which is `FJS-631` one layer over — and `$readAs` does not
-  apply unchanged, because a subscriber is not a principal and there is nobody
-  to grade against.
+- **A webhook subscriber is an AUDIENCE, and it is read rather than stated**
+  (`FJS-D193`). A delivery carried whatever the bus emitted — measured,
+  `deliver('users:created', { …, password: 'hunter2' })` arrived in full
+  (`FJS-724`). `FJS-631` one layer over, and `$readAs` does not carry across
+  unchanged because a URL is not a principal. What makes it carry is that a
+  REGISTRATION had one: the audience is READ from the principal in scope at
+  registration, stored as an ID and re-resolved at every delivery — caravan's
+  answer for a job, on a longer fuse. **Read and not stated is the security
+  property**: `sessionFor` must never be wired to anything a request can name,
+  and `manage` (5) is the bar for creating a registration, so an audience the
+  registrant chose would make 5 the bar for receiving anything.
+  **Three answers, and the line between the last two is the design**: *graded*;
+  *ungraded* where grading was never APPLICABLE (no Data boundary, an event
+  naming no model, a payload that is not a row), delivered with the floor and
+  said once; *refused* where it was applicable and unanswerable — nothing sent
+  and **no pending row**, because a payload nobody may read must not sit in a
+  retry table for a day. `$protectedFields` is the floor on the ungraded path
+  alone, by name at any depth; under grading it would be a second reading of a
+  rule the boundary already applied. **ABSENT is not `null`** — a custom store
+  that cannot record an audience answers `undefined`, which is *cannot say* and
+  not *nobody*, and its deliveries go out ungraded saying so.
 - **`sessionGateLevel` does not read `role`, and a test written against one
   grades 4.** A standing is `isAdmin`/`isOwner`/`isSystemAdmin` plus the two
   lifecycle fields; an app's own `role` column is not consulted whatever it
@@ -766,12 +859,31 @@ src/
   calls the same call within a tenant and was never asked about the tenant, so
   it cannot opt out; `cache: { shared: true }` is the declared opt-out, and it is
   the app's statement to make.
-- **The outbox relay sweeps every database the request path can write to.** One
-  per tenant off the registry, and the dispatch names the tenant so the handler
-  writes back to the file the row came from. An app built with both
-  `createApp({ db })` and `createApp({ tenants })` holding the model in both is
-  refused at BOOT — `assertOutboxShape`, not the pass, because `pass()` logs and
-  continues and the failure is a queue that quietly never drains.
+- **The outbox relay sweeps every database the request path can write to, COLD
+  and once per tick.** One per tenant off the registry, and the dispatch names
+  the tenant so the handler writes back to the file the row came from. An app
+  built with both `createApp({ db })` and `createApp({ tenants })` holding the
+  model in both is refused at BOOT — `assertOutboxShape`, not the pass, because
+  `pass()` logs and continues and the failure is a queue that quietly never
+  drains; it opens no tenant to answer that, since the question is decidable
+  from `app.db` and the registry's presence.
+  **The walk goes through `registry.query`**, litestone's own scan-resistant
+  path, and everything here that needs the database set goes through
+  `forEachOutboxDatabase` rather than a `list()` + `get()` loop. `get(id)` is the
+  REQUEST path's verb and promotes into the pool, so a relay's timer using it
+  made the walk the working set: measured against a real registry, one idle pass
+  over 20 tenants evicted the tenant that had just been served, and it happened
+  three times per tick because deliver, sweep and count each resolved the
+  registry (`FJS-778`). `outboxPass` is one traversal, and **the post-commit
+  kick names its own database** — the call knows the client it wrote the row
+  through — which is what leaves the timer as pure crash recovery.
+- **A row that keeps failing is given up on.** `maxAttempts` (default 10) with a
+  doubling backoff on `nextAttemptAt`; past the cap the row is not deleted and
+  not stamped — it stops matching the relay's query, counts as `dead` rather
+  than `pending`, and fails the readiness check, which is the only thing in the
+  process that says an effect is never going to happen. Dead is DERIVED from
+  `attempts` against the cap, so raising the number revives every row it covers;
+  `maxAttempts: 0` is the old behavior, retried on every tick forever.
 - **`createApp({ principal })` is where a claim gets onto the principal, and the
   ordering is the feature.** It runs INSIDE `withLitestoneDb`/`withTenantDb` —
   after the client is scoped to the caller, before `next()` — because
@@ -890,6 +1002,14 @@ src/
   earlier one, so it is refused and counted on `stale`, which a view renders as
   *3 new — refresh* and `load()` clears. The limit and offset come off the
   ENVELOPE, not the params — the effective limit is the server's.
+  **A list with a `limit` and NO `orderBy` is in the same position and takes the
+  same answer** (`FJS-766`). Nothing can place the row, so at the page size it is
+  counted rather than appended — appending unconditionally is what this did, and
+  the list then grew without bound: 3000 pushes into a `limit: 20` load reached
+  3003 rows and 221 MB of RSS. It bounds GROWTH alone: a row already on the page
+  takes `apply`'s `present` branch and never reaches the bound, and a page that
+  is not yet full still appends. Trimming instead would drop a server row chosen
+  at random, which is worse than not showing it.
 - **`resource().load()` writes the store only if it is still the newest load.**
   Stamped when issued (`FJS-082`); an overtaken load still RETURNS its rows to
   the caller that awaited them, and its request is not cancelled. Code reading
@@ -950,13 +1070,29 @@ src/
   being wrong.
 - **Fake clients hide real bugs.** Cross-package behavior goes in
   `tests/real-litestone-client.test.ts`, against a real client.
-- **`tests/email.test.ts` calls `mock.module()` on the smtp shim, and bun does
-  not undo that.** The replacement is process-wide for the rest of the run, so
-  any later test importing `src/mail/smtp.ts` grades the mock — one passed alone
-  and failed inside the suite, which is the good outcome; the bad one is passing
-  in both. `tests/smtp-starttls.test.ts` and `tests/mail-injection.test.ts` both drive a
-  subprocess for that reason — the second one measured it: five assertions went
-  green in isolation and failed in the full run, against the mock.
+- **No test file may name a port.** Bun runs every file in ONE process and an
+  app's `stop()` does not finish before the next file's `start()` begins, so a
+  shared port means a socket is answered by another file's app mid-shutdown —
+  which reached the client as `Expected 101 status code` and was reported as the
+  connection-cap assertion failing, one run in three and then every run
+  (`FJS-900`). Three files bound 3396 and four bound 3397. Ask for `port: 0` and
+  read `app.http.port` back after `start()`. `tests/test-ports.test.ts` refuses a
+  second file naming the same port.
+
+- **Nothing here mocks a module any more, and it must stay that way.**
+  `mock.module()` is applied PROCESS-WIDE by bun and never undone, so
+  `tests/email.test.ts`'s five calls on the smtp shim made every later file grade
+  the mock — measured, five assertions green in isolation and failing in the full
+  run — and three suites spawned a subprocess to escape it. The transport is
+  INJECTED now: `createSystemSender(config, { transport })`, defaulting to the
+  real client, which is Outpost's runner one package over (`FJS-908`).
+  All three suites came home and stayed green, which is what proves the mock was
+  the only cause. **Their assertions are real `expect`s now, not stdout
+  matching** (`FJS-909`): an `ok <name>` line a parent greps for cannot fail when
+  it is not reached, so a renamed row or a probe that exits early read as a pass
+  — 2 greps became 42 assertions. For a double at the interface,
+  `createTestMailer()` in `@frontierjs/testing` — it refuses exactly what the
+  real mailer refuses.
 - **`ctx.result` must be `null`, not absent**, when hand-building a context in a
   test — `runPipeline` reads non-null as "a before hook already answered".
 - **The HTTP and WS paths build their context separately** — `bridge.toContext()`

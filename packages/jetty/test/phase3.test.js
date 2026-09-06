@@ -380,6 +380,70 @@ group('createResource — hook pipeline')
     }
   }
 
+  // A hook that breaks the chain is refused by name rather than resolving the
+  // call to the `null` the context was born with — the three shapes below all
+  // used to hand a screen an "answer" and throw a TypeError one hop later.
+  // Each is PAIRED with the legitimate version, because a guard that refused
+  // both would make the around phase useless for what it is for (`FJS-351`).
+  {
+    const { ResourceHookError } = await import('../src/resources/resource.js')
+
+    // (a) an around that forgets next()
+    const r = createResource('h1', { hooks: { around: { all: [async () => {}] } } })
+    try {
+      await r.service.find({})
+      bad('an around that forgot next() resolved instead of throwing')
+    } catch (e) {
+      if (e instanceof ResourceHookError && e.phase === 'around'
+          && e.message.includes('h1.find') && e.message.includes('next()'))
+        ok('an around that forgot next() is refused, naming the way out')
+      else bad('wrong error for a forgotten next()', e.message)
+    }
+
+    // (a-control) …one that short-circuits WITH an answer is honored, and the
+    // port is never asked. Skipping the call is the point of the phase.
+    const r2 = createResource('h2', {
+      hooks: { around: { all: [async (c) => { c.result = { cached: true } }] } },
+    })
+    const cached = await r2.service.find({})
+    if (cached?.cached === true) ok('an around that sets a result short-circuits')
+
+    // (a-control) …and `null` assigned on purpose is an answer, not a break.
+    const r3 = createResource('h3', {
+      hooks: { around: { all: [async (c) => { c.result = null }] } },
+    })
+    if (await r3.service.find({}) === null) ok('an around answering null is honored')
+
+    // (b) an around that swallows the failure
+    const r4 = createResource('h4', {
+      hooks: { around: { all: [async (c, next) => { try { await next() } catch {} }] } },
+    })
+    port._enqueueResponse(() => Promise.reject(new Error('boom')))
+    try {
+      await r4.service.find({})
+      bad('a swallowed failure reported success')
+    } catch (e) {
+      if (e instanceof ResourceHookError) ok('an around that swallows the failure is refused')
+      else bad('wrong error for a swallowed failure', e.message)
+    }
+
+    // (c) an error hook that clears ctx.error and sets nothing. The failure it
+    // discarded rides on `cause` — without it the outage is invisible and the
+    // report is only "your hook is wrong".
+    const r5 = createResource('h5', {
+      hooks: { error: { all: [(c) => { c.error = null }] } },
+    })
+    port._enqueueResponse(() => Promise.reject(new Error('discarded')))
+    try {
+      await r5.service.find({})
+      bad('an error hook cleared the error and answered null')
+    } catch (e) {
+      if (e instanceof ResourceHookError && e.phase === 'error' && e.cause?.message === 'discarded')
+        ok('an error hook that recovers with nothing is refused, carrying the cause')
+      else bad('wrong error for an empty recovery', e.message)
+    }
+  }
+
   // resource.hooks() merges after creation
   {
     const order = []

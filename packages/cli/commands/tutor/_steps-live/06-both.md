@@ -47,7 +47,7 @@ if (!await must(context, {
   asked: `a frame carrying ${title}`,
   got:   heard.signedIn.length ? `${heard.signedIn.length} frame(s)` : 'no frames at all',
 }, {
-  likely: 'the publish did not go out — step 4 is the one that failed',
+  likely: 'the publish did not go out — step 4 is the one that would have failed',
 })) return
 
 if (!await must(context, {

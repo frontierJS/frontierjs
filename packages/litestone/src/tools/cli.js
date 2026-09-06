@@ -20,7 +20,7 @@ import { Database }                                from 'bun:sqlite'
 // import.meta.dir remains correct for locating files NEXT TO the source at
 // runtime — but see IS_COMPILED: inside a standalone binary there is no such
 // directory, so on-disk assets must be embedded instead (see studio.html).
-import { parse, parseFile, inlineImports, inlineImportsFromDisk } from '../core/parser.js'
+import { parse, parseFile, inlineImports, inlineImportsFromDisk, resolveImportSpecifier } from '../core/parser.js'
 import { buildPristine, introspect, diffSchemas,
          generateMigrationSQL, summariseDiff }         from '../core/migrate.js'
 import { create, apply, status, verify,
@@ -30,7 +30,7 @@ import { create, apply, status, verify,
 import { backupSqliteTo }                              from '../core/backup.js'
 import { schemaAnchor, noteMintedDirectory }          from '../core/db-path.js'
 import { resolveTenancy }                              from '../core/tenancy.js'
-import { CATALOG, GROUPS, POSITIONS, positionsOf, docFor } from '../core/catalog.js'
+import { CATALOG, GROUPS, POSITIONS, positionsOf, docFor, synonymsFor, tierFor } from '../core/catalog.js'
 import { modelToAccessor, modelToTableName }           from '../core/ddl.js'
 
 // Assets that must survive `bun build --compile`. A text import is embedded in
@@ -207,7 +207,7 @@ const HELP = `
     ${cyan('litestone types')} [out.d.ts]            generate TypeScript declarations from schema
     ${dim('  --only=users,posts')}                  only emit types for specified models
     ${dim('  --audience=client|system')}             field visibility (default: client)
-    ${cyan('litestone studio')}                     open local web UI
+    ${cyan('litestone studio')} [--no-open]        open local web UI
     ${cyan('litestone repl')} [--as|--level|--gate]  a console that boots at a gate level
     ${cyan('litestone doctor')}                     check setup, audit health
     ${cyan('litestone seed')} [SeederClass]             seed the database
@@ -2162,8 +2162,17 @@ async function cmdStudio(cfg) {
             name:   db.name,
             driver: db.driver ?? 'sqlite',
           }))
+          // Which file is `main`? Asked of the CLIENT, because a declaration wins
+          // over `cfg.db`, which loadConfig always answers — `./development.db`
+          // when nothing said otherwise. So every app that declares its databases
+          // was told through this field that it was on a file the studio had
+          // never opened. The printed banner asks the schema for the same reason
+          // (`FJS-449`); this field went on answering the default.
+          const mainMeta = activeDb.$databases?.main
+          const mainPath = (mainMeta && (!mainMeta.driver || mainMeta.driver === 'sqlite') && mainMeta.path)
+            || (cfg.db ? resolve(cfg.db) : null)
           return json({
-            dbPath:     cfg.db ? resolve(cfg.db) : null,
+            dbPath:     mainPath,
             schema:     liveSchema,
             softDelete: softDeleteMap,
             stats,
@@ -2462,7 +2471,8 @@ async function cmdStudio(cfg) {
         // browser gets an answer instead of a second copy of POSITION_RULES.
         if (path === '/api/catalog')
           return json({
-            catalog:   CATALOG.map(r => ({ ...r, positions: positionsOf(r), doc: docFor(r) })),
+            catalog:   CATALOG.map(r => ({ ...r, positions: positionsOf(r), doc: docFor(r),
+                                          synonyms: synonymsFor(r), tier: tierFor(r) })),
             groups:    GROUPS,
             positions: POSITIONS,
           })
@@ -3503,10 +3513,14 @@ async function cmdStudio(cfg) {
   } else if (cfg.db) console.log(`  ${dim('db:')}     ${rel(resolve(cfg.db))}`)
   console.log(`  ${dim('Press Ctrl+C to stop')}\n`)
 
-  // Open browser
-  const opener = process.platform === 'darwin' ? 'open'
-    : process.platform === 'win32' ? 'start' : 'xdg-open'
-  try { Bun.spawn([opener, url]) } catch {}
+  // Open browser. `--no-open` is what a script wants: a studio started by a
+  // test or a tutorial spawns a browser window on the machine running it, which
+  // on a CI runner is a process nobody closes.
+  if (!flag('no-open')) {
+    const opener = process.platform === 'darwin' ? 'open'
+      : process.platform === 'win32' ? 'start' : 'xdg-open'
+    try { Bun.spawn([opener, url]) } catch {}
+  }
 }
 
 
@@ -3762,7 +3776,7 @@ async function cmdAdvise(cfg) {
 
 
 async function cmdExplain(word) {
-  const { CATALOG, GROUPS, POSITIONS, POSITION_RULES, positionsOf, typed, lookup, grouped, docFor } =
+  const { CATALOG, GROUPS, POSITIONS, POSITION_RULES, positionsOf, typed, lookup, grouped, docFor, bySynonym } =
     await import('../core/catalog.js')
   const { VISIBILITY, PER_CALLER } = await import('../core/advise.js')
 
@@ -3812,6 +3826,21 @@ async function cmdExplain(word) {
   const rows  = typedPrefix
     ? [lookup(word)].filter(Boolean)
     : CATALOG.filter(r => r.word === bare)
+
+  // A synonym is an exact hit, not a guess: `aggregate` IS @from, and answering
+  // "not a word this language has" is true and useless. The line says which
+  // word answered, because the point is to leave knowing it.
+  const viaSynonym = rows.length ? null : bySynonym(bare)
+  if (viaSynonym) {
+    if (asJson) {
+      process.stdout.write(JSON.stringify(
+        [{ ...viaSynonym, positions: positionsOf(viaSynonym), doc: docFor(viaSynonym), matchedSynonym: bare }], null, 2) + '\n')
+      return
+    }
+    console.log()
+    console.log(`  ${dim(bare)} ${dim('is not a word — the word is')} ${cyan(typed(viaSynonym))}`)
+    rows.push(viaSynonym)
+  }
 
   if (!rows.length) {
     const near = suggestWords(CATALOG, bare, typed)
@@ -4157,7 +4186,8 @@ async function cmdAccessDiff(cfg, from, { asJson, strict }) {
     return
   }
 
-  if (before?.note) console.log(`  ${yellow('!')}  ${before.note}`)
+  if (baseline.note) console.log(`  ${yellow('!')}  ${baseline.note}`)
+  if (before?.note)  console.log(`  ${yellow('!')}  ${before.note}`)
 
   const mark  = result.verdict === 'widens' ? red('✗') : result.verdict === 'unknown' ? yellow('!') : green('✓')
   const lines = formatAccessDiff(result, { baseline: baseline.label })
@@ -4346,6 +4376,10 @@ async function cmdRelease(cfg) {
   }
 
   const mark = result.verdict === 'contract' ? red('✗') : result.verdict === 'unknown' ? yellow('!') : green('✓')
+  // Said on a baseline that RESOLVED, which is the only case where it is not
+  // obvious: a baseline that lost an import compares cleanly against a smaller
+  // schema and reports every model it dropped as newly added.
+  if (baseline.note) console.log(`  ${yellow('!')}  ${baseline.note}`)
   if (before?.note) console.log(`  ${yellow('!')}  ${before.note}`)
 
   const lines = formatVerdict(result, { baseline: baseline.label })
@@ -4377,11 +4411,42 @@ function loadBaselineSchema(from, schemaPath) {
 
   if (existsSync(from) && statSync(from).isFile()) {
     // rel() walks up out of the project for a file in /tmp, which reads as a
-    // path nobody typed. Shortest of the two is the one a person recognises.
+    // path nobody typed. Shortest of the two is the one a person recognizes.
     const abs = resolve(from), r = rel(abs)
-    const { text, missing: gone } = inlineImportsFromDisk(abs)
-    missing.push(...gone)
-    return { text, label: `\`${r.length < abs.length ? r : abs}\``, note: noteFor(null) }
+
+    // A baseline is a COPY of this schema at another moment, and its `import`
+    // lines mean the files the schema imports — but a relative specifier
+    // resolves against whatever directory the copy was put in, so a baseline
+    // kept anywhere but beside the schema silently loses every imported model
+    // and the comparison then reports the whole of an imported package as newly
+    // added. Its own directory is still asked FIRST: a baseline that brought
+    // its neighbours with it means those, and a schema whose imports have since
+    // been rewritten must not have today's files read into yesterday's release.
+    // The schema's directory is the fallback, and borrowing is stated.
+    const borrowed = []
+    const text = inlineImports(readFileSync(abs, 'utf8'), abs, {
+      resolveChild: (parent, spec) => {
+        const here = resolveImportSpecifier(spec, parent).path
+        if (existsSync(here)) return here
+        const there = resolveImportSpecifier(spec, schemaPath).path
+        if (!existsSync(there)) return here     // report it against the baseline's own path
+        borrowed.push(spec)
+        return there
+      },
+      read: (p) => { try { return readFileSync(p, 'utf8') } catch { return null } },
+      seen: new Set([abs]),
+      missing,
+    })
+
+    const label = `\`${r.length < abs.length ? r : abs}\``
+    const notes = []
+    if (borrowed.length)
+      notes.push(`${borrowed.length === 1 ? 'an import was' : `${borrowed.length} imports were`} read from ` +
+                 `${rel(dirname(resolve(schemaPath)))} rather than beside the baseline (${borrowed.join(', ')})`)
+    const gone = noteFor(null)
+    if (gone) notes.push(gone)
+
+    return { text, label, note: notes.length ? notes.join('; ') : null }
   }
 
   const root = git(['rev-parse', '--show-toplevel'])
@@ -5587,11 +5652,30 @@ async function cmdBackup(dest, cfg) {
       const srcDir  = resolve(info.path)
       const destDir = resolve(resolvedDest, name)
       if (!existsSync(srcDir)) {
-        // Database paths resolve against the process CWD, not the schema file —
-        // so running this from the wrong directory silently produced a partial
-        // backup that reported success.
+        // A jsonl/logger database is a DIRECTORY the driver creates on its first
+        // write, so absent has two causes and they are not the same fact. Both
+        // used to be `backup INCOMPLETE` and exit 1, which made the first deploy
+        // of every app report that its restore point did not exist — and a
+        // refusal that fires on every ordinary run teaches an operator to ignore
+        // the one that matters (`FJS-574`).
+        //
+        // The parent separates them, off the filesystem rather than off a flag
+        // the operator has to remember to set. The parent is there and the
+        // directory is not: nothing has ever been written to this trail, so
+        // there is nothing to copy and the backup is whole. The parent is gone
+        // too: the path does not lead anywhere on this machine — an unmounted
+        // volume is the usual reason — and what would have been in it is not in
+        // this copy.
+        //
+        // Ambiguity falls toward the refusal, since an absent parent is the
+        // unreachable answer.
+        if (existsSync(dirname(srcDir))) {
+          console.log(`  ${dim('·')}  ${cyan(name)}: ${dim('nothing written yet')}`)
+          console.log(`     ${dim(`${srcDir} — a logger creates its directory on the first write`)}`)
+          continue
+        }
         console.log(`  ${yellow('⚠')}  ${cyan(name)}: ${dim(srcDir)} not found, skipping`)
-        incomplete.push(`${name} (${srcDir} not found — paths resolve against CWD)`)
+        incomplete.push(`${name} (${srcDir} does not exist — nor does ${dirname(srcDir)}, so nothing is mounted there)`)
         continue
       }
       try {

@@ -48,6 +48,20 @@ export function isWidgetName(name) {
   return /^[A-Z][A-Za-z0-9]*$/.test(name)
 }
 
+/**
+ * Is this a tag a browser will register?
+ *
+ * Mirrors sierra's `isLegalTag`, which owns the runtime half — the cli does not
+ * depend on sierra, the same reason `widgetTag` mirrors `kebab`. A custom
+ * element name must contain a dash, and the prefix defaults to empty, so a
+ * one-word widget scaffolds a tag that builds, deploys and then throws on every
+ * page that embeds it. The check exists; without this it runs in a stranger's
+ * browser.
+ */
+export function isLegalWidgetTag(tag) {
+  return /^[a-z][a-z0-9._]*-[a-z0-9._-]*$/.test(String(tag))
+}
+
 /** `LeadForm` → `lead-form`. Mirrors sierra's `kebab`, which owns the runtime half. */
 export function widgetTag(name, prefix = '') {
   return prefix + String(name)
@@ -165,6 +179,10 @@ export function widgetStarter({ name, prefix = '' }) {
   // Props are data-* attributes, so they arrive as STRINGS — <${tag}
   // data-label="Book now"> is \`label\`. A widget parses what it needs; guessing
   // here would make data-id="007" a number.
+  //
+  // They are read ONCE, at mount: a host page that rewrites data-label after the
+  // widget is up changes nothing. A widget that has to follow a value on the
+  // host page reads it from an endpoint instead.
   export let label = 'Book now'
 </script>
 
@@ -278,6 +296,15 @@ export function scaffoldWidgetSurface({
     throw new Error(
       `"${name}" is not a widget name — PascalCase, singular, like a component ` +
       `(Invariant 19). It is also the tag a host page writes.`
+    )
+  }
+
+  const scaffoldTag = widgetTag(name, prefix)
+  if (!isLegalWidgetTag(scaffoldTag)) {
+    throw new Error(
+      `"${name}" under prefix ${JSON.stringify(prefix)} is the tag <${scaffoldTag}>, which no ` +
+      `browser will register — a custom element name must contain a dash. Pass ` +
+      `--prefix (e.g. 'mt-'), or name the widget with two words.`
     )
   }
 

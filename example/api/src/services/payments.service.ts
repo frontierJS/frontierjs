@@ -234,7 +234,7 @@ const refund = async () => {
   // no order — and *that payment names an order that is no longer here* is the
   // wrong sentence for it, blaming a missing row for a shape that is correct.
   // Giving money back on a subscription is a credit note, which is a document
-  // somebody authorises rather than a button that moves an order.
+  // somebody authorizes rather than a button that moves an order.
   if (payment.invoiceId)
     throw bad('That payment is for an invoice — money goes back on a subscription as a credit note, not as an order refund')
 
@@ -374,13 +374,16 @@ const record = async () => {
     if (held) return { status: 'already-filed', eventId, paymentMethod: held.id }
 
     // The newest card is the one a renewal reaches for, which is what a person
-    // adding one means. **One default per customer is still not declarable** —
-    // the predicate is expressible since `FJS-603`, and the DECLARATION is not,
-    // because this model already indexes `customerId` for the ordinary read and
-    // an index is named for its columns alone (`FJS-614`) — so these two writes
-    // are the invariant, and they are only sound because `record` is `transactional:`:
-    // between the clear and the create there is an instant with no default at
-    // all, and a renewal landing in it charges nobody and duns them for it.
+    // adding one means. One default per customer is the SCHEMA's now —
+    // `@@unique([customerId], where: isDefault == true)` — so a second writer
+    // racing this is refused by the database rather than leaving two.
+    //
+    // The order still matters and now for the opposite reason: creating the new
+    // default before clearing the old one is refused outright, where it used to
+    // pass and leave two. And `record` being `transactional:` is still what
+    // makes the pair sound — between the clear and the create there is an
+    // instant with no default at all, and a renewal landing in it charges
+    // nobody and duns them for it.
     await system.paymentMethod.updateMany({
       where: { customerId: customer.id, isDefault: true },
       data:  { isDefault: false },
@@ -614,7 +617,12 @@ export function createPaymentsService() {
     // `patch`, no `remove`. A payment is not a row a person makes, and 405 is
     // a better answer than a 403 from a gate the caller could not have known
     // about. surface.snapshot.md carries this list and CI fails a stale one.
-    methods: ['find', 'get', 'start', 'refund', 'record'],
+    // `start` states gate 0: a hosted checkout is reached by a shopper with no
+    // session at all and the payment CODE is the credential (`FJS-497`), so the
+    // read-gate floor a custom method otherwise takes (`FJS-826`) would refuse
+    // the one caller this verb exists for. `refund` keeps the floor — it is an
+    // administrator's act and its transition gate is above it.
+    methods: ['find', 'get', { method: 'start', gate: 0 }, 'refund', 'record'],
     //
     // ─── Nothing joins this channel, and that is the decision ──────────────
     //

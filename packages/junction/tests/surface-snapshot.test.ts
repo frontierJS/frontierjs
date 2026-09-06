@@ -17,7 +17,9 @@ import { describeSurface, renderSurfaceSnapshot } from '../tools/surface.ts'
 async function buildApp() {
   const app = createApp({
     config: {
-      port:     3397,
+      // Never listens, so the number was inert — 0 keeps it out of the
+      // one-port-per-file rule `FJS-900` established.
+      port:     0,
       apiPrefix: '/api',
       database: { url: '', log: false },
       services: { dir: '/nonexistent' },

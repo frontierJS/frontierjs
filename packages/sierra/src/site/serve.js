@@ -30,9 +30,11 @@
 
 import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
-import { join, extname, normalize, resolve } from 'node:path'
+import { join, extname, resolve } from 'node:path'
 
 import { isHashedAsset } from '../serve/hashed-asset.js'
+import { relativePathFor, withinRoot } from '../serve/served-path.js'
+import { bodyAnswer, methodAnswer } from '../serve/http-answers.js'
 
 const TYPES = {
   '.html':  'text/html; charset=utf-8',
@@ -64,7 +66,7 @@ function cacheFor(path) {
 }
 
 /**
- * Resolve a URL path to a file on disk.
+ * Resolve an already-decoded, root-relative path to a file on disk.
  *
  * Two candidates and the order matters. `/about/` is a directory, so its index
  * is the answer; `/about` names the same page and a static host redirects or
@@ -72,11 +74,7 @@ function cacheFor(path) {
  * is the commonest thing in a hand-typed URL. An exact file wins over both —
  * `/robots.txt` is a file, not a directory to index.
  */
-async function resolveFile(rootDir, urlPath) {
-  const safe = normalize(decodeURIComponent(urlPath))
-    .replace(/^(\.\.[/\\])+/, '')
-    .replace(/^[/\\]+/, '')
-
+async function resolveFile(rootDir, safe, allowOutside) {
   const base = join(rootDir, safe)
   // `..` cannot walk out — this is served to the open internet by definition.
   if (!base.startsWith(rootDir)) return null
@@ -88,7 +86,11 @@ async function resolveFile(rootDir, urlPath) {
   for (const file of candidates) {
     try {
       const info = await stat(file)
-      if (info.isFile()) return file
+      if (!info.isFile()) continue
+      // What the URL SAID is settled above; what the file IS is a second
+      // question, and only realpath can answer it (`FJS-783`).
+      if (!await withinRoot(rootDir, file, allowOutside)) continue
+      return file
     } catch { /* next candidate */ }
   }
   return null
@@ -104,38 +106,70 @@ async function resolveFile(rootDir, urlPath) {
  *                                     collide
  * @param {string}  [opts.host='0.0.0.0']
  * @param {string}  [opts.notFound='404.html']  served for a miss when it exists
+ * @param {string[]} [opts.allowOutside]  directories a symlink inside `dir` may
+ *                                     legitimately resolve into; see
+ *                                     serve/served-path.js
  * @returns {Promise<{ port: number, url: string, close: () => Promise<void> }>}
  */
 export async function serveSite({
-  dir, port = 0, host = '0.0.0.0', notFound = '404.html',
+  dir, port = 0, host = '0.0.0.0', notFound = '404.html', allowOutside = [],
 } = {}) {
   const rootDir = resolve(dir)
 
   const server = createServer(async (req, res) => {
     const headers = { 'X-Content-Type-Options': 'nosniff' }
 
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      res.writeHead(405, headers); res.end('method not allowed'); return
+    // Everything below is inside one try. The handler is `async`, so anything
+    // that throws becomes an unhandled rejection — which node answers by
+    // exiting the process, taking a public origin down on one bad request. The
+    // decode was the way in that was found (`FJS-784`); `readFile` racing a
+    // deleted file between the stat and the read has the identical shape, and
+    // so does every line added here later.
+    try {
+
+    // A wrong verb is 405 CARRYING `Allow` and an unclaimed OPTIONS is 204 —
+    // the shape `FJS-753` settled for junction, and the same one a static host
+    // gives. This answered 405 to both, with nothing saying what was allowed.
+    const verb = methodAnswer(req.method)
+    if (verb) {
+      res.writeHead(verb.status, { ...headers, ...verb.headers })
+      res.end(verb.status === 405 ? 'method not allowed' : undefined)
+      return
     }
 
     const urlPath = req.url.split('?')[0].split('#')[0]
-    const file    = await resolveFile(rootDir, urlPath)
+    const safe    = relativePathFor(urlPath)
+
+    // Not a 404: a URL that cannot be decoded is not a file that is missing.
+    if (safe === null) {
+      res.writeHead(400, { ...headers, 'Content-Type': 'text/plain; charset=utf-8' })
+      res.end('bad request')
+      return
+    }
+
+    const file = await resolveFile(rootDir, safe, allowOutside)
 
     if (file) {
-      const body = await readFile(file)
-      res.writeHead(200, {
-        ...headers,
-        'Content-Type':   TYPES[extname(file)] ?? 'application/octet-stream',
-        'Content-Length': body.length,
-        'Cache-Control':  cacheFor(file),
+      const body   = await readFile(file)
+      const type   = TYPES[extname(file)] ?? 'application/octet-stream'
+      const answer = bodyAnswer(body, type, {
+        range:          req.headers.range,
+        acceptEncoding: req.headers['accept-encoding'],
       })
-      res.end(req.method === 'HEAD' ? undefined : body)
+
+      res.writeHead(answer.status, {
+        ...headers,
+        ...answer.headers,
+        'Content-Type':  type,
+        'Cache-Control': cacheFor(file),
+      })
+      res.end(req.method === 'HEAD' ? undefined : answer.body)
       return
     }
 
     // A miss gets the site's own 404 page where the build emitted one, with the
     // status still 404 — a soft 404 is a page a crawler indexes.
-    const fallback = await resolveFile(rootDir, `/${notFound}`)
+    const fallback = await resolveFile(rootDir, notFound, allowOutside)
     if (fallback) {
       const body = await readFile(fallback)
       res.writeHead(404, {
@@ -150,6 +184,20 @@ export async function serveSite({
 
     res.writeHead(404, { ...headers, 'Content-Type': 'text/plain; charset=utf-8' })
     res.end('not found')
+
+    } catch (err) {
+      // Logged rather than swallowed: a 500 on an origin whose whole job is to
+      // hand back files it already has is a defect, and the operator is the
+      // only one who can see it.
+      console.error(`[Sierra] site: ${req.method} ${req.url} failed —`, err)
+      // `end()` on a finished response emits an 'error' event with no listener,
+      // which is the crash this catch exists to prevent, one step along.
+      if (res.writableEnded) return
+      if (!res.headersSent) {
+        res.writeHead(500, { ...headers, 'Content-Type': 'text/plain; charset=utf-8' })
+      }
+      res.end('internal error')
+    }
   })
 
   await new Promise((ok, fail) => {

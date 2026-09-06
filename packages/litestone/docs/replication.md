@@ -98,7 +98,7 @@ Making that one command is the other half of `FJS-552`.
 **v0.5 or newer**, and `litestone replicate` refuses anything older rather than
 warning.
 
-Litestone emits STRICT tables (`@@strict` is on by default) and litestream 0.3.x
+Litestone emits STRICT tables (strict is the default) and litestream 0.3.x
 bundles a SQLite that cannot parse them. Pointed at a litestone database it
 starts, prints `replicating to:`, and then loops forever on
 

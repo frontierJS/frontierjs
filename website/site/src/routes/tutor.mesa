@@ -1,6 +1,6 @@
 ---
 title: "FrontierJS — the tutorial is a command"
-description: "fli tutor is eight lessons that run the real commands and then ask the running world whether they worked — including a real deploy to your own machine. It is graded by the project's own CI."
+description: "fli tutor is thirteen lessons that run the real commands and then ask the running world whether they worked — including a real deploy to your own machine. It is graded by the project's own CI."
 render: static
 ---
 <!--
@@ -8,7 +8,7 @@ render: static
 
   Its whole argument is that a tutorial which cannot fail is not evidence, so
   every sample here is a transcript or a verbatim lift from the step's own
-  source. The eight lesson cards are markup; there is nothing on this page for
+  source. The ten lesson cards are markup; there is nothing on this page for
   an island to move.
 -->
 <script>
@@ -27,6 +27,22 @@ render: static
       needs: 'nothing',
       body:  'Scaffold an app, start it, register an account, add a model of your own, push it, write a row through the API and read it back out of the SQLite file the app wrote. Then write a Mesa component, and ask the dev server for the compiled module. Then build it, and check the built page actually loads its JavaScript.',
       proves: 'the row is in db/app.db',
+    },
+    {
+      cmd:   'fli tutor:tools',
+      name:  'The four tools, and when',
+      steps: 6,
+      needs: 'nothing',
+      body:  'Four surfaces whose whole job is to report on a running app, and one question each. The GUI is the front door — what is here, what is up, and does anything fail a check. Then the database as it really is, the call feed with a refusal in it named and coded, and the chain that handled the request.',
+      proves: 'a 401 shows up as a 401',
+    },
+    {
+      cmd:   'fli tutor:ui',
+      name:  'A screen you did not write',
+      steps: 6,
+      needs: 'Chrome',
+      body:  'A form is not written, it is read off the schema — which is easy to nod at and easy to fake, so this one opens a real browser. Every control, the type each column implies, and nothing for the columns the server owns. Then one attribute is added to one column of the schema, no form is touched, and the same page starts refusing.',
+      proves: 'the empty submit never reaches the server',
     },
     {
       cmd:   'fli tutor:access',
@@ -53,6 +69,14 @@ render: static
       proves: 'the response came back before the work was done',
     },
     {
+      cmd:   'fli tutor:notify',
+      name:  'Telling somebody something',
+      steps: 8,
+      needs: 'nothing',
+      body:  'One notification, declared in one file, delivered as a row in the app and as an email — and the file names it, so the type nothing states is the type the database carries. Renaming the file renames the type and orphans every row already written, in silence, which is why a stated type exists. Then a transport declared with no formatter, refused before anything is delivered.',
+      proves: 'a two-transport notification cannot half-land',
+    },
+    {
       cmd:   'fli tutor:site',
       name:  'The public half',
       steps: 8,
@@ -77,12 +101,28 @@ render: static
       proves: 'a gate raise is a contract, with no column touched',
     },
     {
+      cmd:   'fli tutor:test',
+      name:  'Knowing it is right',
+      steps: 6,
+      needs: 'nothing',
+      body:  'Most of what you would write tests for has already been declared, and a declaration can be executed: four calls run every gate at every level, every protected column, every validator and every row policy, with no fixtures to author. Then the schema is mutated on purpose — a gate dropped, a guard removed — and the checks derived from the ORIGINAL are run against the mutant, so anything that survives is a hole in the checks and names itself.',
+      proves: 'a survivor is a fact about the checks, not the schema',
+    },
+    {
       cmd:   'fli tutor:fleet',
       name:  'A machine that takes orders',
+      steps: 8,
+      needs: 'a checkout · Docker',
+      body:  'The other release story. A control plane holds the fleet as rows, a machine runs an outpost so the control plane has hands on it, and nobody types a deploy. A signed command from the control plane really runs on your machine — and then a release: sources built into an image there, a container started, and the bytes recorded, because a tag is a name two builds share.',
+      proves: 'the control plane recorded which bytes ran',
+    },
+    {
+      cmd:   'fli tutor:adopt',
+      name:  'A database you already have',
       steps: 7,
-      needs: 'a checkout',
-      body:  'The other release story. A control plane holds the fleet as rows, a machine runs an outpost so the control plane has hands on it, and nobody types a deploy. It ends by sending a signed command from the control plane that really runs on your machine.',
-      proves: 'and what it said came from this machine',
+      needs: 'nothing',
+      body:  'The other door. A SQLite database made by somebody else, with rows in it, read into a schema — and the half a converter can quietly skip: every construct the reading could not carry, graded changed, lost or noted. It checks the reading against itself by building a database from it and reading that, then serves a row written by raw SQL before there was an app. The last step is the finding an inherited schema comes with, and it is kept rather than fixed: a baseline the number may never pass.',
+      proves: 'a row that predates the framework is served',
     },
   ]
 
@@ -103,7 +143,7 @@ render: static
   <div class="container">
     <a href="#top">The idea</a>
     <a href="#step">A step</a>
-    <a href="#lessons">The eight lessons</a>
+    <a href="#lessons">The thirteen lessons</a>
     <a href="#why">Why it is different</a>
     <a href="#found">What it found</a>
     <a href="#start">Start</a>
@@ -129,7 +169,7 @@ render: static
       </p>
       <div class="cluster">
         <a class="btn primary raised" href="#start">Run it</a>
-        <a class="btn outlined" href="#lessons">The eight lessons</a>
+        <a class="btn outlined" href="#lessons">The thirteen lessons</a>
       </div>
     </div>
 
@@ -179,7 +219,7 @@ render: static
 <!-- ─── The lessons ───────────────────────────────────────────────────── -->
 <section id="lessons">
   <div class="container stack">
-    <p class="eyebrow">The eight lessons</p>
+    <p class="eyebrow">The thirteen lessons</p>
     <h2>Empty directory to a machine taking orders.</h2>
     <p class="lede" style="max-width:64ch">
       Each one is separately runnable and separately resumable. The first two need nothing
@@ -233,7 +273,7 @@ render: static
       <div class="tile">
         <h3>Our CI grades it</h3>
         <p>
-          All eight lessons run in <code>bun run ci</code>. Tutorials rot when the product
+          All thirteen lessons run in <code>bun run ci</code>. Tutorials rot when the product
           moves — ours already had, and its own header disagreed with the README about
           whether it had ever been executed. That is what this replaces.
         </p>

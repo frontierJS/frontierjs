@@ -181,7 +181,7 @@ check('…while the same token is a session at home',
 
 // A write is the sharper half: a read below a gate is an empty list, a write is
 // a refusal. `Customer` is @@gate("0.4.4.5") — create needs USER(4), and an
-// unrecognised token is STRANGER(0).
+// unrecognized token is STRANGER(0).
 const wrote = await at(HOST, '/customers', {
   method: 'POST',
   headers: { 'content-type': 'application/json', authorization: `Bearer ${homeToken}` },

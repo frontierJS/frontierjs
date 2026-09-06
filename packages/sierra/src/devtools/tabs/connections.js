@@ -1,3 +1,5 @@
+import { html } from '../html.js'
+
 export function createConnectionsTab() {
   const el = document.createElement('div')
   el.className = 'fjs-tab-content'
@@ -16,14 +18,11 @@ export function createConnectionsTab() {
       const row = document.createElement('div')
       row.className = 'fjs-feed-row'
       const since = c.connectedAt ? new Date(c.connectedAt).toLocaleTimeString() : '—'
-      row.innerHTML =
-        `<span class="fjs-feed-name">${esc(c.user ?? 'anon')}</span>` +
-        `<span class="fjs-feed-payload">${esc(c.ip ?? '')} · since ${since}</span>`
+      row.innerHTML = String(html`<span class="fjs-feed-name">${c.user ?? 'anon'}</span>` +
+        html`<span class="fjs-feed-payload">${c.ip ?? ''} · since ${since}</span>`)
       list.appendChild(row)
     }
   }
 
   return { el, render, setConnections }
 }
-
-function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }

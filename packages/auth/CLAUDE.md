@@ -56,7 +56,7 @@ index.ts     public API
   app's own `User`, `@@log(audit)`, and `@@tenant(none)` under row tenancy. Until
   litestone had `extend model` the only way to say them was to paste the models
   in and edit them, which basecamp did for four models — and one of them ended up
-  with `@guarded(all)` where this file writes `@secret`, so a basecamp that
+  with `@guarded` where this file writes `@secret`, so a basecamp that
   turned OAuth on would have stored every provider access and refresh token
   unencrypted, with 137 green tests either side of the divergence. Nothing
   anywhere compares a copy to its original. `User` is the exception and always

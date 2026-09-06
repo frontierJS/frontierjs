@@ -52,6 +52,13 @@ title: Subscription
   let plan     = null
   let planRow  = null
   let unwatchPlan = null
+  // Have the two reads the price comparison needs both ANSWERED? Not *is there
+  // a value* — a read that answered null has answered. The alert below is a
+  // comparison between two independent `record()`s and they land ~25ms apart,
+  // so rendering the no-alert branch while the second is still out states that
+  // the prices agree, about a subscription whose price has moved (`FJS-632`).
+  let versionAnswered = false
+  let planAnswered    = false
   let bills    = []
   let options  = []       // every open price, as a Select
   let error    = null
@@ -97,27 +104,50 @@ title: Subscription
    *  move. A `service.get()` here is a plain object no announcement reaches, so
    *  a plan retired or renamed in another tab would leave this screen saying
    *  the old thing with nothing said (`FJS-518`). */
+  /** Answered, whichever way. A read that refused has answered too — without
+   *  this the pending state below would never clear for a row this caller may
+   *  not read, and the section would spin for ever instead of saying nothing. */
+  function settles(ready, done) {
+    ready.then(done, done)
+    return ready
+  }
+
   function watchVersion(id) {
-    if (id == null) { unwatchVer?.(); verRow?.release(); unwatchVer = verRow = null; version = null; return }
+    if (id == null) {
+      unwatchVer?.(); verRow?.release(); unwatchVer = verRow = null; version = null
+      versionAnswered = true      // there is nothing to read, which is an answer
+      return
+    }
     if (verRow && String(verRow.id) === String(id)) return verRow.ready
     unwatchVer?.(); verRow?.release()
+    versionAnswered = false
     verRow = planVersions.record(id)
     unwatchVer = verRow.subscribe(v => { version = v })
-    return verRow.ready
+    return settles(verRow.ready, () => { versionAnswered = true })
   }
 
   function watchPlan(id) {
-    if (id == null) { unwatchPlan?.(); planRow?.release(); unwatchPlan = planRow = null; plan = null; return }
+    if (id == null) {
+      unwatchPlan?.(); planRow?.release(); unwatchPlan = planRow = null; plan = null
+      planAnswered = true
+      return
+    }
     if (planRow && String(planRow.id) === String(id)) return planRow.ready
     unwatchPlan?.(); planRow?.release()
+    planAnswered = false
     planRow = plans.record(id)
     unwatchPlan = planRow.subscribe(v => { plan = v })
-    return planRow.ready
+    return settles(planRow.ready, () => { planAnswered = true })
   }
 
   async function loadRest() {
     if (!sub) return
     await watchVersion(sub.planVersionId)
+    // Once, here, as well as reactively below. The reactive statement fires on
+    // a CHANGE to `version` and a subscription with no version never produces
+    // one — so without this the plan read is never marked answered and the
+    // pending state above never clears.
+    watchPlan(version?.planId ?? null)
 
     const list = await invoices.service.find({ subscriptionId: sub.id }, { orderBy: '-issuedAt', limit: 50 })
     bills = list?.data ?? []
@@ -303,7 +333,16 @@ title: Subscription
     </Alert>
   {/if}
 
-  {#if plan && version && plan.currentPrice != null && plan.currentPrice !== version.price}
+  <!--
+    Three states, not two. *The prices agree* and *we have not finished asking*
+    render identically as an absent alert, and they are ~25ms apart on a fast
+    machine — long enough that the screen states the first while the second is
+    true. So the undecided case is drawn rather than skipped, which is also the
+    only thing anything outside this component can wait for (`FJS-632`).
+  -->
+  {#if !(versionAnswered && planAnswered)}
+    <Skeleton height="3rem" id="sd-price-pending" />
+  {:else if plan && version && plan.currentPrice != null && plan.currentPrice !== version.price}
     <Alert tone="info" id="sd-price-moved">
       This subscription is on <strong>{money(version.price)}</strong>; the plan
       now sells at <strong>{money(plan.currentPrice)}</strong>. Repricing a plan

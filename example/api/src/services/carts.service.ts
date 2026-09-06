@@ -596,11 +596,6 @@ export function createCartsService() {
       // lines on screen at the moment they come into existence.
       await system.orderLine.createMany({ data: lines.map(l => ({
         orderId:     order.id,
-        // The same id the order carries, for the same reason and at the same
-        // moment. Two columns holding one fact is what a policy that cannot
-        // reach through a relation costs (`FJS-499`); writing them in one
-        // transaction is what stops them drifting.
-        userId:      buyerId,
         variantId:   l.variantId,
         sku:         l.sku,
         description: [l.product, [l.color, l.size].filter(Boolean).join(' · ')]

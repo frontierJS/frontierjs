@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <!-- The policy a bank, a government site or anything behind a WAF sends. No
+       `unsafe-inline`, so a <style> element the widget injects is blocked — and
+       the widget cannot see that it was: the block is reported to the HOST
+       page, and Mesa's own scoped styles arrive by adoptedStyleSheets, which
+       CSP does not gate. The symptom is a widget that is half-styled on one
+       customer's site and correct everywhere it was ever tested. -->
+  <meta http-equiv="Content-Security-Policy" content="style-src 'self'">
+  <title>A host page with a strict CSP</title>
+</head>
+<body>
+  <h1>Host page (CSP)</h1>
+
+  <!-- Both stylesheets under one policy: the component's own scoped <style>
+       block (Mesa's path) and LeadForm's IMPORTED global.css (this runtime's).
+       Asserting either alone would pass a fix that broke both. -->
+  <mt-counter data-start="5"></mt-counter>
+  <mt-lead-form data-pid="ABC-1"></mt-lead-form>
+
+  <script defer src="{{EMBEDS}}/Counter.js"></script>
+  <script defer src="{{EMBEDS}}/LeadForm.js"></script>
+</body>
+</html>

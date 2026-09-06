@@ -85,7 +85,10 @@ function walkMd(dir, out, root) {
  * run twice and a cache keyed on a root that a test rewrites is a stale answer.
  */
 export function docCorpus(root, { history = true, registers = true, proposals = true } = {}) {
-  const dirs  = ['IDEAS', 'docs', 'packages', 'website']
+  // `.claude/skills` is the disclosed half of the root `CLAUDE.md` — a hazard
+  // catalogue or a seam index moved behind a pointer is the same document at a
+  // different rung, and a citation in it rots the same way.
+  const dirs  = ['IDEAS', 'docs', 'packages', 'website', join('.claude', 'skills')]
   const files = []
 
   for (const name of readdirSyncSafe(root))
@@ -833,7 +836,7 @@ function quotedSpans(line) {
 /** The documents a reader acts on today: the maps, at the repo and package roots. */
 function mapTier(root) {
   return docCorpus(root, { history: false, registers: false, proposals: false })
-    .filter(d => /^(CLAUDE|README|ARCHITECT|PHILOSOPHY)\.md$/.test(d.rel.split(sep).pop()))
+    .filter(d => /^(CLAUDE|README|ARCHITECT|PHILOSOPHY|SKILL)\.md$/.test(d.rel.split(sep).pop()))
     .filter(d => !['test', 'tests', 'fixtures', 'docs', 'example', 'mockup', 'node_modules']
       .some(seg => d.rel.split(sep).includes(seg)))
 }

@@ -22,6 +22,18 @@ export function generateOverlayScript() {
 if (import.meta.env.DEV && import.meta.hot) {
   let _overlayEl = null
 
+  // Every value this overlay renders arrives from a caller, and one of them is
+  // now a URL: the router reports 'redirect', 'navigation' and 'component'
+  // failures through here, and a URL carries whatever text a link on the page
+  // put in it. Text and attribute positions take the same escape rather than a
+  // per-site one, because the per-site version is what let the file field
+  // through while the message beside it was covered.
+  const _esc = (v) => String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+
   function sierraShowError({ message, file, stack, type = 'error' }) {
     // Dismiss existing
     if (_overlayEl) _overlayEl.remove()
@@ -77,7 +89,7 @@ if (import.meta.env.DEV && import.meta.hot) {
             padding:2px 8px;
             background:#1a1a24;
             border-radius:4px;
-          ">\${fileDisplay}</span>\` : ''}
+          ">\${_esc(fileDisplay)}</span>\` : ''}
         </div>
 
         <p style="
@@ -86,7 +98,7 @@ if (import.meta.env.DEV && import.meta.hot) {
           color:#e2e2e8;
           margin:0 0 16px;
           word-break:break-word;
-        ">\${message.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</p>
+        ">\${_esc(message)}</p>
 
         \${stackLines ? \`<pre style="
           font-size:11px;
@@ -101,7 +113,7 @@ if (import.meta.env.DEV && import.meta.hot) {
           max-height:140px;
           white-space:pre-wrap;
           word-break:break-all;
-        ">\${stackLines.replace(/</g,'&lt;')}</pre>\` : ''}
+        ">\${_esc(stackLines)}</pre>\` : ''}
 
         <div style="display:flex;gap:10px">
           <button onclick="this.closest('#__sierra_overlay__').remove()" style="
@@ -141,10 +153,10 @@ if (import.meta.env.DEV && import.meta.hot) {
               }, 1500);
             });
           "
-          data-type="\${type}"
-          data-file="\${file ?? \'\'}"
-          data-msg="\${message.replace(/"/g, \'&quot;\').replace(/\\n/g, \'\\\\n\')}"
-          data-stack="\${(stack || \'\').replace(/"/g, \'&quot;\').replace(/\\n/g, \'\\\\n\')}"
+          data-type="\${_esc(type)}"
+          data-file="\${_esc(file)}"
+          data-msg="\${_esc(message)}"
+          data-stack="\${_esc(stack)}"
           style="
             padding:8px 18px;
             background:#1a1a24;

@@ -46,7 +46,7 @@ function migrate(live: Database, schema: string) {
 }
 
 describe('indexPredicate', () => {
-  it('reads the tail of a CREATE INDEX and normalises its whitespace', () => {
+  it('reads the tail of a CREATE INDEX and normalizes its whitespace', () => {
     expect(indexPredicate(`CREATE INDEX "i" ON "t" ("a") WHERE "d" IS NULL`)).toBe('"d" IS NULL')
     expect(indexPredicate(`CREATE INDEX "i" ON "t" ("a")\n  WHERE  "d"   IS NULL;`)).toBe('"d" IS NULL')
   })
@@ -906,7 +906,7 @@ describe('@@unique(where:) — what it parses to', () => {
 
   it('emits a standalone CREATE UNIQUE INDEX and nothing inside the table', () => {
     const ddl = generateDDL(one('@@unique([employeeId], where: effectiveTo == null)').schema)
-    expect(ddl).toContain('CREATE UNIQUE INDEX IF NOT EXISTS "idx_w_employeeId" ON "w" ("employeeId") WHERE "effectiveTo" IS NULL;')
+    expect(ddl).toContain('CREATE UNIQUE INDEX IF NOT EXISTS "uniq_w_employeeId" ON "w" ("employeeId") WHERE "effectiveTo" IS NULL;')
     expect(ddl).not.toContain('UNIQUE ("employeeId")')
   })
 
@@ -925,7 +925,7 @@ describe('@@unique(where:) — what it parses to', () => {
     // …and the DDL SQLite is handed actually builds.
     const db = new Database(':memory:')
     apply(db, generateDDL(r.schema))
-    expect(idxSql(db, 'idx_w_employeeId')).toContain(`WHERE "status" = 'active'`)
+    expect(idxSql(db, 'uniq_w_employeeId')).toContain(`WHERE "status" = 'active'`)
   })
 
   it('accepts a comparison @@index(where:) refuses, and for the reason the two differ', () => {
@@ -951,10 +951,33 @@ describe('@@unique(where:) — what it parses to', () => {
     expect(one('@@unique([employeeId], where: nope == null)').errors.join(' ')).toContain('not a column')
   })
 
-  it('collides with an @@index over the same columns, and says which two', () => {
+  it('COEXISTS with an @@index over the same columns — two names, two kinds', () => {
+    // `FJS-614`. The two are different things over one column list and both are
+    // legitimate on one model: the ordinary lookup, and *at most one row where
+    // the predicate holds*. They shared a derived name, so the second was
+    // undeclarable — and the refusal offered two ways out, different columns or
+    // one predicate covering both, neither of which exists for that pair. A
+    // partial unique cannot stand in for the lookup either: it covers only the
+    // rows its predicate admits, which is why `advise` does not count one as
+    // foreign-key coverage.
     const r = one('@@index([employeeId])\n    @@unique([employeeId], where: effectiveTo == null)')
-    expect(r.errors.join(' ')).toContain('idx_<table>_employeeId')
-    expect(r.errors.join(' ')).toContain('@@index([employeeId]) and @@unique([employeeId])')
+    expect(r.errors).toEqual([])
+
+    const ddl = generateDDL(r.schema)
+    expect(ddl).toContain('CREATE INDEX IF NOT EXISTS "idx_w_employeeId"')
+    expect(ddl).toContain('CREATE UNIQUE INDEX IF NOT EXISTS "uniq_w_employeeId"')
+  })
+
+  it('still refuses two of the SAME kind over the same columns', () => {
+    // The name space split in two; it did not go away. Both halves, because a
+    // fix that only kept one of them would look identical from the pair above.
+    const idx = one('@@index([employeeId])\n    @@index([employeeId])')
+    expect(idx.errors.join(' ')).toContain('idx_<table>_employeeId')
+    expect(idx.errors.join(' ')).toContain('two @@index([employeeId])')
+
+    const uniq = one('@@unique([employeeId], where: effectiveTo == null)\n    @@unique([employeeId], where: rate == null)')
+    expect(uniq.errors.join(' ')).toContain('uniq_<table>_employeeId')
+    expect(uniq.errors.join(' ')).toContain('two @@unique([employeeId])')
   })
 
   it('the nullable-member refusal now offers the predicate as the third answer', () => {
@@ -1062,10 +1085,44 @@ describe('@@unique(where:) — the migrator', () => {
   it('is read back as an index and never as a table constraint', () => {
     const { db } = liveFrom('effectiveTo == null')
     const rows = db.prepare(`PRAGMA index_list("pay_window")`).all() as any[]
-    const ours = rows.find(r => r.name === 'idx_pay_window_employeeId')
+    const ours = rows.find(r => r.name === 'uniq_pay_window_employeeId')
     // origin 'c' — an explicit CREATE INDEX, which is what puts it in the index
     // diff rather than in `tableUniques`, with no edit to either.
     expect(ours).toMatchObject({ unique: 1, origin: 'c', partial: 1 })
+  })
+
+  // The class every other test in this file is blind to by construction: they
+  // all build a FRESH database, where the name litestone derives today is the
+  // only name that has ever existed. A database written before `FJS-614` split
+  // the name space carries this index as `idx_<table>_<cols>`, and it has to
+  // move — otherwise the model's own `@@index` over the same columns is a
+  // `CREATE INDEX IF NOT EXISTS` against a name already taken by the unique
+  // one, which SQLite answers by doing nothing at all.
+  it('renames an index this build derives differently', () => {
+    const db = new Database(':memory:')
+    apply(db, generateDDL(parse(SRC('effectiveTo == null')).schema)
+      .replace(/uniq_pay_window_employeeId/g, 'idx_pay_window_employeeId'))
+
+    const d: any = planAgainst(introspect(db), 'effectiveTo == null')
+    expect(d.tableDiffs.length).toBe(1)
+    expect(d.tableDiffs[0].needsRebuild).toBe(false)
+    expect(d.tableDiffs[0].indexes.dropped.map((i: any) => i.name)).toEqual(['idx_pay_window_employeeId'])
+    expect(d.tableDiffs[0].indexes.added.map((i: any) => i.name)).toEqual(['uniq_pay_window_employeeId'])
+  })
+
+  it('leaves an index the APP made alone, even one of the same shape', () => {
+    // The control that keeps the rename honest, and the reason the name is not
+    // part of `indexKey`: keyed on the name, this hand-made index would be
+    // foreign AND litestone's would be created beside it, so the database would
+    // carry two identical indexes and pay for both on every write.
+    const db = new Database(':memory:')
+    apply(db, generateDDL(parse(SRC('effectiveTo == null')).schema))
+    db.run(`CREATE UNIQUE INDEX "by_hand" ON "pay_window" ("employeeId") WHERE "effectiveTo" IS NULL;`)
+
+    const d: any = planAgainst(introspect(db), 'effectiveTo == null')
+    const idx = d.tableDiffs[0]?.indexes
+    expect(idx?.dropped ?? []).toEqual([])
+    expect(idx?.added ?? []).toEqual([])
   })
 })
 

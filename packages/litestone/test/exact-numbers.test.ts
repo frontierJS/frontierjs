@@ -54,11 +54,15 @@ describe('what is refused at parse', () => {
       .toMatch(/@money derives the scale from the currency/)
   })
 
-  test('a currency this runtime does not know', () => {
+  test('a currency ISO 4217 does not carry', () => {
     // The one that matters most: `Intl.NumberFormat` does NOT throw on `UDS`,
     // it answers two decimal places, so nothing downstream would notice.
-    expect(errsOf(`model P { id Int @id  t Int @money(UDS) }`)).toMatch(/not a currency this runtime knows/)
-    expect(errsOf(`model P { id Int @id  t Int @money(BTC) }`)).toMatch(/not a currency this runtime knows/)
+    expect(errsOf(`model P { id Int @id  t Int @money(UDS) }`)).toMatch(/not an ISO 4217 currency/)
+    expect(errsOf(`model P { id Int @id  t Int @money(BTC) }`)).toMatch(/not an ISO 4217 currency/)
+    // Zimbabwe Gold: a live currency node's ICU carries and bun's does not, so
+    // this model parsed on one runtime and was refused as a typo on the other
+    // until the table was shipped (`FJS-745`).
+    expect(parse(`model P { id Int @id  t Int @money(ZWG) }`).valid).toBe(true)
   })
 
   test('a real currency with no minor unit is fine — the point of deriving it', () => {

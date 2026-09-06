@@ -16,7 +16,7 @@
  *   8. plugins       — run user-supplied post-build plugin functions
  */
 
-import { move404 } from './move-404.js'
+import { move404, NOT_FOUND_URL } from './move-404.js'
 import { copyRobots } from './copy-robots.js'
 import { generateRedirects } from './redirects.js'
 import { generateSitemap } from './sitemap.js'
@@ -51,25 +51,45 @@ export async function runPostBuild(config, routeTable, outDir, root, prerendered
   // A prerendered page can still opt out: `indexed` has already dropped drafts
   // and `robots: noindex`, so anything the route table excluded is excluded
   // here too.
-  const indexed = prerenderedUrls?.length
+  //
+  // `/404/` comes off both branches. `move404` below relocates that page to
+  // `404.html`, so by the time anything reads this list the URL is not a page —
+  // a sitemap listing it advertises one that answers 404. Dropped HERE rather
+  // than inside `generateSitemap`, because every step downstream reads this one
+  // variable and each would otherwise need the same exclusion.
+  const indexed = (prerenderedUrls?.length
     ? prerenderedUrls.filter((u) => isIndexable(u, routeTable))
     : (routeTable.indexed ?? [])
+  ).filter((u) => u !== NOT_FOUND_URL && u !== NOT_FOUND_URL.replace(/\/$/, ''))
 
   // 1. 404 page
   const r404 = await move404(outDir)
   if (r404) results.push(r404)
 
-  // 2. robots.txt
-  const rRobots = await copyRobots(root, outDir)
+  // 2. robots.txt — `Sitemap:` needs the origin, so this is read here rather
+  // than at the sitemap step below, which is the only place it used to be.
+  const siteUrl = config.siteUrl ?? ''
+
+  const rRobots = await copyRobots(root, outDir, siteUrl)
   if (rRobots) results.push(rRobots)
 
   // 3. _redirects
   const rRedirects = await generateRedirects(routeTable.redirects ?? [], outDir)
   if (rRedirects) results.push(rRedirects)
 
+  // What each page DECLARED about itself. Built once here and handed to every
+  // step that needs it: `generateSitemap` reads `sitemap: { priority,
+  // changefreq }` off it, and was called with three arguments, so the
+  // documented frontmatter did nothing at all (`FJS-822`).
+  const routeMetaMap = {}
+  const flattenTree = (node) => {
+    if (node.path && node.meta) routeMetaMap[node.path] = node.meta
+    for (const child of node.children ?? []) flattenTree(child)
+  }
+  if (routeTable.tree) flattenTree(routeTable.tree)
+
   // 4. sitemap.xml
-  const siteUrl = config.siteUrl ?? ''
-  const rSitemap = await generateSitemap(indexed, outDir, siteUrl)
+  const rSitemap = await generateSitemap(indexed, outDir, siteUrl, routeMetaMap)
   if (rSitemap) results.push(rSitemap)
 
   // 5. llms.txt (conditional)
@@ -80,15 +100,13 @@ export async function runPostBuild(config, routeTable, outDir, root, prerendered
 
   // 6. Markdown pages (conditional)
   if (config.markdownPages) {
-    // Build path→meta map from tree for frontmatter extraction
-    const routeMetaMap = {}
-    const flattenTree = (node) => {
-      if (node.path && node.meta) routeMetaMap[node.path] = node.meta
-      for (const child of node.children ?? []) flattenTree(child)
-    }
-    if (routeTable.tree) flattenTree(routeTable.tree)
-
-    const rMd = await generateMarkdownPages(config, routeTable, outDir, routeMetaMap)
+    // `indexed`, not `routeTable` — this step re-derived its own answer to
+    // *what are this site's pages* from `routeTable.indexed` and filtered out
+    // anything containing `:`, so a storefront emitted `index.md` for its four
+    // static pages and for none of its products: the pages the feature exists
+    // to expose (`FJS-822`, `FJS-456`'s shape in the step `FJS-502` did not
+    // reach). One list, computed once, passed to every step.
+    const rMd = await generateMarkdownPages(config, indexed, outDir, routeMetaMap)
     if (rMd) results.push(rMd)
   }
 

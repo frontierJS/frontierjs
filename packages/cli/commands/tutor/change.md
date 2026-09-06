@@ -45,7 +45,7 @@ openTutor(context, 'tutor:change', { ephemeral: [] })
 context.config.source = flag.source || defaultSource()
 ```
 
-## Lesson 7 — the schema you already deployed
+## Lesson 10 — the schema you already deployed
 
 Every lesson so far changed a schema that nobody was using. This one is about
 month two, when there are rows in production and a release already serving them.

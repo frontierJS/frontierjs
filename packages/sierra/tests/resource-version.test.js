@@ -334,6 +334,6 @@ describe('a stale write says something a person can act on', () => {
   test('a per-field 400 is unaffected', () => {
     const err = Object.assign(new Error('Bad Request'),
       { code: 400, data: { data: [{ field: 'note', message: 'Too short' }] } })
-    expect(toFieldErrors(err)).toEqual({ fields: { note: 'Too short' }, message: '' })
+    expect(toFieldErrors(err)).toEqual({ fields: { note: 'Too short' }, message: '', committed: false })
   })
 })

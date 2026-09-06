@@ -2,6 +2,8 @@
 // Named HTTP error classes — throw these anywhere in the stack,
 // the transport layer serializes them correctly automatically.
 
+import { redactBy } from '@frontierjs/toolbelt/redact'
+
 export class FrameworkError extends Error {
   code:  number
   data:  unknown
@@ -323,20 +325,11 @@ export function redactProtected(
   fields: Record<string, string>,
   seen:   WeakSet<object> = new WeakSet()
 ): unknown {
-  if (!value || typeof value !== 'object') return value
-  if (seen.has(value as object)) return '[circular]'
-  seen.add(value as object)
-
-  if (Array.isArray(value)) return value.map(v => redactProtected(v, fields, seen))
-
-  const proto = Object.getPrototypeOf(value)
-  if (proto !== Object.prototype && proto !== null) return value
-
-  const out: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    out[k] = fields[k] ? '[redacted]' : redactProtected(v, fields, seen)
-  }
-  return out
+  // The WALK is `@frontierjs/toolbelt/redact`; what stays here is the
+  // PREDICATE, which is the only half that is this file's business. The logger
+  // puts the credential name list through the same function, and two walkers is
+  // how the cycle guard comes to exist in one of them and not the other.
+  return redactBy(value, (k) => Boolean(fields[k]), seen)
 }
 
 /** Is this app allowed to say what actually went wrong? */

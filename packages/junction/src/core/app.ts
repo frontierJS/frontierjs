@@ -333,6 +333,16 @@ export interface App {
   tenant: () => string | null
 
   /**
+   * The id of the request in scope right now, or null.
+   *
+   * Third sibling of `principal()` and `tenant()`, asked in the same place and
+   * for the same reason: work that outlives the request has to be able to name
+   * the request it came from, or a job and the call that queued it share no id
+   * in any log.
+   */
+  correlationId: () => string | null
+
+  /**
    * What this app is configured with, for a tenant.
    *
    * The no-call half of `$.config`: a job, a boot task, a raw route or a script
@@ -1124,6 +1134,13 @@ export function createApp(opts: AppOptions = {}): App {
       // has two. Under `strategy database` and for work `runAs` opened, the
       // request-wide answer is the only one there is.
       return currentCall()?.locals?.tenantId ?? requestMeta()?.tenant ?? null
+    },
+
+    correlationId(): string | null {
+      // The third of the three read at dispatch. Request-wide, unlike the
+      // tenant: a correlation id names the REQUEST, and a service that
+      // re-resolves a tenant mid-request is still inside the same one.
+      return requestMeta()?.correlationId ?? null
     },
 
     loadTenantConfig(tenantId: string): Promise<AppConfig> {

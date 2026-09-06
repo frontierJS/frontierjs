@@ -21,14 +21,14 @@ if (context.config.abort) {
 
 context.config.journal.settle('succeeded')
 
-log.success('Lesson 4 done — a response that did not wait, and a row that says what happened')
+log.success('Lesson 6 done — a response that did not wait, and a row that says what happened')
 log.info('')
 log.info(`  ${app}`)
 log.info('')
 log.info('  api/src/jobs/finish-note.job.ts   the job — the file names it')
 log.info('  db/jobs.db                        every piece of deferred work, as rows')
 log.info('')
-log.info('  fli tutor:site                    next — a public site built ahead of time')
+log.info('  fli tutor:notify                  next — telling somebody something')
 log.info('')
 
 if (ws.kind === 'temp' && !context.flag.keep) {

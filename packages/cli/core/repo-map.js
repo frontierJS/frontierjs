@@ -75,7 +75,7 @@ export function collect({ root }) {
     invariants: invariants(root),
     checks:    checkRules(root),
     drives:    drives(root),
-    ports:     ports(),
+    ports:     ports(root),
     issues:    issues(root),
     decisions: decisions(root),
     ideas:     ideas(root),
@@ -520,8 +520,17 @@ const drives = driveRows
 // Derived from the registry rather than listed: a project id IS its ports, and
 // the pair printed beside the formula is what stops the next app choosing a
 // number somebody already has.
+//
+// The registry is a SOURCE FILE of one workspace and reads as a fact about
+// whatever tree the page is titled after, so a tree that does not hold it gets
+// no section at all: `fli ws:map` in any other monorepo printed `example` at
+// 8010 and `basecamp` at 8020 as that project's own ports, with nothing on the
+// page saying otherwise. Omitted the same way every other absent source is,
+// which is why the test is for the file rather than for a name.
 
-function ports() {
+function ports(root) {
+  if (!existsSync(join(root, 'packages', 'cli', 'core', 'ports.js'))) return null
+
   const rows = Object.entries(PROJECTS)
     .map(([name, id]) => ({
       name,
@@ -951,7 +960,7 @@ function bar(model) {
     ['issues', model.issues?.open],
     ['packages', model.packages.length],
     ['drives', model.drives.length],
-    ['ports', model.ports.rows.length],
+    ['ports', model.ports?.rows.length],
     ['commands', model.commands?.total],
     ['registers', model.registers.length],
   ].filter(([, n]) => n)
@@ -1079,6 +1088,8 @@ function driveSection(model) {
 }
 
 function portSection(model) {
+  if (!model.ports) return ''
+
   const rows = model.ports.rows.map(p => `<tr data-row>
     <td class="m">${p.id}</td>
     <td class="m">${esc(p.name)}</td>

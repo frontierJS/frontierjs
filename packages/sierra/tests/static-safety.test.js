@@ -39,6 +39,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 /** A $defs table shaped exactly as litestone's generateJsonSchema emits one. */
 const DEFS = {
   Product:  { properties: { id: {} }, 'x-gate': { read: 0, create: 4, update: 4, delete: 5 } },
+  // Read 0 and its children are not: the shape `FJS-781` is about — a public
+  // parent whose `include:` publishes a gated child.
+  Customer: { properties: { id: {} }, 'x-gate': { read: 0, create: 4, update: 4, delete: 5 } },
   Invoice:  { properties: { id: {} }, 'x-gate': { read: 4, create: 4, update: 4, delete: 5 } },
   Secret:   { properties: { id: {} }, 'x-gate': { read: 8, create: 8, update: 8, delete: 8 } },
   Note:     { properties: { id: {} } },                      // no gate at all
@@ -48,7 +51,7 @@ const DEFS = {
   ProductVariant: { properties: { id: {} }, 'x-gate': { read: 0, create: 4, update: 4, delete: 5 } },
   InvoiceLine:    { properties: { id: {} }, 'x-gate': { read: 4, create: 4, update: 4, delete: 5 } },
 }
-const MODELS = ['Product', 'Invoice', 'Secret', 'Note', 'ProductVariant', 'InvoiceLine']
+const MODELS = ['Product', 'Customer', 'Invoice', 'Secret', 'Note', 'ProductVariant', 'InvoiceLine']
 
 beforeEach(() => installSchemas(DEFS, MODELS))
 
@@ -89,7 +92,7 @@ describe('gateReadLevel', () => {
   })
 
   test('a name the schema does not describe is unknown, not 0', () => {
-    // The dangerous default. Scoring an unrecognised read as 0 would let a
+    // The dangerous default. Scoring an unrecognized read as 0 would let a
     // typo'd or dynamic model name through as "public".
     const r = gateReadLevel('whatever')
     expect(r.model).toBeNull()
@@ -129,7 +132,7 @@ describe('checkRoute — the decision', () => {
 
   const route = (o) => checkRoute({
     routeId: 'src/routes/x/index.mesa', meta: {}, models: new Set(),
-    tapped: true, readsData: true, ...o,
+    taps: 1, readsData: true, ...o,
   })
 
   test('passes a route that reads only ungated models', () => {
@@ -181,25 +184,42 @@ describe('checkRoute — fail closed', () => {
     // The load-bearing rule. Fail-open here would let exactly the clever route
     // we are worried about through, which is the failure mode being fixed.
     const r = checkRoute({
-      routeId: 'r', meta: {}, models: new Set(), tapped: false, readsData: true,
+      routeId: 'r', meta: {}, models: new Set(), taps: 0, readsData: true,
     })
     expect(r.ok).toBe(false)
     expect(r.message).toContain('could not observe')
   })
 
-  test('…and the refusal explains both ways out', () => {
+  test('…and the refusal names the one way out, which is wiring the client', () => {
     const r = checkRoute({
-      routeId: 'r', meta: {}, models: new Set(), tapped: false, readsData: true,
+      routeId: 'r', meta: {}, models: new Set(), taps: 0, readsData: true,
     })
     expect(r.message).toContain('sierra config `db`')
-    expect(r.message).toContain('publishes: 0')
   })
 
-  test('an explicit declaration is accepted as the acknowledgement', () => {
-    const r = checkRoute({
-      routeId: 'r', meta: { publishes: 0 }, models: new Set(), tapped: false, readsData: true,
-    })
-    expect(r.ok).toBe(true)
+  test('`publishes: 0` does NOT waive it — the most conservative-looking value was the strongest escape (FJS-782)', () => {
+    // `publishes: 0` reads as *this page publishes public data only* and its
+    // effect was *stop asking whether you could observe me*. The two questions
+    // are separate: a number about what a page contains cannot stand in for
+    // being able to see what it contains.
+    for (const publishes of [0, 4, '0']) {
+      const r = checkRoute({
+        routeId: 'r', meta: { publishes }, models: new Set(), taps: 0, readsData: true,
+      })
+      expect(r.ok).toBe(false)
+      expect(r.message).toContain('could not observe')
+    }
+  })
+
+  test('…and the route that reads nothing is still never asked, whatever it declares', () => {
+    // The negative control. A branch that refused every undeclared route would
+    // satisfy the assertion above and fail every page with a companion.
+    expect(checkRoute({
+      routeId: 'r', meta: { publishes: 0 }, models: new Set(), taps: 0, readsData: false,
+    }).ok).toBe(true)
+    expect(checkRoute({
+      routeId: 'r', meta: {}, models: new Set(['product']), taps: 1, readsData: true,
+    }).ok).toBe(true)
   })
 
   test('a route that reads NO data is never asked to declare anything', () => {
@@ -207,22 +227,54 @@ describe('checkRoute — fail closed', () => {
     // nothing to prove. Demanding a declaration there would be noise that
     // teaches people to add `publishes:` reflexively.
     const r = checkRoute({
-      routeId: 'r', meta: {}, models: new Set(), tapped: false, readsData: false,
+      routeId: 'r', meta: {}, models: new Set(), taps: 0, readsData: false,
     })
     expect(r.ok).toBe(true)
   })
 
-  test('an unrecognised model is refused rather than scored public', () => {
+  test('an unrecognized model is refused rather than scored public', () => {
     const r = checkRoute({
-      routeId: 'r', meta: {}, models: new Set(['mystery']), tapped: true, readsData: true,
+      routeId: 'r', meta: {}, models: new Set(['mystery']), taps: 1, readsData: true,
     })
     expect(r.ok).toBe(false)
-    expect(r.message).toContain('schema does not describe')
+    expect(r.message).toContain('could not\n   resolve')
+  })
+
+  test('…and `publishes:` does not waive that either (FJS-782)', () => {
+    const r = checkRoute({
+      routeId: 'r', meta: { publishes: 9 }, models: new Set(['mystery']), taps: 1, readsData: true,
+    })
+    expect(r.ok).toBe(false)
+  })
+
+  test('a relation the recorder could not expand is refused, not scored', () => {
+    const r = checkRoute({
+      routeId: 'r', meta: { publishes: 9 }, models: new Set(['product']),
+      unresolved: new Set(['Product.mystery']), taps: 1, readsData: true,
+    })
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('Product.mystery')
+  })
+
+  test('reads data, a tap installed, and nothing seen is REPORTED rather than refused', () => {
+    // A load() that fetches an absolute URL and touches no database is
+    // legitimate and common; a load() that built its own Litestone client is
+    // not, and the two are the same silence. Refusing would refuse the
+    // majority case to catch the minority one.
+    const r = checkRoute({
+      routeId: 'r', meta: {}, models: new Set(), taps: 1, readsData: true,
+    })
+    expect(r.ok).toBe(true)
+    expect(r.observedNothing).toBe(true)
+    // The control: a route that read something is not reported.
+    expect(checkRoute({
+      routeId: 'r', meta: {}, models: new Set(['product']), taps: 1, readsData: true,
+    }).observedNothing).toBe(false)
   })
 
   test('a bad publishes value fails the route rather than being ignored', () => {
     const r = checkRoute({
-      routeId: 'r', meta: { publishes: 'yes' }, models: new Set(), tapped: true, readsData: true,
+      routeId: 'r', meta: { publishes: 'yes' }, models: new Set(), taps: 1, readsData: true,
     })
     expect(r.ok).toBe(false)
   })
@@ -235,7 +287,7 @@ describe('createReadRecorder', () => {
     return {
       $tapQuery(fn) { listeners.add(fn); return () => listeners.delete(fn) },
       emit(model, operation = 'findMany') { for (const fn of listeners) fn({ model, operation }) },
-      get taps() { return listeners.size },
+      get listenerCount() { return listeners.size },
     }
   }
 
@@ -244,7 +296,7 @@ describe('createReadRecorder', () => {
     const rec = createReadRecorder(c)
     c.emit('product'); c.emit('invoice'); c.emit('product')
     expect([...rec.models].sort()).toEqual(['invoice', 'product'])
-    expect(rec.tapped).toBe(true)
+    expect(rec.taps).toBe(1)
   })
 
   test('stop() actually unsubscribes', () => {
@@ -254,19 +306,122 @@ describe('createReadRecorder', () => {
     const c = fakeClient()
     const rec = createReadRecorder(c)
     rec.stop()
-    expect(c.taps).toBe(0)
+    expect(c.listenerCount).toBe(0)
     c.emit('invoice')
     expect(rec.models.size).toBe(0)
   })
 
-  test('reports tapped:false when there is no client', () => {
+  test('reports taps:0 when there is no client', () => {
     const rec = createReadRecorder(null)
-    expect(rec.tapped).toBe(false)
+    expect(rec.taps).toBe(0)
     expect(() => rec.stop()).not.toThrow()
   })
 
-  test('reports tapped:false for something that is not a Litestone client', () => {
-    expect(createReadRecorder({}).tapped).toBe(false)
+  test('reports taps:0 for something that is not a Litestone client', () => {
+    expect(createReadRecorder({}).taps).toBe(0)
+  })
+})
+
+describe('createReadRecorder — a relation the tap never fires for (FJS-781)', () => {
+
+  // `$tapQuery` fires per TABLE, from inside makeTable's closure, so a child
+  // resolved by `include:` is read inside the PARENT's statement and reaches no
+  // child table. The recorder holds the client, so it expands the query.
+  function client(relations) {
+    const listeners = new Set()
+    return {
+      $relations: relations,
+      $tapQuery(fn) { listeners.add(fn); return () => listeners.delete(fn) },
+      read(model, args) { for (const fn of listeners) fn({ model, operation: 'findMany', args }) },
+    }
+  }
+
+  const RELATIONS = {
+    Customer: { invoices: { kind: 'hasMany', targetModel: 'Invoice' } },
+    Invoice:  { lines:    { kind: 'hasMany', targetModel: 'InvoiceLine' },
+                secret:   { kind: 'belongsTo', targetModel: 'Secret' } },
+  }
+
+  test('an included child is in the read set', () => {
+    const c = client(RELATIONS)
+    const rec = createReadRecorder(c)
+    c.read('customer', { include: { invoices: true } })
+    expect([...rec.models]).toContain('Invoice')
+    expect([...rec.unresolved]).toEqual([])
+  })
+
+  test('and it is what makes the route fail', () => {
+    // The whole point: the parent is level 0 and the child is level 4, so
+    // scoring the parent alone published the child and printed a tick.
+    const c = client(RELATIONS)
+    const rec = createReadRecorder(c)
+    c.read('customer', { include: { invoices: true } })
+    const r = checkRoute({
+      routeId: 'r', meta: {}, models: rec.models, unresolved: rec.unresolved,
+      taps: rec.taps, readsData: true,
+    })
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('Invoice')
+  })
+
+  test('a nested include is followed to the bottom', () => {
+    const c = client(RELATIONS)
+    const rec = createReadRecorder(c)
+    c.read('customer', { include: { invoices: { include: { lines: true, secret: true } } } })
+    expect([...rec.models].sort()).toEqual(['Invoice', 'InvoiceLine', 'Secret', 'customer'])
+  })
+
+  test('a relation named in a nested SELECT is followed too', () => {
+    const c = client(RELATIONS)
+    const rec = createReadRecorder(c)
+    c.read('customer', { select: { name: true, invoices: { select: { total: true } } } })
+    expect([...rec.models]).toContain('Invoice')
+  })
+
+  test('a plain select of scalar columns is not an unresolved read', () => {
+    // The negative control that keeps the expansion honest in the other
+    // direction: every ordinary `select` would be refused if a scalar key
+    // counted as a relation the map does not carry (`FJS-351`).
+    const c = client(RELATIONS)
+    const rec = createReadRecorder(c)
+    c.read('customer', { select: { name: true, total: true }, where: { id: 1 } })
+    expect([...rec.unresolved]).toEqual([])
+    expect([...rec.models]).toEqual(['customer'])
+  })
+
+  test('an include the map cannot expand is unresolved, not scored', () => {
+    const c = client(RELATIONS)
+    const rec = createReadRecorder(c)
+    c.read('customer', { include: { mystery: true } })
+    expect([...rec.unresolved]).toEqual(['Customer.mystery'])
+  })
+
+  test('a client with no $relations at all refuses an include and passes a plain read', () => {
+    // An older litestone. Fail closed on what cannot be expanded — and only on
+    // that, or every app on that client stops building.
+    const c = client(undefined)
+    const rec = createReadRecorder(c)
+    c.read('customer', { where: { id: 1 } })
+    expect([...rec.unresolved]).toEqual([])
+    c.read('customer', { include: { invoices: true } })
+    expect([...rec.unresolved]).toEqual(['Customer.invoices'])
+  })
+
+  test('_count over a relation is a read of that relation', () => {
+    const c = client(RELATIONS)
+    const rec = createReadRecorder(c)
+    c.read('customer', { include: { _count: { select: { invoices: true } } } })
+    expect([...rec.models]).toContain('Invoice')
+  })
+
+  test('an aggregate with no include contributes only its own table', () => {
+    // The six REFUSED rows of the audit probe are the negative control for the
+    // recorder's PLACEMENT; this is the one of them the expansion could break.
+    const c = client(RELATIONS)
+    const rec = createReadRecorder(c)
+    c.read('invoice', { _sum: { total: true } })
+    expect([...rec.models]).toEqual(['invoice'])
+    expect([...rec.unresolved]).toEqual([])
   })
 })
 

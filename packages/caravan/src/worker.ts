@@ -228,6 +228,7 @@ export class QueueWorker {
         attempts: record.attempts,
         actorId:  record.actor_id ?? null,
         tenantId: record.tenant_id ?? null,
+        correlationId: record.correlation_id ?? null,
         auth:     { user: user as JobContext['auth']['user'] },
         // undefined rather than null when there is no app: a handler tests
         // `ctx.app?` and an optional property that is present-but-null reads

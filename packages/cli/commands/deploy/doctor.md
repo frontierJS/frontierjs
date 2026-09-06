@@ -262,7 +262,11 @@ if (existsSync(resolvePath(context.paths.root, 'db/schema.lite'))) {
     command: `bunx litestone migrate check --schema db/schema.lite`,
     cwd: context.paths.root, stdio: 'pipe', allowFailure: true,
   })
-  const code = probe?.exitCode ?? probe?.code ?? 0
+  // `status` is the exit code — what `execSync` puts on the error it throws,
+  // which `allowFailure` hands back instead of throwing. `exitCode` and `code`
+  // are neither of them there, so this used to read 0 on every path that
+  // reached it and the check could only ever pass (`FJS-537`).
+  const code = probe?.status ?? 0
   if (code !== 0) {
     renderCheck('migration history builds the schema', 'fail',
       `db/migrations/ does not build db/schema.lite — the deploy will refuse at start. ` +

@@ -24,7 +24,7 @@ if (context.config.abort) {
 
 context.config.journal.settle('succeeded')
 
-log.success('Lesson 3 done — a publish that reaches one client and not the other')
+log.success('Lesson 5 done — a publish that reaches one client and not the other')
 log.info('')
 log.info(`  ${app}`)
 log.info('')

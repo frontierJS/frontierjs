@@ -22,7 +22,7 @@ both as the weaker one.
 
 ## The classes
 
-Throw one of these anywhere and the transport serialises it. Status is set in
+Throw one of these anywhere and the transport serializes it. Status is set in
 the constructor, so a class is its status.
 
 | Class | Status | Default message |

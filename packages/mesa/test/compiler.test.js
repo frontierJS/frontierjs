@@ -587,15 +587,20 @@ describe('compile() output shape', () => {
       const out = await cx(`<script>export let count = 0;</script><p>{count}</p>`)
       expect(out).toContain('$$option.props?.count')
     })
-    it('does NOT emit makeExternalProperty for export const', async () => {
+    // export const is a prop the child may not write (FJS-D209): the same
+    // registration export let gets, minus the setter. The registration is what
+    // carries the parent's LATER values in — a plain const froze the prop at
+    // mount and a re-rendering parent showed a stale child.
+    it('export const — registered, and with no setter', async () => {
       const out = await cx(`<script>export const MAX = 100;</script><p>{MAX}</p>`)
-      expect(out).not.toContain('makeExternalProperty')
+      expect(out).toContain("makeExternalProperty('MAX'")
+      expect(out).not.toContain('const $$set_MAX')
     })
-    it('export const for callback — plain const, no signal', async () => {
+    it('export const for callback — the initializer is the fallback', async () => {
       const out = await cx(`<script>export const onchange = null</script><div></div>`)
-      expect(out).toContain("const onchange = $$option.props?.onchange")
-      expect(out).not.toContain('$$sig_onchange')
-      expect(out).not.toContain('makeExternalProperty')
+      expect(out).toContain('$$option.props?.onchange !== undefined ? $$option.props.onchange : null')
+      expect(out).toContain('const $$sig_onchange = $$runtime.track(')
+      expect(out).not.toContain('const $$set_onchange')
     })
     it('template reads use get()', async () => {
       const out = await cx(`<script>export let count = 0;</script><p>{count}</p>`)
@@ -2127,10 +2132,10 @@ describe('isStatic detection', () => {
     expect(out).toContain('.nodeValue =')
     expect(out).not.toContain('$$runtime.render(')
   })
-  it('export const — inlined as literal, no signal', async () => {
+  it('export const — a tracked prop, read through get(), never written', async () => {
     const out = await cx(`<script>export const MAX = 100</script><p>{MAX}</p>`)
-    expect(out).not.toContain('$$sig_MAX')
-    expect(out).not.toContain('track(')
+    expect(out).toContain('$$runtime.get($$sig_MAX)')
+    expect(out).not.toContain('$$set_MAX')
   })
   it('no effects for fully static component', async () => {
     const out = await cx(`<h1>Mesa</h1><p>reactive UI language</p>`)

@@ -476,13 +476,32 @@ const TTL_MAP: Record<string, number> = {
   weeks: 604_800_000,
 }
 
+/**
+ * The parse, with no opinion about what an unreadable value means.
+ *
+ * Split from `parseTtl` rather than duplicated: a caller that must REFUSE an
+ * unreadable duration (`scheduler.every`, where the 5-minute fallback turned
+ * `every('nonsense')` into a job on a schedule nobody wrote) needs to know the
+ * parse failed, and a caller that wants the fallback keeps it. One
+ * implementation, two entry points, no second grammar.
+ */
+export function parseTtlOrNull(ttl: string): number | null {
+  const parsed = parseTtlImpl(ttl)
+  return parsed
+}
+
 export function parseTtl(ttl: string): number {
+  // The fallback every existing caller has always had.
+  return parseTtlImpl(ttl) ?? 300_000
+}
+
+function parseTtlImpl(ttl: string): number | null {
   // '5 minutes' → 300000
   // '1h' → 3600000
   // '30s' → 30000
   // raw ms number string → ms
   const n = parseInt(ttl, 10)
-  if (isNaN(n)) return 300_000  // default 5 min
+  if (isNaN(n)) return null
 
   // Short suffixes: 300ms, 300s, 5m, 2h, 7d
   const short = ttl.replace(String(n), '').trim().toLowerCase()

@@ -1,5 +1,786 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-05 — an audit entry can name who was really acting, and a session's sockets can be closed
+
+2237 tests, 0 fail (+3).
+
+**`installLogContext` carries two more keys** — `operatorId` and `episodeId` —
+down the closure it already hands litestone. Not three: `subjectId` is the
+principal already in scope, so asking for it would restate what the entry can
+read. `SessionContext.support` is where an operator survives, since the session
+resolves to the SUBJECT and nothing below that line would otherwise know one
+exists.
+
+**`manager.disconnectSession(sessionId, reason)`.** A session is resolved once,
+at upgrade, and its principal is handed to every frame after — so a change to
+what a session MEANS reaches HTTP on the next request and reaches an open socket
+never. Blunt rather than careful: re-resolving a live connection would mean
+rebuilding a principal underneath frames already in flight, where closing costs a
+reconnect the client already knows how to do. It goes through the ordinary
+disconnect path, or the manager keeps holding a connection whose socket is gone
+and goes on selecting it as a broadcast recipient. Answers a count, because
+*nothing to close* and *nothing happened* are the same silence otherwise.
+
+**`client.auth.startSupport()` / `endSupport()`.** Neither answers the new
+principal: who the caller is now is `account.get('me')`, the same question asked
+of the same place.
+
+## The mail suites came home, and their assertions became real
+
+`tests/mail-injection.test.ts` and `tests/smtp-message.test.ts` each spawned a
+probe and asserted by matching the child's stdout. The fork had no cause left
+once nothing mocked a module, but moving them was never the work: an `ok <name>`
+line the parent greps for is an assertion that cannot fail when it is not
+reached — a `check()` after an early return, a renamed row, a probe that exits
+before its last section all read as a pass.
+
+The two files went from 2 stdout greps to 42 real assertions over the same fake
+MTAs, in process. Nothing was weakened: every wire claim still reads the
+conversation rather than the return value, which was `sent` the whole time it was
+wrong. Three assertions were added because real ones made the gap visible —
+`envelopeRecipients` asked directly beside the wire it produces,
+`assertHeaderName` asked for a real name and a forged one, and a legitimate
+header shown reaching the wire beside the three injections, without which a guard
+that refused every header would have satisfied all three refusal rows.
+
+`tests/fixtures/` holds no mail probe now. 2234/0 three times running
+(`FJS-909`).
+
+## No test file names a port
+
+`tests/ws-limits.test.ts` had been failing about one whole-suite run in three
+and never alone; on the day five files were added to this package it began
+failing every run.
+
+The lead was that it died in the SETUP — at `ws.onerror` while opening the three
+sockets the connection cap is meant to ALLOW, not at the assertion about the
+fourth — with `Expected 101 status code`. Instrumented, the server that refused
+answered `Server shutting down`. Bun runs every file in one process and an app's
+`stop()` does not finish before the next file's `start()` begins, so a socket
+meant for one app was answered by another file's app on the same port, mid
+shutdown. **Three files bound 3396 and four bound 3397.**
+
+Reading the per-IP map at test start — empty — is what ruled out the cap itself
+and two module-level-state theories before anything was changed.
+
+Every one binds `port: 0` and reads `app.http.port` back after `start()`, which
+is what `@frontierjs/testing`'s `listen: true` already does and for this reason.
+`tests/test-ports.test.ts` is the guard: no two files in this package may name
+the same port, decided from the source, because nothing else notices a collision
+until a suite goes red somewhere unrelated. It counts only the spellings that
+reach `createApp` — a `localhost:3000` URL is not one, since ten files name it as
+the base of a client that never connects — and it excludes itself.
+
+2196/0 three times running (`FJS-900`).
+
+## The mail transport is injected, so nothing mocks a module
+
+Five `mock.module()` calls in `tests/email.test.ts`, all on the SMTP shim. Bun
+applies that process-wide and never undoes it, so a test's result depended on
+which other file had run first — and three suites here spawned a subprocess to
+escape it.
+
+`createSystemSender(config, { transport })` takes the transport instead, the
+default being the real client. That is Outpost's injected runner, for the reason
+that package already gives: a test needs the failures — a 535, a refused
+connection, a timeout — and no test may reach a real mail server to get them.
+
+All five mocks are gone. `tests/smtp-starttls.test.ts` came back in process and
+stayed green in the full suite, which is the evidence the mock was the only
+cause rather than a claim that it was. Two suites still fork and their comments
+say so plainly; converting them means replacing stdout string matching with real
+assertions, which is `FJS-909`.
+
+`@frontierjs/junction/mail` also re-exports `assertMessageAddresses`,
+`assertHeaderName` and `assertHeaderValue`, because a test double implementing
+`IMail` has to accept exactly what the real mailer accepts.
+
+## The AI battery ships a shape and no vendor
+
+`createOpenAIModel` and `createAnthropicModel` hardcoded two vendor hosts, an
+`anthropic-version`, and an `anthropic-beta` naming a preview that had gone GA
+years before — and made two bare `fetch` calls with no deadline on the slowest
+request an app makes.
+
+The missing deadline was not an oversight to patch. A timeout, a retry, a
+breaker, an auth header and a body encoding are declared per target in Conduit,
+and this file restated all of them per provider, badly. `FJS-D153` had already
+ruled that for Conduit — the boundary owns the mechanism, never the vendor — and
+`FJS-D215` says what was true all along: that argument is about a package that
+publishes a boundary, not about Conduit in particular.
+
+What decided it was the measurement rather than the doctrine. The code had **no
+tests, no caller anywhere in this repo, and one user-facing instruction — the
+`ai` extra `fli new` scaffolds — telling an app to import `createAnthropicAdapter`,
+which junction has never exported.**
+
+So junction keeps `IAIModel`, `AIBuilder` and `AIRegistry`, and ships no
+provider. An app's adapter reaches its vendor through `app.conduit`; the scaffold
+now writes those thirty lines instead of a wrong import. A first-party connector
+is not forbidden — it lives in its own package, on its own cadence, with its own
+sink, exactly as `@frontierjs/conduit-stripe` does.
+
+A fourth thing came out of checking the fix, and it is not about AI at all. The
+scaffold's replacement comment carried a backslash before a backtick, which
+inside a template literal is an escaped backslash followed by an unescaped one —
+so the literal ended two lines early and the file the scaffold would write did
+not parse, while `bun run typecheck` stayed clean, because it grades the
+TypeScript holding the template and never the JavaScript it emits. That is
+Invariant 15 one package over, and the only thing covering it was the full-tier
+`scaffold` phase. `tests/scaffold-templates.test.ts` now extracts each template
+and asserts it ends where its call ends — the symptom is a literal that stopped
+early, not a bad character, which is why the first version of that test passed
+with the defect reintroduced.
+
+Three things came out of reproducing it. `AIRegistry.register` returned void, so
+the one-line `new AIRegistry().register(model)` that every doc showed set `ai` to
+`undefined` — advice that fails when taken; it is chainable now. An unknown model
+name threw without naming what is registered, so a typo and an empty registry
+read alike; they are separate sentences. And the mechanism that stays had no
+tests at all, which is how it carried a void-returning `register` indefinitely.
+
+## The OpenAPI spec is graded by calling what it documents
+
+A spec is a document, and nothing ever executed this one. Measured against a
+service narrowed by `methods:`, six documented operations produced **three 405s
+and one 404** — four separate kinds of drift, every one of which read as correct
+in the file.
+
+The instrument is the round trip: call every operation the spec documents against
+the app that produced it. Nothing narrower catches a fifth kind of lie, because
+the assertions one writes are the ones one already thought of — a per-clause test
+would have passed on the `/{id}/{method}` path, which no assertion was written to
+look for.
+
+**CRUD verbs are filtered by what the service answers.** `describe().methods` is
+the policy-applied list and its own comment already said why — *advertising a verb
+the service answers 405 to is worse than not advertising it, because a generated
+client calls it*. The generator did not read it. A path left with no operations is
+no longer emitted at all.
+
+**A custom method is documented where the wire serves it.** It had a path each,
+`/{service}/{id}/{method}`, under a comment calling the slug documentation-only;
+measured, every one answered 404, because no such route is registered and the wire
+dispatches `POST /{service}/{id}` on `X-Service-Method`. They collapse into one
+operation whose header enum is the allow-list and whose body is a `oneOf`. That is
+the wire's shape surfacing rather than a loss: OpenAPI dispatches on path and verb
+and has no way to say *a different operation depending on a header value*, so a
+per-method operation would read better and be the same lie in a new place.
+
+**An error response carries a shape.** `components.schemas` was empty and every
+error listed a `description` and nothing else, so a generated client had no error
+type. `Error` is derived from what `toFrameworkError` actually sends, and the test
+asserts it against a real refusal rather than against the document.
+
+**A declared `input:` reaches the spec.** The one part of a payload contract that
+is stated rather than derived from a model was the part that went undocumented. It
+resolves through `appJsonSchema`, exported from the adapter that already owns the
+derivation and its cache; where it cannot resolve, the operation names the type
+instead of dropping it.
+
+Two things the reproduction added. The docs page interpolates two caller-supplied
+values into hand-written HTML — the title into markup, the Scalar config into a
+`<script>` — so a `customCss` containing `</script>` closed the element and
+everything after it was markup. The Scalar reference was also unpinned, running
+whatever that package published today on the API's own origin; it is pinned now,
+and the pin going stale is the trade, since a stale version still renders. And
+`ui` was typed `string | false`, which has no spelling for *on, at the default
+path*: the runtime accepted `true` and the type forbade it.
+
+Three existing tests asserted the old shape and were updated rather than the code.
+They searched path keys for a method name; they search the whole document now,
+which also strengthens the control that an undeclared method appears nowhere.
+
+## Liveness and readiness are two questions, and a check is bounded
+
+Measured before anything changed: a readiness check that never settled meant
+`/health` gave **no answer at all** — not a slow one — which an orchestrator
+reads as a dead process; three checks (one fast, two of 400 ms) took 816 ms
+because they ran one after another, so an app grew its own probe latency by
+adding a dependency; and a failing third-party check answered 503 on the only
+path there was, so a livenessProbe pointed at it restarts every replica of an
+app that is working.
+
+`/health` does not move. It goes on answering readiness — which is what a load
+balancer wanted from it all along — and `/health/ready` and `/health/live` are
+added beside it. **Liveness consults nothing**: *should this process be
+restarted* is answered by the process reaching the line, because restarting
+cannot fix somebody else's database and doing it to every replica at once turns
+a blip into an outage. A **draining process is still alive**, which is the one
+place the two answers must disagree: killing it mid-drain destroys the in-flight
+requests the drain exists to finish.
+
+Checks run concurrently now, and each is bounded by `checkTimeout` (2000 ms). A
+check that overruns is a `fail` row carrying `timed out after Nms` rather than a
+silence — nothing cancels it, which is the same honest answer
+`http.requestTimeout` gives. Each check is entered through
+`Promise.resolve().then(fn)` and not `fn()`, or one that throws synchronously
+escapes its own promise and rejects the whole collection: a 500 naming no check.
+
+`/health` answering 503 `draining` with `Connection: close` was already true
+(`FJS-693`) and is pinned as a control here rather than re-fixed.
+
+## /metrics answers a scraper in the format the path implies
+
+`/metrics` is a convention before it is a path, and the convention carries a
+format. Measured, a Prometheus `Accept` was handed `application/json`, which no
+scraper can read.
+
+One collector, two representations, chosen by `Accept`. A browser leads with
+`text/html` and curl sends the wildcard, so every existing reader of this
+endpoint — the devtools console, `fli gui` — keeps the JSON it is written
+against.
+
+The mapping is one narrow rule: **a number is a metric and nothing else is**. A
+string (`nodeVersion`, `ts`), an array (the service list) and a boolean are
+skipped rather than counted or stringified, because the alternative is inventing
+a value the collector never stated. That rule is also what bounds cardinality: a
+`registerMetricsSource` section made of names and flags emits no series at all,
+so a section cannot become a series per service by accident.
+
+No `# TYPE` is emitted. Whether a number is a counter or a gauge is not
+derivable from its name, and Prometheus reads an untyped metric correctly where
+a mislabelled counter it does not.
+
+## The two cache drivers answer the same question the same way
+
+An interface exists so a caller need not know which backend answers. Measured
+before anything changed, the memory driver and the SQLite one disagreed eleven
+ways: a memory `get()` handed back the stored reference, so mutating a row after
+`set` — or mutating what `get` answered — changed what the cache held, where
+SQLite round-tripped and did not; `undefined` and a function stored in one and
+threw a NOT NULL in the other; a `Date` came back a `Date` from one and a string
+from the other, a `Map` a `Map` and a `{}`, `NaN` itself and `null`; `clear()`
+answered a count and 0; `clear(pattern)` was a substring match in memory and a
+prefix in SQLite; eviction was FIFO, and only one driver evicted at all.
+
+The fix is one codec both drivers call, not a fix per driver — that is what makes
+a twelfth divergence unreachable rather than merely unfiled. **What a cache value
+may be is derived rather than chosen**: JSON is what a Litestone row already is
+(a `DateTime` reads back as an ISO string), what a response body carries and what
+a WS frame carries, so a cache holding what the wire holds owes no rule of its
+own. What JSON would lose is refused at `set()` naming the key and the way out —
+a `Date` says store the ISO string, a `BigInt` says store digits the way an
+`Int @big` column crosses — and the walk is the one `JSON.stringify` was already
+doing, so grading a value costs no second pass. `undefined` is refused for a
+second reason as well: `get()` answers it for a miss, so a stored one could not
+be read back, which is what makes `getOrSet`'s miss check sound.
+
+**The memory driver holds the value encoded**, which is what buys value
+semantics. A shared reference is a semantics no persistent backend can offer, so
+code written against it breaks on the day the driver is swapped. Eviction is LRU:
+`get()` counts as a use, `has()` deliberately does not — a scan for one key would
+otherwise evict the entries somebody is reading — and an overwrite re-inserts,
+because `Map.set` on an existing key leaves it where it was.
+
+`getOrSet(key, factory, ttl)` is the read-through, with single flight: one factory
+run per key however many callers arrive while it is running, a rejection reaching
+all of them and cached for none.
+
+The conformance suite is the artefact, and one body run against both drivers is
+the only shape that can see any of this. It found the twelfth divergence on its
+first run: the SQLite `clear(prefix)` escaped `%` and `_` with a backslash and
+declared no `ESCAPE`, so a prefix containing either matched nothing.
+
+It also retired a workaround. `buildCacheHooks` was `structuredClone`-ing on both
+store and read because the interface promised nothing — a second answer to
+isolation, and one that cannot be true of a driver it has never heard of. Measured:
+a 20-row `find` result costs ~70 µs to encode and ~31 µs to read, against ~73 µs
+for the `structuredClone` the hook paid twice, so the service cache is a wash on
+store and about 2.3x faster on read; a session-sized value is 1.8 µs and 0.7 µs
+against 0.7 µs.
+
+`verifySession` is deliberately still uncached. A revoked session would go on
+working for the TTL, which is a security property traded for an indexed read —
+and `client.auth` calls `POST /auth/logout` precisely so that row stops being
+valid.
+
+## A scheduled job does not overlap itself
+
+`setInterval` fires on a clock and knows nothing about the body it started last
+time. Measured: a 100 ms interval with a 350 ms body started 15 runs in 1.6 s
+with **four** in flight at once, and nothing anywhere reported it. A scheduled
+job that overlaps itself is how one corrupts the state it maintains.
+
+A tick arriving while the previous run is still going is dropped rather than
+queued — queueing turns a job that cannot keep up into an unbounded backlog
+that fails later and further from the cause — and `stats.skipped` counts it,
+which is the whole difference between this and the bug. One `runOnce` shared by
+`every` and `cron`; the `finally` is load-bearing, since without it the first
+throw stops the job for ever.
+
+`every()` now refuses an interval that is not one. `every('0ms')` was a timer
+with no interval; `every('nonsense')` took `parseTtl`'s five-minute fallback and
+became a job on a schedule nobody wrote. `parseTtl` keeps that fallback for
+every existing caller — it is right for a cache TTL — and the parse is split
+from the opinion about it as `parseTtlOrNull`.
+
+The cron driver re-aligns to the minute boundary on every tick instead of a
+fixed 60 s interval, which accumulates drift so a tick lands at `:59.99` and
+reads the minute before the one it was meant to serve. The minute each job last
+fired for is remembered too, because re-aligning narrows that window without
+closing it.
+
+Two of the four clauses filed here were already closed by the
+`@frontierjs/toolbelt/cron` consolidation — a stepped range is stepped within
+the range, and a date that never occurs is refused — and are now pinned as
+controls rather than re-fixed.
+
+## The log level moves at runtime, and the children follow
+
+`minLevel` was destructured once and closed over, and `child()` passed a copy of
+it. There was no way to turn debug on in a running process, and no way for a
+change to reach a child if there had been.
+
+It is a cell shared by reference down the tree now — litestone's `enc`
+arrangement, for the reason it states: a spread copies a string by value, so the
+root moves and everything derived from it keeps the old one. `setLevel` refuses
+a level that is not one; `noopLogger` accepts and ignores it, because one that
+threw would make every caller branch on which logger it holds.
+
+The cell is tree-wide, so setting the level on a child moves the root. That is
+what "turn debug on in a running process" wants; per-namespace verbosity is a
+different feature needing a cell per node with a fallback to its parent.
+
+
+## The SMTP driver sends what the interface accepts
+
+`MailMessage` declares `cc`, `bcc`, `attachments` and `headers`. The Resend
+adapter mapped all four. `createSmtpMailer` built the transport message from an
+explicit field list — `from, to, subject, html, text, replyTo` — and left the
+other four out, then answered `{ message: 'sent' }`.
+
+Measured on the wire against a capturing server: a `cc` address was validated on
+the way in, reached no `RCPT TO`, appeared in no header, and the copied
+recipient never received the mail. One interface, two drivers, no way to tell
+which one you had.
+
+The envelope is `to + cc + bcc` now. A `Cc:` header is emitted; **`Bcc:` is
+deliberately not**, because writing one is how a blind copy stops being blind —
+the obvious symmetry with `Cc` is the bug. Caller headers are emitted last, so
+they cannot restate `From` or `Content-Type` ahead of the message's own. An
+attachment turns the message into `multipart/mixed` by wrapping the body that
+was already built, so the alternative/html/text shapes stay the only place body
+structure is decided.
+
+**Passing headers through is what makes header injection reachable**, so the
+guard is part of the same change: `assertHeaderName` — a name is a token, no
+colon, space or line break — beside the value check that already existed. Both
+run at the ADAPTER as well as in the transport, and that placement is
+load-bearing rather than tidy: a refusal raised while building the MIME body
+fires with a socket open and a session mid-transaction, and it read as a hang.
+
+## The SMTP conversation is bounded, and knows whether to try again
+
+There was no deadline anywhere. A host that accepted the connection and never
+greeted parked the caller for the life of the process — a request that never
+answers, or a queue worker that never takes another job. Every read and the
+connect itself now take `timeoutMs`, default 30s. Measuring that found
+`createSmtpMailer` was dropping `timeoutMs` between the adapter and the
+transport as well: the same option-declared-and-forwarded-nowhere bug as the
+four fields above, one field along.
+
+`SmtpError.retryable` is derived from the reply code's first digit, which is
+what that digit is for: RFC 5321 4yz is a transient negative and 5yz is
+permanent, and a failure with no reply behind it (a refused connection, a
+timeout) is transient too. A greylist 450 and a hard bounce 550 used to retry
+identically, so a queue burned its whole ladder on an address that will never
+accept.
+
+
+## 2026-09-05 — `client.presence`, and the roster says which member you are
+
+`FJS-811`, and the client half of `FJS-787`.
+
+Presence had a server and no client verb. `client.presence.announce(channelId, meta)` publishes
+this connection's meta for a channel and asks for its roster; `release(channelId)` stops. They
+are deliberately NOT called `subscribe`/`unsubscribe` even though those are the frame types on
+the wire: `subscribe` does not subscribe — the server owns channel membership and says so in
+`transport/channels.ts` — and `unsubscribe` is a no-op there, so publishing the wire words as
+the public verbs would name the one thing this cannot do.
+
+The meta is held by the client rather than the caller, because what invalidates it is a
+RECONNECT, which no caller sees: presence is keyed by connection id, so a new socket is a new
+connection with no meta and no roster. Every announced channel is re-sent on connect, before
+`connect` fires, so a listener that reads a roster is not reading the previous socket's.
+Socket-only and no HTTP fallback — presence is a fact about a live connection, and a request
+that opens and closes one has nothing to be present in.
+
+**`presence:sync` now carries `you`.** It is the only frame sent to exactly one connection and
+therefore the only one that can say which member the recipient IS; without it a client cannot
+split a roster into self and others at all, because nothing else tells a browser its connection
+id.
+
+**`auth.signOut()` asks `hasCredential`, not `token`.** In cookie mode the credential is an
+httpOnly cookie no script can read, so a token gate skipped the one call that ends the session
+and still answered `{ revoked: true }` — the person told the session was revoked while it stayed
+valid in the jar (`FJS-787`).
+
+## A payload key that names no column is refused
+
+`autoValidate` copies the declared properties out of a payload and drops the
+rest. That is mass-assignment protection and it is right about most of what it
+drops: `id` on a create, `createdAt`, a `@guarded` column — a client that
+fetches a row, edits one field and PUTs the whole thing back sends all three on
+every write, and refusing them would break the commonest REST idiom there is.
+
+It was wrong about the other kind. `{ title, titel: 'typo' }` answered 201 with
+the typo gone and nothing said: a write the caller believed had happened.
+
+The two are separated by one fact and it is derivable — does the key name a
+field the model declares. `createdAt` does. `titel` does not, and no schema
+change short of adding the column makes it mean anything. The set is read off
+`$schema.models` and **not** off the generated documents: `createdAt` and
+`updatedAt` are in no mode `create`/`update`/`read` emits, measured, so a
+document-derived set would refuse exactly the legitimate echo above.
+
+A key naming nothing is now a 400 through `fieldError`, so it lands under the
+box rather than in a banner. It is checked **per row**, so a bulk write still
+partitions — one typo in row ninety must not cost the other ninety-nine. A
+declared `input:` type is the same rule against its own property set. There is
+no *did you mean*: litestone owns the typo hint and exports neither of its two
+`editDistance` copies, and a third here would be a new origin for the one thing
+this file must not invent. The sentence names `@transient` instead, which is
+the framework's existing answer for a value a caller sends that is not a column.
+
+**The default was measured rather than argued.** *Strictness follows cost*
+needs to know the cost, so the check shipped as a warning and was counted:
+across junction's 2035 tests it fired twice, both times in a test asserting the
+strip itself. The live refusal then found, in basecamp, four services wiring
+`deriveSlug` onto a model with no `slug` column — a hook that had been stamping
+a key every write discarded, in an app where three *other* services carry a
+hand-written comment explaining they omit it for that reason — and one page
+spreading a `threshold` form control it had already folded into `condition`.
+Both were invisible for as long as the strip was silent.
+
+## A custom method has a gate
+
+`OP_FOR_METHOD` names the six CRUD verbs, and a method it does not name reached
+`next()` ungraded. Not unguarded — a body that writes is still refused by the
+model's own `@@gate` — but the refusal arrives after the body has run. Measured
+against a `@@gate("5.5.5.5")` model: an anonymous `POST` with
+`X-Service-Method: refund` executed the handler, ran its side effect, and only
+then took a 403 from the first write, while every CRUD verb on the same service
+answered 401 having run nothing.
+
+The floor is derived and it is the model's **read** gate: to call anything on a
+service you must at least be able to see the model, which is what `find` already
+requires. Nothing above that is derivable — `availability` and `refund` sit on
+one service over one model — so it is declared:
+`methods: [{ method: 'settle', gate: 5 }]`. A declared level grades the caller
+(401 for a stranger, 403 for one too junior); the floor is a presence check, as
+`find` is.
+
+**A method authenticated by something that is not a session states `gate: 0`.**
+An outpost heartbeat signed with HMAC, an invitation preview opened by somebody
+who has no account yet — both are real and both are in basecamp. The refusal
+warns once per method with that sentence on the server's log; the 401 body stays
+generic, because naming the fix to a caller hands an attacker the shape of it.
+`FJS-826`.
+
+## A bad `$after` is a 400, not an empty list
+
+Four shapes of cursor answered a 200 over the wire — an empty list, which a
+client reads as the end of the data — and a malformed one answered 500. The
+grading is litestone's, because that is where the ordering is known; what
+changed here is that `tests/window.test.ts` now asserts the status, which is the
+half neither package can answer alone. `FJS-779`.
+
+## The outbox relay gives up, waits, and stops evicting the tenants being served
+
+Four changes, one finding (`FJS-778`).
+
+A row whose job could not be dispatched was retried on every tick of the relay's
+clock, forever — twelve passes over an unroutable job left `attempts: 12` and a
+row still counted as pending. `maxAttempts` (default 10) with an exponential
+backoff on a new `nextAttemptAt` column is the bound. Past the cap a row is
+**dead**: not deleted and not stamped, it stops matching the relay's query, is
+counted as `dead` rather than `pending`, and fails the readiness check — the only
+thing in the process that says an effect is never going to happen. Dead is
+DERIVED from `attempts` against the cap, so raising the number revives every row
+it covers, which is the way back for a handler that has since been fixed.
+`maxAttempts: 0` is the old behavior and stays reachable.
+
+The walk that finds the rows used `registry.get(id)` — the request path's verb,
+which promotes into litestone's LRU — and `deliverOutbox` / `sweepOutbox` /
+`pendingOutbox` each resolved the registry themselves, so a tick walked every
+tenant three times. Measured against a real registry, 20 tenants at `maxOpen 8`:
+one idle pass retired **59** clients and evicted the tenant that had just been
+served. It goes through `registry.query` now — bounded fan-out, each client
+opened COLD — and `outboxPass` makes a tick ONE traversal. After: the served
+tenant survives, 59 retirements → 16, 54 ms for 20 tenants.
+
+The post-commit kick names its own database. The call knows the client it wrote
+the row through, so what was a scan of the whole registry on every committed
+call that enqueued anything is one query. `assertOutboxShape` opens no tenant
+either: the ambiguous-home question is answerable from `app.db` and the
+registry's presence, and walking at boot opened every tenant database an app has.
+
+`app.outbox.pass()` is the tick, reachable by hand. `deliver()` is the narrower
+verb and refreshes no count, deliberately — a metrics source must be synchronous,
+so those numbers are as of the last pass.
+
+## Adapter caches key on the schema, not the client
+
+The generated JSON Schema, the compiled validators, a model's column set, its
+`@version` column, its gate levels and whether it is row-scoped are all facts
+about the schema. All eight were held in a `WeakMap` keyed on the client — and
+`withLitestoneDb` calls `$setAuth(user)` per request against a principal that is
+a fresh object every time, so the proxy was fresh and every lookup missed.
+
+Measured on the 188-model fixture: a create cost **7.38 ms** with a fresh
+principal and **0.49 ms** with one reused. After, **0.61 ms**, with the two
+indistinguishable — which is the claim rather than the absolute number.
+
+`$schema` is the identity they meant: litestone shares the parsed schema by
+reference across root, `$setAuth`, `asSystem` and `$scopedBy`. Two clients over
+one schema share the entries, correctly, for the same reason. `FJS-777`.
+
+## `autoFilter` reports the path, the right model, and the reason
+
+A filter key found through a relation now reports where it sat
+(`customer.is.nope`) and the model it was graded against — `allowed` is the
+TARGET's column list, so saying *filterable fields on orders* while listing
+Customer's sends the reader to the wrong schema.
+
+And a key refused for a REASON is no longer reported as unknown. Litestone
+writes a sentence for `@computed`, `@encrypted`, `@transient` and a bad
+`$scope`; this layer rebuilt its own from `key`/`suggestion`/`allowed` and threw
+that away, so a correctly-spelled `@encrypted` column sent the caller hunting for
+a typo. `FJS-776`.
+
+## The logger and `defineEnv` stop printing credentials
+
+The logger wrote `data` through `JSON.stringify` with no filter, so
+`authorization`, `cookie` and `password` reached the line verbatim — nested ones
+included, which is the shape a request logger produces. `defineEnv` quoted the
+offending value on a type failure, so a malformed `DATABASE_URL` put its password
+on stderr at boot.
+
+Redaction is a `JSON.stringify` replacer rather than a pre-pass copy: the walk
+happens inside stringify anyway, so it costs a Set lookup per key and allocates
+nothing on the hottest path in the process. The pretty path redacts too — a
+developer's terminal is where a token gets pasted into an issue.
+
+The name set is `@frontierjs/toolbelt/redact`, not a list here, because conduit
+asks the same question about a URL's userinfo and three lists would disagree the
+first time somebody adds a header. `redactProtected` now delegates its walk to
+the same kit and keeps only its predicate. `defineEnv` gained `secret?: boolean`,
+inferred from the name when absent. `FJS-775`, `FJS-709` `batteries-11`.
+
+## `isServiceResult` takes a fourth discriminant
+
+A row carrying `kind` (holding `'single'` or `'list'`), `object` and `data` satisfied
+the guard. The `kind: 'list'` variant was the damaging one: a list envelope is kept
+whole, so `protect()` stripped inside the row's own `data` column and the row's
+protected siblings went out intact — the July password-leak shape one layer out.
+
+`errors` is the fourth signal. `single()` and `list()` always set it and a row will
+not, and the pre-`kind` wire shape an older server sends fails on the discriminant
+before reaching the check.
+
+Not a Symbol brand, and the reason is a measurement: across every `.lite` here —
+the apps, the seven imported corpora and the 188-model `openmrp` fixture — no model
+carries even two of the three columns together. The passthrough branch it exploits
+also has no producer; disabling it left the suite at 1985 pass, 0 fail. Deleting the
+branch was rejected because an app that DID return an envelope from a custom method
+would then have it double-wrapped inside `data`, silently. `FJS-706` `core-10`.
+
+## 2026-09-04 — `sessionGateLevel` grades a role-less session CREATOR(3)
+
+**A behavior change, on one branch.** `sessionGateLevel`, `LEVELS` and
+`GradableUser` are `@frontierjs/toolbelt/gate` re-exported under their existing
+names, and the kit's grader reads `role` where this copy did not: a signed-in
+caller carrying no role now grades CREATOR(3) rather than USER(4). Litestone's
+grader has always answered 3, and a schema declaring any `@@gate` auto-installs
+Litestone's rather than this — so the two answered one caller differently
+depending on how an app was wired, and one `@@gate("4")` read was a 403 or a 200
+(`FJS-520`, ruled `FJS-D197`).
+
+**Who is affected.** `@frontierjs/auth`'s `User` ships
+`role String @default("user")` and the session builder copies it, so an app on
+the shipped auth is unaffected. What reaches the branch is a session some other
+path built — an app with its own `User` and no role column, a machine or API-key
+caller, a hand-built test principal. Such an app either gives its callers a role
+or installs a `getLevel` that wraps this, which is the documented extension
+point.
+
+## 2026-09-04 — `app.scheduler` reads the one cron grammar
+
+`FJS-767`. This scheduler had a parser of its own and Caravan had another. Both
+were broken and not in the same way, so an expression meant two different things
+depending on which timer was holding it: `0 1-5,8 * * *` was hours 1 and 8 here
+and hours 1 to 5 there, and `0 1-5/2 * * *` was every second hour here and hours
+1 to 5 there. Neither consulted a bound, so `0 25 * * *` became a timer that
+matched no minute for the life of the process.
+
+Both now read `@frontierjs/toolbelt/cron`. What is junction's is the clock: this
+scheduler is in-process, has no persistence and no zone, so it reads the host
+one — which is why the kit takes clock parts rather than a `Date`.
+
+`cronMatcher(expr)` is exported alongside `createScheduler`, because the mapping
+is now the only part of this that can be wrong and it is the classic place to be
+wrong: `getMonth()` is 0-11 and cron's month is 1-12. Nothing could ask the
+question before — the matcher lived in a closure behind a timer that fires once
+a minute, so the only way to test a schedule was to wait for it.
+
+## 2026-09-04 — every service over a model is told, and a live list stays the size of its page
+
+`FJS-767` and `FJS-766`, split out of `FJS-712`. 1974 tests, 0 fail. Typecheck clean.
+
+**The announcement index held ONE service per model.** Two services over one
+`Order`: `orders.create` announced both, `orders2.create` announced `orders2`
+alone, and `asSystem().create` announced `orders2` alone. Whichever service
+claimed the model last owned it, the suppression compared against that winner,
+and the loser's subscribers held a stale row with nothing said — with which one
+won decided by registration order, so it moved when a file was renamed.
+
+The filed reading was the opposite (*announces TWICE, the second ungraded*); the
+ungraded half went with `FJS-672`, and reproducing it found the silence
+underneath. It is model → a SET now, each announcement graded with its own
+accessor and the suppression asked per service.
+
+**A DECLARED `model:` is the only spelling that service claims.** The index used
+to make the name-derived claim first and let the declared one override the key it
+named, which left the derived claim standing — so a service called `orders` over
+`model: 'Invoice'` went on receiving `Order` writes. Harmless while one name won
+a key; a wrong announcement the moment every claimant gets one.
+
+**A live list with a `limit` and no `orderBy` grew without bound.** 3000 pushes
+into a `load({}, { limit: 20 })` reached 3003 rows and took the process from
+107 MB to 221 MB. The branch appended and bumped `stale`, on the reading that not
+showing the row somebody just made is worse than a list longer than the page it
+claims to be. **Reversed**, and the test that asserted it is rewritten: with no
+ordering nothing in a browser can know whether the row belongs on the page at
+all, which is the position page 2 is already in — and the same code already
+refuses and counts there. Trimming instead drops a server row chosen at random,
+which is worse than not showing it.
+
+It bounds GROWTH and nothing else. A row already on the page takes `apply`'s
+`present` branch and never reaches the bound, so a patch still applies at any
+page size, and a page that is not yet full still appends — which is the case the
+old reading was really about. The membership test the first draft put inside
+`insert` was dead for that reason and is not there.
+
+Graded by removal, of 76: the service set **2**, the declared-only claim **1**,
+the growth bound **1**.
+
+## 2026-09-04 — the broadcast cohort key is the principal's value, not the object
+
+`FJS-764`, split out of `FJS-712`. `FJS-D175` says two tabs of one person are
+one verdict and one frame, and the key that expressed it was `conn.user` — an
+object. Nothing upstream shares one: `_wsOpen` calls `verifySession` per socket
+and `@frontierjs/auth` answers `{ ...toContext(user), sessionId }`, a fresh
+object every time. So no two sockets ever collapsed and the cohort was a
+per-connection loop wearing the word cohort.
+
+Measured against a real Data boundary — a gated, policied model, 100 sockets,
+median of five runs:
+
+    100 sockets, ONE person      606.7 µs  →   75.5 µs
+    100 sockets, 100 people      554.0 µs  →  533.4 µs
+
+The second row is what says the fix is a collapse rather than a speed-up: where
+there is nothing to collapse, nothing changes.
+
+The key is now a canonical serialization of the session, which is what actually
+decides the answer — `$readAs` grades the gate, the row policy and the field
+policies out of the principal's own fields, and `sessionGateLevel` reads five
+more. Two principals that serialize identically cannot be graded differently,
+which is the property a hash only approximates. It is memoised on the session
+object, so the serialization is paid once per connection rather than once per
+connection per publish, and the memo is weak.
+
+Serialization REFUSES rather than approximates: anything with a prototype of its
+own — a class instance, a Map, a function — plus a cycle or anything past a
+small depth, answers null and the caller falls back to the object, which is the
+old behavior. Collapsing two principals that are not the same is the one mistake
+here that delivers a row to somebody who may not read it.
+
+The suite's own fixture is why this survived: it shared one `user` object
+between the two tabs, which no transport does. Every new row hands each
+connection its own.
+
+## 2026-09-04 — a refusal made by an around hook is no longer reported as a success
+
+`FJS-762`. Found by measuring the devtools console for `fli tutor:tools`: an
+anonymous POST answered 401 and arrived in the call feed as `notes create · ok`,
+with no name, code or message on it.
+
+`hooks.ts` assigns `ctx.error` inside `runCore` — a before hook, the method, an
+after hook — and an AROUND hook wraps all three, so its throw is caught into
+`callService`'s own `pipelineError` and never reaches that assignment. The
+telemetry event read `ctx.error ? 'error' : 'ok'` and answered `ok`.
+
+**`gateAuth` is an around hook**, so this was every auth refusal an app makes:
+the commonest failure there is, invisible in the one surface whose job is *what
+happened to this call*, and indistinguishable from a 200 in the feed, in
+`/api/state`, and to any subscriber grading on `status`. Not every failure — a
+validation 400 is thrown from `validated:`, inside `runCore`, and was already
+correct, which is why the field looked as though it worked.
+
+The test is that pair, one service with one call refused by an around hook and
+one allowed through, because a fix that marked everything an error would look
+identical from the refused side. 1958 tests; the new one fails with the fix
+stubbed.
+
+## 2026-09-04 — a webhook subscriber is an audience, and it is read rather than stated
+
+`FJS-724`, ruled `FJS-D193`. 1958 tests, 0 fail. Typecheck clean.
+
+A delivery carried whatever the event bus emitted — `ctx.result` for a service
+event, the row itself for a litestone tap — with nothing between there and the
+wire. Re-measured on today's code before anything was written:
+`deliver('users:created', { …, password: 'hunter2' })` arrived at the receiver
+in full.
+
+This is `FJS-631` one layer over, and the mechanism that closed it there does
+not carry across unchanged, because **a URL is not a principal**. What makes it
+carry is that a REGISTRATION had one: the caller who created it. So the audience
+is not stated in a body and needs no UI — it is READ from the principal in scope
+at registration, stored as an ID, and the principal is re-resolved at every
+delivery through `IAuth.sessionFor`. Caravan already answers the same question
+the same way for a job; a registration is deferred work with a longer fuse, and
+a registrant demoted since is graded at the standing they hold now.
+
+**Reading it rather than taking it is the security property.** `sessionFor` must
+never be wired to anything a request can name, and `manage` (5) is the bar for
+creating a registration — an audience the registrant chose would make that same 5
+the bar for receiving anything anybody in the app can read. A body naming
+`subscriber` is ignored; the row records the caller.
+
+**Three answers, and the line between the last two is the design.** *Graded* — a
+model resolved and `$readAs` answered. *Ungraded* — grading was never
+APPLICABLE (no Data boundary, an event naming no model, a payload that is not a
+row): delivered with the floor applied and said out loud once. *Refused* —
+applicable and unanswerable, or answered no: nothing sent, and **no pending row
+written**, because a payload nobody may read must not sit in a retry table for a
+day. `channels.ts` draws the same line for a broadcast.
+
+`$protectedFields` is the FLOOR and it applies on the ungraded path alone, by
+name and at any depth — there a name is the only handle left, and under grading
+it would be a second reading of a rule the Data boundary has already applied.
+
+**ABSENT is not `null`.** `IWebhookStore.register` gained a fourth argument, so
+an implementation written before this answers `undefined` — *cannot say* rather
+than *nobody*. Read as nobody it stops every delivery in an app that upgraded;
+read as anybody it is the hole. It is neither, and the payload goes out ungraded
+saying which. The same distinction `ctx.auth` makes between a call naming no
+principal and one naming `null`.
+
+Two things the fix turned up. `createStubAuth` had no `sessionFor`, so junction's
+own `runAs` could not be driven from a test at all. And `resolveAccessor` answers
+its INPUT for a name that matched no model, which is indistinguishable from one
+that matched itself — `accessorIfModel` is the sibling that answers `null`, and
+without it `webhook:test` would be refused as though a policy had judged it,
+since `$readGrading` calls an unknown accessor `graded` by design.
+
+18 new tests, every refusal paired with the acceptance of the same payload by an
+audience one field apart. Graded by removal, of 47: no shaping at all **12**, a
+refusal delivering anyway **1**, absent-read-as-nobody **1**, no floor **1**, an
+undecidable rule delivering **1**, an unknown accessor treated as a model **3**,
+cohorts keyed by registration **1**, the audience taken from the caller **1**.
+
 ## 2026-09-03 — a claim is per request, and a broadcast has no request
 
 `FJS-749`, `FJS-D191`. 1955 pass. Typecheck clean.

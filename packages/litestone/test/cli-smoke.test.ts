@@ -659,7 +659,7 @@ model Vault {
     const jsonSchema = JSON.parse(readFileSync(join(dir, 'schema.json'), 'utf8'))
     expect(jsonSchema.$defs.Address).toBeDefined()
     expect(jsonSchema.$defs.Address.type).toBe('object')
-    expect(jsonSchema.$defs.User.properties.address).toEqual({ $ref: '#/$defs/Address' })
+    expect(jsonSchema.$defs.User.properties.address).toEqual({ $ref: '#/$defs/Address', 'x-sortable': 'json' })
   }, 30_000)
 
   // There is no `down`. `--backup` is the way back, and the run has to be able
@@ -1095,5 +1095,158 @@ describe('a schema importing a package by name', () => {
     const { exit, stderr, stdout } = await runCli(dir, ['db', 'push'])
     expect(exit).not.toBe(0)
     expect(stdout + stderr).toMatch(/is the package installed, and does it export that subpath\?/)
+  })
+
+  // ─── release --from <path> ────────────────────────────────────────────────
+  //
+  // A baseline file is a COPY of the schema at another moment, and its `import`
+  // lines resolve against whatever directory the copy was put in. Kept anywhere
+  // but beside the schema it lost every imported model in silence, and the
+  // comparison then reported an imported package as newly added — the one
+  // command whose whole job is to classify a difference, inventing one
+  // (`FJS-757`). Three cases, because the fix is only sound as a set: the
+  // borrow, the baseline that brought its own and must keep it, and the import
+  // that is genuinely gone.
+
+  function releaseFixture(label: string) {
+    const dir = mkdtempSync(join(rootTmp, `${label}-`))
+    mkdirSync(join(dir, 'db'),   { recursive: true })
+    mkdirSync(join(dir, 'else'), { recursive: true })
+    writeFileSync(join(dir, 'db', 'auth.lite'),
+      'model Credential {\n  id     String @id\n  secret String\n}\n', 'utf8')
+    const schema = 'database main {\n  path "./app.db"\n}\n\nimport "./auth.lite"\n\n' +
+                   'model Note {\n  id    String @id\n  title String\n}\n'
+    writeFileSync(join(dir, 'db', 'schema.lite'),   schema, 'utf8')
+    writeFileSync(join(dir, 'else', 'before.lite'), schema, 'utf8')
+    return dir
+  }
+
+  const RELEASE = ['release', '--schema', 'db/schema.lite', '--from', 'else/before.lite']
+
+  test('a baseline kept away from the schema borrows its imports, and says so', async () => {
+    const dir = releaseFixture('release-borrow')
+    const { stdout } = await runCli(dir, RELEASE)
+
+    // The verdict is the assertion. Credential is in BOTH releases, so a
+    // baseline that dropped it reports it as an expand — a real deploy told it
+    // may be taken back on the strength of a model that never moved.
+    expect(stdout).toMatch(/no change to the release surface/)
+    expect(stdout).not.toMatch(/Credential/)
+    expect(stdout).toMatch(/an import was read from db rather than beside the baseline \(\.\/auth\.lite\)/)
+  })
+
+  test('a baseline that brought its own imports keeps them', async () => {
+    const dir = releaseFixture('release-own')
+    // The neighbour, one column WIDER than today's. Borrowing today's file
+    // would answer `unchanged` and hide a contract.
+    writeFileSync(join(dir, 'else', 'auth.lite'),
+      'model Credential {\n  id     String @id\n  secret String\n  label  String?\n}\n', 'utf8')
+
+    const { stdout } = await runCli(dir, RELEASE)
+    expect(stdout).toMatch(/CONTRACT/)
+    expect(stdout).toMatch(/Credential\.label/)
+    expect(stdout).not.toMatch(/rather than beside the baseline/)
+  })
+
+  test('an import missing from both places is named', async () => {
+    const dir = releaseFixture('release-gone')
+    writeFileSync(join(dir, 'else', 'before.lite'),
+      readFileSync(join(dir, 'else', 'before.lite'), 'utf8') + '\nimport "./nope.lite"\n', 'utf8')
+
+    const { stdout } = await runCli(dir, RELEASE)
+    expect(stdout).toMatch(/could not be read there \(\.\/nope\.lite\)/)
+  })
+})
+
+// ─── backup: a declared logger with no directory ──────────────────────────────
+//
+// A jsonl/logger database is a DIRECTORY the driver creates on its first write,
+// so *absent* has two causes and they are not the same fact. Both used to be
+// `backup INCOMPLETE` and exit 1, which made the pre-deploy snapshot of every
+// app's FIRST deploy report that the restore point did not exist — and a
+// refusal that fires on every ordinary run is one an operator learns to ignore
+// (`FJS-574`).
+//
+// Every row here is a PAIR, because a fix that simply stopped refusing would
+// satisfy any test that only asked about the first deploy. The unreachable case
+// must still exit 1, and the present case must still be copied.
+describe('backup — a declared logger directory that is not there', () => {
+  const SCHEMA = (auditPath: string) => `
+database main  { path "main.db" }
+database audit { driver logger  path "${auditPath}" }
+
+model Widget {
+  id   Int    @id @default(autoincrement())
+  name String
+  @@log(audit)
+}
+`
+
+  test('nothing written yet is not a failure, and the backup is complete', async () => {
+    const dir = makeFixtureDir('backup-unwritten', { schema: SCHEMA('audit') })
+    await runCli(dir, ['migrate', 'apply', '--yes'])
+    expect(existsSync(join(dir, 'audit'))).toBe(false)
+
+    const r = await runCli(dir, ['backup', 'out'])
+    expect(r.exit).toBe(0)
+    expect(r.stdout).toContain('backup complete')
+    expect(r.stdout).not.toContain('INCOMPLETE')
+    // It says so rather than saying nothing: a database silently absent from the
+    // report is the shape the refusal was added to prevent.
+    expect(r.stdout).toContain('nothing written yet')
+    // …and the database that DOES exist was actually copied, or "complete"
+    // would be true of a backup that took nothing.
+    expect(existsSync(join(dir, 'out', 'main.db'))).toBe(true)
+  })
+
+  test('a path that leads nowhere still refuses, and names the parent', async () => {
+    // The pair. Same absent directory, one level further out — no parent, so
+    // nothing is mounted there and what would have been in it is not in this
+    // copy. Ambiguity falls this way on purpose.
+    const dir = makeFixtureDir('backup-unreachable', { schema: SCHEMA('nomount/audit') })
+    await runCli(dir, ['migrate', 'apply', '--yes'])
+
+    const r = await runCli(dir, ['backup', 'out'])
+    expect(r.exit).toBe(1)
+    expect(r.stdout).toContain('backup INCOMPLETE')
+    expect(r.stdout).toContain('nothing is mounted there')
+    expect(r.stdout).not.toContain('nothing written yet')
+  })
+
+  test('and a written trail is copied, which is what both rows are about', async () => {
+    // The control for the pair above. A build that reported every logger as
+    // unwritten would pass both of them.
+    const dir = makeFixtureDir('backup-written', { schema: SCHEMA('audit') })
+    await runCli(dir, ['migrate', 'apply', '--yes'])
+    mkdirSync(join(dir, 'audit'), { recursive: true })
+    writeFileSync(join(dir, 'audit', '2026-09.jsonl'), '{"op":"create"}\n', 'utf8')
+
+    const r = await runCli(dir, ['backup', 'out'])
+    expect(r.exit).toBe(0)
+    expect(r.stdout).toContain('backup complete')
+    expect(r.stdout).not.toContain('nothing written yet')
+    expect(existsSync(join(dir, 'out', 'audit', '2026-09.jsonl'))).toBe(true)
+  })
+
+  test('the report blames no cause it cannot have', async () => {
+    // `cmdBackup` opens its client with `resolveFrom: 'schema'`, so a database
+    // path is anchored to the app root and the process CWD does not decide it.
+    // The refusal used to say *paths resolve against CWD*, which sent an
+    // operator to look at the one thing that could not be it — the same defect
+    // one layer up made the deploy step blame a missing `db/schema.lite` under
+    // a failure the container disproves.
+    //
+    // Asserted by RUNNING from somewhere else: this succeeds, which is what
+    // makes the sentence impossible rather than merely unhelpful.
+    const dir = makeFixtureDir('backup-cwd', { schema: SCHEMA('audit') })
+    await runCli(dir, ['migrate', 'apply', '--yes'])
+    mkdirSync(join(dir, 'audit'), { recursive: true })
+    writeFileSync(join(dir, 'audit', 'a.jsonl'), '{}\n', 'utf8')
+
+    const elsewhere = mkdtempSync(join(rootTmp, 'backup-cwd-elsewhere-'))
+    const r = await runCli(elsewhere, ['backup', join(elsewhere, 'out'), '--schema', join(dir, 'schema.lite')])
+    expect(r.exit).toBe(0)
+    expect(r.stdout).not.toContain('resolve against CWD')
+    expect(existsSync(join(elsewhere, 'out', 'audit', 'a.jsonl'))).toBe(true)
   })
 })

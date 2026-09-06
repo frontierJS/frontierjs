@@ -27,7 +27,7 @@
 //   Cycle-safe: visited set prevents infinite recursion.
 
 import { AccessDeniedError }   from './plugin.js'
-import { modelToTableName, sqlType } from './ddl.js'
+import { modelToTableName, sqlType, columnMapFor } from './ddl.js'
 import { comparisonEncoderFor } from './encryption.js'
 import { ValidationError }     from './validate.js'
 import { NOW_SQL }             from './query.js'
@@ -72,6 +72,7 @@ export function policyExprToString(node) {
     case 'now':     return 'now()'
     case 'check':   return node.operation ? `check(${node.field}, '${node.operation}')` : `check(${node.field})`
     case 'field':   return node.name
+    case 'path':    return `${node.rel}.${node.name}`
     case 'list':    return `[${node.items.map(v => typeof v === 'string' ? `'${v}'` : String(v)).join(', ')}]`
     case 'literal': {
       const v = node.value
@@ -135,17 +136,23 @@ export function buildClaimSet(schema, declared = null) {
   const names     = new Map()
   const authModel = schema?.models?.find(m => (m.attributes ?? []).some(a => a.kind === 'auth')) ?? null
   const tenantClaim = schema?.tenancy?.claim ?? null
+  // A claim on no row, named by the schema itself. This is the one source a
+  // tool that only has the file can read: `fli studio` and `litestone tinker`
+  // open a client off schema.lite and cannot see the app's createClient call,
+  // so before this every such tool refused a schema naming one (`FJS-772`).
+  const schemaClaims = schema?.claims ?? []
 
   for (const n of FRAMEWORK_CLAIMS) names.set(n, 'the framework')
   if (authModel) for (const f of authModel.fields ?? []) names.set(f.name, `@@auth ${authModel.name}`)
   if (tenantClaim) names.set(tenantClaim, 'tenancy')
+  for (const n of schemaClaims) names.set(n, 'claim')
   if (Array.isArray(declared)) for (const n of declared) names.set(n, 'declared')
 
   return {
     // Nothing to compare against unless the app said something. `claims: []` is
     // a statement — the principal carries the framework's two and nothing else —
     // where absent is silence, so the empty array is deliberately not falsy here.
-    active: !!authModel || Array.isArray(declared),
+    active: !!authModel || schemaClaims.length > 0 || Array.isArray(declared),
     names,
     has:    (n) => names.has(n),
     list:   () => [...names].map(([n, src]) => (src === 'the framework' ? n : `${n} (${src})`)).sort(),
@@ -176,12 +183,23 @@ export function authClaimsUsed(schema) {
 // decidable from the schema is therefore decided here, where the answer is a
 // refusal naming the model and the expression, and not on a query nobody has
 // run yet.
-function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = null) {
+function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = null, schema = null) {
   const known = (name) => {
     const rel = relationMap?.[model.name]?.[name]
     if (rel) return true
     const col = rel?.kind === 'belongsTo' ? rel.foreignKey : name
     return model.fields.some(f => f.name === col)
+  }
+
+  // A path's target field, or null when there is no schema to reach it through.
+  // Shared so the general walk and the `in` section cannot come to disagree
+  // about what a hop resolves to — the same shape `fieldNamed` has one model
+  // closer.
+  const pathTarget = (n) => {
+    const rel = relationMap?.[model.name]?.[n.rel]
+    if (rel?.kind !== 'belongsTo') return null
+    const target = schema?.models?.find(m => m.name === rel.targetModel)
+    return target ? { rel, target, field: target.fields.find(x => x.name === n.name) ?? null } : null
   }
 
   const walk = (n) => {
@@ -199,6 +217,54 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
         `${model.name}: '${n.name}' is not a field on this model — in ${what} ` +
         `'${policyExprToString(expr)}'. Fields: ${cols.join(', ')}`)
     }
+    // One hop across a relation (`FJS-D221`). Everything refused here is a case
+    // whose alternative is a SILENT wrong answer rather than an error, which is
+    // the whole reason a policy gets checked at startup: a bad predicate does
+    // not throw, it filters, and a filter that admits too much looks exactly
+    // like one doing its job.
+    if (n.type === 'path') {
+      const rel = relationMap?.[model.name]?.[n.rel]
+      const say = (msg) => { throw new Error(
+        `${model.name}: ${msg} — in ${what} '${policyExprToString(expr)}'`) }
+
+      if (!rel) {
+        const rels = Object.keys(relationMap?.[model.name] ?? {}).sort()
+        say(`'${n.rel}' is not a relation on this model` +
+            (rels.length ? `. Relations: ${rels.join(', ')}` : ''))
+      }
+      // The same refusal `check()` makes, in the same words, so the two ways of
+      // crossing a relation cannot come to accept different sets. A to-many
+      // would be *does ANY child match*, which is a different question and one
+      // `FJS-D221` deliberately leaves unruled rather than pre-paying for.
+      if (rel.kind !== 'belongsTo')
+        say(`'${n.rel}' is ${rel.kind}, and a policy path crosses a to-one (belongsTo) relation. ` +
+            `'any child matches' is not expressible yet`)
+
+      const target = schema?.models?.find(m => m.name === rel.targetModel)
+      // No schema is a caller validating outside a client; the relation check
+      // above is all that can be asked there.
+      if (target) {
+        const f = target.fields.find(x => x.name === n.name)
+        if (!f) {
+          const cols = target.fields.map(x => x.name).sort()
+          say(`'${n.name}' is not a field on ${rel.targetModel} — reached as '${n.rel}.${n.name}'. ` +
+              `Fields: ${cols.join(', ')}`)
+        }
+        for (const kind of ['computed', 'transient'])
+          if (f.attributes?.some(a => a.kind === kind))
+            say(`'${n.rel}.${n.name}' is @${kind} on ${rel.targetModel}, so there is no column to correlate on`)
+        // A crossed encoded column would compare ciphertext against the
+        // plaintext operand and match nothing — an empty screen with a 200,
+        // which is this feature's own failure mode arriving through the fix
+        // for it. `encodedCompare` encodes the operand for a LOCAL column and
+        // has no counterpart across a hop.
+        for (const kind of ['encrypted', 'hashed', 'secret'])
+          if (f.attributes?.some(a => a.kind === kind))
+            say(`'${n.rel}.${n.name}' is @${kind} on ${rel.targetModel}, so the column holds an ` +
+                `encoding rather than the value — a comparison across the hop would match nothing`)
+      }
+      return
+    }
     // The same sentence about the OTHER side of the comparison. An absent claim
     // is `NULL` to the SQL compiler and `null` to the evaluator, and the two
     // read that opposite ways, so a misspelling is silently enforced backwards
@@ -208,8 +274,8 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
         `${model.name}: '${n.field}' is not a claim the principal carries — in ${what} ` +
         `'${policyExprToString(expr)}'.\n` +
         `  Claims: ${claims.list().join(', ')}\n` +
-        `  A claim resolved per request is declared with ` +
-        `createClient({ claims: ['${n.field}'] }).`)
+        `  A claim that is on no row is declared in the schema — a top-level ` +
+        `\`claim ${n.field}\`. The app still resolves the VALUE per request.`)
     }
     if (n.type !== 'compare') return
     walk(n.left); walk(n.right)
@@ -239,6 +305,14 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
       for (const kind of ['encrypted', 'hashed', 'secret'])
         if (f.attributes?.some(a => a.kind === kind))
           say(`'${n.right.name}' is @${kind}, so the column holds an encoding rather than its members`)
+    } else if (n.right.type === 'path') {
+      // The list one hop away. Every refusal the local branch above makes,
+      // made here too — `json_each` reads whatever the subquery hands it and
+      // is as indifferent to a scalar column as it is locally.
+      const t = pathTarget(n.right)
+      if (t && !t.field) say(`'${n.right.name}' is not a field on ${t.rel.targetModel} — reached as '${n.right.rel}.${n.right.name}'`)
+      if (t?.field && !t.field.type?.array)
+        say(`'${n.right.rel}.${n.right.name}' is not an array field, and 'in' takes the list on the RIGHT`)
     } else if (n.right.type !== 'list' && n.right.type !== 'auth') {
       say(`the right side of 'in' must be a list — an array field, auth().something, or a literal like ['draft', 'review']`)
     }
@@ -254,6 +328,18 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
       if (n.right.type === 'field')
         say(`both sides name a column on this model. 'in' compares a value the CALLER has ` +
             `against a list on the row — put auth().something on the left`)
+    } else if (n.left.type === 'path') {
+      const t = pathTarget(n.left)
+      if (t?.field?.type?.array)
+        say(`'${n.left.rel}.${n.left.name}' is an array field, and 'in' asks whether ONE value is in a list. ` +
+            `Overlap between two lists is not expressible yet`)
+      // A crossed value against a LOCAL array column would need the subquery as
+      // json_each's needle, and `scalarOperand` reduces the left side to one
+      // bound value — so it would compile to a comparison against null and
+      // filter everything out in silence.
+      if (n.right.type === 'field')
+        say(`'${n.left.rel}.${n.left.name}' crosses a relation and the list is a column on this row. ` +
+            `Put the value the CALLER has on the left — 'auth().something in ${n.right.name}'`)
     } else if (n.left.type === 'list') {
       say(`a list cannot be the left side of 'in'`)
     }
@@ -329,6 +415,14 @@ export function compileDerived(model, fieldName, node) {
       case 'check':
         bad(`check() delegates to another model's policy, which is per-request — see @@scope`)
         break
+      case 'path':
+        // A correlated subquery is static SQL, so this is a scope refusal and
+        // not an impossibility: @from already crosses a relation to bring a
+        // value onto a row, and two ways to do it is the second origin this
+        // language exists to avoid.
+        bad(`'${n.rel}.${n.name}' crosses a relation, which a @derived field does not do — ` +
+            `bring the value onto this model with @from(${n.rel}, ${n.name})`)
+        break
       default:
         bad(`unsupported expression node '${n.type}'`)
     }
@@ -360,6 +454,10 @@ function inferType(model, schema, n) {
       const f = model.fields.find(x => x.name === n.name)
       return f?.type?.name ?? null
     }
+    // `path` is deliberately absent and falls to the default. Resolving a hop
+    // needs the relationMap, which this walk does not take, and inference here
+    // is partial by design — `null` means *cannot tell*, and a checker that
+    // guesses is worse than one that is quiet.
     case 'ternary': {
       const t = inferType(model, schema, n.then)
       const e = inferType(model, schema, n.else)
@@ -426,8 +524,9 @@ export function dependsOnClock(node) {
 // **An ALLOW-LIST, and that is the whole of its safety.** A node kind not named
 // here is assumed to read the row, so a kind the language grows later is
 // evaluated per row — slower, and correct — where a deny-list would silently
-// stop stripping a column the day it was added. `field` reads a column and
-// `check` walks a relation FROM the row, so neither is listed.
+// stop stripping a column the day it was added. `field` reads a column, `path`
+// reads one across the row's own foreign key and `check` walks a relation FROM
+// the row, so none of the three is listed.
 //
 // `now` is deliberately absent though it reads no row: a clock-dependent
 // predicate hoisted across a result set would answer one instant for rows read
@@ -463,6 +562,16 @@ export function referencesRow(node) {
 // refused by the same count. A subquery — a relation hop, a check() — pushes
 // none, so the caller looks for SELECT in the SQL instead.
 export function compileStatic(node, modelName, schema, relationMap = new Map()) {
+  // A hop refused here rather than by `pathSql`, which is handed no relationMap
+  // on this path and would report the relation as missing — a sentence that is
+  // false about the schema and points the author at the wrong line.
+  const noHops = (n) => {
+    if (!n || typeof n !== 'object') return
+    if (n.type === 'path') throw new Error(
+      `'${n.rel}.${n.name}' crosses a relation, and this predicate reads the row it is about and nothing else`)
+    for (const v of Object.values(n)) Array.isArray(v) ? v.forEach(noHops) : noHops(v)
+  }
+  noHops(node)
   const params = []
   const ctx    = { auth: null, _now: null, enc: {} }
   const sql    = compileSql(node, params, ctx, modelName, null, new Map(), schema, relationMap, new Set())
@@ -483,7 +592,7 @@ export function buildScopeMap(schema, relationMap, claims = null) {
       if (attr.raw) { map[model.name][attr.name] = { __raw: attr.raw, mintedBy: attr.mintedBy }; continue }
       // Same startup check @@allow gets: a scope compiles into a WHERE, so a
       // wrong one is an empty screen with a 200.
-      checkExpr(model, attr.expr, relationMap, `@@scope(${attr.name}, …)`, claims)
+      checkExpr(model, attr.expr, relationMap, `@@scope(${attr.name}, …)`, claims, schema)
       map[model.name][attr.name] = attr.expr
     }
   }
@@ -633,7 +742,7 @@ export function checkFieldPolicies(schema, relationMap, claims = null) {
       for (const attr of field.attributes ?? []) {
         if (attr.kind !== 'fieldAllow') continue
         const ops = (attr.operations ?? []).map(o => `'${o}'`).join(', ')
-        checkExpr(model, attr.expr, relationMap, `@allow(${ops}, …) on ${model.name}.${field.name}`, claims)
+        checkExpr(model, attr.expr, relationMap, `@allow(${ops}, …) on ${model.name}.${field.name}`, claims, schema)
       }
     }
   }
@@ -645,7 +754,7 @@ export function buildPolicyMap(schema, relationMap, claims = null) {
   for (const model of schema.models) {
     for (const attr of model.attributes) {
       if (attr.kind !== 'allow' && attr.kind !== 'deny') continue
-      checkExpr(model, attr.expr, relationMap, '@@allow/@@deny', claims)
+      checkExpr(model, attr.expr, relationMap, '@@allow/@@deny', claims, schema)
       if (!map[model.name]) map[model.name] = {}
       const bucket = map[model.name]
 
@@ -938,6 +1047,58 @@ function scalarOperand(node, ctx, modelName, relationMap) {
   }
 }
 
+// field → column for the model a policy is being compiled against, memoized per
+// schema. `modelName` follows the recursion into a related model's policy, so
+// the answer is that model's own map rather than the one we started from.
+const _policyColumnMaps = new WeakMap()
+function policyColumn(schema, modelName, field) {
+  if (!schema || !modelName) return field
+  let byModel = _policyColumnMaps.get(schema)
+  if (!byModel) _policyColumnMaps.set(schema, byModel = new Map())
+  let map = byModel.get(modelName)
+  if (map === undefined) {
+    const model = schema.models?.find(m => m.name === modelName)
+    map = model ? columnMapFor(model) : null
+    byModel.set(modelName, map)
+  }
+  return map?.[field] ?? field
+}
+
+// One hop across a relation, as a correlated scalar subquery (`FJS-D221`).
+//
+// Same correlation `check()` builds and for the same reason — the relation's
+// key is known at compile time, so the join is derivable and the copied column
+// it replaces was a restatement. It differs from `check()` in ONE answer, and
+// deliberately: an absent foreign key ALLOWS there, because `check(parent)`
+// delegates a policy and a row naming no parent is not a row naming somebody
+// else's. A path yields a VALUE, so an absent parent is an absent value —
+// SQL's NULL, which an @@allow fails closed on and a @@deny fires on. Nothing
+// extra is written to get that: a scalar subquery over no row IS NULL.
+//
+// The correlation names TABLES on both sides. A model name is not a table name
+// (`model LogLine` is `log_line`), and the column is `@map`'s, since an unknown
+// quoted identifier is a STRING CONSTANT to SQLite rather than an error
+// (`FJS-761`).
+function pathSql(node, modelName, schema, relationMap) {
+  const rel = relationMap[modelName]?.[node.rel]
+  // Startup refuses both of these by name; a throw here means a predicate
+  // reached the compiler some other way.
+  if (!rel) throw new Error(`${modelName}: '${node.rel}' is not a relation on this model`)
+  if (rel.kind !== 'belongsTo')
+    throw new Error(`${modelName}.${node.rel}.${node.name}: a policy path crosses a to-one (belongsTo) relation`)
+
+  const selfDef     = schema?.models?.find(m => m.name === modelName)
+  const targetDef   = schema?.models?.find(m => m.name === rel.targetModel)
+  const selfTable   = selfDef   ? modelToTableName(selfDef, false)   : modelName
+  const targetTable = targetDef ? modelToTableName(targetDef, false) : rel.targetModel
+  const col         = policyColumn(schema, rel.targetModel, node.name)
+  const fk          = policyColumn(schema, modelName, rel.foreignKey)
+  const refKey      = policyColumn(schema, rel.targetModel, rel.referencedKey)
+
+  return `(SELECT "${targetTable}"."${col}" FROM "${targetTable}" ` +
+         `WHERE "${targetTable}"."${refKey}" = "${selfTable}"."${fk}")`
+}
+
 function compileSql(node, params, ctx, modelName, op, policyMap, schema, relationMap, visited) {
   switch (node.type) {
 
@@ -958,7 +1119,16 @@ function compileSql(node, params, ctx, modelName, op, policyMap, schema, relatio
       return '?'
 
     case 'field':
-      return `"${node.name}"`
+      // A policy names FIELDS and compiles to SQL, so a mapped model needs the
+      // column. Silent without it, and in the worst direction: SQLite reads an
+      // unknown `"ident"` as a STRING LITERAL, so `@@allow('read', …)` compiled
+      // to a comparison against the text `'ownerId'`, matched nothing, and every
+      // read on the model answered an empty list (`FJS-761`). The JS half needs
+      // no counterpart — `evalJs` reads a row that is already field-keyed.
+      return `"${policyColumn(schema, modelName, node.name)}"`
+
+    case 'path':
+      return pathSql(node, modelName, schema, relationMap)
 
     case 'auth':
       params.push(node.field ? (ctx.auth?.[node.field] ?? null) : (ctx.auth?.id ?? null))
@@ -988,6 +1158,12 @@ function compileSql(node, params, ctx, modelName, op, policyMap, schema, relatio
       // one that has to be said out loud — `IN ()` is a syntax error, and a
       // policy whose list is empty admits nothing.
       if (node.op === 'in') {
+        // the list is an array column one hop away — json_each takes an
+        // expression, so the correlated subquery goes where the column went.
+        if (right.type === 'path') {
+          params.push(scalarOperand(left, ctx, modelName, relationMap))
+          return `EXISTS (SELECT 1 FROM json_each(${pathSql(right, modelName, schema, relationMap)}) WHERE value = ?)`
+        }
         // the list is an array COLUMN on the row
         if (right.type === 'field') {
           const rel = relationMap[modelName]?.[right.name]
@@ -1009,6 +1185,9 @@ function compileSql(node, params, ctx, modelName, op, policyMap, schema, relatio
           ? `"${relationMap[modelName]?.[left.name]?.kind === 'belongsTo'
               ? relationMap[modelName][left.name].foreignKey : left.name}"`
           : compileSql(left, params, ctx, modelName, op, policyMap, schema, relationMap, visited)
+        // `pathSql` is reached through the line above, which is what keeps the
+        // parameter ORDER right: the subquery binds nothing, so the list's
+        // values stay the only params and they are pushed after it.
         params.push(...list)
         return `${L} IN (${list.map(() => '?').join(', ')})`
       }
@@ -1042,6 +1221,14 @@ function compileSql(node, params, ctx, modelName, op, policyMap, schema, relatio
         const fk  = rel?.kind === 'belongsTo' ? rel.foreignKey : right.name
         return `"${fk}" ${node.op === '==' ? 'IS NULL' : 'IS NOT NULL'}`
       }
+      // Same sentence one hop away. A subquery answers NULL for an absent
+      // parent AND for a parent whose column is null, and `= NULL` is never
+      // true for either, so without this the predicate keeps no row and says
+      // nothing — the exact shape the two branches above exist for.
+      if (left.type === 'path' && right.type === 'literal' && right.value === null)
+        return `${pathSql(left, modelName, schema, relationMap)} ${node.op === '==' ? 'IS NULL' : 'IS NOT NULL'}`
+      if (right.type === 'path' && left.type === 'literal' && left.value === null)
+        return `${pathSql(right, modelName, schema, relationMap)} ${node.op === '==' ? 'IS NULL' : 'IS NOT NULL'}`
 
       // A column holding encoded bytes is compared against the operand encoded the
       // same way — after the null branches above, which stay a plain IS NULL.
@@ -1163,6 +1350,42 @@ function evalCheck(node, ctx, data, modelName, policyMap, relationMap, op) {
   return !!hit
 }
 
+// One hop, evaluated. `create` has no WHERE to correlate against, so the row is
+// looked up the way `evalCheck` looks one up — the foreign key is in the data
+// being written, and bun:sqlite is synchronous.
+//
+// Where this DIFFERS from evalCheck is the answer when the hop cannot be made,
+// and the difference is the node's type rather than a change of mind.
+// `check()` is a PREDICATE and answers `true` conservatively; a path yields a
+// VALUE, and this language already spells *absent* as `null` with SQL's three
+// values over it — so an @@allow fails closed and an @@deny fires, which is the
+// direction the cost of being wrong points in. It is also the same answer the
+// SQL half gives, where a scalar subquery over no row IS NULL: one language,
+// two compilers, `FJS-195`'s rule.
+//
+// `ctx.readDb` routes to the write connection while a transaction is open, or a
+// parent and child created together would deny the child.
+function evalPath(node, ctx, data, modelName, relationMap) {
+  const rel = relationMap?.[modelName]?.[node.rel]
+  if (!rel || rel.kind !== 'belongsTo') return null
+
+  const fk = data?.[rel.foreignKey]
+  if (fk == null) return null
+
+  const schema = ctx.schema
+  const db     = ctx.readDb
+  if (!schema || !db?.query) return null
+
+  const targetDef = schema.models?.find(m => m.name === rel.targetModel)
+  if (!targetDef) return null
+  const targetTable = modelToTableName(targetDef, false)
+  const col    = policyColumn(schema, rel.targetModel, node.name)
+  const refKey = policyColumn(schema, rel.targetModel, rel.referencedKey)
+
+  const row = db.query(`SELECT "${col}" AS v FROM "${targetTable}" WHERE "${refKey}" = ? LIMIT 1`).get(fk)
+  return row?.v ?? null
+}
+
 // ─── JS evaluator (create + post-update) ──────────────────────────────────────
 // Evaluates a policy expression against a data/row object in JavaScript.
 // Used when there's no WHERE clause available (create) or for post-update checks.
@@ -1212,6 +1435,8 @@ export function evalJs(node, ctx, data, modelName, policyMap, relationMap, op = 
 
     case 'field':   return data?.[node.name] ?? null
 
+    case 'path':    return evalPath(node, ctx, data, modelName, relationMap)
+
     case 'auth':
       return node.field ? (ctx.auth?.[node.field] ?? null) : ctx.auth
 
@@ -1239,7 +1464,7 @@ export function evalJs(node, ctx, data, modelName, policyMap, relationMap, op = 
                                               ? relationMap[modelName][n.name].foreignKey : n.name]
                   : ev(n)
           // A create may carry the array as written; a row read back has been
-          // deserialised. A column absent from the payload is not an empty
+          // deserialized. A column absent from the payload is not an empty
           // list — it is a column that was not set, and nothing is in it.
           if (Array.isArray(v)) return v
           if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p : [] } catch { return [] } }
@@ -1358,6 +1583,14 @@ const toText = (v) => (typeof v === 'number' ? String(v) : v)
 // The affinity of one side of a comparison. A literal and a claim have none —
 // they are the parameter — so this only ever answers for a column.
 function affinityOf(node, ctx, modelName, relationMap) {
+  // A crossed column has an affinity too, and it is the TARGET's. Answering
+  // null here would let `evalJs` compare with no affinity where the WHERE
+  // applies one, which is `FJS-713` reached through a relation.
+  if (node?.type === 'path') {
+    const rel = relationMap?.[modelName]?.[node.rel]
+    if (rel?.kind !== 'belongsTo') return null
+    return affinityOf({ type: 'field', name: node.name }, ctx, rel.targetModel, relationMap)
+  }
   if (node?.type !== 'field') return null
   const rel = relationMap?.[modelName]?.[node.name]
   const col = rel?.kind === 'belongsTo' ? rel.foreignKey : node.name

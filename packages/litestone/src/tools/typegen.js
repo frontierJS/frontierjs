@@ -365,14 +365,16 @@ export interface CursorResult<T> {`,
     ``,
     `export interface QueryEvent {`,
     `  model:     string`,
-    `  operation: 'findMany' | 'findFirst' | 'findUnique' | 'findManyCursor' | 'count' | 'search' | 'create' | 'createMany' | 'update' | 'updateMany' | 'upsertMany' | 'remove' | 'removeMany' | 'restore' | 'delete' | 'deleteMany'`,
+    `  operation: 'aggregate' | 'count' | 'create' | 'createMany' | 'delete' | 'deleteMany' | 'exists' | 'findFirst' | 'findMany' | 'findManyCursor' | 'findUnique' | 'groupBy' | 'include' | 'include:count' | 'remove' | 'removeMany' | 'restore' | 'search' | 'update' | 'updateMany' | 'upsert' | 'upsertMany'`,
     `  database:  string`,
     `  actorId:   string | number | null`,
     `  sql:       string`,
     `  params:    unknown[]`,
     `  duration:  number`,
     `  rowCount:  number`,
-    `  args:      Record<string, unknown>`,
+    `  // The call's own arguments. Absent on include/include:count, whose`,
+    `  // arguments are the parent read's.`,
+    `  args?:     Record<string, unknown>`,
     `}`,
     ``,
     `// ── write event ($tapEvents / onEvent) ───────────────────────────────────────`,
@@ -504,10 +506,9 @@ function fieldRowSpec(field, schema, audience, modelNames) {
   // Always skip relations — virtual
   if (type.kind === 'relation') return null
 
-  // @guarded(all) / @secret — strip for client audience
-  const isGuardedAll = attributes.some(a => a.kind === 'guarded' && a.level === 'all')
-                    || attributes.some(a => a.kind === 'secret')
-  if (isGuardedAll && audience === 'client') return null
+  // @guarded / @secret — strip for client audience
+  const isGuarded = attributes.some(a => a.kind === 'guarded' || a.kind === 'secret')
+  if (isGuarded && audience === 'client') return null
 
   // @hashed — stripped for EVERY audience, asSystem() included. The row type says
   // what a read returns, and a read of a digest returns nothing.
@@ -519,7 +520,7 @@ function fieldRowSpec(field, schema, audience, modelNames) {
   if (attributes.some(a => a.kind === 'transient')) return null
 
   const tsType  = fieldToTs(field, schema, modelNames)
-  const optional = type.optional || isGuardedAll  // guarded fields may be absent even in system reads
+  const optional = type.optional || isGuarded  // guarded fields may be absent even in system reads
 
   const commentParts = []
   if (attributes.some(a => a.kind === 'guarded'))  commentParts.push('@guarded')
@@ -543,10 +544,9 @@ function fieldCreateSpec(field, schema, audience, modelNames) {
   // Skip computed / generated — db handles these
   if (attributes.some(a => a.kind === 'computed' || a.kind === 'generated' || a.kind === 'funcCall' || a.kind === 'from')) return null
 
-  // Skip @guarded(all) / @secret for client audience
-  const isGuardedAll = attributes.some(a => a.kind === 'guarded' && a.level === 'all')
-                    || attributes.some(a => a.kind === 'secret')
-  if (isGuardedAll && audience === 'client') return null
+  // Skip @guarded / @secret for client audience
+  const isGuarded = attributes.some(a => a.kind === 'guarded' || a.kind === 'secret')
+  if (isGuarded && audience === 'client') return null
 
   // Skip auto-managed timestamps, @updatedBy and @createdBy — all stamped from
   // ctx.auth, and a value in the payload loses to the principal anyway
@@ -579,9 +579,8 @@ function fieldUpdateSpec(field, schema, audience, modelNames) {
   if (attributes.some(a => a.kind === 'computed' || a.kind === 'generated' || a.kind === 'funcCall' || a.kind === 'from')) return null
   if (name === 'createdAt' || name === 'updatedAt' || name === 'deletedAt') return null
 
-  const isGuardedAll = attributes.some(a => a.kind === 'guarded' && a.level === 'all')
-                    || attributes.some(a => a.kind === 'secret')
-  if (isGuardedAll && audience === 'client') return null
+  const isGuarded = attributes.some(a => a.kind === 'guarded' || a.kind === 'secret')
+  if (isGuarded && audience === 'client') return null
 
   // Same as create, and it matters more here: clearing a nullable column is
   // only expressible as an explicit null (Invariant 9 — test key presence, not

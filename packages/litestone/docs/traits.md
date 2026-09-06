@@ -231,7 +231,7 @@ extend model Session {
 }
 ```
 
-Before this the only way to say it was to paste the four models in and edit them, and a copy stops being the package's the first time either side moves. Basecamp's did: it carried `@guarded(all)` where the package writes `@secret`, so every OAuth token it stored was in plain text — and its own test suite was green throughout, because nothing anywhere compares a copy to its original.
+Before this the only way to say it was to paste the four models in and edit them, and a copy stops being the package's the first time either side moves. Basecamp's did: it carried `@guarded` where the package writes `@secret`, so every OAuth token it stored was in plain text — and its own test suite was green throughout, because nothing anywhere compares a copy to its original.
 
 ### The rules
 

@@ -17,7 +17,7 @@
  * was at the last install and pass against a broken working copy.
  *
  * Traps inherited from verify-studio-access.mjs: never return a bare `null`
- * from a probe (CDP serialises it with no `value` key and it reads back as
+ * from a probe (CDP serializes it with no `value` key and it reads back as
  * `undefined`), and never assert against a poll without awaiting it.
  */
 
@@ -41,7 +41,9 @@ const t = (name, actual, expected) => results.push({ name, actual, expected })
 // ─── the server, started and stopped by this file ─────────────────────────
 
 const CLI    = pathResolve(import.meta.dirname, '../src/tools/cli.js')
-const studio = spawn('bun', [CLI, 'studio', '--schema', SCHEMA, '--port', PORT], {
+// `--no-open` or every run of this drive opens a tab on the desktop of
+// whoever is running it, over whatever they were typing into.
+const studio = spawn('bun', [CLI, 'studio', '--schema', SCHEMA, '--port', PORT, '--no-open'], {
   cwd: join(REPO, 'example/db'), stdio: ['ignore', 'pipe', 'pipe'], detached: true,
 })
 let studioOut = ''
@@ -204,20 +206,28 @@ t('home.everyGroupBoxed', await evaluate(`
 
 // ─── a word with nothing behind it is DIMMED, not hidden ──────────────────
 //
-// The whole panel rests on this: a gray box is the only way someone finds a
+// The whole panel rests on this: an unused word is the only way someone finds a
 // feature they have never heard of, and `hidden` or `disabled` would take it
-// out of reach exactly where it is needed.
+// out of reach exactly where it is needed. What says "nobody uses this" is the
+// COUNT — the card itself reads identically either way, because a faded card
+// reads as unavailable rather than unused.
 
-t('empty.dimmedNotHidden', await evaluate(`
+t('empty.shownLikeAnyOther', await evaluate(`
   const boxes = [...document.querySelectorAll('#exBody .ex-box')];
-  const empty = boxes.filter(b => b.dataset.empty === 'true');
+  const empty = boxes.filter(b => b.querySelector('.badge.muted'));
   return {
     some:      empty.length > 0,
     visible:   empty.every(b => b.offsetParent !== null),
     clickable: empty.every(b => !b.disabled),
-    faded:     empty.every(b => parseFloat(getComputedStyle(b).opacity) < 1),
+    unfaded:   empty.every(b => parseFloat(getComputedStyle(b).opacity) === 1),
+    sameAsUsed: empty.every(b => {
+      const used = boxes.find(x => x.querySelector('.badge.info'));
+      if (!used) return false;
+      const a = getComputedStyle(b), c = getComputedStyle(used);
+      return a.color === c.color && a.opacity === c.opacity;
+    }),
   };
-`), { some: true, visible: true, clickable: true, faded: true })
+`), { some: true, visible: true, clickable: true, unfaded: true, sameAsUsed: true })
 
 // Which words the fixture leaves unused is the fixture's business — naming them
 // here makes the drive red the day somebody adds a view to example/. What has to

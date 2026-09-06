@@ -19,6 +19,7 @@
 // must be answerable about a schema that has never been migrated.
 
 import { parseGateString } from '../plugins/gate.js'
+import { authClaimsUsed }   from './policy.js'
 
 // ─── The visibility table ─────────────────────────────────────────────────────
 //
@@ -232,7 +233,7 @@ export const RULES = [
           if (has(f, 'secret') || !has(f, 'guarded') || !has(f, 'encrypted')) continue
           out.push({
             model: model.name, field: f.name,
-            message: `${model.name}.${f.name} declares both. @secret expands into exactly @encrypted @guarded(all) plus a log entry, so saying @secret keeps the pair from drifting apart.`,
+            message: `${model.name}.${f.name} declares both. @secret expands into exactly @encrypted @guarded plus a log entry, so saying @secret keeps the pair from drifting apart.`,
           })
         }
       }
@@ -468,7 +469,7 @@ export const RULES = [
     id:       'declared-and-unreferenced',
     severity: 'info',
     title:    'a declaration nothing references',
-    blurb:    'An enum, type, trait, function or valueset nothing names. Usually a rename that left the ' +
+    blurb:    'An enum, type, trait, function, valueset or claim nothing names. Usually a rename that left the ' +
               'old declaration behind, but a type may legitimately exist for an API payload the seed ' +
               'never stores, which is reported as external rather than as a finding.',
     run(schema) {
@@ -489,6 +490,15 @@ export const RULES = [
         if (!referenced.has(t.name))
           out.push({ model: t.name, field: null, external: true,
             message: `type ${t.name} is not used by any Json @type(${t.name}). That is only half the answer — a service may name it as an \`input:\`, which is outside the schema and invisible here.` })
+      // The other direction is a parse-time refusal, so this is the only half
+      // that can be silent: a claim nothing names is a claim the app is still
+      // resolving per request for nobody, and after a rename it is the reason
+      // a policy that reads correctly denies every reader (`FJS-666`).
+      const usedClaims = authClaimsUsed(schema)
+      for (const c of schema.claims ?? [])
+        if (!usedClaims.has(c))
+          out.push({ model: null, field: null,
+            message: `claim ${c} is declared and no @@allow, @@deny or @@scope reads auth().${c}.` })
       return out
     },
   },

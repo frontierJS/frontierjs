@@ -713,12 +713,22 @@ describe('a dot-path write key crosses autoValidate and is refused by the Data b
     expect(mapped.data?.[0]?.path).toEqual(['settings.commute'])
   })
 
-  // The control. A key with nothing behind it is what the strip exists for, and
-  // it must still be dropped — a fix that carried every unknown key would have
-  // traded a silent no-op for mass assignment.
-  test('a key whose head is not a field is still stripped', async () => {
+  // The control. A key with nothing behind it must not be CARRIED — a fix that
+  // carried every unknown key would have traded a silent no-op for mass
+  // assignment. It is refused rather than stripped since FJS-889: the head
+  // names no column, so no schema change short of adding one makes it mean
+  // anything, and a 200 that dropped it was the silent write loss.
+  test('a key whose head is not a field is refused, naming both', async () => {
     const db = await docDb()
     const c  = ctx(db, { method: 'patch', data: { name: 'a', 'nosuch.deep': 1, alsoUnknown: 2 } })
+    await expect(autoValidate('account', 'patch')(c))
+      .rejects.toThrow(/nosuch\.deep.*alsoUnknown|alsoUnknown.*nosuch\.deep/s)
+  })
+
+  // …and the pair, so the refusal above is not just "it refuses everything".
+  test('a payload of nothing but declared fields is untouched', async () => {
+    const db = await docDb()
+    const c  = ctx(db, { method: 'patch', data: { name: 'a' } })
     await autoValidate('account', 'patch')(c)
     expect(Object.keys(c.data as object).sort()).toEqual(['name'])
   })

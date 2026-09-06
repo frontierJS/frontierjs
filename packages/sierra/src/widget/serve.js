@@ -23,9 +23,11 @@
 
 import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
-import { join, extname, normalize, resolve } from 'node:path'
+import { join, extname, resolve } from 'node:path'
 
 import { isHashedAsset } from '../serve/hashed-asset.js'
+import { relativePathFor, withinRoot } from '../serve/served-path.js'
+import { bodyAnswer, methodAnswer, ALLOWED_METHODS } from '../serve/http-answers.js'
 
 const TYPES = {
   '.js':   'text/javascript; charset=utf-8',
@@ -38,6 +40,16 @@ const TYPES = {
   '.jpg':  'image/jpeg',
   '.webp': 'image/webp',
   '.woff2': 'font/woff2',
+  // Below: everything a widget bundle can legitimately reference and this table
+  // answered `application/octet-stream` for. With `nosniff` set, that is not a
+  // guess the browser recovers from — a `.wasm` served that way cannot be
+  // `instantiateStreaming`'d at all, and `.woff` (not `2`) is still what an
+  // older face ships as.
+  '.woff': 'font/woff',
+  '.ico':  'image/x-icon',
+  '.gif':  'image/gif',
+  '.avif': 'image/avif',
+  '.wasm': 'application/wasm',
 }
 
 function cacheFor(path) {
@@ -57,9 +69,14 @@ function cacheFor(path) {
  *                                      cannot collide that way
  * @param {string}  [opts.host='0.0.0.0']
  * @param {string}  [opts.origin='*']   Access-Control-Allow-Origin
+ * @param {string[]} [opts.allowOutside] directories a symlink inside `dir` may
+ *                                      legitimately resolve into; see
+ *                                      serve/served-path.js
  * @returns {Promise<{ port: number, url: string, close: () => Promise<void> }>}
  */
-export async function serveWidgets({ dir, port = 0, host = '0.0.0.0', origin = '*' } = {}) {
+export async function serveWidgets({
+  dir, port = 0, host = '0.0.0.0', origin = '*', allowOutside = [],
+} = {}) {
   const rootDir = resolve(dir)
 
   const server = createServer(async (req, res) => {
@@ -68,39 +85,85 @@ export async function serveWidgets({ dir, port = 0, host = '0.0.0.0', origin = '
       // A widget fetching its own API from the host page sends these; answering
       // them here costs nothing and a missing one is a blank widget with a
       // console message on somebody else's site.
-      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+      'Access-Control-Allow-Methods': ALLOWED_METHODS,
       'Access-Control-Allow-Headers': 'Content-Type',
+      // Without this a browser preflights EVERY cross-origin fetch this widget
+      // makes, so a page that loads the widget once pays two round trips for
+      // every one it needs. Ten minutes is the ceiling Chromium honors.
+      'Access-Control-Max-Age': '600',
       'Timing-Allow-Origin': origin,
       'X-Content-Type-Options': 'nosniff',
     }
 
-    if (req.method === 'OPTIONS') { res.writeHead(204, headers); res.end(); return }
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      res.writeHead(405, headers); res.end('method not allowed'); return
+    // Everything below is inside one try. The handler is `async`, so anything
+    // that throws becomes an unhandled rejection — which node answers by
+    // exiting the process, taking a public origin down on one bad request, and
+    // bun answers by never writing the response at all (`FJS-784`).
+    try {
+
+    const verb = methodAnswer(req.method)
+    if (verb) {
+      res.writeHead(verb.status, { ...headers, ...verb.headers })
+      res.end(verb.status === 405 ? 'method not allowed' : undefined)
+      return
     }
 
-    // `normalize` before joining, so `..` cannot walk out of the directory —
-    // this is served to the open internet by definition.
-    const url  = decodeURIComponent(req.url.split('?')[0])
-    const safe = normalize(url).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]+/, '')
+    // What the URL says, decoded and normalized so `..` cannot walk out — this
+    // is served to the open internet by definition.
+    const safe = relativePathFor(req.url.split('?')[0].split('#')[0])
+
+    // Not a 404: a URL that cannot be decoded is not a file that is missing.
+    if (safe === null) {
+      res.writeHead(400, { ...headers, 'Content-Type': 'text/plain; charset=utf-8' })
+      res.end('bad request')
+      return
+    }
+
     const file = join(rootDir, safe)
 
-    if (!file.startsWith(rootDir)) { res.writeHead(403, headers); res.end('forbidden'); return }
-
+    let body
     try {
       const info = await stat(file)
       if (info.isDirectory()) throw new Error('directory')
-      const body = await readFile(file)
-      res.writeHead(200, {
-        ...headers,
-        'Content-Type':   TYPES[extname(file)] ?? 'application/octet-stream',
-        'Content-Length': body.length,
-        'Cache-Control':  cacheFor(safe),
-      })
-      res.end(req.method === 'HEAD' ? undefined : body)
+      // What the URL said is settled above; what the file IS is a second
+      // question, and only realpath can answer it. Answered as not found for
+      // the same reason junction does (`FJS-746`, `FJS-783`): a 403 confirms
+      // to the caller that they found a way out of the root.
+      if (!file.startsWith(rootDir)) throw new Error('outside root')
+      if (!await withinRoot(rootDir, file, allowOutside)) throw new Error('outside root')
+      body = await readFile(file)
     } catch {
-      res.writeHead(404, headers)
+      res.writeHead(404, { ...headers, 'Content-Type': 'text/plain; charset=utf-8' })
       res.end('not found')
+      return
+    }
+
+    const type   = TYPES[extname(file)] ?? 'application/octet-stream'
+    const answer = bodyAnswer(body, type, {
+      range:          req.headers.range,
+      acceptEncoding: req.headers['accept-encoding'],
+    })
+
+    res.writeHead(answer.status, {
+      ...headers,
+      ...answer.headers,
+      'Content-Type':  type,
+      'Cache-Control': cacheFor(safe),
+    })
+    res.end(req.method === 'HEAD' ? undefined : answer.body)
+
+    } catch (err) {
+      // Logged rather than swallowed: a 500 on an origin whose whole job is to
+      // hand back files it already has is a defect, and the operator is the
+      // only one who can see it.
+      console.error(`[Sierra] widgets: ${req.method} ${req.url} failed —`, err)
+      // `end()` on a finished response emits an 'error' event with no listener,
+      // which is the crash this catch exists to prevent, one step along.
+      if (res.writableEnded) return
+      if (!res.headersSent) {
+        res.writeHead(500, { ...headers, 'Content-Type': 'text/plain; charset=utf-8' })
+      }
+      res.end('internal error')
     }
   })
 

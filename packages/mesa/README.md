@@ -495,6 +495,7 @@ replaced was out of date in both columns without ever rendering wrong:
 | `component-anchor` · `component-api` · `dynamic-element` | The anchor→registry keying, what `bind:this` hands a parent, `<mesa:element>` |
 | `external-reactivity` · `inert-block` · `watch-handler-defer` · `watch-proxy-staleness` · `async-decl-scope` · `whitespace-collapse` | The diagnostics and the semantics that are silent when wrong |
 | `vite-plugin` · `vite-server` · `vite-devtools` · `vite-errors` · `vite-hmr` · `vite-compiler-resolution` | The Vite plugin — hooks, a real dev server in middleware mode, the DevTools route, the HMR boundary against real compiled output |
+| `snippet-through-slot` | A snippet argument that reaches its render site through another component's slot or `{@render}`, including the `<table>` shape it was found in |
 | `repl` | REPL module graph, example compile + coverage, interactivity |
 
 `test/spec-check.mjs` is separate — a plain `node test/spec-check.mjs` script that

@@ -102,6 +102,12 @@ COPY --from=base /app .
 # The database files themselves are NOT in the image: point DATABASE_URL at /db
 # in .env.production, or the app opens a copy inside the container and every
 # write is lost on the next swap.
+#
+# The audit trail is the same problem and is easy to forget, because nothing
+# fails when it is wrong: a logger-driver database is a DIRECTORY of JSONL,
+# and left on its default the container writes it beside the code and the next
+# swap takes it with the rows in it. Bind AUDIT_PATH=/db/audit/ beside
+# DATABASE_URL -- fli check's log-db-unbound is what says so.
 RUN mkdir -p /db
 
 EXPOSE 3000

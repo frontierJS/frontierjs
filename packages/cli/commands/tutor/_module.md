@@ -19,6 +19,7 @@ description: Learn FrontierJS by building an app that really runs, one lesson at
 const { createPrompts } = await import(new URL('file://' + global.fliRoot + '/core/prompt.js'))
 const probe             = await import(new URL('file://' + global.fliRoot + '/core/probe.js'))
 const T                 = await import(new URL('file://' + global.fliRoot + '/core/tutor.js'))
+const B                 = await import(new URL('file://' + global.fliRoot + '/core/browser.js'))
 
 const { existsSync, mkdirSync, openSync, readFileSync, writeFileSync, appendFileSync, copyFileSync, rmSync } = await import('node:fs')
 const { join, resolve, basename } = await import('node:path')
@@ -248,7 +249,7 @@ const defaultSource = () =>
 // the lesson's own prose makes both unreadable, and the diagnosis on a failed
 // health check needs somewhere to point.
 
-const startServer = async (context, { name, script, cwd, env = {}, port, path = '/', ready = 40, logs }) => {
+const startServer = async (context, { name, script, argv, cwd, env = {}, port, path = '/', ready = 40, logs }) => {
   context.config.__servers ??= {}
   if (context.config.__servers[name]) return context.config.__servers[name]
 
@@ -260,7 +261,12 @@ const startServer = async (context, { name, script, cwd, env = {}, port, path = 
   const logPath = join(logDir, `${name}.log`)
   const out     = openSync(logPath, 'w')
 
-  const child = spawn('bun', ['run', script], {
+  // `argv` is the other kind of server a lesson starts. `fli gui`, `fli db:studio`
+  // and `fli project:view` are TOOLS: run against the app rather than from
+  // inside it, so there is no package script to name — and never a bare `fli`,
+  // which is whatever global install the machine happens to carry.
+  const [bin, ...rest] = argv ?? ['bun', 'run', script]
+  const child = spawn(bin, rest, {
     cwd,
     env:      { ...process.env, ...env },
     stdio:    ['ignore', out, out],
@@ -286,10 +292,81 @@ const serverLog = (rec, lines = 6) => {
 // Stopping is by GROUP, and a failure to stop is not a failure of the lesson:
 // the process may already be gone, which is the ordinary case on a rerun.
 const stopServers = (context) => {
+  for (const page of context.config.__pages ?? []) { try { page.close() } catch {} }
+  context.config.__pages = []
   for (const rec of Object.values(context.config.__servers ?? {})) {
     try { process.kill(-rec.pid, 'SIGTERM') } catch { try { rec.child?.kill('SIGTERM') } catch {} }
   }
   context.config.__servers = {}
+}
+
+// ─── the browser ──────────────────────────────────────────────────────────────
+//
+// A page is a process too, and it is closed by the same teardown for the same
+// reason: a lesson that refuses partway leaves Chrome and a temp profile behind
+// otherwise. `core/browser.js` owns the launch.
+//
+// No Chrome is a SKIP and not a failure — a fact about the machine rather than
+// about the app — so a lesson asks before it opens anything.
+const haveChrome = () => B.findChrome() !== null
+
+const openPage = async (context, path = '/') => {
+  const page = await B.openPage({ url: `http://127.0.0.1:${context.config.webPort}${path}` })
+  ;(context.config.__pages ??= []).push(page)
+  return page
+}
+
+// Setting `.value` does not notify a binding: the DOM's own setter is what a
+// framework listens to, and assigning through the property descriptor is the
+// only way to write a value AND have the `input` event carry it. Typing
+// character by character over CDP would be the other way and is thirty times
+// slower.
+const fill = (selector, value) =>
+  `(() => { const el = document.querySelector(${JSON.stringify(selector)})
+            if (!el) return null
+            Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value').set.call(el, ${JSON.stringify(value)})
+            el.dispatchEvent(new Event('input', { bubbles: true }))
+            return el.value })()`
+
+const clickText = (text) =>
+  `(() => { const b = [...document.querySelectorAll('button, a')]
+              .find(e => e.textContent.trim() === ${JSON.stringify(text)})
+            if (!b) return false
+            b.click(); return true })()`
+
+// A caller this lesson can use from BOTH sides — a token for the HTTP probes and
+// a signed-in page for the browser ones. A step run on its own (`--step 5`) has
+// neither, and the token cannot come out of the journal: a session is not a fact
+// a file should hold. So the address is minted per run rather than remembered.
+const ensureCaller = async (context, page) => {
+  if (!context.config.userToken) {
+    const who = `ui-${Date.now()}@frontier.invalid`
+    const reg = await registerAccount(context, { email: who, password: 'correct horse battery', name: 'Ada' })
+    if (!reg.ok) return reg
+    context.config.userToken = reg.json.token
+    context.config.uiEmail   = who
+  }
+  if (context.config.__signedIn) return { ok: true, name: 'already signed in', asked: 'a session', got: 'one' }
+  const io = await signInPage(context, page, context.config.uiEmail, 'correct horse battery')
+  if (io.ok) context.config.__signedIn = true
+  return io
+}
+
+// Sign in through the app's own login page. Over HTTP would be quicker and
+// would prove less: the token has to end up where the BROWSER's client reads
+// it, and that is the half a fetch cannot stand in for.
+const signInPage = async (context, page, email, password) => {
+  await page.goto(`http://127.0.0.1:${context.config.webPort}/login/`)
+  await probe.pageEval({ page, ask: `!!document.querySelector('input[type=email]')`, name: 'the sign-in form is up' })
+  await page.eval(fill('input[type=email]', email))
+  await page.eval(fill('input[type=password]', password))
+  await page.eval(clickText('Sign in'))
+  return probe.pageEval({
+    page,
+    ask:      `Object.keys(localStorage).some(k => k.endsWith('_token'))`,
+    describe: 'a session token in this origin’s storage',
+    name:     `sign in as ${email}`,
+  })
 }
 
 const stopServer = (context, name) => {
@@ -436,12 +513,21 @@ const schemaFile = (context) => join(context.config.appDir, 'db', 'schema.lite')
 const editSchema = (context, from, to) => {
   const path = schemaFile(context)
   const src  = readFileSync(path, 'utf8')
-  // The target is asked about FIRST. Lessons share a named workspace and several
-  // of them raise the same gate, so an app arriving already changed is the
-  // ordinary case — and asking for `from` first reports that as *the schema has
-  // no such line*, which is true and is the wrong answer.
-  if (src.includes(to))    return { ok: true,  already: true }
-  if (!src.includes(from)) return { ok: false, why: `the schema has no ${JSON.stringify(from)} to change` }
+  // *Already done* means there is nothing LEFT to change, and that is a question
+  // about `from` rather than about `to`. Asking whether the target text appears
+  // anywhere in the file is a substring search over every model: once another
+  // model carried `@@gate("0.4.4.6")` — which `tutor:adopt` gives the models it
+  // adopts — this returned `already` and edited nothing, so the gate two
+  // lessons depend on stayed where it was and their verdicts came back
+  // backwards. Found by running the lessons as a course.
+  //
+  // Lessons still share a workspace and several of them raise the same gate, so
+  // an app arriving already changed is the ordinary case: `from` absent and `to`
+  // present is exactly that, and is still reported as `already`.
+  if (!src.includes(from))
+    return src.includes(to)
+      ? { ok: true,  already: true }
+      : { ok: false, why: `the schema has no ${JSON.stringify(from)} to change` }
   writeFileSync(path, src.replace(from, to), 'utf8')
   return { ok: true }
 }
@@ -575,6 +661,11 @@ const createNote = (context, title) => probe.httpJson({
 // is a shell and prints; a lesson that has to branch on a verdict needs the
 // document. Never a bare `fli` — that is whatever global install the machine
 // happens to have, which is not the build under test.
+// The argv form of the same rule `context.fli` states: the RUNNING cli, never a
+// bare `fli`. `startServer({ argv })` takes this; `context.fli` is the shell
+// form for `context.exec`.
+const fliArgv = (...args) => [process.execPath, join(global.fliRoot, 'bin', 'fli.js'), ...args]
+
 const fliJson = (context, args, cwd) => {
   const r = probe.runArgv(process.execPath, [join(global.fliRoot, 'bin', 'fli.js'), ...args], { cwd })
   let json = null

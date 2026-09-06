@@ -302,6 +302,53 @@ describe('signing out', () => {
     expect(client.calls).toEqual(['me', 'signOut'])
     expect(s.session.user).toBeNull()
   })
+
+  // The doc comment on signOut() promises the local half runs even when the
+  // server call fails. Nothing in that module made it true — it held because
+  // junction's own signOut catches internally and answers `{revoked:false,
+  // error}`, so no arrangement of the REAL client can produce the case. A
+  // stand-in is the only thing that can ask it, which is the whole finding: an
+  // app that supplies its own auth surface is not junction's client, and the
+  // promise was inherited rather than kept.
+  test('clears here even when the server half throws', async () => {
+    const s = await freshSession()
+    const client = fakeClient({ token: 't', me: { userId: 'u1', level: 5 } })
+    client.auth.signOut = async () => { throw new Error('network down') }
+    s.initSession(client)
+    await s.ready
+    expect(s.session.user).not.toBeNull()
+
+    await expect(s.signOut()).rejects.toThrow('network down')
+
+    // The person is not left looking at a signed-in UI with no session.
+    expect(s.session.user).toBeNull()
+    expect(s.session.level).toBe(0)
+  })
+
+  test('…and the refusal still reaches the caller, rather than being swallowed', async () => {
+    // The negative control for the row above: a `catch` that returned instead
+    // of a `finally` would clear the session and satisfy it, while telling a
+    // sign-out button that the server had agreed.
+    const s = await freshSession()
+    const client = fakeClient({ token: 't', me: { userId: 'u1' } })
+    const boom = new Error('network down')
+    client.auth.signOut = async () => { throw boom }
+    s.initSession(client)
+    await s.ready
+
+    await expect(s.signOut()).rejects.toBe(boom)
+  })
+
+  test('the server\'s answer is still returned when it succeeds', async () => {
+    // …and the other control: a `finally` that swallowed the value would make
+    // every sign-out look like it revoked nothing.
+    const s = await freshSession()
+    const client = fakeClient({ token: 't', me: { userId: 'u1' } })
+    s.initSession(client)
+    await s.ready
+
+    await expect(s.signOut()).resolves.toEqual({ revoked: true })
+  })
 })
 
 describe('the level', () => {

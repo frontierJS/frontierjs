@@ -76,6 +76,14 @@ It is the only place that scheme is written down.
   either against Sierra.
 - **`mergeHooks` answers a NEW map**, re-exported from `resources/index.js`. It
   merged in place before; toolbelt's license is purity, so both callers reassign.
+- **A hook that breaks the chain throws `ResourceHookError` rather than
+  answering `null`.** An `around` that forgets `next()`, one that catches the
+  failure and does not rethrow, and an `error` hook that clears `ctx.error`
+  without setting a result all end the pipeline with nothing having produced an
+  answer — and `null` is what the context is born with, so a screen read it as
+  one. The test is the ASSIGNMENT, not the value (`null` is a real answer for a
+  missing row), which is why `ctx` comes from `hookContext` and not a literal.
+  A deliberate short-circuit still works: set `ctx.result`.
 - **The HMR algorithm is not duplicated either**: the DOM swap is Mesa's
   (`@frontierjs/mesa/vite/swap`, `FJS-259`) and only the registry and the two
   module shapes are jetty's.

@@ -1,0 +1,38 @@
+<script>
+  // destroy.mesa — what a mount handle's `destroy()` has to take away.
+  //
+  // Everything here renders through a different path, because the range
+  // `mount()` sweeps is walked at destroy time and not recorded at mount:
+  // an {#if} branch and an {#each} row materialize at a flush AFTER mount()
+  // has returned, so a teardown that captured node references would leave
+  // exactly these behind (FJS-890).
+  //
+  // The child component matters separately: its anchor is a comment of its
+  // own inside the range, and a component that survived a destroy is invisible
+  // to any assertion counting elements.
+  import Child from './Child.mesa'
+
+  export let rows = ['a', 'b', 'c']
+  let open = false
+  $.onMount(() => { open = true })
+
+  // The half a DOM sweep cannot see. Both counters live on `window` rather than
+  // in the component, because what is being asked is whether anything of this
+  // mount is still running after the nodes are gone.
+  $.onDestroy(() => { window.__destroyed = (window.__destroyed ?? 0) + 1 })
+  function ping() { window.__pings = (window.__pings ?? 0) + 1 }
+</script>
+
+<mesa:window on:mesa-ping={ping} />
+
+<p id="plain">plain</p>
+
+{#if open}
+  <p id="late">late</p>
+{/if}
+
+<ul id="rows">
+  {#each rows as row (row)}<li class="row">{row}</li>{/each}
+</ul>
+
+<Child label="in-destroy" />

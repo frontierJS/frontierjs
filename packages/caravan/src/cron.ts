@@ -11,89 +11,17 @@
 
 // ─── Parser ───────────────────────────────────────────────────────────────────
 
+// The grammar is `@frontierjs/toolbelt/cron` and may be nowhere else: junction's
+// `app.scheduler` parses the same expressions and the two disagreed about what
+// several of them meant (`FJS-767`). What stays here is the half that is not the
+// grammar — a named zone, and the wall-clock walk across a daylight boundary.
+
+import { parseCron, cronMatches } from '@frontierjs/toolbelt/cron'
+
 const DAYS = ['su', 'mo', 'tu', 'we', 'th', 'fr', 'sa']
 
-const FIELD_DEFS = [
-  { key: 'minutes', name: 'Minutes', max: 59 },
-  { key: 'hours',   name: 'Hours',   max: 23 },
-  { key: 'date',    name: 'Date',    max: 31 },
-  { key: 'month',   name: 'Month',   max: 12 },
-  { key: 'day',     name: 'Day',     max: 6  },
-] as const
-
-type FieldKey = typeof FIELD_DEFS[number]['key']
-
-type CronType = '*' | 'equal' | 'every' | 'in' | 'between'
-
-interface FieldConfig {
-  key:     FieldKey
-  name:    string
-  max:     number
-  type:    CronType
-  values:  number[]
-  current: number
-  valid:   boolean
-}
-
-type CronConfig = Record<FieldKey, FieldConfig>
-
-const TYPE_MAP: Record<'/' | '-' | ',', CronType> = {
-  '/': 'every',
-  '-': 'between',
-  ',': 'in',
-}
-
-function parseCron(line: string): CronConfig {
-  // Normalize named days: monday/mon/MON → numeric index
-  const normalized = line.toLowerCase()
-    .replace(/[a-z]+/g, (text) => {
-      const idx = DAYS.indexOf(text.substring(0, 2))
-      return idx >= 0 ? String(idx) : text
-    })
-
-  const items = normalized.split(/\s|\t/).filter(Boolean)
-  if (items.length !== 5) {
-    throw new Error(`Invalid cron expression: "${line}" — expected 5 fields (minute hour date month day)`)
-  }
-
-  const config = {} as CronConfig
-
-  for (let i = 0; i < FIELD_DEFS.length; i++) {
-    const item     = items[i]
-    const defaults = FIELD_DEFS[i]
-    const field: FieldConfig = {
-      ...defaults,
-      type:    item === '*' ? '*' : 'equal',
-      values:  item === '*' ? [] : [parseInt(item)],
-      current: 0,
-      valid:   false,
-    }
-
-    // Detect operator: /, -, ,
-    const opMatch = item.match(/[\/,\-]/)
-    if (opMatch) {
-      const op = opMatch[0] as '/' | '-' | ','
-      field.type   = TYPE_MAP[op]
-      field.values = item
-        .split(op)
-        .flatMap(part => part !== '*' ? [parseInt(part)] : [])
-    }
-
-    config[defaults.key] = field
-  }
-
-  return config
-}
-
-// ─── Validators ───────────────────────────────────────────────────────────────
-
-const VALIDATORS: Record<CronType, (values: number[], current: number) => boolean> = {
-  '*':       (_values, _current)       => true,
-  equal:     ([value],  current)       => value === current,
-  every:     ([value],  current)       => current % value === 0,
-  in:        (values,   current)       => values.includes(current),
-  between:   ([begin, end], current)   => current >= begin && current <= end,
-}
+type FieldKey = 'minutes' | 'hours' | 'date' | 'month' | 'day'
+type CronConfig = Record<FieldKey, Set<number>>
 
 // ─── Date → field map ─────────────────────────────────────────────────────────
 
@@ -147,11 +75,7 @@ function validate(
 
   const dateMap = getDateMap(date, timeZone)
 
-  const isValid = (Object.values(cronConfig) as FieldConfig[]).every(field => {
-    field.current = dateMap[field.key]
-    field.valid   = VALIDATORS[field.type](field.values, field.current)
-    return field.valid
-  })
+  const isValid = cronMatches(cronConfig, dateMap)
 
   if (findNext) {
     const limit   = findNext === true ? 60 * 24 : findNext

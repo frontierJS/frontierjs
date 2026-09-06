@@ -26,8 +26,6 @@ flags:
 <script>
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { resolve }                                             from 'path'
-import { createRequire }                                       from 'node:module'
-import { pathToFileURL }                                       from 'node:url'
 
 // ─── Where the schema comes from ──────────────────────────────────────────────
 //
@@ -46,6 +44,8 @@ import { pathToFileURL }                                       from 'node:url'
 
 const AUTH_PKG = '@frontierjs/auth'
 
+const { shippedFile } = await import(resolve(global.fliRoot, 'core/app-schema.js'))
+
 // A shipped `.lite` file has to parse standalone, so it spells the attribute out
 // rather than carrying a placeholder — `packages/auth/schema.ts` makes the same
 // substitution for a caller assembling the schema in memory, and auth's
@@ -56,14 +56,15 @@ const AUTH_PKG = '@frontierjs/auth'
 const retargetDb = (source, db) =>
   db === 'main' ? source : source.replace(/^([ \t]*)@@db\(main\)/gm, `$1@@db(${db})`)
 
-/** Resolve a subpath of @frontierjs/auth from the app, or null if not installed. */
-const resolveFromApp = (root, subpath) => {
-  try {
-    return createRequire(pathToFileURL(resolve(root, 'package.json'))).resolve(subpath)
-  } catch {
-    return null
-  }
-}
+/** Resolve a subpath of @frontierjs/auth from the app, or null if not installed.
+ *
+ *  `core/app-schema.js` owns the question — *is this shipped file installed
+ *  HERE* — and the reasoning that used to live in this header lives on
+ *  `shippedFile` now, where the two commands that were resolving it the unsound
+ *  way can read it. Three copies of this function existed and only this one was
+ *  right. */
+const resolveFromApp = (root, subpath) =>
+  shippedFile(root, AUTH_PKG, `.${subpath.slice(AUTH_PKG.length)}`)?.file ?? null
 
 // ─── The block appended to schema.lite ───────────────────────────────────────
 //

@@ -205,6 +205,14 @@ function runner(app: BasecampApp) {
     } else if (name.includes('start') || name.includes('deploy')) {
       const reply = await executor.call('/deploy', {
         deployment_id: deploy.id,
+        // The container is named for the APP, and this line is what makes that
+        // true: outpost falls back to the deployment id when it is absent, so
+        // every release started a container called `fjs-<deployment>` while
+        // `/stop`, `/health-check` and `/logs` — which all send `app_id` — asked
+        // about `fjs-<app>`. The health check then failed on every release, the
+        // next deploy stopped nothing and the containers accumulated one per
+        // release, each of them unreachable by name (`FJS-920`).
+        app_id:        deploy.appId,
         image,
         digest,
         config:        service.config ?? {},   // Json columns — already objects

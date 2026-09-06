@@ -61,19 +61,28 @@ export async function run(t) {
   // A collected error — legal syntax the analyser refuses. This is the shape
   // that used to be served half-compiled, because the plugin read `warnings`
   // and never `analysis.errors`.
+  //
+  // Asserted on the overlay, the same way the parse case above is. It used to
+  // read `__hmrLog` OR the overlay and then truncate the pair to 600 chars —
+  // and the log alone is longer than that, so the overlay half could never be
+  // reached and only the log could ever satisfy it. `[Mesa]` arrived in the log
+  // because the throwing module was EVALUATED in the page; it no longer is,
+  // which is the fix (FJS-836), so the OR was hiding the assertion rather than
+  // widening it.
   await t.edit('src/Counter.mesa', 'let count = 0', 'let count = 0\n  $: { }')
 
   const collected = await t.evaluate(`
     const t0 = Date.now();
-    let seen = '';
+    let el;
     for (;;) {
-      seen = window.__hmrLog.join('\\n') + '\\n' +
-             (document.querySelector('vite-error-overlay')?.shadowRoot?.textContent ?? '');
-      if (/\\[Mesa\\]/.test(seen) || Date.now() - t0 > ${ARRIVES}) break;
+      el = document.querySelector('vite-error-overlay');
+      if (el || Date.now() - t0 > ${ARRIVES}) break;
       await new Promise(r => setTimeout(r, 100));
     }
-    return { seen: seen.slice(0, 600) };
+    return { present: !!el, text: (el?.shadowRoot?.textContent ?? '').slice(0, 400) };
   `)
-  t.match(collected.seen, /\[Mesa\]/,
+  t.ok(collected.present,
     'a collected compile error reaches the browser rather than being served half-compiled')
+  t.match(collected.text, /Counter\.mesa/, 'naming the file')
+  t.match(collected.text, /\$: \{ \}|does nothing|Mesa/, 'and the fault')
 }

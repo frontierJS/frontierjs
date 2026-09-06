@@ -96,7 +96,7 @@ export const cart = {
   /** What the shop offers, loaded once. `ShippingMethod` reads at level 0, so
    *  this needs no session — which is the whole reason a guest can check out. */
   shippingOptions: [],
-  /** True while a call is in flight — one flag, because the basket serialises
+  /** True while a call is in flight — one flag, because the basket serializes
    *  its own writes below and two cannot overlap. */
   busy:    false,
   /** The server's own sentence, or null. A stock refusal names the SKU. */

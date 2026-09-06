@@ -18,6 +18,10 @@ export interface SmtpConfig {
   user: string
   pass: string
   tls?:  boolean          // explicit override; auto-true when port === 465
+  /** How long to wait for the server to say anything, per read. Default 30s.
+   *  There was no bound at all: a host that accepts the connection and never
+   *  greets held the request — or the worker — for ever. */
+  timeoutMs?: number
 }
 
 export interface SmtpMessage {
@@ -27,6 +31,22 @@ export interface SmtpMessage {
   html?:    string
   text?:    string
   replyTo?: string
+  /** Copied recipients. In the envelope AND in a `Cc:` header — the point of a
+   *  copy is that everyone can see it. */
+  cc?:      string | string[]
+  /** Blind recipients. In the envelope and in NO header: writing a `Bcc:` line
+   *  into the message is how a blind copy stops being blind. */
+  bcc?:     string | string[]
+  headers?: Record<string, string>
+  attachments?: SmtpAttachment[]
+}
+
+export interface SmtpAttachment {
+  filename: string
+  /** Whatever `MailAttachment` accepts — the transport takes the interface's
+   *  own type rather than a narrower one, which is the whole point here. */
+  content:  ArrayBuffer | Uint8Array | string
+  type?:    string
 }
 
 // ─── Address and header safety ───────────────────────────────
@@ -103,6 +123,26 @@ export class SmtpError extends Error {
   ) {
     super(message)
     this.name = 'SmtpError'
+  }
+
+  /**
+   * Is trying again a reasonable thing to do?
+   *
+   * DERIVED from the reply code's first digit, which is what that digit is for:
+   * RFC 5321 4yz is a transient negative — a greylist, a full mailbox, a
+   * server too busy — and 5yz is permanent. A hand-kept list of codes would be
+   * a second statement of the same rule and would drift.
+   *
+   * `null` is a failure with no reply behind it — a refused connection, a
+   * timeout, a socket that closed mid-session — and those are transient too:
+   * nothing about the message was rejected.
+   *
+   * Without this a greylist 450 and a hard bounce 550 retried identically, so
+   * the queue burned its whole ladder on an address that will never accept.
+   */
+  get retryable(): boolean {
+    if (this.code === null) return true
+    return this.code >= 400 && this.code < 500
   }
 }
 
@@ -193,6 +233,8 @@ async function openSession(config: SmtpConfig): Promise<{
     }
   }
 
+  const timeoutMs = config.timeoutMs ?? 30_000
+
   // ── Connect ──
   // eslint-disable-next-line prefer-const
   let socket: ReturnType<typeof Bun.connect> extends Promise<infer S> ? S : never
@@ -217,7 +259,15 @@ async function openSession(config: SmtpConfig): Promise<{
     },
   })
 
-  socket = await connectPromise
+  // The connect gets the same deadline. `Bun.connect` to a black-holed address
+  // does not reject on its own — the OS keeps retrying the SYN — so without
+  // this the bound above would only start applying after a connection that may
+  // never arrive.
+  socket = await Promise.race([
+    connectPromise,
+    new Promise<never>((_, rej) => setTimeout(() => rej(new SmtpError(
+      `Timed out after ${timeoutMs}ms connecting to ${config.host}:${config.port}`)), timeoutMs)),
+  ]) as typeof socket
 
   // ── Helpers ──
 
@@ -230,9 +280,23 @@ async function openSession(config: SmtpConfig): Promise<{
       return Promise.resolve(already.response)
     }
 
+    // Bounded. Nothing here had a deadline, so a host that accepted the
+    // connection and then said nothing parked this promise for the life of the
+    // process — a request that never answers, or a queue worker that never
+    // takes another job. The timer is cleared on BOTH settle paths, and clears
+    // the waiters with it so a late chunk cannot resolve a read that has
+    // already failed.
     return new Promise((resolve, reject) => {
-      waitResolve = resolve
-      waitReject  = reject
+      const timer = setTimeout(() => {
+        waitResolve = null
+        waitReject  = null
+        reject(new SmtpError(
+          `Timed out after ${timeoutMs}ms waiting for the server to respond ` +
+          `(${config.host}:${config.port})`))
+      }, timeoutMs)
+
+      waitResolve = (r) => { clearTimeout(timer); resolve(r) }
+      waitReject  = (e) => { clearTimeout(timer); reject(e) }
     })
   }
 
@@ -361,7 +425,9 @@ async function openSession(config: SmtpConfig): Promise<{
     // Before ANY socket write. The last gate before the wire, and the only one
     // `sendMail` alone reaches.
     assertMessageAddresses(msg)
-    const recipients = Array.isArray(msg.to) ? msg.to : [msg.to]
+    // Every address that must RECEIVE this, which is not the same set as the
+    // addresses that appear in the headers: a bcc is here and nowhere else.
+    const recipients = envelopeRecipients(msg)
 
     // A refusal mid-transaction abandons a half-open one — the session is
     // reusable and the next message would otherwise inherit this one's envelope
@@ -426,6 +492,44 @@ async function openSession(config: SmtpConfig): Promise<{
 // Body encoding: quoted-printable (safe for 8-bit content over SMTP).
 // Subject encoding: RFC 2047 encoded-word for non-ASCII.
 
+const asList = (v: string | string[] | undefined): string[] =>
+  v === undefined || v === null ? [] : Array.isArray(v) ? v : [v]
+
+/**
+ * Who the envelope must name.
+ *
+ * `to` alone until now, so a `cc` was validated on the way in and then reached
+ * no RCPT TO — the copied recipient never received the mail, no header said
+ * they were meant to, and `send()` answered `sent`.
+ */
+export function envelopeRecipients(msg: SmtpMessage): string[] {
+  return [...asList(msg.to), ...asList(msg.cc), ...asList(msg.bcc)]
+}
+
+/**
+ * A header NAME is as injectable as its value, and nothing checked one.
+ *
+ * While `headers` was dropped between the adapter and the wire this could not
+ * be reached; passing it through is what makes it reachable, so the guard lands
+ * in the same change. A name is a token — no colon, no space, no control
+ * character — and `assertHeaderValue` already owns the value.
+ */
+export function assertHeaderName(name: string): string {
+  if (!/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/.test(name))
+    throw new SmtpError(
+      `Mail: "${name}" is not a header name — a name is letters, digits and ` +
+      `-!#$%&'*+.^_\`|~, with no colon, space or line break`)
+  return name
+}
+
+/** Base64, in the 76-column lines a MIME body part is folded to. */
+function base64Lines(content: ArrayBuffer | Uint8Array | string): string {
+  const b64 = typeof content === 'string'
+    ? Buffer.from(content, 'utf8').toString('base64')
+    : Buffer.from(content instanceof ArrayBuffer ? new Uint8Array(content) : content).toString('base64')
+  return (b64.match(/.{1,76}/g) ?? []).join('\r\n')
+}
+
 function buildMimeMessage(msg: SmtpMessage): string {
   const to       = Array.isArray(msg.to) ? msg.to.join(', ') : msg.to
   const date     = new Date().toUTCString()
@@ -435,14 +539,58 @@ function buildMimeMessage(msg: SmtpMessage): string {
   // than encoding it. `From`/`To`/`Reply-To` used to be interpolated raw, so a
   // CRLF in any of them wrote a header of the caller's choosing into a message
   // the app composed.
+  const cc = asList(msg.cc).join(', ')
+
   const baseHeaders = [
     `From: ${encodeMimeHeader(msg.from)}`,
     `To: ${encodeMimeHeader(to)}`,
+    // A copy is visible by definition. `bcc` is deliberately NOT here — it is
+    // in the envelope and in no header, which is the whole of what makes it
+    // blind; emitting it is how every blind recipient learns about the others.
+    ...(cc ? [`Cc: ${encodeMimeHeader(cc)}`] : []),
     `Subject: ${encodeMimeHeader(msg.subject)}`,
     `Date: ${date}`,
     `MIME-Version: 1.0`,
     ...(msg.replyTo ? [`Reply-To: ${encodeMimeHeader(msg.replyTo)}`] : []),
+    // The caller's own headers, name and value both graded. Last, so a caller
+    // cannot restate `From` or `Content-Type` ahead of the message's own.
+    ...Object.entries(msg.headers ?? {}).map(([k, v]) =>
+      `${assertHeaderName(k)}: ${encodeMimeHeader(String(v))}`),
   ]
+
+  // Attachments: the whole message becomes multipart/mixed, with everything
+  // above as the first part. Built by wrapping rather than by a fourth branch,
+  // so the alternative/html/text shapes below stay the only place body
+  // structure is decided.
+  if (msg.attachments?.length) {
+    const mixed = `----=_Mixed_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
+    const inner = buildMimeMessage({ ...msg, attachments: undefined, headers: undefined })
+    const blank = inner.indexOf('\r\n\r\n')
+    const innerHeaders = inner.slice(0, blank).split('\r\n')
+      .filter(h => /^(Content-Type|Content-Transfer-Encoding):/i.test(h))
+    const innerBody = inner.slice(blank + 4)
+
+    return [
+      ...baseHeaders,
+      `Content-Type: multipart/mixed; boundary="${mixed}"`,
+      '',
+      `--${mixed}`,
+      ...innerHeaders,
+      '',
+      innerBody,
+      ...msg.attachments.flatMap(a => [
+        `--${mixed}`,
+        // The filename reaches a header, so it is graded like one.
+        `Content-Type: ${assertHeaderValue(a.type ?? 'application/octet-stream', 'attachment.type')}; ` +
+          `name="${assertHeaderValue(a.filename, 'attachment.filename')}"`,
+        'Content-Transfer-Encoding: base64',
+        `Content-Disposition: attachment; filename="${assertHeaderValue(a.filename, 'attachment.filename')}"`,
+        '',
+        base64Lines(a.content),
+      ]),
+      `--${mixed}--`,
+    ].join('\r\n')
+  }
 
   // Multipart/alternative (HTML + plain text)
   if (msg.html && msg.text) {

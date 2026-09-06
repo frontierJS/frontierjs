@@ -746,16 +746,29 @@ export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: s
       const subjectWorkspace = (subject?.workspaceId as string | undefined)
         ?? (accessor === 'workspace' ? subject?.id as string | undefined : undefined)
 
+      // `Session` here is the generated ROW type, which knows nothing about the
+      // principal junction builds — `support` lives on `SessionContext`.
+      const support = (session as { support?: { operatorId?: string } } | undefined)?.support
+
       // asSystem(): the trail must record actions the actor could not write
       // for themselves. AuditEvent create is a system-only concern.
       await sys.auditEvent.create({
         data: {
           workspaceId: (ctx.locals.workspaceId as string | undefined) ?? subjectWorkspace ?? null,
-          actorId:     session?.userId ?? null,
+          // Support mode inverts the actor. Inside an episode the session
+          // resolves to the SUBJECT — that is what bounds an operator at the
+          // subject's own standing — so `session.userId` answers who the write
+          // was made AS and nobody answers who made it. Filing it under the
+          // person it was done to is `FJS-142`'s complaint stated exactly, and
+          // is what Laravel Nova does today.
+          actorId:     support?.operatorId ?? session?.userId ?? null,
+          ...(support ? { onBehalfOfId: session?.userId } : {}),
           // No session is not an anonymous user — it is a job or an
           // outpost acting for itself. `AuditEvent.actorType` defaults to 'user',
           // so leaving it unstated would file every machine write under people.
-          actorType:   session ? (session.authMethod === 'api_key' ? 'api_key' : 'user') : 'system',
+          actorType:   session
+            ? (support ? 'support' : session.authMethod === 'api_key' ? 'api_key' : 'user')
+            : 'system',
           action:      `${ctx.service}.${ctx.method}`,
           subjectType: ctx.service,
           subjectId:   (result?.id as string | undefined) ?? (before?.id as string | undefined) ?? 'unknown',

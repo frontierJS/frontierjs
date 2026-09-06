@@ -7,9 +7,9 @@ framework import, no mutation of its arguments. The rule is the package's
 license, not its style: `FJS-D26` admits toolbelt as substrate *below* the
 dependency graph on the strength of it, so breaking purity costs the standing.
 
-**One kit per subpath.** `/glow`, `/inflect`, `/directives`, `/history`,
-`/hooks`, `/json`, `/jsonschema`, `/match`, `/query`, `/search`, `/signature` and
-`/units` today; a caller
+**One kit per subpath.** `/cron`, `/gate`, `/glow`, `/inflect`, `/directives`,
+`/history`, `/hooks`, `/json`, `/jsonschema`, `/match`, `/query`, `/redact`,
+`/search`, `/signature` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
 `bun run test` — `test/run.js` is the whole harness, no dependencies, runs
@@ -23,6 +23,13 @@ under node too.
 src/glow/glow.js     source code → highlighted HTML. The first kit.
 src/inflect/         English singular ⇄ plural. One definition, five callers
                      across litestone, junction and sierra
+src/cron/            what a five-field cron expression ADMITS — a Set per
+                     field. Caravan and junction's `app.scheduler` each had a
+                     parser and they were broken differently, so one expression
+                     named two schedules (`FJS-767`). Which clock, and when a
+                     timer looks, stays with each scheduler: `cronMatches` takes
+                     clock parts rather than a `Date`. Ships a `.d.ts` — both
+                     callers are TypeScript
 src/units/           a magnitude with a unit, as a person reads it. Bytes:
                      binary steps, familiar labels, adaptive precision — four
                      callers had four copies and two answers (`FJS-408`).
@@ -31,6 +38,16 @@ src/units/           a magnitude with a unit, as a person reads it. Bytes:
                      currency at all (`FJS-440`). Arithmetic: `roundMinor` and
                      `allocate`, the rounding mode and the leftover unit
                      `@money` deliberately left to the app (`FJS-D154`)
+src/gate/            the access LADDER — the 0-9 scale, `levelPasses` (8 and 9
+                     are SENTINELS, so it is not `>=`), and `gradeStanding`,
+                     the session shape -> level. Four hand copies across three
+                     realms, each carrying a comment saying *change one, change
+                     both*, and they drifted on the branch none of their tests
+                     could see (`FJS-520`, ruled `FJS-D197`). Litestone
+                     enforces, junction grades the caller, sierra renders a
+                     screen from it in plain node — and the dependency
+                     direction forbids two of the three from asking the first.
+                     Ships a `.d.ts`: junction re-exports the type
 src/directives/      the `$` convention — which params are directives, and how
                      a bag of them splits into filters + directives. Two
                      boundaries read it: junction's bridge and sierra's router
@@ -38,10 +55,13 @@ src/query/           what a query STRING means — types, structure, and the way
                      back. Sibling of /directives: that one says which params
                      are directives, this one says what the values are. Three
                      readers — junction's transport, junction's client writing
-                     one, sierra's router. Ships a `.d.ts`, the only kit that
-                     does, because junction's browser client reaches it
+                     one, sierra's router. Ships a `.d.ts`, because junction's
+                     browser client reaches it
 src/hooks/           the four-phase resource pipeline — before · after · around
-                     · error. Two callers: sierra's createResource and jetty's
+                     · error — plus `hookContext`/`answered`, which is whether
+                     anything ever produced a result, and `hookChainMessage`,
+                     what to say when nothing did. Two callers: sierra's
+                     createResource and jetty's
 src/json/            reading, editing and COMPARING a JSON document nothing
                      describes — classify, the immutable writes, the flattened
                      tree, and diffDocs. Two callers, both in @frontierjs/ui:
@@ -126,6 +146,21 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
   no cycle guard, no NaN. A general one here would be a second answer to a
   question this kit already scopes.
 
+- **`ctx.result` is an ACCESSOR and the value is not the test.** Three ordinary
+  hook mistakes end the pipeline with nothing having run — an `around` that
+  returns without calling `next()`, an `around` that catches and does not
+  rethrow, an `error` hook that clears `ctx.error` and sets nothing — and all
+  three used to resolve the call to the `null` the context was born with, which
+  a screen reads as an answer. `null` is also a legitimate answer (a `get` for
+  a row that is not there), so what separates them is whether anything ever
+  ASSIGNED it. `hookContext` tracks that; `answered(ctx)` reports it. A context
+  from anywhere else answers `false`, so a caller that has not adopted it is
+  never told its pipeline broke.
+- **The WORDS have one owner here and the Error class does not.** Both callers
+  throw a `ResourceHookError` of their own type — each package's errors are its
+  own surface, and this package exports only pure functions (`FJS-D26`). What
+  would drift between two hand-written messages is which phase and the two ways
+  out, so that is `hookChainMessage`.
 - **`mergeHooks` answers a NEW map.** It merged in place in both copies it came
   from; a pure function may not mutate its arguments, and that rule is this
   package's license rather than its style (`FJS-D26`). A caller upgrading has to
@@ -133,12 +168,27 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
   which is louder than one silently rewritten.
 - **`formatMoney` is `Intl` and not a symbol table, and the reason is JPY.**
   What separates two currencies is not the glyph: it is which side it sits on,
-  whether there is a space, how thousands are grouped, and **how many decimals
-  the currency has**. A hand-rolled `toFixed(2)` invents a minor unit the yen
-  does not have. One locale by default — `en-US` with `currencyDisplay:
+  whether there is a space and how thousands are grouped. A hand-rolled
+  `toFixed(2)` invents a minor unit the yen does not have. One locale by default — `en-US` with `currencyDisplay:
   'narrowSymbol'` answers `$28.00`, `£28.00`, `€28.00`; asking for each
   currency's home locale instead answers `US$28.00` for dollars, which is
   correct and is not what a price tag says.
+- **The currency table is SHIPPED and the host's ICU is not asked** (`FJS-745`).
+  Two facts made that necessary. `Intl.supportedValuesOf('currency')` answers 162
+  codes under node and 306 under bun, differing on 145 — so `@money(ZWG)` parsed
+  on one runtime and was refused as a typo on the other. And
+  `resolvedOptions().maximumFractionDigits` disagrees on fourteen codes both
+  carry: node says the Iraqi dinar has no decimal places, bun says three, ISO
+  says three. **Neither runtime is wrong** — that number answers how an amount is
+  DISPLAYED, which is CLDR's question, and `@money` derives its scale from how it
+  is STORED, which is ISO 4217's exponent. `formatMoney` still asks `Intl` for the
+  glyph, its side and the grouping, and pins the decimals to the exponent so one
+  stored amount renders identically wherever it is read.
+- **`minorUnits` refuses a code with no minor unit in its own words.** `XAU`,
+  `XDR`, `XXX` and ten more are ISO codes and are not amounts — `isKnownCurrency`
+  is true for them and `minorUnits` throws, because answering 2 would let
+  `toMinor` invent a hundredth of a troy ounce. A typo and a metal are different
+  refusals with different ways out.
 - **An unrecognised 3-letter code does NOT throw, and the separator is a
   no-break space.** Intl accepts any well-formed code and prints it where the
   symbol goes, joined with U+00A0. Only a malformed code (fewer than three
@@ -248,6 +298,17 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
   `FJS-479`, which made `purchases` resolve to `purchas`, which is a model
   junction cannot find, which is **no `@@gate` and no validation** on that
   service. Adding a word to the list is cheap; changing the default is not.
+- **The irregular table is DATA ABOUT ENGLISH and a spelling sweep will eat
+  it.** `analyses` is the plural of `analysis` on both sides of the Atlantic; a
+  find/replace of `analyse` → `analyze` rewrote it to `analyzes` here **and in
+  the test that asserted it**, in one commit, so the suite stayed green and
+  `singularize('analyses')` answered `analyse` — a model junction cannot find.
+  The header carries a warning; the structural guard is the one below.
+- **The spec READS the table for the round trip and hand-writes the plurals for
+  correctness, and the split is the point.** A copy of the table in the test
+  grades nothing — it agrees with whatever the table says, including a plural
+  nobody speaks. Measured: reintroducing `analyzes` leaves *every irregular
+  round-trips* green and fails the corpus, and so does dropping `half`.
 - **A round trip is not a correctness test here.** `pluralize('cas')` is
   `cases`, so `singularize`/`pluralize` agreed with each other for as long as
   both were wrong. Assert the singular you expect, not that it survives.
@@ -264,5 +325,6 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
 | --- | --- |
 | `glow` | `packages/css`: `bun run test code` — it styles *real glow output*, injected by the css harness. A change to the element glow picks for a token breaks there, not here. Then `packages/mesa`: `bun run test`, whose markdown fences run it |
 | `inflect` | `packages/litestone`: `bun run test` (table names), `packages/junction` and `packages/sierra`: `bun run test` (model resolution). A rule changed here renames tables — read the DDL snapshot diff before believing a green run |
-| `units` | `packages/toolbelt`: `bun run test`, then `example`: `verify` and `verify:public` — the prices on a live screen and in a PRERENDERED file, which is the one place the formatter runs in node with no browser under it |
+| `units` | `packages/toolbelt`: `bun run test`, then `example`: `verify` and `verify:site` — the prices on a live screen and in a PRERENDERED file, which is the one place the formatter runs in node with no browser under it |
+| `gate` | `packages/litestone`: `bun run test` (the boundary that enforces it) · `packages/junction`: `bun run test` — `session-gate-level.test.ts` asserts the export IS the kit's binding, which is the assertion four hand copies could not make · `packages/sierra`: `bun run test` (the screen's verdict). The kit's own spec walks the whole 216-case grid and the whole 0-9 square, because the drift was one branch and asking one grader about one caller is what hid it |
 | `directives` | `packages/junction`: `bun run test` — the bridge strips by this table, and `live-order.test.ts` asserts both transports only emit names it holds. Then `packages/sierra`: `bun run test` (`page-query.test.js`), and `example`: `verify` for a real navigation |

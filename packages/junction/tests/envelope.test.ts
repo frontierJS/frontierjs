@@ -49,6 +49,29 @@ describe('isServiceResult — strict, because the loose version was wrong', () =
     expect(isServiceResult({ kind: 'nope', object: 'x', data: [] })).toBe(false)
   })
 
+  // The row that satisfied every signal the guard used to have. `kind` as a free
+  // String holding one of the two reserved words, beside `object` and `data`.
+  // The `list` variant is the damaging one: a list envelope is kept whole, so
+  // protect() strips inside the row's own `data` column and the row's protected
+  // siblings ride out intact. `errors` is what separates them now.
+  test('a row carrying kind, object and data is not an envelope', () => {
+    const asSingle = { id: 7, kind: 'single', object: 'product', data: { sku: 'X' }, apiKey: 's3cr3t' }
+    const asList   = { id: 7, kind: 'list',   object: 'product', data: [{ sku: 'X' }], apiKey: 's3cr3t' }
+
+    expect(isServiceResult(asSingle)).toBe(false)
+    expect(isServiceResult(asList)).toBe(false)
+    expect(isListResult(asList)).toBe(false)
+
+    // …so the row survives every consumer whole, rather than being replaced by
+    // its own `data` column.
+    expect(resultData(asSingle)).toBe(asSingle)
+    expect(unwrapResult(asList)).toBe(asList)
+
+    // The control: the same three keys plus the fourth IS an envelope, or this
+    // test would pass against a guard that had stopped recognizing anything.
+    expect(isServiceResult({ ...asList, errors: [] })).toBe(true)
+  })
+
   test('isListResult narrows to lists only', () => {
     expect(isListResult(list('posts', []))).toBe(true)
     expect(isListResult(single('posts', { id: 1 }))).toBe(false)
@@ -237,7 +260,7 @@ describe('constructors keep the shape well-formed', () => {
   test('a constructed envelope satisfies the guard', () => {
     // The reason to use these rather than an object literal: a hook that
     // short-circuits by setting ctx.result has to produce something the rest
-    // of the pipeline recognises, and hand-rolling one is how fields go
+    // of the pipeline recognizes, and hand-rolling one is how fields go
     // missing. (July's password leak was protect() stripping fields off the
     // wrapper instead of the record.)
     expect(isServiceResult(single('posts', { id: 1 }))).toBe(true)

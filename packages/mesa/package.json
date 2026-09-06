@@ -60,7 +60,7 @@
     }
   },
   "scripts": {
-    "test": "vitest run && node test/browser/runtime/run.mjs && node test/browser/vite/run.mjs",
+    "test": "node test/spec-check.mjs && vitest run && node test/browser/runtime/run.mjs && node test/browser/vite/run.mjs",
     "test:watch": "vitest",
     "test:browser": "node test/browser/runtime/run.mjs && node test/browser/vite/run.mjs",
     "test:browser:runtime": "node test/browser/runtime/run.mjs",

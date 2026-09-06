@@ -230,15 +230,52 @@ describe('a live list keeps its page', () => {
     expect(stale.get()).toBe(0)
   })
 
-  it('an unordered list that outgrows its page says so rather than dropping a row at random', async () => {
+  it('an unordered list at its page size COUNTS a new row rather than growing', async () => {
+    // Reversed deliberately (`FJS-766`). This used to append and only bump
+    // `stale`, on the reading that not showing the row somebody just made is
+    // worse than a list longer than the page it claims to be. The measurement
+    // says otherwise: 3000 pushes into a `limit: 20` load reached 3003 rows and
+    // took the process from 107 MB to 221 MB, and nothing bounds it.
+    //
+    // With no ordering nothing here can know whether the row belongs on the
+    // page at all, which is the position page 2 is already in — and it takes
+    // the same answer there. `stale` is what the view renders as *1 new —
+    // refresh*, and a reload gets the server's own answer.
     const { restore } = mockList([{ id: 1 }, { id: 2 }], { limit: 2, offset: 0, total: 2 })
     const { service, store, load, stale } = client().resource('items')
     await load()
     restore()
 
     service._receive('created', { id: 3 })
-    expect(store.get()).toHaveLength(3)   // the row the user just made is not thrown away
+    expect(store.get().map(r => r.id)).toEqual([1, 2])
     expect(stale.get()).toBe(1)
+  })
+
+  it('…and it is a bound on GROWTH, not on updates', async () => {
+    // The pair, and the reason `insert` needs no membership test of its own: a
+    // row already on the page takes `apply`'s `present` branch and never
+    // reaches the bound. Without this a full unordered list would freeze.
+    const { restore } = mockList([{ id: 1, n: 'a' }, { id: 2, n: 'b' }], { limit: 2, offset: 0, total: 2 })
+    const { service, store, load, stale } = client().resource('items')
+    await load()
+    restore()
+
+    service._receive('updated', { id: 2, n: 'B' })
+    expect(store.get().map(r => r.n)).toEqual(['a', 'B'])
+    expect(stale.get()).toBe(0)
+  })
+
+  it('…and a page that is not full still shows the row', async () => {
+    // The other pair, and the case the old reading was really about: appending
+    // here pushes nothing off, so the row somebody just made appears.
+    const { restore } = mockList([{ id: 1 }], { limit: 20, offset: 0, total: 1 })
+    const { service, store, load, stale } = client().resource('items')
+    await load()
+    restore()
+
+    service._receive('created', { id: 2 })
+    expect(store.get().map(r => r.id)).toEqual([1, 2])
+    expect(stale.get()).toBe(0)
   })
 
   it('load() clears it — that answer is current by definition', async () => {

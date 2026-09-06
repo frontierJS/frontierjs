@@ -137,7 +137,7 @@ model Subscriber {
   id     Int    @id @default(autoincrement())
   email  String @unique
   fields Json   @default("{}")               // human-keyed — what a person reads
-  slots  Json   @default("{}") @guarded(all) // slot-keyed mirror — what is indexed
+  slots  Json   @default("{}") @guarded // slot-keyed mirror — what is indexed
 
   t1 String? @generated("json_extract({slots}, '$.t1')")
   …                                          // the pool, sized from this model's write rate

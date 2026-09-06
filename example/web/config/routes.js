@@ -9,7 +9,7 @@ export const tree = {
   file: "src/routes/index.mesa",
   companion: null,
   layout: "src/routes/_module.mesa",
-  meta: {"siteName":"Kitchen sink","title":"Home","isIndex":true},
+  meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Home\",\"isIndex\":true}"),
   params: [],
   children: [
   {
@@ -18,7 +18,7 @@ export const tree = {
       file: "src/routes/cart/index.mesa",
       companion: null,
       layout: "src/routes/_module.mesa",
-      meta: {"siteName":"Kitchen sink","title":"Basket","isIndex":true},
+      meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Basket\",\"isIndex\":true}"),
       params: [],
       children: [],
     },
@@ -28,7 +28,7 @@ export const tree = {
       file: "src/routes/customers/index.mesa",
       companion: null,
       layout: "src/routes/_module.mesa",
-      meta: {"siteName":"Kitchen sink","title":"Customers","isIndex":true},
+      meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Customers\",\"isIndex\":true}"),
       params: [],
       children: [],
     },
@@ -38,7 +38,7 @@ export const tree = {
       file: "src/routes/inventory/index.mesa",
       companion: null,
       layout: "src/routes/_module.mesa",
-      meta: {"siteName":"Kitchen sink","title":"Inventory","isIndex":true},
+      meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Inventory\",\"isIndex\":true}"),
       params: [],
       children: [],
     },
@@ -48,7 +48,7 @@ export const tree = {
       file: "src/routes/invoices/index.mesa",
       companion: null,
       layout: "src/routes/_module.mesa",
-      meta: {"siteName":"Kitchen sink","title":"Invoices","isIndex":true},
+      meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Invoices\",\"isIndex\":true}"),
       params: [],
       children: [
       {
@@ -57,7 +57,7 @@ export const tree = {
           file: "src/routes/invoices/[id].mesa",
           companion: null,
           layout: "src/routes/_module.mesa",
-          meta: {"siteName":"Kitchen sink","title":"Invoice","dynamic":true},
+          meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Invoice\",\"dynamic\":true}"),
           params: ["id"],
           children: [],
         }
@@ -69,7 +69,7 @@ export const tree = {
       file: "src/routes/orders/index.mesa",
       companion: null,
       layout: "src/routes/_module.mesa",
-      meta: {"siteName":"Kitchen sink","title":"Orders","isIndex":true},
+      meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Orders\",\"isIndex\":true}"),
       params: [],
       children: [
       {
@@ -78,7 +78,7 @@ export const tree = {
           file: "src/routes/orders/create.mesa",
           companion: null,
           layout: "src/routes/_module.mesa",
-          meta: {"siteName":"Kitchen sink","title":"New order"},
+          meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"New order\"}"),
           params: [],
           children: [],
         },
@@ -88,7 +88,7 @@ export const tree = {
           file: "src/routes/orders/[id].mesa",
           companion: null,
           layout: "src/routes/_module.mesa",
-          meta: {"siteName":"Kitchen sink","title":"Order","dynamic":true},
+          meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Order\",\"dynamic\":true}"),
           params: ["id"],
           children: [],
         }
@@ -100,7 +100,7 @@ export const tree = {
       file: "src/routes/payroll/index.mesa",
       companion: null,
       layout: "src/routes/_module.mesa",
-      meta: {"siteName":"Kitchen sink","title":"Payroll","isIndex":true},
+      meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Payroll\",\"isIndex\":true}"),
       params: [],
       children: [
       {
@@ -109,7 +109,7 @@ export const tree = {
           file: "src/routes/payroll/[id].mesa",
           companion: null,
           layout: "src/routes/_module.mesa",
-          meta: {"siteName":"Kitchen sink","title":"Pay run","dynamic":true},
+          meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Pay run\",\"dynamic\":true}"),
           params: ["id"],
           children: [],
         }
@@ -121,7 +121,7 @@ export const tree = {
       file: "src/routes/people/index.mesa",
       companion: null,
       layout: "src/routes/_module.mesa",
-      meta: {"siteName":"Kitchen sink","title":"People","isIndex":true},
+      meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"People\",\"isIndex\":true}"),
       params: [],
       children: [
       {
@@ -130,7 +130,7 @@ export const tree = {
           file: "src/routes/people/[id].mesa",
           companion: null,
           layout: "src/routes/_module.mesa",
-          meta: {"siteName":"Kitchen sink","title":"Person","dynamic":true},
+          meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Person\",\"dynamic\":true}"),
           params: ["id"],
           children: [],
         }
@@ -142,7 +142,7 @@ export const tree = {
       file: "src/routes/plans/index.mesa",
       companion: null,
       layout: "src/routes/_module.mesa",
-      meta: {"siteName":"Kitchen sink","title":"Plans","isIndex":true},
+      meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Plans\",\"isIndex\":true}"),
       params: [],
       children: [
       {
@@ -151,7 +151,7 @@ export const tree = {
           file: "src/routes/plans/[id].mesa",
           companion: null,
           layout: "src/routes/_module.mesa",
-          meta: {"siteName":"Kitchen sink","title":"Plan","dynamic":true},
+          meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Plan\",\"dynamic\":true}"),
           params: ["id"],
           children: [],
         }
@@ -163,7 +163,7 @@ export const tree = {
       file: "src/routes/products/index.mesa",
       companion: null,
       layout: "src/routes/_module.mesa",
-      meta: {"siteName":"Kitchen sink","title":"Products","isIndex":true},
+      meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Products\",\"isIndex\":true}"),
       params: [],
       children: [
       {
@@ -172,7 +172,7 @@ export const tree = {
           file: "src/routes/products/create.mesa",
           companion: null,
           layout: "src/routes/_module.mesa",
-          meta: {"siteName":"Kitchen sink","title":"New product"},
+          meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"New product\"}"),
           params: [],
           children: [],
         },
@@ -182,7 +182,7 @@ export const tree = {
           file: "src/routes/products/[id].mesa",
           companion: null,
           layout: "src/routes/_module.mesa",
-          meta: {"siteName":"Kitchen sink","title":"Product","dynamic":true},
+          meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Product\",\"dynamic\":true}"),
           params: ["id"],
           children: [],
         }
@@ -194,7 +194,7 @@ export const tree = {
       file: "src/routes/settings/index.mesa",
       companion: null,
       layout: "src/routes/_module.mesa",
-      meta: {"siteName":"Kitchen sink","title":"Settings","isIndex":true},
+      meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Settings\",\"isIndex\":true}"),
       params: [],
       children: [
       {
@@ -203,7 +203,7 @@ export const tree = {
           file: "src/routes/settings/fields.mesa",
           companion: null,
           layout: "src/routes/_module.mesa",
-          meta: {"siteName":"Kitchen sink","title":"Customer fields"},
+          meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Customer fields\"}"),
           params: [],
           children: [],
         }
@@ -215,7 +215,7 @@ export const tree = {
       file: "src/routes/subscriptions/index.mesa",
       companion: null,
       layout: "src/routes/_module.mesa",
-      meta: {"siteName":"Kitchen sink","title":"Subscriptions","isIndex":true},
+      meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Subscriptions\",\"isIndex\":true}"),
       params: [],
       children: [
       {
@@ -224,7 +224,7 @@ export const tree = {
           file: "src/routes/subscriptions/[id].mesa",
           companion: null,
           layout: "src/routes/_module.mesa",
-          meta: {"siteName":"Kitchen sink","title":"Subscription","dynamic":true},
+          meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Subscription\",\"dynamic\":true}"),
           params: ["id"],
           children: [],
         }
@@ -236,7 +236,7 @@ export const tree = {
       file: "src/routes/users/index.mesa",
       companion: null,
       layout: "src/routes/_module.mesa",
-      meta: {"siteName":"Kitchen sink","title":"Users","isIndex":true},
+      meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Users\",\"isIndex\":true}"),
       params: [],
       children: [],
     }

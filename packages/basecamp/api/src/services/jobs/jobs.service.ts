@@ -9,7 +9,7 @@
 
 import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, ws }
+import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
 import { syncSchedule, unscheduleJob } from './job-schedule.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
@@ -263,7 +263,9 @@ export function createJobsService(app: BasecampApp) {
         // they are unreachable off the wire — and `jobInScope` is what confines
         // them where there IS a caller.
         all:     [sessionScope(app, { except: ['startRun', 'finishRun'] })],
-        create:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), deriveSlug],
+        // No deriveSlug: `Job` has no `slug` column, so the shared hook stamped a
+        // key the model does not declare and the write dropped it in silence.
+        create:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         patch:   [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         remove:  [requireWorkspaceRole(app, 'admin', 'owner')],
         trigger: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],

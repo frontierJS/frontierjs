@@ -163,7 +163,7 @@ migrating means re-collecting the values from wherever they still exist. See
 
 ## @secret
 
-Composite attribute — expands at parse time to `@encrypted + @guarded(all) + @log(audit)`. Every read and write is logged to the audit logger database.
+Composite attribute — expands at parse time to `@encrypted + @guarded + @log(audit)`. Every read and write is logged to the audit logger database.
 
 ```prisma
 database audit {
@@ -227,7 +227,7 @@ const tenants = await createTenantRegistry({
 })
 ```
 
-## @guarded and @guarded(all)
+## @guarded and @guarded
 
 Not encryption, but related. **A system-context column, in both directions**:
 stripped from every read, and refused on every write, unless the client is
@@ -235,7 +235,7 @@ stripped from every read, and refused on every write, unless the client is
 
 ```prisma
 model User {
-  passwordHash String @guarded(all)   // system only, and a select cannot unlock the read
+  passwordHash String @guarded   // system only, and a select cannot unlock the read
   internalNote String @guarded        // system only; the read is unlockable by nothing either
 }
 ```
@@ -252,7 +252,13 @@ column is invisible and settable at once, so a caller cannot see what they are
 overwriting and the owner cannot see that they did.
 
 `@omit` is the weaker neighbor — a read-shaped rule only, and an explicit
-`select` unlocks it. Neither level of `@guarded` is unlockable that way.
+`select` unlocks it. `@guarded` is not unlockable that way, and takes no argument.
+
+**They stack, and they answer different questions** (`FJS-D205`): `@guarded`
+says who may see the column, `@omit` says whether it is in the default payload.
+`@guarded @omit(all)` is therefore *system context AND asked for by name* — the
+shape a large blob or an audit payload wants, where even `asSystem()` should not
+be dragging it into every read.
 
 For a column *some* callers may write, the tool is field-level
 `@allow('write', …)`; it cannot sit beside `@guarded`, which already answers

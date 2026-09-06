@@ -48,7 +48,22 @@ if (flag.rules) {
 }
 
 const staleDays = Number.parseInt(flag['stale-days'] ?? '60', 10)
-const result    = runRegisterCheck({ root, staleDays: Number.isFinite(staleDays) ? staleDays : 60 })
+
+// A root with no register at all is a refusal rather than a pass, and it is the
+// commonest way to reach one: `fli` walks up to the nearest package root, so
+// this run from inside a package reads that package's directory. Printed as a
+// message and not a stack, because the fix is to change directory.
+let result
+try {
+  result = runRegisterCheck({ root, staleDays: Number.isFinite(staleDays) ? staleDays : 60 })
+} catch (err) {
+  echo('')
+  echo(`  fli register:check\n`)
+  for (const line of String(err.message).split('\n')) echo(`  ${line}`)
+  echo('')
+  process.exitCode = 1
+  return
+}
 
 if (flag.json) {
   echo(JSON.stringify(result, null, 2))
@@ -76,7 +91,17 @@ Nothing is configured. The registers are found where a project keeps them —
 `ISSUES.md` and `ISSUES_ARCHIVE.md` at the root, `DECISIONS.md` beside them,
 `IDEAS/*.md` in a directory. A register a project does not have is absent from
 the report rather than a failure: an app with no `IDEAS/` has not done anything
-wrong.
+wrong. The report names the ones it read, so a small count is legible as a
+small register.
+
+**A root holding NONE of them is refused**, and the exit code is 1. The two
+cases are not the same claim: a project with two registers is being graded on
+two, while a directory with none is one this command cannot answer for, and
+`0 open · 0 rulings · ✓ every register agrees with itself` is a pass over a
+question nobody asked. It is also the likely way to arrive — `fli` walks up to
+the nearest package root, so a run from inside `packages/<pkg>` grades that
+package's own directory, which is what the root `CLAUDE.md` tells everyone to
+do before running anything else.
 
 ## Errors and warnings are two different claims
 

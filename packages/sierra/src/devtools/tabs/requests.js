@@ -1,4 +1,10 @@
 import { buildWaterfallEl } from '../waterfall.js'
+import { html, classSuffix, num } from '../html.js'
+
+// The transports the stylesheet has a badge rule for. A class name is a selector
+// other code matches on, so the suffix is CHOSEN from this list rather than
+// escaped out of whatever arrived on the socket.
+const TRANSPORTS = ['ws', 'websocket', 'http', 'internal']
 
 export function createRequestsTab(buffer, config) {
   const el = document.createElement('div')
@@ -29,17 +35,17 @@ export function createRequestsTab(buffer, config) {
     // value never changes for a given request, so compute it once per entry
     // rather than once per row per render.
     const ts = req._ts ??= new Date(req.ts).toLocaleTimeString()
-    const durBar  = Math.min(100, Math.round((req.durationMs / 500) * 100))
-    const badge   = `<span class="fjs-badge fjs-badge-${(req.transport||'http').toLowerCase()}">${req.transport||'HTTP'}</span>`
+    const durBar  = Math.min(100, Math.round((num(req.durationMs) / 500) * 100))
+    const kind    = classSuffix(req.transport ?? 'http', TRANSPORTS, 'other')
+    const badge   = html`<span class="fjs-badge fjs-badge-${kind}">${req.transport || 'HTTP'}</span>`
     const status  = req.status === 'error' ? '✗' : '✓'
 
-    tr.innerHTML =
-      `<span class="fjs-req-time">${ts}</span>` +
-      `<span class="fjs-req-svc">${esc(req.service)}.${esc(req.method)}</span>` +
-      `${badge}` +
-      `<span class="fjs-req-user">${esc(req.user ?? '—')}</span>` +
-      `<span class="fjs-req-dur"><span class="fjs-dur-bar" style="width:${durBar}%"></span>${req.durationMs}ms</span>` +
-      `<span class="fjs-req-status">${status}</span>`
+    tr.innerHTML = String(html`<span class="fjs-req-time">${ts}</span>` +
+      html`<span class="fjs-req-svc">${req.service}.${req.method}</span>` +
+      badge +
+      html`<span class="fjs-req-user">${req.user ?? '—'}</span>` +
+      html`<span class="fjs-req-dur"><span class="fjs-dur-bar" style="width:${durBar}%"></span>${req.durationMs}ms</span>` +
+      html`<span class="fjs-req-status">${status}</span>`)
 
     if (req.errorMsg) {
       const err = document.createElement('div')
@@ -89,8 +95,4 @@ export function createRequestsTab(buffer, config) {
   }
 
   return { el, render }
-}
-
-function esc(s) {
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
 }

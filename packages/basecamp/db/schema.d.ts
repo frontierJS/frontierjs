@@ -68,7 +68,7 @@ export type AlertSeverity = 'info' | 'warning' | 'critical'
 
 export type AlertSubject = 'server' | 'volume'
 
-export type ActorKind = 'user' | 'api_key' | 'system'
+export type ActorKind = 'user' | 'api_key' | 'system' | 'support'
 
 export type ChannelKind = 'slack' | 'pagerduty' | 'email' | 'webhook'
 
@@ -161,6 +161,26 @@ export interface Session {
   ipAddress?: string | null
   userAgent?: string | null
   createdAt: string
+  /**
+   * SUPPORT MODE — this session is an operator's, and while these are set it
+   * resolves to somebody else.
+   * 
+   * Three columns on the operator's OWN row rather than a second session or a
+   * second model. A session minted for the subject would be a credential to
+   * keep somewhere, swap for, and lose with the tab; clearing a column is a
+   * way back that cannot be forgotten. The permanent record is the audit
+   * trail, which this model already writes through @@log(audit) and which
+   * outlives the row by construction — a second table recording the same
+   * episode would be a second origin for it.
+   * 
+   * `impersonationEndsAt` is READ AT RESOLUTION, so an episode stops applying
+   * the instant it lapses whether or not anything has swept it. The reason is
+   * required by the route and nullable here, for every row written before
+   * these columns existed.
+   */
+  impersonatingUserId?: string | null
+  impersonationReason?: string | null
+  impersonationEndsAt?: string | null
 }
 
 export interface SessionCreate {
@@ -170,6 +190,26 @@ export interface SessionCreate {
   expiresAt: string
   ipAddress?: string | null
   userAgent?: string | null
+  /**
+   * SUPPORT MODE — this session is an operator's, and while these are set it
+   * resolves to somebody else.
+   * 
+   * Three columns on the operator's OWN row rather than a second session or a
+   * second model. A session minted for the subject would be a credential to
+   * keep somewhere, swap for, and lose with the tab; clearing a column is a
+   * way back that cannot be forgotten. The permanent record is the audit
+   * trail, which this model already writes through @@log(audit) and which
+   * outlives the row by construction — a second table recording the same
+   * episode would be a second origin for it.
+   * 
+   * `impersonationEndsAt` is READ AT RESOLUTION, so an episode stops applying
+   * the instant it lapses whether or not anything has swept it. The reason is
+   * required by the route and nullable here, for every row written before
+   * these columns existed.
+   */
+  impersonatingUserId?: string | null
+  impersonationReason?: string | null
+  impersonationEndsAt?: string | null
 }
 
 export interface SessionUpdate {
@@ -179,6 +219,9 @@ export interface SessionUpdate {
   expiresAt?: string
   ipAddress?: string | null
   userAgent?: string | null
+  impersonatingUserId?: string | null
+  impersonationReason?: string | null
+  impersonationEndsAt?: string | null
 }
 
 export interface SessionWhere extends WhereBase {
@@ -189,6 +232,9 @@ export interface SessionWhere extends WhereBase {
   ipAddress?: string | WhereOp<string> | null
   userAgent?: string | WhereOp<string> | null
   createdAt?: string | WhereOp<string> | null
+  impersonatingUserId?: string | WhereOp<string> | null
+  impersonationReason?: string | WhereOp<string> | null
+  impersonationEndsAt?: string | WhereOp<string> | null
   AND?: SessionWhere[]
   OR?:  SessionWhere[]
   NOT?: SessionWhere
@@ -2676,6 +2722,18 @@ export interface AuditEvent {
   workspaceId?: string | null
   actorId?: string | null
   actorType: ActorKind
+  /**
+   * SUPPORT MODE — who the operator was acting AS.
+   * 
+   * `actorId` stays the person who really did it, which is the opposite of
+   * what every hand-rolled impersonation records and is the whole complaint in
+   * `FJS-142`. Null outside an episode.
+   * 
+   * NOT `subjectId`, which on this model is the ROW that was acted on. The
+   * framework's own trail uses `subjectId` for the PERSON, in the sense a data
+   * subject is a person; this table already spent the word, so it uses another.
+   */
+  onBehalfOfId?: string | null
   action: string
   subjectType: string
   subjectId: string
@@ -2688,6 +2746,18 @@ export interface AuditEventCreate {
   workspaceId?: string | null
   actorId?: string | null
   actorType?: ActorKind
+  /**
+   * SUPPORT MODE — who the operator was acting AS.
+   * 
+   * `actorId` stays the person who really did it, which is the opposite of
+   * what every hand-rolled impersonation records and is the whole complaint in
+   * `FJS-142`. Null outside an episode.
+   * 
+   * NOT `subjectId`, which on this model is the ROW that was acted on. The
+   * framework's own trail uses `subjectId` for the PERSON, in the sense a data
+   * subject is a person; this table already spent the word, so it uses another.
+   */
+  onBehalfOfId?: string | null
   action: string
   subjectType: string
   subjectId: string
@@ -2699,6 +2769,7 @@ export interface AuditEventUpdate {
   workspaceId?: string | null
   actorId?: string | null
   actorType?: ActorKind
+  onBehalfOfId?: string | null
   action?: string
   subjectType?: string
   subjectId?: string
@@ -2710,6 +2781,7 @@ export interface AuditEventWhere extends WhereBase {
   workspaceId?: string | WhereOp<string> | null
   actorId?: string | WhereOp<string> | null
   actorType?: ActorKind | WhereOp<ActorKind> | null
+  onBehalfOfId?: string | WhereOp<string> | null
   action?: string | WhereOp<string> | null
   subjectType?: string | WhereOp<string> | null
   subjectId?: string | WhereOp<string> | null
@@ -3260,14 +3332,16 @@ export interface TableClient<TRow, TCreate, TUpdate, TWhere> {
 
 export interface QueryEvent {
   model:     string
-  operation: 'findMany' | 'findFirst' | 'findUnique' | 'findManyCursor' | 'count' | 'search' | 'create' | 'createMany' | 'update' | 'updateMany' | 'upsertMany' | 'remove' | 'removeMany' | 'restore' | 'delete' | 'deleteMany'
+  operation: 'aggregate' | 'count' | 'create' | 'createMany' | 'delete' | 'deleteMany' | 'exists' | 'findFirst' | 'findMany' | 'findManyCursor' | 'findUnique' | 'groupBy' | 'include' | 'include:count' | 'remove' | 'removeMany' | 'restore' | 'search' | 'update' | 'updateMany' | 'upsert' | 'upsertMany'
   database:  string
   actorId:   string | number | null
   sql:       string
   params:    unknown[]
   duration:  number
   rowCount:  number
-  args:      Record<string, unknown>
+  // The call's own arguments. Absent on include/include:count, whose
+  // arguments are the parent read's.
+  args?:     Record<string, unknown>
 }
 
 // ── write event ($tapEvents / onEvent) ───────────────────────────────────────

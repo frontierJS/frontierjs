@@ -235,7 +235,7 @@ export async function buildBasecampApp(
   // right sentence for the package that owns the scale and the wrong one for
   // an operator, who has a ROLE and has never seen a level. The gate is still
   // this app's rule — declared in this app's schema — so the way back to the
-  // word a person recognises is this app's too.
+  // word a person recognizes is this app's too.
   //
   // A mapper rather than a hook, and app-wide rather than per service: every
   // gated move in the seed goes through it, including the ones nothing has
@@ -523,7 +523,30 @@ export async function buildBasecampApp(
   // No `level`: a level here is per workspace (core/gate.ts), so there is no
   // single number `account.me` could answer with. `applyStanding` resolves it
   // per request instead.
-  app.configure(createAuthPlugin(auth, { prefix: '/auth', services: { apiKeys: false } }))
+  // ── Support mode ──────────────────────────────────────────────────────
+  //
+  // Who may act as somebody else. Absent, the routes refuse — so this line is
+  // the whole of what turns the feature on, and it is the hub tier and nothing
+  // below it: `isSystemAdmin` is what `requireSystemAdmin()` reads and what
+  // sessionGateLevel grades SYSADMIN(7) on, so impersonation is decided by the
+  // same fact as every other hub act rather than by a second one.
+  //
+  // **A system administrator may not be impersonated.** The ceiling is the
+  // SUBJECT's standing, which is the design and is correct — and it is also the
+  // one shape where the feature is indistinguishable from god mode, since
+  // standing in for an administrator grants administrator. Refusing the pair
+  // costs one comparison and leaves the ceiling meaningful for everybody else.
+  const supportGuard = async (operator: { isSystemAdmin?: boolean }, subjectId: string) => {
+    if (operator?.isSystemAdmin !== true) return false
+    const subject = await db.asSystem().user.findUnique({ where: { id: subjectId } })
+    return subject != null && subject.isSystemAdmin !== true
+  }
+
+  app.configure(createAuthPlugin(auth, {
+    prefix:   '/auth',
+    services: { apiKeys: false },
+    canStartSupport: supportGuard,
+  }))
 
   app.configure(function setupRoutes(a) {
     const sys = db.asSystem()

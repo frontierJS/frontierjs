@@ -395,7 +395,7 @@ async function handleProves(req, res) {
 async function handleCheck(req, res) {
   try {
     const root = global.projectRoot
-    const { runChecks, findApps } = await import('./checks.js')
+    const { runChecks, findApps, readBaseline, gradeBaseline, BASELINE_FILE } = await import('./checks.js')
     const { relative }            = await import('path')
 
     // Per app, then the workspace's own rules — the same two passes the
@@ -414,6 +414,15 @@ async function handleCheck(req, res) {
       // answerable while it runs.
       await new Promise(setImmediate)
       const r = runChecks({ root: s.root, scope: s.scope })
+
+      // The app's own ratchet, read here too. `fli check` exits on the baseline
+      // and this panel used to count raw findings, so an app carrying declared
+      // debt read as failing on the one surface whose job is to say how it is
+      // doing — while its own `bun run check` was green. Two owners of one
+      // question is how a report stops being believed.
+      const baseline = readBaseline(s.root)
+      const grade    = baseline.present ? gradeBaseline(r, baseline) : null
+
       out.push({
         label:    s.label,
         dir:      s.scope === 'repo' ? '.' : s.label,
@@ -423,7 +432,17 @@ async function handleCheck(req, res) {
           rule: f.rule, severity: f.severity, line: f.line ?? null,
           file: f.file ? relative(root, f.file) : null,
           message: f.message,
+          // Declared debt is still printed — it is the count that is capped,
+          // never the finding — so each one says which side of the line it is on.
+          within: grade ? !grade.regressions.some(g => g.rule === f.rule) : false,
         })),
+        // Absent means no baseline: nothing is declared, so nothing is allowed.
+        baseline: grade
+          ? { file: BASELINE_FILE, ok: grade.ok, regressions: grade.regressions }
+          : null,
+        // What `fli check` would exit. A scope with a baseline passes when it is
+        // within it; one without passes when it has no errors.
+        ok: grade ? grade.ok : r.findings.every(f => f.severity !== 'error'),
       })
     }
 

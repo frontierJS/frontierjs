@@ -16,7 +16,7 @@ phase, so a command renamed out from under a step is a red build rather than a
 stale paragraph.
 
 ```bash
-fli tutor            # the eight lessons, and how far through them you are
+fli tutor            # the thirteen lessons, and how far through them you are
 fli tutor:app        # lesson 1 — an app that runs
 ```
 
@@ -25,18 +25,23 @@ stop. The step you stopped at is the one the next run starts from, so stopping
 costs nothing. `--yes` runs a lesson straight through, and `--step N` runs one
 step on its own.
 
-## The eight lessons
+## The thirteen lessons
 
 | | | Needs |
 | --- | --- | --- |
 | `fli tutor:app` | An empty directory to a running app with a model of your own in it, and a row read back out of the database | — |
+| `fli tutor:tools` | The four tools that show you what the app is doing — the GUI as the front door, the database as it really is, the call feed with a refusal in it, and the chain that handled the request | — |
+| `fli tutor:ui` | The form nobody wrote: every control read off the schema, then one attribute added to one column and the same form refusing before it makes a request | Chrome |
 | `fli tutor:access` | The gate, the row policy and the field policy, each watched refusing somebody — and every refusal paired with an identical call that is allowed | — |
 | `fli tutor:live` | A write reaching a client that asked for nothing — then two sockets against one publish, and the gate deciding which of them is told | — |
 | `fli tutor:jobs` | Work that outlives the request: a queue that is a SQLite file, a job named by its own filename, and a response that comes back before the work is done | — |
+| `fli tutor:notify` | Telling somebody something once, across every way you reach them: one send, two transports, a name that is a database column — and a transport with no formatter refusing before anything is delivered | — |
 | `fli tutor:site` | A public site built ahead of time — one HTML file per page with the data in it, and a build that refuses to publish anything gated | — |
 | `fli tutor:deploy` | A real deploy to **this machine**: an image, a journal on disk, a redeploy, a revert, and a revert of the revert | Docker · git |
 | `fli tutor:change` | Changing a schema that is already deployed: expand, contract, the three-deploy split, and a raised gate that touches no column and is still a contract | — |
-| `fli tutor:fleet` | The other release story — a control plane, a machine that reports in, and a signed command that really runs on it | a checkout |
+| `fli tutor:test` | The four checks a schema already contains, executed — then the schema mutated on purpose, so the checks are graded by something other than themselves | — |
+| `fli tutor:fleet` | The other release story — a control plane, a machine that reports in, a signed command that really runs on it, and a release built on that machine whose bytes the control plane can name | a checkout · Docker for the release |
+| `fli tutor:adopt` | The other door — a SQLite database that predates the framework, read into a schema, checked against itself, and served: a row written by raw SQL, answered over HTTP — then the finding it comes with, recorded in `check-baseline.json` rather than fixed | — |
 
 They run in a throwaway directory by default. `--workspace ~/somewhere` keeps
 what they build, which is the point if you want to read it afterwards.

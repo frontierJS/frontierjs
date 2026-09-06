@@ -13,6 +13,7 @@
 
 import { dirname, basename, extname, join, relative, resolve } from 'path'
 import { readFrontmatter } from './parse-frontmatter.js'
+import { importFresh } from './import-fresh.js'
 import {
   classify,
   isGroupSegment,
@@ -108,6 +109,9 @@ export async function buildTree(files, routesDir, options = {}) {
     ))
   )
 
+  // Two files, one URL
+  checkUrlConflicts(entries)
+
   // Sort: shorter paths first, alphabetically within same depth
   entries.sort((a, b) => {
     const depthDiff = a.path.split('/').length - b.path.split('/').length
@@ -188,9 +192,15 @@ async function loadAllCompanionMeta(companionFiles, cwd) {
   await Promise.all(
     companionFiles.map(async (file) => {
       try {
-        const { pathToFileURL } = await import('url')
+        // `importFresh`, not a plain `import()`. This is the one companion
+        // reader that did not miss the module cache, so a `meta` export was
+        // frozen for the life of the process: editing a title in
+        // `_module.meta.js` changed nothing, editing the `.mesa` beside it to
+        // force a rescan changed nothing, and only a restart did — with nothing
+        // saying so (`FJS-821`). Its two sibling importers already busted, and
+        // the query string they bust with is not enough under bun (`FJS-806`).
         const absPath = resolve(cwd, file)
-        const mod = await import(pathToFileURL(absPath).href)
+        const mod = await importFresh(absPath)
         cache.set(file, mod.meta ?? {})
       } catch {
         cache.set(file, {})
@@ -488,6 +498,38 @@ function checkConflicts(routeFiles, routesDir) {
       }
       folderNames.add(folderKey)
     }
+  }
+}
+
+/**
+ * Detect two files that resolve to the same URL.
+ *
+ * `checkConflicts` above keys on the DIRECTORY path, so it sees `about.mesa`
+ * beside `about/` and nothing else — while `fileToRoute` lowercases every
+ * segment and drops `(group)` segments, so three further shapes reach the same
+ * URL from different files and none of them said anything (`FJS-798`):
+ * `(app)/login.mesa` + `(auth)/login.mesa` gave two tree nodes under one id and
+ * a components map with a duplicate key, so the router matched the first node's
+ * meta and mounted the last file; `index.mesa` + `(app)/index.mesa` deleted the
+ * real root outright, because `buildTreeFromEntries` takes the first
+ * `id === 'root'` and continues past the rest; and `about.mesa` +
+ * `About/index.mesa` slipped the guard, which lowercases the file name and not
+ * the folder key.
+ *
+ * The URL is the thing that has to be unique, so that is what is compared.
+ */
+function checkUrlConflicts(entries) {
+  const seen = new Map()  // path → file
+
+  for (const entry of entries) {
+    const prior = seen.get(entry.path)
+    if (prior) {
+      throw new Error(
+        `[Sierra] Route conflict: '${prior}' and '${entry.file}' both resolve to '${entry.path}'. ` +
+        `Route groups and letter case do not make a URL distinct — rename one of them.`
+      )
+    }
+    seen.set(entry.path, entry.file)
   }
 }
 

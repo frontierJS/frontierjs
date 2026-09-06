@@ -1,5 +1,56 @@
 # Changes — @frontierjs/auth
 
+## 2026-09-05 — support mode: acting as somebody else, bounded and recorded
+
+266 tests, 0 fail (+21). `example`: `verify:support` 24/24, new.
+
+**An episode is three columns on the operator's OWN `Session`** —
+`impersonatingUserId`, `impersonationReason`, `impersonationEndsAt`. Nothing is
+minted: `verifySession` follows the columns and answers the SUBJECT's principal,
+so every layer above the token is unchanged and the ceiling is free — an
+operator cannot exceed what the person they are helping could do, enforced at the
+Data boundary by the same mechanism as every other request. The way back is
+clearing a column rather than a second credential to keep somewhere and lose with
+the tab. Discourse's shape, plus a reason.
+
+**The record is the audit trail and not a second table.** `Session` already
+carries `@@log(audit)`, so stamping the columns writes an entry with `before` and
+`after` — the trail outlives the row by construction, which is what a trail is.
+`episodeId` on an entry is the session's own id.
+
+**`impersonationEndsAt` is read at RESOLUTION.** A cron makes an episode end
+eventually; this makes it end. The sweep in `cleanup.ts` closes what the browser
+did not, and neither is what makes the ceiling true. **The same predicate decides
+whether a new episode may start** (`liveEpisode`): reading the column in one place
+and the clock in the other made a lapse permanent — the operator resolves as
+themselves again, correctly, and every start after that is refused for an episode
+nobody is in. Found by `example`: `verify:support`, invisible to every test that
+ends an episode the way the happy path does.
+
+**Who may is the app's answer and absent refuses.**
+`createAuthPlugin({ canStartSupport })`, Guard tier (`FJS-D06`) — impersonation is
+never acquired by upgrading a dependency. It is not a `@capability` on the column
+for `FJS-519`'s reason: every write to `Session` goes through `asSystem()`, which
+drops the grid with every other rule, so a declaration there would be graded by
+nothing. Four refusals stay the provider's, because no app should be able to allow
+them: no reason, yourself, a subject who does not exist, and an episode inside an
+episode — chaining would record the SUBJECT as the operator of the next one.
+
+**`refuseInSupport()` refuses the six credential paths from inside an episode** —
+a password change, an API key minted or revoked, a session revoked, a connection
+detached. Each outlives the episode that produced it; a key minted while
+impersonating is the ceiling escaped for good, with the trail showing an ordinary
+key issue. Every test of them is PAIRED with the same call outside an episode, or
+a guard that refused everybody would look identical from the refused side.
+
+**Both routes close the session's sockets.** A socket resolves its principal once
+at upgrade, so without it the operator's open tabs go on acting as whoever they
+were before the change — as themselves after a start, and as the SUBJECT after an
+end, which is the episode outliving itself.
+
+Closes [`FJS-142`](../../ISSUES.md#fjs-142). `IDEAS/support-mode.md` carries the
+design, the prior art it was corrected by, and what was deliberately cut.
+
 ## 2026-08-24 — a sign-in screen can ask which providers exist, and the models are imported rather than pasted
 
 247 tests, 0 fail (+3). `example`: `verify:oauth` 22/22 (+3).

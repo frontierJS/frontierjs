@@ -36,7 +36,7 @@ export interface WebhookMapper {
   // The HTTP path this mapper claims — e.g. "/webhooks/stripe"
   path: string
   // Given the raw request body, return the event name + payload.
-  // Return null to decline (e.g. unrecognised event type).
+  // Return null to decline (e.g. unrecognized event type).
   map(body: unknown, headers: Record<string, string>): { name: string; payload: unknown } | null
 }
 

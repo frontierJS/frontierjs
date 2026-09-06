@@ -23,28 +23,44 @@ the rule is enforced by `bun run ci`'s hygiene phase rather than by habit.
 
 | | |
 |---|---|
-| Tests | **277 passing, 0 failing**, 12 spec files (`bun run test`) — verified |
-| Under node | **276 passing, 1 failing** (`node test/run.js`, node v22.21.1) — verified, and it is a real divergence rather than a harness one. See below |
+| Tests | **280 passing, 0 failing**, 12 spec files (`bun run test`) — verified |
+| Under node | **280 passing, 0 failing** (`node test/run.js`, node v22.21.1) — verified. The two runtimes now answer identically, which is the point of the section below |
 | Typecheck | **clean, no baseline** (`bun run typecheck`) — verified |
 | Substrate purity | *17 source file(s), no dependency and no ambient capability* — verified, from `bun run ci`'s hygiene phase |
 | Published | `0.1.1` on npm, the version the tree carries (`npm view @frontierjs/toolbelt version`) — verified. Every declared entry point is in the tarball (`exports.snapshot.md`) |
 
 Reproduce: `cd packages/toolbelt && bun run test && bun run typecheck`.
 
-## The one kit whose answer depends on the runtime
+## The kit that had to stop asking the host
 
-**`isKnownCurrency('XXX')` is `true` under bun and `false` under node**, because
-node's ICU leaves ISO 4217's own *no currency* code out of
-`Intl.supportedValuesOf('currency')` and bun's does not. `minorUnits('XXX')`
-therefore answers `2` under bun and throws *is not a currency this runtime knows*
-under node — verified both ways.
+**`/units` ships ISO 4217 rather than reading the host's ICU tables** (`FJS-745`).
+Two measurements, on node v22.21.1 and the bun in this tree:
 
-This is the one place the purity rule is thinner than it reads: the functions take
-no clock and no globals, and they still ask the host's ICU tables, which two hosts
-answer differently. `units.spec.js` asserts the bun answer, so `bun run test` is
-green and the same suite the package documents as runnable under node is not.
-Nothing is filed for it — decide whether the kit carries its own answer for `XXX`,
-or whether the spec is asserting a runtime rather than the kit.
+- `Intl.supportedValuesOf('currency')` is **162 codes under node and 306 under
+  bun, differing on 145**. bun carries every withdrawn code back to the Austrian
+  schilling; node carries `ZWG`, Zimbabwe Gold, which bun does not — so
+  `@money(ZWG)` parsed on one runtime and was refused as a typo on the other.
+- `resolvedOptions().maximumFractionDigits` **disagrees on fourteen codes both
+  runtimes carry**. node says the Iraqi dinar has no decimal places and bun says
+  three; ISO says three. That is a stored amount out by a thousand between the
+  machine that wrote it and the one that read it.
+
+The second one is the sharper finding, and it is not a bug in either runtime:
+`maximumFractionDigits` answers how an amount is **displayed**, which is CLDR's
+question, and `@money` derives its scale from how an amount is **stored**, which
+is ISO's. They are different questions, and reading the storage answer off the
+display one would have been wrong even if the two hosts had agreed.
+
+So the table is the kit's: 183 codes, 26 exponents that are not 2, and 13 codes
+with no minor unit at all (the metals, the reserved codes, `XXX`) which
+`minorUnits` refuses in their own words rather than answering 2. `Intl` still
+does the formatting — the glyph, its side, the grouping — and no longer decides
+the decimals. `units.spec.js` carries the negative control: with
+`supportedValuesOf` stubbed to answer nothing, every value is unchanged.
+
+This was also the one place the purity rule was thinner than it read. A host ICU
+table is a dependency the manifest cannot declare, and declaring nothing is this
+package's whole license to be imported by litestone and mesa (`FJS-D26`).
 
 ## What is NOT built
 

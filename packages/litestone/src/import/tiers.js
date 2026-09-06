@@ -59,6 +59,9 @@ const LOST = [
                               // (FJS-603) and dropped WHOLE where it cannot — never strengthened. On an
                               // @@index an unreadable predicate is dropped and the index only widens,
                               // which is why one row covers both and the note says which happened
+  'table-unique',             // a composite UNIQUE naming a NULLABLE column. `.lite` refuses that at parse
+                              // (`FJS-D130`) because two NULLs never compare equal, so the tuple constraint
+                              // holds exactly where nobody doubted it — handed over rather than approximated
   'index-expression',
   'index-modifier',
   'index-collapsed',

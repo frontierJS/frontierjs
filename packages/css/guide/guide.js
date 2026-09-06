@@ -9979,7 +9979,7 @@ const WIZ_SKETCH = {
     </div>`
   },
 
-  /* ── Kinds of block. Each one is a recognisable shape. ───────────── */
+  /* ── Kinds of block. Each one is a recognizable shape. ───────────── */
   block: {
     unit: `<div class="sg-sk">
       <div class="sg-sk-box on" style="padding: 4px; display: flex; flex-direction: column; gap: 3px">
@@ -10999,7 +10999,7 @@ $custom-colors: ("brand": (#6d28d9, #fff));`, 'bash')}
  * check, and the number would rot the first time the derivation changed.
  *
  * The colors have to go through a canvas rather than a regex: Chrome
- * serialises the derived fill as `color(xyz-d65 0.19 0.09 0.66)`, and
+ * serializes the derived fill as `color(xyz-d65 0.19 0.09 0.66)`, and
  * parsing those three floats as 8-bit channels gives a plausible, wrong
  * answer for every color — which is exactly what it did the first time.
  */

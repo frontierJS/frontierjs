@@ -138,9 +138,15 @@ export function createPresenceTracker(deps: PresenceDeps) {
 
     presenceFor(channelId).set(conn.id, member)
 
-    // Send presence:sync to the new member — full list including themselves
+    // Send presence:sync to the new member — full list including themselves.
+    //
+    // `you` is which of those members the recipient IS. A sync is the only
+    // frame sent to exactly one connection, so it is the only one that can
+    // carry it — and without it a client cannot split the roster into self and
+    // others at all, because nothing else tells a browser its connection id.
     deps.sendToConn(conn, 'presence:sync', {
       channelId,
+      you:     conn.id,
       members: presenceMembers(channelId),
     })
 

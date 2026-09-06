@@ -97,7 +97,7 @@ title: Pay run
 
     if (!slips.length) { people = new Map(); return }
     // One request for the names, not one per payslip. A payslip names an
-    // employee id and nobody recognises an id.
+    // employee id and nobody recognizes an id.
     try {
       const staff = await employees.service.find(
         { id: { in: [...new Set(slips.map(s => s.employeeId))] } }, { limit: 500 })

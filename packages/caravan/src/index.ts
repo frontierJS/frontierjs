@@ -441,6 +441,12 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         ? dispatchOpts.tenant ?? null
         : host?.tenant?.() ?? null
 
+      // WHICH REQUEST, on the same absent-is-not-null rule as the two above. A
+      // job queued inside a call belongs to it and nothing has to be said.
+      const correlationId = 'correlationId' in dispatchOpts
+        ? dispatchOpts.correlationId ?? null
+        : host?.correlationId?.() ?? null
+
       const row = {
         id,
         queue:        targetQueue,
@@ -462,6 +468,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         created_at:   now,
         actor_id:     actorId,
         tenant_id:    tenantId,
+        correlation_id: correlationId,
       }
 
       // The primary key is the only thing that can decide a race between two

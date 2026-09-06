@@ -70,7 +70,14 @@ export type Schema = Record<string, FieldDef>
 
 export interface SchemaOptions {
   /** If true, fields not defined in the schema are passed through unchanged.
-   *  Default: false — unknown fields are silently stripped (safer for APIs). */
+   *  Default: false — unknown fields are silently stripped (safer for APIs).
+   *
+   *  The strip is the whole answer for a hand-written schema, which has no
+   *  second set to consult. A schema compiled from a MODEL is graded once more
+   *  before it gets here: `autoValidate` refuses a key that names no field the
+   *  model declares, because there the two kinds of unknown are separable — a
+   *  column the caller may not write is an echo and is dropped, a word that is
+   *  not a column at all can never mean anything and is a 400. */
   passthrough?: boolean
 }
 

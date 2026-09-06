@@ -3797,7 +3797,7 @@ anything that changes at runtime.`,
 
   let expiry  = ''
   let phone   = ''
-  let licence = ''
+  let license = ''
   let postal  = ''
 
   let country = 'US'
@@ -3819,7 +3819,7 @@ anything that changes at runtime.`,
 
 <label>
   Licence <span class="hint">aaa-9999</span>
-  <input bind:value|mask({"aaa-9999"})={licence} placeholder="abc-1234" />
+  <input bind:value|mask({"aaa-9999"})={license} placeholder="abc-1234" />
 </label>
 
 <label>
@@ -3835,7 +3835,7 @@ anything that changes at runtime.`,
 
 <p class="out">expiry: <code>{expiry || '(empty)'}</code></p>
 <p class="out">phone: <code>{phone || '(empty)'}</code></p>
-<p class="out">licence: <code>{licence || '(empty)'}</code></p>
+<p class="out">license: <code>{license || '(empty)'}</code></p>
 <p class="out">postal: <code>{postal || '(empty)'}</code></p>
 
 <p class="note">

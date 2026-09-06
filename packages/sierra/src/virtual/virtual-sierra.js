@@ -357,9 +357,17 @@ function generateVirtualSierra(config, tableOutput, sierraConfigPath, sierraCont
     // The table is what `$ref` points into (enum fields are emitted as
     // {"$ref":"#/$defs/Plan"}), and the model list is what keeps an enum from
     // being addressable as a resource.
+    //
+    // The third argument is what UPDATE mode differs by, per model — an
+    // `@immutable` column's `readOnly`, a sealing one's `x-litestone-seal`, the
+    // `@version` property. A patch rather than a second table because the
+    // second copy is +26 KB gzipped on `example` and the delta is +2 KB
+    // (`FJS-807`); `schema-plugin.js` computes it from the two generated
+    // documents.
     lines.push(
       `registerSchemas(${JSON.stringify(sierraContext.schemaDefs)}, ` +
-      `${JSON.stringify(sierraContext.schemaModels ?? null)})`
+      `${JSON.stringify(sierraContext.schemaModels ?? null)}, ` +
+      `${JSON.stringify(sierraContext.schemaUpdate ?? null)})`
     )
     lines.push(``)
   }

@@ -108,7 +108,7 @@
    *
    * It paints one pixel and reads it back, because that is the only step
    * that performs a real conversion. Canvas `fillStyle` looks like it
-   * normalises — it does turn "red" into "#ff0000" — but it passes every
+   * normalizes — it does turn "red" into "#ff0000" — but it passes every
    * modern color syntax straight through:
    *
    *   fillStyle = 'color(xyz-d65 0.17 0.17 0.59)'  →  same string back

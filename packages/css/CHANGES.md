@@ -1,5 +1,23 @@
 # Changes — @frontierjs/css
 
+## 2026-09-05 — the tokens are on `:root, :host`
+
+`FJS-816`. 470 passing.
+
+`:root` matches `<html>` and nothing else, so this stylesheet folded into a shadow root —
+which is what a Sierra widget IS, one script carrying its own CSS into a root on somebody
+else's page — declared the tokens on no element at all and every `var(--…)` resolved empty.
+
+The failure was partial and therefore confusing: `box-sizing` and the `--space-*` rules are on
+`*` and did cross, so a widget styled with this kit rendered as a transparent box with the
+spacing right, having shipped the whole kit to do it. `:host` matches nothing in a document,
+so this is a no-op there; inside a shadow root it declares the tokens on the host element,
+from which they inherit exactly as `:root`'s do in a page.
+
+Invariant 13 says this is the styling language, which means it has to work in every surface
+that has one. `example/widgets/src/Embeds/BuyButton.mesa` hand-writes hex colors only because
+it did not, and that workaround is now removable.
+
 ## Breaking changes, by version
 
 Moved out of `README.md`, which is a map: a version history is a register's

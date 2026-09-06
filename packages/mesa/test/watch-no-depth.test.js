@@ -23,7 +23,7 @@
  * `let` is already a signal, so a whole-value watch on one can only add
  * deep-mutation tracking, and a primitive has no depth. Nothing is lost.
  *
- * The refusal is conservative — only an initialiser that is VISIBLY a primitive
+ * The refusal is conservative — only an initializer that is VISIBLY a primitive
  * refuses, because `let x = fetchCount()` has the same hole and is not
  * decidable here, and a rule that guessed would refuse `let rows = []`.
  */
@@ -76,7 +76,7 @@ describe('$: on a local `let` with no depth is refused (FJS-505)', () => {
     ['a template string', 'let t = `x`',   '$: (t)'],
     ['a boolean',        'let b = false',  '$: (b)'],
     ['null',             'let e = null',   '$: (e)'],
-    ['no initialiser',   'let u',          '$: (u)'],
+    ['no initializer',   'let u',          '$: (u)'],
     ['undefined',        'let v = undefined', '$: (v)'],
     ['a negative number', 'let m = -1',    '$: (m)'],
   ])('refuses %s', async (_label, decl, watch) => {

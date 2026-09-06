@@ -11,9 +11,10 @@
  * both halves — the sibling is found with no configuration, and `compilerPath`
  * still wins for a caller testing a build that is not this one.
  *
- * The answer is memoised in a MODULE-level variable, so every case resets the
- * module registry first: one resolution decides for the whole process, and a
- * test inheriting the previous test's compiler proves nothing.
+ * The answer is memoised per PLUGIN INSTANCE (`FJS-880`). Cases still reset the
+ * module registry, so a test inherits nothing from the one before it, and the
+ * pair at the end is what the memo's SCOPE is: two plugins in one config, each
+ * holding the compiler it asked for.
  *
  * The stub is also how the diagnostics below are reached. The plugin defends
  * against a warning containing a newline and an error carrying `details`; no
@@ -82,11 +83,13 @@ describe('finding the compiler', () => {
     expect(code).toContain('$$runtime.template')
   })
 
-  // The memo is per module instance, not per plugin instance. Two plugins in one
-  // Vite config — a `widget` build beside an app build, say — share whichever
-  // compiler was asked for first, and the second one's compilerPath is silently
-  // ignored.
-  test('the first resolution decides for every later plugin instance', async () => {
+  // FJS-880. Two plugins in one Vite config — a `widget` build beside an app
+  // build, a Sierra plugin beside this one — is the ordinary case (`FJS-D16`),
+  // and each keeps the compiler it asked for. A memo at module scope handed the
+  // second whichever compiler resolved first and dropped its option in silence.
+  // Asked in both orders: with the stub first, resolving in registration order
+  // is indistinguishable from resolving per instance.
+  test('a second plugin instance keeps its own compiler — stub first', async () => {
     vi.resetModules()
     const { default: mesaPlugin } = await import('../mesa-vite/index.js')
 
@@ -95,6 +98,22 @@ describe('finding the compiler', () => {
     await transform(first, JSON.stringify({ result: 'export const from = "stub"' }))
 
     const second = mesaPlugin({ hmr: false })       // wants the sibling
+    second.configResolved({ root: ROOT, command: 'serve' })
+    const { code } = await transform(second, '<script>\nlet a = 1\n</script><p>{a}</p>')
+
+    expect(code).toContain('$$runtime.template')
+    expect(code).not.toContain('export const from = "stub"')
+  })
+
+  test('a second plugin instance keeps its own compiler — sibling first', async () => {
+    vi.resetModules()
+    const { default: mesaPlugin } = await import('../mesa-vite/index.js')
+
+    const first = mesaPlugin({ hmr: false })
+    first.configResolved({ root: ROOT, command: 'serve' })
+    await transform(first, '<script>\nlet a = 1\n</script><p>{a}</p>')
+
+    const second = mesaPlugin({ compilerPath: STUB, hmr: false })
     second.configResolved({ root: ROOT, command: 'serve' })
     const { code } = await transform(second, JSON.stringify({ result: 'export const from = "stub"' }))
 
@@ -117,33 +136,36 @@ describe('diagnostics the real compiler cannot reach', () => {
     parses(code)
   })
 
+  // Same claim, asked of the raise rather than of a hot-update frame: the hook
+  // no longer compiles, so `transform` is where a diagnostic becomes something
+  // the overlay can render (FJS-836, FJS-876).
   test('a parse error with details becomes the overlay frame', async () => {
     const plugin = await freshPlugin({ compilerPath: STUB, hmr: false })
-
-    const sent = []
-    await plugin.handleHotUpdate({
-      file:    `${ROOT}/A.mesa`,
-      modules: [],
-      read:    async () => JSON.stringify({
-        throw: { message: 'Unexpected token', details: '<button onclick={() =>}>' }
-      }),
-      server:  { hot: { send: (m) => sent.push(m) }, moduleGraph: {} },
-    })
-
-    expect(sent[0].err.message).toBe('Unexpected token')
-    expect(sent[0].err.frame).toBe('<button onclick={() =>}>')
-  })
-
-  test('a frame is escaped before it is inlined into a dev module', async () => {
-    const plugin = await freshPlugin({ compilerPath: STUB, hmr: false })
-    const { code } = await transform(plugin, JSON.stringify({
-      throw: { message: 'bad `tick`', details: 'const s = `${x}`' }
+    const r = await transform(plugin, JSON.stringify({
+      throw: { message: 'Unexpected token', details: '<button onclick={() =>}>' }
     }))
 
-    // The throw is built as a template literal. An unescaped backtick from a
-    // diagnostic closes it and ships a syntax error in place of the error.
-    expect(code).toMatch(/^throw new Error\(/)
-    parses(code)
+    expect(r.code).toBeNull()
+    expect(r.errors).toHaveLength(1)
+    expect(r.errors[0].message).toContain('Unexpected token')
+    expect(r.errors[0].frame).toBe('<button onclick={() =>}>')
+  })
+
+  // Was: the diagnostic is inlined into a dev module built as a template
+  // literal, so a backtick in it closes the literal and ships a syntax error in
+  // place of the error. There is no such module now — nothing is assembled from
+  // foreign text — so the claim is that the text arrives intact and inert.
+  test('a diagnostic carrying a backtick and a ${ } arrives intact', async () => {
+    const plugin = await freshPlugin({ compilerPath: STUB, hmr: false })
+    globalThis.__mesaPwned = undefined
+    const r = await transform(plugin, JSON.stringify({
+      throw: { message: 'bad `tick`', details: 'const s = `${globalThis.__mesaPwned = 1}`' }
+    }))
+
+    expect(r.code).toBeNull()
+    expect(r.errors[0].message).toContain('bad `tick`')
+    expect(r.errors[0].frame).toContain('${globalThis.__mesaPwned = 1}')
+    expect(globalThis.__mesaPwned).toBeUndefined()
   })
 })
 

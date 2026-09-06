@@ -125,20 +125,27 @@ whether some app has one.
 | job + owner tables | caravan | package-owned database |
 | the audit trail | litestone | declared database block |
 
-### Candidate — the package already writes to a model it does not ship
+### Built — `Notification`, and it landed APPENDED rather than imported
 
-**`Notification` — build this one first.** `packages/notifications/drivers/inapp.ts`
-calls `litestone.asSystem().notification.create({ … })` and names six columns —
-`userId`, `type`, `data`, `contextType`, `contextId` — against a hand-written
-structural type that is the only description of the shape anywhere. The package
-ships no `.lite`. `example` hand-writes the model; the second app to install
-`@frontierjs/notifications` reverse-engineers it from a driver's source, and
-nothing anywhere compares the two.
+`packages/notifications` ships `db/notification.lite` and exports it as
+`./schema.lite` ([`FJS-910`](../ISSUES.md#fjs-910)). What this section argued
+for is done; what it got wrong is worth keeping, because the same reasoning
+decides the candidates below.
 
-It is the exact shape of the failure `extend model` was built to remove, one app
-earlier in its life than basecamp's auth copies were. Its gate does not vary —
-`example` writes `@@gate("0.8.4.8")` with two `@@allow`s scoping it to the
-recipient, which is right for every app — so it is an **imported** model.
+The argument here was **imported**, on the grounds that the gate does not vary —
+`@@gate("0.8.4.8")` with two `@@allow`s scoping it to the recipient is right for
+every app. That premise is true and is not sufficient. **`userId`'s TYPE follows
+the app's own `User` key**: `String` where auth mints uuids, `Int` where the app
+keys users on a rowid. A column's type is the one thing `extend model` cannot
+change, so an imported `Notification` would be wrong for a whole class of apps
+with no way for them to fix it — and would be wrong silently, at the first
+insert. Appended, with `package-model-drift` comparing the copy against the
+shipped file, keeps the one property importing was wanted for.
+
+**The test for the rest of this list is therefore not *does the gate vary* but
+*does any COLUMN vary*.** A model whose every column is the package's is
+importable; one carrying a key that follows the app's own identity model is
+not.
 
 ### Candidate — machinery by the test, nothing ships it
 

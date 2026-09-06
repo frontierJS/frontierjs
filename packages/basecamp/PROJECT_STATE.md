@@ -622,7 +622,7 @@ Two declarations close it, neither of them a level:
 `/hub/users/` still grants the tier, suspends and creates bots — 271/271 in the
 browser, unchanged.
 
-**`@guarded(all)` was the wrong tool and looked like the right one.** It is a
+**`@guarded` was the wrong tool and looked like the right one.** It is a
 read-side lock: with it on `isSystemAdmin` the write still landed and the answer
 came back with the column absent, which reads as a refusal. `litestone`'s own
 `docs/schema.md` says *excluded from all operations unless `asSystem()`*, and
@@ -682,7 +682,7 @@ nothing had ever written one.
 
 `preview` and `accept` are this app's **only unauthenticated service methods**,
 exempt from `sessionScope` because the population they serve is not a member yet
-and may not exist yet. The `@guarded(all)` token is the credential — no scoped
+and may not exist yet. The `@guarded` token is the credential — no scoped
 read can answer it, so the link is shown once, the shape an issued API key
 already had — and everything a token cannot decide (unknown, expired, workspace
 gone, workspace suspended) is decided in one function, because none of the hooks

@@ -17,7 +17,7 @@
  * browser drives.
  */
 
-import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { requireServers } from './lib/preflight.mjs'
 
 const API = process.env.API_URL ?? 'http://localhost:8110'
@@ -329,9 +329,16 @@ try {
   // reports `done`, removes nothing, and looks broken. A log that has genuinely
   // aged has its old rows at the top, which is what this reproduces.
   //
-  // The companion index maps ids to byte offsets, so a rewrite invalidates it —
-  // removed here for the same reason the compaction removes its own, and
-  // rebuilt lazily on the next write.
+  // The companion index maps ids to byte offsets, so this rewrite invalidates
+  // it — and it is deliberately LEFT ALONE. Compaction reads the file rather
+  // than the index and calls `rebuildIndex` when it is done, so the stale
+  // offsets are repaired by the very pass this is testing.
+  //
+  // Deleting it is what this used to do, and it is the one thing `FJS-D180`
+  // says never to do: the sidecar is in WAL, the API process holds it open, and
+  // an unlink leaves `-wal`/`-shm` behind while that process goes on writing
+  // into an inode with no directory entry — answering ok the whole time. The
+  // state it leaves is visible on disk as a 4 KB index beside a 240 KB `-wal`.
   const MARK   = `retention-probe-${Date.now().toString(36)}`
   const stamp  = (daysAgo) => new Date(Date.now() - daysAgo * 86_400_000).toISOString()
   const line   = (age) => JSON.stringify({
@@ -345,7 +352,6 @@ try {
   // clock-skew argument. The fresh one carries today's date and the same marker.
   const trail = readFileSync(AUDIT, 'utf8')
   writeFileSync(AUDIT, line(200) + '\n' + trail.replace(/\n?$/, '\n') + line(0) + '\n')
-  try { rmSync(AUDIT + '.index.db') } catch { /* absent is fine — it is rebuilt lazily */ }
 
   const planted = readFileSync(AUDIT, 'utf8')
   t('retention.planted', {

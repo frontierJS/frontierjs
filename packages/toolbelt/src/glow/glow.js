@@ -277,7 +277,7 @@ export function parseRow(row, lang) {
   const tokens = []
 
   /* Line comments, one syntax per language in the list. A language with no
-     entry gets `//`, so `['js', 'sql']` recognises both spellings and a
+     entry gets `//`, so `['js', 'sql']` recognizes both spellings and a
      transcript keeps its commentary on either side of the seam. */
   for (const mark of new Set(asLangs(lang).map((l) => LINE_COMMENT[l] || '//')))
     tags.unshift({ tag: 'sup', re: new RegExp(`${mark.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} .+`) })

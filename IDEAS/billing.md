@@ -536,14 +536,15 @@ what `@guarded` is for, and it is the first place in this app where one model
 carries both answers.
 
 **`isDefault` is `FJS-603` a second time** — and it is the instance that survived
-closing it. *At most one default per customer* is
+closing it, until it did not. *At most one default per customer* is
 `@@unique([customerId], where: isDefault == true)`, the predicate is well inside
-what the attribute takes, and the DECLARATION is still refused: this model
-already carries `@@index([customerId])` for the ordinary read, an index is named
-for its columns alone, and the two derive one name
-([`FJS-614`](../ISSUES.md#fjs-614)). So the invariant is still a service
-transaction here. Two instances is the point at which it stopped being one app's
-arrangement, and the second one is now also what shows where the fix stops.
+what the attribute takes, and the DECLARATION was refused: this model already
+carries `@@index([customerId])` for the ordinary read, an index was named for its
+columns alone, and the two derived one name. Closed by
+[`FJS-614`](../ISSUES_ARCHIVE.md) — a partial unique takes `uniq_<table>_<cols>`,
+so a lookup and a conditional constraint over one column list are two names. The
+service transaction that attaches a card still clears the old default first, and
+now for the opposite reason: creating the new one first is refused.
 
 `Payment` gains `paymentMethodId Int?` at `onDelete: Restrict`, because a card
 that is taken off file must not take the payments it made with it.

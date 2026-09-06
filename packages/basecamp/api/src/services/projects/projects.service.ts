@@ -1,5 +1,5 @@
 // src/services/projects/projects.service.ts
-// Projects — the unit a workspace organises environments under.
+// Projects — the unit a workspace organizes environments under.
 //
 // Mounted at /projects. Zero raw SQL: every read and write goes through the
 // caller-scoped Litestone client on $.locals.db.

@@ -19,8 +19,16 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { createApp, channels, createService, defaultConfig } from '../index.ts'
 
-const PORT = 3396
-const WS   = `ws://localhost:${PORT}/ws`
+// Port 0, read back after start(). A FIXED port here was the whole of
+// `FJS-900`: three files in this package bound 3396 and four bound 3397, and
+// bun runs them in one process — so under the full suite an app was answering
+// on this port while a previous file's app on the same one was still shutting
+// down, and a socket meant for the capped app below was refused by a DYING one
+// (its 'Server shutting down' reached the client as `Expected 101`). It passed
+// alone for the obvious reason. Nothing may hard-code a port in this package's
+// tests; ask for 0 and read `app.http.port`.
+let PORT = 0
+const WS = () => `ws://localhost:${PORT}/ws`
 const ROOM = 'room:1'
 
 // Presence skips an anonymous caller, so the presence half of this file needs
@@ -34,7 +42,7 @@ const USERS: Record<string, { userId: string; userType: string; authMethod: 'ses
 let app: any
 
 function client(token?: string) {
-  const ws = new WebSocket(token ? `${WS}?token=${token}` : WS)
+  const ws = new WebSocket(token ? `${WS()}?token=${token}` : WS())
   const frames: any[] = []
   let closed: { code: number; reason: string } | null = null
 
@@ -72,7 +80,7 @@ function client(token?: string) {
 beforeAll(async () => {
   app = createApp({
     config: {
-      port: PORT,
+      port: 0,
       database: { url: '', log: false },
       services: { dir: '/nonexistent' },
       http: {
@@ -104,6 +112,7 @@ beforeAll(async () => {
     a.channels.on('connection', (_s: unknown, conn: unknown) => { a.channel(ROOM).join(conn) })
   }, { presence: true, presenceFlushMs: 0, presenceMetaBytes: 256, presenceUpdatesPerSecond: 2 }))
   await app.start()
+  PORT = (app as unknown as { http: { port: number } }).http.port
 })
 
 afterAll(async () => { await app?.stop() })
@@ -175,7 +184,7 @@ describe('too many sockets from one address (FJS-705)', () => {
 
   // Its own app on its own port: the cap is per APP, so a small one in the
   // shared app refuses every other socket this file opens.
-  const CAP_PORT = 3397
+  let CAP_PORT = 0   // bound at start(), read back — see the note above
   let capped: any
 
   const capClient = () => {
@@ -195,12 +204,13 @@ describe('too many sockets from one address (FJS-705)', () => {
   beforeAll(async () => {
     capped = createApp({
       config: {
-        port: CAP_PORT, database: { url: '', log: false }, services: { dir: '/nonexistent' },
+        port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' },
         http: { ...defaultConfig.http, drainTimeout: 250, ws: { maxConnectionsPerIp: 3 } },
       },
     })
     capped.configure(channels())
     await capped.start()
+    CAP_PORT = (capped as { http: { port: number } }).http.port
   })
   afterAll(async () => { await capped?.stop() })
 

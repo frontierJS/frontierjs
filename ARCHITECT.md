@@ -58,13 +58,13 @@ Use the left column. Never the right.
 |   ↳ *plural by realm*       | each package documents its own by LIFETIME (`FJS-D03`); see its `CLAUDE.md` |
 | **Chain of Responsibility** | pipeline, middleware stack, flow            |
 | **Signal**                  | observable, atom, ref, store (for the cell) |
-| **Projection**              | (nothing — new noun, see below)             |
 | **Guard**                   | hook (for a thing that only answers allow/deny) |
 | **Observer**                | hook, listener (for a thing that cannot act) |
 | **Provider**                | adapter, driver, integration                |
 | **Transport**               | channel (for the delivery medium)           |
 | **Target**                  | endpoint, integration, service (for a Conduit declaration) |
 | **Job**                     | task, worker, cron                          |
+| **Queue**                   | lane, topic, pool, channel (for a Job's container) |
 | **Release**                 | manifest, deploy, build (for the immutable artefact) |
 
 Clarifications settled by the code:
@@ -76,10 +76,12 @@ Clarifications settled by the code:
   Paper use for their core primitive. The ban now reads: never call an Event a
   signal. A Signal never crosses a Boundary; an Event exists only to
   (`FJS-D44`).
-- **Projection** is a *stored or served* second shape of the same truth — a
-  materialised view, a serialized subset, a report. What a compiler or a
-  component computes and throws away stays **derived**. If it has no independent
-  existence, it is not a Projection (`FJS-D46`).
+- **A second shape of the same truth is a `view`**, which is what the seed
+  language calls it — `@@materialized` for the kind that is stored, `@@refreshOn`
+  for what refreshes it. What a compiler or a component computes and throws away
+  stays **derived**. *Projection* was coined for this and is withdrawn: the
+  keyword had already shipped, and a row here naming it a second time is what
+  this table exists to prevent (`FJS-D46`).
 - **A custom service method is a Method, not an Action.** A Service answers
   CRUD plus whatever else it declares, in one `methods:` list; *custom* is the
   adjective for the ones the CRUD set does not name, and there is no noun for
@@ -109,6 +111,12 @@ Clarifications settled by the code:
   `Adapter` is refused.
 - **A Channel is a broadcast set; the delivery medium is a Transport**
   (`FJS-D06`).
+- **A Queue is what a Job runs on, and its verbs come in two tiers**
+  (`FJS-D198`). **App verbs** — `handle`, `dispatch`, `schedule` — are written in
+  a source file and run inside a request. **Operator verbs** — `pause`, `resume`,
+  `drain`, `purge`, `cancel`, the rate limit — are in no source file, are gated
+  at ADMINISTRATOR or above, and are audited. The word is Caravan's: a buffer
+  that holds work in order is not thereby a Queue.
 - **`Edge` is refused; `Boundary` is qualified at every use** — the Data
   boundary, the app↔world boundary (`FJS-D06`).
 - **The Deployment noun is Release, and `Manifest` is ceded to MV3**
@@ -129,6 +137,9 @@ vocabulary is mandatory for describing and fully open for challenging.
 - **Slice** — a package that crosses all realms deliberately (auth,
   notifications). Deferred until `fli add <slice>` is on the table or someone
   outside this repo ships one (`FJS-D06` §7).
+- **Run** — bounded work that finishes and can be interrupted and resumed: a
+  backfill, a pay run, a deploy. Distinct from Queue, which is standing and
+  unbounded (`FJS-D198`). The word is currently spent on the cli's runnables.
 - **Environment** and **Audience** in the Deployment realm — proposed in
   `IDEAS/release-transitions.md`; *Audience* may belong to the Data realm beside
   the gate ladder, and *binding* is already Mesa's word.

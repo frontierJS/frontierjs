@@ -22,7 +22,7 @@ model Order {
   reference  String
   total      Int
   margin     Int?    @allow('read', auth().isStaff == true)
-  internal   String? @guarded(all)
+  internal   String? @guarded
   userId     String?
   @@gate("1.4.4.5")
   @@allow('read', auth().isStaff == true)

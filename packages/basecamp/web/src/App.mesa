@@ -1,6 +1,7 @@
 <script>
   import { RouterView, beforeNavigate } from '@frontierjs/sierra/router'
   import { session, ready } from './session.js'
+  import SupportBanner from './components/SupportBanner.mesa'
 
   // Registered here, in component setup, on purpose. Sierra defers its boot
   // navigation by a microtask precisely so guards registered during mount are
@@ -41,4 +42,5 @@
   })
 </script>
 
+<SupportBanner />
 <RouterView />

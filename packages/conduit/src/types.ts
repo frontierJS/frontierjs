@@ -305,18 +305,26 @@ export class ConduitStreamError extends Error {
 
 // ─── Errors ─────────────────────────────────────────────────
 
-export type ConduitErrorKind =
-  | 'target_not_found'
-  | 'connection_failed'
-  | 'timeout'
-  | 'auth_failed'
-  | 'not_implemented'
+/**
+ * Every fault conduit can answer with.
+ *
+ * An ARRAY the type derives from, and not the other way round: `retryable` and
+ * the breaker's fault set are both one answer per kind, and a union cannot be
+ * walked at runtime, so a kind added here with no answer beside it read as
+ * decided (`FJS-739`). The suite walks this list.
+ */
+export const CONDUIT_ERROR_KINDS = [
+  'target_not_found',
+  'connection_failed',
+  'timeout',
+  'auth_failed',
+  'not_implemented',
   // 5xx ONLY. The target is broken, this is retryable, and it is the one
   // response-shaped kind the breaker counts. It used to be every non-2xx and
   // every unusable body as well, which put three unrelated things behind one
   // word that three consumers branch on (`FJS-684`).
-  | 'server_error'
-  | 'stream_error'
+  'server_error',
+  'stream_error',
   // The target understood the request and refused it — any 4xx that is not a
   // 401/403 (`auth_failed`), a 429 (`rate_limited`) or a 3xx (`redirected`).
   // Its own kind for the reason each carve-out beside it has one: it is never
@@ -327,7 +335,7 @@ export type ConduitErrorKind =
   // locally (`FJS-684`). `raw` carries the body, because a 4xx is the one
   // failure whose payload the caller can usually act on — a validation report,
   // a decline code.
-  | 'client_error'
+  'client_error',
   // The target answered and the answer is unusable: HTML where a payload was
   // expected, a body that did not parse as the JSON its own content-type
   // claimed. Not retryable — the same request renders the same error page —
@@ -335,7 +343,7 @@ export type ConduitErrorKind =
   // a wrong content-type is a misconfiguration and a breaker cannot heal one.
   // A body that arrived SHORT is not this: that is a `connection_failed`,
   // because the bytes stopped rather than being wrong.
-  | 'invalid_response'
+  'invalid_response',
   // The target asked us to slow down — HTTP 429, or 503 carrying `Retry-After`.
   // Its own kind rather than a `server_error`, because the two disagree on both
   // counts that matter: this one is always retryable, and it says nothing about
@@ -343,17 +351,17 @@ export type ConduitErrorKind =
   // `server_error` a provider's rate limit tripped the breaker and every send
   // after it failed `circuit_open` — load shed by the one status that means
   // *slow down* rather than *I am broken* (`FJS-650`).
-  | 'rate_limited'
+  'rate_limited',
   // The request itself is unusable — a body that will not serialize, a
   // response larger than the configured cap. The caller is at fault, not
   // the network or the target, so these are never retryable.
-  | 'invalid_request'
+  'invalid_request',
   // The breaker for this target is open: it failed repeatedly and Conduit
   // is refusing to send until the reset window elapses. Nothing left the
   // process — this is load shed on the way out.
-  | 'circuit_open'
+  'circuit_open',
   // The per-target concurrency cap is full. Also shed before dispatch.
-  | 'overloaded'
+  'overloaded',
   // The target answered a 3xx and this target does not follow redirects (or
   // could not follow this one). Its own kind rather than a `server_error`,
   // because the three things that word decides all disagree here: it is not
@@ -361,7 +369,10 @@ export type ConduitErrorKind =
   // target's health, so it must not count toward the breaker, and the caller
   // has something to act on, which `meta.headers.location` and `meta.status`
   // carry (`FJS-679`).
-  | 'redirected'
+  'redirected',
+] as const
+
+export type ConduitErrorKind = typeof CONDUIT_ERROR_KINDS[number]
 
 export interface ConduitError {
   kind:      ConduitErrorKind
@@ -500,7 +511,7 @@ export interface ResilienceOptions {
    * Default 5. Set to 0 to disable the breaker.
    *
    * Only failures that implicate the target count — connection_failed,
-   * timeout, server_error. A misconfigured credential or an unserialisable
+   * timeout, server_error. A misconfigured credential or an unserializable
    * body is your bug, not the target's, and must not shed load.
    */
   failure_threshold?: number

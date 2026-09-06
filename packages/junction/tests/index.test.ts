@@ -2038,12 +2038,19 @@ describe('generateOpenAPI', () => {
     expect(spec.paths['/posts/{id}']).toHaveProperty('delete')
   })
 
-  it('includes action routes', async () => {
+  it('documents custom methods at the address the wire serves', async () => {
     const app  = await makeApp()
     const spec = generateOpenAPI(app, { title: 'T', version: '1' })
 
-    expect(spec.paths['/posts/{id}/publish']).toBeDefined()
-    expect(spec.paths['/posts/{id}/unpublish']).toBeDefined()
+    // This asserted `/posts/{id}/publish` for its whole life, and that path was
+    // measured answering 404: no such route is registered, the wire dispatches
+    // on `X-Service-Method` against `POST /{service}/{id}` (`FJS-902`).
+    expect(spec.paths['/posts/{id}/publish']).toBeUndefined()
+
+    const header = (spec.paths['/posts/{id}'] as Record<string, any>).post
+      .parameters.find((p: any) => p.name === 'X-Service-Method')
+    expect(header.schema.enum).toContain('publish')
+    expect(header.schema.enum).toContain('unpublish')
   })
 
   it('includes schema details when schemas are registered', async () => {
@@ -3843,7 +3850,7 @@ describe('app.ws() routing', () => {
     expect(typeof ctx.close).toBe('function')
   })
 
-  it('send() serialises objects to JSON strings', () => {
+  it('send() serializes objects to JSON strings', () => {
     const sent: string[] = []
     const mockWs = { send: (m: string) => sent.push(m), close: () => {} }
 
@@ -4531,7 +4538,7 @@ describe('Plugin lifecycle', () => {
   it('plugin can set a property on app via register()', async () => {
     // A key an app has not claimed is not on the type — Invariant 5 — so the
     // test reads it as a bag rather than annotating `app` with itself, which
-    // is what `typeof app` in its own initialiser was.
+    // is what `typeof app` in its own initializer was.
     const app = await createTestApp()
     app.configure({
       name: 'test',

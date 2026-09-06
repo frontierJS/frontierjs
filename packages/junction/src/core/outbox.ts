@@ -44,15 +44,16 @@ interface OutboxClient {
 }
 
 export interface OutboxRow {
-  id:          string
-  job:         string
-  payload:     unknown
-  actorId:     string | null
-  claimedAt:   string | null
-  deliveredAt: string | null
-  attempts:    number
-  lastError:   string | null
-  createdAt:   string
+  id:            string
+  job:           string
+  payload:       unknown
+  actorId:       string | null
+  claimedAt:     string | null
+  deliveredAt:   string | null
+  nextAttemptAt: string | null
+  attempts:      number
+  lastError:     string | null
+  createdAt:     string
 }
 
 interface OutboxTable {
@@ -175,27 +176,33 @@ export async function enqueueOutbox(
 interface TenantRegistryLike {
   list(): string[]
   get(id: string): Promise<unknown>
+  /**
+   * litestone's own scan over every tenant: bounded fan-out, and each client
+   * opened COLD so walking the registry does not become the pool's working
+   * set. Optional because the registry is duck-typed across the dependency
+   * boundary — the same reason `retain?` is optional on junction's other
+   * `TenantRegistryLike` — and the fallback below is the hot sequential walk
+   * this used to do everywhere.
+   */
+  query?(
+    fn:    (db: unknown, id: string) => Promise<unknown>,
+    opts?: { concurrency?: number },
+  ): Promise<Array<{ tenantId: string; result: unknown; error?: unknown }>>
 }
 
-interface OutboxSource { db: OutboxClient; tenant: string | null }
+/** A tenant whose database does not carry the model. Not a result. */
+const SKIPPED = Symbol('outbox.skipped')
 
 /**
- * Every database this app's outbox rows can be in, with the tenant each one is.
- *
- * An app with no tenancy is one entry and `null`. An app with a tenant registry
- * is one entry per tenant, and the sweep cost is one query per tenant per pass
- * — which is the honest cost of having put the rows there.
+ * Refuse the shape that cannot be resolved: rows are written to the tenant's
+ * file by every request, and `app.db` is a real database that is nobody's, so
+ * half of them would never be delivered.
  */
-async function outboxDatabases(app: App): Promise<OutboxSource[]> {
+function assertOneOutboxHome(app: App): void {
   const db       = app.db as OutboxClient | undefined
   const registry = (app as { tenants?: TenantRegistryLike }).tenants
-
-  if (!registry) return db && hasOutboxModel(db) ? [{ db, tenant: null }] : []
-
-  // Both, which is the shape that cannot be resolved: rows are written to the
-  // tenant's file by every request, and `app.db` is a real database that is
-  // nobody's. Refused rather than half-swept.
-  if (db && hasOutboxModel(db)) throw new Error(
+  if (!registry || !db || !hasOutboxModel(db)) return
+  throw new Error(
     `[Junction] outbox: this app was built with BOTH createApp({ db }) and ` +
     `createApp({ tenants }), and ${OUTBOX_MODEL} is declared in the app-level ` +
     `database as well as in the tenants'. A row is written to whichever client ` +
@@ -203,13 +210,52 @@ async function outboxDatabases(app: App): Promise<OutboxSource[]> {
     `the outbox in one place: drop the app-level db, or move ${OUTBOX_MODEL} ` +
     `into a database block that is not per-tenant.`
   )
+}
 
-  const out: OutboxSource[] = []
-  for (const id of registry.list()) {
-    const client = await registry.get(id) as OutboxClient
-    if (hasOutboxModel(client)) out.push({ db: client, tenant: id })
+/**
+ * Run `fn` against every database this app's outbox rows can be in.
+ *
+ * An app with no tenancy is one call and `null`. An app with a tenant registry
+ * is one call per tenant — the honest cost of having put the rows there — and
+ * the walk goes through `registry.query`, which opens each client COLD.
+ *
+ * That word is the whole of this function. `registry.get(id)` is the request
+ * path's verb and it PROMOTES, so walking the registry with it makes the walk
+ * the pool's working set: measured against a real registry, one idle pass over
+ * 20 tenants evicted the tenant currently being served (`FJS-778`). A relay's
+ * timer is not a caller.
+ */
+async function forEachOutboxDatabase<T>(
+  app: App,
+  fn:  (db: OutboxClient, tenant: string | null) => Promise<T>,
+): Promise<T[]> {
+  assertOneOutboxHome(app)
+
+  const db       = app.db as OutboxClient | undefined
+  const registry = (app as { tenants?: TenantRegistryLike }).tenants
+
+  if (!registry) return db && hasOutboxModel(db) ? [await fn(db, null)] : []
+
+  if (typeof registry.query !== 'function') {
+    const out: T[] = []
+    for (const id of registry.list()) {
+      const client = await registry.get(id) as OutboxClient
+      if (hasOutboxModel(client)) out.push(await fn(client, id))
+    }
+    return out
   }
-  return out
+
+  // `query` captures a per-tenant error rather than throwing, which would turn
+  // a database this pass could not reach into a clean pass over an empty queue
+  // — `FJS-365`'s failure wearing a different face. The first one is rethrown,
+  // so the relay's own catch logs it as it did before.
+  const results = await registry.query(async (client, id) =>
+    hasOutboxModel(client as OutboxClient) ? await fn(client as OutboxClient, id) : SKIPPED)
+
+  const failed = results.find(r => r.error)
+  if (failed) throw failed.error
+
+  return results.map(r => r.result).filter(r => r !== SKIPPED) as T[]
 }
 
 export interface DeliverOptions {
@@ -217,11 +263,73 @@ export interface DeliverOptions {
   batch?:          number
   /** A claim older than this is retaken — a relay died mid-handoff. */
   claimTimeoutMs?: number
+  /**
+   * How many attempts a row gets before it is DEAD. Default 10; `0` never
+   * gives up. See `backoffFor` for what the ladder costs in wall-clock.
+   */
+  maxAttempts?:    number
+  /** The first retry delay, doubling per attempt. Default 5000. */
+  retryBackoffMs?: number
+  /**
+   * Deliver from THIS client alone, skipping the walk entirely.
+   *
+   * The post-commit kick's own database: the call knows which client it wrote
+   * the row through, so under `strategy database` the kick is one query rather
+   * than a scan of every tenant in the registry to find the one it came from.
+   */
+  db?:             unknown
+  /** The tenant `db` belongs to, which travels with the dispatch. */
+  tenant?:         string | null
 }
 
 export interface DeliverResult {
   delivered: number
   failed:    number
+}
+
+/** Never gives up before this many ms, whatever `maxAttempts` allows. */
+const MAX_BACKOFF_MS = 60 * 60 * 1_000
+
+/**
+ * The defaults live here rather than in the plugin because three exported
+ * functions read them and the plugin is not on the path of any of them: an
+ * operator calling `pendingOutbox(app)` must grade dead by the same number the
+ * relay retries by, or the count and the behavior disagree.
+ */
+export const DEFAULT_MAX_ATTEMPTS      = 10
+export const DEFAULT_RETRY_BACKOFF_MS  = 5_000
+
+/**
+ * How long after a failed attempt this row may be tried again.
+ *
+ * Doubling from `base`, capped at an hour. At the default base and cap a row
+ * has spent about 43 minutes by its tenth attempt, which is what makes the cap
+ * inert until somebody raises `maxAttempts` — it is there for that case and
+ * not for the default one.
+ */
+function backoffFor(attempts: number, base: number): number {
+  return Math.min(base * 2 ** Math.max(0, attempts - 1), MAX_BACKOFF_MS)
+}
+
+/**
+ * Rows this relay may take right now: undelivered, not claimed by a relay that
+ * is still alive, past their backoff, and not dead.
+ *
+ * `attempts` is counted at the CLAIM, so a relay that dies mid-handoff spends
+ * one — which is what makes the cap a bound on *this row is stuck* rather than
+ * on *this row failed*, and it is the reason the two OR groups cannot be
+ * folded: a stale claim and an elapsed backoff are two different ways a row
+ * became available again.
+ */
+function owedWhere(now: Date, stale: Date, maxAttempts: number): Record<string, unknown> {
+  return {
+    deliveredAt: null,
+    ...(maxAttempts > 0 ? { attempts: { lt: maxAttempts } } : {}),
+    AND: [
+      { OR: [{ claimedAt:     null }, { claimedAt:     { lt:  stale } }] },
+      { OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now   } }] },
+    ],
+  }
 }
 
 interface JobDispatcher {
@@ -251,9 +359,15 @@ export async function deliverOutbox(
   const jobs = app.jobs as unknown as JobDispatcher | undefined
   if (typeof jobs?.dispatch !== 'function') return { delivered: 0, failed: 0 }
 
+  // A named client is the post-commit kick: the call already knows which
+  // database it wrote the row through, so there is nothing to walk. Under
+  // `strategy database` this is the difference between one query and a scan of
+  // the whole registry on every committed call that enqueued anything.
+  if (opts.db) return deliverFrom(opts.db as OutboxClient, jobs, opts.tenant ?? null, opts)
+
   const total: DeliverResult = { delivered: 0, failed: 0 }
-  for (const { db, tenant } of await outboxDatabases(app)) {
-    const one = await deliverFrom(db, jobs, tenant, opts)
+  const each  = await forEachOutboxDatabase(app, (db, tenant) => deliverFrom(db, jobs, tenant, opts))
+  for (const one of each) {
     total.delivered += one.delivered
     total.failed    += one.failed
   }
@@ -269,13 +383,15 @@ async function deliverFrom(
 ): Promise<DeliverResult> {
   const batch   = opts.batch          ?? 50
   const timeout = opts.claimTimeoutMs ?? 30_000
+  const maxTry  = opts.maxAttempts    ?? DEFAULT_MAX_ATTEMPTS
+  const base    = opts.retryBackoffMs ?? DEFAULT_RETRY_BACKOFF_MS
 
   const table  = outboxTable(db)
   const now    = new Date()
   const stale  = new Date(now.getTime() - timeout)
 
   const owed = await table.findMany({
-    where:   { deliveredAt: null, OR: [{ claimedAt: null }, { claimedAt: { lt: stale } }] },
+    where:   owedWhere(now, stale, maxTry),
     orderBy: { createdAt: 'asc' },
     limit:   batch,
   })
@@ -306,12 +422,19 @@ async function deliverFrom(
       await table.update({ where: { id: row.id }, data: { deliveredAt: new Date() } })
       delivered++
     } catch (err) {
-      // Release the claim so the next pass retries rather than waiting out the
-      // stale-claim timeout. `attempts` is already counted and stays counted.
+      // Release the claim so the next pass is not waiting out the stale-claim
+      // timeout, and put the row's next attempt far enough out that a queue
+      // which is refusing is not asked again on every tick. `attempts` is
+      // already counted and stays counted: past `maxAttempts` the row simply
+      // stops matching `owedWhere`, which is the whole of what dead means.
       failed++
       await table.update({
         where: { id: row.id },
-        data:  { claimedAt: null, lastError: (err as Error)?.message ?? String(err) },
+        data:  {
+          claimedAt:     null,
+          nextAttemptAt: new Date(now.getTime() + backoffFor(row.attempts + 1, base)),
+          lastError:     (err as Error)?.message ?? String(err),
+        },
       })
     }
   }
@@ -322,15 +445,15 @@ async function deliverFrom(
 /** Drop delivered rows past their retention. They are kept for inspection. */
 export async function sweepOutbox(app: App, retentionMs: number): Promise<number> {
   const before = new Date(Date.now() - retentionMs)
+  const each   = await forEachOutboxDatabase(app, db => sweepFrom(db, before))
+  return each.reduce((n, one) => n + one, 0)
+}
 
-  let gone = 0
-  for (const { db } of await outboxDatabases(app)) {
-    const removed = await outboxTable(db).removeMany({
-      where: { deliveredAt: { lt: before, not: null } },
-    })
-    gone += removed.count
-  }
-  return gone
+async function sweepFrom(db: OutboxClient, before: Date): Promise<number> {
+  const removed = await outboxTable(db).removeMany({
+    where: { deliveredAt: { lt: before, not: null } },
+  })
+  return removed.count
 }
 
 /**
@@ -340,17 +463,89 @@ export async function sweepOutbox(app: App, retentionMs: number): Promise<number
  * not a reason to take the process down — so a misconfiguration discovered
  * there would be one line in a log and a queue that never drains. This is the
  * same question asked where it can still be a refusal.
+ *
+ * It does NOT open a tenant, because the answer does not need one: what cannot
+ * be resolved is an app declaring the model in two places, which is decidable
+ * from `app.db` and the presence of a registry. Walking anyway meant a boot
+ * that opened every tenant database an app has.
  */
 export async function assertOutboxShape(app: App): Promise<void> {
-  await outboxDatabases(app)
+  assertOneOutboxHome(app)
+}
+
+export interface OutboxCounts {
+  /** Owed and still to be tried. */
+  pending: number
+  /** Past `maxAttempts`: still here, with its `lastError`, and untouched. */
+  dead:    number
 }
 
 /** Rows owed, across every database this app writes them to. */
-export async function pendingOutbox(app: App): Promise<number> {
-  let pending = 0
-  for (const { db } of await outboxDatabases(app))
-    pending += await outboxTable(db).count({ where: { deliveredAt: null } })
-  return pending
+export async function pendingOutbox(app: App, opts: DeliverOptions = {}): Promise<number> {
+  return (await outboxCounts(app, opts)).pending
+}
+
+/**
+ * What the table holds, in one walk.
+ *
+ * Two counts and not one, because a dead row is owed forever and would keep
+ * `pending` off zero for the life of the app — which is the number a readiness
+ * probe and an operator both read as *the relay is behind*. Dead is DERIVED
+ * from `attempts` against the cap rather than stamped on the row, so raising
+ * `maxAttempts` revives every row it covers, and that is the way back.
+ */
+export async function outboxCounts(app: App, opts: DeliverOptions = {}): Promise<OutboxCounts> {
+  const maxTry = opts.maxAttempts ?? DEFAULT_MAX_ATTEMPTS
+  const each   = await forEachOutboxDatabase(app, db => countFrom(db, maxTry))
+
+  return each.reduce<OutboxCounts>((sum, one) => ({
+    pending: sum.pending + one.pending,
+    dead:    sum.dead    + one.dead,
+  }), { pending: 0, dead: 0 })
+}
+
+async function countFrom(db: OutboxClient, maxTry: number): Promise<OutboxCounts> {
+  const table = outboxTable(db)
+  const owed  = await table.count({ where: { deliveredAt: null } })
+  const dead  = maxTry > 0
+    ? await table.count({ where: { deliveredAt: null, attempts: { gte: maxTry } } })
+    : 0
+  return { pending: owed - dead, dead }
+}
+
+/**
+ * Everything one tick of the relay does, over ONE walk of the databases.
+ *
+ * Deliver, sweep and count were three exported functions and the plugin called
+ * all three, so a tenanted app resolved its whole registry three times per
+ * pass. They stay three functions because an operator legitimately asks for one
+ * of them; the relay asks for a PASS, which is one traversal.
+ */
+export async function outboxPass(
+  app:         App,
+  opts:        DeliverOptions = {},
+  retentionMs: number = 0,
+): Promise<DeliverResult & OutboxCounts> {
+  const jobs   = app.jobs as unknown as JobDispatcher | undefined
+  const maxTry = opts.maxAttempts ?? DEFAULT_MAX_ATTEMPTS
+  const before = new Date(Date.now() - retentionMs)
+
+  const each = await forEachOutboxDatabase(app, async (db, tenant) => {
+    const sent = typeof jobs?.dispatch === 'function'
+      ? await deliverFrom(db, jobs, tenant, opts)
+      : { delivered: 0, failed: 0 }
+    if (retentionMs > 0) await sweepFrom(db, before)
+    // After the delivery, so it counts what this pass could not take rather
+    // than what it was about to.
+    return { ...sent, ...await countFrom(db, maxTry) }
+  })
+
+  return each.reduce((sum, one) => ({
+    delivered: sum.delivered + one.delivered,
+    failed:    sum.failed    + one.failed,
+    pending:   sum.pending   + one.pending,
+    dead:      sum.dead      + one.dead,
+  }), { delivered: 0, failed: 0, pending: 0, dead: 0 })
 }
 
 // ─── What the plugin claims ───────────────────────────────────────────────────
@@ -363,6 +558,18 @@ export interface OutboxApi {
   sweep(retentionMs?: number): Promise<number>
   /** How many rows are still owed. For a health endpoint, and for tests. */
   pending(): Promise<number>
+  /** Owed and dead, separately — what `/metrics` reports. */
+  counts(): Promise<OutboxCounts>
+  /**
+   * One tick of the relay: deliver, sweep, and refresh what `/metrics` and the
+   * health check answer — all over ONE walk of the databases.
+   *
+   * `deliver()` is the narrower verb and refreshes no count, deliberately: a
+   * metrics source must be synchronous, so those numbers are as of the last
+   * PASS. This is the unit the timer runs, reachable by hand because otherwise
+   * nothing but the clock can produce the state those two surfaces report.
+   */
+  pass(): Promise<DeliverResult & OutboxCounts>
 }
 
 // ─── The shipped schema fragment ──────────────────────────────────────────────

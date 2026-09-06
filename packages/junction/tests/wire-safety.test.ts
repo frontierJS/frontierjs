@@ -38,7 +38,7 @@ class Refused extends Error {
 }
 
 async function mkApp() {
-  // `@secret` is `@encrypted @guarded(all)`, so the client wants a key. Fixed
+  // `@secret` is `@encrypted @guarded`, so the client wants a key. Fixed
   // rather than generated: what is asserted is that the value never leaves,
   // and a key that changes per run cannot be told from one that never worked.
   const db  = await createClient({

@@ -16,7 +16,7 @@
  * Needs Chrome on PATH or $FJS_CHROME, same as the css package's harness.
  * Exits non-zero and prints what differed.
  *
- * One harness trap: NEVER return a bare `null` from a probe. CDP serialises it
+ * One harness trap: NEVER return a bare `null` from a probe. CDP serializes it
  * as {type:'object', subtype:'null'} with no `value` key at all, so it reads
  * back as `undefined` and an assertion expecting null fails for a reason that
  * has nothing to do with the page. Nulls nested inside an object survive, so
@@ -958,17 +958,21 @@ try {
   // end. It is the one thing a screen can say that a `Plan` row cannot.
   t('subDetail.priceMoved', await evaluate(`
     // TWO reads reach this: the version this subscriber was sold at, and the
-    // plan's CURRENT price. Waiting for the sold-at tile is waiting for the
-    // first of them — a page holding the version and not the plan renders no
-    // alert, which is indistinguishable from the two prices agreeing.
+    // plan's CURRENT price. They land about 25ms apart, and *the prices agree*
+    // and *we have not finished asking* both render as an absent alert — so
+    // waiting for the sold-at tile alone read the first while the second was
+    // true, about one run in three (FJS-632).
     //
-    // Waiting for the plan too does NOT fix it and makes this hang instead: the
-    // plan read never arrives at all on those runs (FJS-632). The id sd-plan is
-    // on the page for measuring that.
-    await waitFor(() => (document.querySelector('#sd-sold-at')?.textContent ?? '').includes('.'));
+    // The page draws the undecided state now, so this waits for the comparison
+    // to be DECIDED rather than for either half of it to arrive.
+    await waitFor(() => !document.querySelector('#sd-price-pending'));
     return {
       alert:     !!document.querySelector('#sd-price-moved'),
       notTheNew: !document.querySelector('#sd-sold-at').textContent.includes('${repriceShown}'),
+      // The plan tile's fallback starts with '#'. Asserted alongside because
+      // the alert being absent and the plan never arriving look the same, and
+      // this is what tells them apart if it ever regresses.
+      planLoaded: !(document.querySelector('#sd-plan')?.textContent ?? '').includes('#'),
     };
   `))
 
@@ -1267,7 +1271,7 @@ const expected = {
   'planDetail.newWindowEmpty': { stillOne: 1, openHolders: 0, closedHolders: true },
 
   'subs.rows': true,
-  'subDetail.priceMoved': { alert: true, notTheNew: true },
+  'subDetail.priceMoved': { alert: true, notTheNew: true, planLoaded: true },
   'subDetail.stopRenewing': { said: true, ends: true, status: true, canUndo: true },
   'subDetail.resume':       { gone: true, renews: true, canStop: true },
   // Exactly one document, and it is an invoice: an upgrade owes money.

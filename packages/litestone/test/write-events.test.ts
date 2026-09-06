@@ -365,7 +365,7 @@ describe('announce — collection · rows · none', () => {
   test('an announced row is shaped, not raw off RETURNING', async () => {
     const secrets = await createClient({
       db: ':memory:',
-      schema: `model Vault { id Int @id  name String  token String @guarded(all) }`,
+      schema: `model Vault { id Int @id  name String  token String @guarded }`,
     }) as never as typeof db
     const got: Ev[] = []
     ;(secrets as never as { $tapEvents(f: (e: Ev) => void): void }).$tapEvents((e) => { got.push(e) })

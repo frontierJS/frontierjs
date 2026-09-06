@@ -129,7 +129,7 @@ function resolveOptions(options) {
  * Outlook conditional comments cannot survive a DOM round-trip: happy-dom,
  * which the static renderer runs in, ends the comment early for several
  * shapes of tag inside it (a namespaced attribute like `xmlns:v` is enough),
- * after which `<!--[if mso]>` serialises as `<!--[if mso]-->` and the VML
+ * after which `<!--[if mso]>` serializes as `<!--[if mso]-->` and the VML
  * that follows becomes live markup on every client.
  *
  * So components emit the block escaped in a `data-mso` attribute — text, as

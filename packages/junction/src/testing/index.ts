@@ -99,6 +99,15 @@ export function createStubAuth(opts: { users?: StubUser[] } = {}): IAuth & {
 
     async logout(): Promise<void> {},
 
+    // `app.runAs` re-resolves a principal through this rather than replaying a
+    // stored session, so nothing that defers work — a job, a webhook delivery —
+    // can be driven against a stub without it. A user removed since answers
+    // `null`, which is the case deferred work has to handle.
+    async sessionFor(userId: string): Promise<SessionContext | null> {
+      const user = users.get(String(userId))
+      return user ? toSession(user) : null
+    },
+
     async createUser(data: { email?: string; name?: string; role?: string }): Promise<SessionContext> {
       const id   = `user-${crypto.randomUUID().slice(0, 8)}`
       const user: StubUser = { id, role: data.role ?? 'user' }

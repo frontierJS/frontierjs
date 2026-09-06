@@ -171,7 +171,7 @@ test('space: no component or pattern declares a literal padding or gap', functio
    * `0px` — 287 false positives, all of them the test being wrong.
    */
   var DECL = /(^|[{;\s])(padding[a-z-]*|gap|row-gap|column-gap)\s*:\s*([^;}]+)/g;
-  /* The CSSOM serialises `padding: 0` as `0px`. Zero has no density. */
+  /* The CSSOM serializes `padding: 0` as `0px`. Zero has no density. */
   var allowed = /^(var\(|calc\(|0(px)?$|auto$|inherit$|[\d.]+em$)/;
   var offenders = [];
 

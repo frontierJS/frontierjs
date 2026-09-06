@@ -1,5 +1,969 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-05 — The corpus roster is one list, and the floor is what git carries
+
+`introspect-roundtrip.test.ts` asserted `CORPUS.length >= 8` over a roster it
+wrote itself, and two of the eight names — `calcom`, `documenso` — are FETCHED
+rather than committed. So the count was reachable on every machine that had ever
+run `fetch.mjs` and on no fresh clone, which is why this suite failed on the
+runner and passed for everyone here (`FJS-009`).
+
+The same copy had drifted the other way: `hrms.lite` is committed and that list
+never named it, so the round-trip property swept it never.
+
+**`test/fixtures/corpus/tiers.js` is the roster** and both readers import it —
+`committed` (in git, so a floor may be built on them), `fetched` (needs the
+network, swept when present and SKIPPED BY NAME when not, never counted toward a
+floor), `local` (a private schema read from `$FJS_CORPUS_LOCAL`). The floor is
+`COMMITTED.length + SCALE.length`, derived rather than written as a number.
+
+**The guard that would have caught `hrms` asks the DIRECTORY**, not the roster: a
+`.lite` in `fixtures/corpus/` that no tier names is swept by nothing. Comparing
+the roster against a list derived from the roster is a tautology that passes
+however wrong both are — the first version of this check was exactly that, and
+only stubbing it showed so.
+
+Measured on a fresh clone with no network: **39 pass, 5 skip, 0 fail**, where the
+old assertion was arithmetically unsatisfiable.
+
+## 2026-09-05 — A trail nothing has written yet is not a partial backup
+
+`litestone backup` marked the whole run INCOMPLETE and exited 1 when a declared
+jsonl/logger directory was absent — so the pre-deploy snapshot of every app's
+first real deploy reported that its restore point did not exist, on a scaffold
+that declares `main` plus an `audit` logger and has only ever written one of
+them (`FJS-574`). A refusal that fires on every ordinary run is one an operator
+learns to ignore, which is the whole value of the refusal.
+
+**Absent has two causes and the parent directory separates them**, off the
+filesystem rather than off a flag somebody has to remember to set. A logger
+creates its directory on the first write: the parent is there and the directory
+is not, so nothing has ever been written and there is nothing to copy — reported
+on its own line and the backup is whole. The parent is gone too, so the path
+leads nowhere on this machine, an unmounted volume being the usual reason, and
+what would have been in it is not in this copy — still INCOMPLETE, still exit 1.
+Ambiguity falls toward the refusal, since an absent parent IS the unreachable
+answer.
+
+**The refusal also blamed a cause it cannot have.** It read `not found — paths
+resolve against CWD`, and `cmdBackup` opens its client with
+`resolveFrom: 'schema'`, so a database path is anchored to the app root and the
+process CWD does not decide it. The message now names the missing parent, which
+is the thing an operator can act on.
+
+`test/cli-smoke.test.ts` — four rows, every one a PAIR, and the fix is red from
+BOTH sides: one fails with the split removed, one fails with every absent
+directory read as unwritten. The CWD sentence is asserted absent by RUNNING the
+backup from somewhere else and succeeding, which is what makes it impossible
+rather than merely unhelpful.
+
+## 2026-09-05 — A row policy may name a column one relation away
+
+`@@allow('read', order.userId == auth().id)` was `Expected RPAREN, got '.'`, so
+*the lines of my own orders* had nowhere to live but a copy of the id on the
+child (`FJS-499`, ruled `FJS-D221`). The relation's key is known at compile
+time, so the join is derivable and the copy was a restatement — one whose
+failure, when it drifts, is a row readable by the wrong person.
+
+**One hop.** `a.b.c` is a parse error naming the rule, so the bound is
+discoverable from the mistake. It compiles to a correlated scalar subquery
+correlating on the referenced key; on `create`, where there is no WHERE, the
+parent is looked up through the foreign key in the payload, as `check()` does.
+
+**It differs from `check()` in one answer.** An absent foreign key ALLOWS under
+`check(parent)` — a delegation, and a row naming no parent is not a row naming
+somebody else's. A path yields a VALUE, so an absent parent is NULL: an
+`@@allow` keeps no row and a `@@deny` fires. Both compilers agree, and a scalar
+subquery over no row is NULL for free.
+
+Refused at startup, each naming the column and each PAIRED in the tests with the
+legitimate shape one character away: a to-many (*any child matches* is a
+different question and stays unruled), an unknown relation, an unknown column on
+the TARGET model, `@computed`/`@transient`, `@encrypted`/`@hashed`/`@secret` —
+where a comparison would match nothing and read as a policy doing its job — `in`
+over a scalar column, `@derived` (pointed at `@from`), and an index predicate.
+
+`verifyRowPolicies` reports a crossed policy as not-graded BY NAME, as it does
+`check()`: the grader makes one row and what admits it is on another, so
+*skipped* and *graded, every row on one side* would otherwise read identically.
+
+**The cost is the half no behavioral test can see.** `test/policy-paths.test.ts`
+EXPLAINs the bytes the client sent over 3,000 rows and asserts the parent is
+reached by its key — specifically that the plan names no AUTOMATIC index, with a
+hand-written correlation on an unindexed column beside it that does. `SCAN` is
+not the signal: SQLite is clever enough to build a transient index instead, so
+the cost hides in a word a reader would not look for.
+
+*example* loses one of eight such columns: `OrderLine.userId` is gone and
+`carts.checkout` no longer writes it. One hop removes the last link of a chain
+rather than the chain — `Order.userId` is still denormalised from
+`Customer.userId`, and reaching the customer from a line would be two hops.
+
+## 2026-09-05 — Studio grew a front door, and the diagram grew a dimension
+
+**The sidebar collapses**, to a 3rem icon rail — the toggle in the topbar, `\\`
+as a shortcut, remembered per browser. `--sidebar-width` is the whole mechanism,
+since `.shell.viewport` already reads it.
+
+Nothing is `display: none`d that carries a name: the labels move to
+`.visually-hidden`, so a collapsed rail still announces *Browse* rather than an
+unnamed link with a picture in it, and each icon takes a `title` from the label
+already in the markup so a mouse user is not left with the picture alone. The
+tables list and the Acting-as picker do go away — neither is usable at 3rem and
+both have a panel that owns them. The shortcut is refused while a field has
+focus, or it would eat a backslash typed into the SQL box; and the toggle
+redraws the diagram, whose FK curves are drawn against measured geometry and
+would otherwise end where their cards used to be.
+
+
+**Overview is the landing panel.** Studio had thirteen panels and opened on
+Browse, which answers *what rows exist* — rarely anybody's first question, and
+never the first question on an app you did not write. The new panel answers four
+in the order people ask them: what is wrong, what shape is this, who may read
+it, where is the data — then a directory of every panel and the QUESTION it
+answers, because the rail on the left carries names and a name is what does not
+tell somebody which of thirteen to click.
+
+**It re-derives no verdict.** `/drift` decides what has drifted, `/perf/advisor`
+what is slow, `/access` what is open, `erGraph()` what a hub is. This reads those
+four and links to the panel that can act on each. Every load is fresh: a front
+page is looked at AFTER doing something elsewhere, so a cached one shows the
+world as it was before the thing you just did.
+
+**It says which database it is describing.** Under `tenancy { strategy database }`
+the base database holds the registry and almost nothing else, so an unselected
+tenant reads as an app with no data in it — `example` shows 385 rows in the base
+and 699 with `flagship` open, and the only non-empty table in the first case is
+the logger, which is the one database a registry deliberately does not redirect.
+The row counts are re-read on every visit rather than taken from the boot
+snapshot, because opening a tenant re-points every data endpoint.
+
+**The ER diagram is now a map.** It was 39 identical cards in declaration order,
+with position — the strongest channel on the page — carrying nothing. Four
+channels now, each carrying one fact:
+
+- **Position is dependency.** X is longest-path depth along the FK direction, so
+  a model sits right of everything it points at and lines flow one way. Y within
+  a column is declaration order, the grouping the author already made. A
+  circular FK reads as depth 0, deterministic, so the layout is stable across
+  reloads. Isolates park in a lane past the end.
+- **Prominence is a tier**, from two numbers off the edges the diagram already
+  draws: `hub` (3+ models point at it), `connector` (1–2), `leaf` (none, but it
+  points at something), `isolate` (no relations at all — 12 of 40 in `example`,
+  auth machinery and lookup tables). Named rather than scored: a blended score
+  would rank the cards and be unable to say why, which is what a reader opens
+  the panel to find out. Each card states the number the tier was read off.
+- **Hue is a family** — the first PascalCase word, and only where two or more
+  models share it. NOT a hash of the name, which destroys similarity by
+  construction; and not a hash of the stem either, which cannot promise two
+  families look different. Sorted stems walked by the golden angle instead. The
+  spine is on the inline-start edge because the header tint is the database's,
+  and an edge whose two ends are one family is drawn in that family's hue.
+- **Hover and click focus**, because *what touches THIS one* is asked one card at
+  a time and no static channel can answer it. A pin outlives the pointer, which
+  hover cannot on a 3000px canvas; a drag never pins.
+
+Row counts are an opt-in overlay, log-scaled — measured `4→12% · 900→52% ·
+480k→100%`, where linear renders everything but the largest table as nothing.
+They are not in the tier: they measure the data rather than the design, they are
+zero on a fresh app exactly when orientation matters most, and the largest tables
+are usually the least architecturally interesting.
+
+The nav said `Schema` for the diagram and `schema.lite` for the file — two labels
+a file extension apart where the one called Schema was the one that is not it.
+Now `Models` and `Schema`; the ids are unchanged, so `#schema` still opens the
+diagram and every existing link lands.
+
+## The schema says what a column may be sorted and filtered by
+
+`$checkOrderBy` and `$checkWhere` refuse a bad key at the Data boundary and
+nothing answered the question the other way — *given this model, which keys may
+I send*. So a generated table would render a sortable header for a column whose
+sort throws, and a hand-written one gets it right only by its author knowing
+(`FJS-553`, `FJS-554`).
+
+`x-sortable` and `x-filterable` are emitted per field. **Only the exceptions**:
+absent means yes, and a string says why not — `array`, `json`, `file`,
+`encrypted`, `hashed`, `computed`, `transient`. Most columns are ordinary, and
+this ships in a bundle whose size is already an argument (`FJS-785`).
+
+**Two keys, because they are two answers.** A `@from` field does both, a
+`@computed` field neither, an array sorts by its serialized text and filters
+through `json_each`, and a deterministic `@encrypted` column is matchable and
+still sorts by ciphertext — one flag cannot say that.
+
+**`filterableKeysFor` and `sortableKeysFor` moved to `core/query.js`.** The
+generator answers the same question to the browser and may not import the query
+client: `client.js` opens with `bun:sqlite` and sierra's build runs in plain
+Node. One owner, two readers (Invariant 4) — a copy in `jsonschema.js` would
+have been a second definition of *what may be sorted*, drifting silently.
+
+`test/queryability.test.ts` is 6 tests and the last one is the point: for every
+column it asserts the emitted key BESIDE what `$checkOrderBy` answers for the
+same column, in both directions. A second copy would pass every other row there
+and fail that one.
+
+Two things it does not do. The snapshot renderer now accounts for both keys in
+`KEYWORDS` rather than leaving them to the catch-all, which names an unknown
+extension and drops its VALUE — and here the value is the whole content. And a
+`@guarded` column is absent from the client audience entirely (`FJS-D205`), so
+there is no property to carry a key.
+
+## A refusal no longer hands over a @guarded column name
+
+4334 tests, 0 fail (+5).
+
+`FJS-D205` keeps `@guarded`/`@secret` out of the client's JSON Schema, so the
+static bundle never carries the name. The validation refusals did. Measured:
+`$setAuth(null)`, on a model gated `@@gate("1.1.5.9")`, read
+`Sortable: createdAt, email, id, notes, ssn` — and was refused a legitimate read
+one line later with `requires level 1, user has level 0`. Two owners, opposite
+answers.
+
+`_shownSet` narrows what a refusal DISCLOSES at four sites: `checkOrderBy`,
+`checkWhereKeys`, and both bridges, since `$checkWhere` is what junction's
+`autoFilter` builds a 400 from. **Both message branches**, because the list is
+the branch nobody hits and `suggestKey` is the branch a real typo takes — `sn`
+suggested `ssn` before this.
+
+**Legality is untouched, deliberately.** `$checkWhere` states that validity is a
+question about the schema and every flavor of client must answer it identically;
+filtering the legal set would let one caller's standing decide another's 400.
+The two bridges run outside any call in progress, where `ctx.isSystem` has
+nothing to answer with, so they narrow for every caller — the safe direction and
+the right one, since a boundary's caller is never the system context.
+
+`test/guarded-disclosure.test.ts` is 5 tests and **3 go red with `_shownSet`
+stubbed to identity**. Every hidden name is asserted beside the same call as
+`asSystem()`, which must still see it: a build that named no column at all would
+satisfy any test that only asked about the refusal.
+
+Two things were left alone on purpose. Naming a guarded column EXACTLY is still
+refused in its own sentence, which already argues the inference channel better
+than a generic *unknown field* would. And validation still runs ahead of the
+gate, so a below-gate caller learns the ordinary column names — that half is
+`FJS-914`, still open and now S3.
+
+## A private corpus fixture lives outside the tree
+
+The corpus's one LOCAL target, `maidtech`, was a hand-converted private schema
+sitting in `test/fixtures/corpus/` under a `.gitignore` line naming it — which is
+a source file the tree hides, and the `hygiene` CI phase fails on exactly that.
+It was right to: a hidden source file is what made 20 files of Sierra's build
+pipeline invisible to a fresh clone, and the `generatedIgnored` allowance could
+not cover this one because every entry there must be GENERATED and this one is
+converted by hand. Silencing it would have put a false statement in the file
+whose entries have to be true.
+
+`read()` now falls back to `$FJS_CORPUS_LOCAL` for a LOCAL name, so the fixture
+lives outside the repository and the target still runs: 17 tests with 1 skip
+when the variable is unset, 18 pass and 32 → 36 assertions when it points at the
+directory. **The override is LOCAL only** — redirecting a committed fixture would
+let a green run grade bytes nobody reviewed, which is the failure this whole file
+exists to catch one layer down. The `.gitignore` line stays as a guard against
+dropping the file back in, and now says where it belongs instead.
+
+## An audit entry says who was REALLY acting
+
+4337 tests, 0 fail (+5).
+
+The logger auto-model gains `subjectId` and `episodeId`, and `actorType` gains
+the value `support`. Inside a support episode the principal in scope IS the
+subject — that is what bounds an operator at the subject's own standing — so
+`ctx.auth.id` answers who a write was made AS and nobody answers who made it.
+Left alone, every impersonated write files under the person it was done to, which
+is the default in the field and what makes a trail useless as evidence.
+
+So `actorId` becomes the OPERATOR where the provenance closure names one, and the
+principal moves to `subjectId` beside it. The direction is decided by which error
+is worse: attributing a support agent's write to the customer is a false
+accusation in the record.
+
+**A trail the app DECLARED keeps only the columns it declared** — the entry is
+written with the rest dropped, no error, `dropped: 0`. So an app that declared its
+own trail model records episodes with the operator missing. Asserted as
+still-broken in `test/support-attribution.test.ts`; the `litestone advise` rule
+that closes it is deliberately not built while every scaffolded app uses the auto
+model.
+
+## An unknown `where` operator is a 400, not a 500
+
+The operator loop in `buildWhere` opens by stating the rule: *"Both refusals
+below are ValidationErrors rather than bare Errors: an operator the column
+cannot answer is a caller error, and junction maps the name to a 400. A 500
+would say the server broke."* Twelve lines below it, the `default` case — an
+operator that does not exist at all — threw a bare `Error`.
+
+So `?status[nope]=1` came back a 500, blaming the server for what the request
+got wrong. Not a modelless-service problem, which is how it was filed: measured
+over HTTP, it was a 500 on a fully modelled service too. `$checkWhere` grades
+the KEY — `?statuz=paid` is a 400 naming the field with a did-you-mean — and
+nothing graded the operator on a valid key. The relation path had the same bare
+throw; `FJS-776` graded the relation key and left both operators.
+
+Both are `ValidationError` now, carrying `path: ['where', field]` so a form
+marks the box. The refusal stays in the compiler, where the operator vocabulary
+lives, which means app code calling `findMany` directly gets the same answer as
+an HTTP caller.
+
+The message names the valid operators. That list is `WHERE_OPS`, which already
+existed for the typed-JSON walk rather than being written out a second time, and
+`test/where-operators.test.ts` asserts it is exactly the cases `buildWhere`
+answers — an operator added to one and not the other fails, instead of producing
+a refusal that quietly omits a real answer.
+
+Left alone, and stated rather than hidden: `TEXT_OP_REFUSALS` covers
+array/json/file/boolean and not numbers, so `contains` on an `Int` still
+substring-matches the number's text.
+
+
+## The query tap counts every statement an include runs
+
+`$tapQuery` fires once per statement — that is the shape of the event, whose
+`sql` field is singular. An `include` is a second statement against a different
+table, and it was reported nowhere.
+
+Measured against real executions rather than against the tap, with the statement
+objects wrapped before the seed ran (a statement is cached after its first
+prepare, so instrumenting later misses everything already compiled): a hundred
+authors with one include reported **one** statement and ran **two**. Nested, or
+two siblings: one against three. Includes are batched — `WHERE fk IN (…)`, never
+N+1 — so the gap is one event per relation level, which is what let it last and
+what made it useless as telemetry.
+
+`fireQuery` runs before `withIncludes`, so the parent's `duration` did not cover
+the include either. The time was reported nowhere at all, not only the count.
+
+Five statement sites inside `resolveIncludes` emit now: `include` for the three
+row-hydration shapes, `include:count` for the two `_count` ones. Each names the
+relation TARGET as its `model` and that model's own `database`, because a
+relation may live in another block. The emit body moved to module scope rather
+than being copied — `resolveIncludes` is not inside the table closure, and a
+second copy of it there is exactly the second origin a tap exists to avoid.
+
+## The declared event vocabulary was missing four operations
+
+Declaring the two new ones found it. `QueryEvent` exists twice — hand-written in
+`index.d.ts` and generated into an app's own types by `typegen.js` — and the
+generated one is a closed union. It omitted `aggregate`, `exists`, `groupBy` and
+`upsert`, every one of which the client had always emitted, so an app switching
+on `event.operation` was handed a type that refuses real events. `index.d.ts`
+separately omitted `rowCount`, which is the field a telemetry consumer most
+needs, and declared `operation` as a bare `string`.
+
+Both corrected. `test/query-tap.test.ts` greps the call sites and fails on a
+value that is emitted and not declared, in either file — the duplication cannot
+be removed (one is a package type, one is generated text) but it can be stopped
+from drifting quietly.
+
+
+## 2026-09-04 — `@guarded` takes no argument (`FJS-827`)
+
+`@guarded(all)` and `@guarded` compiled to two branches with one body, and the
+write half read no level at all. The argument is gone; `@guarded(all)` now
+refuses by name and points at `@omit(all)`, which is the word for a column a
+caller may read by asking for it.
+
+Two readers had implemented the documented distinction and were wrong for it:
+`jsonschema.js` kept a bare `@guarded` column in the client's READ schema and
+`typegen.js` kept it in the client row type, both on the strength of a
+select-unlock the runtime never performed. Each collapses to one branch — the
+client audience never sees a guarded column, in any mode.
+
+54 files swept, 8 of them `.lite`, across auth, basecamp and `example`. Snapshots
+regenerated: `catalog`, `reference`, and both apps' `access`, `release` and
+`jsonschema`. `example`'s `PaymentMethod.providerRef` leaves the client JSON
+Schema, which is the visible half of the fix.
+
+`@omit(lists)` now refuses by naming the bare form — it is what `@omit` already
+means, and a second spelling of one thing is what `@@strict` was deleted for.
+
+## 2026-09-04 — a field's read protection is two axes AND'd (`FJS-D205`)
+
+`applyFieldPolicyTo` decided *may this caller see it* and *is it in the default
+payload* in one `if/else` ladder, first match wins, in an order nothing stated.
+So `both Int? @guarded @omit(all)` parsed with no complaint and came back to
+`asSystem()` in a plain read, with the `@omit` branch unreachable — and
+`@encrypted` swallowed both `@omit` and a field `@allow('read')` the same way.
+
+Now two booleans: **visibility** (`@hashed`, `@encrypted`, `@guarded`, field
+`@allow('read')` — strictest wins, nothing widens) and **inclusion** (`@omit`,
+`@omit(all)` — `select` unlocks this axis and only this one). Strip if either
+says no.
+
+`@guarded` + `@allow` was already refused at parse time, so that arm of the
+ladder was dead by construction rather than by accident; `@guarded(select)` is
+still not implemented and stays open as `FJS-827`, narrowed to deleting the
+argument.
+
+`test/field-policy-compose.test.ts` is new and is the tripwire: every pair
+asserted beside each of its halves alone, because a strip that refused
+everything and a strip that composed look the same from the refused side. Four
+of its eight rows fail against the ladder. No `.lite` in this repo pairs those
+attributes, so nothing here moved.
+
+## 2026-09-04 — `@@strict` is deleted (`FJS-D203`)
+
+Two words for one boolean, and the default was strict either way. Nothing read
+the redundant one: `isStrict()` asks for `noStrict` and returns true otherwise,
+so `@@strict` parsed, was documented, sat in the catalog, the reference and the
+tier lists, and changed no DDL.
+
+Gone from the catalog row, the parser case, the `DOCS` map and four prose
+mentions that named it as a word somebody writes — `migrate.js`'s list of what
+forces a table rebuild, `replicate.js` and `docs/replication.md` on STRICT
+tables, and `docs/migrations.md`. `@@noStrict` is unchanged and is the only way
+to opt out. `@@strict` is refused as an unknown model attribute, the same answer
+every other word the language does not have gets.
+
+**100 words** — 12 declarations · 63 field attributes · 25 model attributes.
+
+## 2026-09-04 — an unused word looks like a used one
+
+The card grid faded a whole box to `.55` when the schema declared none of that
+word, which was the last of the dimming: the name and the description now render
+identically whether or not the schema uses it, and the COUNT is the only thing
+that says so — `badge muted` against `badge info`. Measured: same opacity, same
+title color, same blurb color across all 27 boxes.
+
+**A faded card reads as unavailable rather than unused**, which is backwards in
+a panel whose subject is the words you have not found. Nothing is hidden and
+nothing is `disabled` — that part was already right and stays.
+
+`data-empty` is gone from both the box and the row; the badge carries the fact,
+so the attribute was a hook nothing read. The drive's `empty.dimmedNotHidden`
+became `empty.shownLikeAnyOther` and asserts the opposite of what it did: it
+finds an unused word by its muted badge, then checks the card is NOT faded and
+that its colors match a used one.
+
+## A window over a nullable sort column serves every row
+
+`"col" > NULL` is NULL, which matches nothing — so a cursor minted off a row
+whose sort value is null named a position no comparison could resume from.
+Measured on six rows with three nulls, ordered `[{priority:'asc'},{id:'asc'}]`:
+page 1 answered three rows and `hasMore: true`, page 2 answered **nothing**,
+both with a 200.
+
+Each field contributes an EQUAL and an AFTER predicate now, and both read where
+the nulls sit — SQLite's own positions, measured (first ascending, last
+descending), or whatever `orderBy` stated. Fixed rather than refused: declining
+to page by a nullable column was the cheaper option already in the file, and it
+would have taken the window away from every list ordered by a `priority`, a
+`dueAt` or an `archivedAt`.
+
+Two more hops were dropping the same fact. `findManyCursor` emitted
+`ORDER BY "priority" ASC` where `findMany` emitted `NULLS LAST` for the same
+`orderBy`, so the scan walked one arrangement and the cursor was compared
+against another; and `orderTotal` dropped it on the way back to junction, which
+re-orders the first page with it.
+
+`nullable` is carried on the field because the NULL-aware form costs an `OR`,
+and an `OR` is what stops SQLite using the index a keyset scan exists for — a
+`NOT NULL` column compiles exactly the SQL it always did. The single-field fast
+path is folded into the same loop: it was the comparison written twice, and only
+the multi-field copy would have been fixed. `FJS-780`.
+
+## A cursor is graded against the ordering using it
+
+`?$after=…` is caller-supplied text. `decodeCursor` parsed it and handed the
+result to `buildCursorWhere`, which reads its columns off the server's own
+`orderBy` and looks each one up in the decoded object — so a token that was not
+one this list minted found `undefined` at every key, bound NULL, and answered an
+empty page.
+
+Measured on six rows ordered by `id`: `{"nope":3}`, `{}`, `[3]`, `7` and
+`{"id":{"$gt":0}}` each answered **0 rows with a 200**, `null` answered the
+**whole table** by paging from the start again, and only a malformed token said
+anything — as a bare `Error`, which reaches a caller as a 500.
+
+`decodeCursor(token, fields)` grades against the key set `cursorFields(orderBy)`
+computed for this query, which is the same function `cursorFor` mints with. So
+the expectation is derived, and the case that actually happens is caught for
+free: a client holds an `endCursor`, somebody changes the sort, and the next
+page is asked for under an ordering that did not mint it. It refuses with a
+`ValidationError` on `['$after']`, which junction maps to a 400.
+
+No signature, deliberately, and the reason is in the code: the columns compared
+come from the server's `orderBy` and never from the token — only the values are
+read out of it, each bound against a column the caller can already filter on.
+`FJS-779`.
+
+
+## A filter through a relation is graded
+
+`$checkWhere` stopped at the relation key: `{ customer: { is: { nope: 1 } } }`
+passed, because `customer` is a real relation, and the object under it was never
+looked at. The inner name reached SQL as an identifier and came back as
+`no such column: t.nope` — a 500 quoting the query, where the same typo one level
+up is a 400 with a suggestion.
+
+`collectWhereKeyProblems` descends now, mirroring `walkGuardedWhere`: only a
+relation key and a known mode, because a nested object under an ordinary column
+is a typed-Json path where a name means something else entirely. An unknown
+relation OPERATOR is graded here too, rather than thrown out of the compiler as a
+bare `Error`. A problem carries its `path` and the `model` it was graded against,
+so a boundary can say `customer.is.nope` and name the model whose columns it is
+listing.
+
+An unknown relation in an `include` throws `ValidationError` instead of a bare
+`Error`, for the same reason: it is a caller naming something that is not there,
+which is what `checkWhereKeys` already answers that way. `FJS-776`.
+
+## 2026-09-04 — Explore filters by tier
+
+Three pills beside the Table toggle — Essential 7, Common 49, Situational 45,
+each counted rather than written down. On is a tone and off is the muted one,
+because two states of one control need to differ by more than a border in a row
+full of them.
+
+**One owner for what is on screen.** The filter lives in `exWordList`, so it
+reaches the table, the card grid, the search results and the group detail — and
+`exGroupDetail` stopped drawing its own boxes to get it. A group whose words are
+all filtered out is not offered at all, since clicking through to an empty list
+is worse than the box not being there.
+
+**An untiered word is never filtered out.** It is the state that means somebody
+has to look, so hiding it behind a filter is the one thing it must not do.
+
+Turning all three off says *every tier is filtered out* and hands back a button,
+rather than silently meaning *all* — an empty filter and no filter are different
+statements and read identically if you let them.
+
+## 2026-09-04 — every word says when you meet it
+
+`TIERS` in `src/core/catalog.js` — three hand-kept lists, `essential` (7),
+`common` (49), `situational` (45) — and a **When** column in Explore's table.
+
+**One axis, and it is reach rather than difficulty.** A column holding both
+answers neither: `@@index` is wanted by nearly every app AND needs a query plan
+read correctly, so a *frequency + expertise* scale has nowhere to put it.
+Difficulty is already carried by the blurb, the note and the docs page.
+
+The first pass was anchored on what the tree actually declares — `fli new` and
+`fli scaffold` write `database`, `model`, `@id`, `@default`, `@updatedAt`,
+`@@gate`, which is essential; then a count of every word across `example` and
+`basecamp` (32 in both, 28 in one, 41 in neither). It is an anchor and not an
+oracle: two apps, both written in this house, and `import` reads as unused
+because `parseFile` inlines it before anything can count it.
+
+**The test does not grade the choice — it grades that a choice exists.** A word
+in no tier fails, a word in two fails, a key naming a word that is gone fails,
+and a removed word must be on no ladder at all. Measured by breaking it: drop
+`field:id` from `essential` and two rows go red. That is the half that rots on
+its own, because an untiered word is indistinguishable from a situational one
+everywhere it is read — so the column renders one in `--color-warning` rather
+than blank.
+
+The count badge carries *nobody uses this* and the row no longer does. Dimming a
+BOX is texture; dimming a table row reads as disabled, which is the opposite of
+a panel whose subject is the words you have not reached for.
+
+## 2026-09-04 — `@@softDeleteCascade` is gone rather than deprecated
+
+The word was kept only to be refused by name and point at `@@softDelete(cascade)`
+— a migration path for schemas that do not exist. Nothing here has been
+deployed, so it was a carried cost with no beneficiary: a catalog row, a parser
+case, a page in the reference, a line in the adoption table and a snippet prefix
+the editor still offered.
+
+All of it is deleted. `@@softDeleteCascade` is now an unknown model attribute
+and is refused as one, which is what every other misspelling gets. `101 words`
+again — 12 declarations · 63 field attributes · 26 model attributes.
+
+The `removed` / `replacedBy` mechanism stays: it is six lines across the
+snapshot, the reference, `explain` and Studio, and the two catalog tests that
+grade a removed word now iterate an empty set. It costs nothing to keep and is
+what the next rename will need — but nothing exercises it until then.
+
+## One table object per model, shared across every flavor of client
+
+`$setAuth(user)` could not reuse a table, because the principal differs per
+request — so a request touching five models rebuilt five ~5,900-line closures.
+
+What made it fixable is what the build actually READS. Every reference inside
+`makeTable` to the four keys a flavor decides — `auth`, `isSystem`, `scopedBy`,
+`tables` — is inside a method body; the two at construction depth are comments.
+Everything read while the object is being built is schema-derived and identical
+for every flavor, so the object being rebuilt never depended on the thing that
+forced the rebuild.
+
+The shared ctx is `Object.create(ctx)` — live, because `ctx.tables`,
+`ctx.jsonlTableCache` and a plugin's own keys are all assigned after it exists —
+with those four shadowed by getters over an `AsyncLocalStorage`. A flavor is now
+a store rather than a context, and a flavor's table is ~29 arrows entering that
+store. No method body changed.
+
+Measured on the 188-model fixture:
+
+| | before | after |
+| --- | --- | --- |
+| request touching 5 models | 172 µs | **19 µs** |
+| touching 20 | 628 µs | **32 µs** |
+| scoped client holding 5 models | 117 KB | **4 KB** |
+| fully materialised scoped client | 3.6 MB | **19 KB** |
+
+**A read outside a flavor scope throws** rather than falling back to the
+unscoped root, which would let an escaped read run as nobody and answer `[]`
+with a 200. It is not junction's ENDED marker: a table is reachable only through
+a flavor, so what it catches is a read with no call in its async history.
+
+**Three caches were keyed on the ctx OBJECT because the ctx object used to be
+per flavor** — the gate plugin's level resolver, external-ref's stash, and the
+hoisted field-read answer. Sharing the ctx made all three share one cache across
+principals, the gate one silently: an `isSystemAdmin` reader answered at
+whatever level the process saw first, which is a wrong ANSWER and not an error,
+and it is fourteen tests. All three key on the flavor now.
+
+`onLog` is handed a SNAPSHOT of those keys over the live ctx, because a callback
+that keeps what it was given reads it after the call is over and that is
+precisely what the refusal fires on. `FJS-722`.
+
+## 2026-09-04 — Explore draws its words as cards or as a table
+
+One button in the bar. Cards reach an attribute through its GROUP, because a
+wall of 63 boxes is not a place to start looking; the table skips the grouping
+and draws every word at once — the three levels the language has, then A–Z
+inside each — for the reader who already knows roughly what they want.
+
+Both shapes come out of one `exWordList`, so a set of words cannot be drawn one
+way on the home view and another way in search results, and the synonym note
+(*“aggregate” is this word*) survives into either. The toggle holds across
+navigation.
+
+The table badges a `removed` word the way the card already did: without it the
+table would be the one place a dropped word reads as live. And the
+declarations heading no longer says **nine** — it counts the rows, which is why
+it now says twelve.
+
+## 2026-09-04 — the word you would have used finds the word we chose
+
+The catalog names ONE word per concept and a reader arrives with their own.
+Measured against the search — word, blurb and arity — `sum` found `@from`, while
+`aggregate` and `rollup` found nothing at all: the gap was vocabulary and not the
+language.
+
+`SYNONYMS` in `src/core/catalog.js` is 84 terms over 38 words, and it is the one
+fact here that cannot be derived — it is about readers, not about `.lite` — so it
+is graded instead. Four rules, executed in `test/catalog.test.ts`: a key must
+name a row that exists, a synonym must not BE a word (it would shadow the real
+one), it must belong to one row only, and **the existing search must not already
+find it** — a term the blurb already carries is dead weight that reads as
+coverage. Each guard was checked by breaking it: `sum` added to `@from` fails the
+fourth, `unique` fails the second, a second owner for `aggregate` fails the
+third. What no rule can grade is a synonym pointing at the wrong CONCEPT, which
+is why the list is short and hand-picked.
+
+Three readers, one table. Studio's search matches synonyms and SAYS which one —
+*“aggregate” is this word* — because a silent hit answers the question and
+teaches nothing; `litestone explain aggregate` resolves it exactly rather than
+answering *not a word this language has*; and every word's page in
+`docs/reference.snapshot.md` carries **Also typed**, so the list is reviewable in
+a diff beside the word it claims to be another name for.
+
+Both spellings where they differ. `organisation` is not this repo's spelling
+(`FJS-D192`) and is exactly what somebody types.
+
+## 2026-09-04 — Explore's interview says which axis each question decides
+
+The panel's body had no padding: `#exBody` is a `.data-grid-wrap`, which is the
+scroller shared with the panels that hold a TABLE and wants its own edge. It
+joins `#migPanel`, `#statsScroll` and `.lite-diff` — the rule for a scroller
+holding documents rather than a grid — so Explore is padded like Migrations and
+by the same declaration.
+
+The interview also has a grid of its own. `.ex-grid`'s 13rem column is right
+for a word tile, whose content is a name and a count; a question card holds two
+buttons whose labels are sentences, and at that width the longest was drawn PAST
+the card's own edge — measured at 1408px, 2 of 8 buttons overhung, one by 23px.
+The column minimum is 17rem there and the choices are a column of full-width
+buttons that wrap their text, so the card sets the width rather than the label:
+0 of 8 spill at 1024, 1408 and 1920.
+
+Each interview card carries an eyebrow naming the axis it decides: `Read`,
+`Write`, `Storage`, and `Audience — not part of the row`. Four questions in one
+grid read as one list, and three of them answer a row of the visibility table
+while the fourth multiplies with every row; that was said once above the grid
+and is now said on the card that is the exception.
+
+## 2026-09-04 — a claim is declared in the schema
+
+`FJS-772`. 4256 tests, 0 fail. 5 of them new.
+
+A claim on no row — a cart token, an impersonation — could only be named at
+`createClient({ claims })`. Every tool that opens a schema and not an app reads
+`schema.lite` alone, so `litestone studio`, `litestone tinker` and `fli auth:*`
+answered `Fatal` on a schema its own app runs: the guard was right and had
+nowhere to read the answer from. The name is a fact about the policies that read
+it, so it is declared where they are, as a top-level `claim <name>`.
+
+`createClient({ claims })` is unchanged and is a union with it, for an app
+adding a claim to a schema it does not own. Claims merge across `import` where
+`tenancy` refuses a second block — two files naming one claim have said one
+thing, and it lets a package ship the claim its own shipped policies read.
+
+The reverse direction is the half that can now go quiet: a claim declared and
+read by no policy after a rename. `litestone advise`'s
+`declared-and-unreferenced` reports it; used-and-undeclared stays a startup
+refusal, and both messages name the schema line rather than the option.
+
+## 2026-09-04 — the ladder moved to the substrate
+
+`LEVELS`, `levelPasses` and `FrontierGateGetLevel` are
+`@frontierjs/toolbelt/gate` re-exported under the names this package has always
+published, and the parser's `LEVEL_NAMES` comes off the kit rather than
+mirroring the runtime's copy. Nothing an app imports changed name or value.
+
+**`GatePlugin`'s bare constructor default is deleted.** It was
+`user ? USER : STRANGER` — a second ladder with one rung, which graded an
+`isSystemAdmin` caller USER(4) and disagreed with the shipped grader on 212 of
+216 sessions. The default is the shipped grader now.
+
+`FrontierGateGetLevel`'s behavior is unchanged, including `role` read for
+presence: no role is CREATOR(3). It was Junction's copy that lacked that branch
+(`FJS-520`, ruled `FJS-D197`).
+
+## 2026-09-04 — `@map` names the column, everywhere
+
+`FJS-761`. 4250 tests, 0 fail. 24 of them new.
+
+The attribute parsed, was documented in two places, and was emitted by four of
+the importers. The only consumer of a `map` attribute anywhere was `ddl.js`
+reading the MODEL-level `@@map`, so a schema carrying `fullName
+@map("full_name")` described a table it could not read. It mattered most where
+the attribute is GENERATED: `litestone introspect` emits one per renamed column
+under its default camelCase reading, which made the adoption door produce a
+schema that could not read its own source. `FJS-760` had made that reading grade
+itself `changed`; that gap is retired here rather than reported.
+
+**`fieldToColumnName` is the field-level counterpart of `modelToTableName`**, and
+everything that writes a column identifier goes through it or through the
+per-model map `columnMapFor` derives from it. The map holds only the names that
+DIFFER, so a schema declaring no `@map` allocates nothing and takes no
+translation on any path.
+
+**Two directions, and they fail differently.** A missed identifier on the write
+side is `no such column` and stops — except in a WHERE, where SQLite reads an
+unknown `"ident"` as a STRING LITERAL, so the clause matches nothing and the
+answer is an empty list with no error at all. That silent shape is what the
+`@@allow` compiler, the include join, the soft-delete clause and the atomic
+`increment` each were: `@@allow('read', auth().id == ownerId)` compiled to a
+comparison against the text `'ownerId'` and every read answered `[]`, and
+`{ pages: { increment: 5 } }` evaluated `'pages' + 5` and stored 5. Every row of
+the new suite is therefore a PAIR against the same schema with the `@map`s taken
+off: a mechanism that answered `[]` for both spellings would pass any test that
+only asked the mapped one.
+
+**The read direction is the STATEMENT's**, which is `wideDb`'s ruling reused
+rather than restated: `SELECT *` and `RETURNING *` answer storage keys, and the
+sites that see a row are an enumeration nobody keeps in step — a count, an
+aggregate and an existence probe reach a caller without passing either row
+reader. `mappedDb` wraps what it is given rather than unwrapping, so a model that
+is both wide and mapped keeps both.
+
+Three details are decisions rather than mechanics.
+
+**An index NAME stays on the FIELD.** It is this emitter's own identifier, the
+migrator matches by shape rather than by it, and deriving it from the column
+would rename every index the day a schema adds a `@map`.
+
+**An author-written expression is translated, and only its identifiers.**
+`@@check` and a compiled `@@index(where:)` name fields and are emitted verbatim,
+so they run through `mapIdentifiers` — which is the importer's own function,
+moved here and shared, since it already does this in the other direction. A word
+inside `'…'` is a value and is never rewritten.
+
+**A mapped identifier is emitted BARE where the name allows it**, and the reason
+is the error message rather than the SQL. SQLite reports an unnamed CHECK by its
+own source text, and an expression that OPENS with a quoted identifier comes back
+as that identifier alone — `CHECK ("page_count" >= 0)` arrives as `page_count`.
+`asCheckViolation` finds the declaration that owns the message by matching that
+text, so quoting every mapped column turned every violation on a mapped model
+into the generic sentence. A column whose name is a keyword is still quoted and
+still loses the message, which is what an author who quotes their own column
+already gets.
+
+The migrator needed nothing: *an unchanged mapped schema migrates nothing* holds,
+which is the property a constraint compared by text puts at risk, and it is
+asserted.
+
+**Two things the adoption door stops handing over.** `field-map-unimplemented` is
+retired from the import tiers, so a camelCase reading no longer grades itself
+`changed` or fails `--strict`. And a `CHECK` whose columns the reading renamed is
+now REWRITTEN into field names rather than emitted as a FIXME — the same
+`mapIdentifiers` walk `ddl.js` runs in the other direction, which is what makes
+the round trip exact, with a word the table has no column for left alone as the
+function or keyword it is. `table-check` went with it, which the tier table's own
+completeness guard is what noticed.
+
+
+## 2026-09-04 — the studio names the database it opened, and can be started without a browser
+
+`FJS-763`. `FJS-449`'s class, surviving in one field. `loadConfig` ALWAYS answers
+a `db` — `./development.db` when nothing said otherwise — and a declaration wins
+over it, so an app declaring `database main { path env("DATABASE_URL", …) }` was
+told through `/api/info` that it was on `development.db`, a file that is not on
+disk. The studio really was reading the declared file, so the two disagreed and
+only the field a script would read was wrong; it is not decorative, since
+`txInit()` pre-fills the transform panel's source database from it. Asked of the
+client now, the same source `getDbStats` already trusted.
+
+`--no-open` added beside it: a studio started by a test or a tutorial otherwise
+spawns a browser window on whatever machine is running it, which on a CI runner
+is a process nobody closes.
+
+## 2026-09-04 — a lookup index and a conditional constraint are two names
+
+`FJS-614`. 4231 tests, 0 fail.
+
+An index was named `idx_<table>_<fields>` whatever declared it, so a partial
+`@@unique` and an `@@index` over the same columns derived one name and the
+parser refused the second. The refusal offered two ways out — different column
+lists, or one predicate covering both — and neither exists for that pair: they
+are different KINDS of thing about the same column. *At most one default card
+per customer* is `@@unique([customerId], where: isDefault == true)` and the model
+also wants `@@index([customerId])` for the ordinary read. Dropping the plain
+index is not the answer either, because a partial unique covers only the rows its
+predicate admits — which is exactly why `advise` does not count one as
+foreign-key coverage.
+
+**A partial `@@unique` takes `uniq_<table>_<fields>` now.** The name space splits
+in two and the refusal stays inside each half: two `@@index` over one column list
+still collide, and so do two partial `@@unique`.
+
+The prefix IS the ownership test in `migrate.js` — an index litestone does not
+recognize as its own is one it never drops — so `ownedIndex` reads both.
+
+**A database written before the split carries the index under the old name, and
+that is the class every other test here is blind to by construction**: they all
+build a fresh database, where today's derivation is the only one that has ever
+existed. Left alone, the stale name is not merely untidy — the model's own
+`@@index` over the same columns is then a `CREATE INDEX IF NOT EXISTS` against a
+name already taken, which SQLite answers by doing nothing at all. So a matched
+pair whose NAMES differ is a rename: one DROP, one CREATE, no rebuild.
+
+The name is deliberately not part of `indexKey`. A HAND-MADE index of the same
+shape under another name matches today and is left alone; keying on the name
+would make it foreign and create litestone's beside it, so the database would
+carry two identical indexes and pay for both on every write. `ownedIndex` is what
+separates the two, asked of the LIVE name — the one being dropped. The control
+for that is in the suite beside the rename.
+
+`example` declares the pair now, and the invariant moved out of the service
+transaction that attaches a card into the schema: a second writer racing it is
+refused by the database. The transaction still clears the old default first, and
+now for the opposite reason — creating the new one first is refused where it used
+to pass and leave two.
+
+## 2026-09-04 — introspect keeps the constraints, and names the table
+
+`litestone introspect` carries three things it was dropping in silence, and says
+what it still cannot.
+
+**Uniqueness the table declares.** `email TEXT UNIQUE` and `UNIQUE (a, b)` build
+IMPLICIT indexes, whose `sql` in `sqlite_master` is NULL — so the index walk
+reached neither and both were dropped with nothing in the gap report. `--strict`
+passed over a schema declaring no uniqueness at all, which a later `db push`
+would then enforce by rebuilding the table without it. `PRAGMA index_list` is
+where they are: the same reader the migration differ uses for the same blind
+spot one layer over. A composite naming a nullable column is handed over rather
+than approximated, because the parser refuses that (`FJS-D130`) and a schema
+that will not parse is not an import.
+
+**CHECK**, carried as `@@check` when every identifier in it survives unrenamed,
+and reported as `lost` when not: `@@check` is written in field names and the
+stored text names columns.
+
+**`@@map`, whenever the round trip does not land back on the real table name.**
+The name is derived backwards here and forwards by `ddl.js`, and the two are not
+inverses — `orders` → `Order` → `order` — so every plural-table database (Rails,
+Django, Laravel, most hand-written SQL) produced a schema whose every model
+named a table that is not there, and the first read was `no such table`.
+
+**And one it does not fix.** `@map("col")` parses, is documented, and is applied
+by nothing: the column is named after the FIELD. So the camelCase reading —
+the default — emits an attribute the engine ignores and produces a schema that
+cannot read its own source. It is graded `changed` now, so `--strict` refuses it
+and the reader is told; `--no-camel` is the working path. Filed as `FJS-761`
+(`FJS-760` is the rest of this entry).
+
+Found by writing `fli tutor:adopt` against a database made the way a real one is
+made, rather than against a fixture this repo wrote.
+
+## 2026-09-04 — the index survives its own compaction, asserted
+
+`FJS-572`. 4228 pass. Typecheck clean.
+
+`FJS-D180` removed the unlink from compaction and said why: the sidecar is in
+WAL, a live process holds it open, and an unlink leaves `-wal`/`-shm` behind
+while that process goes on writing into an inode with no directory entry —
+answering ok the whole time, where a rollback journal answers
+`SQLITE_READONLY_DBMOVED`. Nothing pinned it.
+
+Two rows now. The index's **inode** survives a sweep — asserted as the inode
+rather than as *the file exists*, because unlink-then-recreate leaves a file
+there and is exactly the refused state — and the rows read back through it are
+still their own afterwards.
+
+The second took two goes, and the first version was worthless. Planting an aged
+line and then compacting puts the file back to the byte layout the index was
+built over, so every offset is accidentally correct again and it passed with
+`rebuildIndex` stubbed out. The index has to be built over the layout that
+INCLUDES the line about to be removed. Controls 3 / 1.
+
+Measured and not a defect: the sidecar's WAL grows about 380 KB per compaction
+while its main file stays at 4 KB, which looks unbounded and is not — SQLite's
+default auto-checkpoint plateaus it, measured at 4.43 MB over 40 rounds.
+
+## 2026-09-03 — a `@money` default is stated in the currency's minor units
+
+`FJS-745`'s litestone half. 4226 tests, 0 fail.
+
+A fractional `@default` on a scaled column is refused with the value rewritten
+in minor units, and for `@money` that rewrite was `raw * 100` whatever the
+currency was. The yen's minor unit is the yen and the dinar has three, so
+`@money(JPY) @default(1.5)` was answered *write it as `@default(150)`* — advice
+wrong by a hundred, in the one place a schema author is being told the right
+answer. It now reads the exponent through `minorUnits`, and a bare `@money`
+keeps the two-place reading because the app's own currency is not knowable at
+parse.
+
+Safe to do only now: `minorUnits` used to come off the host's ICU tables, which
+answer differently under node and under bun for fourteen currencies, so the
+suggestion would have depended on which runtime parsed the schema.
+
+`@money(<code>)` is also refused against ISO 4217 rather than against whatever
+the runtime carries, so the message says *not an ISO 4217 currency*, and
+`@money(ZWG)` — a live currency bun's ICU does not know — parses everywhere.
+
+## 2026-09-03 — a baseline file keeps its imports
+
+`litestone release --from <path>` and `litestone access --from <path>` resolve a
+baseline file's `import` lines against **its own directory first**, then against
+the schema's, and say when they borrowed.
+
+A baseline is a copy of the schema at another moment, so its imports mean the
+files that schema imports — but a relative specifier resolves against whatever
+directory the copy was put in. Kept anywhere but beside the schema it lost every
+imported model in silence, and the comparison then reported an imported
+package's models as newly added: measured on a scaffolded app, three fabricated
+contract findings against `@frontierjs/auth`, in the one command whose whole job
+is to classify a difference (`FJS-757`).
+
+Its own directory is still asked first, and that is not politeness: a baseline
+that brought its neighbours with it means those, and reading today's files into
+yesterday's release turns a contract into *unchanged*.
+
+**The note was already being computed and never printed.** `loadBaselineSchema`
+built one for every unreadable import and only the `no baseline` path showed it,
+so a baseline that resolved to less than it should have said nothing at all. Both
+commands print it now.
+
+Three cases in `cli-smoke.test.ts`, sound only as a set — the borrow (asserted on
+the verdict, since the failure is a model that never moved reported as an
+expand), the baseline that brought its own, one column wider than today's, and
+the import missing from both places. Stubbed, 2 of 3 fail.
+
+
 ## 2026-09-03 — `resolveFrom: 'schema'` was inert whenever the schema came in as a path
 
 `FJS-758`. 4222 pass, typecheck clean.

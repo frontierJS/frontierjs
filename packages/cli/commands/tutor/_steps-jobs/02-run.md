@@ -5,10 +5,9 @@ description: Start the API — no browser in this lesson
 
 ## The API alone
 
-Only the API is started. Every client in this lesson is a socket opened against
-it directly, so there is no page in between — and no page is the point: what is
-being asserted is which connections a broadcast reaches, and a browser can only
-ever be one of them, signed in.
+Only the API is started. Nothing in this lesson is on a screen: what is being
+asserted is that a response came back before the work was done, and the row a
+separate process wrote afterwards. A browser could show neither.
 
 ```js
 if (!await narrate(context)) return

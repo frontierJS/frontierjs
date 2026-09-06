@@ -76,4 +76,4 @@ export type {
 } from './types.ts'
 
 // Exported as values (classes, not just types)
-export { ConduitStreamError, CredentialError } from './types.ts'
+export { ConduitStreamError, CredentialError, CONDUIT_ERROR_KINDS } from './types.ts'

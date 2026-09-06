@@ -139,7 +139,7 @@ export interface AccessPolicy {
 
 export interface AccessField {
   name:       string
-  /** `@secret` | `@encrypted` | `@guarded(all)` | `@guarded`, or null. */
+  /** `@secret` | `@encrypted` | `@guarded` | `@guarded`, or null. */
   protection: string | null
   allows:     Array<{ operations: string[], expr: string }>
 }

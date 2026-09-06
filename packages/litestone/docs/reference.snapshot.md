@@ -17,13 +17,13 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Studio's Explore panel, which also places a word into your schema and shows you
 the diff first.
 
-**101 words** — 11 declarations · 63 field attributes · 27 model attributes.
+**100 words** — 12 declarations · 63 field attributes · 25 model attributes.
 
 ## Index
 
 **Declarations**
 
-- *Declare* — [`import`](#import-declaration) · [`database`](#database-declaration) · [`tenancy`](#tenancy-declaration) · [`model`](#model-declaration) · [`view`](#view-declaration) · [`enum`](#enum-declaration) · [`valueset`](#valueset-declaration) · [`function`](#function-declaration) · [`trait`](#trait-declaration) · [`extend`](#extend-declaration) · [`type`](#type-declaration)
+- *Declare* — [`import`](#import-declaration) · [`database`](#database-declaration) · [`tenancy`](#tenancy-declaration) · [`claim`](#claim-declaration) · [`model`](#model-declaration) · [`view`](#view-declaration) · [`enum`](#enum-declaration) · [`valueset`](#valueset-declaration) · [`function`](#function-declaration) · [`trait`](#trait-declaration) · [`extend`](#extend-declaration) · [`type`](#type-declaration)
 
 **Field attributes**
 
@@ -40,7 +40,7 @@ the diff first.
 **Model attributes**
 
 - *Identify a row* — [`@@id`](#id-model)
-- *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@check`](#check-model) · [`@@arc`](#arc-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@strict`](#strict-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@softDelete`](#softdelete-model) · [`@@softDeleteCascade`](#softdeletecascade-model) · [`@@hasTemplates`](#hastemplates-model)
+- *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@check`](#check-model) · [`@@arc`](#arc-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model)
 - *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
 - *Wire it to the app* — [`@@auth`](#auth-model) · [`@@log`](#log-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
 
@@ -88,8 +88,22 @@ tenancy {
 ```
 
 - **`strategy`** — `database` · `row`
+- **Also typed** — `multi-tenant` · `saas`
 - **Deeper** — [multi-tenancy.md](multi-tenancy.md)
 - **See also** — [`@@tenant`](#tenant-model)
+
+### `claim` `<name>` <a id="claim-declaration"></a>
+
+A claim the principal carries that is on no row. `@@auth <Model>` already names every claim that IS a column; this names the rest — a cart token, a device id — so `auth().<name>` is graded rather than compiling to NULL. Names only: the app resolves the value per request. A tool that has the schema and not the app (studio, tinker) reads this and nothing else.
+
+```lite
+claim cartToken
+```
+
+- **Note** — Declared and never used in a policy is reported by `litestone advise`; used and never declared is a parse-time refusal.
+- **Also typed** — `token claim`
+- **Deeper** — [access-control.md](access-control.md)
+- **See also** — [`@@auth`](#auth-model) · [`@allow`](#allow-field)
 
 ### `model` `<PascalCaseSingular> { … }` <a id="model-declaration"></a>
 
@@ -145,6 +159,7 @@ valueset TaskTag {
 }
 ```
 
+- **Also typed** — `lookup table` · `shared enum`
 - **See also** — [`@values`](#values-field) · [`@@scope`](#scope-model)
 
 ### `function` `<name>(p: Type, …): Type { @@expr("…") }` <a id="function-declaration"></a>
@@ -289,6 +304,7 @@ model Example {
 }
 ```
 
+- **Also typed** — `autoincrement` · `serial` · `nextval`
 - **Deeper** — [sequences.md](sequences.md)
 
 ### Reach another row
@@ -309,6 +325,7 @@ model Example {
 
 - **Legal** — on a model's field · on a trait's field
 - **`onDelete`** — `Cascade` · `SetNull` · `Restrict` · `NoAction`
+- **Also typed** — `fk` · `has many` · `belongs to`
 - **Deeper** — [relations.md](relations.md)
 
 #### `@from` `(<Model>, last|first|count|sum|max|min|exists: … [, where][, orderBy][, via][, withDeleted][, withTemplates])` <a id="from-field"></a>
@@ -331,6 +348,7 @@ model Example {
 - **Legal** — on a model's field · on a trait's field
 - **`operation`** — `last` · `first` · `count` · `exists`
 - **Note** — Reads back down a declared relation, so the target model must carry one to here.
+- **Also typed** — `aggregate` · `rollup` · `roll-up` · `denormalized`
 - **Deeper** — [relations.md](relations.md)
 - **See also** — [`@computed`](#computed-field) · [`@derived`](#derived-field)
 
@@ -380,7 +398,8 @@ model Example {
 }
 ```
 
-- **Deeper** — [modelling.md](modelling.md)
+- **Also typed** — `virtual`
+- **Deeper** — [modeling.md](modeling.md)
 - **See also** — [`@transient`](#transient-field) · [`@derived`](#derived-field) · [`@from`](#from-field)
 
 #### `@transient` <a id="transient-field"></a>
@@ -394,7 +413,8 @@ model Example {
 }
 ```
 
-- **Deeper** — [modelling.md](modelling.md)
+- **Also typed** — `input only` · `write only` · `not stored`
+- **Deeper** — [modeling.md](modeling.md)
 - **See also** — [`@computed`](#computed-field) · [`@system`](#system-field) · [`@guarded`](#guarded-field)
 
 #### `@derived` `(<expression>)` <a id="derived-field"></a>
@@ -410,7 +430,8 @@ model Example {
 }
 ```
 
-- **Deeper** — [modelling.md](modelling.md)
+- **Also typed** — `calculated` · `formula`
+- **Deeper** — [modeling.md](modeling.md)
 - **See also** — [`@generated`](#generated-field) · [`@computed`](#computed-field)
 
 #### `@generated` `("sql expr" | `{a} {b}` template [, stored])` <a id="generated-field"></a>
@@ -427,6 +448,7 @@ model Example {
 ```
 
 - **Legal** — on a model's field · on a trait's field
+- **Also typed** — `stored column`
 - **Deeper** — [schema.md](schema.md)
 - **See also** — [`function`](#function-declaration) · [`@derived`](#derived-field)
 
@@ -441,6 +463,7 @@ model Example {
 }
 ```
 
+- **Also typed** — `cascade` · `purge`
 - **Deeper** — [soft-delete.md](soft-delete.md)
 - **See also** — [`@keepVersions`](#keepversions-field) · [`@@softDelete`](#softdelete-model) · [`@keep`](#keep-field)
 
@@ -463,6 +486,7 @@ model Example {
 }
 ```
 
+- **Also typed** — `on delete` · `restrict`
 - **Deeper** — [soft-delete.md](soft-delete.md)
 - **See also** — [`@@softDelete`](#softdelete-model) · [`@hardDelete`](#harddelete-field)
 
@@ -480,17 +504,18 @@ model Example {
 ```
 
 - **`level`** — `all`
+- **Also typed** — `hide` · `exclude` · `private`
 - **Deeper** — [schema.md](schema.md)
 - **See also** — [`@guarded`](#guarded-field) · [`@system`](#system-field)
 
-#### `@guarded` `[(all)]` <a id="guarded-field"></a>
+#### `@guarded` <a id="guarded-field"></a>
 
-A system-context lock, BOTH directions: absent from reads and refused on writes outside asSystem(), by name. Not a level — @guarded(5) does not parse. A required @guarded column makes the model uncreatable below level 8. It is not exclusive with @encrypted — @secret expands into exactly that pair — but writing both by hand is @secret spelled out.
+A system-context lock, BOTH directions: absent from reads and refused on writes outside asSystem(), by name. Takes no argument — not a level (@guarded(5) does not parse) and not a scope (@guarded(all) was accepted for a while and did nothing). An explicit select does not unlock it; @omit(all) is the word for a column a caller may read by naming it, and the two stack. A required @guarded column makes the model uncreatable below level 8. It is not exclusive with @encrypted — @secret expands into exactly that pair — but writing both by hand is @secret spelled out.
 
 ```lite
 model Example {
   id Int @id
-  internalScore Int @guarded(all)
+  internalScore Int @guarded
 }
 ```
 
@@ -509,7 +534,8 @@ model Example {
 }
 ```
 
-- **Deeper** — [modelling.md](modelling.md)
+- **Also typed** — `server-assigned`
+- **Deeper** — [modeling.md](modeling.md)
 - **See also** — [`@guarded`](#guarded-field) · [`@transient`](#transient-field) · [`@immutable`](#immutable-field)
 
 #### `@immutable` <a id="immutable-field"></a>
@@ -523,7 +549,8 @@ model Example {
 }
 ```
 
-- **Deeper** — [modelling.md](modelling.md)
+- **Also typed** — `write-once` · `append-only`
+- **Deeper** — [modeling.md](modeling.md)
 - **See also** — [`@system`](#system-field) · [`@guarded`](#guarded-field) · [`@version`](#version-field)
 
 #### `@sealed` <a id="sealed-field"></a>
@@ -550,7 +577,7 @@ model Example {
 }
 ```
 
-- **Deeper** — [modelling.md](modelling.md)
+- **Deeper** — [modeling.md](modeling.md)
 - **See also** — [`@@transitions`](#transitions-model) · [`@immutable`](#immutable-field) · [`@keep`](#keep-field)
 
 #### `@capability` <a id="capability-field"></a>
@@ -565,6 +592,7 @@ model Example {
 }
 ```
 
+- **Also typed** — `feature flag` · `entitlement`
 - **Deeper** — [access-control.md](access-control.md)
 - **See also** — [`@@capabilities`](#capabilities-model) · [`@guarded`](#guarded-field) · [`@allow`](#allow-field)
 
@@ -580,6 +608,7 @@ model Example {
 ```
 
 - **Legal** — on a model's field · on a trait's field
+- **Also typed** — `pii` · `at-rest`
 - **Deeper** — [encryption.md](encryption.md)
 - **See also** — [`@secret`](#secret-field) · [`@hashed`](#hashed-field) · [`@guarded`](#guarded-field)
 
@@ -594,12 +623,13 @@ model Example {
 }
 ```
 
+- **Also typed** — `password` · `bcrypt` · `argon`
 - **Deeper** — [encryption.md](encryption.md)
 - **See also** — [`@encrypted`](#encrypted-field) · [`@secret`](#secret-field)
 
 #### `@secret` `[(rotate: …)]` <a id="secret-field"></a>
 
-Expands at parse into @encrypted @guarded(all) @log(&lt;logger db&gt;). `deterministic: true` stores the same value as the same bytes, so it can be looked up by equality and still rotated — an API key is both.
+Expands at parse into @encrypted @guarded @log(&lt;logger db&gt;). `deterministic: true` stores the same value as the same bytes, so it can be looked up by equality and still rotated — an API key is both.
 
 ```lite
 model Example {
@@ -623,6 +653,7 @@ model Example {
 }
 ```
 
+- **Also typed** — `invariant`
 - **Deeper** — [schema.md](schema.md)
 
 ### Record who and when
@@ -681,6 +712,7 @@ model Example {
 ```
 
 - **Legal** — on a model's field · on a trait's field
+- **Also typed** — `etag`
 - **Deeper** — [schema.md](schema.md)
 - **See also** — [`@keepVersions`](#keepversions-field)
 
@@ -714,6 +746,7 @@ model Example {
 }
 ```
 
+- **Also typed** — `audit` · `history` · `trail`
 - **Deeper** — [audit-logging.md](audit-logging.md)
 - **See also** — [`@@log`](#log-model) · [`database`](#database-declaration)
 
@@ -769,6 +802,7 @@ model Example {
 }
 ```
 
+- **Also typed** — `permalink` · `handle`
 - **Deeper** — [schema.md](schema.md)
 - **See also** — [`function`](#function-declaration)
 
@@ -798,6 +832,7 @@ model Example {
 
 - **Legal** — on a model's field · on a trait's field
 - **`strength`** — `required` · `open` · `suggested`
+- **Also typed** — `dropdown` · `options` · `picklist`
 - **See also** — [`valueset`](#valueset-declaration) · [`@relation`](#relation-field)
 
 #### `@label` `("Human name")` <a id="label-field"></a>
@@ -826,6 +861,7 @@ model Example {
 }
 ```
 
+- **Also typed** — `not null` · `notnull` · `mandatory`
 - **Deeper** — [schema.md](schema.md)
 
 #### `@email` `[(message)]` <a id="email-field"></a>
@@ -878,6 +914,7 @@ model Example {
 }
 ```
 
+- **Also typed** — `rich text` · `wysiwyg`
 - **Deeper** — [schema.md](schema.md)
 
 #### `@accept` `("image/*")` <a id="accept-field"></a>
@@ -891,6 +928,7 @@ model Example {
 }
 ```
 
+- **Also typed** — `mime` · `file type` · `upload`
 - **Deeper** — [file-storage.md](file-storage.md)
 
 #### `@date` `[(message)]` <a id="date-field"></a>
@@ -956,6 +994,7 @@ model Example {
 }
 ```
 
+- **Also typed** — `maxlength`
 - **Deeper** — [schema.md](schema.md)
 
 #### `@startsWith` `("text"[, message])` <a id="startswith-field"></a>
@@ -1136,12 +1175,13 @@ model Example {
 ```
 
 - **Legal** — on a model's field · on a trait's field
+- **Also typed** — `precision`
 - **Deeper** — [exact-numbers.md](exact-numbers.md)
 - **See also** — [`@money`](#money-field)
 
 #### `@money` `[(<CURRENCY>)] | [(field: <column>)]` <a id="money-field"></a>
 
-An amount, stored as a whole number of minor units. The scale is DERIVED from the currency and is not the author's to pick — JPY has none, USD has two, KWD has three — and the ISO table is read off Intl rather than shipped, so a code this runtime does not know is refused at parse rather than silently taking two places. `field:` names a sibling String column holding the code per row, for a shop that takes more than one currency. Bare @money is the app's default currency. Formatting is formatMoney in @frontierjs/toolbelt/units; rounding and splitting a bill are the application's, not the schema's.
+An amount, stored as a whole number of minor units. The scale is DERIVED from the currency and is not the author's to pick — JPY has none, USD has two, KWD has three — and the ISO 4217 table is shipped by @frontierjs/toolbelt rather than read off the host, because Intl answers how an amount is DISPLAYED and node and bun disagree about fourteen currencies including the dinar, so a code ISO does not carry is refused at parse rather than silently taking two places. `field:` names a sibling String column holding the code per row, for a shop that takes more than one currency. Bare @money is the app's default currency. Formatting is formatMoney in @frontierjs/toolbelt/units; rounding and splitting a bill are the application's, not the schema's.
 
 ```lite
 model Example {
@@ -1151,6 +1191,7 @@ model Example {
 ```
 
 - **Legal** — on a model's field · on a trait's field
+- **Also typed** — `price` · `cents`
 - **Deeper** — [exact-numbers.md](exact-numbers.md)
 - **See also** — [`@scale`](#scale-field)
 
@@ -1208,6 +1249,7 @@ model Example {
 }
 ```
 
+- **Also typed** — `performance` · `speed up` · `query plan`
 - **Deeper** — [performance.md](performance.md)
 
 #### `@@unique` `([field, …][, nullsDistinct: true | where: <expr>])` <a id="unique-model"></a>
@@ -1286,6 +1328,7 @@ model Example {
 ```
 
 - **Parses as** — `labelField`
+- **Also typed** — `display name` · `human name`
 - **Deeper** — [jsonschema.md](jsonschema.md)
 - **See also** — [`@label`](#label-field)
 
@@ -1300,20 +1343,8 @@ model Example {
 }
 ```
 
+- **Also typed** — `legacy table` · `existing table`
 - **Deeper** — [multi-database.md](multi-database.md)
-
-#### `@@strict` <a id="strict-model"></a>
-
-Legacy explicit opt-in to STRICT tables. Strict is the default now.
-
-```lite
-model Example {
-  id Int @id
-  @@strict
-}
-```
-
-- **Deeper** — [schema.md](schema.md)
 
 #### `@@noStrict` <a id="nostrict-model"></a>
 
@@ -1357,23 +1388,9 @@ model Example {
 ```
 
 - **`mode`** — `cascade`
+- **Also typed** — `archive` · `trash` · `recycle`
 - **Deeper** — [soft-delete.md](soft-delete.md)
 - **See also** — [`@unique`](#unique-field) · [`@hardDelete`](#harddelete-field)
-
-#### `@@softDeleteCascade` <a id="softdeletecascade-model"></a>
-
-> **Removed.** Use `softDelete`. The parser keeps the word only to refuse it by name.
-
-Removed. The parser keeps the word only to refuse it by name and say the replacement — @@softDelete(cascade).
-
-```lite
-model Example {
-  id Int @id
-  @@softDeleteCascade
-}
-```
-
-- **See also** — [`@@softDelete`](#softdelete-model)
 
 #### `@@hasTemplates` `[(<field>)]` <a id="hastemplates-model"></a>
 
@@ -1416,6 +1433,7 @@ model Example {
 }
 ```
 
+- **Also typed** — `permission` · `rbac` · `role` · `authorization`
 - **Deeper** — [access-control.md](access-control.md)
 - **See also** — [`@allow`](#allow-field) · [`@@deny`](#deny-model)
 
@@ -1431,6 +1449,7 @@ model Example {
 }
 ```
 
+- **Also typed** — `rls` · `row level security`
 - **Deeper** — [access-control.md](access-control.md)
 - **See also** — [`@@deny`](#deny-model) · [`@@gate`](#gate-model) · [`@@scope`](#scope-model)
 
@@ -1480,6 +1499,7 @@ model Example {
 ```
 
 - **`mode`** — `none`
+- **Also typed** — `workspace` · `organization` · `organisation`
 - **Deeper** — [multi-tenancy.md](multi-tenancy.md)
 - **See also** — [`tenancy`](#tenancy-declaration) · [`@@deny`](#deny-model)
 
@@ -1500,6 +1520,7 @@ model Example {
 }
 ```
 
+- **Also typed** — `workflow` · `status`
 - **Deeper** — [schema.md](schema.md)
 - **See also** — [`@@gate`](#gate-model)
 
@@ -1573,6 +1594,7 @@ model Example {
 }
 ```
 
+- **Also typed** — `mixin` · `shared fields`
 - **Deeper** — [traits.md](traits.md)
 - **See also** — [`trait`](#trait-declaration)
 
@@ -1690,4 +1712,4 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 
 ### `declared-and-unreferenced` — a declaration nothing references
 
-*info*. An enum, type, trait, function or valueset nothing names. Usually a rename that left the old declaration behind, but a type may legitimately exist for an API payload the seed never stores, which is reported as external rather than as a finding.
+*info*. An enum, type, trait, function, valueset or claim nothing names. Usually a rename that left the old declaration behind, but a type may legitimately exist for an API payload the seed never stores, which is reported as external rather than as a finding.

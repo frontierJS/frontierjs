@@ -61,7 +61,7 @@ person's credential.
 
 **Auth's schema anticipated the storage.** `Credential` carries `type`, `value`,
 `accessToken`, `refreshToken`, `tokenExpiresAt` and `scope`, at `@@gate("8")` with
-both tokens `@secret` — which is `@encrypted @guarded(all)`, so nothing outside
+both tokens `@secret` — which is `@encrypted @guarded`, so nothing outside
 `asSystem()` reads them and they are encrypted at rest
 (`packages/auth/db/auth.lite`). `type` is `'password'` and `'apiKey'` today; the
 `@@index([type, value])` is already the lookup an OAuth provider account id wants.

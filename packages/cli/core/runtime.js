@@ -276,14 +276,21 @@ export async function Command({ file, arg, flag, emit }) {
   // `describe` is what --dry prints when the command itself is not the
   // interesting part. A deploy step runs `ssh host sh -s` and pipes the real
   // script to it, so printing the command shows every step as the same line.
-  config.exec = ({ command, dry, describe, ...opts }) => {
+  config.exec = ({ command, dry, describe, allowFailure, ...opts }) => {
     if (dry ?? config.flag.dry) {
       const msg = describe ?? command
       return emit ? emit({ type: 'log', level: 'dry', text: msg }) : logger(msg, 'dry')
     }
+    refuseUnknownExecOptions(opts)
     try {
       return execSync(command, { stdio: 'inherit', ...opts })
     } catch (err) {
+      // A non-zero exit that the caller is asking about rather than being
+      // stopped by — a probe. The thrown error IS the answer: `status` is the
+      // exit code and `stdout`/`stderr` are what the child wrote, so a caller
+      // reads the same two places on both paths. A signal still stops
+      // everything, because Ctrl+C is not a probe result.
+      if (allowFailure && err.signal !== 'SIGINT' && err.signal !== 'SIGTERM') return err
       if (err.signal === 'SIGINT' || err.signal === 'SIGTERM') {
         const code = err.signal === 'SIGINT' ? 130 : 143
         const note = err.signal === 'SIGINT' ? 'aborted (Ctrl+C)' : 'terminated'
@@ -908,6 +915,36 @@ const defaultFlags = {
     description: 'Show full stack traces on errors instead of clean messages'
   }
 }
+
+// The options `execSync` understands, plus nothing. An unrecognized key used
+// to be spread through and silently ignored, and `capture: true` is what that
+// cost: four auth commands asked for the child's output, got `null` from a
+// default `stdio: 'inherit'`, parsed `''`, and printed *Failed — check
+// output above* directly beneath the output they were meant to read
+// (`FJS-537`). The data was on screen and the command said it had failed.
+//
+// Refusing by name rather than forwarding, the way `createClient` refuses an
+// unknown option (`FJS-579`) — a typo in an options bag is a statement the
+// author just made, and forwarding it makes the mistake indistinguishable
+// from the default. A Node release that adds an option adds it here.
+export const EXEC_OPTIONS = new Set([
+  'cwd', 'input', 'stdio', 'env', 'shell', 'uid', 'gid',
+  'timeout', 'killSignal', 'maxBuffer', 'encoding', 'windowsHide',
+])
+
+export function refuseUnknownExecOptions(opts) {
+  const unknown = Object.keys(opts).filter(k => !EXEC_OPTIONS.has(k))
+  if (unknown.length === 0) return
+  const hint = unknown.includes('capture')
+    ? ` To read the child's output, ask for a pipe: stdio: ['ignore', 'pipe', 'inherit'].`
+    : ''
+  throw new Error(
+    `context.exec does not take ${unknown.map(k => `\`${k}\``).join(', ')}. ` +
+    `It takes command, dry and describe, plus what execSync understands ` +
+    `(${[...EXEC_OPTIONS].join(', ')}).${hint}`
+  )
+}
+
 
 export function getConfig(metadata, rawArg, flag) {
   // Deep-clone metadata so repeated calls (registry lookups, help display)

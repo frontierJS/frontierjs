@@ -153,6 +153,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `expiresAt` | `string` | yes | — | `format: "date-time"` | — |
 | `ipAddress` | `string`? | — | — | — | — |
 | `userAgent` | `string`? | — | — | — | — |
+| `impersonatingUserId` | `string`? | — | — | — | — |
+| `impersonationReason` | `string`? | — | — | — | — |
+| `impersonationEndsAt` | `string`? | — | — | `format: "date-time"` | — |
 
 **On create**: required — `userId`, `expiresAt` · not accepted — `id`
 
@@ -192,12 +195,13 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `job` | `string` | yes | — | — | — |
-| `payload` | `json` | yes | — | — | — |
+| `payload` | `json` | yes | — | `x-sortable: "json"` | — |
 | `actorId` | `string`? | — | — | — | — |
 | `claimedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `deliveredAt` | `string`? | — | — | `format: "date-time"` | — |
 | `attempts` | `integer` = `0` | — | — | — | — |
 | `lastError` | `string`? | — | — | — | — |
+| `nextAttemptAt` | `string`? | — | — | `format: "date-time"` | — |
 
 **On create**: required — `job`, `payload` · not accepted — `id`
 
@@ -269,7 +273,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `integer` | — | — | — | — |
 | `productId` | `integer` | yes | Product | — | — |
 | `variantId` | `integer`? | — | Variant | — | — |
-| `file` | `FileRef` | yes | — | `x-litestone-accept` | — |
+| `file` | `FileRef` | yes | — | `x-sortable: "file"` `x-litestone-accept` | — |
 | `alt` | `string` | yes | Alt text | `minLength: 1` `maxLength: 160` | `required` |
 | `position` | `integer` = `0` | — | — | — | — |
 
@@ -294,8 +298,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `notes` | `string`? | — | — | `x-litestone-read-policy` | — |
 | `userId` | `string`? | — | — | `x-litestone-kind` | — |
 | `orderCount` | `integer` | — | — | `x-litestone-from` `x-litestone-kind` | — |
-| `fields` | `json` = `{}` | — | — | — | — |
-| `slots` | `json` = `{}` | — | — | `x-litestone-kind` | — |
+| `fields` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
+| `slots` | `json` = `{}` | — | — | `x-sortable: "json"` `x-litestone-kind` | — |
 | `t1` | `string`? | — | — | `x-litestone-kind` | — |
 | `t2` | `string`? | — | — | `x-litestone-kind` | — |
 | `t3` | `string`? | — | — | `x-litestone-kind` | — |
@@ -339,7 +343,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `kind` | `DiscountKind` = `"percent"` | — | Kind | — | — |
 | `value` | `integer` | yes | Value | `minimum: 0` `x-scale` | — |
 | `minSubtotal` | `integer` = `0` | — | Minimum spend | `minimum: 0` `x-money` | — |
-| `audience` | `json`? | — | Audience | — | — |
+| `audience` | `json`? | — | Audience | `x-sortable: "json"` | — |
 | `startsAt` | `string`? | — | Starts | `format: "date-time"` | — |
 | `endsAt` | `string`? | — | Ends | `format: "date-time"` | — |
 | `maxRedemptions` | `integer`? | — | Redemption limit | `minimum: 1` | — |
@@ -427,7 +431,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `quantity` | `integer` | yes | — | `minimum: 1` `maximum: 99` | — |
 | `unitPrice` | `integer` | yes | Unit price | `minimum: 0` `x-money` | — |
 | `lineTotal` | `integer` | yes | Total | `minimum: 0` `x-money` | — |
-| `userId` | `string`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `orderId`, `variantId`, `sku`, `description`, `quantity`, `unitPrice`, `lineTotal` · not accepted — `id`
 
@@ -441,7 +444,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
 | `customerId` | `integer` | yes | — | — | — |
-| `providerRef` | `string` | yes | — | `minLength: 3` `maxLength: 64` | — |
 | `brand` | `string` | yes | Brand | `minLength: 1` `maxLength: 20` | — |
 | `last4` | `string` | yes | Last four | `minLength: 4` `maxLength: 4` | — |
 | `expMonth` | `integer` | yes | Expiry month | `minimum: 1` `maximum: 12` | — |
@@ -449,7 +451,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `isDefault` | `boolean` = `false` | — | Default | `x-litestone-kind` | — |
 | `userId` | `string`? | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `customerId`, `brand`, `last4`, `expMonth`, `expYear` · not accepted — `id`, `providerRef`
+**On create**: required — `customerId`, `brand`, `last4`, `expMonth`, `expYear` · not accepted — `id`
 
 ### `Payment`
 
@@ -624,15 +626,12 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
-| `token` | `string` | — | — | — | — |
 | `userId` | `string`? | — | — | — | — |
 | `status` | `CartStatus` = `"open"` | — | — | — | — |
 | `discountId` | `integer`? | — | Discount | `x-litestone-kind` | — |
 | `shippingMethodId` | `integer`? | — | Shipping | `x-litestone-kind` | — |
-| `handoffCode` | `string`? | — | — | — | — |
-| `handoffExpires` | `string`? | — | — | `format: "date-time"` | — |
 
-**On create**: required — nothing · not accepted — `id`, `token`, `handoffCode`, `handoffExpires`
+**On create**: required — nothing · not accepted — `id`
 
 ### `CartLine`
 
@@ -845,7 +844,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `integer` | — | — | — | — |
 | `userId` | `string` | yes | — | — | — |
 | `type` | `string` | yes | — | — | — |
-| `data` | `json` | yes | — | — | — |
+| `data` | `json` | yes | — | `x-sortable: "json"` | — |
 | `contextType` | `NotificationContext`? | — | — | — | — |
 | `contextId` | `integer`? | — | — | — | — |
 | `readAt` | `string`? | — | — | `format: "date-time"` | — |

@@ -119,6 +119,46 @@ describe('junction.call.start + junction.call.end lifecycle', () => {
     expect(end.error?.code).toBe(500)
   })
 
+  // An AROUND hook wraps runCore, and runCore is where hooks.ts assigns
+  // ctx.error — so a refusal thrown from one never reaches that assignment.
+  // gateAuth is an around hook, which made every auth refusal an app makes
+  // arrive at the devtools console as `status: 'ok'`. Paired with the call
+  // that is allowed through the same service, because a fix that reported
+  // everything as an error would look identical from the refused side.
+  it('an around hook that refuses is status=error, and the call it allows is not', async () => {
+    const { emitter, captured } = mockTelemetry()
+
+    const svc = createService({
+      name: 'items',
+      find:   async () => [],
+      create: async () => ({ id: 1 }),
+    })
+    svc.hooks({
+      around: {
+        create: [async (ctx, next) => {
+          void ctx
+          void next
+          throw Object.assign(new Error('Authentication required'), { code: 401, name: 'Unauthorized' })
+        }],
+      },
+    })
+
+    await callService(svc, bridge.internal('items', 'find', null), undefined, undefined, emitter)
+    await expect(
+      callService(svc, bridge.internal('items', 'create', { title: 'x' }), undefined, undefined, emitter),
+    ).rejects.toThrow()
+
+    const ends = captured.filter(e => e.name === 'junction.call.end').map(e => e.data as TelemetryEvent)
+    const allowed = ends.find(e => e.method === 'find')!
+    const refused = ends.find(e => e.method === 'create')!
+
+    expect(allowed.status).toBe('ok')
+    expect(allowed.error).toBeUndefined()
+    expect(refused.status).toBe('error')
+    expect(refused.error?.code).toBe(401)
+    expect(refused.error?.message).toBe('Authentication required')
+  })
+
   it('end event includes authenticated userId', async () => {
     const { emitter, captured } = mockTelemetry()
 

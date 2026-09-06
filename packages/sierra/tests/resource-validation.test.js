@@ -524,6 +524,8 @@ describe('toFieldErrors — a thrown value becomes a form\'s error map', () => {
     expect(toFieldErrors(err)).toEqual({
       fields: { name: 'Name is required', email: 'Email must be a valid email address' },
       message: '',
+      // A client-side refusal never reached the server, so nothing was written.
+      committed: false,
     })
   })
 
@@ -542,6 +544,7 @@ describe('toFieldErrors — a thrown value becomes a form\'s error map', () => {
     expect(toFieldErrors(err)).toEqual({
       fields: { email: 'Email must be a valid email address' },
       message: '',
+      committed: false,
     })
   })
 
@@ -554,14 +557,14 @@ describe('toFieldErrors — a thrown value becomes a form\'s error map', () => {
 
   test('a failure with no field information becomes a form-level message', () => {
     const err = Object.assign(new Error('Service Unavailable'), { code: 503 })
-    expect(toFieldErrors(err)).toEqual({ fields: {}, message: 'Service Unavailable' })
+    expect(toFieldErrors(err)).toEqual({ fields: {}, message: 'Service Unavailable', committed: false })
   })
 
   test("the validator's whole-payload failure is form-level, not a field called _", () => {
     const err = Object.assign(new Error('bad'), {
       data: { data: [{ field: '_', message: 'Expected an object' }] },
     })
-    expect(toFieldErrors(err)).toEqual({ fields: {}, message: 'Expected an object' })
+    expect(toFieldErrors(err)).toEqual({ fields: {}, message: 'Expected an object', committed: false })
   })
 
   test('first message per field wins — one control, one line', () => {
@@ -581,10 +584,10 @@ describe('toFieldErrors — a thrown value becomes a form\'s error map', () => {
   })
 
   test('survives a thrown non-Error', () => {
-    expect(toFieldErrors('boom')).toEqual({ fields: {}, message: 'boom' })
+    expect(toFieldErrors('boom')).toEqual({ fields: {}, message: 'boom', committed: false })
     // A thrown null has no message to relay, so it gets a true generic one
     // rather than the string "null" under the submit button.
-    expect(toFieldErrors(null)).toEqual({ fields: {}, message: 'Request failed' })
+    expect(toFieldErrors(null)).toEqual({ fields: {}, message: 'Request failed', committed: false })
   })
 
   test('resource.fieldErrors is the same function, reachable from the record', async () => {

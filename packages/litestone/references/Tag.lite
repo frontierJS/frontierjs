@@ -89,7 +89,7 @@
 ///
 /// ─── What is deliberately NOT here ────────────────────────────────────────
 ///
-/// **No `count`.** A denormalised total goes stale on every attach and detach
+/// **No `count`.** A denormalized total goes stale on every attach and detach
 /// and there is no trigger to keep it. `@from(TagAttachment, count: true)` is a
 /// correlated subquery and is always right.
 ///

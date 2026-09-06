@@ -53,8 +53,7 @@ export const SCHEMA_FILE = join(HERE, '../../../db/schema.lite')
 // createClient rejects it with "must be 32 bytes (got 1)".
 export const DEV_KEY = 'deadbeef'.repeat(8)
 
-// Exported for the same reason `APP_CLAIMS` is: a drive building its own client
-// off this schema gets `@frontierjs/auth`'s `@encrypted` columns with it, so it
+// Exported because a drive building its own client off this schema gets `@frontierjs/auth`'s `@encrypted` columns with it, so it
 // needs the key the app is using rather than one of its own.
 export const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ?? DEV_KEY
 
@@ -104,21 +103,6 @@ export const STORAGE_BASE = process.env.STORAGE_BASE ?? `http://localhost:${proc
 //
 // The CLI reads the file and gets the same two paths. That is the point: one
 // answer, whoever is asking.
-/**
- * The claims this app's principal carries that no schema can name.
- *
- * `cartToken` is a capability a caller with NO SESSION holds, resolved per
- * request off a declared header — on no row and in no schema, so it is the one
- * claim `@@auth User` cannot answer for. Declared, `auth().cartToken` is graded
- * like any column; undeclared, a misspelling of it denies every basket read and
- * admits every basket write (`FJS-666`).
- *
- * Exported because a drive that builds its own client off this schema has to
- * state the same list, and two copies of it is how one of them goes stale. The
- * same names are what `api/principal.snapshot.md` § Claims records.
- */
-export const APP_CLAIMS = ['cartToken']
-
 const registry = await createTenantRegistry({
   // No `schema:`. Handed the path alone, litestone reads it with `parseFile`,
   // which resolves the imports — which is the whole of what makes the committed
@@ -137,8 +121,6 @@ const registry = await createTenantRegistry({
     // read from the app root.
     path:        SCHEMA_FILE,
     resolveFrom: 'schema',
-
-    claims: APP_CLAIMS,
 
     plugins: [
       new GatePlugin({ getLevel: shopGateLevel }),

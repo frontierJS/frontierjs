@@ -65,10 +65,12 @@ them off a diff.
 - **`FJS-D117` and `FJS-D118` are unruled routing questions** — whether a
   co-located route part carries its folder in its name, and whether a page can
   state where *back* goes.
-- **`FJS-632` is a live flake** (with `example`): a second `record()` on one
-  screen never resolves about one run in three, and two fixes moved the rate by
-  nothing. It predates the `domain/` split and is measured rather than reasoned
-  about.
+- **`FJS-632` is closed and `record()` was not the cause.** The second read
+  arrived 25 ms after the first; what was wrong was a screen rendering *the two
+  prices agree* while it was still asking what the second one was. Worth knowing
+  because the shape recurs: two independent `record()` views compared against
+  each other need a drawn UNDECIDED state, or the comparison's two answers are
+  one branch.
 
 ## Picking it up next
 
@@ -80,9 +82,9 @@ them off a diff.
 3. **`FJS-553`/`FJS-554` are the pair that unblocks the open question.** They are
    one shape: a fact the Data boundary already answers and that the client cannot
    ask for. Doing them together is what makes a generated table decidable.
-4. **`FJS-632` needs a measurement, not a fix.** Two candidate causes have been
-   ruled out by running them; the next step is instrumenting the record view's
-   own subscribe path rather than trying a third shape.
+4. **`FJS-553`/`FJS-554`'s neighbour is `FJS-628`, now closed** — the seal
+   reaches a form through `resource.sealedFields`, which is the same shape those
+   two want: a fact the Data boundary answers, asked through the resource.
 
 ## Unconfirmed
 

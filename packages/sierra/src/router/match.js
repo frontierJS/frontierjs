@@ -37,10 +37,9 @@ export function matchRoute(pathname, tree, options = {}) {
 }
 
 // ─── Pattern segment cache ───────────────────────────────────────────────────
-// Route patterns are static for the life of the tree, so their split form and
-// the lowercase of each static segment can be computed once. Keyed by node so
-// nothing is written onto the tree itself (the route table is serialized, and
-// tests build trees by hand).
+// Route patterns are static for the life of the tree, so their split form can
+// be computed once. Keyed by node so nothing is written onto the tree itself
+// (the route table is serialized, and tests build trees by hand).
 const _segCache = new WeakMap()
 
 function segmentsFor(node) {
@@ -48,7 +47,7 @@ function segmentsFor(node) {
   if (segs) return segs
   segs = splitPath(node.path).map((part) => {
     if (part.startsWith(':')) return { dynamic: true, name: part.slice(1) }
-    return { dynamic: false, lower: part.toLowerCase() }
+    return { dynamic: false, value: part }
   })
   _segCache.set(node, segs)
   return segs
@@ -144,8 +143,21 @@ function matchPattern(node, pathParts, inheritedParams) {
 
     if (seg.dynamic) {
       if (params === null) params = { ...inheritedParams }
-      params[seg.name] = decodeURIComponent(uPart)
-    } else if (seg.lower !== uPart.toLowerCase()) {
+      // Defined, not assigned. `params.__proto__ = value` on an ordinary object
+      // is a call to Object.prototype's setter, so a route file legally named
+      // `[__proto__].mesa` matched and then handed back a param that could never
+      // be read (`FJS-821` (g)). Every other name behaves identically either
+      // way — an own data property is what an assignment would have produced.
+      Object.defineProperty(params, seg.name, {
+        value: safeDecode(uPart), writable: true, enumerable: true, configurable: true,
+      })
+    } else if (seg.value !== uPart) {
+      // Case-SENSITIVE, per `FJS-D210`. This compared lowercased for a long
+      // time, and it was the only one of four readers of *which route is this*
+      // that did: `isActive`, the prefetch cache key, `page.path` and the
+      // filename a static build writes to disk are all case-sensitive. So
+      // `/ADMIN/` rendered the admin page in the SPA, reported itself as not
+      // active, cached under its own key, and 404'd on a static host.
       return null   // static segment mismatch
     }
   }
@@ -154,6 +166,23 @@ function matchPattern(node, pathParts, inheritedParams) {
 
   if (plen === ulen) return { exact: true, params }
   return { prefix: true, params }
+}
+
+/**
+ * Decode a path segment, or hand back what was there.
+ *
+ * `decodeURIComponent('%')` throws URIError, and it threw out of matchRoute,
+ * out of _navigate and out of the boot navigation — so a pasted `/blog/100%`
+ * left `page.route` null, RouterView's `{#if page.route}` never opened, and the
+ * only evidence was one unhandled rejection. A segment that will not decode is
+ * still a legal param value, and a 404 is a better answer than a blank page.
+ */
+function safeDecode(part) {
+  try {
+    return decodeURIComponent(part)
+  } catch {
+    return part
+  }
 }
 
 /**
@@ -240,4 +269,47 @@ export function buildUrl(path, params = {}, trailingSlash = 'always') {
  */
 export function parseQueryParams(search) {
   return parseQueryString(search)
+}
+
+/**
+ * Would this path have matched but for its case?
+ *
+ * The other half of `FJS-D210`. Matching is case-sensitive because the three
+ * readers beside it are, and a static build's filenames are — but a case-only
+ * miss is the single most likely reason a path that plainly exists does not
+ * resolve, and a bare 404 says nothing about it. So the miss is NAMED rather
+ * than merely refused, which is § IV's standing answer where a deliberate
+ * difference collides with muscle memory.
+ *
+ * Answers the path that WOULD have matched, or null. Called only when nothing
+ * matched exactly, so it costs a walk on a route that was going to 404 anyway.
+ *
+ * @param {string} pathname   already normalized
+ * @param {object} tree
+ * @returns {string|null}
+ */
+export function caseInsensitiveNearMiss(pathname, tree) {
+  if (!tree) return null
+  const want = splitPath(pathname).map(p => p.toLowerCase())
+
+  let found = null
+  ;(function walk(node) {
+    if (found || !node) return
+    // A spread route matches anything, so it is never a near miss — it is what
+    // the path already resolved to.
+    if (!node.meta?.spread) {
+      const segs = segmentsFor(node)
+      if (segs.length === want.length) {
+        const hit = segs.every((seg, i) => (
+          seg.dynamic || seg.value.toLowerCase() === want[i]
+        ))
+        // Only a CASE difference is a near miss. An exact match would not have
+        // reached this function, so any hit here differs by case alone.
+        if (hit) { found = node.path; return }
+      }
+    }
+    node.children?.forEach(walk)
+  })(tree)
+
+  return found
 }

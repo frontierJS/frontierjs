@@ -369,12 +369,12 @@ describe('package-model-drift', () => {
   const withModel = (body) => ({ ...CLEAN, ...KIT, 'db/schema.lite': SCHEMA + '\n' + body })
 
   test('a column declared differently from the package is a warning naming both', () => {
-    // The measured case: `@secret` becomes `@guarded(all)` in the copy, so the
+    // The measured case: `@secret` becomes `@guarded` in the copy, so the
     // column stops being encrypted and the package goes on writing to it.
     const root = tree('pmd-drift', withModel([
       'model Token {',
       '  id      String  @id @default(uuid())',
-      '  secret  String  @guarded(all)',
+      '  secret  String  @guarded',
       '  label   String?',
       '}',
     ].join('\n')))
@@ -383,7 +383,7 @@ describe('package-model-drift', () => {
     expect(findings).toHaveLength(1)
     expect(findings[0].severity).toBe('warn')
     expect(findings[0].message).toContain('@secret')       // what the package says
-    expect(findings[0].message).toContain('@guarded(all)') // what this says
+    expect(findings[0].message).toContain('@guarded') // what this says
     expect(findings[0].message).toContain('@acme/kit')
   })
 
@@ -456,6 +456,52 @@ describe('package-model-drift', () => {
     // because there is no second declaration to disagree with the first.
     const root = tree('pmd-imported', { ...CLEAN, ...KIT })
     expect(only(root, 'package-model-drift').findings).toEqual([])
+  })
+
+  // Two rules pulling against each other, reconciled here. `polymorphic-subject`
+  // asks an app to constrain exactly this kind of column, and a package cannot
+  // ship the constraint because it cannot know the app's set — so an app that
+  // takes the advice must not be reported for having taken it.
+  describe('a bare scalar tightened into a declared set', () => {
+    const LOOSE = {
+      ...DEP({
+        'package.json': JSON.stringify({ name: '@acme/kit', exports: { './schema.lite': './db/kit.lite' } }),
+        'db/kit.lite': [
+          'model Event {',
+          '  id           String  @id @default(uuid())',
+          '  subjectType  String?',
+          '}',
+        ].join('\n'),
+      }),
+      'package.json': JSON.stringify({ name: 'app', dependencies: { '@acme/kit': '*' } }),
+    }
+    const app = (name, line) => tree(`pmd-narrow-${name}`, {
+      ...CLEAN, ...LOOSE,
+      'db/schema.lite': SCHEMA +
+        '\nenum Subject { Order Invoice }\n\nmodel Event {\n  id           String  @id @default(uuid())\n' +
+        line + '\n}\n',
+    })
+
+    test('an enum in place of the package’s String is not drift', () => {
+      expect(only(app('enum', '  subjectType  Subject?'), 'package-model-drift').findings).toEqual([])
+    })
+
+    test('but dropping the ? is, because it refuses a write the package makes', () => {
+      const { findings } = only(app('required', '  subjectType  Subject'), 'package-model-drift')
+      expect(findings).toHaveLength(1)
+      expect(findings[0].message).toContain('subjectType')
+    })
+
+    test('and a different scalar is a change rather than a narrowing', () => {
+      expect(only(app('scalar', '  subjectType  Int?'), 'package-model-drift').findings).toHaveLength(1)
+    })
+
+    test('an attribute the package declares still has to survive the narrowing', () => {
+      // The narrowing is about the TYPE alone. Everything after it is compared
+      // as before, or an attribute could be dropped by spelling the type as an
+      // enum.
+      expect(only(app('attr', '  subjectType  Subject? @default("Order")'), 'package-model-drift').findings).toHaveLength(1)
+    })
   })
 
   test('a dependency that ships no .lite is skipped by name', () => {
@@ -1677,6 +1723,52 @@ model Comment {
   id          Int    @id
   workspaceId Int
   subjectType String
+}
+`))
+    expect(only(root, 'polymorphic-subject').findings).toEqual([])
+  })
+
+  // The spelling the population this rule is FOR actually uses. A schema read
+  // out of somebody's existing database keeps the database's names — `litestone
+  // introspect --no-camel`, a Rails `subject_type`/`subject_id` — and matching
+  // camelCase alone reported every one of those as having no pair at all.
+  test('a snake_case pair is the same pair', () => {
+    const root = tree('ps-snake', withModel(`
+model ActivityLog {
+  id           Int    @id
+  workspaceId  Int
+  subject_type String
+  subject_id   Int
+}
+`))
+    const { findings } = only(root, 'polymorphic-subject')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/ActivityLog\.subject_type names what subject_id points at/)
+  })
+
+  test('and @@check answers it in that spelling too', () => {
+    const root = tree('ps-snake-check', withModel(`
+model ActivityLog {
+  id           Int    @id
+  workspaceId  Int
+  subject_type String
+  subject_id   Int
+  @@check("subject_type IN ('Account', 'Lead')")
+}
+`))
+    expect(only(root, 'polymorphic-subject').findings).toEqual([])
+  })
+
+  // The control that keeps the two spellings apart: a snake_case discriminator
+  // whose id is spelled the OTHER way is not a pair, and reporting it would be
+  // the fix over-reaching rather than working.
+  test('a snake_case type with a camelCase id beside it is not a pair', () => {
+    const root = tree('ps-mixed', withModel(`
+model ActivityLog {
+  id           Int    @id
+  workspaceId  Int
+  subject_type String
+  subjectId    Int
 }
 `))
     expect(only(root, 'polymorphic-subject').findings).toEqual([])

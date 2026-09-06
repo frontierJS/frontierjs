@@ -74,7 +74,7 @@ test('meta: assertions fail when they should', function () {
   assert.throws(function () { assert.differentColor('#fff', '#fff'); }, 'differentColor accepted a match');
 });
 
-test('meta: toRGB normalises every color syntax to sRGB', function () {
+test('meta: toRGB normalizes every color syntax to sRGB', function () {
   assert.equal(toRGB('#ff0000').slice(0, 3).join(','), '255,0,0', 'hex');
   assert.equal(toRGB('rgb(255, 0, 0)').slice(0, 3).join(','), '255,0,0', 'rgb()');
   assert.equal(toRGB('red').slice(0, 3).join(','), '255,0,0', 'named');

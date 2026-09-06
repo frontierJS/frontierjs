@@ -226,8 +226,11 @@ describe('what the app advertises comes from the same table', () => {
     expect(fromManifest).toContain('reboot')
     expect(fromManifest).not.toContain('prune')
 
-    const oaPaths = Object.keys(oa.paths).join(' ')
-    expect(oaPaths).toContain('reboot')
-    expect(oaPaths).not.toContain('prune')
+    // In the `X-Service-Method` enum now, not in a path of its own — the path
+    // form answered 404. The whole document is searched, so an undeclared
+    // method appearing anywhere at all fails.
+    const doc = JSON.stringify(oa)
+    expect(doc).toContain('reboot')
+    expect(doc).not.toContain('prune')
   })
 })

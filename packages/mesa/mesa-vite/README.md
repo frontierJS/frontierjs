@@ -45,7 +45,8 @@ It is imported lazily, so putting the plugin in a config file does not pull
 ~290 KB of compiler into a process that may never transform anything.
 
 `options.compilerPath` still wins, for testing against a compiler build that is
-not the installed one:
+not the installed one — and the answer is memoised per PLUGIN INSTANCE, so two
+`mesa()` calls in one config each keep the compiler they asked for:
 
 ```js
 mesa({
@@ -147,10 +148,11 @@ component trees.
 
 ### Vite version compatibility
 
-The plugin uses `handleHotUpdate` (the stable hook). Vite 8's
-`server.hot ?? server.ws` shape is handled for the error overlay. The
-`hotUpdate` environments-API hook (Vite 8) is not used — `handleHotUpdate`
-remains the working path.
+The plugin uses `handleHotUpdate` (the stable hook), and it only
+invalidates: a broken file is reported by `transform` raising, so the hook
+touches neither `server.hot` nor `server.ws`. The `hotUpdate`
+environments-API hook (Vite 8) is not used — `handleHotUpdate` remains the
+working path.
 
 ## Mesa DevTools
 
@@ -195,7 +197,9 @@ export default {
 
 `mesaDevtools()` is a no-op for transform/CSS/HMR — those still come from
 whichever plugin handles `.mesa` files. Use it strictly when those
-server-lifecycle hooks aren't reaching Vite from the primary plugin.
+server-lifecycle hooks aren't reaching Vite from the primary plugin. It is
+dev-only: in a build it injects no script and claims no id, since the client's
+`src` is a virtual id nothing emits as an asset.
 
 ## Error overlay
 
@@ -203,6 +207,13 @@ Compile errors surface in Vite's browser overlay with the file path,
 message, and (for parse errors) the relevant source context. Compile
 warnings appear as terminal warnings during the dev session and as
 comments in the compiled output.
+
+Dev and build alike, the transform RAISES: the module request is answered
+500, which is the only thing the dev client will put in an overlay. A module
+body that throws does not work and cannot — every importer writes
+`import X from './X.mesa'`, so the ES linker rejects it for a missing
+`default` before a line of it runs, and the developer is told their own
+import is wrong.
 
 ## Mounting components
 

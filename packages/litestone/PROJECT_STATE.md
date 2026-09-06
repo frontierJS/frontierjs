@@ -43,7 +43,7 @@ A long sequence of work across multiple sessions, organized roughly chronologica
 
 ### Phase 2 — Test fixtures flipped to PascalCase
 
-All high-priority describe blocks flipped to PascalCase fixtures: `@@allow/@@deny`, `@allow field-level`, `policyDebug`, `GatePlugin`, `FrontierGateGetLevel`, `@sequence`, `computed inline`, `soft delete cascade`, `@hardDelete`, `relation orderBy`, `relation aggregate orderBy`, `@from`, `@@softDelete footgun`, `@omit/@guarded`, `@guarded(all)+WHERE`, `@encrypted`, `@secret`, `generateGateMatrix`, `generateFactory`/`autoFactories`, plus the foundational migration/CRUD/transaction/metadata blocks.
+All high-priority describe blocks flipped to PascalCase fixtures: `@@allow/@@deny`, `@allow field-level`, `policyDebug`, `GatePlugin`, `FrontierGateGetLevel`, `@sequence`, `computed inline`, `soft delete cascade`, `@hardDelete`, `relation orderBy`, `relation aggregate orderBy`, `@from`, `@@softDelete footgun`, `@omit/@guarded`, `@guarded+WHERE`, `@encrypted`, `@secret`, `generateGateMatrix`, `generateFactory`/`autoFactories`, plus the foundational migration/CRUD/transaction/metadata blocks.
 
 This pass caught and fixed two more source bugs that lowercase-plural fixtures hid (plugin invocation sites + `buildRelationMap` keying).
 

@@ -124,15 +124,35 @@ attribute, which is what that file exists to make visible.
 
 - Boxes for the nine declarations, then one per attribute group, each carrying
   how many of its words this schema uses
-- **A word with nothing behind it is dimmed, never hidden.** Its card still
-  opens — blurb, argument form, a worked example — because a gray box is the
-  only way somebody finds a feature they have not heard of
+- **Cards or a table**, one button in the bar. Cards reach an attribute through
+  its group, because 63 boxes is not a place to start looking; the table skips
+  the grouping and draws every word at once — by level, then A–Z — for the
+  reader who knows roughly what they want and would rather scan than click. The
+  toggle holds across navigation and applies to search results too
+- **Three pills filter by when you meet a word** — Essential, Common,
+  Situational, each carrying how many words it holds. They compose with the
+  search and with either shape, a group whose words are all filtered out stops
+  being offered rather than opening onto nothing, and turning all three off says
+  so and hands back a way in. A word nobody has tiered yet is never filtered
+  out: that state means somebody has to look at it
+- **A word with nothing behind it reads exactly like one in use.** Only the
+  count says otherwise, and its card still opens — blurb, argument form, a
+  worked example — because an unused word is the only way somebody finds a
+  feature they have not heard of. Nothing is hidden and nothing is `disabled`:
+  a faded card reads as unavailable rather than unused
 - Clicking a declaration gives a card per instance: a model's gate, columns,
   relations, row policies and protected fields; an enum's values; a database's
   driver and path. Models Litestone generated for a logger database are listed
   and badged `generated`, and are left out of every count
 - Search reaches both halves at once — the language, and what this schema
   declares
+- **It also matches the word you would have used.** Typing `aggregate` or
+  `rollup` finds `@from`, `workflow` finds `@@transitions`, `password` finds
+  `@hashed` — and the box says *“aggregate” is this word*, because a silent hit
+  answers the question and teaches nothing. The list is `SYNONYMS` in
+  `src/core/catalog.js`, one owner per term, and `litestone explain aggregate`
+  reads the same table; every word's own synonyms are on its page in
+  `docs/reference.snapshot.md` under **Also typed**
 - **Add to…** asks where it goes, then does the surgery: a model attribute
   before the chosen model's closing brace, a field attribute onto the column you
   picked, or the whole example line as a new field. A blind append would write a
@@ -310,7 +330,7 @@ migration runs, which is the truth rather than a stale read.
 
 The raw `CREATE INDEX` is still shown for a database you cannot redeploy, but the
 schema is the better route: **a migration only drops what litestone named**
-(`idx_<table>_<cols>`), so an index created by hand under another name survives
+(`idx_<table>_<cols>` and `uniq_<table>_<cols>`), so an index created by hand under another name survives
 every later migration.
 
 **Why index a foreign key at all**, measured on 50k rows:

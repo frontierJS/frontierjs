@@ -11,6 +11,7 @@ import { glow } from '@frontierjs/toolbelt/glow'
 | Subpath | Kit | State |
 | --- | --- | --- |
 | `/glow` | source code → highlighted HTML | shipping |
+| `/cron` | what a five-field cron expression admits | shipping |
 | `/inflect` | English singular ⇄ plural | shipping |
 | `/directives` | the `$` convention — filters vs directives | shipping |
 | `/history` | the key naming one occurrence of change | shipping |
@@ -73,6 +74,28 @@ inverses rather than approximately so.
 **It is not validation and not schema coercion.** It answers *what did the caller
 type*, with no model in the room. Where a model exists it has the last word:
 `id String` filtered by `?id=5` reads 5 here and Litestone converts it back.
+
+## `cron` — what a five-field expression admits
+
+```js
+import { parseCron, cronMatches } from '@frontierjs/toolbelt/cron'
+
+const fields = parseCron('0 9-17/2 * * mon-fri')   // → Sets, one per field
+cronMatches(fields, { minutes: 0, hours: 11, date: 4, month: 3, day: 3 })  // true
+```
+
+`parseCron` answers the set of values each field admits and throws on anything
+it cannot mean, naming the field and the bound — `0 25 * * *` is *hour value is
+25, outside 0-23* rather than a schedule that registers and matches no minute
+for the life of the process. `0 9 31 2 *` is refused the same way: every field
+is in range and no month it admits is long enough.
+
+`cronMatches` takes clock parts rather than a `Date`, with month 1-12 and day
+0-6. **Which clock, and when to look, is the caller's** — Caravan reads a named
+zone and walks a wall clock across daylight boundaries, junction's in-process
+scheduler reads the host clock, and neither is a fact about the grammar.
+
+Sunday is 0 and 7. A term may combine a list, a range and a step (`0,2-4,9-15/3`).
 
 ## `units` — a magnitude with a unit
 

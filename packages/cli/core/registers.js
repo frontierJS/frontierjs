@@ -40,7 +40,7 @@ export const REGISTERS_VERSION = 1
 //
 // A register field is only worth typing if a value outside the set is an error
 // rather than a shrug. These are the sets; `register:check` is what enforces
-// them. Anything unrecognised is kept verbatim and reported, never coerced —
+// them. Anything unrecognized is kept verbatim and reported, never coerced —
 // silently mapping an unknown status onto a known one is how a register starts
 // lying.
 
@@ -49,6 +49,20 @@ export const REGISTERS_VERSION = 1
 // been struck through.
 export const ISSUE_STATUS = ['open', 'stale?', 'contested', 'ruled', 'needs a ruling', 'closed']
 export const SEVERITY     = ['S1', 'S2', 'S3', 'S4']
+
+// What a RULING may say about itself, and it is a short list because being in
+// `DECISIONS.md` is already the statement that it was decided. Stamping 180 of
+// 182 headings `accepted` would restate the file's own name once per ruling and
+// leave the exception — the ruling that has since stopped being true — reading
+// exactly like the rule (`FJS-D196`).
+//
+// `superseded-by` a later ruling replaced it wholesale · `amended-by` a later
+// ruling changed part of it and the rest still governs · `withdrawn` it was
+// taken back and nothing replaced it. **Absence means in force**, which is the
+// state of nearly every row and is why it is the one that costs nothing to
+// write. `proposed` is not here: an undecided question lives in `ISSUES.md`
+// § Needs a decision, so it has no referent in this file.
+export const RULING_STATUS = ['superseded-by', 'amended-by', 'withdrawn']
 
 // The lifecycle a proposal is on, plus the two shapes that are on no lifecycle.
 // `PHILOSOPHY.md` §VII is the rule and this is what enforces it.
@@ -78,6 +92,11 @@ export const IDEA_STATUS = [
  * Every register, read off `root`. Missing files are absent rather than fatal —
  * a consuming app has no `IDEAS/`, and a reader that invents one is worse than
  * a reader that reports none.
+ *
+ * `sources` is which of them were actually there, and it is the half a caller
+ * cannot derive from the counts: an empty register and a register that is not
+ * at this root produce the same three empty lists, so a reader that only counts
+ * records reports a clean sheet for a wrong directory.
  */
 export function readRegisters(root) {
   const issues    = readIssues(root)
@@ -87,11 +106,70 @@ export function readRegisters(root) {
   return {
     version: REGISTERS_VERSION,
     root,
+    sources: registerSources(root),
     issues,
     decisions,
     ideas,
     ids: indexById([...issues, ...decisions, ...ideas]),
+    unparsed: unparsedRecords(root, [...issues, ...decisions]),
   }
+}
+
+/**
+ * Every line that has a record's SHAPE and produced no record.
+ *
+ * `sources` separates *this root keeps no register* from *this register is
+ * empty*; this separates *empty* from *unreadable*. The reader is keyed to one
+ * id prefix, so a register written under another one parses to nothing and
+ * every rule below then passes over a file none of them could see — `0 open ·
+ * ✓ every register agrees with itself` over a table of live defects. Counted
+ * rather than parsed, because minting a record out of a line the reader
+ * rejected is guessing at the thing the report exists to name.
+ *
+ * `IDEAS/` is not scanned: it is file-per-record and reads its id out of
+ * frontmatter, so it carries no prefix to be keyed to.
+ */
+export function unparsedRecords(root, records) {
+  const parsed = new Set(records.map(r => `${r.file}:${r.line}`))
+  const out    = []
+
+  const scan = (name, shape) => {
+    const file = join(root, name)
+    if (!existsSync(file)) return
+
+    const rel = relative(root, file)
+    let fence = false
+    let lineNo = 0
+
+    for (const line of readFileSync(file, 'utf8').split('\n')) {
+      lineNo++
+      // Same rule as every reader here: a register documents its own format,
+      // and the example in the fence is a record in every way but being one.
+      if (/^\s*```/.test(line)) { fence = !fence; continue }
+      if (fence) continue
+      if (!shape.test(line)) continue
+      if (parsed.has(`${rel}:${lineNo}`)) continue
+      out.push({ file: rel, line: lineNo, text: line.trim().slice(0, 120) })
+    }
+  }
+
+  scan('ISSUES.md',         ISSUE_ROW_SHAPE)
+  scan('ISSUES_ARCHIVE.md', ISSUE_ROW_SHAPE)
+  scan('DECISIONS.md',      HEADING_SHAPE)
+
+  return out
+}
+
+/**
+ * The register files this root actually holds, in the order they are read.
+ * Asked of the tree rather than inferred from what parsed, because a register
+ * that exists and holds nothing is a project at the start and a register that
+ * is absent is a caller in the wrong place.
+ */
+export const REGISTER_FILES = Object.freeze(['ISSUES.md', 'ISSUES_ARCHIVE.md', 'DECISIONS.md', 'IDEAS'])
+
+export function registerSources(root) {
+  return REGISTER_FILES.filter(name => existsSync(join(root, name)))
 }
 
 /**
@@ -128,6 +206,39 @@ function indexById(records) {
   return { byId, duplicates }
 }
 
+/**
+ * A ruling's declared status, read off the line under its heading.
+ *
+ * `**Status:** superseded-by [`FJS-D111`](#fjs-d111)`, and nothing further down
+ * counts: a register is read by scanning headings, so a retirement announced in
+ * paragraph nine is one the reader has already walked past — which is how five
+ * of these came to be marked in prose alone and cited as live anyway. Scanned
+ * over the first few lines rather than the first, since a heading is usually
+ * followed by a blank one.
+ *
+ * An unrecognized word is KEPT and reported by `register:check`, never coerced:
+ * mapping it onto a known one silently is how a register starts lying.
+ */
+function declaredStatus(bodyLines) {
+  for (const line of bodyLines.slice(0, 4)) {
+    const m = line.match(/^\s*\*\*Status:\*\*\s*(\S+)(.*)$/)
+    if (!m) continue
+    const rest = m[2] ?? ''
+    return {
+      status:      m[1].replace(/[.,:]$/, ''),
+      // What replaced it, where the status names something. A RULING usually,
+      // and an issue where a shipped fix moved a ruling's premise without anyone
+      // writing a new one — `FJS-690` narrowed what `FJS-D74` ruled and closed
+      // with no ruling id, and forcing one into existence for every such fix is
+      // ceremony. What the reader needs is a citation they can follow, and both
+      // are that. Graded as a citation like any other, so a status pointing at
+      // an id no register holds is `unknown-ref`.
+      supersededBy: (rest.match(/FJS-D?\d+/) ?? [null])[0],
+    }
+  }
+  return {}
+}
+
 /** Where a record is, for a message somebody has to act on. */
 function place(r) {
   return { file: r.file, line: r.line ?? null }
@@ -146,6 +257,13 @@ function place(r) {
 // at the first closed row.
 
 const ISSUE_ROW = /^\|\s*(<a\s[^>]*>\s*<\/a>\s*)?`?FJS-/
+
+// The same row with the PREFIX taken out of it. Nothing is read off this — it
+// is what `unparsedRecords` counts against the strict one, so a register
+// written under another prefix reads as unparsed rather than as empty. A pass
+// over a register the reader could not see is the one answer this must not
+// give, and it was the answer: an `ACME-1` table graded `0 open · ✓`.
+const ISSUE_ROW_SHAPE = /^\|\s*(?:<a\s[^>]*>\s*<\/a>\s*)?`?[A-Z][A-Z0-9]*-D?\d+/
 
 function readIssues(root) {
   const out = []
@@ -262,6 +380,10 @@ function readIssues(root) {
 // the gap is the parser's job and minting an id is a decision.
 
 const HEADING = /^###\s+(?:<a\s+id="[^"]*"><\/a>)?\s*(\d{4}-\d{2}-\d{2})\s*·\s*`?(FJS-D\d+)`?\s*[—–-]\s*(.*)$/
+// The heading with the id taken out of it; `ISSUE_ROW_SHAPE`'s counterpart and
+// read by nothing but `unparsedRecords`. The prose form carries no prefix and
+// already parses under any, so only the migrated form needs one.
+const HEADING_SHAPE = /^###\s+(?:<a\s+id="[^"]*"><\/a>)?\s*\d{4}-\d{2}-\d{2}\s*·/
 const RULING  = /^\*\*(\d{4}-\d{2}-\d{2})\s*·\s*(?:`?(FJS-D\d+)`?\s*[—–-]\s*)?/
 
 function readDecisions(root) {
@@ -276,10 +398,12 @@ function readDecisions(root) {
 
   const close = (endLine) => {
     if (!open) return
+    const bodyLines = lines.slice(open.line + 1, endLine)
     const body = lines.slice(open.line, endLine).join('\n')
     open.record.body  = plain(body).trim()
     open.record.refs  = refsIn(body)
     open.record.files = linkedFiles(body)
+    Object.assign(open.record, declaredStatus(bodyLines))
     out.push(open.record)
     open = null
   }

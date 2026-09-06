@@ -22,7 +22,7 @@ import { Database }                         from 'bun:sqlite'
 
 import {
   httpStatus, httpJson, httpText, header, portAnswering, portFree,
-  fileExists, fileContains, sqliteRow, eventually, dockerRunning, dockerImageOf,
+  fileExists, fileContains, sqliteRow, sqliteExec, eventually, dockerRunning, dockerImageOf,
   commandExists, formatFailure,
 } from '../core/probe.js'
 
@@ -281,6 +281,46 @@ describe('sqliteRow — against a real database', () => {
   test('an expect predicate grades the rows', () => {
     expect(sqliteRow({ db, sql: 'SELECT * FROM note', expect: (rows) => rows.length === 1 }).ok).toBe(true)
     expect(sqliteRow({ db, sql: 'SELECT * FROM note', expect: (rows) => rows.length === 2 }).ok).toBe(false)
+  })
+})
+
+describe('sqliteExec — the write half, and the reason it is a subprocess', () => {
+  let dir, db
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'fjs-probe-exec-'))
+    db  = join(dir, 'made.db')
+  })
+  afterAll(() => rmSync(dir, { recursive: true, force: true }))
+
+  // `fli` runs on node, where `bun:sqlite` cannot be imported at all — so a step
+  // that opened a database in-process worked under `bun fli.js` and failed for
+  // everyone who typed `fli`. Both halves go through the same subprocess.
+  test('creates a database a real reader can then read', () => {
+    const made = sqliteExec({ db, statements: [
+      'CREATE TABLE customers (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE)',
+      "INSERT INTO customers (email) VALUES ('ada@example.test')",
+    ] })
+    expect(made.ok).toBe(true)
+    expect(sqliteRow({ db, sql: 'SELECT email FROM customers' }).detail).toContain('ada@example.test')
+  })
+
+  // `bun -e` exits 0 with nothing on stderr for an uncaught throw, so the script
+  // catches and sets its own code — without that a broken statement arrives as
+  // success and the caller builds on a database that was never made.
+  test('a bad statement fails with what SQLite said, and does not crash', () => {
+    const r = sqliteExec({ db, statements: ['CREATE TABLE'] })
+    expect(r.ok).toBe(false)
+    expect(r.got).toMatch(/incomplete input|syntax error|near/i)
+  })
+
+  test('statements run in order — a later one may depend on an earlier', () => {
+    const one = join(dir, 'ordered.db')
+    expect(sqliteExec({ db: one, statements: [
+      'CREATE TABLE a (id INTEGER PRIMARY KEY)',
+      'INSERT INTO a (id) VALUES (1)',
+      'CREATE INDEX a_by_id ON a(id)',
+    ] }).ok).toBe(true)
+    expect(sqliteRow({ db: one, sql: 'SELECT id FROM a' }).ok).toBe(true)
   })
 })
 

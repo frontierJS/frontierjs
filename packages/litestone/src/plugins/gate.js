@@ -63,18 +63,15 @@ import { collectNestedOps, collectIncludedModels } from './reach.js'
 
 // ─── Level constants ──────────────────────────────────────────────────────────
 
-export const LEVELS = {
-  STRANGER:      0,
-  VISITOR:       1,
-  READER:        2,
-  CREATOR:       3,
-  USER:          4,
-  ADMINISTRATOR: 5,
-  OWNER:         6,
-  SYSADMIN:      7,   // global system admin — real human, revocable
-  SYSTEM:        8,   // asSystem() only — background jobs, migrations
-  LOCKED:        9,   // absolute wall — not even asSystem() passes
-}
+// The scale, the comparison and the grader are `@frontierjs/toolbelt/gate` and
+// are re-exported here rather than declared. Three realms need the ladder and
+// the dependency direction forbids two of them from asking this package, so it
+// was a hand copy at four places and drifted (`FJS-520`, ruled `FJS-D197`).
+// The kit is substrate, below the graph, so litestone, junction and sierra may
+// all import it and there is one definition again.
+import { LEVELS, levelPasses, levelName, gradeStanding } from '@frontierjs/toolbelt/gate'
+
+export { LEVELS, levelPasses, levelName }
 
 // ─── Parse @@gate string ──────────────────────────────────────────────────────
 // "2.4.5.6" → { read: 2, create: 4, update: 5, delete: 6 }
@@ -154,22 +151,6 @@ function makeLevelCache(getLevel, auth) {
 
 // ─── Access check ─────────────────────────────────────────────────────────────
 
-// The one definition of "does this level pass this gate". Anything that
-// *describes* the gate rather than enforcing it — the generated matrix, the
-// access snapshot — asks this rather than restating the comparison, because a
-// second copy is an artefact that certifies access the plugin does not grant.
-//
-// A per-move @gate is on the same scale and asks here too: `checkTransitions`
-// enforcing one and `transitions()` describing one each spelled the comparison
-// by hand, and a hand-spelled `>=` reads 8 as a rung rather than a sentinel.
-// The independent copy is `expectedVerdict` in access.js, which is an oracle
-// and says at its own declaration why it must not call this.
-export function levelPasses(required, userLevel) {
-  if (required === 9) return false               // LOCKED — asSystem() included
-  if (required === 8) return userLevel === 8     // SYSTEM — SYSADMIN(7) is not it
-  return userLevel >= required
-}
-
 function checkLevel(required, userLevel, model, operation) {
   if (levelPasses(required, userLevel)) return
 
@@ -194,11 +175,16 @@ function checkLevel(required, userLevel, model, operation) {
 export class GatePlugin extends Plugin {
   constructor({ getLevel } = {}) {
     super()
-    // Default: unauthenticated → STRANGER (0), authenticated → USER (4).
-    // Provide getLevel to map your own roles/permissions to levels.
+    // The default is the shipped grader, and it used to be a second one written
+    // here: `user ? USER : STRANGER`, which read nothing but *is there a user*
+    // and therefore graded an `isSystemAdmin` caller USER(4). Against
+    // `gradeStanding` it disagreed on 212 of the 216 combinations of the fields
+    // a session carries — a whole ladder's worth of standing, silently absent
+    // for anyone who constructed the plugin without a resolver (`FJS-D197`).
+    // Pass `getLevel` to map an app's own roles onto the scale.
     if (getLevel !== undefined && typeof getLevel !== 'function')
       throw new Error('GatePlugin: getLevel must be a function')
-    getLevel = getLevel ?? ((user) => user ? LEVELS.USER : LEVELS.STRANGER)
+    getLevel = getLevel ?? gradeStanding
     this._getLevel    = getLevel
     this._accessMap   = {}
     this._relationMap = {}
@@ -235,10 +221,16 @@ export class GatePlugin extends Plugin {
 
   _resolver(ctx) {
     if (ctx.isSystem) return SYSTEM_RESOLVER  // SYSTEM level
-    let resolver = this._resolvers.get(ctx)
+    // Keyed on the FLAVOR, falling back to the ctx object for a ctx that is not
+    // the shared one. A table's ctx is shared across every flavor since
+    // `FJS-722`, so keying on it gave the first caller's level to everyone —
+    // an `isSystemAdmin` reader answered at whatever level the process saw
+    // first, which is a wrong ANSWER and not an error.
+    const key = ctx._flavor ?? ctx
+    let resolver = this._resolvers.get(key)
     if (!resolver) {
       resolver = makeLevelCache(this._getLevel, ctx.auth ?? null)
-      this._resolvers.set(ctx, resolver)
+      this._resolvers.set(key, resolver)
     }
     return resolver
   }
@@ -335,33 +327,13 @@ export class GatePlugin extends Plugin {
 // documented scale. An owner who never completed an activation step is still
 // the owner.
 //
-// Junction's sessionGateLevel() (packages/junction/src/core/litestone.ts) is the
-// same function for the same purpose; it cannot be imported here because the
-// dependency runs Litestone ← Junction, never the reverse. The two are a HAND
-// COPY — change one, change both.
-//
-// Level scale:
-//   0  STRANGER      — not logged in
-//   1  VISITOR       — modeled as unverified
-//   2  READER        — verified, modeled as not yet activated (read-only)
-//   3  CREATOR       — no role assigned (submit but can't manage)
-//   4  USER          — full CRUD
-//   5  ADMINISTRATOR — isAdmin
-//   6  OWNER         — isOwner (account/tenant owner)
-//   7  SYSADMIN      — isSystemAdmin (real human, global)
-
-export function FrontierGateGetLevel(user) {
-  if (!user) return LEVELS.STRANGER
-
-  // Explicit standing first — it outranks any lifecycle stage.
-  if (user.isSystemAdmin) return LEVELS.SYSADMIN
-  if (user.isOwner)       return LEVELS.OWNER
-  if (user.isAdmin)       return LEVELS.ADMINISTRATOR
-
-  // `=== null` — modeled and not reached. undefined means "not modeled".
-  if (user.verifiedAt  === null) return LEVELS.VISITOR
-  if (user.activatedAt === null) return LEVELS.READER
-
-  if (!user.role) return LEVELS.CREATOR
-  return LEVELS.USER
-}
+// The name this package has always exported for the shipped grader, and it is
+// `@frontierjs/toolbelt/gate`'s `gradeStanding` under an alias. Junction's
+// `sessionGateLevel` is the same binding from the other side: it was a hand
+// copy across a boundary this package cannot cross, the two carried a comment
+// each saying *change one, change both*, and they drifted anyway — 8 of 216
+// sessions graded CREATOR(3) here and USER(4) there, so one `@@gate("4")` read
+// was a 403 or a 200 depending on which resolver an app had installed
+// (`FJS-520`, ruled `FJS-D197`). The scale is on the kit; what to read about a
+// caller is in `gradeStanding`'s own doc comment.
+export const FrontierGateGetLevel = gradeStanding

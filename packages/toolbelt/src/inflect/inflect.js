@@ -26,17 +26,31 @@
  */
 
 /*
+ * THESE ARE ENGLISH PLURAL FORMS, NOT PROSE. A spelling sweep must not touch
+ * them: `analyses` is the plural of `analysis` on both sides of the Atlantic,
+ * and a find/replace of `analyse` → `analyze` once rewrote it to `analyzes`
+ * here AND in the test that guards it, in one commit, leaving nothing to fail.
+ *
  * Both directions of one table. Written out rather than derived, because the
  * reverse of a rule is not a rule — `data` → `datum` cannot be computed from
  * `datum` → `data` without knowing which words play.
  */
-const IRREGULAR = {
+export const IRREGULAR = {
   person: 'people',   child: 'children', man: 'men',       woman: 'women',
   tooth: 'teeth',     foot: 'feet',      mouse: 'mice',    goose: 'geese',
-  ox: 'oxen',         leaf: 'leaves',    life: 'lives',    knife: 'knives',
+  ox: 'oxen',         quiz: 'quizzes',
   index: 'indices',   matrix: 'matrices', vertex: 'vertices',
-  analysis: 'analyzes', basis: 'bases',  crisis: 'crises',
+  analysis: 'analyses', basis: 'bases',  crisis: 'crises',
   datum: 'data',      medium: 'media',   criterion: 'criteria',
+
+  /* The `-f`/`-fe` stems. A closed list for SES_BARE_S's reason: `leaf` is
+     `leaves` and `roof` is `roofs`, and no ending tells them apart. Only the
+     whole word is matched, so `BookShelf` is still `bookshelfs` — pluralize
+     never reaches inside a compound, or `audit_index` would rename a table. */
+  leaf: 'leaves',     life: 'lives',     knife: 'knives',  wife: 'wives',
+  half: 'halves',     calf: 'calves',    loaf: 'loaves',   thief: 'thieves',
+  shelf: 'shelves',   self: 'selves',    wolf: 'wolves',   elf: 'elves',
+  sheaf: 'sheaves',   scarf: 'scarves',
 }
 
 /*

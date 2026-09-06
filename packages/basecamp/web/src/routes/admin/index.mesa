@@ -31,7 +31,7 @@ title: Members
   let canInvite = false
 
   // What an invite just minted. Held until dismissed, because the link is shown
-  // ONCE — `Invitation.token` is `@guarded(all)`, so no later read can answer
+  // ONCE — `Invitation.token` is `@guarded`, so no later read can answer
   // it, exactly like an issued API key.
   let minted  = null
 

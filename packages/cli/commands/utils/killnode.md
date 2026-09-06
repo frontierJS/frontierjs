@@ -23,6 +23,7 @@ flags:
 
 <script>
 import { execSync } from 'child_process'
+import { resolve } from 'path'
 
 // killall/kill exit non-zero when nothing matched — that is information, not a
 // failure, so capture it rather than letting execSync throw the command down.
@@ -37,22 +38,11 @@ const sh = (command, dry, log) => {
   }
 }
 
-// -sTCP:LISTEN matters: without it lsof also reports every process with an open
-// CONNECTION to that port, so `fli kill 8010` would take your browser with it.
-// lsof exits 1 with no output when nothing is listening.
-const pidsOnPort = (port) => {
-  try {
-    const out = execSync(`lsof -ti tcp:${port} -sTCP:LISTEN`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString()
-    return [...new Set(out.split('\n').map(s => s.trim()).filter(Boolean))]
-  } catch { return [] }
-}
-
-const describe = (pid) => {
-  try {
-    return execSync(`ps -p ${pid} -o args=`, { stdio: ['ignore', 'pipe', 'ignore'] })
-      .toString().trim().slice(0, 90)
-  } catch { return '' }
-}
+// `pidsOnPort` and `describe` moved to core/ports.js when `fli ps` became the
+// second caller — two implementations of *what is holding this port* is how the
+// command that kills it and the command that lists it come to disagree.
+const { pidsOnPort, describeProcess: describe } =
+  await import(resolve(global.fliRoot, 'core/ports.js'))
 </script>
 
 With no argument this kills every `node` and `bun` process. Give it a port and

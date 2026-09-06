@@ -707,22 +707,29 @@ describe('query helpers', () => {
   })
 
   test('normaliseOrderBy', () => {
+    // `nulls` is part of a sort key, defaulted to where SQLite puts them:
+    // first ascending, last descending. A cursor compares against this
+    // position, so dropping it loses every row on one side of the nulls
+    // (`FJS-780`).
     const r = normaliseOrderBy([{ createdAt: 'desc' }, { id: 'asc' }])
-    expect(r[0]).toEqual({ col: 'createdAt', dir: 'DESC' })
-    expect(r[1]).toEqual({ col: 'id', dir: 'ASC' })
+    expect(r[0]).toEqual({ col: 'createdAt', dir: 'DESC', nulls: 'LAST' })
+    expect(r[1]).toEqual({ col: 'id', dir: 'ASC', nulls: 'FIRST' })
   })
 
+  // Parenthesised because one field and many now go through one loop. The
+  // single-field fast path was the same comparison written a second time, and
+  // only the multi-field copy would have been made NULL-aware.
   test('buildCursorWhere — single ASC', () => {
     const p: any[] = []
     const w = buildCursorWhere([{ col: 'id', dir: 'ASC' }], { id: 50 }, p)
-    expect(w).toBe('"id" > ?')
+    expect(w).toBe('("id" > ?)')
     expect(p).toEqual([50])
   })
 
   test('buildCursorWhere — single DESC', () => {
     const p: any[] = []
     const w = buildCursorWhere([{ col: 'id', dir: 'DESC' }], { id: 50 }, p)
-    expect(w).toBe('"id" < ?')
+    expect(w).toBe('("id" < ?)')
   })
 
   test('buildCursorWhere — multi-field', () => {
@@ -856,8 +863,14 @@ describe('query helpers', () => {
   })
 
   test('normaliseOrderBy — handles object form', () => {
+    // This asserted that a STATED `nulls` was dropped, which is what let the
+    // cursor and the scan disagree about the order (`FJS-780`): `buildOrderBy`
+    // emitted `NULLS LAST` and `findManyCursor` did not.
     const r = normaliseOrderBy([{ name: { dir: 'asc', nulls: 'last' } }, { id: 'desc' }])
-    expect(r).toEqual([{ col: 'name', dir: 'ASC' }, { col: 'id', dir: 'DESC' }])
+    expect(r).toEqual([
+      { col: 'name', dir: 'ASC',  nulls: 'LAST' },
+      { col: 'id',   dir: 'DESC', nulls: 'LAST' },
+    ])
   })
 
   test('isNamedAgg — detects named aggregate specs', () => {
@@ -2593,7 +2606,7 @@ describe('window functions', () => {
   test('throws on unknown window function', async () => {
     await expect(
       db.score.findMany({ window: { x: { unknown: true } as any } })
-    ).rejects.toThrow('unrecognised window function')
+    ).rejects.toThrow('unrecognized window function')
   })
 })
 
@@ -5422,7 +5435,7 @@ describe('@omit / @guarded field policy', () => {
         bio      String?   @omit
         prefs    String?   @omit(all)
         salary   Int @guarded
-        secret   String    @guarded(all)
+        secret   String    @guarded
       }
     `, 'policy')
     await db.asSystem().user.create({ data: { id: 1, name: 'Alice', bio: 'Long bio', prefs: '{}', salary: 100000, secret: 'top-secret' } })
@@ -5480,16 +5493,16 @@ describe('@omit / @guarded field policy', () => {
     expect(rows[0].salary).toBe(100000)
   })
 
-  // @guarded(all) — system context only, select cannot unlock
-  test('@guarded(all): excluded from findMany', async () => {
+  // @guarded — system context only, select cannot unlock
+  test('@guarded: excluded from findMany', async () => {
     const rows = await db.user.findMany()
     expect('secret' in rows[0]).toBe(false)
   })
-  test('@guarded(all): select cannot unlock', async () => {
+  test('@guarded: select cannot unlock', async () => {
     const rows = await db.user.findMany({ select: { id: true, secret: true } })
     expect('secret' in rows[0]).toBe(false)
   })
-  test('@guarded(all): asSystem() unlocks it', async () => {
+  test('@guarded: asSystem() unlocks it', async () => {
     const rows = await db.asSystem().user.findMany()
     expect(rows[0].secret).toBe('top-secret')
   })
@@ -5516,7 +5529,7 @@ describe('@guarded — write half', () => {
     model Thing {
       id       Int     @id @default(autoincrement())
       name     String
-      riskFlag String? @guarded(all)
+      riskFlag String? @guarded
       note     String? @guarded
       card     String? @encrypted
     }
@@ -5525,7 +5538,7 @@ describe('@guarded — write half', () => {
   beforeAll(async () => { db = await makeDb(SCHEMA, 'guarded-write', { encryptionKey: 'a'.repeat(64) }) })
   afterAll(() => db.$close())
 
-  test('a non-system create naming a @guarded(all) field is refused by name', async () => {
+  test('a non-system create naming a @guarded field is refused by name', async () => {
     const user = db.$setAuth({ id: 1 })
     await expect(user.thing.create({ data: { name: 'a', riskFlag: 'HIGH' } }))
       .rejects.toThrow(/"riskFlag" is @guarded/)
@@ -5592,7 +5605,7 @@ describe('@guarded — write half', () => {
   })
 
   test('the pair still cannot be spelled — @allow beside @guarded is a parse error', () => {
-    const r = parse(`model T { id Int @id  x String? @guarded(all) @allow('write', false) }`)
+    const r = parse(`model T { id Int @id  x String? @guarded @allow('write', false) }`)
     expect(r.valid).toBe(false)
     expect(r.errors.some((e: string) => e.includes('@allow conflicts with @guarded'))).toBe(true)
   })
@@ -5682,18 +5695,18 @@ describe('a stamped column is not a caller write (FJS-565)', () => {
 })
 
 
-// ─── 18b. @guarded(all) + WHERE clause behavior ──────────────────────────────
+// ─── 18b. @guarded + WHERE clause behavior ──────────────────────────────
 //
 // Confirms the three documented cases:
-//   1. Non-system WHERE on @guarded(all) field: filters correctly, field stripped from result
-//   2. asSystem() WHERE on @guarded(all) field: filters correctly, field visible in result
-//   3. @guarded(all) + @encrypted (i.e. @secret): WHERE on non-secret field works,
+//   1. Non-system WHERE on @guarded field: filters correctly, field stripped from result
+//   2. asSystem() WHERE on @guarded field: filters correctly, field visible in result
+//   3. @guarded + @encrypted (i.e. @secret): WHERE on non-secret field works,
 //      plaintext WHERE on a non-searchable encrypted field is REFUSED (it can never
 //      match, and answering null looked like "no such row"),
 //      asSystem() returns decrypted value
 
 
-describe('@guarded(all) + WHERE clause', () => {
+describe('@guarded + WHERE clause', () => {
   const ENC_KEY = 'b'.repeat(64)   // 32-byte hex key
 
   let db: any
@@ -5703,8 +5716,8 @@ describe('@guarded(all) + WHERE clause', () => {
       model User {
         id      Int @id
         name    String
-        secret  String    @guarded(all)
-        token   String    @encrypted @guarded(all)
+        secret  String    @guarded
+        token   String    @encrypted @guarded
       }
     `, 'guarded-where', { encryptionKey: ENC_KEY })
 
@@ -5722,7 +5735,7 @@ describe('@guarded(all) + WHERE clause', () => {
     expect(row?.name).toBe('Alice')
   })
 
-  test('non-system: @guarded(all) field is stripped from result even when WHERE matches', async () => {
+  test('non-system: @guarded field is stripped from result even when WHERE matches', async () => {
     // WHERE on `name` finds the row — but `secret` must not appear in the output
     const row = await db.user.findFirst({ where: { name: 'Alice' } })
     expect(row).not.toBeNull()
@@ -5730,7 +5743,7 @@ describe('@guarded(all) + WHERE clause', () => {
     expect('token'  in row).toBe(false)
   })
 
-  test('non-system: findMany with WHERE on non-guarded field strips @guarded(all) from all results', async () => {
+  test('non-system: findMany with WHERE on non-guarded field strips @guarded from all results', async () => {
     const rows = await db.user.findMany({ where: { name: { not: null } } })
     expect(rows.length).toBeGreaterThan(0)
     for (const row of rows) {
@@ -5746,20 +5759,20 @@ describe('@guarded(all) + WHERE clause', () => {
 
   // ── Case 2: asSystem() context ─────────────────────────────────────────────
 
-  test('asSystem(): WHERE on non-guarded field works and @guarded(all) field is visible', async () => {
+  test('asSystem(): WHERE on non-guarded field works and @guarded field is visible', async () => {
     const row = await db.asSystem().user.findFirst({ where: { name: 'Alice' } })
     expect(row?.id).toBe(1)
     expect(row?.secret).toBe('hunter2')
   })
 
-  test('asSystem(): WHERE on @guarded(all) plain-text field filters and returns correct row', async () => {
+  test('asSystem(): WHERE on @guarded plain-text field filters and returns correct row', async () => {
     const row = await db.asSystem().user.findFirst({ where: { secret: 'correcthorse' } })
     expect(row?.id).toBe(2)
     expect(row?.name).toBe('Bob')
     expect(row?.secret).toBe('correcthorse')
   })
 
-  test('asSystem(): WHERE on @guarded(all) field with multiple matches returns first', async () => {
+  test('asSystem(): WHERE on @guarded field with multiple matches returns first', async () => {
     // Both Alice (id=1) and Carol (id=3) have secret='hunter2'
     const rows = await db.asSystem().user.findMany({ where: { secret: 'hunter2' } })
     expect(rows.length).toBe(2)
@@ -5768,19 +5781,19 @@ describe('@guarded(all) + WHERE clause', () => {
     expect(rows.every((r: any) => r.secret === 'hunter2')).toBe(true)
   })
 
-  test('asSystem(): WHERE on @guarded(all) field with no match returns null', async () => {
+  test('asSystem(): WHERE on @guarded field with no match returns null', async () => {
     const row = await db.asSystem().user.findFirst({ where: { secret: 'doesnotexist' } })
     expect(row).toBeNull()
   })
 
-  test('asSystem(): @encrypted + @guarded(all) — decrypted value visible in result', async () => {
+  test('asSystem(): @encrypted + @guarded — decrypted value visible in result', async () => {
     const row = await db.asSystem().user.findFirst({ where: { name: 'Alice' } })
     expect(row?.token).toBe('tok_alice')
   })
 
-  // ── Case 3: @encrypted + @guarded(all) WHERE edge cases ───────────────────
+  // ── Case 3: @encrypted + @guarded WHERE edge cases ───────────────────
 
-  test('@encrypted @guarded(all): plaintext WHERE on a random-IV field is refused', async () => {
+  test('@encrypted @guarded: plaintext WHERE on a random-IV field is refused', async () => {
     // token is plain @encrypted, so the stored ciphertext can never equal the
     // plaintext and this filter matches nothing whatever the data is. It used to
     // answer null, indistinguishable from "no such row" — the caller then looks
@@ -5790,22 +5803,22 @@ describe('@guarded(all) + WHERE clause', () => {
       .rejects.toThrow(/deterministic: true/)
   })
 
-  test('@encrypted @guarded(all): non-system context strips encrypted+guarded field from result', async () => {
+  test('@encrypted @guarded: non-system context strips encrypted+guarded field from result', async () => {
     const row = await db.user.findFirst({ where: { id: 1 } })
     expect(row).not.toBeNull()
     expect('token' in row).toBe(false)
   })
 
-  // ── $setAuth still strips @guarded(all) ────────────────────────────────────
+  // ── $setAuth still strips @guarded ────────────────────────────────────
 
-  test('$setAuth: @guarded(all) field stripped (not asSystem)', async () => {
+  test('$setAuth: @guarded field stripped (not asSystem)', async () => {
     const authed = db.$setAuth({ id: 1, role: 'admin' })
     const row = await authed.user.findFirst({ where: { name: 'Alice' } })
     expect(row).not.toBeNull()
     expect('secret' in row).toBe(false)
   })
 
-  test('$setAuth: asSystem() on auth-scoped client unlocks @guarded(all)', async () => {
+  test('$setAuth: asSystem() on auth-scoped client unlocks @guarded', async () => {
     const authed = db.$setAuth({ id: 1, role: 'admin' })
     const row = await authed.asSystem().user.findFirst({ where: { name: 'Alice' } })
     expect(row?.secret).toBe('hunter2')
@@ -6130,8 +6143,8 @@ describe('raw SQL and the access rules it cannot enforce', () => {
 
   test('a leading comment does not send a write to the reader', async () => {
     // The routing test strips comments first. Without that, `-- why\nDELETE …`
-    // reads as an unrecognised statement — which is fine, since anything
-    // unrecognised goes to the writer, but a comment before a SELECT must not
+    // reads as an unrecognized statement — which is fine, since anything
+    // unrecognized goes to the writer, but a comment before a SELECT must not
     // do the reverse and quietly move every commented read onto the writer.
     const open = await makeDb(`model Memo { id Int @id  body String }`, 'raw-sql-comment')
     await open.asSystem().memo.create({ data: { id: 1, body: 'x' } })
@@ -6280,7 +6293,7 @@ describe('@encrypted on a Json field', () => {
     expect(String(raw.open)).toContain('"b"')
   })
 
-  test('@encrypted still implies @guarded(all) for a Json field', async () => {
+  test('@encrypted still implies @guarded for a Json field', async () => {
     // The fix must not have made the field readable to a non-system caller.
     const row = await db.vault.findUnique({ where: { id: 1 } })
     expect('blob' in row).toBe(false)
@@ -6313,13 +6326,13 @@ describe('@secret field attribute', () => {
 
   // ── Parser expansion ──────────────────────────────────────────────────────
 
-  test('expands @secret → @encrypted + @guarded(all) at parse time', () => {
+  test('expands @secret → @encrypted + @guarded at parse time', () => {
     const r = parse(`model T { id Int @id; token String @secret }`)
     expect(r.valid).toBe(true)
     const field = r.schema.models[0].fields.find((f: any) => f.name === 'token')
     expect(field.attributes.some((a: any) => a.kind === 'secret')).toBe(true)
     expect(field.attributes.some((a: any) => a.kind === 'encrypted')).toBe(true)
-    expect(field.attributes.some((a: any) => a.kind === 'guarded' && a.level === 'all')).toBe(true)
+    expect(field.attributes.some((a: any) => a.kind === 'guarded')).toBe(true)
   })
 
   test('@secret defaults rotate: true', () => {
@@ -6336,12 +6349,12 @@ describe('@secret field attribute', () => {
     expect(secretAttr.rotate).toBe(false)
   })
 
-  test('@secret still expands @encrypted + @guarded(all) when rotate: false', () => {
+  test('@secret still expands @encrypted + @guarded when rotate: false', () => {
     const r = parse(`model T { id Int @id; token String @secret(rotate: false) }`)
     expect(r.valid).toBe(true)
     const field = r.schema.models[0].fields.find((f: any) => f.name === 'token')
     expect(field.attributes.some((a: any) => a.kind === 'encrypted')).toBe(true)
-    expect(field.attributes.some((a: any) => a.kind === 'guarded' && a.level === 'all')).toBe(true)
+    expect(field.attributes.some((a: any) => a.kind === 'guarded')).toBe(true)
   })
 
   test('@secret synthesizes @log when a logger database is declared', () => {
@@ -6863,7 +6876,7 @@ describe('onLog callback', () => {
           id      Int    @id @default(autoincrement())
           name    String
           token   String @encrypted
-          apiKey  String @guarded(all)
+          apiKey  String @guarded
           pw      String @hashed
         }
       `,
@@ -7054,7 +7067,7 @@ describe('onLog callback', () => {
 // to it is not, and the log has none of the column's read protections.
 //
 // This is load-bearing for @secret in particular, which expands to
-// @encrypted + @guarded(all) + @log(<first logger db>) — so merely DECLARING a
+// @encrypted + @guarded + @log(<first logger db>) — so merely DECLARING a
 // logger database is enough to start logging every @secret field.
 
 describe('audit log redaction', () => {
@@ -7069,7 +7082,7 @@ describe('audit log redaction', () => {
       name     String
       secretF  String? @secret
       encF     String? @encrypted
-      guardedF String? @guarded(all)
+      guardedF String? @guarded
       plain    String?
 
       @@db(main)
@@ -8180,7 +8193,7 @@ describe('@allow field-level access', () => {
         teamId Int
         team   Team @relation(fields: [teamId], references: [id])
         name   String
-        token  String  @guarded(all)
+        token  String  @guarded
         salary Float?  @allow('read', auth().role == 'hr')
       }
     `, name)
@@ -11772,7 +11785,7 @@ describe('generateTypeScript — ServiceTypes', () => {
       model Account {
         id     Int    @id
         name   String
-        secret String @guarded(all)
+        secret String @guarded
       }
     `
     const client = generateTypeScript(parse(GUARDED).schema, { audience: 'client' })
@@ -13565,7 +13578,7 @@ const ACCESS_SCHEMA = `
   model Vault {
     id     Int    @id
     name   String
-    token  String  @guarded(all)
+    token  String  @guarded
     pin    String  @encrypted
     apiKey String  @secret
     @@gate("8")
@@ -13616,10 +13629,10 @@ describe('deriveAccess', () => {
   })
 
   test('@secret is reported as @secret, not as the pair it expands to', () => {
-    // @secret desugars to @encrypted + @guarded(all) at parse time and keeps its
+    // @secret desugars to @encrypted + @guarded at parse time and keeps its
     // own attribute, so the field carries all three. Report what was written.
     const fields = Object.fromEntries(byName('Vault').fields.map(f => [f.name, f.protection]))
-    expect(fields).toEqual({ token: '@guarded(all)', pin: '@encrypted', apiKey: '@secret' })
+    expect(fields).toEqual({ token: '@guarded', pin: '@encrypted', apiKey: '@secret' })
   })
 
   test('a field @allow is reported with its operations', () => {
@@ -14764,7 +14777,7 @@ describe('createTestEnv', () => {
     // AccessDeniedError. An OPTIONAL guarded column is simply left out of the
     // fixture; a required one cannot be, so the model is uncreatable below
     // level 8 and the row is reported rather than read as a gate verdict.
-    const schema = LADDER_SCHEMA.replace('handle String @length(3, 12)', 'handle String @length(3, 12)\n    auditTag String @guarded(all)')
+    const schema = LADDER_SCHEMA.replace('handle String @length(3, 12)', 'handle String @length(3, 12)\n    auditTag String @guarded')
     const env    = await createTestEnv({ schema })
     const rows   = await env.verifyGateLadder({ ops: ['create'] })
 
@@ -14840,21 +14853,29 @@ describe('createTestEnv', () => {
     env.close()
   })
 
-  test('verifyRowPolicies reports a check() predicate rather than guessing', async () => {
-    const env = await createTestEnv({ schema: `
-      model Team { id Int @id  name String  notes Note[]  @@allow('read', name != null) }
-      model Note {
-        id     Int    @id
-        title  String
-        teamId Int
-        team   Team   @relation(fields: [teamId], references: [id])
-        @@allow('read', check(team))
-      }
-    ` })
-    const bad = await env.verifyRowPolicies()
-    expect(bad.some((m: any) => m.model === 'Note' && m.got === 'skipped')).toBe(true)
-    expect(bad.find((m: any) => m.model === 'Note').message).toMatch(/uses check\(\)/)
-    env.close()
+  test('verifyRowPolicies reports a CROSSED predicate rather than guessing', async () => {
+    // Both ways a policy reaches another model, because the grader is blind to
+    // them for one reason: it makes ONE row, and what admits that row lives on
+    // a different one. `check(team)` delegates a policy; `team.name` reads a
+    // column one hop away (`FJS-D221`). A crossed rule that came back GRADED
+    // would mean every seeded row landed on one side, which is what a broken
+    // policy looks like — so the two answers have to be told apart by name.
+    for (const rule of [`check(team)`, `team.name != null`]) {
+      const env = await createTestEnv({ schema: `
+        model Team { id Int @id  name String  notes Note[]  @@allow('read', name != null) }
+        model Note {
+          id     Int    @id
+          title  String
+          teamId Int
+          team   Team   @relation(fields: [teamId], references: [id])
+          @@allow('read', ${rule})
+        }
+      ` })
+      const bad = await env.verifyRowPolicies()
+      expect(bad.some((m: any) => m.model === 'Note' && m.got === 'skipped'), rule).toBe(true)
+      expect(bad.find((m: any) => m.model === 'Note').message).toMatch(/crosses a relation/)
+      env.close()
+    }
   })
 
   test('verifyFieldProtection asks which COLUMNS come back, not who may read', async () => {
@@ -15557,7 +15578,7 @@ describe('generateTypeScript', () => {
 
   test('@secret field excluded from client audience', () => {
     const dts = generateTypeScript(schema, { audience: 'client' })
-    // apiKey is @secret = @guarded(all) → stripped in client audience
+    // apiKey is @secret = @guarded → stripped in client audience
     const userSection = dts.slice(dts.indexOf('export interface User {'), dts.indexOf('export interface UserCreate {'))
     expect(userSection).not.toContain('apiKey')
   })
@@ -16662,7 +16683,7 @@ describe('@from — first/last returns a properly read row', () => {
     model Order {
       id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])
       amount Float
-      secretNote String? @guarded(all)
+      secretNote String? @guarded
       hiddenNote String? @omit(all)
       card       String? @encrypted
       label      String  @computed
@@ -16704,9 +16725,9 @@ describe('@from — first/last returns a properly read row', () => {
   test('protected fields do not come back through it', async () => {
     const db = await shop('from-row-guarded')
     const last = (await db.$setAuth({ id: 9 }).account.findUnique({ where: { id: 1 } })).lastOrder
-    expect(last.secretNote).toBeUndefined()   // @guarded(all)
+    expect(last.secretNote).toBeUndefined()   // @guarded
     expect(last.hiddenNote).toBeUndefined()   // @omit(all)
-    expect(last.card).toBeUndefined()         // @encrypted implies @guarded(all)
+    expect(last.card).toBeUndefined()         // @encrypted implies @guarded
     expect(last.amount).toBe(9)
     db.$close()
   })
@@ -16772,7 +16793,7 @@ describe('@from — first/last returns a properly read row', () => {
   const POLICIED = `
     model Account { id Int @id  orders Order[]  lastOrder Order? @from(Order, last: true) }
     model Order   { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])
-                    ownerId Int  amount Int  note String? @guarded(all)  deletedAt DateTime?
+                    ownerId Int  amount Int  note String? @guarded  deletedAt DateTime?
                     @@allow('read', ownerId == auth().id)
                     @@softDelete }
   `
@@ -18041,7 +18062,7 @@ describe('window functions', () => {
   test('throws on unknown window function spec', async () => {
     await expect(
       db.order.findMany({ window: { x: { unknownFn: true } as any } })
-    ).rejects.toThrow('unrecognised window function spec')
+    ).rejects.toThrow('unrecognized window function spec')
   })
 
   test('window FILTER — conditional aggregate window', async () => {
@@ -20097,7 +20118,7 @@ describe('generateJsonSchema with types', () => {
       }
     `)
     const s = generateJsonSchema(r.schema!) as any
-    expect(s.$defs.User.properties.address).toEqual({ $ref: '#/$defs/Address' })
+    expect(s.$defs.User.properties.address).toEqual({ $ref: '#/$defs/Address', 'x-sortable': 'json' })
   })
 
   test('emits a full type definition with required fields and shape', async () => {
@@ -20134,7 +20155,10 @@ describe('generateJsonSchema with types', () => {
       model U { id Int @id; meta Json }
     `)
     const s = generateJsonSchema(r.schema!) as any
-    expect(s.$defs.U.properties.meta).toEqual({})
+    // Permissive about its SHAPE, which is what this is about. `x-sortable` is
+    // not a constraint on the value — it says the stored text is a document, so
+    // ordering by it orders by that text.
+    expect(s.$defs.U.properties.meta).toEqual({ 'x-sortable': 'json' })
   })
 
   test('nested types resolve via $ref', async () => {
@@ -24756,6 +24780,9 @@ describe('enum arrays', () => {
     expect(js.$defs.Rule.properties.targets).toEqual({
       type:    'array',
       items:   { $ref: '#/$defs/ReclaimTarget' },
+      // Sorting orders rows by the serialized JSON, so it is refused — the
+      // column still FILTERS, through json_each.
+      'x-sortable': 'array',
       // Every array column is NOT NULL DEFAULT '[]' whether it says so or not,
       // so the schema says so too — a form seeding `undefined` would be seeding
       // a value the column cannot hold.
@@ -25089,7 +25116,7 @@ enum After { x y }
   })
 
   test('an attribute inside a doc comment is prose, not a mutation site', async () => {
-    // A mutant that edits a comment is behaviourally identical to the original
+    // A mutant that edits a comment is behaviorally identical to the original
     // and survives everything, so a well-commented schema scored WORSE. Found on
     // `example`, whose Customer model documents what @guarded is not.
     const { schemaMutants } = await import('../src/mutate.js')
@@ -26072,7 +26099,7 @@ describe('@encrypted(deterministic) / @hashed — declaration', () => {
     const cases: [string, RegExp][] = [
       ['t String @hashed @encrypted',            /conflicts with @encrypted/],
       ['t String @hashed @secret',               /conflicts with @secret/],
-      ['t String @hashed @guarded(all)',         /conflicts with @guarded/],
+      ['t String @hashed @guarded',         /conflicts with @guarded/],
       [`t String @hashed @allow('read', true)`,  /conflicts with @allow/],
       ['t Int    @hashed',                       /requires a String field/],
       ['t String[] @hashed',                     /cannot be applied to an array/],

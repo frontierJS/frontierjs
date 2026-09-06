@@ -181,6 +181,8 @@ before you build on one** — several are emitted and nothing yet reads them.
 | `x-capabilities` | model | `{operations, moves, columns}` — action → the capability NAME it requires | affordance; a screen deciding which buttons a grant-holder could press |
 | `x-version` | model | the `@version` column's name, so a client knows what to round-trip | sierra `field-rules.js` |
 | `x-label-field` | model | the `@@label(field)` column's name — which column identifies a row to a person | sierra `field-rules.js`, `resource.js` |
+| `x-sortable` | field | **ABSENT means sortable.** A string says why not: `array` \| `json` \| `file` \| `encrypted` \| `hashed` \| `computed` \| `transient` | a generated table header |
+| `x-filterable` | field | **ABSENT means filterable.** A string says why not: `computed` \| `transient` \| `encrypted` | a generated filter bar |
 | `x-litestone-file` | `FileRef` def | `true` — marks the def as a file ref, not a user `type` | junction (maps it to `any`), `fli` |
 | `x-litestone-kind` | field | `'version'` \| `'computed'` \| `'generated'` \| `'from'` \| `'system'` \| `'transient'` | junction (`liftTransient`), tests |
 | `x-litestone-from` | field | `{target, op}` from `@from(Model, count: true)` | nothing yet |
@@ -189,6 +191,24 @@ before you build on one** — several are emitted and nothing yet reads them.
 | `x-litestone-read-policy` | field | `true` when a field-level `@allow('read', …)` may hide it | nothing yet |
 | `x-litestone-secret` | field | `true` — `audience: 'system'` only | nothing yet |
 | `x-litestone-guarded` | field | `true` — `audience: 'system'` only | nothing yet |
+
+**`x-sortable` and `x-filterable` emit only the EXCEPTIONS**, which is why absent
+is the answer for most columns: they ship in a bundle whose size is already an
+argument (`FJS-785`), and a schema that stamped every ordinary column would cost
+two keys per field to say *yes* twice. They are two keys rather than one because
+they are two answers — a `@from` field does both, a `@computed` field neither,
+an array sorts by its serialized text and filters through `json_each`, and a
+deterministic `@encrypted` column is matchable and still sorts by ciphertext.
+
+Unlike the affordances below, these are **not** a permission: they say what the
+column IS, so the answer is the same for every caller. What a caller may not
+*see* is handled one level up — a `@guarded` column is absent from the client
+audience entirely (`FJS-D205`), so there is no property to carry a key.
+
+Both are answered by `filterableKeysFor`/`sortableKeysFor` in `core/query.js` —
+the same two functions `$checkWhere` and `$checkOrderBy` refuse with. They live
+there rather than in `client.js` because this generator may not import the query
+client: that pulls in `bun:sqlite`, and sierra's build runs in plain Node.
 
 `x-gate`, `x-capabilities` and the `gate` inside `x-transitions` are **UI affordances**. The Data
 boundary enforces regardless of what the client believes, so an unknown answer
@@ -228,7 +248,7 @@ model's `required[]`, not on the field.
 
 `audience: 'client'` (the default) **removes fields rather than marking them**:
 
-- `@secret` and `@guarded(all)` — gone from every mode.
+- `@secret` and `@guarded` — gone from every mode.
 - `@guarded` (select-level) — gone from `create` and `update`, present in `full`.
 - A field-level `@allow('read', …)` field is made nullable and annotated
   `x-litestone-read-policy: true`, because whether it arrives depends on who asked.

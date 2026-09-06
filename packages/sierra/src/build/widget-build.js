@@ -49,7 +49,7 @@
  * Resource follows (Invariant 19), kebab-cased when it reaches HTML as a tag.
  */
 
-import { readdirSync, statSync } from 'node:fs'
+import { readdirSync, statSync, readFileSync } from 'node:fs'
 import { mkdir, writeFile, rm }  from 'node:fs/promises'
 import { resolve, join, basename, extname } from 'node:path'
 
@@ -59,7 +59,7 @@ import { resolve, join, basename, extname } from 'node:path'
 // here — this module is not bundled into a widget, so the concatenation is
 // harmless, while the same concatenation in the runtime would be folded into
 // the whole literal and then replaced along with the entry's.
-import { CSS_MARK } from '../widget/index.js'
+import { CSS_MARK, isLegalTag, kebab } from '../widget/index.js'
 
 /**
  * The literal the CSS is swapped into. A widget's stylesheet cannot be a
@@ -141,7 +141,7 @@ export default embed(Component, {
   // widgetCssPlugin. Passed as a bare literal on purpose: anything the
   // bundler can evaluate, it evaluates, so a comparison against the
   // placeholder here folds to an empty string before the swap can happen.
-  // The runtime recognises an unreplaced placeholder instead.
+  // The runtime recognizes an unreplaced placeholder instead.
   css:    ${JSON.stringify(CSS_PLACEHOLDER)},
   ...declared,
 })
@@ -209,6 +209,41 @@ export function widgetCssPlugin() {
 }
 
 /**
+ * Refuse a widget whose tag a browser cannot register — here, not on a
+ * stranger's page.
+ *
+ * `assertTag` throws in the RUNTIME, at module scope, which is correct and is
+ * delivered to the wrong person: the prefix defaults to `''` everywhere, so a
+ * one-word widget yields the dashless tag `booking`, the build is clean, the
+ * deploy is clean, and the script throws on load in every customer's console.
+ * Everything needed to know that is here — the name and the prefix — so this is
+ * decidable before the first Vite call.
+ *
+ * A widget may name its own `tag` in `<script module>`, which the build cannot
+ * evaluate and the runtime still checks. So the source is asked whether it
+ * declares one, and a widget that does is left to the runtime rather than
+ * failed on a tag it does not use.
+ */
+function assertBuildableTags(widgets, prefix) {
+  const bad = []
+  for (const widget of widgets) {
+    const tag = `${prefix}${kebab(widget.name)}`
+    if (isLegalTag(tag)) continue
+    let src = ''
+    try { src = readFileSync(widget.entry, 'utf8') } catch { /* unreadable is not a tag claim */ }
+    if (/(^|[^\w$])tag\s*:/.test(src)) continue
+    bad.push({ name: widget.name, tag })
+  }
+  if (!bad.length) return
+  throw new Error(
+    `[Sierra] ${bad.map(b => `${b.name} → <${b.tag}>`).join(', ')} — a custom element name must ` +
+    `contain a dash, and widgets.prefix is ${JSON.stringify(prefix)}. This builds and deploys ` +
+    `clean and then throws on every page that embeds it. Set widgets.prefix (e.g. 'mt-'), give ` +
+    `the widget a two-word name, or declare a tag in its <script module>.`
+  )
+}
+
+/**
  * Build every widget in `dir` into `outDir`, one self-contained IIFE each.
  *
  * @param {object}   opts
@@ -241,6 +276,8 @@ export async function buildWidgets(opts) {
     log(`no widgets found in ${dir}/ — a widget is a .mesa file there, or a directory holding index.mesa`)
     return []
   }
+
+  assertBuildableTags(widgets, prefix)
 
   const tmpDir = resolve(root, 'node_modules/.sierra')
   await mkdir(tmpDir, { recursive: true })
@@ -277,10 +314,39 @@ export async function buildWidgets(opts) {
       })
       built.push({ name: widget.name, fileName: `${widget.name}.js` })
       log(`${widget.name} → ${outDir}/${widget.name}.js`)
+    } catch (err) {
+      // Vite writes the chunk before whatever failed after it, so a failed build
+      // leaves a broken script on disk beside the widgets that did build — and
+      // `COPY dist/embeds` in the next deploy step ships it. An absent file is
+      // loud; a stale one is a page that half works.
+      await rm(resolve(root, outDir, `${widget.name}.js`), { force: true }).catch(() => {})
+      throw err
     } finally {
       await rm(entryFile, { force: true }).catch(() => {})
     }
   }
 
+  reportUnclaimed(resolve(root, outDir), widgets, log)
   return built
+}
+
+/**
+ * Name the scripts in `outDir` that no widget here claims.
+ *
+ * `emptyOutDir: false` is necessary — N builds write into one directory — so
+ * nothing prunes, and a widget deleted from `src/Embeds/` keeps shipping
+ * forever. Keeping it is the right DEFAULT (a host page still has that URL
+ * pasted into it), but it should be an answer rather than an accident, and
+ * *what is on this origin and why* has to be askable.
+ */
+function reportUnclaimed(outAbs, widgets, log) {
+  const claimed = new Set(widgets.map(w => `${w.name}.js`))
+  let names
+  try { names = readdirSync(outAbs) } catch { return }
+  const stale = names.filter(n => n.endsWith('.js') && !claimed.has(n)).sort()
+  if (!stale.length) return
+  log(
+    `${stale.join(', ')} — in ${outAbs} and built by no widget in this surface. ` +
+    `They are still served: a host page has that URL. Delete them when no page embeds them.`
+  )
 }

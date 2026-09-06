@@ -114,7 +114,7 @@ describe('beginFlow', () => {
 
   test('the redirect URI is passed through untouched', () => {
     // Providers match it as an exact string, so anything that rebuilds or
-    // normalises it produces a mismatch nobody can debug from the error.
+    // normalizes it produces a mismatch nobody can debug from the error.
     const { authorizeUrl } = beginFlow(google(), REDIRECT)
     expect(new URL(authorizeUrl).searchParams.get('redirect_uri')).toBe(REDIRECT)
   })

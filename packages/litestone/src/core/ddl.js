@@ -66,6 +66,114 @@ export function modelToTableName(model, pluralize = false) {
 }
 
 /**
+ * Derive the SQL column name from a field.
+ *
+ * The field-level counterpart of `modelToTableName`, and it has to be a
+ * function rather than a read of `field.name`: `@map` parsed and was applied by
+ * nothing, so a schema carrying `fullName @map("full_name")` described a table
+ * it could not read (`FJS-761`). Everything that emits a column identifier goes
+ * through here.
+ */
+export function fieldToColumnName(field) {
+  const mapAttr = field?.attributes?.find(a => a.kind === 'map')
+  return mapAttr?.name || field?.name
+}
+
+/**
+ * A model's field name → column name, for the names that DIFFER.
+ *
+ * Empty for a model that maps nothing, which is what lets every caller skip the
+ * translation entirely rather than walking a full identity map per statement.
+ */
+export function columnMapFor(model) {
+  const map = {}
+  for (const f of model?.fields ?? []) {
+    const col = fieldToColumnName(f)
+    if (col !== f.name) map[f.name] = col
+  }
+  return map
+}
+
+/** One name through a model's map. A field the map does not name is its own column. */
+export const mapCol = (map, name) => (map && map[name]) || name
+
+/**
+ * Walk the identifiers in a SQL expression, leaving string literals alone.
+ *
+ * `fn` answers a replacement or `null` to keep the word as it stands. A word
+ * inside `'…'` is a VALUE and is never offered — rewriting there turned
+ * `'legacy'` into an identifier called legacy. Shared with the importer, which
+ * runs it in the other direction: a column read out of a foreign database
+ * becomes a field name there, and a field name becomes a column here.
+ */
+export function mapIdentifiers(expr, fn) {
+  let out = '', i = 0
+  while (i < expr.length) {
+    const ch = expr[i]
+    if (ch === "'") {
+      const end = expr.indexOf("'", i + 1)
+      const stop = end === -1 ? expr.length : end + 1
+      out += expr.slice(i, stop); i = stop; continue
+    }
+    if (ch === '"') {
+      const end = expr.indexOf('"', i + 1)
+      const stop = end === -1 ? expr.length : end + 1
+      const id = expr.slice(i + 1, end === -1 ? expr.length : end)
+      const mapped = /^[a-z_]\w*$/i.test(id) ? fn(id) : null
+      out += mapped ?? expr.slice(i, stop); i = stop; continue
+    }
+    const word = expr.slice(i).match(/^[a-z_][a-z0-9_]*/i)
+    if (word) { out += fn(word[0]) ?? word[0]; i += word[0].length; continue }
+    out += ch; i++
+  }
+  return out
+}
+
+/**
+ * An author-written SQL expression, in COLUMN space.
+ *
+ * `@@check` is emitted verbatim and names FIELDS, so a model that renames one
+ * with `@map` described a constraint over a column that is not there — the
+ * table then fails to CREATE, naming the field (`FJS-761`).
+ */
+export function mapExprCols(expr, cmap) {
+  if (!expr || !cmap || Object.keys(cmap).length === 0) return expr
+  return mapIdentifiers(expr, (id) => {
+    const c = cmap[id]
+    if (!c) return null
+    // BARE where the name allows it, and the reason is the error message rather
+    // than the SQL. SQLite reports an unnamed CHECK by its own source text, and
+    // an expression that OPENS with a quoted identifier is reported as that
+    // identifier alone — `CHECK ("page_count" >= 0)` comes back as
+    // `page_count`. `asCheckViolation` finds the declaration that owns the
+    // message by matching that text, so quoting every mapped column turned
+    // every violation on a mapped model into the generic sentence. An author
+    // who quotes their own column already loses the message the same way, so
+    // this keeps the two spellings symmetric rather than inventing a rule.
+    return SAFE_BARE_IDENT.test(c) ? c : `"${c}"`
+  })
+}
+
+// Quoting is what a name needs when it could be read as something else. A
+// keyword or a name with punctuation in it is quoted and takes the generic
+// message with it, which is the trade named in mapExprCols.
+const SQL_KEYWORDS = new Set([
+  'abort', 'action', 'add', 'all', 'alter', 'and', 'as', 'asc', 'between', 'by',
+  'case', 'cast', 'check', 'collate', 'column', 'commit', 'constraint', 'create',
+  'cross', 'default', 'delete', 'desc', 'distinct', 'drop', 'else', 'end',
+  'escape', 'except', 'exists', 'filter', 'for', 'from', 'full', 'group',
+  'having', 'if', 'in', 'index', 'inner', 'insert', 'intersect', 'into', 'is',
+  'isnull', 'join', 'left', 'like', 'limit', 'match', 'natural', 'not',
+  'notnull', 'null', 'of', 'offset', 'on', 'or', 'order', 'outer', 'primary',
+  'references', 'regexp', 'right', 'select', 'set', 'table', 'then', 'to',
+  'transaction', 'union', 'unique', 'update', 'using', 'values', 'view', 'when',
+  'where', 'with',
+])
+const SAFE_BARE_IDENT = {
+  test: (name) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) && !SQL_KEYWORDS.has(name.toLowerCase()),
+}
+
+/**
  * Derive the client accessor key from a model name.
  * Always camelCase singular — never pluralized.
  *
@@ -159,7 +267,8 @@ export function columnDefaultExpr(field) {
 // ─── Column definition ────────────────────────────────────────────────────────
 
 function columnDef(field, schema = null, compositePk = false, strict = true) {
-  const parts = [`  "${field.name}" ${sqlType(field.type)}`]
+  const col   = fieldToColumnName(field)
+  const parts = [`  "${col}" ${sqlType(field.type)}`]
 
   // NOT NULL — unless optional, and not for GENERATED/funcCall columns
   // SQLite rejects NOT NULL on GENERATED ALWAYS AS columns
@@ -186,7 +295,7 @@ function columnDef(field, schema = null, compositePk = false, strict = true) {
   if (expr) parts.push(`DEFAULT ${expr}`)
 
   if (field.type.array) {
-    parts.push(`CHECK (json_valid("${field.name}") AND json_type("${field.name}") = 'array')`)
+    parts.push(`CHECK (json_valid("${col}") AND json_type("${col}") = 'array')`)
   }
 
   // GENERATED (computed column) — from explicit @generated
@@ -218,7 +327,7 @@ function columnDef(field, schema = null, compositePk = false, strict = true) {
   // a seed, a raw statement and `asSystem()`, which drops every rule this package
   // owns and cannot drop this one.
   if (field.attributes.some(a => a.kind === 'scale' || a.kind === 'money'))
-    parts.push(`CHECK ("${field.name}" BETWEEN -${EXACT_INT_MAX} AND ${EXACT_INT_MAX})`)
+    parts.push(`CHECK ("${col}" BETWEEN -${EXACT_INT_MAX} AND ${EXACT_INT_MAX})`)
 
   // @big — and the CHECK is emitted only where STRICT is off, which is the
   // opposite of the pair above and is a measurement rather than a judgement.
@@ -231,7 +340,7 @@ function columnDef(field, schema = null, compositePk = false, strict = true) {
   // that off, and there it is the only thing standing between a wide column and
   // a silent REAL.
   if (!strict && field.attributes.some(a => a.kind === 'big'))
-    parts.push(`CHECK ("${field.name}" IS NULL OR typeof("${field.name}") = 'integer')`)
+    parts.push(`CHECK ("${col}" IS NULL OR typeof("${col}") = 'integer')`)
 
   // CHECK
   const chk = field.attributes.find(a => a.kind === 'check')
@@ -244,6 +353,7 @@ function columnDef(field, schema = null, compositePk = false, strict = true) {
 
 function tableConstraints(model, schema, pluralize = false) {
   const lines = []
+  const cmap  = columnMapFor(model)
 
   // Composite primary key — if more than one @id field.
   //
@@ -257,14 +367,14 @@ function tableConstraints(model, schema, pluralize = false) {
   const pkFields = model.fields.filter(f => f.attributes.find(a => a.kind === 'id'))
   if (pkFields.length > 1) {
     const names = idOrder ?? pkFields.map(f => f.name)
-    const cols  = names.map(n => `"${n}"`).join(', ')
+    const cols  = names.map(n => `"${mapCol(cmap, n)}"`).join(', ')
     lines.push(`  PRIMARY KEY (${cols})`)
   }
 
   // @@unique constraints
   for (const attr of model.attributes) {
     if (attr.kind === 'uniqueIndex') {
-      const cols = attr.fields.map(f => `"${f}"`).join(', ')
+      const cols = attr.fields.map(f => `"${mapCol(cmap, f)}"`).join(', ')
       lines.push(`  UNIQUE (${cols})`)
     }
   }
@@ -277,7 +387,7 @@ function tableConstraints(model, schema, pluralize = false) {
   // sides are this emitter's own output, which is what makes a string
   // comparison exact there.
   for (const attr of model.attributes) {
-    if (attr.kind === 'check') lines.push(`  CHECK (${attr.expr})`)
+    if (attr.kind === 'check') lines.push(`  CHECK (${mapExprCols(attr.expr, cmap)})`)
   }
 
   // @@arc — exclusive foreign keys, counted.
@@ -288,7 +398,7 @@ function tableConstraints(model, schema, pluralize = false) {
   // against at parse; the migrator's CHECK-text comparison stays exact because
   // both sides are this emitter's output.
   for (const attr of model.attributes) {
-    if (attr.kind === 'arc') lines.push(`  CHECK (${arcCheckExpr(attr)})`)
+    if (attr.kind === 'arc') lines.push(`  CHECK (${arcCheckExpr(attr, cmap)})`)
   }
 
   // Foreign keys from @relation attributes
@@ -296,11 +406,15 @@ function tableConstraints(model, schema, pluralize = false) {
     const rel = field.attributes.find(a => a.kind === 'relation')
     if (!rel?.fields) continue  // skip back-reference fields (no fields: [...])
 
-    const fromCols = rel.fields.map(f => `"${f}"`).join(', ')
-    const toCols   = rel.references.map(f => `"${f}"`).join(', ')
     // Resolve the TARGET's actual table name — @@map / pluralize aware.
     // Referencing the raw model name broke every FK on @@map'd schemas.
     const targetModel = schema?.models.find(m => m.name === field.type.name)
+    // Each side takes its OWN model's map. `references:` names fields on the
+    // TARGET, so mapping them through this model's would resolve a name that
+    // happens to exist on both and leave the rest alone.
+    const targetMap = targetModel ? columnMapFor(targetModel) : null
+    const fromCols = rel.fields.map(f => `"${mapCol(cmap, f)}"`).join(', ')
+    const toCols   = rel.references.map(f => `"${mapCol(targetMap, f)}"`).join(', ')
     const targetTable = targetModel ? modelToTableName(targetModel, pluralize) : field.type.name
     let fk = `  FOREIGN KEY (${fromCols}) REFERENCES "${targetTable}" (${toCols})`
     if (rel.onDelete) fk += ` ON DELETE ${rel.onDelete.toUpperCase().replace('SETNULL', 'SET NULL').replace('NOACTION', 'NO ACTION')}`
@@ -327,7 +441,7 @@ function enumCheck(field, schema) {
   // one by doubling it; without this a member like `Don't ship` closes the
   // literal and the whole CREATE TABLE stops parsing.
   const values = enumDef.values.map(v => `'${String(v.name).replace(/'/g, "''")}'`).join(', ')
-  return `  CHECK ("${field.name}" IN (${values}))`
+  return `  CHECK ("${fieldToColumnName(field)}" IN (${values}))`
 }
 
 // ─── What becomes a column ────────────────────────────────────────────────────
@@ -372,7 +486,8 @@ function createTable(model, schema, tableName, pluralize = false) {  // schema n
 
 function createIndexes(model, softDelete = false, tableName) {
   const lines = []
-  const soft  = softDelete ? `"deletedAt" IS NULL` : null
+  const cmap  = columnMapFor(model)
+  const soft  = softDelete ? `"${mapCol(cmap, 'deletedAt')}" IS NULL` : null
 
   for (const attr of model.attributes) {
     if (attr.kind !== 'index') continue
@@ -383,7 +498,7 @@ function createIndexes(model, softDelete = false, tableName) {
     // not rename an existing index; the migrator sees the change through
     // `indexKey`, which carries the sorts.
     const cols = attr.fields
-      .map((f, i) => `"${f}"${attr.sorts?.[i] ? ` ${attr.sorts[i]}` : ''}`)
+      .map((f, i) => `"${mapCol(cmap, f)}"${attr.sorts?.[i] ? ` ${attr.sorts[i]}` : ''}`)
       .join(', ')
 
     // Partial indexes on soft-delete tables — only index live rows. Smaller
@@ -396,7 +511,7 @@ function createIndexes(model, softDelete = false, tableName) {
     // silently un-optimize every read. `whereSql` is the parser's own compiled
     // output — the same compiler a query goes through — which is what makes the
     // two byte-identical and therefore matchable.
-    const parts = [soft, attr.whereSql].filter(Boolean)
+    const parts = [soft, mapExprCols(attr.whereSql, cmap)].filter(Boolean)
     const where = parts.length === 0 ? ''
                 : parts.length === 1 ? ` WHERE ${parts[0]}`
                 : ` WHERE ${parts.map(p => `(${p})`).join(' AND ')}`
@@ -417,18 +532,27 @@ function createIndexes(model, softDelete = false, tableName) {
   // live rows writes `deletedAt == null` themselves, and then they have said it.
   for (const attr of model.attributes) {
     if (attr.kind !== 'partialUnique') continue
-    const cols = attr.fields.map(f => `"${f}"`).join(', ')
-    // Same name as an @@index over the same columns would take, which is what
-    // keeps it inside the `idx_<table>_` prefix `ownedIndex` reads — an index
-    // litestone does not recognize as its own is one it never drops. The parser
-    // refuses the collision.
-    lines.push(`CREATE UNIQUE INDEX IF NOT EXISTS "idx_${tableName}_${attr.fields.join('_')}" ON "${tableName}" (${cols}) WHERE ${attr.whereSql};`)
+    const cols = attr.fields.map(f => `"${mapCol(cmap, f)}"`).join(', ')
+    // `uniq_` and not `idx_`, because the two are different KINDS of thing over
+    // the same columns and both are legitimate on one model: `@@index([a])` is
+    // the ordinary lookup and `@@unique([a], where: …)` is *at most one row
+    // where the predicate holds*. Sharing the derivation made the second
+    // undeclarable, and the refusal offered two ways out — different columns,
+    // or one predicate covering both — neither of which exists for that pair
+    // (`FJS-614`). A partial unique covers only the rows its predicate admits,
+    // so it cannot stand in for the lookup, which is the same reason `advise`
+    // does not count one as foreign-key coverage.
+    //
+    // The prefix IS the ownership test in `migrate.js`, so a new one has to be
+    // recognized there or litestone stops dropping its own index.
+    lines.push(`CREATE UNIQUE INDEX IF NOT EXISTS "uniq_${tableName}_${attr.fields.join('_')}" ON "${tableName}" (${cols}) WHERE ${mapExprCols(attr.whereSql, cmap)};`)
   }
 
   // Auto-generate a partial index on deletedAt itself for soft-delete tables.
   // Makes WHERE deletedAt IS NULL counts and existence checks very fast.
   if (softDelete) {
-    lines.push(`CREATE INDEX IF NOT EXISTS "idx_${tableName}_deletedAt" ON "${tableName}" ("deletedAt") WHERE "deletedAt" IS NULL;`)
+    const dc = mapCol(cmap, 'deletedAt')
+    lines.push(`CREATE INDEX IF NOT EXISTS "idx_${tableName}_deletedAt" ON "${tableName}" ("${dc}") WHERE "${dc}" IS NULL;`)
   }
 
   return lines
@@ -440,7 +564,12 @@ function createFts(model, tableName) {
   const fts = model.attributes.find(a => a.kind === 'fts')
   if (!fts) return null
 
+  const cmap = columnMapFor(model)
+  // The FTS table's own columns are litestone's and stay FIELD names — search()
+  // reads them back and they are never the source table's. What the triggers
+  // reference through `new.`/`old.` is the source row, which is columns.
   const contentCols   = fts.fields.join(', ')
+  const rowidCol      = mapCol(cmap, 'id')
   const hasSoftDelete = model.attributes.some(a => a.kind === 'softDelete')
   // unicode61 is FTS5's implicit default — only emit a tokenize clause when
   // the user picked something else. Keeps the DDL clean for the common case
@@ -448,8 +577,8 @@ function createFts(model, tableName) {
   const tokenize = fts.tokenize && fts.tokenize !== 'unicode61'
     ? `,\n  tokenize='${fts.tokenize}'`
     : ''
-  const oldVals = fts.fields.map(f => `old.${f}`).join(', ')
-  const newVals = fts.fields.map(f => `new.${f}`).join(', ')
+  const oldVals = fts.fields.map(f => `old.${mapCol(cmap, f)}`).join(', ')
+  const newVals = fts.fields.map(f => `new.${mapCol(cmap, f)}`).join(', ')
 
   // The index mirrors the table row for row, soft-deleted rows included, and
   // the ONE reader — search() — excludes them in its own WHERE, which is also
@@ -467,7 +596,7 @@ function createFts(model, tableName) {
     `CREATE VIRTUAL TABLE IF NOT EXISTS "${tableName}_fts" USING fts5(`,
     `  ${contentCols},`,
     `  content="${tableName}",`,
-    `  content_rowid="id"${tokenize}`,
+    `  content_rowid="${rowidCol}"${tokenize}`,
     `);`,
     ``,
     `-- Triggers to keep FTS index in sync.`,
@@ -481,14 +610,14 @@ function createFts(model, tableName) {
       `DROP TRIGGER IF EXISTS "${tableName}_fts_restore";`,
     ] : []),
     `CREATE TRIGGER "${tableName}_fts_insert" AFTER INSERT ON "${tableName}" BEGIN`,
-    `  INSERT INTO "${tableName}_fts"(rowid, ${contentCols}) VALUES (new.id, ${newVals});`,
+    `  INSERT INTO "${tableName}_fts"(rowid, ${contentCols}) VALUES (new.${rowidCol}, ${newVals});`,
     `END;`,
     `CREATE TRIGGER "${tableName}_fts_delete" AFTER DELETE ON "${tableName}" BEGIN`,
-    `  INSERT INTO "${tableName}_fts"("${tableName}_fts", rowid, ${contentCols}) VALUES ('delete', old.id, ${oldVals});`,
+    `  INSERT INTO "${tableName}_fts"("${tableName}_fts", rowid, ${contentCols}) VALUES ('delete', old.${rowidCol}, ${oldVals});`,
     `END;`,
     `CREATE TRIGGER "${tableName}_fts_update" AFTER UPDATE ON "${tableName}" BEGIN`,
-    `  INSERT INTO "${tableName}_fts"("${tableName}_fts", rowid, ${contentCols}) VALUES ('delete', old.id, ${oldVals});`,
-    `  INSERT INTO "${tableName}_fts"(rowid, ${contentCols}) VALUES (new.id, ${newVals});`,
+    `  INSERT INTO "${tableName}_fts"("${tableName}_fts", rowid, ${contentCols}) VALUES ('delete', old.${rowidCol}, ${oldVals});`,
+    `  INSERT INTO "${tableName}_fts"(rowid, ${contentCols}) VALUES (new.${rowidCol}, ${newVals});`,
     `END;`,
   ]
 
@@ -1027,8 +1156,8 @@ export function generateModelDDL(model, schema, { pluralize = false } = {}) {
 // CHECK text back against it to find the declaration that owns the message. A
 // second spelling would not fail — it would fall through to "this record is not
 // valid", which is the generic sentence the message exists to replace.
-export function arcCheckExpr(attr) {
-  const terms = attr.fields.map(f => `("${f}" IS NOT NULL)`).join(' + ')
+export function arcCheckExpr(attr, cmap = null) {
+  const terms = attr.fields.map(f => `("${mapCol(cmap, f)}" IS NOT NULL)`).join(' + ')
   return `(${terms}) ${attr.optional ? '<=' : '='} 1`
 }
 

@@ -29,7 +29,7 @@ const METHODS_WITH_BODY: Record<string, 1> = {
 //
 // They used to share one object, with dynamic routes under the key 'D' and
 // fixed routes keyed by their normalized path. A route registered at '/D'
-// normalises to exactly 'D', so it collided with the bucket: build() threw
+// normalizes to exactly 'D', so it collided with the bucket: build() threw
 // `methodCache.D.push is not a function`, and lookup() would have returned the
 // bucket array as if it were a route. Two fields cannot collide.
 type RouteCache = {

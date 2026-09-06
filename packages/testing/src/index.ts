@@ -45,6 +45,8 @@ import type { SessionContext }            from '@frontierjs/junction/auth'
 export * from '@frontierjs/litestone/testing'
 export { request, createStubAuth, testCtx, withTestMeta, enterCall } from '@frontierjs/junction/testing'
 export { verifyTransportParity } from './parity.ts'
+export { createTestMailer } from './doubles.ts'
+export type { TestMailer } from './doubles.ts'
 export type { ParityCall, ParityPrincipal, ParityMismatch, ParityOptions } from './parity.ts'
 
 // ─── types ────────────────────────────────────────────────────────────────────

@@ -530,13 +530,10 @@ const ATTR_DOCS: Record<string, string> = {
     'Excludes this field from ALL read operations. Pass it explicitly in `select` to unlock.',
 
   '@guarded':
-    'Excluded from all reads unless `asSystem()` is used. Unlike `@omit`, an explicit `select` alone is not enough.',
-
-  '@guarded(all)':
-    'Excluded from all operations (reads and writes) unless `asSystem()` is used.',
+    'Excluded from all operations, reads and writes alike, unless `asSystem()` is used. Unlike `@omit`, an explicit `select` does not unlock it. Takes no argument.',
 
   '@encrypted':
-    'Encrypts the value at rest using AES-256-GCM. Requires `encryptionKey` (64-char hex) in `createClient()`.\n\nImplies `@guarded(all)` — only readable via `asSystem()`.',
+    'Encrypts the value at rest using AES-256-GCM. Requires `encryptionKey` (64-char hex) in `createClient()`.\n\nImplies `@guarded` — only readable via `asSystem()`.',
 
   '@encrypted(deterministic: true)':
     'AES-256-GCM with the IV derived from the plaintext, so the same value always stores the same bytes — equality `where` filters work, and the value still decrypts.\n\n```\nemail String @encrypted(deterministic: true)\n// WHERE email = \'alice@example.com\'  ✓ works\n// user.email                          ✓ reads back\n```\n\nTrade-off: equal values are visibly equal in the column to anyone holding the database file.',
@@ -545,7 +542,7 @@ const ATTR_DOCS: Record<string, string> = {
     'HMAC-SHA256. **One-way** — no ciphertext, no key recovers it, `$rotateKey` cannot touch it.\n\nEquality `where` filters work; the value never comes back, `asSystem()` included. Naming it in a `select`, `groupBy` or aggregate throws.\n\n```\nloginToken String @hashed\n// WHERE loginToken = tok   ✓ matches\n// user.loginToken          → undefined\n```\n\nString columns only. Does not compose with `@encrypted`, `@secret`, `@guarded` or `@allow`.',
 
   '@secret':
-    'Composite attribute — expands to `@encrypted + @guarded(all) + @log(audit)`.\n\nThe field is encrypted at rest, hidden from all reads unless `asSystem()`, and every read/write is logged to the audit logger database.\n\nUse `@secret(rotate: false)` to exclude from `db.$rotateKey()` — the column is then UNREADABLE after a rotation, because the key swap is global, and `$rotateKey` refuses while one exists unless it is orphaned by name. `@secret(deterministic: true)` is a secret that must also be looked up by value.',
+    'Composite attribute — expands to `@encrypted + @guarded + @log(audit)`.\n\nThe field is encrypted at rest, hidden from all reads unless `asSystem()`, and every read/write is logged to the audit logger database.\n\nUse `@secret(rotate: false)` to exclude from `db.$rotateKey()` — the column is then UNREADABLE after a rotation, because the key swap is global, and `$rotateKey` refuses while one exists unless it is orphaned by name. `@secret(deterministic: true)` is a secret that must also be looked up by value.',
 
   '@log':
     'Logs reads and writes of this field to a `logger` database.\n\n```\napiKey String @secret   // @log(audit) is implicit via @secret\nsalary Float @log(audit)\n```\n\nSee also: `@@log` for model-level logging.',
@@ -654,8 +651,6 @@ const ATTR_DOCS: Record<string, string> = {
   '@@noStrict':
     'Opts this model out of SQLite STRICT mode (all models are STRICT by default).',
 
-  '@@strict':
-    'Explicitly opts into STRICT mode (default — only needed if overriding a previous `@@noStrict`).',
 }
 
 const TYPE_DOCS: Record<string, string> = {
@@ -687,7 +682,7 @@ connection.onHover((pos: TextDocumentPositionParams): Hover | null => {
   // attribute table — `function slug(...)` hovered as the @slug transform,
   // and so would a model or field named trim, lower, email, url…
   const candidates = word.startsWith('@') ? [word] : []
-  // Also check for @omit(all), @guarded(all) etc. by looking at surrounding context
+  // Also check for @omit(all), @guarded etc. by looking at surrounding context
   const lineWord = (() => {
     const start = line.slice(0, col).search(/@@?\w+/)
     if (start === -1) return null

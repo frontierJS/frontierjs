@@ -76,4 +76,29 @@ if (!await must(context, {
 log.info('')
 log.info(`  ${f.detail}`)
 log.info('')
+
+// ── and then apply it ───────────────────────────────────────────────────────
+//
+// The lesson has been about verdicts, and the verdict on what is left is
+// expand: `priority` is optional and N-1 keeps serving. So the honest end is to
+// apply it, which is what you would do next.
+//
+// It is also what keeps this app usable. Every step above edited the SCHEMA and
+// nothing wrote a table, so the app now declares a column its database does not
+// have — and the next thing to write a Note through the API is refused with
+// `table note has no column named priority`, three lessons later, by a page
+// that has nothing to do with this one.
+log.info('applying it — the verdict on what is left is expand, and a schema the')
+log.info('database has not caught up with is a 500 on the next write')
+pushSchema(context)
+
+if (!await must(context, probe.sqliteRow({
+  db:     join(app, 'db', 'app.db'),
+  sql:    "select name from pragma_table_info('note') where name = 'priority'",
+  expect: (rows) => rows.length === 1,
+  name:   'the column the schema declares is in the table',
+}), {
+  likely:    'db:push did not run — its output is above',
+  reproduce: `cd ${app} && fli db:push`,
+})) return
 ```

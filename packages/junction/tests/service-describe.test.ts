@@ -82,9 +82,13 @@ describe('describe()', () => {
     expect(metrics.services.details.widgets!.methods).toEqual(d.methods)
     expect(metrics.services.details.widgets!.allowBulk).toBe(d.allowBulk)
 
-    const paths = Object.keys(oa.paths).join(' ')
-    for (const a of d.customMethods) expect(paths).toContain(a)
-    expect(paths).not.toContain('prune')
+    // A custom method is named in the `X-Service-Method` enum rather than in a
+    // path, because the path form was one the wire does not serve. Asked of the
+    // whole document, which is stronger than asking the path keys: `prune` must
+    // appear NOWHERE, not merely in no path.
+    const doc = JSON.stringify(oa)
+    for (const a of d.customMethods) expect(doc).toContain(a)
+    expect(doc).not.toContain('prune')
   })
 })
 

@@ -1,5 +1,497 @@
 # Changes — @frontierjs/mesa
 
+## 2026-09-05 — a `javascript:` URL is refused where it navigates
+
+`FJS-858`, ruled by `FJS-D217`.
+
+`href`, `src`, `action` and `formaction` took a `javascript:` URL unfiltered, at runtime and
+baked into a static file. They are refused now, along with `data:text/html`, the attribute is
+REMOVED rather than left stale — so a reactive `href` moving from `/orders/12` to
+`javascript:` clears the link instead of leaving a destination the component no longer states
+— and a warning names it.
+
+**The row named one writer and there were two.** `spreadAttributes` never reaches
+`setAttribute` for `href` at all: `href` has a setter on `HTMLAnchorElement`, so the spread
+takes the property path. A guard in `set_attribute` alone — the documented single owner —
+would have left the spread hole open with every test green. `bindAttribute` needed nothing,
+being `createEffect(() => set_attribute(...))` and nothing else.
+
+The predicate strips C0 controls and whitespace and lowercases **for the test only**, because
+a URL parser drops those before reading a scheme and `Java\nscript:` is one URL to a browser;
+nothing rewrites the value that gets written. The refusal is narrow: a relative URL, a
+protocol-relative one, `mailto:`, `tel:`, `blob:`, `data:image/png` and `data:image/svg+xml`
+all survive, and so do `?q=javascript:…` and `/javascript:…`, which contain the string and are
+not that scheme.
+
+## 2026-09-05 — a class declaration runs in dependency order
+
+`FJS-846`, the class half.
+
+Every non-variable statement was emitted in a trailing loop after the effects, and a class
+binding does not hoist, so `const c = new C()` read `C` in its temporal dead zone.
+
+**The reorder is load-bearing and stayed**: vars are dependency-sorted so a derived can name
+one declared below it, and every `$:` effect must follow every declaration. What the reason
+did not cover is classes, which are declarations too — so they joined the same sort.
+`classDeclTimeRefs()` collects only what the declaration EVALUATES: superclass, computed keys,
+static fields and static blocks. A method body is deferred and orders nothing, and ordering on
+every identifier would turn `class R { read() { return n } }` into a cycle and refuse a working
+component. A genuine cycle is reported naming both sides.
+
+The general reorder remains: an expression statement before a later `const` still runs after
+it. Measured before deciding — 82 of 331 instance scripts in this workspace have that shape and
+nearly all are harmless, since a `const` over a reactive `let` is a memo and re-derives. A
+warning there is noise, not a diagnostic.
+
+## 2026-09-05 — `$: o.x, doThing()` is refused instead of compiling to nothing
+
+`FJS-848`.
+
+`isHandler` accepts only an arrow, a function expression or a bare identifier, so a call or an
+update expression in the last position fell through to the multi-path watch, which kept
+whatever `memberPath()` named and dropped the rest in silence — which is where the author's
+`hits++` went. The scalar case did error, but with the *primitive deep-watch* message, about
+`a` and not about the handler.
+
+Every element of the sequence that names no path is refused now, with a position, the last one
+carrying the rewrite.
+
+**A neighbouring defect had to be fixed first, or the refusal would have refused a documented
+form.** `memberPath()` did not know `ChainExpression`, so `$: store?.a` named no path — which
+means soft paths had never registered a watch at all, silently, in either shape, while the
+code that waits for exactly that `?.` string sat downstream of it.
+
+## 2026-09-05 — an `export const` default may name a reactive variable
+
+`FJS-899`.
+
+The head emitted `track(props.x !== undefined ? props.x : 'n' + base)` with `base` both in its
+temporal dead zone and un-rewritten through accessors that do not exist yet. The default is
+deferred now — but through an inline `$$runtime.set($$sig_x, …)` rather than `export let`'s
+setter, because `FJS-D209` is that the child has no setter and one declared for the compiler's
+own use is one the child can spell.
+
+`export var` had the identical crash from the identical emission and is fixed with it. That
+needed no ruling: the deferral runs before any effect, so the snapshot is still the mount-time
+value `FJS-D211` describes.
+
+## 2026-09-05 — the docs compile, and an error names the tag that was written
+
+`FJS-868`, ruled by `FJS-D216`.
+
+`<mesa:window on:keydown={h}>` unclosed is the only spelling §12.1 showed and the one §23's
+flagship complete component used, and it has never compiled. The elements keep their closing
+slash — two ways to write one element costs more than six wrong examples — so the docs are
+what changed.
+
+**The artefact is the point.** `test/docs-fences.test.js` compiles every whole-component fence
+in `docs/`; the examples were wrong for the life of the file because nothing had ever executed
+one. `VISION.md` went from eight bad to 48 fences and none. Fences without a `<script>` are not
+graded: a fragment illustrating one attribute names bindings it never declares, and a check
+that fires on correct documentation is a check people delete.
+
+The diagnostic went with it. `readTag` splits `mesa` from `:window`, and `describeNode()`
+printed the first half — so an author was told `<mesa> is never closed` and searching the file
+for `<mesa>` found nothing. Fixed in three messages; the close-tag comparison still uses the
+half before the colon, only the text quotes what was written.
+
+## 2026-09-05 — one proxy per object, and one proxy builder
+
+`FJS-849` and `FJS-853`, which are one bug.
+
+Child proxies were cached BY PATH, so an object reachable at two paths got two proxies and
+`state.selected === state.items[0]` was false — `indexOf` −1, `includes` false, `Set.has`
+false, an `{#each}` keyed on the object broken. Beside it a second builder, for a local `let`
+under a bare `$:`, had no cache at all, so `obj.child === obj.child` was false within one
+expression.
+
+**The path key was carrying two jobs and only one of them was identity.** It also carried the
+watch NODE — the trie position a read subscribes to and a write fires — so a cache keyed by
+the target alone would have dropped one alias's subscriptions, in read order. The cache is
+keyed by the target object with the node kept as a LIST on the entry: an alias merges its node
+on a hit, reads subscribe to every node's cover, writes fire from all of them. That is a
+superset of the old behavior, not a narrowing.
+
+`_buildLocalProxy` is gone; local and imported state share one builder, matching the trie
+below it, which had been unified for this reason already.
+
+Measured over 200k nested reads, best of five: imported 68.7/82.7/87.9ms → 48.3/47.9/52.8ms,
+local `let` 179.4/174.8/197.0ms → 50.2/49.4/53.3ms. **The first correct version was 4.5×
+slower than the bug** — what recovered it was passing the cache into the proxy closure rather
+than looking it up per read, and joining the child path string only on a cache miss.
+
+## 2026-09-05 — a `const` is derived only when something it names can move
+
+`FJS-847`, ruled by `FJS-D212`.
+
+`reactiveSet` was every top-level binding whose `kind !== 'var'`, so a `const` over a static
+`const` became a memo that can never recompute. The cost was not the memo: promotion makes the
+initializer LAZY, so `const handle = subscribe(id)` never subscribed when nothing read
+`handle` — no subscription, and an `$.onDestroy` closing a handle that was never opened.
+
+**The narrowing then broke a real screen, and that is the more useful half.** A call to a
+binding the script holds is a second door reactivity comes through: `useStore` hands back a
+getter, so `Math.max(10, ...rows().map(f))` reads a signal INSIDE the call where no name the
+closure walks can see it. `example`'s catalogue computed its price ceiling once against an
+empty store and every filter above it collapsed to one row — green in every unit suite, caught
+by `verify`. A const calling a LOCAL binding is now derived on the strength of the call. An
+imported call is not, which is `EXTERNAL_REACTIVITY.md`'s standing rule rather than a new one.
+
+A second defect fell out on the way: `collectRefs` skipped every identifier under a
+`key`/`property` parent, computed ones included, so `users[userId]` looked like it read only
+`users`. Blanket promotion had been hiding it.
+
+## 2026-09-05 — in Markdown, `{…}` is a path
+
+`FJS-873`, ruled by `FJS-D213`.
+
+Markdown prose is template source, so `A set {1, 2, 3} of numbers.` rendered **"A set 3 of
+numbers."** — a comma operator, valid JS, no error, wrong prose. `{…}` in a `.md` now
+interpolates a bare path and nothing else, with `\{` as the escape.
+
+**Two mechanisms, not one.** The narrowing is in `parseText`; the escape is separate, because
+CommonMark eats `\{` before Mesa sees it, so it crosses the Markdown step as a sentinel. The
+seam is the text-node site alone — a pure `{expr}` attribute never reaches `parseText`, and
+`FJS-D208` makes the same text-vs-attribute split three lines away.
+
+Diffed against all 692 `.md` files in the repo: **nine differ and all nine are wins.** The
+tutor's `{{apiPort}}` placeholders were being compiled as `{apiPort}` and rendered empty,
+eating the substitution its own runtime relies on.
+
+## 2026-09-05 — the flush budget measures the node, not the pass
+
+`FJS-851`.
+
+A chain of 998 links settled and 1000 was declared cyclic, its pending nodes dropped. The
+derived layer settles one DOM-depth per pass by design (`FJS-303`) and every link of a memo
+chain sits at depth 0, so one pass bought one link against a budget of 1000 passes.
+
+`_MAX_NODE_RUNS = 100` makes depth and cyclicity different facts: a chain runs each node once
+at any length, a cycle re-runs the same node. `_MAX_FLUSH_WORK` stays as a backstop for work
+that keeps creating fresh nodes. **The cycle message now names the node that repeated**, which
+the old one structurally could not — in a two-effect cycle the queue is empty at halt, so
+*Still pending* printed blank.
+
+## 2026-09-05 — a spread key the DOM refuses no longer takes the page down
+
+`FJS-872`.
+
+A spread's keys come from data, so one can be a string the DOM rejects as an attribute name.
+`setAttribute` answers that with a thrown `InvalidCharacterError`, which escaped the effect and
+took the whole render down over one key, naming neither the component nor the attribute.
+
+`spreadAttributes` catches that one error name, warns naming the key and the element, and
+skips — the same move it already makes for a getter-only property, where the comment already
+says it keeps one stray prop from taking the whole render down. **The DOM is asked rather than
+a name pattern restated here**, because a second definition of *what is a legal attribute name*
+would be wrong in exactly the cases that matter. Measured: `a b`, `a=b` and `a"b` throw; `1abc`
+is accepted.
+
+The other half is the address. A failed render now names the file, says the refusal is the
+DOM's and that nothing was injected, keeps the cause, and rewrites the temp `.mjs` stack frames
+back to the `.mesa` they compiled from.
+
+## 2026-09-05 — anchors are lifted out of the DOM, not matched out of the HTML
+
+`FJS-859`.
+
+Three regexes over serialized HTML stripped the mount anchors, and they matched inside
+attribute values: `alt="x <!-- y" data-keep="K" title="z --> w"` did not merely lose a value —
+the match ate `" title="z ` and welded two attributes into one, losing `title` entirely. The
+same string survived intact as text, so the data was safe in one position and mangled in the
+other.
+
+`_serializeWithoutAnchors(container)` walks the DOM, lifts the anchor comment NODES out,
+serializes, and puts them back. Attribute values and text are untouchable by construction.
+
+Three details hold it up: the anchors go back BEFORE dispose, since a block's cleanup reads
+`anchor.parentNode` and bails on null; it is a hand walk rather than
+`createTreeWalker(SHOW_COMMENT)`, because happy-dom changed what that filter matches between
+versions this package has pinned and a walker matching nothing leaves every anchor in the page;
+and the set of comments removed is unchanged, so island markers and `[if mso]` conditionals
+still survive.
+
+## 2026-09-05 — the HMR boundary fails closed by injecting nothing
+
+`FJS-865`, `FJS-887` and `FJS-875`.
+
+The injected `import.meta.hot.accept` makes a module SELF-ACCEPTING, so a boundary that cannot
+swap swallows every edit rather than falling back to a reload — Vite escalates nothing.
+**Failing closed can therefore only mean injecting no accept.** The plugin asks
+`hmrClientSource()` once per instance before injecting; a throw means no boundary, one warning,
+and the file stays on the full-reload path. The stub client that is still served — the join can
+break after startup, when components already carry the accept — now reloads.
+
+That path had no trigger, which made its value aspirational. It has three now, and the
+strongest asks the question of **Vite** rather than of a string: a real dev server, two
+components one line apart, `moduleGraph.isSelfAccepting` true for the wrapped one and false for
+the refused one. The absence of a substring cannot say *Vite will escalate*.
+
+The client registry is swept on the way in and on every update rather than only by the swap: a
+swap runs when that one file is edited, so a route navigated away from left its marker, anchor,
+props and block retained for the life of the tab. Bounded rather than complete — an instance
+torn down and never remounted while nobody edits still holds one entry.
+
+## 2026-09-05 — the compiler is resolved once per plugin instance
+
+`FJS-880`.
+
+The memo was at module scope, so the second plugin in a config was handed whichever compiler
+resolved first and its `compilerPath` was dropped in silence. That is the ordinary case, since
+`FJS-D16` has Sierra reimplementing the plugin and never the boundary. The memo is now a
+per-instance promise; `import()` already caches by URL, so per-instance costs nothing.
+
+The test that pinned the old behavior is reconciled into a pair asked in BOTH orders, because
+resolving in registration order looks identical to per-instance if you only ask one way.
+
+## 2026-09-05 — CSS is collected once per scope id
+
+`FJS-871`.
+
+The defect was the collection, not the sharing, and Invariant 12 is untouched: `cssHash` hashes
+style content and nothing else, so two components with identical `<style>` are *supposed* to
+share a scope id. `compileTree` accumulated `css` and `styles` blindly, so one id produced two
+entries and the rules landed twice in both the stylesheet and the `<style>` tag. `css` on the
+return is derived from the deduped `styles`, so the two cannot disagree.
+
+## 2026-09-05 — a render that fails says where, and a server render says what it answers
+
+`FJS-870`, `FJS-886`, ruled by `FJS-D214`.
+
+`localStorage` is genuinely absent during a server render, and `new Error(msg)` was discarding
+the one stack frame that named the compiled module and its component function. The failure now
+names both.
+
+**The plausible wrong page is ruled rather than fixed.** `window.innerWidth` answers 1280,
+`navigator.userAgent` answers `Node.js/22`, `matchMedia().matches` answers false, so a
+responsive component bakes the desktop branch and nothing reports it. Every neighbouring rule
+here is deliberately silent, and a per-read warning fires on every page of a prerender of
+hundreds. What was missing was a position: `SSR_SPEC.md` now carries what each global answers
+and the consequence — the server always answers with the wide viewport, so mobile-first is
+correct in a baked page and desktop-first is not.
+
+Four claims about happy-dom were measured against the installed 20.11.6 and all four were
+stale: cross-document adoption no longer throws (it adopts silently, so a mismatch is a wrong
+page rather than a crash), `requestIdleCallback` is on a list of globals happy-dom is said to
+provide and 20 has neither it nor its partner, `createTreeWalker(SHOW_COMMENT)` finds comments,
+and a comment ends at `-->` rather than the first `>`. The `>` escape stays anyway: the payload
+is written once for two parsers and only one of them is pinned here.
+
+## 2026-09-05 — smaller runtime corrections
+
+`FJS-878` — `restProps` walked the prototype, so a props object with one painted its inherited
+keys onto the element as attributes. `Object.keys` — own enumerable string keys, which also
+drops the non-string keys the prop registry's Symbol sink warns about, for free.
+
+`FJS-879` — an effect whose first run threw stayed on its owner's children and subscribed while
+the caller got `undefined`, so the next write re-ran it. It disposes in the catch. The rethrow
+is kept: a setup failure is still the caller's to see, and only the leak is closed.
+
+## 2026-09-05 — a mount owns a reactive root, so `destroy()` disposes one
+
+`FJS-890`, the effects half — the part the DOM half below said was not a smaller change.
+
+`mount()` runs the component inside a `createRoot` and `destroy()` disposes it before it
+sweeps the DOM. Effects before nodes: a cleanup may reach for the element it was attached to,
+and disposal removes no DOM of its own.
+
+The component's own owner node is made by `push_component` and parented to whatever `_owner`
+is at the time. A root mount runs outside every effect, so that was `null` — the node was
+reachable from nothing, `$.onDestroy` never ran, and a `<mesa:window>` listener came off
+never, one per mount for the life of the page.
+
+**Every long-lived caller had already compensated by hand**, which is the shape that says a
+handle is missing half its teardown: mesa's own tests write `disposeRoot(); instance.destroy()`
+around a mount, and sierra's `islands/loader.js` carried a comment explaining that the effects
+survive. Sierra's widget sweep stays, because it answers a different question — what the
+element held BEFORE the mount, which Mesa has no way to know.
+
+## 2026-09-05 — a duplicate `{#each}` key no longer corrupts the list for good
+
+`FJS-856`.
+
+The behavior is unchanged — warn once per render, carry on — and what changed is that carrying
+on is now correct. Every repeat after the first is filed under a stand-in key object, reused
+across renders so the row keeps its DOM, and rebuilt each render so the list empties when the
+data stops repeating. No block is orphaned, and removing the duplicate repairs the list.
+
+`FJS-325` closed the accidental case by changing the DEFAULT key to the index; the declared
+case stayed exactly as `FJS-315` had described it. `keyCount` now doubles as the render's key
+set, replacing the `new Set(newKeys)` the removal pass built, so the always-on dedupe costs
+about what the dev-only check did.
+
+## 2026-09-05 — every handler between two delegation roots fires again
+
+`FJS-833`, Invariant 11.
+
+`_makeDelegatedHandler` aborted the walk of `composedPath()` at the first inner registered
+root. A handler is stored on the ELEMENT it was written on and not on a root, so every
+delegated handler above an inner root and below an outer one was skipped for ever — the
+ordinary Sierra shape of an app mounted at the page container with an island inside it.
+
+Ownership is now decided per node: `rootIndex = path.indexOf(root)`, `floor` = the deepest
+registered root below it, dispatch `floor+1 … rootIndex-1`. Each handler still has exactly one
+owning root, which is the half a fix here can quietly break — a handler firing twice looks
+like a handler firing.
+
+## 2026-09-05 — replacing an object notifies the watches inside it
+
+`FJS-832`.
+
+`_watchFire` walked from the written key upward to the root and never downward, so
+`page.data = {…}` — the move Sierra's router makes on every navigation — notified the watch on
+`data` and on the whole object, and not the watch on `page.data.title`, whose value had just
+changed. The compiler emits exactly that watch for `$: page.data.title` and says nothing.
+
+Cost is bounded to DECLARED watches: a key nobody declared has no trie node, which is the hot
+path. Measured over 1M writes, best of five — an undeclared leaf 64ms → 59ms, inside noise; a
+`page.data` swap with three declared descendants 590ms → 626ms, +36ns a write, which is the
+cost of firing three signals that previously never fired.
+
+## 2026-09-05 — an effect that creates an effect prunes its own children
+
+`FJS-852`.
+
+`_run()` cleared cleanups and deps on re-run and deliberately left `_children` alone, which is
+right for `ifBlock` and `keyBlock` — they dispose their own branch — and wrong for any effect
+calling `createEffect` in its body: after 50 re-runs, 51 inner effects were live and all of
+them ran. Nodes made by `_makeNode` now carry `_selfOwned` and only those are disposed; block
+owners are inert `_fn: null` literals and survive.
+
+**One real caller broke, and it is the finding rather than a casualty.** `portal()` built its
+content directly under its own effect and returns early when the target has not moved, so the
+prune killed the content and nothing rebuilt it — `@frontierjs/ui`'s `AlertProvider` showed one
+alert and then never changed its text again. `portal` now creates a target-scoped owner node,
+the shape `ifBlock` uses, and disposes the previous one on retarget, which it had never done.
+Every other `createEffect` in the runtime was audited: `portal` was the only DOM-building one
+without an owner.
+
+## 2026-09-05 — `export const` is a prop the child may not write
+
+`FJS-867`, ruled by `FJS-D209`.
+
+RULE 56 said `export const` was a compiler error. It was neither refused nor implemented: it
+compiled to a plain `const` reading `props.x`, so the author's declared constant was a prop the
+parent controlled, the parent's LATER values never arrived, and a child write failed at runtime
+with *Assignment to constant variable*, naming neither the prop nor the file.
+
+It now compiles to what `export let` compiles to minus the setter — the same tracked signal,
+the initializer as the fallback, the parent's later values reaching the child, no `$$set_x`,
+read-only through `bind:this`, and a child write refused at compile time naming the prop.
+**Immutable describes the child, not time**: a value frozen at mount would turn a parent's
+update into a silently stale screen.
+
+The refusal lives in `rewriteExpr` rather than `rewriteAssignments`, because it is the only one
+of the two that knows about shadowing and a local `x` over the prop is not the prop. All 66
+existing uses in the repo are in `<script module>`, an ordinary ES export, untouched.
+
+## 2026-09-05 — a nullish interpolation renders empty, and RULE 12 is withdrawn
+
+`FJS-854` and `FJS-855`, ruled by `FJS-D208`.
+
+RULE 12 promised that every member chain in a template was wrapped in optional chaining and a
+nullish fallback — *zero runtime errors* — and none of it was implemented. **Implementing it was
+refused**: under the rewrite a misspelled path and a genuinely absent value are
+indistinguishable, both render empty, neither reports, and the component looks like it works.
+
+The empty string is kept and is a separate, narrower rule. A text-node hole is emitted as
+`${(expr) ?? ''}` — per hole, because `hi {x} there` stringifies each hole separately, and the
+parens are load-bearing since `${a || b ?? ''}` is a SyntaxError that takes the module down at
+parse time. Attributes, `style:` and component props keep the old path, where `null` means
+*remove* and `undefined` means *leave alone*. A deep path still throws, deliberately.
+
+## 2026-09-05 — a numeric input binds a number
+
+`FJS-857`.
+
+`el.value` is always a string and the generic bind path wrote it straight to the signal, so a
+component initialised `let qty = 1` held `"12"` after the first keystroke: `qty + 1` was
+`"121"`, `qty > 10` compared lexicographically, and a value posted to the API arrived as a
+string a JSON-Schema `type: integer` refuses one realm away. The write direction was fine,
+which is why every round trip that set the value from code passed.
+
+Coerced through `valueAsNumber` by the element's own `type` — `number` and `range` — with no
+modifier, since it is a fact about the control rather than an author's opt-in. An empty or
+half-typed box yields `undefined`, *no value yet*, which is what an unassigned `let` holds;
+`null` would say *the author cleared it*, which a lone `-` does not.
+
+## 2026-09-05 — `Map`, `Set` and `Date` in watched state say so
+
+`FJS-850`.
+
+They are handed through `_isOpaque` untouched and are simply inert: `state.tags = new Set()`
+then `state.tags.add('x')` compiles clean, runs clean and renders nothing. `_warnOpaqueWatch`
+now fires once per value from both proxy get traps, naming the path and the kind — the shape
+`_warnAccessorWatch` already uses for a watch that can never fire. No reactivity change;
+making them reactive is a different and unruled question. Narrowed to those three deliberately:
+`RegExp`, `Promise`, `Error` and the typed arrays are inert too, but nobody expects mutating
+one to render, so warning there is noise.
+
+## 2026-09-05 — `innerHTML`, `textContent` and `innerText` leave `_DOM_PROPS`
+
+`FJS-D206`.
+
+`<div innerHTML={value}>` parsed markup from a value: a second `{@html}`, undocumented, that no
+security sentence in the language covered. The three keys are out of `_DOM_PROPS` and
+`_TEXT_DOM_PROPS` and fall through to `setAttribute`, where they are inert. `{@html}` is the
+only way to write markup from a value.
+
+No `.mesa` file in the repo authors any of the three as an attribute — the eight files that
+mention the words do so in `<script>` bodies manipulating DOM nodes directly — so the removal
+costs no existing code.
+
+## 2026-09-05 — `destroy()` removes what the mount rendered
+
+`FJS-890`, the DOM half.
+
+`mount().destroy()` was `anchor.remove(); cleanupDelegation(); cleanupStyles()` — it named a
+teardown and performed three of its five parts, leaving the rendered DOM, the effects and the
+signal graph in place.
+
+What a mount rendered is everything between the node it was handed and the anchor inserted
+after it. That range starts EMPTY, because the anchor goes in at `label.nextSibling` before
+the component runs, and a compiled component appends before its anchor, so the range is the
+render and nothing else. It is walked at destroy rather than recorded at mount, since block
+content queued during setup lands at anchors already inside the range — after `mount()` has
+returned.
+
+**Collected first, removed only on REACHING the anchor.** A walk that never meets it —
+`destroy()` called twice, a host that removed the anchor, a reparented label — would otherwise
+take every following sibling of the label with it.
+
+Every real caller of a mount handle's `destroy()` in this repo was swept first: sierra's
+widget `unmount`, `islands/loader.js`'s `disposeWithin`, and both browser drives' unmount
+helpers. None relied on the DOM surviving it; two of them were compensating by hand and are
+now belt-and-braces rather than load-bearing.
+
+**The effects half is not done and is not a smaller change.** A compiled component returns
+`undefined`, and its owner node — pushed by `push_component`, popped by `pop_component` — is
+reachable from `mount` nowhere, so disposing effects requires `mount` to own a `createRoot`.
+That changes what a mount handle IS and reaches every caller of it.
+
+## 2026-09-05 — an island prop that changes type across the marker is named
+
+`FJS-805`.
+
+An island's props are serialized into a comment marker at prerender and parsed back at mount,
+and by the time `islands/loader.js` sees them a `Date` is a string indistinguishable from a
+string the author wrote and a `Map` is `{}`. No loader-side rule can recover that: it would
+fire on legitimate values and stay silent on the ones that lost the most. The one place both
+the original and the serialized value exist is the replacer.
+
+The replacer is a `function` rather than an arrow, and that is the whole mechanism:
+`JSON.stringify` binds `this` to the HOLDER, so `this[key]` is the value before `toJSON` ran
+while `value` is what will be written. The two disagreeing is the class JSON reports nothing
+about, and it is warned about beside the existing `dropped` warning, in the same walk.
+
+Two details the mechanism needs. **Map and Set are tested first**: they carry no `toJSON`, so
+the replacer is handed the collection itself and `raw !== value` is false right up to the
+point JSON writes `{}` — under the other order a Map lands in the retyped list and never
+reaches its own branch. And **a bare key is not a prop name**: the walk is depth-first over
+the whole payload, so a holder→path `WeakMap` makes the warning name `nested.inner` and
+`arr[0]` rather than `inner` and `0`, which is an array index nothing could tell from a
+top-level prop. Probed in both bun and node, same answer in each.
+
 ## 2026-09-02 — a temp module does not outlive the process that wrote it
 
 `FJS-664`. 1353 vitest + 107 runtime-browser + 47 vite-browser, 0 fail; sierra
