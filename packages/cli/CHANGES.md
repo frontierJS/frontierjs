@@ -1,5 +1,28 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-06 — a pivot the journal could not store
+
+`fli deploy` died at `04c-journal` on every deploy in the repo — the deploy
+cycle's first deploy and `tutor:deploy` at the same step — with
+`FOREIGN KEY constraint failed` ([`FJS-952`](../../ISSUES.md#fjs-952)).
+
+litestone ranks a pivot `unchanged < expand < unknown < contract` and answers
+the first rung when a release moved no schema. `db/deploy.lite` declares three
+of the four. `recordRelease` is an `INSERT OR IGNORE`, and IGNORE silently drops
+a row that violates a CHECK, so the `release` row was never written and the
+transition's foreign key failed one statement later — naming neither `pivot`
+nor the word that was refused.
+
+`mintRelease` normalizes `unchanged` to `expand`, before the id hash. Pivot
+answers one question — can Release N-1 still serve this database — and both
+rungs answer yes. Doing it after the hash would give one Release two ids
+depending on which word arrived.
+
+The test that matters reads the CHECK out of the shipped `ddl.snapshot.sql` and
+puts every rung of litestone's ladder through the mint, so a fifth rung fails
+loudly rather than being dropped in silence. All three new tests are red with
+the mapping removed.
+
 ## 2026-09-05 — `fli gui` can open the pages it could already regenerate
 
 A snapshot generator is a runnable row, so the front page had a start button for
