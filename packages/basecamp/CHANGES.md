@@ -1,5 +1,30 @@
 # Changes — Basecamp
 
+## 2026-09-05 — two tests naming a schema that had moved
+
+211 tests, 0 fail. Both failures were in the tests rather than in the app, and
+both are the same class: a test that hard-codes something the framework or the
+schema owns, and goes stale silently when that thing moves.
+
+**`Server` has no `hostname` and no `provider`.** The optimistic-locking test
+created one with both, so junction refused the create by name — *"hostname: is
+not a field of Server"* — and the row it meant to assert about was never
+written. The columns are `ipAddress` and `providerKind`; the test says so now.
+What it is actually for is unchanged: `Server` is the named exclusion from
+`@version`, because an outpost heartbeat writes the row on its own schedule.
+
+**The row-policy checker reworded a reason.** `verifyRowPolicies` used to report
+a delegated policy as *delegates to another model's policy*; since one-hop paths
+landed it reports *the policy crosses a relation (check() or a path like
+'parent.column')*, which covers both shapes. The test matched the old sentence,
+so 46 correctly-reported rows read as a new ungradable shape.
+
+The pattern is updated and the enumeration is kept, because the enumeration is
+the assertion — it is what makes a genuinely new shape loud. One reason stays
+deliberately outside it: *all seeded rows fall on the same side of the policy*
+is a hole in this schema's fixtures, not a shape the checker cannot grade, and
+accepting it here would hide the thing it exists to report.
+
 ## 2026-09-05 — the container a release starts is named for the app
 
 `deployment-run.job.ts` called `/deploy` without `app_id`, and outpost names the

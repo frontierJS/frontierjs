@@ -1041,6 +1041,43 @@ circle.er-link-fam { fill: hsl(var(--er-family) 62% 52%); stroke: none }
 .ex-blurb { font-size: var(--text-sm); color: var(--color-muted); line-height: 1.4 }
 .ex-clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden }
 
+/* The palette. It sits above everything and is the one thing here that is not
+   inside the shell, so its own stacking context is stated rather than inherited. */
+.pal-backdrop { position: fixed; inset: 0; z-index: 100; background: rgb(0 0 0 / 0.4);
+                display: flex; justify-content: center; align-items: flex-start; padding-block-start: 10vh }
+.pal { width: min(40rem, 92vw); max-height: 70vh; display: flex; flex-direction: column;
+       background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-lg);
+       box-shadow: 0 1rem 3rem rgb(0 0 0 / 0.3); overflow: hidden }
+.pal-input { border: 0; border-block-end: 1px solid var(--rule); border-radius: 0; font-size: var(--text-lg) }
+.pal-input:focus { outline: none }
+.pal-results { list-style: none; margin: 0; padding: var(--space-2xs); overflow-y: auto; flex: 1 }
+.pal-group { padding: var(--space-xs) var(--space-sm) var(--space-2xs);
+             font-size: var(--text-xs); color: var(--color-muted); text-transform: uppercase; letter-spacing: 0.06em }
+.pal-row { display: flex; gap: var(--space-sm); align-items: baseline; width: 100%; text-align: start;
+           padding: var(--space-xs) var(--space-sm); border: 0; background: none; color: inherit;
+           border-radius: var(--radius-sm); cursor: pointer }
+.pal-row[aria-selected="true"] { background: var(--surface-2, rgb(127 127 127 / 0.14)) }
+.pal-name { font-weight: 600; white-space: nowrap }
+.pal-what { color: var(--color-muted); font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.pal-hit { text-decoration: underline; text-underline-offset: 2px }
+.pal-foot { display: flex; gap: var(--space-md); padding: var(--space-xs) var(--space-sm);
+            border-block-start: 1px solid var(--rule); font-size: var(--text-xs) }
+.pal-foot kbd { font-family: var(--font-mono); border: 1px solid var(--rule);
+                border-radius: var(--radius-sm); padding-inline: 0.25em; margin-inline-end: 0.15em }
+.pal-empty { padding: var(--space-lg); color: var(--color-muted); text-align: center }
+
+/* Compare. The verdict cards stack, and the finding tables are the widest thing
+   here — a `@@unique(a, b) added` detail is a sentence, so the subject column is
+   held narrow and the detail takes the rest rather than the row wrapping oddly. */
+.cmp-counts { margin-block-start: var(--space-xs) }
+.cmp-grid td { vertical-align: top; padding-block: var(--space-xs) }
+.cmp-grid td:first-child { width: 1%; white-space: nowrap }
+.cmp-grid td:nth-child(2) { width: 1%; white-space: nowrap }
+.cmp-split { margin-block-start: var(--space-2xs) }
+.cmp-split summary { color: var(--color-muted); font-size: var(--text-sm); cursor: pointer }
+.cmp-split ol { margin-block: var(--space-2xs); padding-inline-start: var(--space-lg) }
+#panelCompare .card { margin-block-end: var(--space-md) }
+
 /* The word's own card. The example is the widest thing on it and the only part
    that must not wrap, so it scrolls itself rather than the page. */
 .ex-card { padding: var(--space-lg); background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-md) }
@@ -1162,6 +1199,23 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
   </div>
 </header>
 
+<!-- ── The palette ────────────────────────────────────────────────────────
+     Thirteen panels, forty models and every word of the language, and the only
+     way to reach any of them was to know which panel owned it. One box searches
+     all three. Hidden with [hidden] so an unstyled Studio does not show it. -->
+<div id="palette" class="pal-backdrop" hidden onclick="if (event.target === this) palClose()">
+  <div class="pal" role="dialog" aria-modal="true" aria-label="Search Studio">
+    <input id="palInput" class="field pal-input" type="text" autocomplete="off" spellcheck="false"
+           placeholder="Go to a panel, a model, or a word of the language"
+           aria-controls="palResults" aria-expanded="true" role="combobox"
+           oninput="palSearch()" onkeydown="palKey(event)">
+    <ul id="palResults" class="pal-results" role="listbox" aria-label="Results"></ul>
+    <div class="pal-foot text-muted">
+      <span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>↵</kbd> open</span><span><kbd>esc</kbd> close</span>
+    </div>
+  </div>
+</div>
+
 <nav class="sidebar" id="studioRail" aria-label="Studio">
 
   <div class="sidebar-section">
@@ -1202,6 +1256,10 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
       <li><a class="navlink" id="navAccess" href="#access">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         <span class="navlink-text">Access</span>
+      </a></li>
+      <li><a class="navlink" id="navCompare" href="#compare">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 3v12"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v3a6 6 0 0 1-6 6H9"/></svg>
+        <span class="navlink-text">Compare</span>
       </a></li>
       <li><a class="navlink" id="navMigrations" href="#migrations">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
@@ -1422,6 +1480,19 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
       <span class="text-muted" id="acCounts"></span>
     </div>
     <div class="data-grid-wrap stack" id="acPanel">
+      <div class="empty"><span class="spinner"></span> Loading…</div>
+    </div>
+  </article>
+
+  <article class="view" id="panelCompare" hidden>
+    <div class="bar">
+      <strong>Compare</strong>
+      <label class="text-muted" for="cmpRef">against</label>
+      <select id="cmpRef" onchange="cmpRun()"></select>
+      <div class="spacer"></div>
+      <span class="text-muted" id="cmpSubject"></span>
+    </div>
+    <div class="data-grid-wrap stack" id="cmpPanel">
       <div class="empty"><span class="spinner"></span> Loading…</div>
     </div>
   </article>
@@ -2607,9 +2678,12 @@ function setRail(collapsed) {
     btn.title = collapsed ? 'Expand the sidebar (\\)' : 'Collapse the sidebar (\\)'
     btn.querySelector('.visually-hidden').textContent = collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'
   }
-  // The diagram is drawn against MEASURED geometry and the canvas is sized off
-  // the frame, so a rail that moves without a redraw leaves every FK line
-  // ending where its card used to be.
+  // Insurance, and stated as insurance: nothing currently depends on it. Cards
+  // are absolutely positioned inside the canvas, so narrowing the frame moves
+  // the canvas and not a single card coordinate — measured by deleting this
+  // line and watching every line-endpoint assertion still pass. It stays
+  // because one rAF is cheaper than the day a card's placement becomes
+  // frame-relative and every curve silently points at nothing.
   if (typeof erDrawLines === 'function' && schema) requestAnimationFrame(erDrawLines)
 }
 
@@ -2785,6 +2859,7 @@ const OV_TOOLS = [
   ['lite',       'Schema',      'Edit schema.lite and see the migration it implies before applying it'],
   ['explore',    'Explore',     'The language itself — every word, and which of them this schema uses'],
   ['access',     'Access',      'Who may read, write and delete each model, and what a policy filters'],
+  ['compare',    'Compare',     'What this branch did — can N-1 still serve the database, and who may now do more'],
   ['migrations', 'Migrations',  'What is applied, what is pending, and what drifted'],
   ['perf',       'Performance', 'Missing indexes, and EXPLAIN for a query you paste'],
   ['qlog',       'Query Log',   'Every statement this Studio has run, as it runs'],
@@ -3495,6 +3570,388 @@ function acTone(required) {
   if (required <= 1) return 'warning'              // reachable without signing in
   if (required >= 8) return 'info'                 // asSystem() or nothing
   return 'muted'
+}
+
+// ─── The palette ─────────────────────────────────────────────────────────────
+//
+// Thirteen panels, forty models and every word of the language, and until this
+// the only way to reach any of them was to know which panel owned it — the same
+// problem `fli ws:atlas` answers one tier up, with the same answer.
+//
+// THE CORPUS IS BUILT FROM WHAT THE PAGE ALREADY KNOWS, and the one thing it
+// does not is fetched once, on first open. A palette that made every panel load
+// its own data to be searchable would cost a schema parse, a catalog read and an
+// advisory pass to press a key.
+//
+// RANK BY WHERE THE MATCH IS, not by how much of it matched. A prefix beats a
+// word boundary beats a substring, because what a person types is the start of
+// the thing they are thinking of — typing `ord` for `Order` must not be beaten
+// by `Recorded` on the grounds that the second is a shorter word.
+let _palWords  = null    // the language, fetched once
+let _palRows   = []      // what the current query matched, flat and in rank order
+let _palAt     = 0       // which row is selected
+let _palReturn = null    // what had focus when it opened
+
+async function palOpen() {
+  const box = document.getElementById('palette')
+  if (!box.hidden) return
+  _palReturn = document.activeElement
+  box.hidden = false
+  const input = document.getElementById('palInput')
+  input.value = ''
+  input.focus()
+  palSearch()
+
+  // The language is the one part of the corpus the page does not already hold.
+  // Fetched after the box is up, so the palette opens instantly and gains the
+  // words a moment later rather than waiting on a request to appear at all.
+  if (!_palWords) {
+    try {
+      const cat = await api('/catalog')
+      _palWords = (cat.catalog ?? []).map(r => ({
+        word: r.word, level: r.level, blurb: r.blurb ?? '', synonyms: r.synonyms ?? [],
+      }))
+    } catch { _palWords = [] }
+    if (!box.hidden) palSearch()
+  }
+}
+
+function palClose() {
+  const box = document.getElementById('palette')
+  if (box.hidden) return
+  box.hidden = true
+  // Focus goes back where it was. Leaving it on a hidden input is how a keyboard
+  // user ends up typing into nothing.
+  try { _palReturn?.focus() } catch {}
+  _palReturn = null
+}
+
+// Panels come from the same table the Overview directory renders, so a panel
+// added there is searchable with no second list to keep — and `overview` itself
+// is not in that table, being the thing the table lives on.
+function palPanels() {
+  return [{ id: 'overview', name: 'Overview', what: 'The front page — what needs attention, and every panel' }]
+    .concat(OV_TOOLS
+      .filter(([id]) => id !== 'tenants' || tenantsEnabled)
+      .map(([id, name, what]) => ({ id, name, what })))
+}
+
+/**
+ * Where a query hits a candidate: 0 prefix, 1 word boundary, 2 substring, or
+ * null for no match. Case-insensitive, and the boundary test is deliberately
+ * about `_`, `-`, `.` and a capital as well as a space — `PayRun` has a word
+ * boundary at the R, and typing `run` should find it.
+ */
+function palHit(text, q) {
+  const t = text.toLowerCase()
+  const i = t.indexOf(q)
+  if (i < 0) return null
+  if (i === 0) return { rank: 0, at: i }
+  const before = text[i - 1]
+  const boundary = /[\s_\-.:@]/.test(before) || (before === before.toLowerCase() && text[i] === text[i].toUpperCase())
+  return { rank: boundary ? 1 : 2, at: i }
+}
+
+function palSearch() {
+  const q = document.getElementById('palInput').value.trim().toLowerCase()
+  const out = []
+
+  const add = (group, name, what, run, hit) => out.push({ group, name, what, run, hit })
+
+  for (const p of palPanels()) {
+    // The name first, then the sentence saying what the panel answers — ranked
+    // last and with no hit span, the way a synonym is, because the match is not
+    // in the text the row shows as its name. Typing `policy` has to find Access
+    // and `EXPLAIN` has to find Performance: what somebody is looking for is the
+    // question, and the panel names are this tool's vocabulary rather than
+    // theirs.
+    const hit = q
+      ? (palHit(p.name, q) ?? (p.what.toLowerCase().includes(q) ? { rank: 3, at: -1 } : null))
+      : { rank: 0, at: 0 }
+    if (hit) add('Panels', p.name, p.what, `showTool('${p.id}')`, hit)
+  }
+
+  for (const m of (schema?.models ?? [])) {
+    const hit = q ? palHit(m.name, q) : null
+    if (!hit) continue
+    const n = m.fields?.length ?? 0
+    add('Models', m.name, `${n} field${n === 1 ? '' : 's'} — browse its rows`,
+        `selectTable(${JSON.stringify(m.name)}); showTool('browse')`, hit)
+  }
+
+  // A word is searched WITH its sigil, because that is how it is written and
+  // how somebody looking for it types it: `@@gate` and `gate` both have to land.
+  for (const w of (_palWords ?? [])) {
+    const sigil = w.level === 'model' ? '@@' : w.level === 'field' ? '@' : ''
+    const shown = sigil + w.word
+    // With the sigil and without, because that is how a word is written and how
+    // somebody looking for it types it — `@@gate` and `gate` both land. Then the
+    // SYNONYMS the catalogue already carries, ranked last and with no hit span,
+    // since the match is not in the text on screen: typing `rbac` or
+    // `permission` finds `@@gate`, which is the word somebody who does not know
+    // this language yet actually has.
+    let hit = q ? (palHit(shown, q) ?? palHit(w.word, q)) : null
+    if (!hit && q && w.synonyms.some(x => x.toLowerCase().includes(q))) hit = { rank: 3, at: -1 }
+    if (!hit) continue
+    add('The language', shown, w.blurb,
+        `showTool('explore'); exGo({kind:${w.level === 'schema' ? "'top'" : "'word'"},word:${JSON.stringify(w.word)},level:${JSON.stringify(w.level)}})`,
+        hit)
+  }
+
+  // Rank first, then the shorter name — `Order` before `OrderLine` for `order`,
+  // which is what somebody typing five letters meant.
+  out.sort((a, b) => a.hit.rank - b.hit.rank || a.name.length - b.name.length || a.name.localeCompare(b.name))
+
+  _palRows = out.slice(0, 40)
+  _palAt   = 0
+  palRender()
+}
+
+function palRender() {
+  const list = document.getElementById('palResults')
+  if (!_palRows.length) {
+    list.innerHTML = `<li class="pal-empty">Nothing here matches that.</li>`
+    return
+  }
+  let html = '', group = null
+  _palRows.forEach((r, i) => {
+    if (r.group !== group) { group = r.group; html += `<li class="pal-group" role="presentation">${esc(group)}</li>` }
+    html += `<li role="presentation"><button class="pal-row" role="option" id="palRow${i}"
+      aria-selected="${i === _palAt}" onmousemove="palAt(${i})" onclick="palRun(${i})">
+      <span class="pal-name">${palMark(r.name, r.hit)}</span>
+      <span class="pal-what">${esc(r.what ?? '')}</span>
+    </button></li>`
+  })
+  list.innerHTML = html
+  document.getElementById('palRow' + _palAt)?.scrollIntoView({ block: 'nearest' })
+}
+
+// The matched span, underlined. Built by SLICING the original rather than by
+// replacing text, so a query that is also HTML cannot become markup — and the
+// three pieces are escaped separately for the same reason.
+function palMark(name, hit) {
+  if (!hit || hit.at < 0) return esc(name)
+  const q = document.getElementById('palInput').value.trim()
+  const end = hit.at + q.length
+  return esc(name.slice(0, hit.at)) +
+         `<span class="pal-hit">${esc(name.slice(hit.at, end))}</span>` +
+         esc(name.slice(end))
+}
+
+function palAt(i) {
+  if (i === _palAt) return
+  _palAt = i
+  for (const el of document.querySelectorAll('#palResults .pal-row'))
+    el.setAttribute('aria-selected', String(el.id === 'palRow' + i))
+}
+
+function palRun(i) {
+  const row = _palRows[i ?? _palAt]
+  if (!row) return
+  palClose()
+  // eslint-disable-next-line no-new-func
+  new Function(row.run)()
+}
+
+function palKey(e) {
+  if (e.key === 'ArrowDown') { e.preventDefault(); _palAt = Math.min(_palAt + 1, _palRows.length - 1); palRender() }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); _palAt = Math.max(_palAt - 1, 0); palRender() }
+  else if (e.key === 'Enter')  { e.preventDefault(); palRun() }
+  else if (e.key === 'Escape') { e.preventDefault(); palClose() }
+}
+
+// ⌘K on a Mac and Ctrl+K everywhere else — the shortcut every tool with a
+// palette uses, so it is the one that is already in people's hands. Both are
+// bound on both platforms rather than branching on the user agent, since the
+// other combination is bound to nothing here either way.
+//
+// `preventDefault` is not optional: Ctrl+K is the browser's own search-from-the
+// address-bar shortcut, and without it the box opens and the focus leaves the
+// page. Unlike the rail's `\`, this DOES fire from inside a field — a palette
+// you cannot open while the cursor is in the SQL box is one nobody reaches for
+// — and Escape inside the palette closes the palette rather than the field.
+addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+    e.preventDefault()
+    document.getElementById('palette').hidden ? palOpen() : palClose()
+    return
+  }
+  if (e.key === 'Escape' && !document.getElementById('palette').hidden) palClose()
+})
+
+// ─── Compare — what this branch did ──────────────────────────────────────────
+//
+// Every other panel answers *what is true now*. This one answers *what changed*,
+// which is the question asked last and with the most at stake, and the one
+// Studio could not be asked at all: `litestone release --from` and `litestone
+// access --from` both computed it and neither had a face.
+//
+// TWO VERDICTS, NEVER ONE BADGE. They are read off one walk of the same two
+// surfaces and they disagree by construction — removing a `@@gate` is an
+// `expand` for a deploy (N-1 keeps working) and the widest thing a schema change
+// can do to access. A single headline would have to pick one and would be wrong
+// about the other every time it mattered.
+//
+// The ref is CHOSEN FROM A LIST the server enumerated, never typed: the value
+// ends up on a git command line, and the name is looked up rather than
+// interpolated.
+let _cmpRefs = null
+let _cmpBusy = false
+
+const CMP_DEPLOY_TONE = { unchanged: 'success', expand: 'success', unknown: 'warning', contract: 'danger' }
+const CMP_ACCESS_TONE = { unchanged: 'success', new: 'muted', narrows: 'success', unknown: 'warning', widens: 'danger' }
+
+const CMP_DEPLOY_SAYS = {
+  unchanged: 'nothing about the database moved',
+  expand:    'N-1 and N can serve this database at once — deploy in any order',
+  unknown:   'something moved that cannot be classified from its text — read the rows',
+  contract:  'THE PIVOT — N-1 cannot serve this database. It must stop before this deploys',
+}
+const CMP_ACCESS_SAYS = {
+  unchanged: 'nothing declared about access moved',
+  new:       'models the baseline never had. Nothing that existed moved',
+  narrows:   'every declared change takes access away',
+  unknown:   'a predicate moved and which way is not decidable from its text',
+  widens:    'this hands callers access they did not have',
+}
+
+async function cmpInit() {
+  if (_cmpRefs) return
+  const panel = document.getElementById('cmpPanel')
+  try {
+    const res = await api('/refs')
+    _cmpRefs = res.refs ?? []
+  } catch (e) {
+    panel.innerHTML = `<div class="alert danger"><div class="alert-content">${esc(e.message)}</div></div>`
+    return
+  }
+
+  if (!_cmpRefs.length) {
+    document.getElementById('cmpRef').hidden = true
+    panel.innerHTML = `<div class="empty">
+      <p><b>Nothing to compare against.</b></p>
+      <p class="text-muted">This directory is not a git repository, so there is no previous
+      version of the schema to read. Every other panel still describes the one you have.</p>
+    </div>`
+    return
+  }
+
+  // The default is the first entry that is not HEAD — comparing HEAD against
+  // itself answers `unchanged` for every branch, which looks like the panel is
+  // broken rather than like a question honestly answered.
+  const sel = document.getElementById('cmpRef')
+  sel.innerHTML = _cmpRefs.map((r, i) => {
+    const label = r.kind === 'schema-commit' ? r.name.slice(0, 8) : r.name
+    return `<option value="${esc(r.name)}"${i === (_cmpRefs.length > 1 ? 1 : 0) ? ' selected' : ''}>${esc(label)} — ${esc(r.note)}</option>`
+  }).join('')
+  cmpRun()
+}
+
+async function cmpRun() {
+  if (_cmpBusy) return
+  const ref   = document.getElementById('cmpRef').value
+  const panel = document.getElementById('cmpPanel')
+  const known = _cmpRefs.find(r => r.name === ref)
+  document.getElementById('cmpSubject').textContent = known?.subject ?? ''
+
+  _cmpBusy = true
+  panel.innerHTML = `<div class="empty"><span class="spinner"></span> Reading the schema at ${esc(ref.slice(0, 12))}…</div>`
+  let res
+  try { res = await api('/compare', { ref }) }
+  catch (e) { res = { error: e.message } }
+  _cmpBusy = false
+
+  if (res.error) {
+    panel.innerHTML = `<div class="alert warning"><div class="alert-content">
+      <b>No baseline there.</b> ${esc(res.error)}</div></div>`
+    return
+  }
+  panel.innerHTML = cmpRender(res)
+}
+
+function cmpRender(r) {
+  const d = r.deploy, a = r.access
+
+  // The note is a warning and not a footnote. The commonest one is that a
+  // package's schema fragment could not be read at that ref — a package
+  // specifier resolves through node_modules and `git show` has no such thing —
+  // and every model that fragment ships then reads as NEW. Left small, that is a
+  // panel confidently reporting six new models nobody added.
+  const note = r.note ? `<div class="alert warning"><div class="alert-content">${esc(r.note)}</div></div>` : ''
+
+  const head = (label, verdict, tone, says, counts) => `<article class="card outlined">
+    <div class="surface-header cluster">
+      <span class="badge ${tone[verdict] ?? 'muted'}">${esc(label)}: ${esc(verdict)}</span>
+      <span class="text-muted">${esc(says[verdict] ?? '')}</span>
+    </div>
+    <div class="cluster gap-2xs cmp-counts">${counts}</div>
+  </article>`
+
+  const pill = (n, word) => `<span class="pill${n ? '' : ' muted'}">${n} ${esc(word)}</span>`
+
+  const deployCounts = pill(d.counts.expand, 'expand') + pill(d.counts.unknown, 'undecidable') + pill(d.counts.contract, 'contract')
+  const accessCounts = pill(a.counts.widens, 'widen') + pill(a.counts.unknown, 'undecidable') +
+                       pill(a.counts.narrows, 'narrow') + pill(a.counts.new ?? 0, 'new')
+
+  return note +
+    head('Deploy', d.verdict, CMP_DEPLOY_TONE, CMP_DEPLOY_SAYS, deployCounts) +
+    cmpRows('What the deploy sees', d.findings, f => f.severity, CMP_DEPLOY_TONE, f => f.detail) +
+    head('Access', a.verdict, CMP_ACCESS_TONE, CMP_ACCESS_SAYS, accessCounts) +
+    cmpRows('What it does to who may do what', a.findings, f => f.access, CMP_ACCESS_TONE,
+            f => f.accessDetail ?? f.detail) +
+    cmpDrift(r.drift)
+}
+
+// One row per finding, worst first — the sort is the server's, off RANK, so the
+// thing that stops a deploy is the thing you read.
+function cmpRows(title, findings, grade, tone, detail) {
+  if (!findings?.length) return ''
+  const rows = findings.map(f => `<tr>
+    <td><span class="badge ${tone[grade(f)] ?? 'muted'}">${esc(grade(f))}</span></td>
+    <td><code class="code-inline">${esc(f.subject ?? '')}</code></td>
+    <td>${esc(detail(f) ?? '')}${cmpSplit(f)}</td>
+  </tr>`).join('')
+  return `<article class="card outlined">
+    <div class="surface-header">${esc(title)} — ${findings.length}</div>
+    <table class="data-grid cmp-grid"><tbody>${rows}</tbody></table>
+  </article>`
+}
+
+// The three-step plan a contract on a required column is offered instead of.
+// Rendered where the refusal is, because a refusal that implies an alternative
+// and does not name it is worse than no classification at all.
+function cmpSplit(f) {
+  if (!f.split?.length) return ''
+  const backfill = f.needsBackfill
+    ? `<p class="text-muted">The middle step is the only one that can fail halfway. Whether a
+       backfill is declared is a question about the running app — <code class="code-inline">fli release:check</code> answers it.</p>`
+    : ''
+  return `<details class="cmp-split"><summary>the three-step way round</summary>
+    <ol>${f.split.map(x => `<li><code class="code-inline">${esc(x)}</code></li>`).join('')}</ol>${backfill}</details>`
+}
+
+// A capability is a REFERENCE, so a renamed one leaves the old string in every
+// grant column and grants nothing — and `migrate create` cannot see it, because
+// a rename emits identical DDL. Two schemas is the only place it is computable,
+// which is why it lives here and nowhere else.
+function cmpDrift(drift) {
+  if (!drift?.lost?.length) return ''
+  const renames = (drift.renames ?? []).map(r =>
+    `<li><code class="code-inline">${esc(r.from)}</code> becomes <code class="code-inline">${esc(r.to)}</code> <span class="text-muted">(${esc(r.why)})</span></li>`).join('')
+  const amb = (drift.ambiguous ?? []).map(n =>
+    `<li><code class="code-inline">${esc(n)}</code> <span class="text-muted">— gone, and nothing pairs with it unambiguously</span></li>`).join('')
+  const sql = (drift.sql ?? []).length
+    ? `<pre class="code-block">${esc(drift.sql.join('\n'))}</pre>` : ''
+  return `<article class="card outlined">
+    <div class="surface-header">
+      ${drift.lost.length} capability name${drift.lost.length === 1 ? '' : 's'} disappeared
+    </div>
+    <div class="stack">
+      <p class="text-muted">A capability is a reference. The old string stays in every row and grants
+      nothing, and <code class="code-inline">migrate create</code> cannot see this — a rename emits identical DDL.</p>
+      <ul>${renames}${amb}</ul>${sql}
+    </div>
+  </article>`
 }
 
 async function acInit() {
@@ -4980,7 +5437,7 @@ function exTyped(level, word) {
 
 // ── Tool navigation ───────────────────────────────────────────────────────────
 
-const TOOLS = ['overview','browse','query','schema','explore','access','migrations','stats','repl','qlog','tenants','transform','perf','lite']
+const TOOLS = ['overview','browse','query','schema','explore','access','compare','migrations','stats','repl','qlog','tenants','transform','perf','lite']
 
 // The tool is in the location hash, so back/forward work and a Studio link can
 // name the panel it opens. The nav is anchors for the same reason: a <div
@@ -5002,6 +5459,7 @@ function showTool(tool) {
   if (tool === 'schema')     erInit()
   if (tool === 'explore')    exInit()
   if (tool === 'access')     acInit()
+  if (tool === 'compare')    cmpInit()
   if (tool === 'migrations') loadMigrations()
   if (tool === 'stats')      { loadStats(); loadDiskUsage(); renderRotateKey() }
   if (tool === 'transform')  txInit()

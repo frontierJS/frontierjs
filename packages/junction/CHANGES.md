@@ -1,5 +1,219 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-06 — a `find`'s `errors` reached clients unchecked (`FJS-951`)
+
+`wrapResult`'s list branch is `method === 'find' || isBulk`, and only the bulk
+half asked whether `errors` was an array. So a `find` answering
+`{ data, errors: 'oops' }` passed that string into the field a caller reads to
+find out WHICH rows were rejected — a shape `ListResult.errors: unknown[]` says
+is impossible — and shipped it to every consumer.
+
+Refused with `ResultShapeError`, the same class the two siblings in that branch
+already throw for a non-list and for extra keys.
+
+The controls keep it narrow: a real partial-failure list still passes, a `find`
+carrying no `errors` is the ordinary case, and a CUSTOM method answering
+`{ data, errors }` is a RECORD rather than an envelope — which is what stops the
+refusal widening into every method with a field called `errors`.
+
+**Three other claims in the same sub-finding are not defects**, and the filing
+was wrong about them. A custom method returning an array announces once per
+record because one event carrying an array reaches a client store as a single
+malformed upsert; a payload that is not a row travels as a SIGNAL rather than
+being dropped, since a method changing many rows has no single row to carry; and
+`posts:prim 42` is only reachable where there is no model for
+`announcementPayload` to compare against. All three had their rationale already
+written into the code.
+
+
+## 2026-09-06 — a failed plugin boot left everything it had opened (`FJS-950`)
+
+Two plugins boot, the third throws, `start()` rejects — and the first two are
+still holding whatever they opened, because nothing unwound them. Measured.
+
+`shutdownPlugins(list)` is now the one owner of *shut this set down, reverse
+order, each bounded*, and it takes the list as a PARAMETER, which is the whole
+reason it is one function: `stop()` passes every plugin, a failed boot passes
+the ones that booted. The failing plugin is included — it is the one most likely
+to have opened something before it threw — and a `shutdown()` that itself throws
+is logged rather than raised, because the caller needs to know why the app would
+not START.
+
+**`start()` twice is refused by name.** It used to reach `security-headers` and
+die on `Cannot add middleware after the router is built`.
+
+Writing the control for that refusal is what found the real shape: *start, stop,
+start* does not work either — `stop()` clears `started` but the router is built
+once — so the guard is a latch rather than a `started` check, and the refusal
+names both states. Restart itself is `FJS-949`.
+
+The sub-finding's third claim is **not** a defect: a `ready()` throw being
+logged while the app is already serving is what this file documents, with
+`boot()` named as the phase for anything that must succeed.
+
+7 tests — 2 red with the unwind stubbed, 2 with the latch stubbed. The controls
+carry it: a start that SUCCEEDS must shut nothing down, and a fresh app must
+still start.
+
+
+## 2026-09-06 — a hook that could never run, and an error hook nobody heard (`FJS-945`)
+
+**A hook keyed on a method the service does not answer never ran and nothing
+said so.** `before: { creat: [requireAuth] }` built a pipeline nothing executed,
+the service answered normally, and the guard was simply absent. This package's
+own `CLAUDE.md` listed it as a WARNING; measured, there was none at any log
+level. That paragraph is corrected too — a refusal took over what it had called
+a warning.
+
+It is a `check-authoring` finding now (`FJS-D199`), graded against the service's
+OWN answerable names rather than CRUD, so a custom method is a legal key and a
+narrowing `methods:` policy does not make a hook on a real method read as a
+typo. A phase that is not a phase is refused the same way.
+
+**A throwing `error` hook gets the opposite answer, on purpose.** It must not
+change the call's verdict — the original error is what the caller needs, and an
+error hook is the last place a second failure should replace the first — but
+swallowing it whole meant an app whose error REPORTING is broken reported
+nothing and nobody found out. It logs and emits `junction.errorhook.error` now,
+carrying both errors: the answer `afterCommit` already gives a throwing effect.
+
+Two surfaces, two strictnesses, resolved by what a mistake destroys.
+
+The sub-finding's third claim — an `around` that forgets `next()` answering 204
+— is `FJS-946` and deliberately not here: short-circuiting is what the phase is
+FOR, so a deliberate `null` is one character away and the question is per call
+rather than at `start()`.
+
+6 tests — 2 red with the key check stubbed, 1 with the emit stubbed. Controls:
+the same hook spelled right, a hook on a custom method, `all` as a key, and an
+error hook that does not throw, which must emit nothing.
+
+
+## 2026-09-06 — the loader dropped a service in silence, three ways (`FJS-944`)
+
+All three reproduced in one boot. **Two files claiming one name**: a warn, then
+continue — the winner is whichever file sorts first, which nobody wrote down, so
+the app answered a service nobody chose and the loser's methods were absent. **A
+service file that threw**: an error, then continue — the app booted green and the
+failure arrived later as a 404 against a name somebody had written down. **Two
+`create*Service` exports in one file**: nothing printed at all, the quietest of
+the three.
+
+All four (a file exporting no factory is the fourth) report into the same keyed
+sink, and `check-authoring` refuses with every one at once. The duplicate names
+BOTH files and says which is serving and why. Without a sink the loader keeps its
+old behavior, which is what a direct caller of `autoloadServices` gets.
+
+The `health`-shadow named in the same sub-finding is **not** here: a service name
+colliding with a mounted route is the route table's question and has a different
+owner. It stays open rather than being half-done.
+
+**Two FILES is the finding, and the first build got that wrong.** A name already
+held by a MANUAL registration was read as a duplicate — and this file's own
+header rule is *manual registration always takes precedence*, which is how
+`basecamp` registers every service it also keeps on disk, so three of its
+services refused to boot. That case is a `diagnostic` now, because an app doing
+it eighteen times must not print eighteen warnings a boot.
+
+7 tests, one red per mechanism when each is stubbed in turn — including the
+manual-precedence control, so the regression CI caught is catchable without CI.
+Every refusal is paired with the legitimate shape one file away: the same two
+files under different names, one factory instead of two, and an empty services
+directory. The real `example` API and `basecamp` both boot.
+
+
+## 2026-09-05 — a method named after an option served stale rows (`FJS-942`)
+
+`methods: ['find', 'cache']` beside `async cache(ctx)` put `cache` in
+`_customMethods` and in `describe().methods` — routed over HTTP, advertised by
+the manifest — while `app.service('posts').cache` was undefined,
+`describe().cache` answered false, and `if (def.cache)` read the FUNCTION as a
+truthy cache declaration and installed `checkCache` on find and get. A row added
+between two `find()` calls was invisible to the second, from a service reporting
+that it does not cache. One name, three answers, none of them the author's.
+
+The comment claiming this worked — *the runtime honors the declaration* — went
+with it. An option key is refused as a method name now, declared or not.
+
+**The collector grew its other half.** `collectCustomMethods` and
+`resolveMethodPolicy` both stopped throwing at construction; they report into
+one sink that rides the service, and `start()`'s `check-authoring` phase reads
+it — the phase `FJS-939` built for config. One app, one verdict, rather than one
+throw per boot per typo (`FJS-D199`). `resolveMethodPolicy` still throws for a
+direct caller that passes no sink.
+
+**The sink is keyed, and that is its own finding.** Two graders read the one
+`methods:` list, and a name refused by the first is then missing from the table
+the second grades against — so one typo was described twice, in two
+vocabularies. First finding per key wins; the more specific grader runs first.
+
+Three existing tests changed rather than were added, and one of them pinned the
+bug: it asserted `customMethodNames(declared)` was `['cache']`.
+
+14 tests in the phase's file — 3 red with the option refusal stubbed, 1 with the
+dedupe stubbed. `example`: `verify:jobs` 12/12 through a real app of 60-odd
+services; `basecamp`: `verify:screens` 66/66.
+
+
+## 2026-09-05 — a bulk PATCH must be filtered, the way a bulk REMOVE already was
+
+`PATCH /orders` with no query parameters rewrote every row the caller can read,
+up to `bulkMax` (1000). `DELETE /orders` has refused the identical shape since
+it was written — *Bulk delete with no filter conditions is not allowed* — so the
+risk had been considered once and answered for one verb (`FJS-941`).
+
+An empty filter is every row, and a filter that arrives empty is not a filter
+somebody wrote: a client that built its query string from a variable, a form
+that submitted nothing, a URL with the search part dropped. Litestone reads the
+empty `where` as *every row, deliberately*, which is the right answer for
+`truncate` and the wrong one for a request.
+
+`ensureFiltered(op, where)` is one owner for both verbs. It is asked of
+`q.where` **before** `softDeleteFilter()` is merged in, or the framework's own
+clause counts as the caller's filter and the guard never fires on a
+`@@softDelete` model — which is most of them.
+
+**`restore` is deliberately outside it.** It un-deletes, the way back is to
+remove again, and strictness follows what a mistake destroys.
+
+Six fixtures in `tests/bulk-partial-success.test.ts` used the unfiltered form as
+a convenience and now carry a predicate that matches the rows they meant; each
+still asserts what it always did. Two new rows: the refusal paired with the same
+call carrying one predicate, and the soft-delete clause not counting as a
+filter. Both red with the guard stubbed.
+
+## 2026-09-05 — a config section nothing reads is refused by name (`FJS-939`)
+
+`loadConfig` maps the sections `junction.config.js` names onto `AppConfig` and
+stashes the rest under `_junction`, so `plugin:` for `plugins:` and
+`middlewares:` for `middleware:` merged with no error, no warning and no effect.
+The app booted on defaults looking like it had loaded something.
+
+**`JUNCTION_SECTIONS` is the one list**, read by the refusal and asserted
+against what `loadConfig` actually consumes — a name kept there that nothing
+reads would be a section the check accepts and the app still ignores.
+
+**Collected, not thrown where found.** Findings go on the app and one
+`check-authoring` phase reports every one of them, before any plugin boots, so
+an author with three typos pays one boot rather than three (`FJS-D199`). No
+permitting flag: a key that ought to be legal is a missing feature.
+
+The suggestion is nearest-by-edit-distance, bounded at half the word, so an
+unrelated key is reported as unknown rather than corrected towards a section
+nobody meant.
+
+**Top level only, and the narrowing is measured.** `basecamp` declares
+`middleware.cors.credentials`, which `JunctionMiddlewareConfig.cors` did not
+name and `applyConfiguredCors` reads and honours — so the interfaces are not the
+runtime's key list, and a hand-kept one per section would be the second origin
+the ruling exists to remove. That interface is corrected here; the nested half
+is `FJS-940`.
+
+10 tests: **3 red with the phase stubbed**, 1 with the suggestion bound removed,
+2 with one section dropped from the list. Every refusal is paired with the
+correctly spelled section one character away.
+
+
 ## 2026-09-05 — an audit entry can name who was really acting, and a session's sockets can be closed
 
 2237 tests, 0 fail (+3).

@@ -1,5 +1,38 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-05 — a static build published 205 KB no page could load (`FJS-904`)
+
+`target: 'static'` runs the SPA client build and then prerenders over the top of
+it, so the client entry, the route table and one chunk per route were produced
+and referenced by nothing — `dist/index.html` is overwritten by the prerendered
+home page, and a prerendered page loads its islands and nothing else. Measured
+on `example/site`: 12 files and 205 KB of the 313 KB published, the entry alone
+125 KB. Not dead weight a host skips; published, fetchable and cached.
+
+`build/prune-unreachable.js` walks reachability from the emitted pages and
+deletes what nothing can load. Derived rather than listed: a static site has one
+way to start a fetch, so the pages ARE the specification of what may be
+published, and a list of what the bundler is known to emit would be a second
+statement of its chunking.
+
+Removal rather than a narrower build, because the stylesheet comes out of that
+same graph — an app's entry imports `@frontierjs/css` and `cssCodeSplit: false`
+collects the routes' CSS with it — so cutting the graph takes the CSS too. It is
+the step `removeOrphanIslandChunks` already occupies, one line further down.
+
+**Strict about the walk, permissive about files.** Removing a chunk a page needs
+is a broken site and leaving one nothing loads is wasted bytes, so anything
+named anywhere is kept and the refusal is on the root set: scripts with no HTML
+beside them throws rather than emptying `assets/`. An SPA shell that survived
+prerendering keeps its whole graph with nothing special-cased, which is what
+stops the pass assuming what the prerenderer wrote.
+
+`tests/prune-unreachable.test.js`, 7 tests, **5 red with the pass stubbed to a
+no-op and the refusal red on its own with the root check removed**. Drives:
+`example` `verify:site` 45/45, `verify:shop` 13/13, `verify:account` 32/32, and
+the island fixture in a real browser.
+
+
 ## 2026-09-05 — the sitemap advertised a URL that answers 404 (`FJS-456`)
 
 `move404` RENAMES `404/index.html` to `404.html`, so by the time the sitemap is

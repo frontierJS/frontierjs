@@ -252,8 +252,8 @@ Type?      — optional (nullable)
                                  client is refused by name. Emitted `writeOnly` into the
                                  create/update JSON Schema and absent from the read modes
 @guarded                         system-context column — stripped from every read, refused
-                                 on every write, and refused in a where/orderBy/distinct/
-                                 cursor, unless asSystem()
+                                 on every write, and refused in a where/orderBy/cursor,
+                                 unless asSystem()
 @guarded                    the same; an explicit select cannot unlock the read
 @encrypted                       AES-256-GCM at rest — hidden from a non-system read,
                                  and writable by a non-system caller
@@ -1753,7 +1753,7 @@ cell means.
   holds the release surface and never the classification, because a verdict is a
   fact about two schemas while the file describes one — write it in and the file
   depends on its own previous contents, which is not a fixed point. Same reason
-  `repo-map.snapshot.html` carries no dates and no timings. `--check` is
+  `repo-report.snapshot.html` carries no dates and no timings. `--check` is
   therefore staleness alone, and the classification is printed.
 - **A generated expectation must not come from the code it grades.**
   `expectedVerdict()` in `access.js` restates what `@@gate` means and does not

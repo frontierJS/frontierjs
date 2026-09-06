@@ -1619,6 +1619,12 @@ function dashRow(r) {
   // `start` is null where the project declares nothing that starts this —
   // the row stays, because a surface that exists and has no script is a
   // different thing from a surface that is not there.
+  //
+  // `view` is NOT `open`: open is gated on the row answering, because a link to
+  // a port nothing is listening on is a browser error page. A committed page is
+  // a file and is there whether or not anything is running, so it is always
+  // shown — and whether a row has one is `viewable`, decided in `runnables.js`
+  // rather than re-derived from the filename here.
   const cmd = r.start
     ? `<code class="gui-cmd" title="${esc(r.dir)}">${esc(r.dir === '.' ? '' : r.dir + ' · ')}${esc(r.start)}</code>`
     : `<span class="text-xs text-muted">nothing here starts it</span>`
@@ -1653,6 +1659,7 @@ function dashRow(r) {
         ${r.start ? `<button class="btn ghost text-xs" data-start hidden onclick="${r.needs?.length ? 'startWithNeeds' : 'startRow'}(${esc(JSON.stringify(r.id))})">${r.needs?.length ? 'start it all' : 'start'}</button>` : ''}
         ${r.start ? `<button class="btn ghost text-xs" data-stop hidden onclick="stopRow(${esc(JSON.stringify(r.id))})">stop</button>` : ''}
         ${r.open ? `<a class="btn ghost text-xs" data-open hidden href="${esc(r.open)}" target="_blank" rel="noreferrer">open</a>` : ''}
+        ${r.viewable ? `<a class="btn ghost text-xs" href="${API}/api/page/${encodeURIComponent(r.id)}" target="_blank" rel="noreferrer">view</a>` : ''}
       </div>
     </li>`
 }

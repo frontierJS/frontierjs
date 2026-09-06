@@ -1033,10 +1033,15 @@ src/
   describes what happened — the loader's per-service registration line, the
   anonymous-hook style note — and is silent unless asked for; `/manifest`
   answers the first on demand and the second is one line per SERVICE naming
-  every position, not one per phase per method. A WARNING describes a probable
-  defect — a duplicate service, a file with no factory, a hook map on a method
-  the service does not have — and is unchanged. The old gate was
+  every position, not one per phase per method. The old gate was
   `NODE_ENV !== 'production'`, which is every developer all of the time.
+  **The third kind is a REFUSAL, and it took over what this line used to call a
+  warning.** A duplicate service, a file with no factory, a hook map on a method
+  the service does not answer: each one is a thing the author wrote that nothing
+  reads, and each was a `console.warn` beside a `continue` — or, measured, not
+  even that. They are `check-authoring` findings now (`FJS-D199`), collected and
+  refused together at `start()`. What stays a warning is a probable defect the
+  app can still run with.
 - **`ctx.data` is a row OR an array of rows, and a hook that forgets the second
   is silent.** Bulk create sends the array. `timestamps()` set `created_at` and
   `updated_at` as properties OF THE ARRAY — so every row of every bulk create

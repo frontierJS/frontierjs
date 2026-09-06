@@ -246,6 +246,37 @@ describe('partial-failure envelope', () => {
     expect(wrapResult([{ id: 1 }], 'posts').errors).toEqual([])
     expect(single('posts', { id: 1 }).errors).toEqual([])
   })
+
+  test('an `errors` that is not an array is refused, on find as on a bulk write', () => {
+    // The bulk half asked `Array.isArray(errors)` and `find` shared the branch
+    // without asking — so `find` answering `{ data, errors: 'oops' }` put that
+    // string in the slot a client reads to find out WHICH rows failed, and
+    // shipped it to every consumer as a shape the type says is impossible.
+    expect(() => wrapResult({ data: [{ id: 1 }], errors: 'oops' }, 'posts', 'find'))
+      .toThrow(/`errors` is .*not an array|not an array/)
+
+    // The two controls that make the refusal mean something. A real
+    // partial-failure list still passes…
+    const ok = wrapResult({
+      data:   [{ id: 1 }],
+      errors: [toBulkFailure({ title: '' }, new Error('nope'))],
+    }, 'posts', 'find')
+    expect(ok.errors).toHaveLength(1)
+
+    // …and a find carrying no `errors` at all is the ordinary case.
+    expect(wrapResult({ data: [{ id: 1 }], total: 1 }, 'posts', 'find').errors).toEqual([])
+  })
+
+  test('a CUSTOM method answering { data, errors } is a record, not an envelope', () => {
+    // The branch is `method === 'find' || isBulk`, and `isBulk` needs an array —
+    // so this is neither, and the whole object is the single's `data`. Asserted
+    // because it is what stops the refusal above widening into every method that
+    // happens to answer a field called `errors`.
+    const r = wrapResult({ data: { id: 1 }, errors: 'oops' }, 'posts', 'summarize')
+    expect(r.kind).toBe('single')
+    expect(r.data).toEqual({ data: { id: 1 }, errors: 'oops' })
+    expect(r.errors).toEqual([])
+  })
 })
 
 describe('constructors keep the shape well-formed', () => {

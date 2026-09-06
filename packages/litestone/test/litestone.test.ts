@@ -26151,7 +26151,8 @@ describe('@encrypted(deterministic) / @hashed — declaration', () => {
     // The row path strips it — including asSystem(), which lifts every other lock.
     expect('pw' in (await sys.u.findUnique({ where: { id: 1 } }))).toBe(false)
     expect('pw' in (await sys.u.findMany())[0]).toBe(false)
-    expect('pw' in (await sys.u.findMany({ distinct: ['pw'] }))[0]).toBe(false)
+    // `SELECT DISTINCT *` is its own branch in buildSQL, not the row read's.
+    expect('pw' in (await sys.u.findMany({ distinct: true }))[0]).toBe(false)
 
     // And the paths that project a column without building a row. These answered
     // the digest — a read of a value declared unreadable, and silent.

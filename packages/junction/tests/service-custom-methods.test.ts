@@ -74,40 +74,58 @@ describe('the action table', () => {
     expect(customMethodNames(svc)).toEqual([])
   })
 
-  test('an action may be named after an option key — but only by declaring it', () => {
-    // `as never` because the caveat is real: an option that is TYPED on
-    // ServiceDefinition (`cache: CacheDeclaration`) cannot also be typed as a
-    // function, so this form needs a cast in TypeScript even though the
-    // declaration is what dispatch obeys. Plain JS callers pay nothing.
+  test('an action may NOT be named after an option key, declared or not', () => {
+    // This used to assert the opposite, and the capability it claimed was
+    // measured false (`FJS-942`): declaring `cache` put the name in the table
+    // and in `describe().methods`, so it was routed and advertised — while
+    // `app.service('reports').cache` stayed undefined, `describe().cache`
+    // answered false, and `if (def.cache)` read the FUNCTION as a truthy cache
+    // declaration and cached find and get. One name, three answers.
     const scanned = createService({
       name: 'reports', model: 'report',
       cache: (async () => ({ warmed: true })) as never,
     })
     expect(customMethodNames(scanned)).toEqual([])       // eaten as config, as before
 
+    const findings: string[] = []
     const declared = createService({
       name: 'reports', model: 'report',
       methods: ['find', 'cache'],
       cache: (async () => ({ warmed: true })) as never,
     })
-    expect(customMethodNames(declared)).toEqual(['cache'])
+    for (const f of (declared as { _authoringFindings?: string[] })._authoringFindings ?? [])
+      findings.push(f)
+    expect(customMethodNames(declared)).toEqual([])
+    expect(findings.join('\n')).toContain('is a service OPTION and cannot also be a method')
+
+    // The control, one name away: a name that is NOT an option is a method,
+    // which is what stops the refusal being "declaring never works".
+    const fine = createService({
+      name: 'reports', model: 'report',
+      methods: ['find', 'warm'], warm: noop,
+    })
+    expect(customMethodNames(fine)).toEqual(['warm'])
+    expect((fine as { _authoringFindings?: string[] })._authoringFindings).toEqual([])
   })
 
-  test('a declared name with no function throws, naming what IS available', () => {
-    let msg = ''
-    try {
-      createService({ name: 'things', model: 'thing', methods: ['find', 'rebot'], reboot: noop })
-    } catch (err) { msg = (err as Error).message }
+  test('a declared name with no function is REPORTED, naming what IS available', () => {
+    // Reported rather than thrown at construction: an app has a config, N
+    // service files and a hook table, and start()'s `check-authoring` phase
+    // refuses with every finding at once (`FJS-D199`).
+    const svc = createService({ name: 'things', model: 'thing', methods: ['find', 'rebot'], reboot: noop })
+    const msg = ((svc as { _authoringFindings?: string[] })._authoringFindings ?? []).join('\n')
     expect(msg).toContain("'rebot'")
     expect(msg).toContain('not defined')
     expect(msg).toContain('reboot')          // the name they meant
+    // And it is left OUT of the table — it is a 405 either way, and shipping
+    // the name would be the wrong half of the answer. `reboot` is not there
+    // either: a declared list is the whole offer, which the undeclared-function
+    // case above already pins.
   })
 
   test('a declared name that is a non-function option says a name cannot be both', () => {
-    let msg = ''
-    try {
-      createService({ name: 'things', model: 'thing', methods: ['find', 'cache'], cache: true })
-    } catch (err) { msg = (err as Error).message }
+    const svc = createService({ name: 'things', model: 'thing', methods: ['find', 'cache'], cache: true })
+    const msg = ((svc as { _authoringFindings?: string[] })._authoringFindings ?? []).join('\n')
     expect(msg).toContain("'cache'")
     expect(msg).toContain('cannot be both')
   })

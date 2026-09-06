@@ -59,6 +59,7 @@ src/
     slot-rewrite.js      compile-time slot rewriting
     prerender.js         routes declaring `render: static` → HTML
     island-bundle.js     one chunk per island the static build needs
+    prune-unreachable.js what a static build may publish: the emitted pages walked
     widget-build.js      one self-contained IIFE per widget in src/Embeds/
     static-safety.js     proves a prerendered page is publishable
     warnings.js, dev-overlay.js, devtools-plugin.js

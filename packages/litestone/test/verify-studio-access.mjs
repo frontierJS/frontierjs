@@ -7,7 +7,8 @@
  *
  *   node packages/litestone/test/verify-studio-access.mjs
  *
- * Starts and stops its own server on 5099 — nothing to launch first. Needs
+ * Starts and stops its own server on 7502 — test-tier tooling, inside the port
+ * scheme so `fli ps` can see it. Nothing to launch first. Needs
  * Chrome on PATH or $FJS_CHROME, same as the css package's harness.
  *
  * Two traps this harness has already hit:
@@ -24,7 +25,7 @@ import { rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { tempDir } from '../src/tmp-dirs.js'
 import { join, resolve as pathResolve } from 'node:path'
 
-const PORT   = process.env.STUDIO_PORT ?? '5099'
+const PORT   = process.env.STUDIO_PORT ?? '7502'
 const UI     = `http://localhost:${PORT}`
 const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 const REPO   = pathResolve(import.meta.dirname, '../../..')
@@ -35,9 +36,19 @@ const t = (name, actual, expected) => results.push({ name, actual, expected })
 
 // ─── the server, started and stopped by this file ─────────────────────────
 
+// From `src/tools/cli.js` by path rather than `bunx litestone`: bun resolves a
+// workspace dependency to a COPY under node_modules/.bun, so the binary runs
+// the tree as it was at the last install and passes against a broken working
+// copy. studio.html is TEXT-IMPORTED into that file, which makes this the
+// difference between driving the panel you just edited and the one you shipped.
+//
 // `--no-open` or every run of this drive opens a tab on the desktop of
 // whoever is running it, over whatever they were typing into.
-const studio = spawn('bunx', ['litestone', 'studio', '--schema', SCHEMA, '--port', PORT, '--no-open'], {
+//
+// cwd is the APP ROOT, which is where `.env` lives: `example` declares
+// @encrypted columns and studio refuses to start without the key.
+const CLI    = pathResolve(import.meta.dirname, '../src/tools/cli.js')
+const studio = spawn('bun', [CLI, 'studio', '--schema', SCHEMA, '--port', PORT, '--no-open'], {
   cwd: join(REPO, 'example'), stdio: ['ignore', 'pipe', 'pipe'], detached: true,
 })
 let studioOut = ''
@@ -169,8 +180,21 @@ await evaluate(`
 t('panel.visible',   await evaluate(`return !document.getElementById('panelAccess').hidden`), true)
 t('nav.current',     await evaluate(`return document.getElementById('navAccess').getAttribute('aria-current')`), 'page')
 
-t('gates.rowCount',  await evaluate(`return document.querySelectorAll('#acPanel tbody tr').length`), 4)
-t('gates.counts',    await evaluate(`return document.getElementById('acCounts').textContent.includes('4 models')`), true)
+// DERIVED, not typed. These were literal 4s frozen at an `example` that had
+// four models; it has 39 now, so the drive failed on every run and reported a
+// fixture that had stopped describing its subject as a regression in the panel.
+// A UI drive's question is *did the panel render what it was given*, so the
+// expectation comes from the same endpoint the panel reads — whether that
+// endpoint is RIGHT is a different question, and `access.snapshot.md` is
+// already the thing that gates it.
+const surface     = await (await fetch(`${UI}/api/access`, {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+})).json()
+const modelCount  = surface.models.length
+const policyCount = surface.models.filter(m => m.policies && Object.keys(m.policies).length).length
+
+t('gates.rowCount',  await evaluate(`return document.querySelectorAll('#acPanel tbody tr').length`), modelCount)
+t('gates.counts',    await evaluate(`return document.getElementById('acCounts').textContent.includes('${modelCount} models')`), true)
 
 // STRANGER on read is the thing worth catching the eye — example's models are
 // all `0.4.4.5`, so read is level 0 and must carry the warning tone.
@@ -227,7 +251,7 @@ t('level.7.systemGateDenied', await evaluate(`
 await evaluate(`acShow('policies'); return true`)
 t('policies.rendered', await evaluate(`
   return document.querySelector('#acPanel .card') ? document.querySelectorAll('#acPanel .card').length : 0;
-`), 1)
+`), policyCount)
 
 await evaluate(`acShow('fields'); return true`)
 t('fields.rendered', await evaluate(`return document.querySelectorAll('#acPanel tbody tr').length >= 1`), true)

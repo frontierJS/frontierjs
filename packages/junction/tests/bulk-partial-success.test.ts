@@ -244,8 +244,10 @@ describe('a filtered bulk patch enforces what a single patch enforces', () => {
     const svc = createService({ name: 'orders', model: 'Order', allowBulk: true }) as never as
       { patch(c: ServiceContext): Promise<Bulk> }
 
-    // No filter — every row is a target, and only paid -> shipped is legal.
-    const out = await svc.patch(ctx(db, { data: { status: 'shipped' } }))
+    // Every row is a target, and only paid -> shipped is legal. The filter is
+    // `ref`, which every row carries by default: an EMPTY filter is refused
+    // (FJS-934's sibling), so *all of them* has to be said with a predicate.
+    const out = await svc.patch(ctx(db, { data: { status: 'shipped' }, query: { ref: 'x' } }))
 
     expect(out.data.map(r => r.id)).toEqual([1, 3])
     expect(out.errors).toHaveLength(1)
@@ -260,7 +262,7 @@ describe('a filtered bulk patch enforces what a single patch enforces', () => {
     const svc = createService({ name: 'orders', model: 'Order', allowBulk: true }) as never as
       { patch(c: ServiceContext): Promise<Bulk> }
 
-    const raw = await svc.patch(ctx(db, { data: { status: 'shipped' } }))
+    const raw = await svc.patch(ctx(db, { data: { status: 'shipped' }, query: { ref: 'x' } }))
     const env = wrapResult(raw, 'orders', 'patch') as { kind: string; data: unknown[]; errors: unknown[] }
 
     // It used to answer { count: 1 }, which wrapResult reads as a SINGLE — so a
@@ -283,7 +285,7 @@ describe('@version on a filtered bulk write', () => {
     const svc = createService({ name: 'docs', model: 'Doc', allowBulk: true }) as never as
       { patch(c: ServiceContext): Promise<Bulk> }
 
-    const out = await svc.patch(ctx(db, { service: 'docs', data: { title: 'z' } }))
+    const out = await svc.patch(ctx(db, { service: 'docs', data: { title: 'z' }, query: { ver: { $gte: 0 } } }))
 
     expect(out.errors).toHaveLength(0)
     expect(out.data).toHaveLength(2)
@@ -312,7 +314,7 @@ describe('@version on a filtered bulk write', () => {
     const svc = createService({ name: 'orders', model: 'Order', allowBulk: true }) as never as
       { patch(c: ServiceContext): Promise<Bulk> }
 
-    const out = await svc.patch(ctx(db, { data: { ref: 'renamed' } }))
+    const out = await svc.patch(ctx(db, { data: { ref: 'renamed' }, query: { ref: 'x' } }))
     expect(out.data).toHaveLength(1)
     expect(out.data[0]!.ref).toBe('renamed')
   })
@@ -352,6 +354,57 @@ describe('a filtered bulk remove', () => {
     expect((err as Error).message).toContain('no filter conditions')
   })
 
+  // A bulk PATCH had no such guard, so `PATCH /orders` with no query rewrote
+  // every row the caller can read, up to bulkMax — the same shape the line
+  // above has refused since it was written. Both verbs ask `ensureFiltered`
+  // now, and each refusal is paired with the same call carrying one predicate,
+  // because a guard that refused the filtered form too would satisfy any test
+  // that only asks about the refusal.
+  test('an unfiltered bulk patch is refused, and one predicate is enough', async () => {
+    const db  = await mkDb(ORDERS) as never as Record<string, {
+      create(a: unknown): Promise<unknown>
+      findMany(a?: unknown): Promise<{ ref: string }[]>
+    }>
+    for (let i = 1; i <= 3; i++) await db.order!.create({ data: { id: i } })
+
+    const svc = createService({ name: 'orders', model: 'Order', allowBulk: true }) as never as
+      { patch(c: ServiceContext): Promise<Bulk> }
+
+    const err = await svc.patch(ctx(db, { data: { ref: 'WIPED' } })).catch(e => e as Error)
+    expect((err as Error).message).toContain('no filter conditions')
+    expect((err as Error).message).toContain('every row in the table')
+    // Refused BEFORE anything is selected, so nothing was written.
+    expect((await db.order!.findMany({})).some(r => r.ref === 'WIPED')).toBe(false)
+
+    const out = await svc.patch(ctx(db, { data: { ref: 'WIPED' }, query: { ref: 'x' } }))
+    expect(out.data).toHaveLength(3)
+  })
+
+  // The softDelete clause is the framework's, not the caller's. Merged in
+  // before the count, it would BE the filter and the guard would never fire on
+  // a @@softDelete model — which is most of them.
+  test('the framework soft-delete clause does not count as a filter', async () => {
+    const db  = await mkDb(`
+      model Note {
+        id        Int       @id
+        body      String    @default("b")
+        deletedAt DateTime?
+        @@softDelete
+      }
+    `) as never as Record<string, { create(a: unknown): Promise<unknown>; count(a?: unknown): Promise<number> }>
+    await db.note!.create({ data: { id: 1 } })
+
+    const svc = createService({ name: 'notes', model: 'Note', allowBulk: true }) as never as
+      { patch(c: ServiceContext): Promise<unknown>; remove(c: ServiceContext): Promise<unknown> }
+
+    const p = await svc.patch(ctx(db, { service: 'notes', data: { body: 'z' } })).catch(e => e as Error)
+    const r = await svc.remove(ctx(db, { service: 'notes', method: 'remove' })).catch(e => e as Error)
+
+    expect((p as Error).message).toContain('no filter conditions')
+    expect((r as Error).message).toContain('no filter conditions')
+    expect(await db.note!.count()).toBe(1)
+  })
+
   test('allowBulk: false still refuses both verbs', async () => {
     const db  = await mkDb(ORDERS)
     const svc = createService({ name: 'orders', model: 'Order' }) as never as
@@ -374,7 +427,7 @@ describe('bulkMax', () => {
     const svc = createService({ name: 'orders', model: 'Order', allowBulk: true, bulkMax: 3 }) as never as
       { patch(c: ServiceContext): Promise<unknown> }
 
-    const err = await svc.patch(ctx(db, { data: { ref: 'touched' } })).catch(e => e as Error)
+    const err = await svc.patch(ctx(db, { data: { ref: 'touched' }, query: { ref: 'x' } })).catch(e => e as Error)
 
     expect((err as Error).message).toContain('matched 5 rows')
     expect((err as Error).message).toContain('limit of 3')
@@ -392,7 +445,7 @@ describe('bulkMax', () => {
     const svc = createService({ name: 'orders', model: 'Order', allowBulk: true, bulkMax: 3 }) as never as
       { patch(c: ServiceContext): Promise<Bulk> }
 
-    const out = await svc.patch(ctx(db, { data: { ref: 'x' } }))
+    const out = await svc.patch(ctx(db, { data: { ref: 'x' }, query: { ref: 'x' } }))
     expect(out.data).toHaveLength(3)
   })
 

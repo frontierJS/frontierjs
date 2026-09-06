@@ -36,7 +36,7 @@ test/
 
 ## Build & test
 
-This package supports both Node 20+ and Bun 1.3+. **`bun run test` runs plain
+This package supports both Node 24+ and Bun 1.3+. **`bun run test` runs plain
 `node`** over the phase files in order — the runner is node, the launcher is
 whichever you have.
 

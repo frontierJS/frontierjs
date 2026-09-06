@@ -69,7 +69,6 @@ export class WebSocketTransport extends BaseTransport {
   }
 
   async send<T>(req: ConduitRequest): Promise<ConduitResult<T>> {
-    const elapsed = this.timer()
 
     let ws: WebSocket | null
     try {
@@ -102,7 +101,7 @@ export class WebSocketTransport extends BaseTransport {
           if (msg.error) {
             resolve(this.fail('server_error', msg.error, { retryable: false }))
           } else {
-            resolve(this.ok<T>(msg.body as T, undefined, elapsed()))
+            resolve(this.ok<T>(msg.body as T))
           }
         },
         reject: (err) => {

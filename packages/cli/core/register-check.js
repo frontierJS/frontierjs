@@ -227,7 +227,7 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
     // under § Closed — which is what made it silently legal as a hand-written
     // cell in an open section, where it means the opposite. A row saying it is
     // done, in the table of what is not, is counted as open by everything that
-    // reads this file: `register:check`'s own tally, `ws:map`, `ws:atlas`, and
+    // reads this file: `register:check`'s own tally, `ws:atlas`, and
     // whoever is choosing what to work on next. Sixteen of them had accumulated
     // when this rule was written, one being the only S1.
     //

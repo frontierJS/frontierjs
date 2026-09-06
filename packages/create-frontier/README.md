@@ -61,4 +61,4 @@ tooling opinion and the reasoning behind it, including why there is no formatter
 ## Requirements
 
 - **Bun** — `curl -fsSL https://bun.sh/install | bash`
-- Node 20.6+ to run this installer itself (`npm create` supplies it)
+- Node 24+ to run this installer itself (`npm create` supplies it)

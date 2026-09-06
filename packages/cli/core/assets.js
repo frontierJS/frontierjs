@@ -2,8 +2,8 @@
 //
 // What a browser gets from a sibling package: the styling language every page
 // here is written in (Invariant 13), and the highlighter that marks a code
-// block up for it. One owner, because the generated pages (`ws:map`,
-// `ws:atlas`) and the Web GUI must be styled by the same bytes.
+// block up for it. One owner, because the generated pages (both `ws:atlas`
+// presentations) and the Web GUI must be styled by the same bytes.
 //
 // ── Why build rather than read `dist/` ────────────────────────────────────────
 //
@@ -44,7 +44,7 @@ export const CDN_STYLESHEET = 'https://unpkg.com/@frontierjs/css/dist/frontier.m
 //
 // Two questions, and they are not the same one.
 //
-// A page ABOUT a tree is styled by THAT tree: `ws:map` and `ws:atlas` describe
+// A page ABOUT a tree is styled by THAT tree: both `ws:atlas` presentations describe
 // a workspace, and a stylesheet that came from somewhere else describes
 // nothing (`FJS-256`). So the tree is the only place looked, and finding
 // nothing is an answer — the caller links the published bundle and says so.

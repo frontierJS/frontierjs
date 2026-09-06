@@ -1536,6 +1536,96 @@ describe('WebSocket transport — connection lifecycle', () => {
 
 // ─── Retry policy (§2.5, §2.6) ───────────────────────────────
 
+// ─── duration_ms — the whole call ────────────────────────────
+//
+// The number on the public result reported the LAST ATTEMPT while `stats()`
+// reported the whole call, so an app logging latency off the result was right
+// until something retried and then wrong by three orders of magnitude — in
+// exactly the case worth logging (`FJS-660`). Every case here is paired with
+// the same call one condition away, because a stamp that made every number
+// large would satisfy any test that only asked about the retried one.
+
+/** Answers 500 with `Retry-After: 0` for the first `fails` hits, then 200. */
+function slowFlakyServer(fails: number, delayMs: number) {
+  let hits = 0
+  const s = recorder(async () => {
+    hits++
+    await new Promise(r => setTimeout(r, delayMs))
+    return hits <= fails
+      ? new Response('boom', { status: 500, headers: { 'retry-after': '0' } })
+      : Response.json({ ok: true })
+  })
+  return { ...s, hits: () => hits }
+}
+
+describe('duration_ms is the whole call', () => {
+  it('a retried call reports every attempt, and one attempt of the same server does not', async () => {
+    const s = slowFlakyServer(2, 60)
+    try {
+      const c = createConduit({ credentials: secrets(), retry_limit: 3 })
+      await c.register(providerTarget({ address: s.url }))
+
+      const retried = await c.send({ target: 'provider:hetzner', method: 'GET', path: '/x' })
+      expect(retried.error).toBeNull()
+      expect(s.hits()).toBe(3)
+
+      // The control, and the whole test: the same server, the same per-attempt
+      // cost, one attempt. The retried call is three of these end to end, so a
+      // number measured inside the transport's loop would report the two as
+      // the same and this is the only comparison that can see it.
+      const single = await c.send({ target: 'provider:hetzner', method: 'GET', path: '/x' })
+      expect(s.hits()).toBe(4)
+
+      expect(retried.meta.duration_ms).toBeGreaterThan(single.meta.duration_ms * 2)
+      expect(retried.meta.duration_ms).toBeGreaterThanOrEqual(3 * 60 * 0.8)
+    } finally { s.stop() }
+  })
+
+  it('the result and /metrics are the same measurement', async () => {
+    // They disagreed by three orders of magnitude and nothing compared them,
+    // which is why it survived from 2026-08-01. One call on a fresh conduit,
+    // so `latency_ms.total` is that call and nothing else.
+    const s = slowFlakyServer(2, 40)
+    try {
+      const c = createConduit({ credentials: secrets(), retry_limit: 3 })
+      await c.register(providerTarget({ address: s.url }))
+
+      const result = await c.send({ target: 'provider:hetzner', method: 'GET', path: '/x' })
+
+      expect(result.meta.duration_ms).toBe(c.stats().requests.latency_ms.total)
+      expect(result.meta.duration_ms).toBeGreaterThan(0)
+    } finally { s.stop() }
+  })
+
+  it('a call that exhausted its retries reports its time — the slowest calls read 0', async () => {
+    // `fail()` hardcoded 0, so the answer that cost the most reported nothing
+    // at all. Paired with the success above: the two build their meta in
+    // different functions and only one of them was ever measured.
+    const s = slowFlakyServer(99, 40)
+    try {
+      const c = createConduit({ credentials: secrets(), retry_limit: 2 })
+      await c.register(providerTarget({ address: s.url }))
+
+      const result = await c.send({ target: 'provider:hetzner', method: 'GET', path: '/x' })
+
+      expect(result.error!.kind).toBe('server_error')
+      expect(s.hits()).toBe(3)
+      expect(result.meta.duration_ms).toBe(c.stats().requests.latency_ms.total)
+      expect(result.meta.duration_ms).toBeGreaterThanOrEqual(3 * 40 * 0.8)
+    } finally { s.stop() }
+  })
+
+  it('nothing was sent, so it cost nothing', async () => {
+    // The control on the stamp itself: a request that never reached a transport
+    // still reports 0, so the fix is a measurement and not a floor.
+    const c = createConduit({ credentials: secrets() })
+    const result = await c.send({ target: 'provider:nobody', method: 'GET', path: '/x' })
+
+    expect(result.error!.kind).toBe('target_not_found')
+    expect(result.meta.duration_ms).toBe(0)
+  })
+})
+
 describe('retry policy', () => {
   it('does not retry a POST without an idempotency key', async () => {
     let hits = 0

@@ -700,8 +700,23 @@ function htmlToText(html) {
     // Block elements → newlines before text
     .replace(/<(h[1-6])[^>]*>/gi, '\n\n')
     .replace(/<\/(h[1-6])>/gi,    '\n\n')
+    /*
+     * A CLOSING tag emits a newline as well as the opening one. The opening
+     * alone is enough only while every block is followed by another block;
+     * content after a `</p>` that opens no block of its own joins the
+     * paragraph. Doubling is collapsed by the `\n{3,}` rule below.
+     *
+     * Table parts are the same question one step out: an email kit builds
+     * everything from tables, so a document whose only structure is
+     * `<tr><td>` had no boundaries at all and adjacent cells ran their words
+     * together — a `<p>` of body text followed by a button came out as
+     * `Body wordsGo (…)`.
+     */
     .replace(/<(p|div|section|article|header|footer|li)[^>]*>/gi, '\n')
-    .replace(/<\/(p|div|section|article|header|footer|li)>/gi,    '')
+    .replace(/<\/(p|div|section|article|header|footer|li)>/gi,    '\n')
+    // Closing tag only. Source indentation already puts a newline before the
+    // opening one, so matching both buys nothing a cell can see.
+    .replace(/<\/(table|tbody|thead|tfoot|tr|td|th)>/gi, '\n')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<hr\s*\/?>/gi, '\n' + '─'.repeat(40) + '\n')
     // Links: preserve URL

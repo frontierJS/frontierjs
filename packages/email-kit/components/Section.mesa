@@ -1,5 +1,9 @@
 <script>
   export let bgcolor  = undefined   // background color for the section
+  // Spacer rows go INSIDE the section table. Emitted as siblings of it they
+  // have no table ancestor, so every client discards them and the padding
+  // silently does nothing — the rendered string keeps them, which is why it
+  // held for so long. Inside, the section's own bgcolor runs through them too.
   export let padding  = undefined   // shorthand: adds spacer rows top and bottom
   export let align    = 'center'
 </script>
@@ -13,10 +17,6 @@
   </Section>
 -->
 
-{#if padding}
-<tr><td style="font-size:0;line-height:0;height:{typeof padding === 'number' ? padding : 24}px;">&nbsp;</td></tr>
-{/if}
-
 <table
   role="presentation"
   cellspacing="0"
@@ -26,10 +26,12 @@
   align="{align}"
   style="border-collapse:collapse;{bgcolor ? `background-color:${bgcolor};` : ''}">
   <tbody>
+    {#if padding}
+    <tr><td style="font-size:0;line-height:0;height:{typeof padding === 'number' ? padding : 24}px;">&nbsp;</td></tr>
+    {/if}
     <slot />
+    {#if padding}
+    <tr><td style="font-size:0;line-height:0;height:{typeof padding === 'number' ? padding : 24}px;">&nbsp;</td></tr>
+    {/if}
   </tbody>
 </table>
-
-{#if padding}
-<tr><td style="font-size:0;line-height:0;height:{typeof padding === 'number' ? padding : 24}px;">&nbsp;</td></tr>
-{/if}

@@ -28,10 +28,15 @@ export abstract class BaseTransport {
 
   // ─── Helpers available to all transports ──────────────────
 
+  // `duration_ms` is a placeholder here and in `fail()` below, and no transport
+  // may compute one. A transport's retry loop is BELOW this frame, so a number
+  // measured inside it is the last attempt: it read 1ms on a call that took
+  // 1,715ms across three, while `stats()` had the real figure all along
+  // (`FJS-660`). The conduit layer spans every attempt and stamps the total
+  // over this on the way out — one owner, one measurement.
   protected ok<T>(
     data: T,
     status?: number,
-    duration_ms = 0,
     headers?: Record<string, string>,
   ): ConduitResult<T> {
     return {
@@ -41,7 +46,7 @@ export abstract class BaseTransport {
         protocol:    this.protocol,
         target:      this.descriptor.id,
         status,
-        duration_ms,
+        duration_ms: 0,
         ...(headers ? { headers } : {}),
       }
     }
@@ -93,11 +98,6 @@ export abstract class BaseTransport {
    */
   protected idempotencyHeader(): string {
     return this.descriptor.idempotency?.header ?? 'Idempotency-Key'
-  }
-
-  protected timer() {
-    const start = performance.now()
-    return () => Math.round(performance.now() - start)
   }
 
   // What an HMAC signature is computed over. Every transport supplies these

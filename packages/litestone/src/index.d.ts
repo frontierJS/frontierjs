@@ -401,7 +401,10 @@ export interface ScopeDef {
   offset?:       number
   include?:      Record<string, unknown>
   select?:       Record<string, unknown>
-  distinct?:     boolean | string[]
+  // Whole-row DISTINCT. SQLite has no DISTINCT ON, so a column list is refused
+  // by name rather than ignored (FJS-935) — pair it with `select` for the
+  // distinct values of a column, or use `groupBy` for one row per value.
+  distinct?:     boolean
   withDeleted?:  boolean
   onlyDeleted?:  boolean
   /** @@hasTemplates: include templates alongside instances. Default false. */

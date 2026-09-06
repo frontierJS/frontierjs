@@ -1440,7 +1440,11 @@ xNode.node = (data) =>
 xNode.nodeComment = (data) =>
   xNode.baseNode('node:comment', data, (ctx, node) => {
     const { debug, debugLabel } = get_context().config
-    if (debug && debugLabel) ctx.write(`<!-- ${node.value} -->`)
+    // `$` marks it as Mesa's. The static renderer strips the anchors it finds
+    // and cannot otherwise tell one from a comment an author wrote into
+    // `{@html}` — both are Comment nodes with space-padded data, and the
+    // author's was the one being deleted (`FJS-906`).
+    if (debug && debugLabel) ctx.write(`<!--$ ${node.value} -->`)
     else ctx.write('<!---->')
   })
 
@@ -1606,7 +1610,10 @@ export function parseHTML(source) {
     let textNode = null
     if (!push) push = (n) => parent.body.push(n)
     const addText = (v) => {
-      if (!textNode) textNode = { type: 'text', value: '' }
+      // `start` is where the run of text began. A text node is the only node
+      // kind that carried no offset, and an interpolation inside one is what a
+      // source map has to point at.
+      if (!textNode) textNode = { type: 'text', value: '', start: reader.index - String(v ?? '').length }
       textNode.value += v
     }
     const flushText = () => {
@@ -2187,6 +2194,29 @@ function collectRefs(node) {
 // Deliberately over-collects, and deliberately skips `content` / `openTag` —
 // those carry raw source from the node's start to the end of the file, which
 // would make every subtree look like it reads everything.
+/*
+ * `$:` is a top-level annotation (RULE 1). Nested in a function body, a block
+ * or a callback it is never visited by Pass 1 and survives into the output as
+ * a plain JavaScript label wrapping a one-shot assignment: the author asked
+ * for a derivation and got a write that happens when the function is called
+ * and then goes stale, with the page still rendering a plausible number.
+ *
+ * Collected rather than reported here so the caller can decide what counts as
+ * nested — the top-level `$: { … }` block form is the label's own body and is
+ * legitimate.
+ */
+function collectReactiveLabels(node, out = []) {
+  if (Array.isArray(node)) { for (const n of node) collectReactiveLabels(n, out); return out }
+  if (!node || typeof node !== 'object' || typeof node.type !== 'string') return out
+  if (node.type === 'LabeledStatement' && node.label?.name?.startsWith('$')) out.push(node)
+  for (const k of Object.keys(node)) {
+    if (k === 'type' || k === 'start' || k === 'end' || k === 'loc' || k === 'range') continue
+    const v = node[k]
+    if (v && typeof v === 'object') collectReactiveLabels(v, out)
+  }
+  return out
+}
+
 function templateSource(node, out = []) {
   if (Array.isArray(node)) { for (const n of node) templateSource(n, out); return out }
   if (!node || typeof node !== 'object') return out
@@ -2807,6 +2837,31 @@ export function analyzeScript(raw, ast) {
   for (const node of ast.body) {
     if (node.type === 'ImportDeclaration') {
       for (const s of node.specifiers) importedNameSet.add(s.local.name)
+    }
+  }
+
+  // RULE 1, enforced. Pass 1 below only ever looks at `ast.body`, so a nested
+  // `$:` reached the emitter untouched and compiled to a label nobody reads.
+  for (const node of ast.body) {
+    const isTopLevelLabel =
+      node.type === 'LabeledStatement' && node.label?.name?.startsWith('$')
+    // Walk INTO a top-level `$:` — its own body is legitimate, a `$:` nested
+    // inside it is not.
+    for (const nested of collectReactiveLabels(isTopLevelLabel ? node.body : node)) {
+      const src  = raw.slice(nested.start, nested.end).split('\n')[0].trim()
+      const shown = src.length > 60 ? src.slice(0, 57) + '...' : src
+      // Thrown rather than pushed: everything in `errors` is downgraded to a
+      // warning at the call site, and a warning is what this already was —
+      // the module parses, runs, and renders a plausible number that is right
+      // once and stale for ever. Refusing costs 0 of 397 .mesa files in this
+      // workspace, and the correction is one line.
+      throw new Error(
+        `'${shown}' — '$:' is top-level only (RULE 1). Inside a function, a block or a ` +
+        `callback it compiles to a JavaScript label and assigns once, so the value is ` +
+        `right on the first call and stale after it, with nothing said. Move it to the ` +
+        `top level of the <script>, or write a plain assignment if a one-shot write is ` +
+        `what you meant.`
+      )
     }
   }
 
@@ -4325,8 +4380,8 @@ export function buildBlock(data, option = {}) {
             // remove and `undefined` there means leave alone.
             const exp = rewriteTextResult(pe, ctx.accessors ?? null, { coerceNullish: true })
             binds.push(
-              xNode('bindText', { el: textNode.bindName(), exp }, (w, nd) => {
-                w.writeLine(`$$runtime.bindText(${nd.el}, () => (${nd.exp}));`)
+              xNode('bindText', { el: textNode.bindName(), exp, srcStart: n.start }, (w, nd) => {
+                w.writeLine(`$$runtime.bindText(${nd.el}, () => (${mark(nd.srcStart)}${nd.exp}));`)
               })
             )
           }
@@ -5626,6 +5681,10 @@ export function attachSlot(name, node) {
   const defaultBlock = node.body?.length
     ? this.buildBlock({ body: node.body }, { inline: true })
     : null
+  // What this component can render, collected where it is emitted rather than
+  // by a second walk. Read below by the `makeSlots` call, which runs at
+  // serialization — after every slot in the body has been built.
+  ;(this.slotNames ??= new Set()).add(name)
   return xNode('slot', { name, defaultBlock }, (w, n) => {
     // __block is the 3rd arg to the component fn — the slots object from caller.
     // { default: makeBlock(...), sidebar: makeBlock(...) }
@@ -5637,6 +5696,84 @@ export function attachSlot(name, node) {
     } else w.write('null')
     w.write(')')
   })
+}
+
+
+/*
+ * Which named slot a BLOCK child belongs to, or null.
+ *
+ * `slot=` is an attribute on an element, so `{#if c}<b slot="actions"/>{/if}`
+ * put the whole block in the DEFAULT slot: the caller was read as having
+ * written the component's content themselves, and a component that branches on
+ * `$slots.default` — `<Form>` deciding whether to generate its fields — turned
+ * itself off (`FJS-607`). Every branch of that block agrees on one slot, so the
+ * block belongs to it.
+ *
+ * Conservative by construction. An unrecognized node makes it `null`, which is
+ * today's behavior, so a block kind added later routes nowhere rather than
+ * routing wrongly — the failure direction a walk over an enumeration should
+ * have.
+ *
+ * @returns {{ name: string } | { mixed: 'unslotted' | 'names' } | null}
+ */
+function blockSlotTarget(node, preserveComments) {
+  const names = new Set()
+  let unslotted = false
+
+  const bodies = (n) => {
+    const out = []
+    // `{#if}` keeps its else in `elsePart`, not in `parts` — reading only
+    // `parts` sees one branch of a two-branch block and calls it unanimous.
+    for (const k of ['body', 'mainBlock', 'elseBlock', 'elsePart']) {
+      if (Array.isArray(n[k])) out.push(n[k])
+    }
+    if (Array.isArray(n.parts)) {
+      for (const p of n.parts) if (Array.isArray(p?.body)) out.push(p.body)
+    } else if (n.parts && typeof n.parts === 'object') {
+      // `{#await}` keys its branches by name.
+      for (const v of Object.values(n.parts)) if (Array.isArray(v)) out.push(v)
+    }
+    return out
+  }
+
+  const visit = (n) => {
+    if (!n || typeof n !== 'object') return
+    if (n.type === 'comment') { if (preserveComments) unslotted = true; return }
+    if (n.type === 'text' && !String(n.value ?? '').trim()) return
+    if (n.type === 'node') {
+      const a = n.attributes?.find((x) => x.name === 'slot')
+      if (a) names.add(a.value?.replace(/^['"]|['"]$/g, '') || 'default')
+      else unslotted = true
+      return
+    }
+    const inner = bodies(n)
+    if (!inner.length) { unslotted = true; return }
+    for (const list of inner) for (const c of list) visit(c)
+  }
+
+  for (const list of bodies(node)) for (const c of list) visit(c)
+
+  if (!names.size) return null
+  if (unslotted) return { mixed: 'unslotted' }
+  if (names.size > 1) return { mixed: 'names', names: [...names] }
+  const [name] = names
+  return name === 'default' ? null : { name }
+}
+
+/** Drop `slot=` from every element inside a block being routed to that slot. */
+function stripInnerSlotAttrs(node) {
+  if (!node || typeof node !== 'object') return
+  if (Array.isArray(node)) { node.forEach(stripInnerSlotAttrs); return }
+  if (node.type === 'node' && node.attributes?.some((a) => a.name === 'slot')) {
+    node.attributes = node.attributes.filter((a) => a.name !== 'slot')
+  }
+  for (const k of ['body', 'mainBlock', 'elseBlock', 'elsePart']) {
+    if (Array.isArray(node[k])) node[k].forEach(stripInnerSlotAttrs)
+  }
+  if (Array.isArray(node.parts)) node.parts.forEach((p) => stripInnerSlotAttrs(p?.body))
+  else if (node.parts && typeof node.parts === 'object') {
+    for (const v of Object.values(node.parts)) stripInnerSlotAttrs(v)
+  }
 }
 
 export function makeComponent(node, option = {}) {
@@ -5799,6 +5936,29 @@ export function makeComponent(node, option = {}) {
         if (!namedSlotMap[slotName]) namedSlotMap[slotName] = []
         namedSlotMap[slotName].push(child)
       } else {
+        // A block whose every branch is slotted with one name belongs to that
+        // slot, not to the default one.
+        const target = child.type !== 'text' && child.type !== 'comment'
+          ? blockSlotTarget(child, ctx.config?.preserveComments)
+          : null
+        if (target?.name) {
+          stripInnerSlotAttrs(child)
+          if (!namedSlotMap[target.name]) namedSlotMap[target.name] = []
+          namedSlotMap[target.name].push(child)
+          continue
+        }
+        if (target?.mixed) {
+          const where = `a {#${child.type}} inside <${node.name}>`
+          ctx.warning({
+            message: target.mixed === 'names'
+              ? `Warning: ${where} names more than one slot (${target.names.join(', ')}), so the ` +
+                `whole block goes to the default slot and every 'slot=' inside it is ignored. ` +
+                `A block belongs to one slot — split it, one per slot.`
+              : `Warning: ${where} mixes slotted and unslotted content, so the whole block goes ` +
+                `to the default slot and every 'slot=' inside it is ignored. Move the slotted ` +
+                `elements out of the block, or slot the block's own wrapper instead.`,
+          })
+        }
         defaultNodes.push(child)
       }
     }
@@ -6223,9 +6383,21 @@ export function bindProp(prop, node, element) {
 
     if (canDelegate) {
       ctx.delegatedEvents.add(event)
+      // A delegated handler is a PROPERTY on the element, so a second
+      // `on:click` on one element overwrote the first and it fired never —
+      // silently, and only on this path: the non-delegated branch below calls
+      // `addEvent`, which appends, so the same markup behaved differently
+      // depending on whether the event had a modifier on it. The merge is only
+      // emitted for the second and later handler, so the ordinary single-handler
+      // output is unchanged.
+      const seen = (element._delegatedOn ??= new Set())
+      const duplicate = seen.has(event)
+      seen.add(event)
       return {
-        bind: xNode('bindEventDelegated', { el: element.bindName(), event, handler }, (w, n) => {
-          w.writeLine(`${n.el}.__${n.event} = ${n.handler};`)
+        bind: xNode('bindEventDelegated', { el: element.bindName(), event, handler, duplicate }, (w, n) => {
+          w.writeLine(n.duplicate
+            ? `${n.el}.__${n.event} = $$runtime.mergeEvents(${n.el}.__${n.event}, ${n.handler});`
+            : `${n.el}.__${n.event} = ${n.handler};`)
         })
       }
     }
@@ -6318,6 +6490,11 @@ export function bindProp(prop, node, element) {
     }
 
     return {
+      // No marker: `parseAttributes` reads a SUB-READER over the tag, so an
+      // offset taken here is relative to the tag and not to the file. Plumbing
+      // the tag's own start through would be the fix; a marker built from the
+      // tag-relative number would point at the wrong line, which is the one
+      // outcome this whole mechanism is arranged to avoid.
       bind: xNode('bindAttribute', { el: element.bindName(), name, exp }, (w, n) => {
         w.writeLine(`$$runtime.bindAttribute(${n.el}, '${n.name}', () => (${n.exp}));`)
       })
@@ -8151,6 +8328,41 @@ function _renderGroup(code) {
 //                → $$runtime.makeBlock($tpl1, fn)
 //                (makeBlock does its own .cloneNode(true) internally)
 
+/*
+ * A source position, carried INSIDE the emitted expression.
+ *
+ * Template expressions cannot be aligned the way a script line can: after
+ * `xBuild` returns a string, `_renderGroup` folds a run of `bindText` calls
+ * into one `render()` block and `_domTraversal` collapses a run of traversal
+ * declarations, so the line an expression was written on does not survive and
+ * neither does its text. A marker travels with the code through every one of
+ * those passes because they concatenate what they fold, and it is read off the
+ * FINISHED text and then removed.
+ */
+const MARK = /\/\*@m(\d+)\*\//g
+const mark = (start) => (start == null ? '' : `/*@m${start}*/`)
+
+/** Remove every position marker. Line count is unchanged — they are inline. */
+export function stripSourceMarks(code) {
+  return code.replace(MARK, '')
+}
+
+/**
+ * Where each marker ended up, in the coordinates of the text handed in.
+ * Read before stripping; stripping removes no newlines, so the line numbers
+ * stay true afterwards.
+ *
+ * @returns {Array<{ genLine: number, srcOffset: number }>} 0-based genLine
+ */
+export function readSourceMarks(code) {
+  const out = []
+  const lines = code.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    for (const m of lines[i].matchAll(MARK)) out.push({ genLine: i, srcOffset: +m[1] })
+  }
+  return out
+}
+
 function hoistTemplates(code) {
   const seen = new Map() // key → tplName
   const decls = []
@@ -9012,7 +9224,12 @@ export async function compile(source, config = {}) {
       w.write(true, 'const $$option = { props: __props };')
       // $$slots — reactive object indicating which named slots have content.
       // Used as: {#if $$slots.sidebar} to conditionally render slot areas.
-      w.write(true, 'const $$slots = $$runtime.makeSlots(__block);')
+      // The declared set travels with the call. A component cannot see the
+      // slots its CALLER passed until runtime, and the caller cannot see which
+      // ones this component renders without resolving the import — so the one
+      // place both facts meet is here, in the child, at construction.
+      const _slotNames = JSON.stringify([...(ctx.slotNames ?? [])])
+      w.write(true, `const $$slots = $$runtime.makeSlots(__block, ${_slotNames}, '${_displayName}');`)
       w.add(ctx.module.head)
       w.add(ctx.module.code)
       w.add(ctx.module.body)
@@ -9028,6 +9245,13 @@ export async function compile(source, config = {}) {
     for (const k in ctx.glob ?? {}) resolveDependencies(ctx.glob[k])
     return _renderGroup(_domTraversal(hoistTemplates(xBuild(root, { warning: config.warning })))).replace(/^const \$\$set_/mg, (m) => '  ' + m)
   })
+
+  // Position markers are OFF unless asked for, and the caller that asks is the
+  // one that strips them: they have to be read out of the text the browser will
+  // actually load, after a warning block and an HMR wrap have moved every line,
+  // so the compiler cannot read them itself without answering in coordinates
+  // nobody else uses. `stripSourceMarks` is exported for that caller.
+  if (!config.sourceMarks) ctx.result = stripSourceMarks(ctx.result)
 
   await hook('build')
 

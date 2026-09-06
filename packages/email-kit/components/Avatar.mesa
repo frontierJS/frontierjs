@@ -1,4 +1,6 @@
 <script>
+  import { refuseChildren } from './slot-guard.js'
+  refuseChildren('Avatar', $.slots, "Pass `name` — the initial is drawn from it, and `bgcolor` and `size` shape the circle.")
   export let name    = ''
   export let bgcolor = '#9fc612'
   export let color   = '#ffffff'
@@ -6,7 +8,10 @@
   export let align   = 'left'
   export let padding = '8px 16px'
 
-  const initial = name ? name.trim()[0].toUpperCase() : '?'
+  // Trim BEFORE the test: a whitespace-only name is truthy, trims to empty,
+  // and `[0]` is then undefined — which threw and took the whole email with it.
+  const trimmed = String(name ?? '').trim()
+  const initial = trimmed ? trimmed[0].toUpperCase() : '?'
   const fontSize = Math.round(size * 0.4)
   const cx = size / 2
   const cy = size / 2

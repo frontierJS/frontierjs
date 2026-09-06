@@ -14,7 +14,7 @@ _Audited: 2026-08-01 · Package: `@frontierjs/conduit` 0.1.0 (`conduit.zip`) · 
 >
 > **Not fixed, by decision** — per-frame WebSocket signing. Auth is applied to the connection upgrade only; anything able to write to an established socket can issue any command on it. Documented in the README.
 >
-> **Still open** — the response cap and breaker are per-target, not global, so there is no process-wide memory or concurrency ceiling. `meta.duration_ms` still measures only the last attempt (the conduit-level counters measure the whole call correctly). No `tsconfig.json` — a repo-wide gap, not conduit's.
+> **Still open** — the response cap and breaker are per-target, not global, so there is no process-wide memory or concurrency ceiling. No `tsconfig.json` — a repo-wide gap, not conduit's.
 >
 > **Corrections to this audit** — §1.6 ("does not install") was an artifact of auditing a zip outside the monorepo; the surviving parts were the false `peerDependenciesMeta.optional` and the missing `tsconfig.json` (the latter is a repo-wide gap, not conduit's). §1.2's "fails open" is softened by Junction's app-level hooks, which do reach this service — now covered by a test.
 >
@@ -306,7 +306,7 @@ Also, secrets are persisted to SQLite in plaintext (`stores/sqlite.ts:54`), and 
 The `/metrics` wiring exists but exposes almost nothing you would want at 3 a.m.
 
 - **`stats()` returns target counts only** — verified: `{"targets":{"total":2,"byKind":{…},"byProtocol":{…}}}`. No request counts, error rates, latency, retry counts, or per-target health. For an outbound integration layer these are the primary signals.
-- **`duration_ms` is `0` on every error** (`base.ts:56`) and, on success, measures only the *last* attempt (`http.ts:58`, timer created per attempt). Verified: a 3.5 s four-attempt failure reported `duration_ms: 0`. Latency telemetry is unusable for exactly the requests you care about.
+- ~~**`duration_ms` is `0` on every error** and, on success, measures only the *last* attempt. Verified: a 3.5 s four-attempt failure reported `duration_ms: 0`.~~ **Fixed 2026-09-05** (`FJS-660`): no transport computes one, and the conduit layer stamps the whole call from the measurement `stats()` already used.
 - **Hooks are sync-only, unguarded, and incomplete** — `(req) => void` cannot export a span; a throwing hook takes down `send()`; there is no `onRetry`, so retries are invisible; and `stream()` fires only `onRequest`, never response, error or completion.
 - **No correlation or trace context** is propagated to targets. Nothing ties a Hub request to the outpost call it produced.
 

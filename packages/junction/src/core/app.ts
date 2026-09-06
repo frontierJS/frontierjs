@@ -22,7 +22,7 @@ import { resolveBuildId } from './build-id.ts'
 import { mergeHookMaps, type HookMap } from './hooks.ts'
 import { toFrameworkError, NotFound }   from './errors.ts'
 import { helmet, cors }                 from '../transport/middleware.ts'
-import { defaultConfig, deepMerge, loadConfig } from '../config/index.ts'
+import { defaultConfig, deepMerge, loadConfig, unknownSections } from '../config/index.ts'
 import type { DeepPartial }                     from '../config/index.ts'
 import { createLogger, noopLogger }             from './logger.ts'
 import type { ILogger, LoggerOptions }          from './logger.ts'
@@ -808,6 +808,16 @@ export function createApp(opts: AppOptions = {}): App {
   const _serviceCallers = new Map<string, ServiceCaller>()
   // Signal handler installed by start(), removed by stop() — kept here so
   // repeated start() calls never register duplicates.
+  // Authoring mistakes found while starting, reported together by the
+  // `check-authoring` phase. Collected rather than thrown where they are found:
+  // an app has a config, N service files and a hook table, so throwing on the
+  // first makes fixing them serial — one boot per typo (`FJS-D199`).
+  const _authoringFindings: string[] = []
+  // start() is once per app, and this is not `started`: `stop()` clears that
+  // one, and a second start() then reached `security-headers` and died on
+  // `Cannot add middleware after the router is built` — an internal sentence
+  // about a router for a caller whose mistake was calling start() again.
+  let _everStarted = false
   let _signalHandler: (() => void) | null = null
   let _rejectionHandler: ((reason: unknown) => void) | null = null
   let _exceptionHandler: ((err: Error) => void) | null = null
@@ -815,6 +825,32 @@ export function createApp(opts: AppOptions = {}): App {
   // One way out of a crash, shared by both handlers. Exits 1 whichever way it
   // goes — a crash that shut down tidily is still a crash, and reporting 0
   // there is the same lie the deadline exists to stop.
+  // Shut a set of plugins down, reverse order, each bounded. Two callers and
+  // they are not the same list: `stop()` passes every plugin, and a `boot()`
+  // that threw passes the ones that had already booted — which is why this is a
+  // parameter rather than a closure over `plugins`.
+  //
+  // Bounded and logged rather than thrown: a plugin whose `shutdown()` never
+  // settles used to take the whole list with it, so the caravan pool, the
+  // outbox relay and the litestone close never ran. A step that silently did
+  // not run is the failure this exists to stop.
+  const shutdownPlugins = async (list: Plugin[]): Promise<void> => {
+    const pluginMs = config.shutdown?.pluginTimeout ?? 5_000
+    for (const plugin of [...list].reverse()) {
+      if (!plugin.shutdown) continue
+      try {
+        await withDeadline(
+          Promise.resolve(plugin.shutdown(app)),
+          pluginMs,
+          () => logger.error(
+            `plugin '${plugin.name}' shutdown did not finish within ${pluginMs}ms — skipped`),
+        )
+      } catch (err) {
+        logger.error(`plugin '${plugin.name}' shutdown failed`, err as Error)
+      }
+    }
+  }
+
   const crashStop = () => {
     const ms = config.shutdown?.timeout ?? 15_000
     withDeadline(app.stop(), ms, () => {})
@@ -1281,6 +1317,15 @@ export function createApp(opts: AppOptions = {}): App {
         for (const key of Object.keys(merged)) {
           (config as Record<string, unknown>)[key] = merged[key]
         }
+
+        // A section nothing reads. Recorded rather than thrown here, so one
+        // boot reports every one of them.
+        for (const miss of unknownSections(merged._junction)) {
+          _authoringFindings.push(
+            `junction.config.js declares '${miss.key}', which nothing reads` +
+            (miss.nearest ? ` — did you mean '${miss.nearest}'?` : '.')
+          )
+        }
       } catch (err) {
         // loadConfig treats "file not found" as a normal miss. Reaching this
         // catch means a config file EXISTS but is broken — abort startup
@@ -1447,20 +1492,7 @@ export function createApp(opts: AppOptions = {}): App {
       // and the litestone close never ran. Bounded, one plugin hanging costs
       // its own step and nothing else — and it is LOGGED, because a step that
       // silently did not run is the failure this whole change is about.
-      const pluginMs = config.shutdown?.pluginTimeout ?? 5_000
-      for (const plugin of [...plugins].reverse()) {
-        if (!plugin.shutdown) continue
-        try {
-          await withDeadline(
-            Promise.resolve(plugin.shutdown(app)),
-            pluginMs,
-            () => logger.error(
-              `plugin '${plugin.name}' shutdown did not finish within ${pluginMs}ms — skipped`),
-          )
-        } catch (err) {
-          logger.error(`plugin '${plugin.name}' shutdown failed`, err as Error)
-        }
-      }
+      await shutdownPlugins(plugins)
 
       scheduler.destroy()
       cache.destroy()
@@ -1608,6 +1640,23 @@ export function createApp(opts: AppOptions = {}): App {
 
   async function runStartPhases(bindHost: boolean): Promise<void> {
 
+    // A second start() used to reach `security-headers` and die on `Cannot add
+    // middleware after the router is built` — an internal sentence about a
+    // router, for a caller whose actual mistake was calling this twice. Refused
+    // by name instead: an app is started once, and the way to start it again is
+    // to stop it first.
+    if (_everStarted) {
+      throw new Error(
+        `[Junction] this app has already been started` +
+        (started ? ` and is still running${app.http?.port ? ` on ${app.http.port}` : ''}` : ' and stopped') +
+        `. start() runs the whole phase list — middleware is applied, plugins ` +
+        `boot, routes are registered — and none of it is repeatable: the router ` +
+        `is built once and refuses middleware afterwards. A STOPPED app cannot ` +
+        `be restarted either (\`FJS-949\`); build a new one with createApp().`
+      )
+    }
+    _everStarted = true
+
     const startPhases: StartPhase[] = [
 
       // Load junction.config.js and deep-merge into the live config.
@@ -1713,16 +1762,55 @@ export function createApp(opts: AppOptions = {}): App {
         }
 
         if (_servicesDir.dir) {
-          await autoloadServices({ dir: _servicesDir.dir, app, registry: services })
+          await autoloadServices({
+            dir: _servicesDir.dir, app, registry: services,
+            // Keyed like every other authoring finding, so one file that
+            // exports two factories AND throws is two sentences and not four.
+            report: (_key, finding) => _authoringFindings.push(finding),
+          })
         }
       }},
 
       // Plugins do their async setup here — the full app exists by now.
+      // Every authoring mistake this start() found, in one verdict, before any
+      // plugin boots — so nothing is half-initialized when it refuses, and an
+      // author fixes a config in one pass rather than one boot per typo
+      // (`FJS-D199`). Refuse rather than warn: `warnings: []` is the shape
+      // being replaced (`FJS-431`), and there is no permitting flag, because a
+      // key that ought to be legal is a missing feature.
+      { name: 'check-authoring', run: () => {
+        // Services are collected HERE rather than pushed at construction: a
+        // service is built at import and registered later, so the app has no
+        // hold on it until now — and autoload runs one phase above, so a
+        // service loaded off disk is in the registry by the time this asks.
+        for (const svc of services.values()) {
+          for (const f of (svc as { _authoringFindings?: string[] })._authoringFindings ?? [])
+            _authoringFindings.push(f)
+        }
+        if (_authoringFindings.length === 0) return
+        throw new Error(
+          `[Junction] ${_authoringFindings.length} authoring mistake(s) — this app declares ` +
+          `things nothing reads:\n` +
+          _authoringFindings.map(f => `    ${f}`).join('\n')
+        )
+      }},
+
       { name: 'boot-plugins', run: async () => {
+        const booted: Plugin[] = []
         for (const plugin of plugins) {
           try {
             await plugin.boot?.(app)
+            booted.push(plugin)
           } catch (err) {
+            // Unwind. A boot that failed halfway left every earlier plugin's
+            // pool, timer and connection alive with `shutdown()` never called,
+            // so `start()` threw and the process went on holding them.
+            //
+            // The FAILING plugin is included: it is the one most likely to have
+            // opened something before it threw, and a `shutdown()` that assumes
+            // a completed boot throws into the same catch every other one does.
+            booted.push(plugin)
+            await shutdownPlugins(booted)
             throw new Error(`Plugin "${plugin.name}" boot failed: ${(err as Error).message}`)
           }
         }

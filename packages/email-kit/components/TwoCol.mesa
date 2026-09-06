@@ -1,4 +1,6 @@
 <script>
+  import { refuseChildren } from './slot-guard.js'
+  refuseChildren('TwoCol', $.slots, 'It lays out two NAMED slots — put the content in `<div slot="left">` and `<div slot="right">`.')
   export let bgcolor   = undefined
   export let valign    = 'top'
   export let leftWidth = '50%'

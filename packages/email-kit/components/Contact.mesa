@@ -1,4 +1,6 @@
 <script>
+  import { refuseChildren } from './slot-guard.js'
+  refuseChildren('Contact', $.slots, "Pass `name`, `email` and `phone`.")
   export let name     = ''
   export let email    = ''
   export let phone    = ''

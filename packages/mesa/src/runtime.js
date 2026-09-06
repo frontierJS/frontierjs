@@ -388,6 +388,15 @@ export function createEffect(fn, opts) {
   return () => _disposeNode(node, true)
 }
 
+/*
+ * What Mesa writes into a comment node it owns. The static renderer strips the
+ * anchors it finds and cannot otherwise tell one from a comment an author put
+ * through `{@html}` — both are Comment nodes and an empty one is what a caller
+ * gets from rendering a component to a string and splicing it in (`FJS-906`).
+ * Read by `render.js`'s `_isAnchorComment` and by nothing else.
+ */
+export const ANCHOR_DATA = '$'
+
 /**
  * createRoot(fn) — run `fn` inside an owner scope that ends when you say so.
  *
@@ -836,7 +845,7 @@ export function htmlToFragment(html, option, clean) {
   let result = _templateCache.get(html)
   if (!result) {
     const t = document.createElement('template')
-    t.innerHTML = html.replace(/<>/g, '<!---->')
+    t.innerHTML = html.replace(/<>/g, `<!--${ANCHOR_DATA}-->`)
     result = t.content
     if (clean) {
       const it = document.createNodeIterator(result, NodeFilter.SHOW_COMMENT)
@@ -928,7 +937,7 @@ const _guardRange = (dom) => {
   let first  = isFrag ? dom.firstChild : dom
   const last = isFrag ? dom.lastChild  : dom
   if (first && first.nodeType === 8 /* COMMENT_NODE */) {
-    const marker = document.createComment('')
+    const marker = document.createComment(ANCHOR_DATA)
     if (isFrag) {
       dom.insertBefore(marker, first)
     } else {
@@ -2263,7 +2272,7 @@ export function mount(label, component, option) {
   const styleRoot = option?.root instanceof ShadowRoot ? option.root : null
   const cleanupStyles = styleRoot ? _registerStyleRoot(styleRoot) : () => {}
 
-  const anchor = document.createComment('')
+  const anchor = document.createComment(ANCHOR_DATA)
   label.parentNode.insertBefore(anchor, label.nextSibling)
   // A root mount runs outside any effect, so the flush loop's unwind cannot see
   // it. The error still propagates to the caller — it is theirs to handle — but
@@ -2327,7 +2336,7 @@ export function mountStatic(label, component, option) {
       '@frontierjs/mesa-runtime: mountStatic() called in a non-browser environment. ' +
         'Use renderToString() for SSR.'
     )
-  const anchor = document.createComment('')
+  const anchor = document.createComment(ANCHOR_DATA)
   label.appendChild(anchor)
   component(anchor, option?.props ?? {}, null)
   return { $dom: anchor }
@@ -3220,7 +3229,7 @@ export function ifBlock(anchor, condFn, blocks, noAnchor) {
     }
 
     const node = $dom.$dom ?? $dom
-    const marker = document.createComment('')
+    const marker = document.createComment(ANCHOR_DATA)
     if (noAnchor) {
       parent.appendChild(marker)
       parent.appendChild(node)
@@ -3302,7 +3311,7 @@ export function keyBlock(anchor, keyFn, makeBlock, noAnchor) {
 
     const node = $dom?.$dom ?? $dom
     if (!node) return
-    const marker = document.createComment('')
+    const marker = document.createComment(ANCHOR_DATA)
     if (noAnchor) {
       parent.appendChild(marker)
       parent.appendChild(node)
@@ -3345,7 +3354,7 @@ export function awaitBlock(anchor, getPromise, pendingBlock, thenBlock, catchBlo
     if (result && result.nodeType) return result
     // Snippet style — fn inserts before a temp anchor
     const frag = document.createDocumentFragment()
-    const tempAnchor = document.createComment('')
+    const tempAnchor = document.createComment(ANCHOR_DATA)
     frag.appendChild(tempAnchor)
     try { fn(tempAnchor, ...args) } catch (_) {}
     frag.removeChild(tempAnchor)
@@ -3364,7 +3373,7 @@ export function awaitBlock(anchor, getPromise, pendingBlock, thenBlock, catchBlo
       startMarker = null
     }
     if ($dom) {
-      const marker = document.createComment('')
+      const marker = document.createComment(ANCHOR_DATA)
       parent.insertBefore(marker, anchor)
       parent.insertBefore($dom, anchor)
       startMarker = marker
@@ -3469,7 +3478,7 @@ export function mountedBlock(anchor, getPromise, pendingBlock, contentBlock, fai
     try { result = fn(...args) } catch (_) { result = undefined }
     if (result && (result.$dom || result.nodeType)) return result
     const frag = document.createDocumentFragment()
-    const tempAnchor = document.createComment('')
+    const tempAnchor = document.createComment(ANCHOR_DATA)
     frag.appendChild(tempAnchor)
     fn(tempAnchor, ...args)
     frag.removeChild(tempAnchor)
@@ -3539,7 +3548,7 @@ export function boundaryBlock(anchor, getStates, contentBlock, pendingBlock, fai
     if (result && (result.$dom || result.nodeType)) return result
     // Snippet style — call again with a temp anchor as first arg
     const frag = document.createDocumentFragment()
-    const tempAnchor = document.createComment('')
+    const tempAnchor = document.createComment(ANCHOR_DATA)
     frag.appendChild(tempAnchor)
     fn(tempAnchor, ...args)
     frag.removeChild(tempAnchor)
@@ -3555,7 +3564,7 @@ export function boundaryBlock(anchor, getStates, contentBlock, pendingBlock, fai
     }
     const node = $dom ? $dom.$dom ?? $dom : null
     if (node) {
-      const marker = document.createComment('')
+      const marker = document.createComment(ANCHOR_DATA)
       parent.insertBefore(marker, anchor)
       parent.insertBefore(node, anchor)
       startMarker = marker
@@ -3651,14 +3660,61 @@ export function attachSlot(anchor, slotFn, fallbackFactory) {
  * @param {object|null} __block — the slots object passed as 3rd arg to Component()
  * @returns {object} — proxy-like object with boolean keys per slot name
  */
-export function makeSlots(__block) {
+export function makeSlots(__block, declared, componentName) {
   if (!__block) return {}
   const slots = {}
   for (const key of Object.keys(__block)) {
     slots[key] = true
   }
+  if (declared) warnUnrenderableSlots(__block, declared, componentName)
   return slots
 }
+
+/*
+ * Children handed to a component that has no `<slot>` for them are dropped, and
+ * were dropped in silence: `<Button>Go</Button>` against a component whose label
+ * is a `text` prop rendered an empty button, and nothing said so at any layer
+ * (`FJS-926`).
+ *
+ * Graded against the slot names the component's own template DECLARES, not
+ * against the ones it has rendered so far. The difference is the whole design.
+ * Svelte's equivalent asks the second question and has answered the same false
+ * positive twice (their #4546, reopened as #6325): a component that renders its
+ * slot conditionally — `{#if $slots.default}<slot />{/if}` — has rendered
+ * nothing at the moment the check runs, and six components in this repo's own
+ * kit are that shape. An accordion whose `<slot>` sits behind `{#if expanded}`
+ * is the same trap one step further out. A DECLARED slot is right in all three.
+ *
+ * Their other false positive cannot arise here: whitespace-only children
+ * compile to `null`, so `<Child>\n</Child>` passes no block at all.
+ *
+ * Once per component-and-slot, because a list renders one component many times
+ * and a warning per row is a warning nobody reads. Not gated on a dev build —
+ * the check is a set lookup against a static list, and a dropped child is a bug
+ * in every build, including the server render an email goes out on.
+ */
+const _warnedSlots = new Set()
+
+function warnUnrenderableSlots(__block, declared, componentName) {
+  for (const name of Object.keys(__block)) {
+    if (declared.includes(name)) continue
+    const key = `${componentName}:${name}`
+    if (_warnedSlots.has(key)) continue
+    _warnedSlots.add(key)
+    const what = name === 'default' ? 'children' : `content for slot "${name}"`
+    console.warn(
+      `[Mesa] <${componentName}> was given ${what} and renders no ` +
+      (name === 'default' ? '<slot />' : `<slot name="${name}" />`) +
+      `, so it has been dropped. ` +
+      (declared.length
+        ? `It renders: ${declared.map((d) => d === 'default' ? '<slot />' : `<slot name="${d}" />`).join(', ')}.`
+        : `It renders no slots at all — pass the content as a prop.`)
+    )
+  }
+}
+
+/** Test seam: the warning fires once per component-and-slot for the process. */
+export function resetSlotWarnings() { _warnedSlots.clear() }
 
 /**
  * restProps — everything the caller passed that the component did not declare.
@@ -4017,6 +4073,75 @@ function _watchFire(node, key) {
   }
 }
 
+/*
+ * Fire the node itself and every watch above it, touching no key.
+ *
+ * A symbol-keyed write is a change to the OBJECT — it just is not a change at
+ * a path, because a symbol cannot be a watch segment and the get trap never
+ * subscribes to one. Firing nothing at all left the whole-object watch silent
+ * where the same write with a string key wakes it, which is the difference a
+ * `$: store` is there to catch.
+ */
+/*
+ * A write that the target refused. Object.freeze is the ordinary cause, and
+ * the native message names the property and `#<Object>` — so on a store of any
+ * size the reader is told a `b` somewhere is read-only. The path and the fact
+ * that it is frozen are what make that actionable.
+ */
+/*
+ * A write from inside a derivation.
+ *
+ * A memo is LAZY: it recomputes when something reads it, and stops the moment
+ * nothing does. So a derivation written for its side effect works while a
+ * screen happens to be reading it and then quietly stops — the write does not
+ * fail, it just never happens again, which is the shape that gets diagnosed as
+ * a data problem.
+ *
+ * A warning rather than a refusal. Svelte refuses it outright
+ * (`state_unsafe_mutation`), but a write from inside `fn()` to one of the
+ * memo's OWN dependencies is a handled case here — `_recompute` clears `dirty`
+ * before running for exactly that reason — and refusing would contradict
+ * behavior this runtime documents. Measured across mesa, sierra and ui: no
+ * suite in this repo writes from inside a derivation at all.
+ *
+ * Once per path, since a derivation reruns.
+ */
+const _warnedDerivedWrites = new Set()
+
+function _warnDerivedWrite(key, pathPrefix) {
+  const at = pathPrefix ? `${pathPrefix}.${String(key)}` : String(key)
+  if (_warnedDerivedWrites.has(at)) return
+  _warnedDerivedWrites.add(at)
+  console.warn(
+    `[Mesa] ${at} was written from inside a derivation. A derivation is lazy — ` +
+    `it stops recomputing the moment nothing reads it, and the write stops with ` +
+    `it, silently. Put the write in an effect, which runs because something ` +
+    `changed rather than because something asked.`,
+  )
+}
+
+/** Test seam: the derivation-write warning is once per path per process. */
+export function resetDerivedWriteWarnings() { _warnedDerivedWrites.clear() }
+
+function _frozenWriteError(cause, key, pathPrefix) {
+  const at = pathPrefix ? `${pathPrefix}.${String(key)}` : String(key)
+  const frozen = /read only|not extensible|read-only/i.test(cause?.message ?? '')
+  const err = new TypeError(
+    `[Mesa] cannot write ${at} — ` +
+    (frozen
+      ? `the object holding it is frozen. Object.freeze() and reactive state are ` +
+        `different answers to the same question; keep the frozen value outside the ` +
+        `store, or write a copy back to ${pathPrefix || 'the store'} instead of mutating in place.`
+      : cause?.message ?? 'the write was refused'),
+    { cause },
+  )
+  return err
+}
+
+function _watchFireSelf(node) {
+  for (let n = node; n; n = n.parent) if (n.sig) n.sig.fire()
+}
+
 function _watchFireSubtree(n) {
   if (n.sig) n.sig.fire()
   for (const c of n.children.values()) _watchFireSubtree(c)
@@ -4217,9 +4342,19 @@ function _buildProxy(obj, byTarget, entry, pathPrefix) {
       return value
     },
     set(target, key, value) {
-      target[key] = _unwrapValue(value)
-      if (typeof key !== 'symbol')
-        for (const n of entry.nodes) _watchFire(n, key)
+      // A frozen target throws here, and the bare message names the property
+      // and `#<Object>` — neither the path it sits at nor the store it belongs
+      // to, which is everything a reader needs to find it.
+      if (_listener?._isDerived) _warnDerivedWrite(key, pathPrefix)
+      try {
+        target[key] = _unwrapValue(value)
+      } catch (e) {
+        throw _frozenWriteError(e, key, pathPrefix)
+      }
+      for (const n of entry.nodes) {
+        if (typeof key === 'symbol') _watchFireSelf(n)
+        else _watchFire(n, key)
+      }
       return true
     },
     // Without this trap `delete obj.k` reached the raw object directly and fired
@@ -4228,8 +4363,12 @@ function _buildProxy(obj, byTarget, entry, pathPrefix) {
     deleteProperty(target, key) {
       const had = Object.prototype.hasOwnProperty.call(target, key)
       delete target[key]
-      if (had && typeof key !== 'symbol')
-        for (const n of entry.nodes) _watchFire(n, key)
+      if (had) {
+        for (const n of entry.nodes) {
+          if (typeof key === 'symbol') _watchFireSelf(n)
+          else _watchFire(n, key)
+        }
+      }
       return true
     }
   })
@@ -4809,7 +4948,11 @@ export function pushProps(anchor, newProps) {
     // Written wholesale, which is what lets a key LEAVE a spread.
     const rest = registry.get(REST_PROPS)
     if (rest) rest.setRest(newProps)
-    for (const name in newProps) {
+    // Own enumerable keys only. `for…in` walks the prototype, so a class
+    // instance or an Object.create(defaults) passed as props wrote the child's
+    // OWN declared prop from a key the parent never passed — quieter than the
+    // sibling in `pick`, which painted the same keys onto the element.
+    for (const name of Object.keys(newProps)) {
       const p = registry.get(name)
       if (!p) continue
       // Use directWrite when available — it bypasses the compiled setter's
@@ -5119,7 +5262,7 @@ const TEMPLATE_FRAGMENT = 1
  */
 function parseTemplateFresh(html, asFragment) {
   const t = document.createElement('template')
-  t.innerHTML = html.replace(/<>/g, '<!---->')
+  t.innerHTML = html.replace(/<>/g, `<!--${ANCHOR_DATA}-->`)
   const content = t.content
   if (!asFragment && content.firstChild === content.lastChild) return content.firstChild
   return content
@@ -5262,6 +5405,19 @@ const _BOOL_ATTRS = new Set([
  * choice per attribute — so the same component was correct or broken depending
  * on whether the value was static.
  */
+/*
+ * The two prefixes that are real namespaces rather than part of the name.
+ * `setAttribute('xlink:href', …)` creates an attribute whose literal NAME
+ * contains a colon, in no namespace. An HTML parser forgives that and Chrome
+ * renders it, but an XHTML document, a standalone `.svg` file and anything
+ * that re-serializes the DOM as XML do not — so the reference is simply not
+ * there, in exactly the output that is hardest to notice.
+ */
+const _NS = {
+  xlink: 'http://www.w3.org/1999/xlink',
+  xml:   'http://www.w3.org/XML/1998/namespace',
+}
+
 export function set_attribute(el, name, value) {
   // `<option value={obj}>` — keep the real value beside the attribute.
   // An attribute is a string, so an object became "[object Object]" and the
@@ -5294,6 +5450,13 @@ export function set_attribute(el, name, value) {
     return
   }
 
+  const ns = name.includes(':') ? _NS[name.slice(0, name.indexOf(':'))] : undefined
+  if (ns) {
+    if (value == null || value === false) el.removeAttributeNS(ns, name.slice(name.indexOf(':') + 1))
+    else el.setAttributeNS(ns, name, '' + value)
+    return
+  }
+
   if (value == null || value === false) {
     if (_BOOL_DOM_PROPS.has(name)) el[name] = false
     else if (_TEXT_DOM_PROPS.has(name)) el[name] = ''
@@ -5303,10 +5466,56 @@ export function set_attribute(el, name, value) {
   } else if (_BOOL_ATTRS.has(name)) {
     // Boolean attribute: any truthy value → set as empty string (canonical form)
     el.setAttribute(name, '')
+  } else if (typeof value === 'object' && isCustomElement(el) && name in el) {
+    // A custom element handed an object. An attribute is a string, so this is
+    // the one case where the name list cannot be right: `[object Object]` is
+    // not a value the element can do anything with, and the element itself has
+    // already answered the question by DEFINING the property.
+    //
+    // Narrowed to a non-primitive on purpose. Svelte prefers the property
+    // whenever one exists and carries open reports from both directions for it
+    // (sveltejs/svelte#12624, #15455) — and had to force `spellcheck` and
+    // `translate` back to `setAttribute` (#12734), which are built-ins. A
+    // string still goes to the attribute here, so nothing that works today
+    // changes: a `[foo="bar"]` selector keeps matching.
+    el[name] = value
   } else {
-    el.setAttribute(name, '' + value)
+    const str = '' + value
+    if (str === '[object Object]') warnStringifiedObject(el, name)
+    el.setAttribute(name, str)
   }
 }
+
+/** A dash in the tag name is what makes an element custom. */
+function isCustomElement(el) {
+  return typeof el.tagName === 'string' && el.tagName.includes('-')
+}
+
+/*
+ * An object written into an attribute reaches the DOM as `[object Object]`,
+ * which no reader can use and which looks like a rendered value in devtools.
+ * Once per element-name and attribute, since a list writes the same mistake
+ * on every row.
+ */
+const _warnedStringified = new Set()
+
+function warnStringifiedObject(el, name) {
+  const tag = el.tagName?.toLowerCase() ?? '?'
+  const key = `${tag}:${name}`
+  if (_warnedStringified.has(key)) return
+  _warnedStringified.add(key)
+  console.warn(
+    `[Mesa] <${tag} ${name}={…}> was given an object, and an attribute is a string, ` +
+    `so it reached the DOM as "[object Object]". ` +
+    (isCustomElement(el)
+      ? `<${tag}> declares no \`${name}\` property for it to be assigned to — define one, ` +
+        `or pass a string.`
+      : `Pass a string, or a custom element that declares a property of that name.`)
+  )
+}
+
+/** Test seam: the warning is once per element-name and attribute per process. */
+export function resetAttributeWarnings() { _warnedStringified.clear() }
 
 /*
  * The `{class}` passthrough — MERGE, never replace.

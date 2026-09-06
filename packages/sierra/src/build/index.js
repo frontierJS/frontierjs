@@ -25,6 +25,7 @@ import { virtualSierraPlugin } from '../virtual/virtual-sierra.js'
 import { runPostBuild } from '../postbuild/index.js'
 import { prerenderRoutes } from './prerender.js'
 import { buildIslandBundle, injectIntoPages } from './island-bundle.js'
+import { pruneUnreachable } from './prune-unreachable.js'
 import { autoImportPlugin } from './auto-import-plugin.js'
 import { appAliasPlugin } from './app-alias-plugin.js'
 import { staticDataPlugin } from './static-data-plugin.js'
@@ -527,6 +528,22 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
       }
 
       const results = await runPostBuild(config, routeTable, outDir, root, prerenderedUrls)
+
+      // Publish only what a page can reach. Runs after postbuild, so the copies
+      // it makes (404.html) are roots like any other page. `static` only: an SPA
+      // is served by its index.html and every chunk it lazy-loads is reachable
+      // through the entry the moment the router asks for it.
+      if ((config.target ?? 'spa') === 'static') {
+        const pruned = await pruneUnreachable({ outDir })
+        if (pruned.removed.length) {
+          console.log(
+            `\n  [Sierra] Published ${pruned.kept.length} script(s); ` +
+            `removed ${pruned.removed.length} no page can reach ` +
+            `(${(pruned.bytes / 1024).toFixed(0)} KB):`
+          )
+          for (const f of pruned.removed) console.log(`    · ${f}`)
+        }
+      }
 
       if (results.length > 0) {
         console.log('\n  [Sierra] Post-build:')

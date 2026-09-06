@@ -161,7 +161,7 @@ export class StubTransport extends BaseTransport {
       })
     }
 
-    return this.ok<T>(entry.data as T, entry.status, 0)
+    return this.ok<T>(entry.data as T, entry.status)
   }
 
   async *stream(req: ConduitRequest): AsyncIterable<ConduitChunk> {

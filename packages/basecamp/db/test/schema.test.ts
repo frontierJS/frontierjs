@@ -2142,10 +2142,13 @@ describe('the access and constraints this schema declares are enforced', () => {
     const violations = graded.filter(m => m.got !== 'skipped')
 
     expect(violations.map(m => m.message)).toEqual([])
-    // The report is asserted too: it should be delegations and SYSTEM gates and
-    // nothing else, so a NEW ungradable shape is loud rather than absorbed.
+    // The report is asserted too: it should be relation-crossing policies and
+    // SYSTEM gates and nothing else, so a NEW ungradable shape is loud rather
+    // than absorbed. In particular the checker's *every seeded row falls on the
+    // same side* reason is deliberately not accepted here — that one is a hole
+    // in this schema's fixtures, not a shape it cannot grade.
     for (const m of graded)
-      expect(m.message).toMatch(/delegates to another model's policy|which no principal can hold/)
+      expect(m.message).toMatch(/the policy crosses a relation|which no principal can hold/)
   }, 60_000)
 
   test('no tenant reaches another tenant, on every scoped model', async () => {

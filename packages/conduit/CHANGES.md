@@ -1,5 +1,34 @@
 # Changes — @frontierjs/conduit
 
+## 2026-09-05 — `duration_ms` was the last attempt, not the call (`FJS-660`)
+
+The public result and `/metrics` reported two different numbers for one call and
+disagreed by three orders of magnitude: measured against a server failing twice
+then succeeding, `meta.duration_ms: 1` on a call that took **1,715 ms** across
+three attempts. `fail()` was worse — it hardcoded 0, so the answers that cost
+the most reported nothing at all.
+
+Cause is structural rather than arithmetic: a transport's retry loop is BELOW
+`send()`, so a timer created inside one can only ever see its own attempt. The
+conduit layer is the frame that spans them, and it was already measuring the
+whole call correctly — into its own counters and nowhere else.
+
+**No transport computes one now.** `ok()` lost its `duration_ms` parameter,
+`timer()` is gone, and both builders emit a placeholder the conduit layer stamps
+over on the way out, from the same measurement `recordResult` takes. One owner,
+one measurement, so the two readers cannot drift again.
+
+**No per-attempt field beside it.** It has no reader, and `onRetry` already
+receives each attempt with its error and its number. 0 still means nothing was
+sent — an unknown target, a shed request, a breaker refusal — which is what
+those calls cost.
+
+Four tests, **three red with the stamp removed**; the fourth is the request that
+never reached a transport, which must still read 0, or the fix is a floor rather
+than a measurement. The retried call is graded against the SAME server answering
+once, since a number measured inside the loop reports the two as equal.
+
+
 ## 2026-09-04 — `retryable` says only whether THIS request may be sent again
 
 `FJS-739`, ruled `FJS-D194`. 290 tests, 0 fail. Typecheck clean.

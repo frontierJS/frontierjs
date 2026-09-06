@@ -1,5 +1,287 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-06 — `distinct` is a boolean, and everything else was accepted and ignored
+
+`buildSQL` reads `distinct === true` and nothing else, so `distinct: ['title']`
+emitted no `DISTINCT` at all — three rows over two titles came back as three.
+What made it worse than an ignored option is that `checkSelect` validated the
+array's ELEMENTS by name, so `distinct: ['nosuchcol']` was refused with *Unknown
+field* and the API answered as though it had understood the argument. A string
+and a number were not name-checked at all. Refused by name now (`FJS-935`), the
+shape `FJS-828` already refuses one option along.
+
+**Refused rather than implemented, and the reason is SQLite's.** There is no
+`DISTINCT ON`, so a column list has nothing to compile to; getting there means a
+window function, an arbitrary rule for WHICH row survives, and a second query
+shape interacting with `limit`, `offset` and `include`. Both things a caller
+could have meant already have a spelling — the distinct VALUES of a column are
+`select` plus `distinct: true`, and one whole row per value is `groupBy`, where
+which row survives is a question the caller answers rather than a partition
+answering it for them. A third spelling would restate one of the two.
+
+**Inside an INCLUDE it was worse and is now refused whole**, `true` included:
+nothing read it, and nothing name-checked it either, so
+`include: { posts: { distinct: ['nope'] } }` was accepted and answered every
+post. An include is one batched query across every parent row, so a `DISTINCT`
+there dedupes ACROSS parents, which is not what anyone writing it meant.
+
+**The two suites that used the list spelling as a column-naming position are
+gone rather than moved**, because `distinct` is no longer one:
+`guarded-filter`'s shape row, and `matrix`'s whole `distinct` column. That
+column is the finding worth keeping — it graded `rows: 2` against a fixture of
+exactly two rows, so it said `ok` for nineteen of twenty kinds and passed with
+the feature entirely absent. `walkGuardedColumnList` went with them, having lost
+its only two callers, and `index.d.ts` narrowed from `boolean | string[]` to
+`boolean` — the same file already typed `findMany`'s own `distinct` as
+`boolean`, so the two declarations in it disagreed.
+
+10 tests in `test/distinct-shape.test.ts`, 4 red with the shape refusal stubbed
+and 2 with the nested one. Every refusal sits beside the accepting shape one
+character away — `distinct: true` still dedupes, a bare `true` is still a
+whole-row DISTINCT, and an include naming `where` and `orderBy` is still
+honoured — because a fix that refused `distinct` outright would satisfy any test
+that only asked about the refusal. litestone 4368 pass, typecheck clean.
+
+## 2026-09-06 — Studio gets a Compare panel: what this branch did
+
+Thirteen panels answered *what is true now*. Nothing answered *what changed* —
+and two shipped commands computed exactly that with no surface anywhere:
+`litestone release --from` (can N-1 and N serve one database at once) and
+`litestone access --from` (who may now do more). The question asked last, with
+the most at stake, was the one thing Studio could not be asked.
+
+**Two verdicts, never one badge.** Deploy and Access are read off one walk of
+the same two surfaces and they disagree by construction: removing a `@@gate` is
+an `expand` for a deploy — N-1 keeps working — and the widest thing a schema
+change can do to access. A single headline has to pick one and is wrong about
+the other every time it matters.
+
+**The ref is chosen from a list the server enumerated, never typed.** The value
+ends up on a git command line, and `loadBaselineSchema` reads a plain FILE when
+one exists by that name, so a text box here would let whoever has the page open
+name a path on the disk. `gitBaselineRefs` lists the baselines somebody would
+actually compare against — HEAD, where the branch left the trunk, the trunk, the
+commits that touched THIS SCHEMA, then the tags — and the client picks a name
+from it; the resolved SHA is what travels onward. That is Invariant 8's rule
+(the name is looked up, never interpolated) one realm over, and the same reason
+`fli proves` takes no ref over HTTP at all.
+
+Two things the first listing got wrong and the drive now pins. It deduped by
+NAME, so a monorepo that tags seventeen packages at one commit filled the list
+with rows resolving to a single sha; it is keyed on the sha. And the
+schema-commit pathspec was root-relative while Studio runs in the app directory
+— a plain pathspec is relative to the CWD — so the only entries that can
+possibly differ were matching nothing, silently, and the list came back
+tags-only.
+
+### A package fragment is read from the working tree
+
+Found by looking at the panel's first real answer: six models reported as NEW
+that nobody added. `import "@frontierjs/auth/schema.lite"` resolves through
+node, and a ref has no `node_modules` — joined as a path it asks git for
+`db/@frontierjs/auth/schema.lite`, which is nothing. So every model a package
+ships was absent from every baseline, and both CLI commands reported the whole
+of `@frontierjs/auth` as newly added on every run, for ever.
+
+It is read off disk now and the note says so. The alternative it is measured
+against is not perfection: if the package version moved between that ref and
+now, this compares today's fragment against itself and UNDERSTATES what changed
+in it, for one package. Not doing it OVERSTATES every package model on every
+comparison. A relative import still comes from the ref — git has those files at
+that commit, which is the whole point of asking for one. `litestone access
+--from` and `litestone release --from` get the fix with the panel, since it is
+in the reader both of them already share.
+
+### And a ⌘K palette
+
+Thirteen panels, forty models and a hundred words of the language, reachable
+only by knowing which panel owned them — the problem `fli ws:atlas` answers one
+tier up, with the same answer. One box searches all three.
+
+**The corpus is what the page already holds**, plus the language, fetched once
+on first open and after the box is up: a palette that made every panel load its
+own data to be searchable would cost a schema parse, a catalog read and an
+advisory pass to press a key. Panels come from the same table the Overview
+directory renders, so a panel added there is searchable with no second list.
+
+**Rank is WHERE the match is** — prefix, then word boundary, then substring —
+because what somebody types is the start of the thing they are thinking of, and
+`ord` for `Order` must not lose to `Recorded` for being in a shorter word. Two
+things are ranked last and carry no underline, because the match is not in the
+text the row shows: a word's SYNONYMS, which the catalogue already carried, so
+`rbac` finds `@@gate`; and a panel's own sentence, so `policy` finds Access and
+`EXPLAIN` finds Performance. The panel names are this tool's vocabulary and
+those are the reader's.
+
+Unlike the rail's `\`, it DOES open from inside a text field — a palette you
+cannot reach while the cursor is in the SQL box is one nobody reaches for — and
+`preventDefault` is not optional, Ctrl+K being the browser's own
+search-from-the-address-bar shortcut.
+
+`test/verify-studio-compare.mjs`, 38 assertions, port 7505. Measured with each
+half stubbed: the ref lookup reds 4 rows, the sha dedupe 1, the package-fragment
+borrow 2, the Access verdict card 1, option values invented client-side 4, the
+palette's sort 1, its rank tiers 1, its synonyms 1, its focus restore 1, and
+each of the three escaped slices of a marked name 1 — three rows, because one
+probe can only cover the slice it puts the hostile text in.
+
+## 2026-09-05 — a `where` that is not an object is refused rather than dropped
+
+`deleteMany({ where: 5 })` destroyed every row and answered `{count: 3}`.
+`buildWhere` walks the value's entries looking for columns; a number has none,
+so it emitted NO CLAUSE — byte-identical to what an absent `where` emits.
+`updateMany` and `removeMany` did the same thing to the same rows (`FJS-934`).
+
+The other half fails the opposite way and is quieter: a string's entries ARE
+keys — its character indices — so `where: 'title'` compiled to a predicate over
+columns named `0`, `1`, `2`, matched nothing, and answered `[]`. One malformed
+shape reached every row, another reached none, and neither said anything.
+
+**Absent, `null` and `{}` are untouched and still mean every row.** That is the
+whole distinction the check draws: an omitted or empty `where` is a caller
+saying so — the single `delete`'s own refusal names `deleteMany({})` as the way
+to delete all rows, and `truncate`, `reset` and the seeder are all built on it —
+while a malformed one is a caller who believes they narrowed. Single-row
+`update` was already safe by accident: its *requires a where clause* guard read
+the malformed value as absent and refused.
+
+Not a permission bypass — row policies and `@@gate` still applied. What was
+dropped was the caller's own narrowing, on the three verbs where that means the
+whole table.
+
+`test/where-container.test.ts`, 6 assertions, 4 red against the original. The
+controls are the file: `{}` still deletes everything, and the shapes an
+accidentally-empty filter actually arrives in (`{ id: undefined }`, `{ id: { in:
+[] } }`) were already refused and still are.
+
+## 2026-09-05 — a `select` that is not an object is refused rather than answered empty
+
+`select: ['id', 'title']` answered `{}` and reported success. `parseSelectArg`
+walks the value's own entries looking for field names; in a list it finds `0`
+and `1`, matches neither, and emits `SELECT "_no_cols_"` — so the read ran, the
+row existed, and every reader downstream saw a row with nothing in it. `'id'`,
+`true` and `5` all did the same, and on `findMany` it was `[{}, {}]`
+(`FJS-828`). The object form has refused an unknown column BY NAME since
+`FJS-601`; the wrong CONTAINER never reached that check.
+
+**The list is not accepted as a second spelling.** It is the wire form —
+`$select=id,title` — and junction's `parseSelect` turns one into the object
+before a read, which is the one owner of that translation (Invariant 4). No
+caller in this repo passes a list to litestone; every one that looked like it
+does is on the wire side of that conversion.
+
+Two holes came out of writing the check rather than out of the report.
+**`search()` validated neither the container nor the keys**, so `FJS-601`'s
+refusal had reached every read except that one — `search('x', { select: { nope:
+true } })` answered `{}`. And **`create` is in neither wrapper list**, so it had
+never had either half; it takes the select check alone rather than joining the
+write list, whose guarded refusal is worded for a filter and whose where-key
+check it has nothing to answer.
+
+`select: false` stays legal on a write and is refused on a read, where it meant
+nothing and fell through the `!select` fast path to the whole row — the same
+silent wrong answer one value over. The write refusal names it and the read
+refusal does not.
+
+`test/select-container.test.ts`, 9 assertions, every refusal beside the object
+one character away that still answers. Measured with each half stubbed: the
+container guard reds 5, `search` 2, `create` 2.
+
+## 2026-09-05 — a third Studio drive, over the diagram, the front page and the rail
+
+`verify:studio:models` — 30 assertions, in a real browser, over work that until
+now was proven only by hand probes that die with the session.
+
+**Everything it asks about is a rendered consequence of a computation, and the
+failure mode is a diagram that still looks like a diagram.** So the tiers are
+asserted against the edge counts they are READ OFF rather than against a list of
+model names — naming the hubs makes the drive red the day somebody adds a
+relation to `example`, which is a fixture that has stopped describing its
+subject and not a regression. Beside it: that all four tiers OCCUR, since a grid
+where everything is one tier agrees with the row above it; that a model sits
+right of everything it points at; that no card overlaps another; that a stem of
+one is not a family and the hues are spaced; and the row overlay's log scale
+with a LINEAR control beside it, because 4 rows against 480,000 is 12% under a
+log and 0% under a division.
+
+Overview is asked from a BARE url, since `#overview` in the address bar would
+assert the router and say nothing about the default. Every directory card is
+CLICKED and the panel it names has to open. The pin is asserted against what is
+on screen rather than against `_erPinned`, which `erFocus` never writes — the
+first version of that row passed with the pin's own guard deleted. And a drag
+must not pin while the same gesture without movement must, or a guard that
+refused everything would satisfy the first half.
+
+**Measured against stubs**, one feature removed at a time: tiers reds 3 rows,
+families 3, focus 1, the drag-vs-click guard 1, the rail's collapse 1, the
+landing panel 4, the log scale 1.
+
+Two things the tripwire pass found in the drive itself. A probe that THREW took
+the whole report with it — the run went red naming a line number while every
+assertion after it never ran, which is `FJS-773`'s `&&` one layer down; each
+assertion is wrapped now and a throw is recorded as its value. And the claim
+that the rail's toggle must redraw the diagram is **false**: cards are
+absolutely positioned inside the canvas, so narrowing the frame moves the canvas
+and not a coordinate. The redraw stays as stated insurance and the assertion was
+rewritten to what it can actually prove — every curve ends on the card it names.
+
+`verify:studio` runs all three and **no longer short-circuits**: it was
+`access && explore`, and that is how the stale half hid the broken half for
+months. Each drive is separately runnable — `verify:studio:access`,
+`:explore`, `:models` — and all three are named in the root `CLAUDE.md` drives
+table, which `preflight.js` parses and `fli check`'s `drive-preamble` grades.
+
+21 + 51 + 30 = 102 assertions.
+
+## 2026-09-05 — Studio's two drives assert again, and the preview endpoint was never wired
+
+`verify:studio` and `verify:studio:explore` both failed before reaching a single
+assertion about Studio, so the one served surface here with no other coverage had
+none. Four causes (`FJS-773`), and the first is the one that matters most:
+
+**The access drive spawned `bunx litestone`.** Bun resolves a workspace
+dependency to a COPY under `node_modules/.bun`, and `studio.html` is
+text-imported into `src/tools/cli.js` — so the drive was asserting against a
+Studio nobody had edited. It spawns from the file by path now, as the explore
+drive already did and said why.
+
+**The explore drive spawned one directory too deep**, at `example/db` rather
+than the app root, so it never found the `.env` holding `ENCRYPTION_KEY` and
+Studio refused to start on a schema with `@encrypted` columns. Because
+`verify:studio` is `access && explore`, the stale half above hid it entirely.
+
+**Six fixtures had stopped describing their subject and now derive.** Model and
+policy counts come from the `/api/access` the panel renders. `unique` usage is
+counted from `EX_KIND_TO_WORD` rather than `uniqueIndex` alone, since
+`partialUnique` folds into the same word and `example` growing a partial unique
+read as a counting bug. The no-doc-page negative case is taken from
+`UNDOCUMENTED` instead of naming `field:check`, which has since been given a
+page. And the muted-badge assertion follows the contract rather than the
+attribute, because the box stopped being greyed when only the count badge did.
+
+**Seven assertions picked *the first non-generated model*, which is imported.**
+`parseFile` inlines imports, so `schema.models` carries auth's `Credential`
+while the editor holds the `import` line that brought it in — `exFindBlock`
+answered null and the drive died on an insert with nowhere to land. One
+`pickEditable()` defined in the page replaces all seven, so an eighth cannot
+repeat it.
+
+Both drives moved off ad-hoc ports 5098/5099 onto **7502/7503** — test-tier
+tooling, inside the port scheme, visible to `fli ps`.
+
+**`/api/preview` had never worked on a schema that imports anything**
+(`FJS-923`). It called `inlineImports(source, schema, {})` with an empty options
+object, so `resolveChild` and `read` were undefined and it threw on the first
+import line, answering `opts.resolveChild is not a function` dressed as a parse
+error. The comment above it described behavior that was never wired. A schema
+with no imports never reaches the callback, which is why it read as working —
+and every real app imports auth, so all four preview engines were unreachable
+for all of them. A fragment that cannot be read is now refused by name rather
+than absorbed: a smaller schema than the file describes would make every verdict
+below it a verdict about the wrong schema.
+
+21 + 51 = 72 assertions green.
+
 ## 2026-09-05 — The corpus roster is one list, and the floor is what git carries
 
 `introspect-roundtrip.test.ts` asserted `CORPUS.length >= 8` over a roster it

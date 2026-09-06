@@ -438,3 +438,51 @@ describe('handleHotUpdate', () => {
     }
   })
 })
+
+// ─── the map the plugin returns (FJS-874) ─────────────────────────────────────
+//
+// Every return carried `map: null`, and Vite does not synthesize one — so a
+// TypeError in a handler named a generated line in a file the developer cannot
+// open. None of the plugin suites asked about `map`, which is why it stayed
+// null through four of them.
+
+describe('source map', () => {
+  const MAPPABLE = `<script>
+  function reportTheProblem(reason) {
+    throw new Error('mesa test: ' + reason)
+  }
+</script>
+<button>{reportTheProblem('x')}</button>`
+
+  test('a component with a surviving line gets a map naming its own file', async () => {
+    const { out } = await transform(MAPPABLE, `${ROOT}/Mapped.mesa`)
+    expect(out.map).toBeTruthy()
+    expect(out.map.version).toBe(3)
+    expect(out.map.sources).toEqual([`${ROOT}/Mapped.mesa`])
+    expect(out.map.sourcesContent[0]).toBe(MAPPABLE)
+    expect(out.map.mappings.length).toBeGreaterThan(0)
+  })
+
+  test('the mapping points at a line that is really in the output', async () => {
+    // The alignment is against the finished text, so a mapping can only exist
+    // for a line that survived every pass. Asserted rather than assumed.
+    const { out } = await transform(MAPPABLE, `${ROOT}/Mapped.mesa`)
+    expect(out.code).toContain(`throw new Error('mesa test: ' + reason)`)
+  })
+
+  test('a declaration is mapped even though its text was rewritten', async () => {
+    // `let n = 1` becomes a `track()` call and shares no text with its source.
+    // It is matched on the NAME instead, so the declaration still maps.
+    const { out } = await transform(`<script>\n  let counter = 1\n</script>\n<p>{counter}</p>`, `${ROOT}/Decl.mesa`)
+    expect(out.map).toBeTruthy()
+    expect(out.map.mappings.split(';').filter(Boolean).length).toBeGreaterThan(0)
+  })
+
+  test('markup with nothing to align gets no map rather than a wrong one', async () => {
+    // No script, so no declaration and no surviving line. The wrong answer is
+    // a map: an empty one still tells the debugger to look at the .mesa and
+    // then resolves nothing.
+    const { out } = await transform(`<p>hello there, world</p>`, `${ROOT}/Bare.mesa`)
+    expect(out.map).toBeNull()
+  })
+})

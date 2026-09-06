@@ -261,7 +261,9 @@ export const defaultConfig: AppConfig = {
 // loadConfig() flattens these into a plain AppConfig for the app to use.
 
 export interface JunctionMiddlewareConfig {
-  cors?:          { origins?: string[]; methods?: string[]; headers?: string[] }
+  // `credentials` is read by `applyConfiguredCors` and was undeclared, so a
+  // config that works had a type saying it did not.
+  cors?:          { origins?: string[]; methods?: string[]; headers?: string[]; credentials?: boolean }
   helmet?:        boolean
   requestLogger?: boolean
   correlationId?: boolean
@@ -313,6 +315,71 @@ export interface JunctionConfig {
    * translation.
    */
   attachments?: import('../core/attachments.ts').Attachments
+}
+
+// ─── What a junction.config.js may declare ────────────────────────────────
+
+/**
+ * The sections `junction.config.js` has, and the only list of them.
+ *
+ * A section this does not name is stashed under `_junction` and read by
+ * nothing, so `plugin:` for `plugins:` and `middlewares:` for `middleware:`
+ * both merge with no error and no warning — the app boots on defaults looking
+ * like it loaded something (`FJS-431`'s shape, ruled `FJS-D199`).
+ *
+ * TOP-LEVEL ONLY, deliberately, and the reason is measured rather than a
+ * preference: the interfaces above are not the runtime's key list. `basecamp`
+ * declares `middleware.cors.credentials`, which `JunctionMiddlewareConfig.cors`
+ * does not name and `core/app.ts` reads and honours. Refusing nested keys means
+ * hand-keeping a list per section beside an interface that has already drifted
+ * from what reads it — the second origin the ruling exists to remove. The
+ * nested half is its own row.
+ */
+export const JUNCTION_SECTIONS = [
+  'app', 'middleware', 'plugins', 'services', 'conduit', 'caravan', 'attachments',
+] as const
+
+/**
+ * Sections of a `junction.config.js` nothing will read, each with the nearest
+ * name that would have been read.
+ *
+ * Nearest by edit distance rather than by a table of known typos: a table can
+ * only ever name the mistakes somebody already made. A suggestion is offered
+ * only when it is closer than half the word, so an unrelated key is reported
+ * as unknown rather than corrected towards something the author never meant.
+ */
+export function unknownSections(cfg: unknown): Array<{ key: string; nearest: string | null }> {
+  if (!isPlainObject(cfg)) return []
+  const known = JUNCTION_SECTIONS as readonly string[]
+  const out: Array<{ key: string; nearest: string | null }> = []
+  for (const key of Object.keys(cfg)) {
+    if (known.includes(key)) continue
+    let nearest: string | null = null
+    let best = Math.floor(key.length / 2) + 1
+    for (const candidate of known) {
+      const d = editDistance(key, candidate)
+      if (d < best) { best = d; nearest = candidate }
+    }
+    out.push({ key, nearest })
+  }
+  return out
+}
+
+/** Levenshtein, iterative, one row at a time. */
+function editDistance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i)
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i]
+    for (let j = 1; j <= b.length; j++) {
+      row[j] = Math.min(
+        prev[j] + 1,
+        row[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      )
+    }
+    prev = row
+  }
+  return prev[b.length]
 }
 
 // ─── Config loader ────────────────────────────────────────────────────────

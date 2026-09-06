@@ -1,5 +1,90 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-05 — `fli gui` can open the pages it could already regenerate
+
+A snapshot generator is a runnable row, so the front page had a start button for
+both pages `ws:atlas` writes and no way to READ either. A `file://` link from an
+http page is refused by every browser, so `GET /api/page/:id` serves them off the
+project root the server already knows.
+
+**The id is looked up, never joined.** What arrives is compared against the rows
+`runnables()` computed, and a row that is not a viewable snapshot answers 404
+with the same wording as one that does not exist — so no caller-supplied text
+reaches a path, and `..` is not a case to handle because there is nothing for it
+to traverse. Whether a row has a page is `viewable` on the row, decided in
+`core/runnables.js`, because a page re-deriving *is this openable* from a
+filename is a second owner of one rule and only one of the two ever gets fixed.
+
+The link is not `data-open`, which stays hidden until a row answers on its port:
+a committed file is there whether or not anything is running, and a link that
+appeared only while a server was up would be absent exactly when somebody wants
+to read what the tree looks like. `tests/browser/specs/view.spec.mjs` asserts the
+bytes that come back carry the generator line, because the GUI serves its own
+dashboard for any path it does not recognise — so a wrong route reads as a
+working link until somebody looks at what loaded.
+
+
+## 2026-09-05 — `ws:map` and `ws:atlas` become one command
+
+Ruled by `FJS-D223`. They were never two things: `collect()` in
+`core/repo-map.js` is the one reader and `core/repo-atlas.js` performs no
+filesystem reads at all, so the split was a rendering choice wearing a command's
+clothes — and it cost what a second surface costs. Six of seventeen model fields
+were rendered by only one of the two pages, and the reader that had silently
+gone to zero was found by asking what the other page showed (`FJS-927`).
+
+One axis, so one flag: `--as=atlas|report|json`, the deck by default. It
+**absorbs `--json`** rather than sitting beside it, because a boolean and an
+enum selecting along one axis are two spellings of one question, and the pair is
+what invites a third — the next presentation is a value here, not a second flag.
+An unknown value is refused by name with the ones that exist listed, rather than
+falling back to the default, since a typo that quietly writes the deck is a
+person diffing the wrong file. `--live` is refused against anything but the
+deck, before git is read.
+
+`ws:map` is deleted with no alias and `repo-map.snapshot.html` is renamed to
+`repo-report.snapshot.html`. Nothing here has shipped, so there is no call to
+keep working; the rename is one `removedSnapshots` entry, and the `snapshots`
+phase needed no edit because it reads each file's generator out of its own
+header.
+
+**Where a section goes is decided by reading mode, not size** — a report is read
+across, an atlas is navigated. That is the rule that keeps the report from being
+defined as *the small one*, which is the definition under which the next person
+trims it.
+
+
+## 2026-09-05 — The map shows all three registers, and what proves a change
+
+`ws:map` collected seventeen model fields and rendered nine. Six were read on
+every run and dropped — `apps`, `proofs`, `invariants`, `checks`, `decisions`
+and `ideas` — and one of them was also broken: `decisions()` was a hand reader
+predating `core/registers.js` that matched only the legacy bold-lead ruling, so
+after the register migrated to `###` headings it answered 0 of 208 and the
+section vanished. `ws:atlas` reads the same field and had been printing
+`0 settled` in the Rulings card of its own hub row. Both committed snapshots
+carried it (`FJS-927`).
+
+The rulings now come through `core/registers.js`, the one owner, and the
+duplicate is gone. **The three registers are one section** — what is wrong, what
+is settled, what is not started — because the question they answer together is
+answered by reading across them. Open rows are still listed in full; the other
+two are counted and pointed at, with the newest ruling per section quoted, since
+this page is a printout somebody diffs and 208 rulings would drown the eight
+lines that moved.
+
+**`proofs` gets a section, resolved.** Eighty-eight rows of *which drive proves
+a change*, parsed from `CLAUDE.md`, with each target graded through the same
+`resolveRun` that `fli check`'s `proof-target` uses — so the page and the rule
+cannot disagree about what is missing. Rendering the prose alone would have
+added nothing to the markdown; what a generated page can add is that a row
+naming a drive that has been renamed reads exactly like a row that is right.
+
+The old *Which file answers which question* section keeps its content and is
+`root-docs` now: it is about what KIND of statement a root file may hold, which
+is a different subject from the three registers and was one id away from them.
+
+
 ## 2026-09-05 — `tutor:fleet` releases something, and finds two reasons it could not
 
 Half B. The lesson stopped at *a command from the control plane ran on this

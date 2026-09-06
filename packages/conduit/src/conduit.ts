@@ -338,11 +338,16 @@ export function createConduit(
 
       const result = await transport.send<T>(withTrace(req))
 
-      // Measured here rather than read from result.meta: meta.duration_ms is
-      // per-attempt inside the transport, so it under-reports anything retried
-      // and is 0 on failure. This is the number an operator wants.
-      const validated = validate<T>(req, result)
-      recordResult(validated, Math.round(performance.now() - started))
+      // The whole call — every attempt, and the waits between them. Measured
+      // here because this is the only frame that spans them: a transport's
+      // retry loop is below `send()`, so a number stamped inside one is the
+      // LAST attempt and reads as 1ms on a call that really took 1,715ms
+      // across three (`FJS-660`). One measurement, written to both readers,
+      // so `meta.duration_ms` and `stats().latency` cannot disagree.
+      const validated   = validate<T>(req, result)
+      const duration_ms = Math.round(performance.now() - started)
+      validated.meta.duration_ms = duration_ms
+      recordResult(validated, duration_ms)
 
       outcome = validated.error
         ? (countsAsTargetFault(validated.error.kind) ? 'target_fault' : 'other')

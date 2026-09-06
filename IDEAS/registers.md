@@ -30,7 +30,7 @@ exists, and until this week the checker passed on registers it could not parse.
 | One reader | [`core/registers.js`](../packages/cli/core/registers.js) | `IDEAS/` yes, issues and decisions no — the id prefix is in the regexes |
 | The grader | [`core/register-check.js`](../packages/cli/core/register-check.js), 15 rules, 11 of them errors | **Yes, today.** It runs off the project root, so a flat directory with an `ISSUES.md` is graded — measured |
 | The CI phase | `registers`, in [`scripts/ci.mjs`](../scripts/ci.mjs) | This repo only |
-| Two pages | `fli ws:map` · `fli ws:atlas` | Needs a `packages/` monorepo; a flat project falls through to `$WORKSPACE_DIR` and then to a prompt |
+| Two pages | `fli ws:atlas`, as a deck or `--as=report` | Needs a `packages/` monorepo; a flat project falls through to `$WORKSPACE_DIR` and then to a prompt |
 | The prose rules | seven under *the notes* in [`core/checks.js`](../packages/cli/core/checks.js) | This repo only — every one is `scope: 'repo'` |
 | The record shape | frontmatter per file | `IDEAS/` is already there; issues and decisions are still a table and a run of headings |
 
@@ -55,7 +55,7 @@ encouraging half of this whole paper: the deck already reads a tree it has never
 seen, because every section whose source is absent is omitted rather than faked,
 and the plates are dealt from that tree's own files.
 
-**`fli ws:map` printed this repo's port table as that project's**, which is
+**The report presentation printed this repo's port table as that project's**, which is
 [`FJS-917`](../ISSUES.md#fjs-917) and is fixed. Worth keeping for the shape rather
 than the defect: the map renders the registry as a section and the atlas looks one
 project up by card key, so the same model leaked through one page and not the

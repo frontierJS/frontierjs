@@ -347,6 +347,11 @@ function tasks(root, claimed) {
 // A snapshot naming no generator keeps its row with `start: null` and its error
 // carried — the phase fails such a file rather than skipping it, and a tile that
 // hid it would be quieter than the check.
+//
+// `viewable` is whether this artefact is a PAGE — the two `ws:atlas` writes are,
+// and a `.md` or a `.sql` is a diff rather than something to open. Decided here
+// rather than in the GUI, because a page re-deriving *is this openable* from a
+// filename is a second owner of the rule and only one of the two gets fixed.
 
 function snapshots(root) {
   return findSnapshots({ root }).map(s => ({
@@ -361,6 +366,7 @@ function snapshots(root) {
     argv:   s.argv ?? null,
     port:   null,
     open:   null,
+    viewable: s.file.endsWith('.html'),
     needs:  [],
     source: s.file,
     error:  s.error ?? null,

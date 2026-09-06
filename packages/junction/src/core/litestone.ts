@@ -748,6 +748,32 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     }
   }
 
+  /**
+   * A filtered write with nothing in the filter is the whole table.
+   *
+   * `DELETE /orders` and `PATCH /orders` are one query parameter away from
+   * their scoped forms, and a filter that arrives empty — a client that built
+   * its query string from a variable, a form that submitted nothing — is
+   * indistinguishable from one nobody wrote. Litestone reads the empty `where`
+   * as *every row, deliberately*, which is the right answer for `truncate` and
+   * the wrong one for a request.
+   *
+   * Asked of `q.where` BEFORE `softDeleteFilter()` is merged in, or the
+   * framework's own clause counts as the caller's filter and the guard never
+   * fires on a `@@softDelete` model.
+   *
+   * `restore` is deliberately outside this: it un-deletes, the way back is to
+   * remove again, and strictness follows what a mistake destroys.
+   */
+  function ensureFiltered(op: string, where: Record<string, unknown>): void {
+    if (Object.keys(where).length > 0) return
+    throw new BadRequest(
+      `Bulk ${op} with no filter conditions is not allowed — an empty filter is every row ` +
+      `in the table. Provide at least one query parameter to scope it` +
+      (op === 'patch' ? `, or patch one row by id.` : `, or delete one row by id.`)
+    )
+  }
+
   // ─── Filtered bulk writes ─────────────────────────────────────────────────
   //
   // A bulk patch or remove selects its rows and then writes them ONE AT A TIME,
@@ -1068,6 +1094,8 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       // counts and selects its targets through `table.count`/`findMany`, which
       // apply litestone's own soft-delete filter, so widening the WHERE here
       // alone would match nothing and read as the directive being ignored.
+      ensureFiltered('patch', q.where)
+
       const where = { ...q.where, ...softDeleteFilter() }
       const sysPatch = systemFields(ctx)
       return bulkByRow(ctx, 'patch', table, where, (id, version) =>
@@ -1106,14 +1134,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
 
       ensureBulkAllowed('remove')
 
-      // Safety: refuse to delete the whole table when no filter conditions
-      // remain — bulk remove must be scoped by at least one query param.
-      if (Object.keys(q.where).length === 0) {
-        throw new BadRequest(
-          'Bulk delete with no filter conditions is not allowed. ' +
-          'Provide at least one query parameter to scope the deletion.'
-        )
-      }
+      ensureFiltered('remove', q.where)
 
       const where = { ...q.where, ...softDeleteFilter() }
 

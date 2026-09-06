@@ -37,6 +37,8 @@ import path       from 'path'
 import fs         from 'fs'
 import { pathToFileURL, fileURLToPath } from 'url'
 
+import { buildSourceMap } from '../src/sourcemap.js'
+import { readSourceMarks, stripSourceMarks } from '../src/compiler.js'
 import { injectHMR, canInject } from './hmr.js'
 import { hmrClientSource } from './client-source.js'
 import { inspectClientSource } from './inspect-client.js'
@@ -371,6 +373,8 @@ export function __mesa_hot_update(id) {
       try {
         ctx = await compileSource(code, {
           filename: id,
+          // Position markers for the source map, read and stripped below.
+          sourceMarks: true,
           // The compiler's `css` is not a switch, it is a DESTINATION: truthy
           // inlines the scoped rules as `$$runtime.addStyles(id, …)`, falsy
           // extracts them onto `ctx.css.result` for the caller to place. This
@@ -432,7 +436,17 @@ export function __mesa_hot_update(id) {
         js = injectHMR(js, id, root, VIRTUAL_CLIENT_ID)
       }
 
-      return { code: js, map: null }
+      // Built LAST and against the finished text, after the warning block and
+      // the HMR wrap have moved every line. See `src/sourcemap.js`: the map is
+      // an alignment, not a record of what was emitted, because four passes
+      // rewrite the module after `xBuild` and one of them hoists.
+      // Markers are read out of the FINISHED text — after the warning block
+      // and the HMR wrap have moved every line — and stripped here, so no
+      // other consumer of the compiler ever sees them.
+      const marks = readSourceMarks(js)
+      js = stripSourceMarks(js)
+
+      return { code: js, map: buildSourceMap(code, js, id, marks) }
     },
 
     // ── HMR ───────────────────────────────────────────────────────────────────

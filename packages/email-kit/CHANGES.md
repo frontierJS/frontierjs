@@ -1,5 +1,96 @@
 # Changes — @frontierjs/email-kit
 
+## 2026-09-05 — four defects the audit found, fixed
+
+**[FJS-928](../../ISSUES.md#fjs-928) — a `<Button>`'s Outlook fallback escaped nothing.** The
+VML is built as a string and spliced into the finished document, which is the design's whole
+point (happy-dom ends the comment early, so the markup has to stay out of the DOM) and was also
+what removed the last escaping in the path. A `text` of `Pay <![endif]--><img …> now` put the
+`img` OUTSIDE the conditional comment, so it reached every client rather than Outlook; an `href`
+carrying a `"` broke out of the VML attribute. The anchor beside it escaped both correctly all
+along, which is what hid it: one half of one component was safe and the unsafe half is the one
+nobody re-parses. `>` is escaped for a reason beyond attributes — a comment ends at a literal
+`-->`, so escaping `<` alone leaves the block closable.
+
+**[FJS-929](../../ISSUES.md#fjs-929) — `<Avatar name="   " />` threw**, taking the whole email
+with it. A whitespace-only name is truthy, trims to empty, and `[0]` is then `undefined`. An
+empty name was fine, which is why it was never seen: the guard was on the wrong emptiness.
+
+**[FJS-930](../../ISSUES.md#fjs-930) — `<Section padding>` did nothing.** Its spacer rows were
+siblings of the section table, and a `<tr>` with no table ancestor is discarded by the parser
+rather than by the renderer — so they were in the rendered string all along and every substring
+assertion agreed with the broken version. Moved inside the `<tbody>`, which is what the prop's
+own doc comment already claimed, and the section's `bgcolor` now runs through the padding.
+
+**[FJS-931](../../ISSUES.md#fjs-931) — `width="undefined"`.** A quoted interpolation stringifies
+an unset prop; a bare `{width}` omits the attribute. `Image` documented the trap it shipped —
+*Always specify width for Outlook* — while its own default emitted a value Outlook cannot read.
+
+[FJS-933](../../ISSUES.md#fjs-933) closed alongside them: the component map in `index.js`
+is still a literal, so no bundler has to see a `readdirSync`, but the keys are now asserted
+against the directory. And [FJS-932](../../ISSUES.md#fjs-932) is fixed in mesa — the plain-text
+fallback ran adjacent blocks together, and this package is the only consumer of `result.text`.
+
+The suite is 102 tests, from 77. Each fix was measured against its own removal: 3 red, 1, 2, 2.
+`Section`'s is asserted through a **real parse**, since the string is where the broken version
+looked correct. Still never opened in a real mail client.
+
+## 2026-09-05 — three of the nine guards named a prop that does not exist
+
+The advice a guard prints is its whole value, and it is a string, so every test written the
+day before passed on all three: `Address` told a caller to pass `region` and `postcode` when
+it takes `state` and `zip`; `Stars` said `rating` when it takes `count`; `Avatar` offered
+`src` for a real image, and it has no image — it draws a letter. Advice that fails when taken
+is worse than none.
+
+Fixed, and the check is derived rather than restated: every bare backticked identifier in an
+advice string is asserted to be an `export let` of that component, read out of the same file.
+It is red against any of the three originals. `TwoCol` is the shape that forces the rule to be
+about identifiers — its backticks hold `<div slot="left">`, which is markup and not a prop.
+
+Found by an audit of the package rather than by a caller, which filed six ids: an injection
+through `<Button>`'s Outlook fallback ([FJS-928](../../ISSUES.md#fjs-928), the sharp one),
+`<Avatar name=" " />` throwing ([FJS-929](../../ISSUES.md#fjs-929)), `<Section padding>`
+emitting rows no client keeps ([FJS-930](../../ISSUES.md#fjs-930)), `width="undefined"`
+([FJS-931](../../ISSUES.md#fjs-931)), a plain-text fallback that runs blocks together
+([FJS-932](../../ISSUES.md#fjs-932)) and the hand-kept component map in `index.js`
+([FJS-933](../../ISSUES.md#fjs-933)).
+
+## 2026-09-05 — every component is rendered by something, and one that cannot take children says so
+
+The suite went from 34 tests to 77.
+
+**Two components had never been rendered by anything.** `Header` and `Link` were in neither
+the suite nor the `WelcomeEmail` template, so they worked by luck rather than by evidence; four
+more — `Heading`, `Text`, `Review`, `TwoCol` — were reached only through the whole-document
+template render, which asserts the document and not the component, so a break in one showed up
+as a byte count nobody checked. Every component in the directory is now rendered on its own,
+and the list is READ from the directory rather than written out, because a hand-kept list is
+what let two of them fall out of it.
+
+**A component that cannot render children now says so.** Mesa drops children handed to a
+component with no matching `<slot>`, in silence — fourteen of these take children and eight
+cannot, so a caller had no way to tell which kind they were holding, and getting it wrong
+rendered an empty button rather than an error.
+
+`Button` is the case that decided the shape. Its label goes into the anchor AND into the
+Outlook VML, which is built as a STRING in `<script>` and percent-encoded into a data
+attribute — slot content is DOM and never a string, so a `<slot>` there would label the anchor
+and leave every Outlook recipient an unlabelled button. Refusing the children and naming the
+prop is the answer; accepting them halfway is worse than dropping them.
+
+`refuseChildren(component, $.slots, advice)` warns once per component per process — a list
+renders the same component many times and a warning per row is a warning nobody reads — and
+takes a whole sentence rather than a fragment, because half of these take no content at all
+and *pass nothing instead* is not advice anybody can act on. `TwoCol` is guarded too: it has
+named slots, so it is not slotless, and its default children were dropped just the same.
+
+Every refusal is tested against a component that legitimately keeps its children, since a guard
+that warned on everything would satisfy any test that only asked about the refusal. 11 of the
+77 are red without the guard.
+
+The underlying rule is the language's, not this kit's, and is filed as `FJS-926`.
+
 ## 2026-08-17 — paths resolve on Windows, and the phantom option is gone (`FJS-052`)
 
 `index.js` built 24 component paths and `COMPONENTS_DIR` from

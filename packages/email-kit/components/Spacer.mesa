@@ -1,4 +1,6 @@
 <script>
+  import { refuseChildren } from './slot-guard.js'
+  refuseChildren('Spacer', $.slots, "A spacer has no content; `height` is what it takes.")
   export let height  = 24
   export let bgcolor = undefined
 </script>

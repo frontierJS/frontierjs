@@ -83,7 +83,7 @@
     "@frontierjs/junction": "file:../junction"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "devDependencies": {
     "@frontierjs/junction": "workspace:*",

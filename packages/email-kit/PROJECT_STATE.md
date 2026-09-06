@@ -1,6 +1,6 @@
 # @frontierjs/email-kit — project state
 
-State as of **2026-08-06**. The kit was added on 2026-08-03; on 08-06 it was
+State as of **2026-09-05**. The kit was added on 2026-08-03; on 08-06 it was
 renamed to `@frontierjs/email-kit` everywhere (`FJS-D15`) and its suite was
 found to have been failing entirely — see `CHANGES.md`.
 
@@ -17,7 +17,15 @@ and removing it took Mesa from 27 skipped tests to zero.
 
 ## What works
 
-- **34/34 tests pass** — `bun run test`. Re-verified 2026-08-06: between
+- **102/102 tests pass** — `bun run test`, re-verified 2026-09-05. Was 34, and the
+  34 covered 16 of the 22 components: `Header` and `Link` were rendered by
+  nothing at all, and four more only through the whole-document template. Every
+  component is now rendered on its own, off a list READ from the directory.
+- **A component that cannot take children warns instead of dropping them**
+  (`components/slot-guard.js`). Eight take no content and `TwoCol` takes only
+  named slots; Mesa drops the children in silence, so the kit says so. The
+  language-level rule is `FJS-926`.
+- Re-verified 2026-08-06: between
   2026-08-03 and then **all 34 were failing**, because mesa moved its sources
   into `src/` and both this package's probe paths and mesa's own temp-dir
   resolution still assumed the old layout. This line said "34/34 pass"

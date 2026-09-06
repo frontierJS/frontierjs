@@ -86,6 +86,12 @@ function route(req, res) {
     return handleGlow(res)
   }
 
+  // GET /api/page/:id — a committed page, served so the GUI can open it
+  const pageMatch = path.match(/^\/api\/page\/(.+)$/)
+  if (req.method === 'GET' && pageMatch) {
+    return handlePage(req, res, decodeURIComponent(pageMatch[1]))
+  }
+
   // GET / and any non-API path — serve the Web GUI (client handles routing)
   if (req.method === 'GET' && !path.startsWith('/api/')) {
     return handleStatic(res)
@@ -280,6 +286,40 @@ async function handlePorts(req, res) {
 
 let _cachedRunnables = null
 let _runnablesAt     = 0
+
+// ─── GET /api/page/:id ───────────────────────────────────────────────────────
+//
+// `fli ws:atlas` writes two pages describing this workspace and the GUI could
+// press the button that regenerates them — a snapshot generator is a runnable
+// row — while having no way to OPEN one. A `file://` link from an http page is
+// refused by every browser, so the server that already knows the project root
+// serves them.
+//
+// **The id is looked up, never joined.** What arrives is compared against the
+// rows `runnables()` computed; a row that is not a viewable snapshot is a 404
+// with the same wording as one that does not exist. So no caller-supplied text
+// reaches a path, which is Invariant 8's rule one realm over, and `..` is not a
+// case to handle because there is nothing for it to traverse.
+
+async function handlePage(req, res, id) {
+  const row = await rowById(id)
+
+  if (!row?.viewable) {
+    json(res, 404, { error: `no page ${id}` })
+    return
+  }
+
+  try {
+    const file = resolve(global.projectRoot, row.source)
+    const body = readFileSync(file, 'utf8')
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+    res.end(body)
+  } catch {
+    // Generated and gitignored, or generated and never run. The generator is on
+    // the row that linked here, so the answer says which button to press.
+    json(res, 404, { error: `${row.source} is not written — run \`${row.start ?? 'its generator'}\`` })
+  }
+}
 
 async function handleRunnables(req, res) {
   try {

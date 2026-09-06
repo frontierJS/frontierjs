@@ -3,7 +3,7 @@
 **`@frontierjs/email-kit`** — table-based email components compiled by Mesa with
 `target: 'email'`. An MJML replacement, in the framework's own language.
 
-`bun run test` — the runner is **vitest**.
+`bun run test` — the runner is **vitest**. 102 tests.
 
 ---
 
@@ -31,6 +31,12 @@ docs/          Outlook conditional-comment handling — read before touching it
   because of a stale path into mesa. Run it, do not read about it.
 - **Outlook conditional comments are fragile** — the `docs/` note is the only
   record of why the markup is shaped the way it is.
+- **The VML fallback is a STRING, so nothing downstream escapes it.** It is
+  spliced into the finished document by `expandMsoPlaceholders()`, after the DOM
+  is out of the picture — which is the point, and is why every value going into
+  it must be escaped where the string is built. `>` included: a comment ends at
+  a literal `-->`, so a label can otherwise close the block and show the Outlook
+  fallback to everyone.
 - **Never opened in a real mail client.** Every claim about rendering is a claim
   about HTML, not about Outlook or Gmail. Say so when reporting.
 

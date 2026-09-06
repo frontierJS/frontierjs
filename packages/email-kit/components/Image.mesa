@@ -1,6 +1,11 @@
 <script>
+  import { refuseChildren } from './slot-guard.js'
+  refuseChildren('Image', $.slots, "Pass `src` and `alt`.")
   export let src      = ''
   export let alt      = ''
+  // Unquoted in the markup below: `width="{width}"` writes the string
+  // `undefined` when the prop is unset, and Outlook reads that as no width
+  // at all. A bare `{width}` omits the attribute instead.
   export let width    = undefined    // explicit pixel width (recommended for Outlook)
   export let height   = undefined
   export let align    = 'center'
@@ -23,8 +28,8 @@
     <img
       src="{src}"
       alt="{alt}"
-      width="{width}"
-      height="{height}"
+      width={width}
+      height={height}
       class="{fluid ? 'fluid' : ''}"
       style="
         display:block;

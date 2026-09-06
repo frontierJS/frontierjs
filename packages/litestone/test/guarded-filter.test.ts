@@ -103,7 +103,6 @@ describe('@guarded — every shape a caller can name a column in', () => {
     'count':                  as => as.user.count({ where: { ssn: { startsWith: '1' } } }),
     'exists':                 as => as.user.exists({ where: { ssn: { startsWith: '1' } } }),
     'orderBy':                as => as.user.findMany({ orderBy: { ssn: 'asc' } }),
-    'distinct':               as => as.user.findMany({ distinct: ['ssn'] }),
     'cursor':                 as => as.user.findManyCursor({ cursor: { ssn: '1' }, limit: 1 }),
     // A write's `where` is the same oracle with the row count as the answer.
     'where on a write':       as => as.user.updateMany({ where: { ssn: { startsWith: '1' } }, data: { name: 'x' } }),

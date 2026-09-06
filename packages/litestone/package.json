@@ -92,8 +92,11 @@
     "build:lib": "bun scripts/build-lib.js",
     "build:lib:testing": "bun scripts/build-lib.js --with-testing",
     "typecheck": "node ../../scripts/typecheck.mjs",
-    "verify:studio": "node test/verify-studio-access.mjs && node test/verify-studio-explore.mjs",
-    "verify:studio:explore": "node test/verify-studio-explore.mjs"
+    "verify:studio": "s=0; node test/verify-studio-access.mjs || s=1; node test/verify-studio-explore.mjs || s=1; node test/verify-studio-models.mjs || s=1; node test/verify-studio-compare.mjs || s=1; exit $s",
+    "verify:studio:access": "node test/verify-studio-access.mjs",
+    "verify:studio:explore": "node test/verify-studio-explore.mjs",
+    "verify:studio:models": "node test/verify-studio-models.mjs",
+    "verify:studio:compare": "node test/verify-studio-compare.mjs"
   },
   "types": "./src/index.d.ts",
   "dependencies": {

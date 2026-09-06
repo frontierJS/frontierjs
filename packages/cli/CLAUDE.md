@@ -45,7 +45,10 @@ core/
                 table and the resolution of both its columns. A PARSE and never
                 a second table; not a build graph, and it must not become one
   server.js     also the control surface's own endpoints — `/api/runnables`,
-                `/api/state`, `/api/proves`, `/api/health/:id`, and start/stop/
+                `/api/state`, `/api/proves`, `/api/health/:id`, `/api/page/:id`
+                (a committed page, served because a `file://` link from an http
+                page is refused — the id is looked up against the runnable rows
+                and never joined onto a path), and start/stop/
                 output. The health probe is HERE and not in the page: 8500
                 fetching 8110 is cross-origin, and a CORS failure reads exactly
                 like the app being down
@@ -274,8 +277,11 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   nothing can recheck is a document wearing a gate's clothes. What stays in
   `ci.mjs` is the repo-history half: a snapshot tracked at the base ref and gone
   now is a failure, because discovery alone fails open.
-- **`core/repo-map.js` reads the workspace; it never describes it.** `fli ws:map`
-  writes one self-contained `repo-map.snapshot.html` — snapshots and their
+- **`core/repo-map.js` reads the workspace; it never describes it — and it is
+  the ONE reader behind both presentations** (`FJS-D223`). `collect()` builds
+  the model; `renderHtml` is the report and `core/repo-atlas.js` is the deck,
+  and that module reads no files at all. `fli ws:atlas --as=report`
+  writes one self-contained `repo-report.snapshot.html` — snapshots and their
   generators, the CI phases out of `main()` in `scripts/ci.mjs` (with each
   phase's own section comment as its description), the open register by
   severity, packages and their sibling deps, every `verify*` drive, the port
@@ -287,7 +293,8 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   every snapshot and is one, so the first generation writes twice to reach the
   fixed point; every run after is already there.
 - **`core/repo-atlas.js` renders the same model as a deck, and owns the
-  crossing.** `fli ws:atlas` deals one plate per package, app, claimed folder,
+  crossing.** `fli ws:atlas` (the default presentation) deals one plate per
+  package, app, claimed folder,
   and one for the workspace itself — the register files things against `repo`
   and they had nowhere to live. A plate opens a dossier: deps and dependents
   (each a link to that dossier), the issues filed against it, the snapshots it

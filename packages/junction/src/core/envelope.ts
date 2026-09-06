@@ -290,7 +290,22 @@ export function wrapResult(raw: unknown, object: string, method = ''): ServiceRe
     }
     const p = raw as {
       total?: number; limit?: number; offset?: number; skip?: number
-      endCursor?: string | null; hasMore?: boolean; errors?: unknown[]
+      endCursor?: string | null; hasMore?: boolean; errors?: unknown
+    }
+    // `errors` is the field a client reads to decide partial failure, and this
+    // branch is shared by `find` and by a bulk write — but only the bulk half
+    // asked whether it was an array. So a `find` answering `{ data, errors:
+    // 'oops' }` put that string in the envelope's `errors` slot and shipped it
+    // to every consumer, each of which then has to survive a shape the type
+    // says is impossible. The same refusal its two siblings above already give.
+    if (p.errors !== undefined && !Array.isArray(p.errors)) {
+      throw new ResultShapeError(
+        object, method || 'find', raw,
+        `answered a list whose \`errors\` is ${describeShape(p.errors)}, not an array. ` +
+        `\`errors\` is the partial-failure list a caller reads to find out WHICH rows ` +
+        `were rejected — one { data, error } per failure — and anything else in that ` +
+        `slot reaches every client as a shape nothing is written to handle.`
+      )
     }
     // Canonical pagination field is `offset`; `skip` accepted from services
     // written Feathers-style so it isn't silently dropped.
@@ -300,7 +315,7 @@ export function wrapResult(raw: unknown, object: string, method = ''): ServiceRe
       offset: p.offset ?? p.skip,
       endCursor: p.endCursor,
       hasMore:   p.hasMore,
-    }, p.errors ?? [])
+    }, (p.errors as unknown[] | undefined) ?? [])
   }
 
   return single(object, raw)

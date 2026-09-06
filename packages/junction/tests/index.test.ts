@@ -2731,6 +2731,9 @@ describe('allowBulk guard', () => {
     const svc = createService({ name: 'items', model: 'items', db: makeDb([{ id: '1' }]), allowBulk: true })
     const ctx = testCtx('items', 'patch', { status: 'updated' })
     ctx.id = null
+    // A bulk patch also needs a filter — an empty one is every row, and that is
+    // refused separately from the allowBulk gate this test is about.
+    ctx.query = { id: '1' }
 
     await callService(svc, ctx)
     expect(ctx.error).toBeNull()

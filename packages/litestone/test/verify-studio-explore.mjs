@@ -8,7 +8,8 @@
  *
  *   node packages/litestone/test/verify-studio-explore.mjs
  *
- * Starts and stops its own server on 5098 — nothing to launch first. Needs
+ * Starts and stops its own server on 7503 — test-tier tooling, inside the port
+ * scheme so `fli ps` can see it. Nothing to launch first. Needs
  * Chrome on PATH or $FJS_CHROME.
  *
  * The server is spawned from `src/tools/cli.js` by path rather than through
@@ -29,7 +30,7 @@ import { CATALOG, docFor, UNDOCUMENTED } from '../src/core/catalog.js'
 import { RULES, VISIBILITY } from '../src/core/advise.js'
 import { OPPORTUNITIES } from '../src/core/opportunities.js'
 
-const PORT   = process.env.STUDIO_PORT ?? '5098'
+const PORT   = process.env.STUDIO_PORT ?? '7503'
 const UI     = `http://localhost:${PORT}`
 const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 const REPO   = pathResolve(import.meta.dirname, '../../..')
@@ -43,8 +44,13 @@ const t = (name, actual, expected) => results.push({ name, actual, expected })
 const CLI    = pathResolve(import.meta.dirname, '../src/tools/cli.js')
 // `--no-open` or every run of this drive opens a tab on the desktop of
 // whoever is running it, over whatever they were typing into.
+// cwd is the APP ROOT and not `example/db`, which is where the schema sits:
+// `.env` lives at the app root, `example` declares @encrypted columns, and
+// studio refuses to start with no encryption key. One directory too deep meant
+// this drive never reached a single assertion — and because `verify:studio` is
+// `access && explore`, the stale half above hid it for as long as it was broken.
 const studio = spawn('bun', [CLI, 'studio', '--schema', SCHEMA, '--port', PORT, '--no-open'], {
-  cwd: join(REPO, 'example/db'), stdio: ['ignore', 'pipe', 'pipe'], detached: true,
+  cwd: join(REPO, 'example'), stdio: ['ignore', 'pipe', 'pipe'], detached: true,
 })
 let studioOut = ''
 studio.stdout.on('data', d => { studioOut += d })
@@ -231,13 +237,24 @@ t('empty.shownLikeAnyOther', await evaluate(`
 
 // Which words the fixture leaves unused is the fixture's business — naming them
 // here makes the drive red the day somebody adds a view to example/. What has to
-// hold is the LINK: a box is gray exactly when its count is zero.
-t('empty.greyMatchesTheCount', await evaluate(`
+// hold is the LINK between the count and how it is drawn.
+//
+// It used to be the BOX that went gray, off a `data-empty` attribute. Muting the
+// whole box read as "this word is not available", which is the opposite of what
+// the panel is for, so the box is now drawn identically either way and only the
+// COUNT BADGE is muted. The assertion follows the contract rather than the
+// attribute: `.badge.muted` exactly when the count is zero, `.badge.info`
+// exactly when it is not. `empty.shownLikeAnyOther` above is the other half —
+// it asserts the box itself did NOT change.
+t('empty.mutedBadgeMatchesTheCount', await evaluate(`
   const use   = exUsage();
   const boxes = [...document.querySelectorAll('#exBody section')][0].querySelectorAll('.ex-box');
   const wrong = [...boxes].filter(b => {
-    const word = b.querySelector('.ex-word').textContent;
-    return (b.dataset.empty === 'true') !== ((use.get('schema:' + word) || 0) === 0);
+    const word  = b.querySelector('.ex-word').textContent;
+    const badge = b.querySelector('.ex-count');
+    const zero  = (use.get('schema:' + word) || 0) === 0;
+    return badge.classList.contains('muted') !== zero
+        || badge.classList.contains('info')  === zero;
   }).map(b => b.querySelector('.ex-word').textContent);
   return wrong;
 `), [])
@@ -300,12 +317,30 @@ t('erased.countedFromSource', await evaluate(`
 // catalog is keyed by what you type, so the walker has to translate or those
 // two words are permanently zero while the schema plainly uses them.
 
+// The kinds are read off EX_KIND_TO_WORD rather than typed. This counted
+// `uniqueIndex` alone and the map also folds `partialUnique` into `unique`, so
+// the moment `example` grew a `@@unique([...], where: ...)` the drive reported
+// 8 against 4 and read as a counting bug in the panel. Asking the map means a
+// new alias cannot make this red without also being the thing under test.
+//
+// The owner set is the one exUsage walks — own models, views and types — not
+// `schema.models`, which is a third answer again.
 t('usage.writtenWordNotNodeKind', await evaluate(`
-  const use = exUsage();
-  const declaredUnique = (schema.models || [])
-    .reduce((n, m) => n + (m.attributes || []).filter(a => a.kind === 'uniqueIndex').length, 0);
-  return { translated: (use.get('model:unique') || 0) === declaredUnique, none: use.get('model:uniqueIndex') === undefined };
-`), { translated: true, none: true })
+  const use    = exUsage();
+  const gen    = exGenerated();
+  const kinds  = Object.keys(EX_KIND_TO_WORD).filter(k => EX_KIND_TO_WORD[k] === 'unique');
+  const owners = [
+    ...(schema.models || []).filter(m => !gen.has(m.name)),
+    ...(schema.views || []), ...(schema.types || []),
+  ];
+  const declaredUnique = owners
+    .reduce((n, m) => n + (m.attributes || []).filter(a => kinds.includes(a.kind)).length, 0);
+  return {
+    translated: (use.get('model:unique') || 0) === declaredUnique,
+    counted:    declaredUnique > 0,
+    none:       kinds.every(k => use.get('model:' + k) === undefined),
+  };
+`), { translated: true, counted: true, none: true })
 
 // db.$schema is the AUGMENTED parse: it carries a log model per logger database
 // and a stub per view, so a count taken off it reports declarations nobody made.
@@ -351,17 +386,46 @@ t('search.emptyIsSaidRatherThanBlank', await evaluate(`
   return document.querySelector('#exBody .empty-text') !== null;
 `), true)
 
+// A model this EDITOR can edit, which is not the same as a model in the schema.
+//
+// `parseFile` inlines imports, so `schema.models` carries auth's `Credential`,
+// `Session` and `Verification` while the editor holds only the `import` line
+// that brought them in. Four assertions below picked "the first non-generated
+// model", got `Credential`, and died on a null block — an insert with nowhere
+// to land, reported as a crash rather than as the refusal it is. Defined once
+// in the page so the fifth one cannot repeat it.
+await evaluate(`
+  window.pickEditable = (extra) => {
+    const src = document.getElementById('liteEditor').value;
+    return (schema.models || []).find(m =>
+      !exGenerated().has(m.name) &&
+      exFindBlock(src, 'model', m.name) &&
+      (!extra || extra(m)));
+  };
+  return true
+`)
+
 // ─── the way out: placement, not a blind append ───────────────────────────
 //
 // Appending @@fts to the end of the file writes a second model called Example,
 // which is not what anybody meant by "add full-text search". The card asks which
 // model, and the insert is surgery on the editor's current text.
 
+// The target has to be a model whose BLOCK IS IN THE EDITOR, which is not the
+// same as a model in the schema: `parseFile` inlines imports, so `schema.models`
+// carries auth's `Credential` and `Session` while the editor holds the `import`
+// line that brought them in. Picking the first non-generated model picked
+// `Credential`, `exFindBlock` answered null, and the drive died on it — an
+// insert with nowhere to land, reported as a crash rather than as the refusal
+// it should be.
 t('insert.modelAttributeLandsInsideTheChosenModel', await evaluate(`
   const box = document.getElementById('exSearch'); box.value = ''; exRender();
   await liteInit();
   const before = document.getElementById('liteEditor').value;
-  const target = (schema.models || []).find(m => !exGenerated().has(m.name)).name;
+  const target = pickEditable()?.name;
+  // The count BEFORE, because example already declares one @@fts — an absolute
+  // "exactly one" was a fixture that assumed an empty schema.
+  const ftsBefore = (before.match(/@@fts/g) || []).length;
 
   exGo({ kind: 'word', word: 'fts', level: 'model' });
   document.getElementById('exTargetModel').value = target;
@@ -369,21 +433,22 @@ t('insert.modelAttributeLandsInsideTheChosenModel', await evaluate(`
 
   const ta = document.getElementById('liteEditor');
   const block = exFindBlock(ta.value, 'model', target);
-  const at = ta.value.indexOf('@@fts');
+  const at = ta.value.indexOf('@@fts', block.open);
   return {
+    picked:  !!target,
     grew:    ta.value.length > before.length,
     inside:  at > block.open && at < block.close,
-    once:    (ta.value.match(/@@fts/g) || []).length === 1,
+    once:    (ta.value.match(/@@fts/g) || []).length === ftsBefore + 1,
     noModel: !/model Example\b/.test(ta.value),
     unsaved: before === _liteSource,
   };
-`), { grew: true, inside: true, once: true, noModel: true, unsaved: true })
+`), { picked: true, grew: true, inside: true, once: true, noModel: true, unsaved: true })
 
 // A field attribute goes onto the column you picked, on its own line, not as a
 // new field with a name from the example.
 t('insert.fieldAttributeLandsOnTheChosenField', await evaluate(`
   await liteReload();
-  const model = (schema.models || []).find(m => !exGenerated().has(m.name) &&
+  const model = pickEditable(m =>
     m.fields.some(f => f.type.kind !== 'relation' && !(f.attributes||[]).some(a => a.kind === 'omit')));
   const field = model.fields.find(f => f.type.kind !== 'relation' && !(f.attributes||[]).some(a => a.kind === 'omit')).name;
 
@@ -399,15 +464,15 @@ t('insert.fieldAttributeLandsOnTheChosenField', await evaluate(`
 // goes in, inside the model.
 t('insert.newFieldGoesInsideTheModel', await evaluate(`
   await liteReload();
-  const target = (schema.models || []).find(m => !exGenerated().has(m.name)).name;
+  const target = pickEditable()?.name;
   exGo({ kind: 'word', word: 'markdown', level: 'field' });
   await exApply('markdown', 'field', { model: target, where: 'newField' });
 
   const ta = document.getElementById('liteEditor');
   const block = exFindBlock(ta.value, 'model', target);
-  const at = ta.value.indexOf('@markdown');
-  return { inside: at > block.open && at < block.close };
-`), { inside: true })
+  const at = ta.value.indexOf('@markdown', block.open);
+  return { picked: !!target, inside: at > block.open && at < block.close };
+`), { picked: true, inside: true })
 
 // A brace inside a string must not close the model early.
 //
@@ -466,7 +531,7 @@ t('insert.fixtureTemplateBracesAreFine', await evaluate(`
 // live validation and queues the schema diff, so nothing here restates them.
 t('insert.editorValidatesWhatWasInserted', await evaluate(`
   await liteReload();
-  const target = (schema.models || []).find(m => !exGenerated().has(m.name)).name;
+  const target = pickEditable().name;
   exGo({ kind: 'word', word: 'markdown', level: 'field' });
   await exApply('markdown', 'field', { model: target, where: 'newField' });
   const t0 = Date.now();
@@ -506,7 +571,7 @@ await evaluate(`await liteReload(); return true`)
 t('preview.raisingAGateIsContractAndNarrows', await evaluate(`
   await liteReload();
   const src   = document.getElementById('liteEditor').value;
-  const model = (schema.models || []).find(m => !exGenerated().has(m.name) &&
+  const model = pickEditable(m =>
     (m.attributes || []).some(a => a.kind === 'gate' && String(a.value).split('.').every(n => Number(n) < 7)));
   if (!model) return 'no fixture model has a gate that can be raised';
 
@@ -528,7 +593,7 @@ t('preview.raisingAGateIsContractAndNarrows', await evaluate(`
 // what says so — before the insert rather than after the save.
 t('preview.exampleNamingMissingFieldsIsRefusedByName', await evaluate(`
   await liteReload();
-  const target = (schema.models || []).find(m => !exGenerated().has(m.name) &&
+  const target = pickEditable(m =>
     !(m.attributes || []).some(a => a.kind === 'fts') &&
     !m.fields.some(f => f.name === 'title'));
   exGo({ kind: 'word', word: 'fts', level: 'model' });
@@ -547,7 +612,7 @@ t('preview.exampleNamingMissingFieldsIsRefusedByName', await evaluate(`
 // calls it too.
 t('preview.ftsShowsItsVirtualTable', await evaluate(`
   const src   = document.getElementById('liteEditor').value;
-  const model = (schema.models || []).find(m => !exGenerated().has(m.name) &&
+  const model = pickEditable(m =>
     !(m.attributes || []).some(a => a.kind === 'fts') &&
     m.fields.some(f => f.type.name === 'String' && f.type.kind === 'scalar'));
   const col   = model.fields.find(f => f.type.name === 'String' && f.type.kind === 'scalar').name;
@@ -566,7 +631,7 @@ t('preview.ftsShowsItsVirtualTable', await evaluate(`
 `), { valid: true, ddlChanged: true, virtualTable: true, deploy: 'unchanged' })
 
 t('preview.aRequiredColumnIsAContract', await evaluate(`
-  const target = (schema.models || []).find(m => !exGenerated().has(m.name)).name;
+  const target = pickEditable().name;
   exGo({ kind: 'word', word: 'email', level: 'field' });
   await exPreviewPlan('email', 'field', { model: target, where: 'newField' });
   return {
@@ -581,7 +646,7 @@ t('preview.aRequiredColumnIsAContract', await evaluate(`
 // about the other three realms.
 t('preview.aRefusedPaneIsNamedRatherThan500', await evaluate(`
   const row    = _catalog.find(r => r.word === 'fts' && r.level === 'model');
-  const target = (schema.models || []).find(m => !exGenerated().has(m.name)).name;
+  const target = pickEditable().name;
   const bad    = document.getElementById('liteEditor').value
     .replace('model ' + target + ' {', 'model ' + target + ' {\\n  @@gate("4.2.4.5")');
 
@@ -617,7 +682,7 @@ t('preview.refusedPaneRendersTheReasonNotADiff', await evaluate(`
 // showing three empty panes that read as a broken preview.
 t('preview.quietWordSaysSo', await evaluate(`
   await liteReload();
-  const target = (schema.models || []).find(m => !exGenerated().has(m.name)).name;
+  const target = pickEditable().name;
   const field  = (schema.models || []).find(m => m.name === target)
     .fields.find(f => f.type.kind !== 'relation' && !(f.attributes||[]).some(a => a.kind === 'omit')).name;
   exGo({ kind: 'word', word: 'omit', level: 'field' });
@@ -630,7 +695,7 @@ t('preview.neverTouchesTheEditor', await evaluate(`
   await liteReload();
   showTool('explore');
   const before = document.getElementById('liteEditor').value;
-  const target = (schema.models || []).find(m => !exGenerated().has(m.name)).name;
+  const target = pickEditable().name;
   exGo({ kind: 'word', word: 'fts', level: 'model' });
   await exPreviewPlan('fts', 'model', { model: target });
   return { editorUntouched: document.getElementById('liteEditor').value === before,
@@ -760,8 +825,17 @@ t('card.saysWhereToReadMore', await evaluate(`
 // The negative case carries the card count with it. Asking only whether
 // `.ex-doc` is absent passes against a page that rendered no card at all —
 // which is exactly what a wrong `kind:` did to the assertion above.
+//
+// The word comes from UNDOCUMENTED, which is the register for *this word owes a
+// page and here is why*. It used to name `field:check` outright, and `check`
+// has since been given one — so the drive failed reporting a missing line that
+// is now correctly present. A word that gains a page must move this assertion,
+// not break it.
+const [noPage] = Object.keys(UNDOCUMENTED)
+if (!noPage) throw new Error('UNDOCUMENTED is empty — nothing left to assert the negative case with')
+const [noPageLevel, noPageWord] = noPage.split(':')
 t('card.aWordWithNoPageShowsNoLine', await evaluate(`
-  exGo({ kind: 'word', level: 'field', word: 'check' });
+  exGo({ kind: 'word', level: '${noPageLevel}', word: '${noPageWord}' });
   const card = document.querySelector('.ex-card');
   return { card: !!card, doc: !!(card && card.querySelector('.ex-doc')) };
 `), { card: true, doc: false })
@@ -822,7 +896,7 @@ t('missing.theWordOpensItsCard', await evaluate(`
 t('rules.aLegalButWrongEditIsReported', await evaluate(`
   await liteReload();
   const src   = document.getElementById('liteEditor').value;
-  const model = (schema.models || []).find(m => !exGenerated().has(m.name));
+  const model = pickEditable();
   const b     = exFindBlock(src, 'model', model.name);
   const at    = src.lastIndexOf('\\n', b.close) + 1;
   const proposed = src.slice(0, at) + '  secretToken String @guarded\\n' + src.slice(at);
@@ -846,7 +920,7 @@ t('rules.preexistingFindingsAreMarked', await evaluate(`
 t('rules.previewShowsThem', await evaluate(`
   await liteReload();
   const src   = document.getElementById('liteEditor').value;
-  const model = (schema.models || []).find(m => !exGenerated().has(m.name));
+  const model = pickEditable();
   const b     = exFindBlock(src, 'model', model.name);
   const at    = src.lastIndexOf('\\n', b.close) + 1;
   // exGo clears the preview — a new card must not show the last one's answer —

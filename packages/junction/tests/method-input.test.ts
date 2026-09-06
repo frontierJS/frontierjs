@@ -101,12 +101,26 @@ describe('methods: entries', () => {
       .toThrow(/must name a `type`/)
   })
 
-  test('an object entry naming a method that does not exist is refused at construction', () => {
-    expect(() => createService({
+  test('an object entry naming a method that does not exist is reported', () => {
+    // Collected rather than thrown at construction — `start()`'s
+    // `check-authoring` phase refuses with every finding at once (`FJS-D199`).
+    const svc = createService({
       name: 'orders',
       methods: [{ method: 'pya', input: 'PayOrder' }] as never,
       async pay() { return null },
-    } as never)).toThrow(/'pya'/)
+    } as never)
+    const findings = ((svc as { _authoringFindings?: string[] })._authoringFindings ?? []).join('\n')
+    expect(findings).toMatch(/'pya'/)
+
+    // The control one letter away: the entry naming the method that IS there
+    // reports nothing, so the refusal is about the name and not about the
+    // object form of an entry.
+    const fine = createService({
+      name: 'orders',
+      methods: [{ method: 'pay', input: 'PayOrder' }] as never,
+      async pay() { return null },
+    } as never)
+    expect((fine as { _authoringFindings?: string[] })._authoringFindings).toEqual([])
   })
 })
 

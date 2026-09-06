@@ -769,16 +769,8 @@ function walkGuardedOrderBy(orderBy, modelName, g, out, depth = 0) {
   return out
 }
 
-function walkGuardedColumnList(list, modelName, g, out) {
-  if (!Array.isArray(list)) return out
-  const own = g.own[modelName] ?? NO_KEYS
-  for (const k of list) if (own.has(k)) out.push({ model: modelName, key: k })
-  return out
-}
-
-// An include carries a whole nested read — its own where, orderBy, distinct and
-// include — against the target model, so it is the same three questions asked
-// one relation along.
+// An include carries a whole nested read — its own where, orderBy and include —
+// against the target model, so it is the same questions asked one relation along.
 function walkGuardedInclude(include, modelName, g, out, depth = 0) {
   if (!include || typeof include !== 'object' || depth > 12) return out
   const rels = g.relationMap?.[modelName] ?? {}
@@ -787,7 +779,6 @@ function walkGuardedInclude(include, modelName, g, out, depth = 0) {
     if (!rel || !v || typeof v !== 'object') continue
     walkGuardedWhere(v.where, rel.targetModel, g, out, depth + 1)
     walkGuardedOrderBy(v.orderBy, rel.targetModel, g, out, depth + 1)
-    walkGuardedColumnList(v.distinct, rel.targetModel, g, out)
     walkGuardedInclude(v.include, rel.targetModel, g, out, depth + 1)
   }
   return out
@@ -801,7 +792,6 @@ function collectGuardedArgs(args, modelName, g) {
   walkGuardedWhere(args.where, modelName, g, out)
   walkGuardedOrderBy(args.orderBy, modelName, g, out)
   walkGuardedInclude(args.include, modelName, g, out)
-  walkGuardedColumnList(args.distinct, modelName, g, out)
   // A cursor is a row's column values, so it compares exactly as a where does.
   walkGuardedWhere(args.cursor, modelName, g, out)
   return out
@@ -1178,6 +1168,27 @@ function collectAggKeyProblems(names, sets, op, valueRead, out = []) {
 }
 
 function checkWhereKeys(where, keys, modelName, method, isWrite, scopes = null, ctx = null) {
+  // The CONTAINER first. A `where` that is not an object emits no clause at all
+  // — `buildWhere` walks its entries and finds no column among them — which is
+  // byte-identical to what an absent `where` emits, so `deleteMany({ where: 5 })`
+  // destroyed every row and reported the count as success (FJS-934). A string or
+  // an array is the same fault failing the other way: their entries ARE keys (a
+  // string's character indices), so they compile to a predicate over columns
+  // named `0`, `1`, `2` and match nothing.
+  //
+  // `where: {}` is untouched and means every row on purpose. That is the whole
+  // distinction: absent and empty are a caller saying so, and a malformed value
+  // is a caller who believes they narrowed.
+  if (where != null && (typeof where !== 'object' || Array.isArray(where))) {
+    throw new ValidationError([{
+      path:    ['where'],
+      message: `'where' on ${modelName}.${method} must be an object — got ` +
+               `${Array.isArray(where) ? 'an array' : typeof where}. It narrows nothing as ` +
+               `written, and on ${modelName}.${method} that is ` +
+               (isWrite ? 'every row in the table' : 'every row') + `. Omit it, or pass {} to ` +
+               `mean every row deliberately.`,
+    }])
+  }
   const problems = collectWhereKeyProblems(where, keys.filterable, keys.computed, keys.encrypted, [], scopes, keys.transient,
                                            ctx ? { ctx, model: modelName } : null)
   for (const p of problems) {
@@ -1329,21 +1340,82 @@ function withArgValidation(table, model, ctx) {
             (suggestKey(key, allowed) ? `. Did you mean: ${suggestKey(key, allowed)}?` : ''),
   }])
 
-  const checkSelect = (args, method) => {
+  // The CONTAINER is checked before the keys. A `select` that is not an object
+  // projects no columns at all — `parseSelectArg` walks its entries, finds no
+  // field name among them and emits `"_no_cols_"` — so `select: ['id']` answers
+  // `{}` and reports success, which every downstream reader sees as a row that
+  // exists and is empty (FJS-828). The list IS the wire spelling; junction's
+  // `parseSelect` turns `$select=id,title` into the object before a read, and
+  // accepting one here as well would be a second owner of that translation.
+  const selectContainerRefusal = (sel, method, isWrite) => new ValidationError([{
+    path:    ['select'],
+    message: `'select' on ${modelName}.${method} must be an object naming columns — got ` +
+             `${Array.isArray(sel) ? 'an array' : typeof sel}. Write ` +
+             `{ ${[...selectable][0] ?? 'id'}: true }` +
+             (isWrite ? `, or 'select: false' for do not hand me the row` : '') +
+             `. A list is the wire form — $select=a,b — and the API boundary converts it.`,
+  }])
+
+  // `distinct` is a boolean and SQLite is why. The clause it emits is
+  // `SELECT DISTINCT`, which dedupes the whole projected row; there is no
+  // `DISTINCT ON`, so a list of columns has nothing to compile to. It was
+  // accepted anyway — `buildSQL` reads `distinct === true` and nothing else, so
+  // `distinct: ['title']` emitted no DISTINCT at all and three rows over two
+  // titles came back as three, while `checkSelect` validated the list's
+  // ELEMENTS by name, so the API answered as though it had understood the
+  // argument (FJS-935). The same shape FJS-828 refuses one option along.
+  //
+  // Both things a caller could have meant already have a spelling, which is why
+  // this refuses rather than growing a window function: the distinct VALUES are
+  // `select` plus `distinct: true`, and one whole row per value is `groupBy` —
+  // where WHICH row survives is a question the caller answers rather than one
+  // an arbitrary partition answers for them.
+  const distinctShapeRefusal = (d, method) => new ValidationError([{
+    path:    ['distinct'],
+    message: `'distinct' on ${modelName}.${method} is a boolean — got ` +
+             `${Array.isArray(d) ? 'an array' : typeof d}. SQLite has no DISTINCT ON, so a ` +
+             `column list has nothing to compile to and was silently ignored. For the ` +
+             `distinct VALUES of a column, write ` +
+             `{ select: { ${[...distinctable][0] ?? 'id'}: true }, distinct: true }; for one whole ` +
+             `row per value, groupBy({ by: [...] }), which also says which row you want.`,
+  }])
+
+  // An include's own `distinct` is read by NOTHING — not `true`, not a list, and
+  // its elements were never name-checked either, so `include: { posts: { distinct:
+  // ['nope'] } }` was accepted whole and answered every post. The top-level half
+  // at least honoured the boolean. Refused at any depth rather than implemented,
+  // because an include is one batched IN-query over every parent: a DISTINCT
+  // there dedupes ACROSS parents, which is not what anyone writing it meant, and
+  // per-parent is the same window `distinctShapeRefusal` declines to grow.
+  const refuseNestedDistinct = (include, method, depth = 0) => {
+    if (!include || typeof include !== 'object' || depth > 12) return
+    for (const v of Object.values(include)) {
+      if (!v || typeof v !== 'object') continue
+      if (v.distinct != null) throw new ValidationError([{
+        path:    ['include', 'distinct'],
+        message: `'distinct' inside an include on ${modelName}.${method} is read by nothing and ` +
+                 `was silently ignored. An include is one batched query across every parent row, ` +
+                 `so a DISTINCT there would dedupe across parents. Read the related model ` +
+                 `directly, or groupBy it.`,
+      }])
+      refuseNestedDistinct(v.include, method, depth + 1)
+    }
+  }
+
+  const checkSelect = (args, method, isWrite) => {
     const sel = args?.select
+    if (sel != null && (typeof sel !== 'object' || Array.isArray(sel))) {
+      if (!(isWrite && sel === false)) throw selectContainerRefusal(sel, method, isWrite)
+    }
     if (sel && typeof sel === 'object' && !Array.isArray(sel)) {
       for (const [k, v] of Object.entries(sel)) {
         if (!v || selectable.has(k)) continue
         throw selectRefusal('select', k, selectable, method)
       }
     }
-    // `distinct: true` is the whole-row shorthand and names no key.
-    if (Array.isArray(args?.distinct)) {
-      for (const k of args.distinct) {
-        if (distinctable.has(k)) continue
-        throw selectRefusal('distinct', k, distinctable, method)
-      }
-    }
+    if (args?.distinct != null && typeof args.distinct !== 'boolean')
+      throw distinctShapeRefusal(args.distinct, method)
+    refuseNestedDistinct(args?.include, method)
   }
 
   const checkTakeSkip = (args, method) => {
@@ -1374,7 +1446,7 @@ function withArgValidation(table, model, ctx) {
       }
       checkWhereKeys(args?.where, whereKeys, modelName, method, isWrite, scopeNames, ctx)
       checkOrderBy(args, method)
-      checkSelect(args, method)
+      checkSelect(args, method, isWrite)
       // After the key checks, so a caller naming a column that does not exist
       // still hears about the typo rather than a predicate they cannot see.
       if (checkFieldRead()) args = applyFieldRead(args, method)
@@ -1383,6 +1455,19 @@ function withArgValidation(table, model, ctx) {
   }
   for (const m of ARG_READ_METHODS)  wrap(m, false)
   for (const m of ARG_WRITE_METHODS) wrap(m, true)
+
+  // `create` shapes a row with `select` like every verb above and is in neither
+  // list, because the rest of that wrapper reads a `where` it does not have and
+  // its guarded refusal is worded for a filter. So it takes the select check
+  // alone: `create({ data, select: { nope: true } })` answered `{}` — the row
+  // was written and the caller was handed nothing, with no error either way.
+  if (typeof table.create === 'function') {
+    const fn = table.create
+    out.create = async (args = {}) => {
+      checkSelect(args, 'create', true)
+      return fn.call(table, args)
+    }
+  }
 
   // search(query, opts) — the where filter rides in opts
   if (typeof table.search === 'function') {
@@ -1394,6 +1479,9 @@ function withArgValidation(table, model, ctx) {
         if (found.length) throw guardedArgsError(found, modelName, 'search')
       }
       checkWhereKeys(opts?.where, whereKeys, modelName, 'search', false, scopeNames, ctx)
+      // search() honors `select` and validated neither its container nor its
+      // keys — FJS-601's refusal reached every read but this one.
+      checkSelect(opts, 'search', false)
       if (checkFieldRead()) opts = applyFieldRead(opts, 'search')
       return fn.call(table, q, opts)
     }

@@ -219,8 +219,24 @@ export async function runPipeline(
           await runHooks(ctx, pipeline.error, 'error', telemetry)
           // If error hook cleared ctx.error, treat as recovered
           if (!ctx.error) return
-        } catch {
-          // Error in error hook — original error wins
+        } catch (hookErr) {
+          // The original error still wins: it is what the caller needs, and an
+          // error hook is the last place a second failure should replace the
+          // first. But swallowing it whole meant an app whose error REPORTING
+          // is broken reports nothing and nobody finds out — at any log level,
+          // measured. Same answer `afterCommit` already gives a throwing
+          // effect: say it, emit it, do not change the call's verdict.
+          const e = hookErr as Error
+          console.error(
+            `[Junction] an 'error' hook threw while handling '${ctx.service}.${ctx.method}': ` +
+            `${e?.message}. The original error is what the caller is told; this hook did not run to completion.`
+          )
+          telemetry?.emit('junction.errorhook.error', {
+            service:  ctx.service,
+            method:   ctx.method,
+            error:    { name: e?.name, message: e?.message },
+            original: { name: ctx.error?.name, message: ctx.error?.message },
+          })
         }
       }
 

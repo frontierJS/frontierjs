@@ -13,6 +13,7 @@ import {
   resolvePipelines,
   mergeHookMaps,
   runPipeline,
+  HOOK_STAGES,
   type Hook,
   type AroundHook,
   type HookMap,
@@ -377,6 +378,14 @@ export interface Service {
    * — the table is what is authoritative.
    */
   _customMethods: CustomMethodMap
+
+  /**
+   * Authoring mistakes found while this service was built — a `methods:` entry
+   * with no function behind it, or one naming a service option. Read by
+   * `start()`'s `check-authoring` phase, which refuses with every one of them
+   * at once (`FJS-D199`).
+   */
+  _authoringFindings?: string[]
 }
 
 // ─── Service call entry point ─────────────────────────────────────────────
@@ -1119,12 +1128,15 @@ export const SERVICE_RUNTIME_KEYS: ReadonlySet<string> = new Set([
 //   methods: ['find', 'get', 'reboot']   → 'reboot' is a custom method, stated
 //   (no methods:)                        → scan, exactly as before
 //
-// The declaration is also the only way to name a method after an option key.
-// `cache`, `schema`, `channel` and the rest of SERVICE_OPTION_KEYS are eaten by
-// the scan with no error, so `async cache(ctx)` was simply impossible. It still
-// costs a cast in TypeScript where the option is typed — `cache` is declared as
-// a CacheDeclaration and cannot also be a function — so the runtime honors the
-// declaration and the type does not know about it.
+// A name in SERVICE_OPTION_KEYS is REFUSED here, and the claim that declaring
+// one made it work was measured false. `methods: ['cache']` beside `async
+// cache(ctx)` put the name in `_customMethods` and in `describe().methods`, so
+// it was routed over HTTP and advertised by the manifest — while
+// `app.service('posts').cache` stayed undefined, `describe().cache` answered
+// FALSE, and `if (def.cache)` read the FUNCTION as a truthy cache declaration
+// and installed `checkCache` on find and get. A row added between two `find()`
+// calls was then invisible to the second, from a service reporting that it does
+// not cache. One name, three answers, none of them the author's.
 
 export type CustomMethodFn  = (ctx: ServiceContext) => Promise<unknown> | unknown
 export type CustomMethodMap = Record<string, CustomMethodFn>
@@ -1133,14 +1145,25 @@ export type CustomMethodMap = Record<string, CustomMethodFn>
  * The custom methods a definition declares, resolved to functions.
  *
  * `declared` is the `methods:` list when there is one. Names in it that are not
- * CRUD are custom methods and are resolved off the source; a name with no function
- * behind it throws, because the alternative is a 405 in production for a method
- * the author believed they had shipped.
+ * CRUD are custom methods and are resolved off the source.
+ *
+ * **A name that cannot work is REPORTED, never dropped and never thrown here.**
+ * `report` receives a KEY and one sentence. The key is what the finding is
+ * ABOUT — this service and that name — because two graders read the one
+ * `methods:` list and a name refused here is then also missing from the table
+ * `resolveMethodPolicy` grades against, so the author saw their one typo
+ * described twice in two vocabularies. First finding per key wins, and this
+ * one runs first because it has the more specific reading. `start()`'s
+ * `check-authoring` phase refuses with all of them together — an app has a config, N service
+ * files and a hook table, so throwing on the first makes fixing them serial,
+ * one boot per typo (`FJS-D199`). A reported name is left OUT of the map: it is
+ * a 405 either way, and shipping it would be the wrong half of the answer.
  */
 export function collectCustomMethods(
   source:      object,
   serviceName: string,
   declared?:   MethodPolicy,
+  report?:     (key: string, finding: string) => void,
 ): CustomMethodMap {
   const src = source as Record<string, unknown>
   const out: CustomMethodMap = {}
@@ -1150,24 +1173,43 @@ export function collectCustomMethods(
       const name = methodEntryName(entry, serviceName)
       if (CRUD_METHODS.has(name)) continue
       const fn = src[name]
-      if (typeof fn !== 'function') {
-        // Name what IS on offer. A typo'd allow-list entry (`'fnid'`) is the
-        // common case, and the message that only repeats what the caller wrote
-        // is the least useful moment to be terse.
-        const available = [
-          ...CRUD_METHODS,
-          ...Object.entries(src).filter(([k, v]) => isCustomMethod(k, v)).map(([k]) => k),
-        ].sort().join(', ')
 
-        throw new TypeError(
-          `[Junction] service '${serviceName}': methods lists '${name}', which is ` +
+      // Name what IS on offer. A typo'd allow-list entry (`'fnid'`) is the
+      // common case, and the message that only repeats what the caller wrote
+      // is the least useful moment to be terse.
+      const available = () => [
+        ...CRUD_METHODS,
+        ...Object.entries(src).filter(([k, v]) => isCustomMethod(k, v)).map(([k]) => k),
+      ].sort().join(', ')
+
+      if (typeof fn !== 'function') {
+        report?.(`${serviceName}:${name}`,
+          `service '${serviceName}': methods lists '${name}', which is ` +
           (fn === undefined
             ? `not defined on this service.`
             : `a ${typeof fn}, not a method — rename the option or the method, ` +
               `a name cannot be both.`) +
-          ` Available: ${available}`
+          ` Available: ${available()}`
         )
+        continue
       }
+
+      // An option key is not available as a method name, and declaring it does
+      // not make it one. The option is still read: `if (def.cache)` takes the
+      // FUNCTION as a truthy cache declaration and caches find and get, while
+      // `describe().cache` answers false and the in-process caller has no
+      // `cache` at all. Refused rather than silently preferred either way,
+      // because both readings are ones somebody wrote down.
+      if (SERVICE_OPTION_KEYS.has(name)) {
+        report?.(`${serviceName}:${name}`,
+          `service '${serviceName}': methods lists '${name}', which is a service ` +
+          `OPTION and cannot also be a method — the option is still read, so ` +
+          `'${name}' would be routed and advertised while the option it names ` +
+          `stayed in force. Rename the method. Available: ${available()}`
+        )
+        continue
+      }
+
       out[name] = fn as CustomMethodFn
     }
     return out
@@ -1502,15 +1544,23 @@ export function collectMethodInputs(
  * explicitly is allowed.
  *
  * `available` is every name this service could legitimately answer: CRUD plus
- * its own custom methods. A name outside it THROWS at construction rather than being
- * ignored, because the failure mode of a silent typo is the one this whole
- * feature exists to prevent — `methods: ['find', 'gett']` would block `get`
- * and read as "the allow-list is broken" only after a 405 in production.
+ * its own custom methods. A name outside it is REPORTED rather than ignored,
+ * because the failure mode of a silent typo is the one this whole feature
+ * exists to prevent — `methods: ['find', 'gett']` would block `get` and read as
+ * "the allow-list is broken" only after a 405 in production.
+ *
+ * `report` is the same keyed sink `collectCustomMethods` writes to, and both
+ * are read by `start()`'s `check-authoring` phase. Two functions grade the one
+ * list — that one for a name that cannot BE a method, this one for a name the
+ * service cannot ANSWER — and a name refused there is missing here too, so the
+ * key is what stops one typo being described twice. Without a sink it still
+ * throws, which is what a direct caller of this exported function gets.
  */
 export function resolveMethodPolicy(
   policy:      MethodPolicy | undefined,
   available:   readonly string[],
   serviceName: string,
+  report?:     (key: string, finding: string) => void,
 ): Set<string> | null {
   if (policy === undefined) return null
 
@@ -1527,10 +1577,15 @@ export function resolveMethodPolicy(
   const known   = new Set(available)
   const unknown = names.filter(m => !known.has(m))
   if (unknown.length) {
-    throw new TypeError(
-      `[Junction] service '${serviceName}': methods lists ${unknown.map(m => `'${m}'`).join(', ')}, ` +
+    const sentence =
+      `service '${serviceName}': methods lists ${unknown.map(m => `'${m}'`).join(', ')}, ` +
       `which this service does not have. Available: ${[...known].sort().join(', ')}`
-    )
+    if (!report) throw new TypeError(`[Junction] ${sentence}`)
+    for (const m of unknown) report(`${serviceName}:${m}`, sentence)
+    // The unanswerable names are dropped rather than kept: the policy is what
+    // the transport offers, and offering a name nothing implements is the 405
+    // this feature exists to prevent.
+    return new Set(names.filter(m => known.has(m)))
   }
 
   return new Set(names)
@@ -1667,7 +1722,11 @@ export function createBaseService(
 
   // Custom methods — declared by `methods:` when it is there, scanned for when it is
   // not. One parse step; everything downstream reads the table.
-  const customMethods = collectCustomMethods(opts, name ?? model ?? 'service', methods)
+  // Findings here ride the DEFINITION into createService, which grades the same
+  // list a second way and keys both, so one typo is one sentence.
+  const authoringFindings: string[] = []
+  const customMethods = collectCustomMethods(
+    opts, name ?? model ?? 'service', methods, (_k, f) => authoringFindings.push(f))
 
   // A CRUD method the definition WROTE wins over the generated one.
   //
@@ -1848,6 +1907,9 @@ export function createBaseService(
     // includes CRUD, `_meta` and every other runtime key.
     ...customMethods,
     _customMethods: customMethods,
+    // Read by start()'s `check-authoring` phase, which reports every one of
+    // them in one verdict rather than one boot at a time (`FJS-D199`).
+    _authoringFindings: authoringFindings,
     ...(name    !== undefined ? { name }    : {}),
     ...(channel !== undefined ? { channel } : {}),
     // The last five of SERVICE_OPTION_KEYS this literal used to drop, and they
@@ -2447,9 +2509,15 @@ export function createService(def: ServiceDefinition): Service {
   // already built its own table and put it on `def`; taking that over rescanning
   // matters because by then `def` also carries CRUD, the bypass twins and
   // `_meta`, and the scan would have to be right about all of them again.
+  // One sink for both graders — `collectCustomMethods` for a name that cannot
+  // be a method, `resolveMethodPolicy` for one this service cannot answer. A
+  // base reached through the loader's spread carries its own, so they join.
+  const seen = new Map<string, string>()
+  const report = (key: string, f: string) => { if (!seen.has(key)) seen.set(key, f) }
+
   const custom: CustomMethodMap = {
     ...((def as { _customMethods?: CustomMethodMap })._customMethods ?? {}),
-    ...collectCustomMethods(def, defName ?? '(unnamed)', def.methods),
+    ...collectCustomMethods(def, defName ?? '(unnamed)', def.methods, report),
   }
 
   // On the object as well as in the table: a spread has to carry them, and
@@ -2466,7 +2534,41 @@ export function createService(def: ServiceDefinition): Service {
     def.methods,
     serviceMethodNames(service),
     defName ?? '(unnamed)',
+    report,
   )
+  // A hook map keyed on a method this service does not have, or on a phase that
+  // is not a phase. Both were silent: `before: { creat: [requireAuth] }` built a
+  // pipeline nothing ever ran, the service answered normally, and the hook that
+  // was supposed to guard it simply did not exist — junction's own CLAUDE.md
+  // claimed this warned, and measured it did not.
+  //
+  // Graded against the service's OWN answerable names rather than CRUD, so a
+  // custom method is a legal key and a `methods:` policy that narrows the
+  // surface does not make a hook on a real method look like a typo.
+  if (def.hooks) {
+    const legal = new Set(['all', ...serviceMethodNames(service)])
+    for (const [phase, byMethod] of Object.entries(def.hooks)) {
+      if (!HOOK_STAGES.includes(phase as (typeof HOOK_STAGES)[number])) {
+        report(`hooks:${defName}:${phase}`,
+          `service '${defName ?? '(unnamed)'}': hooks declares the phase '${phase}', which is not ` +
+          `one — nothing reads it. Phases: ${HOOK_STAGES.join(', ')}`)
+        continue
+      }
+      if (!byMethod || typeof byMethod !== 'object') continue
+      for (const key of Object.keys(byMethod)) {
+        if (legal.has(key)) continue
+        report(`hooks:${defName}:${phase}.${key}`,
+          `service '${defName ?? '(unnamed)'}': hooks.${phase} is keyed on '${key}', which this ` +
+          `service does not answer — those hooks never run. ` +
+          `Available: ${['all', ...serviceMethodNames(service)].sort().join(', ')}`)
+      }
+    }
+  }
+
+  ;(service as Service)._authoringFindings = [
+    ...((def as { _authoringFindings?: string[] })._authoringFindings ?? []),
+    ...seen.values(),
+  ]
 
   // Resolved for describe() only — the hook itself filters at call time. Read
   // off the policy so the answer is what the service will actually answer.

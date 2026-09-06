@@ -245,7 +245,6 @@ export class HttpTransport extends BaseTransport {
   }
 
   private async attempt<T>(req: ConduitRequest, budgetMs = Infinity): Promise<ConduitResult<T>> {
-    const elapsed  = this.timer()
     const maxBytes = this.opts.max_response_bytes ?? DEFAULT_MAX_BYTES
     const timeout  = Math.min(
       req.timeout_ms ?? this.opts.timeout_ms ?? DEFAULT_TIMEOUT_MS,
@@ -318,7 +317,6 @@ export class HttpTransport extends BaseTransport {
       // entirely untimed, so a server that sends headers and then dribbles
       // a body forever hangs the request indefinitely (§1.5).
 
-      const duration = elapsed()
       // Read once and pass to every exit below: `Link`, `ETag` and
       // `X-Total-Count` are answers a caller cannot get any other way, and a
       // failure carries them too — `Retry-After` rides a 429 (`FJS-648`).
@@ -349,7 +347,7 @@ export class HttpTransport extends BaseTransport {
       // cache hit came back as a failure — the one way a 304 can be answered
       // reported as the target being broken (`FJS-649`). `data` is null and the
       // status says why: the caller serves the copy it already holds.
-      if (res.status === 304) return this.ok<T>(null as T, 304, duration, headers)
+      if (res.status === 304) return this.ok<T>(null as T, 304, headers)
 
       // 429 always, and a 503 that named a wait — a 503 without one stays a
       // plain server error, since that is a target in trouble rather than a
@@ -382,7 +380,7 @@ export class HttpTransport extends BaseTransport {
 
       const text = await readBody(res, maxBytes)
 
-      if (text === '') return this.ok<T>(null as T, res.status, duration, headers)
+      if (text === '') return this.ok<T>(null as T, res.status, headers)
 
       // A 200 carrying HTML is a captive portal, a proxy interstitial or a
       // provider error page — common in exactly this layer. The connection
@@ -404,10 +402,10 @@ export class HttpTransport extends BaseTransport {
       // had been delivered. A target that answers plain text is not a broken
       // target; only markup where a payload was expected is evidence of one.
       if (contentType !== '' && !isJsonType(contentType))
-        return this.ok<T>(text as T, res.status, duration, headers)
+        return this.ok<T>(text as T, res.status, headers)
 
       try {
-        return this.ok<T>(JSON.parse(text) as T, res.status, duration, headers)
+        return this.ok<T>(JSON.parse(text) as T, res.status, headers)
       } catch {
         // An empty content-type with a non-JSON body lands here rather than
         // above, and is still a failure: nothing said what this was, and it

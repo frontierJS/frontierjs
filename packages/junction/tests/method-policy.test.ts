@@ -188,24 +188,35 @@ describe('methods: absent means everything', () => {
   })
 })
 
-describe('methods: a bad declaration fails at construction', () => {
+describe('methods: a bad declaration is reported by start()', () => {
 
-  it('throws on a name the service does not have', () => {
+  // These used to throw at construction. They are collected now and refused
+  // together by `start()`'s `check-authoring` phase, because an app has a
+  // config, N service files and a hook table, and throwing on the first makes
+  // fixing them serial — one boot per typo (`FJS-D199`). What is graded here is
+  // the finding; `authoring-keys.test.ts` grades the refusal it becomes.
+  const findingsOf = (svc: unknown) =>
+    ((svc as { _authoringFindings?: string[] })._authoringFindings ?? []).join('\n')
+
+  it('reports a name the service does not have', () => {
     // The failure this prevents: `['find', 'gett']` silently blocks `get` and
     // reads as "the allow-list is broken" only after a 405 in production.
-    expect(() => createService({
+    const svc = createService({
       name:    'typo',
       methods: ['find', 'gett'],
       async find() { return [] },
-    })).toThrow(/gett/)
+    })
+    expect(findingsOf(svc)).toMatch(/gett/)
   })
 
   it('names what was available, so the typo is obvious', () => {
-    let msg = ''
-    try {
-      createService({ name: 'typo2', methods: ['fnid'], async find() { return [] } })
-    } catch (err) { msg = (err as Error).message }
-    expect(msg).toContain('find')
+    const svc = createService({ name: 'typo2', methods: ['fnid'], async find() { return [] } })
+    expect(findingsOf(svc)).toContain('find')
+  })
+
+  it('…and a correct declaration reports nothing — the control', () => {
+    const svc = createService({ name: 'fine', methods: ['find'], async find() { return [] } })
+    expect(findingsOf(svc)).toBe('')
   })
 
   it('accepts an action name in the list', () => {

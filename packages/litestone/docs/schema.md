@@ -147,7 +147,7 @@ open editor correctly stale after one lands.
 @omit                            excluded from findMany/findFirst (still in findUnique)
 @omit(all)                       excluded from all reads
 @guarded                         system-context column: stripped from every read, refused on
-                                 every write, and refused in a where/orderBy/distinct/cursor
+                                 every write, and refused in a where/orderBy/cursor
                                  — naming it recovers it — unless asSystem()
 @guarded                    the same, and an explicit select cannot unlock the read
 @encrypted                       AES-256-GCM at rest — hidden from a non-system read, and

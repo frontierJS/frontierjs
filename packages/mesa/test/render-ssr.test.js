@@ -18,6 +18,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { writeFileSync, unlinkSync, mkdirSync, rmSync } from 'node:fs'
 import path from 'node:path'
 import { compileSource } from '../src/compiler.js'
+import { ANCHOR_DATA } from '../src/runtime.js'
 import {
   initRenderer, resetRenderer, renderToHTML, renderAll, wrapPage, escapeHTML,
 } from '../src/render.js'
@@ -56,11 +57,20 @@ const unscope = (html) => html
     return kept.length ? ` class="${kept.join(' ')}"` : ''
   })
 
-/** The same anchor-stripping the renderer applies, for comparing client output. */
+/*
+ * The same anchor-stripping the renderer applies, for comparing client output.
+ *
+ * Written off `ANCHOR_DATA` rather than off the shape of the markup: this used
+ * to match `<!---->` and `<!-- name -->` by hand, which is a second statement
+ * of a rule `render.js` owns — and the shape it restated was the one that also
+ * matched a comment the AUTHOR wrote (`FJS-906`). A regex is acceptable here
+ * and nowhere else: this is a test comparing two strings, not the renderer,
+ * which walks nodes precisely because a regex cannot tell an anchor from those
+ * characters inside an attribute value.
+ */
 const strip = (html) => html
   .replace(/<!--mesa-root-->/g, '')
-  .replace(/<!---->/g, '')
-  .replace(/<!-- [^>]* -->/g, '')
+  .replace(new RegExp(`<!--\\${ANCHOR_DATA}[^>]*-->`, 'g'), '')
   .trim()
 
 /** Render the same component through the client runtime, into a real container. */
@@ -292,7 +302,7 @@ describe('renderToHTML — basics', () => {
   it('strips Mesa comment anchors by default and keeps them on request', async () => {
     const Comp = await build(`<div>{#if true}<b>yes</b>{/if}</div>`)
     expect(await renderToHTML(Comp)).toBe('<div><b>yes</b></div>')
-    expect(await renderToHTML(Comp, {}, { keepAnchors: true })).toContain('<!---->')
+    expect(await renderToHTML(Comp, {}, { keepAnchors: true })).toContain(`<!--${ANCHOR_DATA}-->`)
   })
 })
 

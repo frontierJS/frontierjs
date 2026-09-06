@@ -2404,6 +2404,66 @@ async function cmdStudio(cfg) {
           return json(deriveAccess(currentSchemaParse().schema))
         }
 
+        // ── GET /api/refs · POST /api/compare ───────────────────────────
+        // What this branch did to the database and to who may do what.
+        //
+        // Every other panel answers *what is true now*. Two shipped commands
+        // answer *what changed* — `litestone release --from` (can N-1 and N
+        // serve one database at once) and `litestone access --from` (who may
+        // now do more) — and neither had a surface, so the question you ask
+        // last, with the most at stake, was the one thing Studio could not be
+        // asked.
+        //
+        // **A REF IS NOT CALLER-SUPPLIED TEXT HERE.** `fli proves` takes no ref
+        // over HTTP for exactly this reason: the value ends up on a git command
+        // line, and `loadBaselineSchema` reads a plain FILE when one exists by
+        // that name. So the server ENUMERATES the candidates and the client
+        // picks one BY NAME from that list; the name is looked up and the
+        // resolved SHA is what travels onward (Invariant 8's rule, one realm
+        // over). A 40-hex sha is also never a path that exists, which closes
+        // the file branch by construction rather than by argument.
+        if (path === '/api/refs')    return json({ refs: gitBaselineRefs(cfg.schema) })
+
+        if (path === '/api/compare') {
+          const refs  = gitBaselineRefs(cfg.schema)
+          const asked = refs.find(r => r.name === body.ref)
+          if (!asked) return json({ error: `Unknown ref '${body.ref}' — pick one this repository listed` }, 400)
+
+          const { deriveReleaseSurface, classifyPivot, classifyAccess, capabilityDrift } =
+            await import('../release.js')
+
+          const schemaPath = resolve(cfg.schema)
+          const parsed     = currentSchemaParse()
+          if (!parsed.schema) return json({ error: 'The schema on disk does not parse — fix it before comparing.' }, 400)
+
+          const after    = deriveReleaseSurface(parsed.schema)
+          const baseline = loadBaselineSchema(asked.sha, schemaPath)
+          const before   = baseline.text ? parseBaseline(baseline.text, false, deriveReleaseSurface) : null
+
+          if (!before?.surface) {
+            return json({
+              ref:   asked,
+              error: before?.error ?? baseline.note ?? 'no baseline at that ref',
+            })
+          }
+
+          // Both axes off ONE walk each of the same two surfaces. They
+          // disagree by construction — removing a @@gate is an `expand` and the
+          // widest thing a schema change can do — so they are two answers and
+          // never one badge.
+          const deploy = classifyPivot(before.surface, after)
+          const access = classifyAccess(before.surface, after)
+          const drift  = capabilityDrift(before.surface, after)
+
+          return json({
+            ref:    asked,
+            note:   before.note ?? baseline.note ?? null,
+            deploy: { verdict: deploy.verdict, counts: deploy.counts, findings: deploy.findings },
+            access: { verdict: access.verdict, counts: access.counts, findings: access.findings },
+            drift:  drift?.lost?.length ? drift : null,
+          })
+        }
+
         // ── GET /api/drift ──────────────────────────────────────────────
         // Three questions that are not the same question, kept apart on
         // purpose: one badge saying "out of date" would blur them.
@@ -2523,9 +2583,32 @@ async function cmdStudio(cfg) {
 
           // Imports are inlined from the file's own directory so a fragment the
           // app imports is in the parse, exactly as it is when Studio boots.
+          //
+          // The options were an empty object, so `resolveChild` and `read` were
+          // undefined and this threw on the FIRST import line — every preview
+          // of a schema that imports anything came back
+          // `opts.resolveChild is not a function` dressed as a parse error. A
+          // schema with no imports never reaches the callback, which is why it
+          // read as working (`FJS-829`).
+          const previewMissing = []
           let after
-          try   { after = parse(inlineImports(source, resolve(cfg.schema), {})) }
+          try {
+            after = parse(inlineImports(source, resolve(cfg.schema), {
+              resolveChild: (parent, spec) => resolveImportSpecifier(spec, parent).path,
+              read:         (p) => { try { return readFileSync(p, 'utf8') } catch { return null } },
+              seen:         new Set([resolve(cfg.schema)]),
+              missing:      previewMissing,
+            }))
+          }
           catch (e) { return json({ valid: false, errors: [e.message] }) }
+          // A fragment that cannot be read describes a SMALLER schema than the
+          // one being previewed, and every verdict below would be about that
+          // smaller one. Said rather than absorbed.
+          if (previewMissing.length)
+            return json({ valid: false, errors: [
+              `cannot read ${previewMissing.length === 1 ? 'the import' : 'imports'} ` +
+              `${previewMissing.map(m => `"${m}"`).join(', ')} — the preview would describe a smaller schema than the file does`,
+            ] })
           if (!after.valid) return json({ valid: false, errors: after.errors })
 
           const before = currentSchemaParse()
@@ -4403,7 +4486,8 @@ async function cmdRelease(cfg) {
 // a ref and a filename are not distinguishable and only one of them can be
 // tested for cheaply; anything else is asked of git.
 function loadBaselineSchema(from, schemaPath) {
-  const missing = []
+  const missing      = []
+  const borrowedPkgs = []
   const noteFor = (base) => base ?? (missing.length
     ? `${missing.length === 1 ? 'an import' : `${missing.length} imports`} could not be read there ` +
       `(${missing.join(', ')}) — those models are absent from the baseline`
@@ -4458,15 +4542,56 @@ function loadBaselineSchema(from, schemaPath) {
   if (rootText === null)
     return { text: null, label: from, note: `\`${tracked}\` is not committed at \`${from}\`` }
 
+  // A PACKAGE specifier is read from the working tree, and that is not a
+  // shortcut. `import "@frontierjs/auth/schema.lite"` resolves through node —
+  // a ref has no node_modules, so joining it as a path asks git for
+  // `db/@frontierjs/auth/schema.lite`, which is nothing. Every model a package
+  // ships was therefore absent from every baseline, and the comparison reported
+  // the whole of `@frontierjs/auth` as newly added on every run, for ever: six
+  // phantom `new` models on `example`, which is the shape of an answer nobody
+  // can act on.
+  //
+  // The alternative it is measured against is not perfection. If the package
+  // version moved between that ref and now, this compares today's fragment
+  // against itself and UNDERSTATES what changed in it — one package, when its
+  // version moved. Not doing it OVERSTATES every package model on every
+  // comparison. The note says which happened, which is the half that makes the
+  // narrower error the honest one to take.
+  //
+  // A relative import still comes from the ref: those files are in the tree and
+  // git has them at that commit, which is the whole point of asking for a ref.
+  const fromDisk = new Set()
   const text = inlineImports(rootText, tracked, {
-    resolveChild: (parent, spec) => posixJoin(posixDir(parent), spec),
-    read:         (p) => git(['show', `${from}:${p}`]),
-    seen:         new Set([tracked]),
+    resolveChild: (parent, spec) => {
+      if (RELATIVE_IMPORT.test(spec)) return posixJoin(posixDir(parent), spec)
+      const here = resolveImportSpecifier(spec, schemaPath).path
+      if (!here || !existsSync(here)) return posixJoin(posixDir(parent), spec)
+      fromDisk.add(here)
+      borrowedPkgs.push(spec)
+      return here
+    },
+    read: (p) => (fromDisk.has(p)
+      ? (() => { try { return readFileSync(p, 'utf8') } catch { return null } })()
+      : git(['show', `${from}:${p}`])),
+    seen:  new Set([tracked]),
     missing,
   })
 
-  return { text, label: `\`${from}\``, note: noteFor(null) }
+  const notes = []
+  if (borrowedPkgs.length)
+    notes.push(`${borrowedPkgs.length === 1 ? 'a package fragment was' : `${borrowedPkgs.length} package fragments were`} ` +
+               `read from the working tree rather than at that ref — a package specifier resolves through ` +
+               `node_modules, which a ref does not have (${borrowedPkgs.join(', ')})`)
+  const gone = noteFor(null)
+  if (gone) notes.push(gone)
+
+  return { text, label: `\`${from}\``, note: notes.length ? notes.join('; ') : null }
 }
+
+// The same test `resolveImportSpecifier` makes, stated where the ref reader can
+// ask it without resolving anything: a relative or absolute specifier is a file
+// in this tree and git has it at the ref; anything else is a package.
+const RELATIVE_IMPORT = /^\.\.?[\\/]|^[\\/]|^[A-Za-z]:[\\/]/
 
 // A git ref is addressed with posix paths regardless of the host, so the two
 // path helpers `inlineImports` needs for the ref reader live here rather than
@@ -4517,6 +4642,84 @@ function git(argv) {
   const run = spawnSync('git', argv, { encoding: 'utf8', shell: false, cwd: process.cwd() })
   if (run.error || run.status !== 0) return null
   return run.stdout.replace(/\n$/, '')
+}
+
+// ─── The baselines a comparison may name ─────────────────────────────────────
+//
+// Studio's diff panel does not take a ref typed by whoever has the page open.
+// It takes a NAME this function listed, and hands `loadBaselineSchema` the sha
+// it resolved for that name — so the value reaching a git command line was
+// produced here and never received. That is Invariant 8's rule (the name is
+// looked up, never interpolated) applied one realm over, and it is also the
+// reason `fli proves` takes no ref over HTTP at all.
+//
+// The list is the baselines somebody would actually compare against, cheapest
+// first: where you are, where you branched from, the release tags, and the
+// commits that touched THIS SCHEMA — the last being the only ones that can
+// possibly differ, so a repo with a thousand commits offers the handful whose
+// answer is not `unchanged`.
+//
+// Everything is best-effort: a shallow clone has no merge-base, a fresh repo
+// has no tags, and a directory that is not a repository answers an empty list
+// rather than an error, because *there is nothing to compare against* is a
+// state the panel renders and not a failure.
+function gitBaselineRefs(schemaPath, { tags = 6, commits = 12 } = {}) {
+  if (!git(['rev-parse', '--git-dir'])) return []
+
+  const out  = []
+  const seen = new Set()
+
+  // Keyed on the SHA and not on the name. A monorepo tags every package at one
+  // commit, so the first listing here was eight `@frontierjs/*@x.y.z` rows
+  // resolving to one sha, crowding out the entries whose answer is not
+  // `unchanged` — and HEAD and `main` are usually the same commit too. One row
+  // per commit, and the first name to claim it is the one worth reading.
+  const push = (name, kind, note) => {
+    const sha = git(['rev-parse', '--verify', `${name}^{commit}`])
+    if (!sha || seen.has(sha)) return
+    seen.add(sha)
+    out.push({ name, kind, note, sha, subject: git(['log', '-1', '--format=%s', sha]) ?? '' })
+  }
+
+  push('HEAD', 'head', 'the commit you are on')
+
+  // Where this branch left the trunk. The most useful of the lot and the one
+  // nobody types: it is what a review compares against, and it answers
+  // `unchanged` for every commit the branch did not make.
+  const head = git(['rev-parse', '--abbrev-ref', 'HEAD'])
+  for (const trunk of ['main', 'master']) {
+    if (head === trunk) continue
+    const base = git(['merge-base', 'HEAD', trunk])
+    if (base) { push(base, 'merge-base', `where this branch left ${trunk}`); break }
+  }
+  for (const trunk of ['main', 'master']) push(trunk, 'branch', 'the trunk as it stands')
+
+  // Commits that touched the SCHEMA — ahead of the tags, because they are the
+  // only ones that can possibly differ. `--follow` so a renamed file keeps its
+  // history, which is the moment a comparison is most wanted.
+  //
+  // The pathspec is written `:/path` — root-relative. A plain pathspec is
+  // relative to the CWD and Studio runs in the app directory, so the
+  // root-relative path this resolves was matching nothing and the list came
+  // back tags-only, with no error anywhere. `git show <ref>:<path>` in
+  // `loadBaselineSchema` is root-relative by definition, which is why that half
+  // was right all along and this one was not.
+  const root    = git(['rev-parse', '--show-toplevel'])
+  const tracked = root ? relative(root, resolve(schemaPath)).split('\\').join('/') : null
+  if (tracked) {
+    const log = git(['log', `-${commits}`, '--follow', '--format=%H\u0001%ad\u0001%s', '--date=short', '--', `:/${tracked}`])
+    for (const line of (log ?? '').split('\n').filter(Boolean)) {
+      const [sha, date, subject] = line.split('\u0001')
+      if (!sha || seen.has(sha)) continue
+      seen.add(sha)
+      out.push({ name: sha, kind: 'schema-commit', note: `${date} — touched the schema`, sha, subject: subject ?? '' })
+    }
+  }
+
+  for (const t of (git(['tag', '--sort=-creatordate']) ?? '').split('\n').filter(Boolean).slice(0, tags))
+    push(t, 'tag', 'a release tag')
+
+  return out
 }
 
 

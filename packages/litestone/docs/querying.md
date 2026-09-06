@@ -10,7 +10,9 @@ db.user.findMany({ where, orderBy, limit, offset, include, select })
 db.user.findMany({ withDeleted: true })    // include soft-deleted rows
 db.user.findMany({ onlyDeleted: true })    // only soft-deleted rows
 
-// SELECT DISTINCT
+// SELECT DISTINCT — a boolean, and it dedupes the whole PROJECTED row, so it is
+// paired with `select`. SQLite has no DISTINCT ON: a column list is refused by
+// name, and one whole row per value is `groupBy`, which also says which row.
 db.user.findMany({ select: { role: true }, distinct: true })
 
 // Return first match or null
@@ -86,6 +88,16 @@ const posts = await db.post.findMany({
 // Skip RETURNING — fastest write path (no row returned)
 await db.order.update({ where: { id: 1 }, data: { status: 'paid' }, select: false })
 await db.order.create({ data: { amount: 100 }, select: false })
+```
+
+An object is the only spelling, and `false` on a write is the one exception.
+Anything else is refused by name — a list projects no columns and would answer
+`{}` with no error, and the list is the WIRE form (`$select=id,title`), which
+the API boundary converts before a read.
+
+```js
+db.user.findMany({ select: ['id', 'email'] })   // refused: 'select' must be an object
+db.user.findFirst({ select: false })            // refused: it means nothing on a read
 ```
 
 ## Cursor pagination

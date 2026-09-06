@@ -122,7 +122,9 @@ $: selectedCity = cities[0]        // writable derived — re-derives when citie
 ```
 
 > **RULE 1** — `$:` annotations are top-level scope only — never inside functions, blocks,
-> or callbacks.
+> or callbacks. **Enforced**: a nested one is a compile error naming the line. It used to
+> compile to a plain JavaScript label wrapping a one-shot assignment, which is right on the
+> first call and stale after it with nothing said.
 
 > **RULE 2** — The compiler detects derived values. A top-level `const` is derived when it
 > transitively depends on something that can MOVE — a `let`, a prop, a `$context` read, an
@@ -346,6 +348,18 @@ $: filters.q         // now `filters.q = 'x'` re-renders, not just `filters = {�
 
 > **RULE 48** — `delete obj.key` notifies the watches covering that key, exactly as
 > `obj.key = undefined` does. Deleting a key that was not present notifies nothing.
+
+A **symbol-keyed** write or delete is not a change at a path — a symbol cannot be a
+watch segment, and reading one subscribes to nothing, because `Symbol.iterator` and its
+kind are protocol lookups rather than state. It is still a change to the object, so it
+fires the watches that cover the object itself and nothing narrower.
+
+**Cloning a watched object: unwrap it first.** `structuredClone` refuses a proxy, and
+spreading does not help — `{...state}` copies each property through the get trap, and a
+nested object comes back as a proxy again, so the clone throws `DataCloneError`. No
+caching arrangement can fix that: the get trap has to return a proxy or there is no
+reactivity beneath the first level. `unproxy(state)` is the answer and returns a plain
+deep copy, which is also what to log and what to send over the wire.
 
 > **RULE 49** — Values with internal slots — `Date`, `Map`, `Set`, `RegExp`, `Promise`,
 > typed arrays, `Error` — are handed through the proxy untouched. Their methods work
@@ -2352,7 +2366,7 @@ components hydrate to their initial render and serialize cleanly.
 
 | # | Rule |
 |---|---|
-| 1 | `$:` annotations are top-level scope only |
+| 1 | `$:` annotations are top-level scope only — enforced, a nested one is a compile error |
 | 2 | Compiler detects derived values — `const` referencing reactive vars auto-derives |
 | 3 | Compiler detects template bindings — all reactive vars used in templates are auto-wired |
 | 4 | Scoped variables are never tracked — but CAN read and write top-level reactive state |

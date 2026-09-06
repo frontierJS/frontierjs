@@ -7579,6 +7579,87 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d224"></a>2026-09-05 · `FJS-D224` — § IV gains a seventh adjudication: preservation against evolution. Compatibility is owed to users, never to code.
+
+`PHILOSOPHY.md` § IV settles six standing tensions and none of them covered
+*should this change at all*. That gap is not inert: an argument that has no row
+gets decided by the nearest-looking row instead, and the nearest-looking row
+here is *familiarity vs. precision*, which was cited to argue that `ws:map`
+should survive `FJS-D223` as an alias. **That row says `ecosystem` twice** — it
+is about the shapes a developer brings in from elsewhere and has never been
+about this framework's own past. It was not ambiguous; it was reached for
+because nothing else was there to reach for.
+
+**The amendment states the principle rather than the project's state.** § VII
+forbids a maturity word in a Guiding document, and rightly: *pre-alpha* is true
+for an afternoon and the principle is true on both sides of it. So the row says
+compatibility is owed to users and not to code — where nobody depends on a
+spelling, a rename is a rename, and where somebody does, the break is announced.
+Which of the two a project is standing in is a fact recorded in its map, which
+is where `CLAUDE.md` § Evolution policy already answers it for this one.
+
+**What was NOT written, and why it matters more than what was.** The first
+proposal was to scope § IV's familiarity row — *this means the ecosystem, not
+our own past*. That is a restatement of a sentence already carrying the word
+twice, and § VII's delete test refuses it: nobody acts differently for reading
+it, and a second statement of one rule is the disease the whole document is
+arranged against. The hole was a missing row, not a loose one, and the two have
+the same symptom.
+
+The `decision-rules` skill is amended with it and names this specific
+mis-citation, because *reach for the neighboring row* is a failure mode that
+does not feel like one from the inside — every step of it is a person correctly
+consulting the doctrine.
+
+### <a id="fjs-d223"></a>2026-09-05 · `FJS-D223` — `ws:map` and `ws:atlas` are one command. One model, three presentations of it, chosen by `--as`.
+
+They were never two things. `collect()` in `core/repo-map.js` is the one reader,
+and `core/repo-atlas.js` performs **no filesystem reads at all** — every plate on
+the deck comes out of that model. The split was a rendering choice wearing a
+command's clothes, and it cost what a second surface always costs: six of
+seventeen model fields were collected on every run and rendered by only one of
+the two pages, and the one reader that had silently gone to zero was found by
+asking what the other page showed rather than by anything watching
+(`FJS-927`).
+
+**One axis, so one flag.** How the model is presented has three values and they
+are not independent options — the model, one page read top to bottom, one page
+navigated part by part:
+
+```
+fli ws:atlas                  the deck
+fli ws:atlas --as=report      one page, read top to bottom
+fli ws:atlas --as=json        the model
+```
+
+`--as` **absorbs `--json`** rather than sitting beside it. A boolean and an enum
+that select along the same axis are two spellings of one question, and the pair
+is what invites a third: the next presentation is a value here, never a second
+flag.
+
+**What decides where a section goes is the reading MODE, not the size.** A report
+is read through; an atlas is navigated. That is the by-KIND against by-THING axis
+those two pages already had — all snapshots together against everything about
+litestone — and it is what keeps the report from being defined as *the small
+one*, which is the definition under which the next person trims it. The proofs
+table is the case: 47 KB, and it belongs on the report because it is a table read
+across, not because it fits.
+
+**`ws:map` is deleted, with no alias.** Nothing here has shipped, so there is no
+call to keep working and no muscle memory to spare (`CLAUDE.md` § Evolution
+policy). `PHILOSOPHY.md` § IV's *familiarity vs. precision* is about habits a
+developer brings from the ecosystem and says nothing about this framework's own
+past; it was cited the other way while this was being argued, which is the
+failure the policy paragraph now names.
+
+**The committed artefacts follow, and the CI phase costs nothing.**
+`repo-map.snapshot.html` becomes `repo-report.snapshot.html`, whose header names
+`fli ws:atlas --as=report`. The `snapshots` phase reads the generator command out
+of each file's own header and reruns it with `--check`, so two committed files
+from one command with different flags need no edit there — the rename is one
+entry under `removedSnapshots` in `scripts/ci-allowances.json`, which is what
+that allowance is for.
+
 ### <a id="fjs-d222"></a>2026-09-05 · `FJS-D222` — the runtime split is by ROLE, not by package. A harness runs under node; a package runs under what it needs.
 
 The question was whether every package should run under Bun. Re-measured

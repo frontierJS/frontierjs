@@ -186,9 +186,14 @@ const OPS: Record<string, any> = {
               want: (k) => k.ascIds },
 
   // Shape ops. A column's value must come back in ONE shape whatever asked for
-  // it — `findMany` parses an array column, so `distinct`/`groupBy`/`_max` must
-  // too, or a caller's `.length` means different things down different paths.
-  distinct: { run: (db, k) => db.cell.findMany({ distinct: [k.field] }), rows: 2 },
+  // it — `findMany` parses an array column, so `groupBy`/`_max` must too, or a
+  // caller's `.length` means different things down different paths.
+  //
+  // `distinct` was a column here and is not one any more: it is a boolean, the
+  // whole-row `SELECT DISTINCT`, so it names no field and the grid's question —
+  // does an operation that NAMES this column refuse or answer — cannot be put to
+  // it (FJS-935). Its cells said `ok` for nineteen of twenty kinds against a
+  // fixture of exactly two rows, which is the answer an ignored argument gives.
   groupBy:  { run: (db, k) => db.cell.groupBy({ by: [k.field], _count: true }), shape: true },
   aggMax:   { run: (db, k) => db.cell.aggregate({ _max: { [k.field]: true } }), shape: 'max' },
 
@@ -225,27 +230,27 @@ const OPS: Record<string, any> = {
 // ISSUES.md; a cell carrying `ref` is refused today and stays refused.
 
 const GRID = `
-kind      | whereEq  whereIn  whereNot contains bareArr  hasOp    orderBy  distinct groupBy  aggMax   update   updMany  createSt createOm select   delWhere
-text      | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ok       ref      ok       ok
-int       | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ok       ok       ok       ok
-bool      | ok       ok       ok       ref      ok       ref      ok       ok       ok       ok       ok       ok       ok       ok       ok       ok
-datetime  | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ok       ref      ok       ok
-array     | ok       ok       ok       ref      ok       ok       ref      ok       ok       ref      ok       ok       ok       ok       ok       ok
-intArray  | ok       ok       ok       ref      ok       ok       ref      ok       ok       ref      ok       ok       ok       ok       ok       ok
-enum      | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ok       ref      ok       ok
-enumArray | ok       ok       ok       ref      ok       ok       ref      ok       ok       ref      ok       ok       ok       ok       ok       ok
-json      | ref      ref      ref      ref      ref      ref      ref      ok       ok       ref      ok       ok       ok       ok       ok       ref
-typedJson | ok       ref      ref      ref      ref      ref      ref      ok       ok       ref      ok       ok       ok       ref      ok       ok
-encrypted | ref      ref      ref      ref      ref      ref      ref      ok       ok       ref      ok       ok       ok       ok       ok       ref
-encDet    | ok       ok       ok       ref      ok       ref      ref      ok       ok       ref      ok       ok       ok       ok       ok       ok
-hashed    | ok       ok       ok       ref      ok       ref      ref      ok       ref      ref      ok       ok       ok       ok       ref      ok
-float     | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ok       ok       ok       ok
-money     | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ok       ref      ok       ok
-guarded   | ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ok       ok       ref
-system    | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ref      ref      ref      ok       ok       ok
-transient | ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ok       ref      ref
-computed  | ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ok       ok       ref
-generated | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ref      ref      ref      ok       ok       ok
+kind      | whereEq  whereIn  whereNot contains bareArr  hasOp    orderBy  groupBy  aggMax   update   updMany  createSt createOm select   delWhere
+text      | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ref      ok       ok
+int       | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ok       ok       ok
+bool      | ok       ok       ok       ref      ok       ref      ok       ok       ok       ok       ok       ok       ok       ok       ok
+datetime  | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ref      ok       ok
+array     | ok       ok       ok       ref      ok       ok       ref      ok       ref      ok       ok       ok       ok       ok       ok
+intArray  | ok       ok       ok       ref      ok       ok       ref      ok       ref      ok       ok       ok       ok       ok       ok
+enum      | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ref      ok       ok
+enumArray | ok       ok       ok       ref      ok       ok       ref      ok       ref      ok       ok       ok       ok       ok       ok
+json      | ref      ref      ref      ref      ref      ref      ref      ok       ref      ok       ok       ok       ok       ok       ref
+typedJson | ok       ref      ref      ref      ref      ref      ref      ok       ref      ok       ok       ok       ref      ok       ok
+encrypted | ref      ref      ref      ref      ref      ref      ref      ok       ref      ok       ok       ok       ok       ok       ref
+encDet    | ok       ok       ok       ref      ok       ref      ref      ok       ref      ok       ok       ok       ok       ok       ok
+hashed    | ok       ok       ok       ref      ok       ref      ref      ref      ref      ok       ok       ok       ok       ref      ok
+float     | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ok       ok       ok
+money     | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ref      ok       ok
+guarded   | ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ok       ok       ref
+system    | ok       ok       ok       ok       ok       ref      ok       ok       ok       ref      ref      ref      ok       ok       ok
+transient | ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ok       ref      ref
+computed  | ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ok       ok       ref
+generated | ok       ok       ok       ok       ok       ref      ok       ok       ok       ref      ref      ref      ok       ok       ok
 `
 
 // ─── runner ───────────────────────────────────────────────────────────────────

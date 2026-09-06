@@ -9,7 +9,7 @@ export const tree = {
   file: "src/routes/index.mesa",
   companion: null,
   layout: null,
-  meta: {"title":"Islands","render":"static","isIndex":true},
+  meta: JSON.parse("{\"title\":\"Islands\",\"render\":\"static\",\"isIndex\":true}"),
   params: [],
   children: [
   {
@@ -18,7 +18,7 @@ export const tree = {
       file: "src/routes/plain.mesa",
       companion: null,
       layout: null,
-      meta: {"title":"Plain","render":"static"},
+      meta: JSON.parse("{\"title\":\"Plain\",\"render\":\"static\"}"),
       params: [],
       children: [],
     }
@@ -31,9 +31,11 @@ export const components = {
   'plain': () => import('../src/routes/plain.mesa'),
 }
 
+
 // Loader factory map — routes with a .meta.js companion
 // Only populated for routes that have a companion file
 export const loaders = {
+
 
 }
 

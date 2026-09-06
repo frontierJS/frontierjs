@@ -229,8 +229,8 @@ describe('optimistic locking — the lost update, executed', () => {
     // question is whether a patch with no version goes through.
     const dev  = () => env.as(developer).service('servers')
     const made = await dev().create({
-      name: 'edge-1', slug: slug(), hostname: `edge-${Math.random().toString(36).slice(2, 8)}.test`,
-      role: 'general', provider: 'manual',
+      name: 'edge-1', slug: slug(), role: 'general',
+      providerKind: 'custom', ipAddress: '203.0.113.10',
     })
     expect(made.version).toBeUndefined()
 

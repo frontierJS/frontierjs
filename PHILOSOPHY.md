@@ -119,6 +119,15 @@ moment someone is listening hardest.
 
 ## IV. Standing adjudications
 
+**Preservation vs. evolution.** Compatibility is owed to users, never to code.
+A spelling that already exists is not a reason to keep it; the reason is
+somebody depending on it. Where nobody does, a rename is a rename — no alias,
+no deprecation, no migration path, no second name for one thing — because the
+cost of carrying the old spelling is paid forever by everyone who then reads two
+names for one idea. Where somebody does, the break is announced and the
+adjudication below governs how. **Which of those two a project is standing in is
+a fact about the project**, recorded in its map and never argued from here.
+
 **Ergonomics vs. strictness.** Strictness follows cost — never resolve this
 by temperament ("we're strict" / "we're friendly"); resolve it per-surface
 by what a mistake destroys.

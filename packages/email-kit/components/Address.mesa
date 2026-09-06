@@ -1,4 +1,6 @@
 <script>
+  import { refuseChildren } from './slot-guard.js'
+  refuseChildren('Address', $.slots, "Pass `line1`, `line2`, `city`, `state` and `zip`.")
   export let line1   = ''
   export let line2   = ''
   export let city    = ''

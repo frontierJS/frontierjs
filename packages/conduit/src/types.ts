@@ -264,6 +264,16 @@ export interface ResponseMeta {
   protocol:    Protocol | null  // null when target not found before transport dispatch
   target:      string
   status?:     number
+
+  // The WHOLE call: every attempt the transport made, and the waits between
+  // them. It is the same measurement `stats().latency` is built from, so an
+  // app logging off the result and a `/metrics` scrape cannot disagree — they
+  // did, by three orders of magnitude, for as long as a transport measured its
+  // own attempt (`FJS-660`). Per-attempt latency is not carried: the `onRetry`
+  // observer already sees each one, with its error and its attempt number.
+  //
+  // 0 where nothing was sent — an unknown target, a shed request, a breaker
+  // refusal — which is what those calls cost.
   duration_ms: number
 
   // The response's headers, lowercased. Absent when nothing was sent — a

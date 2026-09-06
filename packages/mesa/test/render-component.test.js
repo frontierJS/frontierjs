@@ -324,6 +324,38 @@ describe('renderFile', () => {
 // ── htmlToText (via email target) ─────────────────────────────────────────────
 
 describe('htmlToText — via email target', () => {
+  // A block boundary that produced no separator ran the two sides together,
+  // and the shape it happened in is the ordinary one for email: everything is
+  // a table, so a document can have no <p> boundary anywhere in it. Every row
+  // asserts the WORDS do not touch, not the exact whitespace, since the amount
+  // of it is a formatting detail of the source.
+
+  it('a paragraph and the content after it do not run together', async () => {
+    const result = await renderComponent(
+      `<p>Body words</p><a href="https://x.test/go">Go</a>`,
+      { cwd: '/tmp/mesa', target: 'email' }
+    )
+    expect(result.text).not.toContain('wordsGo')
+    expect(result.text).toMatch(/Body words\s+Go \(https:\/\/x\.test\/go\)/)
+  })
+
+  it('table cells are a block boundary', async () => {
+    const result = await renderComponent(
+      `<table><tr><td>Order #</td><td>1042</td></tr></table>`,
+      { cwd: '/tmp/mesa', target: 'email' }
+    )
+    expect(result.text).not.toContain('Order #1042')
+    expect(result.text).toMatch(/Order #\s+1042/)
+  })
+
+  it('two paragraphs are still one blank line apart', async () => {
+    const result = await renderComponent(
+      `<p>First</p><p>Second</p>`,
+      { cwd: '/tmp/mesa', target: 'email' }
+    )
+    expect(result.text).toBe('First\n\nSecond')
+  })
+
   it('converts headings and paragraphs', async () => {
     const result = await renderComponent(
       `<h1>Title</h1><p>Body text here.</p>`,

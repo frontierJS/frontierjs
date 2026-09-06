@@ -1,4 +1,6 @@
 <script>
+  import { refuseChildren } from './slot-guard.js'
+  refuseChildren('Button', $.slots, "Pass `text`. It is also what the Outlook VML fallback renders, and only a string can reach that — a slot would label the anchor and leave Outlook an unlabelled button.")
   export let href     = ''
   export let text     = ''
   export let bgcolor  = '#9fc612'
@@ -36,10 +38,28 @@
    * tag as separate attributes. encodeURIComponent leaves no `<`, `>` or `"`
    * for anything downstream to interpret.
    */
+  /*
+   * Everything below is a STRING that is spliced into the finished document,
+   * so nothing downstream escapes it — by the time `expandMsoPlaceholders()`
+   * sees the payload it cannot tell a caller's value from the markup carrying
+   * it. The anchor further down gets the same two values and comes back
+   * correctly escaped, which is what made this invisible: one half of the
+   * component was safe and the unsafe half is the one nobody re-parses.
+   *
+   * `>` is escaped for a reason beyond attributes: a comment ends at a literal
+   * `-->`, so a `text` of `... <![endif]--> ...` closes the block and the rest
+   * becomes live markup on EVERY client rather than Outlook.
+   */
+  const esc = (v) => String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+
   const msoHTML = `<!--[if mso]>
-<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" href="${href}" style="height:44px;v-text-anchor:middle;width:200px;" arcsize="${Math.round(radius * 2)}%" stroke="f" fillcolor="${bgcolor}">
+<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" href="${esc(href)}" style="height:44px;v-text-anchor:middle;width:200px;" arcsize="${Math.round(radius * 2)}%" stroke="f" fillcolor="${esc(bgcolor)}">
 <w:anchorlock/>
-<center style="color:${color};font-family:Helvetica,Arial,sans-serif;font-size:${size}px;font-weight:${weight};">${text}</center>
+<center style="color:${esc(color)};font-family:Helvetica,Arial,sans-serif;font-size:${size}px;font-weight:${weight};">${esc(text)}</center>
 </v:roundrect>
 <![endif]--><!--[if !mso]><!-->`
 

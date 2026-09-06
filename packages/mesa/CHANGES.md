@@ -1,5 +1,275 @@
 # Changes — @frontierjs/mesa
 
+## 2026-09-06 — what a write through the watch proxy reports
+
+**[FJS-884](../../ISSUES.md#fjs-884), closed.** Four things, and one of them turned out to
+have no fix.
+
+**A symbol-keyed write and delete now reach the whole-object watch.** They fired nothing, where
+the same write with a string key wakes it. A symbol is not a change at a path — it cannot be a
+watch segment and reading one subscribes to nothing — but it is a change to the object, so it
+fires the node and its ancestors and nothing narrower.
+
+**A frozen nested object names its path.** The native message is `Cannot assign to read only
+property 'b' of object '#<Object>'`, which on a store of any size says that some `b` somewhere is
+read-only. It now says which, that the object is frozen, and keeps the original as `cause`.
+
+**A write from inside a derivation is warned about, not refused.** A memo is lazy, so a
+derivation written for its side effect stops the moment nothing reads it — silently. Svelte
+refuses this outright, but a write to the memo's own dependency is a handled case here that
+`_recompute` clears `dirty` before running for. Instrumented across mesa, sierra and ui first:
+nothing in this repo writes from inside a derivation at all.
+
+**`structuredClone` cannot be fixed, and now says so.** The get trap has to return a proxy or
+there is no reactivity below the first level, so `{...state}` hands back proxies and the clone
+throws. `unproxy()` is the answer, it works, and `VISION.md` mentioned it zero times — an answer
+nobody could find. Documented beside RULE 49 with the symbol rule.
+
+The first measurement of the symbol gap was wrong and worth recording: a bare `watchProxy` has no
+declared watches, so it fires for no key at all and the probe showed a gap that was not there.
+The comparison only means anything with `watchPath(p, '')` declared.
+
+## 2026-09-06 — three ways an attribute was written, and the one that was picked
+
+**[FJS-885](../../ISSUES.md#fjs-885), closed.**
+
+**Two `on:click` on one element now both fire.** A delegated handler is a property — `el.__click
+= fn` — so the second overwrote the first and it fired never. Only on that path: the
+non-delegated branch calls `addEvent`, which appends, so the same markup behaved differently
+depending on whether the event carried a modifier. `mergeEvents` already existed; the merge is
+emitted only for the second and later handler, so ordinary output is unchanged. Svelte attaches
+both and fires both, which is what the neighbouring path here already did.
+
+**A custom element handed an object receives the object.** `set_attribute` read a fixed HTML name
+list where the spread path next door asks the element. Narrowed to a non-primitive on a custom
+element that declares the property — the one case where an attribute cannot carry the value and
+the element has already answered by defining it. A string still goes to the attribute, so a
+`[foo="bar"]` selector keeps matching: Svelte prefers the property whenever one exists and had to
+force `spellcheck` and `translate` back to `setAttribute` for it
+([#12734](https://github.com/sveltejs/svelte/pull/12734)). Where it still stringifies it warns —
+but only when the result is literally `[object Object]`, so a `Date` is left alone.
+
+**`xlink:` and `xml:` are namespaces now, and the test for it is in the browser drive.**
+happy-dom normalizes the colon form into the namespace by itself, so under it the fix and its
+absence are indistinguishable — the first version of that test passed for the wrong reason. In
+real Chrome it is 4 red, and the three that pass are the controls, including an invented
+`foo:bar` prefix that must stay in no namespace.
+
+## 2026-09-06 — a template expression maps to the line it was written on
+
+**[FJS-943](../../ISSUES.md#fjs-943), closed.** The row was filed expecting the four passes that
+rewrite the module after `xBuild` to be made mapping-aware. They did not have to be.
+
+`_renderGroup` folds a run of `bindText` calls into one shared `render()` block and
+`_domTraversal` collapses a run of traversal declarations, so neither the line an expression was
+written on nor its text survives — there is nothing for an alignment to match. But a marker
+emitted **inside** the expression does survive, because those passes concatenate what they fold.
+It is read off the finished text and stripped.
+
+The markers are off by default, and the caller that asks for them is the one that strips them:
+they have to be read after the warning block and the HMR wrap have moved every line, so a compiler
+that stripped them itself would answer in coordinates nobody else uses.
+
+Two things had to be fixed to get there. A text node carried **no offset at all** and now does;
+and the first version recorded `reader.index`, which is the END of the text run, so every marker
+pointed one element to the right. An exact position beats an inferred one where both land on the
+same generated line.
+
+The end-to-end row is a real throw from inside `{explode(seed)}` through Node's own source-map
+support, asserting the interpolation's own line. 1 red with the marker removed.
+
+Attributes are deliberately not marked: `parseAttributes` reads a sub-reader over the tag, so an
+offset taken there is tag-relative and a marker built from it would point at the wrong line — the
+one outcome this mechanism exists to avoid. That is [FJS-948](../../ISSUES.md#fjs-948), and it is
+left undone rather than half-done, because the wiring was tried first and silently produced
+nothing, which reads from the outside exactly like a working feature.
+
+## 2026-09-06 — a rewritten declaration keeps its source line
+
+**[FJS-943](../../ISSUES.md#fjs-943), narrowed.** The map only covered lines that survived
+compilation unchanged, which left out most of a script: `let count = 0` becomes a `track()` call
+and shares no text with its source.
+
+A declaration carries a **name** into the generated binding, so the two are matched on the name
+instead of on their text — `let` to its signal, `$:` to its signal pair, `const` to its
+`trackDerived`, and an import to the line the emitter added a `;` to. That maps a declaration to
+where the declaration went, which is what a breakpoint on that line should stop at. Nothing was
+threaded through the four post-`xBuild` passes; the alignment is still computed against the
+finished text.
+
+Deliberately not a general expression mapping: a generated line that merely mentions `count` is
+not a candidate, because ten of them do and picking one is a guess. Ambiguity in either direction
+maps to nothing — a name declared twice, or one with two generated declaration sites.
+
+**The end-to-end row passed with the tier removed at first**, because `const answer = explode()`
+over nothing reactive is emitted verbatim and tier 1 mapped it. It measures the tier only once the
+`const` depends on a `let`. 2 red now, one of them a real stack through Node's own consumer.
+
+What remains is template expressions — no name to match, no surviving text — which is the half
+that would need threading.
+
+## 2026-09-06 — a stack frame names the .mesa file
+
+**[FJS-874](../../ISSUES.md#fjs-874).** Every `transform` returned `map: null` and Vite
+synthesizes nothing, so a TypeError in a handler named a generated line in a file the developer
+cannot open.
+
+The map is an **alignment against the finished text**, not a record of what was emitted, and the
+code forced that: `xBuild` returns a string and four more passes rewrite it — one of them
+`hoistTemplates`, which moves declarations — so a position recorded during emit names a line that
+no longer holds that code. Such a map is not coarse, it is wrong, and a wrong map is worse than
+none: the debugger stops confidently on the wrong line. Svelte carries open reports of that shape
+([#10635](https://github.com/sveltejs/svelte/issues/10635),
+[#16615](https://github.com/sveltejs/svelte/issues/16615)). Computing it last, against the final
+string, is immune to every pass by construction — the warning block and the HMR wrap included.
+
+A source line is mapped only when it survived unchanged and is unique in both directions. A
+rewritten line gets nothing, and an unmapped line is honest. What survives is most of what matters
+at runtime: function bodies, handlers, imports, and the expressions in them.
+
+Graded through **Node's own consumer**, because a decoder written here would agree with the
+encoder here about a map no real tool can read. `node --enable-source-maps` rewrites a real stack
+from a real mount:
+
+```
+Error: boom: from the body
+    at explode (…/Widget.mesa:3:5)
+    at trigger (…/Widget.mesa:7:5)
+```
+
+with the negative control that those frames must not name the generated module. The VLQ encoder
+is graded against the spec's own examples. `map` had never been asked about by any of the four
+plugin suites; it has three rows there now. What the map does not cover is
+[FJS-943](../../ISSUES.md#fjs-943).
+
+## 2026-09-05 — a block whose every branch is slotted belongs to that slot
+
+**[FJS-607](../../ISSUES.md#fjs-607).** `slot=` is an attribute on an element, so
+`{#if cond}<Button slot="actions" />{/if}` put the whole block in the DEFAULT slot. A component
+branching on `$slots.default` — `<Form>` deciding whether to generate its fields — then turned
+itself off: every field gone, the form still submitting, the page looking like a component that
+failed to load.
+
+A block whose every branch is slotted with one name now routes to that slot, decided where the
+children are already partitioned, with `slot=` stripped from the elements inside. Where a block
+cannot belong anywhere — branches naming different slots, or slotted content beside unslotted —
+it still goes to default and the compiler says which of the two it is, because guessing between
+them puts content in a slot nobody named.
+
+Conservative by construction: an unrecognized node answers `null`, which is the old behavior, so
+a block kind added later routes nowhere rather than wrongly. The walk reads `elsePart` as well as
+`parts` — `{#if}` keeps its else outside `parts`, and reading only `parts` sees one branch of a
+two-branch block and calls it unanimous, which is what the first version of this did.
+
+5 red. The two `@frontierjs/ui` rows that pinned the broken behavior went red as designed — their
+own comment said settling this would turn them — and now assert the form generates.
+
+## 2026-09-05 — a component that cannot render its children says so
+
+**[FJS-926](../../ISSUES.md#fjs-926).** `<Button>Go</Button>` against a component whose label is a
+`text` prop rendered an empty button, and nothing said so at any layer.
+
+Graded against the slot names the child's own template **declares**, collected where they are
+emitted and handed to `makeSlots` with the component name. No import resolution, no deferral, no
+flush — both facts meet in the child, at construction.
+
+The design is the finding, and the alternative is executed rather than argued. Svelte grades
+against what has been **rendered** ([PR #4501](https://github.com/sveltejs/svelte/pull/4501)) and
+has answered the same false positive twice: a `<slot>` inside an `{#if}` has rendered nothing when
+the check runs ([#4546](https://github.com/sveltejs/svelte/issues/4546), reopened as
+[#6325](https://github.com/sveltejs/svelte/issues/6325)). Emulating that grading here turns all
+three no-warn controls red — including an ordinary component that renders its children, since
+nothing has rendered yet — and the accordion whose `<slot>` sits behind `{#if expanded}` stays
+wrong even with deferral. Their whitespace false positive cannot arise: whitespace-only children
+compile to `null`.
+
+A warning rather than a refusal, once per component-and-slot. Not gated on a dev build, which is
+the deliberate departure: the check is a set lookup against a static list, and a dropped child is
+a bug in the server render an email goes out on too.
+
+`@frontierjs/email-kit`'s own guard still fires beside it, naming the exact prop — knowledge Mesa
+cannot derive. Folding them is [FJS-938](../../ISSUES.md#fjs-938).
+
+## 2026-09-05 — an author's comment survives a static render
+
+**[FJS-906](../../ISSUES.md#fjs-906).** The static renderer strips Mesa's comment anchors, and it
+told them apart by shape: a named anchor is space-padded, which is also what an ordinary
+hand-written comment looks like. A comment put through `{@html}` becomes a real Comment node with
+exactly that shape, so an author's markup lost it every time.
+
+Anchors are now `$`-prefixed — `<!--$ name -->` — and the prefix is the whole of the test. A node
+property cannot carry this: the named anchors are written into the compiled template STRING and
+become Comment nodes by parsing, never by `createComment`, so there is nothing to mark where they
+are made.
+
+Measured before deciding. With `keepAnchors` on, a real render leaves `<!---->`, `<!--mesa-root-->`
+and the named form — and the named form is emitted only under `debug && debugLabel`, so in an
+ordinary build the space-padded rule was stripping author content and nothing else. Three of five
+red; the two controls are an `[if mso]` conditional through `{@html}`, which survives, and a
+deliberate `<!--$ … -->` from an author, which does not — the prefix is a claim on the namespace.
+
+The empty form went with it. `<!---->` was left recognized-by-absence at first; Svelte's
+[#14323](https://github.com/sveltejs/svelte/issues/14323) is the same defect from the hydration
+side — a caller renders a component to a string, splices it through `{@html}`, and the string is
+full of `<!---->` — and the fix proposed there is the one taken here: mark your own and ignore
+every other comment. Every anchor is now `$`-prefixed, `ANCHOR_DATA` in `runtime.js` is the one
+statement of it, and `render.js` is its only reader.
+
+The 22 tests that broke on that were a hand copy of the rule in `render-ssr.test.js` — restating
+the SHAPE rather than reading the marker, which is how a rule that also matched an author's
+comment came to have two origins. It reads `ANCHOR_DATA` now.
+
+The `undefined` in a debug label came out of the same measurement and is
+[FJS-936](../../ISSUES.md#fjs-936).
+
+## 2026-09-05 — a `$:` in a function body is refused
+
+**[FJS-877](../../ISSUES.md#fjs-877).** RULE 1 has always said `$:` is top-level only — *never
+inside functions, blocks, or callbacks* — and nothing enforced it. Pass 1 walks `ast.body`, so a
+nested `$:` was never visited and reached the output as a plain JavaScript label wrapping a
+one-shot assignment: right on the first call, stale after it, and the page still renders a
+plausible number.
+
+An error rather than a warning, and the cost was measured before the choice: every `.mesa` in the
+workspace, compiled through the real compiler with the check armed, is **0 of 397**. The scan
+proves a planted nested `$:` is refused in the same run, because a scan that finds nothing and a
+scan that sees nothing produce the same output — the first version of it did not `await` an async
+`compile` and reported a zero it had not earned.
+
+Four refusals, each paired with the legitimate form one line away: a top-level `$:`, a top-level
+`$: { }` whose body is the label's own, and an ordinary JavaScript label in a function, which is
+not a Mesa label at all. RULE 1 now says enforced.
+
+## 2026-09-05 — pushProps writes own keys only
+
+**[FJS-905](../../ISSUES.md#fjs-905).** The sibling of FJS-878, one function down: `pick` walked
+a props object's prototype and painted inherited keys onto the element, and `pushProps` had the
+same `for…in`. It cannot reach the DOM — each name is looked up in the child's prop registry —
+so an inherited key overwrote a child's OWN declared prop instead, which is quieter and a
+different severity. A class instance, or `Object.create(defaults)`, passed as props is the shape.
+
+Driven through the real registry rather than a stub, because the arrangement is what the
+compiler emits around a child and a hand-made registry would test the map and not the walk.
+Two red, and the third assertion is an own key still writing — a walk that dropped everything
+passes both refusals.
+
+## 2026-09-05 — the plain-text fallback stopped running words together
+
+**[FJS-932](../../ISSUES.md#fjs-932).** `htmlToText` gave a block element a newline when it
+opened and nothing when it closed, which is enough only while every block is followed by another
+block — content after a `</p>` that opens no block of its own joined the paragraph. And **table
+parts were not block elements at all**, which is the shape that matters: an email kit builds
+everything from tables, so a document could have no boundary anywhere in it. An `<Email>` with a
+paragraph of body text and a button below it derived `"Body wordsGo (https://x.test/go)"`.
+
+Closing tags now emit a newline, and `table`/`tbody`/`thead`/`tfoot`/`tr`/`td`/`th` do too —
+closing only, since source indentation already puts a newline in front of the opening one.
+Three assertions, all red against the original. One of them is that two paragraphs stay one
+blank line apart, which the function's own docstring had promised all along and the old
+behavior did not do.
+
+Found by an audit of `@frontierjs/email-kit`, which is the only consumer of `result.text`.
+
 ## 2026-09-05 — a `javascript:` URL is refused where it navigates
 
 `FJS-858`, ruled by `FJS-D217`.

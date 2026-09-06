@@ -127,12 +127,18 @@ export function resetRenderer() {
 // the same data.
 
 // An anchor by its comment data. `mesa-island` markers and `[if mso]`
-// conditionals have no leading space and survive — the first is read by a
+// conditionals are not `$`-prefixed and survive — the first is read by a
 // loader, the second is what an email template emitted `{@html}` for.
+//
+// Every form is `$`-prefixed — `<!--$-->` for a block anchor, `<!--$ name -->`
+// for a named one — and the prefix is the whole of how it is recognized. It used to be recognized by being space-padded, which is also
+// what an ordinary hand-written comment looks like: a comment an author put
+// through `{@html}` becomes a real Comment node with exactly that shape, so
+// their markup lost it on every static render (`FJS-906`). Nothing marks a
+// parsed node, and the named anchors come out of template STRINGS rather than
+// `createComment`, so a property on the node cannot carry this.
 function _isAnchorComment(data) {
-  if (data === 'mesa-root' || data === '') return true
-  // A named anchor is written `<!-- name -->`, so its data is space-padded.
-  return data.length >= 2 && data.startsWith(' ') && data.endsWith(' ')
+  return data === 'mesa-root' || data.startsWith('$')
 }
 
 // A hand walk rather than a TreeWalker: happy-dom changed what `SHOW_COMMENT`

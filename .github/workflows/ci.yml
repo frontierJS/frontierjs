@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The typecheck ratchet compares against the merge base, which needs
           # real history — a shallow clone has no merge base to find.
@@ -39,10 +39,15 @@ jobs:
           bun-version: 1.3.11
 
       # packages/frontierjs-vscode is the one package that runs on npm — its own
-      # scripts shell out to `npm run build`.
-      - uses: actions/setup-node@v4
+      # scripts shell out to `npm run build`, and `scripts/ci.mjs` is plain node.
+      #
+      # 24 is the ACTIVE LTS and is the floor `create-frontier` and `jetty`
+      # declare. Testing above the floor leaves the version users actually
+      # install untested, which is the direction that matters here: `npm create
+      # frontier` runs on a stranger's node, not on this runner's.
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
 
       # packages/css drives a real headless Chrome and sierra's island
       # verification does too. The runner image ships one; naming it here means
