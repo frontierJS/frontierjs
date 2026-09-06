@@ -41,8 +41,14 @@ describe('the schema fragment', () => {
     // `drivers/inapp.ts` puts in its create call, so a rename here that the
     // driver does not follow is the failure this test is for.
     const out    = parse('database main { path "./x.db" }\n' + readFileSync(join(root, FRAGMENT), 'utf8'))
-    const model  = out.schema.models.find(m => m.name === 'Notification')
-    const fields = new Set(model.fields.map(f => f.name))
+    // The parser is plain JS with no .d.ts and infers `models` as never[], so
+    // the shape this test reads is named on the CONTAINER. Annotating the find
+    // callback instead does not work — the element type is what is empty.
+    type Named   = { name: string }
+    const models = out.schema!.models as Array<Named & { fields: Named[] }>
+    const model  = models.find(m => m.name === 'Notification')
+    expect(model, 'the fragment declares model Notification').toBeDefined()
+    const fields = new Set(model!.fields.map(f => f.name))
 
     for (const column of ['userId', 'type', 'data', 'contextType', 'contextId'])
       expect(fields.has(column)).toBe(true)
@@ -55,6 +61,6 @@ describe('the schema fragment', () => {
     const text = readFileSync(join(root, FRAGMENT), 'utf8')
     const gate = text.match(/@@gate\("([\d.]+)"\)/)?.[1]
     expect(gate).toBe('0.8.4.8')
-    expect(gate.split('.')[1]).not.toBe('9')
+    expect(gate!.split('.')[1]).not.toBe('9')
   })
 })
