@@ -18,6 +18,11 @@
 import { test, expect, describe } from 'bun:test'
 import { parse } from '../src/core/parser.js'
 import { createClient } from '../src/core/client.js'
+import { createTestEnv } from '../src/testing.js'
+import { generateTypeScript } from '../src/tools/typegen.js'
+import { VIEW_REFUSED } from '../src/core/client.js'
+import { generateJsonSchema } from '../src/jsonschema.js'
+import { levelPasses } from '@frontierjs/toolbelt/gate'
 
 const errs = (src: string) => parse(src).errors
 
@@ -303,5 +308,217 @@ describe('a view offers every read a model does, and no write', () => {
     expect(typeof view.cursorFor).toBe('function')
     const row = (await view.findMany({}))[0]
     expect(() => view.cursorFor(row, [{ kind: 'asc' }])).toThrow(/total order/i)
+  })
+})
+
+// ─── the affordance a browser is handed ──────────────────────────────────────
+//
+// `FJS-999`. The generated JSON Schema walked `schema.models` and never
+// `schema.views`, so `x-gate` was emitted for no projection at all and
+// `can('read', 4)` answered YES against a gate of 5. Not a hole — Invariant 6
+// makes the client's answer an affordance and the boundary grades again, which
+// the pair at the bottom of this block asserts — but it is the affordance's
+// whole job, and without it a report screen shows a caller who may not read it
+// an EMPTY TABLE instead of a reason.
+//
+// Every claim here is PAIRED with the same question asked of a model, because
+// a generator that emitted nothing for either would satisfy any test that only
+// looked at the view.
+
+describe('a view reaches the generated JSON Schema', () => {
+  const SRC = `
+    database main { path ":memory:" }
+    model Order { id Int @id @default(autoincrement())  total Int  @@gate("1") }
+    view revenueByStatus {
+      status String
+      orders Int
+      total  Int?
+      ${SQL}
+      @@gate("5")
+    }
+  `
+  const defs = (mode = 'create') =>
+    generateJsonSchema(parse(SRC).schema, { mode }).$defs
+
+  test('the projection has a definition of its own, beside the models', () => {
+    expect(Object.keys(defs())).toContain('revenueByStatus')
+    expect(Object.keys(defs())).toContain('Order')
+  })
+
+  test('its declared gate crosses, the way a model\'s does', () => {
+    expect(defs().revenueByStatus['x-gate'].read).toBe(5)
+    expect(defs().Order['x-gate'].read).toBe(1)
+  })
+
+  test('the three writes are LOCKED, whatever the gate string said', () => {
+    // A view refuses every write at the Data boundary for every caller and for
+    // asSystem() alike, which is what 9 means on the scale. Emitting the
+    // declared 5 across all four would tell a screen an ADMINISTRATOR may
+    // create one — false at every level. The model beside it keeps its own.
+    const g = defs().revenueByStatus['x-gate']
+    expect([g.create, g.update, g.delete]).toEqual([9, 9, 9])
+    expect(levelPasses(g.create, 8)).toBe(false)
+    const m = defs().Order['x-gate']
+    expect([m.create, m.update, m.delete]).toEqual([1, 1, 1])
+  })
+
+  test('every column is readOnly and nothing is required', () => {
+    const d = defs().revenueByStatus
+    expect(Object.values(d.properties).every((p: any) => p.readOnly)).toBe(true)
+    expect(d.required).toBeUndefined()
+    // The control: the model's own columns are not readOnly, so this is a
+    // statement about projections rather than about the generator.
+    expect(defs().Order.properties.total.readOnly).toBeUndefined()
+    expect(defs().Order.required).toEqual(['total'])
+  })
+
+  test('it says it is a projection, which readOnly columns alone do not', () => {
+    expect(defs().revenueByStatus['x-litestone-view']).toBe(true)
+    expect(defs().Order['x-litestone-view']).toBeUndefined()
+  })
+
+  test('the create and update modes are the same document', () => {
+    // What makes a view cost the browser one definition rather than two:
+    // `diffSchemaModes` finds nothing to patch.
+    expect(defs('update').revenueByStatus).toEqual(defs('create').revenueByStatus)
+  })
+
+  test('an ungated view in an ungated schema emits no read level', () => {
+    // An unknown affordance is permissive (Invariant 6), so the key stays
+    // ABSENT rather than being invented — while the writes are still locked.
+    const d = generateJsonSchema(
+      parse(`model A { id Int @id }\nview v { a String ${SQL} }`).schema).$defs.v
+    expect('read' in d['x-gate']).toBe(false)
+    expect(d['x-gate'].create).toBe(9)
+  })
+
+  test('and the boundary refuses the caller the affordance refuses', async () => {
+    // The pair the affordance is only ever a saving against. A schema-side
+    // answer that had drifted from the boundary would pass every row above.
+    const db = await createClient({ schema: SRC, resolveFrom: import.meta.dir })
+    expect(defs().revenueByStatus['x-gate'].read).toBe(5)
+    await expect(db.$setAuth({ id: 'u1', role: 'member' }).revenueByStatus.findMany())
+      .rejects.toThrow()
+    // The control, one level up: the caller the affordance would have let
+    // through is the caller the boundary lets through.
+    await expect(db.$setAuth({ id: 'a1', isAdmin: true }).revenueByStatus.findMany())
+      .resolves.toBeDefined()
+  })
+})
+
+// ─── the executed checks, over a projection ──────────────────────────────────
+//
+// `verifyGateLadder` walks every gated declaration, and a view is one. Its
+// WRITES are not on the ladder — a projection refuses create, update and
+// delete for every caller and for `asSystem()` alike, so no level grades them
+// — and leaving them in made the checker build a fixture for a thing with no
+// table and report *no fixture could be built, so the gate was never asked* 27
+// times per view. A checker that emits 27 unaskable rows is one people stop
+// reading.
+
+describe('a view on the ladder is a READ and nothing else', () => {
+  const SCHEMA = `
+model Order {
+  id    String @id @default(uuid())
+  total Int
+  @@gate("2")
+}
+
+view revenue {
+  total Int
+  @@sql("SELECT SUM(total) AS total FROM [order]")
+  @@gate("2")
+}
+`
+
+  test('the ladder is clean, and the read rows are what it asked', async () => {
+    const env = await createTestEnv({ schema: SCHEMA })
+    expect(await env.verifyGateLadder()).toEqual([])
+    // The control: the read half really did run. A filter that dropped the
+    // view entirely also returns [], and would say nothing about the gate a
+    // projection DOES carry.
+    expect(await env.verifyGateLadder({ ops: ['read'] })).toEqual([])
+  })
+
+  test('and the model beside it is still graded on all four', async () => {
+    // The other control. Removing the write rows must not remove anybody
+    // else's — a filter reading the wrong flag would empty the whole ladder
+    // and every assertion above would still pass.
+    const env = await createTestEnv({ schema: SCHEMA })
+    const bad = await env.verifyGateLadder({ against: {
+      ...env.schema,
+      models: env.schema.models.map((m: any) =>
+        m.name === 'Order'
+          ? { ...m, attributes: m.attributes.map((a: any) =>
+              a.kind === 'gate' ? { ...a, value: '5' } : a) }
+          : m),
+    } })
+    // Order really reads at 2, so a ladder built against a gate of 5 has to
+    // disagree — which is only possible if the model's rows were asked.
+    expect(bad.length).toBeGreaterThan(0)
+    expect(bad.every((r: any) => r.model === 'Order')).toBe(true)
+  })
+})
+
+// ─── the generated .d.ts ─────────────────────────────────────────────────────
+//
+// `typegen` walked `schema.models` and never `schema.views`, so a declared
+// projection was absent from `schema.d.ts` and `db.<view>` was a type error in
+// the one place a generated file is supposed to help. The same walk as
+// `FJS-999`, one artefact along — and it stayed invisible in both apps that
+// have a view because each reaches the client through an `any`.
+
+describe('a view reaches the generated types', () => {
+  const SRC = `
+model Order {
+  id     String @id @default(uuid())
+  total  Int
+  @@gate("2")
+}
+
+view revenue {
+  status String
+  total  Int?
+  @@sql("SELECT status, SUM(total) AS total FROM [order] GROUP BY status")
+  @@gate("2")
+}
+`
+  const ts = () => generateTypeScript(parse(SRC).schema)
+
+  test('the projection has a Row and a Where, and the model still has four', () => {
+    const out = ts()
+    expect(out).toContain('export interface Revenue {')
+    expect(out).toContain('export interface RevenueWhere extends WhereBase {')
+    // Absent by design: there is nothing to create and nothing to update.
+    expect(out).not.toContain('export interface RevenueCreate')
+    expect(out).not.toContain('export interface RevenueUpdate')
+    // The control — the model beside it is unchanged.
+    expect(out).toContain('export interface OrderCreate')
+    expect(out).toContain('export interface OrderUpdate')
+  })
+
+  test('the client reaches it by its declared name, as a ViewClient', () => {
+    expect(ts()).toContain('readonly revenue: ViewClient<Revenue, RevenueWhere>')
+    expect(ts()).toContain('readonly order: TableClient<Order,')
+  })
+
+  test('the refused set is litestone\'s own, not a copy', () => {
+    // The assertion that keeps the two from parting company: every verb the
+    // client refuses is in the emitted union, and nothing else is.
+    const union = ts().split('export type ViewRefusedVerb =')[1].split('export type ViewClient')[0]
+    const emitted = [...union.matchAll(/'([a-zA-Z]+)'/g)].map(m => m[1]).sort()
+    expect(emitted).toEqual([...VIEW_REFUSED].sort())
+  })
+
+  test('an optional view column is optional in the Row', () => {
+    // A view declares its own nullability and nothing infers it from @@sql.
+    expect(ts()).toMatch(/export interface Revenue \{[^}]*total\?: number \| null/)
+  })
+
+  test('a schema with no view emits neither the section nor the type', () => {
+    // The delete test: nothing is paid for by a schema that declares none.
+    const out = generateTypeScript(parse('model Order { id Int @id  total Int }').schema)
+    expect(out).not.toContain('ViewClient')
+    expect(out).not.toContain('ViewRefusedVerb')
   })
 })

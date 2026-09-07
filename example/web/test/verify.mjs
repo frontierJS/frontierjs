@@ -28,6 +28,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { requireServers } from './lib/preflight.mjs'
+import { results, report } from './lib/report.mjs'
 
 const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
 const API    = process.env.API_URL ?? 'http://localhost:8110'
@@ -249,8 +250,7 @@ async function signIn(who, level) {
 
 // ─── the drive ────────────────────────────────────────────────────────────
 
-const got = {}
-const t = (label, value) => { got[label] = value }
+const { got, t } = results()
 
 // The price this run raises the PRO plan to, minted below and read by the
 // assertions at the bottom. Declared here because `expected` is built outside
@@ -1287,17 +1287,4 @@ const expected = {
 // recording no change (`FJS-530`).
 expected['planDetail.storedCents'] = repriceCents
 
-let failed = 0
-for (const [key, want] of Object.entries(expected)) {
-  const have = got[key]
-  const ok = JSON.stringify(have) === JSON.stringify(want)
-  if (!ok) failed++
-  console.log(`${ok ? '  ok  ' : '  FAIL'} ${key}`)
-  if (!ok) {
-    console.log(`         want ${JSON.stringify(want)}`)
-    console.log(`         have ${JSON.stringify(have)}`)
-  }
-}
-
-console.log(failed ? `\n${failed} assertion(s) failed` : `\nall ${Object.keys(expected).length} assertions passed`)
-process.exit(failed ? 1 : 0)
+process.exit(report(got, expected))

@@ -944,3 +944,6 @@ CREATE TABLE IF NOT EXISTS "job_run" (
   FOREIGN KEY ("jobId") REFERENCES "job" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_job_run_jobId" ON "job_run" ("jobId");
+
+CREATE VIEW IF NOT EXISTS "fleetByProvider" AS
+SELECT workspaceId, providerKind, region, COUNT(*) AS servers, SUM(COALESCE(json_extract(plan, '$.vcpu'), 0)) AS vcpu, SUM(COALESCE(json_extract(plan, '$.ramGb'), 0)) AS ramGb FROM server WHERE deletedAt IS NULL GROUP BY workspaceId, providerKind, region;

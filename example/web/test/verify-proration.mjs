@@ -26,13 +26,13 @@
 import { db }         from '../../api/src/core/db.ts'
 import { prorate, changePlan, issueInvoice, periodLines } from '../../api/src/domain/billing'
 import { allocate }   from '@frontierjs/toolbelt/units'
+import { results, report } from './lib/report.mjs'
 
 const sys = db.asSystem()
 const RUN = String(Date.now()).slice(-6)
 const DAY = 24 * 60 * 60 * 1000
 
-const got = {}
-const t = (label, value) => { got[label] = value }
+const { got, t } = results()
 
 // ─── The pure half ────────────────────────────────────────────────────────
 
@@ -248,14 +248,4 @@ const expected = {
   'noop.writesNoDocument': true,
 }
 
-let failed = 0
-for (const [key, want] of Object.entries(expected)) {
-  const ok = got[key] === want
-  if (!ok) failed++
-  console.log(`${ok ? '  ok  ' : '  FAIL'} ${key}`)
-  if (!ok) console.log(`         want ${want}   have ${JSON.stringify(got[key])}`)
-}
-console.log(failed
-  ? `\n${failed} assertion(s) failed`
-  : `\nall ${Object.keys(expected).length} assertions passed`)
-process.exit(failed ? 1 : 0)
+process.exit(report(got, expected))

@@ -29,7 +29,8 @@ src/inflect/         How a name is spelled — number, shape, and the reader.
 src/cron/            what a five-field cron expression ADMITS — a Set per
                      field. Caravan and junction's `app.scheduler` each had a
                      parser and they were broken differently, so one expression
-                     named two schedules (`FJS-767`). Which clock, and when a
+                     named two schedules (`FJS-767`). Four fields AND and the
+                     two date fields OR (`FJS-1008`). Which clock, and when a
                      timer looks, stays with each scheduler: `cronMatches` takes
                      clock parts rather than a `Date`. Ships a `.d.ts` — both
                      callers are TypeScript
@@ -172,6 +173,14 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
   ASSIGNED it. `hookContext` tracks that; `answered(ctx)` reports it. A context
   from anywhere else answers `false`, so a caller that has not adopted it is
   never told its pipeline broke.
+- **A method NAME is a map key, so both lookups are own-key.** `p['constructor']`
+  answers `Object` and `runHooks` iterates it — `TypeError: list is not
+  iterable`, on the pipeline — while `toString` and `valueOf` fail the other way
+  and silently run nothing; `mergeHooks` threw whenever one side declared such a
+  name and the other did not (`FJS-1003`). Its writes are `defineProperty` for
+  `/json`'s reason too. **Every spec row names one of the six inherited members
+  specifically**: an ordinary method name behaves correctly either way, so a row
+  using one grades nothing.
 - **The WORDS have one owner here and the Error class does not.** Both callers
   throw a `ResourceHookError` of their own type — each package's errors are its
   own surface, and this package exports only pure functions (`FJS-D26`). What
@@ -205,6 +214,21 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
   is true for them and `minorUnits` throws, because answering 2 would let
   `toMinor` invent a hundredth of a troy ounce. A typo and a metal are different
   refusals with different ways out.
+- **Cron's two date fields OR, and only when BOTH are restricted.** Day of month
+  and day of week are OR'd with each other and AND'd with the other three, so
+  `0 0 1 * mon` is the first of the month AND every Monday. It reads as a bug
+  and it is the grammar; under a uniform five-field AND it fired only when the
+  1st happened to BE a Monday, about one month in seven, which is a schedule
+  that runs and looks alive (`FJS-1008`). **Restricted means *not written as a
+  star***, which is cron's own test — the field's FIRST CHARACTER — so `0-6`
+  names every day and is still restricted, and `0 0 1 * 0-6` fires daily.
+  Reading set COMPLETENESS instead is tidier and diverges on exactly that one
+  line, silently, which is what the familiarity adjudication rules out.
+- **A cron name belongs to its FIELD, never to the line.** Resolving day names
+  over the whole expression made `0 0 * sat *` mean June — six of the seven sit
+  inside 1-12, so a misplaced name became a number rather than an error
+  (`FJS-1009`). Each field carries its own table, which is also why month names
+  work at all.
 - **An unrecognised 3-letter code does NOT throw, and the separator is a
   no-break space.** Intl accepts any well-formed code and prints it where the
   symbol goes, joined with U+00A0. Only a malformed code (fewer than three
@@ -217,11 +241,20 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
   a price gains two zeroes. `fromMinor`/`toMinor` are the crossing, and
   `roundMinor`/`allocate` are on the other side of it: everything they touch is
   minor units, and neither takes a currency at all.
-- **`roundMinor` throws where every formatter here answers `''`.** Not a number
-  is not zero either way, but display can say nothing and arithmetic cannot: a
-  silent 0 in a total is a receipt that balances and is wrong. `allocate`
-  refuses for the same reason rather than splitting evenly when the ratios sum
-  to zero — a guess that adds up is the worst kind.
+- **Not a number gets THREE answers here, one per surface, and they are not an
+  oversight.** `Number(null)`, `Number('')` and `Number([])` are all 0, so every
+  function has to ask before it divides — `asNumber` is the one private owner of
+  *is this a number at all*. What each does about the answer is decided by what
+  a mistake destroys. A **formatter** answers `''`: display can say nothing.
+  **`fromMinor`** answers NaN, which its sink `formatMoney` turns into `''`, so
+  *we do not know* reaches the cell rather than rendering `$0.00` — and a throw
+  would take a screen down over one missing amount. **`toMinor` and
+  `roundMinor` throw**: those are the write and the arithmetic, and a silent 0
+  is a free order or a receipt that balances and is wrong (`FJS-1011`). The
+  CURRENCY code is strict on every one of them, because a typo there is wrong by
+  a factor of a hundred whichever direction it is going. `allocate` refuses for
+  the same reason rather than splitting evenly when the ratios sum to zero — a
+  guess that adds up is the worst kind.
 - **`allocate` has no `scale` and no currency, and that is not an omission.**
   The smallest thing a split can hand out is one of whatever `amount` is counted
   in, which the caller decided by holding an integer. `FJS-D154` was filed with
@@ -313,9 +346,13 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
   exported so the composition has one spelling. The irregular table is
   whole-word only for that reason: teaching it to reach inside `audit_index`
   would rename a table in every schema that already has one.
-- **`directives` is load-bearing the same way `inflect` is.** A `$` key it does
-  not name is not refused — it falls through as a FILTER, so the Data boundary
-  reports a column nobody declared and the cause is three layers away. The kit
+- **`directives` is load-bearing the same way `inflect` is.** A `$` key it does not name no longer falls through as a
+  FILTER — that was `FJS-988`, where the Data boundary reported a column nobody
+  declared three layers from the cause. **The kit REPORTS the unknown names and
+  the boundary refuses**: `unknownDirectives()` is the report, junction's bridge
+  answers 400 naming them, and sierra's router drops, because a router has
+  nowhere to put an error a person could act on (`FJS-D237`). The list a refusal
+  prints is derived from this table, never copied. The kit
   holds the read direction only; junction's browser client writes `$` names from
   a typed `QueryDirectives` on two paths that share nothing, and junction's own suite
   asserts every name it emits is one this table strips. Adding a directive means

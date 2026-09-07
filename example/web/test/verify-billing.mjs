@@ -36,13 +36,13 @@ import { sweepRenewals }   from '../../api/src/jobs/renew-subscriptions.job.ts'
 import { renewSubscription } from '../../api/src/jobs/renew-subscription.job.ts'
 import { dunSubscriptions }  from '../../api/src/jobs/dun-subscriptions.job.ts'
 import { occurrenceKey }   from '@frontierjs/toolbelt/history'
+import { results, report } from './lib/report.mjs'
 
 const sys = db.asSystem()
 const RUN = String(Date.now()).slice(-6)
 const DAY = 24 * 60 * 60 * 1000
 
-const got = {}
-const t = (label, value) => { got[label] = value }
+const { got, t } = results()
 
 /** The sweep's dispatcher, recording rather than queueing. See the header. */
 function recorder() {
@@ -398,14 +398,4 @@ const expected = {
   'boundary.itIsPickedUpAtTheNextOne': true,
 }
 
-let failed = 0
-for (const [key, want] of Object.entries(expected)) {
-  const ok = got[key] === want
-  if (!ok) failed++
-  console.log(`${ok ? '  ok  ' : '  FAIL'} ${key}`)
-  if (!ok) console.log(`         want ${want}   have ${JSON.stringify(got[key])}`)
-}
-console.log(failed
-  ? `\n${failed} assertion(s) failed`
-  : `\nall ${Object.keys(expected).length} assertions passed`)
-process.exit(failed ? 1 : 0)
+process.exit(report(got, expected))

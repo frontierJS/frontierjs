@@ -47,11 +47,11 @@ const RUN  = Date.now().toString(36).slice(-6).toUpperCase()
 const REF  = `ORD-N${RUN}`
 
 import { requireServers } from './lib/preflight.mjs'
+import { results, report } from './lib/report.mjs'
 
 await requireServers([['api (bun run api)', `${API}/api/health`], ['the mail sink', `${SINK}/outbox`]])
 
-const got = {}
-const t = (label, value) => { got[label] = value }
+const { got, t } = results()
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
 async function until(fn, ms = 15_000) {
@@ -354,17 +354,4 @@ const expected = {
   'inbox.servesOneMessageRaw': { status: 200, isHtml: true, isTheMail: true, missing: 404 },
 }
 
-let failed = 0
-for (const [key, want] of Object.entries(expected)) {
-  const have = got[key]
-  const ok = JSON.stringify(have) === JSON.stringify(want)
-  if (!ok) failed++
-  console.log(`${ok ? '  ok  ' : '  FAIL'} ${key}`)
-  if (!ok) {
-    console.log(`         want ${JSON.stringify(want)}`)
-    console.log(`         have ${JSON.stringify(have)}`)
-  }
-}
-
-console.log(failed ? `\n${failed} assertion(s) failed` : `\nall ${Object.keys(expected).length} assertions passed`)
-process.exit(failed ? 1 : 0)
+process.exit(report(got, expected))

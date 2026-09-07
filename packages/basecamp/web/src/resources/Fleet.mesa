@@ -1,0 +1,25 @@
+<script module>
+  // src/resources/Fleet.mesa — the Resource layer, over a PROJECTION.
+  //
+  // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18).
+  // No markup: everything is module scope, which is what <script module> means.
+  //
+  // **Named for its service noun, singularised** (invariant 19's second half,
+  // for a resource over no model). The service is `fleet` and the declaration
+  // is `view fleetByProvider` — a projection is named like an accessor, so
+  // there is no PascalCase name for the tree to carry and `model:` says which
+  // declaration this is.
+  //
+  // **No markup half, and there cannot be one.** Invariant 18 makes the markup
+  // a model's default FORM, and a projection has nothing to write to: every
+  // write verb on a view refuses by name at the Data boundary, and the service
+  // declares `methods: 'readOnly'` so the router answers 405 before that.
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  // `idField: null` is a STATEMENT, not a default being skipped: a projection
+  // declares columns and no key, so there is no row identity to hold. The store
+  // keeps the list as it arrives and `load()` replaces it wholesale, which is
+  // what a view IS — its rows move when the fleet does, never one at a time.
+  // Bound to `id` instead, the store correctly drops every row it cannot place.
+  export const fleet = createResource('fleet', { model: 'fleetByProvider', idField: null })
+</script>

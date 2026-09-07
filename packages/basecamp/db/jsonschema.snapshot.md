@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-84 definitions · 50 models · 34 enums · 0 other
+85 definitions · 50 models · 1 view · 34 enums · 0 other
 ```
 
 ## Definitions
@@ -75,6 +75,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `HubConfig` | model |
 | `Notification` | model |
 | `NotificationPreference` | model |
+| `fleetByProvider` | view |
 | `VerificationPurpose` | enum |
 | `MetricType` | enum |
 | `AccountType` | enum |
@@ -1189,3 +1190,16 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `inApp` | `boolean` = `true` | — | — | — | — |
 
 **On create**: required — `userId`, `kind` · not accepted — `id`
+
+### `fleetByProvider`
+
+- view — read-only · gate `read:2 create:9 update:9 delete:9` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `workspaceId` | `string` | — | — | — | — |
+| `providerKind` | `string` | — | — | — | — |
+| `region` | `string` | — | — | — | — |
+| `servers` | `integer` | — | — | — | — |
+| `vcpu` | `integer` | — | — | — | — |
+| `ramGb` | `integer` | — | — | — | — |

@@ -1,5 +1,106 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-09-07 — `/cron` reads a crontab line the way a crontab does
+
+Three findings, all silent, all invisible to the specs that were there — 358
+passing before any of them and 370 after.
+
+**Day of month and day of week are OR'd when both are restricted** (`FJS-1008`).
+`cronMatches` ANDed all five fields, so `0 0 1 * mon` — the first of the month
+AND every Monday to every cron there is — fired here only when the 1st happened
+to BE a Monday, about one month in seven. That is `FJS-767`'s complaint in the
+kit written to end it, and it is silent in the worst direction: the schedule
+registers, lists in `jobs.snapshot.md` and RUNS, so it looks alive. § IV
+*familiarity vs. precision* — nothing was being preserved, since the AND had no
+user and was an oversight rather than a deliberate difference, so the row applies
+in its first clause and the proven shape is stolen whole.
+
+**Restricted means *not written as a star*, and that is the same adjudication a
+second time.** Cron's test is the field's FIRST CHARACTER, so `0-6` names every
+day and is still restricted. Reading set COMPLETENESS instead was the first
+build here and it is tidier — it makes `*`, `0-6` and `0-7` one answer, which is
+what they mean — but it diverges from cron on `0 0 1 * 0-6`, which fires daily
+there and on the 1st under the tidy rule, with nothing said either way. A silent
+difference from the ecosystem's shape is precisely what that row rules out, so
+the test is the star and `parseCron` carries a `stars` set. Caravan imports
+`CronFields` now rather than restating it as a `Record`, or the flags would be
+dropped on the way through. `refuseImpossibleDate` runs only where the weekday
+is a star, because `0 9 31 2 mon` fires on the Mondays in February.
+
+**A name belongs to its field, not to the line** (`FJS-1009`). Every alphabetic
+run was replaced from one day table before any field was parsed, on the stated
+assumption that a name can only be a day — so `0 0 * sat *` meant June. Six of
+the seven day names land inside 1-12 and all six inside 1-31; only `sun`→0 was
+caught, by a bounds check that is not about this. Per-field tables fix the other
+half for free: **month names now work**, which every crontab admits and this
+refused. Any prefix of two letters or more naming exactly one entry, so `jun`
+resolves and `ju` is refused naming what it could be. A name is not a step.
+
+**An incomplete `parts` object is refused** (`FJS-1010`). `{ minute: 0 }` for
+`{ minutes: 0 }` was `has(undefined)` — false every minute there is. The five
+keys are read off `CRON_FIELDS` rather than restated.
+
+Measured by stubbing, against the 25 rows the spec now carries: the original
+file reds **9**, the OR alone 4, the star test replaced by set completeness 2,
+the per-field name tables 4, the parts guard 2. Every OR row is PAIRED with the
+shape that must still AND, since an unconditional OR matches far too much and
+would pass any test asking only about the two dates — and the completeness stub
+is the one that matters most, because a rule that is merely *documented* as the
+star test would red nothing.
+
+## 2026-09-07 — `/units` answers *not a number* per surface
+
+`toMinor` answered **0** for `undefined`, `null`, `''`, `[]` and `{}`, so a
+missing amount booked a free order (`FJS-1011`). `Number(null)` and `Number('')`
+are both 0 — the trap `formatMoney` guards by hand and names in its own comment —
+and the two functions on the `@money` path checked only finiteness, which cannot
+see any of them. The tell was in the callers: all three wrote the blank guard
+themselves, each differently.
+
+**The three surfaces answer differently on purpose**, § IV *ergonomics vs.
+strictness* resolved by what a mistake destroys. A formatter answers `''`.
+`fromMinor` answers NaN, which `formatMoney` turns into `''`, so *we do not know*
+reaches the cell instead of `$0.00` — and a throw would take a screen down over
+one nullable column. `toMinor` throws, like `roundMinor`: it is the write side.
+The currency CODE stays strict on all of them.
+
+*Is this a number at all* is now one private owner, `asNumber`, which removed two
+hand copies and closed the `[]` hole in both formatters. 6 rows red with it back
+to bare `Number()`.
+
+`allocate` was probed and is clean — 200,000 random cases plus `MAX_SAFE_INTEGER`
+and ratios of 1e300 and 1e-320, and the sum invariant holds in every one.
+
+## 2026-09-07 — `/directives` reports the `$` names it does not know
+
+`unknownDirectives(params)` — the unrecognised `$` keys, in arrival order. New
+because `FJS-988` stopped a typo'd directive landing in the filters and what
+replaced it was silence: `$limitt=10` returned the default page with a 200.
+
+**The kit reports and the boundary refuses.** A refusal is a decision about a
+request and this package makes none (`FJS-D26`), so junction's bridge answers a
+400 and sierra's router keeps dropping — `FJS-D237`, § IV *ergonomics vs.
+strictness* resolved per surface. It lives here rather than in the bridge so the
+names a refusal prints are DERIVED from the same table `splitParams` strips by; a
+copy there goes stale on the next directive added.
+
+The spec row walks every name in `RESERVED_PARAMS` both ways, with three
+controls — a known directive, a known transport param, and `pri$ce`, since the
+PREFIX is the rule and not the character. 358 passing.
+
+## 2026-09-07 — `/hooks` looks a method name up as an own key
+
+`runPhase(map, 'before', 'constructor', ctx)` threw `TypeError: list is not
+iterable`, because `p[method]` answers `Object` and `runHooks` iterates it;
+`toString` and `valueOf` failed the other way and silently ran no hooks.
+`mergeHooks` threw whenever one side declared hooks for such a name and the
+other did not, since `i?.[method]` read the inherited member and spread it. Its
+writes are `defineProperty` now as well, for the `/json` reason one kit along.
+
+Every row names one of the six inherited members specifically — an ordinary
+method name behaves correctly with or without the fix. Measured: restoring the
+two ordinary lookups reds both. 357 passing. `FJS-1003`.
+
 ## 2026-09-07 — `/signature` checks its unit instead of documenting it
 
 The scheme signs seconds and said so only inside the error a caller who passed

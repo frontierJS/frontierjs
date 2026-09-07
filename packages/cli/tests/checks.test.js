@@ -583,6 +583,77 @@ describe('resources', () => {
     expect(findings[0].message).toMatch(/should be Lead\.mesa/)
   })
 
+  // ── a Resource over a VIEW ─────────────────────────────────────────────────
+  //
+  // `FJS-999` closed the gap that made one possible, and the rule then reported
+  // `example`'s first one twice over: it read the `model:` out of a DOC COMMENT
+  // explaining the convention, and it knew only models, so a legitimate
+  // projection resource had nowhere to be correct.
+
+  const VIEW = `
+view revenueByStatus {
+  status String
+  total  Int
+  @@sql("SELECT status, SUM(id) AS total FROM lead GROUP BY status")
+  @@gate("5")
+  @@tenant(none)
+}
+`
+
+  test('a Resource over a view takes its service noun, and states the view', () => {
+    // A projection is named like an accessor — `revenueByStatus` — so no
+    // PascalCase filename can BE its name, which is Invariant 19's second half
+    // with a declaration behind it rather than nothing.
+    const root = tree('r-view', {
+      ...CLEAN,
+      'db/schema.lite': SCHEMA + VIEW,
+      'web/src/resources/Revenue.mesa': resource('revenue', `model: 'revenueByStatus'`),
+    })
+    expect(only(root, 'resource-file-name').findings).toEqual([])
+  })
+
+  test('and it is still judged — a name the service does not give is an error', () => {
+    // The control. Without it the branch above is "a view states anything and
+    // the rule stops looking", which passes every misnamed projection file.
+    const root = tree('r-view-bad', {
+      ...CLEAN,
+      'db/schema.lite': SCHEMA + VIEW,
+      'web/src/resources/Ledger.mesa': resource('revenue', `model: 'revenueByStatus'`),
+    })
+    const { findings } = only(root, 'resource-file-name')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/Revenue\.mesa/)
+  })
+
+  test('a model: quoted in a comment is not this file\'s declaration', () => {
+    // The rule matched the whole file, so a resource explaining the convention
+    // — `createResource('lenses', { model: 'Lens' })` in its own doc comment —
+    // was reported as naming a model it does not use.
+    const root = tree('r-comment', {
+      ...CLEAN,
+      'web/src/resources/Lead.mesa':
+        `<script module>\n  // The escape a service that does not pluralise takes:\n` +
+        `  //   createResource('lenses', { model: 'Lens' })\n` +
+        `  import { createResource } from '@frontierjs/sierra/junction'\n` +
+        `  export const leads = createResource('leads')\n</script>\n`,
+    })
+    expect(only(root, 'resource-file-name').findings).toEqual([])
+  })
+
+  test('and a real stated model is still read, one line below a comment', () => {
+    // The pair: blanking comments must not blank the declaration.
+    const root = tree('r-comment-real', {
+      ...CLEAN,
+      'web/src/resources/Alert.mesa':
+        `<script module>\n  // Named for the model, which is not the service noun.\n` +
+        `  import { createResource } from '@frontierjs/sierra/junction'\n` +
+        `  export const alerts = createResource('alerts', { model: 'AlertRule' })\n</script>\n`,
+    })
+    const { findings } = only(root, 'resource-file-name')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/states model: 'AlertRule'/)
+  })
+
   test('two Resources in one file is an error', () => {
     const root = tree('r-two', {
       ...CLEAN,

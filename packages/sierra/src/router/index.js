@@ -677,6 +677,13 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   //
   // `params` is PATH captures alone now. It used to carry the search params
   // merged in, so one value had two homes and neither said which kind it was.
+  //
+  // An unrecognised `$` name is DROPPED here and REFUSED at junction's bridge,
+  // which is one grammar answered two ways on purpose (`FJS-D237`). A typo in a
+  // request costs the correctness of the answer and a 400 costs a retry; a typo
+  // in a URL is already a navigation, and there is nowhere to put an error a
+  // person could act on — a half-loaded page is worse than a missing `$limit`.
+  // If a router ever grows an error channel, this is the line that changes.
   const { query, directives } = splitParams(parseQueryParams(search))
 
   // Build pending route context

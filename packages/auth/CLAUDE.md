@@ -161,6 +161,16 @@ index.ts     public API
   `findFirst({ where: { email } })` as a where-operator and the address was a
   FILTER (`FJS-296`). **A new route reads its body through that reader**; a new
   field is a line in `BODY_FIELDS`.
+- **The BODY has a reader and so does the QUERY, and the query one was missing
+  for a year.** `FJS-296` gave `plugin.ts` a body reader because a where-operator
+  object reached the user lookup; nothing gave `ctx.query` the same rule, and
+  `GET /auth/email/verify` read it with `as string` — a cast that does nothing at
+  runtime — where every OAuth sibling wrote `String(...)`. `?token[gt]=` arrived
+  as `{gt: ''}`, went into `where: { value: token }` and **verified a stranger's
+  address** (`FJS-1002`). `queryText()` refuses a non-string by naming the
+  parameter. The OAuth reads keep `String()` on purpose: they are inside a
+  redirect flow that has to end on a failure PAGE, so a thrown 400 is the wrong
+  shape there — a real difference, not a second spelling.
 - **A session is graded, not trusted.** `sessionGateLevel()` (in Junction) turns
   a `SessionContext` into Litestone's 0–7 scale, and `toDataPrincipal()` turns it
   into the principal `auth()` reads. Absent ≠ null: an app with no verification

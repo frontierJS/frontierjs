@@ -4415,7 +4415,9 @@ async function cmdAccess(cfg) {
   if (toStdout) { process.stdout.write(body); return }
 
   const { counts } = access
-  const summary = `${counts.models} models · ${counts.gated} gated · ${counts.unrestricted} unrestricted · ` +
+  const summary = `${counts.models - counts.views} models · ` +
+                  (counts.views ? `${counts.views} view${counts.views === 1 ? '' : 's'} · ` : '') +
+                  `${counts.gated} gated · ${counts.unrestricted} unrestricted · ` +
                   `${counts.policied} policied · ${counts.protected} with protected fields`
 
   if (check) {

@@ -513,6 +513,7 @@ const CHECKS = {
     if (!files.length) return { skipped: 'no .mesa files in web/src/resources/' }
     const schema = schemaFile(root)
     const known  = schema ? new Set(models(schema).map(m => m.name)) : null
+    const viewNames = schema ? new Set(appSchemaViews(root).map(v => v.name)) : null
     const findings = []
 
     for (const path of files) {
@@ -527,9 +528,31 @@ const CHECKS = {
       }
       if (!known) continue
 
-      const src    = readFileSync(path, 'utf8')
+      // Comments stripped BEFORE anything is matched. A resource file explains
+      // itself, and one explaining why it names a model quotes the option:
+      // `createResource('lenses', { model: 'Lens' })` inside a doc comment was
+      // read as this file's declaration, and the rule reported a file named for
+      // its own prose.
+      const src    = stripComments(readFileSync(path, 'utf8'))
       const stated = src.match(/\bmodel:\s*['"]([A-Za-z0-9_]+)['"]/)
       if (stated) {
+        // A resource over a VIEW is the second half of Invariant 19 with a
+        // declaration behind it: a projection is named like an accessor
+        // (`revenueByStatus`), so no PascalCase filename can BE its name, and
+        // the file takes its service noun the way a resource over nothing does.
+        // The stated name still has to exist — a typo is not a view.
+        if (viewNames?.has(stated[1])) {
+          const svc = src.match(/createResource\(\s*['"]([A-Za-z0-9_-]+)['"]/)?.[1]
+          if (!svc || modelName(svc) === name) continue
+          findings.push({
+            file: path,
+            message: `states model: '${stated[1]}', a view, and is named ${name}.mesa while the service is ` +
+                     `'${svc}'. A Resource over a view takes its SERVICE noun singularised — ` +
+                     `${modelName(svc)}.mesa — because a projection is named like an accessor and has no ` +
+                     `PascalCase name for the tree to carry.`,
+          })
+          continue
+        }
         if (stated[1] !== name) findings.push({
           file: path,
           message: `states model: '${stated[1]}' but is named ${name}.mesa. Where a model exists the ` +
@@ -2797,6 +2820,21 @@ function readCode(path) {
 function resourceDirs(root) {
   return [join(root, 'web', 'src', 'resources'), join(root, 'src', 'resources')]
     .filter(d => existsSync(d) && statSync(d).isDirectory())
+}
+
+/**
+ * Source with its comments blanked, for a rule that matches on CODE.
+ *
+ * A rule reading a file with a regex reads the prose too, and a file that
+ * explains its own convention quotes the thing being explained — which is how
+ * `resource-file-name` came to report a resource as naming the model its doc
+ * comment mentioned. Blanked rather than deleted so nothing else shifts: the
+ * only rules here that care about a comment's CONTENT ask for the raw text.
+ */
+function stripComments(src) {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
 }
 
 function resourceFiles(root) {

@@ -3420,6 +3420,54 @@ export type NotificationPreferenceOrderBy =
   | { [K in keyof Omit<NotificationPreference, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<NotificationPreference, never>]?: OrderDir }>
 
+// ── Views ────────────────────────────────────────────────────────────────────
+
+// ─── FleetByProvider ─────────────────────────────────────────────
+
+/**
+ * The fleet, counted. What the cloud-spend screen used to assemble in the
+ * browser out of `servers.find({ limit: 200 })`, which is a count that goes
+ * quietly wrong on the 201st machine — the number a report exists to be right
+ * about, capped by a page size nobody chose for that reason.
+ * 
+ * **Not `@@materialized`, and that is the decision worth reading.** A
+ * materialized view is rebuilt on every write to a source it names, inside
+ * the writing transaction; the source here is `Server`, and every outpost
+ * heartbeat writes one. A tally over a few hundred rows costs nothing at read
+ * time and a full recompute per heartbeat costs the fleet — so this one is a
+ * plain `CREATE VIEW` and `example`'s `revenueByStatus`, whose source moves
+ * when somebody buys something, is not.
+ * 
+ * **`deletedAt IS NULL` is written out because a view inherits no clause of
+ * `@@softDelete`.** `Server` soft-deletes; nothing would have said so, and a
+ * removed machine would have gone on being counted with every screen looking
+ * correct.
+ * 
+ * The grain is provider × region because those are the two tallies the screen
+ * draws; a roll-up to one provider is a sum over rows that are all here, which
+ * is the difference between rolling up a projection and re-deriving one.
+ */
+export interface FleetByProvider {
+  workspaceId: string
+  providerKind: string
+  region: string
+  servers: number
+  vcpu: number
+  ramGb: number
+}
+
+export interface FleetByProviderWhere extends WhereBase {
+  workspaceId?: string | WhereOp<string> | null
+  providerKind?: string | WhereOp<string> | null
+  region?: string | WhereOp<string> | null
+  servers?: number | WhereOp<number> | null
+  vcpu?: number | WhereOp<number> | null
+  ramGb?: number | WhereOp<number> | null
+  AND?: FleetByProviderWhere[]
+  OR?:  FleetByProviderWhere[]
+  NOT?: FleetByProviderWhere
+}
+
 // ── Services ─────────────────────────────────────────────────────────────────
 
 /**
@@ -3477,6 +3525,7 @@ export interface ServiceTypes {
   hubConfigs: HubConfig
   notifications: Notification
   notificationPreferences: NotificationPreference
+  fleetByProviders: FleetByProvider
 }
 
 // ── Cursor pagination result ─────────────────────────────────────────────────
@@ -3531,6 +3580,29 @@ export interface TableClient<TRow, TCreate, TUpdate, TWhere> {
   /** @@transitions — [] on a model that declares none. */
   transitions(idOrRow: TRow | string | number): Promise<TransitionOption[]>
 }
+
+// ── View client interface ────────────────────────────────────────────────────
+
+// A projection reads and does not write. The set removed is litestone's own
+// `VIEW_REFUSED` — the list the client refuses by name — so a verb added
+// to one is removed from the other with nothing here to edit.
+export type ViewRefusedVerb =
+  | 'create'
+  | 'createMany'
+  | 'delete'
+  | 'deleteMany'
+  | 'optimizeFts'
+  | 'remove'
+  | 'removeMany'
+  | 'restore'
+  | 'search'
+  | 'update'
+  | 'updateMany'
+  | 'upsert'
+  | 'upsertMany'
+
+export type ViewClient<TRow, TWhere> =
+  Omit<TableClient<TRow, never, never, TWhere>, ViewRefusedVerb>
 
 // ── onQuery event ────────────────────────────────────────────────────────────
 
@@ -3615,6 +3687,7 @@ export interface LitestoneClient {
   readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere>
   readonly notification: TableClient<Notification, NotificationCreate, NotificationUpdate, NotificationWhere>
   readonly notificationPreference: TableClient<NotificationPreference, NotificationPreferenceCreate, NotificationPreferenceUpdate, NotificationPreferenceWhere>
+  readonly fleetByProvider: ViewClient<FleetByProvider, FleetByProviderWhere>
 
   // Auth scoping
   asSystem(): LitestoneClient

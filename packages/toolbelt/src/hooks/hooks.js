@@ -131,7 +131,11 @@ export async function runPhase(hookMap, phase, method, ctx) {
   const p = hookMap?.[phase]
   if (!p) return
   await runHooks(p.all, ctx)
-  await runHooks(p[method], ctx)
+  // Own keys: `method` is a service method NAME, and `p['constructor']` answers
+  // `Object`, which `runHooks` then iterates — `TypeError: list is not
+  // iterable`, on the pipeline. `toString` and `valueOf` fail the other way and
+  // silently run nothing (`FJS-1003`).
+  await runHooks(Object.hasOwn(p, method) ? p[method] : undefined, ctx)
 }
 
 /**
@@ -143,6 +147,11 @@ export async function runPhase(hookMap, phase, method, ctx) {
  * b)` with the result discarded, so a caller who now forgets the assignment
  * gets a map that never grew rather than one silently rewritten.
  */
+/** One phase's list for one method, or none. Own keys only — see `runPhase`. */
+function own(phaseMap, method) {
+  return phaseMap && Object.hasOwn(phaseMap, method) ? (phaseMap[method] ?? []) : []
+}
+
 export function mergeHooks(target, incoming) {
   const out = {}
   for (const phase of ['before', 'after', 'around', 'error']) {
@@ -151,7 +160,12 @@ export function mergeHooks(target, incoming) {
     if (!t && !i) continue
     out[phase] = {}
     for (const method of new Set([...Object.keys(t ?? {}), ...Object.keys(i ?? {})])) {
-      out[phase][method] = [...(t?.[method] ?? []), ...(i?.[method] ?? [])]
+      // `own()` for `runPhase`'s reason, and the write is DEFINED for
+      // `/json`'s: a method named `__proto__` would be assigned onto the
+      // prototype and the hook list lost in silence (`FJS-1003`, `FJS-996`).
+      const merged = [...own(t, method), ...own(i, method)]
+      Object.defineProperty(out[phase], method,
+        { value: merged, writable: true, enumerable: true, configurable: true })
     }
   }
   return out

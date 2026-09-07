@@ -112,6 +112,10 @@ api/src/  app.ts (builds the app, never starts it) · services/ (29) ·
 web/src/  App.mesa · main.js · session.js · notices.js (one leaf definition the
           shell and the home screen share) · routes/ · components/ ·
           resources/ (PascalCase singular, one Resource per file — Invariant 19)
+          components/NoRecord.mesa is what a DETAIL screen renders instead of a
+          record, and the reason: gone, signed out, or the read failed. Every
+          `[id]/` screen ends in it. `error` is the banner over a page that
+          still has its row; `loadError` is why this page has none (`FJS-968`)
 web/test/ verify.mjs · verify-build.mjs + preview.mjs (the built output)
 docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
           2026-08-30). Four of them are a screen with a skeleton where a third

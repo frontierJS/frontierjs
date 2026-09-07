@@ -53,6 +53,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { db } from '../../api/src/core/db.ts'
 import { sweepPayroll } from './payroll-sweep.mjs'
+import { results, report } from './lib/report.mjs'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const ROOT   = join(HERE, '../..')
@@ -270,8 +271,7 @@ const click = (sel) => evaluate(`
   return true;
 `)
 
-const got = {}
-const t   = (label, value) => { got[label] = value }
+const { got, t } = results()
 
 const fixtures = { runIds: [], employeeIds: [] }
 let failedEarly = null
@@ -886,16 +886,7 @@ const expected = {
   'console.noErrorsAnywhere': true,
 }
 
-let failed = 0
-for (const [key, want] of Object.entries(expected)) {
-  const ok = got[key] === want
-  if (!ok) failed++
-  console.log(`${ok ? '  ok  ' : '  FAIL'} ${key}`)
-  if (!ok) console.log(`         want ${want}   have ${JSON.stringify(got[key])}`)
-}
-if (noise.length) console.log(`\nconsole noise:\n  ${noise.slice(0, 8).join('\n  ')}`)
-if (failedEarly) console.error(`\nstopped early: ${failedEarly.message ?? failedEarly}`)
-console.log(failed || failedEarly
-  ? `\n${failed} assertion(s) failed`
-  : `\nall ${Object.keys(expected).length} assertions passed`)
-process.exit(failed || failedEarly ? 1 : 0)
+// Printed before the table: it is context for reading the rows, not a row.
+if (noise.length) console.log(`console noise:\n  ${noise.slice(0, 8).join('\n  ')}\n`)
+
+process.exit(report(got, expected, { stoppedEarly: failedEarly }))

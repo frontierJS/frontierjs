@@ -254,3 +254,46 @@ describe('what the app advertises comes from the same table', () => {
     expect(doc).not.toContain('prune')
   })
 })
+
+// ─── A method name is a map key ────────────────────────────────────────────
+//
+// The declared branch read `src[name]`, so a `methods:` entry naming an
+// Object.prototype member resolved to an inherited FUNCTION, passed the
+// `typeof fn !== 'function'` check, and was registered — publishing a route the
+// service never wrote and advertising it in describe(), /health and the OpenAPI
+// document. The branch exists to refuse a name that is not defined on the
+// service; those six were exactly the ones it could not refuse (`FJS-1003`).
+
+describe('collectCustomMethods — an inherited name is not a method', () => {
+  const def = { model: 'Post', async publish() { return 'ok' } }
+
+  test('the six Object.prototype members are refused BY NAME', () => {
+    for (const name of ['toString', 'valueOf', 'constructor',
+                        'hasOwnProperty', 'isPrototypeOf', 'propertyIsEnumerable']) {
+      const findings: string[] = []
+      const out = collectCustomMethods(def, 'posts', [name], (_k, f) => findings.push(f))
+      expect(Object.keys(out)).toEqual([])
+      expect(findings.length).toBe(1)
+      expect(findings[0]).toContain(name)
+      expect(findings[0]).toContain('not defined on this service')
+    }
+  })
+
+  test('a real method and a typo are unchanged', () => {
+    // The controls. A guard refusing every declared name would satisfy the row
+    // above and register nothing at all.
+    const ok: string[] = []
+    expect(Object.keys(collectCustomMethods(def, 'posts', ['publish'], (_k, f) => ok.push(f)))).toEqual(['publish'])
+    expect(ok.length).toBe(0)
+
+    const typo: string[] = []
+    expect(Object.keys(collectCustomMethods(def, 'posts', ['publsh'], (_k, f) => typo.push(f)))).toEqual([])
+    expect(typo[0]).toContain('not defined on this service')
+  })
+
+  test('a service that genuinely defines one of those names still works', () => {
+    // Own key, so it is a real method and must be collected.
+    const odd = { model: 'Post', async toString() { return 'mine' } }
+    expect(Object.keys(collectCustomMethods(odd, 'posts', ['toString'], () => {}))).toEqual(['toString'])
+  })
+})

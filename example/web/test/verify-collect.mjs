@@ -37,6 +37,7 @@ import { execFileSync }  from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { signRequest }   from '@frontierjs/toolbelt/signature'
+import { results, report } from './lib/report.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
@@ -108,8 +109,7 @@ const sys = db.asSystem()
 
 const RUN = String(Date.now()).slice(-6)
 const DAY = 24 * 60 * 60 * 1000
-const got = {}
-const t = (label, value) => { got[label] = value }
+const { got, t } = results()
 
 // ─── A subscription with something owed ───────────────────────────────────
 
@@ -618,14 +618,4 @@ const expected = {
   'refund.invoicePaymentIsNamed': true,
 }
 
-let failed = 0
-for (const [key, want] of Object.entries(expected)) {
-  const ok = got[key] === want
-  if (!ok) failed++
-  console.log(`${ok ? '  ok  ' : '  FAIL'} ${key}`)
-  if (!ok) console.log(`         want ${want}   have ${JSON.stringify(got[key])}`)
-}
-console.log(failed
-  ? `\n${failed} assertion(s) failed`
-  : `\nall ${Object.keys(expected).length} assertions passed`)
-process.exit(failed ? 1 : 0)
+process.exit(report(got, expected))

@@ -140,3 +140,119 @@ test('cron: month is 1-12 as a clock reports it, not 0-11', function () {
   assert.ok(cronMatches(f,  { minutes: 0, hours: 0, date: 1, month: 1, day: 3 }))
   assert.ok(!cronMatches(f, { minutes: 0, hours: 0, date: 1, month: 0, day: 3 }))
 })
+
+// ─── Day of month OR day of week ──────────────────────────────────────────
+//
+// Cron's one asymmetry, and it reads as a bug: under a uniform five-field AND
+// `0 0 1 * mon` fired only when the 1st happened to BE a Monday, which is a
+// schedule that runs and looks alive. Every row here is paired with the shape
+// that must still AND, because an OR applied unconditionally matches far too
+// much and would pass any test that only asks about the two dates.
+
+test('cron: date and weekday are OR\'d when BOTH are restricted', function () {
+  const f = parseCron('0 0 1 * mon')
+  const at = (date, day) => cronMatches(f, { minutes: 0, hours: 0, date, month: 9, day })
+
+  assert.ok(at(1, 2))    // the 1st, a Tuesday — the date carries it
+  assert.ok(at(7, 1))    // a Monday, the 7th — the weekday carries it
+  assert.ok(at(1, 1))    // both
+  assert.ok(!at(2, 3))   // neither, so the OR is not simply true
+  assert.ok(!cronMatches(f, { minutes: 1, hours: 0, date: 1, month: 9, day: 2 }))  // minute still ANDs
+})
+
+test('cron: with only ONE of the two restricted, the answer is the AND', function () {
+  // The other field admits everything, so OR and AND agree — which is what
+  // makes the rule cost nothing to state. A matcher that OR'd unconditionally
+  // fails here and nowhere above.
+  const dateOnly = parseCron('0 0 1 * *')
+  assert.ok(cronMatches(dateOnly,  { minutes: 0, hours: 0, date: 1, month: 9, day: 2 }))
+  assert.ok(!cronMatches(dateOnly, { minutes: 0, hours: 0, date: 2, month: 9, day: 2 }))
+
+  const dayOnly = parseCron('0 0 * * mon')
+  assert.ok(cronMatches(dayOnly,  { minutes: 0, hours: 0, date: 7, month: 9, day: 1 }))
+  assert.ok(!cronMatches(dayOnly, { minutes: 0, hours: 0, date: 7, month: 9, day: 2 }))
+})
+
+test('cron: restricted is read off the TEXT — the star, as cron reads it', function () {
+  // `0-6` names every day and is still not a star, so `0 0 1 * 0-6` ORs and
+  // fires daily. A rule that read set COMPLETENESS instead looks tidier and
+  // diverges here alone, with nothing said — the one shape the familiarity
+  // adjudication rules out. `*/2` is a star because its first character is.
+  const spelled = parseCron('0 0 1 * 0-6')
+  assert.ok(cronMatches(spelled, { minutes: 0, hours: 0, date: 4, month: 9, day: 4 }))
+
+  const starred = parseCron('0 0 1 * *')
+  assert.ok(!cronMatches(starred, { minutes: 0, hours: 0, date: 4, month: 9, day: 4 }))
+
+  assert.deepEqual([...parseCron('0 0 1 * 0-6').day], [...parseCron('0 0 1 * *').day])
+  assert.ok(parseCron('0 0 * */2 *').stars.has('month'))
+  assert.ok(!parseCron('0 0 * 1-12 *').stars.has('month'))
+})
+
+test('cron: an impossible date is still refused, unless a weekday can carry it', function () {
+  assert.ok(/never occurs/.test(refuses('0 9 31 2 *')))
+  // Under the OR the same expression with a weekday fires on the Mondays in
+  // February, so refusing it would refuse a schedule that works.
+  const f = parseCron('0 9 31 2 mon')
+  assert.ok(cronMatches(f, { minutes: 0, hours: 9, date: 3, month: 2, day: 1 }))
+})
+
+// ─── Names belong to a field, not to the line ─────────────────────────────
+
+test('cron: a name is resolved in its OWN field\'s table', function () {
+  assert.deepEqual([...parseCron('0 0 * * sat').day], [6])
+  // The same word one field to the left was June: six of the seven day names
+  // sit inside 1-12, so a misplaced name landed as a number and said nothing.
+  assert.ok(/not a number or a month name/.test(refuses('0 0 * sat *')))
+  assert.ok(/not a number: "mon"/.test(refuses('mon 0 * * *')))
+})
+
+test('cron: month names, which every crontab admits and this refused', function () {
+  assert.deepEqual([...parseCron('0 0 * jan *').month], [1])
+  assert.deepEqual([...parseCron('0 0 * JAN *').month], [1])
+  assert.deepEqual([...parseCron('0 0 * mar-may *').month], [3, 4, 5])
+  assert.deepEqual([...parseCron('0 0 * december *').month], [12])
+})
+
+test('cron: an ambiguous prefix is named rather than guessed', function () {
+  assert.ok(/could be june or july/.test(refuses('0 0 * ju *')))
+  assert.ok(/could be march or may/.test(refuses('0 0 * ma *')))
+  assert.deepEqual([...parseCron('0 0 * jun *').month], [6])   // one more letter resolves it
+  assert.deepEqual([...parseCron('0 0 * * mo').day], [1])      // two IS unambiguous for a day
+})
+
+test('cron: a name is not a step', function () {
+  assert.ok(/step is not a number: "mon"/.test(refuses('0 0 * * */mon')))
+  assert.deepEqual([...parseCron('0 0 * * */2').day], [0, 2, 4, 6])
+})
+
+// ─── The parts a matcher is handed ────────────────────────────────────────
+
+test('cron: an incomplete parts object is REFUSED, not answered false', function () {
+  const f = parseCron('* * * * *')
+  const whole = { minutes: 0, hours: 0, date: 1, month: 1, day: 0 }
+  assert.ok(cronMatches(f, whole))
+
+  // `minute` for `minutes` matched nothing, for ever — a schedule registered,
+  // listed in `jobs.snapshot.md`, and silent. Each of the five is asked, so a
+  // guard that only checked the first would pass on one row alone.
+  for (const key of CRON_FIELDS.map((d) => d.key)) {
+    const missing = { ...whole }
+    delete missing[key]
+    let message = ''
+    try { cronMatches(f, missing) } catch (err) { message = err.message }
+    assert.ok(message.includes(`parts.${key}`), `a missing ${key} must be named, got: ${message}`)
+  }
+  for (const bad of [null, undefined, {}, { minutes: '0', hours: 0, date: 1, month: 1, day: 0 }]) {
+    assert.throws(() => cronMatches(f, bad))
+  }
+
+  // A `fields` that did not come from `parseCron` is named too, rather than
+  // throwing about a property nobody typed. Sets do not survive JSON, so
+  // anything round-tripped is already not one.
+  const plain = { minutes: f.minutes, hours: f.hours, date: f.date, month: f.month, day: f.day }
+  let said = ''
+  try { cronMatches(plain, whole) } catch (err) { said = err.message }
+  assert.ok(/must come from parseCron/.test(said), said)
+  assert.ok(cronMatches({ ...plain, stars: f.stars }, whole))
+})

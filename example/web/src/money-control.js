@@ -64,8 +64,11 @@ registerFormControl('money', Input, {
       oninput: (e) => {
         const raw = e.target.value
         // Blank stays blank. `createResource` strips it to null, which is what
-        // a nullable money column means and what `@default(0)` fills in.
-        onvalue(raw === '' ? '' : toMinor(Number(raw), code))
+        // a nullable money column means and what `@default(0)` fills in. A
+        // number input answers '' for anything it cannot parse, so this branch
+        // covers both, and `toMinor` reads the text itself — wrapping it in
+        // `Number()` first only manufactures the NaN it now refuses.
+        onvalue(raw.trim() === '' ? '' : toMinor(raw, code))
       },
     }
   },

@@ -281,7 +281,19 @@ export async function generateSchemas(schemaPath, warn, root = process.cwd()) {
   // The full defs table is still returned and still registered: $ref targets
   // live in it, and resolving `{$ref:'#/$defs/Plan'}` is the only way the
   // browser can learn a field's enum values.
-  const models = (result.schema?.models ?? []).map(m => m.name).filter(Boolean)
+  // Views are addressable alongside models, and for the same reason enums are
+  // not: a `view` is something a resource reads, an enum is something a field
+  // refers to. Left out, a projection's definition sits in `$defs` reachable by
+  // `$ref` and by nothing else, so `createResource` over one resolved no schema
+  // at all and every affordance it offers — `can()` most of all — answered from
+  // no declaration (`FJS-999`).
+  //
+  // The plural rules cannot reach a service named for the report rather than
+  // the projection (`revenue` for `revenueByStatus`), which is the case the
+  // registry already answers by hand: `createResource('revenue', { model:
+  // 'revenueByStatus' })`.
+  const models = [...(result.schema?.models ?? []), ...(result.schema?.views ?? [])]
+    .map(m => m.name).filter(Boolean)
 
   return { defs, models, updatePatch }
 }

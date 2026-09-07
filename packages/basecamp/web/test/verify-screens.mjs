@@ -83,10 +83,14 @@ for (const [name, port] of [['API', API_PORT], ['web', WEB_PORT]]) {
 }
 
 // ─── Servers ─────────────────────────────────────────────────────────────
-children.push(spawn('bun', ['api/index.ts'], {
+// Held by name as well as in `children`: the last assertions stop the API on
+// purpose, to see what a detail screen says when the read cannot be answered,
+// and killing every child would take the dev server and the browser with it.
+const api = spawn('bun', ['api/index.ts'], {
   cwd: PKG, stdio: 'ignore', detached: true,
   env: { ...process.env, DATABASE_URL: DB, APP_URL: BASE },
-}))
+})
+children.push(api)
 children.push(spawn('bun', ['run', 'web'], { cwd: PKG, stdio: 'ignore', detached: true }))
 
 const waitFor = async (url, label) => {
@@ -481,6 +485,19 @@ try {
       }).then(async r => ({ status: r.status, body: await r.json().catch(() => null) }))`)
   }
 
+  /** The same read, and the workspace is a PARAMETER. Every service here is
+   *  scoped by the caller's membership row for the workspace the request
+   *  names, so asking the same question about two of them is the only way to
+   *  see that the scope is doing anything at all. */
+  async function apiGet(path, workspaceId = null) {
+    return evaluate(`
+      fetch(${JSON.stringify(path)}, { headers: {
+        accept:           'application/json',
+        authorization:    'Bearer ' + localStorage.getItem('basecamp_token'),
+        'x-workspace-id': ${workspaceId ? JSON.stringify(workspaceId) : `localStorage.getItem('basecamp_workspace')`},
+      }}).then(async r => ({ status: r.status, body: await r.json().catch(() => null) }))`)
+  }
+
   // db/seed.js makes servers, apps and placements and no domains or networks,
   // so two of the graph's four node kinds and the whole of /dns/ would be
   // asserted against an empty list — which is exactly the shape that passes
@@ -599,6 +616,53 @@ try {
     (await text('#spend-status')).trim() === 'unconfigured', await text('#spend-status'))
   check('with no currency figure anywhere on it', !/[$£€]\s?\d/.test(await body()))
 
+  // ── The counts are a PROJECTION, and the projection is scoped ─────────
+  //
+  // `view fleetByProvider` in db/schema.lite. Two things are asserted and only
+  // the second needs this app: that the number on screen is the database's
+  // answer rather than a tally of whatever page of servers the screen fetched,
+  // and that the projection narrows to ONE workspace with no where-clause
+  // written anywhere — not in the service, not on the screen. Tenancy is
+  // declared once at the top of the schema and the parser gives a scoped view
+  // a generated READ deny; `membershipClaim` resolves the claim per request.
+  const activeWs = await evaluate(`localStorage.getItem('basecamp_workspace')`)
+  const fleetApi = await apiGet('/fleet')
+  const projected = (fleetApi.body?.data ?? []).reduce((n, r) => n + (r.servers ?? 0), 0)
+  check('the total on screen is the projection, not a tally of the listed page',
+    Number((await text('#spend-total')).trim()) === projected,
+    `screen ${await text('#spend-total')}, projection ${projected}`)
+  check('and the projection only carries this workspace',
+    (fleetApi.body?.data ?? []).length > 0 &&
+    (fleetApi.body?.data ?? []).every(r => r.workspaceId === activeWs),
+    JSON.stringify(fleetApi.body?.data?.map(r => r.workspaceId)))
+
+  // The other half, and the one a single-tenant app cannot ask. The seeded
+  // owner is a member of every workspace, so the SAME principal asking the
+  // SAME question about a different one gets a different answer — which is the
+  // declared claim doing the narrowing, since nothing in the path writes a
+  // filter.
+  const wsList = await apiGet('/workspaces')
+  const otherWs = (wsList.body?.data ?? []).find(w => w.id !== activeWs)
+  check('the seeded owner belongs to more than one workspace', !!otherWs,
+    JSON.stringify(wsList.body?.data?.map(w => w.id)))
+  if (otherWs) {
+    const otherFleet = await apiGet('/fleet', otherWs.id)
+    check('the same principal asking about another workspace gets that one',
+      (otherFleet.body?.data ?? []).length > 0 &&
+      (otherFleet.body?.data ?? []).every(r => r.workspaceId === otherWs.id),
+      JSON.stringify(otherFleet.body?.data?.map(r => r.workspaceId)))
+  }
+
+  // The negative control, and it is what separates *scoped by the membership
+  // row* from *scoped by whatever the header said*. A workspace this caller is
+  // not in must not answer rows, and the refusal has to be a status rather
+  // than an empty list — an empty projection and a refused one look identical
+  // to a reader counting rows.
+  const strangerWs = await apiGet('/fleet', '00000000-0000-4000-8000-000000000000')
+  check('a workspace the caller is not in is refused, not answered empty',
+    strangerWs.status >= 400,
+    `${strangerWs.status} ${JSON.stringify(strangerWs.body)?.slice(0, 120)}`)
+
   // ── /git-activity/ and /observability/ ─────────────────────────────────
   // Both report an adapter the test environment does not configure, and the
   // word they print comes from the portal's own ping — the same read
@@ -631,6 +695,112 @@ try {
   const hostedText = await text('#hosted-tiles')
   check('the hosted pair are the two the screens ask about',
     hostedText.includes('Edge & DNS') && hostedText.includes('Cloud spend'), hostedText.slice(0, 120))
+
+  // ── A detail screen with no record ─────────────────────────────────────
+  //
+  // `FJS-968`. Every one of these screens used to answer with one of three
+  // wrong things: `apps/[id]` said *App not found — it may have been deleted*
+  // for ANY throw in load(), five rendered NOTHING at all when the row was
+  // genuinely absent, and the same five rendered a failure as an alert with no
+  // heading above it. Each state is asserted here PAIRED with the one it was
+  // being confused with, because a component that gave one answer to
+  // everything is exactly what was there before.
+  //
+  // It goes last: the failure case stops the API, and nothing after it could
+  // read anything.
+  console.log('\n  a detail screen with no record')
+
+  // GONE. A real id that is not in the database, over the real transport — so
+  // this is the boundary answering, not a stub.
+  await goto('/apps/00000000-0000-4000-8000-0000000000ff/')
+  await until(`document.querySelector('h1')?.textContent ?? ''`, t => t.length > 0,
+    'the missing-record screen rendered no heading at all')
+  const goneHeading = (await text('h1')).trim()
+  check('a record that is not there says so, in a heading',
+    goneHeading === 'App not found', goneHeading)
+  check('and says the two things it could be',
+    (await body()).includes('deleted, or it belongs to another workspace'))
+  // The pair. A screen that said this for every state would pass the two rows
+  // above and be the bug this closed.
+  check('with no failure alert beside it — nothing failed',
+    await evaluate(`!document.getElementById('screen-error')`))
+  check('and no retry button, because retrying cannot make it exist',
+    !(await body()).includes('Try again'))
+
+  // The control: the same screen, a real id, still renders the record. Without
+  // it every row above passes against a detail screen that renders nothing.
+  const realApp = await apiGet('/apps')
+  const realId  = realApp.body?.data?.[0]?.id
+  check('the same screen still opens a record that IS there', !!realId)
+  await goto(`/apps/${realId}/`)
+  await until(`document.getElementById('app-status') !== null`, v => v,
+    'the app detail never rendered for a real id')
+  check('and its heading is the record, not a state',
+    (await text('h1')).trim() !== 'App not found', await text('h1'))
+
+  // FAILED. The API is stopped under a page that is already signed in, and the
+  // next screen is reached by CLICKING — a client-side navigation, so the
+  // session stays in memory and the only thing that fails is this screen's own
+  // read. That is the shape of the flake that filed this. A full page load
+  // instead exercises a different path entirely, asserted below.
+  //
+  // `detached: true` means the child leads its own process GROUP and
+  // `bun api/index.ts` spawns under it, so killing the pid alone leaves the app
+  // holding the port and the read is answered by a process that never went away
+  // (`FJS-740`, one layer along). The negative pid is the group.
+  try { process.kill(-api.pid, 'SIGTERM') } catch { try { api.kill('SIGTERM') } catch {} }
+  // Probed from node against the API's own port. Asked through the page it goes
+  // via vite's proxy, which answers 500 rather than refusing the connection — a
+  // resolved fetch, so *is it down* would read as *it is up*.
+  {
+    const deadline = Date.now() + 10_000
+    let down = false
+    while (Date.now() < deadline && !down) {
+      try { await fetch(`http://localhost:${API_PORT}/health`, { signal: AbortSignal.timeout(500) }) }
+      catch { down = true }
+      if (!down) await sleep(250)
+    }
+    check('the API really stopped, so the next read cannot be answered', down)
+  }
+
+  // The SAME URL as the *gone* rows above, which is the sharpest pair this
+  // drive can make: one address, two reasons for having no record, two
+  // sentences. It has to be a record nothing has read — a node already in the
+  // client's store answers from memory with the API down, which is correct and
+  // would have made this row green against the bug. The link is injected and
+  // clicked so the router handles it: `Page.navigate` is a full load, and a
+  // full load with no API cannot restore a session at all (asserted below).
+  await evaluate(`(() => {
+    const a = document.createElement('a')
+    a.href = '/apps/00000000-0000-4000-8000-0000000000ff/'
+    a.id = 'drive-nav'
+    document.body.appendChild(a)
+    a.click()
+  })()`)
+  await until(`document.querySelector('h1')?.textContent ?? ''`,
+    t => t && t !== 'Loading…', 'a failed load rendered no heading')
+  const failHeading = (await text('h1')).trim()
+  check('a load that FAILED does not say the record was deleted',
+    failHeading !== 'App not found', failHeading)
+  check('it says it could not load, in a heading a screen reader lands on',
+    failHeading === 'Could not load this app', failHeading)
+  check('and it offers a retry, which is the whole difference from gone',
+    (await body()).includes('Try again'))
+
+  // The other path, and it is this app's own decision rather than the
+  // component's: a FULL load with the API down cannot restore a session, so the
+  // guard sends the caller to /login/ — `src/session.js` says so and says why.
+  // Asserted because that decision is only sound if the login screen then
+  // states the reason; a redirect that drops it is the same lost sentence one
+  // layer up.
+  await goto(`/apps/${realId}/`)
+  await until(`document.body.textContent.length`, n => n > 0, 'the login screen never rendered')
+  const landed = await evaluate(`location.pathname`)
+  check('a full load with no API lands on sign-in rather than a broken screen',
+    landed.includes('/login'), landed)
+  check('and the login screen says why it sent them there',
+    await evaluate(`!!document.getElementById('session-error')`),
+    (await body()).replace(/\s+/g, ' ').slice(0, 160))
 
   // ─── The console ───────────────────────────────────────────────────────
   console.log('\n  the console')

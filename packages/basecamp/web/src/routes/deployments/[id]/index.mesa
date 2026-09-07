@@ -6,7 +6,8 @@ title: Deployment
   import { status }       from '@frontierjs/sierra/junction'
   import { session }      from '../../../session.js'
   import { deployments }  from '../../../resources/Deployment.mesa'
-  import Button           from '@frontierjs/ui/components/forms/Button.mesa'
+  import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+  import NoRecord from '../../../components/NoRecord.mesa'
 
   $: page.params
   $: status.connected
@@ -14,6 +15,7 @@ title: Deployment
 
   let deployment = null
   let error      = null
+  let loadError  = null
   let loading    = true
 
   // The deployment, watched rather than read (`FJS-518`). `get()` answers it
@@ -35,11 +37,11 @@ title: Deployment
   }
 
   async function load() {
-    error = null
+    error = null; loadError = null
     try {
       await watchDeployment(page.params.id)
     } catch (e) {
-      error = e.message
+      error = e.message; loadError = e
     } finally {
       loading = false
     }
@@ -86,10 +88,6 @@ title: Deployment
 
 {#if loading}
   <p class="text-sm text-muted">Loading…</p>
-{:else if error && !deployment}
-  <article class="alert danger">
-    <div class="alert-content">{error}</div>
-  </article>
 {:else if deployment}
   <div class="section-header">
     <h1>{deployment.app?.name ?? 'Deployment'}</h1>
@@ -169,4 +167,7 @@ title: Deployment
       </li>
     {/each}
   </ol>
+{:else}
+  <NoRecord error={loadError} noun="Deployment" onretry={load}
+            backHref="/deployments/" backLabel="Back to deployments" />
 {/if}

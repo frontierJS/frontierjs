@@ -1,5 +1,73 @@
 # Changes — Basecamp
 
+## 2026-09-07 — a screen with no record says which of three things happened
+
+`FJS-968`, filed as one screen and found to be three failures across seven.
+`apps/[id]` said *App not found — it may have been deleted, or it belongs to
+another workspace* for ANY throw in `load()`, so a transient failure read as a
+deletion. Five more rendered a BLANK PAGE when the row was genuinely absent —
+no heading, no sentence, no link — which is the bug `apps` carried a comment
+saying had been fixed, and it had been fixed only there. The same five rendered
+a failure as an alert with no `<h1>` above it, so the only statement of what
+happened was styled as a decoration.
+
+`NoRecord.mesa` is the one owner, branching on `error.code` — the one property
+junction's client sets on the HTTP path and the WS path alike, which is what
+makes *no code at all* mean *the request never got an answer* rather than an
+unknown status. `error` and `loadError` are separate on every screen now,
+because a banner over a page that still has its record and a page that has none
+are different statements and one variable could not tell them apart.
+
+**There is no 403 branch, and that is measured rather than forgotten.** Every
+model behind these screens reads at 2 and every workspace member grades at least
+that; a member looking at another workspace's record is filtered by tenancy and
+arrives as an absence. A refusal branch would be a state nothing can enter.
+
+`verify:screens` asserts the same URL twice — `/apps/<absent id>/` says *App not
+found* when the API answers 404 and *Could not load this app* when the API is
+stopped. That pair is the defect stated as a test.
+
+`FJS-1012` came out of the same run: with the API unreachable a full page load
+cannot restore a session, so the guard sends the caller to `/login/` — which
+`session.js` decided deliberately and justified by saying the login screen
+would surface the reason. Nothing on that screen read it, so a person whose
+server was down met an ordinary sign-in form and typing a correct password did
+nothing. It reads `session.error` now, and the drive asserts both the landing
+and the sentence.
+
+## 2026-09-07 — the fleet is counted by the database
+
+`FJS-D228` phase 2, and the first `view` in this app. `/cloud-spend/` tallied
+`servers.find({ limit: 200 })` in the browser — by provider, by region, total
+vCPU, total RAM — so every count on the screen was silently wrong from the 201st
+machine, on the one screen whose whole job is to be right about how many there
+are (`FJS-1007`).
+
+`view fleetByProvider` replaces it: declared columns, a grouped `@@sql`,
+`@@gate("2")` and `@@tenant(column: "workspaceId")`. `fleet.service.ts` is
+`methods: 'readOnly'` and **writes no where-clause**, which is the assertion
+rather than an omission — tenancy is declared once at the top of `schema.lite`,
+the parser gives a scoped view a generated READ deny, and `membershipClaim`
+resolves the claim per request. The projection narrows to the caller's own
+workspace with nothing in the service saying so.
+
+Two decisions live in the schema. It is **not** `@@materialized`: a materialized
+view is rebuilt on every write to a source it names, inside the writing
+transaction, and every outpost heartbeat writes a `Server` row. And
+`deletedAt IS NULL` is written out, because a view inherits no clause of
+`@@softDelete` and a removed machine would have gone on being counted with every
+screen looking correct.
+
+The table under the tiles is still a page and now says so — the tile reads the
+projection's total, the line beneath says how many are listed.
+
+`verify:screens` gains five rows, and three of them can only be asked here: the
+screen's total is the projection rather than a tally of the listed page; the same
+principal asking about a second workspace gets that workspace; and a workspace
+the caller is not in is REFUSED rather than answered empty, which is what
+separates *scoped by the membership row* from *scoped by whatever the header
+said*.
+
 ## 2026-09-07 — a machine's readings, and the three cards that said they could not be drawn
 
 `Server.health` is a snapshot: one Json column, one row per machine, overwritten

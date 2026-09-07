@@ -19,7 +19,9 @@ import {
   type CallOptions, type RequestMeta, type QueryDirectives,
 } from '../core/context.ts'
 import { isListResult, unwrapResult } from '../core/envelope.ts'
-import { splitParams } from '@frontierjs/toolbelt/directives'
+// `RESERVED_PARAMS` comes through `../core/context.ts` above — the same kit
+// binding, re-exported there so junction has one import point for it.
+import { splitParams, unknownDirectives } from '@frontierjs/toolbelt/directives'
 
 export {
   RESERVED_PARAMS, enterRequest, requestMeta, freezeUser,
@@ -115,6 +117,8 @@ export const bridge = {
     // parseQuery downstream looked for those exact keys on ctx.query. The
     // transport deleted precisely what the query builder was written to read,
     // so $limit / $offset / $orderBy / $select were all silently inert.
+    refuseUnknownDirectives(rawQuery)
+
     const { query, directives } = splitParams(rawQuery) as {
       query: Record<string, unknown>
       directives: QueryDirectives
@@ -245,6 +249,8 @@ export const bridge = {
     // An internal caller may still hand us a `$`-spelled query (older code,
     // and tests that predate ctx.directives). Translate rather than ignore:
     // explicit opts.directives wins, `$` keys are the fallback.
+    refuseUnknownDirectives(query)
+
     const { query: filters, directives: fromQuery } = splitParams(query) as {
       query: Record<string, unknown>
       directives: QueryDirectives
@@ -331,6 +337,39 @@ function protectedFieldsFor(ctx?: ServiceContext): Record<string, string> {
 // Only a stated negative is refused. A non-numeric `$limit` keeps its existing
 // fallback to the default: text is a caller who wrote nothing usable, where a
 // negative number is a caller who wrote something and meant it.
+/*
+ * A `$` name the wire does not know is refused, and the refusal names it.
+ *
+ * `$limitt=10` used to be a WHERE on a column nobody declared, which the Data
+ * boundary reported three layers from the cause (`FJS-988`); it is dropped now,
+ * and dropping is what this replaces — the caller asked for ten rows, got the
+ * default page and a 200, and nothing said why.
+ *
+ * The BRIDGE refuses and sierra's router does not, which is § IV *ergonomics vs.
+ * strictness* resolved per surface by what a mistake destroys: here a typo costs
+ * the correctness of the answer and a refusal costs a retry, while in a router a
+ * refusal destroys the navigation and a half-loaded page is worse than a missing
+ * `$limit` (`FJS-D237`).
+ *
+ * The list of names comes from the toolbelt table rather than from here. A copy
+ * would go stale on the next directive added, which is the exact failure that
+ * table was built to end.
+ */
+function refuseUnknownDirectives(params: unknown): void {
+  const unknown = unknownDirectives(params as Record<string, unknown>)
+  if (!unknown.length) return
+
+  const available = [...RESERVED_PARAMS].sort()
+  const plural = unknown.length > 1
+  throw new BadRequest(
+    `${unknown.join(', ')} ${plural ? 'are not directives' : 'is not a directive'} this API knows. ` +
+    `A '$' name is transport syntax, so it cannot fall through and be read as a filter either — ` +
+    `the call is refused rather than answered as if it had been applied. ` +
+    `Case matters: ${available.join(', ')}.`,
+    { directives: unknown, available }
+  )
+}
+
 function refuseNegativeWindow(directives: QueryDirectives): void {
   for (const name of ['limit', 'offset'] as const) {
     const value = directives[name]

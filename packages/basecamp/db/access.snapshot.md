@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-50 models · 50 gated · 0 unrestricted
-36 with row policies · 8 with protected fields · 19 declared moves · 5 @system · 0 @seals
+50 models · 1 view · 51 gated · 0 unrestricted
+37 with row policies · 8 with protected fields · 19 declared moves · 5 @system · 0 @seals
 ```
 
 ## Gates
@@ -44,6 +44,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `Environment` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `FeatureFlag` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `FlagOverride` | 2 READER | 4 USER | 4 USER | 4 USER |
+| `fleetByProvider` *(view)* | 2 READER | — *no writes* | — *no writes* | — *no writes* |
 | `HubConfig` | 7 SYSADMIN | 7 SYSADMIN | 7 SYSADMIN | 7 SYSADMIN |
 | `Invitation` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Job` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
@@ -251,6 +252,10 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **post-update** — `!check(environment, 'read')` — "Outside your workspaceId"
 - deny **delete** — `!check(flag, 'read')` — "Outside your workspaceId"
 - deny **delete** — `!check(environment, 'read')` — "Outside your workspaceId"
+
+### `fleetByProvider` *(view)*
+
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 
 ### `Invitation`
 

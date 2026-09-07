@@ -437,3 +437,52 @@ describe('auth errors map correctly outside the auth routes', () => {
     expect(new AuthConfigError('x').status).toBe(500)
   })
 })
+
+// ─── GET /auth/email/verify — the token is a STRING ────────────────────────
+//
+// `FJS-296` gave these routes a body reader because a where-operator object
+// reached the user lookup. The QUERY never got one, and this route read it with
+// `as string` — a cast that does nothing at runtime — where every OAuth sibling
+// wrote `String(...)`. `?token[gt]=` therefore arrived as `{ gt: '' }`, went
+// into `where: { value: token }`, matched the first unexpired row and verified
+// somebody else's address (`FJS-1002`).
+
+describe('GET /auth/email/verify', () => {
+  test('a where-operator in the query cannot verify a stranger', async () => {
+    const reg = await request(app).post('/auth/register')
+      .send({ email: email('ev-victim'), password: 'pw', name: 'EV' })
+    expect(reg.status).toBe(201)
+    await (h.auth as any).requestEmailVerification((reg.body as any).user.userId)
+
+    const pendingBefore = await h.sys.verification.findMany({ where: { purpose: 'emailVerify' } })
+    expect(pendingBefore.length).toBeGreaterThan(0)
+
+    for (const q of ['token[gt]=', 'token[not]=zzz', 'token[gte]=', 'token[contains]=']) {
+      const res = await request(app).get(`/auth/email/verify?${q}`)
+      expect(res.status).toBe(400)
+      expect((res.body as any).message).toMatch(/token must be a string/)
+    }
+
+    // The row is UNTOUCHED and the account is still unverified. Asserting the
+    // 400s alone passes against a route that answered 400 and consumed the row.
+    const after = await h.sys.verification.findMany({ where: { purpose: 'emailVerify' } })
+    expect(after.length).toBe(pendingBefore.length)
+    const victim = await h.sys.user.findFirst({ where: { email: email('ev-victim') } })
+    expect(victim.emailVerified).toBe(false)
+  })
+
+  test('the real token still verifies, and is consumed', async () => {
+    // The control, and it has to run after the row above is proven intact: a
+    // guard refusing every token would satisfy the refusals on its own.
+    const reg = await request(app).post('/auth/register')
+      .send({ email: email('ev-ok'), password: 'pw', name: 'OK' })
+    await (h.auth as any).requestEmailVerification((reg.body as any).user.userId)
+    const token = h.verifyToken()
+
+    const res = await request(app).get(`/auth/email/verify?token=${encodeURIComponent(token)}`)
+    expect(res.status).toBe(200)
+    expect((res.body as any).user.email).toBe(email('ev-ok'))
+
+    expect((await request(app).get(`/auth/email/verify?token=${encodeURIComponent(token)}`)).status).toBe(400)
+  })
+})

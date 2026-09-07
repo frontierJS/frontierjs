@@ -157,3 +157,44 @@ test('hooks: the message names the phase and both ways out', async function () {
   assert.equal(onError.includes('ctx.error'), true)
   assert.equal(onError === around, false)
 })
+
+/* ── A method name is a map key ─────────────────────────────────────── */
+
+// `method` is a service method NAME, looked up in a map the caller wrote. With
+// ordinary access `p['constructor']` answers `Object`, which `runHooks` then
+// iterates. Every row below names one of the six inherited members
+// specifically: an ordinary method name behaves correctly with or without the
+// fix, so a row using one grades nothing (`FJS-1003`).
+
+test('hooks: a method named after an Object member runs its own hooks, or none', async function () {
+  let ran = 0
+  const map = { before: { all: [() => { ran++ }], find: [() => { ran++ }] } }
+
+  ran = 0; await runPhase(map, 'before', 'find', {})
+  assert.equal(ran, 2, 'the control: `all` plus the method\'s own')
+
+  for (const method of ['constructor', 'toString', 'valueOf', 'hasOwnProperty']) {
+    ran = 0
+    await runPhase(map, 'before', method, {})
+    // `all` still runs; the method has no hooks of its own and that is not an
+    // error. Before the fix `constructor` threw and the rest ran nothing.
+    assert.equal(ran, 1, `runPhase for '${method}' runs \`all\` and nothing else`)
+  }
+})
+
+test('hooks: mergeHooks survives a method named after an Object member', async function () {
+  // `i?.[method]` read the inherited value and spread it — `TypeError: ... is
+  // not iterable` — whenever one side declared such a name and the other did not.
+  const a = { before: { constructor: ['a1'], find: ['f1'] } }
+  const b = { before: { find: ['f2'] } }
+
+  const out = mergeHooks(a, b)
+  assert.deepEqual(out.before.constructor, ['a1'])
+  assert.deepEqual(out.before.find, ['f1', 'f2'], 'the control: ordinary names still concatenate')
+
+  // A `__proto__` key is DEFINED rather than assigned, or the list is lost to
+  // the prototype in silence.
+  const p = mergeHooks(JSON.parse('{"before":{"__proto__":["x"]}}'), { before: { find: ['y'] } })
+  assert.deepEqual(Object.keys(p.before).sort(), ['__proto__', 'find'])
+  assert.deepEqual(p.before.__proto__, ['x'])
+})

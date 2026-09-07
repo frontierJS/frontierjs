@@ -112,7 +112,14 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
   const defs   = full.$defs ?? {}
   const cDefs  = create.$defs ?? {}
   const names  = Object.keys(defs)
-  const models = names.filter(n => isModel(defs[n]))
+  // A view is counted apart from the models it is rendered beside. The two are
+  // one section because a projection is described exactly as a table is — the
+  // same fields, the same gate, the same closed object — and separate numbers
+  // because they are not the same thing to a reader: nothing writes a view, so
+  // `55 models` over a schema holding 54 was the count reading as the claim.
+  const isView = (d) => isModel(d) && d['x-litestone-view'] === true
+  const models = names.filter(n => isModel(defs[n]) && !isView(defs[n]))
+  const views  = names.filter(n => isView(defs[n]))
   const enums  = names.filter(n => isEnum(defs[n]))
   const others = names.filter(n => !isModel(defs[n]) && !isEnum(defs[n]))
 
@@ -134,8 +141,10 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
   out.push('and no reader branches on them.')
   out.push('')
   out.push('```')
-  out.push(`${Object.keys(defs).length} definitions · ${models.length} models · ` +
-           `${enums.length} enums · ${others.length} other`)
+  const many = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+  out.push(`${many(Object.keys(defs).length, 'definition')} · ${many(models.length, 'model')} · ` +
+           (views.length ? `${many(views.length, 'view')} · ` : '') +
+           `${many(enums.length, 'enum')} · ${others.length} other`)
   out.push('```')
   out.push('')
 
@@ -152,7 +161,9 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
   out.push('| Name | Kind |')
   out.push('| --- | --- |')
   for (const name of names) {
-    const kind = isModel(defs[name]) ? 'model' : isEnum(defs[name]) ? 'enum' : 'type'
+    const kind = isView(defs[name])  ? 'view'
+               : isModel(defs[name]) ? 'model'
+               : isEnum(defs[name])  ? 'enum' : 'type'
     out.push(`| \`${name}\` | ${kind} |`)
   }
   out.push('')
@@ -178,7 +189,7 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
   out.push('rule names `x-messages` answers for, which is what a failure is allowed to say.')
   out.push('')
 
-  for (const name of models) {
+  for (const name of [...models, ...views]) {
     const def      = defs[name]
     const required = new Set(def.required ?? [])
     const props    = Object.entries(def.properties ?? {})
@@ -195,6 +206,10 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
     if (def['x-version'])     meta.push(`version field \`${def['x-version']}\``)
     if (def['x-soft-delete']) meta.push(`soft delete \`${def['x-soft-delete']}\``)
     if (def.additionalProperties === false) meta.push('closed (`additionalProperties: false`)')
+    // Said on the definition rather than left to be inferred from a gate of 9
+    // on three operations: a projection is read-only because it is a
+    // projection, and the locked writes are the consequence.
+    if (def['x-litestone-view']) meta.unshift('view — read-only')
     if (meta.length) bullets.push(`- ${meta.join(' · ')}`)
 
     // Relations — the ONLY place a relation exists on the client, and what
@@ -260,7 +275,10 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
     // and a required one that a caller cannot send is the shape of FJS-095:
     // validation refuses before the request, naming fields the caller was never
     // meant to provide.
-    const cDef      = cDefs[name]
+    // A projection has no create mode to differ from, and every line this
+    // block could write about one — "required — nothing" — reads as a fact
+    // about a form that does not exist.
+    const cDef      = def['x-litestone-view'] ? null : cDefs[name]
     if (cDef) {
       const cProps    = new Set(Object.keys(cDef.properties ?? {}))
       const cRequired = cDef.required ?? []

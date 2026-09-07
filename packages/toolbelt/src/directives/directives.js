@@ -90,6 +90,27 @@ export const TRANSPORT_PARAMS = Object.freeze(['$first', '$wrap'])
 export const RESERVED_PARAMS = new Set([...DIRECTIVE_PARAMS, ...TRANSPORT_PARAMS])
 
 /**
+ * The `$` keys this table does not know, in the order they arrived.
+ *
+ * The kit REPORTS and the boundary REFUSES, because this package is a pure
+ * function below the dependency graph (`FJS-D26`) and a refusal is a decision
+ * about a request. It is here rather than at either boundary so the list a
+ * refusal names is derived from the same table `splitParams` strips by — a
+ * second list would go stale the moment a directive is added, which is the
+ * failure the table itself was built to end (`FJS-306`).
+ *
+ * `$` alone is included: it is not a name this table holds, and a caller who
+ * wrote it meant something.
+ *
+ * @param {Record<string, unknown>} params
+ * @returns {string[]}
+ */
+export function unknownDirectives(params) {
+  if (!params || typeof params !== 'object') return []
+  return Object.keys(params).filter((k) => k.startsWith('$') && !RESERVED_PARAMS.has(k))
+}
+
+/**
  * The `$` keys of a parameter bag → the structured directives.
  *
  * Absent keys stay absent — an empty object means *nothing was asked*, which is

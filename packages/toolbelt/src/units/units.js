@@ -20,6 +20,21 @@ const STEP  = 1024
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
 
 /**
+ * A value that is genuinely a number, or NaN.
+ *
+ * `Number(null)`, `Number('')` and `Number([])` are all 0 — the one place
+ * JavaScript hands you a plausible answer to a question nobody asked, and the
+ * reason every function here has to ask before it divides. Only a number or a
+ * non-blank string is one; what each caller then DOES about NaN is its own
+ * surface's answer, and they differ.
+ */
+function asNumber(value) {
+  if (typeof value === 'number') return value
+  if (typeof value === 'string' && value.trim() !== '') return Number(value)
+  return NaN
+}
+
+/**
  * Bytes → the shortest honest string.
  *
  * Precision is ADAPTIVE: one decimal below ten of a unit, none above it —
@@ -36,11 +51,8 @@ const UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
  */
 export function formatBytes(bytes, opts = {}) {
   // Not a number is not zero. Answering '0 B' for a missing size is how *we do
-  // not know* reads as *an empty file*. `null` and `''` are checked by hand
-  // because `Number(null)` and `Number('')` are both 0, which is the one place
-  // JavaScript will hand you a plausible answer to a question nobody asked.
-  if (bytes == null || bytes === '') return ''
-  const n = Number(bytes)
+  // not know* reads as *an empty file*.
+  const n = asNumber(bytes)
   if (!Number.isFinite(n)) return ''
 
   const sign = n < 0 ? '-' : ''
@@ -98,8 +110,7 @@ export const BYTE_UNITS = Object.freeze(UNITS)
  * @returns {string}
  */
 export function formatMoney(amount, currency = 'USD', opts = {}) {
-  if (amount == null || amount === '') return ''
-  const n = Number(amount)
+  const n = asNumber(amount)
   if (!Number.isFinite(n)) return ''
 
   const code = String(currency || 'USD').toUpperCase()
@@ -240,14 +251,23 @@ function isoDigits(code) {
  * the yen by a factor of a hundred, and wrong for the dinar by ten; it is the
  * same mistake `formatMoney` exists to stop, one step earlier in the pipe.
  *
+ * Not a number answers NaN rather than 0, and it does not throw. This is the
+ * READ side: the value came out of a nullable column and its sink is
+ * `formatMoney`, which already answers `''` for a number it cannot render — so
+ * NaN carries *we do not know* all the way to the cell, where 0 rendered it as
+ * `$0.00` and a throw would take a screen down over one missing amount. The
+ * currency is still resolved first, so a typo in the CODE is loud either way.
+ * `toMinor` below is the opposite surface and answers the opposite way.
+ *
  * @param {number} minor  a whole number of minor units, e.g. 1299
  * @param {string} currency  ISO 4217
  * @returns {number}  the major-unit amount, e.g. 12.99
  */
 export function fromMinor(minor, currency) {
-  const n = Number(minor)
-  if (!Number.isFinite(n)) return 0
-  return n / 10 ** minorUnits(currency)
+  const n = asNumber(minor)
+  const scale = 10 ** minorUnits(currency)
+  if (!Number.isFinite(n)) return NaN
+  return n / scale
 }
 
 /**
@@ -258,13 +278,21 @@ export function fromMinor(minor, currency) {
  * a number that looks exact. Every amount entering the Data boundary goes
  * through here; nothing downstream of it is a float.
  *
+ * Not a number THROWS, where `fromMinor` above answers NaN and `formatMoney`
+ * answers `''`. One rule resolved per surface, by what a mistake destroys, and
+ * this is the write side: 0 is a plausible answer to a question nobody asked,
+ * and the question here is what to charge, so a missing amount booked a free
+ * order and nothing said anything. A caller that means *blank is no amount*
+ * decides that before the call, because only it knows.
+ *
  * @param {number} major  e.g. 12.99
  * @param {string} currency  ISO 4217
  * @returns {number}  minor units, e.g. 1299
  */
 export function toMinor(major, currency) {
-  const n = Number(major)
-  if (!Number.isFinite(n)) return 0
+  const n = asNumber(major)
+  if (!Number.isFinite(n))
+    throw new Error(`toMinor: ${JSON.stringify(major)} is not a finite number of ${String(currency).toUpperCase()}`)
   return Math.round(n * 10 ** minorUnits(currency))
 }
 
@@ -307,11 +335,10 @@ export function roundMinor(value, opts = {}) {
   if (mode !== 'half-away' && mode !== 'half-even')
     throw new Error(`roundMinor: unknown mode '${mode}' — 'half-away' or 'half-even'`)
 
-  const n = Number(value)
-  // Not a number is not zero anywhere else in this file, and it is not zero
-  // here either — but this one is arithmetic rather than display, so a caller
-  // handed NaN has a bug upstream and a silent 0 buries it in a total.
-  if (!Number.isFinite(n)) throw new Error(`roundMinor: ${value} is not a finite number`)
+  const n = asNumber(value)
+  // Arithmetic rather than display, so a caller handed NaN has a bug upstream
+  // and a silent 0 buries it in a total.
+  if (!Number.isFinite(n)) throw new Error(`roundMinor: ${JSON.stringify(value)} is not a finite number`)
 
   const sign = n < 0 ? -1 : 1
   const mag  = Math.abs(n)

@@ -33,18 +33,20 @@ title: Dashboard
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
-  import Widget from '../../../components/widgets/Widget.mesa'
+  import Widget   from '../../../components/widgets/Widget.mesa'
+  import NoRecord from '../../../components/NoRecord.mesa'
 
   $: page.params
 
-  let board   = null
-  let kinds   = []
-  let sources = []          // what a counter may count
-  let adapters = []         // portal ids a service_health widget may name
-  let error   = null
-  let loading = true
-  let busy    = null
-  let editing = false
+  let board     = null
+  let kinds     = []
+  let sources   = []          // what a counter may count
+  let adapters  = []         // portal ids a service_health widget may name
+  let error     = null
+  let loadError = null
+  let loading   = true
+  let busy      = null
+  let editing   = false
 
   // The add-widget panel. `chosen` is the kind spec, not just its name — the
   // second step is built from what that kind needs.
@@ -76,11 +78,11 @@ title: Dashboard
   }
 
   async function load() {
-    error = null
+    error = null; loadError = null
     try {
       await watchBoard(page.params.id)
     } catch (e) {
-      error = e.message
+      error = e.message; loadError = e
     } finally {
       loading = false
     }
@@ -212,10 +214,8 @@ title: Dashboard
 {#if loading}
   <p class="text-sm text-muted">Loading…</p>
 {:else if !board}
-  <div class="section-header"><h1>Dashboard</h1></div>
-  <article class="alert danger" id="screen-error">
-    <div class="alert-content">{error ?? 'Not found'}</div>
-  </article>
+  <NoRecord error={loadError} noun="Dashboard" onretry={load}
+            backHref="/dashboards/" backLabel="Back to dashboards" />
 {:else}
   <div class="section-header">
     <h1>{board.icon ?? ''} {board.name}</h1>

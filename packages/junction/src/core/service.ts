@@ -1176,7 +1176,15 @@ export function collectCustomMethods(
     for (const entry of declared) {
       const name = methodEntryName(entry, serviceName)
       if (CRUD_METHODS.has(name)) continue
-      const fn = src[name]
+      // Own keys. `src['toString']` answers an inherited function, so six names
+      // — toString, valueOf, constructor, hasOwnProperty, isPrototypeOf,
+      // propertyIsEnumerable — passed the `typeof fn !== 'function'` check below
+      // and were REGISTERED, publishing a route the service never wrote and
+      // advertising it in describe(), /health and the OpenAPI document. The
+      // branch exists to refuse a name that is not defined here, and those six
+      // are the ones it could not refuse (`FJS-1003`). The scan branch below
+      // already walks Object.entries, which is why only this one was wrong.
+      const fn = Object.hasOwn(src, name) ? src[name] : undefined
 
       // Name what IS on offer. A typo'd allow-list entry (`'fnid'`) is the
       // common case, and the message that only repeats what the caller wrote

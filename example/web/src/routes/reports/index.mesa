@@ -49,6 +49,11 @@ title: Reports
 
   function load() {
     error = null; refused = false
+    // What the affordance buys, and the whole of it: not making a request that
+    // is going to come back 403. The refusal below is still what the page is
+    // drawn from, so a wrong answer here costs a round trip in one direction
+    // and shows the same panel in the other.
+    if (!revenue.can('read', session.level)) return
     revenue.load({}, { orderBy: 'status' })
       .catch(e => {
         // A gate refusal is not an error this screen reports, it is the state
@@ -59,18 +64,17 @@ title: Reports
   }
   load()
 
-  // Two ways to know, and the second is the one that decides.
+  // Two ways to know, and the SERVER's is the one that decides.
   //
   // `can()` is an AFFORDANCE and Invariant 6 makes it deliberately permissive:
-  // an answer the browser's schema does not carry is *yes*, and the server
-  // enforces regardless. A `view`'s gate does not currently reach the generated
-  // schema at all (`FJS-999`), so this answers yes for every caller — which is
-  // exactly the case the invariant describes, and exactly why a screen may not
-  // rest on it.
+  // an answer the browser's schema does not carry is *yes*. It carries one now
+  // — a view's `@@gate` reaches the generated schema the way a model's does —
+  // so this answers no for staff and the panel is drawn without asking. That is
+  // a saving and not a boundary: `session.level` is the browser's own copy, and
+  // a page that hid itself on the strength of it would be resting on the one
+  // answer the client is not the authority for.
   //
-  // So the refusal above is what draws the panel, and this only ever saves a
-  // round trip. When the schema gap closes, staff stop making the request at
-  // all and nothing else about this page changes.
+  // Which is why both are read. `refused` is the one that cannot be wrong.
   $: canRead = revenue.can('read', session.level)
   $: gated   = refused || !canRead
 

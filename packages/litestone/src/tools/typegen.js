@@ -11,6 +11,11 @@
 //   - Typed LitestoneClient interface
 
 import { pluralize as pluralizeWord } from '@frontierjs/toolbelt/inflect'
+// The verbs a view refuses, read from the one place that refuses them. Restated
+// here it would be a second list beside the thing that owns the answer, and the
+// two would part company on the day a verb is added — which is exactly the shape
+// that left a view without `findManyAndCount` (`FJS-997`).
+import { VIEW_REFUSED } from '../core/client.js'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -249,6 +254,58 @@ export function generateTypeScript(schema, opts = {}) {
     lines.push(``)
   }
 
+  // ── Views ────────────────────────────────────────────────────────────────────
+  // A projection gets a Row and a Where and nothing else. There is no Create and
+  // no Update because there is no write: a view refuses all thirteen write verbs
+  // by name at the Data boundary, which is what `ViewClient` says in the type
+  // system rather than restating.
+  //
+  // View field AST carries no `attributes` array — a view column takes no field
+  // attributes, so the parser has nowhere to put one — and every spec helper
+  // below reads it, so it is backfilled here the same way `createClient` does
+  // for its view-as-model stubs.
+  const views = (schema.views ?? []).map(v => ({
+    ...v,
+    fields: (v.fields ?? []).map(f => ({ ...f, attributes: f.attributes ?? [] })),
+  }))
+
+  if (views.length) {
+    lines.push(`// ── Views ────────────────────────────────────────────────────────────────────`, ``)
+    for (const view of views) {
+      lines.push(`// ─── ${pascal(view.name)} ${'─'.repeat(Math.max(0, 60 - view.name.length))}`, ``)
+
+      if (includeComments && view.comments?.length) {
+        lines.push(`/**`)
+        for (const c of view.comments) lines.push(` * ${c}`)
+        lines.push(` */`)
+      }
+      lines.push(`export interface ${pascal(view.name)} {`)
+      for (const field of view.fields) {
+        const spec = fieldRowSpec(field, schema, audience, modelNames)
+        if (!spec) continue
+        if (includeComments && field.comments?.length === 1) lines.push(`  /** ${field.comments[0]} */`)
+        else if (includeComments && field.comments?.length) {
+          lines.push(`  /**`)
+          for (const c of field.comments) lines.push(`   * ${c}`)
+          lines.push(`   */`)
+        }
+        lines.push(`  ${spec.name}${spec.optional ? '?' : ''}: ${spec.tsType}`)
+      }
+      lines.push(`}`, ``)
+
+      lines.push(`export interface ${pascal(view.name)}Where extends WhereBase {`)
+      for (const field of view.fields) {
+        const spec = fieldWhereSpec(field, schema, modelNames)
+        if (!spec) continue
+        lines.push(`  ${spec.name}?: ${spec.tsType}`)
+      }
+      lines.push(`  AND?: ${pascal(view.name)}Where[]`)
+      lines.push(`  OR?:  ${pascal(view.name)}Where[]`)
+      lines.push(`  NOT?: ${pascal(view.name)}Where`)
+      lines.push(`}`, ``)
+    }
+  }
+
   // ── Service map ──────────────────────────────────────────────────────────────
   // `model Post` → `db.post` → service `posts`, which is the name a browser
   // calls `client.service('posts')` with. The plural comes from
@@ -276,6 +333,14 @@ export function generateTypeScript(schema, opts = {}) {
   )
   for (const model of schema.models) {
     lines.push(`  ${serviceName(model.name)}: ${pascal(model.name)}`)
+  }
+  // Views take the same convention. It is likelier to be wrong for a projection
+  // than for a model — a report's service is named for the report rather than
+  // for the grain it groups at — and the convention is followed anyway, because
+  // being wrong here costs a missing inference and never a wrong one, and an
+  // exception is a rule two readers have to remember.
+  for (const view of views) {
+    lines.push(`  ${serviceName(view.name)}: ${pascal(view.name)}`)
   }
   lines.push(`}`, ``)
 
@@ -359,6 +424,22 @@ export interface CursorResult<T> {`,
     ``,
   )
 
+  // Emitted only where a view is declared, the way FileRef is emitted only
+  // where a File column is. A schema with no projection pays nothing for one.
+  if (views.length) lines.push(
+    `// ── View client interface ────────────────────────────────────────────────────`,
+    ``,
+    `// A projection reads and does not write. The set removed is litestone's own`,
+    `// \`VIEW_REFUSED\` — the list the client refuses by name — so a verb added`,
+    `// to one is removed from the other with nothing here to edit.`,
+    `export type ViewRefusedVerb =`,
+    ...[...VIEW_REFUSED].sort().map(v => `  | '${v}'`),
+    ``,
+    `export type ViewClient<TRow, TWhere> =`,
+    `  Omit<TableClient<TRow, never, never, TWhere>, ViewRefusedVerb>`,
+    ``,
+  )
+
   // ── QueryEvent (for onQuery) ──────────────────────────────────────────────────
   lines.push(
     `// ── onQuery event ────────────────────────────────────────────────────────────`,
@@ -404,6 +485,15 @@ export interface CursorResult<T> {`,
   for (const model of schema.models) {
     lines.push(
       `  readonly ${accessor(model.name)}: TableClient<${pascal(model.name)}, ${pascal(model.name)}Create, ${pascal(model.name)}Update, ${pascal(model.name)}Where>`
+    )
+  }
+  // And one per view. A view is reached exactly as a table is — `db.<name>` —
+  // and its accessor IS its declared name, a projection being named like one
+  // already. Missing, a real read of a declared report was a type error in the
+  // one place a generated .d.ts is supposed to help.
+  for (const view of views) {
+    lines.push(
+      `  readonly ${accessor(view.name)}: ViewClient<${pascal(view.name)}, ${pascal(view.name)}Where>`
     )
   }
 

@@ -95,6 +95,24 @@ is in range and no month it admits is long enough.
 zone and walks a wall clock across daylight boundaries, junction's in-process
 scheduler reads the host clock, and neither is a fact about the grammar.
 
+**Day of month and day of week are OR'd where BOTH are restricted**, and AND'd
+with the other three: `0 0 1 * mon` is the first of the month AND every Monday,
+which is what it means in a crontab. The asymmetry reads as a bug and is the
+grammar — under a uniform AND the same line fires only when the 1st happens to
+BE a Monday, about one month in seven, which is a schedule that runs and looks
+alive (`FJS-1008`). Restricted means *not written as a star* — cron's own test
+is the field's FIRST CHARACTER, so `0-6` names every day and is still restricted,
+and `0 0 1 * 0-6` fires daily. Reading set COMPLETENESS instead looks tidier and
+diverges on exactly that line, silently.
+
+**A name is resolved in its own field's table**, never over the line: `sat` is a
+day and `jan` is a month, and each is refused in the other's field rather than
+becoming a number (`FJS-1009`). Any prefix of two letters or more naming exactly
+one entry, so `jun` resolves and `ju` is refused naming what it could be.
+
+`cronMatches` throws where `parts` is missing one of the five keys. It used to
+answer `false` — every minute, for ever.
+
 Sunday is 0 and 7. A term may combine a list, a range and a step (`0,2-4,9-15/3`).
 
 ## `units` — a magnitude with a unit
@@ -115,8 +133,18 @@ Precision is adaptive — one decimal below ten of a unit, none above, and never
 bytes — because a long list is scanned for magnitudes, and `503.2 GB` carries a
 digit nobody is reading. `decimals` fixes it for a column that must not jitter.
 
-`''` for `undefined`, `null`, `NaN` and a non-numeric string: answering `0 B` for
-a missing size is how *we do not know* reads as *an empty file*.
+`''` for `undefined`, `null`, `NaN`, `[]` and a non-numeric string: answering
+`0 B` for a missing size is how *we do not know* reads as *an empty file*.
+`Number(null)` and `Number('')` are both 0, so every function here asks before
+it divides.
+
+**What it does about that answer depends on the surface, and the three differ on
+purpose.** A formatter says `''` — display can say nothing. `fromMinor` answers
+NaN, which `formatMoney` turns into `''`, so a nullable money column reaches the
+cell as blank rather than as `$0.00`, and one missing amount does not take a
+screen down. `toMinor` and `roundMinor` **throw**: those are the write and the
+arithmetic, where a silent 0 is a free order or a receipt that balances and is
+wrong (`FJS-1011`). The currency CODE is strict on all of them.
 
 Four copies of this function existed before it did, and two of them disagreed —
 `@frontierjs/ui` said `5.0 MB` where three basecamp screens said `5 MB`, so one
@@ -124,8 +152,9 @@ application showed one disk two ways (`FJS-408`).
 
 ## `inflect` — how a name is spelled
 
-Two axes of one question. NUMBER is `post` ⇄ `posts`; SHAPE is
-`product_variants` ⇄ `ProductVariant` ⇄ `productVariant`.
+Three axes of one question. NUMBER is `post` ⇄ `posts`; SHAPE is
+`product_variants` ⇄ `ProductVariant` ⇄ `productVariant`; READER is
+`postal_code` → `Postal Code`.
 
 ```js
 import { pluralize, singularize, modelName, camel, snake, slug } from '@frontierjs/toolbelt/inflect'

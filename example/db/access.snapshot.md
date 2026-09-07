@@ -10,7 +10,7 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-43 models · 43 gated · 0 unrestricted
+42 models · 1 view · 43 gated · 0 unrestricted
 13 with row policies · 20 with protected fields · 15 declared moves · 8 @system · 1 @seals
 ```
 

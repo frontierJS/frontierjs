@@ -1,5 +1,71 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-07 — a view reaches the generated types, and leaves the gate ladder
+
+Two more of `FJS-999`'s walk. `litestone types` never looked at `schema.views`,
+so a declared projection was absent from the `.d.ts` and `db.<view>` was a type
+error in the one file whose whole job is to make that call legal (`FJS-1005`).
+
+A view emits a Row and a Where and **no Create and no Update** — there is
+nothing to write — and its client entry is `ViewClient<Row, Where>`, which is
+`TableClient` minus the verbs litestone itself refuses. **That set is imported
+rather than restated**: the emitted `ViewRefusedVerb` union is built from
+`VIEW_REFUSED`, so a verb added to one is removed from the other with nothing in
+the type emitter to edit. The test asserts the union against the constant rather
+than against a literal, for the same reason.
+
+`VIEW_BLOCKED_WRITES` is now `VIEW_REFUSED`. Two of its thirteen members are
+reads — `search` and `optimizeFts`, refused because a view declares no `@@fts` —
+and the name was about to be published into every app's `.d.ts`.
+
+`verifyGateLadder` no longer puts a view's writes on the ladder (`FJS-1006`).
+The checker builds a fixture per row, a projection has no table to build one in,
+and it reported *no fixture could be built, so the gate was never asked* three
+operations by nine levels per view. A checker that emits 27 unaskable rows is
+one people stop reading — and it is not a fixture gap: a view refuses those
+three for every caller and for `asSystem()` alike, so no level grades them.
+Reads still run, which is the control the test keeps.
+
+`access.snapshot.md` counts views apart from models. The table already labelled
+each row; the header said `51 models` over a schema declaring 50.
+
+## 2026-09-07 — a view is described to the browser, and it is described as read-only
+
+`FJS-999`. `generateJsonSchema` walked `schema.models` and never `schema.views`,
+so `x-gate` was emitted for no projection at all and a client asking whether a
+caller may read a report got the permissive answer Invariant 6 gives to a
+question the schema does not carry. Never a hole — the boundary grades again —
+but the affordance's whole job is not making a request that is going to 403, and
+a screen with no affordance can only render the refusal it already received.
+
+**The views go through the model generator rather than beside it.** A projection
+declares columns and access attributes and nothing else, so `modelToJsonSchema`
+already answers every question about one correctly; `viewToJsonSchema` normalizes
+the decl — view field AST carries no `attributes` array, the same backfill
+`createClient` does for its view-as-model stubs — and applies afterwards the one
+thing the model generator cannot know: **a projection has no writable mode.**
+Every column is `readOnly`, `required` is dropped, and the two modes come out
+identical, so sierra's `diffSchemaModes` finds nothing to patch and a view costs
+that bundle one definition rather than two.
+
+**The three writes are emitted LOCKED and the declaration gets no say.** A view
+refuses every write at the Data boundary for every caller and for `asSystem()`
+alike, which is what 9 means on the scale; passing the declared `@@gate("5")`
+through all four would have told a screen an ADMINISTRATOR may create one, which
+is false at every level. Read stays the declaration's, and stays ABSENT where
+there is none, because an unknown affordance is permissive and inventing a level
+there would be the opposite mistake.
+
+`x-litestone-view` is the flag, and it is not redundant with the readOnly
+columns: a model of nothing but `@computed` columns emits the same shape, and a
+consumer has to be able to tell a projection from one — a `<Form>` over a view is
+a bug rather than an empty form.
+
+`jsonschema.snapshot.md` counts and labels views apart from the models it renders
+them beside, and writes no create-mode line for one, since *required — nothing*
+about a form that does not exist is the count reading as the claim. That file is
+the artefact that makes the next projection's arrival visible.
+
 ## 2026-09-07 — a tuple key is a fixture the executed checks can build
 
 `FJS-961`. `expandCompositeId` stamps `@id` on every member of an `@@id([a, b])`,

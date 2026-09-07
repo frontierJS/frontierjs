@@ -1,5 +1,31 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-07 — the router still drops an unknown `$` name, on purpose
+
+Junction's bridge refuses one with a 400; this router does not, and the call site
+now says why (`FJS-D237`). A typo in a request costs the correctness of the
+answer and a refusal costs a retry; a typo in a URL is already a navigation, and
+there is nowhere to put an error a person could act on — a half-loaded page is
+worse than a missing `$limit`. The comment names the line that changes if a
+router ever grows an error channel. No behaviour change here; 1486 passing.
+
+## 2026-09-07 — a view is addressable as a resource
+
+`FJS-999`. The build's model list was `schema.models` alone, so a projection's
+definition sat in `$defs` reachable by `$ref` and by nothing else: `createResource`
+over a view resolved no schema at all, and every affordance it offers — `can()`
+most of all — answered from no declaration.
+
+**Views join the list and enums still do not**, which is the line: a `view` is
+something a resource READS, an enum is something a field refers to. The plural
+rules cannot reach a service named `revenue` over a projection named
+`revenueByStatus`, and that is the case the registry already answers by hand —
+`createResource('revenue', { model: 'revenueByStatus' })`, the same escape
+`createResource('lenses', { model: 'Lens' })` takes.
+
+Costs the bundle one definition per view and no second one: litestone emits a
+projection identically in both modes, so `diffSchemaModes` writes no patch.
+
 ## 2026-09-07 — a picker offers what you reached for last, first
 
 `recentHead` resolves a set's declared `recent(Model.column, clock)` into the

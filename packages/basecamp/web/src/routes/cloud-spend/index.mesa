@@ -13,7 +13,10 @@ title: Cloud spend
   //
   // What IS here is the inventory a bill is computed FROM, and that half is
   // real: how many machines, in which regions, under which provider, with how
-  // much disk attached. The money is a skeleton, and whether an adapter exists
+  // much disk attached. Those counts are a `view` in db/schema.lite now
+  // (`FJS-D228` phase 2) rather than a tally of whatever page of servers this
+  // screen happened to fetch — a report over a fleet has to be right about the
+  // fleet, and a `limit` is not a fact about it. The money is a skeleton, and whether an adapter exists
   // is ASKED — `ICloudSpend` is declared with a stub behind it and `/portal/`
   // reports which, the same read /admin/adapters/ makes.
   //
@@ -21,6 +24,7 @@ title: Cloud spend
   // whichever provider gains an adapter first, this is the screen it fills.
   import { session } from '../../session.js'
   import { servers } from '../../resources/Server.mesa'
+  import { fleet }   from '../../resources/Fleet.mesa'
   import { volumes } from '../../resources/Volume.mesa'
   import { portal } from '../../resources/Portal.mesa'
   import { formatBytes as size } from '@frontierjs/toolbelt/units'
@@ -36,7 +40,8 @@ title: Cloud spend
 
   $: session.workspaceId
 
-  let fleet   = []
+  let machines = []
+  let shape    = []
   let usage   = null
   let spend   = null
   let error   = null
@@ -45,8 +50,15 @@ title: Cloud spend
   async function load() {
     error = null; loading = true
     try {
-      const [srv, use, adapter] = await Promise.all([
+      const [srv, tally, use, adapter] = await Promise.all([
         servers.service.find({}, { limit: 200 }),
+        // The COUNTS, and they are not derived from the list beside them. This
+        // is `view fleetByProvider` in db/schema.lite — a projection the
+        // database groups — and the reason it exists is that the list above is
+        // a page: tallying `limit: 200` was silently wrong from the 201st
+        // machine, on the one screen whose whole job is to be right about how
+        // many there are.
+        fleet.service.find({}),
         // The fleet's disk totals, asked of the thing that owns them. The
         // volumes screen asks the same method — one answer, two readers.
         volumes.service.invoke('usage', null).catch(() => null),
@@ -54,7 +66,8 @@ title: Cloud spend
         // fleet is this app's own rows either way.
         portal.service.get('cloudSpend').catch(() => null),
       ])
-      fleet = srv.data
+      machines = srv.data
+      shape    = tally.data
       usage = use
       spend = adapter
     } catch (e) {
@@ -67,19 +80,28 @@ title: Cloud spend
   load()
   $: session.workspaceId, () => load()
 
-  // Grouped here rather than in a service: this is one read of a list the
-  // screen already has, and a `groupBy` endpoint for it would be an API
-  // nothing else could use.
-  function tally(rows, key) {
+  // Rolled up from the PROJECTION, never re-derived from the list. The view's
+  // grain is provider x region, so a roll-up to one provider is a sum over
+  // rows that are all present — which is the difference between rolling up a
+  // report and computing a second one beside it.
+  function rollup(rows, key) {
     const out = new Map()
-    for (const r of rows) out.set(r[key], (out.get(r[key]) ?? 0) + 1)
+    for (const r of rows) out.set(r[key], (out.get(r[key]) ?? 0) + (r.servers ?? 0))
     return [...out.entries()].sort((a, b) => b[1] - a[1])
   }
 
-  $: byProvider = tally(fleet, 'providerKind')
-  $: byRegion   = tally(fleet, 'region')
-  $: vcpu       = fleet.reduce((n, s) => n + (s.plan?.vcpu ?? 0), 0)
-  $: ram        = fleet.reduce((n, s) => n + (s.plan?.ramGb ?? 0), 0)
+  $: byProvider = rollup(shape, 'providerKind')
+  $: byRegion   = rollup(shape, 'region')
+  $: vcpu       = shape.reduce((n, r) => n + (r.vcpu  ?? 0), 0)
+  $: ram        = shape.reduce((n, r) => n + (r.ramGb ?? 0), 0)
+
+  // How many there are, and how many are listed below. Two numbers because
+  // they can differ: the table is a page and the count is the whole fleet, so
+  // saying *N online* under a total the list cannot see would be the truncated
+  // answer wearing the complete one's label.
+  $: total     = shape.reduce((n, r) => n + (r.servers ?? 0), 0)
+  $: truncated = total > machines.length
+  $: online    = machines.filter(s => s.status === 'online').length
 
   const COLUMNS = [
     { key: 'name',     label: 'Server' },
@@ -153,8 +175,8 @@ title: Cloud spend
   <div class="tiles" style="--tile-min: 12rem" id="spend-inventory">
     <article class="tile">
       <div class="tile-label">Servers</div>
-      <div class="tile-value">{fleet.length}</div>
-      <div class="tile-delta muted">{fleet.filter(s => s.status === 'online').length} online</div>
+      <div class="tile-value" id="spend-total">{total}</div>
+      <div class="tile-delta muted">{truncated ? `${machines.length} listed below` : `${online} online`}</div>
     </article>
     <article class="tile">
       <div class="tile-label">vCPU</div>
@@ -194,7 +216,7 @@ title: Cloud spend
 
   <Card>
     <h2 class="h4">The fleet</h2>
-    {#if fleet.length === 0}
+    {#if machines.length === 0}
       <EmptyState
         compact
         title="No servers yet"
@@ -205,7 +227,7 @@ title: Cloud spend
         {/snippet}
       </EmptyState>
     {:else}
-      <Table id="spend-rows" columns={COLUMNS} rows={fleet} striped>
+      <Table id="spend-rows" columns={COLUMNS} rows={machines} striped>
         {#snippet row(s)}
           <tr>
             <td><a href={`/servers/${s.id}/`}>{s.name}</a></td>

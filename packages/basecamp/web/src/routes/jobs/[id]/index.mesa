@@ -5,15 +5,17 @@ title: Job
   import { page }       from '@frontierjs/sierra/router'
   import { session }    from '../../../session.js'
   import { jobs }       from '../../../resources/Job.mesa'
-  import Button         from '@frontierjs/ui/components/forms/Button.mesa'
+  import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+  import NoRecord from '../../../components/NoRecord.mesa'
 
   $: page.params
   $: session.level
 
-  let job     = null
-  let error   = null
-  let loading = true
-  let busy    = null
+  let job       = null
+  let error     = null
+  let loadError = null
+  let loading   = true
+  let busy      = null
 
   // The job, watched rather than read (`FJS-518`). `get()` answers it WITH its
   // five most recent runs, so the history needs no second request — and that is
@@ -31,11 +33,11 @@ title: Job
   }
 
   async function load() {
-    error = null
+    error = null; loadError = null
     try {
       await watchJob(page.params.id)
     } catch (e) {
-      error = e.message
+      error = e.message; loadError = e
     } finally {
       loading = false
     }
@@ -79,10 +81,6 @@ title: Job
 
 {#if loading}
   <p class="text-sm text-muted">Loading…</p>
-{:else if error && !job}
-  <article class="alert danger">
-    <div class="alert-content">{error}</div>
-  </article>
 {:else if job}
   <div class="section-header">
     <h1>{job.name}</h1>
@@ -140,4 +138,7 @@ title: Job
       {/each}
     </ol>
   {/if}
+{:else}
+  <NoRecord error={loadError} noun="Job" onretry={load}
+            backHref="/jobs/" backLabel="Back to jobs" />
 {/if}

@@ -19,6 +19,7 @@
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { requireServers } from './lib/preflight.mjs'
+import { results, report } from './lib/report.mjs'
 
 const API = process.env.API_URL ?? 'http://localhost:8110'
 const REF = 'ORD-JOBS-1'
@@ -30,8 +31,7 @@ const AUDIT = 'db/audit/auditLogs.jsonl'
 
 await requireServers([['api (bun run api)', `${API}/api/health`]])
 
-const got = {}
-const t = (label, value) => { got[label] = value }
+const { got, t } = results()
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
@@ -452,33 +452,19 @@ const expected = {
   // is written inside the transaction, so it rolls back with everything else.
   'outbox.refusedMoveRecordsNothing': { status: 409, newAnnouncements: 0 },
   'sweep.ranOnDemand': { accepted: 200, finished: 'done' },
+
+  // Compared against what the sweep FOUND rather than against a constant: which
+  // orders were pending is a fact about the database this run opened on. A
+  // predicate is how `expected` says that (`lib/report.mjs`), so the row is
+  // graded and counted with the rest instead of beside them.
+  'sweep.cancelsAbandoned': (have) =>
+    JSON.stringify(have.nowCancelled) === JSON.stringify(have.wasPending)
+    && have.leftPending === 0
+    && have.othersUntouched === true,
 }
 
-let failed = 0
-for (const [key, want] of Object.entries(expected)) {
-  const have = got[key]
-  const ok = JSON.stringify(have) === JSON.stringify(want)
-  if (!ok) failed++
-  console.log(`${ok ? '  ok  ' : '  FAIL'} ${key}`)
-  if (!ok) {
-    console.log(`         want ${JSON.stringify(want)}`)
-    console.log(`         have ${JSON.stringify(have)}`)
-  }
-}
-
-// The sweep, compared against what it found rather than a constant.
-const sweep = got['sweep.cancelsAbandoned']
-const sweepOk = sweep
-  && JSON.stringify(sweep.nowCancelled) === JSON.stringify(sweep.wasPending)
-  && sweep.leftPending === 0
-  && sweep.othersUntouched === true
-if (!sweepOk) failed++
-console.log(`${sweepOk ? '  ok  ' : '  FAIL'} sweep.cancelsAbandoned`)
-if (!sweepOk) console.log(`         have ${JSON.stringify(sweep)}`)
-
-const total = Object.keys(expected).length + 1
-console.log(failed ? `\n${failed} assertion(s) failed` : `\nall ${total} assertions passed`)
+const failed = report(got, expected)
 if (!failed) console.log(
   `\nNote: this drive cancels every pending order (that is what a 0-day sweep\n` +
   `means). \`bun run reset\` re-seeds them — a restart no longer does.`)
-process.exit(failed ? 1 : 0)
+process.exit(failed)

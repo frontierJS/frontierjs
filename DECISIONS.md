@@ -4267,6 +4267,71 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d237"></a>2026-09-07 · `FJS-D237` — an unrecognised `$` parameter is REFUSED by junction's bridge and DROPPED by sierra's router. One grammar, two surfaces, two answers, because a refusal costs a retry on one and a navigation on the other.
+
+`$limitt=10` used to land in the filters as a `WHERE` on a column nobody
+declared, which the Data boundary reported three layers from the cause
+([`FJS-988`](ISSUES.md#fjs-988)). That is fixed and what replaced it was silence:
+the caller asked for ten rows, got the default page and a **200**, and nothing
+said why. Dropping is better than misfiling and it is not what this codebase does
+anywhere else — conduit refuses an unknown descriptor field by name,
+`collectCustomMethods` refuses a `methods:` entry that is not a method, litestone
+refuses an unknown `where` key with a suggestion.
+
+**The kit REPORTS and the boundary REFUSES.** `@frontierjs/toolbelt/directives`
+is a pure function below the dependency graph (`FJS-D26`), and a refusal is a
+decision about a request, so the kit could not make it. `unknownDirectives()` is
+the new export and it answers a list; each boundary decides what that list means.
+It lives in the kit rather than at either boundary so **the names a refusal
+prints are derived from the same table `splitParams` strips by** — a copy in the
+bridge would go stale on the next directive added, which is the exact failure
+that table was built to end (`FJS-306`).
+
+**Two boundaries, two answers, and the asymmetry is the ruling.** § IV
+*ergonomics vs. strictness* says resolve this per SURFACE by what a mistake
+destroys, never by temperament:
+
+| | reads | a typo costs | a refusal costs | answer |
+| --- | --- | --- | --- | --- |
+| junction's bridge | a query string / a WS frame | the correctness of the answer | a retry | **400, naming it** |
+| sierra's router | a URL's search string | a wrong page size | the navigation | **dropped** |
+
+A router has nowhere to put an error a person could act on — it is already
+navigating — and a half-loaded page is worse than a missing `$limit`. The comment
+at that call site says so, and says which line changes if a router ever grows an
+error channel. This is the same two-boundaries-one-table shape `FJS-D125` already
+lives with.
+
+**Both junction paths refuse, HTTP and the internal/WS one**, because a WS
+client's typo is the same mistake as an HTTP client's. Nothing in the workspace
+was passing an unknown `$` key — 2328 junction tests green before a single one
+was written.
+
+**No suggestion, and that was decided rather than skipped.** litestone's `where`
+refusal says *did you mean*; here the message lists all thirteen instead. The
+reason is measured: toolbelt's `/search` is a subsequence matcher, so `$slect` →
+`$select` scores 0.857 and `$orderby` → `$orderBy` scores 1.000, but `$limitt` →
+`$limit` scores **0** — an insertion, which is the commonest typo shape. Getting
+a real *did you mean* means an edit distance, which is a SECOND answer to *how
+close are two words* beside the kit that owns it, and thirteen is a readable list.
+Revisit if the table grows past what a message can carry.
+
+**The break is a rename, not a migration** — § IV *preservation vs. evolution*,
+with the project's own fact recorded: nothing runs off this machine, so an app
+using a `$`-prefixed name as an ordinary filter column simply does not exist. No
+flag, no opt-out. Invariant 10 already says a `$` key is transport syntax that
+must never survive the bridge, so such an app was relying on what the invariant
+forbids.
+
+Measured: removing the refusal reds the 2 rows that assert it; widening it to
+every `$` key reds **4** — the control plus **three pre-existing window rows**,
+which is the number that matters, since an over-wide guard breaks `$after` and
+`$limit` and therefore every paginated call in the repo · toolbelt 358 · junction
+2328 · sierra 1486 · [directives.js](packages/toolbelt/src/directives/directives.js)
+· [bridge.ts](packages/junction/src/transport/bridge.ts) ·
+[router/index.js](packages/sierra/src/router/index.js)
+
+
 ### <a id="fjs-d227"></a>2026-09-07 · `FJS-D227` — a `Json` column some reader INTERPRETS is a language, and a language is declared as columns.
 
 `AlertRule.condition` was `Json @default("{}")` and had **three writers spelling
@@ -7979,6 +8044,65 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d238"></a>2026-09-07 · `FJS-D238` — a service addresses a row by ONE column, so a model whose key is a tuple is not a service model. The refusal is at the boundary, on every path that names a row.
+
+`idField` is the whole of how a service reaches one row: `get`, `update`,
+`patch`, `remove`, `restore` and every filtered bulk write build their `where`
+from it. So a column that does not IDENTIFY a row is a filter wearing an
+identity's name. Measured on the shipped code, on a `Membership` keyed
+`@@id([userId, teamId])` with `idField: 'userId'` and two rows sharing
+`userId = 1`: `patch('1')` answered the FIRST row and wrote BOTH, and
+`remove('1')` answered one row and deleted both. Nothing in the envelope, the
+status or the log said so.
+
+**The prior half was already here and covered a quarter of the surface.**
+`FJS-694` refused `get` on a tuple-keyed model by name — the condition was *the
+key is a tuple and `idField` is not one of its columns*, which refuses the
+default `id` and ACCEPTS a member, and a member is the dangerous spelling. The
+same condition also refused the legitimate one: a `@unique` slug outside the
+key, which is an app saying what identifies a row.
+
+**Both halves flip.** The refusal fires when the key is a tuple unless the app
+NAMED a column outside it, and it fires on every path that names a row rather
+than on `get` alone — including `bulkByRow`, which names no row from outside and
+still reaches its rows one at a time by `idField`. Reads that FILTER, and
+creates, are untouched: `FJS-608` and `FJS-694` made both work on these models
+and they still do. What is refused is naming.
+
+**The ecosystem's answer is the same answer.** JSON:API's spec says a resource
+id is one string. Django's routers take one `lookup_field`; Ent has no composite
+key at all; Spring Data REST needs a `BackendIdConverter` written by hand.
+PostgREST and DynamoDB never pretend the tuple is one value — a row is reached
+by naming every part. The two shapes that DO address one are OData's key
+predicate (`/Points(seriesId='abc',at=1)`, a URL grammar nobody else
+implements) and Prisma's named tuple (`where: { seriesId_at: {…} }`, an
+argument rather than a path). Rails' `to_param` joins the columns into a string
+and is the only shipped middle answer; it is also where the escaping bugs live.
+So this is § IV *familiarity vs. precision* working as written: the shape is
+taken from the ecosystem, and the muscle memory that a row always has an `id`
+fails loudly, naming the filter and the custom method as the two ways through.
+
+**§ IV *ergonomics vs. strictness*** decides the volume, per surface by what a
+mistake destroys. Here it destroys rows, so the refusal is a 400 at the first
+request rather than a warning.
+
+**The enforcement is in ONE place and there is deliberately no `fli check`
+rule.** A static rule would be a second implementation of one judgment, and the
+weaker of the two — it cannot see a service built at runtime, and it would have
+to re-derive the key where the boundary asks `db.$primaryKey(accessor)`, which
+already owns that question for the whole framework.
+
+The nine questions were answered before the first edit; the two that shaped the
+result are *can it be derived instead of restated* (the key comes from
+`$primaryKey`, so the guard is a comparison and not a reading) and *can this be
+wrong without anything saying so*, which is the measurement above. The tier is
+**Register**, and the artefact is `tests/composite-key.test.ts`, where every
+refusal is PAIRED with the shape one column away that must still work ·
+[litestone.ts](packages/junction/src/core/litestone.ts) ·
+[composite-key.test.ts](packages/junction/tests/composite-key.test.ts) ·
+[FJS-694](ISSUES_ARCHIVE.md) · [FJS-961](ISSUES.md#fjs-961)
+
 
 ### <a id="fjs-d236"></a>2026-09-07 · `FJS-D236` — `humanize` is a third AXIS of `/inflect`, not a kit beside it. One folder answers *how is this name spelled*, and the divergence between the structural halves and the reader half is stated inside it.
 

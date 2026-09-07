@@ -38,14 +38,14 @@ import sendPayslip, { sendPayslipJob } from '../../api/src/jobs/send-payslip.job
 import { occurrenceKey }               from '@frontierjs/toolbelt/history'
 
 import { sweepPayroll }                from './payroll-sweep.mjs'
+import { results, report } from './lib/report.mjs'
 
 const sys = db.asSystem()
 const RUN = String(Date.now()).slice(-6)
 const DAY = 86_400_000
 const ago = (d) => new Date(Date.now() - d * DAY).toISOString()
 
-const got = {}
-const t   = (label, value) => { got[label] = value }
+const { got, t } = results()
 const refused = async (fn) => { try { await fn(); return false } catch { return true } }
 
 // Everything this drive makes is registered here as it is made and swept in the
@@ -292,15 +292,4 @@ const expected = {
   'paid.cannotBeRecalculated': true,
 }
 
-let failed = 0
-for (const [key, want] of Object.entries(expected)) {
-  const ok = got[key] === want
-  if (!ok) failed++
-  console.log(`${ok ? '  ok  ' : '  FAIL'} ${key}`)
-  if (!ok) console.log(`         want ${want}   have ${JSON.stringify(got[key])}`)
-}
-if (failedEarly) console.error(`\nstopped early: ${failedEarly.message ?? failedEarly}`)
-console.log(failed || failedEarly
-  ? `\n${failed} assertion(s) failed`
-  : `\nall ${Object.keys(expected).length} assertions passed`)
-process.exit(failed || failedEarly ? 1 : 0)
+process.exit(report(got, expected, { stoppedEarly: failedEarly }))

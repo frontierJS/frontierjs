@@ -23,6 +23,8 @@ import { createService } from '../src/core/service.ts'
 import { parseQuery } from '../src/core/litestone.ts'
 import { createJunctionClient } from '../src/client/index.ts'
 import type { ServiceContext } from '../src/transport/bridge.ts'
+import { createTestApp, request } from '../src/testing/index.ts'
+import { RESERVED_PARAMS } from '@frontierjs/toolbelt/directives'
 
 // ─── the server half, against a real Litestone client ─────────────────────────
 
@@ -361,5 +363,58 @@ describe('resource().more()', () => {
     await r.more()
     expect(r.store.get().map((x: any) => x.id)).toEqual([1, 2, 3])
     m.restore()
+  })
+})
+
+// ─── An unknown `$` name is refused ────────────────────────────────────────
+//
+// `FJS-988` stopped `$limitt` landing in the filters as a WHERE on a column
+// nobody declared. What it did instead was DROP it: the caller asked for ten
+// rows, got the default page and a 200, and nothing said why.
+//
+// The bridge refuses now and sierra's router still drops — § IV *ergonomics vs.
+// strictness*, resolved per surface by what a mistake destroys (`FJS-D237`).
+// The names in the message come from toolbelt's own table, never a copy here.
+
+describe('an unrecognised $ directive', () => {
+
+  const app = () => createTestApp({
+    services: [() => createService({
+      name: 'things',
+      find: async () => ({ data: [], total: 0 }),
+    })],
+  })
+
+  test('is refused by name, and the refusal lists what exists', async () => {
+    const res = await request(await app()).get('/things?$limitt=10&status=paid')
+
+    expect(res.status).toBe(400)
+    expect((res.body as any).message).toContain('$limitt')
+    // Derived from RESERVED_PARAMS, so a directive added later is listed for
+    // free — a hand-written list here would be the second table the kit exists
+    // to prevent.
+    for (const name of RESERVED_PARAMS) {
+      expect((res.body as any).message).toContain(name)
+    }
+  })
+
+  test('every unknown name in one bag is named, not just the first', async () => {
+    const res = await request(await app()).get('/things?$limitt=1&$offest=2')
+    expect(res.status).toBe(400)
+    expect((res.body as any).message).toContain('$limitt')
+    expect((res.body as any).message).toContain('$offest')
+  })
+
+  test('a known directive and a known transport param still pass', async () => {
+    // The controls, and they are the test: a bridge that refused every `$` key
+    // would satisfy both rows above and break every paginated call in the repo.
+    expect((await request(await app()).get('/things?$limit=1&status=paid')).status).toBe(200)
+    expect((await request(await app()).get('/things?$orderBy=name')).status).toBe(200)
+    expect((await request(await app()).get('/things?$wrap=1')).status).toBe(200)
+  })
+
+  test('an ordinary filter that merely CONTAINS a $ is untouched', async () => {
+    // The prefix is the rule, not the character.
+    expect((await request(await app()).get('/things?pri%24ce=5')).status).toBe(200)
   })
 })

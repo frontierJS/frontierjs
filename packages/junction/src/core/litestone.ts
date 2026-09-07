@@ -624,6 +624,11 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     bulkMax    = 1000,
   } = opts
 
+  // Whether the app NAMED the column, as opposed to taking the default. The
+  // tuple-key refusal below turns on it: `id` is what this layer assumed, and a
+  // column the author wrote down is what they are willing to identify a row by.
+  const declaredIdField = opts.idField
+
   // `model` is the DECLARED option and is undefined whenever a service relies on
   // the filename, which is the default the autoloader is built around — so every
   // 404 from a scaffolded service read `undefined with id=… not found`. The
@@ -650,6 +655,34 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       } catch { /* not this spelling */ }
     }
     return []
+  }
+
+  /**
+   * A row this service can NAME with one value, or a refusal saying why not.
+   *
+   * `idField` is the whole of how a service addresses a row — get, update,
+   * patch, remove, restore and every bulk write build their `where` from it —
+   * so a column that does not identify a row is a FILTER wearing an identity's
+   * name. On a tuple-keyed model that is a patch by one member writing every
+   * row that shares it, answering the first and reporting one (`FJS-D238`).
+   *
+   * The escape is a column the app NAMED that is outside the key — a `@unique`
+   * slug it addresses rows by — because that is the author saying what
+   * identifies a row rather than this layer inferring it. The default `id` on a
+   * model that has no `id` column is refused for the same reason a key member
+   * is: neither one names a row.
+   *
+   * Reads that FILTER and creates are untouched. What is refused is naming.
+   */
+  function assertNameable(ctx: ServiceContext): void {
+    const key = primaryKeyOf(ctx)
+    if (key.length < 2) return
+    if (declaredIdField !== undefined && !key.includes(declaredIdField)) return
+    throw new BadRequest(
+      `${modelLabel(ctx)} is keyed by (${key.join(', ')}), so one value cannot name a row. ` +
+      `A read can filter — ?${key.map(k => `${k}=…`).join('&')} — and a write cannot: ` +
+      `this service addresses a row by one column. Give the service a custom method that ` +
+      `takes the whole key, or name a unique column of its own with idField.`)
   }
 
   function getTable(ctx: ServiceContext): LitestoneTable {
@@ -753,6 +786,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     const q     = parseQuery(ctx.query, paginate.default, paginate.max, ctx.directives)
 
     if (ctx.id) {
+      assertNameable(ctx)
       const where = { [idField]: ctx.id }
       return table.restore({ where })
     }
@@ -891,6 +925,12 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     where: Record<string, unknown>,
     apply: (id: unknown, version: Record<string, unknown>) => Promise<unknown>
   ): Promise<unknown> {
+    // A filtered write never names a row from outside, and it still reaches
+    // one row at a time BY `idField` — so on a tuple-keyed model each apply()
+    // writes every sibling sharing the column and the envelope reports the
+    // rows it selected rather than the rows it wrote.
+    assertNameable(ctx)
+
     const matched = await table.count({ where })
     if (matched > bulkMax) {
       throw new BadRequest(
@@ -1030,21 +1070,13 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       const q     = parseQuery(ctx.query, 1, 1, ctx.directives)
 
       if (ctx.id) {
-        // A URL segment is ONE value and this model's key is several.
-        //
-        // The list works — litestone orders and pages a tuple-keyed model
-        // correctly as of `FJS-694` — but naming one row does not, and the
-        // failure it used to give was the Data boundary's: *Unknown field 'id'
-        // in where*, which reads as the schema being wrong rather than as the
-        // request being unanswerable. Refused here, by name, with the two ways
-        // out, because what a composite key should look like in a URL is a
-        // decision about a public shape and not something to invent inside a
-        // 404 path.
-        const key = primaryKeyOf(ctx)
-        if (key.length > 1 && !key.includes(idField)) throw new BadRequest(
-          `${modelLabel(ctx)} is keyed by (${key.join(', ')}), so one value cannot name a row. ` +
-          `Filter for it instead — GET /${ctx.service}?${key.map(k => `${k}=…`).join('&')} — ` +
-          `or give the service a custom method that takes the whole key.`)
+        // A URL segment is ONE value and this model's key is several. The list
+        // works — litestone orders and pages a tuple-keyed model correctly as
+        // of `FJS-694` — and naming one row does not: the failure it used to
+        // give was the Data boundary's *Unknown field 'id' in where*, which
+        // reads as the schema being wrong rather than as the request being
+        // unanswerable.
+        assertNameable(ctx)
 
         const where = { [idField]: ctx.id, ...softDeleteFilter() }
         const args: Record<string, unknown> = { where }
@@ -1146,6 +1178,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       if (!ctx.data) throw new BadRequest('Request body is required')
       if (!ctx.id)   throw new BadRequest('update() requires an id — use patch() for query-based writes')
 
+      assertNameable(ctx)
       const table = getTable(ctx)
       const q     = parseQuery(ctx.query, paginate.default, paginate.max, ctx.directives)
 
@@ -1180,6 +1213,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       }
 
       if (ctx.id) {
+        assertNameable(ctx)
         const where = { [idField]: ctx.id, ...writeWhere(q) }
 
         // Single round trip — update() returns null when no row matches.
@@ -1231,6 +1265,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       refuseHardDelete(ctx, q)
 
       if (ctx.id) {
+        assertNameable(ctx)
         const where = { [idField]: ctx.id, ...softDeleteFilter() }
 
         // Single round trip — update()/remove() return null when no row

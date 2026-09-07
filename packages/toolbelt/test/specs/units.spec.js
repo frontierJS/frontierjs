@@ -244,7 +244,6 @@ test('units: the minor-unit conversion is the currency\'s, not a hundred', funct
   assert.equal(fromMinor(1299, 'JPY'), 1299)     // the yen has no minor unit
   assert.equal(fromMinor(1299, 'KWD'), 1.299)    // and the dinar has three
   assert.equal(fromMinor(0, 'USD'), 0)
-  assert.equal(fromMinor(null, 'USD'), 0)
   assert.equal(fromMinor('1250', 'USD'), 12.5)   // the wire is text
 })
 
@@ -255,7 +254,7 @@ test('units: toMinor ROUNDS, because 8.29 * 100 is not 829', function () {
   assert.equal(toMinor(12.99, 'USD'), 1299)
   assert.equal(toMinor(1299, 'JPY'), 1299)
   assert.equal(toMinor(1.2345, 'KWD'), 1235)
-  assert.equal(toMinor('', 'USD'), 0)
+  assert.equal(toMinor('12.99', 'USD'), 1299)    // the wire is text
 })
 
 test('units: minor units round-trip through a formatter', function () {
@@ -368,4 +367,53 @@ test('units: the refusals name what is wrong with the call', function () {
   assert.throws(() => allocate(10, []), /non-empty/)
   assert.throws(() => allocate(10, [1, -1]), />= 0/)
   assert.throws(() => allocate(10, [0, 0]), /sum to 0/)
+})
+
+// ─── Not a number, per surface ────────────────────────────────────────────
+//
+// `Number(null)`, `Number('')` and `Number([])` are all 0, so a finiteness
+// check alone cannot see a missing amount. The three surfaces here answer that
+// differently on purpose, and each row is paired with a value that must still
+// go through — an implementation that refused everything would satisfy every
+// refusal below on its own.
+
+test('units: toMinor REFUSES a value that is not a number', function () {
+  // The write path into `@money`. A silent 0 booked a free order and nothing
+  // said anything, which is the same *we do not know reads as free* the
+  // formatters above are arranged to avoid, on the side where it costs money.
+  for (const v of [undefined, null, '', '   ', [], {}, 'abc', NaN, true]) {
+    let threw = ''
+    try { toMinor(v, 'USD') } catch (err) { threw = err.message }
+    assert.ok(threw.startsWith('toMinor:'), `toMinor(${JSON.stringify(v)}) must refuse, got: ${threw}`)
+  }
+  assert.equal(toMinor(0, 'USD'), 0)          // zero is an amount
+  assert.equal(toMinor('8.29', 'USD'), 829)   // the wire is text
+  assert.equal(toMinor(-8.29, 'USD'), -829)
+})
+
+test('units: fromMinor answers NaN, so the CELL says nothing', function () {
+  // The read path. The value came out of a nullable column and its sink is
+  // `formatMoney`, which already refuses a number it cannot render — so NaN
+  // carries all the way through, where 0 rendered `$0.00` and a throw would
+  // have taken a screen down over one missing amount.
+  for (const v of [undefined, null, '', [], {}, 'abc']) {
+    assert.ok(Number.isNaN(fromMinor(v, 'USD')), `fromMinor(${JSON.stringify(v)}) must be NaN`)
+    assert.equal(formatMoney(fromMinor(v, 'USD'), 'USD'), '')
+  }
+  assert.equal(formatMoney(fromMinor(1299, 'USD'), 'USD'), '$12.99')
+  assert.equal(formatMoney(fromMinor(0, 'USD'), 'USD'), '$0.00')
+
+  // A typo in the CODE is loud on both sides, which is the half that must not
+  // become lenient along with the amount.
+  assert.throws(() => fromMinor(1299, 'UDS'))
+})
+
+test('units: the formatters refuse the same set, and answer the empty string', function () {
+  for (const v of [undefined, null, '', [], {}, 'abc']) {
+    assert.equal(formatBytes(v), '')
+    assert.equal(formatMoney(v, 'USD'), '')
+  }
+  assert.equal(formatBytes(0), '0 B')          // zero is a size
+  assert.equal(formatBytes('1536'), '1.5 KB')  // the wire is text
+  assert.equal(formatMoney(0, 'USD'), '$0.00')
 })

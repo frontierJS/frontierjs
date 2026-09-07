@@ -10,7 +10,7 @@
 
 import {
   DIRECTIVE_PARAMS, TRANSPORT_PARAMS, RESERVED_PARAMS,
-  parseDirectives, splitParams,
+  parseDirectives, splitParams, unknownDirectives,
 } from '../../src/directives/directives.js'
 
 /* ── The table ─────────────────────────────────────────────────────── */
@@ -150,4 +150,28 @@ test('directives: a filter named __proto__ survives to the Data boundary', funct
   // removed altogether.
   assert.equal(directives.limit, 5)
   assert.equal(query.$limit, undefined)
+})
+
+test('directives: the unknown $ names are reported, and the list is THIS table', function () {
+  // The kit reports and the boundary refuses — a pure function cannot refuse a
+  // request, and the list a refusal names has to be derived from the same table
+  // `splitParams` strips by, or it goes stale on the next directive added
+  // (`FJS-D237`).
+  assert.deepEqual(unknownDirectives({ $limit: '1', $limitt: '2', status: 'x' }), ['$limitt'])
+  assert.deepEqual(unknownDirectives({ $offest: '1', $nope: '2' }), ['$offest', '$nope'],
+    'every unknown, in arrival order — a refusal naming only the first is two round trips')
+
+  // Controls. A reporter that answered every `$` key would satisfy the rows
+  // above and refuse every paginated call in the repo.
+  assert.deepEqual(unknownDirectives({ $limit: '1', $orderBy: 'name' }), [])
+  assert.deepEqual(unknownDirectives({ $first: '1', $wrap: '1' }), [],
+    'a transport param is a name the wire knows, though it is not a directive')
+  assert.deepEqual(unknownDirectives({ status: 'x', 'pri$ce': '5' }), [],
+    'the PREFIX is the rule, not the character')
+
+  // Every name the table holds is known to the reporter, both ways round.
+  for (const name of RESERVED_PARAMS) {
+    assert.deepEqual(unknownDirectives({ [name]: '1' }), [], `${name} is known`)
+  }
+  assert.deepEqual(unknownDirectives(null), [])
 })

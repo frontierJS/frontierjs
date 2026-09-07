@@ -286,17 +286,29 @@ await go('/reports/')
 
 t('staff.areToldTheyMayNot', await waitFor('#rp-gated', 6000), true)
 
-// The row that pins WHY the panel above is drawn from the refusal rather than
-// from the affordance. `can()` is permissive by design (Invariant 6) and a
-// view's gate reaches no generated schema (`FJS-999`), so it answers yes to a
-// caller the server then refuses. A screen resting on it would show this caller
-// an empty table. When the schema gap closes this flips to false and the panel
-// is drawn one round trip earlier — nothing else about the page changes.
-t('staff.theAffordanceIsPermissiveAndTheScreenDoesNotRestOnIt', await evaluate(`
+// The affordance, off a PROJECTION's own gate. A view's `@@gate` reaches the
+// generated schema now (`FJS-999`), so this answers no for staff at 4 against a
+// gate of 5 and the panel above is drawn without a request being made.
+//
+// It is asserted as a PAIR with the refusal, and that is the whole row: the
+// panel is drawn from `refused || !canRead`, so an affordance stuck at yes and
+// an affordance stuck at no both produce a page that looks exactly like this
+// one. Only the two together say which half answered.
+t('staff.theAffordanceKnowsTheProjectionIsGatedAboveThem', await evaluate(`
   const { session } = await import('/src/session.js');
   const { revenue } = await import('/src/resources/Revenue.mesa');
   return { level: session.level, affordance: revenue.can('read', session.level) };
-`), { level: 4, affordance: true })
+`), { level: 4, affordance: false })
+// The other half of that pair, and the one that cannot be wrong: the SAME live
+// session asking anyway is refused by the Data boundary. Asked through the
+// resource rather than over a fresh HTTP login, because a fourth sign-in here
+// spends the login limiter's budget to learn nothing the page's own client
+// cannot answer.
+t('staff.andTheBoundaryRefusesTheSameSessionAnyway', await evaluate(`
+  const { revenue } = await import('/src/resources/Revenue.mesa');
+  try { await revenue.load({}); return 'allowed' }
+  catch (e) { return e?.code ?? e?.status ?? String(e) }
+`), 403)
 t('staff.andNoTableIsDrawnBesideTheRefusal',
   await evaluate(`return document.querySelectorAll('[data-status]').length`), 0)
 t('staff.theRefusalNamesWhatTheyCANDo',

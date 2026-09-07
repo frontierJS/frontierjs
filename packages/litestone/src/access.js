@@ -280,7 +280,14 @@ export function renderAccessSnapshot(access, opts = {}) {
   out.push('and read the diff: it names exactly which access moved. A line that changed')
   out.push('without a schema change you meant to make is a shipped security bug.')
   out.push('')
-  out.push(`\`\`\`\n${counts.models} models · ${counts.gated} gated · ${counts.unrestricted} unrestricted`)
+  // Views counted apart from the models they are listed beside. The table
+  // labels each row, so the rows were never misleading; the header was — `51
+  // models` over a schema declaring 50 is the count reading as the claim, and
+  // this file is read by somebody checking that a number moved for a reason.
+  const plain = counts.models - counts.views
+  out.push(`\`\`\`\n${plain} model${plain === 1 ? '' : 's'}` +
+    (counts.views ? ` · ${counts.views} view${counts.views === 1 ? '' : 's'}` : '') +
+    ` · ${counts.gated} gated · ${counts.unrestricted} unrestricted`)
   out.push(`${counts.policied} with row policies · ${counts.protected} with protected fields · ${counts.transitions} declared moves · ${counts.systemMoves} @system · ${counts.sealingMoves} @seals\n\`\`\``)
   out.push('')
 

@@ -20,6 +20,8 @@ title: App
   import { domains } from '../../../resources/Domain.mesa'
   import { servers } from '../../../resources/Server.mesa'
 
+  import NoRecord from '../../../components/NoRecord.mesa'
+
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
@@ -36,13 +38,14 @@ title: App
 
   $: page.params
 
-  let app     = null
-  let error   = null
-  let loading = true
-  let busy    = null
-  let tab     = 'overview'
-  let adding  = false
-  let certFor = null                 // domain id whose upload form is open
+  let app       = null
+  let error     = null
+  let loadError = null
+  let loading   = true
+  let busy      = null
+  let tab       = 'overview'
+  let adding    = false
+  let certFor   = null                 // domain id whose upload form is open
   let draft     = domains.make()
   let certDraft = { certPem: '', keyPem: '', expiresAt: '' }
   let fleet     = []                 // the workspace's machines, for the placement select
@@ -70,7 +73,7 @@ title: App
   }
 
   async function load() {
-    error = null
+    error = null; loadError = null
     try {
       await watchApp(page.params.id)
       // The machines this app could be placed on. Read here rather than in the
@@ -78,7 +81,10 @@ title: App
       // identical, and the difference decides whether 'Place' is a dead button.
       fleet = (await servers.service.find({}, { limit: 200 })).data
     } catch (e) {
-      error = e.message
+      // Two readers, and they are not the same question. `error` is the banner
+      // over a page that still has its record; `loadError` is why this page has
+      // none, and only the thrown value can tell refused from gone from failed.
+      error = e.message; loadError = e
     } finally {
       loading = false
     }
@@ -228,7 +234,13 @@ title: App
   ]
 </script>
 
-{#if error}
+<!-- The banner is for an ACTION that failed on a page that still has its
+     record. A failed LOAD is answered by <NoRecord> below, which says what
+     happened and what to do about it — rendering both put two `#screen-error`
+     elements on one document and said the same thing twice. The other six
+     detail screens keep theirs inside the row branch, which is the same rule
+     spelled by nesting. -->
+{#if error && app}
   <article class="alert danger" id="screen-error">
     <div class="alert-content">{error}</div>
   </article>
@@ -492,19 +504,8 @@ title: App
     {/if}
   {/if}
 {:else}
-  <!--
-    A screen whose record is gone still needs a heading. Without this branch the
-    page rendered the error alert and NOTHING else — no `<h1>`, so a screen
-    reader landed on a document with no heading at all and the only statement of
-    what had happened was styled as a decoration. Reached in the ordinary way: a
-    deleted project cascades to its apps, and any bookmark or back button then
-    lands here.
-  -->
-  <div class="section-header"><h1>App not found</h1></div>
-  <p class="text-sm text-muted">
-    It may have been deleted, or it belongs to another workspace.
-    <a class="navlink" href="/projects/">Back to projects</a>
-  </p>
+  <NoRecord error={loadError} noun="App" onretry={load}
+            backHref="/projects/" backLabel="Back to projects" />
 {/if}
 
 <!--

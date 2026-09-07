@@ -421,9 +421,20 @@ export async function createTestEnv(opts = {}) {
       const schema = against ?? built.parsed.schema
       const wanted = new Set(ops)
       const access = deriveAccess(schema)
+      // A view's WRITES are not on the ladder, and that is a statement rather
+      // than a gap. A projection refuses create, update and delete by name for
+      // every caller and for `asSystem()` alike — LOCKED, whatever `@@gate`
+      // says — so no level grades them and there is nothing for a ladder to
+      // find. Left in, the checker builds a fixture for a thing with no table,
+      // fails, and reports *no fixture could be built, so the gate was never
+      // asked* at nine levels for each of three operations: 27 rows per view
+      // that look like findings and are noise, which is the surest way to make
+      // people stop reading the ones that are not. The refusal itself is
+      // covered where it lives, in litestone's own view tests.
       const rows   = access.models.filter(m => m.gate)
-        .flatMap(m => gateLadder(m).map(r => ({ model: m.name, ...r })))
+        .flatMap(m => gateLadder(m).map(r => ({ model: m.name, isView: m.isView, ...r })))
         .filter(r => wanted.has(r.op))
+        .filter(r => !r.isView || r.op === 'read')
       if (!rows.length) return []
 
       // A gate REFUSES and a policy FILTERS, and on a write both arrive as the

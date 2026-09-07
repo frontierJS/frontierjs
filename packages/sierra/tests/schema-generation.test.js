@@ -20,6 +20,7 @@ import { resolveSchemaPath, generateSchemas } from '../src/build/schema-plugin.j
 import {
   registerSchemas, schemaFor, allSchemas, allDefs, hasSchemas, resolveRef,
 } from '../src/junction/schema-registry.js'
+import { buildGate, canAtLevel } from '../src/junction/field-rules.js'
 import { tmpDir } from './tmp.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -321,5 +322,79 @@ describe('a schema that imports another file', () => {
     const { dir, path } = fixture()
     const out = await generateSchemas(path, () => {}, dir)
     expect(out.models).not.toContain('Session')
+  })
+})
+
+// ─── a view is addressable, an enum still is not ─────────────────────────────
+//
+// `FJS-999`. A `view` is something a resource READS, which is what makes it
+// different from an enum: left out of the model list, its definition sat in
+// $defs reachable by $ref and by nothing else, so `createResource` over one
+// resolved no schema at all and every affordance it offers answered from no
+// declaration. The enum beside it in each row is the control — the reason this
+// list is passed rather than derived from "has properties" has not changed.
+
+const VIEW_SCHEMA = `
+database main { path env("DATABASE_URL", "./app.db") }
+
+enum Plan { starter pro }
+
+model Order {
+  id     Int    @id
+  status String
+  total  Int
+  @@gate("1")
+}
+
+view revenueByStatus {
+  status String
+  orders Int
+  total  Int
+  @@sql("SELECT status, COUNT(*) AS orders, SUM(total) AS total FROM [order] GROUP BY status")
+  @@gate("5")
+}
+`
+
+describe('a view reaches the browser', () => {
+  beforeEach(() => registerSchemas({}))
+
+  test('the projection is in the model list and the enum is not', async () => {
+    const { dir, path } = fixture(VIEW_SCHEMA)
+    const out = await generateSchemas(path, () => {}, dir)
+    expect(out.models.sort()).toEqual(['Order', 'revenueByStatus'])
+    expect(Object.keys(out.defs)).toContain('Plan')
+  })
+
+  test('and it resolves by name, so a resource can be built over it', async () => {
+    const { dir, path } = fixture(VIEW_SCHEMA)
+    const out = await generateSchemas(path, () => {}, dir)
+    registerSchemas(out.defs, out.models, out.updatePatch)
+
+    // The name as declared. The plural rules cannot reach a service called
+    // `revenue` over a projection called `revenueByStatus`, which is the case
+    // `createResource('revenue', { model: 'revenueByStatus' })` answers.
+    expect(schemaFor('revenueByStatus')?.['x-litestone-view']).toBe(true)
+    expect(schemaFor('revenue')).toBeNull()
+  })
+
+  test('its gate crosses, which is the whole reason it is here', async () => {
+    const { dir, path } = fixture(VIEW_SCHEMA)
+    const out = await generateSchemas(path, () => {}, dir)
+    registerSchemas(out.defs, out.models, out.updatePatch)
+
+    const gate = buildGate(schemaFor('revenueByStatus'))
+    // Gated ABOVE the rows it aggregates: a caller who reads every order may
+    // not read the sum of them.
+    expect(canAtLevel(gate, 'read', 4)).toBe(false)
+    expect(canAtLevel(gate, 'read', 5)).toBe(true)
+    expect(canAtLevel(buildGate(schemaFor('Order')), 'read', 4)).toBe(true)
+    // And no level writes a projection.
+    expect(canAtLevel(gate, 'create', 8)).toBe(false)
+  })
+
+  test('the two modes agree, so a view costs one definition and not two', async () => {
+    const { dir, path } = fixture(VIEW_SCHEMA)
+    const out = await generateSchemas(path, () => {}, dir)
+    expect(out.updatePatch.revenueByStatus).toBeUndefined()
   })
 })

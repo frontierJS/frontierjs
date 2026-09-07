@@ -19,6 +19,12 @@
   // an `Order` that reads at 1, so a caller who legitimately lists every order
   // may not read the sum of them. `can('read', …)` off this resource is the
   // affordance; the API grades it again.
+  //
+  // **The model is named because the plural rules cannot reach it.** A service
+  // called `revenue` over a projection called `revenueByStatus` is the case the
+  // schema registry answers by hand — the same escape `createResource('lenses',
+  // { model: 'Lens' })` takes. Without it the resource resolves no definition,
+  // and every affordance it offers answers from nothing (`FJS-999`).
   import { createResource } from '@frontierjs/sierra/junction'
 
   // `idField: null` is a STATEMENT, not a default being skipped: a projection
@@ -27,5 +33,5 @@
   // what a view IS — its rows move when the projection refreshes, never one at a
   // time. Bound to `id` instead, the store correctly drops every row it cannot
   // place, so three rows went in and none came out (`FJS-998`).
-  export const revenue = createResource('revenue', { idField: null })
+  export const revenue = createResource('revenue', { model: 'revenueByStatus', idField: null })
 </script>

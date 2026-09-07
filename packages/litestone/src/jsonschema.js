@@ -141,6 +141,7 @@ const MESSAGE_KEYWORDS = {
  * @returns {object}  JSON Schema object (not stringified)
  */
 import { parseGateString } from './plugins/gate.js'
+import { LEVELS } from '@frontierjs/toolbelt/gate'
 import { TIME_PATTERNS } from './core/validate.js'
 import { dependsOnClock } from './core/policy.js'
 import { capabilitiesForModel } from './core/capabilities.js'
@@ -218,6 +219,22 @@ export function generateJsonSchema(schema, options = {}) {
   const modelDefs = {}
   for (const model of schema.models) {
     modelDefs[model.name] = modelToJsonSchema(model, schema, enumDefs, typeDefs, { mode, includeDeletedAt, includeTimestamps, inlineEnums, audience })
+  }
+
+  // Views, through the same generator. A projection carries the same access
+  // attributes a model does — `@@gate`, `@@allow`, `@@deny` — compiled against
+  // the columns IT declares, and a client that cannot see them has no
+  // affordance for a report at all: `x-gate` was emitted for no view, so
+  // `can('read', 4)` answered YES against a gate of 5 and a screen resting on
+  // it showed a caller who may not read an EMPTY TABLE instead of a reason
+  // (`FJS-999`). Invariant 6 still holds — the API grades it again — which is
+  // why this is worth having and not worth trusting.
+  //
+  // The definition table is where they go rather than a list of their own: a
+  // `$ref` points into `$defs` and a consumer resolving one must not have to
+  // know whether the target was a table.
+  for (const view of (schema.views ?? [])) {
+    modelDefs[view.name] = viewToJsonSchema(view, schema, enumDefs, typeDefs, { mode, includeDeletedAt, includeTimestamps, inlineEnums, audience })
   }
 
   // Add FileRef definition if any model has a File field
@@ -302,6 +319,65 @@ function queryabilityFor(model) {
     }
     return out
   }
+}
+
+/**
+ * One `view` as a definition — the model generator, with the read-only truth
+ * applied afterwards.
+ *
+ * Not a second walk. A view declares columns and access attributes and nothing
+ * else, so `modelToJsonSchema` already answers every question about it
+ * correctly; what it cannot know is that a projection has NO WRITABLE MODE, and
+ * that is stated here once rather than threaded through the loop as a flag the
+ * per-field branches would each have to honor.
+ *
+ * Two things follow from read-only and both matter to a generated screen:
+ * `required` is dropped, because a required column on a create schema for
+ * something no caller creates is an assertion nobody can satisfy; and the two
+ * modes come out identical, so `diffSchemaModes` emits no patch and a view
+ * costs the bundle one definition rather than two.
+ *
+ * View field AST carries no `attributes` array — the parser has nowhere to put
+ * one, a view column taking no field attributes — so it is backfilled, the same
+ * shape `createClient` backfills for its view-as-model stubs.
+ */
+function viewToJsonSchema(view, schema, enumDefs, typeDefs, opts) {
+  const decl = {
+    name:       view.name,
+    comments:   view.comments   ?? [],
+    attributes: view.attributes ?? [],
+    fields:     (view.fields ?? []).map(f => ({ ...f, attributes: f.attributes ?? [] })),
+  }
+
+  const result = modelToJsonSchema(decl, schema, enumDefs, typeDefs, opts)
+
+  for (const prop of Object.values(result.properties ?? {})) prop.readOnly = true
+  delete result.required
+
+  // ── x-gate on a projection ───────────────────────────────────────────────
+  // The three writes are LOCKED and the declaration does not get a say. A
+  // view's write verbs refuse by name at the Data boundary for every caller
+  // and for `asSystem()` alike, which is what LOCKED means on the scale — so
+  // emitting the declared `@@gate("5")` across all four would tell a screen
+  // that an ADMINISTRATOR may create one, which is false at every level.
+  //
+  // Read is the declaration's, and stays ABSENT when there is none: an unknown
+  // affordance is permissive (Invariant 6) and a view that gates nothing reads
+  // like any other row the caller may already reach.
+  const declared = result['x-gate']
+  result['x-gate'] = {
+    ...(typeof declared?.read === 'number' ? { read: declared.read } : {}),
+    create: LEVELS.LOCKED,
+    update: LEVELS.LOCKED,
+    delete: LEVELS.LOCKED,
+  }
+
+  // What tells a consumer this is a projection at all. A `<Form>` over one is a
+  // bug rather than an empty form, and readOnly properties alone do not say so:
+  // a model of nothing but `@computed` columns emits the same shape.
+  result['x-litestone-view'] = true
+
+  return result
 }
 
 function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {

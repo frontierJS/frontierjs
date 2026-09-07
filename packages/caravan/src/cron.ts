@@ -17,11 +17,14 @@
 // grammar — a named zone, and the wall-clock walk across a daylight boundary.
 
 import { parseCron, cronMatches } from '@frontierjs/toolbelt/cron'
+import type { CronFields } from '@frontierjs/toolbelt/cron'
 
 const DAYS = ['su', 'mo', 'tu', 'we', 'th', 'fr', 'sa']
 
 type FieldKey = 'minutes' | 'hours' | 'date' | 'month' | 'day'
-type CronConfig = Record<FieldKey, Set<number>>
+// The kit's own type, not a restatement of it: the fields now carry which were
+// written as a star, and a local `Record` would drop that on the way through.
+type CronConfig = CronFields
 
 // ─── Date → field map ─────────────────────────────────────────────────────────
 

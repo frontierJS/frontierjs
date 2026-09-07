@@ -1,5 +1,22 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-07 — a rule that reads code stops reading the prose beside it
+
+`FJS-1004`. `resource-file-name` matched `model:` anywhere in a resource file,
+so the first one written over a `view` — whose header cites
+`createResource('lenses', { model: 'Lens' })` as the escape it is taking — was
+reported as naming a model it does not use. Comments are blanked before any of
+the matching now, in `stripComments` rather than in the branch, because the next
+rule to match on code has the same problem; the test that keeps it honest is the
+pair, a real `model:` one line below a comment.
+
+The other half is that the rule knew only models. A Resource over a `view` is
+Invariant 19's second half with a declaration behind it: a projection is named
+like an accessor, so no PascalCase filename can BE its name and the file takes
+its SERVICE noun singularised. Accepted only when the stated name is a declared
+view AND the filename is that noun — a misnamed projection file is still an
+error, rather than a branch that stops looking.
+
 ## 2026-09-07 — A name for a command line you type often
 
 `fli make:shortcut go-time "fli ws:atlas --open --live"`, and `fli go-time` runs

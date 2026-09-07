@@ -37,6 +37,7 @@
 
 import { signRequest } from '@frontierjs/toolbelt/signature'
 import { requireServers } from './lib/preflight.mjs'
+import { results, report } from './lib/report.mjs'
 
 const API  = process.env.API_URL ?? 'http://localhost:8110'
 const PSP  = process.env.PSP_URL ?? 'http://localhost:8112'
@@ -61,8 +62,7 @@ await requireServers([['api (bun run api)', `${API}/api/health`], ['the payment 
  */
 const RUN = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 
-const got = {}
-const t = (label, value) => { got[label] = value }
+const { got, t } = results()
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
 async function until(fn, ms = 10_000) {
@@ -775,7 +775,12 @@ const expected = {
 
   // FJS-463: a transition made outside the service that owns the model used to
   // announce nothing at all.
-  'live.moveReachedTheChannel': { event: 'orders pay', id: null, status: 'paid', reference: 'ORD-PAY-1' },
+  // The order id is this run's, so the row cannot be a constant. A predicate
+  // says what the report used to fake by blanking the id before comparing, and
+  // says it better: the id has to BE one rather than be ignored.
+  'live.moveReachedTheChannel': (have) =>
+    have.event === 'orders pay' && have.status === 'paid'
+    && have.reference === 'ORD-PAY-1' && Number.isInteger(have.id),
 
   'webhook.redeliveryIsDeduped': {
     accepted: 200, rowsBefore: 1, rowsAfter: 1, kinds: ['payment.succeeded'],
@@ -846,22 +851,4 @@ const expected = {
   }
 }
 
-let failed = 0
-for (const [key, want] of Object.entries(expected)) {
-  let have = got[key]
-  // The order id is this run's and cannot be a constant. Asserted as "the id
-  // this run created" by the drive body, and blanked here so the rest of the
-  // frame is compared literally.
-  if (key === 'live.moveReachedTheChannel' && have && !have.missing) have = { ...have, id: null }
-  const ok = JSON.stringify(have) === JSON.stringify(want)
-  if (!ok) failed++
-  console.log(`${ok ? '  ok  ' : '  FAIL'} ${key}`)
-  if (!ok) {
-    console.log(`         want ${JSON.stringify(want)}`)
-    console.log(`         have ${JSON.stringify(have)}`)
-  }
-}
-
-const total = Object.keys(expected).length
-console.log(failed ? `\n${failed} assertion(s) failed` : `\nall ${total} assertions passed`)
-process.exit(failed ? 1 : 0)
+process.exit(report(got, expected))

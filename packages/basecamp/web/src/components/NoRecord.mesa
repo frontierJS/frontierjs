@@ -1,0 +1,87 @@
+<script>
+  // NoRecord.mesa — a detail screen with no row, and WHY.
+  //
+  // Not `EmptyState`, which says a LIST has nothing in it. This says a screen
+  // that expected one record has none, and the difference between the reasons
+  // is the whole component: a person looking at a deleted row, a person whose
+  // session ended and a person whose request failed each need a different next
+  // move, and telling them apart is not something seven screens should each
+  // decide (`FJS-968`).
+  //
+  // **The reason comes off `error.code` and nowhere else.** Junction's client
+  // puts the status there on the HTTP path and on the WS path alike, so it is
+  // the one property both transports set. A rejected fetch carries none, which
+  // is what makes *no code* mean *the request never got an answer* rather than
+  // an unknown status.
+  //
+  // Three failures this replaces, and only the first was filed:
+  //
+  //   `apps/[id]` said "App not found — it may have been deleted, or it
+  //   belongs to another workspace" for ANY throw in load(). A network blip
+  //   read as a deletion. The alert above it said what happened; the HEADING
+  //   made a claim about the data, and a heading is what a person and a screen
+  //   reader both land on.
+  //
+  //   Five screens rendered NOTHING when the row was genuinely absent — no
+  //   heading, no sentence, no link. `apps/[id]` already carried a comment
+  //   saying that exact bug had been fixed there, and it had been fixed there
+  //   only.
+  //
+  //   The same five rendered a failure as an alert with no `<h1>` above it, so
+  //   the only statement of what happened was styled as a decoration.
+  //
+  // **There is no 403 branch and that is measured, not an oversight.** Every
+  // model behind a detail screen here reads at 2 and every workspace member
+  // grades at least that, so no member is refused; a member looking at another
+  // workspace's record is FILTERED by tenancy and arrives as an absence. A
+  // refusal would fall through to the failure branch and show its own message,
+  // which is honest. The day a screen reads a model gated above its audience,
+  // that branch comes back with a test — `example`'s reports screen is the
+  // shape it takes.
+  import Alert  from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let error     = null      // what load() caught, or null for a plain absence
+  export let noun      = 'Record'  // 'App', 'Server' — sentence case, singular
+  export let backHref  = null
+  export let backLabel = 'Go back'
+  export let onretry   = null      // a snippet-free callback; omitted → no retry button
+
+  $: lower = noun.toLowerCase()
+  $: code  = error?.code ?? error?.status ?? null
+
+  // Absent with no error is the same answer as 404: the read succeeded and
+  // there is no such row for this caller. A row policy filtering it out lands
+  // here too, which is why the sentence names the workspace.
+  $: gone    = !error || code === 404
+  $: expired = code === 401
+  $: heading = gone    ? `${noun} not found`
+             : expired ? 'Signed out'
+             :           `Could not load this ${lower}`
+</script>
+
+<div class="section-header"><h1>{heading}</h1></div>
+
+{#if gone}
+  <p class="text-sm text-muted">
+    It may have been deleted, or it belongs to another workspace.
+  </p>
+{:else if expired}
+  <p class="text-sm text-muted">
+    Your session has ended. <a class="navlink" href="/login/">Sign in</a> and try again.
+  </p>
+{:else}
+  <!-- The message is shown rather than summarised: it is the only thing that
+       distinguishes a timeout from a server error, and the person reading it
+       is the one who will report it. -->
+  <Alert tone="danger" id="screen-error">{error?.message ?? 'The request failed.'}</Alert>
+{/if}
+
+<div class="cluster">
+  {#if onretry && !gone}
+    <Button variant="primary" onclick={onretry}>Try again</Button>
+  {/if}
+  {#if backHref}
+    <Button variant="ghost" href={backHref}>{backLabel}</Button>
+  {/if}
+</div>

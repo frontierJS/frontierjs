@@ -6,7 +6,19 @@ title: Sign in
   import Form   from '@frontierjs/ui/components/forms/Form.mesa'
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
-  import { signIn } from '../../session.js'
+  import { session, signIn } from '../../session.js'
+  import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
+
+  // Why the guard sent somebody here, when it was not because they are signed
+  // out. `restore()` leaves anything that is NOT a 401 on `session.error` —
+  // a 401 means the token expired and clears silently — so this is the API
+  // being unreachable, or answering something nobody expected. Without it the
+  // person is shown a plain sign-in form while the real problem is that the
+  // server is down, and typing a correct password does nothing.
+  //
+  // `session.js` already recorded that this screen is where the reason should
+  // surface. It said so and nothing here read it.
+  $: session.error
 
   // A plain `let` is already component state — it must NOT go in a `$:` path
   // watch, which is for fields of plain objects (Mesa RULE 43). Listing one
@@ -51,6 +63,12 @@ title: Sign in
      1280px screen is a wall, not a form. The width is a vocabulary term,
      not a number chosen here. -->
 <div class="container narrow">
+  {#if session.error}
+    <Alert tone="warning" id="session-error" title="Could not reach the server">
+      {session.error}
+    </Alert>
+  {/if}
+
   <Form class="card stack" onsubmit={submit} {mapErrors} errorTitle="Sign in failed">
     <!-- `id` is stated, not derived: the kit falls back to a generated uid, and
          a control whose id changes per render is one a label, an

@@ -1,5 +1,67 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-07 — an unknown `$` directive is a 400, not silence
+
+`$limitt=10` reached the service as nothing at all: the caller asked for ten
+rows, got the default page and a 200. Both bridge paths refuse now — HTTP and
+the internal/WS one, since a WS client's typo is the same mistake — naming every
+unknown key in the bag rather than the first, and listing the thirteen the wire
+knows. `RESERVED_PARAMS` comes through `core/context.ts`, which already
+re-exported it; a second import of the same binding is a duplicate identifier
+and junction carries no typecheck baseline to hide one.
+
+Sierra's router deliberately still drops (`FJS-D237`). No *did you mean*: it
+would need an edit distance, and toolbelt's `/search` is a subsequence matcher
+that scores `$limitt`→`$limit` at 0.
+
+Measured: removing the refusal reds the 2 rows asserting it; refusing every `$`
+key reds 4 — the control plus **three pre-existing window rows**, which is the
+one that matters, since `$after` and `$limit` are how every paginated call in
+the repo works. 2328 passing.
+
+## 2026-09-07 — a service addresses a row by one column, on every path
+
+`FJS-D238`. `idField` is the whole of how a service reaches one row, so a column
+that does not IDENTIFY a row is a filter wearing an identity's name. Measured on
+a `Membership` keyed `@@id([userId, teamId])` with `idField: 'userId'` and two
+rows sharing `userId = 1`: `patch('1')` answered the first row and wrote BOTH,
+and `remove('1')` answered one row and deleted both, with nothing in the
+envelope, the status or the log saying so.
+
+`FJS-694` had refused `get` on a tuple-keyed model since the gap was found, and
+its condition was *the key is a tuple and `idField` is not one of its columns* —
+which accepts the member, the dangerous spelling, and refuses a `@unique` column
+outside the key, which is an app stating what identifies a row. **Both halves
+flip**, and the refusal moves from `get` to every path that names a row:
+`update`, `patch`, `remove`, `restore`, and `bulkByRow`, which names no row from
+outside and still reaches its rows one at a time by `idField`.
+
+Reads that FILTER and creates are untouched — `FJS-608` and `FJS-694` made both
+work on these models. What is refused is naming, and the message carries the two
+ways through: filter for the row, or give the service a custom method that takes
+the whole key.
+
+There is deliberately no `fli check` rule beside it: a static one would be a
+second implementation of one judgment, and it would re-derive the key where the
+boundary asks `db.$primaryKey(accessor)`.
+
+## 2026-09-07 — a `methods:` entry is an own key
+
+`collectCustomMethods`'s declared branch read `src[name]`, so a `methods:` entry
+naming `toString`, `valueOf`, `constructor`, `hasOwnProperty`, `isPrototypeOf`
+or `propertyIsEnumerable` resolved to an inherited function, passed the
+`typeof fn !== 'function'` check and was REGISTERED — publishing a method the
+service never wrote, addressable by `X-Service-Method` and advertised in
+`describe()`, `/health` and the OpenAPI document.
+
+The branch exists to refuse a name that is not defined on the service, and it
+refuses `publsh` correctly; those six were the ones it could not refuse. The
+scan branch beside it was already right, walking `Object.entries`.
+
+Each row is paired with a control — a real method and a typo unchanged, and a
+service that genuinely defines `toString` as an own key still collected.
+Measured: restoring `src[name]` reds the row. 2320 passing. `FJS-1003`.
+
 ## 2026-09-07 — a resource may declare that its rows have no identity
 
 `FJS-998`. `Store._replace` skips a row carrying no id — correctly, since a

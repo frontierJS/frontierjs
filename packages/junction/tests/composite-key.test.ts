@@ -12,6 +12,14 @@
 // so this asserts that the refusal says so instead of leaking the Data
 // boundary's *Unknown field 'id' in where*, which reads as the schema being
 // wrong rather than the request being unanswerable.
+//
+// The second half is `FJS-D238`: a service addresses a row by ONE column, so
+// what `idField` names has to identify one. Naming a member of the tuple was
+// accepted and is a filter wearing an identity's name — a patch by it answered
+// one row and wrote every row sharing the column. Every refusal here is PAIRED
+// with the shape one column away that must still work, because a service that
+// refused a tuple-keyed model outright would satisfy any test that only asked
+// about the refusal.
 
 import { describe, it, expect } from 'bun:test'
 import { createApp, createService } from '../index.ts'
@@ -20,6 +28,7 @@ import { createClient } from '../../litestone/src/index.js'
 const SCHEMA = `model Membership {
   userId Int
   teamId Int
+  slug   String? @unique
   role   String @default("member")
   @@id([userId, teamId])
 }
@@ -34,8 +43,14 @@ async function app() {
   const a: any = createApp({
     db, config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
   })
-  a.services.register(createService({ name: 'memberships', model: 'Membership', methods: ['find', 'get', 'create'] }))
-  a.services.register(createService({ name: 'posts', model: 'Post', methods: ['find', 'get', 'create'] }))
+  const all = ['find', 'get', 'create', 'update', 'patch', 'remove']
+  a.services.register(createService({ name: 'memberships', model: 'Membership', methods: all, allowBulk: true }))
+  a.services.register(createService({ name: 'posts',       model: 'Post',       methods: all, allowBulk: true }))
+  // The two ways an app can point a service at a tuple-keyed model: one member
+  // of the key, and a unique column outside it. They are one character apart in
+  // the service file and they are opposite answers.
+  a.services.register(createService({ name: 'byMember', model: 'Membership', idField: 'userId', methods: all }))
+  a.services.register(createService({ name: 'bySlug',   model: 'Membership', idField: 'slug',   methods: all }))
   return { a, db }
 }
 
@@ -81,6 +96,70 @@ describe('a tuple-keyed model through a derived service (FJS-694)', () => {
     const post = await db.post.create({ data: { title: 'hello' } })
     const got: any = await a.service('posts').get(String(post.id))
     expect(got.title).toBe('hello')
+  })
+
+
+  it('every id-addressed WRITE is refused too, not only the read', async () => {
+    // `get` was refused from the day the gap was found; update, patch, remove
+    // and restore address a row the same way and were not.
+    const { a, db } = await app()
+    await db.membership.create({ data: { userId: 1, teamId: 2 } })
+    for (const call of [
+      () => a.service('memberships').update('1', { role: 'admin' }),
+      () => a.service('memberships').patch('1',  { role: 'admin' }),
+      () => a.service('memberships').remove('1'),
+    ]) {
+      try { await call(); throw new Error('expected a refusal') }
+      catch (err: any) {
+        expect(err.constructor.name).toBe('BadRequest')
+        expect(err.message).toContain('keyed by (userId, teamId)')
+      }
+    }
+  })
+
+  it('an idField naming ONE MEMBER of the key is refused — the silent one', async () => {
+    // Measured on the shipped code before the guard: `patch('1')` over two rows
+    // sharing userId=1 ANSWERED the first row and WROTE both, and `remove('1')`
+    // answered one row and deleted both. Nothing in the envelope said so.
+    const { a, db } = await app()
+    await db.membership.create({ data: { userId: 1, teamId: 1 } })
+    await db.membership.create({ data: { userId: 1, teamId: 2 } })
+
+    try { await a.service('byMember').patch('1', { role: 'admin' }); throw new Error('expected a refusal') }
+    catch (err: any) { expect(err.constructor.name).toBe('BadRequest') }
+
+    // The rows are the assertion. A refusal that still wrote is not a refusal.
+    const rows = await db.membership.findMany({ orderBy: { teamId: 'asc' } })
+    expect(rows.map((r: any) => r.role)).toEqual(['member', 'member'])
+  })
+
+  it('an idField naming a UNIQUE column OUTSIDE the key still addresses a row — the pair', async () => {
+    // One character apart from the case above in the service file, and the
+    // opposite answer: the app has said what identifies a row, and it does.
+    const { a, db } = await app()
+    await db.membership.create({ data: { userId: 1, teamId: 1, slug: 'a' } })
+    await db.membership.create({ data: { userId: 1, teamId: 2, slug: 'b' } })
+
+    const got: any = await a.service('bySlug').get('b')
+    expect(got.teamId).toBe(2)
+
+    await a.service('bySlug').patch('b', { role: 'admin' })
+    const rows = await db.membership.findMany({ orderBy: { teamId: 'asc' } })
+    expect(rows.map((r: any) => r.role)).toEqual(['member', 'admin'])
+  })
+
+  it('a FILTERED bulk write is refused as well, and the ordinary model still runs one', async () => {
+    // A bulk write names no row from outside and still reaches its rows one at
+    // a time by `idField`, so on a tuple key each statement writes every
+    // sibling and the envelope counts the rows it SELECTED.
+    const { a, db } = await app()
+    await db.membership.create({ data: { userId: 1, teamId: 1 } })
+    try { await a.service('memberships').patch({ userId: 1 }, { role: 'admin' }); throw new Error('expected a refusal') }
+    catch (err: any) { expect(err.constructor.name).toBe('BadRequest') }
+
+    await db.post.create({ data: { title: 'a' } })
+    const out: any = await a.service('posts').patch({ title: 'a' }, { title: 'b' })
+    expect(out.data.map((r: any) => r.title)).toEqual(['b'])
   })
 
   it('a model with a tuple key can still be created through the service', async () => {

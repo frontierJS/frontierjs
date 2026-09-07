@@ -30,6 +30,7 @@
  */
 
 import { createHmac } from 'node:crypto'
+import { results, report } from './lib/report.mjs'
 
 const API_PORT    = 7110
 const SINK_PORT   = 7114
@@ -55,8 +56,7 @@ const { default: app }       = await import('../../api/src/app.ts')
 const { startStripeSink }    = await import('../../api/src/providers/stripe/sink.ts')
 const stripe                 = await import('../../api/src/providers/stripe/index.ts')
 
-const got = {}
-const t = (key, value) => { got[key] = value }
+const { got, t } = results()
 
 const sink = startStripeSink()
 await app.start()
@@ -207,16 +207,4 @@ const expected = {
   'webhook.rotationIsAccepted':      { status: 200, body: { received: true, id: 'evt_x', type: 'payment_intent.succeeded' } },
 }
 
-let failed = 0
-for (const [key, want] of Object.entries(expected)) {
-  const have = got[key]
-  const ok = JSON.stringify(have) === JSON.stringify(want)
-  if (!ok) failed++
-  console.log(`${ok ? '  ok  ' : '  FAIL'} ${key}`)
-  if (!ok) {
-    console.log(`         want ${JSON.stringify(want)}`)
-    console.log(`         have ${JSON.stringify(have)}`)
-  }
-}
-console.log(failed ? `\n${failed} assertion(s) failed` : `\nall ${Object.keys(expected).length} assertions passed`)
-process.exit(failed ? 1 : 0)
+process.exit(report(got, expected))

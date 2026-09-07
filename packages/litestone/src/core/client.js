@@ -1213,9 +1213,11 @@ const ARG_WRITE_METHODS = [
  * Wider than `ARG_WRITE_METHODS`, which is about validating arguments: this is
  * about what a projection has no business doing at all, so it carries the two
  * creates and the two FTS verbs as well. `search` is a read and is here anyway —
- * a view declares no `@@fts`, so the index it would query does not exist.
+ * a view declares no `@@fts`, so the index it would query does not exist — which
+ * is why the name says REFUSED rather than writes: two of the thirteen are not
+ * writes, and this list is emitted into every app's generated `.d.ts`.
  */
-export const VIEW_BLOCKED_WRITES = new Set([
+export const VIEW_REFUSED = new Set([
   'create', 'createMany',
   'update', 'updateMany',
   'upsert', 'upsertMany',
@@ -10540,10 +10542,10 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       for (const key of Object.keys(baseTable)) {
         const value = baseTable[key]
         if (typeof value !== 'function') { out[key] = value; continue }
-        out[key] = VIEW_BLOCKED_WRITES.has(key) ? writeBlocked : value.bind(baseTable)
+        out[key] = VIEW_REFUSED.has(key) ? writeBlocked : value.bind(baseTable)
       }
       // A write a view must refuse even where `makeTable` never offered it.
-      for (const key of VIEW_BLOCKED_WRITES) if (!(key in out)) out[key] = writeBlocked
+      for (const key of VIEW_REFUSED) if (!(key in out)) out[key] = writeBlocked
       return out
   }
 

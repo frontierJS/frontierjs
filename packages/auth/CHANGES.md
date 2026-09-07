@@ -1,5 +1,27 @@
 # Changes — @frontierjs/auth
 
+## 2026-09-07 — the query needed the reader the body already had
+
+`GET /auth/email/verify?token[gt]=` verified somebody else's email address with
+no token and no session, flipped `emailVerified`, consumed the pending row so
+the real link then 400d, and returned the account's `userId`, `email`, `name`
+and `role` to a stranger. No session token in the body, so not a takeover.
+
+`ctx.query` is parsed with bracket notation, so the parameter arrived as the
+object `{gt: ''}` and went into `where: { value: token }` as a where-OPERATOR.
+`FJS-296` fixed this shape for the BODY and gave these routes a reader; the
+query never got one, and this route's read was `as string` — a cast, doing
+nothing at runtime — where all five OAuth reads write `String(...)`.
+
+`queryText()` refuses a non-string by naming the parameter, which is the body
+reader's rule one layer along. OAuth keeps `String()`: a redirect flow has to
+end on a failure page, so a throw is the wrong shape there.
+
+The test asserts the pending row SURVIVES and the account is still unverified —
+four 400s alone pass against a route that refuses and consumes anyway — with the
+real token still verifying, and being consumed on second use, as the control.
+Measured: restoring the cast reds exactly that row. 278 passing. `FJS-1002`.
+
 ## 2026-09-07 — `cleanup.ts` had no test, and `stop()` did not stop
 
 `start()` assigned over both live `JobHandle`s, so a second call orphaned the

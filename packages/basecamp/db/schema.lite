@@ -2450,3 +2450,58 @@ model NotificationPreference {
   // has no workspace column to scope by
   @@tenant(none)
 }
+
+
+// ============================================================
+// PROJECTIONS
+// ============================================================
+//
+// A `view` is a report the SCHEMA declares: named columns, a SQL body, and the
+// same access attributes a model carries — compiled against the columns the
+// view itself declares, never inferred from `@@sql`. `FJS-D228` phase 2.
+
+/// The fleet, counted. What the cloud-spend screen used to assemble in the
+/// browser out of `servers.find({ limit: 200 })`, which is a count that goes
+/// quietly wrong on the 201st machine — the number a report exists to be right
+/// about, capped by a page size nobody chose for that reason.
+///
+/// **Not `@@materialized`, and that is the decision worth reading.** A
+/// materialized view is rebuilt on every write to a source it names, inside
+/// the writing transaction; the source here is `Server`, and every outpost
+/// heartbeat writes one. A tally over a few hundred rows costs nothing at read
+/// time and a full recompute per heartbeat costs the fleet — so this one is a
+/// plain `CREATE VIEW` and `example`'s `revenueByStatus`, whose source moves
+/// when somebody buys something, is not.
+///
+/// **`deletedAt IS NULL` is written out because a view inherits no clause of
+/// `@@softDelete`.** `Server` soft-deletes; nothing would have said so, and a
+/// removed machine would have gone on being counted with every screen looking
+/// correct.
+///
+/// The grain is provider × region because those are the two tallies the screen
+/// draws; a roll-up to one provider is a sum over rows that are all here, which
+/// is the difference between rolling up a projection and re-deriving one.
+view fleetByProvider {
+  workspaceId  String
+  providerKind String
+  region       String
+  servers      Int
+  vcpu         Int
+  ramGb        Int
+
+  @@sql("SELECT workspaceId, providerKind, region, COUNT(*) AS servers, SUM(COALESCE(json_extract(plan, '$.vcpu'), 0)) AS vcpu, SUM(COALESCE(json_extract(plan, '$.ramGb'), 0)) AS ramGb FROM server WHERE deletedAt IS NULL GROUP BY workspaceId, providerKind, region")
+
+  // The same level `Server` reads at, deliberately. A projection is not
+  // automatically a bigger disclosure than the rows under it — `example`'s
+  // revenue view is gated ABOVE its orders because a shop's total is a
+  // different fact from one shopper's order, and a fleet's shape is the same
+  // fact as its machines. Gating it higher would hide a summary from the
+  // people who can already read every row it summarises.
+  @@gate("2")
+
+  // WHICH workspace — the tenancy block at the top of this file, resolved per
+  // request off the caller's `WorkspaceMember` row. The projection carries the
+  // column so the generated READ deny has something to compare; nothing in the
+  // service writes a where-clause, which is the whole point of declaring it.
+  @@tenant(column: "workspaceId")
+}

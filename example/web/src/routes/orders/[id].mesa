@@ -235,7 +235,7 @@ title: Order
       // The box is in dollars because that is what a person refunding £5 types;
       // the service, the provider and the column are all in cents.
       const cur  = target.currency ?? 'USD'
-      const body = amount === null || amount === '' ? {} : { amount: toMinor(Number(amount), cur) }
+      const body = amount == null || String(amount).trim() === '' ? {} : { amount: toMinor(amount, cur) }
       const out = await payments.service.invoke('refund', target.id, body)
       // The provider's webhook is what moves the rows, and it has already
       // arrived by the time this resolves — the shop's own listener is
