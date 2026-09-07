@@ -260,6 +260,39 @@ export function pathKey(path) {
   return JSON.stringify(Array.isArray(path) ? path : [])
 }
 
+/*
+ * Put one key on a rebuilt object.
+ *
+ * `__proto__` is a legal JSON key and `JSON.parse` keeps it as an OWN property,
+ * but `copy[key] = value` reaches `Object.prototype`'s `__proto__` setter
+ * instead of creating one — so a rebuilt object loses the key, loses it in
+ * silence, and takes the value's prototype if the value is an object. Every
+ * rebuild here goes through this; `Object.fromEntries` and spread are already
+ * correct, and only assignment is not.
+ *
+ * `constructor` and `toString` store fine as plain assignments, which is why
+ * this is invisible to any test that reaches for one of those.
+ */
+function put(target, key, value) {
+  Object.defineProperty(target, key, { value, writable: true, enumerable: true, configurable: true })
+  return target
+}
+
+/*
+ * Read one member of a container the way JSON means it: an own key of an
+ * object, an in-range index of an array. Ordinary access answers
+ * `Object.prototype` for `__proto__`, a function for `constructor` and
+ * `toString`, and `2` for `length` on a two-element array — none of which are
+ * members of the document.
+ */
+function member(container, step) {
+  if (Array.isArray(container)) {
+    const i = Number(step)
+    return Number.isInteger(i) && i >= 0 && i < container.length ? container[i] : undefined
+  }
+  return Object.hasOwn(container, step) ? container[step] : undefined
+}
+
 /** The value at `path`, or `undefined` where the path does not lead anywhere. */
 export function getIn(value, path) {
   if (!Array.isArray(path)) return undefined
@@ -267,7 +300,7 @@ export function getIn(value, path) {
   let cur = value
   for (const step of path) {
     if (cur === null || typeof cur !== 'object') return undefined
-    cur = cur[step]
+    cur = member(cur, step)
   }
   return cur
 }
@@ -301,7 +334,7 @@ export function setIn(value, path, next) {
 
   if (value !== null && typeof value === 'object') {
     const copy = { ...value }
-    copy[head] = rest.length ? setIn(value[head], rest, next) : next
+    put(copy, head, rest.length ? setIn(member(value, head), rest, next) : next)
     return copy
   }
 
@@ -334,7 +367,7 @@ export function removeIn(value, path) {
   if (parent !== null && typeof parent === 'object') {
     if (!Object.prototype.hasOwnProperty.call(parent, last)) return value
     const copy = {}
-    for (const [k, v] of Object.entries(parent)) if (k !== last) copy[k] = v
+    for (const [k, v] of Object.entries(parent)) if (k !== last) put(copy, k, v)
     return parentPath.length ? setIn(value, parentPath, copy) : copy
   }
 
@@ -374,7 +407,7 @@ export function renameKey(value, path, from, to) {
   }
 
   const copy = {}
-  for (const [k, v] of Object.entries(target)) copy[k === from ? to : k] = v
+  for (const [k, v] of Object.entries(target)) put(copy, k === from ? to : k, v)
 
   return path.length ? setIn(value, path, copy) : copy
 }
@@ -610,11 +643,11 @@ export function diffDocs(before, after) {
       for (const key of mergeKeys([b, a])) {
         const inB = Object.prototype.hasOwnProperty.call(b, key)
         const inA = Object.prototype.hasOwnProperty.call(a, key)
-        if (!inB)      { mark([...path, key], 'added');         merged[key] = a[key]; touched = true }
-        else if (!inA) { mark([...path, key], 'removed', b[key]); merged[key] = b[key]; touched = true }
+        if (!inB)      { mark([...path, key], 'added');         put(merged, key, a[key]); touched = true }
+        else if (!inA) { mark([...path, key], 'removed', b[key]); put(merged, key, b[key]); touched = true }
         else {
           const before = count.added + count.removed + count.changed
-          merged[key] = walk(b[key], a[key], [...path, key])
+          put(merged, key, walk(b[key], a[key], [...path, key]))
           if (count.added + count.removed + count.changed !== before) touched = true
         }
       }

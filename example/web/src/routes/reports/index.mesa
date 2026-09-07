@@ -1,0 +1,123 @@
+---
+title: Reports
+---
+<script>
+  // What the shop took, by order state.
+  //
+  // `FJS-D228` phase 2 — the first REPORT surface, and the smallest honest one:
+  // a declared `view`, rendered. No new noun was minted for it. A report here is
+  // a projection the schema declares, which means the thing that decides who may
+  // read it is `@@gate` on the view rather than anything on this page.
+  //
+  // **The gate is the point of the screen, not a detail of it.** `revenueByStatus`
+  // reads at 5 and `Order` reads at 1, so staff who can open every order on
+  // /orders/ cannot read the total of them here. That inversion is deliberate —
+  // a projection over the whole shop is a different disclosure from the rows it
+  // aggregates — and it is why this page renders a refusal properly rather than
+  // an empty table: an empty grid and a gate saying no look identical, and only
+  // one of them is something the reader can act on.
+  //
+  // Nothing is summed in this file. The totals are `SUM()` inside the view's own
+  // `@@sql`, kept current by `@@refreshOn([Order])`, so a number on this screen
+  // moves when an order does without anything here subscribing to orders.
+  import { revenue } from '@/resources/Revenue.mesa'
+  import { session } from '@/session.js'
+  import { prefs } from '@/prefs.js'
+  import { useStore } from '@frontierjs/sierra/junction'
+  import { money } from '../../money.js'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Badge         from '@frontierjs/ui/components/display/Badge.mesa'
+  import EmptyState    from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import StatCard      from '@frontierjs/ui/components/display/StatCard.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+
+  const columns = [
+    { key: 'status', label: 'State' },
+    { key: 'orders', label: 'Orders', align: 'right' },
+    { key: 'total',  label: 'Taken',  align: 'right' },
+  ]
+
+  const { get: rows, unsubscribe } = useStore(revenue.store)
+  $.onDestroy(unsubscribe)
+
+  $: (session.level, prefs.dense, prefs.currency)
+
+  let error  = null
+  let refused = false
+
+  function load() {
+    error = null; refused = false
+    revenue.load({}, { orderBy: 'status' })
+      .catch(e => {
+        // A gate refusal is not an error this screen reports, it is the state
+        // most of the people here are in.
+        if (e?.code === 403 || e?.status === 403) refused = true
+        else error = e.message
+      })
+  }
+  load()
+
+  // Two ways to know, and the second is the one that decides.
+  //
+  // `can()` is an AFFORDANCE and Invariant 6 makes it deliberately permissive:
+  // an answer the browser's schema does not carry is *yes*, and the server
+  // enforces regardless. A `view`'s gate does not currently reach the generated
+  // schema at all (`FJS-999`), so this answers yes for every caller — which is
+  // exactly the case the invariant describes, and exactly why a screen may not
+  // rest on it.
+  //
+  // So the refusal above is what draws the panel, and this only ever saves a
+  // round trip. When the schema gap closes, staff stop making the request at
+  // all and nothing else about this page changes.
+  $: canRead = revenue.can('read', session.level)
+  $: gated   = refused || !canRead
+
+  // The one derived number on the page, and it is a SUM OF THE PROJECTION rather
+  // than of the orders — three rows added up, not eight. Re-deriving it from
+  // `Order` would be a second answer to a question the view already answers.
+  $: banked = (rows() ?? []).reduce((n, r) => n + (r.total ?? 0), 0)
+  $: placed = (rows() ?? []).reduce((n, r) => n + (r.orders ?? 0), 0)
+</script>
+
+<SectionHeader title="Reports" level={1}>
+  {#snippet action()}
+    <div class="cluster">
+      <a class="navlink" href="/orders/">Orders</a>
+    </div>
+  {/snippet}
+</SectionHeader>
+
+{#if gated}
+  <!-- Said rather than shown as an empty grid. A projection over the whole shop
+       is gated above the rows it aggregates, so this is the ordinary answer for
+       most of the people who work here — and "you may not read this" and "there
+       is nothing here" are different sentences. -->
+  <Alert tone="warning" id="rp-gated">
+    Revenue is administrator-only. You can open any order on
+    <a href="/orders/">Orders</a> — the totals across all of them are a separate
+    permission.
+  </Alert>
+{:else if error}
+  <Alert tone="danger" id="rp-error">{error}</Alert>
+{:else}
+  <div class="cluster" id="rp-stats">
+    <StatCard label="Taken"  value={money(banked)} sub="across every state" />
+    <StatCard label="Orders" value={String(placed)} sub="counted by the shop" />
+  </div>
+
+  {#if (rows() ?? []).length === 0}
+    <EmptyState title="Nothing taken yet" sub="A paid order will show up here." />
+  {:else}
+    <Table {columns} rows={rows()} striped hover compact={prefs.dense}>
+      {#snippet row(r)}
+        <tr data-status={r.status}>
+          <td><Badge>{r.status}</Badge></td>
+          <td class="tabular" data-orders>{r.orders}</td>
+          <td class="tabular" data-total>{money(r.total)}</td>
+        </tr>
+      {/snippet}
+    </Table>
+  {/if}
+{/if}

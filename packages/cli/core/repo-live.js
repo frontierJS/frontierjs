@@ -37,6 +37,7 @@ export function collectLive({ root, packages, registry = true, now = new Date() 
   const rows = packages.map(pkg => {
     const dir = pkg.claimed ? `packages/${pkg.folder}` : `packages/${pkg.folder}`
     const published = registry && pkg.name && !pkg.private ? publishedVersion(pkg.name) : null
+    const shipped   = published ? publishedSize(pkg.name) : null
 
     return {
       folder:    pkg.folder,
@@ -49,6 +50,11 @@ export function collectLive({ root, packages, registry = true, now = new Date() 
       lastSubject: gitOut(root, ['log', '-1', '--format=%s', '--', dir]),
       commits90: countLines(gitOut(root, ['log', '--since=90.days', '--format=%h', '--', dir])),
       dirty:     countLines(gitOut(root, ['status', '--porcelain', '--', dir])),
+      // What an app INSTALLS, which is a different fact from what the repo
+      // holds: litestone is 269 tracked files and ships 52. Registry data, so
+      // it can only live here.
+      shippedBytes: shipped?.bytes ?? null,
+      shippedFiles: shipped?.files ?? null,
     }
   })
 
@@ -97,6 +103,29 @@ function publishedVersion(name) {
   if (run.error || run.status !== 0) return null
   const out = (run.stdout ?? '').trim()
   return /^\d/.test(out) ? out : null
+}
+
+// How big the published package is, as npm already measured it — no tarball is
+// fetched and nothing is unpacked. `unpackedSize` is what lands in an app's
+// node_modules and `fileCount` is how many files that is, which together are
+// the reference the tree cannot give: `files:` decides what ships, so a package
+// can be large here and small there.
+//
+// A null for anything unanswered, like everything else in this file.
+function publishedSize(name) {
+  const run = spawnSync('npm', ['view', name, 'dist.unpackedSize', 'dist.fileCount', '--json'], {
+    encoding: 'utf8', shell: false, timeout: NPM_TIMEOUT,
+  })
+  if (run.error || run.status !== 0) return null
+  try {
+    const doc = JSON.parse(run.stdout)
+    // Asked for two fields, so npm answers an object; one missing field and it
+    // answers the other bare, which is not a size and not a count.
+    const bytes = Number(doc?.['dist.unpackedSize'])
+    const files = Number(doc?.['dist.fileCount'])
+    if (!Number.isFinite(bytes) || !Number.isFinite(files)) return null
+    return { bytes, files }
+  } catch { return null }
 }
 
 /** Numeric-segment compare; a prerelease suffix is ignored, which is enough to say ahead. */

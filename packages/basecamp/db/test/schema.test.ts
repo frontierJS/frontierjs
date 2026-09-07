@@ -9,6 +9,7 @@
 // Litestone is imported by RELATIVE PATH, not by package specifier: an edit to
 // the workspace source must be what these tests run against.
 
+import { singularize } from '@frontierjs/toolbelt/inflect'
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
@@ -214,7 +215,11 @@ describe('schema.lite', () => {
     const r = parseFile(SCHEMA)
     const bad = r.schema.models
       .map((m: any) => m.name)
-      .filter((n: string) => !/^[A-Z][A-Za-z0-9]*$/.test(n) || n.endsWith('s'))
+      // `singularize` and not `endsWith('s')`. The regex was a sixth hand copy
+      // of a fact `@frontierjs/toolbelt/inflect` owns, and it reads `Series` as
+      // plural — `MetricSeries` is correctly named and this test failed it —
+      // while letting `People` through, which is the miss that matters.
+      .filter((n: string) => !/^[A-Z][A-Za-z0-9]*$/.test(n) || singularize(n) !== n)
     expect(bad).toEqual([])
   })
 
@@ -290,7 +295,7 @@ describe('generated migration', () => {
     expect(onDisk).toContain(generateDDL(r.schema))
   })
 
-  test('applies to a fresh database — 46 tables, FK-clean, all STRICT', () => {
+  test('applies to a fresh database — 50 tables, FK-clean, all STRICT', () => {
     const path = freshDb()
     const raw  = new Database(path)
     const tables = raw.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
@@ -320,7 +325,13 @@ describe('generated migration', () => {
     // kind, a column per transport). 46 since `OutpostNonce`, which is neither
     // a person's nor a workspace's: a machine's spent credential, kept only as
     // long as the signature carrying it could be replayed (`FJS-376`).
-    expect(tables.length).toBe(46)
+    // 49 since the metric store arrived from junction — MetricSeries,
+    // MetricPoint and MetricHour, imported rather than written here and all
+    // three `@@tenant(none)`, because a reading is about the process
+    // (`FJS-956`). 50 with `Notification`, which is a COPY of the fragment
+    // `@frontierjs/notifications` ships to be copied rather than imported
+    // (`FJS-967`).
+    expect(tables.length).toBe(50)
     expect(raw.query('PRAGMA foreign_key_check').all()).toEqual([])
 
     const nonStrict = tables.filter((t: string) => {
@@ -1144,7 +1155,7 @@ describe('the workspace-owned six — the tenancy declared', () => {
     { accessor: 'recipe',              role: 'admin',     data: (t: string) => ({ name: `harden-${t}`, slug: `harden-${t}`, script: 'echo hi' }) },
     { accessor: 'featureFlag',         role: 'developer', data: (t: string) => ({ key: `flag-${t}`, name: 'Flag' }) },
     { accessor: 'notificationChannel', role: 'admin',     data: (t: string) => ({ name: `#ops-${t}`, kind: 'slack', config: { channel: '#ops' } }) },
-    { accessor: 'alertRule',           role: 'admin',     data: (t: string) => ({ name: `CPU high ${t}`, metricName: 'cpu', severity: 'critical' }) },
+    { accessor: 'alertRule',           role: 'admin',     data: (t: string) => ({ name: `CPU high ${t}`, metricName: 'process.memoryMb', severity: 'critical', threshold: 90 }) },
     { accessor: 'dashboard',           role: 'developer', data: (t: string) => ({ name: `Overview ${t}`, slug: `overview-${t}` }) },
   ] as const
 
@@ -1348,7 +1359,11 @@ describe('AlertRuleChannel — the join that replaced a Json array of ids', () =
   async function seedRuleAndChannel(sys: any): Promise<{ ws: any; rule: any; chan: any }> {
     const ws   = await seedWorkspace(sys)
     const rule = await sys.alertRule.create({
-      data: { workspaceId: ws.id, name: 'CPU high', metricName: 'cpu', severity: 'critical' },
+      // `threshold` is stated because it is REQUIRED and has no default. A
+      // rule's number is the rule, and defaulting it to 0 would make `gt 0` the
+      // answer to *nobody said* — a rule that fires on the first reading.
+      data: { workspaceId: ws.id, name: 'CPU high', metricName: 'process.memoryMb',
+              severity: 'critical', threshold: 90 },
     })
     const chan = await sys.notificationChannel.create({
       data: { workspaceId: ws.id, name: '#ops-alerts', kind: 'slack', config: { channel: '#ops' } },
@@ -2198,6 +2213,11 @@ describe('the access and constraints this schema declares are enforced', () => {
     // policy filters, so it can only ever turn an allow into a deny.
     const env = await makeEnv()
     const rows = await env.verifyGateLadder()
+
+    // Nothing is held out of this list, including a row the harness could not
+    // build a fixture for: *the gate was never asked* and *the gate answered
+    // correctly* are the same clean list from here, which is what left the
+    // three tuple-keyed metric models graded by nothing (`FJS-961`).
     const graded = rows.filter((m: any) => m.got !== 'skipped')
     expect(graded.map((m: any) => m.message)).toEqual([])
   }, 120_000)

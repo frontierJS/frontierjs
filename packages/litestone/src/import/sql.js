@@ -14,15 +14,12 @@
 //   · almost everything is noise — sequences, functions, triggers, COMMENT ON,
 //     SET, ACL — so the reader is a whitelist and records what it skipped
 
-import { singularize } from '@frontierjs/toolbelt/inflect'
+import { singularize, pascal, camel, modelName } from '@frontierjs/toolbelt/inflect'
 import { mapIdentifiers } from '../core/ddl.js'
 import { detectPolymorphic } from './polymorphic.js'
 import { BIGINT_EMITTED, namesATable } from './wide-int.js'
 import { predicateToLite } from '../core/migrate.js'
 
-const pascal = (s) => s.split('_').filter(Boolean).map(p => p[0].toUpperCase() + p.slice(1)).join('')
-const camel  = (s) => { const p = pascal(s); return p[0].toLowerCase() + p.slice(1) }
-const modelOf = (t) => pascal(singularize(t))
 // A dump qualifies every name with its schema. Stripping only `public.` let
 // `partman.template_x` through as a model name with a dot in it, which is not
 // an identifier.
@@ -78,7 +75,7 @@ function readStatement(st, enums, tables, gap) {
   if ((m = st.match(/^CREATE TABLE (?:IF NOT EXISTS )?([\w."]+) \((.*)\)(?: PARTITION BY .*)?$/i))) {
     const table = bare(m[1])
     const schema = m[1].replace(/"/g, '').match(/^([a-z_]\w*)\./i)?.[1]
-    const t = { table, model: modelOf(table), cols: [], checks: [], pk: [], fks: [], indexes: [], arcs: [] }
+    const t = { table, model: modelName(table), cols: [], checks: [], pk: [], fks: [], indexes: [], arcs: [] }
     if (tables.has(table)) {
       gap('table-name-collision', t.model, null, `${m[1]} collides with an earlier ${table}`,
           'skipped — .lite has no schema qualifier, so two schemas cannot both contribute this name')

@@ -1,0 +1,136 @@
+// ─── @frontierjs/junction — readings over time ───────────────────────────────
+//
+// `registerMetricsSource` collects what a running app says about itself, and
+// until this file existed the merged value lived for the duration of one HTTP
+// response and was then gone (`FJS-956`). These three models are where a
+// reading is KEPT, which is what makes a threshold answerable at all: a rule
+// reading "above 80% for five minutes" needs a window, and a last value is not
+// one.
+//
+// The vocabulary is OpenMetrics 1.0's and is not approximated. `counter` and
+// `gauge` are ecosystem words that fit exactly rather than half-fit — the
+// difference between them is precisely the difference this store has to care
+// about — so they are taken rather than renamed.
+//
+// IN MAIN, and that is settled rather than convenient (`FJS-D35`): litestone
+// opens one connection per `database` declaration, so a second block is a
+// second connection, and under `strategy database` tenancy it is a second
+// connection to the SAME FILE, which deadlocks on the first write
+// (`FJS-958`). The outbox lives in main for the first half of that reason and
+// this follows it.
+//
+// @@gate("8"): nothing outside asSystem() has anything to say to these models,
+// and the plugin that owns them is the only thing that writes. Same line
+// auth.lite draws around the credential machinery, and the same reason it is
+// IMPORTED rather than pasted into the app's schema.lite — it changes when this
+// package does.
+//
+// This file is REAL .lite and parses standalone.
+
+enum MetricType {
+  // Only goes up, and RESETS TO ZERO when the process restarts. The stored
+  // value is cumulative and the increase is computed from adjacent readings,
+  // which is the only arrangement that survives a missed scrape — a stored
+  // delta cannot tell a gap from a zero.
+  counter
+  // A value that moves both ways. Stored as read.
+  gauge
+  // Bucketed cumulative counts. Present in the vocabulary because a percentile
+  // CANNOT be recovered from averaged samples, so whether an app ever wants one
+  // is a question answered before its first row rather than migrated to
+  // afterwards. Nothing writes one yet.
+  histogram
+}
+
+// A metric's IDENTITY: its name, and the labels that distinguish one stream of
+// it from another.
+model MetricSeries {
+  id         String     @id @default(uuid())
+
+  // The name a scrape reports — a dotted path whose every segment is camelCase,
+  // because the names are not invented: the scrape flattens the collector's own
+  // object and its keys already are `memoryMb`, `heapUsedMb`, `requests.total`.
+  // A convention that disagreed with the source would be a second spelling of
+  // every name in the store.
+  name       String     @trim @length(1, 200)
+  // What distinguishes two streams of one name.
+  labels     Json       @default("{}")
+  // The canonical hash of name + labels, and the reason a re-scrape upserts
+  // instead of forking. NOBODY WRITES A SERIES ROW BY HAND — the scrape mints
+  // one on first sight, which is what keeps this file carrying the SHAPE of a
+  // metric rather than a list of them that goes stale the first time a plugin
+  // registers a source.
+  labelsKey  String     @unique @trim
+
+  type       MetricType @default(gauge)
+  unit       String?    @trim
+
+  // When this series was last written, and the only column that can tell a
+  // scrape that STOPPED from a value that is not CHANGING — the two draw the
+  // same flat line and no amount of looking at the graph separates them. The
+  // scraper writes its own `up` series for the same reason.
+  lastSeenAt DateTime   @default(now())
+  createdAt  DateTime   @default(now())
+
+  points     MetricPoint[]
+  hours      MetricHour[]
+
+  @@db(main)
+  @@gate("8")
+  @@index([name])
+  @@index([lastSeenAt])
+}
+
+// One reading, at raw resolution. Folded to hours and then pruned.
+model MetricPoint {
+  seriesId String
+  // Epoch milliseconds. A plain Int and NOT `@big`: a wide column hands its
+  // value over as a decimal string, and epoch ms stays inside a JS number until
+  // the year 287396, so the crossing would cost every reader a parse and buy
+  // nothing.
+  at       Int
+  value    Float
+
+  series   MetricSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+
+  @@db(main)
+  // The composite key does three jobs: it is the range-query index, it is the
+  // natural key, and it makes a re-scrape a NO-OP instead of a duplicate —
+  // which matters because the scrape is on a clock and a clock fires twice
+  // eventually.
+  @@id([seriesId, at])
+  @@gate("8")
+}
+
+// The same readings, folded, kept far longer.
+model MetricHour {
+  seriesId String
+  // The hour this row covers, epoch ms at its start.
+  hour     Int
+
+  // Four numbers rather than one, because an average alone cannot answer "did
+  // it ever cross", which is the only question an alert rule asks.
+  min      Float
+  max      Float
+  sum      Float
+  count    Int
+
+  // A COUNTER's increase over this hour, and null for a gauge.
+  //
+  // The four numbers above are meaningful for a gauge and very nearly useless
+  // for a counter: summing cumulative readings measures nothing, and `max -
+  // min` is the increase only when the process did not restart inside the hour.
+  //
+  // COMPUTED AT FOLD TIME AND NOT AT READ TIME. A reset is visible only as a
+  // DROP between two adjacent raw points, and the fold is the last moment those
+  // exist — once the hour is written and the raw pruned the drop is gone, and
+  // no reader can ever recover the figure. That inverts the usual arrangement,
+  // where the aggregate is the cheap thing and the detail is kept.
+  increase Float?
+
+  series   MetricSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+
+  @@db(main)
+  @@id([seriesId, hour])
+  @@gate("8")
+}

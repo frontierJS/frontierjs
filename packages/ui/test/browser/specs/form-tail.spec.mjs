@@ -45,7 +45,7 @@ export async function run(t) {
   /* ── the schema's own label reaches every control ─────────────────────── */
 
   // Each of these declares `title` in the fixture, and every one of them is a
-  // different string from what `nameToLabel(name)` would produce. A control
+  // different string from what `humanize(name)` would produce. A control
   // that shadowed the schema answers the title-cased column instead.
   const LABELS = [
     ['input[name=headline]',        'Public headline',    'Input'],

@@ -221,11 +221,13 @@ refuse explicitly, because it is the default outcome.
 
 ---
 
-## 9. The open question
+## 9. The question, and how it was answered
 
-**Does a TUI reuse `.mesa`, or is it a separate authoring model?** Filed as
-`ISSUES.md` `FJS-D38`, because the two answers are different projects and neither is
-obviously right:
+**Does a TUI reuse `.mesa`, or is it a separate authoring model?** **Ruled
+`FJS-D38` (2026-09-07): it reuses it, and so does every other interface route —
+native, mobile, desktop.** A surface is a compiler backend and a runtime; it is
+never a second way to write a component. The two answers were different projects
+and are recorded here as they stood:
 
 - **Reuse.** A second compiler backend and a cell-tree runtime over a bought engine.
   Expensive, and the only version that keeps the one-mental-model claim intact when
@@ -235,7 +237,10 @@ obviously right:
 
 The measurement in §5 is the input either way: it says the reuse answer costs a
 compiler backend rather than a renderer, which is more than it looked like before
-anyone counted.
+anyone counted. The ruling took that price knowingly, and named the half it does
+not buy: the AUTHORING is derived across targets, the RUNTIME is not, because
+there is no renderer abstraction for it to be derived from. The first non-markup
+target builds that seam or proves it unnecessary.
 
 ---
 
@@ -246,7 +251,7 @@ anyone counted.
 - `CLAUDE.md` Invariant 4 — one owner per translation; *an event becomes a line* has
   none
 - `DECISIONS.md` `FJS-D37` — what of the above is ruled
-- `ISSUES.md` `FJS-D38` — the open question in §9
+- `DECISIONS.md` `FJS-D38` — §9, ruled: `.mesa` is the authoring model for every interface
 - `IDEAS/command-surface.md` — the other half of the CLI: authoring, distribution
   and what oclif solves that `fli` does not
 - `IDEAS/diagnostics.md` — `fli doctor`, the largest future consumer of §4's

@@ -495,11 +495,27 @@ replaced was out of date in both columns without ever rendering wrong:
 | `component-anchor` · `component-api` · `dynamic-element` | The anchor→registry keying, what `bind:this` hands a parent, `<mesa:element>` |
 | `external-reactivity` · `inert-block` · `watch-handler-defer` · `watch-proxy-staleness` · `async-decl-scope` · `whitespace-collapse` | The diagnostics and the semantics that are silent when wrong |
 | `vite-plugin` · `vite-server` · `vite-devtools` · `vite-errors` · `vite-hmr` · `vite-compiler-resolution` | The Vite plugin — hooks, a real dev server in middleware mode, the DevTools route, the HMR boundary against real compiled output |
+| `script-order` · `script-source-order` | An instance script runs in the order it is written, and what is still pulled up because something needs it |
+| `parse-diagnostics` | What a parse failure tells the author — the position it happened at, where the still-open construct was OPENED, and the rule an author who wrote valid HTML broke |
+| `reserved-names` | The `$$` prefix an author may not declare — graded against the names the emitter still generates, so a refusal protecting nothing goes red |
 | `snippet-through-slot` | A snippet argument that reaches its render site through another component's slot or `{@render}`, including the `<table>` shape it was found in |
 | `repl` | REPL module graph, example compile + coverage, interactivity |
 
 `test/spec-check.mjs` is separate — a plain `node test/spec-check.mjs` script that
 checks every claim VISION §4 makes against the compiler. It is not part of `bun run test`.
+
+`test/mutants.mjs` is the other one, and it grades the suite rather than the
+compiler. Most of `compiler.test.js` asserts on the emitted JavaScript as text,
+which any emission still calling the named function satisfies whatever the
+arguments or the surrounding effect — so this replaces one runtime export at a
+time with a function that does nothing, leaves the name exported, and runs the
+whole vitest suite. The compiled output is unchanged byte for byte; only the
+behavior is gone. A survivor is a construct nothing executes. The catalogue is
+read off `compiler.js` rather than listed, so a function the compiler stops
+emitting leaves on its own, and the expected survivors are named with their
+reason in the file — a boundary that stops being true shows up as an unexpected
+KILL. `node test/mutants.mjs --list`, or with names to run a few. Not part of
+`bun run test`: it runs the suite once per mutant.
 
 ---
 

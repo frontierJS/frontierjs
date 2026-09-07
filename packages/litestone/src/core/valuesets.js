@@ -78,6 +78,11 @@ export function buildValueSetMap(schema) {
         // picker makes — rather than a `$scope` on one side and a `$raw` the
         // browser cannot express on the other.
         scopes:     vs.scopes ?? [],
+        // The dependency, resolved at parse: which column of THIS model narrows
+        // the list, and which column of the SOURCE it is matched against
+        // (derived from the relation path — `FJS-D122`).
+        dependsOn:  bind.dependsOn ?? null,
+        matchField: bind.dependsOnField ?? null,
       })
     }
     if (binds.length) out[model.name] = binds
@@ -123,7 +128,7 @@ function setFilter(bind, values) {
  * every other rule throws, so a refusal renders in `<Form>` beside the control
  * rather than as a bare 500.
  */
-export async function enforceValueSets(modelName, rows, ctx) {
+export async function enforceValueSets(modelName, rows, ctx, { where = null } = {}) {
   const binds = ctx.valueSetMap?.[modelName]
   if (!binds?.length) return
 
@@ -132,6 +137,11 @@ export async function enforceValueSets(modelName, rows, ctx) {
 
   for (const bind of binds) {
     if (bind.strength === 'suggested') continue
+
+    if (bind.dependsOn) {
+      await enforceDependent(modelName, bind, list, ctx, where, errors)
+      continue
+    }
 
     const values = offered(list, bind)
     if (!values.length) continue
@@ -210,4 +220,128 @@ export async function enforceValueSets(modelName, rows, ctx) {
   }
 
   if (errors.length) throw new ValidationError(errors)
+}
+
+// ─── a dependent set ──────────────────────────────────────────────────────────
+
+/**
+ * Grade (value, controlling value) PAIRS against the row as it will be.
+ *
+ * A dependent binding is a join: `stateId` is legal only among the states of
+ * this row's `countryId` (`FJS-D122`). Two things follow and the second is the
+ * one that is easy to miss.
+ *
+ * **The pair is graded in BOTH directions.** A payload naming only `stateId`
+ * needs the stored `countryId` to grade it — and a payload naming only
+ * `countryId` needs the stored `stateId`, because moving the controller is what
+ * makes an already-stored value illegal. Grading one direction leaves the other
+ * as the way to write the invalid row.
+ *
+ * **A create pays nothing extra.** Both columns are in the payload, so the only
+ * read is the one the plain check already makes, with one more column selected.
+ * The stored row is fetched only when a write names one half and not the other.
+ *
+ * The read is through the caller's own accessor, like every other read here: a
+ * row they cannot see is not a row they can be told about.
+ */
+async function enforceDependent(modelName, bind, list, ctx, where, errors) {
+  const table = ctx.tables?.[bind.accessor]
+  const own   = ctx.tables?.[modelToAccessor(modelName)]
+  if (!table) return
+
+  // What this write says about each half.
+  const names   = list.some(r => r && typeof r === 'object' && bind.field in r)
+  const namesCtl = list.some(r => r && typeof r === 'object' && bind.dependsOn in r)
+  if (!names && !namesCtl) return
+
+  // The pairs to grade, as [value, controllingValue].
+  const pairs = []
+  if (names && namesCtl) {
+    for (const row of list) {
+      const v = row?.[bind.field]
+      if (v == null) continue
+      pairs.push([v, row?.[bind.dependsOn] ?? null])
+    }
+  } else if (where && own) {
+    // One half came off the payload and the other has to come from the rows
+    // this write is about. Distinct pairs only — a bulk update over a thousand
+    // rows in three countries is three questions.
+    const stored = await own.findMany({
+      where,
+      select: { [bind.field]: true, [bind.dependsOn]: true },
+    })
+    const seen = new Set()
+    for (const row of stored) {
+      const v   = names   ? list.find(r => r?.[bind.field] != null)?.[bind.field] : row[bind.field]
+      const ctl = namesCtl ? list.find(r => r?.[bind.dependsOn] !== undefined)?.[bind.dependsOn] : row[bind.dependsOn]
+      if (v == null) continue
+      const key = `${v}\u0000${ctl}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      pairs.push([v, ctl ?? null])
+    }
+  } else {
+    // A create-shaped write naming only the dependent column: the row as it
+    // will be has nothing in the controlling column, so there is no list.
+    for (const row of list) {
+      const v = row?.[bind.field]
+      if (v != null) pairs.push([v, null])
+    }
+  }
+  if (!pairs.length) return
+
+  const values = [...new Set(pairs.map(([v]) => v))]
+  const found  = await table.findMany({
+    where:  setFilter(bind, values),
+    select: { [bind.valueField]: true, [bind.matchField]: true },
+  })
+
+  // One value can legitimately exist under several controllers — `CA` is a
+  // state of two countries — so the answer is a SET per value, never one row.
+  const legal = new Map()
+  for (const row of found) {
+    const v = row[bind.valueField]
+    if (!legal.has(v)) legal.set(v, new Set())
+    legal.get(v).add(row[bind.matchField])
+  }
+
+  const missing = []
+  for (const [value, ctl] of pairs) {
+    const under = legal.get(value)
+    if (under?.has(ctl)) continue
+    if (ctl == null) {
+      errors.push({ path: [bind.field], message:
+        `${bind.field} was given and ${bind.dependsOn} is empty, so which ${bind.set} it must come from is ` +
+        `unknown. Set ${bind.dependsOn} in the same write.` })
+      continue
+    }
+    if (under) {
+      errors.push({ path: [bind.field], message:
+        `${value} is in ${bind.set} but not for ${bind.dependsOn} ${JSON.stringify(ctl)}` })
+      continue
+    }
+    if (bind.strength === 'required') {
+      errors.push({ path: [bind.field], message: `${value} is not in ${bind.set}` })
+      continue
+    }
+    missing.push([value, ctl])
+  }
+
+  // open — the value joins the set, STAMPED with the controller it was offered
+  // under. Without the stamp the row lands outside the list that was just
+  // narrowed, and the next read does not offer the value that was just added.
+  for (const [value, ctl] of missing) {
+    try {
+      await table.create({
+        data: {
+          [bind.valueField]: value,
+          [bind.matchField]: ctl,
+          ...(bind.labelField && bind.labelField !== bind.valueField ? { [bind.labelField]: value } : {}),
+        },
+        select: false,
+      })
+    } catch (err) {
+      throw new ValueSetExtendError(bind, value, err)
+    }
+  }
 }

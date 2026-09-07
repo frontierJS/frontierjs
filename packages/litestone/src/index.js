@@ -22,7 +22,7 @@ export { introspect, buildPristine, buildPristineForDatabase, diffSchemas,
          splitStatements, checksum }             from './core/migrate.js'
 export { create, apply, status, verify,
          listMigrationFiles, unmatchedMigrationFiles,
-         describeSkipped, slugify,
+         describeSkipped,
          autoMigrate }                           from './core/migrations.js'
 
 export { generateJsonSchema }                     from './jsonschema.js'

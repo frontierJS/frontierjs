@@ -12,7 +12,7 @@
 //     (Invariant 2), so every name goes through @frontierjs/toolbelt/inflect —
 //     the one owner — and the original is kept with @map.
 
-import { singularize } from '@frontierjs/toolbelt/inflect'
+import { singularize, pascal, camel, modelName } from '@frontierjs/toolbelt/inflect'
 import { detectPolymorphic } from './polymorphic.js'
 import { BIGINT_EMITTED, namesATable } from './wide-int.js'
 import { predicateToLite } from '../core/migrate.js'
@@ -29,10 +29,6 @@ const TYPES = {
   binary: 'Bytes',
 }
 
-const pascal = (snake) => snake.split('_').filter(Boolean)
-  .map(p => p[0].toUpperCase() + p.slice(1)).join('')
-const camel  = (snake) => { const p = pascal(snake); return p[0].toLowerCase() + p.slice(1) }
-const modelOf = (table) => pascal(singularize(table))
 
 export function convert(src, label = 'schema') {
   const gaps = []
@@ -60,7 +56,7 @@ function readTables(src, gap) {
     const open = line.match(/^create_table "([^"]+)"(?:, (.*?))? do \|t\|$/)
     if (open) {
       const [, table, opts = ''] = open
-      cur = { table, model: modelOf(table), cols: [], indexes: [], fks: [], opts }
+      cur = { table, model: modelName(table), cols: [], indexes: [], fks: [], opts }
       tables.set(table, cur)
 
       // `id: false` is a join table or a table keyed by something else; .lite

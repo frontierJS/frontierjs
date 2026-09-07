@@ -34,7 +34,7 @@ beforeAll(async () => {
   app.configure(channels() as never)
   app.services.register(createService({
     name:    'probe',
-    find:    async (ctx: any) => [{ transport: ctx.transport, q: shape(ctx.query) }],
+    find:    async (ctx: any) => [{ transport: ctx.transport, q: shape(ctx.query), d: ctx.directives }],
     methods: ['find'],
   } as never))
   await app.start()
@@ -47,8 +47,8 @@ beforeAll(async () => {
 
 afterAll(async () => { await app?.stop() })
 
-const ask = async (client: any, filter: Record<string, unknown>) => {
-  const out = await client.service('probe').find(filter)
+const ask = async (client: any, filter: Record<string, unknown>, directives?: Record<string, unknown>) => {
+  const out = await client.service('probe').find(filter, directives)
   return out.data[0]
 }
 
@@ -93,5 +93,39 @@ describe('a filter means the same thing on both transports', () => {
       code:       'string:"5"',
       id:         'object:{"in":[1,2]}',
     })
+  })
+})
+
+// ─── the same DIRECTIVE, down both transports ───────────────────────────────
+//
+// A directive is not a filter, and it took the opposite route out of this
+// client: `$orderBy` was `JSON.stringify`d whenever it was not a string, and
+// the reader takes `$orderBy` as-is — so the far side got the TEXT
+// `[{"sortOrder":"asc"}]`, split it on commas and refused it as a column name.
+// Every structured orderBy from a browser was a 400 (`FJS-962`), which is
+// `FJS-D125`'s inverse-pair rule broken at one line.
+//
+// Each row is asserted twice on purpose: that both transports agree, and that
+// what arrived is what was HANDED IN. Agreement alone passes when both halves
+// send the same broken text.
+const ORDERINGS: Array<[string, unknown]> = [
+  ['a column name',      'name'],
+  ['a direction',        { name: 'desc' }],
+  ['two columns',        [{ sortOrder: 'asc' }, { name: 'asc' }]],
+  ['a nulls placement',  { deletedAt: { dir: 'asc', nulls: 'last' } }],
+  ['a relation hop',     { author: { name: 'asc' } }],
+]
+
+describe('an orderBy means the same thing on both transports', () => {
+  test.each(ORDERINGS)('%s', async (_label, orderBy) => {
+    const http = await ask(overHttp,   {}, { orderBy })
+    const ws   = await ask(overSocket, {}, { orderBy })
+    expect(http.d.orderBy).toEqual(orderBy)
+    expect(ws.d.orderBy).toEqual(orderBy)
+  })
+
+  test('and it arrives beside the directives that were already scalars', async () => {
+    const { d } = await ask(overHttp, {}, { orderBy: [{ sortOrder: 'asc' }], limit: 5, offset: 10 })
+    expect(d).toMatchObject({ orderBy: [{ sortOrder: 'asc' }], limit: 5, offset: 10 })
   })
 })

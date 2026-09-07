@@ -1,0 +1,3 @@
+# test/mutants.mjs writes these per run and unlinks them; a killed run leaves them
+src/_mutant-runtime.js
+_mutant.vitest.config.js

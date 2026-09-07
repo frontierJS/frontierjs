@@ -1,0 +1,1133 @@
+-- Litestone migration
+-- Created:   2026-09-07T18:34:26.194Z
+-- Changes:
+--     + Credential  (new table)
+--     + Session  (new table)
+--     + Verification  (new table)
+--     + OauthFlow  (new table)
+--     + OutboxMessage  (new table)
+--     + MetricSeries  (new table)
+--     + MetricPoint  (new table)
+--     + MetricHour  (new table)
+--     + Product  (new table)
+--     + Color  (new table)
+--     + ProductVariant  (new table)
+--     + ProductImage  (new table)
+--     + Customer  (new table)
+--     + CustomField  (new table)
+--     + Discount  (new table)
+--     + ShippingMethod  (new table)
+--     + TaxRate  (new table)
+--     + Order  (new table)
+--     + OrderLine  (new table)
+--     + PaymentMethod  (new table)
+--     + Payment  (new table)
+--     + PaymentEvent  (new table)
+--     + Plan  (new table)
+--     + PlanVersion  (new table)
+--     + Subscription  (new table)
+--     + Invoice  (new table)
+--     + InvoiceLine  (new table)
+--     + CreditNote  (new table)
+--     + Cart  (new table)
+--     + CartLine  (new table)
+--     + StockReservation  (new table)
+--     + InventoryMovement  (new table)
+--     + JournalEntry  (new table)
+--     + JournalLine  (new table)
+--     + Employee  (new table)
+--     + PayWindow  (new table)
+--     + PayRate  (new table)
+--     + PayRun  (new table)
+--     + Payslip  (new table)
+--     + PayslipLine  (new table)
+--     + Notification  (new table)
+--     + User  (new table)
+
+
+PRAGMA foreign_keys = OFF;
+BEGIN;
+
+-- ─── new tables ────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS "credential" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "userId" TEXT NOT NULL,
+  "type" TEXT NOT NULL,
+  "value" TEXT NOT NULL,
+  "label" TEXT,
+  "accessToken" TEXT,
+  "refreshToken" TEXT,
+  "tokenExpiresAt" TEXT,
+  "scope" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_credential_userId_type" ON "credential" ("userId", "type");
+CREATE INDEX IF NOT EXISTS "idx_credential_type_value" ON "credential" ("type", "value");
+
+CREATE TABLE IF NOT EXISTS "session" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "userId" TEXT NOT NULL,
+  "token" TEXT NOT NULL UNIQUE,
+  "expiresAt" TEXT NOT NULL,
+  "ipAddress" TEXT,
+  "userAgent" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "impersonatingUserId" TEXT,
+  "impersonationReason" TEXT,
+  "impersonationEndsAt" TEXT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_session_userId" ON "session" ("userId");
+CREATE INDEX IF NOT EXISTS "idx_session_expiresAt" ON "session" ("expiresAt");
+
+CREATE TABLE IF NOT EXISTS "verification" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "purpose" TEXT NOT NULL,
+  "identifier" TEXT NOT NULL,
+  "value" TEXT NOT NULL UNIQUE,
+  "provider" TEXT,
+  "subject" TEXT,
+  "expiresAt" TEXT NOT NULL,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("purpose" IN ('passwordReset', 'emailVerify', 'oauthLink'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_verification_purpose_identifier" ON "verification" ("purpose", "identifier");
+CREATE INDEX IF NOT EXISTS "idx_verification_expiresAt" ON "verification" ("expiresAt");
+
+-- An authorization in flight.
+-- 
+-- `Oauth` and not `OAuth`, for the reason basecamp's `ThreeCX` is not `3CX`:
+-- the accessor is the model name with its first character lowered and nothing
+-- else, so `OAuthFlow` would be reached as `db.oAuthFlow`.
+-- 
+-- NOT a Verification, and the reuse was the mistake: nobody is proving
+-- anything here, there is no address yet and there may be no account at the
+-- end of it. `state` is a CSRF token echoed back by a redirect rather than a
+-- secret sent to a person, its life is minutes rather than hours, and it
+-- carries a PKCE verifier that no other row in this schema has a use for.
+-- Three different answers to what a column means is three tables wearing one
+-- name.
+CREATE TABLE IF NOT EXISTS "oauth_flow" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "state" TEXT NOT NULL UNIQUE,
+  "provider" TEXT NOT NULL,
+  "verifier" TEXT NOT NULL,
+  "returnTo" TEXT,
+  "expiresAt" TEXT NOT NULL,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_oauth_flow_expiresAt" ON "oauth_flow" ("expiresAt");
+
+CREATE TABLE IF NOT EXISTS "outbox_message" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "job" TEXT NOT NULL,
+  "payload" TEXT NOT NULL,
+  "actorId" TEXT,
+  "claimedAt" TEXT,
+  "deliveredAt" TEXT,
+  "attempts" INTEGER NOT NULL DEFAULT 0,
+  "lastError" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "nextAttemptAt" TEXT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_outbox_message_deliveredAt_createdAt" ON "outbox_message" ("deliveredAt", "createdAt");
+CREATE INDEX IF NOT EXISTS "idx_outbox_message_claimedAt" ON "outbox_message" ("claimedAt");
+
+CREATE TABLE IF NOT EXISTS "metric_series" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "name" TEXT NOT NULL,
+  "labels" TEXT NOT NULL DEFAULT '{}',
+  "labelsKey" TEXT NOT NULL UNIQUE,
+  "type" TEXT NOT NULL DEFAULT 'gauge',
+  "unit" TEXT,
+  "lastSeenAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("type" IN ('counter', 'gauge', 'histogram'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_metric_series_name" ON "metric_series" ("name");
+CREATE INDEX IF NOT EXISTS "idx_metric_series_lastSeenAt" ON "metric_series" ("lastSeenAt");
+
+CREATE TABLE IF NOT EXISTS "metric_point" (
+  "seriesId" TEXT NOT NULL,
+  "at" INTEGER NOT NULL,
+  "value" REAL NOT NULL,
+  PRIMARY KEY ("seriesId", "at"),
+  FOREIGN KEY ("seriesId") REFERENCES "metric_series" ("id") ON DELETE CASCADE
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS "metric_hour" (
+  "seriesId" TEXT NOT NULL,
+  "hour" INTEGER NOT NULL,
+  "min" REAL NOT NULL,
+  "max" REAL NOT NULL,
+  "sum" REAL NOT NULL,
+  "count" INTEGER NOT NULL,
+  "increase" REAL,
+  PRIMARY KEY ("seriesId", "hour"),
+  FOREIGN KEY ("seriesId") REFERENCES "metric_series" ("id") ON DELETE CASCADE
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS "product" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "name" TEXT NOT NULL UNIQUE,
+  "slug" TEXT NOT NULL UNIQUE,
+  "description" TEXT,
+  "brand" TEXT NOT NULL,
+  "active" INTEGER NOT NULL DEFAULT 1,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "deletedAt" TEXT,
+  "version" INTEGER NOT NULL DEFAULT 1,
+  CHECK ("brand" IN ('frontierjs', 'junction', 'litestone'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_product_deletedAt" ON "product" ("deletedAt") WHERE "deletedAt" IS NULL;
+CREATE VIRTUAL TABLE IF NOT EXISTS "product_fts" USING fts5(
+  name, description,
+  content="product",
+  content_rowid="id"
+);
+
+-- Triggers to keep FTS index in sync.
+-- Dropped first: IF NOT EXISTS keeps a stale body forever, and a trigger is
+-- cheap to recreate, so re-applying the DDL repairs a wrong trigger set.
+DROP TRIGGER IF EXISTS "product_fts_insert";
+DROP TRIGGER IF EXISTS "product_fts_delete";
+DROP TRIGGER IF EXISTS "product_fts_update";
+DROP TRIGGER IF EXISTS "product_fts_soft_delete";
+DROP TRIGGER IF EXISTS "product_fts_restore";
+CREATE TRIGGER "product_fts_insert" AFTER INSERT ON "product" BEGIN
+  INSERT INTO "product_fts"(rowid, name, description) VALUES (new.id, new.name, new.description);
+END;
+CREATE TRIGGER "product_fts_delete" AFTER DELETE ON "product" BEGIN
+  INSERT INTO "product_fts"("product_fts", rowid, name, description) VALUES ('delete', old.id, old.name, old.description);
+END;
+CREATE TRIGGER "product_fts_update" AFTER UPDATE ON "product" BEGIN
+  INSERT INTO "product_fts"("product_fts", rowid, name, description) VALUES ('delete', old.id, old.name, old.description);
+  INSERT INTO "product_fts"(rowid, name, description) VALUES (new.id, new.name, new.description);
+END;
+
+-- The colorways this shop has run. `ProductVariant.color` stores the NAME
+-- rather than a foreign key, because the value has to outlive the row: a
+-- colorway that is retired is still what the navy tees in the warehouse are,
+-- and a deleted row must not take that answer with it.
+CREATE TABLE IF NOT EXISTS "color" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "name" TEXT NOT NULL UNIQUE,
+  "hex" TEXT,
+  "retired" INTEGER NOT NULL DEFAULT 0,
+  "sortOrder" INTEGER NOT NULL DEFAULT 999,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+) STRICT;
+
+-- The buyable thing. One row per option combination, and the row a basket
+-- line, a price and a stock count all point at.
+CREATE TABLE IF NOT EXISTS "product_variant" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "productId" INTEGER NOT NULL,
+  "sku" TEXT NOT NULL UNIQUE,
+  "color" TEXT NOT NULL DEFAULT 'Default',
+  "size" TEXT NOT NULL DEFAULT 'one',
+  "price" INTEGER NOT NULL CHECK ("price" BETWEEN -9007199254740991 AND 9007199254740991),
+  "barcode" TEXT UNIQUE,
+  "stock" INTEGER NOT NULL DEFAULT 0,
+  "active" INTEGER NOT NULL DEFAULT 1,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "deletedAt" TEXT,
+  CHECK ("size" IN ('one', 'xs', 's', 'm', 'l', 'xl', 'xxl')),
+  UNIQUE ("productId", "color", "size"),
+  FOREIGN KEY ("productId") REFERENCES "product" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_product_variant_productId" ON "product_variant" ("productId") WHERE ("deletedAt" IS NULL) AND ("active" = 1);
+CREATE INDEX IF NOT EXISTS "idx_product_variant_deletedAt" ON "product_variant" ("deletedAt") WHERE "deletedAt" IS NULL;
+
+-- A photograph. The bytes live in object storage and this column holds the
+-- reference — `File` is the type that means that, and `FileStorage` in
+-- api/db.ts is what turns a path or an upload into one.
+CREATE TABLE IF NOT EXISTS "product_image" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "productId" INTEGER NOT NULL,
+  "variantId" INTEGER,
+  "file" TEXT NOT NULL,
+  "alt" TEXT NOT NULL,
+  "position" INTEGER NOT NULL DEFAULT 0,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "deletedAt" TEXT,
+  FOREIGN KEY ("productId") REFERENCES "product" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("variantId") REFERENCES "product_variant" ("id") ON DELETE SET NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_product_image_productId" ON "product_image" ("productId") WHERE "deletedAt" IS NULL;
+CREATE INDEX IF NOT EXISTS "idx_product_image_variantId" ON "product_image" ("variantId") WHERE "deletedAt" IS NULL;
+CREATE INDEX IF NOT EXISTS "idx_product_image_deletedAt" ON "product_image" ("deletedAt") WHERE "deletedAt" IS NULL;
+
+CREATE TABLE IF NOT EXISTS "customer" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "name" TEXT NOT NULL,
+  "firstName" TEXT NOT NULL,
+  "lastName" TEXT NOT NULL,
+  "fullName" TEXT GENERATED ALWAYS AS (concat_ws(' ', "firstName", "lastName")) VIRTUAL,
+  "email" TEXT NOT NULL UNIQUE,
+  "notes" TEXT,
+  "userId" TEXT UNIQUE,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "fields" TEXT NOT NULL DEFAULT '{}',
+  "slots" TEXT NOT NULL DEFAULT '{}',
+  "t1" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t1')) VIRTUAL,
+  "t2" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t2')) VIRTUAL,
+  "t3" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t3')) VIRTUAL,
+  "t4" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t4')) VIRTUAL,
+  "t5" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t5')) VIRTUAL,
+  "t6" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t6')) VIRTUAL,
+  "t7" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t7')) VIRTUAL,
+  "t8" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t8')) VIRTUAL,
+  "n1" REAL GENERATED ALWAYS AS (json_extract("slots", '$.n1')) VIRTUAL,
+  "n2" REAL GENERATED ALWAYS AS (json_extract("slots", '$.n2')) VIRTUAL,
+  "n3" REAL GENERATED ALWAYS AS (json_extract("slots", '$.n3')) VIRTUAL,
+  "n4" REAL GENERATED ALWAYS AS (json_extract("slots", '$.n4')) VIRTUAL,
+  "deletedAt" TEXT,
+  "version" INTEGER NOT NULL DEFAULT 1
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_customer_t1_t2_t3_t4_n1_n2_t5_t6_t7_t8_n3_n4" ON "customer" ("t1", "t2", "t3", "t4", "n1", "n2", "t5", "t6", "t7", "t8", "n3", "n4") WHERE "deletedAt" IS NULL;
+CREATE INDEX IF NOT EXISTS "idx_customer_deletedAt" ON "customer" ("deletedAt") WHERE "deletedAt" IS NULL;
+
+CREATE TABLE IF NOT EXISTS "custom_field" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "key" TEXT NOT NULL UNIQUE,
+  "label" TEXT NOT NULL,
+  "type" TEXT NOT NULL,
+  "slot" TEXT UNIQUE,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("type" IN ('text', 'number'))
+) STRICT;
+
+-- A code somebody types at the till.
+-- 
+-- ─── Why a shopper may not read this table ────────────────────────────────
+-- 
+-- `@@gate("5.5.5.5")` — staff only, read included. Every other thing a
+-- shopper interacts with here is readable at 0, because a storefront has to
+-- list it; a discount code is the exception, and the reason is that listing
+-- them IS the exploit. `GET /api/discounts` answering the table hands every
+-- unreleased code to anyone who asks, and a shop's codes are worth money.
+-- 
+-- So the shopper never reads a row: they send a string to
+-- `carts.applyDiscount`, which validates it through the SYSTEM client and
+-- answers the basket with the money recalculated — the same shape
+-- `StockReservation` uses for holds, and for the same reason. What comes back
+-- is what this code is worth to THIS basket, which is the only fact about it
+-- they are entitled to.
+CREATE TABLE IF NOT EXISTS "discount" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "code" TEXT NOT NULL UNIQUE,
+  "label" TEXT NOT NULL,
+  "kind" TEXT NOT NULL DEFAULT 'percent',
+  "value" INTEGER NOT NULL CHECK ("value" BETWEEN -9007199254740991 AND 9007199254740991),
+  "minSubtotal" INTEGER NOT NULL DEFAULT 0 CHECK ("minSubtotal" BETWEEN -9007199254740991 AND 9007199254740991),
+  "audience" TEXT,
+  "startsAt" TEXT,
+  "endsAt" TEXT,
+  "maxRedemptions" INTEGER,
+  "redemptions" INTEGER NOT NULL DEFAULT 0,
+  "active" INTEGER NOT NULL DEFAULT 1,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("kind" IN ('percent', 'fixed')),
+  CHECK (maxRedemptions IS NULL OR redemptions <= maxRedemptions),
+  CHECK (startsAt IS NULL OR endsAt IS NULL OR startsAt < endsAt),
+  CHECK (kind != 'percent' OR value <= 10000)
+) STRICT;
+
+-- What the shop charges to send it.
+-- 
+-- Readable at 0, unlike a discount: a storefront has to OFFER these, and the
+-- prices are printed on the shipping page anyway. That difference — one table
+-- public, its neighbor staff-only, both on the same screen — is the clearest
+-- statement in this schema that a gate answers *what kind of caller* and not
+-- *what kind of table*.
+CREATE TABLE IF NOT EXISTS "shipping_method" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "name" TEXT NOT NULL UNIQUE,
+  "description" TEXT,
+  "price" INTEGER NOT NULL CHECK ("price" BETWEEN -9007199254740991 AND 9007199254740991),
+  "freeOver" INTEGER CHECK ("freeOver" BETWEEN -9007199254740991 AND 9007199254740991),
+  "position" INTEGER NOT NULL DEFAULT 0,
+  "active" INTEGER NOT NULL DEFAULT 1,
+  "version" INTEGER NOT NULL DEFAULT 1
+) STRICT;
+
+-- The rate this shop collects, and what it is called where the shop is.
+-- 
+-- A row rather than a constant because this is a FLEET: `tenancy { strategy
+-- database }` gives every shop its own file, so a shop in one jurisdiction
+-- and a shop in another disagree about both numbers — and a constant in the
+-- API would be the one fact about a shop that every shop had to share.
+-- 
+-- `label` is not decoration. A line on a receipt reading `Tax` where the law
+-- says `VAT` is a receipt a business customer cannot file.
+CREATE TABLE IF NOT EXISTS "tax_rate" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "label" TEXT NOT NULL,
+  "rate" REAL NOT NULL,
+  "isDefault" INTEGER NOT NULL DEFAULT 0,
+  "active" INTEGER NOT NULL DEFAULT 1,
+  "version" INTEGER NOT NULL DEFAULT 1
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS "order" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "reference" TEXT NOT NULL UNIQUE,
+  "status" TEXT NOT NULL DEFAULT 'pending',
+  "subtotal" INTEGER NOT NULL DEFAULT 0 CHECK ("subtotal" BETWEEN -9007199254740991 AND 9007199254740991),
+  "discountCode" TEXT,
+  "discountLabel" TEXT,
+  "discount" INTEGER NOT NULL DEFAULT 0 CHECK ("discount" BETWEEN -9007199254740991 AND 9007199254740991),
+  "shippingLabel" TEXT,
+  "shipping" INTEGER NOT NULL DEFAULT 0 CHECK ("shipping" BETWEEN -9007199254740991 AND 9007199254740991),
+  "taxLabel" TEXT,
+  "taxRate" REAL NOT NULL DEFAULT 0,
+  "tax" INTEGER NOT NULL DEFAULT 0 CHECK ("tax" BETWEEN -9007199254740991 AND 9007199254740991),
+  "total" INTEGER NOT NULL DEFAULT 0 CHECK ("total" BETWEEN -9007199254740991 AND 9007199254740991),
+  "note" TEXT,
+  "customerId" INTEGER NOT NULL,
+  "trackingCode" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "deletedAt" TEXT,
+  "userId" TEXT,
+  CHECK ("status" IN ('pending', 'paid', 'shipped', 'refunded', 'cancelled')),
+  CHECK (subtotal = 0 OR total = subtotal - discount + shipping + tax),
+  CHECK (discount <= subtotal),
+  FOREIGN KEY ("customerId") REFERENCES "customer" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_order_customerId" ON "order" ("customerId") WHERE "deletedAt" IS NULL;
+CREATE INDEX IF NOT EXISTS "idx_order_deletedAt" ON "order" ("deletedAt") WHERE "deletedAt" IS NULL;
+
+-- What was bought, at the price it was bought for.
+-- 
+-- ─── Why the columns are copies ──────────────────────────────────────────
+-- 
+-- Every column below except the two ids is a value this row already has a
+-- relation to. That is not denormalization for speed — it is that a line is a
+-- statement about a MOMENT and its neighbors are statements about now. A
+-- variant's price is what the shop charges today; `unitPrice` is what this
+-- shopper was charged, and re-reading the first to render the second rewrites
+-- what past customers paid every time somebody edits the catalogue. Same for
+-- the wording: `description` is the sentence that was on the screen, and a
+-- colorway renamed next year does not un-sell this one.
+-- 
+-- The relation stays for the one thing a copy cannot do — link back to the
+-- product page — and it is `Restrict` for the reason `InventoryMovement`'s is:
+-- history that a DELETE somewhere else can empty is not history.
+-- 
+-- ─── This does not replace the ledger, and the two are not the same fact ──
+-- 
+-- `InventoryMovement` records what left the SHELF; these record what was
+-- SOLD. A refund still reads the movements back (`api/src/inventory.ts`
+-- `restock`), because the question there is what physically moved and the
+-- signed tape is the only thing that answers it. The question here is what
+-- the shop billed for, which the tape cannot answer: it carries no prices.
+CREATE TABLE IF NOT EXISTS "order_line" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "orderId" INTEGER NOT NULL,
+  "variantId" INTEGER NOT NULL,
+  "sku" TEXT NOT NULL,
+  "description" TEXT NOT NULL,
+  "quantity" INTEGER NOT NULL,
+  "unitPrice" INTEGER NOT NULL CHECK ("unitPrice" BETWEEN -9007199254740991 AND 9007199254740991),
+  "lineTotal" INTEGER NOT NULL CHECK ("lineTotal" BETWEEN -9007199254740991 AND 9007199254740991),
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "deletedAt" TEXT,
+  FOREIGN KEY ("orderId") REFERENCES "order" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("variantId") REFERENCES "product_variant" ("id") ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_order_line_orderId" ON "order_line" ("orderId") WHERE "deletedAt" IS NULL;
+CREATE INDEX IF NOT EXISTS "idx_order_line_variantId" ON "order_line" ("variantId") WHERE "deletedAt" IS NULL;
+CREATE INDEX IF NOT EXISTS "idx_order_line_deletedAt" ON "order_line" ("deletedAt") WHERE "deletedAt" IS NULL;
+
+-- One attempt to take money for one order.
+-- 
+-- ─── Why `providerRef` is @unique and is not the id ──────────────────────
+-- 
+-- A webhook arrives naming the PROVIDER's id and nothing else — it has never
+-- heard of this database. So the column the lookup goes through has to be the
+-- provider's, and it has to be unique or a redelivery could settle a second
+-- row. It is not the primary key because a provider id is theirs to change
+-- the shape of, and a foreign key pointing at a string somebody else mints is
+-- a migration waiting to happen.
+-- A card on file — what makes a charge possible with nobody at the keyboard.
+-- 
+-- ─── Why the shop stores this at all ─────────────────────────────────────
+-- 
+-- A subscription is charged again next month, at three in the morning, with
+-- nobody there to be asked for a card. So the FIRST charge is a conversation
+-- with a person and every one after it is a token the provider issued once and
+-- the shop presents on its own — which is the whole difference between a shop
+-- that bills and a shop that takes payments.
+-- 
+-- The shop never sees a card number. `providerRef` is a handle the provider
+-- will honor, and the four columns beside it are what a person needs in order
+-- to recognize which card they are looking at.
+-- 
+-- ─── The row is not uniformly secret, and that is the point ──────────────
+-- 
+-- `providerRef` can move money, so it is `@guarded`: the app writes it, the
+-- system reads it, and no response ever carries it. `brand` and `last4` are
+-- the opposite — they exist to be shown, and gating the whole model at 8 to
+-- protect the token would take away the one screen this model is for. The
+-- split is per COLUMN, which is what `@guarded` is and what a model-level gate
+-- can never express.
+CREATE TABLE IF NOT EXISTS "payment_method" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "customerId" INTEGER NOT NULL,
+  "providerRef" TEXT NOT NULL UNIQUE,
+  "brand" TEXT NOT NULL,
+  "last4" TEXT NOT NULL,
+  "expMonth" INTEGER NOT NULL,
+  "expYear" INTEGER NOT NULL,
+  "isDefault" INTEGER NOT NULL DEFAULT 0,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "userId" TEXT,
+  FOREIGN KEY ("customerId") REFERENCES "customer" ("id") ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_payment_method_customerId" ON "payment_method" ("customerId");
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_payment_method_customerId" ON "payment_method" ("customerId") WHERE "isDefault" = 1;
+
+CREATE TABLE IF NOT EXISTS "payment" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "providerRef" TEXT NOT NULL UNIQUE,
+  "status" TEXT NOT NULL DEFAULT 'pending',
+  "amount" INTEGER NOT NULL CHECK ("amount" BETWEEN -9007199254740991 AND 9007199254740991),
+  "currency" TEXT NOT NULL DEFAULT 'USD',
+  "orderId" INTEGER,
+  "invoiceId" INTEGER,
+  "paymentMethodId" INTEGER,
+  "refundedAmount" INTEGER NOT NULL DEFAULT 0 CHECK ("refundedAmount" BETWEEN -9007199254740991 AND 9007199254740991),
+  "failureReason" TEXT,
+  "actionUrl" TEXT,
+  "userId" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "settledAt" TEXT,
+  CHECK ("status" IN ('pending', 'requiresAction', 'succeeded', 'failed', 'refunded')),
+  CHECK ((("orderId" IS NOT NULL) + ("invoiceId" IS NOT NULL)) = 1),
+  FOREIGN KEY ("orderId") REFERENCES "order" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("invoiceId") REFERENCES "invoice" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("paymentMethodId") REFERENCES "payment_method" ("id") ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_payment_orderId" ON "payment" ("orderId");
+CREATE INDEX IF NOT EXISTS "idx_payment_invoiceId" ON "payment" ("invoiceId");
+CREATE INDEX IF NOT EXISTS "idx_payment_paymentMethodId" ON "payment" ("paymentMethodId");
+
+-- Every event the provider has delivered, once each. Append-only.
+-- 
+-- ─── What this table is for, and what it is NOT for ──────────────────────
+-- 
+-- It is NOT what makes paying an order idempotent. That is the state machine:
+-- `pay` is `pending -> paid`, so a second one is refused at the Data boundary
+-- whatever this table says. Nor is it the signature replay check, which is a
+-- nonce inside a five-minute window and is gone the moment the window passes.
+-- 
+-- It is the answer to "what did they tell us, and when" — the row a person
+-- reads when the order and the provider's dashboard disagree. The @unique is
+-- what makes a redelivery cheap: the handler claims the id and stops, rather
+-- than re-deriving that there is nothing to do.
+-- 
+-- The claim and the effect are written in ONE transaction (`transactional:`
+-- on `payments.record`), which is the only arrangement that is correct. Claim
+-- first and commit separately, and a crash in between leaves the event
+-- claimed and the order unpaid — and the provider's retry is deduped away by
+-- the very row that recorded nothing happening.
+CREATE TABLE IF NOT EXISTS "payment_event" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "eventId" TEXT NOT NULL UNIQUE,
+  "kind" TEXT NOT NULL,
+  "paymentRef" TEXT,
+  "receivedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+) STRICT;
+
+-- What is on offer. The NAME of a thing you can subscribe to, and nothing
+-- about what it costs — the price is `PlanVersion`, because a price has a
+-- lifetime and a plan does not.
+CREATE TABLE IF NOT EXISTS "plan" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "code" TEXT NOT NULL UNIQUE,
+  "name" TEXT NOT NULL,
+  "description" TEXT,
+  "interval" TEXT NOT NULL DEFAULT 'monthly',
+  "active" INTEGER NOT NULL DEFAULT 1,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("interval" IN ('monthly', 'yearly'))
+) STRICT;
+
+-- What a plan cost, over the window it cost it.
+-- 
+-- **Effective-dated reference data**, which is the temporal shape this app has
+-- nowhere else: every other historical figure here is COPIED at the moment of
+-- sale (`Order`'s nine columns, `OrderLine`'s unit price) because the thing it
+-- was copied from is expected to move underneath. A subscription cannot copy,
+-- because it is charged again next month and has to charge the same amount —
+-- so the price is a row with a lifetime, and a subscription names the version
+-- it was sold at rather than the plan.
+-- 
+-- A change of price is a new row: `effectiveTo` on the old one, a new one with
+-- `effectiveFrom` where it ended. Nothing edits a version that has been sold
+-- against, which is what `@immutable` says here.
+CREATE TABLE IF NOT EXISTS "plan_version" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "planId" INTEGER NOT NULL,
+  "price" INTEGER NOT NULL CHECK ("price" BETWEEN -9007199254740991 AND 9007199254740991),
+  "effectiveFrom" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "effectiveTo" TEXT,
+  CHECK (effectiveTo IS NULL OR effectiveFrom < effectiveTo),
+  FOREIGN KEY ("planId") REFERENCES "plan" ("id") ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_plan_version_planId_effectiveFrom" ON "plan_version" ("planId", "effectiveFrom");
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_plan_version_planId" ON "plan_version" ("planId") WHERE "effectiveTo" IS NULL;
+
+-- Somebody paying, on a cycle.
+-- 
+-- It names a `PlanVersion` and not a `Plan`, which is the whole of the
+-- paragraph on that model: a subscriber keeps the price they signed up at
+-- until something moves them, and *something moved them* is a row change with
+-- a date on it rather than a silent reprice.
+CREATE TABLE IF NOT EXISTS "subscription" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "reference" TEXT NOT NULL UNIQUE,
+  "customerId" INTEGER NOT NULL,
+  "planVersionId" INTEGER NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'trialing',
+  "quantity" INTEGER NOT NULL DEFAULT 1,
+  "currentPeriodStart" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "currentPeriodEnd" TEXT NOT NULL,
+  "trialEndsAt" TEXT,
+  "cancelledAt" TEXT,
+  "cancelAtPeriodEnd" INTEGER NOT NULL DEFAULT 0,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "userId" TEXT,
+  CHECK ("status" IN ('trialing', 'active', 'pastDue', 'cancelled')),
+  FOREIGN KEY ("customerId") REFERENCES "customer" ("id") ON DELETE RESTRICT,
+  FOREIGN KEY ("planVersionId") REFERENCES "plan_version" ("id") ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_subscription_customerId" ON "subscription" ("customerId");
+CREATE INDEX IF NOT EXISTS "idx_subscription_planVersionId" ON "subscription" ("planVersionId");
+
+-- A DOCUMENT.
+-- 
+-- Every money column here is `@immutable` and so is the number and the instant
+-- — which is what `FJS-D162` is about: an invoice states what was charged at a
+-- moment, and the only honest correction is a `CreditNote` beside it. The
+-- freeze holds against `asSystem()`, which matters here more than anywhere
+-- else in this schema, because the caller that writes invoices IS the system:
+-- the renewal job has no session.
+-- 
+-- **`draft` exists again, and `@seals` is why** (`FJS-D167`). It was removed
+-- because `@immutable` froze a column at CREATE, so a row assembled over
+-- several writes could not hold a frozen total — the language was shaping the
+-- domain rather than describing it. `issue: draft -> issued @seals` says WHEN
+-- this row becomes a statement, and on a sealing model `@immutable` means
+-- frozen at the SEAL: the numbers are ordinary while it is a draft and frozen
+-- for everybody afterwards, `asSystem()` included.
+-- 
+-- `lines InvoiceLine[] @sealed` is the other half — the children the document
+-- is MADE of, so after the seal no line may be added, changed or removed.
+-- `payments` and `creditNotes` deliberately carry no `@sealed`: a payment
+-- against an issued invoice is exactly the row that must keep arriving, and a
+-- credit note is how a sealed document is corrected.
+-- 
+-- What is still NOT declared is the invariant that matters most: `subtotal` is
+-- the sum of this invoice's lines, and no `@@check` can see a child table. It
+-- is enforced in `issueInvoice`, which is the only writer — but the seal is now
+-- the MOMENT that check belongs at, which is the half `FJS-D162` left open and
+-- `FJS-D167` supplies without yet spending.
+CREATE TABLE IF NOT EXISTS "invoice" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "number" TEXT NOT NULL UNIQUE,
+  "status" TEXT NOT NULL DEFAULT 'draft',
+  "customerId" INTEGER NOT NULL,
+  "subscriptionId" INTEGER,
+  "subtotal" INTEGER NOT NULL CHECK ("subtotal" BETWEEN -9007199254740991 AND 9007199254740991),
+  "tax" INTEGER NOT NULL DEFAULT 0 CHECK ("tax" BETWEEN -9007199254740991 AND 9007199254740991),
+  "total" INTEGER NOT NULL CHECK ("total" BETWEEN -9007199254740991 AND 9007199254740991),
+  "periodStart" TEXT NOT NULL,
+  "periodEnd" TEXT NOT NULL,
+  "issuedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "dueAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "paidAt" TEXT,
+  "userId" TEXT,
+  CHECK ("status" IN ('draft', 'issued', 'paid', 'void')),
+  CHECK (total = subtotal + tax),
+  FOREIGN KEY ("customerId") REFERENCES "customer" ("id") ON DELETE RESTRICT,
+  FOREIGN KEY ("subscriptionId") REFERENCES "subscription" ("id") ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_invoice_customerId" ON "invoice" ("customerId");
+CREATE INDEX IF NOT EXISTS "idx_invoice_subscriptionId" ON "invoice" ("subscriptionId");
+
+-- One line of the statement, frozen with it.
+-- 
+-- `amount` is carried rather than derived from `unitAmount × quantity` for
+-- `OrderLine`'s reason — a proration line is a FRACTION of a period, so the
+-- two genuinely differ and the line has to say what was charged rather than
+-- what multiplies out.
+CREATE TABLE IF NOT EXISTS "invoice_line" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "invoiceId" INTEGER NOT NULL,
+  "description" TEXT NOT NULL,
+  "quantity" INTEGER NOT NULL DEFAULT 1,
+  "unitAmount" INTEGER NOT NULL CHECK ("unitAmount" BETWEEN -9007199254740991 AND 9007199254740991),
+  "amount" INTEGER NOT NULL CHECK ("amount" BETWEEN -9007199254740991 AND 9007199254740991),
+  "periodStart" TEXT,
+  "periodEnd" TEXT,
+  "userId" TEXT,
+  FOREIGN KEY ("invoiceId") REFERENCES "invoice" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_invoice_line_invoiceId" ON "invoice_line" ("invoiceId");
+
+-- The correction. A row that says an issued invoice was wrong by this much,
+-- beside the invoice rather than inside it.
+-- 
+-- It is the reason every column on `Invoice` can be frozen: with a credit note
+-- there is no case left where editing one would be the answer.
+CREATE TABLE IF NOT EXISTS "credit_note" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "number" TEXT NOT NULL UNIQUE,
+  "invoiceId" INTEGER NOT NULL,
+  "amount" INTEGER NOT NULL CHECK ("amount" BETWEEN -9007199254740991 AND 9007199254740991),
+  "reason" TEXT NOT NULL,
+  "issuedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "userId" TEXT,
+  FOREIGN KEY ("invoiceId") REFERENCES "invoice" ("id") ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_credit_note_invoiceId" ON "credit_note" ("invoiceId");
+
+-- A basket, and the one model in this app owned by NOBODY.
+-- 
+-- A shopper is a stranger — no account, no session, level 0 — and a stranger
+-- still has to be the only person who can see their own basket. That cannot
+-- be `userId == auth().id`, because there is no `auth().id` to compare, and it
+-- must not be a service reading through `asSystem()`, because access is
+-- declared in the schema and not in hooks (Invariant 6).
+-- 
+-- So the owner is a BEARER TOKEN, and `api/cart-claim.ts` turns the header
+-- carrying it into a claim on the principal before the Data boundary scopes
+-- the client. `auth().cartToken` is then a claim a stranger holds, and the
+-- policies below are ordinary row policies over it.
+-- 
+-- The token is `@guarded`: the app writes it, `asSystem()` reads it, and no
+-- caller ever gets it back in a response — the browser knows it because it
+-- was handed it once, at creation, by the service that minted it.
+CREATE TABLE IF NOT EXISTS "cart" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "token" TEXT NOT NULL UNIQUE,
+  "userId" TEXT,
+  "status" TEXT NOT NULL DEFAULT 'open',
+  "discountId" INTEGER,
+  "shippingMethodId" INTEGER,
+  "handoffCode" TEXT UNIQUE,
+  "handoffExpires" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  CHECK ("status" IN ('open', 'ordered', 'abandoned')),
+  FOREIGN KEY ("discountId") REFERENCES "discount" ("id") ON DELETE SET NULL,
+  FOREIGN KEY ("shippingMethodId") REFERENCES "shipping_method" ("id") ON DELETE SET NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_cart_discountId" ON "cart" ("discountId");
+CREATE INDEX IF NOT EXISTS "idx_cart_shippingMethodId" ON "cart" ("shippingMethodId");
+
+-- One line. The quantity and the PRICE THE SHOPPER WAS SHOWN, which is not
+-- the same fact as the variant's price today — a basket left overnight must
+-- either honor what it quoted or say out loud that it changed, and it can do
+-- neither if the number was never written down.
+CREATE TABLE IF NOT EXISTS "cart_line" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "cartId" INTEGER NOT NULL,
+  "variantId" INTEGER NOT NULL,
+  "quantity" INTEGER NOT NULL DEFAULT 1,
+  "unitPrice" INTEGER NOT NULL CHECK ("unitPrice" BETWEEN -9007199254740991 AND 9007199254740991),
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "token" TEXT NOT NULL,
+  UNIQUE ("cartId", "variantId"),
+  FOREIGN KEY ("cartId") REFERENCES "cart" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("variantId") REFERENCES "product_variant" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_cart_line_variantId" ON "cart_line" ("variantId");
+
+-- Stock set aside for one basket, until a moment.
+-- 
+-- ─── Why this is a row and not a column on CartLine ──────────────────────
+-- 
+-- It would fit there — a line already names a variant and a quantity, and an
+-- `heldUntil` column would have been three characters of schema. It is wrong
+-- for one reason and the reason is a POLICY: CartLine is scoped by the
+-- shopper's token (`@@allow('read', token == auth().cartToken)`), and
+-- availability is a sum over *everybody's* holds. Summing CartLine from a
+-- shopper's own client answers a sum over their own basket — a number that is
+-- always plausible, usually zero, and never the one asked for. It is the exact
+-- shape the house rule warns about: a wrong policy is an empty screen, not an
+-- error.
+-- 
+-- A hold is a fact about the SHELF, so it is a table about the shelf, and the
+-- gate says who may look: an administrator reads them (that is the inventory
+-- screen), and nothing below `asSystem()` writes one. There is no row policy
+-- because there is no caller-facing read — the shopper learns about their own
+-- hold from the basket the `carts` service builds for them.
+CREATE TABLE IF NOT EXISTS "stock_reservation" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "variantId" INTEGER NOT NULL,
+  "cartId" INTEGER NOT NULL,
+  "quantity" INTEGER NOT NULL,
+  "expiresAt" TEXT NOT NULL,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  UNIQUE ("cartId", "variantId"),
+  FOREIGN KEY ("variantId") REFERENCES "product_variant" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("cartId") REFERENCES "cart" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_stock_reservation_variantId_expiresAt" ON "stock_reservation" ("variantId", "expiresAt");
+
+-- Why the shelf is at the number it is at. Append-only.
+-- 
+-- `stock` is the running total and this is the tape behind it: nothing writes
+-- that column without writing a row here in the same breath, which is what
+-- makes the two reconcilable at all. It is not the audit trail — `@@log(audit)`
+-- records that SOMEBODY changed a row and Litestone owns its format. This
+-- records what happened to the SHELF, in the shop's own words, and a customer
+-- service agent reads it.
+-- 
+-- ─── The gate is "5.5.9.9" and each digit is deliberate ──────────────────
+-- 
+-- read   5  an administrator; a movement names orders and quantities
+-- create 5  receiving stock is an administrator's act, so the Data boundary
+-- is what refuses it — `inventory.receive` contains no check of
+-- its own and needs none
+-- update 9  LOCKED — nothing passes 9, `asSystem()` included
+-- delete 9  LOCKED
+-- 
+-- 9 is what "append-only" is spelled with. A comment saying the same thing is
+-- a comment; this is enforced at the Data boundary for every caller including
+-- the application itself, which is the only version of the promise worth
+-- having.
+-- 
+-- The one movement an ADMINISTRATOR does not write is `sold`: that one is
+-- written by a shopper at level 0 checking out, so `carts.checkout` makes it
+-- through `asSystem()` — the shop recording a sale on its own behalf. Which
+-- client a `move()` is handed is therefore a real decision at every call site,
+-- and it is why `api/inventory.ts` takes one rather than reaching for a global.
+CREATE TABLE IF NOT EXISTS "inventory_movement" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "variantId" INTEGER NOT NULL,
+  "kind" TEXT NOT NULL,
+  "quantity" INTEGER NOT NULL,
+  "stockBefore" INTEGER NOT NULL,
+  "stockAfter" INTEGER NOT NULL,
+  "reference" TEXT,
+  "note" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("kind" IN ('received', 'sold', 'returned', 'adjusted', 'damaged')),
+  FOREIGN KEY ("variantId") REFERENCES "product_variant" ("id") ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_inventory_movement_variantId" ON "inventory_movement" ("variantId");
+CREATE INDEX IF NOT EXISTS "idx_inventory_movement_reference_kind" ON "inventory_movement" ("reference", "kind");
+
+-- A double-entry journal — the second ledger in this app, and the one whose
+-- invariant the language cannot say.
+-- 
+-- ─── Why it is here at all ────────────────────────────────────────────────
+-- 
+-- `InventoryMovement` already proves the shape: an append-only tape of signed
+-- movements, where summing is the only thing anybody wants to do with one. A
+-- journal is that tape with an account on it and one extra rule — **the lines
+-- of one entry sum to zero** — and that rule is the wall.
+-- 
+-- ─── The wall, stated where somebody will meet it ─────────────────────────
+-- 
+-- *The lines sum to zero* reads a CHILD table. `@@check` sees one row, a
+-- policy cannot aggregate, and a `@from` answers a number rather than refusing
+-- a write. So it is enforced in `api/src/ledger.ts` at the moment an entry is
+-- posted — application code, exactly as `Invoice.subtotal = Σ lines` is
+-- enforced in `api/src/billing.ts`.
+-- 
+-- Two copies of one missing feature is the evidence a ruling wants.
+-- `FJS-D162` ruled WHERE such an invariant is checked — at the transition, and
+-- the freeze is what makes once enough — and deliberately left what SPELLS it
+-- open. This is the second caller waiting on that spelling.
+-- 
+-- What the freeze buys here is what it bought the invoice: every column is
+-- `@immutable`, and a journal has no states at all, so *checked once when it
+-- is posted* is the whole of its life. There is no drift to catch.
+CREATE TABLE IF NOT EXISTS "journal_entry" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "reference" TEXT NOT NULL UNIQUE,
+  "narrative" TEXT NOT NULL,
+  "postedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "source" TEXT NOT NULL,
+  "orderId" INTEGER,
+  "payRunId" INTEGER,
+  CHECK ("source" IN ('sale', 'payroll')),
+  CHECK ((("orderId" IS NOT NULL) + ("payRunId" IS NOT NULL)) = 1),
+  FOREIGN KEY ("orderId") REFERENCES "order" ("id") ON DELETE RESTRICT,
+  FOREIGN KEY ("payRunId") REFERENCES "pay_run" ("id") ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_journal_entry_orderId" ON "journal_entry" ("orderId");
+CREATE INDEX IF NOT EXISTS "idx_journal_entry_payRunId" ON "journal_entry" ("payRunId");
+
+-- One side of one journal.
+-- 
+-- SIGNED, for `InventoryMovement.quantity`'s reason and a second one: with a
+-- debit and a credit COLUMN the balance rule is *sum of one column equals sum
+-- of the other*, and with one signed column it is *the sum is zero*. The
+-- second is the rule a database could one day be asked to hold.
+CREATE TABLE IF NOT EXISTS "journal_line" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "entryId" INTEGER NOT NULL,
+  "account" TEXT NOT NULL,
+  "amount" INTEGER NOT NULL CHECK ("amount" BETWEEN -9007199254740991 AND 9007199254740991),
+  CHECK ("account" IN ('receivables', 'discountsAllowed', 'sales', 'shippingIncome', 'taxPayable', 'wagesExpense', 'payeControl', 'pensionControl', 'niControl', 'netPayControl')),
+  CHECK (amount != 0),
+  FOREIGN KEY ("entryId") REFERENCES "journal_entry" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_journal_line_entryId" ON "journal_line" ("entryId");
+
+-- Somebody this shop employs.
+-- 
+-- A shop is a BUSINESS, and a business that sells things also employs people —
+-- which is why payroll is in this application rather than a fourth one, and
+-- why `JournalEntry` above already exists to receive what a pay run posts.
+-- 
+-- It costs nothing per shop: `tenancy { strategy database }` gives every shop
+-- its own SQLite file, so each one is a separate legal employer with no column
+-- and no policy doing the separating.
+CREATE TABLE IF NOT EXISTS "employee" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "reference" TEXT NOT NULL UNIQUE,
+  "name" TEXT NOT NULL,
+  "email" TEXT NOT NULL UNIQUE,
+  "startedOn" TEXT NOT NULL,
+  "endedOn" TEXT,
+  CHECK (endedOn IS NULL OR startedOn < endedOn)
+) STRICT;
+
+-- What somebody is paid, over the interval it was true for.
+-- 
+-- Named for the WINDOW rather than for the terms it carries, and the rename
+-- was `fli check`'s: `model EmploymentTerms` reads as a plural, so
+-- `employment-terms` singularises to `EmploymentTerm` and Invariant 2's three
+-- resolvers stop agreeing — a resource file over it would resolve to no model
+-- at all. `PayWindow` is what every comment in `api/src/employment.ts` already
+-- called it.
+-- 
+-- ─── The third shape, and why this one ────────────────────────────────────
+-- 
+-- `IDEAS/payroll.md` phase 0 found three effective-dating spellings in real
+-- schemas: a nullable `effectiveTo` pair, a `fromDate` with NO end column
+-- where the window is closed by the next row's start, and a closed interval.
+-- Frappe writes the second.
+-- 
+-- This writes the first, and deliberately writes it IDENTICALLY to
+-- `PlanVersion` above — same two columns, same nullable open end, same
+-- `nullsDistinct` near-miss, same close-then-open in a transaction. Two
+-- unrelated domains in one application arranging the same four things by hand
+-- is the argument for the language knowing about validity windows, and it is
+-- only an argument if the two are the same arrangement rather than two
+-- dialects (`FJS-D164`).
+-- 
+-- ─── One open window per employee, and where it is held ───────────────────
+-- 
+-- `@@unique([employeeId], where: effectiveTo == null)`. It was met here for
+-- the second time as a gap (`FJS-603`) and closed as one: the nullable column
+-- moves OUT of the tuple and into the predicate, which is the difference
+-- between *the open rows are deliberately unconstrained* and *at most one of
+-- them exists*.
+-- 
+-- `employees.setPay` still checks it, and that is not redundant — it names the
+-- employee and says what to do, where the boundary answers a 409 about a
+-- column. What changed is that the rule now holds against a seed, a migration,
+-- a job and `asSystem()`, none of which go through the service.
+CREATE TABLE IF NOT EXISTS "pay_window" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "employeeId" INTEGER NOT NULL,
+  "basis" TEXT NOT NULL,
+  "rate" INTEGER NOT NULL CHECK ("rate" BETWEEN -9007199254740991 AND 9007199254740991),
+  "hoursPerWeek" INTEGER NOT NULL DEFAULT 40,
+  "effectiveFrom" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "effectiveTo" TEXT,
+  CHECK ("basis" IN ('salary', 'hourly')),
+  CHECK (effectiveTo IS NULL OR effectiveFrom < effectiveTo),
+  FOREIGN KEY ("employeeId") REFERENCES "employee" ("id") ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_pay_window_employeeId_effectiveFrom" ON "pay_window" ("employeeId", "effectiveFrom");
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_pay_window_employeeId" ON "pay_window" ("employeeId") WHERE "effectiveTo" IS NULL;
+
+-- A number that was true between two dates, for amounts in a range.
+-- 
+-- ─── One table, and Frappe's three ────────────────────────────────────────
+-- 
+-- Frappe spends `Salary Component`, `Income Tax Slab` and `Income Tax Slab
+-- Other Charges` here, and `TaxableSalarySlab` beside them for the bands. They
+-- are one sentence — *this rate applied to this slice, over this interval* —
+-- and splitting it costs a join per question and a second place to forget the
+-- window.
+-- 
+-- ─── Why it is not a valueset and not an enum ─────────────────────────────
+-- 
+-- A `valueset` (`FJS-D120`) is a closed set of VALUES a picker offers, and an
+-- enum is a fixed set with no time on it. This is a table whose rows are each
+-- true for an interval, which is `PayWindow`'s shape one table along — and
+-- having the same shape twice, over reference data rather than over a person,
+-- is what makes it evidence rather than a coincidence.
+-- 
+-- ─── The band ─────────────────────────────────────────────────────────────
+-- 
+-- `fromAmount` and `toAmount` are ANNUAL and cumulative, so a rate applies to
+-- the slice of income between them and not to the whole. That is what makes a
+-- tax band a band; applying the top rate to the whole salary is the classic
+-- wrong answer, and `api/src/payrates.ts` is the only place the walk is
+-- written. `toAmount` null is *and everything above*, which every real band
+-- table has exactly one of per kind.
+CREATE TABLE IF NOT EXISTS "pay_rate" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "kind" TEXT NOT NULL,
+  "fromAmount" INTEGER NOT NULL DEFAULT 0 CHECK ("fromAmount" BETWEEN -9007199254740991 AND 9007199254740991),
+  "toAmount" INTEGER CHECK ("toAmount" BETWEEN -9007199254740991 AND 9007199254740991),
+  "percent" INTEGER NOT NULL CHECK ("percent" BETWEEN -9007199254740991 AND 9007199254740991),
+  "effectiveFrom" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "effectiveTo" TEXT,
+  CHECK ("kind" IN ('incomeTax', 'employeePension', 'employerPension', 'employerNI')),
+  CHECK (toAmount IS NULL OR fromAmount < toAmount),
+  CHECK (effectiveTo IS NULL OR effectiveFrom < effectiveTo)
+) STRICT;
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_pay_rate_kind_fromAmount" ON "pay_rate" ("kind", "fromAmount") WHERE "effectiveTo" IS NULL;
+
+-- One period's payroll, for everybody employed in it.
+-- 
+-- ─── The ladder, and why approval is the interesting move ─────────────────
+-- 
+-- `calculate` and `pay` are `@system` — a job computes and a job posts. What a
+-- person does is APPROVE, and it is `@gate(5)`: this shop's administrator,
+-- one level above the staff member who can raise and recalculate the run. That
+-- separation is the point of the state machine rather than decoration, and it
+-- is the second `@gate(5)` transition in the application after a refund.
+-- 
+-- `revert` exists because `calculated` has to be undoable — a run computed
+-- against the wrong period is the ordinary mistake, and the alternative to
+-- reverting is deleting payslips, which are documents.
+CREATE TABLE IF NOT EXISTS "pay_run" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "reference" TEXT NOT NULL UNIQUE,
+  "periodStart" TEXT NOT NULL,
+  "periodEnd" TEXT NOT NULL,
+  "payDate" TEXT NOT NULL,
+  "periodsPerYear" INTEGER NOT NULL DEFAULT 12,
+  "periodIndex" INTEGER NOT NULL DEFAULT 0,
+  "status" TEXT NOT NULL DEFAULT 'draft',
+  "headcount" INTEGER,
+  "approvedBy" TEXT,
+  "approvedAt" TEXT,
+  "paidAt" TEXT,
+  CHECK ("status" IN ('draft', 'calculated', 'approved', 'paid')),
+  CHECK (periodStart < periodEnd),
+  CHECK (periodIndex < periodsPerYear)
+) STRICT;
+
+-- What one person was paid for one period. A DOCUMENT.
+-- 
+-- ─── The two invariants, and only one of them is declarable ───────────────
+-- 
+-- `net = gross - deductions` reads three columns of ONE row, so it is a
+-- `@@check` and the database holds it — against a migration, a seed and
+-- `asSystem()` alike.
+-- 
+-- *The lines that count sum to the gross and the deductions* reads a CHILD
+-- table, so it is not declarable at all and lives in `api/src/payroll.ts`.
+-- That is the third place in this application enforcing a cross-row invariant
+-- in application code (`Invoice.subtotal`, `JournalEntry`'s balance, this).
+-- 
+-- **And this one carries the complication phase 0 found in a real payroll**:
+-- the sum is not over every line. `PayslipLine.counts` is false for the
+-- employer's contributions, which appear on the payslip and are not deductions
+-- from the person — so whatever spelling the language grows has to admit a
+-- PREDICATE over the child rather than only an aggregate over it.
+-- 
+-- ─── Why it names the pay window ──────────────────────────────────────────
+-- 
+-- `payWindowId` is `FJS-D164` applied: the consumer names the VERSION, never
+-- the parent. A payslip that pointed at the employee would reprint at
+-- whatever they are paid now, which is the exact failure effective dating
+-- exists to prevent.
+CREATE TABLE IF NOT EXISTS "payslip" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "reference" TEXT NOT NULL UNIQUE,
+  "payRunId" INTEGER NOT NULL,
+  "employeeId" INTEGER NOT NULL,
+  "payWindowId" INTEGER NOT NULL,
+  "periodStart" TEXT NOT NULL,
+  "periodEnd" TEXT NOT NULL,
+  "gross" INTEGER NOT NULL CHECK ("gross" BETWEEN -9007199254740991 AND 9007199254740991),
+  "deductions" INTEGER NOT NULL CHECK ("deductions" BETWEEN -9007199254740991 AND 9007199254740991),
+  "net" INTEGER NOT NULL CHECK ("net" BETWEEN -9007199254740991 AND 9007199254740991),
+  "employerCost" INTEGER NOT NULL CHECK ("employerCost" BETWEEN -9007199254740991 AND 9007199254740991),
+  "sentAt" TEXT,
+  UNIQUE ("payRunId", "employeeId"),
+  CHECK (net = gross - deductions),
+  FOREIGN KEY ("payRunId") REFERENCES "pay_run" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("employeeId") REFERENCES "employee" ("id") ON DELETE RESTRICT,
+  FOREIGN KEY ("payWindowId") REFERENCES "pay_window" ("id") ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_payslip_employeeId" ON "payslip" ("employeeId");
+CREATE INDEX IF NOT EXISTS "idx_payslip_payWindowId" ON "payslip" ("payWindowId");
+
+-- One line of one payslip. SIGNED, and not all of them count.
+-- 
+-- `amount` is positive for an earning and negative for a deduction, which is
+-- `JournalLine`'s convention and `InventoryMovement`'s before it: a ledger of
+-- totals cannot be summed, and summing is the only thing anybody wants to do
+-- with one.
+-- 
+-- `counts` is the complication a real payroll has and a designed one does not.
+-- The employer's contributions belong ON the payslip — a person is entitled to
+-- see what their employment costs — and are not deductions from them, so the
+-- invariant is *the lines that count sum to net* rather than *the lines sum to
+-- net*. Frappe spells the same thing `do_not_include_in_total`.
+CREATE TABLE IF NOT EXISTS "payslip_line" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "payslipId" INTEGER NOT NULL,
+  "kind" TEXT NOT NULL,
+  "description" TEXT NOT NULL,
+  "amount" INTEGER NOT NULL CHECK ("amount" BETWEEN -9007199254740991 AND 9007199254740991),
+  "counts" INTEGER NOT NULL DEFAULT 1,
+  "rateId" INTEGER,
+  "correctsPayRunId" INTEGER,
+  CHECK ("kind" IN ('basicPay', 'overtime', 'bonus', 'incomeTax', 'employeePension', 'employerPension', 'employerNI')),
+  CHECK (amount != 0),
+  FOREIGN KEY ("payslipId") REFERENCES "payslip" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("rateId") REFERENCES "pay_rate" ("id") ON DELETE RESTRICT,
+  FOREIGN KEY ("correctsPayRunId") REFERENCES "pay_run" ("id") ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_payslip_line_payslipId" ON "payslip_line" ("payslipId");
+CREATE INDEX IF NOT EXISTS "idx_payslip_line_rateId" ON "payslip_line" ("rateId");
+CREATE INDEX IF NOT EXISTS "idx_payslip_line_correctsPayRunId" ON "payslip_line" ("correctsPayRunId");
+
+CREATE TABLE IF NOT EXISTS "notification" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "userId" TEXT NOT NULL,
+  "type" TEXT NOT NULL,
+  "data" TEXT NOT NULL,
+  "contextType" TEXT,
+  "contextId" INTEGER,
+  "readAt" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("contextType" IN ('Order'))
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS "user" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "email" TEXT NOT NULL UNIQUE,
+  "name" TEXT,
+  "emailVerified" INTEGER NOT NULL DEFAULT 0,
+  "role" TEXT NOT NULL DEFAULT 'user',
+  "accountId" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "isStaff" INTEGER NOT NULL DEFAULT 0
+) STRICT;
+
+-- ─── new views ──────────────────────────────────────────────────────
+
+CREATE VIEW IF NOT EXISTS "revenueByStatus" AS
+SELECT status, COUNT(*) AS orders, SUM(total) AS total FROM [order] WHERE deletedAt IS NULL GROUP BY status;
+
+COMMIT;
+PRAGMA foreign_keys = ON;

@@ -9,6 +9,7 @@ import { $ } from '@frontierjs/junction'
 // person defined against an app. This handler is the first running the second.
 
 import { defineJob }        from '@frontierjs/caravan'
+import { notifyPeople, workspaceMembers } from '../core/notify.ts'
 import { runsEitherWay }    from './context.ts'
 import { announce }         from '../channels.ts'
 import type { BasecampApp } from '../basecamp.types.ts'
@@ -83,7 +84,7 @@ function runner(app: BasecampApp) {
     return result.data?.stdout ?? ''
   }
 
-  async function runJob(jobId: string, trigger = 'manual'): Promise<void> {
+  async function runJob(jobId: string, trigger = 'manual', lastAttempt = true): Promise<void> {
     const startedAt = Date.now()
 
     // One call for the row, the run it opens, and the two refusals: a job that
@@ -120,6 +121,16 @@ function runner(app: BasecampApp) {
       await jobs.call('finishRun', jobId, { runId, status: 'failed', error: msg, startedAt: startedIso })
       log.error('job failed', { job_id: jobId, error: msg })
 
+      // ONLY ON THE LAST ATTEMPT. This handler re-throws so caravan retries, so
+      // notifying here unguarded pages somebody three times for one failure —
+      // twice about a job that then succeeded. `attempts` is already
+      // incremented when the handler runs and terminal is `attempts >= max`
+      // (caravan's worker), so the caller's test is the same one the queue makes.
+      if (lastAttempt && job.workspaceId)
+        await notifyPeople(app, 'job_failed', await workspaceMembers(app, job.workspaceId as string), {
+          runId, jobId, jobName: job.name, reason: msg,
+        })
+
       // Re-throw so Caravan can apply its retry backoff
       throw err
     }
@@ -130,6 +141,11 @@ function runner(app: BasecampApp) {
 
 // ── The job ───────────────────────────────────────────────────────
 
+/** Read by the handler AND declared on the definition, so *is this the last
+ *  try* cannot drift from what the queue thinks. */
+const MAX_ATTEMPTS = 3
+
+
 export default defineJob<{ id: string; trigger?: string }>('job:run', async (ctx) => {
   // BOTH ways, and the only handler here that is: `jobs.trigger` queues this as
   // the person who clicked, and `job-schedule.ts` fires it off a cron with no
@@ -137,9 +153,13 @@ export default defineJob<{ id: string; trigger?: string }>('job:run', async (ctx
   // the service confines the read, and a cron fire is the app acting on its own
   // behalf across workspaces.
   const { app } = runsEitherWay(ctx, 'job:run')
-  await runner(app).runJob(ctx.data.id, ctx.data.trigger ?? 'manual')
+  // `maxAttempts` is stated once, below, and read here — a literal `3` in the
+  // handler is a retry budget that stops matching the queue's the moment either
+  // moves, and what it costs is a failure nobody is told about.
+  await runner(app).runJob(ctx.data.id, ctx.data.trigger ?? 'manual',
+                           ctx.attempts >= MAX_ATTEMPTS)
 }, {
   queue:       'jobs',
-  maxAttempts: 3,
+  maxAttempts: MAX_ATTEMPTS,
   retryDelay:  [5_000, 30_000, 120_000],  // 5s, 30s, 2m
 })

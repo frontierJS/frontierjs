@@ -13,6 +13,8 @@
 //
 // All validators skip null/undefined values — use NOT NULL in schema for required fields.
 
+import { slug } from '@frontierjs/toolbelt/inflect'
+
 // ─── Error type ───────────────────────────────────────────────────────────────
 
 export class ValidationError extends Error {
@@ -212,16 +214,6 @@ export const DEFAULT_MESSAGES = {
 // ─── Transform engine ─────────────────────────────────────────────────────────
 // Mutates a copy of data — called BEFORE validation and write
 
-// ─── Slugify ──────────────────────────────────────────────────────────────────
-function slugify(str) {
-  return String(str)
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, '')   // strip non-alphanumeric except spaces and hyphens
-    .replace(/[\s_]+/g, '-')    // spaces/underscores → hyphens
-    .replace(/-+/g, '-')        // collapse multiple hyphens
-    .replace(/^-+|-+$/g, '')    // strip leading/trailing hyphens
-}
-
 export function applyTransforms(data, model) {
   const out = { ...data }
 
@@ -248,7 +240,7 @@ export function applyTransforms(data, model) {
         case 'trim':  out[field.name] = String(out[field.name]).trim();          break
         case 'lower': out[field.name] = String(out[field.name]).toLowerCase();   break
         case 'upper': out[field.name] = String(out[field.name]).toUpperCase();   break
-        case 'slug':  out[field.name] = slugify(out[field.name]);                break
+        case 'slug':  out[field.name] = slug(out[field.name]);                     break
       }
     }
   }

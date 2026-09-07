@@ -1020,7 +1020,14 @@ export function getConfig(metadata, rawArg, flag) {
   Object.entries(flag).forEach(([key, value]) => {
     if (key.length === 1) {
       const found = Object.entries(meta.flags).find(([, { char }]) => char === key)
-      if (!found) { logger(`[-${key}] unrecognized short flag, ignoring`, 'warn'); delete flag[key]; return }
+      if (!found) {
+        // A passthrough command does not own its flags — a shortcut re-types
+        // the tail of the argv at another command, so "unrecognized" here names
+        // a flag that is recognized by the thing actually being run.
+        if (meta.mode !== 'passthrough') logger(`[-${key}] unrecognized short flag, ignoring`, 'warn')
+        delete flag[key]
+        return
+      }
       delete flag[key]
       // Only promote short char if the full-name flag isn't already explicitly set
       // and the value is truthy (minimist sets unpasssed short booleans to false)
@@ -1039,7 +1046,7 @@ export function getConfig(metadata, rawArg, flag) {
         logger(`[${key}] flag not defined [strict mode]`, 'error')
         throw new Error('Cancelling action.')
       }
-      logger(`[${key}] flag not defined — ignoring`, 'warn')
+      if (meta.mode !== 'passthrough') logger(`[${key}] flag not defined — ignoring`, 'warn')
       return
     }
 

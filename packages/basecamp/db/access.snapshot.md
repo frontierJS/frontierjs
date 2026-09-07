@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-46 models · 46 gated · 0 unrestricted
-35 with row policies · 8 with protected fields · 19 declared moves · 5 @system · 0 @seals
+50 models · 50 gated · 0 unrestricted
+36 with row policies · 8 with protected fields · 19 declared moves · 5 @system · 0 @seals
 ```
 
 ## Gates
@@ -48,7 +48,11 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `Invitation` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Job` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `JobRun` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `MetricHour` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `MetricPoint` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `MetricSeries` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Network` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `Notification` | 0 STRANGER | 8 SYSTEM | 4 USER | 8 SYSTEM |
 | `NotificationChannel` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `NotificationPreference` | 1 VISITOR | 1 VISITOR | 1 VISITOR | 1 VISITOR |
 | `OauthFlow` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
@@ -279,6 +283,11 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 - deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+
+### `Notification`
+
+- allow **read** — `userId == auth().id`
+- allow **update** — `userId == auth().id`
 
 ### `NotificationChannel`
 

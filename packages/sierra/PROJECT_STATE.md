@@ -60,8 +60,11 @@ them off a diff.
 - **The gate scale is a hand copy** (`FJS-520`, decision `FJS-D184` open) — this
   package holds one of the four, across a boundary that forbids the import.
 - **Value sets have two axes held out of `FJS-D120` and both are wanted**: a
-  per-caller ORDER (`FJS-D121`) and a DEPENDENT set, where one field's value
-  narrows another's list (`FJS-D122`). Both unruled.
+  per-caller ORDER (`FJS-D121`), unruled, and a DEPENDENT set, where one field's
+  value narrows another's list — ruled `FJS-D122` and built (`FJS-953`). This
+  package's half is `options()`: it narrows by the controlling value off the
+  draft record and answers EMPTY with `awaiting` where there is none. What a
+  form does with a value the change made illegal is `FJS-D225`, unruled.
 - **`FJS-D117` and `FJS-D118` are unruled routing questions** — whether a
   co-located route part carries its folder in its name, and whether a page can
   state where *back* goes.

@@ -35,6 +35,7 @@
 
 import { createService, NotFound, BadRequest, Conflict, Forbidden, Unauthorized, Gone, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, refuseGrantAboveOwn, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { notifyPeople, workspaceMembers } from '../../core/notify.ts'
 import { grantsFor } from '../../core/capabilities.ts'
 import { db, ws, actor, findScoped, getScoped } from '../../core/resource.ts'
 import { env } from '../../core/env.ts'
@@ -386,6 +387,28 @@ export function createInvitationsService(app: BasecampApp) {
         })
         await tx.invitation.delete({ where: { id: invitation.id } })
         return member
+      })
+
+      // AFTER the transaction, and outside it. A notification is not part of
+      // the membership: a mailer that refused must not roll back somebody's
+      // access, and a transaction that had already committed cannot be undone
+      // by one anyway. `notifyPeople` catches per recipient for the same reason.
+      //
+      // Everybody already in the workspace, and NOT the person who just joined:
+      // they know. The de-dupe in `notifyPeople` would not have caught that —
+      // they are a member now, so the roster includes them.
+      const existing = (await workspaceMembers(app, workspace.id)).filter(id => id !== userId)
+      await notifyPeople(app, 'member_joined', existing, {
+        workspaceId:   workspace.id,
+        workspaceName: workspace.name,
+        // `data.name` and not `name`: that `const` is scoped to the branch that
+        // CREATES an account, and referring to it here resolves to the DOM
+        // lib's global `name` — a string, so `tsc` says nothing and the value
+        // is whatever the runtime has. An existing account answers `account.name`.
+        personName:    (account?.name as string | undefined)
+                         ?? (String(data.name ?? '').trim() || undefined),
+        personEmail:   email,
+        role:          invitation.role,
       })
 
       return {

@@ -3,7 +3,14 @@
 // Derived mechanically from the MySQL schema of https://github.com/open-mrp/api
 // (Apache 2.0), `shared/db/migrations/0001_initial.sql`, and then given the
 // declarations an FJS app would carry: a gate ladder per model, @@softDelete
-// where the table had a deleted_at column, @version where it had a version one.
+// where the table had a NULLABLE deleted_at column, @version where it had a
+// version one.
+//
+// Nullable, because the name alone is not the fact: `DeletedRecord.deletedAt` is
+// `DateTime @default(now())` — the instant a deletion was recorded, which is this
+// table's DATA — and marking that model `@@softDelete` made every row born
+// deleted and invisible to every read. It carried that for as long as the
+// fixture existed, and the parser refuses it now (`FJS-969`).
 //
 // A SCALE FIXTURE, not a design. 188 models, 1910 columns, 295 relations,
 // 10 implicit many-to-many pairs. Nothing here is a claim about how an MRP should
@@ -1074,7 +1081,6 @@ model DeletedRecord {
   data                               Json
 
   @@index([resourceType, resourceId])
-  @@softDelete
   @@gate("8")
 }
 

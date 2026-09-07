@@ -235,3 +235,34 @@ test('match: without a schema — it still matches structurally', function () {
   assert.equal(matchesQuery({}, row({ id: 5 }), { id: '5' }), false)
 })
 
+
+/* ── An undeclared field is null, whatever it is called ────────────── */
+
+test('match: a field the record inherits is not a field the record HAS', function () {
+  // `key in record` is true for every member of Object.prototype, so a query
+  // naming an undeclared field called `constructor` skipped the *ask the
+  // server* branch, compared two functions, and answered FALSE — which drops
+  // the record out of a live list. `null` is the contract (`FJS-996`).
+  const fields = { id: { type: 'string' }, name: { type: 'string' } }
+  const record = JSON.parse('{"id":"1","name":"a"}')
+
+  // The control: an ordinary undeclared name, which was always right.
+  assert.equal(matchesQuery(fields, record, JSON.parse('{"nope":"x"}')), null)
+
+  for (const key of ['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__']) {
+    assert.equal(
+      matchesQuery(fields, record, JSON.parse(`{"${key}":"x"}`)), null,
+      `an undeclared '${key}' must ask the server`)
+  }
+})
+
+test('match: a column genuinely NAMED constructor is still compared', function () {
+  // The negative control, and it is the row that makes the one above mean
+  // something: answering null for every such name would satisfy that test and
+  // break every app with a column called `constructor`.
+  const fields = { id: { type: 'string' }, constructor: { type: 'string' } }
+  assert.equal(matchesQuery(fields, JSON.parse('{"id":"1","constructor":"blue"}'),
+                                    JSON.parse('{"constructor":"blue"}')), true)
+  assert.equal(matchesQuery(fields, JSON.parse('{"id":"1","constructor":"red"}'),
+                                    JSON.parse('{"constructor":"blue"}')), false)
+})

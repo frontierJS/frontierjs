@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**100 words** — 12 declarations · 63 field attributes · 25 model attributes.
+**101 words** — 12 declarations · 63 field attributes · 26 model attributes.
 
 ## Declarations
 
@@ -21,9 +21,9 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `tenancy` | { strategy database \| row, … } | strategy: database · row |
 | `claim` | <name> |  |
 | `model` | <PascalCaseSingular> { … } |  |
-| `view` | <name> { fields… @@sql(…) [@@materialized] [@@refreshOn([…])] [@@db(…)] } |  |
+| `view` | <name> { fields… @@sql(…) [@@materialized] [@@refreshOn([…])] [@@db(…)] [@@gate(…)] [@@allow(…)] [@@deny(…)] [@@tenant(…)] } |  |
 | `enum` | <Name> { values… } |  |
-| `valueset` | <Name> { source <Model> [value <field>] [scope <name>] [where "…"] } |  |
+| `valueset` | <Name> { source <Model> [value <field>] [scope <name>] [where "…"] [order [recent(<Model>.<col>, <clock>),] <field> [asc\|desc], …] } |  |
 | `function` | <name>(p: Type, …): Type { @@expr("…") } |  |
 | `trait` | <Name> { fields… attributes… } |  |
 | `extend` | model <Name> { fields… attributes… } |  |
@@ -72,7 +72,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@lower` | Clean a value on write |  |  |  |  |
 | `@upper` | Clean a value on write |  |  |  |  |
 | `@slug` | Clean a value on write | [(<field>…)] |  |  |  |
-| `@values` | Refuse a bad value | (<ValueSetName>[, required\|open\|suggested]) | on a model's field · on a trait's field | strength: required · open · suggested |  |
+| `@values` | Refuse a bad value | (<ValueSetName>[, required\|open\|suggested][, dependsOn: <column>[ on <sourceColumn>]]) | on a model's field · on a trait's field | strength: required · open · suggested |  |
 | `@label` | Refuse a bad value | ("Human name") | on a model's field · on a type's field · on a trait's field · on an enum member |  |  |
 | `@required` | Refuse a bad value | [(message: "…")] |  |  |  |
 | `@email` | Refuse a bad value | [(message)] |  |  |  |
@@ -115,6 +115,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@softDelete` | Shape the table | [(cascade)] |  | mode: cascade |  |
 | `@@hasTemplates` | Shape the table | [(<field>)] |  |  |  |
 | `@@gate` | Decide who may | ("<read>.<create>.<update>.<delete>" \| "<n>") |  |  |  |
+| `@@export` | Decide who may | (ndjson \| csv [, since: <column>]) |  |  |  |
 | `@@allow` | Decide who may | ('read'\|'create'\|'update'\|'delete'\|'all', <expression>[, message]) |  |  |  |
 | `@@deny` | Decide who may | ('read'\|…, <expression>[, message]) |  |  |  |
 | `@@scope` | Decide who may | (<name>, <expression>) |  |  |  |
@@ -172,3 +173,4 @@ Shapes the parser accepts and something later refuses.
 | `unique-on-an-optional-column` | info | @unique on an optional column admits any number of nulls |
 | `index-another-index-already-covers` | info | an index a longer one already answers |
 | `declared-and-unreferenced` | info | a declaration nothing references |
+| `materialized-view-full-refresh` | info | a materialized view is rebuilt in full on every row written to its sources |

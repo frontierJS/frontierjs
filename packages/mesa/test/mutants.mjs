@@ -1,0 +1,200 @@
+// test/mutants.mjs — does the suite grade BEHAVIOR or vocabulary? (`FJS-888`)
+//
+// `compiler.test.js` asserts on the emitted JavaScript as text: 448 of its 852
+// assertions are `toContain` over a string. Any emission still CALLING the named
+// runtime function satisfies one of those, whatever the arguments, the
+// surrounding effect, or the order. So the suite can be green over a compiler
+// that emits the right words in the wrong shape, and the finding needs a number
+// rather than an opinion.
+//
+// ── Why the runtime and not the compiler ─────────────────────────────────────
+//
+// `litestone mutate` states the rule this follows: code mutation is
+// combinatorial and most mutants are uninteresting, so mutate the small
+// DECLARATIVE surface instead. Here that surface is the vocabulary itself — the
+// ~90 runtime functions the compiler emits calls to, read out of `compiler.js`
+// rather than listed by hand, so a function the compiler stops emitting leaves
+// the catalogue on its own.
+//
+// One mutant per name: the export is replaced with a function that does nothing
+// and answers `undefined`. The name is still exported, so every `toContain`
+// still passes and every import still resolves — the compiler's output is
+// unchanged, byte for byte. What changes is only whether the thing DOES
+// anything.
+//
+// ── What a survivor means ────────────────────────────────────────────────────
+//
+// Not "the runtime is wrong". It means nothing in the vitest suite executes this
+// function's behavior, so every claim the suite makes about the construct that
+// emits it is a claim about spelling. Some survivors are expected and named
+// below — a function only a real browser or a real Vite server reaches cannot
+// die here, and saying so is the difference between a hole and a boundary.
+//
+// Not part of `bun run test`: it runs the whole suite once per mutant.
+//
+//   node test/mutants.mjs                  every emitted name
+//   node test/mutants.mjs bindText render  just these
+//   node test/mutants.mjs --list           the catalogue, no runs
+
+import { readFileSync, writeFileSync, unlinkSync, existsSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const RUNTIME = path.join(DIR, 'src/runtime.js')
+const MUTANT = path.join(DIR, 'src/_mutant-runtime.js')
+const CONFIG = path.join(DIR, '_mutant.vitest.config.js')
+
+// ─── the catalogue ────────────────────────────────────────────────────────────
+
+/** Every `$$runtime.<name>` the compiler can emit, read off the compiler. */
+function emittedNames() {
+  const src = readFileSync(path.join(DIR, 'src/compiler.js'), 'utf8')
+  const found = new Set()
+  for (const m of src.matchAll(/\$\$runtime\.([a-zA-Z_$][\w$]*)/g)) found.add(m[1])
+  return [...found].sort()
+}
+
+/**
+ * A name is mutable only if `runtime.js` declares it as a top-level export.
+ * The handful that are not are compiler artefacts — a `$$runtime.$` inside a
+ * comment, a placeholder in an example string — and reporting them as
+ * unkillable would be reporting on the regex rather than on the suite.
+ */
+function exportedNames() {
+  const src = readFileSync(RUNTIME, 'utf8')
+  const found = new Set()
+  for (const m of src.matchAll(/^export\s+(?:function\*?|const|let|class)\s+([a-zA-Z_$][\w$]*)/gm)) {
+    found.add(m[1])
+  }
+  return found
+}
+
+/**
+ * Survivors that are boundaries rather than holes, each with the reason.
+ *
+ * A name here still RUNS — it is reported as an expected survivor, not skipped —
+ * because a boundary that stops being true should show up as an unexpected KILL
+ * and make somebody delete the line.
+ */
+const EXPECTED_SURVIVORS = {
+  fade:    'an animation — asserted in the browser drive, which vitest does not run',
+  slide:   'an animation — browser drive',
+  fly:     'an animation — browser drive',
+  inspect: 'a devtools affordance — the vite devtools drive reaches it',
+}
+// Written first as ten, and six of them were KILLED on the first run —
+// `transition`, `entrance`, `island`, `portal`, `__dev` and `noop` are all
+// executed by the vitest suite. They are gone from the list rather than
+// annotated, which is what the revived-survivor report exists to make somebody
+// do. Guessing at this list is how it goes wrong: a name sitting here
+// unexamined reads exactly like a hole nobody has to look at.
+
+// ─── the run ──────────────────────────────────────────────────────────────────
+
+function writeMutant(name) {
+  // `export *` skips a name the module also exports locally, so this replaces
+  // exactly one binding and re-exports the rest untouched. The re-export
+  // specifier is `./runtime.js`, which the aliases below do not match — they
+  // rewrite what the TESTS ask for, not what this file asks for.
+  writeFileSync(MUTANT,
+    `// generated by test/mutants.mjs — delete freely\n` +
+    `export * from './runtime.js'\n` +
+    `export const ${name} = () => undefined\n`)
+}
+
+function writeConfig() {
+  // Both spellings the suite uses: the relative import in a test file, and the
+  // absolute path the three compile-and-mount suites rewrite into their
+  // fixtures. A miss here reads as a surviving mutant, which is the failure
+  // this instrument exists to report — so it would lie in its own direction.
+  writeFileSync(CONFIG,
+    `import { defineConfig, configDefaults } from 'vitest/config'\n` +
+    `export default defineConfig({\n` +
+    `  resolve: { alias: [\n` +
+    `    { find: '../src/runtime.js', replacement: ${JSON.stringify(MUTANT)} },\n` +
+    `    { find: ${JSON.stringify(RUNTIME)}, replacement: ${JSON.stringify(MUTANT)} },\n` +
+    `  ] },\n` +
+    `  test: {\n` +
+    `    environment: 'happy-dom',\n` +
+    `    include: ['test/**/*.{test,spec}.?(c|m)[jt]s?(x)'],\n` +
+    `    exclude: [...configDefaults.exclude, 'test/browser/**'],\n` +
+    `  },\n` +
+    `})\n`)
+}
+
+/** Run the suite against the current mutant. `true` = something failed = killed. */
+function suiteFails() {
+  try {
+    execFileSync('npx', ['vitest', 'run', '--config', CONFIG, '--reporter=dot'],
+      { cwd: DIR, stdio: 'pipe', timeout: 10 * 60_000 })
+    return false
+  } catch {
+    return true
+  }
+}
+
+const args = process.argv.slice(2)
+const emitted = emittedNames()
+const exported = exportedNames()
+const catalogue = emitted.filter((n) => exported.has(n))
+const skipped = emitted.filter((n) => !exported.has(n))
+
+if (args.includes('--list')) {
+  console.log(`${catalogue.length} mutable names:\n  ${catalogue.join(' ')}`)
+  console.log(`\n${skipped.length} emitted but not a top-level export, so not mutable:\n  ${skipped.join(' ')}`)
+  process.exit(0)
+}
+
+const wanted = args.length ? catalogue.filter((n) => args.includes(n)) : catalogue
+if (!wanted.length) {
+  console.error(`no such name. Try --list.`)
+  process.exit(1)
+}
+
+// The control, first and always. A run where the UNMUTATED suite fails grades
+// nothing — every mutant would read as killed and the score would be perfect.
+writeConfig()
+writeFileSync(MUTANT, `export * from './runtime.js'\n`)
+process.stdout.write('control (no mutation)  ')
+if (suiteFails()) {
+  console.log('FAILED — the suite is red before any mutation. Fix that first.')
+  cleanup()
+  process.exit(1)
+}
+console.log('green')
+
+const survivors = []
+let killed = 0
+for (const [i, name] of wanted.entries()) {
+  process.stdout.write(`[${i + 1}/${wanted.length}] ${name} `.padEnd(34))
+  writeMutant(name)
+  if (suiteFails()) { killed++; console.log('killed') }
+  else { survivors.push(name); console.log('SURVIVED') }
+}
+cleanup()
+
+// ─── the report ───────────────────────────────────────────────────────────────
+
+const unexpected = survivors.filter((n) => !(n in EXPECTED_SURVIVORS))
+const expected = survivors.filter((n) => n in EXPECTED_SURVIVORS)
+const revived = Object.keys(EXPECTED_SURVIVORS)
+  .filter((n) => wanted.includes(n) && !survivors.includes(n))
+
+console.log(`\n${killed}/${wanted.length} killed, ${survivors.length} survived`)
+if (unexpected.length) {
+  console.log(`\nnothing in the suite executes these — every claim about the construct\nthat emits one is a claim about spelling:\n  ${unexpected.join('\n  ')}`)
+}
+if (expected.length) {
+  console.log(`\nsurvived, and named as a boundary rather than a hole:`)
+  for (const n of expected) console.log(`  ${n} — ${EXPECTED_SURVIVORS[n]}`)
+}
+if (revived.length) {
+  console.log(`\nlisted as an expected survivor and KILLED — the reason no longer holds,\ndelete the line:\n  ${revived.join(' ')}`)
+}
+process.exit(unexpected.length ? 1 : 0)
+
+function cleanup() {
+  for (const f of [MUTANT, CONFIG]) if (existsSync(f)) { try { unlinkSync(f) } catch {} }
+}

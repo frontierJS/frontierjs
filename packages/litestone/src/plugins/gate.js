@@ -121,7 +121,9 @@ export function validateGate(gate, modelName) {
 
 function buildAccessMap(schema) {
   const map = {}
-  for (const model of schema.models) {
+  // Views are in the walk because a view is a read path onto rows a model
+  // guards: leaving them out is a gate that stops at the projection.
+  for (const model of [...schema.models, ...(schema.views ?? [])]) {
     const gateAttr = model.attributes?.find(a => a.kind === 'gate')
     if (!gateAttr) continue
     const gate = parseGateString(gateAttr.value)

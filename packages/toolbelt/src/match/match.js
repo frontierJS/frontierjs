@@ -209,12 +209,19 @@ export function matchesQuery(fields, record, query) {
       one = _not(matchesQuery(fields, record, val))
     } else if (key.startsWith('$')) {
       one = null   // an operator the server may know and this does not
-    } else if (!(key in record)) {
+    } else if (!Object.hasOwn(record, key)) {
       // A `select` that dropped the filtered column, or a filter naming a
       // relation — the row is here, the answer is not.
+      //
+      // Own keys rather than `in`: a record inherits `constructor`, `toString`,
+      // `valueOf` and `hasOwnProperty` from Object.prototype, so `in` said the
+      // column was present, `_matchField` compared two functions, and a query
+      // naming an undeclared field by one of those names answered FALSE —
+      // dropping the record from a live list — where the contract says null,
+      // ask the server (`FJS-996`).
       one = null
     } else {
-      one = _matchField(fields?.[key], record[key], val)
+      one = _matchField(Object.hasOwn(fields ?? {}, key) ? fields[key] : undefined, record[key], val)
     }
 
     verdict = _and(verdict, one)

@@ -55,13 +55,6 @@ export const LEVELS = Object.freeze({
   LOCKED:        9,   // absolute wall — asSystem() included
 })
 
-/**
- * The name a schema may write instead of a digit — `@@gate("USER")`,
- * `@gate(ADMINISTRATOR)`. Derived from `LEVELS` rather than restated, so a rung
- * cannot exist in one spelling and not the other.
- */
-export const LEVEL_NAMES = Object.freeze(Object.fromEntries(Object.entries(LEVELS)))
-
 /** `4 → 'USER'`, for a message somebody has to read. */
 export function levelName(level) {
   return Object.keys(LEVELS).find((k) => LEVELS[k] === level) ?? String(level)

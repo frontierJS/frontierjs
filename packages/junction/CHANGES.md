@@ -1,5 +1,169 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-07 — a resource may declare that its rows have no identity
+
+`FJS-998`. `Store._replace` skips a row carrying no id — correctly, since a
+`select` that omitted the key is a row it cannot place — but `client.resource()`
+bound EVERY resource and `idField` defaulted to `'id'` with no way to say there
+is not one. A `view` declares columns and no key, so a screen over a projection
+loaded three rows and held zero, with `load()` answering 3 and no error anywhere.
+
+`idField: null` leaves the store unbound, holding the list as it arrives. The
+per-row push handlers are skipped with it, because `place`, `upsert` and `remove`
+are all lookups by key and there is no question they could answer for a keyless
+row. `changed` stays wired: it carries a count rather than a row, so it means the
+same thing.
+
+**The silent half is fixed separately and matters more.** A bound store handed a
+set where NOT ONE row carries the key now warns once, naming the model and the
+way out. That shape is a wiring mistake rather than a partial read, and it
+renders as an empty screen while `load()` reports success.
+
+## 2026-09-07 — the governed extract, over HTTP
+
+`FJS-D228` phase 1b, under `FJS-D230`: Studio previews, the app issues. This is
+the issuing surface — `exportPlugin()`, `GET /exports` and
+`GET /exports/{dataset}`, streamed and taken as the caller.
+
+**It adds no enforcement, which is the point.** Litestone's `runExport` already
+IS the extract — a paginated scoped read, so the gate, the row policies, the
+field policies and tenancy all apply because the client is scoped rather than
+because anything here re-checks them. What a transport owes is who is asking and
+a bound on what one request may cost, and that is all this file is.
+
+**The trap it is arranged around is `FJS-977` one layer up.** A raw route runs
+BELOW the service pipeline, and the pipeline is where a principal is finished:
+`withLitestoneDb` / `withTenantDb` scope the client, lift the row-tenancy claim
+and run the app's own `principal` resolver. A route reading `ctx.user` and
+calling `$setAuth` itself gets a principal short exactly the claims an app
+resolves per request — and under `strategy row` that is not a narrower extract,
+it is an empty one with a 200. So the route runs the SAME around hook, with a
+context built from the request, and takes **both** halves back: the client says
+which database, the merged principal says who. Passing the scoped client alone
+would have changed nothing, because `runExport` re-scopes from `as`.
+
+**A refusal is a status code.** The response is held until the export has
+produced its first ROW, finished, or failed — so a caller below the gate gets a
+403 rather than a 200 whose body stops. That matters most for CSV, where the
+column header is written before the first read: a route that answered as soon as
+it could would hand a refused caller a well-formed file with a header and no
+rows. After the first row a failure errors the stream deliberately, because a
+truncated extract that closes cleanly is indistinguishable from a complete one.
+
+**`system` and `includeProtected` are unreachable over HTTP.** Both exist on
+`runExport` and both belong to `fli db:export`, where an operator typed them and
+the manifest recorded it. `x-export-withheld` names what did not leave.
+
+**Bounded.** `maxConcurrent` (2 by default) refuses with `retryable` rather than
+queueing, because a caller behind an unbounded queue cannot tell that from a
+hang. Backpressure is honoured, so a large extract is still not a value in
+memory.
+
+**Mounting it in `example` found one more, and it is the one a unit test could
+not.** A session context names the account `userId`; the Data boundary reads
+`auth().id`. `toDataPrincipal` is the one owner of that translation and
+`applyClaims` already calls it before its own `$setAuth` — this route did not,
+so `@@allow('read', userId == auth().id)` compared against NULL, matched no
+rows, and answered **200 with an empty extract**. The same account exported one
+order through `fli db:export` and none over HTTP. Every fixture in the junction
+test had handed `verifySession` a row-shaped object with `id` on it, which is
+why they all passed; there is a `userId`-shaped one now.
+
+`tests/export-endpoint.test.ts` is the proof — a real Litestone client and a real
+listening server, 13 tests — and `example`: `verify:export` is the other half,
+19 checks against a real shop. Measured against stubs: taking `ctx.user` instead of
+the resolved principal reds 2, the tenant-resolved client 1, `toDataPrincipal` 1,
+the protected-column default 1, the cap 1, the first-row hold 1, the session
+check 1.
+
+## 2026-09-07 — `app.metrics.record()`, and one owner for a series' identity
+
+The scrape reads `/metrics`, which is everything the PROCESS knows about itself.
+Anything an app measures about something ELSE — a machine it manages, a queue it
+watches — arrives on that thing's own schedule, so it is pushed rather than
+pulled. `app.metrics.record(name, value, { labels, type, unit, at })`.
+
+It goes through the plugin rather than an app writing the tables, and that is
+the whole reason the method exists. **`seriesKey(name, labels)` is exported and
+is the only place a `labelsKey` is spelled.** That column is `@unique` and IS
+the series' identity, so two callers spelling one series differently mint two
+series and each then holds half the readings — which draws a graph with a step
+in it and says nothing about why.
+
+Three decisions inside it. **No labels is the bare name**, so every unlabelled
+series the scrape has already written keeps its row across an upgrade — a format
+that wrapped them as `up{}` would orphan every point in every installed app on
+the first boot. **Labels are sorted**, because object key order is a property of
+whichever literal was typed first and two call sites will not agree. And
+**values escape `\`, `"` and newline**: without that a label VALUE can close the
+quoted run and open another pair, so a caller who controls a value controls the
+whole key and can address a series belonging to somebody else. Every label in
+this repo is written by this repo today, which is exactly the state a format is
+in before the first one is not.
+
+`writePoint` is now the one path both writers take, so the scrape and `record()`
+cannot drift on how a reading becomes rows. `at` rounds to the minute, which is
+what makes a re-scrape a no-op and lets a caller record on whatever schedule it
+already has — a heartbeat every thirty seconds keeps the later reading rather
+than doubling the row count.
+
+`tests/series-key.test.ts` — 6 rows. Stubbed: the escaping 2 red, the sort 1, the
+bare-name case 1. `example`'s `verify:metrics` grades `record()` against the
+shipped plugin and both of its stubs fail the drive outright.
+
+## 2026-09-07 — a structured `orderBy` reaches the server
+
+`find(q, { orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] })` was a **400** on
+both transports, for as long as the client has had directives (`FJS-962`).
+`directiveParams` sent `$orderBy` as `JSON.stringify(d.orderBy)` whenever it was
+not a string, and the reader takes `$orderBy` as-is — so the far side got the
+TEXT, split it on commas and refused it as a column name.
+
+`FJS-D125`'s inverse-pair rule broken at one line: `encodeQueryString` already
+writes a structure in bracket notation and the transport's parser already reads
+it back, so the fix is to pass the value through. The socket half spread the
+same map into a frame, so both transports were wrong together — which is why
+`tests/query-parity.test.ts` now asserts each ordering twice, that the two
+AGREE and that what arrived is what was handed in. Agreement alone passes when
+both halves send the same broken text.
+
+Found by `example`'s `verify:values` in a browser, not by a suite.
+
+## 2026-09-06 — `aggregate`, and its arguments are an allow-list
+
+Counts, sums and groups on the auto surface (`FJS-D226`). One verb for both
+shapes, dispatching on `by` the way litestone's own `query()` does: with one it
+is a group-by and the answer is the list envelope, without one it is a single
+row. `POST /{service}` plus `X-Service-Method: aggregate`, the bare name over
+WS, `app.service(x).aggregate(spec, opts)` in process — the transport was
+already there.
+
+**The arguments are an allow-list and that is the whole of it.** Litestone's
+aggregate surface is wider than what may be reached from a wire, and grading it
+for this verb found two silent holes in the half already reachable —
+`FJS-954` and `FJS-955`. A body handed through whole re-opens that class every
+time the language grows a key, once per app. `_stringAgg` and named aggregates
+are refused BY NAME: one is GROUP_CONCAT wearing an aggregate's clothes, the
+other takes its filter as a `sql`` ` tag a request cannot make.
+
+**`ctx.query` is merged into the where, and that is not a convenience.** Every
+hook that narrows a read writes there — a tenancy filter, `autoFilter`, a
+service's own scoping — so an aggregate reading only its body would answer over
+rows the same caller's `find` cannot see. `aggregate` gets `autoFilter` and not
+`autoSort`: a groupBy sorts by group keys and aggregates, which litestone
+validates itself.
+
+It rides `find`'s gate (`OP_FOR_METHOD`), `readOnly` is now
+`['find','get','aggregate']` — a read-only service that could not answer *how
+many* would surprise everybody — and `clampPage` bounds the groups returned,
+with no new knob: the work bound is the where, exactly as it is for `find`.
+
+16 tests. The two that matter most are a hook's narrowing reaching the numbers,
+and a row policy leaving each caller their own — an aggregate summarises rows it
+does not return, so a leak there is a NUMBER that looks perfectly ordinary.
+`@frontierjs/testing` refused the new method until `OPTS_AT` learned where its
+options sit, which is that tripwire doing its job.
+
 ## 2026-09-06 — a `find`'s `errors` reached clients unchecked (`FJS-951`)
 
 `wrapResult`'s list branch is `method === 'find' || isBulk`, and only the bulk

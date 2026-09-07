@@ -73,7 +73,10 @@ export const WIDGET_KINDS: WidgetKindSpec[] = [
     // The heartbeat writes `Server.health` as a snapshot, so the bars are real
     // and the mock's sparkline is not: there is nowhere a second reading is
     // kept.
-    needs:       'a metric store — this is the last reading, not a trend',
+    // Was 'a metric store — this is the last reading, not a trend'. There is
+    // one now (`FJS-956`): the heartbeat records `server.cpuPercent{serverId}`
+    // and the card draws it.
+    needs:       '',
   },
   {
     kind:        'app_status',
@@ -126,7 +129,10 @@ export const WIDGET_KINDS: WidgetKindSpec[] = [
     required:    false,
     config:      [],
     cols:        1,
-    needs:       'an evaluator — nothing measures a threshold yet (FJS-123)',
+    // Was 'an evaluator — nothing measures a threshold yet'. `alert-evaluate`
+    // runs every minute (`FJS-123`), so *what is firing right now* is a real
+    // question with a real answer, and the card asks it.
+    needs:       '',
   },
   {
     kind:        'service_health',
@@ -138,6 +144,10 @@ export const WIDGET_KINDS: WidgetKindSpec[] = [
     // row. The id is validated against the portal registry all the same.
     config:      ['serviceId'],
     cols:        1,
+    // Still true, and deliberately: the store exists, but nothing RECORDS a
+    // ping into it. A portal entry is an adapter this app configures rather
+    // than a machine that reports, so the reading would have to be taken by a
+    // job that pings on a schedule — which is a feature, not a wiring gap.
     needs:       'latency history — the ping answers now, and nothing keeps it',
   },
   {

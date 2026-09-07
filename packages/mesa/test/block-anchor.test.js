@@ -37,7 +37,7 @@ const HEAD = `<script>\n  let a = true\n  let b = true\n</script>\n`
 
 // The first argument of every block call is its anchor.
 const anchorsOf = (js) =>
-  [...js.matchAll(/\$\$runtime\.(?:ifBlock|keyBlock|awaitBlock|\$\$eachBlock)\((\w+),/g)].map(m => m[1])
+  [...js.matchAll(/\$\$runtime\.(?:ifBlock|keyBlock|awaitBlock|\$\$eachBlock)\(([\w$]+),/g)].map(m => m[1])
 
 describe('a block anchor is never shared', () => {
   // Whitespace between them is the whole point — a static element or a bare text

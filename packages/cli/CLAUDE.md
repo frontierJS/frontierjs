@@ -75,6 +75,12 @@ core/
   widget-surface.js     what a `widgets/` surface IS — shared by `new` and `make:widget`
   site-surface.js       what a `site/` surface IS — ditto, `make:site`
   extension-surface.js  what an `extension/` surface IS — ditto, `make:extension`
+  shortcuts.js  what a SHORTCUT is — a project-local name for a command line,
+                written as an ordinary command file rather than held in a
+                table, so discovery, help, completion and `fli edit` already
+                know about it. It owns the two refusals as well as the shape:
+                a name the registry already answers to, and a target of more
+                than one line
   image.js      WHICH BYTES ran, and how far that answer travels — a registry
                 digest means the same thing anywhere, an image id means it on
                 one host, and a tag means nothing at all
@@ -614,6 +620,14 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   `ports:claim` (it claims a session and starts nothing), and `deploy:doctor`
   has no short alias, so `doctor` means `fli:doctor`. There are none left; a new
   one is answered by renaming, not by leaving it to the alphabet.
+- **A project command overrides a core one in SILENCE, and `make:shortcut` is
+  the one caller that refuses instead.** The silent override is the authoring
+  model — a project shadowing `fli deploy` with its own is the feature — but it
+  is the wrong default for a name typed from memory, so `core/shortcuts.js`
+  asks the registry before writing and names what already holds the name. The
+  generated file declares `mode: passthrough`, the third answer beside `strict`
+  and the default: it forwards the raw argv tail, so an undeclared flag there
+  is one the TARGET declares, and warning about it would print on every run.
 - **`core/app-config.js` is the one owner of what a scaffolded app is GIVEN** —
   dev dependencies, the four check scripts, `tsconfig.json`, `biome.json`,
   `.editorconfig`, the workflow. That set is the framework's real opinion about

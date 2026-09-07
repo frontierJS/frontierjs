@@ -1,15 +1,24 @@
 <script>
   // server_health — CPU, memory and disk for one server.
   //
-  // `Server.health` is what the outpost last reported, stamped by
-  // `servers.heartbeat`. It is a SNAPSHOT: there is nowhere a second reading is
-  // kept, so the bars are the last thing the machine said and the mock's
-  // sparkline is not buildable. The frame says so — `needs` in the vocabulary.
+  // Two readings of the same machine, and they answer different questions.
+  //
+  // `Server.health` is a SNAPSHOT — one column, overwritten every check-in — so
+  // the bars are what the machine said a moment ago. The sparklines beside them
+  // come from the metric store, which the heartbeat now records into
+  // (`FJS-956`): `server.cpuPercent{serverId}` and its two siblings, read back
+  // through `servers.metrics`, whose confinement is a scoped read of this very
+  // server.
+  //
+  // The trend is fetched ONCE and not watched. A push moves the bars, which is
+  // what a card three inches wide is for; re-reading a day of points on every
+  // heartbeat would spend a query a minute to move a line by one pixel.
   //
   // A server with no `health` has not checked in. That is a state worth naming
   // rather than three bars at zero, which reads as a machine at rest.
   import { servers } from '../../resources/Server.mesa'
-  import Bar from '@frontierjs/ui/components/display/Bar.mesa'
+  import Bar       from '@frontierjs/ui/components/display/Bar.mesa'
+  import Sparkline from '@frontierjs/ui/components/display/Sparkline.mesa'
 
   export let widget = null
 
@@ -23,6 +32,7 @@
   // plain form — no `composed:`, and the node IS the value.
   let row     = null
   let unwatch = null
+  let trend   = {}      // series name → number[], oldest first
 
   async function load() {
     error = null
@@ -32,6 +42,17 @@
       row = servers.record(widget.serverId)
       unwatch = row.subscribe(v => { server = v })
       await row.ready
+
+      // A day, which is inside the raw window the store keeps at minute
+      // resolution — so this is a range scan and never the fold.
+      const to  = Date.now()
+      const res = await servers.service.invoke('metrics', widget.serverId,
+                                               { from: to - 24 * 3600 * 1000, to })
+      // `null` for a series nothing has ever written, which is not the same as
+      // an empty one and must not draw a flat line at zero.
+      trend = Object.fromEntries(
+        Object.entries(res?.series ?? {})
+              .map(([name, s]) => [name, s ? s.points.map(p => p.value) : null]))
     } catch (e) {
       error = e.message
     } finally {
@@ -45,14 +66,22 @@
   // Only the three the mock draws, and only when the outpost reported a number.
   // Anything else the outpost sends is its own vocabulary and belongs on the
   // server's screen, not on a card three inches wide.
+  //
+  // The key on `Server.health` and the series NAME are two spellings of one
+  // reading and are paired here rather than derived: the first is the outpost's
+  // vocabulary, the second is `core/server-metrics.ts`'s, and a card is the one
+  // place they have to meet.
   const READINGS = [
-    { key: 'cpu',    label: 'CPU'    },
-    { key: 'memory', label: 'Memory' },
-    { key: 'disk',   label: 'Disk'   },
+    { key: 'cpu',    label: 'CPU',    series: 'server.cpuPercent'    },
+    { key: 'memory', label: 'Memory', series: 'server.memoryPercent' },
+    { key: 'disk',   label: 'Disk',   series: 'server.diskPercent'   },
   ]
   $: bars = READINGS
-    .map(r => ({ ...r, value: Number(server?.health?.[r.key]) }))
+    .map(r => ({ ...r, value: Number(server?.health?.[r.key]), line: trend[r.series] }))
     .filter(r => Number.isFinite(r.value))
+  // Two points is the fewest that is a line. One reading drawn as a sparkline
+  // is a dot the reader takes for a flat trend.
+  const hasLine = (b) => Array.isArray(b.line) && b.line.length > 1
   const when = (iso) => iso ? new Date(iso).toLocaleString() : 'never'
 </script>
 
@@ -69,6 +98,14 @@
 {:else}
   <p class="text-sm text-muted">{server.name} · {when(server.lastHeartbeatAt)}</p>
   {#each bars as bar}
-    <Bar label={bar.label} value={bar.value} unit="%" />
+    <!-- `cluster` brings its own gap from the token ladder; the only thing
+         stated here is that the bar takes the room the sparkline does not. -->
+    <div class="cluster" style="justify-content: space-between">
+      <div style="flex: 1"><Bar label={bar.label} value={bar.value} unit="%" /></div>
+      {#if hasLine(bar)}
+        <Sparkline data={bar.line} width={64} height={20}
+                   label={`${bar.label} over the last day`} />
+      {/if}
+    </div>
   {/each}
 {/if}

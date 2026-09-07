@@ -131,7 +131,16 @@ export interface OutgoingMail {
 }
 
 export interface App {
-  mail?:    { send(msg: OutgoingMail): Promise<void> }
+  // `Promise<unknown>` and not `Promise<void>`: junction's `IMail.send` answers
+  // a `SendResult` receipt, and under `strictFunctionTypes` a `void` return here
+  // makes junction's own App unassignable to this one — so
+  // `app.configure(notificationsPlugin(…))` could not typecheck in ANY app that
+  // ran `tsc`. The driver awaits the send and discards the receipt, which is
+  // correct: a failure THROWS, and `SendResult` is `{ id, message }`.
+  //
+  // Same drift the email driver's header already names one field along. A
+  // structural copy of somebody else's interface is a copy, and it goes stale.
+  mail?:    { send(msg: OutgoingMail): Promise<unknown> }
   /** Junction's broadcast channel — the other reading of the word, and the one it keeps. */
   channel?: (name: string) => { send(event: string, payload: unknown): void } | undefined
   notify?:  (recipient: Recipient, notification: Notification) => Promise<void>

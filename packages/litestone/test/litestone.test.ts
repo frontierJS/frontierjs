@@ -14908,6 +14908,52 @@ describe('createTestEnv', () => {
     env.close(); nullable.close()
   })
 
+  // ── FJS-602 ──────────────────────────────────────────────────────────────
+  //
+  // The `@unique` probe used to sit BEHIND a guard that skipped any model whose
+  // case generator produced nothing, and a model whose columns carry no VALUE
+  // validator produces nothing — so `@unique` was never asked about there. Three
+  // of `@frontierjs/auth`'s models are exactly that shape: `Session.token`,
+  // `Verification.value` and `OauthFlow.state`, each `String @unique @guarded`
+  // with no `@length` or format beside it. A schema that dropped the uniqueness
+  // of a session token migrated cleanly and passed every check in the package.
+  //
+  // Both halves are asserted, because a runner that reported the mutant AND the
+  // original would satisfy any test that only ran the mutant.
+
+  test('a @unique on a model with no other validators is still checked', async () => {
+    // No @length, no format, nothing to generate a case from — which is the
+    // whole shape. The original enforces it, so there is nothing to report.
+    const SHAPE = `
+      model Session {
+        id     String @id @default(uuid())
+        userId String
+        token  String @unique @guarded
+        @@gate("8")
+      }
+    `
+    const env = await createTestEnv({ schema: SHAPE })
+    expect(await env.verifyConstraints()).toEqual([])
+
+    // …and the mutant that drops it is caught, graded against the ORIGINAL.
+    const original = parse(SHAPE).schema
+    const mutant   = await createTestEnv({ schema: SHAPE.replace('@unique @guarded', '@guarded') })
+    const found    = await mutant.verifyConstraints(null, { against: original })
+    expect(found.some((m: any) => m.field === 'token' && m.rule === '@unique')).toBe(true)
+    expect(found[0].message).toMatch(/declares @unique and the write was ACCEPTED/)
+    env.close(); mutant.close()
+  })
+
+  test('a model with no validators and no @unique is still skipped — the control', async () => {
+    // Without this, widening the guard to *visit every model* would pass the row
+    // above and cost a factory build per model on every run.
+    const env = await createTestEnv({ schema: `
+      model Plain { id Int @id  a String  b String }
+    ` })
+    expect(await env.verifyConstraints()).toEqual([])
+    env.close()
+  })
+
   test('verifyConstraints finds nothing on a schema whose rules are enforced', async () => {
     const env = await createTestEnv({ schema: RULES_ENV_SCHEMA })
     expect(await env.verifyConstraints()).toEqual([])
@@ -20118,7 +20164,7 @@ describe('generateJsonSchema with types', () => {
       }
     `)
     const s = generateJsonSchema(r.schema!) as any
-    expect(s.$defs.User.properties.address).toEqual({ $ref: '#/$defs/Address', 'x-sortable': 'json' })
+    expect(s.$defs.User.properties.address).toEqual({ $ref: '#/$defs/Address', 'x-sortable': 'json', 'x-aggregatable': 'json' })
   })
 
   test('emits a full type definition with required fields and shape', async () => {
@@ -20158,7 +20204,7 @@ describe('generateJsonSchema with types', () => {
     // Permissive about its SHAPE, which is what this is about. `x-sortable` is
     // not a constraint on the value — it says the stored text is a document, so
     // ordering by it orders by that text.
-    expect(s.$defs.U.properties.meta).toEqual({ 'x-sortable': 'json' })
+    expect(s.$defs.U.properties.meta).toEqual({ 'x-sortable': 'json', 'x-aggregatable': 'json' })
   })
 
   test('nested types resolve via $ref', async () => {
@@ -24229,8 +24275,79 @@ describe('@version — runtime', () => {
   test('the expected version is never written literally', async () => {
     const db = await makeDb(SCHEMA, 'ver-not-literal')
     await db.order.create({ data: { id: 1, title: 'A' } })
-    // version 1 is correct, so this succeeds — and must land on 2, not on 1
-    expect((await db.order.update({ where: { id: 1 }, data: { version: 1 } })).version).toBe(2)
+    // version 1 is correct, so this succeeds — and must land on 2, not on 1.
+    // The payload carries a real column: a version-only patch writes nothing at
+    // all now (FJS-368), and against that the two answers are the same number.
+    expect((await db.order.update({ where: { id: 1 }, data: { title: 'B', version: 1 } })).version).toBe(2)
+    db.$close()
+  })
+
+  // ── a patch that names nothing (FJS-368) ────────────────────────────────
+  //
+  // `version` is a PRECONDITION the client sends back, not a value to write, so
+  // a form submitted with nothing edited arrives as `{ version: n }` and used to
+  // be a real write: the column went up, `@updatedAt` moved with it, the row was
+  // announced, and every OTHER open editor was told it was stale for a change
+  // nobody made. The caller who caused it never saw the conflict.
+  //
+  // A model with no `@version` already answered this correctly, which is what
+  // makes it a defect rather than a preference: the two spellings disagreed
+  // about the same patch. Every assertion below is paired with the same call
+  // carrying one real column, because a fix that stopped bumping altogether
+  // satisfies any test that only asks about the no-op.
+
+  test('a version-only patch writes nothing, and the same patch with a column still bumps', async () => {
+    const db = await makeDb(SCHEMA, 'ver-noop')
+    await db.order.create({ data: { id: 1, title: 'A' } })
+    const noop = await db.order.update({ where: { id: 1 }, data: { version: 1 } })
+    expect(noop).toMatchObject({ version: 1, status: 'draft' })
+    const real = await db.order.update({ where: { id: 1 }, data: { status: 'a', version: 1 } })
+    expect(real).toMatchObject({ version: 2, status: 'a' })
+    db.$close()
+  })
+
+  test('a no-op still checks the precondition — a stale version is a conflict', async () => {
+    // The one thing a no-op must not become is a silent success: the caller is
+    // saying which version they read, and a stale one means their screen is
+    // wrong whether or not they were writing.
+    const db = await makeDb(SCHEMA, 'ver-noop-stale')
+    await db.order.create({ data: { id: 1, title: 'A' } })
+    await db.order.update({ where: { id: 1 }, data: { status: 'a', version: 1 } })
+    await expect(db.order.update({ where: { id: 1 }, data: { version: 1 } }))
+      .rejects.toThrow(/Version conflict/)
+    // …and the current version still answers, which is the control.
+    expect((await db.order.update({ where: { id: 1 }, data: { version: 2 } })).version).toBe(2)
+    db.$close()
+  })
+
+  test('a no-op on a missing row is still null, not a conflict', async () => {
+    const db = await makeDb(SCHEMA, 'ver-noop-missing')
+    expect(await db.order.update({ where: { id: 99 }, data: { version: 1 } })).toBeNull()
+    db.$close()
+  })
+
+  test('a no-op announces nothing, and a real edit still does', async () => {
+    // The announcement is how the staleness reached other people's screens, so
+    // silencing the bump without it leaves the row's own title true.
+    const db = await makeDb(SCHEMA, 'ver-noop-quiet')
+    await db.order.create({ data: { id: 1, title: 'A' } })
+    const seen: string[] = []
+    db.$tapEvents((e: any) => seen.push(e.event))
+    await db.order.update({ where: { id: 1 }, data: { version: 1 } })
+    await new Promise(r => setTimeout(r, 40))
+    expect(seen).toEqual([])
+    await db.order.update({ where: { id: 1 }, data: { status: 'a', version: 1 } })
+    await new Promise(r => setTimeout(r, 40))
+    expect(seen).toEqual(['update'])
+    db.$close()
+  })
+
+  test('an empty patch on a model with NO @version was always a no-op — the oracle', async () => {
+    // This is the row that makes the fix a correction rather than a choice: the
+    // behavior above is what litestone already did one column away.
+    const db = await makeDb(`model Note { id Int @id  body String }`, 'ver-noop-oracle')
+    await db.note.create({ data: { id: 1, body: 'x' } })
+    expect(await db.note.update({ where: { id: 1 }, data: {} })).toMatchObject({ body: 'x' })
     db.$close()
   })
 
@@ -24783,6 +24900,9 @@ describe('enum arrays', () => {
       // Sorting orders rows by the serialized JSON, so it is refused — the
       // column still FILTERS, through json_each.
       'x-sortable': 'array',
+      // Aggregating it would summarise the serialized text rather than the
+      // values in it, which is the same reason ordering by it is refused.
+      'x-aggregatable': 'array',
       // Every array column is NOT NULL DEFAULT '[]' whether it says so or not,
       // so the schema says so too — a form seeding `undefined` would be seeding
       // a value the column cannot hold.

@@ -60,8 +60,11 @@ export const NOTIFICATION_KINDS: NotificationKindDef[] = [
     description: 'A scheduled or triggered job ended in failure.',
     email: true,  inApp: true },
 
+  // Spend is NOT in it. `cloudSpend` is a declared adapter with nothing behind
+  // it (docs/ADAPTERS.md), and a digest reporting a figure it cannot source is
+  // a number somebody would act on. The description says what is counted.
   { kind: 'weekly_digest',  label: 'Weekly digest',
-    description: 'A summary of the week — deploys, alerts and spend.',
+    description: 'A summary of the week — deploys, alerts and job failures.',
     email: true,  inApp: false },
 ]
 

@@ -1197,17 +1197,17 @@ export class JunctionClient extends EventEmitter {
 
   resource<K extends KnownService>(
     name: K,
-    idField?: string,
+    idField?: string | null,
     opts?: ResourceOptions<ServiceRow<K>>
   ): ResourceResult<ServiceRow<K>>
   resource<T extends Record<string, unknown> = Record<string, unknown>>(
     name: string,
-    idField?: string,
+    idField?: string | null,
     opts?: ResourceOptions<T>
   ): ResourceResult<T>
   resource<T extends Record<string, unknown> = Record<string, unknown>>(
     name: string,
-    idField: string = 'id',
+    idField: string | null = 'id',
     opts: ResourceOptions<T> = {}
   ): ResourceResult<T> {
     const svc = this.service<T>(name)
@@ -1218,7 +1218,16 @@ export class JunctionClient extends EventEmitter {
     // caller did not say, which is junction used on its own (`FJS-D138`).
     const model    = opts.model ?? name
     const registry = this.nodes
-    store.bind({ registry, model, idField })
+    // `idField: null` says these rows have no identity, which is a PROJECTION —
+    // a `view` declares columns and no key, so there is nothing to key a node
+    // by. An unbound store holds the list as it arrives, which is the whole of
+    // what such a resource can offer: no per-row push, no dedupe, no placement.
+    //
+    // Declared rather than sniffed. Bound, the store drops every row that
+    // carries no id — correctly, because a `select` that omitted the key is a
+    // row it cannot place — so a projection went in as three rows and came out
+    // as none, with `load()` answering 3 (`FJS-998`).
+    if (idField !== null) store.bind({ registry, model, idField })
 
     // Open the socket. Everything below wires push events into the store, and
     // none of it fires unless the socket exists — resource() promised "the
@@ -1230,6 +1239,18 @@ export class JunctionClient extends EventEmitter {
     // connect() is idempotent (returns early if the socket is open or opening),
     // so calling resource() for several services opens exactly one socket.
     this.connect()
+
+    // ── Per-row push needs a row identity ───────────────────────────────
+    //
+    // `place`, `upsert` and `remove` are all lookups by key, and a projection
+    // has no key — so for a keyless resource there is no question these could
+    // answer: `created` cannot be placed, `removed` names nothing, `patched`
+    // has no row to patch. Such a resource is a list `load()` replaces
+    // wholesale, which is what a `view` IS: its rows move when the projection
+    // refreshes, never one at a time. `changed` is the exception and stays
+    // wired below — it carries a count rather than a row, so it means the same
+    // thing here as anywhere.
+    const key = idField ?? ''
 
     // Wire WS push events → store mutations.
     // A push carries the record (events are about one row), but normalize
@@ -1363,18 +1384,18 @@ export class JunctionClient extends EventEmitter {
         // still appends, so the row the caller just created shows on the
         // ordinary short list.
         if (limit !== null && store.get().length >= limit) return stale.bump()
-        store.upsert(record, idField)
+        store.upsert(record, key)
         return
       }
 
       // Sorted insertion, and the overflow row genuinely moved to the next
       // page — page 1 of an ordered list IS its first `limit` rows.
-      store.place(record, idField, cmp, limit ?? undefined)
+      store.place(record, key, cmp, limit ?? undefined)
     }
 
     const drop = (record: T | null, id: unknown): void => {
       const had = store.get().length
-      store.remove(id, idField)
+      store.remove(id, key)
 
       if (store.get().length === had) {
         // Not one of this page's rows. Page 1's contents do not depend on a row
@@ -1401,34 +1422,37 @@ export class JunctionClient extends EventEmitter {
       // second list with a different filter — and the announcement is the only
       // thing that will ever tell them. Doing this inside the membership
       // branches below would update exactly the views that already knew.
-      registry.write(model, record, idField)
+      registry.write(model, record, key)
 
       const answer = verdict(record)
       if (answer === false) {
         // Out of the filter: not "do not add it" but "take it out" — a patch is
         // how a row leaves a list, and there is no removal event for that.
-        return drop(record, record?.[idField])
+        return drop(record, record?.[key])
       }
       if (answer !== true) return refetch()
 
-      const present = store.get().some((r) => r[idField] === record?.[idField])
+      const present = store.get().some((r) => r[key] === record?.[key])
       // A row already on this page is this page's row whatever the paging says;
       // reposition it, since the patch may have moved its sort key.
       if (present) {
         const cmp = orderOf()
-        return cmp ? store.place(record, idField, cmp) : store.upsert(record, idField)
+        return cmp ? store.place(record, key, cmp) : store.upsert(record, key)
       }
       insert(record)
     }
 
     // Server auto-events use past-tense names: created / patched / removed
     // (see AUTO_EVENT_MAP server-side). Match those exactly.
-    svc.on('created',  apply)
-    svc.on('patched',  apply)
-    svc.on('removed',  (raw: unknown) => {
-      const record = unwrap(raw)
-      drop(record, record?.[idField])
-    })
+    // Only where a row can be identified — see `const key` above.
+    if (idField !== null) {
+      svc.on('created',  apply)
+      svc.on('patched',  apply)
+      svc.on('removed',  (raw: unknown) => {
+        const record = unwrap(raw)
+        drop(record, record?.[key])
+      })
+    }
 
     // ── A change with no record ────────────────────────────────────────────
     // Every other event names a row. `changed` cannot: it is what a bulk write
@@ -1569,7 +1593,7 @@ export class JunctionClient extends EventEmitter {
         // The same key the node is filed under: this view may have been asked
         // for by a URL, where the id is a string, about a row whose id is a
         // number.
-        if (nodeKey(unwrap(raw)?.[idField]) !== nodeKey(id)) return
+        if (nodeKey(unwrap(raw)?.[key]) !== nodeKey(id)) return
         gone = true
         emit(null)
       })
@@ -1587,7 +1611,7 @@ export class JunctionClient extends EventEmitter {
           const row = ropts.load
             ? await ropts.load()
             : await svc.get(id as string | number)
-          if (row != null) registry.write(model, row, idField)
+          if (row != null) registry.write(model, row, key)
           return row ?? null
         } catch {
           // A refused or missing row is not a crash here: the view answers
@@ -2116,7 +2140,13 @@ function directiveParams(d: QueryDirectives | null | undefined): Record<string, 
   if (d.limit       != null) p['$limit']       = d.limit
   if (d.offset      != null) p['$offset']      = d.offset
   if (d.after       != null) p['$after']       = d.after
-  if (d.orderBy     != null) p['$orderBy']     = typeof d.orderBy === 'string' ? d.orderBy : JSON.stringify(d.orderBy)
+  // The structure travels AS a structure. `encodeQueryString` writes it in
+  // bracket notation and the transport's parser reads it back — they are
+  // inverses by construction (`FJS-D125`) — where a JSON string is neither: the
+  // reader takes `$orderBy` as-is, so `[{"sortOrder":"asc"}]` arrived as text,
+  // was split on commas and refused as a column name. Every non-string orderBy
+  // from this client was a 400 (`FJS-962`).
+  if (d.orderBy     != null) p['$orderBy']     = d.orderBy
   if (d.select      != null) p['$select']      = Array.isArray(d.select)   ? d.select.join(',')   : d.select
   if (d.populate    != null) p['$populate']    = Array.isArray(d.populate) ? d.populate.join(',') : d.populate
   if (d.search      != null) p['$search']      = d.search
@@ -2323,6 +2353,12 @@ export class Store<T extends Record<string, unknown> = Record<string, unknown>> 
     try {
       const ids: unknown[] = []
       const keep = new Set<unknown>()
+      // Every row keyless is a different mistake from some rows keyless: the
+      // second is a `select` that dropped the key, the first is a resource bound
+      // to something that has no key at all. Said once, because the alternative
+      // is a screen that renders nothing while `load()` reports success.
+      if (rows.length && !rows.some(r => _hasId(r, idField)))
+        _warnKeyless(this._bind!.model, idField, rows.length)
       for (const row of rows) {
         if (!_hasId(row, idField)) continue
         // A list is a set of ids in an order, so one row cannot be in it twice.
@@ -2369,6 +2405,22 @@ export class Store<T extends Record<string, unknown> = Record<string, unknown>> 
     const data = this.get()
     for (const fn of this._subs) fn(data)
   }
+}
+
+/**
+ * Said once per model, and only for the shape that is a wiring mistake rather
+ * than a partial read: a bound store handed a set where NOT ONE row carries the
+ * key. It renders as an empty screen while `load()` answers a count, which is
+ * the failure mode with no error attached to it (`FJS-998`).
+ */
+const _keylessWarned = new Set<string>()
+function _warnKeyless(model: string, idField: string, count: number): void {
+  if (_keylessWarned.has(model)) return
+  _keylessWarned.add(model)
+  console.warn(
+    `[junction] resource '${model}' received ${count} row(s) and none carries '${idField}', ` +
+    `so the store kept none of them. A projection (a \`view\`) declares no key — ` +
+    `pass idField: null to hold it as a plain list.`)
 }
 
 function _hasId(record: unknown, idField: string): boolean {

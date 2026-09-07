@@ -179,6 +179,11 @@ export function createProductVariantsService() {
     // it is a bug.
     methods: [
       'find', 'get', 'create', 'update', 'patch', 'remove',
+      // `ProductColor` declares a head — `recent(ProductVariant.color,
+      // createdAt)` — and that rank is an ordinary aggregate over this service,
+      // so a narrowed list has to name it or the colorway picker asks for a
+      // verb this service answers 405 to (`FJS-964`).
+      'aggregate',
       'availability', 'embed',
     ],
   })

@@ -25,7 +25,8 @@ import type { OAuthIdentity, TokenSet, AuthOAuth, OAuthResolution } from './oaut
 import {
   InvalidCredentialsError, EmailTakenError, InvalidTokenError,
   UserNotFoundError, AuthConfigError,
-  LastCredentialError, NotFoundError,
+  LastCredentialError,
+  NoPasswordCredentialError, NotFoundError,
 } from './errors.ts'
 
 // Minimal interface — avoids a hard import of @frontierjs/litestone types
@@ -845,8 +846,14 @@ export function createLitestoneAuth(
     //
     // Refuses to remove the last way in. Not politeness — there is no way back
     // from it: `confirmPasswordReset` updates a password credential and does
-    // not create one, so an account with none cannot gain one by asking for a
-    // reset. Unlinking to zero is a permanent lockout that looks like a button.
+    // not create one, and now refuses outright for an account with none, so no
+    // account can gain a password by asking for a reset. Unlinking to zero is a
+    // permanent lockout that looks like a button.
+    //
+    // Which is why the refusal below names ONE remedy and not two. This guard
+    // fires only when the single remaining way in is the OAuth credential being
+    // removed — so the account has no password by construction, and telling
+    // somebody to add one was advice that could not be taken (FJS-987).
 
     async removeConnection(userId: string, credentialId: string): Promise<{ id: string }> {
       const all = await sys.credential.findMany({ where: { userId } })
@@ -868,7 +875,7 @@ export function createLitestoneAuth(
 
       if (waysIn.length <= 1) {
         throw new LastCredentialError(
-          'This is the only way you can sign in. Add a password or another provider first.'
+          'This is the only way you can sign in. Connect another provider first.'
         )
       }
 
@@ -1006,10 +1013,29 @@ export function createLitestoneAuth(
       const user  = await sys.user.findFirst({ where: { email } })
       if (!user) throw new UserNotFoundError()
 
+      // BEFORE the hash and before anything destructive. `updateMany` matches
+      // nothing on an account whose only credential is an OAuth one, so this
+      // used to succeed having written no password — consuming the token and
+      // revoking every session on the way, leaving the person told their
+      // password was reset, unable to sign in with it, and signed out
+      // everywhere (FJS-987). Refusing here costs them neither.
+      const existing = await sys.credential.findFirst({
+        where: { userId: user.id, type: 'password' }
+      })
+      if (!existing) {
+        await audit('password.reset.refused', {
+          model: 'User', records: [user.id], actorId: user.id,
+          meta:  { reason: 'no-password-credential' },
+        })
+        throw new NoPasswordCredentialError(
+          'This account has no password. Sign in with a connected provider instead.'
+        )
+      }
+
       const hash = await hashPassword(newPassword)
 
-      await sys.credential.updateMany({
-        where: { userId: user.id, type: 'password' },
+      await sys.credential.update({
+        where: { id: existing.id },
         data:  { value: hash },
       })
 
@@ -1094,6 +1120,16 @@ export function createLitestoneAuth(
         }
       })
 
+      // The sibling of `apikey.revoked`. Minting a credential that
+      // authenticates as this person indefinitely is at least as worth
+      // recording as ending one browser session (FJS-991). The key material is
+      // never in the entry — `records` is the credential id, and Invariant 7
+      // would redact the column regardless.
+      await audit('apikey.created', {
+        model: 'Credential', records: [String(cred.id)],
+        actorId: userId, actorType: 'user',
+      })
+
       return { key: rawKey, id: String(cred.id) }
     },
 
@@ -1117,7 +1153,7 @@ export function createLitestoneAuth(
 
     // ── revokeApiKey ─────────────────────────────────────────────────────
 
-    async revokeApiKey(keyId: string, opts?: { userId?: string }): Promise<void> {
+    async revokeApiKey(keyId: string, opts: { userId: string }): Promise<void> {
       // Not Number(keyId). schema.ts ships `Credential.id Int`, but the
       // fragments are a starting point apps edit, and an app whose ids are
       // uuids got Number(uuid) === NaN — a delete that matches nothing and
@@ -1132,10 +1168,24 @@ export function createLitestoneAuth(
       // revokes any key in the system whose id you can guess. The refusal is
       // the same "no such key" either way — whose key it is is not the
       // caller's to learn.
-      const where: Record<string, unknown> = { id: keyId, type: 'apiKey' }
-      if (opts?.userId) where.userId = opts.userId
+      // REQUIRED, not `if (opts?.userId)`. The caller supplies the id, so a
+      // delete matching on it alone revokes any key in the system whose id you
+      // can guess — the same risk `revokeSession` puts in its signature. It was
+      // optional here and three of four call sites omitted it, each safe for a
+      // different local reason a fourth caller would have had to rediscover
+      // (FJS-990).
+      if (!opts?.userId) throw new AuthConfigError('revokeApiKey requires the owner it is scoped to')
+      const where: Record<string, unknown> = { id: keyId, type: 'apiKey', userId: opts.userId }
       const { count } = await sys.credential.deleteMany({ where })
       if (!count) throw new InvalidTokenError(`No API key with id ${keyId}`)
+
+      // Every other credential mutation here writes one, and this pair is the
+      // one that most needs it: an API key outlives a session, carries its own
+      // scopes, and is spent by a machine nobody is watching (FJS-991).
+      await audit('apikey.revoked', {
+        model: 'Credential', records: [String(keyId)],
+        actorId: opts.userId, actorType: 'user',
+      })
     },
 
     // ── changePassword ───────────────────────────────────────────────────

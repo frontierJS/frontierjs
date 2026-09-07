@@ -1,0 +1,91 @@
+<script>
+  // options-recent.mesa — a picker whose list arrives with a HEAD.
+  //
+  // `resource.options()` marks the values this caller reached for last with
+  // `recent: true` and puts them first (`FJS-D121`). Rendered as they arrive
+  // they are entries at the top in an order that is neither alphabetical nor
+  // whatever the set declared, with nothing saying why — which reads as a
+  // broken sort (`FJS-973`).
+  //
+  // Three lists, because the captions have to be shown to be right AND absent
+  // to be right: one with a head, one without (every list in every app before
+  // this, and every list a set declaring no `recent(…)` still produces), and
+  // one whose head sits under a PINNED value — the value in the box, which is
+  // at the top for a different reason and must not be captioned as recent.
+  import Form from '../../../components/forms/Form.mesa'
+  import Select from '../../../components/forms/Select.mesa'
+  import Combobox from '../../../components/forms/Combobox.mesa'
+  import { formFieldList } from '@frontierjs/sierra/field-rules'
+
+  // Both controls are written OUT rather than generated, and that is the honest
+  // arrangement rather than a shortcut: the control table answers `picker` →
+  // Combobox for every binding and every foreign key, so a generated form never
+  // hands a native <select> a fetched list at all. A hand-written form does,
+  // which is where a `<Select name=…>` asks `optionsFor` and can receive a head.
+  //
+  // The two draw a group differently — one has <optgroup>, the other a listbox
+  // with no grouping mechanism at all — which is why both are here.
+  const FIELDS = {
+    tag:    { type: 'string', title: 'Tag',
+              values: { set: 'Tags', strength: 'open', model: 'Tag', value: 'name', label: 'name' } },
+    status: { type: 'string', title: 'Status',
+              values: { set: 'States', strength: 'required', model: 'State', value: 'name', label: 'name' } },
+  }
+
+  const opt = (value, extra = {}) => ({ value, label: value, ...extra })
+
+  // The head is deliberately NOT in the order the rest is in: `zulu` before
+  // `mike` before an alphabetical tail, so a control that dropped the flags and
+  // sorted the list could not produce this by accident.
+  const WITH_HEAD = [
+    opt('zulu',    { recent: true }),
+    opt('mike',    { recent: true }),
+    opt('alpha'),
+    opt('bravo'),
+    opt('charlie'),
+  ]
+
+  const NO_HEAD = [opt('alpha'), opt('bravo'), opt('charlie')]
+
+  // A value the list no longer offers, pinned back on by `withUnavailable` —
+  // which prepends, so it sits ABOVE the head.
+  const PINNED = [
+    opt('retired', { unavailable: true, disabled: true, label: 'retired (unavailable)' }),
+    ...WITH_HEAD,
+  ]
+
+  const resourceFor = (options, value = '') => ({
+    context: { model: 'Post', service: 'posts', idField: 'id' },
+    fields:  FIELDS,
+    formFields: (opts) => formFieldList(FIELDS, opts),
+    options: () => Promise.resolve({ options, total: options.length, truncated: false }),
+    make: () => ({ tag: value, status: value }),
+    validate: () => [],
+    fieldErrors: () => ({ fields: {}, message: '' }),
+    service: {},
+  })
+
+  const HEAD    = resourceFor(WITH_HEAD)
+  const PLAIN   = resourceFor(NO_HEAD)
+  const HOLDING = resourceFor(PINNED, 'retired')
+</script>
+
+<div id="head">
+  <Form resource={HEAD}>
+    <Select name="status" />
+    <Combobox name="tag" />
+  </Form>
+</div>
+
+<div id="plain">
+  <Form resource={PLAIN}>
+    <Select name="status" />
+    <Combobox name="tag" />
+  </Form>
+</div>
+
+<div id="holding">
+  <Form resource={HOLDING}>
+    <Select name="status" />
+  </Form>
+</div>

@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Studio's Explore panel, which also places a word into your schema and shows you
 the diff first.
 
-**100 words** — 12 declarations · 63 field attributes · 25 model attributes.
+**101 words** — 12 declarations · 63 field attributes · 26 model attributes.
 
 ## Index
 
@@ -41,7 +41,7 @@ the diff first.
 
 - *Identify a row* — [`@@id`](#id-model)
 - *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@check`](#check-model) · [`@@arc`](#arc-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model)
-- *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
+- *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@export`](#export-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
 - *Wire it to the app* — [`@@auth`](#auth-model) · [`@@log`](#log-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
 
 ## Declarations
@@ -118,15 +118,16 @@ model Product {
 
 - **Deeper** — [schema.md](schema.md)
 
-### `view` `<name> { fields… @@sql(…) [@@materialized] [@@refreshOn([…])] [@@db(…)] }` <a id="view-declaration"></a>
+### `view` `<name> { fields… @@sql(…) [@@materialized] [@@refreshOn([…])] [@@db(…)] [@@gate(…)] [@@allow(…)] [@@deny(…)] [@@tenant(…)] }` <a id="view-declaration"></a>
 
-A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table refreshed on the models named in `@@refreshOn`.
+A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table refreshed on the models named in `@@refreshOn` — a FULL rebuild per row written to a source, so `litestone advise` notes the cost. A view is a read path onto rows the models guard, so it carries the same access attributes they do, compiled against the columns the VIEW declares rather than inferred from `@@sql`: where the schema declares any access rule a view must state a `@@gate` (`@@gate("0")` says public on purpose), and under `strategy row` it must state `@@tenant` naming its own tenant column or `@@tenant(none)`.
 
 ```lite
 view accountStats {
   accountId Int
   total     Int
   @@sql("SELECT accountId, COUNT(*) AS total FROM Event GROUP BY accountId")
+  @@gate("5")
 }
 ```
 
@@ -143,19 +144,27 @@ enum Plan { free pro @label("Professional") enterprise }
 - **Deeper** — [schema.md](schema.md)
 - **See also** — [`@@transitions`](#transitions-model) · [`@label`](#label-field)
 
-### `valueset` `<Name> { source <Model> [value <field>] [scope <name>] [where "…"] }` <a id="valueset-declaration"></a>
+### `valueset` `<Name> { source <Model> [value <field>] [scope <name>] [where "…"] [order [recent(<Model>.<col>, <clock>),] <field> [asc|desc], …] }` <a id="valueset-declaration"></a>
 
-A named, scoped list of rows from one model — what a picker offers and what a column may hold, declared once instead of a hand-written service, control and validator per list. `value` names the column a record STORES and defaults to the source's @id; a set whose rows get replaced wants a stable code instead. `scope` names a @@scope declared on the source. The strength is not here — it goes on @values, because one list is legitimately enforced on one column and merely offered on another.
+A named, scoped list of rows from one model — what a picker offers and what a column may hold, declared once instead of a hand-written service, control and validator per list. `value` names the column a record STORES and defaults to the source's @id; a set whose rows get replaced wants a stable code instead. `scope` names a @@scope declared on the source. `order` is what a picker offers first, defaulting to the @@label column ascending — it sits here rather than on @values because one list shown on two fields is the same list, and it is not membership: nothing about an order changes what the column may hold. `recent(<Model>.<column>, <clock>)` leads it with a HEAD: the values this caller reached for last, read off rows the app already writes, prepended rather than re-sorting the list, since a capped list re-sorted by recency changes WHICH rows are offered. The column has to hold values of this set and the clock has to be a stored DateTime, both refused by name — ranking the wrong column offers rows that are not in the list, and ranking by the wrong clock draws an order that looks reasonable. The strength is the opposite and is not here — it goes on @values, because one list is legitimately enforced on one column and merely offered on another.
 
 ```lite
 model Tag {
-  id    Int    @id
-  label String @unique
+  id        Int    @id
+  label     String @unique
+  sortOrder Int    @default(0)
+}
+
+model Todo {
+  id        Int      @id
+  tagLabel  String?  @values(TaskTag)
+  createdAt DateTime @default(now())
 }
 
 valueset TaskTag {
   source Tag
   value  label
+  order  recent(Todo.tagLabel, createdAt), sortOrder, label
 }
 ```
 
@@ -808,9 +817,9 @@ model Example {
 
 ### Refuse a bad value
 
-#### `@values` `(<ValueSetName>[, required|open|suggested])` <a id="values-field"></a>
+#### `@values` `(<ValueSetName>[, required|open|suggested][, dependsOn: <column>[ on <sourceColumn>]])` <a id="values-field"></a>
 
-Where this column's legal values come from. `required` (unstated) refuses anything outside the set; `open` accepts a value the caller typed AND joins it to the set, so the source needs a @@label naming which column receives the text; `suggested` offers the list and enforces nothing. It sits BESIDE @relation rather than instead of it — a foreign key is storage and a value set is resolution, and those are two facts about one column. An enum field is refused: an enum is already a complete set and required by construction.
+Where this column's legal values come from. `required` (unstated) refuses anything outside the set; `open` accepts a value the caller typed AND joins it to the set, so the source needs a @@label naming which column receives the text; `suggested` offers the list and enforces nothing. It sits BESIDE @relation rather than instead of it — a foreign key is storage and a value set is resolution, and those are two facts about one column. An enum field is refused: an enum is already a complete set and required by construction. `dependsOn` makes the set DEPENDENT — the list is narrowed by a sibling column of this row, so a state belongs to the chosen country and a variant to the chosen product. It goes here rather than on the valueset because the set is reusable and the controlling column is model-local; which column of the SOURCE it is matched against is derived from the relation both models have to a third, and `on <sourceColumn>` states it where that walk cannot decide. The pair is graded in both directions: moving the controller is refused when it makes the stored value illegal.
 
 ```lite
 model Tag {
@@ -832,6 +841,7 @@ model Example {
 
 - **Legal** — on a model's field · on a trait's field
 - **`strength`** — `required` · `open` · `suggested`
+- **Note** — Dependent form: `stateId String @values(States, dependsOn: countryId)` — the list is that country's states. A picker cannot ask for it before the controlling column has a value, and answers empty rather than offering the whole set.
 - **Also typed** — `dropdown` · `options` · `picklist`
 - **See also** — [`valueset`](#valueset-declaration) · [`@relation`](#relation-field)
 
@@ -1378,11 +1388,12 @@ model Example {
 
 #### `@@softDelete` `[(cascade)]` <a id="softdelete-model"></a>
 
-Deletes mark rather than remove, and restore() is the way back. A deleted row KEEPS its @unique values. `(cascade)` carries the delete to children.
+Two verbs, and only one of them marks: remove() stamps deletedAt and restore() is the way back, while delete() destroys the row here exactly as it does anywhere else, leaving nothing to restore. A removed row KEEPS its @unique values. `(cascade)` carries the removal to children.
 
 ```lite
 model Example {
   id Int @id
+  deletedAt DateTime?
   @@softDelete(cascade)
 }
 ```
@@ -1390,7 +1401,7 @@ model Example {
 - **`mode`** — `cascade`
 - **Also typed** — `archive` · `trash` · `recycle`
 - **Deeper** — [soft-delete.md](soft-delete.md)
-- **See also** — [`@unique`](#unique-field) · [`@hardDelete`](#harddelete-field)
+- **See also** — [`@unique`](#unique-field) · [`@hardDelete`](#harddelete-field) · [`@keep`](#keep-field)
 
 #### `@@hasTemplates` `[(<field>)]` <a id="hastemplates-model"></a>
 
@@ -1436,6 +1447,22 @@ model Example {
 - **Also typed** — `permission` · `rbac` · `role` · `authorization`
 - **Deeper** — [access-control.md](access-control.md)
 - **See also** — [`@allow`](#allow-field) · [`@@deny`](#deny-model)
+
+#### `@@export` `(ndjson | csv [, since: <column>])` <a id="export-model"></a>
+
+This dataset may leave in bulk. It adds NO way in: an export is a paginated scoped read, so the rows that leave are exactly the ones the named principal could read one at a time — the @@gate refuses below its level, the row policies narrow the file rather than failing it, a field policy or @guarded column is simply absent, and under tenancy the extract is one tenant's because the client is. A @@gate is REQUIRED beside it, even where the schema guards nothing else: a bulk read of every row is a different proposition from one row at a time, and @@gate("0") is how a schema says this dataset is public on purpose. `since:` names a sortable declared column and is what makes an incremental run expressible — the column decides what a resumed run CATCHES, so a createdAt cursor sees new rows and not edits to old ones. Protected columns (@encrypted, @secret, @guarded) are omitted from an extract even for a caller who may read them, because a screen and a file that leaves the machine are the same principal at a different blast radius; keeping them is explicit and is recorded in the manifest. Legal on a view too.
+
+```lite
+model Example {
+  id Int @id
+  updatedAt DateTime @updatedAt
+  @@gate("4")
+  @@export(ndjson, since: updatedAt)
+}
+```
+
+- **Deeper** — [export.md](export.md)
+- **See also** — [`@@gate`](#gate-model) · [`@allow`](#allow-field) · [`view`](#view-declaration)
 
 #### `@@allow` `('read'|'create'|'update'|'delete'|'all', <expression>[, message])` <a id="allow-model"></a>
 
@@ -1713,3 +1740,7 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 ### `declared-and-unreferenced` — a declaration nothing references
 
 *info*. An enum, type, trait, function, valueset or claim nothing names. Usually a rename that left the old declaration behind, but a type may legitimately exist for an API payload the seed never stores, which is reported as external rather than as a finding.
+
+### `materialized-view-full-refresh` — a materialized view is rebuilt in full on every row written to its sources
+
+*info*. @@refreshOn installs INSERT, UPDATE and DELETE triggers on each source table, and each one runs DELETE + the whole @@sql again. SQLite fires a row trigger per row, so the cost is one full recomputation per row written, inside the writing transaction.

@@ -1,17 +1,11 @@
 // @frontierjs/ui — shared utilities
 // Plain JS — no Mesa, no store API
 
-/**
- * Convert a camelCase or snake_case identifier to a Title Case label.
- * nameToLabel('firstName')   → 'First Name'
- * nameToLabel('postal_code') → 'Postal Code'
- */
-export function nameToLabel(str = '') {
-  return str
-    .replace(/_/g, ' ')
-    .replace(/^[a-z]|[A-Z]/g, (c, i) => (i ? ' ' : '') + c.toUpperCase())
-    .trim()
-}
+// A field name as a person reads it. The kit owns it because sierra needs the
+// same answer for a different reason — a stored value whose row it could not
+// read still has to render (`FJS-D225`) — and two copies of *what does this
+// identifier say* drift the moment one of them learns about initialisms.
+export { humanize } from '@frontierjs/toolbelt/inflect'
 
 /**
  * Generate a stable random id suffix for label/input association.
@@ -244,3 +238,37 @@ export function optionsNote(error) {
 export function withNote(hint, note) {
   return [hint, note].filter(Boolean).join(' ')
 }
+
+/**
+ * A picker's list, split into the three things it can hold.
+ *
+ * `resource.options()` answers one array with two flags on it: `unavailable`
+ * pins the value in the box back onto a list that no longer contains it
+ * (`FJS-D225`), and `recent` marks the head — the values this caller reached
+ * for last (`FJS-D121`). Both are pinned at the FRONT, so a control that
+ * renders the array as it arrives shows entries at the top that are neither
+ * alphabetical nor whatever the set declared, with nothing saying why they are
+ * there — which reads as a broken sort (`FJS-973`).
+ *
+ * Three buckets rather than two, because the pinned value is not part of the
+ * head and must not be captioned as one: it is the value the field is holding,
+ * and the reason it is at the top is that it is selected.
+ *
+ * A list with no head comes back with `recent: []`, which is every list a set
+ * declaring no `recent(…)` produces — so a control checks that and renders
+ * exactly what it rendered before.
+ */
+export function splitRecent(options = []) {
+  const pinned = [], recent = [], rest = []
+  for (const o of options) {
+    if (o?.unavailable)  pinned.push(o)
+    else if (o?.recent)  recent.push(o)
+    else                 rest.push(o)
+  }
+  return { pinned, recent, rest }
+}
+
+/** What a head is called on screen. One spelling, read by every control. */
+export const RECENT_GROUP = 'Recently used'
+/** …and the rest of the list. NOT "All": the head is not in it. */
+export const REST_GROUP   = 'Everything else'

@@ -29,7 +29,7 @@ import {
   generateMigrationSQL, splitStatements,
 } from '../src/core/migrate.js'
 
-const SOFT  = `model Note { id Int @id @default(autoincrement())  kind String  note String?  @@index([kind])  @@softDelete }`
+const SOFT  = `model Note { id Int @id @default(autoincrement())  kind String  note String?  deletedAt DateTime?  @@index([kind])  @@softDelete }`
 const PLAIN = `model Note { id Int @id @default(autoincrement())  kind String  note String?  @@index([kind]) }`
 
 const idxSql = (db: Database, name = 'idx_note_kind') =>
@@ -136,7 +136,7 @@ describe('generateIndexDDL (FJS-577)', () => {
     live.run(`INSERT INTO "note" ("kind") VALUES ('k1')`)
 
     // dropping a column forces the 12-step rebuild, which recreates the indexes
-    const AFTER = `model Note { id Int @id @default(autoincrement())  kind String  @@index([kind])  @@softDelete }`
+    const AFTER = `model Note { id Int @id @default(autoincrement())  kind String  deletedAt DateTime?  @@index([kind])  @@softDelete }`
     const pr    = parse(AFTER)
     const diff  = diffSchemas(buildPristine(new Database(':memory:'), pr), introspect(live), pr)
     expect(diff.tableDiffs.find((t: any) => t.name === 'note').needsRebuild).toBe(true)
@@ -172,6 +172,7 @@ model Note {
   ownerId    Int
   live       Boolean   @default(true)
   archivedAt DateTime?
+  deletedAt  DateTime?
 ${attrs}
 }`
 
@@ -302,8 +303,7 @@ describe('@@index(where:) beside @@softDelete', () => {
     // Refused because it is the line a converter writes — `deleted_at IS NULL`
     // is the commonest predicate there is, and here it is already implied.
     expect(refusal(M('  @@index([kind], where: archivedAt == null)\n  @@softDelete')
-      .replace('archivedAt == null)', 'deletedAt == null)')
-      .replace('  archivedAt DateTime?', '  archivedAt DateTime?\n  deletedAt  DateTime?')))
+      .replace('archivedAt == null)', 'deletedAt == null)')))
       .toMatch(/already gives every index on this model/)
   })
 

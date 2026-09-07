@@ -253,7 +253,7 @@ methods and all 8 routes untested. Now **64 tests across 3 files**:
 Everything in "the good news" above is now regression-protected, including the
 two facts this file previously told readers to assume were broken.
 
-Still uncovered: `createAuthCleanupJobs` has no test, and there is no test for
+Still uncovered: there is no test for
 concurrent logins or session-fixation behavior.
 ### 6. Login is a user-enumeration timing oracle — **FIXED**
 
@@ -323,9 +323,13 @@ that is mostly because the route layer is typed `any`.
 - **OAuth**: `Credential` carries `accessToken`/`refreshToken`/`scope` fields and
   the schema comment mentions OAuth tokens, but no OAuth flow exists in any
   source file. The schema anticipates a feature that isn't implemented.
-- Whether `createAuthCleanupJobs` is wired anywhere. It uses Junction's own
-  `createScheduler` (not Caravan), so Caravan's state is irrelevant to it — but no
-  caller was found in this repo.
+- ~~Whether `createAuthCleanupJobs` is wired anywhere.~~ **Answered 2026-09-07.**
+  The scaffold wires it — `fli new` and `fli auth:install` both write
+  `authCleanup.start()` into `boot()` and `.stop()` into `shutdown()` — and
+  neither dogfooding app does: `example` never starts it, and `basecamp` runs a
+  `basecamp-cleanup` of its own. It uses Junction's `createScheduler`, not
+  Caravan, so Caravan's state is irrelevant to it. `tests/cleanup.test.ts` covers
+  it now, through `sweepNow()` rather than a restated predicate (`FJS-1000`).
 - Password strength: nothing validates it. `password: 'x'` is accepted.
 - Multi-process: the rate limiter is an in-process `Map`, documented as such.
   Two Bun workers = two independent budgets.

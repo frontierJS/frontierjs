@@ -46,13 +46,16 @@ const RESERVED_WORDS = new Set([
  * though `config.debug: false` drops its injection, because one source
  * compiling under one config and breaking under the other is the worse failure.
  *
- * The last two are compiler internals rather than builtins an author calls;
- * they are here because they land in the same scope and collide the same way.
+ * WHAT IS NOT IN HERE and cannot be: the `$$` prefix is refused wholesale, by
+ * `RESERVED_PREFIX` below. This set was written as the closed answer and was
+ * not one — three of the colliding families are derived from the author's own
+ * identifiers (`$$sig_<name>`, `$$set_<name>`, `$$snippet_<name>`) and two from
+ * a counter (`$$tpl<n>`, `$$el<n>`), so no list of literals can hold them.
+ * What stays here is the names that carry ONE `$`, plus the calling
+ * convention's `__` parameters — the two shapes a prefix rule does not reach.
  */
 const BUILTIN_LOCALS = new Set([
-  '$$option', '$$slots', '$$props', '$$attributes', '$context', '$$emit',
-  '$$onMount', '$$onDestroy', '$$onCleanup', '$mounted', '$inspect',
-  '$$ctxProvide', '$$ctxRead',
+  '$context', '$mounted', '$inspect',
   // The sugar spellings are injected into the same scope and collide the same
   // way, so declaring one is refused rather than silently shadowing it.
   '$props', '$attributes', '$slots', '$async',
@@ -67,6 +70,25 @@ const BUILTIN_LOCALS = new Set([
   // would fail the same silent way.
   '__anchor', '__props', '__block', '__prev',
 ])
+
+/**
+ * The prefix every identifier the compiler generates carries.
+ *
+ * `BUILTIN_LOCALS` above is a list and a list cannot close this: `$$sig_<name>`,
+ * `$$set_<name>` and `$$snippet_<name>` are built from the author's own
+ * identifiers, and `$$tpl<n>` and `$$el<n>` from a counter. All five collide,
+ * in two different ways and neither is reported — a name the emitter also
+ * declares is a duplicate binding, so the output does not parse; a name it only
+ * imports or declares at module scope is shadowed, so the output parses and the
+ * component throws at mount inside generated code. `const $$runtime = 1` is the
+ * second shape and gives `Cannot access '$$runtime' before initialization`
+ * pointing at the line that calls `push_component`.
+ *
+ * So the prefix is reserved rather than the names. Measured at 0 uses across
+ * 372 `.mesa` files, which is what makes reserving it free rather than a
+ * trade.
+ */
+const RESERVED_PREFIX = '$$'
 
 /**
  * The tag `<mesa:element this={…}>` is compiled under before the runtime swaps
@@ -171,6 +193,18 @@ function assertAt(condition, msg, pos) {
  * close tag it wanted sends them to the wrong one, and `</undefined>` — which
  * is what an unclosed `{#if}` used to report — sends them nowhere.
  */
+/**
+ * The elements HTML lets an author leave unclosed. Mesa does not, and the list
+ * is here so the refusal can say so where it applies rather than everywhere:
+ * `<ul><li>a<li>b</ul>` is valid HTML and the error for it should say which
+ * rule it broke, not just that something is still open.
+ */
+const OPTIONAL_END_TAG = new Set([
+  'li', 'dt', 'dd', 'p', 'rt', 'rp', 'optgroup', 'option',
+  'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'caption', 'colgroup',
+  'html', 'head', 'body',
+])
+
 function describeNode(node) {
   if (!node) return 'the component'
   switch (node.type) {
@@ -1365,7 +1399,11 @@ xNode.baseNode = (type, data, handler) =>
     type,
     {
       bindName() {
-        if (!this._boundName) this._boundName = `el${get_context().uniqIndex++}`
+        // `$$el`, not `el`: every identifier the compiler generates carries the
+        // `$$` sigil, which is what lets the refusal be a prefix rule rather
+        // than a list. `el0` was the one that did not, and a script declaring
+        // it emitted a duplicate binding the compile said nothing about.
+        if (!this._boundName) this._boundName = `$$el${get_context().uniqIndex++}`
         return this._boundName
       },
       ...data
@@ -1493,10 +1531,15 @@ class Reader {
     if (pattern instanceof RegExp) {
       assert(pattern.source[0] === '^')
       const rx = this.source.substring(this.index).match(pattern)
-      assert(
-        rx && rx.index === 0,
-        'Wrong syntax at: ' + this.source.substring(this.index, this.index + 30)
-      )
+      // The offset is the one fact this failure always has and never used to
+      // carry: `Wrong syntax at:` quoted thirty raw bytes, newlines included,
+      // and named no line, so the author was handed a fragment to search for.
+      // `parseHTML` reads one Reader over the whole source — `new Reader(r)`
+      // returns `r` — so the index here is absolute and `posOf` can place it.
+      if (!rx || rx.index !== 0) {
+        const line = this.source.slice(this.index).split('\n')[0].slice(0, 40)
+        throw parseError(`Wrong syntax at: ${line}`, this.index)
+      }
       this.index += rx[0].length
       return rx[rx.length - 1]
     }
@@ -1629,6 +1672,21 @@ export function parseHTML(source) {
           push({ type: 'comment', content: reader.read(/^<!--.*?-->/s) })
           continue
         }
+        if (reader.probe('<![CDATA[')) {
+          // Recognised only so the refusal can name it. Left to the generic
+          // reader failure it read `Wrong syntax at: ![CDATA[ x < y ]]>` —
+          // thirty raw bytes and no line — a fragment to search for rather than
+          // a diagnostic (`FJS-882`). It arrives by copy-paste, out of an SVG
+          // an exporter wrote, so the message has to say what to do with the
+          // paste rather than only that it is wrong.
+          throw parseError(
+            `<![CDATA[ … ]]> is not supported. It is legal in XML, and in HTML inside ` +
+            `an <svg> or <math> subtree, and a Mesa template is neither — it is markup ` +
+            `in which '{' is an operator. Keep the content and drop the wrapper: write ` +
+            `'<' as '&lt;', '&' as '&amp;', and a literal brace as '&lbrace;'.`,
+            reader.index
+          )
+        }
         if (reader.readIf('</')) {
           const closeStart = reader.index - 2
           const written = reader.read(/^([^>]*)>/).trim()
@@ -1641,13 +1699,28 @@ export function parseHTML(source) {
           // the message names the construct still OPEN, which is the line to go
           // to. It used to name the tag it wanted, and interpolated `undefined`
           // whenever the open construct was a block or the root.
-          if (name)
-            assertAt(
-              name === parent.name,
-              `</${written}> closes nothing here — ${describeNode(parent)} is still open. ` +
-              `Close it first.`,
+          if (name && name !== parent.name) {
+            // Two lines are involved and the author needs the OTHER one. The
+            // close tag is where the parse failed, so that is the position the
+            // error carries; the line to GO to is where the still-open
+            // construct was opened, and that one is only reachable if the
+            // message says it. Reported as a mismatch on a line they wrote
+            // correctly was the whole complaint (`FJS-882`).
+            const openedAt = get_context()?.posOf?.(parent.start)
+            // The extra sentence is for one case only: the author wrote valid
+            // HTML. Saying it on every mismatch would put a paragraph about end
+            // tags under an unclosed `{#if}`, which is noise at the moment
+            // somebody is reading carefully.
+            const optional = parent.type === 'node' && OPTIONAL_END_TAG.has(parent.name)
+            throw parseError(
+              `</${written}> closes nothing here — ${describeNode(parent)} is still open` +
+              `${openedAt ? `, opened at ${openedAt}` : ''}. Close it first.` +
+              (optional
+                ? ` HTML lets you omit </${parent.name}>; Mesa does not — it closes no element for you.`
+                : ''),
               closeStart
             )
+          }
           return
         }
         const tag = readTag(reader)
@@ -1887,11 +1960,16 @@ export function parseHTML(source) {
     flushText()
     // `Unexpected EOF` alone named nothing. What the author needs is which
     // construct is still open and where they opened it.
-    assertAt(
-      parent.type === 'root',
-      `Unexpected EOF: ${describeNode(parent)} is never closed.`,
-      parent.start
-    )
+    if (parent.type !== 'root') {
+      const optional = parent.type === 'node' && OPTIONAL_END_TAG.has(parent.name)
+      throw parseError(
+        `Unexpected EOF: ${describeNode(parent)} is never closed.` +
+        (optional
+          ? ` HTML lets you omit </${parent.name}>; Mesa does not — it closes no element for you.`
+          : ''),
+        parent.start
+      )
+    }
   }
 
   const root = { type: 'root', body: [] }
@@ -3491,6 +3569,19 @@ export function analyzeScript(raw, ast) {
     const claim = (id, kind) => {
       if (!id) return
       if (id.type === 'Identifier') {
+        if (id.name.startsWith(RESERVED_PREFIX)) {
+          // Thrown for the same reason as below, and the message says which of
+          // the two failures it prevented rather than picking one: the author
+          // cannot tell from their own source whether the name they chose is
+          // one the emitter declares or one it imports.
+          throw new Error(
+            `'${id.name}' cannot be declared as a ${kind} — '${RESERVED_PREFIX}' is reserved. ` +
+            `Every name Mesa generates starts with it: the runtime import, each template, ` +
+            `and the signal behind every reactive 'let'. A declaration here either redeclares ` +
+            `one, which is a SyntaxError in the output, or shadows one, which throws at mount ` +
+            `in a line you did not write. Drop the '${RESERVED_PREFIX}'.`
+          )
+        }
         if (BUILTIN_LOCALS.has(id.name)) {
           // Thrown rather than pushed: everything in `errors` is downgraded to a
           // warning at the call site, and a duplicate binding is not a warning —
@@ -7398,7 +7489,20 @@ export function emitScript(ctx) {
     }
   }
 
+  // Each declaration's code is BUFFERED rather than pushed, so it can be placed
+  // at the position the author wrote it (`FJS-846`). The loop itself still runs
+  // in topological order and is otherwise untouched: accessor registration,
+  // proxy setup and `deferredPropDefaults` all happen in exactly the order they
+  // did. What moves is where the emitted lines land.
+  const declBuckets = new Map()
+  const _realCode = mod.code
   sorted.forEach((v) => {
+    const _bucket = []
+    mod.code = _bucket
+    // The body below is NOT re-indented under this `try`. Re-indenting two
+    // hundred lines to wrap them would bury the change that matters in a diff
+    // nobody can read.
+    try {
     if (v.classNode) {
       const src = raw.slice(v.classNode.start, v.classNode.end)
       mod.code.push(xNode.raw(
@@ -7618,7 +7722,177 @@ export function emitScript(ctx) {
         ))
       }
     }
+    } finally {
+      // Both in the `finally`: the class branch RETURNS out of the try, so a
+      // `set` after it never ran and every class emitted nothing at all.
+      mod.code = _realCode
+      declBuckets.set(v, _bucket)
+    }
   })
+
+  /**
+   * Flush a declaration's buffered code, and whatever it needs, first.
+   *
+   * The walk below is source order; this is the constraint on top of it. A
+   * declaration comes out where the author put it unless something already
+   * emitted needs it earlier, in which case the recursion pulls it up — which
+   * is the same answer the topological sort gave, applied only where it is
+   * actually required rather than to the whole script.
+   */
+  const _byName = new Map(sorted.map((v) => [v.name, v]))
+  const _flushed = new Set()
+  const flushDecl = (v) => {
+    if (!v || _flushed.has(v)) return
+    _flushed.add(v)  // before recursing: a cycle is already reported above
+    for (const dep of (classEdges[v.name] || [])) flushDecl(_byName.get(dep))
+    for (const dep of (v.deps || [])) flushDecl(_byName.get(dep))
+    for (const n of declBuckets.get(v) || []) mod.code.push(n)
+  }
+  // Anything with no statement of its own in `ast.body` — a synthetic
+  // declaration the compiler built — has no source position to be placed at,
+  // so it goes first, in the order the sort gave it.
+  const _declaredStarts = new Set(ast.body.map((n) => n.start))
+  for (const v of sorted) {
+    if (v.classNode ? !_declaredStarts.has(v.classNode.start) : !_declaredStarts.has(v.nodeStart)) {
+      flushDecl(v)
+    }
+  }
+  const _declsAt = new Map()
+  for (const v of sorted) {
+    const at = v.classNode ? v.classNode.start : v.nodeStart
+    if (at == null || !_declaredStarts.has(at)) continue
+    if (!_declsAt.has(at)) _declsAt.set(at, [])
+    _declsAt.get(at).push(v)
+  }
+
+  // Function declarations, class declarations, bare expression statements, etc.
+  // These are emitted verbatim with assignment rewrites applied so that any
+  // `count = x` inside a function body reaches the signal setter.
+  //
+  // VariableDeclaration nodes are normally skipped here because signals/memos
+  // were already emitted in step 5. Exception: nodes that contain destructuring
+  // patterns (passthroughDeclStarts) — those were never registered in vars and
+  const contextProvideStarts = new Set(
+    (ctx.analysis.contextProvides || []).map(p => p.nodeStart)
+  )
+
+  // must be emitted verbatim with their init expressions rewritten through
+  // ctx.accessors so reactive variables are read through their signal getters.
+  const { passthroughDeclStarts } = ctx.analysis
+  for (const astNode of ast.body) {
+    // The declarations this statement's position owns, and whatever they
+    // need. Placed here rather than all together above so that a statement
+    // the author wrote FIRST runs first (`FJS-846`).
+    for (const _v of _declsAt.get(astNode.start) || []) flushDecl(_v)
+    // `export function f() {}` is emitted as `function f() {}` — the keyword has
+    // no meaning inside the component function, and skipping the whole statement
+    // deleted the declaration along with it (`FJS-087`). What `export` buys is the
+    // registerExports() call below, not a different emission.
+    const node =
+      astNode.type === 'ExportNamedDeclaration' &&
+      astNode.declaration?.type === 'FunctionDeclaration'
+        ? astNode.declaration
+        : astNode
+    if (node.type === 'ImportDeclaration') continue // already emitted
+    if (node.type === 'ExportNamedDeclaration') continue // props handled above
+    if (emittedClassStarts.has(node.start)) continue // emitted with the declarations
+    if (node.type === 'LabeledStatement') continue // $: forms handled above
+    // $context.x = expr — converted to $$ctxProvide() calls above, skip raw emit
+    if (contextProvideStarts.has(node.start)) continue
+
+    if (node.type === 'VariableDeclaration') {
+      // Only emit if this node contains at least one pattern declarator.
+      // Regular identifier declarators were already emitted as signals/memos.
+      if (!passthroughDeclStarts.has(node.start)) continue
+
+      // Rewrite each declarator's init expression through accessors so reactive
+      // variables (e.g. `user` → `$$sig_user()`) are read correctly.
+      // We reconstruct the declaration by patching each init in source order.
+      const patches = []
+      for (const d of node.declarations) {
+        if (!d.init) continue
+        const initSrc = raw.slice(d.init.start, d.init.end)
+        const rewritten = rewriteExpr(initSrc, ctx.accessors)
+        if (rewritten !== initSrc) {
+          patches.push({ start: d.init.start, end: d.init.end, replacement: rewritten })
+        }
+      }
+      let nodeSrc = raw.slice(node.start, node.end)
+      if (patches.length) {
+        patches.sort((a, b) => b.start - a.start)
+        const offset = node.start
+        for (const p of patches) {
+          const s = p.start - offset
+          const e = p.end - offset
+          nodeSrc = nodeSrc.slice(0, s) + p.replacement + nodeSrc.slice(e)
+        }
+      }
+      mod.code.push(xNode.raw(nodeSrc))
+      continue
+    }
+
+    const nodeSrc = raw.slice(node.start, node.end)
+
+    // $$inspect(expr1, expr2, ...) or $$inspect(...).with(fn) — top-level call.
+    // Transform into a reactive createEffect that reads each arg through its
+    // accessor (tracking deps) and passes label + getter array to $$runtime.inspect.
+    const _innerInspect = (n) => {
+      if (!n || n.type !== 'CallExpression') return null
+      if (n.callee?.type === 'Identifier' && n.callee?.name === '$inspect') return { call: n, withFn: null }
+      if (n.callee?.type === 'MemberExpression' &&
+          n.callee?.property?.name === 'with' &&
+          n.callee?.object?.type === 'CallExpression' &&
+          n.callee?.object?.callee?.type === 'Identifier' &&
+          n.callee?.object?.callee?.name === '$inspect') {
+        const withArg = n.arguments[0]
+        return {
+          call: n.callee.object,
+          withFn: withArg ? raw.slice(withArg.start, withArg.end) : null
+        }
+      }
+      return null
+    }
+    const _inspectMatch = node.type === 'ExpressionStatement' ? _innerInspect(node.expression) : null
+    if (_inspectMatch) {
+      // In production (debug: false), strip $$inspect entirely — emit nothing
+      if (ctx.config.debug === false) continue
+      const { call: callNode, withFn } = _inspectMatch
+      const argSrcs = callNode.arguments.map(a => raw.slice(a.start, a.end))
+      const label = argSrcs.join(', ')
+      const getters = argSrcs.map(src => {
+        const rw = rewriteExpr(src, ctx.accessors)
+        return `() => (${rw})`
+      }).join(', ')
+      const inspectCall = `$inspect({ label: ${JSON.stringify(label)}, getters: [${getters}] })`
+      const full = withFn ? `${inspectCall}.with(${withFn})` : inspectCall
+      mod.code.push(xNode.raw(`${full};`))
+      continue
+    }
+
+    const rewritten = rewriteExpr(rewriteAssignments(nodeSrc, node, ctx), ctx.accessors)
+    // If the statement contains a *top-level* await (e.g. `x = await fetch(...)`)
+    // wrap in an async IIFE so the component function stays synchronous.
+    // VariableDeclaration `const x = await y` is already handled separately above.
+    //
+    // This used to be `/\bawait\b/.test(rewritten)`, which could not tell a
+    // top-level await from one nested inside a function body. That meant
+    //
+    //   async function handleLogin() { await save(); }
+    //
+    // was wrapped as `(async () => { async function handleLogin() {…} })()`,
+    // scoping the declaration inside the IIFE so the template's
+    // `onclick={handleLogin}` resolved to nothing —
+    // "ReferenceError: handleLogin is not defined" at runtime, with no
+    // compile-time warning. Declarations are never top-level awaits, and an
+    // await inside a nested function is that function's own business.
+    const containsAwait = _hasTopLevelAwait(node)
+    if (containsAwait) {
+      mod.code.push(xNode.raw(`(async () => { ${rewritten} })()`))
+    } else {
+      mod.code.push(xNode.raw(rewritten))
+    }
+  }
+
 
   // ── 5b. Deferred prop defaults ────────────────────────────────────────────
   // Props whose defaults reference reactive vars are set here, after all
@@ -7855,130 +8129,6 @@ export function emitScript(ctx) {
       )
     )
   })
-  // Function declarations, class declarations, bare expression statements, etc.
-  // These are emitted verbatim with assignment rewrites applied so that any
-  // `count = x` inside a function body reaches the signal setter.
-  //
-  // VariableDeclaration nodes are normally skipped here because signals/memos
-  // were already emitted in step 5. Exception: nodes that contain destructuring
-  // patterns (passthroughDeclStarts) — those were never registered in vars and
-  const contextProvideStarts = new Set(
-    (ctx.analysis.contextProvides || []).map(p => p.nodeStart)
-  )
-
-  // must be emitted verbatim with their init expressions rewritten through
-  // ctx.accessors so reactive variables are read through their signal getters.
-  const { passthroughDeclStarts } = ctx.analysis
-  for (const astNode of ast.body) {
-    // `export function f() {}` is emitted as `function f() {}` — the keyword has
-    // no meaning inside the component function, and skipping the whole statement
-    // deleted the declaration along with it (`FJS-087`). What `export` buys is the
-    // registerExports() call below, not a different emission.
-    const node =
-      astNode.type === 'ExportNamedDeclaration' &&
-      astNode.declaration?.type === 'FunctionDeclaration'
-        ? astNode.declaration
-        : astNode
-    if (node.type === 'ImportDeclaration') continue // already emitted
-    if (node.type === 'ExportNamedDeclaration') continue // props handled above
-    if (emittedClassStarts.has(node.start)) continue // emitted with the declarations
-    if (node.type === 'LabeledStatement') continue // $: forms handled above
-    // $context.x = expr — converted to $$ctxProvide() calls above, skip raw emit
-    if (contextProvideStarts.has(node.start)) continue
-
-    if (node.type === 'VariableDeclaration') {
-      // Only emit if this node contains at least one pattern declarator.
-      // Regular identifier declarators were already emitted as signals/memos.
-      if (!passthroughDeclStarts.has(node.start)) continue
-
-      // Rewrite each declarator's init expression through accessors so reactive
-      // variables (e.g. `user` → `$$sig_user()`) are read correctly.
-      // We reconstruct the declaration by patching each init in source order.
-      const patches = []
-      for (const d of node.declarations) {
-        if (!d.init) continue
-        const initSrc = raw.slice(d.init.start, d.init.end)
-        const rewritten = rewriteExpr(initSrc, ctx.accessors)
-        if (rewritten !== initSrc) {
-          patches.push({ start: d.init.start, end: d.init.end, replacement: rewritten })
-        }
-      }
-      let nodeSrc = raw.slice(node.start, node.end)
-      if (patches.length) {
-        patches.sort((a, b) => b.start - a.start)
-        const offset = node.start
-        for (const p of patches) {
-          const s = p.start - offset
-          const e = p.end - offset
-          nodeSrc = nodeSrc.slice(0, s) + p.replacement + nodeSrc.slice(e)
-        }
-      }
-      mod.code.push(xNode.raw(nodeSrc))
-      continue
-    }
-
-    const nodeSrc = raw.slice(node.start, node.end)
-
-    // $$inspect(expr1, expr2, ...) or $$inspect(...).with(fn) — top-level call.
-    // Transform into a reactive createEffect that reads each arg through its
-    // accessor (tracking deps) and passes label + getter array to $$runtime.inspect.
-    const _innerInspect = (n) => {
-      if (!n || n.type !== 'CallExpression') return null
-      if (n.callee?.type === 'Identifier' && n.callee?.name === '$inspect') return { call: n, withFn: null }
-      if (n.callee?.type === 'MemberExpression' &&
-          n.callee?.property?.name === 'with' &&
-          n.callee?.object?.type === 'CallExpression' &&
-          n.callee?.object?.callee?.type === 'Identifier' &&
-          n.callee?.object?.callee?.name === '$inspect') {
-        const withArg = n.arguments[0]
-        return {
-          call: n.callee.object,
-          withFn: withArg ? raw.slice(withArg.start, withArg.end) : null
-        }
-      }
-      return null
-    }
-    const _inspectMatch = node.type === 'ExpressionStatement' ? _innerInspect(node.expression) : null
-    if (_inspectMatch) {
-      // In production (debug: false), strip $$inspect entirely — emit nothing
-      if (ctx.config.debug === false) continue
-      const { call: callNode, withFn } = _inspectMatch
-      const argSrcs = callNode.arguments.map(a => raw.slice(a.start, a.end))
-      const label = argSrcs.join(', ')
-      const getters = argSrcs.map(src => {
-        const rw = rewriteExpr(src, ctx.accessors)
-        return `() => (${rw})`
-      }).join(', ')
-      const inspectCall = `$inspect({ label: ${JSON.stringify(label)}, getters: [${getters}] })`
-      const full = withFn ? `${inspectCall}.with(${withFn})` : inspectCall
-      mod.code.push(xNode.raw(`${full};`))
-      continue
-    }
-
-    const rewritten = rewriteExpr(rewriteAssignments(nodeSrc, node, ctx), ctx.accessors)
-    // If the statement contains a *top-level* await (e.g. `x = await fetch(...)`)
-    // wrap in an async IIFE so the component function stays synchronous.
-    // VariableDeclaration `const x = await y` is already handled separately above.
-    //
-    // This used to be `/\bawait\b/.test(rewritten)`, which could not tell a
-    // top-level await from one nested inside a function body. That meant
-    //
-    //   async function handleLogin() { await save(); }
-    //
-    // was wrapped as `(async () => { async function handleLogin() {…} })()`,
-    // scoping the declaration inside the IIFE so the template's
-    // `onclick={handleLogin}` resolved to nothing —
-    // "ReferenceError: handleLogin is not defined" at runtime, with no
-    // compile-time warning. Declarations are never top-level awaits, and an
-    // await inside a nested function is that function's own business.
-    const containsAwait = _hasTopLevelAwait(node)
-    if (containsAwait) {
-      mod.code.push(xNode.raw(`(async () => { ${rewritten} })()`))
-    } else {
-      mod.code.push(xNode.raw(rewritten))
-    }
-  }
-
   // ── The instance API — what `bind:this` on this component hands the parent ──
   // Exported props are already in the prop registry (makeExternalProperty), so
   // only the methods need declaring. One call, after the statements: function
@@ -8096,7 +8246,7 @@ function _domTraversal(code) {
       if (!m) { out.push(line); continue }
 
       const [, name, expr] = m
-      const isTextNode = name.startsWith('el')
+      const isTextNode = name.startsWith('$$el')
 
       // Y.firstChild.nextSibling — skip first child, get second
       const chainM = expr.match(/^(\S+)\.firstChild\.nextSibling$/)

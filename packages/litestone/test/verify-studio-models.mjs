@@ -654,6 +654,156 @@ t('rail.theShortcutDoesNotFireIntoAField', await probe(`
   return { ignoredInField: afterInField === before, toggledOutside: afterOutside !== before };
 `), { ignoredInField: true, toggledOutside: true })
 
+// ─── switching the open database ──────────────────────────────────────────
+//
+// `example` is `tenancy { strategy database }`: the base file holds the
+// registry and a shared audit log, and every shop's rows live in a file of its
+// own. Opening one re-points every data endpoint on the SERVER — and the client
+// kept the snapshot it took at boot, so the sidebar went on showing 44 tables
+// at zero, the header went on showing the base file's size, and the diagram's
+// row overlay was the registry's. Only a badge and a toast moved, which is why
+// the panel read as unfinished.
+//
+// Asserted as a PAIR in both directions. A switch that showed the tenant's
+// numbers and could not get back is the same defect facing the other way, and
+// the close half is the one nothing would have noticed.
+
+const dbFacts = `
+  const counts = [...document.querySelectorAll('#tableList .table-count')].map(e => e.textContent);
+  return {
+    nonZero: counts.filter(c => c !== '0' && c !== '?').length,
+    size:    document.getElementById('hdrSize').textContent,
+    badge:   document.getElementById('tenantBadge').hidden ? null : document.getElementById('tenantBadge').textContent,
+    erSum:   Object.values(erCounts).reduce((a, b) => a + b, 0),
+  };`
+
+const beforeOpen = await probe(`showTool('tenants'); await new Promise(r => setTimeout(r, 1200)); ${dbFacts}`)
+const afterOpen  = await probe(`await tenantOpen('flagship'); await new Promise(r => setTimeout(r, 1200)); ${dbFacts}`)
+const afterClose = await probe(`await tenantClose(); await new Promise(r => setTimeout(r, 1200)); ${dbFacts}`)
+
+// The counts on screen MOVE. Not "a badge appeared" — the tables the sidebar
+// says are empty are the whole reason somebody opens a tenant at all.
+t('tenant.openingOneMovesWhatIsOnScreen', {
+  moreTables: afterOpen.nonZero > beforeOpen.nonZero,
+  sizeMoved:  afterOpen.size !== beforeOpen.size,
+  badge:      afterOpen.badge,
+}, { moreTables: true, sizeMoved: true, badge: '🏢 flagship' })
+
+// The diagram's row overlay reads `erCounts`, which is the same fact one panel
+// over — a switch that updated the sidebar and left the diagram would put the
+// registry's numbers under the tenant's name with nothing saying so.
+t('tenant.theDiagramFollowsTheSwitch', afterOpen.erSum > beforeOpen.erSum, true)
+
+// And back. `tenantClose` had the identical hole, and closing is the half
+// nobody checks — you go looking for the tenant's data, not for the base
+// database's.
+t('tenant.closingPutsItAllBack', {
+  nonZero: afterClose.nonZero === beforeOpen.nonZero,
+  size:    afterClose.size    === beforeOpen.size,
+  erSum:   afterClose.erSum   === beforeOpen.erSum,
+  badge:   afterClose.badge,
+}, { nonZero: true, size: true, erSum: true, badge: null })
+
+// The base database is not EMPTY, and that is the thing that makes an
+// unselected tenant so confusing: a `logger` database is shared across every
+// tenant, so the audit log has rows while all 43 other tables read zero. It is
+// the shape of *why are all the tables empty except that one*.
+t('tenant.theSharedLogIsWhyTheBaseLooksAlmostEmpty',
+  { some: beforeOpen.nonZero > 0, notMany: beforeOpen.nonZero < 5 },
+  { some: true, notMany: true })
+
+// ─── why a table is empty ─────────────────────────────────────────────────
+//
+// `No rows` is the same sentence a broken query produces, and Studio knew the
+// reason in both of the cases that matter without saying it HERE. A person
+// opens Studio, clicks a table, reads `No rows`, and concludes the app has no
+// data — which is what happened twice in one session on this very app.
+//
+// NOTHING BELOW RUNS THE SEED. This drive is asserted against `example`'s real
+// database and a seed run would rewrite it; what is graded is the detection,
+// the wording and the decision to offer it.
+
+t('seed.isReadOffTheProjectsOwnPackageJson', await probe(`
+  return _seed && { command: _seed.command, runs: _seed.runs, script: _seed.script };
+`), { command: 'bun run db:seed', runs: 'bun run db/seed.ts', script: 'db:seed' })
+
+// The empty state names the TENANT, not the seed, because with no tenant open
+// the seed is the wrong advice: the rows exist, in a file this Studio is not
+// looking at. Both halves — the sentence, and a way through.
+t('empty.saysWhichDatabaseIsOpenAndOffersTheOtherOne', await probe(`
+  selectTable('Product'); showTool('browse');
+  // The loading spinner carries the same class, so the first match is the wrong
+  // one — this waits for the state that is not the loader.
+  const t0 = Date.now();
+  let box = null;
+  while (Date.now() - t0 < 10000) {
+    const el = document.querySelector('#dataGrid .empty');
+    if (el && !el.querySelector('.spinner')) { box = el; break }
+    await new Promise(r => setTimeout(r, 100));
+  }
+  if (!box) return 'no empty state rendered';
+  // Double-escaped: this probe is a template literal, so a single backslash is
+  // eaten by JS and the regex arrives as /s+/g — which strips every letter s.
+  const said = box.textContent.replace(/\\s+/g, ' ');
+  return {
+    namesTheCause:  /no tenant is open/i.test(said),
+    saysWhereRowsAre: /file of its own/.test(said),
+    button:         box.querySelector('button')?.textContent.trim(),
+  };
+`), { namesTheCause: true, saysWhereRowsAre: true, button: 'Open flagship →' })
+
+// The way through is CLICKED, not read off the attribute. This row used to ask
+// whether `onclick` matched /tenantOpen/ and it passed against a button that
+// threw on every press: the id went in as `${JSON.stringify(id)}`, so the
+// markup was `onclick="tenantOpen("flagship")"`, the parser ended the attribute
+// at the second quote, and what survived was a bare `tenantOpen(` — which
+// matches the regex and is a SyntaxError. An inline handler is a string the
+// HTML parser gets first, so the only honest question is whether pressing it
+// does the thing.
+// A handler that throws is caught by `consoleErrors` at the foot of this file
+// as well, since the click happens first — so the broken button reds two rows.
+t('empty.theWayThroughIsAButtonThatWorks', await probe(`
+  document.querySelector('#dataGrid .empty button').click();
+  await new Promise(r => setTimeout(r, 1200));
+  const opened = activeTenantId;
+  await tenantClose(); await new Promise(r => setTimeout(r, 1200));
+  return { opened, back: activeTenantId };
+`), { opened: 'flagship', back: null })
+
+// The three cases, decided by calling the renderer rather than by arranging a
+// database for each: an unseeded app with a seed, the same app once it has
+// rows, and an app with no seed at all. The middle one is the control — an
+// offer that fires whether or not there is anything to fix is an offer people
+// learn to ignore.
+t('seed.isOfferedOnlyWhenThereIsNothingAndSomethingToRun', await probe(`
+  const realCounts = erCounts, realSnap = _tenantSnapshot, realSeed = _seed;
+  const has = (html) => /Run it/.test(html);
+  try {
+    _tenantSnapshot = { enabled: false };
+    erCounts = {};
+    const emptyWithSeed = has(ovAttention(null, null, null, _tenantSnapshot));
+    erCounts = { Product: 12 };
+    const seededAlready = has(ovAttention(null, null, null, _tenantSnapshot));
+    erCounts = {}; _seed = null;
+    const emptyNoSeed = has(ovAttention(null, null, null, _tenantSnapshot));
+    return { emptyWithSeed, seededAlready, emptyNoSeed };
+  } finally {
+    erCounts = realCounts; _tenantSnapshot = realSnap; _seed = realSeed;
+  }
+`), { emptyWithSeed: true, seededAlready: false, emptyNoSeed: false })
+
+// …and it is suppressed while a tenant is unopened, where the rows exist and
+// the seed is the wrong advice. Same renderer, one field different.
+t('seed.isNotOfferedWhenTheAnswerIsATenant', await probe(`
+  const realCounts = erCounts, realSnap = _tenantSnapshot;
+  try {
+    erCounts = {};
+    _tenantSnapshot = { enabled: true, activeTenant: null, tenants: [{ id: 'flagship' }] };
+    const html = ovAttention(null, null, null, _tenantSnapshot);
+    return { offersSeed: /Run it/.test(html), offersTenant: /Tenants/.test(html) };
+  } finally { erCounts = realCounts; _tenantSnapshot = realSnap }
+`), { offersSeed: false, offersTenant: true })
+
 t('consoleErrors', consoleErrors, [])
 
 // ─── report ───────────────────────────────────────────────────────────────

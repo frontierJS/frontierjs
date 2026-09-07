@@ -1,16 +1,21 @@
 <script>
   // alert_status — the workspace's alert rules and their severity.
   //
-  // The mock's card is "what is firing right now". Nothing here evaluates a
-  // threshold (`FJS-123`), so that card would be permanently empty and read as
-  // "all clear" — which is the one wrong answer a monitoring widget can give.
-  // What is real is the rules themselves and whether they are active, which is
-  // what this shows; the frame says what is missing.
+  // The mock's card is "what is firing right now", and it is a real question
+  // now: `alert-evaluate` runs every minute and writes `AlertEvent` rows
+  // (`FJS-123`). Until it did, this card showed the RULES and said so on its
+  // frame — a permanently empty "what is firing" reads as *all clear*, which is
+  // the one wrong answer a monitoring widget can give.
+  //
+  // The firing count comes from `get`, one call per rule and six rules at most:
+  // `find` answers the rows and only `get` pays for the event history, which is
+  // the same shape the alerts screen uses at a hundred.
   import { alerts } from '../../resources/AlertRule.mesa'
   import { onWrite } from './live.js'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
   let rows    = []
+  let firing  = {}     // ruleId → how many of its events are still open
   let error   = null
   let loading = true
 
@@ -20,6 +25,13 @@
     error = null
     try {
       rows = (await alerts.service.find({}, { limit: 6 })).data
+      const full = await Promise.all(rows.map(r => alerts.service.get(r.id)))
+      // `status === 'firing'` and not *has any events*: a rule that fired last
+      // week and recovered is not a rule that is firing, and counting history
+      // as current is the same wrong answer from the other direction.
+      firing = Object.fromEntries(full.map(r => [
+        r.id, (r.recent_events ?? []).filter(e => e.status === 'firing').length,
+      ]))
     } catch (e) {
       error = e.message
     } finally {
@@ -30,7 +42,8 @@
   load()
   $.onDestroy(onWrite(alerts.service, load))
 
-  $: active = rows.filter(r => r.isActive).length
+  $: active    = rows.filter(r => r.isActive).length
+  $: firingNow = rows.filter(r => firing[r.id] > 0).length
 </script>
 
 {#if loading}
@@ -40,12 +53,20 @@
 {:else if !rows.length}
   <p class="text-sm text-muted">No alert rules in this workspace.</p>
 {:else}
-  <p class="text-sm text-muted">{active} of {rows.length} active</p>
+  <!-- The firing count leads, because it is the thing somebody opened a
+       dashboard to see. `All clear` is a claim this card could not make while
+       nothing evaluated a threshold. -->
+  {#if firingNow}
+    <p class="text-sm"><strong>{firingNow} firing</strong> · {active} of {rows.length} active</p>
+  {:else}
+    <p class="text-sm text-muted">All clear · {active} of {rows.length} active</p>
+  {/if}
   <ul class="stack" style="list-style: none; padding: 0">
     {#each rows as rule}
       <li class="cluster">
         <Badge tone={rule.isActive ? (TONE[rule.severity] ?? 'muted') : 'muted'}>{rule.severity}</Badge>
         <span class="text-sm">{rule.name}</span>
+        {#if firing[rule.id]}<Badge tone="danger">firing</Badge>{/if}
       </li>
     {/each}
   </ul>

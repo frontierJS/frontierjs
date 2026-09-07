@@ -44,7 +44,7 @@
 
 import { spawnSync }                       from 'node:child_process'
 import { createRequire }                   from 'node:module'
-import { existsSync, readFileSync, writeFileSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, readdirSync, rmSync, mkdtempSync } from 'node:fs'
 import { join, dirname, relative }         from 'node:path'
 import { fileURLToPath }                   from 'node:url'
 import { tmpdir }                          from 'node:os'
@@ -100,7 +100,7 @@ const started = Date.now()
 // `const` does not, so running the phases from up here puts every helper
 // constant below them in its temporal dead zone — which throws at the first
 // one that is not a function.
-function main() {
+async function main() {
   if (!testsOnly) {
     hygiene()
     structure()
@@ -108,7 +108,7 @@ function main() {
     snapshots()
     access()
     coverage()
-    registry()
+    await registry()
     advisories()
     scaffold()
     typecheck()
@@ -847,7 +847,7 @@ function checkBaselineDirection() {
 // no registry reachable this reports a note and passes, and
 // FJS_CI_REQUIRE_REGISTRY=1 turns that skip into a failure.
 
-function registry() {
+async function registry() {
   const from = phase('registry')
 
   // What `fli new` writes, read from the module that decides it rather than
@@ -929,6 +929,58 @@ function registry() {
     }
   }
 
+  // Every check above asks whether a package RESOLVES. This one asks whether
+  // what it ships still WORKS, for the one artefact that is executed at boot
+  // (FJS-921). Only packages whose published exports offer a `.lite` are
+  // fetched, so on a normal run this is one tarball or none.
+  const knownSchemas = allowances.knownPublishedSchemas ?? {}
+  const excused      = new Set()
+
+  let schemas = 0
+  for (const [name, version] of state) {
+    if (version === 'unpublished' || version === 'unreachable') continue
+    const targets = publishedLiteTargets(name)
+    if (!targets.length) continue
+
+    const faults = await publishedLiteFaults(name, version, targets)
+    if (faults === null) {
+      note(`${name}@${version} ships ${targets.length} schema(s) and the tarball could not be read — not graded.`)
+      continue
+    }
+    schemas += targets.length
+
+    // Keyed by name AND version, so the entry goes stale the moment a corrected
+    // copy is published rather than outliving the fault it excused — the same
+    // ratchet `knownUnpublished` carries one check up.
+    const spec = `${name}@${version}`
+    if (spec in knownSchemas) excused.add(spec)
+    if (faults.length && spec in knownSchemas) {
+      for (const [target, why] of faults) note(`${spec} ships ${target} and it does not parse — known: ${knownSchemas[spec]}`)
+      warn(`${spec} ships a schema that does not parse (known)`)
+      continue
+    }
+
+    for (const [target, why] of faults) fail(
+      `${name}@${version} ships ${target} and the current parser refuses it\n` +
+      `      ${why}\n` +
+      `      An app installing ${name} from npm imports this file and cannot boot, while the tree\n` +
+      `      stays green — an app in this workspace resolves ${name} to its own directory and never\n` +
+      `      reads the published bytes. If the tree's copy is already correct, this is registry drift\n` +
+      `      and the fix is to publish; if it is not, fix the tree first.`
+    )
+  }
+
+  // An allowance that no longer describes anything is a failure, so it
+  // disappears on the release that fixes the schema rather than being carried
+  // forward as a statement nobody re-derives.
+  for (const spec of Object.keys(knownSchemas)) {
+    if (excused.has(spec)) continue
+    fail(
+      `knownPublishedSchemas names ${spec} and this run did not grade it — either that version is no\n` +
+      `      longer what npm serves, or the package stopped exporting a schema. Remove the entry.`
+    )
+  }
+
   // The version gap is NOT a failure — a package ahead of the registry is the
   // normal state between releases. It is reported because it is the thing the
   // register cannot see: a scaffold template written against behavior only the
@@ -947,7 +999,7 @@ function registry() {
 
   if (clean(from)) ok(
     `${state.length} scaffolded package(s), every one of them installable, ` +
-    `${pins} published sibling pin(s) resolve`, Date.now() - t0)
+    `${pins} published sibling pin(s) resolve, ${schemas} published schema(s) parse`, Date.now() - t0)
 }
 
 // `npm view` is the same question `fli ws:npm` asks; this is a plain-node
@@ -963,19 +1015,154 @@ function npmVersion(name) {
   return /E404|is not in this registry|404 Not Found/.test(text) ? 'unpublished' : 'unreachable'
 }
 
+// ─── the schemas a published package offers ──────────────────────────────────
+//
+// Everything above asks whether a package RESOLVES. Nothing asked whether what
+// it ships still works — and `@frontierjs/auth@1.0.3` shipped a `db/auth.lite`
+// carrying `@guarded(all)`, an argument the language deleted, so an app that
+// installed auth from npm could not boot while the tree was green all along
+// (FJS-921). The tree and the registry move independently and this phase exists
+// for the half the tree cannot answer for; a schema is the sharpest case,
+// because it is executed at boot rather than at some later call.
+//
+// **Read off the published EXPORTS map, not off the tree.** A `.lite` a package
+// ships but does not export cannot be reached by an app — `fli auth:install`
+// resolves these through the package's own exports — so what is graded is
+// exactly what a consumer can import, and the candidate list comes from the
+// registry rather than from a local directory the registry may disagree with.
+// It costs no extra request: the manifest is already in hand for the pins.
+
+function publishedLiteTargets(name) {
+  const map = publishedManifest(name)?.exports
+  if (!map || typeof map !== 'object') return []
+
+  // An export target is a string or a conditions object; only the leaves matter.
+  const leaves = (v) => typeof v === 'string' ? [v]
+                : v && typeof v === 'object'  ? Object.values(v).flatMap(leaves)
+                : []
+
+  return [...new Set(Object.values(map).flatMap(leaves).filter(t => t.endsWith('.lite')))]
+}
+
+// A fragment is not a whole schema: both of auth's say in their own headers
+// that they parse standalone against a host declaring `main` and `audit`, and
+// `Session` carries `@@log(audit)`. So the host is supplied here rather than
+// the fragment being parsed bare, which would refuse a correct file.
+const LITE_HOST = 'database main {\n  path "./ci.db"\n}\n\ndatabase audit {\n  path "./ci-audit/"\n  driver logger\n}\n\n'
+// The parser counts lines in what it was HANDED, so every position it reports
+// is the host's lines further down than the file a reader will open — and a
+// line number that is confidently wrong sends somebody to the wrong line rather
+// than to no line at all.
+//
+// The offset is MEASURED rather than derived from the host's own line count:
+// counting newlines models how the parser numbers lines, and the first attempt
+// here was one off because of exactly that guess. A fault is planted on a known
+// line instead and the answer is read back, so this stays right if the parser's
+// numbering ever changes.
+// An error from this parser is sometimes a string and sometimes an object.
+function liteMessage(err) {
+  return typeof err === 'string' ? err : (err?.message ?? 'refused, with no message')
+}
+
+let _liteOffset = null
+
+function liteLineOffset(parse) {
+  if (_liteOffset !== null) return _liteOffset
+  // Line 2 of the fragment, and nothing else in it is refusable.
+  const probe = parse(LITE_HOST + 'model CiProbe {\n  id String @id @guarded(all)\n}\n')
+  // An error is a string here and an object elsewhere in this parser, so both
+  // are read — the first version of this asked only for `.message`, measured
+  // nothing, and silently answered an offset of zero.
+  const at    = String(liteMessage(probe.errors?.[0])).match(/\(line (\d+)/)
+  _liteOffset = at ? Number(at[1]) - 2 : 0
+  return _liteOffset
+}
+
+function atFileLine(message, offset) {
+  return String(message).replace(/\(line (\d+), col (\d+)\)/g, (whole, line, col) => {
+    const n = Number(line) - offset
+    // At or below zero means the fault is in the host above, which would be
+    // this script's bug and not the package's — say nothing rather than a
+    // number that points into a file the reader cannot open.
+    return n > 0 ? `(line ${n}, col ${col})` : whole
+  })
+}
+
+// Unpacks the published tarball and parses each exported `.lite` with the
+// tree's own parser — the same one an installed app runs, which is the only
+// thing that can answer whether the published bytes still parse.
+//
+// Answers `null` when the tarball could not be fetched or unpacked, which the
+// caller reports the way it reports every other no-answer here: a named skip,
+// never a pass in disguise.
+async function publishedLiteFaults(name, version, targets) {
+  const dir = mkdtempSync(join(tmpdir(), 'fjs-ci-lite-'))
+  try {
+    const packed = spawnSync('npm', ['pack', `${name}@${version}`, '--silent'], {
+      cwd: dir, encoding: 'utf8', shell: false, timeout: 120_000,
+    })
+    if (packed.status !== 0) return null
+
+    const tgz = readdirSync(dir).find(f => f.endsWith('.tgz'))
+    if (!tgz) return null
+
+    const untar = spawnSync('tar', ['xzf', tgz, '-C', dir], {
+      cwd: dir, encoding: 'utf8', shell: false, timeout: 120_000,
+    })
+    if (untar.status !== 0) return null
+
+    const { parse } = await import('../packages/litestone/src/core/parser.js')
+    const offset = liteLineOffset(parse)
+    const faults = []
+
+    for (const target of targets) {
+      // Every tarball roots at `package/`, and a target is relative to the
+      // package root the way an exports map is written.
+      const file = join(dir, 'package', target.replace(/^\.\//, ''))
+      if (!existsSync(file)) {
+        faults.push([target, `the exports map offers it and the tarball does not carry it`])
+        continue
+      }
+      const result = parse(LITE_HOST + readFileSync(file, 'utf8'))
+      if (result.valid) continue
+      const first = result.errors?.[0]
+      faults.push([target, atFileLine(liteMessage(first), offset)])
+    }
+    return faults
+  } catch {
+    return null
+  } finally {
+    try { rmSync(dir, { recursive: true, force: true }) } catch {}
+  }
+}
+
+// The PUBLISHED manifest, once per package per run. Two readers want it — the
+// sibling pins and the shipped schemas — and asking npm twice for one document
+// is a second network round trip for an answer already in hand.
+const _manifests = new Map()
+
+function publishedManifest(name) {
+  if (_manifests.has(name)) return _manifests.get(name)
+  const r = spawnSync('npm', ['view', name, '--json'], {
+    cwd: ROOT, encoding: 'utf8', shell: false, timeout: 30_000,
+  })
+  let doc = null
+  if (r.status === 0) {
+    try { doc = JSON.parse(r.stdout) } catch { doc = null }
+    if (Array.isArray(doc)) doc = doc[doc.length - 1]   // more than one dist-tag on a version
+  }
+  _manifests.set(name, doc)
+  return doc
+}
+
 // The sibling dependencies of a package's PUBLISHED latest — what an install
 // actually tries to resolve, which is not what the tree's manifest says. An
 // OPTIONAL peer is left out: it is allowed to go unmet, so an unresolvable one
 // is not a broken install. Answers `[]` for anything it could not read, since
 // the reachability story is told once, above.
 function publishedSiblingRanges(name) {
-  const r = spawnSync('npm', ['view', name, '--json'], {
-    cwd: ROOT, encoding: 'utf8', shell: false, timeout: 30_000,
-  })
-  if (r.status !== 0) return []
-  let doc
-  try { doc = JSON.parse(r.stdout) } catch { return [] }
-  if (Array.isArray(doc)) doc = doc[doc.length - 1]   // more than one dist-tag on a version
+  const doc = publishedManifest(name)
+  if (!doc) return []
   const optional = doc?.peerDependenciesMeta ?? {}
   const peers    = Object.entries(doc?.peerDependencies ?? {}).filter(([n]) => !optional[n]?.optional)
   return [...Object.entries(doc?.dependencies ?? {}), ...peers]
@@ -1717,4 +1904,4 @@ function resolveRoot() {
   return dirname(here)
 }
 
-main()
+await main()

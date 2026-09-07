@@ -7,7 +7,7 @@
  * feeds in, and the failures named are the ones a copy actually had.
  */
 
-import { pluralize, singularize, IRREGULAR } from '../../src/inflect/inflect.js'
+import { pluralize, singularize, IRREGULAR, words, pascal, camel, kebab, snake, modelName, slug, humanize } from '../../src/inflect/inflect.js'
 
 /* ── Regular rules ─────────────────────────────────────────────────── */
 
@@ -215,4 +215,239 @@ test('inflect: a non-string comes back unchanged rather than throwing', function
   assert.equal(singularize(''), '')
   assert.equal(pluralize(null), null)
   assert.equal(singularize(undefined), undefined)
+})
+
+/* ── The -ie stems ─────────────────────────────────────────────────── */
+
+test('inflect: a singular ending -ie survives the -y rule', function () {
+  // `movies` and `bodies` are identical in shape, so this is a list and not a
+  // rule (`FJS-959`). Every case is PAIRED with the `-y` word one letter apart,
+  // because a fix that sent both to `-ie` would look exactly like a fix that
+  // sent neither: the failing behavior and its correction differ only on which
+  // side of the list a word falls.
+  const pairs = [
+    ['movies',   'movie'],   ['bodies',     'body'],
+    ['cookies',  'cookie'],  ['categories', 'category'],
+    ['pies',     'pie'],     ['policies',   'policy'],
+    ['ties',     'tie'],     ['cities',     'city'],
+    ['calories', 'calorie'], ['companies',  'company'],
+    ['zombies',  'zombie'],  ['proxies',    'proxy'],
+  ]
+  for (const [plural, singular] of pairs)
+    assert.equal(singularize(plural), singular, plural)
+})
+
+test('inflect: the -ie stems round-trip, which the broken pair also did', function () {
+  // The reason nothing caught this for so long: `pluralize('movy') === 'movies'`,
+  // so the wrong answer was self-consistent and every symmetry check passed
+  // while both halves named a word that does not exist. Round-tripping is
+  // necessary and is not sufficient — the table above is what makes it true of
+  // real words.
+  for (const w of ['movie', 'cookie', 'pie', 'tie', 'calorie', 'body', 'category', 'city'])
+    assert.equal(singularize(pluralize(w)), w, w)
+})
+
+test('inflect: case and compounds, since a model name is neither lowercase nor one word', function () {
+  assert.equal(singularize('Movies'), 'Movie')
+  assert.equal(singularize('Cookies'), 'Cookie')
+  // `headOf` splits the compound and the list is asked about the HEAD, so a
+  // prefix cannot smuggle a word past it in either direction.
+  assert.equal(singularize('OrderCookies'), 'OrderCookie')
+  assert.equal(singularize('AuditPolicies'), 'AuditPolicy')
+  // And not inside a snake_case word, for IRREGULAR's reason: reaching in would
+  // rename a table.
+  assert.equal(singularize('http_cookies'), 'http_cookie')
+})
+
+test('inflect: what this protects — a service resolves to its model or fails OPEN', function () {
+  // Junction derives a model name from a service name with `singularize`, and a
+  // service that resolves to no model has no @@gate and no validation. This is
+  // the assertion that names the cost rather than the spelling: `model Cookie`
+  // with a `cookies` service resolved to `Cooky`, which is nothing.
+  assert.equal(singularize('cookies'), 'cookie')
+  assert.ok(singularize('cookies') !== 'cooky', 'cookies must not singularise to cooky')
+})
+
+/* ── Shape ─────────────────────────────────────────────────────────── */
+
+test('inflect: the three spellings of one name split into the same words', function () {
+  // Six hand copies split four different ways, so this is the row that makes
+  // the rest of the shape functions agree by construction rather than by
+  // coincidence.
+  // A word keeps its OWN capitals: `words('product_variants')` is
+  // `['product','variants']` and `words('productVariants')` is
+  // `['product','Variants']`. What has to agree is where the SPLIT falls, and
+  // the shapes built on it.
+  const same = ['product_variants', 'product-variants', 'productVariants', 'Product Variants']
+  same.forEach(function (spelling) {
+    assert.equal(words(spelling).map(w => w.toLowerCase()).join('|'), 'product|variants', 'words(' + spelling + ')')
+    assert.equal(pascal(spelling), 'ProductVariants', 'pascal(' + spelling + ')')
+    assert.equal(snake(spelling),  'product_variants', 'snake(' + spelling + ')')
+  })
+})
+
+test('inflect: a run of capitals is one word, and a digit does not start one', function () {
+  // Splitting on every capital gives `o r d e r I D`. This is the same rule
+  // `/humanize` has and the reason both kits need their own tests for it.
+  assert.equal(words('orderID').join('|'), 'order|ID')
+  assert.equal(words('HTTPStatus').join('|'), 'HTTP|Status')
+  // …and the deliberate DIFFERENCE from humanize, which reads `line1` as
+  // `Line 1`. Splitting the digit here renames a column.
+  assert.equal(words('address1').join('|'), 'address1')
+  assert.equal(kebab('address1'), 'address1')
+})
+
+test('inflect: a separator that is not one stays inside the word', function () {
+  // A dump qualifies every table with its schema. If `.` split, `partman.template_x`
+  // would come back as a plausible `PartmanTemplateX` and be used as a model
+  // name; left in, it is visibly not an identifier and the caller's own guard
+  // still sees it.
+  assert.equal(pascal('partman.template_x'), 'Partman.templateX')
+  assert.ok(!/^[A-Za-z][A-Za-z0-9]*$/.test(pascal('partman.template_x')))
+})
+
+test('inflect: the four shapes', function () {
+  const cases = [
+    ['product_variants', 'ProductVariants', 'productVariants', 'product-variants', 'product_variants'],
+    ['ProductVariant',   'ProductVariant',  'productVariant',  'product-variant',  'product_variant'],
+    ['order-item',       'OrderItem',       'orderItem',       'order-item',       'order_item'],
+  ]
+  cases.forEach(function ([raw, wantP, wantC, wantK, wantS]) {
+    assert.equal(pascal(raw), wantP, 'pascal(' + raw + ')')
+    assert.equal(camel(raw),  wantC, 'camel(' + raw + ')')
+    assert.equal(kebab(raw),  wantK, 'kebab(' + raw + ')')
+    assert.equal(snake(raw),  wantS, 'snake(' + raw + ')')
+  })
+})
+
+test('inflect: a word keeps its own tail, where lodash lowercases it', function () {
+  // `upperFirst(camelCase('SKU'))` is `Sku`. A column named SKU is not Sku.
+  assert.equal(pascal('SKU'), 'SKU')
+  assert.equal(pascal('orderID'), 'OrderID')
+})
+
+test('inflect: camel lowers a leading initialism WHOLE', function () {
+  // The copies lowered the first character only, which gives `hTTPStatus`.
+  assert.equal(camel('HTTPStatus'), 'httpStatus')
+  assert.equal(camel('SKU'), 'sku')
+  assert.ok(camel('HTTPStatus') !== 'hTTPStatus')
+  // A leading word that is not an initialism keeps its tail, so the trailing
+  // one still does too.
+  assert.equal(camel('orderID'), 'orderID')
+})
+
+test('inflect: modelName is Invariant 2, and the six copies did not agree about it', function () {
+  // `product-variants` was `ProductVariant` to the cli rule that GRADES model
+  // names and `Product-variant` to two of the readers that PRODUCE them.
+  const spellings = ['product_variants', 'product-variants', 'productVariants']
+  spellings.forEach(function (s) {
+    assert.equal(modelName(s), 'ProductVariant', 'modelName(' + s + ')')
+  })
+  // The composition is the point: singular first, because `singularize` reads
+  // the compound's head and the head is what loses its `s`.
+  assert.equal(modelName('cookies'), 'Cookie')
+  assert.equal(modelName('statuses'), 'Status')
+  assert.equal(modelName('people'), 'Person')
+})
+
+test('inflect: slug is one rule — every run of non-alphanumerics is one separator', function () {
+  assert.equal(slug('Hello, World!'), 'hello-world')
+  assert.equal(slug('  spaced   out  '), 'spaced-out')
+  assert.equal(slug('already-a-slug'), 'already-a-slug')
+  assert.equal(slug('under_score'), 'under-score')
+  // The divergence the copies had: the `@slug` transform stripped the dot and
+  // answered `v12`, everything else converted it.
+  assert.equal(slug('v1.2'), 'v1-2')
+})
+
+test('inflect: an apostrophe is the one mark that is deleted, not separated', function () {
+  // It sits INSIDE a word where every other mark sits between two. Separating
+  // it gives `it-s`, which is a word that is not there — and this is the case
+  // litestone's own `@slug` test already pinned, so the rule follows the code.
+  assert.equal(slug("It's a C++ thing"), 'its-a-c-thing')
+  assert.equal(slug('Don\u2019t Panic'), 'dont-panic')
+  assert.ok(slug("It's").indexOf('-') === -1)
+})
+
+test('inflect: slug folds an accent rather than dropping the letter', function () {
+  // Dropping it is silent and this runs over names a person typed: `Café` came
+  // back `caf` from all five copies.
+  assert.equal(slug('Café Zoë'), 'cafe-zoe')
+  assert.ok(slug('Café') !== 'caf')
+})
+
+test('inflect: slug takes its separator, because a filename segment wants _', function () {
+  // Litestone names a migration file with this and uses `_`; the count of
+  // separators is a fact about the caller, not about slugs.
+  assert.equal(slug('add product variants', { sep: '_' }), 'add_product_variants')
+  assert.equal(slug('add-product-variants', { sep: '_' }), 'add_product_variants')
+})
+
+test('inflect: slug re-trims after truncating, or the cut leaves a separator', function () {
+  // `.slice(0, 64)` at a call site is the version that stores `strategy-and-`.
+  assert.equal(slug('strategy and execution', { max: 13 }), 'strategy-and')
+  assert.ok(!slug('strategy and execution', { max: 13 }).endsWith('-'))
+  // Under the cap it is untouched.
+  assert.equal(slug('short one', { max: 64 }), 'short-one')
+})
+
+test('inflect: shape answers empty for what is not a name, never [object Object]', function () {
+  // These land in generated source. `undefined` in a model name compiles to a
+  // file nobody can parse, and the failure names a line rather than the input.
+  assert.deepEqual(words(null), [])
+  assert.equal(pascal(undefined), '')
+  assert.equal(camel(null), '')
+  assert.equal(kebab({}), '')
+  assert.equal(slug(null), '')
+})
+
+/* ── Reader ────────────────────────────────────────────────────────── */
+
+test('inflect: humanize is a machine name as a person reads it', function () {
+  // The spellings the two callers actually meet: a schema field name (a
+  // control labelling a field that declared no `@label`) and a stored code (a
+  // picker showing a value whose row it could not read, `FJS-D225`).
+  const cases = [
+    ['firstName',   'First Name'],
+    ['postal_code', 'Postal Code'],
+    ['postal-code', 'Postal Code'],
+    ['sku',         'Sku'],
+    ['dark_blue',   'Dark Blue'],
+    ['title',       'Title'],
+  ]
+  cases.forEach(function ([raw, want]) {
+    assert.equal(humanize(raw), want, 'humanize(' + raw + ')')
+  })
+})
+
+test('inflect: humanize keeps an initialism whole', function () {
+  // `S K U` reads as three letters somebody typed; the whole point of the run
+  // is that it was already a word. This is `words()`, unchanged — the row
+  // exists because title-casing is where the tail gets broken.
+  assert.equal(humanize('SKU'), 'SKU')
+  assert.equal(humanize('orderID'), 'Order ID')
+  assert.equal(humanize('HTTPStatus'), 'HTTP Status')
+})
+
+test('inflect: a digit starts a word for the READER and not for the name', function () {
+  // The one rule that separates the two halves of this kit, asserted as a PAIR
+  // in one row. Deriving humanize from `words()` without the added split reds
+  // the first two; lifting the split into `words()` reds the last three by
+  // renaming a column.
+  assert.equal(humanize('line1'), 'Line 1')
+  assert.equal(humanize('address_line_2'), 'Address Line 2')
+
+  assert.equal(kebab('address1'), 'address1')
+  assert.equal(snake('line1'), 'line1')
+  assert.equal(modelName('address1s'), 'Address1')
+})
+
+test('inflect: humanize answers empty for what is not a string, never [object Object]', function () {
+  // This lands in a LABEL. A wrong word is bad and `[object Object]` on screen
+  // is worse than nothing there.
+  ;[null, undefined, 42, {}, [], true].forEach(function (v) {
+    assert.equal(humanize(v), '')
+  })
+  assert.equal(humanize(''), '')
+  assert.equal(humanize('   '), '')
 })

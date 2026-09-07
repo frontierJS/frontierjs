@@ -11,7 +11,7 @@
 // the dev server is already on.
 
 import {
-  createApp, channels, healthPlugin, manifestPlugin, devtools,
+  createApp, channels, healthPlugin, manifestPlugin, metricsPlugin, devtools, exportPlugin,
   type App,
 } from '@frontierjs/junction'
 
@@ -280,6 +280,28 @@ const app = createApp({
 })
 
 app.configure(healthPlugin())
+
+// What `/metrics` says, KEPT. Every source above answers on request and the
+// merged value used to live for exactly one HTTP response — so no threshold in
+// this app was evaluable, because a rule reading "above 80% for five minutes"
+// had no window to read (`FJS-956`). The models come from the same package:
+// `import "@frontierjs/junction/metrics.lite"` in db/schema.lite.
+app.configure(metricsPlugin())
+
+// ── The governed extract ──────────────────────────────────────────────────
+//
+//   GET /exports                  what this shop's schema says may leave
+//   GET /exports/Order            those rows, as the calling session
+//
+// Nothing is configured here because there is nothing to configure: the two
+// datasets are `@@export` declarations in `db/schema.lite`, and which rows leave
+// is the caller's own gate and row policies, applied because the client is
+// scoped rather than because this route checks anything (`FJS-D228` phase 1b).
+//
+// `--system` and `--include-protected` have no query parameter and must not
+// grow one — those belong to `fli db:export`, where an operator typed them and
+// the manifest recorded it (`FJS-D230`).
+app.configure(exportPlugin())
 
 // ── The devtools console ──────────────────────────────────────────────────
 //

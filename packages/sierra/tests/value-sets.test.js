@@ -31,6 +31,15 @@ vi.mock('@frontierjs/sierra/junction', () => ({
       on: () => {},
       find: async (filter, directives) => {
         LAST = { name, filter, directives }
+        // A lookup of specific values — what a pinned unavailable entry asks —
+        // is answered from a table that HAS the retired row, so the fetched
+        // label is exercised rather than assumed.
+        const lookup = Object.values(filter ?? {}).find(v => v && typeof v === 'object' && Array.isArray(v.in))
+        if (lookup) {
+          const rows = [{ id: 9, label: 'ochre' }, { id: 1, label: 'bug' }]
+            .filter(r => lookup.in.includes(r.label) || lookup.in.includes(r.id))
+          return { data: rows, total: rows.length }
+        }
         return { data: [{ id: 1, label: 'bug' }, { id: 2, label: 'chore' }], total: 2 }
       },
     }),
@@ -65,6 +74,13 @@ const DEFS = {
       tags:   { type: 'array', items: str, 'x-values': values({ strength: 'open' }) },
       // Bound AND a foreign key — the case the ordering is about.
       ownerId: { type: 'integer', 'x-values': values({ set: 'Owners', model: 'Tag', value: 'id' }) },
+      // A DEPENDENT set: the list is that country's states, so the picker
+      // cannot ask for it before a country is chosen.
+      countryId: str,
+      stateId:   { ...str, 'x-values': values({
+        set: 'States', model: 'Tag', value: 'label',
+        dependsOn: { field: 'countryId', match: 'countryId' },
+      }) },
     },
     'x-relations': [{
       field: 'owner', model: 'Tag', type: 'belongsTo',
@@ -179,5 +195,133 @@ describe('there is no set the picker has to over-offer', () => {
   test('a set with no narrowing sends no scope at all', async () => {
     await createResource('tasks').options('tag')
     expect(LAST.filter).toEqual({})
+  })
+})
+
+describe('a dependent set is narrowed by the row being edited', () => {
+  test('the controlling value travels as an ordinary column filter', async () => {
+    // Not a new directive and not a scope: an ordinary filter, which
+    // `$checkWhere` already validates. The Data boundary grades the PAIR, so
+    // the list offered is the list accepted (`FJS-D122`).
+    await createResource('tasks').options('stateId', { record: { countryId: 'US' } })
+    expect(LAST.filter.countryId).toBe('US')
+  })
+
+  test('with no controlling value it answers EMPTY and says what it waits for', async () => {
+    // The unnarrowed list would offer values the boundary refuses — the break
+    // this closes, one screen earlier. `awaiting` is what lets a control say
+    // *choose a country first* without knowing the schema.
+    const out = await createResource('tasks').options('stateId', { record: {} })
+    expect(out.options).toEqual([])
+    expect(out.awaiting).toBe('countryId')
+    expect(LAST).toBe(null)                    // and it asked nobody
+  })
+
+  test('no record at all is the same answer, not the whole list', async () => {
+    const out = await createResource('tasks').options('stateId')
+    expect(out.options).toEqual([])
+    expect(LAST).toBe(null)
+  })
+
+  test('changing the controlling field re-asks rather than serving the cache', async () => {
+    // The narrowing goes into `query` BEFORE the cache key is built, so this
+    // needs no cache invalidation of its own.
+    const r = createResource('tasks')
+    await r.options('stateId', { record: { countryId: 'US' } })
+    expect(LAST.filter.countryId).toBe('US')
+    LAST = null
+    await r.options('stateId', { record: { countryId: 'FR' } })
+    expect(LAST.filter.countryId).toBe('FR')
+  })
+
+  test('an undependent set is unaffected by a record', async () => {
+    // The control beside every row above: a plain set still answers without one.
+    const out = await createResource('tasks').options('tag')
+    expect(out.options.length).toBe(2)
+  })
+})
+
+describe('a stored value the list no longer offers', () => {
+  test('is pinned to the front, disabled and marked', async () => {
+    // A native <select> bound to a value it does not contain shows the FIRST
+    // option instead — the wrong value, silently, and saving writes it.
+    const out = await createResource('tasks').options('tag', { record: { tag: 'ochre' } })
+    expect(out.options[0]).toEqual({
+      value: 'ochre', label: 'ochre (unavailable)', disabled: true, unavailable: true,
+    })
+    expect(out.options.map(o => o.value)).toEqual(['ochre', 'bug', 'chore'])
+  })
+
+  test('the label comes from the row, not from the code', async () => {
+    // The row is read once, unnarrowed — the whole point is that the set's own
+    // scope excludes it.
+    const out = await createResource('tasks').options('ownerId', { record: { ownerId: 9 } })
+    expect(out.options[0].label).toBe('ochre (unavailable)')
+  })
+
+  test('falls back to a humanized code when the row cannot be read', async () => {
+    // A policy that refuses the row, or a row that is genuinely gone. The value
+    // is still shown — `dark_blue` reads as English beside the other options.
+    const out = await createResource('tasks').options('tag', { record: { tag: 'dark_blue' } })
+    expect(out.options[0].label).toBe('Dark Blue (unavailable)')
+  })
+
+  test('a value that IS in the list changes nothing', async () => {
+    // The control beside every row above: this is every render but the one the
+    // feature exists for, and it must cost nothing.
+    const out = await createResource('tasks').options('tag', { record: { tag: 'bug' } })
+    expect(out.options.length).toBe(2)
+    expect(out.options.some(o => o.unavailable)).toBe(false)
+  })
+
+  test('an empty record is untouched, and so is a null value', async () => {
+    for (const record of [{}, { tag: null }, undefined]) {
+      const out = await createResource('tasks').options('tag', record ? { record } : {})
+      expect(out.options.map(o => o.value)).toEqual(['bug', 'chore'])
+    }
+  })
+
+  test('a bound array marks per element', async () => {
+    const out = await createResource('tasks').options('tags', { record: { tags: ['bug', 'ochre'] } })
+    expect(out.options.filter(o => o.unavailable).map(o => o.value)).toEqual(['ochre'])
+  })
+
+  test('two records asking about one field are two questions', async () => {
+    // The held value is part of the cache key, or the second record reads the
+    // first one's pinned entry.
+    const r = createResource('tasks')
+    const a = await r.options('tag', { record: { tag: 'ochre' } })
+    const b = await r.options('tag', { record: { tag: 'bug' } })
+    expect(a.options[0].unavailable).toBe(true)
+    expect(b.options.some(o => o.unavailable)).toBe(false)
+  })
+})
+
+describe('resource.aggregate — the verb, from the client', () => {
+  test('goes out as a collection-level invoke, uncached', async () => {
+    // `invoke` and not `call`: the socket when there is one, HTTP when there is
+    // not, which is what every other service call does. Collection-level, so no
+    // id — the bridge reads the header before it looks for one.
+    const seen = []
+    const svc = { invoke: (...a) => { seen.push(a); return Promise.resolve({ _count: 3 }) } }
+    const res = createResource('tasks')
+    res.service.invoke = svc.invoke
+
+    const a = await res.aggregate({ by: ['status'], _count: true })
+    const b = await res.aggregate({ by: ['status'], _count: true })
+
+    expect(a).toEqual({ _count: 3 })
+    expect(seen.length).toBe(2)                       // asked twice — a total is not cacheable
+    expect(seen[0][0]).toBe('aggregate')
+    expect(seen[0][1]).toBe(null)                     // no id
+    expect(seen[0][2]).toEqual({ by: ['status'], _count: true })
+  })
+
+  test('an empty spec is still a call', async () => {
+    const seen = []
+    const res = createResource('tasks')
+    res.service.invoke = (...a) => { seen.push(a); return Promise.resolve({ _count: 0 }) }
+    await res.aggregate()
+    expect(seen[0][2]).toEqual({})
   })
 })

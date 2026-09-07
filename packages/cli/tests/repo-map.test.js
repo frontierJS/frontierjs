@@ -12,10 +12,13 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs'
+import { execFileSync } from 'child_process'
 import { join }   from 'path'
 import { tmpdir } from 'os'
 
 import { collect, renderHtml, renderJson } from '../core/repo-map.js'
+
+const REPO = new URL('../../..', import.meta.url).pathname
 
 let ROOT
 
@@ -842,5 +845,52 @@ describe('the three registers', () => {
 
     expect(body).toContain('What is wrong')
     expect(body).not.toContain('What is settled')
+  })
+})
+
+// ─── how big is this package ──────────────────────────────────────────────────
+//
+// A reference number, and the only interesting thing about it is which files
+// are counted. A directory walk counts whatever is lying around — basecamp
+// holds SQLite files and a write-ahead log, vscode a built `out/` and two
+// `.vsix` — so this machine and CI would disagree about a committed page.
+// Tracked files are the same everywhere at one commit, and absent where git
+// cannot answer rather than guessed.
+
+describe('tracked file counts', () => {
+
+  test('a package carries the count of files git tracks under it', () => {
+    const { packages } = collect({ root: REPO })
+    const cli = packages.find(p => p.folder === 'cli')
+
+    const tracked = execFileSync('git', ['ls-files', '--', 'packages/cli'], { cwd: REPO, encoding: 'utf8' })
+      .split('\n').filter(Boolean).length
+
+    expect(cli.files).toBe(tracked)
+  })
+
+  // The control: an untracked file must not move it. Without this the walk and
+  // the git read pass the same assertion, and the walk is the broken one.
+  test('an untracked file in a package does not move its count', () => {
+    const before = collect({ root: REPO }).packages.find(p => p.folder === 'config').files
+    const stray  = join(REPO, 'packages', 'config', '_untracked-probe.tmp')
+
+    writeFileSync(stray, 'not tracked\n')
+    try {
+      expect(collect({ root: REPO }).packages.find(p => p.folder === 'config').files).toBe(before)
+    } finally {
+      try { rmSync(stray, { force: true }) } catch {}
+    }
+  })
+
+  test('a tree git cannot answer for gets no number rather than a wrong one', () => {
+    const dir = tree('no-git', {
+      'package.json': pkg({ name: 'ws' }),
+      'packages/thing/package.json': pkg({ name: 'thing', version: '1.0.0' }),
+      'packages/thing/src/a.js': '// one\n',
+    })
+    // `tree()` writes under the OS temp dir, which is not a git repository.
+    const thing = collect({ root: dir }).packages.find(p => p.folder === 'thing')
+    expect(thing.files).toBeUndefined()
   })
 })

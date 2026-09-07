@@ -22,7 +22,7 @@
   // bind:this exposes: focus()
 
   import Field from './Field.mesa'
-  import { nameToLabel, uid, resolveError, resolveRule, stated, nativeValidationGuard, lockedBy } from '../../utils.js'
+  import { humanize, uid, resolveError, resolveRule, stated, nativeValidationGuard, lockedBy } from '../../utils.js'
 
   // ── Core props ────────────────────────────────────────────────────────────
 

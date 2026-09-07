@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-39 model(s) · 19 enum(s) · 2 database(s) · 1 value set(s)
+42 model(s) · 20 enum(s) · 2 database(s) · 2 value set(s)
 audit → logger · main → sqlite
 ```
 
@@ -27,6 +27,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `InvoiceStatus` | `draft` · `issued` · `paid` · `void` |
 | `JournalSource` | `payroll` · `sale` |
 | `LedgerAccount` | `discountsAllowed` · `netPayControl` · `niControl` · `payeControl` · `pensionControl` · `receivables` · `sales` · `shippingIncome` · `taxPayable` · `wagesExpense` |
+| `MetricType` | `counter` · `gauge` · `histogram` |
 | `NotificationContext` | `Order` |
 | `OrderStatus` | `cancelled` · `paid` · `pending` · `refunded` · `shipped` |
 | `PayBasis` | `hourly` · `salary` |
@@ -48,6 +49,7 @@ column bound to it, so it is a fact about the set rather than about a field.
 | Set | Source | Value | Scope | Where |
 | --- | --- | --- | --- | --- |
 | `ProductColor` | `Color` | `name` | `current` | — |
+| `ProductVariants` | `ProductVariant` | `id` | — | — |
 
 ## Models
 
@@ -73,6 +75,8 @@ table `cart` · db `main` · gate `0.0.0.5`
 | `userId` | `String` | yes | — | — |
 
 ```
+@@index(discountId)
+@@index(shippingMethodId)
 @@allow('read', token == auth().cartToken)
 @@allow('update', token == auth().cartToken)
 ```
@@ -95,6 +99,7 @@ table `cart_line` · db `main` · gate `0.0.0.0`
 
 ```
 @@unique(cartId, variantId)
+@@index(variantId)
 @@allow('create', token == auth().cartToken)
 @@allow('delete', token == auth().cartToken)
 @@allow('read', token == auth().cartToken)
@@ -112,6 +117,7 @@ table `color` · db `main` · gate `0.4.4.5`
 | `id` | `Int` | no | — | id |
 | `name` | `String` | no | — | unique · **required on write** |
 | `retired` | `Boolean` | no | `0` | — |
+| `sortOrder` | `Int` | no | `999` | — |
 
 ### `Credential`
 
@@ -151,6 +157,7 @@ table `credit_note` · db `main` · gate `1.8.8.8`
 | `userId` | `String` | yes | — | @system |
 
 ```
+@@index(invoiceId)
 @@allow('read', auth().isStaff)
 @@allow('read', userId == auth().id)
 ```
@@ -273,6 +280,11 @@ table `inventory_movement` · db `main` · gate `5.5.9.9`
 | `variant` | `ProductVariant` | — | — | relation |
 | `variantId` | `Int` | no | — | **required on write** |
 
+```
+@@index(reference, kind)
+@@index(variantId)
+```
+
 ### `Invoice`
 
 table `invoice` · db `main` · gate `1.8.8.8`
@@ -300,6 +312,8 @@ table `invoice` · db `main` · gate `1.8.8.8`
 | `userId` | `String` | yes | — | @system |
 
 ```
+@@index(customerId)
+@@index(subscriptionId)
 @@check(total = subtotal + tax)
 @@allow('read', auth().isStaff)
 @@allow('read', userId == auth().id)
@@ -327,6 +341,7 @@ table `invoice_line` · db `main` · gate `1.8.8.8`
 | `userId` | `String` | yes | — | @system |
 
 ```
+@@index(invoiceId)
 @@allow('read', auth().isStaff)
 @@allow('read', userId == auth().id)
 ```
@@ -349,6 +364,8 @@ table `journal_entry` · db `main` · gate `5.8.9.9`
 | `source` | `JournalSource` | no | — | **required on write** |
 
 ```
+@@index(orderId)
+@@index(payRunId)
 @@check((("orderId" IS NOT NULL) + ("payRunId" IS NOT NULL)) = 1)
 ```
 
@@ -365,7 +382,56 @@ table `journal_line` · db `main` · gate `5.8.9.9`
 | `id` | `Int` | no | — | id |
 
 ```
+@@index(entryId)
 @@check(amount != 0)
+```
+
+### `MetricHour`
+
+table `metric_hour` · db `main` · gate `8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `count` | `Int` | no | — | **required on write** |
+| `hour` | `Int` | no | — | id |
+| `increase` | `Float` | yes | — | — |
+| `max` | `Float` | no | — | **required on write** |
+| `min` | `Float` | no | — | **required on write** |
+| `series` | `MetricSeries` | — | — | relation |
+| `seriesId` | `String` | no | — | id |
+| `sum` | `Float` | no | — | **required on write** |
+
+### `MetricPoint`
+
+table `metric_point` · db `main` · gate `8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `at` | `Int` | no | — | id |
+| `series` | `MetricSeries` | — | — | relation |
+| `seriesId` | `String` | no | — | id |
+| `value` | `Float` | no | — | **required on write** |
+
+### `MetricSeries`
+
+table `metric_series` · db `main` · gate `8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `hours` | `MetricHour[]` | — | — | relation |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `labels` | `Json` | no | `'{}'` | — |
+| `labelsKey` | `String` | no | — | unique · **required on write** |
+| `lastSeenAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `name` | `String` | no | — | **required on write** |
+| `points` | `MetricPoint[]` | — | — | relation |
+| `type` | `MetricType` | no | `'gauge'` | — |
+| `unit` | `String` | yes | — | — |
+
+```
+@@index(lastSeenAt)
+@@index(name)
 ```
 
 ### `Notification`
@@ -436,6 +502,7 @@ table `order` · db `main` · gate `1.4.4.5` · @@softDelete(cascade)
 | `userId` | `String` | yes | — | @system |
 
 ```
+@@index(customerId)
 @@check(discount <= subtotal)
 @@check(subtotal = 0 OR total = subtotal - discount + shipping + tax)
 @@allow('read', auth().isStaff)
@@ -467,6 +534,7 @@ table `order_line` · db `main` · gate `1.8.8.8` · @@softDelete
 
 ```
 @@index(orderId)
+@@index(variantId)
 @@allow('read', auth().isStaff)
 @@allow('read', order.userId == auth().id)
 ```
@@ -520,6 +588,7 @@ table `payment` · db `main` · gate `1.8.8.9`
 ```
 @@index(invoiceId)
 @@index(orderId)
+@@index(paymentMethodId)
 @@check((("orderId" IS NOT NULL) + ("invoiceId" IS NOT NULL)) = 1)
 @@allow('read', auth().isStaff)
 @@allow('read', userId == auth().id)
@@ -638,6 +707,8 @@ table `payslip` · db `main` · gate `5.5.8.8`
 
 ```
 @@unique(employeeId, payRunId)
+@@index(employeeId)
+@@index(payWindowId)
 @@check(net = gross - deductions)
 ```
 
@@ -660,6 +731,9 @@ table `payslip_line` · db `main` · gate `5.5.9.8`
 | `rateId` | `Int` | yes | — | — |
 
 ```
+@@index(correctsPayRunId)
+@@index(payslipId)
+@@index(rateId)
 @@check(amount != 0)
 ```
 
@@ -680,6 +754,7 @@ table `pay_window` · db `main` · gate `5.5.5.5`
 
 ```
 @@unique(employeeId), where: "effectiveTo" IS NULL
+@@index(employeeId, effectiveFrom)
 @@check(effectiveTo IS NULL OR effectiveFrom < effectiveTo)
 ```
 
@@ -715,6 +790,7 @@ table `plan_version` · db `main` · gate `0.5.5.5`
 
 ```
 @@unique(planId), where: "effectiveTo" IS NULL
+@@index(planId, effectiveFrom)
 @@check(effectiveTo IS NULL OR effectiveFrom < effectiveTo)
 ```
 
@@ -755,7 +831,12 @@ table `product_image` · db `main` · gate `0.4.4.5` · @@softDelete
 | `product` | `Product` | — | — | relation |
 | `productId` | `Int` | no | — | **required on write** |
 | `variant` | `ProductVariant` | — | — | relation |
-| `variantId` | `Int` | yes | — | — |
+| `variantId` | `Int` | yes | — | `@values(ProductVariants, required)` |
+
+```
+@@index(productId)
+@@index(variantId)
+```
 
 ### `ProductVariant`
 
@@ -866,6 +947,8 @@ table `subscription` · db `main` · gate `1.4.4.5`
 | `userId` | `String` | yes | — | @system |
 
 ```
+@@index(customerId)
+@@index(planVersionId)
 @@allow('read', auth().isStaff)
 @@allow('read', userId == auth().id)
 @@allow('update', auth().isStaff)

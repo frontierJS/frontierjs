@@ -713,6 +713,16 @@ export interface ServiceCaller {
    *   app.service('posts').find({ status: 'open' }, { directives: { limit: 10 } })
    */
   find(query?: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
+  /**
+   * Counts, sums and groups. `by` makes it a group-by and the answer is the
+   * list envelope; without one it is a single row (`FJS-D226`).
+   *
+   *   app.service('orders').aggregate({ where: { status: 'paid' }, _sum: { total: true } })
+   *
+   * The spec is the body an HTTP caller sends, graded by the same allow-list —
+   * one shape whether the caller is a hook, a job or a browser.
+   */
+  aggregate(spec?: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
   get(id: string | number, opts?: CallOptions): Promise<unknown>
   get(query: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
   create(data: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
@@ -1045,6 +1055,12 @@ export function createApp(opts: AppOptions = {}): App {
       const caller: ServiceCaller = {
         find(query?: Record<string, unknown>, opts?: CallOptions) {
           return call(makeCtx('find', null, null, query ?? {}, opts))
+        },
+        // The spec travels as DATA, which is where an HTTP caller puts it —
+        // `parseAggregate` reads one shape whoever is asking, and ctx.query
+        // stays what every hook narrows.
+        aggregate(spec?: Record<string, unknown>, opts?: CallOptions) {
+          return call(makeCtx('aggregate' as ServiceMethod, null, spec ?? {}, {}, opts))
         },
         get(idOrQuery: string | number | Record<string, unknown>, opts?: CallOptions) {
           if (typeof idOrQuery === 'object') {

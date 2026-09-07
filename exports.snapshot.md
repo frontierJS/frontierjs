@@ -179,6 +179,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./auth` | `src/auth/types.ts` | yes |
 | exports | `./outbox.lite` | `db/outbox.lite` | yes |
 | exports | `./backfill.lite` | `db/backfill.lite` | yes |
+| exports | `./metrics.lite` | `db/metrics.lite` | yes |
 | bin | `junction` | `tools/cli.ts` | yes |
 | main | `main` | `index.ts` | yes |
 
@@ -197,6 +198,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./parser (import)` | `src/core/parser.js` | yes |
 | exports | `./import (import)` | `src/import/index.js` | yes |
 | exports | `./jsonschema (import)` | `src/jsonschema.js` | yes |
+| exports | `./export (import)` | `src/export.js` | yes |
 | exports | `./ddl (import)` | `src/core/ddl.js` | yes |
 | exports | `./testing (import)` | `src/testing.js` | yes |
 | exports | `./testing (types)` | `src/testing.d.ts` | yes |

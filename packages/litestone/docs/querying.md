@@ -535,9 +535,24 @@ await db.account.update({ where: { id }, data: {
 **It wears a `$` and the others do not.** The rule above — *the declared type
 decides* — is what makes a bare `increment` safe, because a numeric column
 cannot hold an object. A `Json` column can, so a document's own key could be
-spelled `merge` and there would be no way to tell. (That ambiguity is also why
-`{ doc: { increment: 1 } }` on a `Json` column stores `{"increment":1}` as the
-document, which is correct and is a trap.)
+spelled `merge` and there would be no way to tell.
+
+> **Watch out: on a `Json` column, an operator name is a document key.**
+>
+> ```js
+> await db.a.update({ where: { id }, data: { doc: { increment: 1 } } })
+> // doc is now {"increment":1} — the document was replaced by the operator
+> await db.a.update({ where: { id }, data: { doc: { push: 'x' } } })
+> // doc is now {"push":"x"}
+> ```
+>
+> This is the rule above doing its job — the column decides, and a `Json`
+> column carries objects, so these are values and not operators. Nothing warns,
+> because nothing can: `{ increment: 1 }` is a document somebody might mean.
+>
+> The five bare names (`increment`, `decrement`, `multiply`, `divide`, `push`)
+> are the ones to watch. `$merge` is the only operator a `Json` column takes,
+> and it is spelled with a `$` for exactly this reason.
 
 It is RFC 7396 merge-patch, so three of its rules are worth knowing before you
 reach for it:

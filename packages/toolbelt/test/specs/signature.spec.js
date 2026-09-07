@@ -234,6 +234,67 @@ test('signature: the clock and the nonce are the caller\'s, and it is refused wi
 })
 
 /** The harness's `throws` is synchronous; a rejected promise needs its own. */
+/* ── The unit ──────────────────────────────────────────────────────── */
+
+// This scheme signs SECONDS, and until `FJS-1001` it only said so in the error
+// a caller who passed NOTHING would see. Both units are a finite number, so a
+// `Date.now()` on both sides signed and verified perfectly with the tolerance
+// meaning 300ms — a webhook a third of a second old refused as clock skew, and
+// reported as `3600000s out` for a request one hour old.
+
+test('signature: a millisecond timestamp is refused by name, and names the way out', async function () {
+  await assertRejects(
+    () => signRequest({ secret: 's', method: 'POST', path: '/p', timestamp: Date.now(), nonce: 'n' }),
+    /milliseconds.*divide by 1000/is)
+})
+
+test('signature: a receiver passing its own clock in milliseconds is refused too', async function () {
+  // The half a signer-side check cannot reach: the signature is valid, and it
+  // is the RECEIVER holding the wrong unit. Refusing every legitimate request
+  // reads as a broken signer, which is the wrong place to spend an outage.
+  const sec = Math.floor(Date.now() / 1000)
+  const headers = lower(await signRequest({ secret: 's', method: 'POST', path: '/p', timestamp: sec, nonce: 'n' }))
+
+  await assertRejects(
+    () => verifyRequest({ secret: 's', method: 'POST', path: '/p', body: '', headers, now: Date.now() }),
+    /now looks like milliseconds/i)
+})
+
+test('signature: a millisecond timestamp in the HEADER answers, it does not throw', async function () {
+  // The asymmetry is the point and it is not tidiness: `now` is the caller's own
+  // argument and a throw is right for it, while the header is remote input and a
+  // receiver must not be crashed by what a caller put in one.
+  const sec = Math.floor(Date.now() / 1000)
+  const headers = lower(await signRequest({ secret: 's', method: 'POST', path: '/p', timestamp: sec, nonce: 'n' }))
+  headers['x-fjs-timestamp'] = String(Date.now())
+
+  const out = await verifyRequest({ secret: 's', method: 'POST', path: '/p', body: '', headers, now: sec })
+  assert.equal(out.ok, false)
+  assert.match(out.reason, /milliseconds/i)
+})
+
+test('signature: seconds still round-trip, and the skew is reported in its own unit', async function () {
+  // The control. A guard refusing every large number would satisfy the three
+  // rows above and break every caller in this repo — conduit and outpost both
+  // sign `Math.floor(Date.now() / 1000)`.
+  const sec = Math.floor(Date.now() / 1000)
+  const headers = lower(await signRequest({ secret: 's', method: 'POST', path: '/p', timestamp: sec, nonce: 'n' }))
+  const at = (now) => verifyRequest({ secret: 's', method: 'POST', path: '/p', body: '', headers, now })
+
+  assert.equal((await at(sec)).ok, true)
+  assert.equal((await at(sec + 40)).ok, true, '40s of drift is inside the 300s tolerance')
+
+  const out = await at(sec + 400)
+  assert.equal(out.ok, false)
+  // 400, not 400000: the number and the letter beside it have to agree.
+  assert.match(out.reason, /timestamp is 400s out, tolerance is 300s/)
+})
+
+/** Headers as a receiver reads them. */
+function lower(headers) {
+  return Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]))
+}
+
 async function assertRejects(fn, pattern) {
   let threw = null
   try { await fn() } catch (e) { threw = e }

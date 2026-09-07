@@ -28,6 +28,8 @@ export interface WhereBase {
 
 export type VerificationPurpose = 'passwordReset' | 'emailVerify' | 'oauthLink'
 
+export type MetricType = 'counter' | 'gauge' | 'histogram'
+
 export type AccountType = 'individual' | 'organization'
 
 export type WorkspaceType = 'personal' | 'team' | 'enterprise'
@@ -66,7 +68,11 @@ export type RunStatus = 'pending' | 'running' | 'success' | 'failed' | 'timeout'
 
 export type AlertSeverity = 'info' | 'warning' | 'critical'
 
-export type AlertSubject = 'server' | 'volume'
+export type AlertSubject = 'server' | 'volume' | 'series'
+
+export type ComparisonOp = 'gt' | 'gte' | 'lt' | 'lte'
+
+export type AlertStatus = 'firing' | 'resolved'
 
 export type ActorKind = 'user' | 'api_key' | 'system' | 'support'
 
@@ -81,6 +87,8 @@ export type ParamGenerator = 'random_hex_16' | 'random_hex_32' | 'random_hex_64'
 export type BackupKind = 'manual' | 'scheduled'
 
 export type BackupDestination = 'local' | 's3'
+
+export type NotificationContext = 'Deployment' | 'AlertEvent' | 'JobRun' | 'Workspace'
 
 export type NotificationKind = 'deploy_success' | 'deploy_failed' | 'alert_firing' | 'alert_resolved' | 'member_joined' | 'job_failed' | 'weekly_digest'
 
@@ -409,6 +417,139 @@ export interface OauthFlowWhere extends WhereBase {
 export type OauthFlowOrderBy =
   | { [K in keyof Omit<OauthFlow, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<OauthFlow, never>]?: OrderDir }>
+
+// ─── MetricSeries ────────────────────────────────────────────────
+
+export interface MetricSeries {
+  id: string
+  name: string
+  labels: unknown
+  labelsKey: string
+  type: MetricType
+  unit?: string | null
+  lastSeenAt: string
+  createdAt: string
+}
+
+export interface MetricSeriesCreate {
+  id?: string
+  name: string
+  labels?: unknown
+  labelsKey: string
+  type?: MetricType
+  unit?: string | null
+  lastSeenAt?: string
+}
+
+export interface MetricSeriesUpdate {
+  id?: string
+  name?: string
+  labels?: unknown
+  labelsKey?: string
+  type?: MetricType
+  unit?: string | null
+  lastSeenAt?: string
+}
+
+export interface MetricSeriesWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  name?: string | WhereOp<string> | null
+  labels?: unknown | WhereOp<unknown> | null
+  labelsKey?: string | WhereOp<string> | null
+  type?: MetricType | WhereOp<MetricType> | null
+  unit?: string | WhereOp<string> | null
+  lastSeenAt?: string | WhereOp<string> | null
+  createdAt?: string | WhereOp<string> | null
+  AND?: MetricSeriesWhere[]
+  OR?:  MetricSeriesWhere[]
+  NOT?: MetricSeriesWhere
+}
+
+export type MetricSeriesOrderBy =
+  | { [K in keyof Omit<MetricSeries, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<MetricSeries, never>]?: OrderDir }>
+
+// ─── MetricPoint ─────────────────────────────────────────────────
+
+export interface MetricPoint {
+  seriesId: string
+  at: number
+  value: number
+}
+
+export interface MetricPointCreate {
+  seriesId?: string
+  at?: number
+  value: number
+}
+
+export interface MetricPointUpdate {
+  seriesId?: string
+  at?: number
+  value?: number
+}
+
+export interface MetricPointWhere extends WhereBase {
+  seriesId?: string | WhereOp<string> | null
+  at?: number | WhereOp<number> | null
+  value?: number | WhereOp<number> | null
+  AND?: MetricPointWhere[]
+  OR?:  MetricPointWhere[]
+  NOT?: MetricPointWhere
+}
+
+export type MetricPointOrderBy =
+  | { [K in keyof Omit<MetricPoint, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<MetricPoint, never>]?: OrderDir }>
+
+// ─── MetricHour ──────────────────────────────────────────────────
+
+export interface MetricHour {
+  seriesId: string
+  hour: number
+  min: number
+  max: number
+  sum: number
+  count: number
+  increase?: number | null
+}
+
+export interface MetricHourCreate {
+  seriesId?: string
+  hour?: number
+  min: number
+  max: number
+  sum: number
+  count: number
+  increase?: number | null
+}
+
+export interface MetricHourUpdate {
+  seriesId?: string
+  hour?: number
+  min?: number
+  max?: number
+  sum?: number
+  count?: number
+  increase?: number | null
+}
+
+export interface MetricHourWhere extends WhereBase {
+  seriesId?: string | WhereOp<string> | null
+  hour?: number | WhereOp<number> | null
+  min?: number | WhereOp<number> | null
+  max?: number | WhereOp<number> | null
+  sum?: number | WhereOp<number> | null
+  count?: number | WhereOp<number> | null
+  increase?: number | WhereOp<number> | null
+  AND?: MetricHourWhere[]
+  OR?:  MetricHourWhere[]
+  NOT?: MetricHourWhere
+}
+
+export type MetricHourOrderBy =
+  | { [K in keyof Omit<MetricHour, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<MetricHour, never>]?: OrderDir }>
 
 // ─── User ────────────────────────────────────────────────────────
 
@@ -2439,7 +2580,9 @@ export interface AlertRule {
   description?: string | null
   severity: AlertSeverity
   metricName: string
-  condition: unknown
+  operator: ComparisonOp
+  threshold: number
+  forMinutes: number
   isActive: boolean
   /** @version */
   version: number
@@ -2454,7 +2597,9 @@ export interface AlertRuleCreate {
   description?: string | null
   severity?: AlertSeverity
   metricName: string
-  condition?: unknown
+  operator?: ComparisonOp
+  threshold: number
+  forMinutes?: number
   isActive?: boolean
 }
 
@@ -2465,7 +2610,9 @@ export interface AlertRuleUpdate {
   description?: string | null
   severity?: AlertSeverity
   metricName?: string
-  condition?: unknown
+  operator?: ComparisonOp
+  threshold?: number
+  forMinutes?: number
   isActive?: boolean
   version: number
 }
@@ -2477,7 +2624,9 @@ export interface AlertRuleWhere extends WhereBase {
   description?: string | WhereOp<string> | null
   severity?: AlertSeverity | WhereOp<AlertSeverity> | null
   metricName?: string | WhereOp<string> | null
-  condition?: unknown | WhereOp<unknown> | null
+  operator?: ComparisonOp | WhereOp<ComparisonOp> | null
+  threshold?: number | WhereOp<number> | null
+  forMinutes?: number | WhereOp<number> | null
   isActive?: boolean | WhereOp<boolean> | null
   version?: number | WhereOp<number> | null
   createdAt?: string | WhereOp<string> | null
@@ -2531,7 +2680,7 @@ export type AlertRuleChannelOrderBy =
 export interface AlertEvent {
   id: string
   ruleId: string
-  status: string
+  status: AlertStatus
   severity: AlertSeverity
   subjectType: AlertSubject
   subjectId: string
@@ -2546,7 +2695,7 @@ export interface AlertEvent {
 export interface AlertEventCreate {
   id?: string
   ruleId: string
-  status?: string
+  status?: AlertStatus
   severity: AlertSeverity
   subjectType: AlertSubject
   subjectId: string
@@ -2561,7 +2710,7 @@ export interface AlertEventCreate {
 export interface AlertEventUpdate {
   id?: string
   ruleId?: string
-  status?: string
+  status?: AlertStatus
   severity?: AlertSeverity
   subjectType?: AlertSubject
   subjectId?: string
@@ -2576,7 +2725,7 @@ export interface AlertEventUpdate {
 export interface AlertEventWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   ruleId?: string | WhereOp<string> | null
-  status?: string | WhereOp<string> | null
+  status?: AlertStatus | WhereOp<AlertStatus> | null
   severity?: AlertSeverity | WhereOp<AlertSeverity> | null
   subjectType?: AlertSubject | WhereOp<AlertSubject> | null
   subjectId?: string | WhereOp<string> | null
@@ -3177,6 +3326,57 @@ export type HubConfigOrderBy =
   | { [K in keyof Omit<HubConfig, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<HubConfig, never>]?: OrderDir }>
 
+// ─── Notification ────────────────────────────────────────────────
+
+export interface Notification {
+  id: string
+  userId: string
+  type: string
+  data: unknown
+  contextType?: NotificationContext | null
+  contextId?: string | null
+  readAt?: string | null
+  createdAt: string
+}
+
+export interface NotificationCreate {
+  id?: string
+  userId: string
+  type: string
+  data: unknown
+  contextType?: NotificationContext | null
+  contextId?: string | null
+  readAt?: string | null
+}
+
+export interface NotificationUpdate {
+  id?: string
+  userId?: string
+  type?: string
+  data?: unknown
+  contextType?: NotificationContext | null
+  contextId?: string | null
+  readAt?: string | null
+}
+
+export interface NotificationWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  userId?: string | WhereOp<string> | null
+  type?: string | WhereOp<string> | null
+  data?: unknown | WhereOp<unknown> | null
+  contextType?: NotificationContext | WhereOp<NotificationContext> | null
+  contextId?: string | WhereOp<string> | null
+  readAt?: string | WhereOp<string> | null
+  createdAt?: string | WhereOp<string> | null
+  AND?: NotificationWhere[]
+  OR?:  NotificationWhere[]
+  NOT?: NotificationWhere
+}
+
+export type NotificationOrderBy =
+  | { [K in keyof Omit<Notification, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<Notification, never>]?: OrderDir }>
+
 // ─── NotificationPreference ──────────────────────────────────────
 
 export interface NotificationPreference {
@@ -3231,6 +3431,9 @@ export interface ServiceTypes {
   sessions: Session
   verifications: Verification
   oauthFlows: OauthFlow
+  metricSerieses: MetricSeries
+  metricPoints: MetricPoint
+  metricHours: MetricHour
   users: User
   accounts: Account
   workspaces: Workspace
@@ -3272,6 +3475,7 @@ export interface ServiceTypes {
   registryImages: RegistryImage
   backups: Backup
   hubConfigs: HubConfig
+  notifications: Notification
   notificationPreferences: NotificationPreference
 }
 
@@ -3365,6 +3569,9 @@ export interface LitestoneClient {
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere>
   readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere>
   readonly oauthFlow: TableClient<OauthFlow, OauthFlowCreate, OauthFlowUpdate, OauthFlowWhere>
+  readonly metricSeries: TableClient<MetricSeries, MetricSeriesCreate, MetricSeriesUpdate, MetricSeriesWhere>
+  readonly metricPoint: TableClient<MetricPoint, MetricPointCreate, MetricPointUpdate, MetricPointWhere>
+  readonly metricHour: TableClient<MetricHour, MetricHourCreate, MetricHourUpdate, MetricHourWhere>
   readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere>
   readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere>
   readonly workspace: TableClient<Workspace, WorkspaceCreate, WorkspaceUpdate, WorkspaceWhere>
@@ -3406,6 +3613,7 @@ export interface LitestoneClient {
   readonly registryImage: TableClient<RegistryImage, RegistryImageCreate, RegistryImageUpdate, RegistryImageWhere>
   readonly backup: TableClient<Backup, BackupCreate, BackupUpdate, BackupWhere>
   readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere>
+  readonly notification: TableClient<Notification, NotificationCreate, NotificationUpdate, NotificationWhere>
   readonly notificationPreference: TableClient<NotificationPreference, NotificationPreferenceCreate, NotificationPreferenceUpdate, NotificationPreferenceWhere>
 
   // Auth scoping

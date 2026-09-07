@@ -325,7 +325,7 @@ describe('methods: declared on createBaseService', () => {
       name: 'audit',
       ...(createBaseService({ model: 'auditEvent', methods: 'readOnly', db: () => ({}) }) as unknown as Record<string, unknown>),
     } as never)
-    expect([...(svc as { _methods: Set<string> })._methods].sort()).toEqual(['find', 'get'])
+    expect([...(svc as { _methods: Set<string> })._methods].sort()).toEqual(['aggregate', 'find', 'get'])
   })
 
   it('absent still means everything', () => {

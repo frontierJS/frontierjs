@@ -1,5 +1,97 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-07 — a picker offers what you reached for last, first
+
+`recentHead` resolves a set's declared `recent(Model.column, clock)` into the
+first entries of the list, each marked `recent: true` so a control can draw a
+separator (`FJS-964`).
+
+**Two bounded queries, not a re-sort.** A picker's list is capped, so ranking
+the whole thing by recency would change WHICH rows are offered rather than only
+their order — the property this axis was separated from strength to keep. The
+rank is an `aggregate` over the binding's own model, the rows come back through
+the SET's own filter (scope and the dependent narrowing included, or a retired
+value returns at the top of the list it was retired out of), and the page
+beneath drops whatever the head showed. The total is the list's and does not
+grow.
+
+**Nothing is stored and nothing is per-app.** The rank reads through the
+caller's own service, so what a person sees at the top is what their own `find`
+would answer. A head is skipped for a search and for stated `directives` — both
+are the caller saying what they want — and an unreachable rank leaves the plain
+list with one warning naming the set.
+
+## 2026-09-07 — one owner for the order a picker offers
+
+`optionsOrder(order, shown)` — the declared `x-values.order` when the set states
+one, the display column ascending when it does not (`FJS-D121`). Three call
+sites answered that separately with the same literal, which is why a set could
+not state its own order anywhere.
+
+**`optionsQuery` reads like the place and is not.** `options(field)` asks the
+field's SOURCE model, whose resource is minted inside `relatedResource` carrying
+nobody's declaration — so an app had no way to change a picker's order at all,
+and the suite could not see it: it asserts `getOptions()`, which an app calls
+directly, and never the `options()` crossing. `tests/options-order.test.js` is
+that crossing, and every row is asserted beside the default, because a mechanism
+that sent the declared order and one that sent nothing are the same observation
+from a test that only asks about the declared case.
+
+A literal set is unchanged and needed no work: its members travel in the order
+they were written, which is now stated as the rule rather than left as an
+accident of array order.
+
+## 2026-09-06 — `resource.aggregate()`
+
+`orders.aggregate({ by: ['status'], _count: true })` — counts, sums and groups
+from the client (`FJS-D226`), through `invoke` so it takes the socket when there
+is one and HTTP when there is not, like every other service call. Collection
+level, so no id.
+
+**Uncached, deliberately.** `options()` caches because a picker's list is
+stable; a total is the opposite, and every caller of this wants the number as it
+is now.
+
+## 2026-09-06 — a stored value the list cannot offer is pinned, not dropped
+
+Three ways a column's value falls out of its own list — the row was retired by
+the set's `@@scope`, the row is soft-deleted, or a controlling field narrowed it
+out — and one behavior for all three (`FJS-D225`). A native `<select>` bound to
+a value it does not contain shows the FIRST option instead: the wrong value,
+silently, and saving writes it.
+
+`options()` appends the held value as `{ disabled: true, unavailable: true }`,
+pinned to the front. It costs nothing on every render but the one it exists for:
+the extra read happens only when the value is missing from the list, and it is
+still the caller's own read, so a row policy that refuses it simply does not
+answer. The label falls back to `humanize()` — `dark_blue` reads as English
+beside the other options, and an id falls through to itself, since
+`17 (unavailable)` is worse than the bug.
+
+**The held value is part of the options cache key**, or two records asking about
+one field read each other's pinned entry.
+
+Covers declared sets and relations alike, marks per element for a bound array,
+and the word is generic: the seam cannot know whether the cause was a retirement
+or a narrowing, and *archived* over a value that is merely not-in-France is a
+word that half-fits.
+
+## 2026-09-06 — a dependent picker narrows itself, and says what it is waiting for
+
+`resource.options()` takes the draft `record` and, for a column whose set
+declares `dependsOn`, adds the controlling value as an ordinary column filter —
+the same narrowing the Data boundary grades the pair by, so what is offered is
+what is accepted (`FJS-D122`). It goes into `query` before the cache key is
+built, so changing the controlling field re-asks with no invalidation of its own.
+
+**With no controlling value it answers EMPTY and asks nobody**, carrying
+`awaiting: '<field>'`. The unnarrowed list would put values on screen that the
+boundary refuses — the break this closes, one screen earlier — and *choose a
+country first* is then derived rather than written.
+
+`<Form>` passes its own `record` into `optionsFor`, so a control asks for its
+options exactly as before.
+
 ## 2026-09-05 — a static build published 205 KB no page could load (`FJS-904`)
 
 `target: 'static'` runs the SPA client build and then prerenders over the top of

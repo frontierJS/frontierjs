@@ -4,24 +4,28 @@
 // Mounted at /alerts. Custom methods dispatch on X-Service-Method:
 //   events · attachChannel · detachChannel · acknowledge · resolve
 //
-// `AlertRule` and `AlertEvent` have been in db/schema.lite since the Data realm
-// was rebuilt and had **no API surface at all** — two models nothing could
-// read. This is the service, not the evaluator: nothing here decides that a
-// rule has been breached. That belongs with whatever measures (an outpost
-// heartbeat, an observability adapter), and is deliberately not invented here,
-// because a rule that fires from the browser's idea of the truth is theater.
-// `AlertEvent` rows are therefore written by the system today and read here.
+// This is the service, not the evaluator. What decides a rule has been breached
+// is `jobs/alert-evaluate.job.ts`, a cron reading the metric store — never a
+// browser, because a rule that fires from the browser's idea of the truth is
+// theater. `AlertEvent` rows are written by the system and read here.
 //
 // The split in the schema is the split in the hooks: a rule is authored by a
 // person (admin), an event is FIRED by the system and ACKNOWLEDGED by a person.
 
-import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict, $, isStale } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 
 export function createAlertsService(app: BasecampApp) {
+
+  /** The metric models are `@@gate("8")` and `@@tenant(none)` — a reading is
+   *  about this process and belongs to nobody's workspace. So a scoped client
+   *  has nothing to say to them, and the bypass is written out rather than
+   *  assumed. Nothing from a series reaches the response but its name, type and
+   *  freshness; the rows themselves are `metrics-store`'s, behind the hub gate. */
+  const sys = (): any => $.db.asSystem()
 
   /** An event belongs to a rule, and the rule carries the workspace — so the
    *  tenancy check is one join away and must never be skipped. AlertEvent has
@@ -55,7 +59,19 @@ export function createAlertsService(app: BasecampApp) {
       include: { channel: true },
       orderBy: { createdAt: 'asc' },
     })
-    return { ...rule, recent_events, channels }
+    // WHETHER THE METRIC EXISTS, which is the one thing a rule cannot say
+    // about itself. `metricName` is not a foreign key — a series is minted by
+    // the first scrape that sees it, so a rule legitimately precedes the row it
+    // names — and the cost of that is a rule watching a typo, which never fires
+    // and looks exactly like a threshold nobody crossed. `null` here means the
+    // evaluator has nothing to read; `stale` means it has nothing NEW to read.
+    const found = await sys().metricSeries.findFirst({ where: { labelsKey: rule.metricName } })
+    const series = found
+      ? { name: found.name, type: found.type, unit: found.unit,
+          lastSeenAt: found.lastSeenAt, stale: isStale(found.lastSeenAt) }
+      : null
+
+    return { ...rule, recent_events, channels, series }
   }
 
   return createService({
@@ -93,15 +109,15 @@ export function createAlertsService(app: BasecampApp) {
     },
 
     async create() {
-      // No severity check here. `AlertSeverity` is an enum in db/schema.lite as
-      // of 2026-08-06, so the column carries a CHECK, `autoValidate` refuses a
-      // bad value before this runs, and the UI builds its options from the same
-      // declaration. This service used to own that list — and disagreed with
-      // the schema's own `@default("medium")`, which it would have rejected.
-      const data = $.data as Record<string, unknown>
-      if (!data.metricName) throw new BadRequest('metricName is required')
-
-      return db().alertRule.create({ data })
+      // Nothing is checked here, and every part of that is a declaration
+      // somewhere else. `severity` and `operator` are enums, so the column
+      // carries a CHECK and `autoValidate` refuses a bad value before this
+      // runs; `metricName` and `threshold` are required columns, so a missing
+      // one is refused by name. The UI builds its select from the same
+      // declarations. A service that owned any of these lists would be a second
+      // vocabulary — which is what this one was, disagreeing with the schema's
+      // own severity default until the enum landed.
+      return db().alertRule.create({ data: $.data as Record<string, unknown> })
     },
 
     async patch() {

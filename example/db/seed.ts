@@ -218,6 +218,9 @@ const CATALOGUE: SeedProduct[] = [
 /// `Ochre` is here and retired on purpose: it is what the `@@scope(current)` on
 /// the set narrows away, so the picker on a variant form offers seven of these
 /// eight and the eighth is still the answer for the tees that ran in it.
+///
+/// This array's own order is the swatch row, stamped onto `sortOrder` below so
+/// the picker opens where the range does. Alphabetical would open on Black.
 const COLORS = [
   { name: 'Default',    hex: '#9ca3af' },
   { name: 'Night Navy', hex: '#1e293b' },
@@ -311,9 +314,18 @@ async function seedMoney() {
 }
 
 async function seedColors() {
-  for (const c of COLORS) {
-    if (await sys.color.findFirst({ where: { name: c.name } })) continue
-    await sys.color.create({ data: c })
+  for (const [i, c] of COLORS.entries()) {
+    // The swatch position is corrected on a row that is already here, where
+    // every other seeded column is left alone: `sortOrder` arrived after these
+    // rows did, so an existing database holds the column's default on all of
+    // them — which ties, falls to the name tiebreak, and looks exactly like the
+    // alphabetical order the declaration exists to replace.
+    const have = await sys.color.findFirst({ where: { name: c.name } })
+    if (have) {
+      if (have.sortOrder !== i) await sys.color.update({ where: { id: have.id }, data: { sortOrder: i } })
+      continue
+    }
+    await sys.color.create({ data: { ...c, sortOrder: i } })
   }
 }
 

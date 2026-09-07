@@ -136,7 +136,9 @@ describe('the action table', () => {
     // pretended the method did not exist would be lying about its own shape.
     const svc = createService({ name: 'audit', model: 'audit', methods: 'readOnly', purge: noop })
     expect(customMethodNames(svc)).toEqual(['purge'])
-    expect(allowedMethodNames(svc)).toEqual(['find', 'get'])
+    // `aggregate` is a read and rides `find`'s gate (`FJS-D226`) — a read-only
+    // service that could not answer *how many* would surprise everybody.
+    expect(allowedMethodNames(svc)).toEqual(['find', 'get', 'aggregate'])
   })
 
   test('collectCustomMethods is callable on a bare object — the one parse step', () => {

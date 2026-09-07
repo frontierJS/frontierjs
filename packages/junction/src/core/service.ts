@@ -325,6 +325,9 @@ export interface Service {
   patch:    (ctx: ServiceContext) => Promise<unknown>
   remove:   (ctx: ServiceContext) => Promise<unknown>
   restore?: (ctx: ServiceContext) => Promise<unknown>
+  // Optional for the reason `restore` is: a service built over no model, or by
+  // a caller that supplied its own method map, answers neither.
+  aggregate?: (ctx: ServiceContext) => Promise<unknown>
 
   // Hook registration — can be called multiple times, hooks accumulate
   hooks:    (map: HookMap) => void
@@ -358,6 +361,7 @@ export interface Service {
   // If you want side-effects (publish, audit, cache-bust) use service() instead.
   _find:    (ctx: ServiceContext) => Promise<unknown>
   _get:     (ctx: ServiceContext) => Promise<unknown>
+  _aggregate: (ctx: ServiceContext) => Promise<unknown>
   _create:  (ctx: ServiceContext) => Promise<unknown>
   _update:  (ctx: ServiceContext) => Promise<unknown>
   _patch:   (ctx: ServiceContext) => Promise<unknown>
@@ -458,7 +462,7 @@ export const AUTO_EVENT_MAP: Record<string, string> = {
   restore: 'restored',
 }
 
-const CRUD_METHODS = new Set(['find', 'get', 'create', 'update', 'patch', 'remove', 'restore'])
+const CRUD_METHODS = new Set(['find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore'])
 
 /**
  * The function behind a custom method name, or undefined.
@@ -1105,7 +1109,7 @@ export const SERVICE_OPTION_KEYS: ReadonlySet<string> = new Set([
 
 /** Keys present on a *built* Service — CRUD, bypass twins, and internals. */
 export const SERVICE_RUNTIME_KEYS: ReadonlySet<string> = new Set([
-  'find', 'get', 'create', 'update', 'patch', 'remove', 'restore',
+  'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
   '_find', '_get', '_create', '_update', '_patch', '_remove', '_restore',
   '_hookMap', '_meta', '_schemas', '_methods', '_customMethods', '_transactional',
   'pipelines', 'describe',
@@ -1253,7 +1257,7 @@ export function customMethodNames(svc: object): string[] {
 // Reads are excluded BY NAME rather than by guessing from the method's shape —
 // the same rule the announcement uses. A read taking BEGIN IMMEDIATE would
 // serialize every reader behind every other.
-const NON_TRANSACTIONAL_METHODS = new Set(['find', 'get'])
+const NON_TRANSACTIONAL_METHODS = new Set(['find', 'get', 'aggregate'])
 
 export function resolveTransactional(
   decl:    TransactionalDeclaration | undefined,
@@ -1411,7 +1415,7 @@ function describeChannel(decl: PublishDeclaration | undefined): string | boolean
 // a second option, so there is still one place to look.
 
 /** What `methods: 'readOnly'` expands to. */
-export const READ_ONLY_METHODS: readonly string[] = ['find', 'get']
+export const READ_ONLY_METHODS: readonly string[] = ['find', 'get', 'aggregate']
 
 /** A service's declared method policy: an allow-list, or the one preset. */
 /**
@@ -1653,7 +1657,7 @@ export function scanCustomMethods(obj: object): string[] {
 export type BaseServiceDefinition =
   ServiceDefinition &
   Required<Pick<ServiceDefinition,
-    'find' | 'get' | 'create' | 'update' | 'patch' | 'remove' | 'restore' | 'hooks'>>
+    'find' | 'get' | 'aggregate' | 'create' | 'update' | 'patch' | 'remove' | 'restore' | 'hooks'>>
 
 export function createBaseService(
   opts: BaseServiceOptions
@@ -1741,7 +1745,7 @@ export function createBaseService(
   // untouched: `gateAuth` wraps every method and `autoFilter` is attached by
   // METHOD NAME, so an override keeps the model's `@@gate` and the filter check
   // it would have had.
-  const CRUD_METHODS = ['find', 'get', 'create', 'update', 'patch', 'remove', 'restore'] as const
+  const CRUD_METHODS = ['find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore'] as const
   const overrides: Record<string, Method> = {}
   for (const verb of CRUD_METHODS) {
     const fn = (opts as unknown as Record<string, unknown>)[verb]
@@ -1804,6 +1808,12 @@ export function createBaseService(
     before: {
       find:   derived(autoFilter(model), autoSort(model)),
       get:    derived(autoFilter(model)),
+      // The same filter and NOT the same sort. `autoFilter` is what puts a
+      // hook's narrowing on ctx.query, which `parseAggregate` merges into the
+      // where — without it an aggregate answers over rows the same caller's
+      // find cannot see. `autoSort` grades a COLUMN order by; a groupBy sorts
+      // by group keys and aggregates, which litestone validates itself.
+      aggregate: derived(autoFilter(model)),
       create: derived(autoValidate(model, 'create')),
       patch:  derived(autoValidate(model, 'patch')),
       // `'patch'` and not `'create'` (`FJS-663`, ruled `FJS-D179`). The create
@@ -1893,8 +1903,9 @@ export function createBaseService(
   // object into createService(), which is where both are read — so omitting
   // them here is what made the options-object form silently hook-less.
   return {
-    find:    withDb(base.find),
-    get:     withDb(base.get),
+    find:      withDb(base.find),
+    get:       withDb(base.get),
+    aggregate: withDb(base.aggregate as Method),
     create:  withDb(base.create),
     update:  withDb(base.update),
     patch:   withDb(base.patch),
@@ -2155,6 +2166,7 @@ export interface ServiceDefinition {
   patch?:     (ctx: ServiceContext) => Promise<unknown>
   remove?:    (ctx: ServiceContext) => Promise<unknown>
   restore?:   (ctx: ServiceContext) => Promise<unknown>
+  aggregate?: (ctx: ServiceContext) => Promise<unknown>
 
   // Custom methods — defined directly alongside CRUD methods
   // e.g. { name: 'servers', reboot: async (ctx) => { ... } }
@@ -2437,6 +2449,7 @@ export function createService(def: ServiceDefinition): Service {
 
     find:    def.find    ?? base.find,
     get:     def.get     ?? base.get,
+    aggregate: def.aggregate ?? base.aggregate,
     create:  def.create  ?? base.create,
     update:  def.update  ?? base.update,
     patch:   def.patch   ?? base.patch,
@@ -2448,6 +2461,7 @@ export function createService(def: ServiceDefinition): Service {
     // Emits a lightweight junction.call.end on app.telemetry (no start, no hooks).
     _find:    makeBypass(defName, 'find',    def.find    ?? base.find),
     _get:     makeBypass(defName, 'get',     def.get     ?? base.get),
+    _aggregate: makeBypass(defName, 'aggregate', (def.aggregate ?? base.aggregate) as (ctx: ServiceContext) => Promise<unknown>),
     _create:  makeBypass(defName, 'create',  def.create  ?? base.create),
     _update:  makeBypass(defName, 'update',  def.update  ?? base.update),
     _patch:   makeBypass(defName, 'patch',   def.patch   ?? base.patch),

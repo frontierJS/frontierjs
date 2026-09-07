@@ -14,7 +14,7 @@ model Post {
 }
 ```
 
-`@@softDelete` requires a `deletedAt DateTime?` field. All reads automatically filter `WHERE deletedAt IS NULL`. Indexes on soft-delete models are automatically partial (covering live rows only).
+`@@softDelete` requires a `deletedAt` field and is **refused at parse** without one — the attribute names that column, so a model missing it answers an empty list to every read with no error, because SQLite reads the unknown identifier in `WHERE "deletedAt" IS NULL` as a string literal rather than raising. The column must be OPTIONAL (a live row holds NULL there); its type is not checked, because `introspect` reads one out of a real database's TEXT column as `String?` and that behaves identically. All reads automatically filter `WHERE deletedAt IS NULL`. Indexes on soft-delete models are automatically partial (covering live rows only).
 
 ## Operations
 

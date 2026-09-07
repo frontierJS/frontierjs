@@ -14,10 +14,15 @@
   // Groups:
   //   { group: string, options: [...] }[]  → rendered as <optgroup>
   //
+  // A list a <Form> fetched can also arrive with a HEAD — entries marked
+  // `recent` (`FJS-D121`) — and those become an <optgroup> of their own, above
+  // the rest. Without the caption they sit at the top in an order that is
+  // neither alphabetical nor the set's, which reads as a broken sort.
+  //
   // bind:this exposes: focus()
 
   import Field from './Field.mesa'
-  import { nameToLabel, uid, resolveError, resolveRule, stated, nativeValidationGuard, truncationNote, withNote, optionsNote, lockedBy } from '../../utils.js'
+  import { humanize, uid, resolveError, resolveRule, stated, nativeValidationGuard, truncationNote, withNote, optionsNote, lockedBy, splitRecent, RECENT_GROUP, REST_GROUP } from '../../utils.js'
 
   export let value       = null
   export let options     = []          // flat or grouped (see above)
@@ -40,7 +45,7 @@
 
   export var id = ''
   const selectId  = id || uid('select')
-  const autoLabel = nameToLabel(name)
+  const autoLabel = humanize(name)
 
   const form = $context.form
 
@@ -104,6 +109,12 @@
   const flatOptions    = isGrouped ? [] : normalize(resolved)
   const groupedOptions = isGrouped ? resolved.map(g => ({ ...g, options: normalize(g.options) })) : []
 
+  // The head, if this list has one. `pinned` stays ungrouped above both groups:
+  // it is the value the field is holding, and captioning it as *recently used*
+  // would say something false about why it is at the top.
+  const head    = isGrouped ? { pinned: [], recent: [], rest: [] } : splitRecent(flatOptions)
+  const hasHead = head.recent.length > 0
+
   const hasError = !!resolveError(form, name, error, errors)
 
   let el
@@ -162,6 +173,20 @@
           {/each}
         </optgroup>
       {/each}
+    {:else if hasHead}
+      {#each head.pinned as opt (opt.value)}
+        <option value={opt.value} disabled={opt.disabled}>{opt.label}</option>
+      {/each}
+      <optgroup label={RECENT_GROUP}>
+        {#each head.recent as opt (opt.value)}
+          <option value={opt.value} disabled={opt.disabled}>{opt.label}</option>
+        {/each}
+      </optgroup>
+      <optgroup label={REST_GROUP}>
+        {#each head.rest as opt (opt.value)}
+          <option value={opt.value} disabled={opt.disabled}>{opt.label}</option>
+        {/each}
+      </optgroup>
     {:else}
       {#each flatOptions as opt (opt.value)}
         <option value={opt.value} disabled={opt.disabled}>{opt.label}</option>

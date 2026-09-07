@@ -21,8 +21,11 @@ under node too.
 
 ```
 src/glow/glow.js     source code → highlighted HTML. The first kit.
-src/inflect/         English singular ⇄ plural. One definition, five callers
-                     across litestone, junction and sierra
+src/inflect/         How a name is spelled — number, shape, and the reader.
+                     One definition across litestone, junction and sierra, plus
+                     `humanize` for the screen. The third axis is the one that
+                     may change when a reader changes and the other two may
+                     not (`FJS-D236`)
 src/cron/            what a five-field cron expression ADMITS — a Set per
                      field. Caravan and junction's `app.scheduler` each had a
                      parser and they were broken differently, so one expression
@@ -142,6 +145,19 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
   exists, including a string that PARSES as the kind asked for, and drops the
   value where none does. Two easy-to-invert rules: `'false'` is `false`, and an
   unreadable number is `0` and never `NaN`, which is not a JSON value.
+- **A JSON member is an OWN property, and ordinary property access is not that.**
+  `__proto__` is legal JSON, `JSON.parse` keeps it as an own key, and
+  `copy[key] = value` reaches `Object.prototype`'s setter instead of creating
+  one — so every rebuild here (`setIn`, `removeIn`, `renameKey`, `diffDocs`'
+  merged) silently dropped the key and took the value's prototype, and deleting
+  an UNRELATED key destroyed a `__proto__` sibling and its whole subtree
+  (`FJS-996`). `put()` and `member()` are the two owners; use them rather than
+  `[]`. **`constructor` and `toString` behave correctly under plain
+  assignment**, so a test reaching for either grades nothing — the spec rows are
+  written with `__proto__` for that reason. The same access is why `matchesQuery`
+  answered `false` (drop the row) instead of `null` (ask the server) for an
+  undeclared field named `constructor`, and why `splitParams` lost a `__proto__`
+  filter instead of letting the Data boundary refuse it by name.
 - **`sameValue` is deep equality for JSON and nothing else** — no Map, no Set,
   no cycle guard, no NaN. A general one here would be a second answer to a
   question this kit already scopes.
@@ -219,6 +235,20 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
   reserves them) — because nothing preserves parameter order across a proxy or a
   client library, and an order-sensitive signature fails intermittently and
   reads as a clock problem.
+- **The scheme signs SECONDS, and it is CHECKED rather than documented.** Both
+  units are a finite number and `Date.now()` is every JS caller's reflex, so a
+  millisecond timestamp signed and verified perfectly with the tolerance then
+  meaning 300**ms** — a webhook a third of a second old refused as clock skew,
+  reported as `3600000s out` for a request one hour old (`FJS-1001`). `1e11`
+  separates the two units from 1973 to the year 5138, so a millisecond-shaped
+  value is refused by name and told to divide by 1000. **The asymmetry is
+  deliberate**: `now` is the caller's own argument and THROWS, while a
+  millisecond timestamp in a header ANSWERS `{ok: false}`, because a header is
+  remote input and a receiver must not be crashed by what a caller put in one.
+  Measured: removing the guard reds 3 rows, widening it to every positive number
+  reds 17 — the second number is the point, since a guard that refused real
+  timestamps would break conduit and outpost, which both sign
+  `Math.floor(Date.now() / 1000)`.
 - **The version rides in the signature VALUE, `v1-sha256=…`, and it is carried
   before anything needs it.** A signature on another version is refused by name
   before the digest is compared, because *signature does not match* is the same
@@ -275,7 +305,12 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
 - **`inflect` is load-bearing for Invariant 2, not a convenience.** litestone
   derives a table name with `pluralize` and reads it back with `singularize`,
   junction derives a model name from a service name, sierra indexes both
-  directions — so a rule changed here renames tables. The irregular table is
+  directions — so a rule changed here renames tables. **The shape half is the
+  same fact and arrived late**: six sites composed `pascal(singularize(t))` by
+  hand with four splitters while importing the singular half from here, so
+  `order-item` was `OrderItem` to the cli rule that grades model names and
+  `Order-item` to two of the litestone readers that produce them. `modelName` is
+  exported so the composition has one spelling. The irregular table is
   whole-word only for that reason: teaching it to reach inside `audit_index`
   would rename a table in every schema that already has one.
 - **`directives` is load-bearing the same way `inflect` is.** A `$` key it does

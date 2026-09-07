@@ -209,9 +209,22 @@
     fields: resource?.fields ?? {},
     sealed: _sealed,
     submitted,
+    // `record` goes with it: a dependent set is narrowed by a sibling field's
+    // value, and the form is the only thing here holding the draft. A control
+    // asks for its options exactly as before (`FJS-D122`).
     optionsFor: (name, opts) =>
-      resource?.options?.(name, opts) ??
-      Promise.resolve({ options: [], total: 0, truncated: false }),
+      (resource?.options?.(name, { record, ...opts }) ??
+       Promise.resolve({ options: [], total: 0, truncated: false }))
+        // A value the list no longer offers comes back pinned and disabled, and
+        // the field is marked invalid HERE rather than in each control: four of
+        // them ask this one seam, and the Data boundary is going to refuse the
+        // write anyway (`FJS-D225`). Saying so on open beats saying it after a
+        // long form is filled in.
+        .then((r) => {
+          const stale = r?.options?.find((o) => o?.unavailable)
+          if (stale) reportInvalid(name, `${stale.label} is no longer available — choose another`)
+          return r
+        }),
     reportInvalid,
   }
 

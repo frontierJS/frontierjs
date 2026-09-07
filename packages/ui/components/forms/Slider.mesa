@@ -16,7 +16,7 @@
   //   <Slider bind:value format={(v) => `$${v.toLocaleString()}`} />
 
   import Field from './Field.mesa'
-  import { tone as toTone, cx, nameToLabel, resolveError, resolveRule, stated, lockedBy } from '../../utils.js'
+  import { tone as toTone, cx, humanize, resolveError, resolveRule, stated, lockedBy } from '../../utils.js'
 
   // ── Props ───────────────────────────────────────────────────────────────────
 
@@ -60,7 +60,7 @@
   const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
   const rule = resolveRule(form, name)
 
-  const resolvedLabel = stated(label, rule?.title, name ? nameToLabel(name) : undefined)
+  const resolvedLabel = stated(label, rule?.title, name ? humanize(name) : undefined)
   const displayError  = resolveError(form, name, error, errors)
 
   // ── Helpers ─────────────────────────────────────────────────────────────────

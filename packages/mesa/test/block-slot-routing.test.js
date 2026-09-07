@@ -19,7 +19,7 @@ const build = async (tpl) => {
   const ctx = await compileSource(
     `<script>import Child from './Child.mesa'\nlet c = true\nlet xs = [1]</script>\n<div>${tpl}</div>`,
     { filename: '/P.mesa', warning: (w) => warnings.push(w.message ?? String(w)) })
-  const call = ctx.result.match(/Child\(el\d+, \{\}, ([\s\S]*?)\);\n/)?.[1] ?? ''
+  const call = ctx.result.match(/Child\(\$\$el\d+, \{\}, ([\s\S]*?)\);\n/)?.[1] ?? ''
   return { call, warnings: warnings.filter((w) => w.includes('slot')) }
 }
 

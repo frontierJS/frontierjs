@@ -23,7 +23,6 @@ export const LEVELS: Readonly<{
 }>
 
 /** The name a schema may write instead of a digit. Derived from `LEVELS`. */
-export const LEVEL_NAMES: Readonly<Record<string, number>>
 
 /** `4 → 'USER'`, for a message somebody has to read. */
 export function levelName(level: number): string

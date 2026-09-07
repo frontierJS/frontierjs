@@ -213,7 +213,25 @@ enum RunStatus      { pending running success failed timeout }
 // gives the column its CHECK, the API its validation and the UI its options,
 // from one place (2026-08-06).
 enum AlertSeverity  { info warning critical }
-enum AlertSubject   { server volume }
+// What an alert is ABOUT. Closed rather than free so the evaluator cannot
+// invent a subject nothing measures — the same argument `ChannelKind` makes
+// below. `series` is here because the only thing this app can evaluate today
+// is a metric series: `process.memoryMb` belongs to no server and no volume,
+// and calling it one would page the team that owns the machine.
+enum AlertSubject   { server volume series }
+
+// How a rule compares. Four operators and no fifth, because the fifth anybody
+// reaches for is *stale* — and staleness is already a series: the scraper
+// writes `up` on every pass, so `up < 1` IS the staleness rule and needs no
+// operator that ignores `threshold`. Prometheus draws the same line.
+enum ComparisonOp   { gt gte lt lte }
+
+// An event is firing until something resolves it. Was `String @default("firing")`
+// with one writer; the evaluator is the second, and two writers of an
+// undeclared string is where a typo stops being a curiosity and becomes an
+// alert that can never be cleared.
+enum AlertStatus    { firing resolved }
+
 // `support` is a session like `user` is, and is its own kind because the two
 // answer different questions of the same row: with it, `actorId` is the
 // OPERATOR and `onBehalfOfId` is the person they were acting as.
@@ -286,6 +304,14 @@ enum BackupDestination { local s3 }
 //
 // `deploy_failed` rather than the mock's `deploy_fail`, so it reads the same
 // way as `job_failed` beside it.
+/// What a notification is ABOUT, for the row it links to. The pair carries no
+/// foreign key — nothing cascades and nothing joins — so this is the only half
+/// that can be constrained, and constraining it means a migration, a seed and
+/// `asSystem()` are all held to the set too.
+///
+/// Add a member when a notification starts pointing somewhere new.
+enum NotificationContext { Deployment AlertEvent JobRun Workspace }
+
 enum NotificationKind {
   deploy_success
   deploy_failed
@@ -425,6 +451,24 @@ model User {
 // `extend model` is how the three app-owned facts get said without owning the
 // columns — litestone docs/traits.md.
 import "@frontierjs/auth/schema.lite"
+// Readings over time (`FJS-956`). Basecamp is the app that HAS alert rules —
+// `AlertRule` declares a metric and a condition and nothing could evaluate it,
+// because a rule reading "above 80% for five minutes" had no window to read
+// (`FJS-123`). Imported rather than written here for auth.lite's reason: it
+// changes when junction does.
+import "@frontierjs/junction/metrics.lite"
+
+// A reading is about the PROCESS, not about a workspace: `process.memoryMb` is
+// one number for this machine and belongs to nobody's tenant. Row tenancy would
+// otherwise demand a `workspaceId` the scrape has nothing to put in, and the
+// parser says so by name rather than leaving it to be discovered — the same
+// line the identity models draw two hundred lines down.
+//
+// Which is also the reason an alert rule is workspace-scoped and the series it
+// reads is not: a rule is somebody's policy about a shared fact.
+extend model MetricSeries { @@tenant(none) }
+extend model MetricPoint  { @@tenant(none) }
+extend model MetricHour   { @@tenant(none) }
 
 extend model Credential {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1749,8 +1793,30 @@ model AlertRule {
   name        String    @trim @length(1, 200)
   description String?
   severity    AlertSeverity @default(warning)
-  metricName  String
-  condition   Json      @default("{}")
+  // The series this rule watches, by its `labelsKey` — dotted, camelCase
+  // segments, the flattener's own spelling (`process.memoryMb`). Not a foreign
+  // key: a series is MINTED by the first scrape that sees it, so a rule
+  // legitimately precedes the row it names. What that costs is a rule that can
+  // never fire and says nothing, which is why `alerts.get` answers whether the
+  // series exists and when it was last seen.
+  metricName  String    @trim @length(1, 200)
+
+  // THE CONDITION, AS COLUMNS. Was `condition Json @default("{}")` and had
+  // three writers spelling it three ways — the form sent `{operator, threshold}`,
+  // the seed wrote `{op, value}`, and the detail view read `.operator`, so every
+  // seeded rule rendered its threshold as an em-dash and nothing errored. That
+  // is the shape `channels` was in before it became a join: a structure some
+  // reader interprets is a language, and a language belongs in the schema where
+  // the CHECK, `autoValidate` and the generated form all read it.
+  operator    ComparisonOp @default(gt)
+  threshold   Float
+
+  // How long the breach must HOLD. Zero fires on the newest reading; anything
+  // above it requires every point across the window to breach AND the window to
+  // actually be covered, so a rule cannot fire off the first reading after a
+  // restart. This is the column that separates an alert from a spike.
+  forMinutes  Int       @default(0) @gte(0) @lte(1440)
+
   isActive    Boolean   @default(true)
 
   version     Int       @version
@@ -1792,7 +1858,7 @@ model AlertEvent {
   ruleId         String
   rule           AlertRule  @relation(fields: [ruleId], references: [id], onDelete: Cascade)
 
-  status         String        @default("firing")
+  status         AlertStatus   @default(firing)
   severity       AlertSeverity
   // What fired — the pair carries no foreign key, so a destroyed server leaves
   // its history readable instead of taking it away, which is what an event log
@@ -2274,6 +2340,77 @@ model HubConfig {
 // ============================================================
 // PREFERENCES
 // ============================================================
+
+// What a person was actually TOLD, as a row.
+//
+// A COPY of `@frontierjs/notifications/db/notification.lite`, which ships to be
+// copied rather than imported — the package's own file says why, and the split
+// is the one `@frontierjs/auth` makes with `user.lite`: everything an app does
+// next happens to this model. `fli check`'s `package-model-drift` grades the
+// copy against the package's, so a column the driver starts writing is named
+// there rather than discovered at the first send.
+//
+// Four deliberate deviations from the shipped shape, and three are one reason:
+// **every id in this app is a uuid**, so `id` and `contextId` are `String`
+// where the package writes `Int`, and a relation back to this app's own `User`
+// is added. The fourth is `contextType`, which the package leaves unconstrained
+// because it cannot know an app's subjects; this one can, so it is an enum and
+// the column carries a CHECK.
+//
+// **No `workspaceId`, and that is the interesting one.** A notification is
+// addressed to a PERSON, and a person is in several workspaces — the row policy
+// below confines it to its recipient, which is a stronger confinement than a
+// tenant column and does not need one. What would change it is a bell menu that
+// shows only the workspace you are looking at: the subject is reachable through
+// `contextType`/`contextId` today, so that is a join rather than a column until
+// somebody measures it.
+model Notification {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // The notification's stable name — its FILE name under api/src/notifications,
+  // stamped by the loader. It is also a `NotificationKind`, which is not a
+  // coincidence and is asserted: the enum, `kinds.ts` and the files on disk are
+  // three lists of one thing, and `db/test/schema.test.ts` holds all three
+  // together in both directions. A String rather than the enum because the
+  // package writes this column and cannot know an app's vocabulary.
+  type        String
+
+  // Whatever the inApp formatter built. The shape varies by type, which is why
+  // the browser reads `type` to choose a renderer rather than storing a
+  // sentence — a stored sentence freezes the wording at write time and makes a
+  // copy change a migration.
+  data        Json
+
+  // A loose reference to what this is ABOUT, with no foreign key: it points at
+  // four tables, so a deleted deployment leaves its notifications behind as
+  // dead links rather than cascading them away. The one column that CAN be
+  // constrained is the type, and it is — `fli check`'s `polymorphic-subject`
+  // asks exactly this of a pair like it.
+  contextType NotificationContext?
+  contextId   String?
+
+  // null = unread. The one column a recipient writes, which is what U in the
+  // gate is for.
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  // R.C.U.D. Read is open and the policy scopes it; create is SYSTEM, because
+  // the only writer is the package's inApp driver through `asSystem()`; update
+  // is USER, a recipient marking one read; delete is SYSTEM.
+  //
+  // Create is 8 and NOT 9. `9` is LOCKED — a wall `asSystem()` does not pass
+  // either — so a 9 here would stop the driver from ever writing a row.
+  @@gate("0.8.4.8")
+  @@allow('read',   userId == auth().id)
+  @@allow('update', userId == auth().id)
+  @@index([userId, readAt])
+  @@index([createdAt])
+
+  // @@tenant(none) — see the paragraph above: the recipient is the scope.
+  @@tenant(none)
+}
 
 // What one person wants to be told about, and how.
 //

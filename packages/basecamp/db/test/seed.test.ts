@@ -75,9 +75,28 @@ const NOT_SEEDED: Record<string, string> = {
   outpost_nonce: 'a signature already used, which nothing here has sent',
 
   // Empty because they describe something that has not happened.
-  alert_event:  'nothing evaluates an alert rule (FJS-123)',
+  //
+  // `alert_event` is no longer *nothing evaluates a rule* — `alert-evaluate`
+  // does, every minute (FJS-123). It is empty for `metric_point`'s reason one
+  // step along: the evaluator reads a series, a seed run starts no process, so
+  // there is nothing for a threshold to be crossed by.
+  alert_event:  'a threshold crossed by readings a seed run never took',
+  // Written by this app's own senders when something happens — a deploy
+  // finishing, a rule firing, somebody accepting an invitation. A seed run
+  // makes none of those happen, and a hand-written row would carry a `type` no
+  // formatter produced, which is the string the browser reads to pick a
+  // renderer (FJS-967).
+  notification: 'the app telling somebody about an event that has not occurred',
   invitation:   'an offer nobody has made — accepting one is the flow, not a row to look at',
   server_event: 'written by the outpost, which is not running in a seeded fleet',
+
+  // Readings are produced by a RUNNING process, not by a seeder. `metricsPlugin`
+  // takes one on boot and one a minute after; a seeded reading would be a
+  // measurement of nothing, and the fold has by definition never run on a
+  // database that is one second old (FJS-956).
+  metric_series: 'written by metricsPlugin, which a seed run does not start',
+  metric_point:  'a reading of a process that was not running',
+  metric_hour:   'a fold of readings that do not exist yet',
 
   // Empty and worth a screen having something: candidates for a later seeder.
   domain:        'no app in the seeded fleet has a hostname yet',

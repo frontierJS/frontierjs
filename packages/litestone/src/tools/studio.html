@@ -386,6 +386,8 @@ th.sort-active .sort-arrow { opacity: 1; color: var(--color-primary) }
  * ink ramp plus two identity hues that mean nothing but "number" and "date".
  */
 .cell-null   { color: var(--ink-mute); font-style: italic }
+.auth-note   { margin-top: 6px; font-size: 11px; line-height: 1.45; color: var(--ink-mute) }
+.auth-note b { color: var(--ink-soft); font-weight: 600 }
 .cell-bool-t { color: var(--color-primary) }
 .cell-bool-f { color: var(--ink-mute) }
 .cell-num    { color: var(--brand-blue-lit); font-variant-numeric: tabular-nums }
@@ -906,6 +908,17 @@ circle.er-link-fam { fill: hsl(var(--er-family) 62% 52%); stroke: none }
   background:    var(--bg-mix, var(--rule-strong));
 }
 
+/* Which database the rows below were graded against. Sits between the header
+   and the list because it qualifies every row rather than any one of them. */
+.advisor-source {
+  padding:     var(--space-2xs) var(--space-xs);
+  border-block-end: 1px solid var(--rule);
+  color:       var(--ink-mute);
+  font-size:   var(--text-xs);
+  line-height: 1.5;
+}
+.advisor-source .badge { margin-inline-end: var(--space-2xs) }
+
 .advisor-dot {
   inline-size:   0.5rem;
   block-size:    0.5rem;
@@ -1040,6 +1053,8 @@ circle.er-link-fam { fill: hsl(var(--er-family) 62% 52%); stroke: none }
 .ex-count { font-variant-numeric: tabular-nums }
 .ex-blurb { font-size: var(--text-sm); color: var(--color-muted); line-height: 1.4 }
 .ex-clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden }
+
+.seed-out { max-height: 18rem; overflow: auto; margin-block-start: var(--space-xs); white-space: pre-wrap }
 
 /* The palette. It sits above everything and is the one thing here that is not
    inside the shell, so its own stacking context is stated rather than inherited. */
@@ -1223,6 +1238,7 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
     <select class="field" id="authSelect" aria-labelledby="authLabel" onchange="onAuthChange(this.value)">
       <option value="">⚡ System (no policies)</option>
     </select>
+    <div class="auth-note" id="authNote" hidden></div>
   </div>
 
   <div class="sidebar-section sidebar-tables">
@@ -1311,6 +1327,7 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
        second place that decides whether a migration is pending is a second
        place that can be wrong about it. -->
   <article class="view" id="panelOverview" hidden>
+    <div id="seedOutput" class="alert" role="status" hidden></div>
     <div class="data-grid-wrap stack" id="ovBody">
       <div class="empty"><span class="spinner"></span></div>
     </div>
@@ -1341,8 +1358,8 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
       <button class="btn ghost" onclick="openImport()" title="Import rows from CSV or JSON" id="btnImport" hidden>⬆ Import</button>
       <input type="file" id="importFile" accept=".csv,.json,application/json,text/csv" hidden onchange="importFileChosen(this.files[0])">
       <button class="btn ghost" onclick="openQueryView()" title="The Litestone query behind this view — copy it, or send it to the REPL" id="btnViewQuery" hidden>{ } Query</button>
-      <button class="btn ghost" onclick="exportTable('csv')" title="Export the FULL table (respects search + show-deleted) as CSV">⬇ CSV</button>
-      <button class="btn ghost" onclick="exportTable('json')" title="Export the FULL table (respects search + show-deleted) as JSON">⬇ JSON</button>
+      <button class="btn ghost" onclick="dumpTable('csv')" title="Download the FULL table (respects search + show-deleted) as CSV — the owner's view, not a governed export">⬇ CSV</button>
+      <button class="btn ghost" onclick="dumpTable('json')" title="Download the FULL table (respects search + show-deleted) as JSON — the owner's view, not a governed export">⬇ JSON</button>
       <nav class="pagination" aria-label="Rows">
         <button class="pagination-link" onclick="prevPage()" aria-label="Previous page">←</button>
         <span id="pageInfo" class="text-muted">—</span>
@@ -1699,6 +1716,7 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
     <div class="view perf-body" id="perfAdvisorView" role="tabpanel" aria-labelledby="perfTabAdvisor" tabindex="0">
       <div class="perf-left">
         <div class="section-header">Issues <span class="badge" id="perfIssueCount"></span></div>
+        <div class="advisor-source" id="perfSourceLine" hidden></div>
         <ul class="items perf-section-body" id="perfIssueList">
           <li class="empty">Loading…</li>
         </ul>
@@ -1801,27 +1819,21 @@ async function boot() {
   schema        = info.schema
   softDeleteMap = info.softDelete || {}
 
-  // Counts are keyed by MODEL name (getRowCounts walks $schema.models), so the
-  // diagram never has to derive a table name — that answer lives in
-  // `modelToTableName` on the server and may live in exactly one place.
-  erCounts   = info.counts || {}
-  _erMaxRows = Math.max(0, ...Object.values(erCounts))
-
-  // Header stats
-  const s = info.stats || {}
-  document.getElementById('hdrSize').textContent  = fmtBytes(s.size  || 0)
-  document.getElementById('hdrPages').textContent = (s.pageCount || 0).toLocaleString()
-  document.getElementById('hdrCache').textContent = (s.cacheSize || {read:0}).read + ' stmts'
-
-  // DB filter pills in header (multi-DB only) + table list
-  renderDbFilterPills()
-  renderTableList(info.counts)
+  // Everything derived from WHICH DATABASE IS OPEN, in one place — see
+  // applyDatabaseFacts.
+  applyDatabaseFacts(info)
 
   // Schema cards
   renderSchema()
 
   // Load users into auth picker
   loadAuthUsers()
+
+  // What this project calls its seed, and — on a tenanted app — the registry,
+  // both read once so the Browse empty state can say WHY a table is empty
+  // without a request at the moment somebody clicks one.
+  seedLoad()
+  if (tenantsEnabled) loadTenantSnapshot()
 
   restoreRail()
 
@@ -2099,6 +2111,7 @@ function setAuth(user) {
 
 async function loadAuthUsers() {
   const data = await api('/auth-users').catch(() => ({ users: [] }))
+  renderAuthNote(data)
   if (!data.users?.length) return
 
   _authUsers = data.users
@@ -2119,6 +2132,37 @@ async function loadAuthUsers() {
     opt.textContent = `${name}${sub}`
     sel.appendChild(opt)
   })
+}
+
+// Acting as somebody here is a real $setAuth — row policies, field policies and
+// gates all apply. Two things it cannot do, and neither is visible from the
+// result (`FJS-977`):
+//
+//   the LEVEL is graded by whatever resolver this Studio was started with, and
+//   without --gate that is toolbelt's default rather than the app's own; and
+//
+//   a claim the app resolves PER REQUEST is absent, because Studio has no
+//   request. Under `strategy row` a missing tenancy claim is not a narrower
+//   answer, it is an empty one — and that looks exactly like a policy working.
+//
+// So the picker says what it is. Silence here is the defect, not the limit.
+function renderAuthNote(data) {
+  const el = document.getElementById('authNote')
+  if (!el) return
+  const parts = []
+
+  if (data.gradedBy === 'app') parts.push(`Levels graded by <b>${esc(data.resolver)}</b>.`)
+  else                         parts.push('Levels graded by the <b>default</b> resolver, not this app\'s — pass <b>--gate</b> to use its own.')
+
+  if (data.offRow?.length) {
+    const names = data.offRow.map(c => `<b>${esc(c)}</b>`).join(', ')
+    parts.push(`A principal built here carries no ${names} — the app resolves ${data.offRow.length > 1 ? 'those' : 'that'} per request.`)
+    if (data.tenancyClaim && data.offRow.includes(data.tenancyClaim))
+      parts.push(`That is the tenancy claim, so scoped models read <b>nothing</b> here rather than less.`)
+  }
+
+  el.innerHTML = parts.join(' ')
+  el.hidden = false
 }
 
 // ── DB filter pills ──────────────────────────────────────────────────────────
@@ -2329,9 +2373,66 @@ function clickSort(col) {
   resetAndLoad()   // server-side sort across the WHOLE table, not just this page
 }
 
+/**
+ * `No rows` — and, where there is one, the reason.
+ *
+ * Two of them are the same class of mistake and Studio knew about both without
+ * saying so HERE. Under `tenancy { strategy database }` the base file holds the
+ * registry and a shared log while every tenant's rows are in a file of its own,
+ * so all 44 tables read zero; and a database nothing has seeded is empty for the
+ * ordinary reason. Both answers already existed — one on Overview, one in the
+ * app's own `package.json` — and neither was where the emptiness is SEEN. A
+ * person opens Studio, clicks a table, reads `No rows`, and concludes the app
+ * has no data.
+ *
+ * The button is the same one those panels carry, not a second implementation of
+ * it: `tenantOpen` when there is exactly one tenant to open, the Tenants panel
+ * when there are several to choose between.
+ */
+
+/**
+ * *How do I open one from here* — one answer, three callers.
+ *
+ * Every panel whose answer depends on which database is open needs this, and
+ * each one that wrote its own would drift the moment the switcher changed.
+ * Returns '' when there is nothing to offer, so a caller can concatenate it.
+ */
+function tenantChooseButton() {
+  const tenants = _tenantSnapshot
+  if (!tenants?.enabled || tenants.activeTenant || !tenants.tenants?.length) return ''
+  return tenants.tenants.length > 1
+    ? `<button class="btn" onclick="showTool('tenants')">Choose a tenant →</button>`
+    : `<button class="btn" onclick="tenantOpen(${esc(JSON.stringify(tenants.tenants[0].id))})">Open ${esc(tenants.tenants[0].id)} →</button>`
+}
+
+function emptyTableState() {
+  const tenants = _tenantSnapshot
+  if (tenants?.enabled && !tenants.activeTenant && tenants.tenants?.length) {
+    const many = tenants.tenants.length > 1
+    return `<div class="empty">
+      <div class="empty-title">No rows — and no tenant is open</div>
+      <p class="empty-text">This schema declares <code class="code-inline">tenancy { strategy database }</code>, so the
+      database Studio has open holds the registry and ${many ? `each of the ${tenants.tenants.length} tenants keeps` : 'the one tenant keeps'}
+      its rows in a file of its own. Every table here reads empty until one is open.</p>
+      ${tenantChooseButton()}
+    </div>`
+  }
+
+  if (_seed?.command) {
+    return `<div class="empty">
+      <div class="empty-title">No rows</div>
+      <p class="empty-text">This project declares a seed — <code class="code-inline">${esc(_seed.command)}</code>.
+      Nothing here has run it.</p>
+      <button class="btn" onclick="showTool('overview')">Run the seed →</button>
+    </div>`
+  }
+
+  return '<div class="empty">No rows</div>'
+}
+
 function renderTable(columns, rows) {
   if (!rows.length) {
-    document.getElementById('dataGrid').innerHTML = '<div class="empty">No rows</div>'
+    document.getElementById('dataGrid').innerHTML = emptyTableState()
     return
   }
 
@@ -2771,11 +2872,15 @@ async function ovInit() {
 // A row is an ITEM somebody can act on, and it carries the panel that acts.
 // Reporting a problem with no way through to its owner is how a dashboard
 // becomes something people stop reading.
-function ovItem(tone, text, tool, label) {
+// Every finding carries the way through to whoever can act on it. `tool` is the
+// usual answer and `onclick` the exception — the seed row's action is running
+// the seed, and sending somebody to a panel to press a second button would be a
+// directory entry pretending to be a fix.
+function ovItem(tone, text, tool, label, onclick) {
   return `<li class="list-row">
     <span class="badge ${tone}">${tone === 'danger' ? 'fix' : tone === 'warning' ? 'check' : 'note'}</span>
     <span class="clamp-1" style="flex:1">${text}</span>
-    <button class="btn outlined" onclick="showTool('${tool}')">${esc(label)} →</button>
+    <button class="btn outlined" onclick="${onclick ?? `showTool('${tool}')`}">${esc(label)} →</button>
   </li>`
 }
 
@@ -2793,6 +2898,17 @@ function ovAttention(drift, advisor, access, tenants) {
       `no tenant open — every count below is the BASE database, and ${n === 1 ? 'the one tenant keeps its rows' : `each of ${n} tenants keeps its rows`} in a file of its own`,
       'tenants', 'Tenants'))
   }
+
+  // An empty database with a seed beside it. The two are asserted TOGETHER
+  // because either alone is ordinary: a seeded app is legitimately empty before
+  // its first run, and a project with no seed has nothing to offer. It sits
+  // above the migration rows on purpose — somebody staring at forty empty
+  // tables is not asking about drift.
+  const rows = Object.values(erCounts).reduce((a, b) => a + b, 0)
+  if (_seed?.command && rows === 0 && !(tenants?.enabled && !tenants.activeTenant))
+    items.push(ovItem('info',
+      `no rows anywhere, and this project declares a seed — <code class="code-inline">${esc(_seed.command)}</code>`,
+      null, 'Run it', 'seedRun()'))
 
   const m = drift?.migrations || {}
   if (m.pending)  items.push(ovItem('warning', `<b>${m.pending}</b> migration${m.pending === 1 ? '' : 's'} pending — the database is behind the schema`, 'migrations', 'Migrations'))
@@ -3570,6 +3686,61 @@ function acTone(required) {
   if (required <= 1) return 'warning'              // reachable without signing in
   if (required >= 8) return 'info'                 // asSystem() or nothing
   return 'muted'
+}
+
+// ─── The seed ────────────────────────────────────────────────────────────────
+//
+// A database nothing has seeded reads as an app with no data, and `No rows` on
+// every table is the same sentence a broken query produces. What the seed IS
+// comes off the app's own `package.json` — see `findSeed` — and the client
+// never names it: it asks to run *the seed* and the server resolves which
+// script that is.
+//
+// CONFIRMED, and the confirmation shows the command. Studio already ships raw
+// SQL and a JS REPL, so spawning a process is not a new capability class here —
+// but a button that runs a file somebody else wrote is different from one that
+// runs a query you can read, and the difference is that you cannot read it.
+// Naming the script and what it expands to is what makes the confirmation an
+// actual decision rather than a speed bump.
+let _seed    = null
+let _seeding = false
+
+async function seedLoad() {
+  try { _seed = await api('/seed') } catch { _seed = null }
+}
+
+async function seedRun() {
+  if (_seeding) return
+  if (!_seed?.command) { toast('This project declares no seed', 'err'); return }
+  if (!confirm(`Run this project's seed?\n\n  ${_seed.command}\n  → ${_seed.runs}\n\nIt runs in ${_seed.root}, as you.`)) return
+
+  _seeding = true
+  toast(`Running ${_seed.command}…`, 'ok')
+  let res
+  try { res = await api('/seed/run') }
+  catch (e) { res = { ok: false, output: e.message } }
+  _seeding = false
+
+  if (res.error) { toast(res.error, 'err'); return }
+
+  // The seed wrote rows, so every count on screen is stale — the same fact
+  // `reopenDatabase` exists for, and the same owner.
+  if (res.ok) await reopenDatabase('Seed finished')
+  else toast(res.timedOut ? 'The seed timed out after 5 minutes' : `The seed exited ${res.code}`, 'err')
+
+  // The output either way. A seed that failed says why in its own words, and a
+  // seed that worked usually says what it made.
+  if (res.output) seedShowOutput(res.output, res.ok)
+}
+
+function seedShowOutput(output, ok) {
+  const box = document.getElementById('seedOutput')
+  box.hidden = false
+  box.className = `alert ${ok ? 'success' : 'danger'}`
+  box.innerHTML = `<div class="alert-content">
+    <b>${ok ? 'Seed finished' : 'The seed failed'}</b>
+    <pre class="code-block seed-out">${esc(output)}</pre>
+  </div>`
 }
 
 // ─── The palette ─────────────────────────────────────────────────────────────
@@ -6145,15 +6316,18 @@ document.addEventListener('click', e => {
 })
 
 
-// ── Export ────────────────────────────────────────────────────────────────────
+// ── Table dump ────────────────────────────────────────────────────────────────
 
-// Server-side export — streams the ENTIRE table (not just the loaded page),
-// honoring the active search and show-deleted state.
-async function exportTable(format) {
+// Streams the ENTIRE table (not just the loaded page), honoring the active
+// search and show-deleted state.
+//
+// Deliberately not called an export: `litestone export` is the governed extract
+// and this is the owner's view of a table (`FJS-D230`, `FJS-978`).
+async function dumpTable(format) {
   if (!currentTable) return
-  toast(`Exporting ${currentTable}…`, 'ok')
+  toast(`Downloading ${currentTable}…`, 'ok')
   try {
-    const res = await fetch(API + '/export', {
+    const res = await fetch(API + '/table-dump', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({
@@ -6165,15 +6339,19 @@ async function exportTable(format) {
     })
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
-      throw new Error(err.error || `Export failed (${res.status})`)
+      throw new Error(err.error || `Download failed (${res.status})`)
     }
+    // Protected columns never leave through here (`FJS-976`). Saying which ones
+    // is the whole point — a file with columns missing and nothing on screen
+    // saying so is what somebody reconciles against later and gets wrong.
+    const withheld = res.headers.get('X-Withheld-Columns') || ''
     const blob = await res.blob()
     const a    = document.createElement('a')
     a.href     = URL.createObjectURL(blob)
     a.download = `${currentTable}.${format === 'csv' ? 'csv' : 'json'}`
     a.click()
     URL.revokeObjectURL(a.href)
-    toast(`Downloaded ${a.download}`, 'ok')
+    toast(withheld ? `Downloaded ${a.download} — withheld ${withheld}` : `Downloaded ${a.download}`, 'ok')
   } catch (e) { toast(e.message, 'err') }
 }
 
@@ -6857,13 +7035,24 @@ function txInit() {
 
 let perfActiveIssue = -1
 let perfIssues      = []
+let perfSource      = null
 // ── Tenants ───────────────────────────────────────────────────────────────────
 
 let activeTenantId = null
 
+// The registry, held so the Browse empty state can say WHY a table is empty
+// without issuing a request at the moment somebody clicks one. Refreshed
+// wherever the answer can have moved: at boot, by the panel, and by a switch.
+let _tenantSnapshot = null
+
+async function loadTenantSnapshot() {
+  try { _tenantSnapshot = await api('/tenants') } catch { _tenantSnapshot = null }
+}
+
 async function loadTenants() {
   const list = document.getElementById('tenantList')
   const data = await api('/tenants')
+  _tenantSnapshot = data
   document.getElementById('tenantCount').textContent =
     data.tenants?.length ? `${data.tenants.length} tenants · ${data.openCount ?? 0} open` : ''
   if (!data.enabled) { list.innerHTML = `<div class="empty">
@@ -6881,31 +7070,87 @@ async function loadTenants() {
         <td>${fmtBytes(t.size)}</td>
         <td>${t.active
           ? '<button class="btn outlined" onclick="tenantClose()">← close</button>'
-          : `<button class="btn outlined" onclick="tenantOpen('${esc(t.id)}')">Open in Studio →</button>`}</td>
+          : `<button class="btn outlined" onclick="tenantOpen(${esc(JSON.stringify(t.id))})">Open in Studio →</button>`}</td>
       </tr>`).join('') + '</tbody></table>'
   document.getElementById('btnTenantBack').hidden = !data.activeTenant
+}
+
+/**
+ * Everything on screen that is a fact about WHICH DATABASE IS OPEN.
+ *
+ * These three renders were written inline in the boot sequence, which was right
+ * for exactly as long as the open database could not change. It can: opening a
+ * tenant re-points every data endpoint on the server, and the client kept the
+ * snapshot it took at startup — so the sidebar went on showing 44 tables at
+ * zero, the header went on showing the base file's size, and the row counts
+ * under the diagram were the registry's. The panel looked like it did nothing,
+ * because the only things that moved were a badge and a toast.
+ *
+ * The schema-derived caches are deliberately NOT invalidated here — `_access`,
+ * `_advise` and `_catalog` are answers about the .lite file, which every tenant
+ * shares. `_drift` is, because a tenant can be behind on migrations while the
+ * base database is not.
+ */
+function applyDatabaseFacts(info) {
+  if (!info) return
+
+  // Counts are keyed by MODEL name (getRowCounts walks $schema.models), so the
+  // diagram never has to derive a table name — that answer lives in
+  // `modelToTableName` on the server and may live in exactly one place.
+  erCounts   = info.counts || {}
+  _erMaxRows = Math.max(0, ...Object.values(erCounts))
+
+  const s = info.stats || {}
+  document.getElementById('hdrSize').textContent  = fmtBytes(s.size  || 0)
+  document.getElementById('hdrPages').textContent = (s.pageCount || 0).toLocaleString()
+  document.getElementById('hdrCache').textContent = (s.cacheSize || {read:0}).read + ' stmts'
+
+  renderDbFilterPills()
+  renderTableList(info.counts)
+}
+
+/**
+ * The database under Studio just changed. Re-read it and re-render what it
+ * decides — and say what happened, because the counts moving is the only
+ * evidence the switch worked and it is easy to miss on a panel that is not
+ * showing them.
+ */
+async function reopenDatabase(what) {
+  const info = await api('/info').catch(() => null)
+  applyDatabaseFacts(info)
+  activeTenantId = info?.activeTenant ?? null
+
+  const badge = document.getElementById('tenantBadge')
+  badge.hidden = !activeTenantId
+  if (activeTenantId) badge.textContent = `🏢 ${activeTenantId}`
+
+  // A tenant can be behind on migrations while the base database is not, so the
+  // badge is re-asked rather than left describing the file that was open before.
+  _drift = null
+  driftLoad()
+
+  loadTenants()   // also refreshes _tenantSnapshot
+  if (currentTable) resetAndLoad()
+  if (!document.getElementById('panelOverview').hidden) ovInit()
+  // Every row the advisor prints is about a specific database, so a switch
+  // leaves it describing the previous one — the shape `FJS-982` fixed for the
+  // sidebar counts, one panel along.
+  if (!document.getElementById('panelPerf').hidden) perfInit()
+
+  const rows = Object.values(info?.counts ?? {}).reduce((a, b) => a + b, 0)
+  toast(`${what} — ${rows.toLocaleString()} row${rows === 1 ? '' : 's'} across ${Object.keys(info?.counts ?? {}).length} models`, 'ok')
 }
 
 async function tenantOpen(id) {
   const res = await api('/tenants/open', { id })
   if (res.error) { toast(res.error, 'err'); return }
-  activeTenantId = id
-  const badge = document.getElementById('tenantBadge')
-  badge.hidden = false
-  badge.textContent = `🏢 ${id}`
-  toast(`Studio is now viewing tenant "${id}"`, 'ok')
-  loadTenants()
-  if (currentTable) resetAndLoad()
+  await reopenDatabase(`Studio is now viewing tenant "${id}"`)
 }
 
 async function tenantClose() {
   const res = await api('/tenants/open', {})
   if (res.error) { toast(res.error, 'err'); return }
-  activeTenantId = null
-  document.getElementById('tenantBadge').hidden = true
-  toast('Back to the main project database', 'ok')
-  loadTenants()
-  if (currentTable) resetAndLoad()
+  await reopenDatabase('Back to the main project database')
 }
 
 async function tenantMigrateAll() {
@@ -7329,6 +7574,10 @@ async function perfInit() {
     const res = await api('/perf/advisor')
     if (res.error) { list.innerHTML = `<li class="empty">${esc(res.error)}</li>`; return }
     perfIssues = res.issues ?? []
+    perfSource = res.source ?? null
+    // The switcher's snapshot is what names the tenants, and this panel can be
+    // the first thing opened in a session.
+    if (perfSource?.tenantsEnabled && !_tenantSnapshot) await loadTenantSnapshot().catch(() => {})
     perfRenderIssueList()
   } catch(e) {
     list.innerHTML = `<li class="empty">Error: ${esc(e.message)}</li>`
@@ -7337,9 +7586,48 @@ async function perfInit() {
 
 // ── Issue list (left column) ──────────────────────────────────────────────────
 
+/**
+ * Every row this panel prints is the schema compared to the DDL of ONE database,
+ * and until `FJS-993` nothing said which. Under `tenancy { strategy database }`
+ * that database was the declared `database main` path, which no tenant uses and
+ * nothing migrates after Studio creates it — so a schema whose live shop carried
+ * every index it declares was reported with 23 critical rows against a skeleton
+ * frozen hours earlier. The server refuses to grade that file; this renders the
+ * refusal, and heads a real answer with the database it came from.
+ */
+function perfRenderSourceLine() {
+  const el = document.getElementById('perfSourceLine')
+  if (!el) return
+  if (!perfSource) { el.hidden = true; el.innerHTML = ''; return }
+  const where = perfSource.tenant
+    ? `tenant <b>${esc(perfSource.tenant)}</b>`
+    : `<code class="code-inline">${esc(perfSource.path ?? 'the open database')}</code>`
+  el.hidden = false
+  el.innerHTML = perfSource.behind
+    ? `<span class="badge warning">behind</span> graded against ${where}, which is behind this schema — run a migration, or these rows describe a database nobody is on`
+    : `graded against ${where}`
+}
+
 function perfRenderIssueList() {
   const list  = document.getElementById('perfIssueList')
   const count = document.getElementById('perfIssueCount')
+  perfRenderSourceLine()
+
+  if (perfSource?.reason === 'no-tenant') {
+    count.textContent = ''
+    count.className   = 'badge muted'
+    list.innerHTML    = '<li class="empty">Nothing graded</li>'
+    document.getElementById('perfIssueDetail').innerHTML = `<div class="empty">
+      <div class="empty-title">No tenant is open, so there is nothing to grade</div>
+      <p class="empty-text">This schema declares <code class="code-inline">tenancy { strategy database }</code>. Every check here
+      compares the schema to the DDL of a live database, and the one Studio has open is the declared
+      <code class="code-inline">database main</code> path — a file no tenant runs on and nothing migrates. Open a tenant and
+      these answers are about a database somebody is using.</p>
+      ${tenantChooseButton()}
+    </div>`
+    return
+  }
+
   const reds    = perfIssues.filter(i => i.severity === 'red').length
   const yellows = perfIssues.filter(i => i.severity === 'yellow').length
 

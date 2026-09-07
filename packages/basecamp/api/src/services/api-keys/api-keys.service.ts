@@ -254,7 +254,7 @@ export function createApiKeysService(app: BasecampApp) {
         // A credential exists now. If the row does not, nothing in this app
         // points at it, nothing can revoke it, and it verifies forever.
         if (data.credentialId)
-          await authOrRefuse().revokeApiKey(data.credentialId as string).catch(() => {})
+          await authOrRefuse().revokeApiKey(data.credentialId as string, { userId: String(data.userId) }).catch(() => {})
         throw err
       }
     },
@@ -285,7 +285,7 @@ export function createApiKeysService(app: BasecampApp) {
       // Deleting a key that still works has to stop it working. Otherwise the
       // token outlives every record of itself: nothing left to revoke, and the
       // credential still verifying.
-      if (row.credentialId) await authOrRefuse().revokeApiKey(row.credentialId)
+      if (row.credentialId) await authOrRefuse().revokeApiKey(row.credentialId, { userId: String(row.userId) })
 
       await db().apiKey.delete({ where: { id: row.id } })
       return present(row)
@@ -299,7 +299,7 @@ export function createApiKeysService(app: BasecampApp) {
       const row = await getScoped('apiKey', 'API key')
       if (row.revokedAt) throw new BadRequest(`'${row.name}' is already revoked`)
 
-      if (row.credentialId) await authOrRefuse().revokeApiKey(row.credentialId)
+      if (row.credentialId) await authOrRefuse().revokeApiKey(row.credentialId, { userId: String(row.userId) })
 
       return present(await db().apiKey.update({
         where:  { id: row.id },

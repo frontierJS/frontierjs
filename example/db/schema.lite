@@ -93,6 +93,7 @@ database audit {
   retention 90d
 }
 
+
 // ─── Removal and revision ─────────────────────────────────────────────────
 //
 // Two Data-boundary features declared here and restated in no service and no
@@ -185,6 +186,7 @@ enum Size { one xs s m l xl xxl }
 // readers, which is the workaround dissolving rather than being worked around.
 import "@frontierjs/auth/schema.lite"
 import "@frontierjs/junction/outbox.lite"
+import "@frontierjs/junction/metrics.lite"
 import "./user.lite"
 
 // A claim a caller with NO SESSION holds, resolved per request off a declared
@@ -297,6 +299,16 @@ model Color {
   /// what @@scope below reads, and it is why the set is a table and not an enum:
   /// retiring a colorway is a row edit rather than a deploy.
   retired    Boolean   @default(false)
+
+  /// Where the colorway sits in the swatch row. Merchandising, not alphabet —
+  /// the range reads Default, Night Navy, Sandstone, Clay, and an alphabetical
+  /// picker opens on Black, which is neither what the line looks like nor what
+  /// anybody picks first. Read by `order` on the value set below.
+  ///
+  /// 999 rather than 0 for a colorway nobody placed: an `open` binding creates
+  /// rows from what a merchant types, and an unmerchandised one belongs at the
+  /// end of the row rather than at the front of it.
+  sortOrder  Int       @default(999)
   
   createdAt  DateTime  @default(now())
   
@@ -314,10 +326,23 @@ model Color {
 /// The list behind `ProductVariant.color`. `value name` rather than the id is
 /// the whole point: what is stored is the colorway, readable on its own, and
 /// the row is the metadata about it.
+/// `order` is the third axis and it is not membership (`FJS-D121`): the scope
+/// above decides which colorways are offered, this decides which one the list
+/// opens on. Alphabetical is the default everywhere it is not stated, and it is
+/// wrong here — a swatch row is merchandised, and `name` is only the tiebreak
+/// for the colorways nobody placed.
+///
+/// `recent(…)` is the HEAD and it is a different question from the two after
+/// it: the colorways this shop has actually been cutting, above the merchandised
+/// row rather than reordering it. Read off the variants themselves — no counter,
+/// nothing to keep in step, and right for a colorway an import added as much as
+/// one somebody typed. `createdAt` is stated because ranking by the wrong clock
+/// draws an order that looks perfectly reasonable.
 valueset ProductColor {
   source Color
   value  name
   scope  current
+  order  recent(ProductVariant.color, createdAt), sortOrder, name
 }
 
 /// The buyable thing. One row per option combination, and the row a basket
@@ -395,6 +420,17 @@ model ProductVariant {
   @@log(audit)
 }
 
+/// The variants a photograph may be pinned to: THIS product's, and no other
+/// product's.
+///
+/// A dependent set (`FJS-D122`) — the list is narrowed by a sibling column of
+/// the row being written, so `dependsOn` is on the binding rather than here.
+/// Which column of `ProductVariant` it is matched against is derived from the
+/// relation both models have to `Product`.
+valueset ProductVariants {
+  source ProductVariant
+}
+
 /// A photograph. The bytes live in object storage and this column holds the
 /// reference — `File` is the type that means that, and `FileStorage` in
 /// api/db.ts is what turns a path or an upload into one.
@@ -405,7 +441,12 @@ model ProductImage {
   
   /// Null means "shows the family". A colorway shot names its variant, and a
   /// flat-lay of the whole range names none.
-  variantId  Int?             @label("Variant")
+  ///
+  /// The binding is what stops a photograph naming a variant of a DIFFERENT
+  /// product — a row the relation alone accepts, because both columns are
+  /// valid foreign keys and nothing compared them. The picker sends the same
+  /// narrowing it is graded by, so what it offers is what the boundary takes.
+  variantId  Int?             @label("Variant") @values(ProductVariants, dependsOn: productId)
   variant    ProductVariant?  @relation(fields: [variantId], references: [id], onDelete: SetNull)
   
   file       File             @accept("image/png, image/jpeg, image/webp")
@@ -423,6 +464,13 @@ model ProductImage {
   @@softDelete
   
   @@gate("0.4.4.5")
+  
+  /// The gallery of one product, and the shots of one colorway. Neither read
+  /// starts here — both arrive from the parent — and `Product`'s cascade walks
+  /// this table by `productId` to find what to stamp. Unindexed, every product
+  /// page and every cascade scans every photograph in the shop.
+  @@index([productId])
+  @@index([variantId])
 }
 
 // ─── Customers ────────────────────────────────────────────────────────────
@@ -1079,6 +1127,24 @@ model Order {
   
   @@gate("1.4.4.5")
   
+  /// ─── Bulk export ────────────────────────────────────────────────────────
+  ///
+  /// An export is a paginated scoped read, so this line adds no way in: the two
+  /// allows below are what bound the file, and staff, a shopper and the system
+  /// take three different extracts from this one declaration.
+  ///
+  /// `since: createdAt` is a choice with a consequence worth stating, because
+  /// the column is what decides what an incremental run CATCHES. Orders are
+  /// appended and their receipts are `@immutable`, so new rows are the whole
+  /// story here — but a run resuming from a `createdAt` cursor will not see an
+  /// order that was EDITED after it was first exported. A model whose rows are
+  /// revised wants `@updatedAt` in this slot instead.
+  ///
+  /// `cardToken` and the other protected columns are absent from the file even
+  /// for staff who may read them on screen: a screen and a file that leaves the
+  /// machine are the same principal and a different blast radius.
+  @@export(ndjson, since: createdAt)
+  
   /// Staff read every order; a shopper reads their own. Two allows rather than
   /// one expression, because within an operation they are OR'd — and because
   /// they are two different sentences that will change at different times.
@@ -1117,6 +1183,12 @@ model Order {
   @@softDelete(cascade)
   
   @@log(audit)
+  
+  /// One customer's orders — the console's customer screen, and what
+  /// `Customer`'s cascade walks to find them. The read policy above correlates
+  /// on `userId` and not on this column, so the policy hop is unaffected; what
+  /// is affected is every read that starts from the customer.
+  @@index([customerId])
 }
 
 /// What was bought, at the price it was bought for.
@@ -1202,7 +1274,38 @@ model OrderLine {
   /// Every read of this table is "the lines of one order". It is also what the
   /// policy above correlates on, so the hop is a key lookup rather than a scan.
   @@index([orderId])
+  
+  /// `Restrict` from the variant: this is the check that answers "has this
+  /// colorway ever sold", which is what refuses to let one be deleted.
+  @@index([variantId])
 }
+
+/// ─── Revenue by status ────────────────────────────────────────────────────
+///
+/// The shop's own totals, and the one place here that proves what a `view` is:
+/// a read path onto rows another model guards, inheriting NONE of that model's
+/// rules. `Order` reads at 1 with two `@@allow`s — staff read every order, a
+/// shopper reads their own — and this projection sums across all of them, so an
+/// ungated view here would answer the whole shop's revenue to an anonymous
+/// caller past both of those allows. The gate is therefore stated, and it is
+/// HIGHER than the gate on the rows: an aggregate is not as readable as the
+/// things it aggregates.
+///
+/// `@@softDelete`'s clause is not inherited either — a view's `@@sql` is
+/// written verbatim — so the removed rows are excluded by hand. That is the
+/// second half of the same fact and it is the half that is silent.
+view revenueByStatus {
+  status String
+  orders Int
+  total  Int
+  @@sql("SELECT status, COUNT(*) AS orders, SUM(total) AS total FROM [order] WHERE deletedAt IS NULL GROUP BY status")
+  @@gate("5")
+  
+  /// CSV, and no cursor: an aggregate has no column to resume from — every run
+  /// is the whole answer, which is what a projection over the world IS.
+  @@export(csv)
+}
+
 
 // ─── Payments ─────────────────────────────────────────────────────────────
 //
@@ -1413,6 +1516,10 @@ model Payment {
   @@index([orderId])
   @@index([invoiceId])
 
+  /// `Restrict` from the instrument — the check that runs before a card can
+  /// be forgotten, and the only read of this table that is not by parent.
+  @@index([paymentMethodId])
+
   /// Exactly one. Not *at most* one — a payment for nothing is a row nobody can
   /// reconcile — and not *at least* one, which is the shape that lets a refund
   /// be applied twice, to two different nouns.
@@ -1568,6 +1675,12 @@ model PlanVersion {
   /// one window and opens the next in a transaction, because the constraint
   /// refuses the second open row and does not order the two writes.
   @@unique([planId], where: effectiveTo == null)
+
+  /// The constraint above indexes the OPEN row and nothing else, so reading a
+  /// plan's history — every price it has ever carried — scans. Leading with
+  /// `planId` and continuing into `effectiveFrom` serves the lookup and the
+  /// order in one, which is what an as-at read asks for.
+  @@index([planId, effectiveFrom])
 }
 
 /// Somebody paying, on a cycle.
@@ -1654,6 +1767,13 @@ model Subscription {
     recover:  pastDue             -> active  @system,
     cancel:   [trialing, active, pastDue] -> cancelled @system
   )
+
+  /// Two parents, two lookups. `customerId` is *this customer's plans*, which
+  /// the account screen asks for; `planVersionId` is what a `Restrict` delete
+  /// checks before it will let a price window go, and a restrict that has to
+  /// scan is a scan on every attempt including the ones that succeed.
+  @@index([customerId])
+  @@index([planVersionId])
 }
 
 /// What `subscriptions.changePlan` accepts.
@@ -1782,6 +1902,11 @@ model Invoice {
     settle: issued -> paid @system,
     void:   issued -> void @gate(5)
   )
+
+  /// The ledger a shopper opens, and the run of invoices one arrangement has
+  /// issued. Both `Restrict`, so both are also checked on every parent delete.
+  @@index([customerId])
+  @@index([subscriptionId])
 }
 
 /// One line of the statement, frozen with it.
@@ -1810,6 +1935,10 @@ model InvoiceLine {
   @@gate("1.8.8.8")
   @@allow('read', auth().isStaff)
   @@allow('read', userId == auth().id)
+
+  /// Every read of this table is "the lines of one invoice" —
+  /// `invoices.get(id)` composes the header with them.
+  @@index([invoiceId])
 }
 
 /// The correction. A row that says an issued invoice was wrong by this much,
@@ -1831,6 +1960,10 @@ model CreditNote {
   @@gate("1.8.8.8")
   @@allow('read', auth().isStaff)
   @@allow('read', userId == auth().id)
+
+  /// What has been credited back against one invoice. `Restrict`, so it is also
+  /// the check that runs before an invoice can be removed.
+  @@index([invoiceId])
 }
 
 // ─── Basket ───────────────────────────────────────────────────────────────
@@ -1927,6 +2060,13 @@ model Cart {
 
   @@allow('read',   token == auth().cartToken)
   @@allow('update', token == auth().cartToken)
+
+  /// Neither is a lookup anybody performs — a basket reaches its discount and
+  /// its delivery method by primary key. Both are `SetNull`, which is the read
+  /// that needs them: retiring a discount code or a shipping method rewrites
+  /// every basket holding it, and finds them by scanning.
+  @@index([discountId])
+  @@index([shippingMethodId])
 }
 
 /// One line. The quantity and the PRICE THE SHOPPER WAS SHOWN, which is not
@@ -1984,6 +2124,10 @@ model CartLine {
   @@allow('create', token == auth().cartToken)
   @@allow('update', token == auth().cartToken)
   @@allow('delete', token == auth().cartToken)
+  
+  /// `Cascade` from the variant: withdrawing a colorway takes it out of every
+  /// basket holding it, and that walk starts here.
+  @@index([variantId])
 }
 
 /// What `carts.checkout` accepts. A basket knows what is in it; it does not
@@ -2153,6 +2297,17 @@ model InventoryMovement {
   createdAt    DateTime           @default(now())
   
   @@gate("5.5.9.9")
+  
+  /// The stock ledger of one variant. `Restrict`, so it is also what stands
+  /// between a variant and deletion — a check that scans the whole ledger.
+  @@index([variantId])
+  
+  /// The other read, and it starts from neither parent: `restock` asks what one
+  /// order sold, by `reference` and `kind`, so a refund putting stock back
+  /// to the shelf scans every movement the shop has ever recorded. No advisor
+  /// reports it — neither column is a foreign key, which is the whole of why
+  /// this one had to be found by reading the query.
+  @@index([reference, kind])
 }
 
 /// Which side of the books a journal line lands on.
@@ -2263,6 +2418,12 @@ model JournalEntry {
   @@gate("5.8.9.9")
   
   @@log(audit)
+  
+  /// *What did this sale post* and *what did this pay run post* — the two ways
+  /// into the books that are not by entry id. Both `Restrict`, so both are also
+  /// the check that refuses to let an order or a run be removed.
+  @@index([orderId])
+  @@index([payRunId])
 }
 
 /// One side of one journal.
@@ -2293,6 +2454,10 @@ model JournalLine {
   /// The header's ladder, for the header's reasons. A line that could be
   /// deleted is a balanced entry that stops balancing.
   @@gate("5.8.9.9")
+  
+  /// Every read of this table is "the lines of one entry", and `Cascade` walks
+  /// the same column. A balanced entry is only readable as a whole.
+  @@index([entryId])
 }
 
 /// How somebody is paid. `rate` means a different number under each, which is
@@ -2411,6 +2576,12 @@ model PayWindow {
   /// See the model header. The tuple would have constrained the CLOSED rows,
   /// which nobody was worried about.
   @@unique([employeeId], where: effectiveTo == null)
+  
+  /// The constraint above holds only the OPEN window, which is the one an
+  /// as-at read at a past instant does not want. `payAsAt` filters on
+  /// `employeeId` and orders by `effectiveFrom` descending, so the composite
+  /// answers both halves of it.
+  @@index([employeeId, effectiveFrom])
   
   @@log(audit)
 }
@@ -2694,6 +2865,13 @@ model Payslip {
   /// constraint turns on is null on exactly the rows that matter.
   @@unique([payRunId, employeeId])
   
+  /// The tuple above leads with `payRunId`, so *this run's payslips* is
+  /// covered and *this person's payslips* — the employee screen, and the
+  /// arrears pass reading what has already been paid — is not. `payWindowId`
+  /// is a `Restrict` check.
+  @@index([employeeId])
+  @@index([payWindowId])
+  
   @@log(audit)
 }
 
@@ -2759,6 +2937,13 @@ model PayslipLine {
   @@gate("5.5.9.8")
   
   @@check("amount != 0", "a payslip line cannot be for nothing")
+  
+  /// The lines of one payslip, which is how a payslip is read and how its
+  /// `Cascade` finds what to remove. The other two are `Restrict` checks: a pay
+  /// rate and a corrected run cannot go while a line still names them.
+  @@index([payslipId])
+  @@index([rateId])
+  @@index([correctsPayRunId])
 }
 
 /// What `employees.setPay` accepts — a new pay window opening today.

@@ -20,6 +20,7 @@ import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { join }        from 'node:path'
 import { createTestEnv, session } from '@frontierjs/testing'
 import { signRequest } from '@frontierjs/toolbelt/signature'
+import { seriesKey }   from '@frontierjs/junction'
 import { GatePlugin }  from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
@@ -1448,5 +1449,313 @@ describe('a move the engine makes, asked for by a person', () => {
 
     expect(await can(pending)).toBe(true)
     expect(await can(draining)).toBe(false)
+  })
+})
+
+// ─── the metric store, read back ─────────────────────────────────────────
+//
+// `metricsPlugin` writes these; this service is the only thing that reads
+// them, and until it existed they were three models nothing could reach —
+// which is the shape `AlertRule` sat in for a month (`FJS-123`).
+//
+// What makes the reader worth testing separately from the fold is the TIER
+// CHOICE: raw exists for 48 hours and hourly rows exist for every hour ever
+// folded, so which one answers depends on the window asked for and NOT on
+// anything the caller says. A chart that silently changed resolution when its
+// range crossed 48 hours would show a step nobody could account for.
+describe('the metric store is readable, and picks its own resolution', () => {
+  const HOUR = 3_600_000
+  let seriesId: string
+
+  beforeAll(async () => {
+    const sys = env.system as any
+    const s = await sys.metricSeries.create({
+      data: { name: 'test.gaugeReading', labelsKey: 'test.gaugeReading', type: 'gauge',
+              lastSeenAt: new Date().toISOString() },
+    })
+    seriesId = s.id
+    // Recent minutes, inside the raw window.
+    for (let i = 0; i < 5; i++)
+      await sys.metricPoint.create({ data: { seriesId: s.id, at: Date.now() - i * 60_000, value: i } })
+    // An hour far outside it, folded — which is the only thing that exists out
+    // there, because the raw covering it would have been pruned.
+    await sys.metricHour.create({
+      data: { seriesId: s.id, hour: Math.floor((Date.now() - 200 * HOUR) / HOUR) * HOUR,
+              min: 0, max: 9, sum: 45, count: 10, increase: null },
+    })
+  })
+
+  test('a workspace member cannot see it at all — 404, not 403', async () => {
+    // The hub's answer, and for the hub's reason: these series are
+    // `@@tenant(none)` and belong to no workspace, so this is not a screen a
+    // member is being refused, it is one they have no business knowing exists.
+    await expect(env.as(owner).service('metrics-store').find()).rejects.toThrow(/not found/i)
+  })
+
+  test('a sysadmin lists the series, and each one says whether anything is still writing it', async () => {
+    const res  = await env.as(sysadmin).service('metrics-store').find()
+    const rows = (res as any).data ?? res
+    const mine = rows.find((r: any) => r.labelsKey === 'test.gaugeReading')
+    expect(mine).toBeTruthy()
+    // The column that earns its place: a scrape that STOPPED and a value that
+    // is not CHANGING draw the same flat line, and nothing else separates them.
+    expect(mine.stale).toBe(false)
+  })
+
+  test('a window inside the raw retention is answered at minute resolution', async () => {
+    const r = await env.as(sysadmin).service('metrics-store')
+      .call('read', null, { name: 'test.gaugeReading', from: Date.now() - 2 * HOUR, to: Date.now() })
+    expect(r.tier).toBe('raw')
+    expect(r.points.length).toBe(5)
+  })
+
+  test('a window reaching past it is answered from the fold instead', async () => {
+    // Not a preference and not a fallback: the minutes out there were pruned,
+    // so hour rows are the only thing that exists. Asserting the TIER and not
+    // just the point count is the whole point — a reader that returned an empty
+    // raw list would look identical to one that had no data.
+    const r = await env.as(sysadmin).service('metrics-store')
+      .call('read', null, { name: 'test.gaugeReading', from: Date.now() - 300 * HOUR, to: Date.now() })
+    expect(r.tier).toBe('hour')
+    expect(r.points.length).toBe(1)
+    expect(r.points[0].count).toBe(10)
+  })
+
+  test('a series nobody ever wrote is empty rather than an error', async () => {
+    const r = await env.as(sysadmin).service('metrics-store')
+      .call('read', null, { name: 'test.neverWritten', from: Date.now() - HOUR, to: Date.now() })
+    expect(r.series).toBe(null)
+    expect(r.points).toEqual([])
+  })
+
+  test('a backwards window is refused rather than answered with nothing', async () => {
+    // An empty chart and a nonsense range look the same to a reader, so the
+    // range is graded instead of being allowed to return zero rows.
+    await expect(env.as(sysadmin).service('metrics-store')
+      .call('read', null, { name: 'test.gaugeReading', from: Date.now(), to: Date.now() - HOUR }))
+      .rejects.toThrow(/from must be before to/)
+  })
+})
+
+// ─── A rule watching a metric that does not exist ────────────────────────
+//
+// `AlertRule.metricName` is not a foreign key, and it cannot be: a series is
+// MINTED by the first scrape that sees it, so a rule legitimately precedes the
+// row it names. What that costs is a rule watching a typo — it never fires, and
+// from every screen it looks exactly like a threshold nobody has crossed.
+//
+// So `get` answers whether the series exists and when it was last seen. Both
+// rows below are PAIRED, because an answer of `null` for every rule would
+// satisfy a test that only asked about the typo.
+describe('an alert rule says whether anything writes the metric it watches', () => {
+  const tag = () => Math.random().toString(36).slice(2, 8)
+  let live: any, typo: any
+
+  beforeAll(async () => {
+    const sys = env.system as any
+    await sys.metricSeries.create({
+      data: { name: 'alertcheck.written', labelsKey: 'alertcheck.written', type: 'gauge',
+              lastSeenAt: new Date().toISOString() },
+    })
+    live = await sys.alertRule.create({
+      data: { workspaceId: ws.id, name: `live-${tag()}`, metricName: 'alertcheck.written',
+              severity: 'warning', operator: 'gt', threshold: 10 },
+    })
+    typo = await sys.alertRule.create({
+      data: { workspaceId: ws.id, name: `typo-${tag()}`, metricName: 'alertcheck.writen',
+              severity: 'warning', operator: 'gt', threshold: 10 },
+    })
+  })
+
+  test('a rule over a real series answers it, live', async () => {
+    const r = await env.as(owner).service('alerts').get(live.id) as any
+    expect(r.series?.name).toBe('alertcheck.written')
+    expect(r.series.stale).toBe(false)
+  })
+
+  test('…and one letter out answers null, which is the whole point', async () => {
+    // One character apart from the row above. The series models are
+    // `@@gate("8")` and `@@tenant(none)`, so the lookup is `asSystem()` and the
+    // only thing that reaches the response is the name, the type and the
+    // freshness — never a reading.
+    const r = await env.as(owner).service('alerts').get(typo.id) as any
+    expect(r.series).toBe(null)
+  })
+})
+
+// ─── Accepting an invitation ─────────────────────────────────────────────
+//
+// The whole of `accept` was covered by the browser drive and by nothing else,
+// which cost ten minutes to find a one-word scoping bug: the notification added
+// for `FJS-967` read `name`, a `const` scoped to the branch that CREATES an
+// account — so outside it the identifier resolved to the DOM lib's global
+// `name`, `tsc` said nothing because that global is a string, and every accept
+// threw at runtime.
+//
+// These two rows are the two branches. Neither asserts about the notification;
+// they assert that accepting still WORKS, which is what a sender added beside a
+// transaction can break.
+describe('accepting an invitation puts somebody in the workspace', () => {
+
+  // ONE branch here, and the other is the drive's on purpose. Accepting as an
+  // ALREADY signed-in person carries a session with no workspace claim, which
+  // `tenantClaimGuard` refuses from a service call — the real path arrives over
+  // HTTP where the claim is resolved per request, and reproducing that here
+  // would be reproducing the transport. The branch below is the one that runs
+  // anonymous, and it reaches the same notify call, which is what broke.
+  test('an address with no account creates one, and lands signed in', async () => {
+    const email = `fresh-${Math.random().toString(36).slice(2, 8)}@x.co`
+    const inv   = await env.as(owner).service('invitations')
+      .create({ email, role: 'viewer' }) as any
+
+    // Anonymous on purpose: `accept` and `preview` are the only two methods
+    // here exempt from authenticate, because the whole population they are for
+    // may not have an account yet.
+    const res = await env.service('invitations').call('accept', null, {
+      token: inv.token, name: 'Fresh Person', password: 'correct-horse',
+    }) as any
+
+    expect(res.workspace_id).toBe(ws.id)
+    // The session is the half that makes this branch worth a row: a person who
+    // has no password memory must land inside the app rather than at a form.
+    expect(res.token).toBeTruthy()
+    const made = await env.system.user.findFirst({ where: { email } })
+    expect(made.displayName).toBe('Fresh Person')
+  })
+})
+
+// ─── A machine's readings, kept ──────────────────────────────────────────
+//
+// `Server.health` is a snapshot — one Json column overwritten every check-in —
+// so *what was this box doing on Tuesday* was gone rather than stale, and three
+// widget kinds said so on their own cards (`FJS-956`).
+//
+// The heartbeat records into the metric store now. What makes that worth its own
+// block is the READ: `MetricSeries` is `@@gate("8")` and `@@tenant(none)`,
+// because a reading is about a PROCESS — which is right for `process.memoryMb`
+// and is exactly what a per-server series is not. Opening the package's read
+// slot and asking every app to declare a policy was refused: an app that writes
+// none then serves every reading to anyone, fail-open and silent. So the
+// confinement is the PARENT READ — `getScoped('server')` at the caller's own
+// standing — and the two rows that matter are the pair below.
+describe('a server keeps its readings, and only its own workspace may read them', () => {
+  let box: any
+
+  beforeAll(async () => {
+    const sys = env.system as any
+    box = await sys.server.create({
+      data: { workspaceId: ws.id, name: 'metric-box', slug: `mbox-${Math.random().toString(36).slice(2, 8)}`,
+              status: 'pending' },
+    })
+  })
+
+  /** A check-in the way an outpost makes one: over HTTP, HMAC-signed. The
+   *  method is exempt from `authenticate` and refuses a service call by name,
+   *  so driving it any other way would drive something the outpost does not. */
+  const SECRET = process.env.OUTPOST_SECRET ?? 'outpost-dev-secret'
+
+  async function checkIn(health: Record<string, unknown>) {
+    const body = { outpost_version: '1.0.0', health }
+    const path = `/servers/${box.id}`
+    const req  = env.http.post(path).set('x-service-method', 'heartbeat')
+    for (const [k, v] of Object.entries(await signRequest({
+      secret: SECRET, method: 'POST', path, body: JSON.stringify(body),
+      timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
+    }))) req.set(k, v)
+    const res = await req.send(body)
+    expect(res.status).toBe(200)
+  }
+
+  test('a heartbeat writes a point per reading, labelled with the server', async () => {
+    // Over the real service, not by calling the recorder: the seam this asserts
+    // is that a check-in reaches the store at all, and a direct call to
+    // `recordHealth` agrees with a heartbeat that never invokes it.
+    await checkIn({ cpu: 41, memory: 62, disk: 77 })
+
+    const sys  = env.system as any
+    const one  = await sys.metricSeries.findFirst({
+      where: { labelsKey: seriesKey('server.cpuPercent', { serverId: box.id }) },
+    })
+    expect(one).toBeTruthy()
+    expect(one.labels.serverId).toBe(box.id)
+    expect(await sys.metricPoint.count({ where: { seriesId: one.id } })).toBe(1)
+  })
+
+  test('a key the outpost sent that this app does not keep is not a series', async () => {
+    // `health` is an open Json document and an outpost may send anything. A
+    // store that kept every key it was handed grows a series per typo, and every
+    // one of them is `@@unique` and permanent.
+    await checkIn({ cpu: 41, loadavg: 0.4, swaP: 12 })
+    const sys  = env.system as any
+    const all  = await sys.metricSeries.findMany({})
+    const mine = all.filter((s: any) => s.labels?.serverId === box.id).map((s: any) => s.name).sort()
+    expect(mine).toEqual(['server.cpuPercent', 'server.diskPercent', 'server.memoryPercent'])
+  })
+
+  test('a missing reading is SILENCE, not a zero', async () => {
+    // An outpost that stopped reporting disk and a disk at 0% are different
+    // facts, and writing 0 for the first is the store inventing a reading.
+    //
+    // The assertion is on the VALUE and not on a row COUNT, which is the shape
+    // that measures nothing here: a point is keyed on (series, MINUTE), so a
+    // second check-in inside one minute updates the point either way and the
+    // count is identical whether the guard is there or not. Under the wrong
+    // implementation this row's 77 becomes 0.
+    const sys  = env.system as any
+    const disk = await sys.metricSeries.findFirst({
+      where: { labelsKey: seriesKey('server.diskPercent', { serverId: box.id }) },
+    })
+    const newest = async () => (await sys.metricPoint.findMany({
+      where: { seriesId: disk.id }, orderBy: { at: 'desc' }, limit: 1,
+    }))[0]
+
+    expect((await newest()).value).toBe(77)
+    await checkIn({ cpu: 41 })
+    expect((await newest()).value).toBe(77)
+  })
+
+  test('a member reads their own server\'s series', async () => {
+    const res = await env.as(owner).service('servers').call('metrics', box.id, {}) as any
+    expect(res.serverId).toBe(box.id)
+    expect(res.series['server.cpuPercent'].points.length).toBeGreaterThan(0)
+    // `null` and not `[]` for a series nothing ever wrote: a machine that has
+    // never reported and one whose value is flat draw the same empty chart, and
+    // only the first is something a person should be told about.
+    expect(res.series['server.memoryPercent']).not.toBe(null)
+  })
+
+  test('…AND ANOTHER WORKSPACE\'S SERVER IS 404, from the parent read', async () => {
+    // The pair, and the reason the whole read is shaped this way. The refusal
+    // comes from the SERVER being unreachable at this caller's standing — a
+    // check on the series would be a second access decision over rows the
+    // schema says belong to nobody, and the two would then have to be kept in
+    // step by hand.
+    //
+    // A member of this workspace asking for a machine in another one is the
+    // sharp case: they are signed in, they hold a real standing, and the only
+    // thing between them and another fleet's readings is `getScoped`.
+    const sys      = env.system as any
+    const elsewhere = await sys.workspace.findFirst({ where: { name: 'Other' } })
+    const theirs    = await sys.server.create({
+      data: { workspaceId: elsewhere.id, name: 'their-box',
+              slug: `their-${Math.random().toString(36).slice(2, 8)}`, status: 'pending' },
+    })
+
+    await expect(env.as(owner).service('servers').call('metrics', theirs.id, {}))
+      .rejects.toThrow(/not found/i)
+  })
+
+  test('and somebody with no membership at all never reaches the method', async () => {
+    // A different refusal, one hook earlier, and worth its own row: this one is
+    // `sessionScope` and it would still fire if `getScoped` were removed — so
+    // without the row above, deleting the parent read would look safe.
+    await expect(env.as(outsider).service('servers').call('metrics', box.id, {}))
+      .rejects.toThrow(/not a member/i)
+  })
+
+  test('a backwards window is refused rather than answered with nothing', async () => {
+    await expect(env.as(owner).service('servers').call('metrics', box.id,
+      { from: Date.now(), to: Date.now() - 3_600_000 }))
+      .rejects.toThrow(/from must be before to/)
   })
 })

@@ -32,6 +32,7 @@ import { $ } from '@frontierjs/junction'
 import { defineJob }       from '@frontierjs/caravan'
 import { resolveExecutor, isExecutor } from '../providers/executor.ts'
 import type { Executor }    from '../providers/executor.ts'
+import { notifyPeople, workspaceMembers } from '../core/notify.ts'
 import { runsAsCaller }         from './context.ts'
 import type { BasecampApp } from '../basecamp.types.ts'
 import type { StepStatus } from '../../../db/schema.d.ts'
@@ -84,6 +85,31 @@ function runner(app: BasecampApp) {
     return typeof value === 'string' && /^sha256:[0-9a-f]{64}$/.test(value) ? value : null
   }
 
+  // ── Telling people ────────────────────────────────────────────────
+  // Everybody in the workspace, and no narrowing by role: who WANTS to hear
+  // about a release is a preference, and `NotificationPreference` is where a
+  // person says so. Filtering by role here would be a second answer to a
+  // question one model already owns, and the person who triggered the deploy is
+  // not excluded for the same reason — they can turn it off.
+  //
+  // Failures are never swallowed into the deploy: `notifyPeople` catches per
+  // recipient, and this whole call sits outside the try that fails the release,
+  // because a release that succeeded and a mailer that did not are two facts.
+  async function tellThem(kind: string, deploy: any, service: any, extra: Record<string, unknown> = {}) {
+    const workspaceId = deploy.workspaceId as string | undefined
+    if (!workspaceId) return
+    const env = deploy.environmentId
+      ? await (app.db as any).asSystem().environment.findFirst({ where: { id: deploy.environmentId } })
+      : null
+    await notifyPeople(app, kind, await workspaceMembers(app, workspaceId), {
+      deploymentId: deploy.id,
+      appName:      service?.name ?? 'an app',
+      environment:  env?.name ?? 'an environment',
+      release:      deploy.version ?? undefined,
+      ...extra,
+    })
+  }
+
   // ── Core runner ───────────────────────────────────────────────────
   async function runDeployment(deploymentId: string): Promise<void> {
     const startedAt = Date.now()
@@ -110,6 +136,7 @@ function runner(app: BasecampApp) {
     const service = opened.app as ServiceRow
     if (!service) {
       await failDeploy(deploymentId, startedAt, 'App not found')
+      await tellThem('deploy_failed', deploy, null, { reason: 'App not found' })
       return
     }
 
@@ -122,6 +149,10 @@ function runner(app: BasecampApp) {
       // which is the difference from the behavior this replaced.
       await failDeploy(deploymentId, startedAt, executor.reason)
       log.error('deployment refused — no executor', { id: deploymentId, reason: executor.reason })
+      // A release refused before it started is still a release that failed, and
+      // it is the one people most need telling about: nothing happened on the
+      // machine, so there is no half-finished state on a screen to notice.
+      await tellThem('deploy_failed', deploy, service, { reason: executor.reason })
       return
     }
 
@@ -159,11 +190,13 @@ function runner(app: BasecampApp) {
         startedAt: new Date(startedAt).toISOString(),
       })
       log.info('deployment succeeded', { id: deploymentId, duration_ms: Date.now() - startedAt })
+      await tellThem('deploy_success', deploy, service)
 
     } catch (err: unknown) {
       const msg = (err as Error).message ?? 'unknown error'
       await failDeploy(deploymentId, startedAt, msg)
       log.error('deployment failed', { id: deploymentId, error: msg })
+      await tellThem('deploy_failed', deploy, service, { reason: msg })
     }
   }
 

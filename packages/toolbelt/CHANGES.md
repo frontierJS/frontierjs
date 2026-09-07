@@ -1,5 +1,174 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-09-07 — `/signature` checks its unit instead of documenting it
+
+The scheme signs seconds and said so only inside the error a caller who passed
+NOTHING would see. Both units are a finite number, so `Date.now()` on both sides
+signed and verified perfectly — with `toleranceSeconds: 300` then meaning 300
+**milliseconds**, and a request one hour old reported as `3600000s out`.
+
+Every caller here was already correct (conduit and outpost both sign
+`Math.floor(Date.now() / 1000)`), so this is about the audience conduit exists
+for. **The dangerous direction is the repair**: every unit mismatch fails closed,
+so the first thing anyone does is widen the tolerance, and a caller in seconds
+who sets `300000` has bought a three-and-a-half day replay window.
+
+`1e11` separates the units from 1973 to the year 5138, so the check is exact.
+A millisecond-shaped `timestamp` or `now` is refused by name and told to divide
+by 1000 — § IV *familiarity vs. precision*, fail the muscle memory and name the
+equivalent. **`now` throws and a header answers**: the first is the caller's own
+argument, the second is remote input, and a receiver must not be crashed by what
+somebody put in a header.
+
+Measured: removing the guard reds 3 of the 4 new rows, making the header refusal
+a throw reds exactly the asymmetry row, and widening the guard to every positive
+number reds **17** — that last is the control, since a guard refusing real
+timestamps breaks both shipped signers.
+
+355 passing. `FJS-1001`.
+
+## 2026-09-07 — a JSON member is an OWN property (`/json`, `/match`, `/directives`)
+
+`__proto__` is legal JSON and `JSON.parse` keeps it as an own key, so `<Json
+editable>` rendered the row and could not edit around it. Every rebuild wrote
+keys by assignment, which reaches `Object.prototype`'s setter: **removing an
+unrelated key destroyed a `__proto__` sibling and its subtree**, a rename onto it
+discarded the value, adding it was a no-op that still called `write()`, and a
+diff counted a change it could render no row for.
+
+`put()` and `member()` are the two owners now — `Object.defineProperty` for a
+write, an own-key/in-range-index read for a lookup. `Object.fromEntries` and
+spread were already correct; only assignment was not, which is what made the
+six sites decidable rather than a judgement.
+
+**`constructor` and `toString` store fine under a plain assignment**, so every
+spec row here is written with `__proto__`. Measured: restoring the assignment
+reds 4 of them, restoring the ordinary read 1.
+
+Two more sites, same cause. `matchesQuery` used `key in record`, which is true
+for every member of `Object.prototype`, so a query naming an undeclared field
+called `constructor`, `toString`, `valueOf`, `hasOwnProperty` or `__proto__`
+answered **`false`** — dropping the record from a live list — where the kit's
+contract says `null`, ask the server. And `splitParams` dropped a `__proto__`
+filter in silence; it is carried now, and the Data boundary refuses it by name
+exactly as it refuses any other undeclared column (verified against a real
+client). One spec row each, each red with its own fix removed.
+
+351 passing. `FJS-996`.
+
+## 2026-09-07 — `/humanize` folds into `/inflect` as its third axis
+
+One folder answers *how is this name spelled*. `humanize` is the READER axis
+beside NUMBER and SHAPE, and the `./humanize` subpath is gone rather than
+aliased — its two consumers, ui and sierra, take `@frontierjs/toolbelt/inflect`.
+
+**The entry below arguing they must stay apart was right about the divergence and
+wrong about the folder.** What NUMBER and SHAPE answer must not change when a
+reader changes and what `humanize` answers must — that is still true, and stating
+it in two file headers across a folder boundary is where it went to be lost,
+since neither header is read by anyone editing the other. It is one paragraph in
+`inflect.js` § Reader now (`FJS-D236`).
+
+**It derives.** `humanize` is `words()` plus exactly one added rule — a digit
+starts a word of its own — applied as one visible regex before the split. As a
+separate kit it was three copied regexes nothing marked as copies.
+
+**The added rule may not be lifted upward**, and that is the hazard the merge
+creates: `kebab('address1')` becoming `address-1` renames a column, where a wrong
+label is cosmetic. So the two splitters stay two functions rather than one with an
+option, and one spec row asserts BOTH answers — the digit split beside `kebab`,
+`snake` and `modelName` refusing it — so a later tidy in either direction reds it.
+
+34 inflect rows, 343 passing.
+
+## 2026-09-07 — `/inflect` grows a SHAPE half: six copies of `pascal`, four splitters
+
+Number was already here; shape was not. `words` · `pascal` · `camel` · `kebab` ·
+`snake` · `slug` · `modelName` join `pluralize`/`singularize` in the same kit,
+because they are one question — a caller crossing between a table, a model and a
+service path asks both in the same expression.
+
+**The asymmetry is what made this a defect rather than a tidy-up.** All six hand
+copies already imported `singularize` from here, so half of Invariant 2's
+derivation was a shared kit and the other half of the same expression was
+hand-rolled four different ways: `split('_')` in two of litestone's importers,
+`split(/[_\s]+/)` in `eject`, `replace(/[^A-Za-z0-9]+/g, ' ')` in the frappe
+reader, `split(/[-_]/)` in the cli's checks. `order-item` was `OrderItem` to the
+rule that GRADES model names and `Order-item` to two of the readers that PRODUCE
+them.
+
+`modelName` is exported for that reason. Exporting `pascal` alone would leave the
+composition restated at every call site, one import deeper than before.
+
+**Two answers differ from `/humanize` on purpose**, and each is its own spec row.
+A digit does not start a word here — `address1` stays `address1`, where splitting
+it makes `kebab` rename a column — and only `_`, `-` and whitespace separate, so
+`partman.template_x` comes back visibly wrong instead of as a plausible
+`PartmanTemplateX` a caller would use as a model name. What this kit answers must
+not change when the reader changes; what humanize answers must.
+
+`camel` lowers a leading initialism whole: the copies lowered the first character
+and produced `hTTPStatus`.
+
+**`slug` absorbed five more copies** that had two separators between them and two
+answers for punctuation. One rule and one stated exception: every run of
+non-alphanumerics is one separator, and an apostrophe is deleted, because it sits
+inside a word where every other mark sits between two. That exception is
+litestone's own `@slug` test asserting `its-a-c-thing`, and it was kept by fixing
+the kit rather than the test. `sep` is a parameter because a migration filename
+wants `_`; `max` is here because `.slice(0, 64)` at a call site is the version
+that stores `strategy-and-`; accents fold rather than drop, since `Café` came
+back `caf` from all five copies.
+
+Eleven spec rows. The importers' `split('_')` reds five of them, `modelName`
+without its singular half one, and each of the six single behaviours exactly its
+own (`FJS-975`).
+
+## 2026-09-07 — `/inflect`: `movies` was `movy`, and it round-tripped
+
+`singularize` sent every `-ies` plural through `-y`, which is right for
+`categories` and invents a word for `movies` and `cookies`. `IE_SINGULAR` is the
+closed list that separates them, consulted before the `-y` rule — the shape
+`SES_BARE_S` already has one ending along, and a list for the same reason:
+`movies` and `bodies` are identical in form, and nothing in either says which
+stem it came from.
+
+**It survived because the wrong answer was self-consistent.** `pluralize('movy')`
+is `'movies'`, so the pair round-tripped and every symmetry check passed while
+both halves named a word that does not exist. Round-tripping is necessary here
+and never sufficient, which is why the spec asserts real words on both sides.
+
+**`cookie` is the entry that makes this a defect rather than a curiosity.** A web
+framework declaring `model Cookie` with a `cookies` service is the ordinary case,
+and it resolved to `Cooky`. `core/checks.js` records what a miss costs and it is
+not a bad name: no `@@gate` is found, so a gated model is served to anyone, and
+no schema is found, so `autoValidate` validates nothing. Junction derives a model
+name from a service name with this function.
+
+Every spec row pairs the `-ie` word with the `-y` word one letter apart —
+`movies`/`bodies`, `cookies`/`categories`, `pies`/`policies` — because a fix that
+sent both to `-ie` would look exactly like one that sent neither. Four rows go red
+with the list disabled (`FJS-959`).
+
+## 2026-09-06 — `/humanize`, a machine name as a person reads it
+
+`postal_code` and `postalCode` are both `Postal Code`. `@frontierjs/ui` had it
+as `nameToLabel` and sierra needed the same answer for a different reason — a
+stored value the picker can no longer offer is still shown, and rendering
+`dark_blue` beside options that read like English is the same defect one layer
+down (`FJS-D225`).
+
+Two copies of *what does this identifier say* drift the moment one learns about
+initialisms, which this one has: a run of capitals stays whole (`SKU`, not
+`S K U`; `orderID` → `Order ID`) and a digit starts its own word (`line1` →
+`Line 1`). A non-string answers `''`, because this lands in a label and
+`[object Object]` on screen is worse than nothing.
+
+**Not the inflect kit.** That one is structural — table, accessor, service path
+— and says in its own header that text for a reader belongs elsewhere. ui's
+`nameToLabel` is gone rather than aliased; its eleven call sites take the kit's
+spelling.
+
 ## `/hooks` — a broken chain answered `null` and looked like an answer
 
 Three ordinary mistakes ended the pipeline with nothing having produced a

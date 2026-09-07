@@ -313,7 +313,7 @@ export type HookType = 'before' | 'validated' | 'method' | 'after' | 'around' | 
 // `from '.../transport/bridge.ts'` imports keep working.
 export type { ServiceResult, ResultKind, ListResult, SingleResult } from './envelope.ts'
 
-export type ServiceMethod = 'find' | 'get' | 'create' | 'update' | 'patch' | 'remove' | 'restore'
+export type ServiceMethod = 'find' | 'get' | 'aggregate' | 'create' | 'update' | 'patch' | 'remove' | 'restore'
 export type AnyMethod     = ServiceMethod | string
 
 // ─── Call options (internal service-to-service calls) ─────────────────────

@@ -38,6 +38,7 @@ title: Alerts
   let busy     = null
   let creating = false
   let draft    = alerts.make()
+  let metric   = {}      // ruleId → the series it watches, or null
 
   // The kit's controls take a value and hand back an event; they are NOT bound
   // to `draft[name]`, because `bind:` on a COMPONENT needs a writable top-level
@@ -60,6 +61,13 @@ title: Alerts
       // sayable at a glance rather than after a click.
       const full = await Promise.all(rows.map(r => alerts.service.get(r.id)))
       delivery = Object.fromEntries(full.map(r => [r.id, r.channels ?? []]))
+      // Whether the metric this rule watches EXISTS. `metricName` is not a
+      // foreign key — a series is minted by the first scrape that sees it, so
+      // a rule may legitimately precede it — and the cost is a rule watching a
+      // typo, which never fires and looks exactly like a threshold nobody
+      // crossed. The server answers it because only the server can see the
+      // series; the card says it because otherwise nobody ever finds out.
+      metric = Object.fromEntries(full.map(r => [r.id, r.series ?? null]))
       allChannels = (await channels.service.find({}, { limit: 200 })).data
     } catch (e) {
       error = e.message
@@ -122,17 +130,11 @@ title: Alerts
   async function create(data) {
     error = null
     try {
-      // `condition` is Json in the schema and a threshold in the UI. One shape
-      // is built here rather than asking a person to type JSON — and the
-      // service is what refuses a severity it does not recognize.
-      //
-      // `threshold` is dropped rather than spread: it is a control on this form
-      // and not a column, so sending it names nothing the model declares.
-      const { threshold, ...rest } = data
-      const created = await alerts.service.create({
-        ...rest,
-        condition: { operator: 'gt', threshold: Number(threshold ?? 0) },
-      })
+      // Sent as it stands. Every control on this form is a column now, so
+      // nothing is folded, renamed or dropped on the way out — which is what a
+      // `condition Json` blob cost: this screen and the seeder each invented a
+      // shape and neither was refused.
+      const created = await alerts.service.create(data)
       toasts.success(`${created.name} created`)
       creating = false
       draft = alerts.make()
@@ -182,8 +184,13 @@ title: Alerts
   }
 
   $: severities = alerts.fields?.severity?.enum ?? []
+  $: operators  = alerts.fields?.operator?.enum ?? []
 
   const TONE = { critical: 'danger', warning: 'warning', info: 'info' }
+  // How the four operators read. Not a second vocabulary: the LIST comes from
+  // the schema above, and this only spells each word — a value missing here
+  // renders as the enum's own name rather than as blank.
+  const SYMBOL = { gt: '>', gte: '≥', lt: '<', lte: '≤' }
   const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
 </script>
 
@@ -194,10 +201,10 @@ title: Alerts
   </Button>
 </div>
 
-<Callout tone="info" title="Rules are declared, not yet evaluated">
-  Nothing measures these thresholds today — an evaluator belongs with whatever does the
-  measuring, and a rule that fired from the browser's view of the fleet would be theater.
-  Events written by the system are read here.
+<Callout tone="info" title="Evaluated once a minute, against the metric store">
+  A rule watches a series by name. The evaluator reads it on the server — never here, because
+  a rule that fired from the browser's view of the fleet would be theater — and fires when the
+  reading has held past its threshold for the whole duration.
 </Callout>
 
 {#if error}
@@ -214,12 +221,20 @@ title: Alerts
              oninput={(e) => write('name', e.target.value)} />
       <Input name="metricName" id="metricName" placeholder="memory" value={draft.metricName}
              oninput={(e) => write('metricName', e.target.value)} />
-      <!-- `threshold` is not a column: the schema has `condition Json`, and a
-           person types a number rather than JSON. create() folds it in. -->
-      <Input name="threshold" id="threshold" type="number" label="Threshold (%)" value={draft.threshold}
+      <!-- Every option below comes from the schema's own enum, through the
+           JSON Schema the build emits — never a list retyped here. `operator`
+           and `threshold` are ordinary columns now: they were one `condition
+           Json` blob, which this form wrote as `{operator, threshold}` while
+           the seed wrote `{op, value}` and this card read `.operator`, so a
+           seeded rule rendered its threshold as an em-dash and nothing errored. -->
+      <Select name="operator" id="operator" options={operators}
+              value={draft.operator} oninput={(e) => write('operator', e.target.value)} />
+      <Input name="threshold" id="threshold" type="number" value={draft.threshold}
              oninput={(e) => write('threshold', e.target.value)} />
-      <!-- Options come from the schema's own enum, through the JSON Schema the
-           build emits — never a list retyped here. -->
+      <!-- Zero means "on the newest reading". Above zero the breach has to hold
+           for the whole window, which is what separates an alert from a spike. -->
+      <Input name="forMinutes" id="forMinutes" type="number" value={draft.forMinutes}
+             oninput={(e) => write('forMinutes', e.target.value)} />
       <Select name="severity" id="severity" options={severities}
               value={draft.severity} oninput={(e) => write('severity', e.target.value)} />
       <Button type="submit" variant="primary">Create rule</Button>
@@ -248,7 +263,19 @@ title: Alerts
         <dl class="facts">
           <dt>Metric</dt><dd><code>{rule.metricName}</code></dd>
           <dt>Condition</dt>
-          <dd><code>{rule.condition?.operator ?? 'gt'} {rule.condition?.threshold ?? '—'}</code></dd>
+          <dd><code>{SYMBOL[rule.operator] ?? rule.operator} {rule.threshold}{rule.forMinutes ? ` for ${rule.forMinutes}m` : ''}</code></dd>
+          <dt>Series</dt>
+          <dd>
+            {#if metric[rule.id] === null}
+              <Badge tone="warning">nothing writes this metric</Badge>
+            {:else if metric[rule.id]?.stale}
+              <Badge tone="warning">last seen {when(metric[rule.id].lastSeenAt)}</Badge>
+            {:else if metric[rule.id]}
+              <Badge tone="success">live</Badge>
+            {:else}
+              <span class="text-sm text-muted">—</span>
+            {/if}
+          </dd>
         </dl>
 
         <!-- Where this rule delivers. A rule with no channel fires into a

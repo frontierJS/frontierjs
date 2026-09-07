@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-76 definitions · 46 models · 30 enums · 0 other
+84 definitions · 50 models · 34 enums · 0 other
 ```
 
 ## Definitions
@@ -29,6 +29,9 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `Session` | model |
 | `Verification` | model |
 | `OauthFlow` | model |
+| `MetricSeries` | model |
+| `MetricPoint` | model |
+| `MetricHour` | model |
 | `User` | model |
 | `Account` | model |
 | `Workspace` | model |
@@ -70,8 +73,10 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `RegistryImage` | model |
 | `Backup` | model |
 | `HubConfig` | model |
+| `Notification` | model |
 | `NotificationPreference` | model |
 | `VerificationPurpose` | enum |
+| `MetricType` | enum |
 | `AccountType` | enum |
 | `WorkspaceType` | enum |
 | `WorkspaceRole` | enum |
@@ -92,6 +97,8 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `RunStatus` | enum |
 | `AlertSeverity` | enum |
 | `AlertSubject` | enum |
+| `ComparisonOp` | enum |
+| `AlertStatus` | enum |
 | `ActorKind` | enum |
 | `ChannelKind` | enum |
 | `FlagType` | enum |
@@ -99,6 +106,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `ParamGenerator` | enum |
 | `BackupKind` | enum |
 | `BackupDestination` | enum |
+| `NotificationContext` | enum |
 | `NotificationKind` | enum |
 | `Capability` | enum |
 
@@ -108,6 +116,7 @@ A value removed here is a row already in the database that no longer
 validates, and a select that silently drops an option.
 
 - `VerificationPurpose` — `passwordReset`, `emailVerify`, `oauthLink`
+- `MetricType` — `counter`, `gauge`, `histogram`
 - `AccountType` — `individual`, `organization`
 - `WorkspaceType` — `personal`, `team`, `enterprise`
 - `WorkspaceRole` — `viewer`, `billing`, `developer`, `admin`, `owner`
@@ -127,7 +136,9 @@ validates, and a select that silently drops an option.
 - `JobStatus` — `pending`, `running`, `failed`, `cancelled`
 - `RunStatus` — `pending`, `running`, `success`, `failed`, `timeout`
 - `AlertSeverity` — `info`, `warning`, `critical`
-- `AlertSubject` — `server`, `volume`
+- `AlertSubject` — `server`, `volume`, `series`
+- `ComparisonOp` — `gt`, `gte`, `lt`, `lte`
+- `AlertStatus` — `firing`, `resolved`
 - `ActorKind` — `user`, `api_key`, `system`, `support`
 - `ChannelKind` — `slack`, `pagerduty`, `email`, `webhook`
 - `FlagType` — `boolean`, `variant`
@@ -135,6 +146,7 @@ validates, and a select that silently drops an option.
 - `ParamGenerator` — `random_hex_16`, `random_hex_32`, `random_hex_64`
 - `BackupKind` — `manual`, `scheduled`
 - `BackupDestination` — `local`, `s3`
+- `NotificationContext` — `Deployment`, `AlertEvent`, `JobRun`, `Workspace`
 - `NotificationKind` — `deploy_success`, `deploy_failed`, `alert_firing`, `alert_resolved`, `member_joined`, `job_failed`, `weekly_digest`
 - `Capability` — `Environment.create`, `Environment.delete`, `Environment.update`, `Environment.variables`, `Server.create`, `Server.delete`, `Server.drain`, `Server.reboot`, `Server.undrain`, `Server.update`
 
@@ -206,6 +218,54 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 **On create**: required — `provider`, `expiresAt` · not accepted — `id`
 
+### `MetricSeries`
+
+- gate `read:8 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `points` — hasMany `MetricPoint`
+- relation `hours` — hasMany `MetricHour`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
+| `labels` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `labelsKey` | `string` | yes | — | — | — |
+| `type` | `MetricType` = `"gauge"` | — | — | — | — |
+| `unit` | `string`? | — | — | — | — |
+| `lastSeenAt` | `string` | — | — | `format: "date-time"` | — |
+
+**On create**: required — `name`, `labelsKey` · not accepted — `id`
+
+### `MetricPoint`
+
+- gate `read:8 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `series` — belongsTo `MetricSeries` via `seriesId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `seriesId` | `string` | yes | — | — | — |
+| `at` | `integer` | yes | — | — | — |
+| `value` | `number` | yes | — | — | — |
+
+**On create**: required — `seriesId`, `at`, `value`
+
+### `MetricHour`
+
+- gate `read:8 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `series` — belongsTo `MetricSeries` via `seriesId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `seriesId` | `string` | yes | — | — | — |
+| `hour` | `integer` | yes | — | — | — |
+| `min` | `number` | yes | — | — | — |
+| `max` | `number` | yes | — | — | — |
+| `sum` | `number` | yes | — | — | — |
+| `count` | `integer` | yes | — | — | — |
+| `increase` | `number`? | — | — | — | — |
+
+**On create**: required — `seriesId`, `hour`, `min`, `max`, `sum`, `count`
+
 ### `User`
 
 - gate `read:4 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
@@ -227,7 +287,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `username` | `string`? | — | — | — | — |
 | `displayName` | `string`? | — | — | — | — |
 | `avatarUrl` | `string`? | — | — | — | — |
-| `scopes` | `json` = `[]` | — | — | `x-sortable: "json"` | — |
+| `scopes` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `isSystemAdmin` | `boolean` = `false` | — | — | — | — |
 
 **On create**: required — `email` · not accepted — `id`
@@ -273,7 +333,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
 | `type` | `WorkspaceType` = `"team"` | — | — | — | — |
 | `ownerId` | `string` | yes | — | — | — |
-| `settings` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
+| `settings` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `status` | `WorkspaceStatus` = `"active"` | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
@@ -291,7 +351,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `workspaceId` | `string` | yes | — | — | — |
 | `userId` | `string` | yes | — | — | — |
 | `role` | `WorkspaceRole` = `"viewer"` | — | — | — | — |
-| `capabilities` | `Capability[]` = `[]` | — | — | `x-sortable: "array"` | — |
+| `capabilities` | `Capability[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
 | `invitedBy` | `string`? | — | — | — | — |
 | `invitedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `acceptedAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -325,7 +385,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
 | `kind` | `SecretKind` = `"generic"` | — | — | — | — |
-| `data` | `string` = `"{}"` | — | — | `x-sortable: "encrypted"` `x-filterable: "encrypted"` | — |
+| `data` | `string` = `"{}"` | — | — | `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
 | `isVerified` | `boolean` = `false` | — | — | — | — |
 | `createdBy` | `string`? | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
@@ -346,7 +406,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `credentialId` | `string`? | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
 | `tokenHint` | `string` | — | — | `x-litestone-kind` | — |
-| `scopes` | `string[]` = `[]` | — | — | `x-sortable: "array"` | — |
+| `scopes` | `string[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
 | `expiresAt` | `string`? | — | — | `format: "date-time"` | — |
 | `revokedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `lastUsedAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -389,11 +449,11 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `outpostVersion` | `string`? | — | — | — | — |
 | `outpostUrl` | `string`? | — | — | — | — |
 | `lastHeartbeatAt` | `string`? | — | — | `format: "date-time"` | — |
-| `plan` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
-| `actualSpecs` | `json`? | — | — | `x-sortable: "json"` | — |
-| `health` | `json`? | — | — | `x-sortable: "json"` | — |
-| `dockerState` | `json`? | — | — | `x-sortable: "json"` | — |
-| `labels` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
+| `plan` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `actualSpecs` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `health` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `dockerState` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `labels` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 
 **On create**: required — `name`, `slug` · not accepted — `id`
 
@@ -408,7 +468,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `serverId` | `string` | yes | — | — | — |
 | `kind` | `string` | yes | — | — | — |
 | `message` | `string` | yes | — | — | — |
-| `metadata` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
+| `metadata` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 
 **On create**: required — `serverId`, `kind`, `message` · not accepted — `id`
 
@@ -437,7 +497,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `mountPoint` | `string`? | — | — | — | — |
 | `sizeBytes` | `integer` = `0` | — | — | — | — |
 | `inUse` | `boolean` = `false` | — | — | — | — |
-| `containers` | `string[]` = `[]` | — | — | `x-sortable: "array"` | — |
+| `containers` | `string[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
 | `createdOnServer` | `string`? | — | — | `format: "date-time"` | — |
 | `discoveredAt` | `string` | — | — | `format: "date-time"` | — |
 | `lastSeenAt` | `string` | — | — | `format: "date-time"` | — |
@@ -459,7 +519,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `type` | `string` = `"mesh"` | — | — | — | — |
 | `cidr` | `string` = `"10.0.0.0/16"` | — | — | — | — |
 | `provider` | `string` = `"netbird"` | — | — | — | — |
-| `config` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
+| `config` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `name`, `slug` · not accepted — `id`, `version`
@@ -494,8 +554,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
 | `description` | `string`? | — | — | — | — |
 | `status` | `string` = `"active"` | — | — | — | — |
-| `tags` | `json` = `[]` | — | — | `x-sortable: "json"` | — |
-| `metadata` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
+| `tags` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `metadata` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `name`, `slug` · not accepted — `id`, `version`
@@ -519,7 +579,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
 | `tier` | `EnvironmentTier` = `"development"` | — | — | — | — |
 | `isProtected` | `boolean` = `false` | — | — | — | — |
-| `variables` | `json` = `[]` | — | — | `x-sortable: "json"` | — |
+| `variables` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `projectId`, `name`, `slug` · not accepted — `id`, `version`
@@ -543,8 +603,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
 | `type` | `AppType` = `"container"` | — | — | — | — |
 | `status` | `AppStatus` = `"unknown"` | — | — | — | — |
-| `source` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
-| `config` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
+| `source` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `config` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `port` | `integer`? | — | — | — | — |
 | `isPublic` | `boolean` = `false` | — | — | — | — |
 
@@ -636,7 +696,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `author` | `string`? | — | — | — | — |
 | `builtImage` | `string`? | — | — | — | — |
 | `previousDeploymentId` | `string`? | — | — | — | — |
-| `configSnapshot` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
+| `configSnapshot` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `triggeredBy` | `string`? | — | — | — | — |
 | `queuedAt` | `string` | — | — | `format: "date-time"` | — |
 | `startedAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -685,7 +745,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `cronExpression` | `string`? | — | — | — | — |
 | `nextRunAt` | `string`? | — | — | `format: "date-time"` | — |
 | `trigger` | `string` = `"manual"` | — | — | — | — |
-| `triggerConfig` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
+| `triggerConfig` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `timeoutSeconds` | `integer` = `300` | — | — | — | — |
 | `retryLimit` | `integer` = `3` | — | — | — | — |
 | `retryCount` | `integer` = `0` | — | — | — | — |
@@ -710,7 +770,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `durationMs` | `integer`? | — | — | — | — |
 | `exitCode` | `integer`? | — | — | — | — |
 | `error` | `string`? | — | — | — | — |
-| `output` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
+| `output` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 
 **On create**: required — `jobId` · not accepted — `id`
 
@@ -792,11 +852,11 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `string` | — | — | — | — |
 | `serverId` | `string` | yes | — | — | — |
 | `status` | `RunStatus` = `"pending"` | — | — | — | — |
-| `targets` | `string[]` = `[]` | — | — | `x-sortable: "array"` | — |
+| `targets` | `string[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
 | `keepImages` | `integer` = `3` | — | — | `minimum: 0` `maximum: 50` | — |
 | `requestedBy` | `string`? | — | — | — | — |
 | `freedBytes` | `integer` = `0` | — | — | — | — |
-| `detail` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
+| `detail` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `error` | `string`? | — | — | — | — |
 | `startedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `finishedAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -817,8 +877,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `key` | `string` | yes | — | `minLength: 1` `maxLength: 120` | — |
 | `description` | `string`? | — | — | — | — |
 | `type` | `FlagType` = `"boolean"` | — | — | — | — |
-| `tags` | `string[]` = `[]` | — | — | `x-sortable: "array"` | — |
-| `variants` | `json` = `[]` | — | — | `x-sortable: "json"` | — |
+| `tags` | `string[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
+| `variants` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `isEnabled` | `boolean` = `false` | — | — | — | — |
 | `rollout` | `integer` = `100` | — | — | `minimum: 0` `maximum: 100` | — |
 | `createdBy` | `string`? | — | — | — | — |
@@ -855,7 +915,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
 | `kind` | `ChannelKind` | yes | — | — | — |
-| `config` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
+| `config` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `secretId` | `string`? | — | — | — | — |
 | `isActive` | `boolean` = `true` | — | — | — | — |
 | `lastTestAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -879,12 +939,14 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
 | `description` | `string`? | — | — | — | — |
 | `severity` | `AlertSeverity` = `"warning"` | — | — | — | — |
-| `metricName` | `string` | yes | — | — | — |
-| `condition` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
+| `metricName` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
+| `operator` | `ComparisonOp` = `"gt"` | — | — | — | — |
+| `threshold` | `number` | yes | — | — | — |
+| `forMinutes` | `integer` = `0` | — | — | `minimum: 0` `maximum: 1440` | — |
 | `isActive` | `boolean` = `true` | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `name`, `metricName` · not accepted — `id`, `version`
+**On create**: required — `name`, `metricName`, `threshold` · not accepted — `id`, `version`
 
 ### `AlertRuleChannel`
 
@@ -909,7 +971,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `ruleId` | `string` | yes | — | — | — |
-| `status` | `string` = `"firing"` | — | — | — | — |
+| `status` | `AlertStatus` = `"firing"` | — | — | — | — |
 | `severity` | `AlertSeverity` | yes | — | — | — |
 | `subjectType` | `AlertSubject` | yes | — | — | — |
 | `subjectId` | `string` | yes | — | — | — |
@@ -956,7 +1018,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `kind` | `WidgetKind` | yes | — | — | — |
 | `serverId` | `string`? | — | — | — | — |
 | `appId` | `string`? | — | — | — | — |
-| `config` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
+| `config` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `cols` | `integer` = `1` | — | — | `minimum: 1` `maximum: 3` | — |
 | `position` | `integer` = `0` | — | — | — | — |
 
@@ -977,7 +1039,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `action` | `string` | yes | — | — | — |
 | `subjectType` | `string` | yes | — | — | — |
 | `subjectId` | `string` | yes | — | — | — |
-| `diff` | `json`? | — | — | `x-sortable: "json"` | — |
+| `diff` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 
 **On create**: required — `action`, `subjectType`, `subjectId` · not accepted — `id`
 
@@ -1006,7 +1068,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `cpuLimit` | `string`? | — | — | `minLength: 1` `maxLength: 16` | — |
 | `memLimit` | `string`? | — | — | `minLength: 1` `maxLength: 16` | — |
 | `notes` | `string`? | — | — | `minLength: 0` `maxLength: 1000` | — |
-| `links` | `json` = `[]` | — | — | `x-sortable: "json"` | — |
+| `links` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `deprecatedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `revision` | `integer` | — | — | `x-litestone-kind` | — |
 
@@ -1095,6 +1157,23 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `baseUrl`, `adminEmail` · not accepted — `id`, `version`
+
+### `Notification`
+
+- gate `read:0 create:8 update:4 delete:8` · closed (`additionalProperties: false`)
+- relation `user` — belongsTo `User` via `userId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `userId` | `string` | yes | — | — | — |
+| `type` | `string` | yes | — | — | — |
+| `data` | `json` | yes | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `contextType` | `NotificationContext`? | — | — | — | — |
+| `contextId` | `string`? | — | — | — | — |
+| `readAt` | `string`? | — | — | `format: "date-time"` | — |
+
+**On create**: required — `userId`, `type`, `data` · not accepted — `id`
 
 ### `NotificationPreference`
 

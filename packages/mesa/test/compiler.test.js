@@ -1078,17 +1078,17 @@ function provide(n, f) { return null }
   describe('style:', () => {
     it('pure expression — style:color={expr}', async () => {
       const out = await cx(`<script>let c = 'red'</script><div style:color={c}>x</div>`)
-      expect(out).toContain("bindStyle(el0, 'color', () => ($$runtime.get($$sig_c)))")
+      expect(out).toContain("bindStyle($$el0, 'color', () => ($$runtime.get($$sig_c)))")
     })
     it('mixed template literal — style:font-size="{size}px"', async () => {
       const out = await cx(`<script>let size = 16</script><div style:font-size="{size}px">x</div>`)
-      expect(out).toContain("bindStyle(el0, 'font-size', () => (")
+      expect(out).toContain("bindStyle($$el0, 'font-size', () => (")
       expect(out).toContain('$$runtime.get($$sig_size)')
       expect(out).toContain('px')
     })
     it('shorthand — style:display (no value)', async () => {
       const out = await cx(`<div style:display>x</div>`)
-      expect(out).toContain("bindStyle(el0, 'display'")
+      expect(out).toContain("bindStyle($$el0, 'display'")
     })
     it('multiple on same element', async () => {
       const out = await cx(
@@ -1106,7 +1106,7 @@ function provide(n, f) { return null }
       const out = await cx(`<script>let n = 0;</script><Child qty={n}/>`)
       expect(out).not.toContain('callComponent')
       // new pattern: Child(anchorVar, props, null)
-      expect(out).toMatch(/Child\(\w+,/)
+      expect(out).toMatch(/Child\([\w$]+,/)
     })
     it('emits pushProps effect for reactive prop', async () => {
       const out = await cx(`<script>let n = 0;</script><Child qty={n}/>`)
@@ -1565,13 +1565,13 @@ function provide(n, f) { return null }
   describe('bind:group', () => {
     it('checkbox — emits bindGroup', async () => {
       const out = await cx(`<script>let s=[]</script><input type="checkbox" bind:group={s} value="a">`)
-      expect(out).toContain('bindGroup(el0,')
+      expect(out).toContain('bindGroup($$el0,')
       expect(out).toContain('$$sig_s')
       expect(out).toContain('$$set_s')
     })
     it('radio — emits bindGroup', async () => {
       const out = await cx(`<script>let size='M'</script><input type="radio" bind:group={size} value="S">`)
-      expect(out).toContain('bindGroup(el0,')
+      expect(out).toContain('bindGroup($$el0,')
       expect(out).toContain('$$sig_size')
     })
     it('multiple checkboxes — each gets bindGroup', async () => {
@@ -1744,7 +1744,7 @@ function provide(n, f) { return null }
       // DOM is built once, so a value read at build time is frozen there and
       // the caller's next value never reaches the markup.
       const out = await cx(`{#snippet chip(x)}<span>{x}</span>{/snippet}{@render chip('a')}`)
-      expect(out).toMatch(/\$\$snippet_chip\(\w+, \(\) => \('a'\)\)/)
+      expect(out).toMatch(/\$\$snippet_chip\([\w$]+, \(\) => \('a'\)\)/)
       // …and the body reads it back through the getter.
       expect(out).toContain('x()')
     })
@@ -1827,7 +1827,7 @@ function provide(n, f) { return null }
     expect(result).toContain('$$runtime.render(')
     expect(result).toContain('theme.get()')
     // Must NOT be a one-time nodeValue assignment
-    expect(result).not.toMatch(/el\d+\.nodeValue\s*=.*theme\.get/)
+    expect(result).not.toMatch(/\$\$el\d+\.nodeValue\s*=.*theme\.get/)
   })
 
   it('external signal .get() in text node is wrapped in render()', async () => {
@@ -4854,7 +4854,7 @@ describe('a comment inside a tag (FJS-330)', () => {
     const r = await compileSource(
       `<script>\n  let n = 1\n</script>\n<button <!-- why --> data-n={n}>x</button>`,
       { filename: 'b.mesa' })
-    expect(r.result).toMatch(/set_attribute\(\w+, 'data-n'/)
+    expect(r.result).toMatch(/set_attribute\([\w$]+, 'data-n'/)
     expect(tpl(r)).not.toContain('<!--')
   })
 

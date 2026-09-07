@@ -8,7 +8,7 @@
   //
   // For a toggle-switch aesthetic, use Switch.mesa.
 
-  import { tone as toTone, cx, uid, nameToLabel, resolveError, resolveRule, stated, nativeValidationGuard, lockedBy } from '../../utils.js'
+  import { tone as toTone, cx, uid, humanize, resolveError, resolveRule, stated, nativeValidationGuard, lockedBy } from '../../utils.js'
 
   export let checked     = false
   // `undefined` is "not stated" and `''` is "no label, deliberately". They have
@@ -40,7 +40,7 @@
   const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
   const rule = resolveRule(form, name)
 
-  const resolvedLabel    = stated(label, rule?.title, name ? nameToLabel(name) : '') ?? ''
+  const resolvedLabel    = stated(label, rule?.title, name ? humanize(name) : '') ?? ''
   const resolvedRequired = stated(required, rule?.required)
   const displayError     = resolveError(form, name, error, undefined)
 

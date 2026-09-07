@@ -24,7 +24,7 @@
   //   />
 
   import Field from './Field.mesa'
-  import { uid, nameToLabel, resolveError, resolveRule, stated, lockedBy } from '../../utils.js'
+  import { uid, humanize, resolveError, resolveRule, stated, lockedBy } from '../../utils.js'
 
   export let items    = []
   export let value    = null
@@ -53,7 +53,7 @@
   const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
   const rule = resolveRule(form, name)
 
-  const resolvedLabel    = stated(label, rule?.title, name ? nameToLabel(name) : undefined)
+  const resolvedLabel    = stated(label, rule?.title, name ? humanize(name) : undefined)
   const resolvedRequired = stated(required, rule?.required)
 
   // The option list, same two sources as Select — an enum off the rule, a

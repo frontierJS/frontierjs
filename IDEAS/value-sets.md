@@ -1,12 +1,14 @@
 ---
 id: value-sets
-status: partial
+status: shipped
 dated: 2026-08-21
 ---
 
 # Idea — Value sets: where the options in a picker come from
 
-**Status: PARTIAL.** The shape is settled — `FJS-D120` — and both halves are
+**Status: SHIPPED.** All three axes are ruled and built — `FJS-D120`
+(provenance and strength), `FJS-D122` (dependent sets) and `FJS-D121` (order,
+including the learned head). The shape is settled and both halves are
 built and running in `example`: `valueset` and `@values` parse, `x-values` is
 emitted, a strength is enforced at the Data boundary through the caller's own
 accessor, and `controlFor` answers a picker or a combobox from the binding. The
@@ -20,7 +22,11 @@ by minting a scope of its own (`FJS-430`, closed 2026-08-23). A capped list says
 how many rows it is not showing and the two searchable controls send what was
 typed to the server (`FJS-391`, closed the same day).
 
-What is still open: `FJS-D121` (ordering) and `FJS-D122` (dependent sets). **No
+**All three axes are now ruled and built.** `FJS-D121` (order) was ruled and
+built 2026-09-07 — the authored and default halves as `FJS-963`, the learned
+head as `FJS-964` — and `FJS-D122` (dependent sets) ruled and built 2026-09-06
+as `FJS-953`, where `example` declares the first pair:
+a photograph may only be pinned to a variant of its own product. **No
 screen in `example` mounts the picker yet** — there is no variant edit form, so
 the control is proven by `@frontierjs/ui`'s own browser drive and by the
 resource, not by a rendered app screen.
@@ -191,21 +197,41 @@ What each realm would derive, with no app code:
 
 ## Open questions
 
-Two remain and both are FLAGGED rather than parked — they are wanted, and each
-has a row in `ISSUES.md`.
+Nothing is open. What was here — the ordering axis — is ruled and built; the
+paragraph below records what the ruling decided, and `ISSUES.md` holds anything
+that comes back.
 
-- **Order — axis 3. `FJS-D121`.** Which of the allowed values appear first, and
-  whether the schema says it at all. It is the case this whole line of work
-  started from: a person assigns the same three people over and over and an
-  alphabetical list makes them search every time. Held out of `FJS-D120` because
-  fusing it with strength is the failure this shape exists to avoid, and open
-  rather than built because it needs somewhere to KEEP the recency — per-caller
-  state, which is not obviously a fact about the data the way membership and
-  strength are.
-- **Dependent sets — `FJS-D122`.** A set whose members depend on another field's
-  value. Salesforce's controlling field, Frappe's Dynamic Link. The prior art is
-  a warning rather than a model: it is the one feature Salesforce could not
-  compose with global value sets, which is the shape just adopted.
+Answered by ruling (`FJS-D121`):
+
+- ~~**Order — axis 3.**~~ **On the SET, a directive rather than a rule, and the
+  default is the order the author gave.** Strength went onto the binding because
+  one list is enforced on one column and offered on another; an order has no such
+  case, so it goes where the list is — FHIR's `conceptOrder` is on the ValueSet
+  for the same reason. A literal set needs no syntax at all, because the
+  declaration IS the order and alphabetizing `low, medium, high` is not a worse
+  order but a wrong one. Nothing about it changes what a column may hold, so it
+  travels as `x-values.order` and `$checkOrderBy` is the only check owed.
+  **The learned half is `recent(Model.column, clock)`** — a HEAD rather than a
+  re-sort, since a capped list ranked by recency changes WHICH rows are offered
+  — derived from an `aggregate` over rows the app already writes and read
+  through the caller's own service, with the clock STATED because ranking by the
+  wrong one draws a plausible order.
+  **What the tree turned out to be doing is the finding**: the two provenances
+  already ordered themselves differently, unstated, and an app could not change
+  either — `optionsQuery` does not reach a picker's list, because `options()`
+  asks the SOURCE model through a resource it mints itself.
+
+Answered by ruling (`FJS-D122`):
+
+- ~~**Dependent sets.**~~ **A JOIN, declared on the binding** —
+  `@values(State, dependsOn: countryId)`, with the source-side column derived
+  from the relation path. The prior art was read as a warning and the warning
+  turned out to be about the MECHANISM: Salesforce enumerates the dependency as
+  a per-field-pair matrix, which is where their 300-value cap and their
+  *a global value set may not control* both come from. A join has neither, and
+  chains. Nothing new travels — the picker narrows with an ordinary column
+  filter and the boundary compares pairs — and the stale value needed no new
+  answer, because strength already gives one. The UI half is `FJS-D225`.
 
 Answered by building:
 

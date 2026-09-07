@@ -186,6 +186,18 @@ describe('isAllowedReturnTo', () => {
     // `//evil.test` is protocol-relative and `/\evil.test` is treated as the
     // same by browsers. Both start with '/' and neither is a local path.
     expect(isAllowedReturnTo('//evil.test', allow)).toBe(false)
+    // A browser strips these out of a URL before resolving it, so each of the
+    // three arrives on the wire as `//evil.test` — the line above, obfuscated.
+    // Graded against the permissive allowlist as well, because `['/']` is the
+    // natural way to write *any internal path* and is the only configuration
+    // the bypass was reachable under (FJS-980).
+    for (const hostile of ['/\t/evil.test', '/\n//evil.test', '/\r//evil.test', '/\u0000//evil.test']) {
+      expect(isAllowedReturnTo(hostile, allow)).toBe(false)
+      expect(isAllowedReturnTo(hostile, ['/'])).toBe(false)
+    }
+    // The control: the same allowlist still admits an ordinary path, or the
+    // rows above would pass against a function that refused everything.
+    expect(isAllowedReturnTo('/anything/here', ['/'])).toBe(true)
     expect(isAllowedReturnTo('/\\evil.test', allow)).toBe(false)
     expect(isAllowedReturnTo('//evil.test/dashboard', allow)).toBe(false)
   })

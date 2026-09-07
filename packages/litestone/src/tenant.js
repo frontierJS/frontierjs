@@ -325,6 +325,25 @@ class TenantRegistry {
         'Handle per-tenant logging separately if needed.'
       )
     }
+
+    // The other half, and it is the opposite shape: a second sqlite database is
+    // not shared between tenants, it stops being a separate FILE. Every one of
+    // them is redirected into the tenant's own file below, so its declared
+    // `path` is never read here and the two names address one database — which
+    // is why a `$transaction` spanning them is atomic under tenancy and is not
+    // outside it (`FJS-D35`). Said rather than left to be discovered, because
+    // nothing else reports an input the system ignores.
+    const extraSqlite = parseResult.schema.databases.filter(
+      d => (!d.driver || d.driver === 'sqlite') && d.name !== 'main'
+    )
+    if (extraSqlite.length && !this.#inMemory) {
+      console.warn(
+        `[litestone:tenants] Schema declares ${extraSqlite.length} sqlite database(s) beside main: ` +
+        extraSqlite.map(d => d.name).join(', ') +
+        '. Under `strategy database` every tenant holds all of them in its own file, ' +
+        'so their declared paths are unused and they share one connection.'
+      )
+    }
   }
 
   // ── Tenant DB path ──────────────────────────────────────────────────────────

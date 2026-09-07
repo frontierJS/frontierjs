@@ -2,7 +2,7 @@
 // Internal cryptographic utilities.
 // Nothing here is exported from the package — all usage is via auth.ts.
 
-import { createHmac, randomBytes } from 'crypto'
+import { createHmac, randomBytes, randomUUID } from 'crypto'
 import { parseTtl }                from '@frontierjs/junction'
 
 // ─── Password hashing ─────────────────────────────────────────────────────
@@ -69,10 +69,26 @@ export function generateToken(): string {
 }
 
 // ─── Session tokens ───────────────────────────────────────────────────────
-// UUID — simple, indexed, opaque.
+//
+// A v4 UUID, and the shape is load-bearing rather than a preference.
+//
+// An API key and a session token both arrive as a Bearer token through one door
+// (verifySession), which routes on API_KEY_PREFIX and treats everything else as
+// a session. That is unambiguous only because a UUID CANNOT carry the prefix:
+// its alphabet is hex plus `-`, and `j`, `s` and `_` are outside it.
+//
+// So this must not become `randomBytes(32).toString('base64url')` for symmetry
+// with the two above. That alphabet contains every character of the prefix, so
+// roughly one session token in 64^4 would open with `fjs_`, route to the API-key
+// branch, match no credential row, and resolve as anonymous — a valid session
+// silently signed out, about once in 16.7 million logins. Uniform entropy is
+// worth less than a routing rule that cannot collide; 122 bits is unguessable.
+//
+// `token-shape` in tests/flows.test.ts pins this, so a change here fails loudly
+// rather than at that rate.
 
 export function generateSessionToken(): string {
-  return crypto.randomUUID()
+  return randomUUID()
 }
 
 // ─── TTL helper ───────────────────────────────────────────────────────────

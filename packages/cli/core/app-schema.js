@@ -72,6 +72,26 @@ function readGate(body) {
 }
 
 /** Models declared in one `.lite` text. A line scan — no parser, no database. */
+/**
+ * The `view` declarations in one schema file.
+ *
+ * Separate from `declaredModels` rather than folded into it, deliberately: a
+ * dozen rules read that list and every one of them is about a MODEL — a gate
+ * ladder, a tenant column, a soft-delete cascade. A view answers none of those
+ * questions, so widening the list everybody reads would make each of them
+ * report on a construct they were not written about. Only the rule that needs
+ * views asks for them (`FJS-D228` phase 2).
+ */
+export function declaredViews(text) {
+  const out   = []
+  const lines = text.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^\s*view\s+([A-Za-z_][A-Za-z0-9_]*)/)
+    if (m) out.push({ name: m[1], line: i + 1 })
+  }
+  return out
+}
+
 export function declaredModels(text) {
   const out   = []
   const lines = text.split('\n')
@@ -202,6 +222,35 @@ export function appSchemaModels(root) {
 
   // A sibling under db/ — what an `import` in schema.lite reaches, and where
   // `fli auth:install` puts the @@gate("8") machinery.
+  const dbDir = join(root, 'db')
+  for (const file of safeRead(dbDir)) {
+    if (!file.endsWith('.lite') || file === 'schema.lite') continue
+    try { add(readFileSync(join(dbDir, file), 'utf8'), 'app') } catch { /* unreadable declares nothing */ }
+  }
+
+  for (const dep of shippedSchemas(root)) add(dep.text, dep.pkg)
+
+  return out
+}
+
+/**
+ * Every `view` this app's whole seed declares — the same file set as
+ * `appSchemaModels`, asked the other question.
+ */
+export function appSchemaViews(root) {
+  const out  = []
+  const seen = new Set()
+  const add = (text, origin) => {
+    for (const v of declaredViews(text)) {
+      if (seen.has(v.name)) continue
+      seen.add(v.name)
+      out.push({ name: v.name, origin, line: v.line })
+    }
+  }
+
+  const schema = join(root, 'db', 'schema.lite')
+  if (existsSync(schema)) add(readFileSync(schema, 'utf8'), 'app')
+
   const dbDir = join(root, 'db')
   for (const file of safeRead(dbDir)) {
     if (!file.endsWith('.lite') || file === 'schema.lite') continue

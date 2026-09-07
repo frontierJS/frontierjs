@@ -7,10 +7,10 @@
 // user's .lite (that would mean parsing/editing their source) — it hands them the
 // exact edits. applyEject() runs the one-line rename against a live DB.
 
+// `modelName` is a local here, so only the two shapes are imported.
+import { pascal, camel } from '@frontierjs/toolbelt/inflect'
 import { buildEdgeMap, modelToTableName } from '../core/ddl.js'
 
-const pascal     = s => s.split(/[_\s]+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join('')
-const lowerFirst = s => s.charAt(0).toLowerCase() + s.slice(1)
 
 function renderType(t) {
   return `${t.name}${t.array ? '[]' : ''}${t.optional ? '?' : ''}`
@@ -58,8 +58,8 @@ export function ejectEdge(schema, target, { pluralize = false } = {}) {
   const newModelName = pascal(oldTable.replace(/^_/, ''))   // _project_task → ProjectTask
   const newTable     = oldTable.replace(/^_/, '')           // → project_task (== snake(model))
 
-  const hostEntry = { col: hostCol, model: modelName, rel: lowerFirst(modelName) }
-  const dimEntry  = { col: dimCol,  model: ref,       rel: lowerFirst(ref) }
+  const hostEntry = { col: hostCol, model: modelName, rel: camel(modelName) }
+  const dimEntry  = { col: dimCol,  model: ref,       rel: camel(ref) }
   // Match the physical column order so a later autoMigrate sees the table in sync:
   //   decorate join → colA/colB by sorted model name; create-own → host then dim.
   const keyCols = storage === 'decorate'
@@ -78,8 +78,8 @@ export function ejectEdge(schema, target, { pluralize = false } = {}) {
   const rewire = storage === 'decorate'
     ? [
         `Replace the implicit m2m between ${modelName} and ${ref} with a relation through ${newModelName}:`,
-        `  · on ${modelName}: replace "${lowerFirst(ref)}s ${ref}[]" (or your m2m field) with "${lowerFirst(ref)}Links ${newModelName}[]"`,
-        `  · on ${ref}: replace "${lowerFirst(modelName)}s ${modelName}[]" with "${lowerFirst(modelName)}Links ${newModelName}[]"`,
+        `  · on ${modelName}: replace "${camel(ref)}s ${ref}[]" (or your m2m field) with "${camel(ref)}Links ${newModelName}[]"`,
+        `  · on ${ref}: replace "${camel(modelName)}s ${modelName}[]" with "${camel(modelName)}Links ${newModelName}[]"`,
         `Queries that traversed the m2m now go through ${newModelName}; the edge values are plain columns on it.`,
       ]
     : [`This was a create-own (@scoped) side table — no m2m to rewire. Reference ${newModelName} directly.`]

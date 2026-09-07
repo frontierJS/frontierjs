@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-32 services · 31 routes · 9 plugins · prefix (none)
+33 services · 31 routes · 11 plugins · prefix (none)
 ```
 
 ## App hooks
@@ -44,13 +44,14 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `alerts` · model `AlertRule`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `attachChannel`, `detachChannel`, `acknowledge`, `resolve`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `attachChannel`, `detachChannel`, `acknowledge`, `resolve`
 - **custom methods** — `events`, `attachChannel`, `detachChannel`, `acknowledge`, `resolve`
 - **broadcasts on** — `(computed)`
 
@@ -67,11 +68,12 @@ name when it declares none.
 | before | `resolve` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
 
 ### `api-keys` · model `ApiKey`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `revoke`, `scopes`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `revoke`, `scopes`
 - **custom methods** — `revoke`, `scopes`
 - **broadcasts on** — `(computed)`
 
@@ -85,11 +87,12 @@ name when it declares none.
 | before | `remove` | `anonymous` |
 | before | `revoke` | `anonymous` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
 
 ### `apps` · model `App`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `place`, `unplace`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `place`, `unplace`
 - **custom methods** — `logs`, `place`, `unplace`
 - **broadcasts on** — `(computed)`
 
@@ -104,11 +107,12 @@ name when it declares none.
 | before | `unplace` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
 
 ### `audit` · model `AuditEvent`
 
-- **methods** — `find`, `get`
+- **methods** — `find`, `get`, `aggregate`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -116,6 +120,7 @@ name when it declares none.
 | before | `all` | `anonymous` → `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -130,6 +135,7 @@ name when it declares none.
 | before | `all` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -148,11 +154,12 @@ name when it declares none.
 | before | `setParams` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
 
 ### `channels` · model `NotificationChannel`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `rules`, `test`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `rules`, `test`
 - **custom methods** — `rules`, `test`
 - **broadcasts on** — `(computed)`
 
@@ -166,6 +173,7 @@ name when it declares none.
 | before | `test` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
 
 ### `cleanup` · model `CleanupRun`
@@ -183,13 +191,14 @@ name when it declares none.
 | before | `finishRun` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `conduit-targets` · model `conduit-targets`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -197,6 +206,7 @@ name when it declares none.
 | before | `all` | `authenticate` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -210,6 +220,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -233,11 +244,12 @@ name when it declares none.
 | before | `reorder` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
 
 ### `deployments` · model `Deployment`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `startRun`, `stepStatus`, `finishRun`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `startRun`, `stepStatus`, `finishRun`
 - **custom methods** — `startRun`, `stepStatus`, `finishRun`
 - **broadcasts on** — `(computed)`
 
@@ -253,11 +265,12 @@ name when it declares none.
 | before | `finishRun` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
 
 ### `domains` · model `Domain`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `uploadCert`, `makePrimary`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `uploadCert`, `makePrimary`
 - **custom methods** — `uploadCert`, `makePrimary`
 - **broadcasts on** — `(computed)`
 
@@ -272,11 +285,12 @@ name when it declares none.
 | before | `makePrimary` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
 
 ### `environments` · model `Environment`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `setVariable`, `deleteVariable`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `setVariable`, `deleteVariable`
 - **custom methods** — `setVariable`, `deleteVariable`
 - **broadcasts on** — `(computed)`
 
@@ -291,11 +305,12 @@ name when it declares none.
 | before | `deleteVariable` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
 
 ### `flags` · model `FeatureFlag`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `setOverride`, `clearOverride`, `resolve`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `setOverride`, `clearOverride`, `resolve`
 - **custom methods** — `setOverride`, `clearOverride`, `resolve`
 - **broadcasts on** — `(computed)`
 
@@ -310,6 +325,7 @@ name when it declares none.
 | before | `clearOverride` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
 
 ### `hub` · model `hub`
@@ -323,6 +339,7 @@ name when it declares none.
 | before | `all` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -338,6 +355,7 @@ name when it declares none.
 | before | `all` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -353,6 +371,7 @@ name when it declares none.
 | before | `all` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -372,12 +391,13 @@ name when it declares none.
 | before | `remove` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `jobs` · model `Job`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `trigger`, `cancel`, `startRun`, `finishRun`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `trigger`, `cancel`, `startRun`, `finishRun`
 - **custom methods** — `trigger`, `cancel`, `startRun`, `finishRun`
 - **broadcasts on** — `(computed)`
 
@@ -394,11 +414,29 @@ name when it declares none.
 | before | `cancel` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `update` | `autoValidate` |
+
+### `metrics-store` · model `metrics-store`
+
+- **methods** — `find`, `read`
+- **custom methods** — `read`
+- **also answers to** — `metrics`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `anonymous` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `networks` · model `Network`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `members`, `attach`, `detach`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `members`, `attach`, `detach`
 - **custom methods** — `members`, `attach`, `detach`
 - **broadcasts on** — `(computed)`
 
@@ -413,6 +451,7 @@ name when it declares none.
 | before | `detach` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
 
 ### `notification-preferences` · model `NotificationPreference`
@@ -425,13 +464,14 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `portal` · model `portal`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -439,13 +479,14 @@ name when it declares none.
 | before | `all` | `anonymous` → `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `projects` · model `Project`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -457,6 +498,7 @@ name when it declares none.
 | before | `remove` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
 
 ### `recipes` · model `Recipe`
@@ -477,6 +519,7 @@ name when it declares none.
 | before | `finishRun` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
 
 ### `registry` · model `RegistryImage`
@@ -490,13 +533,14 @@ name when it declares none.
 | before | `all` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `secrets` · model `Secret`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `verify`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `verify`
 - **custom methods** — `verify`
 - **broadcasts on** — `(computed)`
 
@@ -510,12 +554,13 @@ name when it declares none.
 | before | `verify` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
 
 ### `servers` · model `Server`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `sync`, `logEvent`, `reboot`, `drain`, `undrain`, `heartbeat`
-- **custom methods** — `events`, `feed`, `sync`, `logEvent`, `reboot`, `drain`, `undrain`, `heartbeat`
+- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `sync`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `heartbeat`
+- **custom methods** — `events`, `feed`, `sync`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `heartbeat`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -529,6 +574,7 @@ name when it declares none.
 | before | `logEvent` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
 
 ### `sessions` · model `sessions`
@@ -541,6 +587,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -559,13 +606,14 @@ name when it declares none.
 | before | `prune` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `workspaces` · model `Workspace`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `members`, `addMember`, `setMemberRole`, `removeMember`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `members`, `addMember`, `setMemberRole`, `removeMember`
 - **custom methods** — `members`, `addMember`, `setMemberRole`, `removeMember`
 
 | Phase | Method | Chain |
@@ -580,6 +628,7 @@ name when it declares none.
 | before | `removeMember` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
 
 ## Routes
@@ -628,10 +677,12 @@ In configure order, which is what `requires:` is checked against.
 
 1. `conduit`
 2. `caravan`
-3. `health`
-4. `channels`
-5. `@frontierjs/auth`
-6. `setupRoutes`
-7. `staticRoutes`
-8. `basecamp-cleanup`
-9. `corsPlugin`
+3. `notifications`
+4. `health`
+5. `metrics-store`
+6. `channels`
+7. `@frontierjs/auth`
+8. `setupRoutes`
+9. `staticRoutes`
+10. `basecamp-cleanup`
+11. `corsPlugin`

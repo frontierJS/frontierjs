@@ -99,6 +99,7 @@ siteName: Kitchen sink
     { id: 'go-customers', group: 'Navigate', label: 'Customers',  action: () => goto('/customers/') },
     { id: 'go-inventory', group: 'Navigate', label: 'Inventory',  sub: 'On hand, held, and the ledger', action: () => goto('/inventory/') },
     { id: 'go-users',     group: 'Navigate', label: 'Users',      sub: 'Staff and shoppers', action: () => goto('/users/') },
+    { id: 'go-reports',       group: 'Navigate', label: 'Reports',       sub: 'What the shop took, by order state', action: () => goto('/reports/') },
     { id: 'go-plans',         group: 'Navigate', label: 'Plans',         sub: 'What the shop sells on a cycle', action: () => goto('/plans/') },
     { id: 'go-subscriptions', group: 'Navigate', label: 'Subscriptions', sub: 'Who is paying, and what state that is in', action: () => goto('/subscriptions/') },
     { id: 'go-invoices',      group: 'Navigate', label: 'Invoices',      sub: 'The documents', action: () => goto('/invoices/') },
@@ -207,6 +208,12 @@ siteName: Kitchen sink
              that says nothing. The link is at 5 because that is the level the
              screen is FOR, not the level the boundary enforces. -->
         <a class="navlink" id="nav-users" href="/users/" aria-current={(page.route, isActive('/users/')) ? 'page' : null}>Users</a>
+      {/if}
+      <!-- Administrator-only, and the link is hidden rather than the page being
+           a dead end: the view reads at 5 while every order reads at 1, so most
+           of the people who see this nav legitimately cannot open it. -->
+      {#if session.level >= 5}
+        <a class="navlink" id="nav-reports" href="/reports/" aria-current={(page.route, isActive('/reports/')) ? 'page' : null}>Reports</a>
       {/if}
       <a class="navlink" href="/settings/"  aria-current={(page.route, isActive('/settings/')) ? 'page' : null}>Settings</a>
     </nav>

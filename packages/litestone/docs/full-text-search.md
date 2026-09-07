@@ -1,6 +1,6 @@
-# Full-String Search
+# Full-Text Search
 
-Litestone builds FTS5 virtual tables and sync triggers automatically. `@@fts` gives you a `search()` method on any model.
+Litestone builds FTS5 virtual tables and sync triggers automatically for full text search. `@@fts` gives you a `search()` method on any model.
 
 ## Setup
 

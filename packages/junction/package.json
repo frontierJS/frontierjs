@@ -37,7 +37,8 @@
     "./health": "./src/transport/health.ts",
     "./auth": "./src/auth/types.ts",
     "./outbox.lite": "./db/outbox.lite",
-    "./backfill.lite": "./db/backfill.lite"
+    "./backfill.lite": "./db/backfill.lite",
+    "./metrics.lite": "./db/metrics.lite"
   },
   "bin": {
     "junction": "./tools/cli.ts"

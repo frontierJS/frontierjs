@@ -266,6 +266,14 @@ export interface AuthPluginOptions {
   // Register default: { max: 5,  window: '15 minutes' }
   loginRateLimit?:    RateLimitHookOptions
   registerRateLimit?: RateLimitHookOptions
+  /**
+   * `POST /auth/password-reset/request` — the only public route here that sends
+   * mail to an address the CALLER names, so its abuse costs the app money and
+   * its sending reputation rather than access. Limited harder than login by
+   * default: guessing a password is a race the limiter slows, and mailing a
+   * stranger is one nobody should win (FJS-992).
+   */
+  passwordResetRateLimit?: RateLimitHookOptions
 
   // The three services this plugin registers — `account`, `sessions`,
   // `api-keys`. On by default: they are the other half of the auth surface,

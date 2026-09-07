@@ -835,7 +835,6 @@ export declare function autoMigrate(db: AnyLitestoneClient, parseResult?: ParseR
 export declare function listMigrationFiles(dir: string): string[]
 export declare function unmatchedMigrationFiles(dir: string): string[]
 export declare function describeSkipped(skipped: string[]): string
-export declare function slugify(label: string): string
 
 // ─── DDL ──────────────────────────────────────────────────────────────────────
 

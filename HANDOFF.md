@@ -14,6 +14,82 @@ finished.
 
 ---
 
+# Handoff — 2026-09-06/07 (the last two value-set axes, and what building them found)
+
+> **The session was a walk down `IDEAS/value-sets.md`'s open questions, and it
+> ended with the file marked shipped.** `FJS-D122` (dependent sets, built as
+> `FJS-953`) came first, then `FJS-D121` (order) in two halves — `FJS-963` for
+> the authored and default ones, `FJS-964` for the learned head. Each ruling
+> made the next one cheaper, and the third could not have been built at all
+> without a verb that did not exist when the session started.
+
+> **The aggregate verb is the middle of that chain and it was not the plan.**
+> `FJS-D121`(iii) had been framed for months as *where do we KEEP the recency* —
+> a `Recent` model, a JSON column, localStorage. Measured against the tree, the
+> blocker was upstream of storage: `resource.options()` reads the source
+> service, junction's auto surface is exactly find · get · create · update ·
+> patch · remove · restore, so a rank — a `groupBy` over the binding's own model
+> — **could not be asked from a browser at all**, whatever held the numbers. So
+> the question stopped being where to put a counter and became whether the
+> surface gains a verb. `FJS-D226` ruled that it does, `FJS-957` built it, and
+> the recency then needed no storage at all.
+
+> **Grading the surface that verb would expose found two live holes in it**,
+> which is the argument for ruling an allow-list rather than passing a spec
+> through. `FJS-954`: `having` and an aggregate `orderBy` recovered a `@guarded`
+> column in eighteen requests. `FJS-955`: the `sql`` ` brand was a plain JSON
+> key, so a request could forge one and break out through `FILTER (WHERE …)`.
+> Both were reachable before the verb existed, through app code; the verb would
+> have put them on the wire for every app.
+
+> **`FJS-963` measured what the tree was already doing and found it doing it
+> twice, unstated.** A literal set travels in declaration order (a side effect of
+> `values.map()`); a table-backed one arrives alphabetical from a literal written
+> at two call sites. And an app could change neither: `optionsQuery` reads like
+> the place to state a picker's order and does not reach one, because
+> `options(field)` asks the SOURCE model through a resource `relatedResource`
+> mints. Sierra's suite asserted `getOptions()` — what an app calls directly —
+> and never the `options()` crossing, so the gap was untested rather than known.
+
+> **The drive found `FJS-962` on its first real run**, which is the whole reason
+> `verify:values` exists: `directiveParams` sent `$orderBy` as a JSON string
+> whenever it was not one, and the reader takes it as-is — so every structured
+> `orderBy` from the browser client was a 400, on both transports, for as long as
+> the client has had directives. `FJS-D125`'s inverse-pair rule broken at one
+> line, with the encoder and the parser already agreeing on bracket notation.
+
+> **`FJS-965` is the session's own tooling lying**, and it cost a wrong report to
+> the user before it was caught. `scripts/typecheck.mjs` checks the package it is
+> run FROM and has no `--only` flag, so at the workspace root it prints `clean`
+> and exits 0 having checked nothing — three times, over a junction carrying ten
+> real errors from `FJS-957`. `bun run ci --fast` found them. The rule that
+> catches this class is `proof-target`'s: advice that fails when taken is worse
+> than none.
+
+> **`FJS-964` departed from its own ruling in one respect and the ruling records
+> it.** `FJS-D121` sketched `recent(Model.field)`; the build is
+> `recent(Model.column, clock)`, because ranking by the wrong clock draws an
+> order that looks perfectly reasonable, which is this axis's entire failure
+> mode. The head is a PREFIX rather than a re-sort for a related reason: a
+> picker's list is capped, so re-sorting it by recency changes which rows are
+> offered, and *an order is not membership* is exactly what this axis was
+> separated from strength to protect.
+
+> **Two things about the drive are worth carrying.** Its sharpest row moves a
+> colorway onto the shop's newest variant and asserts the picker's head moves —
+> a stored rank passes every other row and fails that one. And it MOVES a row
+> rather than creating one, because a soft-deleted variant keeps its `@@unique`
+> tuple (`FJS-204`), so a create-then-remove drive 409s against itself on the
+> second run; that was found by running it twice rather than by reading the rule.
+
+> **`example`'s dev database could not migrate for the whole session** — a
+> blocked `order_line.userId` drop, pre-existing — so the drives ran against a
+> stale schema and `db:seed` failed outright. It was rebuilt at the end. Worth
+> knowing because the blockage is silent from inside a drive: the API serves
+> anyway and says so in one line nobody reads.
+
+---
+
 # Handoff — 2026-09-05 (a lesson for the thing an app has to say)
 
 > **`@frontierjs/notifications` had no tutorial coverage of any kind**, and
@@ -68,79 +144,3 @@ finished.
 > and this is the first time it has been used.
 
 ---
-
-# Handoff — 2026-09-04 (the tools that report on an app, and three of them lying)
-
-> **The tutorial had ten lessons about building an app and none about looking at
-> one.** `fli tutor:tools` is lesson 2 now — `fli gui` (8500), `fli db:studio`
-> (8502), junction's `devtools()` console (8503) and `fli project:view` (8501),
-> with a question each and a *when to open which* at the end. The GUI is the
-> starting point because it is the only one that knows about the other three.
-
-> **Writing it found that three of the four were reporting something false**,
-> which is the argument for the lesson: nothing in the repo had ever started one
-> of these and asked it a question, so the surfaces whose whole job is to report
-> on an app were the least graded thing in the tree.
-
-> **`FJS-762` is the worst of them.** An anonymous POST answered 401 and arrived
-> in the console's call feed as `notes create · ok`. `hooks.ts` sets `ctx.error`
-> inside `runCore`, an AROUND hook wraps runCore, and `gateAuth` is an around
-> hook — so *every auth refusal an app makes* was emitted as a success. A
-> validation 400 was correct, because it is thrown from `validated:`, inside
-> runCore, which is why the field looked as though it worked. The test is the
-> pair, one call refused by an around hook and one allowed through the same
-> service, since a fix that marked everything an error is indistinguishable from
-> the refused side.
-
-> **`FJS-763` is `FJS-449` surviving in one field.** Studio's `/api/info`
-> reported `development.db` — `loadConfig`'s default, a file not on disk — while
-> the studio was really reading the declared database. The printed banner had
-> been fixed; the field a script reads had not. `--no-open` went in beside it,
-> because a studio started by a test opens a browser window on the CI runner.
-
-> **And every app `fli new` writes was warning about itself.** The generated
-> `db.ts` passed its schema PATH under `createClient({ schema })` — which
-> litestone reads as a path, and which `schema-in-memory` reports on, because the
-> key is all a source reader can see. Now `path:`, the spelling litestone's own
-> error message asks for.
-
-> **The tutorial had no compiler for its own ORDER either**, and inserting a
-> lesson showed it: the order is stated in `index.md`'s LESSONS array, in each
-> lesson's `## Lesson N —` heading, and in each finish step's pointer at the next
-> one, and moving nine lessons cost twenty hand edits. `core/tutorial.js` reads
-> the course and two rules grade it, split the way the proof table is —
-> `tutor-order` an error for naming something that is not there or contradicting
-> the order, `tutor-lesson-named` a warning for a lesson the index does not list.
-> It found a real dead end on its first run: `tutor:fleet` named no next lesson,
-> so a person following the pointers stopped one short, and the *where to go from
-> here* block was on lesson 10 rather than on the last one.
-
-> **`tutor:ui` is the hole the other eleven left.** Data, API and Deployment were
-> each taught by asking the running world; the UI realm — three packages — had
-> one step, so a person finished the course having never seen a form. It opens a
-> real page, asserts the generated form against the schema, then adds ONE
-> attribute to one column and reloads: the same empty submit that was a legal
-> write is now refused in the browser, and the assertion is that the row count
-> did not move rather than that a message appeared. `core/browser.js` is the
-> page driver it needed — small and shipped, because mesa's harness is a spec
-> runner and `files:` does not publish it, so an installed app has none.
-
-> **Three assumptions about the schema had to come out of three lessons**, and
-> they are one mistake: an assertion keyed on a particular gate, a particular
-> length rule or a particular field policy stops being an assertion the moment a
-> LATER lesson edits that column, and every one of them was found by running the
-> lessons in the order a person runs them. `tutor:tools`'s refusal pair is a
-> signed-in read against an anonymous write now; `tutor:ui` takes its own rule
-> back out before asking about the before, and reads the schema to decide whether
-> the ticked box is part of what it asserts.
-
-> **Two things about the lesson are worth keeping.** Its liveness assertion is
-> graded by AGREEMENT rather than by `up`: the port comes out of the ports table,
-> so running the API elsewhere makes `down` the correct answer, and the lesson
-> probes that port itself and requires the two verdicts to match — false for a
-> page reporting whatever it was told last, in either direction, at any port.
-> And its refusal pair is a signed-in read against an anonymous write rather than
-> the same caller twice, because lesson 3 raises the read gate on the model this
-> lesson is looking at: a pair built on a particular gate stops being a pair the
-> moment somebody edits the schema. Both were found by the lesson failing, in a
-> workspace that had been through lesson 3.

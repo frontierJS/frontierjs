@@ -37,16 +37,29 @@
 // day match somebody else's.
 
 /**
- * Remove a drive's own pay runs and employees, in the order the foreign keys
- * allow. Safe to call twice, and safe to call with nothing.
+ * Remove a drive's own pay runs, employees and journal entries, in the order the
+ * foreign keys allow. Safe to call twice, and safe to call with nothing.
  *
  * Call it from a `finally`. A drive that sweeps only on the success path leaves
  * its fixtures behind exactly when something went wrong — which is the run
  * whose leftovers are hardest to recognize later.
+ *
+ * `entryIds` is for an entry that names no pay run — a SALE a payroll drive
+ * posted to have one to assert against (`FJS-994`). The `payRunId` sweep below
+ * cannot reach it, and a ledger that grows by one entry per run of a test is
+ * the same accumulation the header describes.
  */
-export async function sweepPayroll(sys, { runIds = [], employeeIds = [] } = {}) {
+export async function sweepPayroll(sys, { runIds = [], employeeIds = [], entryIds = [] } = {}) {
   const runs = runIds.filter(Boolean)
   const staff = employeeIds.filter(Boolean)
+  const entries = entryIds.filter(Boolean)
+
+  // Under the boundary, for the header's reason: `9` on delete refuses
+  // `asSystem()` by name.
+  for (const id of entries) {
+    await sys.sql`DELETE FROM journal_line WHERE entryId = ${id}`
+    await sys.sql`DELETE FROM journal_entry WHERE id = ${id}`
+  }
 
   if (runs.length) {
     // Lines, then payslips: `PayslipLine.correctsPayRunId` is `Restrict`, so an

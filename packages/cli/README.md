@@ -176,6 +176,28 @@ log.success(`Greeted ${arg.name} ${flag.times} time(s)`)
 `fli make:command` scaffolds this interactively; `fli edit <command>` opens an
 existing one.
 
+### A shortcut
+
+A command line you type often can have a name of its own:
+
+```
+fli make:shortcut go-time "fli ws:atlas --open --live"
+```
+
+Typing that name now runs it, from the project root, with anything typed after
+the name appended verbatim. What that writes is an ordinary command file under
+`cli/src/routes/shortcut/`, so `fli list`, completion and `fli edit` find it with
+no further wiring — and a shortcut that grows into a real command is an edit to
+that file rather than a migration out of a table. A leading `fli` is rewritten to
+the fli that is running, so a shortcut cannot reach a different install than the
+one that made it.
+
+A name the registry already answers to is refused, naming what holds it. That
+refusal is the reason the command exists rather than a line in a config file: a
+project command overrides a core one in silence, which is right for authoring and
+wrong for a name typed from memory — `fli make:shortcut new "…"` would otherwise
+eat `fli new` and say nothing.
+
 **An alias is claimed first-come and a contested one is a bug.** Two commands
 claiming one alias warns, and the winner is whichever loads last — the walk is
 sorted so that is at least reproducible, but nothing about `utils` sorting after
@@ -191,6 +213,7 @@ sorted so that is at least reproducible, but nothing about `utils` sorting after
 | `examples` | | Example invocations |
 | `args` | | Ordered positional definitions |
 | `flags` | | Named flag definitions |
+| `mode` | | `strict` refuses an undeclared flag · `passthrough` accepts it in silence |
 
 **Arg fields** — `name` (read as `arg.name`), `description`, `required`,
 `defaultValue`, `variadic` (joins the remaining positionals into one string;

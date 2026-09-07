@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-37 services · 36 routes · 10 plugins · prefix /api
+38 services · 38 routes · 12 plugins · prefix /api
 ```
 
 ## App hooks
@@ -41,6 +41,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -54,6 +55,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -73,6 +75,7 @@ name when it declares none.
 | around | `all` | `gateAuth` → `transactionScope` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -82,7 +85,7 @@ name when it declares none.
 
 ### `colors` · model `Color`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
 - **broadcasts on** — `colors`
 
 | Phase | Method | Chain |
@@ -90,6 +93,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -103,6 +107,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -118,6 +123,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -134,6 +140,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -141,7 +148,7 @@ name when it declares none.
 
 ### `customFields` · model `CustomField`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
 - **also answers to** — `custom-fields`
 - **broadcasts on** — `customFields`
 
@@ -150,13 +157,14 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `discounts` · model `Discount`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
 - **broadcasts on** — `discounts`
 
 | Phase | Method | Chain |
@@ -164,6 +172,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -182,6 +191,7 @@ name when it declares none.
 | around | `all` | `gateAuth` → `transactionScope` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -201,6 +211,7 @@ name when it declares none.
 | around | `all` | `gateAuth` → `transactionScope` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -218,6 +229,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -233,6 +245,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -248,6 +261,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -263,6 +277,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -278,6 +293,7 @@ name when it declares none.
 | before | `find` | `anonymous` → `autoFilter` → `autoSort` |
 | before | `patch` | `anonymous` → `autoValidate` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
@@ -291,6 +307,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -310,6 +327,7 @@ name when it declares none.
 | before | `update` | `checkOrderRules` → `autoValidate` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `patch` | `autoValidate` |
 | before | `recordTracking` | `validateInput` |
 
@@ -323,6 +341,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -339,6 +358,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -355,6 +375,7 @@ name when it declares none.
 | around | `all` | `gateAuth` → `transactionScope` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -370,6 +391,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -387,6 +409,7 @@ name when it declares none.
 | around | `all` | `gateAuth` → `transactionScope` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -402,6 +425,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -416,6 +440,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -431,6 +456,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -448,6 +474,7 @@ name when it declares none.
 | around | `all` | `gateAuth` → `transactionScope` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -455,7 +482,7 @@ name when it declares none.
 
 ### `planVersions` · model `PlanVersion`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
 - **also answers to** — `plan-versions`
 - **broadcasts on** — `plan-versions`
 
@@ -464,13 +491,14 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `productImages` · model `ProductImage`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
 - **also answers to** — `product-images`
 - **broadcasts on** — `product-images`
 
@@ -479,13 +507,14 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `products` · model `products`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
 - **broadcasts on** — `products`
 
 | Phase | Method | Chain |
@@ -493,13 +522,14 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `productVariants` · model `ProductVariant`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `availability`, `embed`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `availability`, `embed`
 - **custom methods** — `availability`, `embed`
 - **also answers to** — `product-variants`
 - **broadcasts on** — `product-variants`
@@ -509,6 +539,22 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `revenue` · model `revenueByStatus`
+
+- **methods** — `find`, `get`, `aggregate`
+- **broadcasts on** — `revenue`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -523,13 +569,14 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `shippingMethods` · model `ShippingMethod`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
 - **also answers to** — `shipping-methods`
 - **broadcasts on** — `shipping-methods`
 
@@ -538,6 +585,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -552,6 +600,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -568,6 +617,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -575,7 +625,7 @@ name when it declares none.
 
 ### `taxRates` · model `TaxRate`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
 - **also answers to** — `tax-rates`
 - **broadcasts on** — `tax-rates`
 
@@ -584,6 +634,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -598,6 +649,7 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
@@ -633,6 +685,8 @@ once; everything else was registered by hand or by a plugin.
 | POST | `/api/auth/support/end` | raw |
 | POST | `/api/auth/support/start` | raw |
 | GET | `/api/channels/stats` | raw |
+| GET | `/api/exports` | raw |
+| GET | `/api/exports/{dataset}` | raw |
 | GET | `/api/health` | raw |
 | GET | `/api/health/live` | raw |
 | GET | `/api/health/ready` | raw |
@@ -653,12 +707,14 @@ once; everything else was registered by hand or by a plugin.
 In configure order, which is what `requires:` is checked against.
 
 1. `health`
-2. `manifest`
-3. `@frontierjs/auth`
-4. `caravan`
-5. `outbox`
-6. `conduit`
-7. `mailer`
-8. `notifications`
-9. `channels`
-10. `corsPlugin`
+2. `metrics-store`
+3. `export`
+4. `manifest`
+5. `@frontierjs/auth`
+6. `caravan`
+7. `outbox`
+8. `conduit`
+9. `mailer`
+10. `notifications`
+11. `channels`
+12. `corsPlugin`

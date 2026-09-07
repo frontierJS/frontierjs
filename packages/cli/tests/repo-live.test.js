@@ -94,3 +94,38 @@ describe('the live page', () => {
     expect(renderAtlas(model())).not.toContain('id="live-h"')
   })
 })
+
+// ─── what a package ships ─────────────────────────────────────────────────────
+//
+// The size of the PUBLISHED package, which is a different fact from the size of
+// the directory: `files:` decides what goes in the tarball, so litestone is 269
+// tracked files and ships 52. It lives here rather than on the committed page
+// because it is registry data and because an exact byte moves every release.
+
+describe('what a package ships', () => {
+
+  test('the column shows a rounded size and the file count beside it', () => {
+    const html = renderAtlas(model(), live([row({ shippedBytes: 2101540, shippedFiles: 52 })]))
+    expect(html).toContain('2.0 MB')
+    expect(html).toContain('52 file(s)')
+  })
+
+  test('under a megabyte reads in KB, and nothing rounds to zero', () => {
+    const html = renderAtlas(model(), live([row({ shippedBytes: 9554, shippedFiles: 6 })]))
+    expect(html).toContain('9 KB')
+
+    // A tiny package must not read as `0 KB`, which says *empty* rather than
+    // *small* — and one of these is a package that failed to build.
+    const tiny = renderAtlas(model(), live([row({ shippedBytes: 120, shippedFiles: 1 })]))
+    expect(tiny).toContain('1 KB')
+    expect(tiny).not.toContain('0 KB')
+  })
+
+  // Every other cell here answers null with an em dash, and a size is the one
+  // where a zero would read as a real measurement.
+  test('a package the registry could not answer for shows no number', () => {
+    const html = renderAtlas(model(), live([row({ published: null, shippedBytes: null, shippedFiles: null })]))
+    expect(html).not.toContain('0 KB')
+    expect(html).toContain('Ships')
+  })
+})

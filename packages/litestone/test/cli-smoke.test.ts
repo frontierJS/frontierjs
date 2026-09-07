@@ -659,7 +659,7 @@ model Vault {
     const jsonSchema = JSON.parse(readFileSync(join(dir, 'schema.json'), 'utf8'))
     expect(jsonSchema.$defs.Address).toBeDefined()
     expect(jsonSchema.$defs.Address.type).toBe('object')
-    expect(jsonSchema.$defs.User.properties.address).toEqual({ $ref: '#/$defs/Address', 'x-sortable': 'json' })
+    expect(jsonSchema.$defs.User.properties.address).toEqual({ $ref: '#/$defs/Address', 'x-sortable': 'json', 'x-aggregatable': 'json' })
   }, 30_000)
 
   // There is no `down`. `--backup` is the way back, and the run has to be able

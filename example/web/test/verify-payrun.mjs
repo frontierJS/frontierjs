@@ -31,6 +31,7 @@
  */
 
 import { db }                              from '../../api/src/core/db.ts'
+import { postJournal, saleJournal }        from '../../api/src/domain/ledger.ts'
 import { calculatePayRun, payPayRun, revertPayRun } from '../../api/src/domain/payroll'
 import { periodShare }                 from '../../api/src/domain/payroll'
 import { allRatesAsAt }                    from '../../api/src/domain/payroll'
@@ -51,7 +52,7 @@ const refused = async (fn) => { try { await fn(); return false } catch { return 
 // `finally` below — **on the failure path too**, which is the run whose
 // leftovers are hardest to recognize later. `payroll-sweep.mjs` owns the order
 // and the one hatch under the boundary the books need.
-const fixtures = { runIds: [], employeeIds: [] }
+const fixtures = { runIds: [], employeeIds: [], entryIds: [] }
 
 // **What this drive CHANGES on a row it did not make, so the `finally` can put
 // it back.** Declared out here on purpose: a `finally` block is a scope of its
@@ -252,10 +253,31 @@ t('journal.thePeopleAreOwedTheNet',
 // now permits. This is the assertion that concession has to buy back.
 got['document.aPaidRunCannotBeTakenBack'] = await refused(() => revertPayRun(sys, runA.id))
 
+// The other end of the arc needs a sale, and a fresh seed has none: a sale
+// journal is written by checkout and by nothing else, so this row was red on
+// `bun run reset` and green only once `verify:money` had run — a proof failing
+// for a reason with nothing to do with what it proves (`FJS-994`).
+//
+// Posted through `saleJournal` rather than built here, so what the row states is
+// what `ledger.ts` writes rather than what this file can type. The order is a
+// seeded one because `orderId` is `Restrict`; the reference is this run's
+// because `JournalEntry.reference` is `@unique`, and the amounts satisfy the
+// receipt identity so the posting balances.
+const anOrder = await sys.order.findFirst({ orderBy: { id: 'asc' } })
+t('fixture.thereIsAnOrderToSellAgainst', anOrder != null)
+const sale = await postJournal(sys, saleJournal({
+  id: anOrder.id, reference: `PRSALE-${RUN}`,
+  subtotal: 5_000, discount: 500, shipping: 300, tax: 900, total: 5_700,
+}))
+fixtures.entryIds.push(sale.id)
+
 t('arc.aPayrollJournalNamesTheRunAndNotAnOrder',
   entry.payRunId === runA.id && entry.orderId === null)
+// Read back rather than trusted: `postJournal` returns what it wrote, and the
+// claim is about the row that landed. Asked of the entry this drive made, so a
+// leftover sale from another drive cannot answer it.
 t('arc.aSaleJournalStillNamesAnOrder',
-  (await sys.journalEntry.findFirst({ where: { source: 'sale' } }))?.orderId != null)
+  (await sys.journalEntry.findFirst({ where: { id: sale.id } }))?.orderId === anOrder.id)
 t('arc.namingBothIsRefused',
   await refused(() => sys.journalEntry.create({ data: {
     reference: `JNL-BOTH-${RUN}`, narrative: 'both', source: 'payroll',
@@ -327,6 +349,7 @@ const expected = {
   'journal.fiveAccounts': true,
   'journal.theDebitIsGrossPlusEmployerCost': true,
   'journal.thePeopleAreOwedTheNet': true,
+  'fixture.thereIsAnOrderToSellAgainst': true,
   'arc.aPayrollJournalNamesTheRunAndNotAnOrder': true,
   'arc.aSaleJournalStillNamesAnOrder': true,
   'arc.namingBothIsRefused': true,
@@ -339,6 +362,16 @@ for (const [key, want] of Object.entries(expected)) {
   if (!ok) failed++
   console.log(`${ok ? '  ok  ' : '  FAIL'} ${key}`)
   if (!ok) console.log(`         want ${want}   have ${JSON.stringify(got[key])}`)
+}
+
+// The report walks `expected`, so an assertion this file RUNS under a key the
+// map does not carry is recorded and never graded — it prints nothing, it
+// cannot fail, and the total goes on looking right. Measured: adding one and
+// forgetting the map cost nothing at all.
+for (const key of Object.keys(got)) {
+  if (key in expected) continue
+  failed++
+  console.log(`  FAIL ${key}\n         asserted and not listed in \`expected\` — add it, or the row is never graded`)
 }
 if (failedEarly) console.error(`\nstopped early: ${failedEarly.message ?? failedEarly}`)
 console.log(failed || failedEarly

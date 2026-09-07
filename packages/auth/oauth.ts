@@ -281,6 +281,12 @@ export function stateMatches(a: string | null | undefined, b: string | null | un
  */
 export function isAllowedReturnTo(returnTo: string | null | undefined, allow: string[]): boolean {
   if (!returnTo) return false
+  // A browser strips TAB, LF and CR out of a URL before it resolves one, so
+  // `/<TAB>/evil.com` leaves here looking same-origin and arrives on the wire as
+  // `//evil.com` — the shape the next line exists to refuse. Refused rather than
+  // stripped: a path this app generated contains no control character, and
+  // stripping would hand the allowlist a string the caller did not send.
+  if (/[\u0000-\u0020]/.test(returnTo)) return false
   if (!returnTo.startsWith('/')) return false
   if (returnTo.startsWith('//') || returnTo.startsWith('/\\')) return false
   return allow.includes(returnTo) || allow.some(p => p.endsWith('/') && returnTo.startsWith(p))

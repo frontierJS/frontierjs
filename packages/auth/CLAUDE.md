@@ -171,6 +171,23 @@ index.ts     public API
   `Credential.id`: `connections()` hands it to the browser and `removeConnection`
   takes it back, so a sequential integer is enumerable and publishes how many
   credentials the whole installation holds.
+- **`cleanup.ts`'s predicate is named, and `sweepNow()` is why.** A scheduled
+  body lives in a closure the scheduler exposes no way to reach, so an inline
+  `deleteMany` in a timer can only be graded by a test restating it — and a test
+  holding its own copy of a rule agrees with the copy, including once the
+  shipped rule has moved. `sweepNow()` runs the same two functions the timers
+  call, so the tests grade the shipped predicate: measured, dropping the `where`
+  or reading `createdAt` instead of `expiresAt` reds both sweep rows. It is also
+  what an operator draining these tables ahead of the hour wants.
+- **`start()` restarts rather than refuses, and says so.** Assigning over a live
+  `JobHandle` orphans it — nothing holds the old timer, so `stop()` halts only
+  the newest pair and the first sweep runs for the life of the process
+  (`FJS-1000`, measured at 6 further sweeps in 2.5s). A throw would be the house
+  answer for an unknown option and is the wrong one here: this is reached from a
+  plugin's `boot()`, where the failure a throw creates is larger than the one it
+  reports. The stop path is a CLOSURE and not `this.stop()`, because the handle's
+  methods are ordinary shorthand and a caller who destructures `{ start }` has no
+  `this`.
 - **Junction is imported by SPECIFIER — `@frontierjs/junction`, never a relative
   path.** `../junction/index.ts` resolves inside the workspace and nowhere else,
   so the tarball imported nothing and said so only on install. `files` in

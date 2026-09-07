@@ -10,7 +10,7 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-39 models · 39 gated · 0 unrestricted
+43 models · 43 gated · 0 unrestricted
 13 with row policies · 20 with protected fields · 15 declared moves · 8 @system · 1 @seals
 ```
 
@@ -35,6 +35,9 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `InvoiceLine` | 1 VISITOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `JournalEntry` | 5 ADMINISTRATOR | 8 SYSTEM | 9 LOCKED | 9 LOCKED |
 | `JournalLine` | 5 ADMINISTRATOR | 8 SYSTEM | 9 LOCKED | 9 LOCKED |
+| `MetricHour` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `MetricPoint` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `MetricSeries` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Notification` | 0 STRANGER | 8 SYSTEM | 4 USER | 8 SYSTEM |
 | `OauthFlow` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Order` | 1 VISITOR | 4 USER | 4 USER | 5 ADMINISTRATOR |
@@ -53,6 +56,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `Product` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `ProductImage` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `ProductVariant` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `revenueByStatus` *(view)* | 5 ADMINISTRATOR | — *no writes* | — *no writes* | — *no writes* |
 | `Session` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `ShippingMethod` | 0 STRANGER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `StockReservation` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
@@ -60,6 +64,18 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `TaxRate` | 0 STRANGER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `User` | 4 USER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `Verification` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+
+## Bulk export
+
+Datasets `@@export` says may leave in bulk. The rows that do are exactly the ones
+the named principal could read one at a time — an export is a paginated scoped
+read — so the gate and the policies above are what bound it. Protected columns
+are omitted unless the run explicitly asks and is stamped as having asked.
+
+| Dataset | Format | Cursor | Read gate |
+| --- | --- | --- | --- |
+| `Order` | ndjson | `createdAt` | 1 VISITOR |
+| `revenueByStatus` *(view)* | csv | — *full only* | 5 ADMINISTRATOR |
 
 ## Row policies
 

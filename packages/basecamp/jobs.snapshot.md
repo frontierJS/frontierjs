@@ -24,16 +24,18 @@ it re-resolved when it runs. Survives a restart.
 
 | Job | Queue | Schedule | Zone | Attempts | Retry delay | Timeout |
 | --- | --- | --- | --- | --- | --- | --- |
+| `alert-evaluate` | `default` | `* * * * *` | — | 3 | default | **none** |
 | `backup:run` | `fleet` | on dispatch | — | 2 | 30000 | 600000ms |
 | `cleanup:run` | `fleet` | on dispatch | — | 2 | 10000 | **none** |
 | `deployment:run` | `deployments` | on dispatch | — | 1 | default | **none** |
 | `job:run` | `jobs` | on dispatch | — | 3 | 5000, 30000, 120000 | **none** |
 | `recipe:run` | `fleet` | on dispatch | — | 2 | 10000 | **none** |
 | `retention` | `default` | `0 4 * * *` | — | 3 | default | **none** |
+| `weekly-digest` | `default` | `0 9 * * 1` | — | 3 | default | **none** |
 
-6 handler(s), 1 of them on a clock.
+8 handler(s), 3 of them on a clock.
 
-**5 with no timeout.** Absent means no bound, honestly — but a
+**7 with no timeout.** Absent means no bound, honestly — but a
 handler that never settles holds its slot for the life of the process, and on a
 single-concurrency queue everything behind it waits (`FJS-295`). Worth knowing
 which ones those are, which is why the column is here rather than omitted when

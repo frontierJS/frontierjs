@@ -242,10 +242,22 @@ class AlertRuleFactory extends Factory {
   model = 'AlertRule'
   definition() {
     const seq = uid()
+    // EVERY metricName here is a series `metricsPlugin` really writes, so a
+    // seeded fleet has rules the evaluator can actually read. The three that
+    // were here named `disk.used_percent`, `mem.used_percent` and
+    // `outpost.heartbeat` — none of which anything has ever written — and
+    // carried `{ op: '>', value: 85 }`, a third spelling of a condition the
+    // form wrote as `{operator, threshold}` and the screen read as `.operator`.
+    // Columns took all three disagreements away at once.
     const specs = [
-      { name: 'Disk above 85%',      metricName: 'disk.used_percent', severity: 'warning', condition: { op: '>', value: 85 } },
-      { name: 'Memory above 90%',    metricName: 'mem.used_percent',  severity: 'warning', condition: { op: '>', value: 90 } },
-      { name: 'Outpost silent 10m',    metricName: 'outpost.heartbeat',   severity: 'critical', condition: { op: 'stale', minutes: 10 } },
+      { name: 'Memory above 512 MB', metricName: 'process.memoryMb',   severity: 'warning',
+        operator: 'gt', threshold: 512, forMinutes: 5 },
+      { name: 'Heap above 400 MB',   metricName: 'process.heapUsedMb', severity: 'warning',
+        operator: 'gt', threshold: 400, forMinutes: 5 },
+      // The staleness rule, and it needs no operator of its own: the scraper
+      // writes `up` on every pass, so `up < 1` is *the readings stopped*.
+      { name: 'Scrape stopped',      metricName: 'up',                 severity: 'critical',
+        operator: 'lt', threshold: 1, forMinutes: 0 },
     ]
     const spec = specs[seq % specs.length]
     // No `channels` here. It was a `Json` array of ids for rows no model
@@ -466,7 +478,7 @@ export class BasecampSeeder extends Seeder {
               createdBy:   owner.id,
             },
           })
-          if (revoked) await auth.revokeApiKey(id)
+          if (revoked) await auth.revokeApiKey(id, { userId: owner.id })
         }
 
         for (const project of projects) {

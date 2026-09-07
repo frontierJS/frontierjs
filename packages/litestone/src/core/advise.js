@@ -502,6 +502,27 @@ export const RULES = [
       return out
     },
   },
+
+  {
+    id:       'materialized-view-full-refresh',
+    severity: 'info',
+    title:    'a materialized view is rebuilt in full on every row written to its sources',
+    blurb:    '@@refreshOn installs INSERT, UPDATE and DELETE triggers on each source table, and each ' +
+              'one runs DELETE + the whole @@sql again. SQLite fires a row trigger per row, so the ' +
+              'cost is one full recomputation per row written, inside the writing transaction.',
+    run(schema) {
+      const out = []
+      for (const view of schema.views ?? []) {
+        if (!view.materialized || !(view.refreshOn ?? []).length) continue
+        const sources = view.refreshOn.join(', ')
+        out.push({
+          model: view.name, field: null,
+          message: `${view.name} is @@materialized on ${sources}. The refresh is a full rebuild — DELETE plus the whole @@sql — and it runs once per ROW written to ${view.refreshOn.length > 1 ? 'any of those tables' : 'that table'}, synchronously, inside the write's own transaction. A createMany of 10,000 rows therefore re-aggregates ${view.refreshOn.length > 1 ? 'the sources' : 'the source'} 10,000 times. That is the right trade where the sources take single writes and a stale answer is unacceptable, and the wrong one wherever bulk writes or a large source table are ordinary — there, drop @@materialized and read the plain view, or keep the aggregate in a model a job writes.`,
+        })
+      }
+      return out
+    },
+  },
 ]
 
 /** Every rule, over one schema. */

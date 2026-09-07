@@ -116,6 +116,9 @@ export interface ApiTestEnvOptions extends Record<string, unknown> {
 
 const OPTS_AT: Record<string, number> = {
   find: 1, get: 1, create: 1, remove: 1, restore: 1,
+  // `aggregate(spec, opts)` — the spec is data, so the options sit where
+  // find's do (`FJS-D226`).
+  aggregate: 1,
   patch: 2, update: 2,
   call: 3,
   // Hook-bypass twins — same signatures, minus the pipeline.

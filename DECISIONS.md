@@ -2054,6 +2054,232 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d232"></a>2026-09-07 · `FJS-D232` — A database is a FILE. Two `database` blocks resolving to one path are one connection, and a transaction across them is atomic.
+
+`FJS-D35` measured that litestone opens one connection per `database`
+declaration and that the single transaction manager holds main's alone: a
+`$transaction` writing to both and then throwing rolled main back and left the
+second database's row standing. **That probe had two files under it, and the
+sentence was written about the declaration.**
+
+Under `strategy database` there is one file. Every sqlite database is redirected
+into the tenant's own — `tenant.js` writes every one of their DDL sets into it
+at `create()` — so two names addressed one file through two write connections.
+SQLite allows one writer per file, so the second connection's first write waited
+on a lock the caller itself was holding, answered `database is locked`, and
+could never get it. Reads succeeded throughout, which is why a schema declaring
+a second database looked correct until something wrote (`FJS-958`).
+
+**Refusing at open was the other candidate and it fails on what the mistake
+destroys.** The layout is not the developer's error — the tenant layer writes
+it, and `FJS-D35` already puts the outbox in main for the same reason — so a
+refusal would break a working documented arrangement to report a mistake nobody
+made. § IV *ergonomics vs. strictness*: strictness follows cost. So the unit is
+the FILE. `buildDbRegistry` groups sqlite declarations by resolved absolute path
+and opens one connection pair per path.
+
+**What follows is the surprising half: a `$transaction` spanning two declared
+databases is atomic under `strategy database` and is not atomic outside it.**
+Both are the same rule — atomicity is a property of the file — but an app
+reading its own schema cannot see which one it has, so the tenant registry says
+so at open, beside the warning it already prints for the jsonl and logger
+databases a fleet shares.
+
+*Access stays per NAME.* A `readonly` or `access: false` declaration keeps its
+throwing stubs where it shares a handle, and a readonly declaration does not
+close the write handle out from under a readwrite one on the same file.
+
+*`:memory:` is not grouped.* Every `new Database(':memory:')` is a database of
+its own, so the path string is not an identity there and grouping on it would
+put two schemas' tables in whichever handle opened first.
+
+*Three readers had to follow the unit.* Auto-DDL freshness is asked of this
+database's own tables rather than of the file's `sqlite_master` — main's DDL is
+what grew the file, so both the size shortcut and an empty master answered for
+the wrong database. The cross-process watcher is one per HANDLE, since two
+watchers on one events table deliver every foreign event twice. And `_closeAll`
+checkpoints and closes each raw handle once, while still closing every name's
+wrapper, because each has its own throw to arm.
+
+*Measured:* `test/one-file-one-connection.test.ts`, 7 rows, every claim paired
+with the same schema on two paths — a fix that collapsed every database onto
+main's connection passes the shared-file half and deletes `FJS-D35`.
+
+*Lives in:* `packages/litestone/src/core/client.js` (`buildDbRegistry`,
+`_closeAll`, `startCrossProcessWatch`, the auto-DDL block),
+`packages/litestone/src/tenant.js`. Bears on
+[`FJS-D229`](ISSUES.md#fjs-d229), which named this as the preview of a forked
+consistency model.
+
+### <a id="fjs-d121"></a>2026-09-07 · `FJS-D121` — an order is on the SET, it is a directive rather than a rule, and the default is the order the author gave. A learned order is a HEAD, not a re-sort.
+
+The third axis held out of `FJS-D120`, and it was three questions rather than
+one: may a set DECLARE an order, what is the order when nothing declares one,
+and what happens to a LEARNED one.
+
+**The tree answered the second question twice, differently, and neither answer
+was stated anywhere.** A literal set travels in the order its members were
+written — a side effect of `en.values.map()`, which nothing named as a rule. A
+table-backed set arrives alphabetically on the display column, from the literal
+`{ limit, orderBy: shown }` written at two call sites in `resource.js`. And an
+app could not change either: `optionsQuery` reads like the place to state a
+picker's order and does not reach one — `options(field)` asks the field's SOURCE
+model, whose resource is minted inside `relatedResource` carrying nobody's
+declaration. Sierra's suite asserted `getOptions()`, which an app calls
+directly, and never `options()`, so the crossing had no test at all and every
+picker in every app was alphabetical with no way to say otherwise.
+
+```prisma
+valueset ProductColor {
+  source Color
+  value  name
+  scope  current
+  order  sortOrder, name      // merchandising; `name` is only the tiebreak
+}
+```
+
+**It sits on the SET, where strength deliberately does not.** `FJS-D120` moved
+strength onto the binding because one list is legitimately enforced on one
+column and merely offered on another. An order has no such case: one list shown
+on two fields is the same list, and a screen that wants this list in another
+order already has the per-call `directives` argument. FHIR agrees by the same
+reasoning — `valueset-conceptOrder` is on the ValueSet, never on the binding.
+
+**A literal set needs no syntax, and that is the ruling's cheapest half.** The
+declaration IS the order: `low, medium, high` alphabetizes to `high, low,
+medium`, which is not a worse order but a wrong one. So the rule for both
+provenances is one sentence — *the order the author gave, alphabetical where
+there is no author* — and only the half with no author to ask needs a keyword.
+
+**It is a DIRECTIVE and never a rule.** Nothing about an order changes what a
+column may hold; membership is the scope's and legality is the strength's. So it
+travels in `x-values.order`, the client sends it as `orderBy`, and no new check
+is owed: `$checkOrderBy` already refuses a column the caller may not sort by,
+and a column that cannot be sorted MEANINGFULLY — `@encrypted` sorts by
+ciphertext, a `Json` column by its serialization — is refused by name at parse
+beside it. Only a DECLARED order is emitted; the default is resolved where the
+label column is resolved, so a set that says nothing about order travels
+byte-identical to before.
+
+**A learned order is a HEAD, and that is what keeps this axis from becoming
+axis 1.** A picker's list is capped, so re-sorting 4,000 rows by recency changes
+WHICH hundred are offered — *order changes nothing legal* quietly stops being
+true exactly where it was defined. The recent N are their own bounded query,
+prepended, dedup'd, with the ordinary page beneath. Slack and Salesforce both
+landed there; `RecentlyViewed` is a separate queryable object rather than a sort
+key.
+
+**And it is DERIVED, not stored.** The rank is an `aggregate` over the binding's
+own model — which had no way to be asked from a browser until `FJS-D226` — so
+there is no counter, no decay table and no drift, and it is correct for every
+path that ever wrote the data. Its scope is the caller's OWN READ SCOPE, which
+the Data boundary already computes: no new *which column is mine* concept, and
+an app wanting strictly its own rows passes `query`. Mozilla materializes
+frecency because their N is a browser history; an assignee list is orders
+smaller, which is an argument to make out loud rather than assume.
+
+**Amended in the build (`FJS-964`): the CLOCK is stated, where this ruling
+sketched `recent(Model.field)`.** The spelling is
+`recent(ProductVariant.color, createdAt)`. Ranking by the wrong clock draws a
+plausible order and nothing about it looks wrong, which is this axis's entire
+failure mode — so the column that says WHEN is named the way `@@label` names the
+column that says WHICH ROW, rather than guessed from `createdAt`/`updatedAt`.
+The word is still the ecosystem's and it still half-fits (frecency is a count
+AND a clock, and this is the clock alone); requiring the second argument is the
+precision half of that trade. A count-ranked head would be a second word and is
+not ruled here.
+
+*Lives in:* `packages/litestone/src/core/parser.js` (`parseValueSet`'s `order`
+key, `orderColumnRefusal`), `src/jsonschema.js` (`x-values.order`),
+`packages/sierra/src/junction/resource.js` (`optionsOrder`, the one owner of a
+question three call sites answered separately). 11 tests in
+`test/valueset-order.test.ts` (23 with the head), 7 in `tests/options-order.test.js`
+(3 red with the resolver stubbed), 10 in `tests/options-recent.test.js` (5 red
+with the head stubbed, 1 with the scope dropped from its fetch, 2 with the rank's
+order discarded), and 9 rows of `example`'s `verify:values`, whose negative
+control is the alphabetical list beside the declared one. The builds are
+`FJS-963` and `FJS-964`.
+
+### <a id="fjs-d122"></a>2026-09-06 · `FJS-D122` — a dependent set is a JOIN, declared on the binding. The dependency is a column on the source row, so nothing new travels.
+
+The second axis held out of `FJS-D120`: a list whose members depend on another
+field's value. Pick a country, then the state list is that country's.
+
+**Salesforce enumerates the dependency, and that is why it does not compose.**
+Their dependent picklist is a matrix of controlling value → allowed values, held
+per field pair — so a controlling field caps at 300 values, a global value set
+may not be one, and the sharing `FJS-D120` just adopted is precisely what their
+mechanism cannot do. A dependency that is a JOIN has neither limit: the fact
+lives on the source row as a column, and both readers derive it.
+
+```prisma
+model Address {
+  countryId String @values(Country)
+  stateId   String @values(State, dependsOn: countryId)
+}
+```
+
+**It goes on the BINDING, for the reason strength did.** A set is reusable and a
+controlling column is model-local — `State` is one list whether it is picked on
+an address or on a tax rule. Declared on the set it would be single-use, which is
+Salesforce's shape with better syntax.
+
+**Which column of the SOURCE matches is DERIVED**, from the relation path
+`State → Country`. Zero paths or two is a parse refusal naming the candidates,
+with `dependsOn: countryId on regionCountryId` as the escape. A schema stating
+both sides of a join it can compute is two places to be wrong.
+
+**Nothing new travels.** The picker sends an ordinary column filter, which
+`$checkWhere` already validates; the Data boundary selects the controlling column
+beside the value column and compares pairs, one query per binding as before. No
+parameterized scope and no second directive — `FJS-430`'s minting exists for a
+predicate a browser may not send, and a column equality is not one.
+
+**A dependent field with no controlling value answers EMPTY, with a reason.** The
+unnarrowed list offers values the boundary will refuse, which is the break this
+closes, one screen earlier. *Choose a country first* is the honest empty state,
+and it is derived rather than written.
+
+**Legality is graded inside the transaction, and placement is per MODEL.** A patch
+naming `stateId` alone does not carry the country, so the check needs the row as
+it will be — the answer `@@check` already gives for free, since SQLite grades a
+CHECK against the post-update row. A subquery is not available there, so this one
+is read: a model carrying a dependent binding runs its whole value-set check
+inside the write's transaction against the before-row, and every other model
+keeps the pre-transaction check unchanged. Splitting membership from dependency
+across two placements is two owners for one rule.
+
+**The stale value is already ruled, and strength is what rules it.** A write whose
+controlling column moved under it offers a value the set no longer holds:
+`required` refuses field-level, `suggested` accepts. There is no third Data answer
+to invent. What a FORM does with a value that has become illegal — clear it, or
+keep it and mark it — is a UI question, and is `FJS-D225`.
+
+**An `open` dependent set stamps the controlling column on the row it creates.**
+Otherwise the value just added sits outside the narrowed list, and the next read
+does not offer it.
+
+**It chains.** country → state → city is three bindings, each naming its own
+controlling column. Nothing holds a matrix, so nothing caps.
+
+**`dependsOn` takes the ecosystem's word, where `FJS-D120` refused FHIR's.** That
+ruling rejected `extensible` because the original names a semantic-coverage rule
+for humans and the borrowed one would have named a create-a-row mechanic — two
+different sentences. Here the sentence is identical: *this list depends on that
+field* is what a Salesforce admin and a JSON Schema author both already mean. What
+differs is the mechanism under it, which no author writes.
+
+**What was measured while ruling it.** `options()` takes a `query` and documents
+it as the standing narrowing a caller wants on a picker; the Data boundary reads
+`bind.scopes` and nothing else. So a hand-rolled dependent picker offers one list
+while the boundary accepts another, and neither side says so.
+django-autocomplete-light ships that break by construction — the view filters on
+the forwarded field, the form validates against the unfiltered queryset — which is
+what gets built when nothing declares it. No app in this repo calls `options()`
+yet, so the hole is a trap rather than a live defect.
+
+*Lives in:* `IDEAS/value-sets.md` · not built — `FJS-953`.
+
 ### <a id="fjs-d189"></a>2026-09-03 · `FJS-D189` — a polymorphic relation is refused. The closed set is `@@arc`, the open set stays two plain columns, and the reason is that a relation's target is an input to the access-control compiler.
 
 `IDEAS/polymorphic-relations.md` is the argument, measured against the tree
@@ -4040,6 +4266,129 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d227"></a>2026-09-07 · `FJS-D227` — a `Json` column some reader INTERPRETS is a language, and a language is declared as columns.
+
+`AlertRule.condition` was `Json @default("{}")` and had **three writers spelling
+it three ways**: the create form sent `{operator, threshold}`, `db/seed.js` wrote
+`{op, value}`, and the rule card read `.operator` — so every seeded rule rendered
+its threshold as an em-dash, and nothing anywhere errored. Writing the evaluator
+would have made a fourth reader, and the first one whose disagreement wakes
+somebody at 3am.
+
+It is now `operator ComparisonOp`, `threshold Float` and `forMinutes Int`. Not a
+new idea: it is the third time this schema has made the same move, and the second
+time on this model. `AlertRule.channels` was a `Json` array of ids for rows no
+model declared and became `AlertRuleChannel`; `severity` was a free string the
+service refused values for and became `AlertSeverity`. What was missing was the
+rule, so it kept being re-derived.
+
+> **`Json` is right where nothing joins, queries or interprets the value** — a
+> `[{label, url}]` of documentation links, a config blob handed back whole.
+> **The moment something READS INTO it to make a decision, it is a language**,
+> and a language belongs in the schema, where the CHECK, `autoValidate`, the
+> create-mode JSON Schema and the generated form all read one declaration.
+
+`Blueprint.links` already states the first half in place and cites `channels` as
+the precedent for the second; this is that sentence promoted out of a comment.
+
+**Why not `Json @type(T)`** (`FJS-D176`), which exists and is documented. Three
+reasons and the third decides it. The form generator renders scalars and enums,
+so a typed document is a box a person types JSON into — the thing the blob was
+already costing. `@type(` is bound to **zero** fields in this repo, so choosing
+it here means being its first user in the one place where being wrong is a
+missed page-out. And a typed document is graded by one new mechanism, where
+three columns are graded by every mechanism that already exists: this change
+needed no validator, and `threshold is required` came out of litestone the
+moment a fixture stopped stating one.
+
+**`threshold` is required and has no default**, which is the small decision
+inside the big one. A default of `0` would make `gt 0` the answer to *nobody
+said* — a rule that fires on its first reading. The number IS the rule.
+
+Two neighbours moved with it. `AlertEvent.status` was `String @default("firing")`
+with one writer, and the evaluator is the second — two writers of an undeclared
+string is where a typo stops being a curiosity and becomes an alert nothing can
+clear; it is `AlertStatus` now. And `AlertSubject` gained `series`, because the
+only thing this app can evaluate is a metric series and `process.memoryMb`
+belongs to no server and no volume — filing it as one would page whoever owns
+the machine.
+
+**§ IV: preservation vs. evolution.** The column is in the tree and the UI writes
+it; nothing has shipped, so it is a reshape with no alias and no dual read. Not
+*familiarity vs. precision* — nobody brings a `condition` blob in from the
+ecosystem, and Prometheus's own rule format is `expr`/`for`/`severity`, three
+declared fields.
+
+### <a id="fjs-d226"></a>2026-09-06 · `FJS-D226` — the auto service surface gains `aggregate`, and its arguments are an ALLOW-LIST rather than a pass-through.
+
+Litestone answers `having`, six time-series intervals with gap-fill by recursive
+CTE, `_count: { distinct }`, per-group filtered aggregates and `string_agg`. A
+browser can reach none of it, so every app that wants a chart, a dashboard tile
+or a facet count writes a service method — 28 hand-written `.count()` sites
+across `example` and `basecamp`, each re-deciding the gate, the shape and the
+name. That is the road being measured by the workaround (§ IV).
+
+**Three things needed no deciding.** The transport exists: `X-Service-Method`
+already carries `restore` and every custom method, so it is `POST /{service}`
+with that header and the bare name over WS. The verb is ONE, because litestone
+already dispatches on shape — `query({ by })` is a groupBy and `query({})` an
+aggregate. And the Data boundary holds: the verbs grid grades `aggregate` and
+`groupBy` `on` for all five row-reaching rules, so this is transport and
+description rather than access control.
+
+**Why it is built in rather than left to apps, which is the part that was
+measured.** An app can already declare `aggregate` as a custom method and get
+validation and a gate from `{ method, input, gate }`. What it cannot get is a
+graded GRAMMAR. Ruling this exposed two silent holes in the surface it would
+have shipped: `having` and an aggregate `orderBy` named columns that reached no
+field ladder, so a `@guarded` column fell out of a binary search on a threshold
+(`FJS-954`); and `isRawClause` tested a plain property, so a request-shaped
+object forged a `sql`` ` fragment and dumped that column outright (`FJS-955`).
+A pass-through arg type re-opens both, per app, silently. So the verb's schema
+is an allow-list and the framework owns it:
+
+    by · where · having · orderBy · limit · offset · interval · fillGaps
+    _count (incl. distinct) · _sum · _avg · _min · _max
+
+**Two of litestone's own are deliberately NOT on it.** `_stringAgg` is
+`GROUP_CONCAT` — a dump wearing an aggregate's clothes, and the shape `FJS-273`
+already caught returning a whole column. A named aggregate takes `filter` as a
+`sql`` ` tag, which a wire cannot produce and must never appear to: the attempt
+to make one from JSON is `FJS-955` itself. Both stay available to app code,
+where a developer writing SQL is not a caller.
+
+**The cap is `clampPage` and no new knob.** A group count is data-dependent, so
+`limit` bounds the payload and not the work — SQLite computes every group first.
+**That is not a reason for a second mechanism**: a `find` with an unindexed
+`ORDER BY` scans the table too, so the work bound here is the `where` plus the
+policy filter, exactly as it is for `find`. Reusing the clamp keeps one owner
+for *how much may come back*.
+
+**It rides `find`'s gate, and `readOnly` becomes `['find', 'get', 'aggregate']`.**
+An aggregate summarises rows a row policy already filtered, so *may read* and
+*may count* are one permission by default. Where they are not — a salary average
+over rows each person may see one of — the per-method `gate:` in a `methods:`
+entry is the answer that already exists, rather than a new tier.
+
+**What travels is the negative, with its reason**, which is what `FJS-553` and
+`FJS-554` settled for sortability and filterability: `x-aggregatable` appears
+only on a column that cannot be, carrying why — and the reasons are already
+computed by `aggregatableKeysFor`. The client surface is `resource.aggregate()`,
+UNCACHED: `options()` caches because a picker's list is stable, and a total is
+the opposite.
+
+**What it unlocks beyond the counting.** `FJS-D121`'s learned order stops
+needing a counter table: a rank is a `groupBy` over the BINDING's own model —
+*which assignees did I pick* — which is the resource's own service, and the
+blocker was never where to keep the numbers. Facet counts become available to
+the filter bar nothing generates yet. A dashboard tile stops being a bespoke
+method.
+
+*Lives in:* this ruling — the argument is here rather than in a design note,
+because it is a verb on an existing surface rather than a feature with a shape to
+sketch. The grammar it exposes is `packages/litestone/docs/aggregation.md` ·
+built — `FJS-957`.
 
 ### <a id="fjs-d219"></a>2026-09-05 · `FJS-D219` — a battery takes a credential by REFERENCE, and the shape is structural so the rule can reach a package that may not import Conduit
 
@@ -6283,6 +6632,58 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d225"></a>2026-09-06 · `FJS-D225` — a stored value the list no longer offers is SHOWN, disabled and marked, never dropped.
+
+The UI half of `FJS-D122`, and it turned out not to be about dependent sets at
+all. A column's stored value can fall out of the list that is offered for it in
+at least three ways: the row was retired by the set's `@@scope`, the row is
+soft-deleted, or a controlling field narrowed it out. In every one of them a
+native `<select>` bound to a value it does not contain shows **the first option
+instead** — the wrong value, silently, and saving writes it.
+
+**One behavior and no prop.** The alternative on the table was a flag to clear
+the control instead, and it is refused: a form that nulls a field nobody touched
+sends a clearing patch, and Invariant 9 says an explicit null clears. The reason
+a value is unavailable is usually temporary — a colorway retired last week, a
+country picked wrong and about to be corrected — so destroying it to render a
+tidier box trades data for tidiness. Ergonomics against strictness is settled by
+what a mistake destroys (§ IV), and here it is the row.
+
+**It lives in the options seam rather than on a control.** Four controls face
+this — Select, Combobox, RadioGroup, multiselect — so a prop each is four
+implementations that drift. `resource.options()` already takes the draft record,
+so it is the one place holding both the list and the current value: it appends
+the stored value as an option carrying `disabled: true` and `unavailable: true`.
+`Select` already normalises `{ value, label, disabled }`, so the controls need no
+change at all.
+
+**The word is generic, because the control cannot know which cause it is.**
+*Unavailable*, one literal in the kit. Rendering *archived* over a value that is
+merely not-in-France would be a borrowed word that half-fits, which is what
+`FJS-D120` refused about FHIR's `extensible`.
+
+**The label is fetched, and falls back.** A value outside the list has no label
+in hand, so the row is read once — unnarrowed, still through the caller's own
+accessor. A read the policy refuses, or a row that is genuinely gone, falls back
+to `humanize()` for a string value and to the value itself otherwise; an
+id-valued set rendering `17 (unavailable)` is worse than the bug being fixed, and
+a code-valued one reads perfectly well.
+
+**The field is marked invalid up front**, through `$context.form.reportInvalid`
+— the mechanism that already exists for *a control showing a value it cannot
+hand over*. The Data boundary refuses the write regardless; making somebody fill
+a form and collect one field back on submit is the worse half of a mechanism
+already built.
+
+**It covers relations as well as declared sets** — a `@relation` whose row was
+soft-deleted is the same shape through the same seam. Not enums: a value outside
+an enum is a migration, not a stale row. A bound ARRAY marks per element. In a
+combobox the entry is pinned and is never a search hit, because a value that is
+not offered cannot be searched for.
+
+*Lives in:* `packages/sierra/src/junction/resource.js` and
+`@frontierjs/ui`'s `<Form>` · built — `FJS-960`.
+
 ### <a id="fjs-d216"></a>2026-09-05 · `FJS-D216` — `<mesa:*>` keeps its closing slash, and the spec's own examples were wrong
 
 `<mesa:window on:keydown={h}>` written unclosed is the only spelling §12.1
@@ -7579,6 +7980,300 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d236"></a>2026-09-07 · `FJS-D236` — `humanize` is a third AXIS of `/inflect`, not a kit beside it. One folder answers *how is this name spelled*, and the divergence between the structural halves and the reader half is stated inside it.
+
+`/humanize` shipped as its own subpath one day before this, on the argument that
+it is not the inflect kit: that one is structural — a table, an accessor, a
+service path — and what it answers must not change when a reader changes, while
+what `humanize` answers must. **The argument is correct and it is not an argument
+for two folders.** A caller crossing from a column to a screen asks both halves
+in one expression, and splitting them put the divergence in two file headers that
+argued with each other across a folder boundary — which is where a divergence
+goes to be lost, because neither header is read by anyone editing the other.
+
+**It costs nothing to state, because `humanize` DERIVES from `words()`.** It is
+`words()` plus exactly one added rule — a digit starts a word of its own, so
+`line1` reads `Line 1` — and the pre-split is one visible regex at the call. As
+two subpaths this was three copied regexes nobody could see were copies.
+
+**The rule may not be lifted upward and that is the hazard the merge creates.**
+`kebab('address1')` becoming `address-1` renames a column, where a wrong label is
+cosmetic — so the failure modes are asymmetric and the two splitters stay two
+functions rather than one with an option (§ IV *paved road vs. the workaround*: an
+option here widens the shoulder and records nothing). The artefact that makes a
+later "tidy" visible is a single spec row asserting **both** answers — `humanize`
+splitting the digit beside `kebab`, `snake` and `modelName` refusing to — so
+unifying them in either direction reds it.
+
+**`./humanize` is gone rather than aliased.** § IV *preservation vs. evolution*:
+the subpath was one day old, unpublished, and its two consumers are in this
+workspace. Both take `@frontierjs/toolbelt/inflect`.
+
+The tier is **Map** — the kit list in the root `CLAUDE.md` and in the package's
+own, decidable from `exports.snapshot.md`, which the `snapshots` CI phase gates.
+The nine questions were answered before the first edit; the one that shaped the
+result is *can this be wrong without anything saying so*, whose answer is the
+paired spec row above · [inflect.js](packages/toolbelt/src/inflect/inflect.js) ·
+[inflect.spec.js](packages/toolbelt/test/specs/inflect.spec.js)
+
+
+### <a id="fjs-d234"></a>2026-09-07 · `FJS-D234` — user documentation is four surfaces. Three are owed now and one of them is generated; the SITE waits for 1.0, because publishing a reference is how code acquires users.
+
+Filed because a capability audit put *reference documentation* among the rows this
+framework does not answer, and found it the only one of seven with no ruling, no
+proposal and no defect id — on a project whose distinguishing habit is that
+everything is filed. **The record was missing. The documents were not.** Measured
+the day this was written: every one of the 22 packages carries a `README.md`,
+11,352 lines of them; 8 carry a `docs/` directory; litestone's is 43 files and
+14,879 lines; two packages ship an `AGENTS.md`; and 15 tutorial lessons are
+executed against running apps by CI's `tutor` phase rather than linted. What is
+absent is a documentation SITE, and calling that *no documentation* was the audit
+reading one surface and reporting on four.
+
+**The four surfaces, and each has one owner.**
+
+1. **`README.md` — the package, to a consumer.** Map tier under
+   [`FJS-D187`](#fjs-d187), which puts it there for exactly this reason: a
+   consumer acts on it without reading anything else. Owed today, by every
+   package, and Invariant 17 already requires it.
+2. **`AGENTS.md` — the package, to whoever writes against it** without the
+   source ([`FJS-D163`](#fjs-d163)). Owed by a package somebody writes against,
+   and by no other.
+3. **A generated reference, where the subject is a closed vocabulary.**
+   litestone's `docs/reference.snapshot.md` is the shape and the precedent —
+   every word the language holds, written by `litestone catalog --reference`,
+   its examples the same text `test/catalog.test.ts` parses, and the whole file
+   regraded by the `snapshots` phase. It is the only reference here that cannot
+   go stale, and that is a property of how it is made rather than of who
+   maintains it.
+4. **The site.** Composes the three above and authors nothing of its own. This
+   is the one that waits.
+
+**The site waits for 1.0, and the reason is § IV rather than effort.**
+*Preservation vs. evolution* says compatibility is owed to users and never to
+code — and the map's own evolution policy spends that licence hard: a rename is a
+rename, no alias, no deprecation window, no second name for one thing. That
+licence is drawn against the fact that nobody depends on a spelling yet.
+**Publishing a reference is the act that changes it.** A documented attribute
+acquires readers who did not read the commit that renamed it, and the cost § IV
+names — everyone afterwards reading two names for one idea — starts being paid on
+the day the page goes up rather than on the day somebody installs the package. So
+the site is not deferred because it is expensive. It is deferred because
+publishing it early is the one move that would make the evolution policy
+dishonest.
+
+**The deferral is safe for the same reason [`FJS-D12`](#fjs-d12)'s is.** That
+ruling holds the i18n seam open with six constraints so the catalogue can be
+generated rather than excavated. The constraint here is (3): where a subject is a
+closed vocabulary, its reference is derived and gated, so the site's raw material
+accrues on its own and none of it is a debt. What is authored by hand is the
+narrative half, and a narrative that is one release out of date is a nuisance
+where a reference that is one release out of date is a lie.
+
+**The real hazard is staleness and not absence, and it is not covered.** A
+generated reference is regraded by the `snapshots` phase; a hand-written guide is
+not. `doc-cites-dead` resolves a link and says nothing about a claim, so
+litestone's 14,879 hand-written lines can describe an attribute the parser
+deleted and stay green — `FJS-761`'s shape one tier up, where `@map` was parsed,
+documented, emitted by four importers and applied by nothing. **A missing site
+costs an adopter an afternoon; a confident wrong sentence costs them the
+afternoon and their trust in the other forty-two files.** The obligation this
+ruling takes on is therefore the generated column rather than the page count:
+where a `docs/` page documents a closed vocabulary, it moves behind a generator,
+and the ones that cannot are the measure of what is left.
+
+**One second origin is named and is to be retired.** `website/packages.js` calls
+itself *the single source of truth for package features* while each package's own
+`README.md` is the map tier for the same facts, which is Axiom 1 broken in the
+one place a reader is most likely to meet both. The site composes; it does not
+restate. Whether the composition reads the READMEs, `exports.snapshot.md` or a
+new generated artefact is open, and is a question for the site rather than for
+this ruling.
+
+*Lives in:* `packages/litestone/docs/reference.snapshot.md` (the shape) ·
+`packages/*/README.md` · `scripts/ci.mjs` (`snapshots`, `tutor`) ·
+`website/packages.js` (the origin to retire)
+
+### <a id="fjs-d230"></a>2026-09-07 · `FJS-D230` — Studio PREVIEWS and the app ISSUES. A `@@export` extract may only be taken where the principal is actually built; Studio may show rows at a standing, and must name the resolver that graded them.
+
+Asked as *where does a report stop being Studio's and become the app's*, with the
+cheapest first surface for [FJS-D228](#fjs-d228) being a Reports panel over what Studio
+already answers. **The question was filed on a premise that turned out to be false, and
+the false premise made the ruling better rather than harder.**
+
+**The premise was that Studio has no principal. It has one.** `#authSelect` — *Acting
+as* — is populated from `/api/auth-users` (the `@@auth` model's own rows) and
+`currentAuth` rides on every endpoint, each of which does
+`authCtx ? activeDb.$setAuth(authCtx) : activeDb.asSystem()`. Row policies, field
+policies and gates are all real there. Any ruling resting on *Studio cannot enforce* was
+resting on nothing.
+
+**What Studio cannot reproduce is a principal the REQUEST builds, and the line is
+there.** Two measured cases, opposite outcomes:
+
+- **`example` agrees.** `cmdStudio` builds its client with no gate resolver, so
+  `GatePlugin` falls back to toolbelt's `gradeStanding`. Run both ways for the same
+  account, the manifests are identical — `declaredReadGate 1`, `reads graded`, 5 rows.
+  `example`'s own `getLevel` and `gradeStanding` read the same booleans, so there is no
+  divergence to find. Studio's answer there is faithful.
+- **`basecamp` does not.** Its principal is `membershipClaim`, resolved per request off
+  the `WorkspaceMember` row for the workspace the request NAMES — the `X-Workspace-Id`
+  header or `?workspace_id=`. `principal.snapshot.md` § Claims lists three claims
+  (`workspaceId`, `memberRole`, `capabilities`) and none of them is on the `User` row.
+  Studio hands `$setAuth(userRow)`, three claims short, and under `strategy row` that
+  snapshot already states the consequence: *a caller holding none reads nothing, with a
+  200*.
+
+**The hazard is not that Studio is wrong. It is that Studio cannot say which of those
+two it just did.** An empty screen from a missing claim and an empty screen from a
+policy working correctly are the same screen, and § III's *a check that can only fail
+open is not a check* has a twin here — an answer that cannot state its own completeness
+is not an answer anyone may act on.
+
+**So the line is drawn at what happens to the output, not at who is asking.** A preview
+may be approximate and is thrown away. An extract is a file that leaves and is kept, so
+it must carry a standing it can defend. `runExport` stamps `takenAs` —
+`{principal, system, declaredReadGate, reads}` — and Studio's `/api/export` stamps
+nothing, and could not, because it does not know whether the principal it built was
+complete.
+
+**Consequences, and the Studio half is the larger one.** The app gets the issuing
+surface: a junction plugin over `runExport` with `ctx.auth.user`, gated like every other
+route, which restates nothing — the dataset list is `exportableDatasets`, the columns
+are `columnPlan`, the enforcement is `$setAuth`. Studio KEEPS previewing rows at a
+standing, because it can and because the authoring loop needs it, and gains the
+disclosure that makes the preview legible: which resolver graded it, and which declared
+claims the principal it built does not carry. Three defects fall out and are filed —
+[FJS-976](ISSUES.md#fjs-976), [FJS-977](ISSUES.md#fjs-977),
+[FJS-978](ISSUES.md#fjs-978).
+
+**§ IV, two rows in tension and they resolve in opposite directions**, which is the
+substance rather than a complication. *Paved road vs. the workaround*: issuing is the
+road, and Studio's `/api/export` is the workaround that got used because it already
+answered — the road wins, and the workaround is kept as instrumentation under a name
+that does not claim to be the road. *Ergonomics vs. strictness*, resolved per surface by
+what a mistake destroys rather than by temperament: **refuse when issuing**, since the
+cost is a dataset leaving ungated, and **disclose when previewing**, since the cost is a
+developer misreading a screen they are about to change anyway.
+
+**What this does NOT rule.** Whether the issuing surface is a route, a service method or
+both is a build decision inside the app's own realm and needs no ruling. Storage stays
+[FJS-D229](ISSUES.md#fjs-d229). The moment Studio grows an auth story, a tenancy story
+and a release story it has become an app, and this ruling is the thing that will have
+been broken — the test to keep applying is [FJS-D228](#fjs-d228)'s, one axis over.
+
+### <a id="fjs-d228"></a>2026-09-07 · `FJS-D228` — FrontierJS owns the data layer. Analytics is Core scope, built as an application beside `basecamp` and `orion` rather than as a battery inside the core, and the first thing built is the export contract rather than a warehouse.
+
+Asked as *is the analytics and warehouse territory ours, adjacent, or external*, with
+three candidate answers and a file arguing for the cheapest. **The answer is the most
+expensive one, and the reason it does not fail § IV's severability test is that it is
+not a battery.**
+
+**The refusal that was expected does not apply.** *Batteries vs. smallness* requires a
+battery to be severable — one owner, one seam, removable without surgery on the core —
+and seven categories carrying their own storage engine, scheduler and semantic layer is
+not that. But `FJS-D14` already established the other shape: `basecamp` and `orion` are
+applications built ON the framework, not extensions of it, and neither owes the core
+anything. A data product is that shape. It consumes seams; it does not widen them. The
+severability question is answered by the product boundary rather than by a package
+boundary, and the test to keep applying is the same one: the day it needs a change in
+litestone that only it wants, it has become the core and must be admitted as such.
+
+**Six of the seven categories already exist and are pointed at nothing**, which is what
+makes owning this tractable rather than a multi-year commitment. Ingest is the write tap
+and the audit trail; orchestration is caravan; reverse ETL is conduit; the catalog is
+the seed plus what Studio already serves; BI is `aggregate`/`groupBy` under policy with
+no surface above them. **Transform is the one that had been recorded as absent and is
+not** — `view <name> { fields… @@sql(…) @@materialized @@refreshOn([…]) @@db(…) }` is
+declared columns, a SQL body, a materialization strategy, an incrementality trigger and
+a target database in one construct, which is a dbt model with no second language and no
+re-declared types, and `@derived` / `@from(Order, count: true)` is a column-level rollup
+computed in SQL that dbt has no equivalent for. Both ship. Neither is used by any schema
+in this repo ([FJS-972](ISSUES.md#fjs-972)).
+
+**Storage is the only new commitment, and it is deliberately NOT made here**
+([FJS-D229](ISSUES.md#fjs-d229)). Every other category is a choice about which existing
+package points where — reversible, no new dependency. A storage engine is a native
+runtime dependency, is irreversible in the data the moment anyone's analytics live in
+it, forks the consistency model in the way [FJS-958](ISSUES.md#fjs-958) previews, and
+sets the ceiling that decides whether the product is *analytics for the app* or
+*analytics for the business*. SQLite plus materialized views is the floor and it is not
+obviously too low; the decision waits for real strain rather than a guess.
+
+**What makes this worth owning is not any of the seven categories.** Everywhere else an
+extract is a privileged dump: the pipeline authenticates as a service account that reads
+everything, and every access rule the application spent years declaring stops at the
+copy. **The warehouse is where row policy dies.** Access here is declared at the Data
+boundary and `db.$readAs` already grades a row per recipient, so a feed graded per
+recipient — or an extract stamped with the standing it was read at — is structurally
+available and structurally impossible for a tool connecting as root. That is the whole
+edge, and it is the reason the first thing built is **the export contract**: today the
+only way data leaves an FJS app is a human clicking `POST /api/export` in a development
+tool, which is a hole under every possible answer to this question.
+
+**The ruling makes one existing defect load-bearing.** [FJS-970](ISSUES.md#fjs-970) —
+a `view` carries no gate, no row policy and no tenant scope, and cannot be made to — is
+an ordinary bug while views are unused and is a contradiction of this ruling the moment
+the transform primitive is the thing the product is built on. It is fixed before
+anything is built on top of it, not after.
+
+**Scope recorded, in the vocabulary the capability map uses**: Core, maturity 2, owner
+to be named, `derived-from: db/schema.lite`. Two questions stay open and are filed
+rather than folded in — the storage engine ([FJS-D229](ISSUES.md#fjs-d229)) and where
+authoring stops being Studio's ([FJS-D230](#fjs-d230)) — plus a collision this
+ruling creates with `orion`, which wants the same write tap for a different sink
+([FJS-D231](ISSUES.md#fjs-d231)).
+---
+
+### <a id="fjs-d38"></a>2026-09-07 · `FJS-D38` — `.mesa` is the authoring model for EVERY interface, and a new surface is a compiler backend rather than a second component model.
+
+`FJS-D37` §6 left this open as the one thing owed before a TUI: does a terminal
+reuse `.mesa`, or is it a separate authoring model. **It reuses it — and the
+ruling is deliberately wider than the question asked.** Terminal, native, mobile,
+desktop: any interface route FrontierJS ever grows is written in `.mesa`, against
+the same signal graph, with the same Resource meaning the same thing. A surface is
+a TARGET, which is a compiler backend and a runtime, and it is never a second way
+to write a component.
+
+**The alternative was cheap and is refused by name.** Ink for a terminal, React
+Native for a phone, Electron-plus-React for a desktop — each available now, each
+making the framework's answer to *how do I build X* be *use somebody else's
+component model*. That is N authoring models in a repo whose whole thesis is one
+mental model, and the cost does not show up as a line anywhere: it shows up as a
+developer who knows this framework and cannot read its terminal app.
+
+**The price is measured and it is not small.** `FJS-D37` §5 counted it:
+`runtime.js`'s reactive core (lines 1–760) holds **2** DOM references and the
+remaining 4,200 hold **99**, and the compiler emits a template as an HTML *string*
+parsed by `htmlToFragment()` and walked by `refer(root, path)`. Mesa has no
+renderer abstraction — rendering is DOM-shaped by construction, which is also why
+it is fast. So reuse costs a second compiler backend emitting a cell tree, not a
+renderer, and every Mesa target that exists produces markup, SSR and
+`email-kit`'s `target: 'email'` included.
+
+**What this ruling does NOT claim, because the honest half is the useful half.**
+The AUTHORING is derived — one file, one signal graph, one vocabulary. The RUNTIME
+is not: with no renderer abstraction, each target restates the emit, and that is a
+restatement this framework otherwise refuses. Naming it is the point. The seam
+that would make the runtime derived too does not exist, and the first non-markup
+target is what has to build it or prove it unnecessary; a target that quietly
+forks the runtime instead has taken the cheap answer with the expensive answer's
+name on it.
+
+**Nothing is scheduled and `FJS-D37` §6 is unchanged** — no interface target is
+built before core leaves alpha, on `FJS-D14`'s reasoning. What is settled is the
+shape, so that the tone table, the two output owners and every surface decision
+after them are made against one answer rather than against an open question.
+
+**Where this can go wrong without anything saying so**, which is the one § V
+question it does not pass cleanly: a second authoring model arrives by accident
+rather than by decision — a wrapper adopted *just for the TUI*, a component kit
+that is easier to reach for than a backend. No check can grade a project that does
+not exist yet, so this ruling is the whole artefact, and the § IV adjudication it
+turns on is **coherence over convention**: every platform's convention is its own
+component model, and that is exactly what is being declined.
+— `packages/mesa/src/runtime.js` · `packages/mesa/src/compiler.js` · `IDEAS/terminal-surface.md` §5, §9 · `DECISIONS.md` `FJS-D37`.
+
 ### <a id="fjs-d224"></a>2026-09-05 · `FJS-D224` — § IV gains a seventh adjudication: preservation against evolution. Compatibility is owed to users, never to code.
 
 `PHILOSOPHY.md` § IV settles six standing tensions and none of them covered
@@ -8855,6 +9550,150 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d235"></a>2026-09-07 · `FJS-D235` — a broker the business already runs is a conduit target of kind `broker`, and the message's own id is the dispatch id. Delivery semantics stay the broker's, and both existing refusals stand untouched.
+
+Filed from a territory survey that had messaging as a blank and found two rulings
+that look like they close it. **Neither of them is about this**, and the record
+that first noticed ([`IDEAS/inbound-integrations.md`](IDEAS/inbound-integrations.md))
+left three answers unpriced.
+
+**The two refusals, and what each actually refuses.**
+[`FJS-D173`](#fjs-d173) refuses a declared bus (Redis, NATS) for *announcements*,
+because the reach of an announcement is one machine and a bus contradicts the
+premise of a package whose deployment story is a file.
+[`FJS-D110`](#fjs-d110) refuses external pub/sub as a *consequence* of refusing
+serverless — an external database, an external pub/sub and an external queue, at
+which point the framework is a weaker version of one that started there. **Both
+refuse a broker for a job FrontierJS owns.** Neither says anything about a broker
+somebody else runs, which the app is merely required to talk to.
+
+**`FJS-D110` cannot be stretched to cover it, and its own text is why.** Its
+ceiling argument excludes applications that "already have a platform team",
+which is a statement about *capacity* — a shop with four customers can still be
+required to consume from the parent company's Kafka, and no amount of headroom
+here changes that. D110 already names this category and hands it back: a
+requirement that the infrastructure be somebody else's is "a procurement fact
+rather than a technical one, and should be answered as one." Extending it to
+decline a broker would be using that ruling against the limit it states itself.
+
+**The code had already reserved the door and no register said so**, which is
+§ IV's last adjudication arriving as a fact rather than a debate.
+`packages/conduit/src/types.ts` carries `nats` in the `Protocol` union, marked
+*defined, not implemented in V1*, beside `ssh`. So the question was never whether
+to open a seam; it was what the seam means.
+
+**Nothing new is owned, and that is the whole argument for placing it here.**
+Every piece of a broker consumer already has an owner:
+
+- **Naming the counterparty and holding the credential** is a conduit target.
+  [`FJS-D177`](#fjs-d177) already ruled that conduit holds the RELATIONSHIP and
+  that the axis is who dials — a consumer dials out and then listens, so it is a
+  conduit target by the axis conduit already uses.
+- **Dial, then receive** is `transports/websocket.ts`, which does exactly this
+  today: it opens the socket and reads frames off it. A subscriber is that loop
+  with a different envelope.
+- **Doing the work once per message** is caravan. `jobs.id` is a `TEXT PRIMARY
+  KEY` and `dispatch({ id })` is idempotency for all time rather than for a
+  lifetime — the module's own note says the key is what decides when two
+  processes retry at once, which is also the multi-process case
+  [`FJS-D173`](#fjs-d173) would otherwise bite on.
+- **Whether this unit of work already happened** is
+  `@frontierjs/toolbelt/history`, which exists to have one answer.
+- **A durable effect crossing the boundary** is the outbox
+  ([`FJS-D35`](#fjs-d35)).
+
+**So the ruling is a KIND, not a transport.** Conduit already separates two
+axes — `Protocol` is how bytes move (`http`, `websocket`, `unix`, and the two
+reserved), `TargetKind` is what the counterparty is (`provider`, `outpost`,
+`local`). A broker is a fourth kind: **the one relationship where nobody is on
+the other end.** `kind: 'broker'` states that delivery semantics, offsets and
+retry belong to the infrastructure rather than to either party; the protocol slot
+says how it is reached. A target's seven policy numbers, its credential
+reference, its encoding and its trace headers all apply unchanged, which is what
+a new kind buys and a new package would have to restate.
+
+**The seam is one sentence: a received message is dispatched under its own id,
+and the ack follows the dispatch.** Never before it — an ack before the handoff
+is a lost order, and an ack after an idempotent dispatch is a redelivery that
+costs nothing.
+
+**The obligation, and it shapes the feature rather than decorating it: a
+subscription that has silently stopped consuming looks exactly like a quiet
+broker.** That is the same failure this project has already been bitten by twice
+one realm over — a scrape that died and a value inside its threshold draw the
+same flat line, which is why an evaluator may not resolve on no-data. A broker
+target therefore reports liveness — when it last received, and whether its
+connection is up — through `app.registerHealthCheck`, and a subscription that
+cannot say so does not ship. Without that artefact the feature is a trap, and
+question nine is the reason this clause exists.
+
+**What does not change, stated so nobody has to re-derive it.**
+[`FJS-D173`](#fjs-d173) stands: an announcement still reaches one machine and no
+broker carries one. [`FJS-D110`](#fjs-d110) stands: nothing here makes FrontierJS
+*depend* on a broker, and an app that declares no broker target installs nothing
+and runs nothing. [`FJS-D153`](#fjs-d153) caps the surface for free: a connector
+to a named vendor is not in this repo, so this ruling buys a descriptor and a
+seam, never a Kafka client.
+
+**§ IV, batteries vs. smallness, is the row that governs the placement.** A
+battery may be large but must be severable — one owner, one seam, removable
+without surgery on the core. A kind in the router's switch is severable. A
+separate package would be a second integration vocabulary, which is the thing
+conduit exists to prevent, and it was the honest alternative rather than a straw
+one: it would carry its own credential story, its own policy numbers and its own
+trace, and every one of those is a second origin.
+
+*Lives in:* `packages/conduit/src/types.ts` (`TargetKind`, `Protocol`) ·
+`packages/conduit/src/router.ts` (the transport switch) ·
+`packages/caravan/src/db.ts` (`dispatch({ id })`, the primary key) ·
+[`IDEAS/inbound-integrations.md`](IDEAS/inbound-integrations.md) (the record this answers)
+
+### <a id="fjs-d233"></a>2026-09-07 · `FJS-D233` — FrontierJS ships no cost story, and the reason is that a cost fact has its origin outside the app
+
+Raised by a territory survey that put *cost* on the map because the CNCF platform
+capabilities list carries it, and noted that no peer framework does. The survey
+was right to draw the tile and the tile is declined. **Recording the decline is
+the point of this ruling**: an unmarked absence and a deliberate one look
+identical from every other document, which is the same reason
+[`FJS-D153`](#fjs-d153) had to be written down rather than merely acted on.
+
+**A cost fact's origin is the provider's invoice.** Everything the framework
+could compute — instance-hours, bytes egressed, rows stored — is an estimate of a
+number somebody else has already decided, under a rate card the app cannot see,
+with a billing period, reserved capacity, credits and taxes in it. So a cost
+feature is a **restatement**, and Axiom 1's whole content is that a restatement
+drifts from what it restates. § V asks it directly and this is the worst possible
+answer: an estimate that has diverged from the bill looks exactly like one that
+has not, and there is no artefact that could say so. Nothing else on the map
+fails that question this badly.
+
+**It is not derivable from the seed**, which is what every other territory here
+has in common. A schema states what the app is; it states nothing about what a
+vendor charges, and no amount of declaration gets closer to the invoice.
+
+**It would have one owner per provider**, which is to say ten. That is precisely
+the shape [`FJS-D215`](#fjs-d215) generalised out of `FJS-D153`: a package that
+publishes a boundary ships the mechanism and never the vendor, because a rate
+card change would otherwise ship a framework release to every app that installed
+it for something else.
+
+**What remains in scope, and it is not nothing.** An app that wants to watch a
+cost it is told about can write it as a series — `junction/db/metrics.lite` keeps
+readings over time and does not care where a number came from — and a provider
+that publishes a billing API is a Conduit connector under `FJS-D153`'s rule,
+outside this repo. Neither is a cost feature; both are the existing mechanisms
+answering a question an app brought with it.
+
+**Reversal condition, stated so this can be reopened on a fact rather than on
+enthusiasm**: if FrontierJS ever provisions the resource it would be pricing —
+`IDEAS/deploy-plane.md`'s bootstrap ring and `IDEAS/operational-edge.md` § 1 both
+edge toward it — then the app is the origin of the resource fact and the
+arithmetic stops being a guess about somebody else's ledger. It is not today. The
+machine is assumed to exist.
+
+*Lives in:* nowhere, which is the ruling. Cited from `IDEAS/overview.md`
+§ Not on this list.
 
 ### <a id="fjs-d215"></a>2026-09-05 · `FJS-D215` — the mechanism, never the vendor, applies to every battery. Junction's AI adapter ships a shape and no provider.
 

@@ -190,6 +190,7 @@ export function cards(model) {
       topics:  pkg.topics ?? [],
       sections: pkg.sections ?? [],
       subsystems: pkg.subsystems ?? [],
+      files:    pkg.files ?? null,
       baseline: pkg.baseline ?? 0,
     })
   }
@@ -661,6 +662,15 @@ function countChecked(model) {
 // class — every id in the register is a statement about the TREE, so a package
 // whose published copy is a release behind is invisible from inside it.
 
+// Rounded on purpose. `unpackedSize` to the byte is a number that moves every
+// release and that nobody compares; what somebody wants from this column is the
+// order of magnitude beside the package next to it.
+function kb(bytes) {
+  return bytes >= 1024 * 1024
+    ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+    : `${Math.max(1, Math.round(bytes / 1024))} KB`
+}
+
 function livePane(live) {
   if (!live) return ''
 
@@ -674,6 +684,11 @@ function livePane(live) {
     r.lastCommit ? `${esc(r.lastCommit)} <span class="text-xs text-muted">${esc(clip(r.lastSubject ?? '', 60))}</span>` : '<span class="text-xs text-muted">no commit touches it</span>',
     `${r.commits90}`,
     r.dirty ? `<span class="badge warning">${r.dirty}</span>` : '',
+    // What an app actually installs. A reference, so it is rounded — the exact
+    // byte moves on every release and nobody reads it.
+    r.shippedBytes != null
+      ? `${kb(r.shippedBytes)} <span class="text-xs text-muted">${r.shippedFiles} file(s)</span>`
+      : '<span class="text-xs text-muted">—</span>',
   ])
 
   return `<section class="pane" aria-labelledby="live-h">
@@ -689,7 +704,7 @@ function livePane(live) {
     </div>
   </article>
   <div class="table-wrap"><table class="table striped dense">
-    <thead><tr><th>Package</th><th>Local</th><th>Published</th><th>Last touched</th><th>90d</th><th>Dirty</th></tr></thead>
+    <thead><tr><th>Package</th><th>Local</th><th>Published</th><th>Last touched</th><th>90d</th><th>Dirty</th><th>Ships</th></tr></thead>
     <tbody>${rows.map(cells => `<tr>${cells.map((c, i) => `<td${i === 0 ? ' class="atlas-key"' : ''}>${c}</td>`).join('')}</tr>`).join('')}</tbody>
   </table></div>
 </section>`
@@ -846,6 +861,10 @@ function dossier(card, model) {
   const facts = [
     card.name !== card.title ? ['package', card.name] : null,
     card.version ? ['version', card.version] : null,
+    // A reference rather than an audit — how big is this thing before you open
+    // it. Tracked files, so what is lying around locally does not move it, and
+    // absent where git could not answer rather than guessed.
+    card.files   ? ['tracked files', String(card.files)] : null,
     card.test    ? ['test', card.test] : null,
     // Absent is zero and zero is clean, so a package with no ceiling says so
     // rather than saying nothing.
@@ -915,7 +934,8 @@ function dossier(card, model) {
     body.push(block('What the source is made of', card.subsystems.length,
       `<div class="cluster gap-2xs">${card.subsystems.map(s =>
         `<span class="chip">${esc(s.name)} <span class="pill">${s.files}</span></span>`).join('')}</div>
-      <p class="text-xs text-muted">Directories under <code>${esc(card.home)}/src/</code> with the files in each. Structure, not features — the answer to <em>where does this live</em>.</p>`))
+      <p class="text-xs text-muted">Directories under <code>${esc(card.home)}/src/</code> with the files in each${
+        card.files ? `, of ${card.files} tracked in the package` : ''}. Structure, not features — the answer to <em>where does this live</em>.</p>`))
   }
 
   if (card.deps.length || card.dependents.length) {

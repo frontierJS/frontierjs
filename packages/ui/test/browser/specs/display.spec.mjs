@@ -41,6 +41,24 @@ export async function run(t) {
   t.ok(spark.w > 0 && spark.h > 0, 'and the svg occupies its declared box')
   t.match(spark.label, /Signups/, 'a labeled sparkline is announced rather than decorative')
 
+  // …AND IT REDRAWS WHEN THE DATA MOVES, which nothing here had ever asked.
+  // Every derived value in the component is a plain `const` — `normalized`,
+  // `pointsStr`, `areaPath` — so the body reads like one that runs once per
+  // instance, and the whole point of a sparkline is data that changes. It does
+  // recompute; this row is what says so, and what would notice if a change to
+  // the compiler or to the component stopped it. The point COUNT is asserted
+  // on both sides as well as the path, because a redraw that threw the data
+  // away would also change the path.
+  const before = await t.evaluate(
+    `return document.querySelector('#probe-sparkline-live polyline').getAttribute('points')`)
+  await t.clickAt('#grow-sparkline')
+  const after = await t.evaluate(
+    `return document.querySelector('#probe-sparkline-live polyline').getAttribute('points')`)
+
+  t.is((before.match(/[\d.]+[ ,][\d.]+/g) ?? []).length, 5, 'five values before')
+  t.is((after.match(/[\d.]+[ ,][\d.]+/g)  ?? []).length, 7, 'and seven after two more arrive')
+  t.ok(before !== after, 'the path actually moved')
+
   /* ── Bar ─────────────────────────────────────────────────────────────── */
 
   // Bar is a native <progress>, so the fill is the UA's and the value is the

@@ -156,6 +156,58 @@ rather than a route.
 
 ---
 
+## A broker is the shape the axis does not settle — answered by `FJS-D235`
+
+*Added 2026-09-07, from a territory survey that had **messaging and streaming**
+as a blank and could find no record holding it. The finding survived the probe;
+these are the two rulings it is easy to mistake for one.*
+
+**Two refusals exist and neither is this one.** [`FJS-D110`](../DECISIONS.md#fjs-d110)
+refuses an external pub/sub as a *consequence* of refusing serverless — making
+Junction request-scoped would need an external database, an external pub/sub and
+an external queue, at which point the framework is a weaker version of one that
+started there. The cross-process announce ruling refuses a declared bus (Redis,
+NATS) for *announcements*, because the reach of an announcement is one machine
+and a bus contradicts the premise of a package whose deployment story is a file.
+
+Both refuse a broker for a job **FrontierJS owns**. Neither says anything about a
+broker the **business already runs** — a shop whose orders arrive on Kafka
+because six other systems are already on it. That app has no declared way to name
+the thing it talks to, and the absence is not a decision anybody made.
+
+**It is not settled by *who dials* either**, which is why it belongs here rather
+than in the reframe above. A broker consumer dials out and then listens, so it is
+outbound by the axis and a listener by behavior; `FJS-D177`'s three consequences
+split rather than resolve — we authenticate ourselves (outbound), no listening
+socket exists (outbound), and **who retries is the broker's, not ours** (neither).
+A subscription is also the one relationship where the counterparty is not a
+counterparty: nobody is on the other end, and delivery semantics belong to the
+infrastructure rather than to either party.
+
+**Three answers were priced and the first won**, as
+[`FJS-D235`](../DECISIONS.md#fjs-d235) — a conduit target of kind `broker`,
+where the message's own id is the dispatch id. *A separate package* lost on
+batteries-vs-smallness: it would restate the credential story, the policy
+numbers and the trace, each a second origin. *Declined by name* lost on
+`FJS-D110`'s own text, which hands a requirement that the infrastructure be
+somebody else's back as a procurement fact rather than answering it with a
+technical refusal.
+
+Two things the pricing turned up that this record did not have. The
+at-least-once loop is **thinner than stated above**: the offset is the broker's,
+which this section already says one paragraph up, and doing the work once is
+caravan's `dispatch({ id })` rather than anything new. And the `Protocol` union
+in `packages/conduit/src/types.ts` already carries `nats`, marked *defined, not
+implemented in V1* — **the code had reserved the seam while no register said
+so**, so the open question was never whether to open one.
+
+**What is not in question**: nothing here proposes that FrontierJS *depend* on a
+broker. Both existing refusals stand and the ruling reopens neither — an
+announcement still reaches one machine, and an app declaring no broker target
+installs nothing and runs nothing.
+
+---
+
 ## Order
 
 **1 — the credential seam.** `IDEAS/third-party-credentials.md` leg three. It is

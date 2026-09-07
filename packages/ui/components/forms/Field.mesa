@@ -43,7 +43,7 @@
   // how a form and its .lite file drift apart. An explicit prop always wins.
 
   import Label from './Label.mesa'
-  import { nameToLabel, resolveError, resolveRule, stated } from '../../utils.js'
+  import { humanize, resolveError, resolveRule, stated } from '../../utils.js'
 
   export let id       = ''
   export let name     = ''
@@ -69,7 +69,7 @@
   // reaches the browser as the rule's `title`; failing that the column name
   // is title-cased, which is what this component always did.
   const rule = resolveRule(form, name)
-  const resolvedLabel    = stated(label, rule?.title, nameToLabel(name))
+  const resolvedLabel    = stated(label, rule?.title, humanize(name))
   const resolvedRequired = stated(required, rule?.required)
 
   function handleRemove() {

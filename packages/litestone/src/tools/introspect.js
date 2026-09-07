@@ -348,7 +348,14 @@ export function introspectToLite(db, { camelCase = true } = {}) {
     }
 
     // Detect soft delete
-    const hasSoftDelete = columns.some(c => SOFT_DELETE_COLS.includes(c.name))
+    // NULLABLE, because the name alone is not the fact. A `deleted_at` that
+    // cannot hold NULL is a data column — the instant a deletion was recorded —
+    // and marking that model `@@softDelete` makes every row born deleted and
+    // invisible to every read. The 188-model fixture carried exactly that shape
+    // for as long as it existed (`FJS-969`), written by a person applying the
+    // name-only rule; the parser refuses it now, so inferring it here would emit
+    // a schema litestone will not load.
+    const hasSoftDelete = columns.some(c => SOFT_DELETE_COLS.includes(c.name) && !c.notnull)
 
     lines.push(`model ${modelName} {`)
 

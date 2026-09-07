@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 39 models · 2 databases
+-- 42 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
@@ -96,6 +96,20 @@ CREATE TABLE IF NOT EXISTS "outbox_message" (
 CREATE INDEX IF NOT EXISTS "idx_outbox_message_deliveredAt_createdAt" ON "outbox_message" ("deliveredAt", "createdAt");
 CREATE INDEX IF NOT EXISTS "idx_outbox_message_claimedAt" ON "outbox_message" ("claimedAt");
 
+CREATE TABLE IF NOT EXISTS "metric_series" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "name" TEXT NOT NULL,
+  "labels" TEXT NOT NULL DEFAULT '{}',
+  "labelsKey" TEXT NOT NULL UNIQUE,
+  "type" TEXT NOT NULL DEFAULT 'gauge',
+  "unit" TEXT,
+  "lastSeenAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("type" IN ('counter', 'gauge', 'histogram'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_metric_series_name" ON "metric_series" ("name");
+CREATE INDEX IF NOT EXISTS "idx_metric_series_lastSeenAt" ON "metric_series" ("lastSeenAt");
+
 CREATE TABLE IF NOT EXISTS "product" (
   "id" INTEGER NOT NULL PRIMARY KEY,
   "name" TEXT NOT NULL UNIQUE,
@@ -143,6 +157,7 @@ CREATE TABLE IF NOT EXISTS "color" (
   "name" TEXT NOT NULL UNIQUE,
   "hex" TEXT,
   "retired" INTEGER NOT NULL DEFAULT 0,
+  "sortOrder" INTEGER NOT NULL DEFAULT 999,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
 
@@ -413,6 +428,26 @@ CREATE TABLE IF NOT EXISTS "user" (
   "isStaff" INTEGER NOT NULL DEFAULT 0
 ) STRICT;
 
+CREATE TABLE IF NOT EXISTS "metric_point" (
+  "seriesId" TEXT NOT NULL,
+  "at" INTEGER NOT NULL,
+  "value" REAL NOT NULL,
+  PRIMARY KEY ("seriesId", "at"),
+  FOREIGN KEY ("seriesId") REFERENCES "metric_series" ("id") ON DELETE CASCADE
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS "metric_hour" (
+  "seriesId" TEXT NOT NULL,
+  "hour" INTEGER NOT NULL,
+  "min" REAL NOT NULL,
+  "max" REAL NOT NULL,
+  "sum" REAL NOT NULL,
+  "count" INTEGER NOT NULL,
+  "increase" REAL,
+  PRIMARY KEY ("seriesId", "hour"),
+  FOREIGN KEY ("seriesId") REFERENCES "metric_series" ("id") ON DELETE CASCADE
+) STRICT;
+
 -- The buyable thing. One row per option combination, and the row a basket
 -- line, a price and a stock count all point at.
 CREATE TABLE IF NOT EXISTS "product_variant" (
@@ -459,6 +494,7 @@ CREATE TABLE IF NOT EXISTS "order" (
   CHECK (discount <= subtotal),
   FOREIGN KEY ("customerId") REFERENCES "customer" ("id") ON DELETE CASCADE
 ) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_order_customerId" ON "order" ("customerId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_order_deletedAt" ON "order" ("deletedAt") WHERE "deletedAt" IS NULL;
 
 -- One attempt to take money for one order.
@@ -540,6 +576,8 @@ CREATE TABLE IF NOT EXISTS "cart" (
   FOREIGN KEY ("discountId") REFERENCES "discount" ("id") ON DELETE SET NULL,
   FOREIGN KEY ("shippingMethodId") REFERENCES "shipping_method" ("id") ON DELETE SET NULL
 ) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_cart_discountId" ON "cart" ("discountId");
+CREATE INDEX IF NOT EXISTS "idx_cart_shippingMethodId" ON "cart" ("shippingMethodId");
 
 -- What a plan cost, over the window it cost it.
 -- 
@@ -563,6 +601,7 @@ CREATE TABLE IF NOT EXISTS "plan_version" (
   CHECK (effectiveTo IS NULL OR effectiveFrom < effectiveTo),
   FOREIGN KEY ("planId") REFERENCES "plan" ("id") ON DELETE RESTRICT
 ) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_plan_version_planId_effectiveFrom" ON "plan_version" ("planId", "effectiveFrom");
 CREATE UNIQUE INDEX IF NOT EXISTS "uniq_plan_version_planId" ON "plan_version" ("planId") WHERE "effectiveTo" IS NULL;
 
 -- What somebody is paid, over the interval it was true for.
@@ -613,6 +652,7 @@ CREATE TABLE IF NOT EXISTS "pay_window" (
   CHECK (effectiveTo IS NULL OR effectiveFrom < effectiveTo),
   FOREIGN KEY ("employeeId") REFERENCES "employee" ("id") ON DELETE RESTRICT
 ) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_pay_window_employeeId_effectiveFrom" ON "pay_window" ("employeeId", "effectiveFrom");
 CREATE UNIQUE INDEX IF NOT EXISTS "uniq_pay_window_employeeId" ON "pay_window" ("employeeId") WHERE "effectiveTo" IS NULL;
 
 -- A photograph. The bytes live in object storage and this column holds the
@@ -630,6 +670,8 @@ CREATE TABLE IF NOT EXISTS "product_image" (
   FOREIGN KEY ("productId") REFERENCES "product" ("id") ON DELETE CASCADE,
   FOREIGN KEY ("variantId") REFERENCES "product_variant" ("id") ON DELETE SET NULL
 ) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_product_image_productId" ON "product_image" ("productId") WHERE "deletedAt" IS NULL;
+CREATE INDEX IF NOT EXISTS "idx_product_image_variantId" ON "product_image" ("variantId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_product_image_deletedAt" ON "product_image" ("deletedAt") WHERE "deletedAt" IS NULL;
 
 -- Why the shelf is at the number it is at. Append-only.
@@ -673,6 +715,8 @@ CREATE TABLE IF NOT EXISTS "inventory_movement" (
   CHECK ("kind" IN ('received', 'sold', 'returned', 'adjusted', 'damaged')),
   FOREIGN KEY ("variantId") REFERENCES "product_variant" ("id") ON DELETE RESTRICT
 ) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_inventory_movement_variantId" ON "inventory_movement" ("variantId");
+CREATE INDEX IF NOT EXISTS "idx_inventory_movement_reference_kind" ON "inventory_movement" ("reference", "kind");
 
 -- What was bought, at the price it was bought for.
 -- 
@@ -713,6 +757,7 @@ CREATE TABLE IF NOT EXISTS "order_line" (
   FOREIGN KEY ("variantId") REFERENCES "product_variant" ("id") ON DELETE RESTRICT
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_order_line_orderId" ON "order_line" ("orderId") WHERE "deletedAt" IS NULL;
+CREATE INDEX IF NOT EXISTS "idx_order_line_variantId" ON "order_line" ("variantId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_order_line_deletedAt" ON "order_line" ("deletedAt") WHERE "deletedAt" IS NULL;
 
 -- A double-entry journal — the second ledger in this app, and the one whose
@@ -754,6 +799,8 @@ CREATE TABLE IF NOT EXISTS "journal_entry" (
   FOREIGN KEY ("orderId") REFERENCES "order" ("id") ON DELETE RESTRICT,
   FOREIGN KEY ("payRunId") REFERENCES "pay_run" ("id") ON DELETE RESTRICT
 ) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_journal_entry_orderId" ON "journal_entry" ("orderId");
+CREATE INDEX IF NOT EXISTS "idx_journal_entry_payRunId" ON "journal_entry" ("payRunId");
 
 -- One line. The quantity and the PRICE THE SHOPPER WAS SHOWN, which is not
 -- the same fact as the variant's price today — a basket left overnight must
@@ -771,6 +818,7 @@ CREATE TABLE IF NOT EXISTS "cart_line" (
   FOREIGN KEY ("cartId") REFERENCES "cart" ("id") ON DELETE CASCADE,
   FOREIGN KEY ("variantId") REFERENCES "product_variant" ("id") ON DELETE CASCADE
 ) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_cart_line_variantId" ON "cart_line" ("variantId");
 
 -- Stock set aside for one basket, until a moment.
 -- 
@@ -828,6 +876,8 @@ CREATE TABLE IF NOT EXISTS "subscription" (
   FOREIGN KEY ("customerId") REFERENCES "customer" ("id") ON DELETE RESTRICT,
   FOREIGN KEY ("planVersionId") REFERENCES "plan_version" ("id") ON DELETE RESTRICT
 ) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_subscription_customerId" ON "subscription" ("customerId");
+CREATE INDEX IF NOT EXISTS "idx_subscription_planVersionId" ON "subscription" ("planVersionId");
 
 -- What one person was paid for one period. A DOCUMENT.
 -- 
@@ -873,6 +923,8 @@ CREATE TABLE IF NOT EXISTS "payslip" (
   FOREIGN KEY ("employeeId") REFERENCES "employee" ("id") ON DELETE RESTRICT,
   FOREIGN KEY ("payWindowId") REFERENCES "pay_window" ("id") ON DELETE RESTRICT
 ) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_payslip_employeeId" ON "payslip" ("employeeId");
+CREATE INDEX IF NOT EXISTS "idx_payslip_payWindowId" ON "payslip" ("payWindowId");
 
 -- One side of one journal.
 -- 
@@ -889,6 +941,7 @@ CREATE TABLE IF NOT EXISTS "journal_line" (
   CHECK (amount != 0),
   FOREIGN KEY ("entryId") REFERENCES "journal_entry" ("id") ON DELETE CASCADE
 ) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_journal_line_entryId" ON "journal_line" ("entryId");
 
 -- A DOCUMENT.
 -- 
@@ -938,6 +991,8 @@ CREATE TABLE IF NOT EXISTS "invoice" (
   FOREIGN KEY ("customerId") REFERENCES "customer" ("id") ON DELETE RESTRICT,
   FOREIGN KEY ("subscriptionId") REFERENCES "subscription" ("id") ON DELETE RESTRICT
 ) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_invoice_customerId" ON "invoice" ("customerId");
+CREATE INDEX IF NOT EXISTS "idx_invoice_subscriptionId" ON "invoice" ("subscriptionId");
 
 -- One line of one payslip. SIGNED, and not all of them count.
 -- 
@@ -966,6 +1021,9 @@ CREATE TABLE IF NOT EXISTS "payslip_line" (
   FOREIGN KEY ("rateId") REFERENCES "pay_rate" ("id") ON DELETE RESTRICT,
   FOREIGN KEY ("correctsPayRunId") REFERENCES "pay_run" ("id") ON DELETE RESTRICT
 ) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_payslip_line_payslipId" ON "payslip_line" ("payslipId");
+CREATE INDEX IF NOT EXISTS "idx_payslip_line_rateId" ON "payslip_line" ("rateId");
+CREATE INDEX IF NOT EXISTS "idx_payslip_line_correctsPayRunId" ON "payslip_line" ("correctsPayRunId");
 
 CREATE TABLE IF NOT EXISTS "payment" (
   "id" INTEGER NOT NULL PRIMARY KEY,
@@ -990,6 +1048,7 @@ CREATE TABLE IF NOT EXISTS "payment" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_payment_orderId" ON "payment" ("orderId");
 CREATE INDEX IF NOT EXISTS "idx_payment_invoiceId" ON "payment" ("invoiceId");
+CREATE INDEX IF NOT EXISTS "idx_payment_paymentMethodId" ON "payment" ("paymentMethodId");
 
 -- One line of the statement, frozen with it.
 -- 
@@ -1009,6 +1068,7 @@ CREATE TABLE IF NOT EXISTS "invoice_line" (
   "userId" TEXT,
   FOREIGN KEY ("invoiceId") REFERENCES "invoice" ("id") ON DELETE CASCADE
 ) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_invoice_line_invoiceId" ON "invoice_line" ("invoiceId");
 
 -- The correction. A row that says an issued invoice was wrong by this much,
 -- beside the invoice rather than inside it.
@@ -1025,6 +1085,10 @@ CREATE TABLE IF NOT EXISTS "credit_note" (
   "userId" TEXT,
   FOREIGN KEY ("invoiceId") REFERENCES "invoice" ("id") ON DELETE RESTRICT
 ) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_credit_note_invoiceId" ON "credit_note" ("invoiceId");
+
+CREATE VIEW IF NOT EXISTS "revenueByStatus" AS
+SELECT status, COUNT(*) AS orders, SUM(total) AS total FROM [order] WHERE deletedAt IS NULL GROUP BY status;
 
 -- ─── database audit · logger ─────────────────────────────────────────────
 -- No DDL — a logger database has no schema. 0 model(s)

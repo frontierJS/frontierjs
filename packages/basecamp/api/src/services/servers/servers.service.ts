@@ -40,11 +40,12 @@
 // The old parseServer()/parseEvent() JSON.parse helpers are gone — parsing an
 // already-parsed object is how you get "[object Object]" in a column.
 
-import { createService, NotFound, BadRequest, normalizeOrderBy, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, normalizeOrderBy, seriesKey, isStale, $ } from '@frontierjs/junction'
 import type { SortParam } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor, findScoped, getScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing } from '../../core/resource.ts'
 import { envRef }                from '../../core/credentials.ts'
+import { recordHealth, SERVER_SERIES } from '../../core/server-metrics.ts'
 import type { BasecampApp }      from '../../basecamp.types.ts'
 import type { TargetDescriptor } from '@frontierjs/conduit'
 
@@ -145,7 +146,7 @@ export function createServersService(app: BasecampApp) {
       // `methods:` list is the whole surface, so leaving them out silently
       // stopped answering them. `surface.snapshot.md` is what caught it.
       'find', 'get', 'create', 'update', 'patch', 'remove', 'restore',
-      'events', 'feed', 'sync', 'logEvent',
+      'events', 'feed', 'sync', 'logEvent', 'metrics',
       'reboot', 'drain', 'undrain',
       { method: 'heartbeat', gate: 0 },
     ],
@@ -391,6 +392,65 @@ export function createServersService(app: BasecampApp) {
 
     // ── heartbeat — POST /servers/:id  X-Service-Method: heartbeat ────
     // Called by the Basecamp outpost, which holds no session — it authenticates
+    // ── metrics ───────────────────────────────────────────────────────
+    //
+    // This machine's readings over time — what `Server.health` cannot answer,
+    // because it is one column overwritten on every check-in (`FJS-956`).
+    //
+    // ─── The access decision, and the tidier option was refused ──────────
+    //
+    // `MetricSeries` and `MetricPoint` are `@@gate("8")` and `@@tenant(none)`:
+    // a reading is about a PROCESS and belongs to no workspace, which is right
+    // for `process.memoryMb` and is exactly what a per-server series is not.
+    //
+    // The tempting fix is to open the package's read slot and let each app
+    // declare a row policy over the label. **Refused**: an app that installs
+    // junction and writes no policy then serves every reading it has to anyone,
+    // fail-open, and nothing says so. A gate that can only fail open is not a
+    // gate.
+    //
+    // So the CONFINEMENT is the parent read. `getScoped('server')` runs at the
+    // caller's own standing — the gate, the row policies and the workspace
+    // tenancy all apply to it — and a server in another workspace answers 404
+    // before a series is touched. Only then is the series read through
+    // `asSystem()`, which is the shape `jobs/context.ts` already names: a
+    // system read whose confinement is the read above it, not a hook.
+    async metrics() {
+      const server = await getScoped('server', 'Server')
+      $.dispatch = false
+
+      const arg  = { ...(($.query as Record<string, unknown>) ?? {}),
+                     ...(($.data  as Record<string, unknown>) ?? {}) }
+      const to   = num(arg.to)   ?? Date.now()
+      const from = num(arg.from) ?? to - 24 * 3_600_000
+      if (from >= to) throw new BadRequest('from must be before to')
+
+      const sys = $.db.asSystem() as any
+      const out: Record<string, unknown> = {}
+
+      for (const name of SERVER_SERIES) {
+        // The key is junction's, never spelled here: a second spelling is a
+        // second series, and each of them then holds half the readings.
+        const series = await sys.metricSeries.findFirst({
+          where: { labelsKey: seriesKey(name, { serverId: server.id }) },
+        })
+        // `null` and not `[]`. A machine that has never reported disk and one
+        // whose disk is flat draw the same empty chart, and only the first is
+        // something a person should be told about.
+        if (!series) { out[name] = null; continue }
+
+        const points = await sys.metricPoint.findMany({
+          where: { seriesId: series.id, at: { gte: from, lte: to } },
+          orderBy: { at: 'asc' }, limit: 2_000,
+        })
+        out[name] = { unit: series.unit, stale: isStale(series.lastSeenAt), points }
+      }
+
+      return { serverId: server.id, from, to, series: out }
+    },
+
+    // ── heartbeat — POST /servers/:id  X-Service-Method: heartbeat ────
+    // Called by the Basecamp outpost, which holds no session — it authenticates
     // by HMAC at the transport. asSystem() is therefore the correct client
     // here and NOT a shortcut: there is no user to scope to, and the request
     // legitimately writes to a server in any workspace.
@@ -456,6 +516,22 @@ export function createServersService(app: BasecampApp) {
           ...(data.docker ? { dockerState: data.docker } : {}),
         },
       })
+
+      // KEEP THE READINGS. `Server.health` is a SNAPSHOT — one column, one row,
+      // overwritten every check-in — so until now the answer to *what was this
+      // machine doing on Tuesday* was gone rather than stale, and three widget
+      // kinds said so on their own cards (`FJS-956`).
+      //
+      // Through `app.metrics.record()` and not by writing the tables: a series
+      // is addressed by `labelsKey`, and a caller inventing that key mints a
+      // SECOND series under the same name, after which each of them holds half
+      // the readings and the graph has a step in it that nothing explains.
+      //
+      // Not awaited into the response's critical path? It is — a heartbeat is
+      // already a write, three more rows on the same connection cost less than
+      // the branch that would make them optional, and a failure here should be
+      // as visible as any other part of a check-in.
+      await recordHealth(app, server.id, data.health, now)
 
       if (newStatus !== server.status) {
         await sys.serverEvent.create({
@@ -540,4 +616,13 @@ export function createServersService(app: BasecampApp) {
       },
     },
   })
+}
+
+/** The wire carries strings. A bound that silently became `NaN` would be
+ *  answered as "no points" — an empty chart rather than a bad request — so an
+ *  unparseable one is undefined and takes the default. */
+function num(v: unknown): number | undefined {
+  if (v === undefined || v === null || v === '') return undefined
+  const n = Number(v)
+  return Number.isFinite(n) ? n : undefined
 }

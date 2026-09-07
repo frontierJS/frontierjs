@@ -35,9 +35,18 @@
   let removed = 0
   let copied  = 0
   let stepped = ''
+
+  // A sparkline whose data MOVES. Every derived value in that component is a
+  // plain `const`, which reads like a body that runs once — the reason the
+  // spec beside this exists is that nothing anywhere said otherwise, and a
+  // chart that agrees with itself is the one thing a chart always looks like it
+  // is doing correctly.
+  let live = [1, 4, 2, 8, 5]
 </script>
 
 <div id="probe-sparkline"><Sparkline data={[1, 4, 2, 8, 5]} tone="success" label="Signups, last five days" /></div>
+<div id="probe-sparkline-live"><Sparkline data={live} label="Live" /></div>
+<button id="grow-sparkline" onclick={() => live = [...live, 12, 3]}>grow</button>
 <div id="probe-bar"><Bar value={74} max={100} label="Disk" unit="%" /></div>
 <div id="probe-avatar"><Avatar name="Ada Lovelace" status="online" /></div>
 <div id="probe-avatars"><AvatarGroup users={USERS} max={4} /></div>

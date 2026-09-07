@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 46 models · 2 databases
+-- 50 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
@@ -50,6 +50,20 @@ CREATE TABLE IF NOT EXISTS "oauth_flow" (
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_oauth_flow_expiresAt" ON "oauth_flow" ("expiresAt");
+
+CREATE TABLE IF NOT EXISTS "metric_series" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "name" TEXT NOT NULL,
+  "labels" TEXT NOT NULL DEFAULT '{}',
+  "labelsKey" TEXT NOT NULL UNIQUE,
+  "type" TEXT NOT NULL DEFAULT 'gauge',
+  "unit" TEXT,
+  "lastSeenAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("type" IN ('counter', 'gauge', 'histogram'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_metric_series_name" ON "metric_series" ("name");
+CREATE INDEX IF NOT EXISTS "idx_metric_series_lastSeenAt" ON "metric_series" ("lastSeenAt");
 
 CREATE TABLE IF NOT EXISTS "account" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -156,6 +170,26 @@ CREATE TABLE IF NOT EXISTS "hub_config" (
   CHECK ("backupDestination" IN ('local', 's3'))
 ) STRICT;
 
+CREATE TABLE IF NOT EXISTS "metric_point" (
+  "seriesId" TEXT NOT NULL,
+  "at" INTEGER NOT NULL,
+  "value" REAL NOT NULL,
+  PRIMARY KEY ("seriesId", "at"),
+  FOREIGN KEY ("seriesId") REFERENCES "metric_series" ("id") ON DELETE CASCADE
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS "metric_hour" (
+  "seriesId" TEXT NOT NULL,
+  "hour" INTEGER NOT NULL,
+  "min" REAL NOT NULL,
+  "max" REAL NOT NULL,
+  "sum" REAL NOT NULL,
+  "count" INTEGER NOT NULL,
+  "increase" REAL,
+  PRIMARY KEY ("seriesId", "hour"),
+  FOREIGN KEY ("seriesId") REFERENCES "metric_series" ("id") ON DELETE CASCADE
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS "user" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "email" TEXT NOT NULL UNIQUE,
@@ -250,6 +284,21 @@ CREATE TABLE IF NOT EXISTS "session" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_session_userId" ON "session" ("userId");
 CREATE INDEX IF NOT EXISTS "idx_session_expiresAt" ON "session" ("expiresAt");
+
+CREATE TABLE IF NOT EXISTS "notification" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "userId" TEXT NOT NULL,
+  "type" TEXT NOT NULL,
+  "data" TEXT NOT NULL,
+  "contextType" TEXT,
+  "contextId" TEXT,
+  "readAt" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("contextType" IN ('Deployment', 'AlertEvent', 'JobRun', 'Workspace')),
+  FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_notification_userId_readAt" ON "notification" ("userId", "readAt");
+CREATE INDEX IF NOT EXISTS "idx_notification_createdAt" ON "notification" ("createdAt");
 
 CREATE TABLE IF NOT EXISTS "notification_preference" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -470,12 +519,15 @@ CREATE TABLE IF NOT EXISTS "alert_rule" (
   "description" TEXT,
   "severity" TEXT NOT NULL DEFAULT 'warning',
   "metricName" TEXT NOT NULL,
-  "condition" TEXT NOT NULL DEFAULT '{}',
+  "operator" TEXT NOT NULL DEFAULT 'gt',
+  "threshold" REAL NOT NULL,
+  "forMinutes" INTEGER NOT NULL DEFAULT 0,
   "isActive" INTEGER NOT NULL DEFAULT 1,
   "version" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   CHECK ("severity" IN ('info', 'warning', 'critical')),
+  CHECK ("operator" IN ('gt', 'gte', 'lt', 'lte')),
   FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_alert_rule_workspaceId" ON "alert_rule" ("workspaceId");
@@ -676,8 +728,9 @@ CREATE TABLE IF NOT EXISTS "alert_event" (
   "resolvedAt" TEXT,
   "acknowledgedBy" TEXT,
   "acknowledgedAt" TEXT,
+  CHECK ("status" IN ('firing', 'resolved')),
   CHECK ("severity" IN ('info', 'warning', 'critical')),
-  CHECK ("subjectType" IN ('server', 'volume')),
+  CHECK ("subjectType" IN ('server', 'volume', 'series')),
   FOREIGN KEY ("ruleId") REFERENCES "alert_rule" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_alert_event_ruleId" ON "alert_event" ("ruleId");

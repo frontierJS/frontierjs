@@ -923,11 +923,18 @@ describe('the component function name', () => {
  * is renamed to `$$sig_<name>` before emit.
  */
 describe('a declaration colliding with an injected builtin', () => {
-  const RESERVED = [
-    '$$option', '$$slots', '$$props', '$$attributes', '$context', '$$emit',
-    '$$onMount', '$$onDestroy', '$$onCleanup', '$mounted', '$inspect',
+  // Two rules, because there are two shapes. A `$$` name is refused by prefix
+  // (`FJS-883`) — the list below is what the prefix rule covers, kept as a list
+  // here so the names an author actually meets are named in a test rather than
+  // implied by a `startsWith`. A single-`$` name is refused by the literal set,
+  // which is the half a prefix cannot reach.
+  const SIGIL = [
+    '$$option', '$$slots', '$$props', '$$attributes', '$$emit',
+    '$$onMount', '$$onDestroy', '$$onCleanup',
     '$$ctxProvide', '$$ctxRead',
   ]
+  const SINGLE = ['$context', '$mounted', '$inspect', '$props', '$attributes', '$slots']
+  const RESERVED = [...SIGIL, ...SINGLE]
   const forms = {
     let:      (n) => `<script>let show = true; let ${n} = 1</script>{#if show}<p>x</p>{/if}`,
     const:    (n) => `<script>let show = true; const ${n} = 1</script>{#if show}<p>x</p>{/if}`,
@@ -940,14 +947,16 @@ describe('a declaration colliding with an injected builtin', () => {
     it(`is refused by name for every builtin, declared as ${form}`, async () => {
       for (const name of RESERVED) {
         await expect(compile(make(name), `${name}.mesa`), `${form} ${name}`)
-          .rejects.toThrow(/is a Mesa builtin and cannot be declared/)
+          .rejects.toThrow(/cannot be declared/)
       }
     })
   }
 
   it('names the builtin and the declaration form it found', async () => {
     await expect(compile(forms.const('$$props'), 'T.mesa'))
-      .rejects.toThrow(/'\$\$props' is a Mesa builtin and cannot be declared as a const/)
+      .rejects.toThrow(/'\$\$props' cannot be declared as a const/)
+    await expect(compile(forms.const('$context'), 'T.mesa'))
+      .rejects.toThrow(/'\$context' is a Mesa builtin and cannot be declared as a const/)
   })
 
   // The refusal is about the factory scope, so a nested function may still use

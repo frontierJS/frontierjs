@@ -22,6 +22,7 @@ import { generateDDL } from '../src/core/ddl.js'
 import { createClient } from '../src/core/client.js'
 import { generateLiteSchema } from '../src/tools/introspect.js'
 import { introspect, buildPristine, diffSchemas } from '../src/core/migrate.js'
+import { createTestEnv, sampleWrites } from '../src/testing.js'
 
 const errorsOf = (src: string) => parse(src).errors
 const pkOf     = (src: string) => generateDDL(parse(src).schema).match(/PRIMARY KEY \([^)]*\)/)?.[0]
@@ -295,5 +296,63 @@ describe('a member of a tuple key does not identify a row (FJS-694)', () => {
 `,
     })
     expect(db.membership.orderTotal({ slug: 'asc' })).toEqual([{ slug: 'asc' }])
+  })
+})
+
+// ─── the fixture builders ─────────────────────────────────────────────────────
+//
+// A tuple key's columns have no default — that is what makes them a key — so
+// the caller supplies them, and the fixture builder is a caller. It did not:
+// `expandCompositeId` stamps `@id` on every member, and the builder read that
+// attribute alone to mean *the database mints this one*, so an Int member came
+// out of every payload and no fixture for the model could be assembled at all.
+// The executed checks then reported the model ungraded — honestly, which is why
+// it stayed open for as long as it did: the suite beside it read a clean list
+// as coverage and three models entered basecamp graded by nothing (`FJS-961`).
+
+describe('a tuple key is a fixture the checkers can build (FJS-961)', () => {
+  const SCHEMA = `
+model Series {
+  id     String @id @default(uuid())
+  name   String
+  points Point[]
+  @@gate("2")
+}
+
+model Point {
+  seriesId String
+  at       Int
+  value    Float
+  series   Series @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  @@id([seriesId, at])
+  @@gate("2")
+}
+`
+
+  it('grades the whole ladder rather than reporting it unbuildable', async () => {
+    const env = await createTestEnv({ schema: SCHEMA })
+    expect(await env.verifyGateLadder()).toEqual([])
+  })
+
+  it('the payload carries every column of the key', async () => {
+    // The half a green ladder cannot state on its own: a builder that supplied
+    // neither column and a model whose gate allows everything look alike from
+    // the verdict side.
+    const env = await createTestEnv({ schema: SCHEMA })
+    const s: any = await sampleWrites(env.schema, env.system, { models: ['Point'] })
+    expect(s.Point.error).toBeUndefined()
+    expect(typeof s.Point.create.seriesId).toBe('string')
+    expect(typeof s.Point.create.at).toBe('number')
+  })
+
+  it('and a single-column Int key is still the database\'s to mint — the control', async () => {
+    // The rule the builder was reaching for, and the one it must keep: an Int
+    // `@id` auto-increments where it is the WHOLE key. A fix that simply
+    // stopped skipping `@id` would put a caller-supplied id in every ordinary
+    // create, which the create JSON Schema declares `readOnly`.
+    const env = await createTestEnv({ schema: 'model Post {\n  id Int @id\n  title String\n  @@gate("2")\n}\n' })
+    const s: any = await sampleWrites(env.schema, env.system, { models: ['Post'] })
+    expect(s.Post.create.id).toBeUndefined()
+    expect(s.Post.create.title).toBeDefined()
   })
 })

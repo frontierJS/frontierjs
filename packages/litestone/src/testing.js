@@ -21,6 +21,7 @@ import { DEFAULT_MESSAGES, validateField } from './core/validate.js'
 import { buildPolicyMap, evalJs, allowHolds, denyFires } from './core/policy.js'
 import { fakeFor, fakeEmail }       from './fake.js'
 import { capabilityNames }          from './core/capabilities.js'
+import { isServerAssignedId }       from './core/ids.js'
 import { Factory }                  from './seeder.js'
 import { tempDir }                  from './tmp-dirs.js'
 import { parseDuration }            from './tools/retention.js'
@@ -496,7 +497,7 @@ export async function createTestEnv(opts = {}) {
           let run
           try {
             if (row.op === 'read')   run = () => client[acc].findMany({ limit: 1 })
-            const idKey = _idField(schema, row.model)
+            const keyCols = _keyFields(schema, row.model)
 
             if (row.op === 'create') {
               // Fresh PARENTS, and no child. Taking the FKs off an existing
@@ -514,7 +515,8 @@ export async function createTestEnv(opts = {}) {
               // level. `_columnPayload` already draws this line for the tenancy
               // checker; drawing it differently here is how one harness grades a
               // model the other cannot build.
-              if (_hasDefault(schema, row.model, idKey)) delete data[idKey]
+              for (const col of keyCols)
+                if (_hasDefault(schema, row.model, col)) delete data[col]
               // The optional ones come out: they are refused below level 8 and
               // the row does not need them. A REQUIRED one stays in, so the
               // write reaches the field lock and is classified below — stripping
@@ -526,12 +528,12 @@ export async function createTestEnv(opts = {}) {
               // Update and delete need a row that is already there, made as
               // SYSTEM so a gate refusing the principal cannot refuse the setup.
               const seeded = await factory.createOne()
-              const id     = seeded[idKey]
+              const where  = _idWhere(schema, row.model, seeded)
               const patch = _touch(schema, row.model, seeded)
               if (row.level < 8) for (const f of guarded) delete patch[f.name]   // an update names only what it changes
               run = row.op === 'update'
-                ? () => client[acc].update({ where: { [idKey]: id }, data: patch })
-                : () => client[acc].delete({ where: { [idKey]: id } })
+                ? () => client[acc].update({ where, data: patch })
+                : () => client[acc].delete({ where })
             }
           } catch (err) {
             mismatches.push({
@@ -668,7 +670,6 @@ export async function createTestEnv(opts = {}) {
               continue
             }
 
-            const idKey   = _idField(schema, model.name)
             const factory = chain(model.name)
             const seeded  = []
 
@@ -713,12 +714,12 @@ export async function createTestEnv(opts = {}) {
             // against have to be captured first.
             const stored = new Map()
             for (const row of seeded) {
-              const s = await sys[acc].findUnique({ where: { [idKey]: row[idKey] } })
-              if (s) stored.set(row[idKey], s)
+              const s = await sys[acc].findUnique({ where: _idWhere(schema, model.name, row) })
+              if (s) stored.set(_rowId(schema, model.name, row), s)
             }
 
             let admitted
-            try { admitted = await _runPolicyOp(op, await env.atLevel(7, who), acc, schema, model, idKey, [...stored.values()]) }
+            try { admitted = await _runPolicyOp(op, await env.atLevel(7, who), acc, schema, model, [...stored.values()]) }
             catch (err) {
               mismatches.push({
                 model: model.name, op, got: 'error', row: null,
@@ -888,7 +889,6 @@ export async function createTestEnv(opts = {}) {
           }
 
           const acc   = modelToAccessor(model.name)
-          const idKey = _idField(schema, model.name)
           const gate  = access.models.find(m => m.name === model.name)?.gate
 
           // A model that isolates correctly produces no finding, which is
@@ -912,7 +912,7 @@ export async function createTestEnv(opts = {}) {
             continue
           }
 
-          const id = rowA[idKey]
+          const id = _rowId(schema, model.name, rowA)
 
           // ── read ────────────────────────────────────────────────────────────
           if (wanted.has('read')) {
@@ -921,7 +921,7 @@ export async function createTestEnv(opts = {}) {
                 message: `${model.name}.read — gated at ${gate.read} (${levelLabel(gate.read)}), which no principal can hold: the row boundary refuses before the tenant one is reached` })
             } else {
               const reach = async (client) => {
-                try { return new Set((await client[acc].findMany({ limit: 50 })).map(r => r[idKey])) }
+                try { return new Set((await client[acc].findMany({ limit: 50 })).map(r => _rowId(schema, model.name, r))) }
                 catch (err) {
                   if (err instanceof AccessDeniedError || err?.name === 'AccessDeniedError') return null
                   throw err
@@ -974,10 +974,10 @@ export async function createTestEnv(opts = {}) {
 
               if (orphan) {
                 let seenB = null
-                try { seenB = new Set((await clientB[acc].findMany({ limit: 50 })).map(r => r[idKey])) }
+                try { seenB = new Set((await clientB[acc].findMany({ limit: 50 })).map(r => _rowId(schema, model.name, r))) }
                 catch (err) { if (!(err instanceof AccessDeniedError || err?.name === 'AccessDeniedError')) throw err }
 
-                if (seenB?.has(orphan[idKey])) out.push({ model: model.name, op: 'read', actor: 'B', got: 'unparented',
+                if (seenB?.has(_rowId(schema, model.name, orphan))) out.push({ model: model.name, op: 'read', actor: 'B', got: 'unparented',
                   message: `${model.name} is scoped through ${optionalScoped.map(r => `'${r}'`).join(' + ')}, which is optional — a row created without one belongs to no tenant and every tenant reads it. Make the relation required, or give ${model.name} the '${t.column}' column` })
               }
 
@@ -995,7 +995,7 @@ export async function createTestEnv(opts = {}) {
               // The probe row is removed first so its @unique values are free:
               // a create refused by a UNIQUE constraint is not a create refused
               // by tenancy, and the two are the same throw from here.
-              try { await sys[acc].delete({ where: { [idKey]: id } }) } catch { /* a @@softDelete model keeps it; the retry below still tells us */ }
+              try { await sys[acc].delete({ where: _idWhere(schema, model.name, rowA) }) } catch { /* a @@softDelete model keeps it; the retry below still tells us */ }
 
               let made = null
               let threw = null
@@ -1031,16 +1031,16 @@ export async function createTestEnv(opts = {}) {
               const move = _tenantMove(schema, model, va, parents)
               if (move) {
                 let moved = null
-                try { moved = await clientB[acc].update({ where: { [idKey]: rowB[idKey] }, data: move }) }
+                try { moved = await clientB[acc].update({ where: _idWhere(schema, model.name, rowB), data: move }) }
                 catch { /* refused */ }
 
                 // A refusal and a no-match are both acceptable; what is not is
                 // the row arriving in A's tenant.
-                const after = moved ? await sys[acc].findUnique({ where: { [idKey]: rowB[idKey] } }) : null
+                const after = moved ? await sys[acc].findUnique({ where: _idWhere(schema, model.name, rowB) }) : null
                 const key   = Object.keys(move)[0]
                 if (after && String(after[key]) === String(move[key])) out.push({
                   model: model.name, op: 'post-update', actor: 'B', got: 'leaked',
-                  message: `${model.name}#${rowB[idKey]} started in tenant B and a caller in tenant B moved it into tenant A by writing '${key}'` })
+                  message: `${model.name}#${_rowId(schema, model.name, rowB)} started in tenant B and a caller in tenant B moved it into tenant A by writing '${key}'` })
               }
             }
             restore(built.db, before)
@@ -1058,20 +1058,20 @@ export async function createTestEnv(opts = {}) {
               continue
             }
 
-            const stored = await sys[acc].findUnique({ where: { [idKey]: rowA[idKey] } })
+            const stored = await sys[acc].findUnique({ where: _idWhere(schema, model.name, rowA) })
             if (!stored) continue
 
             for (const [label, client] of [['B', clientB], ['nobody', clientN]]) {
               let reached
-              try { reached = await _runPolicyOp(op, client, acc, schema, model, idKey, [stored]) }
+              try { reached = await _runPolicyOp(op, client, acc, schema, model, [stored]) }
               catch (err) {
                 if (err instanceof AccessDeniedError || err?.name === 'AccessDeniedError') { reached = new Set() }
                 else throw err
               }
-              if (reached.has(stored[idKey])) out.push({ model: model.name, op, actor: label, got: 'leaked',
+              if (reached.has(_rowId(schema, model.name, stored))) out.push({ model: model.name, op, actor: label, got: 'leaked',
                 message: label === 'B'
-                  ? `${model.name}#${stored[idKey]} belongs to tenant A and a caller in tenant B ${op}d it`
-                  : `${model.name}#${stored[idKey]} belongs to tenant A and a caller holding no '${t.claim}' ${op}d it` })
+                  ? `${model.name}#${_rowId(schema, model.name, stored)} belongs to tenant A and a caller in tenant B ${op}d it`
+                  : `${model.name}#${_rowId(schema, model.name, stored)} belongs to tenant A and a caller holding no '${t.claim}' ${op}d it` })
 
               restore(built.db, before)
               parents.clear()
@@ -1083,12 +1083,12 @@ export async function createTestEnv(opts = {}) {
             // The other side: A must still reach its own row, or the two
             // refusals above are indistinguishable from a model no write reaches.
             if (rowA) {
-              const mine = await sys[acc].findUnique({ where: { [idKey]: rowA[idKey] } })
+              const mine = await sys[acc].findUnique({ where: _idWhere(schema, model.name, rowA) })
               let ownReach
-              try { ownReach = await _runPolicyOp(op, clientA, acc, schema, model, idKey, mine ? [mine] : []) }
+              try { ownReach = await _runPolicyOp(op, clientA, acc, schema, model, mine ? [mine] : []) }
               catch { ownReach = new Set() }
-              if (mine && !ownReach.has(mine[idKey])) out.push({ model: model.name, op, actor: 'A', got: 'unreachable',
-                message: `${model.name}#${mine[idKey]} was seeded for tenant A and tenant A cannot ${op} it, so the refusals asserted above are not distinguished from a model no ${op} reaches` })
+              if (mine && !ownReach.has(_rowId(schema, model.name, mine))) out.push({ model: model.name, op, actor: 'A', got: 'unreachable',
+                message: `${model.name}#${_rowId(schema, model.name, mine)} was seeded for tenant A and tenant A cannot ${op} it, so the refusals asserted above are not distinguished from a model no ${op} reaches` })
               restore(built.db, before)
               parents.clear()
               try { rowA = await _seedForTenant(schema, model.name, va, chain, parents) }
@@ -1304,7 +1304,22 @@ export async function createTestEnv(opts = {}) {
           let cases
           try { cases = generateValidationCases(schema, model.name) }
           catch { continue }
-          if (!cases.invalid.length && !cases.boundary.length && !cases.uncheckable?.length) continue
+
+          // `@unique` is declared on the MODEL, so which models to visit is
+          // derived from what the model declares — not from what the case
+          // generator happened to produce for it. This guard used to speak for
+          // the uniqueness probe below as well, and a model whose columns carry
+          // no VALUE validator generates no cases at all, so it was skipped
+          // whole and its `@unique` was never asked about (`FJS-602`).
+          //
+          // That is three of `@frontierjs/auth`'s models — `Session.token`,
+          // `Verification.value` and `OauthFlow.state`, each `String @unique
+          // @guarded` and each carrying no `@length` or format beside it. A
+          // schema that dropped the uniqueness of a session token migrated
+          // cleanly and passed every check in the package, which is a security
+          // property rather than a schema nicety.
+          const hasUnique = model.fields.some(f => f.attributes.some(a => a.kind === 'unique'))
+          if (!hasUnique && !cases.invalid.length && !cases.boundary.length && !cases.uncheckable?.length) continue
 
           // A boundary the generator could not build is REPORTED, never
           // dropped. It is not a defect in the schema and it does not claim to
@@ -2432,22 +2447,22 @@ function withDeclaredCapabilities(who, schema) {
 // null. `create` is deliberately absent — it is checked by `evalJs` and nothing
 // else, so grading it with `evalJs` would be the oracle problem, and there is no
 // second implementation to compare against.
-async function _runPolicyOp(op, client, acc, schema, model, idKey, rows) {
+async function _runPolicyOp(op, client, acc, schema, model, rows) {
   if (op === 'read') {
     const seen = await client[acc].findMany({ limit: rows.length + 10 })
-    return new Set(seen.map(r => r[idKey]))
+    return new Set(seen.map(r => _rowId(schema, model.name, r)))
   }
 
   const reached = new Set()
   for (const row of rows) {
-    const where = { [idKey]: row[idKey] }
+    const where = _idWhere(schema, model.name, row)
     const hit = op === 'update'
       ? await client[acc].update({ where, data: _touch(schema, model.name, row) })
       : await client[acc].delete({ where })
     // A hard delete answers the row it removed; `remove()` on a @@softDelete
     // model is a different call, and the D gate covers both, so `delete` is the
     // one that isolates the policy rather than the soft-delete filter.
-    if (hit != null && (!Array.isArray(hit) || hit.length)) reached.add(row[idKey])
+    if (hit != null && (!Array.isArray(hit) || hit.length)) reached.add(_rowId(schema, model.name, row))
   }
   return reached
 }
@@ -2860,6 +2875,39 @@ function _idField(schema, modelName) {
   return model?.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
 }
 
+// The key's columns, IN KEY ORDER — the same answer `$primaryKey` gives, read
+// the same way. `expandCompositeId` stamps `@id` on every member of an
+// `@@id([a, b])`, so asking the fields answers all of them and in DECLARATION
+// order, which is a different fact; the model attribute is where the key's own
+// order is written down.
+function _keyFields(schema, modelName) {
+  const model = schema.models.find(m => m.name === modelName)
+  if (!model) return ['id']
+  const composite = model.attributes?.find(a => a.kind === 'id')
+  if (composite?.fields?.length) return [...composite.fields]
+  const single = model.fields.find(f => f.attributes.some(a => a.kind === 'id'))
+  return [single ? single.name : 'id']
+}
+
+// A `where` that names ONE row. One column of a tuple key is a FILTER rather
+// than an identity — it matches every row sharing that column — so an update or
+// a delete built from it reaches rows the checker never seeded, and the extra
+// row is indistinguishable from the rule under test admitting it.
+function _idWhere(schema, modelName, row) {
+  const where = {}
+  for (const col of _keyFields(schema, modelName)) where[col] = row?.[col]
+  return where
+}
+
+// The same row as something a Set can hold and a message can print. A
+// single-column key stays its own value, so nothing about the ordinary case
+// changes; a tuple becomes its columns in key order.
+function _rowId(schema, modelName, row) {
+  const cols = _keyFields(schema, modelName)
+  if (cols.length === 1) return row?.[cols[0]]
+  return cols.map(c => String(row?.[c])).join(' | ')
+}
+
 // One new parent row per required belongsTo, and the FK values pointing at
 // them. Parents only — the child is what the caller is about to try to create,
 // and creating it here would be answering the question.
@@ -2929,9 +2977,24 @@ function _shouldSkipField(field, model) {
   // with any @@unique([scope, seqField]) declared alongside it.
   if (attrs.some(a => a.kind === 'sequence')) return true
 
-  // @id on Int → auto-increment
-  const isId  = attrs.some(a => a.kind === 'id')
-  if (isId && type.name === 'Int') return true
+  // A key the database mints, and mints a DIFFERENT value each time.
+  //
+  // `isServerAssignedId` owns the first half and is asked rather than restated:
+  // an Int `@id` auto-increments only where it is the WHOLE key, and
+  // `expandCompositeId` stamps `@id` on every member of an `@@id([a, b])`, so a
+  // copy reading the attribute alone takes a tuple member out of every payload
+  // and the model has no fixture at all — which is every executed check
+  // reporting it ungraded rather than wrong (`FJS-961`).
+  //
+  // The second half is this builder's own, because it seeds MANY rows where the
+  // create schema describes one: a default that is a CONSTANT — a literal, or
+  // `auth()`, which is one value for one principal — is server-assigned and is
+  // the same value every row, so leaving it out caps the model at a single row
+  // and the second seed fails on the key. `HubConfig`'s `@default("hub")` is
+  // one row by design and the constraint walk needs a row per rule.
+  const sameEveryRow = attrs.some(a => a.kind === 'default' &&
+    (a.value?.kind !== 'call' || a.value.fn === 'auth'))
+  if (isServerAssignedId(field, model) && !sameEveryRow) return true
 
   const defAttr = attrs.find(a => a.kind === 'default')
   if (defAttr) {

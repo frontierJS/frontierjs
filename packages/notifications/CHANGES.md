@@ -2,6 +2,27 @@
 
 Newest first.
 
+## 2026-09-07 — the plugin could not be configured in a typechecked app
+
+`App.mail` declared `send(msg): Promise<void>`. Junction's `IMail.send` answers
+a `SendResult` receipt, and under `strictFunctionTypes` that makes junction's
+own `App` unassignable to this one — so `app.configure(notificationsPlugin(…))`
+was a type error in **any** app that runs `tsc`, whatever it had configured.
+Found by wiring the plugin into `basecamp`, which does
+([`FJS-967`](../../ISSUES.md#fjs-967)).
+
+`Promise<unknown>` now. The driver awaits the send and discards what comes back,
+which is correct rather than lazy: a failure THROWS, and `SendResult` is
+`{ id, message }` — a receipt, not an error envelope.
+
+**Same drift the email driver's own header already names, one field along.** Its
+comment records a mailer receiving a subject with no body because "notifications
+declares its own structural `App.mail` type rather than importing junction's".
+That is the whole mechanism: a structural copy of somebody else's interface is a
+copy, and the copy goes stale. The minimal interface stays — the runtime
+independence it buys is real — but every member of it is a claim about another
+package that nothing checks.
+
 ## 2026-09-05 — the model ships
 
 `db/notification.lite`, exported as `./schema.lite` and packed by `files:`

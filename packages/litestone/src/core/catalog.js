@@ -194,9 +194,9 @@ const TOP = [
     'view',
     'schema',
     'declare',
-    '<name> { fields… @@sql(…) [@@materialized] [@@refreshOn([…])] [@@db(…)] }',
-    'A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table refreshed on the models named in `@@refreshOn`.',
-    'view accountStats {\n  accountId Int\n  total     Int\n  @@sql("SELECT accountId, COUNT(*) AS total FROM Event GROUP BY accountId")\n}'
+    '<name> { fields… @@sql(…) [@@materialized] [@@refreshOn([…])] [@@db(…)] [@@gate(…)] [@@allow(…)] [@@deny(…)] [@@tenant(…)] }',
+    'A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table refreshed on the models named in `@@refreshOn` — a FULL rebuild per row written to a source, so `litestone advise` notes the cost. A view is a read path onto rows the models guard, so it carries the same access attributes they do, compiled against the columns the VIEW declares rather than inferred from `@@sql`: where the schema declares any access rule a view must state a `@@gate` (`@@gate("0")` says public on purpose), and under `strategy row` it must state `@@tenant` naming its own tenant column or `@@tenant(none)`.',
+    'view accountStats {\n  accountId Int\n  total     Int\n  @@sql("SELECT accountId, COUNT(*) AS total FROM Event GROUP BY accountId")\n  @@gate("5")\n}'
   ),
 
   t(
@@ -213,11 +213,11 @@ const TOP = [
     'valueset',
     'schema',
     'declare',
-    '<Name> { source <Model> [value <field>] [scope <name>] [where "…"] }',
-    "A named, scoped list of rows from one model — what a picker offers and what a column may hold, declared once instead of a hand-written service, control and validator per list. `value` names the column a record STORES and defaults to the source's @id; a set whose rows get replaced wants a stable code instead. `scope` names a @@scope declared on the source. The strength is not here — it goes on @values, because one list is legitimately enforced on one column and merely offered on another.",
-    'valueset TaskTag {\n  source Tag\n  value  label\n}',
+    '<Name> { source <Model> [value <field>] [scope <name>] [where "…"] [order [recent(<Model>.<col>, <clock>),] <field> [asc|desc], …] }',
+    "A named, scoped list of rows from one model — what a picker offers and what a column may hold, declared once instead of a hand-written service, control and validator per list. `value` names the column a record STORES and defaults to the source's @id; a set whose rows get replaced wants a stable code instead. `scope` names a @@scope declared on the source. `order` is what a picker offers first, defaulting to the @@label column ascending — it sits here rather than on @values because one list shown on two fields is the same list, and it is not membership: nothing about an order changes what the column may hold. `recent(<Model>.<column>, <clock>)` leads it with a HEAD: the values this caller reached for last, read off rows the app already writes, prepended rather than re-sorting the list, since a capped list re-sorted by recency changes WHICH rows are offered. The column has to hold values of this set and the clock has to be a stored DateTime, both refused by name — ranking the wrong column offers rows that are not in the list, and ranking by the wrong clock draws an order that looks reasonable. The strength is the opposite and is not here — it goes on @values, because one list is legitimately enforced on one column and merely offered on another.",
+    'valueset TaskTag {\n  source Tag\n  value  label\n  order  recent(Todo.tagLabel, createdAt), sortOrder, label\n}',
     {
-      context: 'model Tag {\n  id    Int    @id\n  label String @unique\n}',
+      context: 'model Tag {\n  id        Int    @id\n  label     String @unique\n  sortOrder Int    @default(0)\n}\n\nmodel Todo {\n  id        Int      @id\n  tagLabel  String?  @values(TaskTag)\n  createdAt DateTime @default(now())\n}',
       seeAlso: ['values', 'scope']
     }
   ),
@@ -683,8 +683,8 @@ const FIELD = [
     'values',
     'field',
     'validate',
-    '(<ValueSetName>[, required|open|suggested])',
-    "Where this column's legal values come from. `required` (unstated) refuses anything outside the set; `open` accepts a value the caller typed AND joins it to the set, so the source needs a @@label naming which column receives the text; `suggested` offers the list and enforces nothing. It sits BESIDE @relation rather than instead of it — a foreign key is storage and a value set is resolution, and those are two facts about one column. An enum field is refused: an enum is already a complete set and required by construction.",
+    '(<ValueSetName>[, required|open|suggested][, dependsOn: <column>[ on <sourceColumn>]])',
+    "Where this column's legal values come from. `required` (unstated) refuses anything outside the set; `open` accepts a value the caller typed AND joins it to the set, so the source needs a @@label naming which column receives the text; `suggested` offers the list and enforces nothing. It sits BESIDE @relation rather than instead of it — a foreign key is storage and a value set is resolution, and those are two facts about one column. An enum field is refused: an enum is already a complete set and required by construction. `dependsOn` makes the set DEPENDENT — the list is narrowed by a sibling column of this row, so a state belongs to the chosen country and a variant to the chosen product. It goes here rather than on the valueset because the set is reusable and the controlling column is model-local; which column of the SOURCE it is matched against is derived from the relation both models have to a third, and `on <sourceColumn>` states it where that walk cannot decide. The pair is graded in both directions: moving the controller is refused when it makes the stored value illegal.",
     'tag String @values(TaskTag)',
     {
       context:
@@ -692,7 +692,8 @@ const FIELD = [
       seeAlso: ['valueset', 'relation'],
       values: [
         vals('strength', ['required', 'open', 'suggested'], 'tag String @values(TaskTag, %s)')
-      ]
+      ],
+      note: 'Dependent form: `stateId String @values(States, dependsOn: countryId)` — the list is that country\'s states. A picker cannot ask for it before the controlling column has a value, and answers empty rather than offering the whole set.'
     }
   ),
   t(
@@ -965,10 +966,14 @@ const MODEL = [
     'model',
     'shape',
     '[(cascade)]',
-    'Deletes mark rather than remove, and restore() is the way back. A deleted row KEEPS its @unique values. `(cascade)` carries the delete to children.',
+    'Two verbs, and only one of them marks: remove() stamps deletedAt and restore() is the way back, while delete() destroys the row here exactly as it does anywhere else, leaving nothing to restore. A removed row KEEPS its @unique values. `(cascade)` carries the removal to children.',
     '@@softDelete(cascade)',
     {
-      seeAlso: ['unique', 'hardDelete'],
+      // The attribute names a column and the model has to declare it — a
+      // `@@softDelete` model with no `deletedAt` is refused at parse, because
+      // without the column every read answers an empty list with no error.
+      extraFields: 'deletedAt DateTime?',
+      seeAlso: ['unique', 'hardDelete', 'keep'],
       values: [vals('mode', ['cascade'], '@@softDelete(%s)')]
     }
   ),
@@ -990,6 +995,15 @@ const MODEL = [
     'The standing a caller needs, per operation, on the 0–9 ladder — read first, then create, update, delete. A missing position cascades from the left, so "4" is 4 for all four. Levels must be NON-DECREASING (8 and 9 are sentinels and may appear anywhere), because a model easier to delete than to read is a mistake every time. A gate REFUSES — it throws naming the model and the level, where a policy filters. A schema declaring any gate auto-installs GatePlugin, since a declared-but-unenforced gate is fail-open. It is per MODEL, so a gate on the table getLevel reads from lets any signed-in caller rewrite anyone else\'s standing.',
     '@@gate("2.4.4.5")',
     { seeAlso: ['allow', 'deny'] }
+  ),
+  t(
+    'export',
+    'model',
+    'access',
+    '(ndjson | csv [, since: <column>])',
+    'This dataset may leave in bulk. It adds NO way in: an export is a paginated scoped read, so the rows that leave are exactly the ones the named principal could read one at a time — the @@gate refuses below its level, the row policies narrow the file rather than failing it, a field policy or @guarded column is simply absent, and under tenancy the extract is one tenant\'s because the client is. A @@gate is REQUIRED beside it, even where the schema guards nothing else: a bulk read of every row is a different proposition from one row at a time, and @@gate("0") is how a schema says this dataset is public on purpose. `since:` names a sortable declared column and is what makes an incremental run expressible — the column decides what a resumed run CATCHES, so a createdAt cursor sees new rows and not edits to old ones. Protected columns (@encrypted, @secret, @guarded) are omitted from an extract even for a caller who may read them, because a screen and a file that leaves the machine are the same principal at a different blast radius; keeping them is explicit and is recorded in the manifest. Legal on a view too.',
+    '@@export(ndjson, since: updatedAt)',
+    { extraFields: 'updatedAt DateTime @updatedAt\n  @@gate("4")', seeAlso: ['gate', 'allow', 'view'] }
   ),
   t(
     'allow',
@@ -1312,6 +1326,7 @@ export const DOCS = {
   'model:softDelete': 'soft-delete.md',
   'model:hasTemplates': 'schema.md',
   'model:gate': 'access-control.md',
+  'model:export': 'export.md',
   'model:capabilities': 'access-control.md',
   'field:capability': 'access-control.md',
   'model:allow': 'access-control.md',
@@ -1381,7 +1396,7 @@ export const TIERS = {
     // model attributes
     'model:label',
     'model:allow', 'model:deny', 'model:transitions',
-    'model:log', 'model:db',
+    'model:log', 'model:db', 'model:export',
     'model:capabilities', 'model:hasTemplates', 'model:scope', 'model:tenant', 'model:trait',
     'model:createdBy', 'model:updatedBy',
   ],

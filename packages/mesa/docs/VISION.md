@@ -96,6 +96,15 @@ and the compiler routes automatically based on extension.
 Mesa's reactive model is built entirely on three existing JavaScript keywords. Their meaning
 at the top level of a component script block is extended, not replaced.
 
+**An instance script runs in the order it is written.** A statement above a declaration runs
+above it, so `a = 5` followed by `let b = a` gives `b` the 5 — the answer plain JavaScript
+gives for the same lines, which is the only oracle the question has. The one departure is
+a declaration something already emitted NEEDS: a class used by a `const` written above it,
+or a memo another memo reads, is pulled up. That is the dependency sort, applied where it is
+required rather than to the whole script (`FJS-846`). Svelte 4 hoisted literal `const`s and
+pure functions out of the instance body wholesale and it cost three bugs (#2687, #1895,
+#2542); Svelte 5's sync mode preserves source order exactly.
+
 ### 2.1 `let` — Mutable Reactive State
 
 A top-level `let` declaration is the primary reactive primitive in Mesa. The compiler tracks
@@ -1246,6 +1255,27 @@ gets its first screen of rows in the HTML rather than an empty box.
 
 Element-level directives appear as attributes on HTML elements.
 
+**Every non-void element closes explicitly.** HTML lets an end tag be omitted for
+about twenty elements — `</li>`, `</p>`, `</td>`, `</option>` and the rest of the
+table and list families — and Mesa closes none of them for you: `<ul><li>a<li>b</ul>`
+is valid HTML and a parse error here. The reason is that a template is a tree the
+compiler walks and hands to a renderer, and an implicit close is a rule about where
+a tag ENDS that the author cannot see in the file — so `{#if}` inside a `<li>` would
+mean two different things depending on a table nobody has open. `<br>` and the other
+void elements need no end tag, and `<span />` is accepted as a self-close on any
+element. The refusal names the rule when the tag is one HTML would have let you
+omit (`FJS-882`), because otherwise an author who wrote correct HTML is told only
+that something is still open.
+
+Svelte went the other way and then walked it back. It implements the WHATWG
+tag-omission table (`html-tree-validation.js`), and since 5.32 it *warns* on every
+implicit close it performs — "can cause an unexpected DOM structure. Add an
+explicit `</li>` to avoid surprises" (#12635, PR #15932). The sharper evidence is
+that Svelte 5 silently lost the case Svelte 3 had added for it: `<ul>{#if x}<li>a{/if}</ul>`
+compiles on 4.2.20 and is a `block_unexpected_close` on 5.57, with the original
+test fixture gone and no issue filed. A rule subtle enough to regress unnoticed
+inside the compiler that owns it is one an author cannot hold either.
+
 ### 10.1 Two-Way Binding — `bind:value`
 
 ```html
@@ -1868,6 +1898,17 @@ then a key; a call is a call.
 All four `__` names are RESERVED: declaring one at the top level of a script is a
 compile error, because it lands in the same scope and wins (`FJS-482`).
 
+**So is the whole `$$` PREFIX, and it is a prefix rather than a list because a
+list cannot close it** (`FJS-883`). Three of the names the compiler generates are
+built from the author's own identifiers — `$$sig_<name>`, `$$set_<name>`,
+`$$snippet_<name>` — and two from a counter, `$$tpl<n>` and `$$el<n>`, so there
+is no set of literals that reaches them. Declaring one collided in two ways and
+neither was reported: a name the emitter also declares is a duplicate binding, so
+the output does not parse, and a name it only imports is shadowed, so the output
+parses and the component throws at mount inside a line nobody wrote. Reserving
+the prefix costs nothing measured — 0 uses across 372 `.mesa` files — and it is
+what lets every generated identifier be minted without a uniquifier.
+
 **Two names wear a single `$` and are neither the door nor a local**: `$class`,
 the prop the `{class}` shorthand travels under, and `$dom`, the key a block
 factory answers with. Both are read BY NAME from outside the compiler, which is
@@ -2367,6 +2408,7 @@ components hydrate to their initial render and serialize cleanly.
 | # | Rule |
 |---|---|
 | 1 | `$:` annotations are top-level scope only — enforced, a nested one is a compile error |
+| 1b | An instance script runs in source order; a declaration is pulled up only when something already emitted needs it (`FJS-846`) |
 | 2 | Compiler detects derived values — `const` referencing reactive vars auto-derives |
 | 3 | Compiler detects template bindings — all reactive vars used in templates are auto-wired |
 | 4 | Scoped variables are never tracked — but CAN read and write top-level reactive state |
@@ -2388,7 +2430,7 @@ components hydrate to their initial render and serialize cleanly.
 | 18 | Mesa's builtins are reached through `$`, which the compiler provides inside the component function — no import, and only the members used are wired |
 | 18a | `$` may not be destructured, aliased or shadowed; it is legal only as the object of a member expression (`FJS-D132`) |
 | 18b | `$` does not exist in `<script module>`, which runs outside any instance — import from the runtime there (`FJS-D132`) |
-| 18d | Four prefixes: `$` the door, `$:` the label, `$$` the compiler's locals, `__` the calling convention — and all four `__` names are reserved (`FJS-D137`, `FJS-482`) |
+| 18d | Four prefixes: `$` the door, `$:` the label, `$$` the compiler's locals, `__` the calling convention — the whole `$$` prefix is reserved and all four `__` names are (`FJS-D137`, `FJS-482`, `FJS-883`) |
 | 18e | `$class` and `$dom` wear a single `$` and are PROTOCOL, read by name from outside the compiler — the only single-`$` names in compiled output (`FJS-D134`) |
 | 18c | The five data members — `$props`, `$attributes`, `$slots`, `$context`, `$async` — also carry a bare spelling, which is canonical; the bare names stay reserved. The other seven and the animation helpers are refused bare (`FJS-D135`) |
 | 19 | SSR: signals synchronous, `$.onMount` no-op, `$context` instance-scoped |
@@ -2405,6 +2447,7 @@ components hydrate to their initial render and serialize cleanly.
 | 27 | `{#key expr}` destroys and recreates content on every change of `expr` |
 | 28 | `{#snippet name(args)}` defines a reusable template fragment; `{@render name(args)}` mounts it |
 | 29 | Snippets close over outer reactive variables; args are plain values, not signals |
+| 29b | Every non-void element closes explicitly — HTML's optional end tags (`</li>`, `</p>`, `</td>`, `</option>` …) are a parse error, and `<br>` and `<span />` are not (`FJS-882`) |
 | 30 | `<script module>` runs once at module load — shared across all instances |
 | 31 | `class="..."` on a component is forwarded to the child's class prop automatically |
 | 31b | `bind:class` on an ELEMENT is a compile error — it never worked, `class` is not a DOM property. `{class}` is the form that merges; on a component `bind:class` is an ordinary two-way prop (`FJS-478`) |

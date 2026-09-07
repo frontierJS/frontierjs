@@ -11,6 +11,7 @@ import {
   createLogger,
   channels,
   healthPlugin,
+  metricsPlugin,
   devtools,
   authenticate,
   mailerPlugin,
@@ -30,6 +31,7 @@ import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
 import { createBasecampDb }              from './core/db.ts'
 import { createSecretResolver }          from './core/credentials.ts'
 import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts'
+import { notificationsPlugin }  from '@frontierjs/notifications'
 import { basecampAuditLog, basecampAuditPreImage, requireOutpostSignature, resolveWorkspaceId } from './core/hooks.ts'
 import { grantsFor } from './core/capabilities.ts'
 import { basecampSessionFields, refuseSuspendedLogin, refuseSuspended } from './core/session-auth.ts'
@@ -330,6 +332,29 @@ export async function buildBasecampApp(
   // reads to say so out loud instead of reporting a delivery that never left.
   if (mail) app.configure(mailerPlugin(createConduitMailer(app, { from: env.MAIL_FROM })))
 
+  // ── Notifications ─────────────────────────────────────────────────────
+  // Seven kinds have been declared, a preferences screen has honoured them, and
+  // nothing in this app had ever sent one (`FJS-967`) — a person could switch
+  // off an email they were never going to get, which reads as evidence the
+  // delivery exists.
+  //
+  // AFTER the mailer, because the email transport resolves `app.mail` at
+  // registration and junction checks plugin order at startup rather than at the
+  // first send. Where there is NO provider the transport is not declared at all
+  // and `core/notify.ts` drops `email` per recipient — a person who asked for it
+  // on an app that cannot mail must still get their in-app copy, and `notify()`
+  // throws on an undeliverable transport before delivering any of them.
+  //
+  // `notifications:` is DECLARED rather than probed, for `example`'s reason:
+  // the probe is relative to the process entry, and the test suite imports this
+  // module directly — which makes the test file the entry, finds no
+  // definitions, and an unnamed definition throws on its first send.
+  app.configure(notificationsPlugin({
+    db,
+    notifications: new URL('./notifications', import.meta.url).pathname,
+    transports:    mail ? { email: { mailer: 'default' } } : {},
+  }))
+
   // ── Standard middleware ────────────────────────────────────────────────
   // CORS is not configured here. It is DECLARED in api/config/junction.config.js
   // and junction installs it from the config block at startup — configuring it
@@ -351,6 +376,16 @@ export async function buildBasecampApp(
       db: () => !!rawDb.query('SELECT 1').get(),
     },
   }))
+
+  // What /metrics says, KEPT. Every source above answers on request, and until
+  // this the merged value lived for the duration of one response — so no
+  // `AlertRule` in this app was evaluable, because a condition reading "above
+  // 80% for five minutes" had no window to read (`FJS-123`, `FJS-956`).
+  //
+  // AFTER healthPlugin, because the scrape reads what the sources contributed
+  // and a plugin configured before them would take its first reading of an app
+  // that had not claimed its sections yet.
+  app.configure(metricsPlugin())
 
   // ── Devtools console ──────────────────────────────────────────────────
   // AFTER health and the queue: the console reads what plugins contributed, so

@@ -8,6 +8,7 @@
 
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, statSync } from 'fs'
 import { resolve, join } from 'path'
+import { slug } from '@frontierjs/toolbelt/inflect'
 import { Database } from 'bun:sqlite'
 import {
   introspect, buildPristine, buildPristineForDatabase, diffSchemas,
@@ -49,12 +50,6 @@ function recordMigration(db, name, sql) {
     INSERT INTO "${MIGRATIONS_TABLE}" (name, applied_at, checksum)
     VALUES (?, ?, ?)
   `).run(name, new Date().toISOString(), sql ? checksum(sql) : 'js-migration')
-}
-
-// ─── File helpers ─────────────────────────────────────────────────────────────
-
-export function slugify(label) {
-  return label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
 }
 
 // ─── Naming a new migration ───────────────────────────────────────────────────
@@ -100,7 +95,9 @@ function timestamp() {
 
 export function nextMigrationName(dir, label, ext = 'sql') {
   const abs   = resolve(dir)
-  const slug  = slugify(label)
+  // `_` rather than the kit's default: this is a filename segment, and the
+  // stamp it sits behind is already separated by one.
+  const seg   = slug(label, { sep: '_' })
   const files = listMigrationFiles(abs)
   const last  = files.length ? files[files.length - 1].match(STAMP)?.[1] : null
 
@@ -108,9 +105,9 @@ export function nextMigrationName(dir, label, ext = 'sql') {
   if (last && ts <= last) ts = bumpStamp(last)
   // A directory can hold a file per label at one stamp; keep stepping until the
   // name is free rather than overwriting somebody's migration.
-  while (existsSync(join(abs, `${ts}_${slug}.${ext}`))) ts = bumpStamp(ts)
+  while (existsSync(join(abs, `${ts}_${seg}.${ext}`))) ts = bumpStamp(ts)
 
-  return `${ts}_${slug}.${ext}`
+  return `${ts}_${seg}.${ext}`
 }
 
 export function listMigrationFiles(dir) {

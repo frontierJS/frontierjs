@@ -30,7 +30,7 @@ import { AccessDeniedError }   from './plugin.js'
 import { modelToTableName, sqlType, columnMapFor } from './ddl.js'
 import { comparisonEncoderFor } from './encryption.js'
 import { ValidationError }     from './validate.js'
-import { NOW_SQL }             from './query.js'
+import { NOW_SQL, rawClause }  from './query.js'
 
 // ─── Debug logger ─────────────────────────────────────────────────────────────
 // policyDebug: true     — logs SQL filters + denials
@@ -618,12 +618,12 @@ export function compileScope(modelName, name, ctx, scopeMap, policyMap, schema, 
   // Minted from a `valueset`'s `where`. The SQL comes from the schema and the
   // NAME is what a caller sent — which is Invariant 8 exactly: the name is a key
   // looked up in this table and is never interpolated into anything.
-  if (expr.__raw) return { _litestoneRaw: true, sql: expr.__raw, params: [] }
+  if (expr.__raw) return rawClause(expr.__raw)
 
   const params = []
   const at     = atOneInstant(ctx)
   const sql    = compileSql(expr, params, at, modelName, 'read', policyMap ?? {}, schema, relationMap, new Set())
-  return { _litestoneRaw: true, sql, params }
+  return rawClause(sql, params)
 }
 
 // ─── What a check() delegation reaches, decided once ─────────────────────────
@@ -751,8 +751,10 @@ export function checkFieldPolicies(schema, relationMap, claims = null) {
 export function buildPolicyMap(schema, relationMap, claims = null) {
   const map = {}
 
-  for (const model of schema.models) {
-    for (const attr of model.attributes) {
+  // Views walk with the models: a row policy on a view compiles against the
+  // columns the view declares, which is why it needs no reading of `@@sql`.
+  for (const model of [...schema.models, ...(schema.views ?? [])]) {
+    for (const attr of model.attributes ?? []) {
       if (attr.kind !== 'allow' && attr.kind !== 'deny') continue
       checkExpr(model, attr.expr, relationMap, '@@allow/@@deny', claims, schema)
       if (!map[model.name]) map[model.name] = {}

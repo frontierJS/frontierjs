@@ -12,7 +12,7 @@ import { glow } from '@frontierjs/toolbelt/glow'
 | --- | --- | --- |
 | `/glow` | source code → highlighted HTML | shipping |
 | `/cron` | what a five-field cron expression admits | shipping |
-| `/inflect` | English singular ⇄ plural | shipping |
+| `/inflect` | how a name is spelled — number and shape | shipping |
 | `/directives` | the `$` convention — filters vs directives | shipping |
 | `/history` | the key naming one occurrence of change | shipping |
 | `/hooks` | the four-phase resource pipeline | shipping |
@@ -122,15 +122,47 @@ Four copies of this function existed before it did, and two of them disagreed �
 `@frontierjs/ui` said `5.0 MB` where three basecamp screens said `5 MB`, so one
 application showed one disk two ways (`FJS-408`).
 
-## `inflect` — English singular ⇄ plural
+## `inflect` — how a name is spelled
+
+Two axes of one question. NUMBER is `post` ⇄ `posts`; SHAPE is
+`product_variants` ⇄ `ProductVariant` ⇄ `productVariant`.
 
 ```js
-import { pluralize, singularize } from '@frontierjs/toolbelt/inflect'
+import { pluralize, singularize, modelName, camel, snake, slug } from '@frontierjs/toolbelt/inflect'
 
-pluralize('category')    // 'categories'
-pluralize('person')      // 'people'
-singularize('statuses')  // 'status'
+pluralize('category')            // 'categories'
+singularize('statuses')          // 'status'
+
+modelName('product-variants')    // 'ProductVariant'  — Invariant 2, composed once
+camel('HTTPStatus')              // 'httpStatus'      — a leading initialism lowers WHOLE
+snake('ProductVariant')          // 'product_variant'
+slug("It's a C++ thing")         // 'its-a-c-thing'
+slug('add product variants', { sep: '_' })   // 'add_product_variants'
 ```
+
+**`modelName` is exported rather than left to the caller.** Six sites composed
+`pascal(singularize(t))` by hand with four different splitters, and every one of
+them already imported `singularize` from here — so half of Invariant 2's
+derivation was shared and the other half of the same expression was not.
+`order-item` was `OrderItem` to one and `Order-item` to two others.
+
+**`humanize` is the third axis and it answers to somebody else.** `postal_code`
+and `postalCode` are both `Postal Code`: `@frontierjs/ui` labels a control whose
+field declared no `@label`, and sierra falls back to it when a stored value has
+no row to read a label from (`FJS-D225`). It is `words()` plus exactly one added
+rule — a digit starts a word of its own — and that rule may not be lifted
+upward, because `kebab('address1')` becoming `address-1` renames a column. What
+NUMBER and SHAPE answer must not change when a reader changes; what `humanize`
+answers must (`FJS-D236`). Only `_`, `-` and whitespace separate in either half,
+so `partman.template_x` comes back visibly wrong rather than as a plausible
+`PartmanTemplateX`.
+
+**`slug` is one rule and one stated exception**: every run of non-alphanumerics
+becomes one separator, and an apostrophe is deleted, because it sits inside a
+word where every other mark sits between two. `sep` is a parameter (a migration
+filename wants `_`), `max` truncates and re-trims (a `.slice()` at the call site
+is what stores `strategy-and-`), and accents fold rather than drop — five copies
+of this answered `caf` for `Café`.
 
 **One definition, five callers.** FrontierJS names one thing three ways —
 `model Post` in the schema, `posts` for the service and the URL, `db.post` for

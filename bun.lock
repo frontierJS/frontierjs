@@ -55,6 +55,7 @@
         "@frontierjs/junction": "workspace:*",
         "@frontierjs/litestone": "workspace:*",
         "@frontierjs/mesa": "workspace:*",
+        "@frontierjs/notifications": "workspace:*",
         "@frontierjs/sierra": "workspace:*",
         "@frontierjs/toolbelt": "workspace:*",
         "@frontierjs/ui": "workspace:*",
@@ -154,7 +155,7 @@
     },
     "packages/frontierjs-vscode": {
       "name": "vscode-frontierjs",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "vscode-languageclient": "^9.0.1",
         "vscode-languageserver": "^9.0.1",

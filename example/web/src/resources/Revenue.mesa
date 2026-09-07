@@ -1,0 +1,31 @@
+<script module>
+  // web/src/resources/Revenue.mesa — the Resource layer, over a PROJECTION.
+  //
+  // The first resource here that is not over a model. `revenueByStatus` is a
+  // `view` in db/schema.lite — declared columns, an `@@sql` body, `@@materialized`
+  // and `@@refreshOn([Order])` — so what this reads is an answer the DATABASE
+  // keeps up to date, not a query this screen assembles.
+  //
+  // **Named for its service noun, singularised** (repo Invariant 19's second
+  // half, for a resource over no model). The service is `revenue`, so the file
+  // is `Revenue.mesa`; there is no `model Revenue` for the filename to take.
+  //
+  // **No markup half, and there cannot be one.** Invariant 18 makes the markup a
+  // model's default FORM, and a projection has nothing to write to: every write
+  // verb on a view refuses by name at the Data boundary, and the service
+  // declares `methods: 'readOnly'` so the router answers 405 before that.
+  //
+  // Its gate is the thing to know before using it anywhere: `@@gate("5")` over
+  // an `Order` that reads at 1, so a caller who legitimately lists every order
+  // may not read the sum of them. `can('read', …)` off this resource is the
+  // affordance; the API grades it again.
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  // `idField: null` is a STATEMENT, not a default being skipped: a projection
+  // declares columns and no key, so there is no row identity to hold. The store
+  // keeps the list as it arrives and `load()` replaces it wholesale, which is
+  // what a view IS — its rows move when the projection refreshes, never one at a
+  // time. Bound to `id` instead, the store correctly drops every row it cannot
+  // place, so three rows went in and none came out (`FJS-998`).
+  export const revenue = createResource('revenue', { idField: null })
+</script>

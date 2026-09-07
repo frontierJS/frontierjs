@@ -126,8 +126,21 @@ export function parseDirectives(params) {
 export function splitParams(params) {
   const query = {}
   if (params && typeof params === 'object') {
-    for (const k in params) {
-      if (!RESERVED_PARAMS.has(k)) query[k] = params[k]
+    // Own keys, and defined rather than assigned. A WS frame's query bag is
+    // `JSON.parse`d, so `__proto__` arrives as an OWN key — `query[k] = v`
+    // reaches Object.prototype's setter, which drops the filter and replaces
+    // the bag's prototype, leaving an object that `Object.keys` and a spread
+    // see one way and a property read sees another. `for...in` compounds it by
+    // enumerating what a previous pass put there (`FJS-996`).
+    for (const k of Object.keys(params)) {
+      // Two conditions, and the prefix is the one that holds the invariant.
+      // Asking only whether the name is a KNOWN directive let every other `$`
+      // key through — `$nope`, `$$limit`, a misspelled `$limitt` — each landing
+      // in the filters as a WHERE on a column that cannot exist, which is the
+      // consequence this function's own contract names (FJS-988). The
+      // recognised names were removed correctly, so nothing failed.
+      if (k.startsWith('$') || RESERVED_PARAMS.has(k)) continue
+      Object.defineProperty(query, k, { value: params[k], writable: true, enumerable: true, configurable: true })
     }
   }
   return { query, directives: parseDirectives(params) }

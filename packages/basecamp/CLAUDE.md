@@ -68,11 +68,21 @@ app no longer keeps a `packages/cli/core/preflight.js` of its own).
 ## Layout
 
 ```
-db/       schema.lite (45 models, 26 enums) · generate.js · migrations/ · seed.js ·
+db/       schema.lite (43 models declared, 50 with the two imported fragments;
+          32 enums declared, 34 resolved) · generate.js · migrations/ · seed.js ·
           litestone.config.js · test/ · README.md (the depth doc)
 api/      index.ts (the entry — start() and nothing else) · config/
-api/src/  app.ts (builds the app, never starts it) · services/ (22) ·
-          jobs/ (4 *.job.ts) · providers/ · core/
+api/src/  app.ts (builds the app, never starts it) · services/ (29) ·
+          jobs/ (8 *.job.ts) · notifications/ (7) · providers/ · core/
+          notifications/ is one file per NotificationKind and the FILE NAME is
+          the persisted type — so the seven files, the enum and kinds.ts are
+          three spellings of one vocabulary, held together by api/test/notify.test.ts
+          core/notify.ts is the one owner of *does this person want it*
+          core/server-metrics.ts decides WHICH of a check-in is kept and what
+          each reading is called; the heartbeat pushes through app.metrics.record
+          core/alerting.ts is the alert comparison, pure — no db, no clock, no app
+          core/delivery.ts is the ONE owner of how a NotificationChannel is
+          reached; `channels.test` and the alert evaluator are its two callers
           core/credentials.ts owns both conduit ref forms — `secret:<id>` and
           `env:<NAME>`; a target carries the ref, never the material
           core/session-auth.ts projects this app's OWN User columns onto the
@@ -409,6 +419,57 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   the channel IS the verified claim. `workspaceIdFromChannel` lives beside
   `workspaceChannelName` — a name written in one place and read in another is
   one a caller can get wrong while every other caller keeps working.
+- **A machine's readings are TWO things and they answer different questions.**
+  `Server.health` is a snapshot — one Json column overwritten every check-in —
+  and the metric store is the line. A card draws both: the bar is what the box
+  said a moment ago, the sparkline is the last day. Reading a series is
+  `servers.metrics`, and **its confinement is the PARENT READ**:
+  `MetricSeries` is `@@gate("8")` and `@@tenant(none)`, so `getScoped('server')`
+  runs at the caller's own standing first and only then is the series read
+  through `asSystem()`. Opening the package's gate for a row policy was refused
+  — an app that declares none then serves every reading to anyone, fail-open
+  (`FJS-956`). **Never spell a `labelsKey` here**: `seriesKey()` is junction's,
+  and a second spelling is a second series holding half the readings.
+- **A notification is what one PERSON can switch off; a channel is where the
+  WORKSPACE is paged.** Both go out when an alert fires and collapsing them
+  gives you either a pager anybody can silence for everyone or a bell menu
+  nobody can turn down. The preference lives in `NotificationPreference` and is
+  resolved in ONE place, `core/notify.ts` — a sender that decided for itself is
+  a screen honoured by some callers and ignored by others (`FJS-967`). Three
+  things about it bite:
+  **the absence of a row is the kind's DEFAULT, never silence** (`kinds.ts`
+  holds them), or this app delivers nothing until somebody opens a screen they
+  have no reason to open;
+  **transports ride on the RECIPIENT**, because `via()` is not awaited and a
+  preference is per person, so two recipients of one send legitimately differ;
+  and **email is a capability, not a preference** — `notify()` throws on a
+  transport with no driver BEFORE delivering any of them, so on an app with no
+  mailer a person who asked for email would get neither. Every one of the seven
+  therefore implements both formatters: `kinds.ts` holds defaults, not a ceiling.
+- **The file name of a `*.notification.ts` IS the persisted type**, so the seven
+  are named for `NotificationKind`'s own values. Renaming one renames a value
+  already written to `notifications.type`. `api/test/notify.test.ts` holds the
+  enum, `kinds.ts` and the directory together in both directions — any two of
+  them agreeing proves nothing about the third.
+- **A rule's condition is COLUMNS, and delivery has one owner.** `AlertRule` was
+  `condition Json @default("{}")` with three writers spelling it three ways — the
+  form `{operator, threshold}`, the seed `{op, value}`, the card reading
+  `.operator` — so every seeded rule rendered an em-dash and nothing errored
+  (`FJS-D227`). It is `operator`/`threshold`/`forMinutes` now. The rule the
+  ruling generalises: **`Json` is right where nothing joins, queries or
+  interprets the value; the moment something reads INTO it to decide, it is a
+  language and belongs in the schema.** Beside it, `core/delivery.ts` is the only
+  place that knows how a `NotificationChannel` is reached — it takes its client
+  and its conduit as arguments rather than reading `$`, because a cron has no
+  ambient call context, and a per-kind table in two places is a kind added to one
+  of them: tests green, never delivers.
+- **Only `recovered` resolves an alert.** `alert-evaluate.job.ts` separates
+  `no-data`, `uncovered` and `recovered`, and the separation is the design: a
+  scrape that STOPPED and a value that came back inside its threshold draw the
+  same flat line, so an evaluator that closes on *not breaching* closes the
+  incident an outage just opened. `forMinutes` also needs the window to be
+  COVERED — every point breaching is not the same claim as *it has been bad for
+  five minutes*, and one reading after a restart satisfies the first.
 - **Zero raw SQL, on purpose** — everything goes through accessors, which is what
   keeps policies enforceable. `db.asSystem().sql` is the only bypass and it
   enforces nothing.

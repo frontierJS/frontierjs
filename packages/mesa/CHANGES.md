@@ -1,5 +1,134 @@
 # Changes — @frontierjs/mesa
 
+## 2026-09-07 — the suite, measured
+
+**[FJS-888](../../ISSUES.md#fjs-888), narrowed.** The row said the compiler suite grades
+vocabulary rather than behavior — 448 of `compiler.test.js`'s 852 assertions are `toContain` over
+the emitted JavaScript, which any emission still calling the named function satisfies whatever the
+arguments or the surrounding effect. It was an argument with no number behind it.
+
+`test/mutants.mjs` supplies the number. It follows `litestone mutate`'s stated rule — code
+mutation is combinatorial, so mutate the small declarative surface instead — and here that surface
+is the vocabulary itself: the ~87 runtime functions the compiler emits calls to, read off
+`compiler.js` rather than listed by hand. One mutant per name, `export *` plus a local
+`export const NAME = () => undefined`. The compiled output does not change by a byte; only the
+behavior is gone.
+
+**76 of 87 killed, 11 survived.** Four are boundaries named in advance and they held — `fade`,
+`fly`, `slide`, `inspect`, reached only by the browser drives. Seven are holes: `addGlobalEvent`,
+`addToHead`, `bindMask`, `bindWindow`, `context`, `htmlToFragmentClean` and `pop` can each be
+gutted with the whole vitest suite still green.
+
+The expected-survivor list RUNS rather than skips, and that is why the first run caught its own
+author: ten names were guessed and six were killed. `transition`, `entrance`, `island`, `portal`,
+`__dev` and `noop` are all executed here. Confirmed on a second run and deleted from the list
+rather than annotated.
+
+Two things a caller needs to know. It grades the vitest suite, so a construct only the browser
+drives cover reads as a survivor — the four named ones are that case. And piping it discards its
+exit code, which is how the first full run reported success with seven unexpected survivors.
+
+## 2026-09-07 — an instance script runs in the order you wrote it
+
+**[FJS-846](../../ISSUES.md#fjs-846), closed** — the half that had been parked, and the parked
+reason was measured on the wrong thing.
+
+It said 82 of 331 instance scripts have a statement before a later `const` and nearly all are
+harmless. That is a fact about this corpus, not about the semantics. Asked instead as *what does
+plain JavaScript answer for these same lines*, five of six shapes disagreed: `a = 5` then
+`let b = a` gave 0, a `var` sampler after a mutation gave the pre-mutation value, `xs.push(1)`
+then `let n = xs.length` gave 0. The sixth agreed by accident — a reactive `const` is a lazy memo
+and re-derives on read whatever order it was emitted in, which is why probes that used one found
+nothing.
+
+**Each declaration is now placed where it was written.** The topological sort still runs
+unchanged; its output is buffered per declaration rather than pushed, and the walk that emits
+top-level statements flushes each declaration at its own source position, pulling one up only
+when something already emitted needs it. The sort became a constraint on source order instead of
+a replacement for it.
+
+Still pulled up, and tested as such: a class used by a `const` above it, a memo another memo
+reads, and a `function` declaration, which JavaScript hoists anyway.
+
+Svelte moved the same way. Svelte 4 hoisted literal `const`s and pure functions out of the
+instance body wholesale and it cost #2687, #1895 and #2542; Svelte 5's sync mode preserves source
+order exactly. A reordering warning was asked for there twice (#4516, #2119) and never shipped —
+which was the option this row had been parked on.
+
+11 tests, 7 red against all-declarations-first, 4 controls. Every case is graded against the
+plain-JS answer rather than a remembered output.
+
+## 2026-09-07 — what a parse failure tells you
+
+**[FJS-882](../../ISSUES.md#fjs-882), closed.** One `Reader` runs over the whole source and every
+node carries `start`, and three shapes spent none of it.
+
+**The generic reader failure carried no position at all** — `Wrong syntax at:` plus thirty raw
+bytes taken straight off the offset, newlines included, so the quoted fragment ran past the end of
+the line and held source the failure had nothing to do with. Four different malformed inputs land
+there: an unterminated close tag, an unterminated comment, a doctype, a processing instruction.
+
+**A close tag that matches nothing reported the close tag's line** — the line the author wrote
+correctly. It already named the construct still open; what it could not say is where that
+construct was OPENED, which is the line to go to. It says both now. Svelte points at the close tag
+and never at both, and #16628 is the same complaint against it, closed the same day with no
+change.
+
+**`<ul><li>a<li>b</ul>` is valid HTML** and Mesa refuses it. That is a language choice and it
+stays, but the refusal said nothing about the choice, so somebody who had written correct HTML was
+told only that something was still open. The extra sentence fires for the twenty-odd elements HTML
+lets you omit and for nothing else — a paragraph about end tags under an unclosed `{#if}` is noise
+at the moment somebody is reading carefully. `VISION.md` § 10 and rule 29b now state the rule,
+which is the half nothing documented.
+
+Svelte is the useful comparison there, because it went the other way and then walked it back: it
+implements the WHATWG omission table and since 5.32 warns on every implicit close it performs
+(#12635, PR #15932). The sharper evidence is that Svelte 5 silently lost the case Svelte 3 added
+the feature for — `<ul>{#if x}<li>a{/if}</ul>` compiles on 4.2.20 and is a `block_unexpected_close`
+on 5.57, fixture gone, no issue filed.
+
+**CDATA is named rather than supported.** In an `<svg>` subtree it read as
+`Wrong syntax at: ![CDATA[ x < y ]]>`. It arrives by copy-paste out of an exporter's SVG, so the
+message says what to do with the paste, and the test compiles that advice rather than quoting it.
+Supporting it means deciding whether `{` interpolates inside one, which is a language feature and
+not a diagnostic — filed as FJS-966.
+
+21 tests: 4 red without the CDATA branch, 4 without the reader offset, 2 without the opened-at
+position, 5 without the omittable-tag sentence. Six are controls.
+
+## 2026-09-06 — `$$` is reserved, and `el0` is yours again
+
+**[FJS-883](../../ISSUES.md#fjs-883), closed** — and the filing was wrong in the direction that
+mattered. It called this a gap in a list rather than a live break, on the grounds that the
+compiler renames `$$runtime`. Nothing renames it. `const $$runtime = 1` is emitted straight into
+the component function, where it shadows the module import for the whole body including the lines
+above it, so the component throws `Cannot access '$$runtime' before initialization` at mount,
+pointing at the call to `push_component`. Written as a `function` it hoists instead and gives
+`$$runtime.push_component is not a function`.
+
+**It is five families, not one name.** `$$tpl<n>` shadows the same way. `$$sig_<name>`,
+`$$set_<name>` and `el<n>` are duplicate bindings, so the emitted module does not parse — and the
+compile reports nothing, which is Invariant 15 in one line. Three of the five are built from the
+author's own identifiers and two from a counter, so no set of literals reaches them.
+
+**So the prefix is reserved rather than the names.** The one generated identifier with no sigil
+was renamed to carry it: `el<n>` is `$$el<n>` now, which closes the last hole and hands `el0` back
+as an ordinary name an author may use. Reserving `$$` costs nothing measured — 0 uses across 372
+`.mesa` files. `BUILTIN_LOCALS` keeps only what a prefix cannot reach, the single-`$` sugar names
+and the four `__` calling-convention parameters, and its header now says why it is not the whole
+answer.
+
+Svelte shipped the list version of this. Svelte 4's `reserved_keywords.js` was three names, and
+#4587, #5355 and #6718 are three reports of one failure — a name the compiler used that the list
+did not know about. On #6718 the maintainers refused to add the missing name rather than grow the
+list again. Their standing rule is the prefix ban, with everything unprefixed run through a
+uniquifier; Mesa needs no uniquifier, because after the rename every generated identifier carries
+the sigil.
+
+12 tests, 7 red with the refusal stubbed and 2 with the rename reverted. Half the file is the
+control: every refused name is asserted to be one the emitter still generates, since a refusal
+over a name nothing emits protects nothing and reads identically from the refused side.
+
 ## 2026-09-06 — what a write through the watch proxy reports
 
 **[FJS-884](../../ISSUES.md#fjs-884), closed.** Four things, and one of them turned out to

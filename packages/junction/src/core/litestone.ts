@@ -71,6 +71,11 @@ interface LitestoneTable {
   deleteMany:       (args:  Record<string, unknown>) => Promise<{ count: number }>
   restore:          (args:  Record<string, unknown>) => Promise<unknown>     // @@softDelete models only
   search:           (query: string, args?: Record<string, unknown>) => Promise<unknown[]>  // @@fts models only — the ROWS, ranked
+  // The two shapes the `aggregate` verb dispatches between (`FJS-D226`): with a
+  // `by` it is a group-by and answers a row per group, without one it is a
+  // single row of numbers.
+  groupBy:          (args:  Record<string, unknown>) => Promise<Record<string, unknown>[]>
+  aggregate:        (args:  Record<string, unknown>) => Promise<Record<string, unknown>>
   // The window (`FJS-D145`). Optional because a litestone that predates them
   // simply answers no cursor, and offset carries on as it always did.
   findManyCursor?:  (args?: Record<string, unknown>) =>
@@ -238,6 +243,86 @@ export function parseQuery(
     withTemplates: withTmpl === true || withTmpl === 'true' || undefined,
     onlyTemplates: onlyTmpl === true || onlyTmpl === 'true' || undefined,
   }
+}
+
+// ─── the aggregate request ────────────────────────────────────────────────────
+//
+// **An allow-list, never a pass-through** (`FJS-D226`). Litestone's aggregate
+// surface is wider than what may be reached from a wire, and the two grammars
+// that had never been graded were both found by asking this question:
+// `having` and an aggregate `orderBy` named columns that reached no field
+// ladder (`FJS-954`), and a request-shaped object forged a `sql`` ` fragment
+// whose text went into the statement (`FJS-955`). A body handed to litestone
+// whole re-opens that class every time the language grows a key.
+//
+// Two of litestone's own are deliberately absent. `_stringAgg` is
+// GROUP_CONCAT — a dump wearing an aggregate's clothes — and a NAMED aggregate
+// takes its `filter` as a `sql`` ` tag, which a wire cannot make and must not
+// appear to. Both stay available to app code, where a developer writing SQL is
+// not a caller.
+const AGGREGATE_KEYS = new Set([
+  'by', 'where', 'having', 'orderBy', 'limit', 'offset', 'interval', 'fillGaps',
+  '_count', '_sum', '_avg', '_min', '_max',
+])
+
+/**
+ * The args for one aggregate call, off the body and the query string.
+ *
+ * **`ctx.query` is merged into the WHERE and that is not a convenience.** Every
+ * hook that narrows a read writes there — a tenancy filter, an `autoFilter`, a
+ * service's own scoping — so an aggregate reading only its body would answer
+ * over rows the same caller's `find` cannot see. It is `find`'s twin or it is a
+ * hole.
+ */
+export function parseAggregate(
+  body:        unknown,
+  query:       Record<string, unknown>,
+  defaultLimit = 20,
+  maxLimit     = 100,
+  directives:  QueryDirectives = {},
+): Record<string, unknown> {
+  if (body != null && (typeof body !== 'object' || Array.isArray(body)))
+    throw new BadRequest('aggregate expects an object body — { by, where, _count, _sum, … }')
+
+  const spec = (body ?? {}) as Record<string, unknown>
+
+  for (const key of Object.keys(spec)) {
+    if (AGGREGATE_KEYS.has(key)) continue
+    if (key === '_stringAgg') throw new BadRequest(
+      'aggregate: _stringAgg is not available here — GROUP_CONCAT returns the column itself rather than a ' +
+      'summary of it, so it is an app-code read and not a wire one.')
+    if (key.startsWith('_')) throw new BadRequest(
+      `aggregate: '${key}' looks like a named aggregate, which is not available here — its filter is a ` +
+      'sql`` fragment, and a request cannot make one. Use _count, _sum, _avg, _min or _max.')
+    throw new BadRequest(
+      `aggregate: unknown key '${key}'. Takes: ${[...AGGREGATE_KEYS].join(', ')}.`)
+  }
+
+  // The caller's own filter, ANDed with everything a hook put on ctx.query.
+  const fromQuery = parseWhere(query)
+  const fromBody  = spec.where && typeof spec.where === 'object' && !Array.isArray(spec.where)
+    ? parseWhere(spec.where as Record<string, unknown>)
+    : {}
+  const where = { ...fromQuery, ...fromBody }
+
+  // The same clamp a page gets. A group count is data-dependent, so this bounds
+  // what comes BACK rather than what is computed — and the work bound is the
+  // where, exactly as it is for find.
+  const { limit, offset } = clampPage(
+    { limit: spec.limit as number, offset: spec.offset as number },
+    defaultLimit, maxLimit,
+  )
+
+  const args: Record<string, unknown> = { where, limit, offset }
+  for (const key of ['by', 'having', 'orderBy', 'interval', 'fillGaps',
+                     '_count', '_sum', '_avg', '_min', '_max'])
+    if (key in spec) args[key] = spec[key]
+
+  // Nothing asked for: a caller who names no aggregate wants the row count,
+  // which is what `_count` alone means everywhere else in this language.
+  if (!['_count', '_sum', '_avg', '_min', '_max'].some(k => k in args)) args._count = true
+
+  return args
 }
 
 export function parseWhere(query: Record<string, unknown>): Record<string, unknown> {
@@ -906,6 +991,38 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       // window rather than stepping to a page. Both paths are `findWindow`'s,
       // because a service that assembles its own query answers the same two.
       return await findWindow(table, args, q.after, modelLabel(ctx))
+    },
+
+    /**
+     * Counts, sums and groups — `find`'s twin (`FJS-D226`).
+     *
+     * One verb for both shapes, dispatching on `by` the way litestone's own
+     * `query()` does. Every rule that guards a read guards this: the gate, the
+     * row policy, soft-delete, templates and the global filter are all `on` for
+     * `aggregate` and `groupBy` at the Data boundary, and `ctx.query` is merged
+     * into the where by `parseAggregate`, so a hook that narrows a read narrows
+     * this too.
+     */
+    async aggregate(ctx: ServiceContext): Promise<unknown> {
+      const table = getTable(ctx)
+      const args  = parseAggregate(ctx.data, ctx.query, paginate.default, paginate.max, ctx.directives)
+      const by    = args.by as unknown[] | undefined
+
+      args.where = { ...(args.where as Record<string, unknown>), ...softDeleteFilter() }
+
+      if (Array.isArray(by) && by.length) return await table.groupBy(args)
+
+      // An aggregate over the whole selection answers ONE row, so a limit and
+      // an offset mean nothing to it and litestone refuses what it does not
+      // take. `by` is what makes them meaningful.
+      delete args.by
+      delete args.limit
+      delete args.offset
+      delete args.having
+      delete args.orderBy
+      delete args.interval
+      delete args.fillGaps
+      return await table.aggregate(args)
     },
 
     async get(ctx: ServiceContext): Promise<unknown> {
@@ -2339,7 +2456,7 @@ function warnFloorRefusal(service: string, method: string, need: number): void {
  * method has always got.
  */
 const OP_FOR_METHOD: Record<string, GateOp> = {
-  find: 'read', get: 'read', create: 'create',
+  find: 'read', get: 'read', aggregate: 'read', create: 'create',
   patch: 'update', update: 'update', remove: 'delete',
 }
 

@@ -307,6 +307,20 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   `utils.js`, or this kit grows component→component imports; and anything the
   server would also want goes to `@frontierjs/toolbelt`, because a `.mesa`
   import needs the Mesa build plugin.
+- **A picker's list can arrive with a HEAD, and the two list controls caption it
+  differently because only one of them has a grouping mechanism.**
+  `resource.options()` marks the values this caller reached for last with
+  `recent` (`FJS-D121`) and prepends them; rendered as they arrive they read as
+  a broken sort. `splitRecent` in `utils.js` is the one owner of the three
+  buckets — `pinned` (an `unavailable` value, which stays ABOVE both captions
+  because it is the value in the box and not a habit), `recent`, `rest` — and
+  `RECENT_GROUP`/`REST_GROUP` are the two spellings, so the controls cannot word
+  it differently. `Select` gets `<optgroup>`s; `Combobox` gets rows that are
+  **`role="presentation"`, never options**, because the cursor indexes the
+  option array and `aria-activedescendant` names its rows.
+  **A generated form never reaches the `<Select>` half**: the control table
+  answers `picker` → Combobox for every binding and every foreign key, so a
+  native select receives a fetched list only in a hand-written form.
 - **A local `<style>` may not name a class `@frontierjs/css` owns.** That is the
   only way a kit component silently changes the package for an app that never
   imports the kit. Two did and both are gone: `DropdownItem` styled `.item`

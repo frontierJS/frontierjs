@@ -181,6 +181,67 @@ describe('doc-cites-dead', () => {
     expect(ids[0].message).toContain('FJS-999')
   })
 
+  test('reports a link that resolves only from the repo root, and names the fix', () => {
+    // The file is there and the link does not reach it: `IDEAS/` + the target is
+    // nothing, which is what a reader's editor computes. Accepted until FJS-750.
+    const root = tree('cite-base-root', {
+      'IDEAS/plan.md':               'The differ is [ddl.js](packages/db/ddl.js).\n',
+      'packages/db/package.json':    PKG,
+      'packages/db/ddl.js':          'export const x = 1\n',
+    })
+    const out = docCitesDead({ root })
+    expect(out.findings).toHaveLength(1)
+    expect(out.findings[0].message).toContain('repo root')
+    expect(out.findings[0].message).toContain('`../packages/db/ddl.js`')
+  })
+
+  test('reports a link that resolves only from the package root', () => {
+    const root = tree('cite-base-pkg', {
+      'packages/db/package.json':    PKG,
+      'packages/db/docs/guide.md':   'See [ddl.js](src/ddl.js).\n',
+      'packages/db/src/ddl.js':      'export const x = 1\n',
+    })
+    const out = docCitesDead({ root })
+    expect(out.findings).toHaveLength(1)
+    expect(out.findings[0].message).toContain('package root')
+    expect(out.findings[0].message).toContain('`../src/ddl.js`')
+  })
+
+  test('the same link written from the document is silent — the control', () => {
+    // Without this, a rule that reported EVERY link would pass both rows above.
+    const root = tree('cite-base-ok', {
+      'IDEAS/plan.md':               'The differ is [ddl.js](../packages/db/ddl.js).\n',
+      'packages/db/package.json':    PKG,
+      'packages/db/ddl.js':          'export const x = 1\n',
+      'packages/db/docs/guide.md':   'See [ddl.js](../src/ddl.js).\n',
+      'packages/db/src/ddl.js':      'export const x = 1\n',
+    })
+    expect(docCitesDead({ root }).findings).toHaveLength(0)
+  })
+
+  test('a `file:N` label disagreeing with its own `#Lm` anchor is reported', () => {
+    const root = tree('cite-anchor-line', {
+      'packages/db/package.json':  PKG,
+      'packages/db/README.md':     'See [ddl.js:44](ddl.js#L7).\n',
+      'packages/db/ddl.js':        'export const x = 1\n',
+    })
+    const out = docCitesDead({ root })
+    expect(out.findings).toHaveLength(1)
+    expect(out.findings[0].message).toContain('ddl.js:44')
+    expect(out.findings[0].message).toContain('line 7')
+  })
+
+  test('a label that agrees with its anchor is silent, and so is one with no label', () => {
+    // Two controls, because the grader has two ways to fire on everything: it
+    // could ignore the comparison, or it could report every `#L` link at all.
+    const root = tree('cite-anchor-line-ok', {
+      'packages/db/package.json':  PKG,
+      'packages/db/README.md':     'See [ddl.js:7](ddl.js#L7) and [the differ](ddl.js#L44).\n',
+      'packages/db/ddl.js':        'export const x = 1\n',
+    })
+    expect(docCitesDead({ root }).findings).toHaveLength(0)
+  })
+
   test('a dead `#fjs-` anchor is reported even though the file is there', () => {
     const root = tree('cite-anchor', {
       'ISSUES.md': '# Issues\n\n## S2 — high\n\n' +

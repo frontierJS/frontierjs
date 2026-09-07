@@ -14,7 +14,7 @@
   //   <Combobox bind:value allowNew placeholder="Select or type a tag…" {options} />
 
   import Field from '../forms/Field.mesa'
-  import { uid, resolveError, resolveRule, stated, nativeValidationGuard, truncationNote, withNote, optionsNote, lockedBy } from '../../utils.js'
+  import { uid, resolveError, resolveRule, stated, nativeValidationGuard, truncationNote, withNote, optionsNote, lockedBy, RECENT_GROUP, REST_GROUP } from '../../utils.js'
 
   export let value       = undefined    // scalar — bindable
   export let options     = []           // string[] | { value, label, disabled? }[]
@@ -63,9 +63,14 @@
   const rowId  = (i) => `${listId}-${i}`
 
   // Normalize options
+  // `recent` and `unavailable` are carried rather than dropped: this builds a
+  // NEW object, so a flag left out here is a fact the list arrived with and the
+  // control cannot see. The head's caption below is the reader of the first
+  // (`FJS-973`); the second is what pins a value the list no longer offers.
   function normalize(o) {
     if (typeof o === 'string' || typeof o === 'number') return { value: o, label: String(o) }
-    return { value: o.value, label: o.label ?? o.textContent ?? String(o.value), disabled: o.disabled ?? false }
+    return { value: o.value, label: o.label ?? o.textContent ?? String(o.value), disabled: o.disabled ?? false,
+             recent: o.recent ?? false, unavailable: o.unavailable ?? false }
   }
 
   // Same fallback as Select: the rule answers an enum synchronously, the form
@@ -156,6 +161,19 @@
   const filtered = (query.trim() && !_searched)
     ? normOptions.filter(o => o.label.toLowerCase().includes(query.toLowerCase()))
     : normOptions
+
+  // Where the head ends, so the two captions can be drawn between the rows
+  // without taking them out of the array the cursor indexes. `-1` is a list
+  // with no head, which is every list a set declaring no `recent(…)` produces
+  // and every searched one — the head is skipped for a search, because the
+  // person has already said what they want.
+  const headEnd = (() => {
+    if (!filtered.some(o => o.recent)) return -1
+    let i = 0
+    while (i < filtered.length && (filtered[i].unavailable || filtered[i].recent)) i++
+    return i
+  })()
+  const firstRecent = filtered.findIndex(o => o.recent)
 
   const resolvedHint = withNote(withNote(hint, optionsNote(stated(optionsError, _error))),
                                truncationNote(filtered.length, _count, { searchable: canSearchServer }))
@@ -287,6 +305,20 @@
               {@const isActive   = i === activeIdx}
               {@const isSelected = opt.value === value}
               <!--
+                The head's captions. They are rendered BETWEEN options rather
+                than as entries of `filtered`, because the cursor indexes that
+                array and `rowId(i)` names its rows — a caption inside it would
+                be arrow-keyed onto and announced as an option. `presentation`
+                for the same reason: a listbox's children are options, and
+                these are furniture.
+              -->
+              {#if i === firstRecent}
+                <li class="item text-muted fjs-combobox-heading" role="presentation">{RECENT_GROUP}</li>
+              {/if}
+              {#if headEnd > 0 && i === headEnd}
+                <li class="item text-muted fjs-combobox-heading" role="presentation">{REST_GROUP}</li>
+              {/if}
+              <!--
                 mousemove, not mouseenter: the panel opens under whatever the
                 pointer was last left on, and arrow-keying a long list scrolls
                 rows under a still pointer. Either way mouseenter moves the
@@ -366,6 +398,16 @@
   }
   .fjs-combobox-option[aria-disabled="true"] {
     opacity:        0.4;
+    pointer-events: none;
+  }
+  /* A caption over the head, and over what follows it. Not an option: no
+     hover, no cursor, and nothing for a pointer to land on. The size ladder is
+     the package's, so a caption stays smaller than a row in every density. */
+  .fjs-combobox-heading {
+    font-size:      var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor:         default;
     pointer-events: none;
   }
 </style>

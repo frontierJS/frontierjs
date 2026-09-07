@@ -11,7 +11,7 @@ the diff: a URL that changed without a change you meant to make is a link
 somebody else already published.
 
 ```
-23 routes · 1 layout · target spa · trailing slash always
+24 routes · 1 layout · target spa · trailing slash always
 ```
 
 ## Routes
@@ -40,6 +40,7 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/products/` | `src/routes/products/index.mesa` | `src/routes/_module.mesa` | — |
 | `/products/:id/` | `src/routes/products/[id].mesa` | `src/routes/_module.mesa` | `id` |
 | `/products/create/` | `src/routes/products/create.mesa` | `src/routes/_module.mesa` | — |
+| `/reports/` | `src/routes/reports/index.mesa` | `src/routes/_module.mesa` | — |
 | `/settings/` | `src/routes/settings/index.mesa` | `src/routes/_module.mesa` | — |
 | `/settings/fields/` | `src/routes/settings/fields.mesa` | `src/routes/_module.mesa` | — |
 | `/subscriptions/` | `src/routes/subscriptions/index.mesa` | `src/routes/_module.mesa` | — |
@@ -71,6 +72,7 @@ this section exists to show.
 - `/products/` — siteName: `Kitchen sink` · title: `Products`
 - `/products/:id/` — siteName: `Kitchen sink` · title: `Product`
 - `/products/create/` — siteName: `Kitchen sink` · title: `New product`
+- `/reports/` — siteName: `Kitchen sink` · title: `Reports`
 - `/settings/` — siteName: `Kitchen sink` · title: `Settings`
 - `/settings/fields/` — siteName: `Kitchen sink` · title: `Customer fields`
 - `/subscriptions/` — siteName: `Kitchen sink` · title: `Subscriptions`
@@ -82,4 +84,4 @@ this section exists to show.
 Every `_module.mesa` reached by a route. One that is here and wraps nothing
 you expected is a directory boundary in the wrong place.
 
-- `src/routes/_module.mesa` — 23 routes: `/`, `/cart/`, `/customers/`, `/inventory/`, `/invoices/`, `/invoices/:id/`, `/orders/`, `/orders/:id/`, `/orders/create/`, `/payroll/`, `/payroll/:id/`, `/people/`, `/people/:id/`, `/plans/`, `/plans/:id/`, `/products/`, `/products/:id/`, `/products/create/`, `/settings/`, `/settings/fields/`, `/subscriptions/`, `/subscriptions/:id/`, `/users/`
+- `src/routes/_module.mesa` — 24 routes: `/`, `/cart/`, `/customers/`, `/inventory/`, `/invoices/`, `/invoices/:id/`, `/orders/`, `/orders/:id/`, `/orders/create/`, `/payroll/`, `/payroll/:id/`, `/people/`, `/people/:id/`, `/plans/`, `/plans/:id/`, `/products/`, `/products/:id/`, `/products/create/`, `/reports/`, `/settings/`, `/settings/fields/`, `/subscriptions/`, `/subscriptions/:id/`, `/users/`

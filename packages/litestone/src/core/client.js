@@ -19,14 +19,14 @@ import { buildEdgeMap, arcCheckExpr, arcDefaultMessage, columnMapFor, mapExprCol
 import {
   buildWhere, buildOrderBy, buildRelationOrderBy,
   buildWindowCols,
-  sql,
+  sql, rawClause,
   isNamedAgg, buildNamedAggExpr, extractNamedAggs,
   parseSelectArg, trimAllToSelect,
   deserializeRow, serializeRow,
   coerceBooleans, serializeBooleans,
   encodeCursor, decodeCursor,
   normaliseOrderBy, buildCursorWhere, extractCursorValues,
-  filterableKeysFor, sortableKeysFor, opaqueSortKind, OPAQUE_SORT,
+  filterableKeysFor, sortableKeysFor, aggregatableKeysFor, opaqueSortKind, OPAQUE_SORT,
 } from './query.js'
 import { validate, applyTransforms, buildValidationMap, validateJsonPatch, ValidationError } from './validate.js'
 import { PluginRunner, AccessDeniedError } from './plugin.js'
@@ -1119,30 +1119,6 @@ const OPAQUE_AGG = {
              `A digest can be matched in a where and never read back, by any caller`,
 }
 
-// Which keys of a model may be named by an aggregate. Deliberately NOT
-// sortableKeysFor: a @from field sorts fine (it is in the SELECT) and cannot be
-// aggregated, and an opaque column is a real column, so it is kept and marked
-// rather than dropped.
-function aggregatableKeysFor(model) {
-  const columns   = new Set()
-  const computed  = new Set()
-  const transient = new Set()
-  const from      = new Set()
-  const relations = new Set()
-  const opaque    = new Map()
-  for (const f of model.fields) {
-    if (f.type?.kind === 'relation' || f.type?.kind === 'implicitM2M')   { relations.add(f.name); continue }
-    if (f.attributes?.some(a => a.kind === 'computed'))                  { computed.add(f.name);  continue }
-    if (f.attributes?.some(a => a.kind === 'transient'))                 { transient.add(f.name); continue }
-    if (f.attributes?.some(a => a.kind === 'from'))                      { from.add(f.name);      continue }
-    if (f.attributes?.some(a => a.kind === 'edge' || a.kind === 'scoped')) continue
-    const why = opaqueSortKind(f)
-    if (why) opaque.set(f.name, why)
-    columns.add(f.name)
-  }
-  return { columns, computed, transient, from, relations, opaque }
-}
-
 function collectAggKeyProblems(names, sets, op, valueRead, out = []) {
   const { columns, computed, transient, from, relations, opaque } = sets
   for (const key of names) {
@@ -1231,6 +1207,24 @@ const ARG_WRITE_METHODS = [
   'update', 'updateMany', 'remove', 'removeMany', 'delete', 'deleteMany', 'restore', 'upsert',
 ]
 
+/**
+ * What a `view` refuses. Everything else `makeTable` offers is forwarded.
+ *
+ * Wider than `ARG_WRITE_METHODS`, which is about validating arguments: this is
+ * about what a projection has no business doing at all, so it carries the two
+ * creates and the two FTS verbs as well. `search` is a read and is here anyway —
+ * a view declares no `@@fts`, so the index it would query does not exist.
+ */
+export const VIEW_BLOCKED_WRITES = new Set([
+  'create', 'createMany',
+  'update', 'updateMany',
+  'upsert', 'upsertMany',
+  'remove', 'removeMany',
+  'delete', 'deleteMany',
+  'restore',
+  'search', 'optimizeFts',
+])
+
 // Non-mutating wrapper: returns a shallow copy so shared/cached table objects
 // (jsonl cache, per-scope rebuilds) never accumulate nested wrappers.
 function withArgValidation(table, model, ctx) {
@@ -1275,11 +1269,10 @@ function withArgValidation(table, model, ctx) {
     }
     if (!parts.length) return args
 
-    const raw = {
-      _litestoneRaw: true,
-      sql:    parts.map(p => `(${p.sql})`).join(' AND '),
-      params: parts.flatMap(p => p.params),
-    }
+    const raw = rawClause(
+      parts.map(p => `(${p.sql})`).join(' AND '),
+      parts.flatMap(p => p.params),
+    )
     // AND rather than a merge into their object: their `where` stays whole and
     // becomes one operand, so nothing they wrote — a NOT above all of it
     // included — can reach the predicate.
@@ -2878,7 +2871,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
         for (const c of cols) where[c] = row[c]
         let hit = null
         try { hit = readDb.query(
-          `SELECT * FROM "${tableName}" WHERE ${cols.map(c => `"${c}" = ?`).join(' AND ')} AND "deletedAt" IS NOT NULL LIMIT 1`
+          `SELECT * FROM "${tableName}" WHERE ${cols.map(c => `"${col(c)}" = ?`).join(' AND ')} AND "${col('deletedAt')}" IS NOT NULL LIMIT 1`
         ).get(...cols.map(c => row[c] ?? null)) } catch { return err }
         if (!hit) continue
         const idField = ctx.models[modelName]?.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
@@ -4984,11 +4977,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // and both compilers can see it.
     const merged = clauses.length === 1
       ? clauses[0]
-      : { _litestoneRaw: true, sql: clauses.map(c => `(${c.sql})`).join(' AND '), params: clauses.flatMap(c => c.params) }
+      : rawClause(clauses.map(c => `(${c.sql})`).join(' AND '), clauses.flatMap(c => c.params))
     const out = expandScopes(rest)
     // `$raw` is a single slot, so a caller using both needs them conjoined.
     return out.$raw
-      ? { ...out, $raw: { _litestoneRaw: true, sql: `(${merged.sql}) AND (${out.$raw.sql})`, params: [...merged.params, ...out.$raw.params] } }
+      ? { ...out, $raw: rawClause(`(${merged.sql}) AND (${out.$raw.sql})`, [...merged.params, ...out.$raw.params]) }
       : { ...out, $raw: merged }
   }
 
@@ -5348,7 +5341,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // (`isTemplate = 0`) on every read, which combinatorially expands fast-path
   // SQL variants. The slow build-SQL path handles them correctly.
   const _fastFindManySql = (softDelete && !hasTemplates && !ctx.hasPolicies && !_staticGlobalFilter && !_dynamicGlobalFilter && !plugins?.hasPlugins)
-    ? `${_baseSqlWithFrom} WHERE "deletedAt" IS NULL`
+    ? `${_baseSqlWithFrom} WHERE "${col('deletedAt')}" IS NULL`
     : null
 
   // Is a transaction open? The two fast paths below hold statements prepared
@@ -5384,8 +5377,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
   )
   const _fastFindUniqueSql = _canFastFindUnique
     ? (softDelete
-        ? `SELECT * FROM "${tableName}" WHERE "${_pkField}" = ? AND "deletedAt" IS NULL LIMIT 2`
-        : `SELECT * FROM "${tableName}" WHERE "${_pkField}" = ? LIMIT 2`)
+        ? `SELECT * FROM "${tableName}" WHERE "${col(_pkField)}" = ? AND "${col('deletedAt')}" IS NULL LIMIT 2`
+        : `SELECT * FROM "${tableName}" WHERE "${col(_pkField)}" = ? LIMIT 2`)
     : null
   // External (@@external) tables may not exist at createClient time — preparing
   // a statement against them throws. Skip the fast path in that case; the
@@ -6377,8 +6370,8 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         // SQLite syntax: GROUP_CONCAT(col, separator ORDER BY ...) — separator
         // MUST precede ORDER BY. Putting ORDER BY before the separator silently
         // causes the separator to be ignored and the default "," is used.
-        const orderClause = saOrderBy ? ` ORDER BY "${saOrderBy}"` : ''
-        selects.push(`GROUP_CONCAT("${field}", ?${orderClause}) AS "__stringAgg__${field}"`)
+        const orderClause = saOrderBy ? ` ORDER BY ${_aggCol(saOrderBy)}` : ''
+        selects.push(`GROUP_CONCAT(${_aggCol(field)}, ?${orderClause}) AS "__stringAgg__${field}"`)
         params.push(separator)
       }
 
@@ -6477,6 +6470,63 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
           throw new Error(`groupBy() interval field '${intervalField}' must be a DateTime field, got '${intervalFieldDef.type.name}'`)
       }
 
+      // ── `having` and an aggregate `orderBy` name columns too ──────────────
+      //
+      // Both put a caller's name inside an aggregate expression and neither
+      // reached refuseAggregateKeys, so the ladder that refuses `_max` over a
+      // @guarded column refused nothing here: a binary search on a HAVING
+      // threshold recovered an exact value in 18 requests and one aggregate
+      // sort ordered every group by it — `FJS-393`'s attack on the two
+      // grammars that had no walk (`FJS-954`). The same gap swallowed a typo,
+      // because SQLite reads an unresolvable quoted identifier as a string
+      // constant and `SUM('nope') > 1` is simply false (`FJS-202`).
+      //
+      // Checked here rather than beside the other refusals because `orderBy`
+      // may name the interval field, which is resolved just above.
+      const AGG_FNS = { _sum: 'SUM', _avg: 'AVG', _min: 'MIN', _max: 'MAX' }
+      if (having && typeof having === 'object') {
+        const names = []
+        for (const [aggKey, spec] of Object.entries(having)) {
+          if (aggKey === '_count') continue
+          if (!(aggKey in AGG_FNS))
+            throw new ValidationError([{ path: ['having', aggKey], message:
+              `Unknown having key '${aggKey}' on ${modelName}.groupBy. A HAVING filters an aggregate: ` +
+              `_count, ${Object.keys(AGG_FNS).join(', ')}. A named aggregate cannot be filtered here — it is ` +
+              `computed in the SELECT, so filter the returned rows.` }])
+          if (spec && typeof spec === 'object') names.push(...Object.keys(spec))
+        }
+        refuseAggregateKeys('having', names)
+      }
+      if (orderBy && typeof orderBy === 'object') {
+        const groupKeys = new Set(by)
+        if (intervalField) groupKeys.add(intervalField)
+        const names = []
+        for (const [key, val] of Object.entries(orderBy)) {
+          if (key === '$raw')
+            // A fragment written for findMany names columns this statement does
+            // not have. Refused rather than emitted as `"$raw" ASC`, which
+            // SQLite reads as a string constant and sorts by nothing.
+            throw new ValidationError([{ path: ['orderBy', '$raw'], message:
+              `orderBy $raw is not supported on groupBy — its ORDER BY is over the group keys and aggregates, ` +
+              `not over ${modelName}'s columns. Put the expression in the aggregate, or sort the result in JS` }])
+          if (key === '_count' || key === '_stringAgg') continue
+          if (key in AGG_FNS) {
+            if (val && typeof val === 'object') names.push(...Object.keys(val))
+            continue
+          }
+          if (key.startsWith('_'))
+            throw new ValidationError([{ path: ['orderBy', key], message:
+              `Cannot orderBy '${key}' on ${modelName}.groupBy — a named aggregate is computed in the SELECT and ` +
+              `cannot be sorted on. Sort the returned rows, or ask for it as ${Object.keys(AGG_FNS).join(' / ')}.` }])
+          if (!groupKeys.has(key))
+            throw new ValidationError([{ path: ['orderBy', key], message:
+              `Cannot orderBy '${key}' on ${modelName}.groupBy — a groupBy sorts by a group key or an aggregate, and ` +
+              `'${key}' is neither. Group keys: ${[...groupKeys].join(', ')}. Aggregates: _count, ` +
+              `${Object.keys(AGG_FNS).join(', ')}.` }])
+        }
+        refuseAggregateKeys('orderBy', names)
+      }
+
       // Build STRFTIME expression for a given field + unit
       function strftimeExpr(field, unit) {
         // `expr` and not `col`, which is this table's field → column resolver.
@@ -6570,8 +6620,8 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         const { field, separator = ',', orderBy: saOrderBy } = _stringAgg
         if (!field) throw new Error('groupBy() _stringAgg requires a field')
         // SQLite: separator must come before ORDER BY in GROUP_CONCAT.
-        const orderClause = saOrderBy ? ` ORDER BY "${saOrderBy}"` : ''
-        selectCols.push(`GROUP_CONCAT("${field}", ?${orderClause}) AS "__stringAgg__${field}"`)
+        const orderClause = saOrderBy ? ` ORDER BY ${_aggCol(saOrderBy)}` : ''
+        selectCols.push(`GROUP_CONCAT(${_aggCol(field)}, ?${orderClause}) AS "__stringAgg__${field}"`)
         params.push(separator)
       }
 
@@ -6710,7 +6760,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
             const fn = { _sum: 'SUM', _avg: 'AVG', _min: 'MIN', _max: 'MAX' }[aggKey]
             if (!fn) continue
             for (const [field, cond] of Object.entries(spec)) {
-              const expr = buildAggHaving(`${fn}("${field}")`, cond, params)
+              const expr = buildAggHaving(`${fn}(${_aggCol(field)})`, cond, params)
               if (expr) havingParts.push(expr)
             }
           }
@@ -6722,28 +6772,18 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (orderBy) {
         const orderParts = []
         for (const [key, val] of Object.entries(orderBy)) {
-          if (key === '$raw') {
-            // groupBy's ORDER BY is over aggregates and group keys, not over
-            // the table, so a fragment written for findMany would name columns
-            // this statement does not have. Refused by name rather than emitted
-            // as `"$raw" ASC`, which SQLite reads as a string constant and
-            // sorts by nothing at all.
-            throw new ValidationError([{ path: ['orderBy', '$raw'], message:
-              `orderBy $raw is not supported on groupBy — its ORDER BY is over the group keys and aggregates, ` +
-              `not over ${modelName}'s columns. Put the expression in the aggregate, or sort the result in JS` }])
-          }
           if (key === '_count') {
             orderParts.push(`COUNT(*) ${val === 'desc' ? 'DESC' : 'ASC'}`)
           } else if (key === '_stringAgg') {
             // orderBy: { _stringAgg: 'asc' } — order by the concatenated result
             if (_stringAgg?.field) {
-              orderParts.push(`GROUP_CONCAT("${_stringAgg.field}") ${val === 'desc' ? 'DESC' : 'ASC'}`)
+              orderParts.push(`GROUP_CONCAT(${_aggCol(_stringAgg.field)}) ${val === 'desc' ? 'DESC' : 'ASC'}`)
             }
           } else if (key.startsWith('_')) {
             const fn = { _sum: 'SUM', _avg: 'AVG', _min: 'MIN', _max: 'MAX' }[key]
             if (fn && typeof val === 'object') {
               for (const [field, dir] of Object.entries(val)) {
-                orderParts.push(`${fn}("${field}") ${dir === 'desc' ? 'DESC' : 'ASC'}`)
+                orderParts.push(`${fn}(${_aggCol(field)}) ${dir === 'desc' ? 'DESC' : 'ASC'}`)
               }
             }
           } else if (key === intervalField) {
@@ -7064,7 +7104,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     // or enable policyDebug to see which policy blocked.
     async update({ where, data, include, select, scopedBy, system, _bypassVersion, _move,
                    withDeleted, onlyDeleted, withTemplates, onlyTemplates } = {}) {
-      await enforceValueSets(modelName, [data], ctx)
+      await enforceValueSets(modelName, [data], ctx, { where })
       if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data, include, select }, ctx)
       const stamped = new Set()
       data = stampFromAuth(data, ctx.updatedByMap?.[modelName], ctx.auth, stamped)
@@ -7096,6 +7136,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // in between. Inside a real transaction the throw IS the rollback
       // (`FJS-638`).
       let updated, beforeRaw, beforeRow, _transResult
+      // Did this patch name anything at all? Set inside the transaction and read
+      // after it, because what a write with nothing to say must NOT do is decided
+      // out here: announce, and file an audit entry (`FJS-368`).
+      let _wroteNothing = false
       const _upDone = await tx.exclusive(async () => {
         const { scalar, nested, hasNested } = extractNestedWrites(data)
         const { data: _scalarNoEdge, edgeWrites } = extractEdgeWrites(scalar)
@@ -7167,7 +7211,23 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         const _vSelf = sealSelfClause(data, _vSealed.sql, _vSealed.params)
         const _vWhereSql    = _vSelf.sql
         const _vWhereParams = _vSelf.params
-        const _setColsBase  = !_versionField ? setCols
+        // The bump rides the SET clause — but only where the caller actually
+        // wrote something. It used to be appended unconditionally, which meant a
+        // versioned update MANUFACTURED a column to write when `data` was
+        // otherwise empty, so a patch whose only key was `version` was a real
+        // write: the column went up, `@updatedAt` moved with it, and every other
+        // open editor of that row was told it was stale for a change nobody made
+        // (`FJS-368`). The value is a precondition the client sends back, not a
+        // value to write, so a form submitted with nothing edited became a write.
+        //
+        // A model with no `@version` already answered this correctly — the else
+        // branch below reads the row back and issues no statement — so the two
+        // spellings disagreed about the same patch, which is the whole finding.
+        // Nested and edge writes are a real change to this row's meaning and
+        // still earn the bump; only a patch that names nothing at all does not.
+        const _touchesRow   = Boolean(setCols) || hasNested || edgeWrites.length > 0
+        _wroteNothing       = !_touchesRow
+        const _setColsBase  = !_versionField || !_touchesRow ? setCols
           : [setCols, `"${col(_versionField)}" = "${col(_versionField)}" + 1`].filter(Boolean).join(', ')
         // Only a write that had something to say moves the stamp: an update
         // naming no column issues no statement at all below, and the trigger it
@@ -7265,7 +7325,14 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
             return true
           }
         } else {
-          // No columns to set — read back to return current row
+          // No columns to set — read back to return current row.
+          //
+          // The precondition is still a question, and it is asked here for the
+          // same reason it is asked on the writing path: the caller is telling
+          // this boundary which version they read, and a stale one means their
+          // view is wrong whether or not they were writing. Answering a no-op
+          // success would confirm a stale screen.
+          throwIfVersionMoved()
           updated = read(readDb.query(`SELECT * FROM "${tableName}" WHERE ${whereSql}`).get(...whereParams), { mode: 'single', hydrateFrom: true })
         }
         if (!updated) return null
@@ -7294,12 +7361,24 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const finalRow = select === false ? null : finaliseOne(updated, ps)
       // The same suppression `emitTransitionEvent` applies, asked here so the
       // update can say whether the move is going to be announced separately.
-      fireRowEvent('update', 'update', finalRow,
-        _transResult && !ctx.isSystem ? _transResult.transitionName : null)
-      emitTransitionEvent(_transResult, updated)
-      if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'update', finalRow, ctx)
-      // ── Logging: emit after ───────────────────────────────────────────────
-      if (tableHasAnyLog && updated) emitLogs('update', [updated], { before: beforeRow, after: updated })
+      // A patch that named no column wrote nothing, so there is nothing to
+      // announce, nothing for a plugin to observe and nothing to file. It used
+      // to do all three: every open tab was sent back to the server and the
+      // trail gained an `update` entry whose before and after are the same row
+      // (`FJS-368`). `fireCollectionEvent` has said the same thing one scope
+      // along for as long as it has existed — *nothing matched, so nothing
+      // changed* — and this is that rule for a single row.
+      //
+      // The row is still READ BACK and returned, which is what separates a no-op
+      // from a refusal: the caller asked what the row is and gets an answer.
+      if (!_wroteNothing) {
+        fireRowEvent('update', 'update', finalRow,
+          _transResult && !ctx.isSystem ? _transResult.transitionName : null)
+        emitTransitionEvent(_transResult, updated)
+        if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'update', finalRow, ctx)
+        // ── Logging: emit after ─────────────────────────────────────────────
+        if (tableHasAnyLog && updated) emitLogs('update', [updated], { before: beforeRow, after: updated })
+      }
       return finalRow
     },
 
@@ -7308,7 +7387,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const _umMove = _bulkTransitionField(data, 'updateMany')
       if (_umMove) throw new BulkTransitionError(modelName, _umMove, 'updateMany')
       const { mode: _umMode, wantRows: _umWantRows } = announceFor(announce)
-      await enforceValueSets(modelName, [data], ctx)
+      await enforceValueSets(modelName, [data], ctx, { where })
       if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data }, ctx)
       // Same stamp update() runs. Missing it here was worse than missing it
       // anywhere else: @updatedAt is a SQL trigger, so the timestamp moved while
@@ -7399,8 +7478,12 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // to prevent.
       extractWriteOps(createData, { where: 'upsert' })
       extractWriteOps(updateData, { where: 'upsert' })
-      // Both halves, because either may be the one that lands.
-      await enforceValueSets(modelName, [createData, updateData], ctx)
+      // Both halves, because either may be the one that lands — and they are two
+      // calls rather than one array: a create-shaped payload IS the row, while
+      // the update half is about a row that already exists, so a dependent
+      // binding grades it against `where` (`FJS-D122`).
+      await enforceValueSets(modelName, [createData], ctx)
+      await enforceValueSets(modelName, [updateData], ctx, { where })
       // Threaded through to both halves: the lookup has to SEE the row the
       // update would write, or an upsert against an excluded row reads as
       // absent and tries to INSERT one that is already there.
@@ -7635,8 +7718,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           for (const [i, row] of rows.entries()) {
             if (target.some(c => row[c] === undefined)) continue
             const hit = writeDb.query(
-              `SELECT * FROM "${tableName}" WHERE ${target.map(c => `"${c}" = ?`).join(' AND ')} ` +
-              `AND "deletedAt" IS NOT NULL LIMIT 1`
+              `SELECT * FROM "${tableName}" WHERE ${target.map(c => `"${col(c)}" = ?`).join(' AND ')} ` +
+              `AND "${col('deletedAt')}" IS NOT NULL LIMIT 1`
             ).get(...target.map(c => row[c] ?? null))
             if (hit) throw asBatchRowError(new SoftDeletedUniqueError(
               modelName, target, target.map(c => row[c]), hit[idField], idField), i, rows.length, row)
@@ -8874,17 +8957,64 @@ function resolveAccessConfig(accessConfig, readOnly, schema) {
 // Returns: { dbName: { rawWriteDb, rawReadDb, writeDb, readDb, driver, access, absPath } }
 //
 // Rules:
-//   - Each database block in schema gets its own connection pair
+//   - The unit is the FILE: two database blocks resolving to one path share one
+//     connection pair
 //   - 'main' must be declared in schema OR dbPath option provided; when both,
 //     dbPath arrives as dbOverrides.main and overrides the declaration
 //   - access: 'readwrite' (default) | 'readonly' | false (no connection)
 //   - jsonl/logger driver: no SQLite connections — path stored only
+//
+// Two declarations can name one file. Under `strategy database` every sqlite
+// database is redirected to the tenant's own file, and a literal path can also
+// be repeated. SQLite allows one writer per file and there is one transaction
+// manager, over main's connection — so a second connection writing inside that
+// transaction waits for a lock the caller itself is holding, answers
+// `database is locked` and cannot ever get it (`FJS-958`). Reads succeed
+// throughout, so the shape looks correct until something writes.
+//
+// ':memory:' is excluded from the grouping: every `new Database(':memory:')` is
+// a database of its own, so those names really are separate files and sharing
+// one handle would put two schemas' tables in it.
 function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMemory = false, anchor = null, busyTimeout = null) {
   const registry = {}
 
+  const pathFor = db => resolveDbPath(db.path, dbOverrides[db.name]?.path, anchor)
+  const isSqlite = db => !db.driver || db.driver === 'sqlite'
+
+  // Which files anything writes to. Asked before the first open, because a
+  // readonly block closes the write handle and a readwrite block on the same
+  // file would then be served a closed one.
+  const writable = new Set()
+  for (const db of schema.databases) {
+    if (!isSqlite(db) || (accessConfig[db.name] ?? 'readwrite') !== 'readwrite') continue
+    const p = pathFor(db)
+    if (p !== ':memory:') writable.add(p)
+  }
+  if (dbPath && !schema.databases.some(d => d.name === 'main') && (accessConfig.main ?? 'readwrite') === 'readwrite') {
+    if (dbPath !== ':memory:') writable.add(resolve(dbPath))
+  }
+
+  // absPath → the connection pair already open on it.
+  const opened = new Map()
+
+  // A per-database `busyTimeout` cannot differ for one file, so the first
+  // declaration to open it decides — schema order, and main is normally first.
+  function connectionsFor(absPath, name, wantsWrite) {
+    const shared = absPath === ':memory:' ? null : opened.get(absPath)
+    if (shared) return shared
+    const conns = openSqliteConnections(absPath, busyTimeoutFor(busyTimeout, name))
+    if (!wantsWrite) {
+      conns.rawWriteDb.close()
+      conns.rawWriteDb = null
+      conns.writeDb    = null
+    }
+    if (absPath !== ':memory:') opened.set(absPath, conns)
+    return conns
+  }
+
   for (const db of schema.databases) {
     const access  = accessConfig[db.name] ?? 'readwrite'
-    const absPath = resolveDbPath(db.path, dbOverrides[db.name]?.path, anchor)
+    const absPath = pathFor(db)
 
     if (db.driver === 'jsonl' || db.driver === 'logger') {
       // In-memory mode: use a unique tmpdir so test runs don't pollute the filesystem.
@@ -8897,15 +9027,17 @@ function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMemory = f
       continue
     }
 
+    // `access: false` opens nothing of its own. Another block on the same file
+    // may still open it — the refusal is this NAME's, not the file's.
     if (access === false) {
       registry[db.name] = { driver: 'sqlite', access: false, absPath, retention: null, logModel: db.logModel, rawWriteDb: null, rawReadDb: null, writeDb: makeThrowingDb(db.name, false), readDb: makeThrowingDb(db.name, false) }
       continue
     }
 
-    const conns = openSqliteConnections(absPath, busyTimeoutFor(busyTimeout, db.name))
+    const wantsWrite = absPath === ':memory:' ? access === 'readwrite' : writable.has(absPath)
+    const conns = connectionsFor(absPath, db.name, wantsWrite)
 
     if (access === 'readonly') {
-      conns.rawWriteDb.close()
       registry[db.name] = { driver: 'sqlite', access: 'readonly', absPath, retention: db.retention, logModel: db.logModel, rawWriteDb: null, rawReadDb: conns.rawReadDb, writeDb: makeThrowingDb(db.name, 'readonly'), readDb: conns.readDb }
     } else {
       registry[db.name] = { driver: 'sqlite', access: 'readwrite', absPath, retention: db.retention, logModel: db.logModel, ...conns }
@@ -8919,18 +9051,17 @@ function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMemory = f
     const absPath = dbPath === ':memory:' ? ':memory:' : resolve(dbPath)
     if (access === false) {
       registry.main = { driver: 'sqlite', access: false, absPath, retention: null, rawWriteDb: null, rawReadDb: null, writeDb: makeThrowingDb('main', false), readDb: makeThrowingDb('main', false) }
-    } else if (access === 'readonly') {
-      const conns = openSqliteConnections(absPath, busyTimeoutFor(busyTimeout, 'main'))
-      conns.rawWriteDb.close()
-      registry.main = { driver: 'sqlite', access: 'readonly', absPath, retention: null, rawWriteDb: null, rawReadDb: conns.rawReadDb, writeDb: makeThrowingDb('main', 'readonly'), readDb: conns.readDb }
     } else {
-      registry.main = { driver: 'sqlite', access: 'readwrite', absPath, retention: null, ...openSqliteConnections(absPath, busyTimeoutFor(busyTimeout, 'main')) }
+      const wantsWrite = absPath === ':memory:' ? access === 'readwrite' : writable.has(absPath)
+      const conns = connectionsFor(absPath, 'main', wantsWrite)
+      registry.main = access === 'readonly'
+        ? { driver: 'sqlite', access: 'readonly', absPath, retention: null, rawWriteDb: null, rawReadDb: conns.rawReadDb, writeDb: makeThrowingDb('main', 'readonly'), readDb: conns.readDb }
+        : { driver: 'sqlite', access: 'readwrite', absPath, retention: null, ...conns }
     }
   }
 
   return registry
 }
-
 // Build a map of model name → database name from @@db model attributes.
 // Models without @@db fall through to 'main'.
 function buildModelDbMap(schema) {
@@ -9642,20 +9773,33 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // (SQLite page size is 4KB minimum; an empty DB is exactly one page).
   {
     let ddlMods = null
+    // How many database names each file carries. A file two blocks share is
+    // fresh for one of them and already built for the other, so neither the
+    // size shortcut nor an empty `sqlite_master` can answer *is this database
+    // fresh* — main's own DDL is what grew the file (`FJS-958`).
+    const nameCount = new Map()
+    for (const conn of Object.values(dbRegistry)) {
+      if (conn.driver !== 'sqlite' || !conn.absPath || conn.absPath === ':memory:') continue
+      nameCount.set(conn.absPath, (nameCount.get(conn.absPath) ?? 0) + 1)
+    }
     for (const [dbName, conn] of Object.entries(dbRegistry)) {
       if (conn.driver !== 'sqlite' || !conn.rawWriteDb || !conn.absPath) continue
       // Fast skip: if the file is larger than one empty SQLite page, tables exist
       const absPath = conn.absPath
-      if (absPath !== ':memory:') {
+      if (absPath !== ':memory:' && (nameCount.get(absPath) ?? 0) < 2) {
         try {
           const { statSync } = await import('fs')
           if (statSync(absPath).size > 8192) continue   // clearly not empty
         } catch {}
       }
-      const existing = conn.rawWriteDb.query(
+      const existing = new Set(conn.rawWriteDb.query(
         `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_litestone%' AND name NOT LIKE '_locks%'`
-      ).all()
-      if (existing.length === 0) {
+      ).all().map((r) => r.name))
+      // Asked of THIS database's own tables rather than of the file's.
+      const mine = schema.models
+        .filter(m => (modelDbMap[m.name] ?? 'main') === dbName)
+        .map(m => modelToTableName(m, pluralizeTableNames))
+      if (mine.length && !mine.some(t => existing.has(t))) {
         if (!ddlMods) {
           const [{ generateDDL, generateDDLForDatabase }, { splitStatements }] = await Promise.all([
             import('./ddl.js'), import('./migrate.js')
@@ -10374,25 +10518,33 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       const writeBlocked = () => {
         throw new Error(`"${view.name}" is a view — write operations are not supported`)
       }
-      return {
-        findMany:          baseTable.findMany.bind(baseTable),
-        findFirst:         baseTable.findFirst.bind(baseTable),
-        findUnique:        baseTable.findUnique.bind(baseTable),
-        findFirstOrThrow:  baseTable.findFirstOrThrow.bind(baseTable),
-        findUniqueOrThrow: baseTable.findUniqueOrThrow.bind(baseTable),
-        count:             baseTable.count.bind(baseTable),
-        exists:            baseTable.exists.bind(baseTable),
-        aggregate:         baseTable.aggregate.bind(baseTable),
-        groupBy:           baseTable.groupBy.bind(baseTable),
-        findManyCursor:    baseTable.findManyCursor.bind(baseTable),
-        create: writeBlocked, createMany: writeBlocked,
-        update: writeBlocked, updateMany: writeBlocked,
-        upsert: writeBlocked, upsertMany: writeBlocked,
-        remove: writeBlocked, removeMany: writeBlocked,
-        restore: writeBlocked, delete: writeBlocked,
-        deleteMany: writeBlocked, search: writeBlocked,
-        optimizeFts: writeBlocked,
+
+      // The WRITES are enumerated and the reads are not, which is the way round
+      // that matters.
+      //
+      // This used to hand-list the ten reads it forwarded, and a read `makeTable`
+      // grew after that list was written simply was not on a view — silently, and
+      // with no error naming the view. Four were missing: `findManyAndCount`,
+      // `cursorFor`, `orderTotal` and `query`. The first of those is what
+      // junction's `find` calls, so no service could list a projection and the
+      // whole Data realm's read surface stopped at the API boundary
+      // (`FJS-997`).
+      //
+      // Inverting it puts the brittleness where it is cheap: a new READ reaches
+      // views for free, and a new WRITE missing from this set is what the test
+      // beside it exists to catch. It has to be caught rather than defaulted,
+      // because a `@@materialized` view is a real TABLE — a write to one
+      // succeeds and is then destroyed by the next refresh, which is worse than
+      // a refusal and quieter than one.
+      const out = {}
+      for (const key of Object.keys(baseTable)) {
+        const value = baseTable[key]
+        if (typeof value !== 'function') { out[key] = value; continue }
+        out[key] = VIEW_BLOCKED_WRITES.has(key) ? writeBlocked : value.bind(baseTable)
       }
+      // A write a view must refuse even where `makeTable` never offered it.
+      for (const key of VIEW_BLOCKED_WRITES) if (!(key in out)) out[key] = writeBlocked
+      return out
   }
 
   // ─── The shared build ──────────────────────────────────────────────────────
@@ -12010,10 +12162,23 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   function startCrossProcessWatch() {
     const cp = ctx._crossProcess
     if (!cp) return
+    // Grouped by CONNECTION, not by name: two `database` blocks can resolve to
+    // one file — a tenant's file holds every sqlite database of the schema — in
+    // which case they share a handle and therefore one events table. A watcher
+    // per name would read that table twice and deliver every foreign event
+    // twice. Keyed by the handle rather than the path because two ':memory:'
+    // databases share a path string and are not one database.
+    const groups = new Map()
     for (const [name, conn] of Object.entries(cp.dbs)) {
+      const g = groups.get(conn.rawWriteDb) ?? { conn, names: [] }
+      g.names.push(name)
+      groups.set(conn.rawWriteDb, g)
+    }
+    for (const { conn, names } of groups.values()) {
+      const name = names[0]
       if (cp.watchers[name]) continue
       const modelsHere = Object.keys(ctx.models)
-        .filter(m => (ctx.modelDbMap?.[m] ?? 'main') === name)
+        .filter(m => names.includes(ctx.modelDbMap?.[m] ?? 'main'))
       cp.watchers[name] = createEventWatcher({
         db:     conn.rawWriteDb,
         file:   conn.absPath,
@@ -12109,12 +12274,22 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     // frees nothing, and it arms the throw — so a caller still holding this
     // client is told so by name rather than being served off a closed handle
     // for whichever queries happen to be cached (`FJS-640`).
+    //
+    // Two names can share one file and therefore one pair of raw handles, so
+    // the checkpoint and the close are asked once per HANDLE. The wrappers are
+    // not deduped: each name has its own, and each has to arm its own throw.
+    const closedRaw = new Set()
     for (const conn of Object.values(dbRegistry)) {
       try { conn.writeDb?.close?.() } catch {}
       try { conn.readDb?.close?.()  } catch {}
-      try { conn.rawWriteDb?.run('PRAGMA wal_checkpoint(TRUNCATE)') } catch {}
-      try { conn.rawWriteDb?.close() } catch {}
-      try { conn.rawReadDb?.close()  } catch {}
+      for (const raw of [conn.rawWriteDb, conn.rawReadDb]) {
+        if (!raw || closedRaw.has(raw)) continue
+        closedRaw.add(raw)
+        if (raw === conn.rawWriteDb) {
+          try { raw.run('PRAGMA wal_checkpoint(TRUNCATE)') } catch {}
+        }
+        try { raw.close() } catch {}
+      }
     }
     for (const table of jsonlTables) {
       try { table._close?.() } catch {}

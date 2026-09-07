@@ -1,5 +1,189 @@
 # Changes — Basecamp
 
+## 2026-09-07 — a machine's readings, and the three cards that said they could not be drawn
+
+`Server.health` is a snapshot: one Json column, one row per machine, overwritten
+every check-in. So *what was this box doing on Tuesday* was not stale, it was
+gone — and three widget kinds printed a *not shown* line rather than a plausible
+one (`FJS-956`).
+
+`servers.heartbeat` records into the metric store now, through junction's new
+`app.metrics.record()` and never by writing the tables: `labelsKey` is `@unique`
+and IS a series' identity, so a caller building its own key mints a second
+series under one name, after which each holds half the readings and the graph
+has a step in it that nothing explains.
+
+`core/server-metrics.ts` decides the two things that must be decided once — WHICH
+readings are kept (an outpost may send anything, and a store that kept every key
+it was handed grows a permanent `@@unique` series per typo) and what they are
+CALLED. A key the outpost sends that this app does not keep is not a series, and
+a MISSING reading is silence rather than a zero: an outpost that stopped
+reporting disk and a disk at 0% are different facts.
+
+**The read is confined by its parent, and the tidier option was refused.**
+`MetricSeries` is `@@gate("8")` and `@@tenant(none)` — right for
+`process.memoryMb`, and exactly what a per-server series is not. Opening the
+package's read slot so each app could declare a row policy is fail-open: an app
+that writes none then serves every reading it has to anyone, silently. So
+`servers.metrics` runs `getScoped('server')` at the caller's own standing first,
+and only then reads the series through `asSystem()`. The pair that proves it is
+a member of THIS workspace asking for another one's machine — 404 from the
+parent read — beside a stranger, refused one hook earlier by `sessionScope`;
+without the first row, deleting the parent read would look safe.
+
+Two cards changed and one deliberately did not. `server_health` draws a
+sparkline beside each bar — the bar is the snapshot, the line is the store.
+`alert_status` leads with *what is firing*, which became a real question when
+something started evaluating a threshold; while nothing did, a permanently empty
+"what is firing" would have read as *all clear*, the one wrong answer a
+monitoring widget can give. `service_health` keeps its line: nothing RECORDS a
+ping, and a job that pings on a schedule is a feature rather than a wiring gap.
+
+**`DiskUsage` keeps `@@unique([serverId])`.** A second table of
+readings-over-time beside the store would be a second owner of one idea.
+
+Measured with each mechanism stubbed: the heartbeat's record 4 red, the kept-key
+list 4, *silence not a zero* 1, the parent read 1. That third row asserted a row
+COUNT first and graded nothing — a point is keyed on (series, MINUTE), so a
+second check-in inside one minute updates it either way; it asserts the VALUE
+now.
+
+## 2026-09-07 — seven kinds a screen honoured and nothing ever sent
+
+`NotificationKind` had seven values, `kinds.ts` gave each a label and a default,
+and the preferences screen wrote rows against them. **Nothing in this app had
+ever sent a notification of any kind** (`FJS-967`) — so a person could turn off
+an email they were never going to get, which is worse than an absent screen
+because the setting reads as evidence the delivery exists.
+
+**The file name is the type is the kind.** The loader stamps a
+`*.notification.ts` file's own name as the persisted `notifications.type`, so
+the seven files are named for the enum's values. One string, and
+`api/test/notify.test.ts` holds the three lists together — the enum, `kinds.ts`
+and the directory — in both directions, because any two of them agreeing proves
+nothing about the third.
+
+**`core/notify.ts` owns *does this person want it*, and nothing else may
+decide.** A sender that answered for itself is a preference screen honoured by
+some callers and ignored by others. Transports are resolved per RECIPIENT and
+stamped on the Recipient: `via()` is not awaited so a definition cannot read a
+row, and a preference is per person, so two recipients of one send legitimately
+differ. **The absence of a row is the kind's own default, never silence** —
+resolved the other way this app delivers nothing to anybody until they open a
+screen they have no reason to open.
+
+**Email is a capability, not a preference.** `notify()` validates every
+requested transport and throws before delivering any of them, so on a Basecamp
+with no mail provider — a supported configuration — a person who asked for email
+would have got neither. It is dropped per recipient and the in-app copy
+survives. All seven implement both formatters for the same reason: `kinds.ts`
+holds defaults, not a ceiling.
+
+Six senders sit on things that already happen: `deployment-run` (both
+outcomes, including the release refused before it started), `job-run`,
+`alert-evaluate` (beside the channel fan-out, and they are not the same thing —
+a channel is where the WORKSPACE is paged, a notification is what one person can
+switch off), and `invitations.accept`. The seventh has no event behind it, so
+`jobs/weekly-digest.job.ts` goes and counts: deploys by `finishedAt`, alerts
+through their rules, job failures through their jobs, at an instant that is a
+PARAMETER rather than four reads of the clock.
+
+**Spend is out of the digest and the description says so.** `kinds.ts` promised
+"deploys, alerts and spend"; `cloudSpend` is a declared adapter with nothing
+behind it, and a figure this app cannot source is one somebody would act on.
+
+**Two defects fixed on the way.**
+
+`@frontierjs/notifications` declared `App.mail.send` returning `Promise<void>`
+where junction's `IMail` answers a `SendResult` receipt. Under
+`strictFunctionTypes` that made junction's own `App` unassignable, so
+`app.configure(notificationsPlugin(…))` **could not typecheck in any app that
+ran `tsc`** — the same structural-copy drift the email driver's own header
+already names one field along.
+
+`job:run` re-throws so caravan retries it, so a notify beside the failure write
+pages somebody three times for one failure and twice about a job that then
+succeeded. `MAX_ATTEMPTS` is stated once now and read by both the handler and
+the definition, so *is this the last try* cannot part from what the queue thinks.
+
+`model Notification` is a COPY of the fragment the package ships to be copied —
+the same split auth makes with `user.lite`. Two deliberate deviations, both
+because every id here is a uuid, baselined by name; the third difference is not
+drift at all but the package's own advice taken — `contextType` is an enum, so
+the column carries a CHECK.
+
+Measured with each mechanism stubbed: the preference read 2 red, *no row means
+the default* 5, the email drop 1, the de-dupe 1, the suspended-account skip 1,
+`acceptedAt` on the roster 1, and deleting one kind's file 3.
+
+## 2026-09-07 — the evaluator, and the condition that stopped being a blob
+
+`AlertRule` declared a metric and a threshold, `NotificationChannel` really
+delivered, `AlertRuleChannel` joined them, and **nothing read the first,
+compared it, or reached the second** (`FJS-123`). `AlertEvent` was a table
+written by nobody. It is `api/src/jobs/alert-evaluate.job.ts` now, on
+`* * * * *` — the scrape's own interval, because a slower evaluator adds its
+period to every rule's `forMinutes` without saying so.
+
+It was never blocked on effort. A rule reading *above 80% for five minutes* had
+no window to read until `FJS-956` built one; the job reads the RAW tier and
+never the fold, since a question about the last five minutes cannot be answered
+by a row covering an hour.
+
+**The condition was a blob with three writers, and the evaluator would have been
+the fourth.** `condition Json @default("{}")`: the create form sent
+`{operator, threshold}`, `db/seed.js` wrote `{op, value}`, and the rule card
+read `.operator` — so every seeded rule rendered its threshold as an em-dash and
+nothing errored. It is `operator ComparisonOp`, `threshold Float` and
+`forMinutes Int` (`FJS-D227`). `AlertEvent.status` became `AlertStatus` for the
+same reason one layer down — one writer is a curiosity, two writers of an
+undeclared string is an alert nothing can clear — and `AlertSubject` gained
+`series`, because `process.memoryMb` belongs to no server and no volume and
+filing it as one would page whoever owns the machine.
+
+Three seeded rules named `disk.used_percent`, `mem.used_percent` and
+`outpost.heartbeat`, none of which anything has ever written. They now name
+series the scrape really produces, and the third is the interesting one:
+`up < 1` IS the staleness rule, so there is no fifth operator that ignores its
+own threshold.
+
+**Only `recovered` resolves.** The three answers that are not *the number is
+fine* are `no-data`, `uncovered` and `recovered`, and separating them is the
+whole design — a scrape that STOPPED and a value that came back inside its
+threshold draw the same flat line, and closing an incident because the exporter
+died is the worst thing this file could do.
+
+**Delivery has one owner again.** The per-kind table — where a request goes,
+what credential it carries, what the body looks like — lived inside
+`channels.test`, and the evaluator is its second caller. It is
+`api/src/core/delivery.ts`, taking its client and its conduit as arguments
+rather than reading `$`, because the ambient call context is a request's and a
+cron has none. A kind added to one of two copies is a channel that tests green
+and never delivers.
+
+**A rule now says whether anything writes the metric it watches.**
+`metricName` is not a foreign key and cannot be — a series is minted by the
+first scrape that sees it, so a rule legitimately precedes the row it names —
+and the cost is a rule watching a typo, which never fires and looks exactly
+like a threshold nobody crossed. `alerts.get` answers the series, its
+freshness, or `null`; the card shows *live*, *last seen …* or *nothing writes
+this metric*.
+
+**A test must not read as a page-out.** One renderer for a button press and a
+real alert is what a shared table invites, and a webhook receiver routing on
+`event` would have woken somebody for a test. `action` carries three verbs and
+each kind maps them its own way: `basecamp.test` / `.alert` / `.resolved` for a
+webhook, and for PagerDuty a test is a trigger carrying no dedup key, which is
+what keeps it off a real incident.
+
+`api/test/alert-evaluate.test.ts` — 19 rows, three halves. The comparison is
+pure; the job runs against a real Litestone client, a real conduit and a real
+HTTP receiver, since a fake conduit agrees with a fan-out that built the wrong
+body. Every not-fired row is paired with the same series one value over the
+line. Measured with each mechanism stubbed: the empty-window guard 2 red, the
+coverage requirement 2, *only recovered resolves* 1, the window bound 1, the
+fan-out 2.
+
 ## 2026-09-05 — two tests naming a schema that had moved
 
 211 tests, 0 fail. Both failures were in the tests rather than in the app, and

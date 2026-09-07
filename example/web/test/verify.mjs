@@ -1204,7 +1204,7 @@ const expected = {
   // a control inside <Form> resolves its own from the field rule — `@label`
   // where the schema declares one, the title-cased column name otherwise.
   // `Customer` rather than `Customer Id` is the whole point of `@label`, and it
-  // was previously unreachable: every control passed its own nameToLabel() down
+  // was previously unreachable: every control passed its own humanize() down
   // as an explicit label, so the schema's was shadowed and never seen.
   'form.controls': [
     // Customer is a `combobox`, not a `select`: a relation picker is a

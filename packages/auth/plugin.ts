@@ -39,6 +39,7 @@ export function createAuthPlugin(
     cookieAuth        = false,
     loginRateLimit    = { max: 10, window: '15 minutes' },
     registerRateLimit = { max: 5,  window: '15 minutes' },
+    passwordResetRateLimit = { max: 3, window: '15 minutes' },
     services          = {},
     oauth,
     canStartSupport,
@@ -53,6 +54,7 @@ export function createAuthPlugin(
 
   const loginLimiter    = rateLimitHook(loginRateLimit)
   const registerLimiter = rateLimitHook(registerRateLimit)
+  const resetLimiter    = rateLimitHook(passwordResetRateLimit)
   // Starting a flow writes a row, unauthenticated, once per click.
   const oauthLimiter    = rateLimitHook(oauth?.rateLimit ?? { max: 20, window: '15 minutes' })
 
@@ -71,6 +73,7 @@ export function createAuthPlugin(
     shutdown() {
       ;(loginLimiter    as unknown as { dispose?(): void }).dispose?.()
       ;(registerLimiter as unknown as { dispose?(): void }).dispose?.()
+      ;(resetLimiter    as unknown as { dispose?(): void }).dispose?.()
       ;(oauthLimiter    as unknown as { dispose?(): void }).dispose?.()
     },
 
@@ -220,6 +223,13 @@ export function createAuthPlugin(
       // Always returns ok — never reveals whether the email is registered.
 
       app.post(`${prefix}/password-reset/request`, async (ctx: TransportContext) => {
+        // Before the body is read. This route answers `{ ok: true }` whether or
+        // not the address exists — deliberately, against enumeration — which
+        // also means nothing about hammering it looks different from use, so
+        // the limiter is the only thing standing between a caller and unbounded
+        // mail sent from this app's domain to an address they chose (FJS-992).
+        resetLimiter(ctx)
+
         const { email } = body(ctx)
         if (!email) throw new BadRequest('email is required')
 

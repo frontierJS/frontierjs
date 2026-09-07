@@ -1,5 +1,166 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-07 — A name for a command line you type often
+
+`fli make:shortcut go-time "fli ws:atlas --open --live"`, and `fli go-time` runs
+it from the project root with anything typed after the name appended verbatim.
+
+**It writes an ordinary command file, and that is the whole design.** A registry
+of name → string would have been a second place a command name comes from, and
+every reader of the first one — discovery, `fli list`, completion, `fli edit`,
+the doc rules — would have had to learn it. A file under
+`cli/src/routes/shortcut/` is already all of those things for free, and a
+shortcut that grows into a real command is an edit to that file rather than a
+migration out of a table. `core/shortcuts.js` is the one owner of the shape.
+
+The noun is `shortcut` rather than `alias` because `alias:` in frontmatter
+already means *a second name for one command file*, which is exactly the job it
+does here: the generated `shortcut:go-time` carries `alias: go-time`.
+
+**The refusal is the reason it is a command rather than a convention.** A
+project command overrides a core one in SILENCE — the authoring model, and the
+wrong default for a name typed from memory, where `fli make:shortcut new "…"`
+would eat `fli new` and say nothing. The registry is asked before anything is
+written, and the refusal names what holds the name.
+
+Two smaller decisions, both about being wrong invisibly. A leading `fli` is
+rewritten to `${context.fli}`, the absolute path of the fli that is running: a
+global install and a workspace checkout are routinely both present, and a
+shortcut resolving off PATH would reach the other one with nothing printed. And
+the argv tail is forwarded raw rather than re-serialized from `flag`, because
+minimist has already folded fli's own defaults into that object and a shortcut
+would have sent `--dry` and `--test` to a command that never asked for them.
+
+`mode: passthrough` is new beside `mode: strict` and the default, and the
+generated file declares it — an undeclared flag on a shortcut is one the target
+declares, so announcing it would print on every run.
+
+## 2026-09-07 — How big is this package, on both pages
+
+A plate said what a package IS and never how much of it there is. Two numbers
+now, and they are deliberately on different pages.
+
+**Tracked file count, on the committed atlas.** It moves when a file is added or
+removed and never when one is edited, which is the only shape of size that does
+not churn a byte-compared page. Read from one `git ls-files` for the whole tree
+rather than a call per package, and **it has to be tracked**: a directory walk
+counts what is lying around, so basecamp reads 272 against 216 and vscode 56
+against 33 — SQLite files and a write-ahead log in one, a built `out/` and two
+`.vsix` in the other. Those are untracked and local, so a walk would give this
+machine and CI different answers about a committed page. No git, no number: the
+field is absent rather than guessed.
+
+**Shipped size, on `--live`.** `files:` decides what goes in a tarball, so what
+an app installs is a different fact from what the repo holds — litestone is 269
+tracked files and ships 52. Read as `dist.unpackedSize` and `dist.fileCount`,
+which npm has already measured, so nothing is fetched or unpacked. Registry
+data, so it can only live on the page that holds a clock, and rounded, because
+an exact byte moves every release and nobody compares one.
+
+The rounding has a floor: a small package reads `1 KB` rather than `0 KB`, since
+*empty* and *small* are different claims and one of them is a package that
+failed to build.
+
+
+## 2026-09-07 — `pascalOf` and `singular` were the sixth and seventh copies
+
+`core/checks.js` derived a model name twice — `pascalOf` for the service rules
+and `singular` for the `.mesa` filename rule — each hand-rolled beside the
+`singularize` it already imported from `@frontierjs/toolbelt/inflect`. Both are
+the kit's `modelName` now, which splits on humps and whitespace as well, so the
+rule that GRADES a model name and the litestone readers that PRODUCE one can no
+longer disagree about `order-item` (`FJS-975`).
+
+## 2026-09-06 — `doc-cites-dead` stops accepting a link that is dead to the reader
+
+A link was resolved against three bases — the repo root, the document's own
+directory, and the package root — and ACCEPTED on any hit. So
+`](packages/litestone/src/core/ddl.js)` written inside `IDEAS/` passed, and is
+`IDEAS/packages/…` to anybody who clicks it: the rule was correct about the tree
+and wrong about the reader (`FJS-750`). **Measured blind first** — planting one
+defect of each class left the finding count at 6, unchanged.
+
+A link resolves from its own document now. The other two bases are still probed,
+because *the file is there and the link does not reach it* is a different finding
+with a different repair, and the message computes and prints the `../` spelling
+rather than describing it. Inline CODE keeps all three bases on purpose: it is a
+name a reader navigates by, not a link a tool follows.
+
+**The rule's own header was the doctrine and it was wrong.** It said all three
+spellings are in use and none of them is wrong; two of the three are dead in
+every renderer, editor and browser. Hearing held (§ IV, doctrine vs discovery)
+and the comment corrected with the code.
+
+**A `file.ext:N` label is now graded against its own `#Lm` anchor.** Two
+statements of one line number in one string, so they compare with no parser —
+which is what separates this from *does line N hold that symbol*, the half that
+wants a resolver per language and stays in `IDEAS/claim-checking.md` § 3. It is
+also the rule that would have caught the corruption this row's own hand-repair
+introduced.
+
+5 tests, 2 red with the base check stubbed and 1 with the anchor check. **Three
+of the five are controls**, because a grader has two ways to fire on everything
+here — report every link, or report every `#L`. Tree unchanged at 6 findings.
+
+## 2026-09-06 — `fli ws:pub` refuses before it spends a version number
+
+`npm publish` is close to irreversible — a version is gone the moment it lands —
+and the publish path had no preflight at all. It would publish from a dirty
+tree, in alphabetical order, with peer ranges it never read.
+
+`core/publish-preflight.js` answers **all** the reasons a release must not
+proceed, each with the flag that overrides it, the way `core/revert.js` already
+does on the other pipeline: a checker that stops at the first refusal makes an
+operator discover the rest one flag at a time.
+
+**A dirty tree is refused** (`--allow-dirty`). npm packs the working directory
+and not the commit, so uncommitted files ship under a tag whose tree does not
+contain them.
+
+**A peer range this release steps outside of is refused** (`--allow-peer-drift`).
+Below 1.0 a caret pins the MINOR, so `^0.1.0` excludes `0.2.0` — and nothing in
+the publish path rewrites a peer range. Nothing inside the workspace can notice
+either: a `workspace:*` devDependency answers first, so the range is never
+consulted until somebody installs from the registry. Peers are read across every
+member rather than the release set, because the package that breaks is the one
+DECLARING the peer and it is usually not one being bumped.
+
+**A range it cannot decide is refused too**, under its own name. `satisfiesRange`
+decides exact, caret and tilde and answers `null` for everything else rather
+than guessing — a range parser here would be a release decision made by a regex,
+and a check that cannot tell and stays quiet is indistinguishable from one that
+approved.
+
+**Publish order is now the dependency graph** rather than the order the filter
+happened to produce. It was alphabetical, so `auth` published before the
+`litestone` and `toolbelt` it resolves against; it is now
+`toolbelt → litestone → junction → auth → …`. A cycle is a note rather than a
+refusal — refusing over one would refuse most real workspaces, and the packages
+still have to go out in some order.
+
+24 tests. Every refusal is paired with the shape one character away that must
+still be allowed, because a preflight that refused everything would satisfy any
+test asking only about the refusal.
+
+**`--except` lands with it**, because one `ws:pub` applies one dist-tag to
+everything it publishes — so a package that needs a different tag has to be held
+back from the run rather than tagged differently inside it. `@frontierjs/outpost`
+is the case: a fleet agent whose `/exec` runs shell and whose secret is shared
+across the fleet ([`FJS-257`](../../ISSUES.md#fjs-257)) should not be reachable
+by a bare `npm i`, so it goes out under `next` in a run of its own.
+
+An `--except` that matched nothing WARNS by name. Silently publishing the
+package it was meant to hold back is the one outcome the flag exists to prevent.
+
+`--filter` and `--except` are one rule asked in two directions and now share
+`matchesSelector` rather than each carrying a copy — two would have drifted the
+first time one learned about scopes and the other did not.
+
+**Deliberately not here yet**: the `files:`/entry-point check and parsing every
+shipped `.lite` before it goes out (the `FJS-921` class). Both are real, and the
+first belongs to `fli ws:exports`, which already answers it and has no engine to
+call — extracting one is the prerequisite, not a second copy of the question.
+
 ## 2026-09-06 — a pivot the journal could not store
 
 `fli deploy` died at `04c-journal` on every deploy in the repo — the deploy

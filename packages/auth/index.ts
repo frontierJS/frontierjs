@@ -32,7 +32,7 @@ export type {
 export {
   AuthError, InvalidCredentialsError, EmailTakenError,
   InvalidTokenError, UserNotFoundError, AuthConfigError,
-  LastCredentialError, NotFoundError,
+  LastCredentialError, NoPasswordCredentialError, NotFoundError,
 } from './errors.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────

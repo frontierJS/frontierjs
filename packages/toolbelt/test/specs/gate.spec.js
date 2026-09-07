@@ -12,7 +12,7 @@
  * could have caught either one.
  */
 
-import { LEVELS, LEVEL_NAMES, levelName, levelPasses, gradeStanding }
+import { LEVELS, levelName, levelPasses, gradeStanding }
   from '../../src/gate/gate.js'
 
 // ─── the scale ────────────────────────────────────────────────────────────────
@@ -23,9 +23,10 @@ test('gate: the scale is 0-9 and the names are derived from it', function () {
   assert.equal(LEVELS.SYSTEM, 8)
   assert.equal(LEVELS.LOCKED, 9)
 
-  // Derived, never restated: a rung cannot exist as a digit and not as a name.
-  assert.deepEqual(Object.keys(LEVEL_NAMES).sort(), Object.keys(LEVELS).sort())
-  for (const [name, n] of Object.entries(LEVELS)) assert.equal(LEVEL_NAMES[name], n)
+  // One map, both directions. `levelName` is the only inverse — a second
+  // exported map was the same object under a name that read as its opposite
+  // (FJS-981).
+  for (const [name, n] of Object.entries(LEVELS)) assert.equal(levelName(n), name)
 
   assert.equal(levelName(5), 'ADMINISTRATOR')
   assert.equal(levelName(42), '42')

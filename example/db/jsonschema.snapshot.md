@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-70 definitions · 51 models · 19 enums · 0 other
+74 definitions · 54 models · 20 enums · 0 other
 ```
 
 ## Definitions
@@ -30,6 +30,9 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `Verification` | model |
 | `OauthFlow` | model |
 | `OutboxMessage` | model |
+| `MetricSeries` | model |
+| `MetricPoint` | model |
+| `MetricHour` | model |
 | `Product` | model |
 | `Color` | model |
 | `ProductVariant` | model |
@@ -65,6 +68,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `Notification` | model |
 | `User` | model |
 | `VerificationPurpose` | enum |
+| `MetricType` | enum |
 | `Brand` | enum |
 | `Size` | enum |
 | `CustomFieldType` | enum |
@@ -102,6 +106,7 @@ A value removed here is a row already in the database that no longer
 validates, and a select that silently drops an option.
 
 - `VerificationPurpose` — `passwordReset`, `emailVerify`, `oauthLink`
+- `MetricType` — `counter`, `gauge`, `histogram`
 - `Brand` — `frontierjs`, `junction`, `litestone`
 - `Size` — `one`, `xs`, `s`, `m`, `l`, `xl`, `xxl`
 - `CustomFieldType` — `text`, `number`
@@ -195,7 +200,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `job` | `string` | yes | — | — | — |
-| `payload` | `json` | yes | — | `x-sortable: "json"` | — |
+| `payload` | `json` | yes | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `actorId` | `string`? | — | — | — | — |
 | `claimedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `deliveredAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -204,6 +209,54 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `nextAttemptAt` | `string`? | — | — | `format: "date-time"` | — |
 
 **On create**: required — `job`, `payload` · not accepted — `id`
+
+### `MetricSeries`
+
+- gate `read:8 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `points` — hasMany `MetricPoint`
+- relation `hours` — hasMany `MetricHour`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
+| `labels` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `labelsKey` | `string` | yes | — | — | — |
+| `type` | `MetricType` = `"gauge"` | — | — | — | — |
+| `unit` | `string`? | — | — | — | — |
+| `lastSeenAt` | `string` | — | — | `format: "date-time"` | — |
+
+**On create**: required — `name`, `labelsKey` · not accepted — `id`
+
+### `MetricPoint`
+
+- gate `read:8 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `series` — belongsTo `MetricSeries` via `seriesId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `seriesId` | `string` | yes | — | — | — |
+| `at` | `integer` | yes | — | — | — |
+| `value` | `number` | yes | — | — | — |
+
+**On create**: required — `seriesId`, `at`, `value`
+
+### `MetricHour`
+
+- gate `read:8 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `series` — belongsTo `MetricSeries` via `seriesId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `seriesId` | `string` | yes | — | — | — |
+| `hour` | `integer` | yes | — | — | — |
+| `min` | `number` | yes | — | — | — |
+| `max` | `number` | yes | — | — | — |
+| `sum` | `number` | yes | — | — | — |
+| `count` | `integer` | yes | — | — | — |
+| `increase` | `number`? | — | — | — | — |
+
+**On create**: required — `seriesId`, `hour`, `min`, `max`, `sum`, `count`
 
 ### `Product`
 
@@ -220,10 +273,10 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `brand` | `Brand` | yes | — | — | — |
 | `active` | `boolean` = `true` | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
-| `variantCount` | `integer` | — | — | `x-litestone-from` `x-litestone-kind` | — |
-| `priceFrom` | `integer` | — | — | `x-litestone-from` `x-litestone-kind` `x-money` | — |
-| `priceTo` | `integer` | — | — | `x-litestone-from` `x-litestone-kind` `x-money` | — |
-| `onHand` | `integer` | — | — | `x-litestone-from` `x-litestone-kind` | — |
+| `variantCount` | `integer` | — | — | `x-aggregatable` `x-litestone-from` `x-litestone-kind` | — |
+| `priceFrom` | `integer` | — | — | `x-aggregatable` `x-litestone-from` `x-litestone-kind` `x-money` | — |
+| `priceTo` | `integer` | — | — | `x-aggregatable` `x-litestone-from` `x-litestone-kind` `x-money` | — |
+| `onHand` | `integer` | — | — | `x-aggregatable` `x-litestone-from` `x-litestone-kind` | — |
 
 **On create**: required — `name`, `slug`, `brand` · not accepted — `id`, `version`, `variantCount`, `priceFrom`, `priceTo`, `onHand`
 
@@ -237,6 +290,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 30` | — |
 | `hex` | `string`? | — | — | `minLength: 4` `maxLength: 7` | — |
 | `retired` | `boolean` = `false` | — | — | — | — |
+| `sortOrder` | `integer` = `999` | — | — | — | — |
 
 **On create**: required — `name` · not accepted — `id`
 
@@ -272,8 +326,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
 | `productId` | `integer` | yes | Product | — | — |
-| `variantId` | `integer`? | — | Variant | — | — |
-| `file` | `FileRef` | yes | — | `x-sortable: "file"` `x-litestone-accept` | — |
+| `variantId` | `integer`? | — | Variant | `x-values` | — |
+| `file` | `FileRef` | yes | — | `x-sortable: "file"` `x-aggregatable` `x-litestone-accept` | — |
 | `alt` | `string` | yes | Alt text | `minLength: 1` `maxLength: 160` | `required` |
 | `position` | `integer` = `0` | — | — | — | — |
 
@@ -297,9 +351,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `email` | `string` | yes | — | `format: "email"` | — |
 | `notes` | `string`? | — | — | `x-litestone-read-policy` | — |
 | `userId` | `string`? | — | — | `x-litestone-kind` | — |
-| `orderCount` | `integer` | — | — | `x-litestone-from` `x-litestone-kind` | — |
-| `fields` | `json` = `{}` | — | — | `x-sortable: "json"` | — |
-| `slots` | `json` = `{}` | — | — | `x-sortable: "json"` `x-litestone-kind` | — |
+| `orderCount` | `integer` | — | — | `x-aggregatable` `x-litestone-from` `x-litestone-kind` | — |
+| `fields` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `slots` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` `x-litestone-kind` | — |
 | `t1` | `string`? | — | — | `x-litestone-kind` | — |
 | `t2` | `string`? | — | — | `x-litestone-kind` | — |
 | `t3` | `string`? | — | — | `x-litestone-kind` | — |
@@ -343,7 +397,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `kind` | `DiscountKind` = `"percent"` | — | Kind | — | — |
 | `value` | `integer` | yes | Value | `minimum: 0` `x-scale` | — |
 | `minSubtotal` | `integer` = `0` | — | Minimum spend | `minimum: 0` `x-money` | — |
-| `audience` | `json`? | — | Audience | `x-sortable: "json"` | — |
+| `audience` | `json`? | — | Audience | `x-sortable: "json"` `x-aggregatable` | — |
 | `startsAt` | `string`? | — | Starts | `format: "date-time"` | — |
 | `endsAt` | `string`? | — | Ends | `format: "date-time"` | — |
 | `maxRedemptions` | `integer`? | — | Redemption limit | `minimum: 1` | — |
@@ -505,7 +559,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `description` | `string`? | — | — | `minLength: 0` `maxLength: 400` | — |
 | `interval` | `PlanInterval` = `"monthly"` | — | — | — | — |
 | `active` | `boolean` = `true` | — | — | — | — |
-| `currentPrice` | `integer`? | — | — | `x-litestone-from` `x-litestone-kind` | — |
+| `currentPrice` | `integer`? | — | — | `x-aggregatable` `x-litestone-from` `x-litestone-kind` | — |
 
 **On create**: required — `code`, `name` · not accepted — `id`, `currentPrice`
 
@@ -844,7 +898,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `integer` | — | — | — | — |
 | `userId` | `string` | yes | — | — | — |
 | `type` | `string` | yes | — | — | — |
-| `data` | `json` | yes | — | `x-sortable: "json"` | — |
+| `data` | `json` | yes | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `contextType` | `NotificationContext`? | — | — | — | — |
 | `contextId` | `integer`? | — | — | — | — |
 | `readAt` | `string`? | — | — | `format: "date-time"` | — |

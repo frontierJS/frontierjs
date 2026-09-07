@@ -1,5 +1,57 @@
 # Changes
 
+## 2026-09-07 — a picker's head is captioned
+
+`resource.options()` marks the values a caller reached for last with `recent`
+and puts them first (`FJS-D121`). No control read the flag, so the head arrived
+as entries at the top in an order that is neither alphabetical nor whatever the
+set declared, with nothing saying why — a broken sort, from the reader's side
+(`FJS-973`).
+
+`Select` draws two `<optgroup>`s, which is the mechanism it already had.
+`Combobox` has no grouping at all, so the captions are rows — and they are
+`role="presentation"` rather than options, because the cursor indexes the option
+array and `aria-activedescendant` names its rows: a caption inside that array is
+arrow-keyed onto and announced as something choosable.
+
+**Three buckets, not two.** `splitRecent` keeps a `unavailable` pinned value
+ungrouped above both — it is the value the field is holding, and captioning it
+as recently used is a wrong explanation rather than a missing one.
+
+`RECENT_GROUP` and `REST_GROUP` are the two spellings, in `utils.js`, so the
+controls cannot word it differently. *Everything else* rather than *All*: the
+head is not in it.
+
+## 2026-09-07 — a Sparkline is asked whether it redraws
+
+Every derived value in `Sparkline.mesa` is a plain `const` — `normalized`,
+`pointsStr`, `areaPath` — which reads like a body that runs once per instance,
+and the whole point of a sparkline is data that changes. It does recompute. What
+was missing was anything that said so: the existing row asserts the path is
+computed correctly from a fixed array and never moves it.
+
+The fixture grows a series by two values and the spec asserts the point COUNT on
+both sides as well as the path, because a redraw that threw the data away would
+also change the path. Found while drawing a real one on basecamp's server-health
+card ([`FJS-956`](../../ISSUES.md#fjs-956)), where the component is handed a day
+of readings that arrive after mount.
+
+## 2026-09-06 — a value the list no longer offers is shown, marked, and refused
+
+`<Form>` hands its own `record` to `optionsFor`, which is what lets a dependent
+set narrow itself (`FJS-D122`) and what lets `options()` pin a stored value the
+list does not contain (`FJS-D225`). The field is then marked invalid **here**,
+in one place: four controls ask this one seam, and the Data boundary is going to
+refuse the write anyway — saying so on open beats saying it after a long form is
+filled in. `reportInvalid` already existed for exactly this sentence, *a control
+showing a value it cannot hand over*.
+
+Controls needed no change: `Select` already normalises `{ value, label,
+disabled }`, so a disabled entry renders on its own.
+
+`nameToLabel` is now `humanize` from `@frontierjs/toolbelt/humanize` — one
+definition, because sierra needs the same answer for the fallback label.
+
 ## 2026-09-05 — a form that has already written its row does not offer the button again
 
 `FJS-823`.
@@ -625,7 +677,7 @@ column name, and every one of them carried the same comment:
 The code did the opposite of its own sentence. `export let label = ''` made *not
 stated* and *deliberately blank* the same value, and `label={label || undefined}`
 collapsed the blank one back to *not stated* — so `Field` fell through to
-`nameToLabel(name)` and drew the label the caller had just turned off.
+`humanize(name)` and drew the label the caller had just turned off.
 
 `Field` was right the whole time: `<Field label="">` renders no label row. Only
 the pass-through was broken, which is why it survived — nothing in the kit's own
@@ -1638,7 +1690,7 @@ customer #1 and the order was filed against them with nothing on screen saying
 so. The placeholder is no longer disabled.
 
 **A control shadowed the schema's `@label`** — FJS-077, second half. `Select`
-and `Textarea` computed `nameToLabel(name)` and passed it to `<Field>` as an
+and `Textarea` computed `humanize(name)` and passed it to `<Field>` as an
 explicit label, so a rule's `title` could never win and `@label("Customer")`
 rendered as "Customer Id". Both now pass `label={label || undefined}` and let
 `Field` resolve once. Every other control that wraps `Field` still has it.

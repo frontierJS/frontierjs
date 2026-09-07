@@ -539,6 +539,34 @@ export function generateOpenAPI(app: App, opts: OpenAPIOptions, defs?: Record<st
     const collection: OAPathItem = {}
     if (answers.has('find'))   collection.get  = buildOperation(serviceName, 'find',   svcSchemas.find, declaredInput['find'])
     if (answers.has('create')) collection.post = buildOperation(serviceName, 'create', svcSchemas.create, declaredInput['create'])
+    // ── aggregate, at the address the wire serves it ───────────────
+    //
+    // Collection POST plus `X-Service-Method: aggregate`, and `create` already
+    // owns collection POST. OpenAPI dispatches on path and verb and cannot say
+    // *a different operation depending on a header VALUE* — the same limit the
+    // custom-method block below explains — so it is documented ON the operation
+    // that shares its address rather than invented at a path nothing serves.
+    if (answers.has('aggregate')) {
+      const note = `\n\nAlso served here: \`X-Service-Method: aggregate\` with a body of ` +
+        `\`{ by?, where?, having?, orderBy?, limit?, offset?, interval?, fillGaps?, ` +
+        `_count?, _sum?, _avg?, _min?, _max? }\`. A \`by\` makes it a group-by and the answer is a ` +
+        `list; without one it is a single row.`
+      if (collection.post) collection.post.description = (collection.post.description ?? '') + note
+      else collection.post = {
+        operationId: `aggregate${serviceName.charAt(0).toUpperCase()}${serviceName.slice(1)}`,
+        summary:     `Counts, sums and groups over ${serviceName}`,
+        description: note.trim(),
+        tags:        [tag],
+        security:    [{ bearerAuth: [] }],
+        parameters:  [{
+          name: 'X-Service-Method', in: 'header', required: true,
+          schema: { type: 'string', enum: ['aggregate'] },
+          description: 'Names the method; the body is the aggregate request.',
+        }],
+        responses:   { '200': { description: 'Success' } },
+      }
+    }
+
     // A path item with no operations is a path that does not exist.
     if (collection.get || collection.post) spec.paths[collectionPath] = collection
 

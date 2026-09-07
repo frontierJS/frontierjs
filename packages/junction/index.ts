@@ -155,7 +155,22 @@ export { cors, helmet, rateLimit, requestLogger, bodyLimit, correlationId, csrf,
 export type { CorsOptions, HelmetOptions, RateLimitOptions, CorrelationIdOptions, CsrfOptions, OriginList, CombinedOrigins } from './src/transport/middleware.ts'
 
 // ─── Health + metrics ─────────────────────────────────────────────────────
-export { healthPlugin }                                            from './src/transport/health.ts'
+// `registerMetricsSource` was a registrar with no reader: every source wrote
+// into `app._metricsSources` and the only way back out was an HTTP request to
+// this process's own port, or a reach into the private map. A scraper that has
+// the app in hand is the ordinary case (`FJS-956`), so the collector is part of
+// the seam rather than half of it.
+export { healthPlugin, collectMetrics, renderPrometheus }          from './src/transport/health.ts'
+// Reading what the store kept, as opposed to collecting what is true now.
+// Beside `db/metrics.lite`, because an app that imports those models cannot
+// read a counter out of them without the reset rule and would write its own.
+export { counterIncrease, counterRate, isStale, seriesKey }        from './src/core/metrics.ts'
+export { exportPlugin }                                            from './src/plugins/export/index.ts'
+export type { ExportPluginOptions }                                from './src/plugins/export/index.ts'
+export { metricsPlugin }                                           from './src/plugins/metrics/index.ts'
+export type { MetricsApi, RecordOptions }                          from './src/plugins/metrics/index.ts'
+export type { MetricsPluginOptions }                               from './src/plugins/metrics/index.ts'
+export type { Reading }                                            from './src/core/metrics.ts'
 export type { HealthPluginOptions, HealthResponse, MetricsResponse, CheckResult } from './src/transport/health.ts'
 
 // ─── Logger ───────────────────────────────────────────────────────────────

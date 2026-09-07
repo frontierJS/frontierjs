@@ -179,6 +179,32 @@ export function canonicalRequest({ method, path, query, timestamp, nonce, bodyHa
   ].join('\n')
 }
 
+/*
+ * Seconds since the epoch, not milliseconds — and the difference is CHECKED
+ * rather than documented.
+ *
+ * Both units are a finite number, so nothing could tell them apart, and
+ * `Date.now()` is the reflex every JS caller has. A millisecond timestamp
+ * signs and verifies perfectly against a millisecond `now`, with the tolerance
+ * then meaning 300ms instead of 300s — so a webhook a third of a second old is
+ * refused as clock skew, reported as `3600000s out` for a request one hour old.
+ *
+ * Every unit mismatch fails closed, which is why this needs naming rather than
+ * leaving: the first repair anyone reaches for is widening the tolerance, and a
+ * caller in seconds who sets 300000 to make a millisecond scheme work has bought
+ * a three-and-a-half day replay window with nothing saying so.
+ *
+ * 1e11 separates them from 1973 to the year 5138 — seconds passes it in 5138,
+ * milliseconds passed it in March 1973 — so no realistic value is ambiguous.
+ */
+const MS_SHAPED = 1e11
+
+function refuseMilliseconds(label, value) {
+  if (Number(value) > MS_SHAPED)
+    return `${label} looks like milliseconds (${value}). This scheme signs SECONDS — divide by 1000, e.g. Math.floor(Date.now() / 1000).`
+  return null
+}
+
 async function hmacHex(secret, message) {
   const key = await crypto.subtle.importKey(
     'raw', ENCODER.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
@@ -206,6 +232,9 @@ export async function signRequest({ secret, method, path, query, body = '', pref
   if (!secret)    throw new TypeError('signRequest: secret is required')
   if (!timestamp) throw new TypeError('signRequest: timestamp is required — seconds, from the caller\'s clock')
   if (!nonce)     throw new TypeError('signRequest: nonce is required — one per request, from the caller')
+
+  const wrongUnit = refuseMilliseconds('timestamp', timestamp)
+  if (wrongUnit) throw new TypeError(`signRequest: ${wrongUnit}`)
 
   const ts  = String(timestamp)
   const sig = await hmacHex(secret, canonicalRequest({
@@ -267,6 +296,17 @@ export async function verifyRequest({
 
   const seconds = Number(timestamp)
   if (!Number.isFinite(seconds)) return { ok: false, reason: 'timestamp is not a number' }
+
+  // The caller's own clock first: a receiver passing `Date.now()` refuses every
+  // legitimate request, and naming that is the difference between a five-minute
+  // fix and an outage spent on the signer.
+  const ourUnit = refuseMilliseconds('now', now)
+  if (ourUnit) throw new TypeError(`verifyRequest: ${ourUnit}`)
+  // The sender's is an ANSWER rather than a throw — it is remote input, and a
+  // receiver must not be crashed by what a caller put in a header.
+  const theirUnit = refuseMilliseconds('timestamp', seconds)
+  if (theirUnit) return { ok: false, reason: theirUnit }
+
   const skew = Math.abs(now - seconds)
   if (skew > toleranceSeconds)
     return { ok: false, reason: `timestamp is ${skew}s out, tolerance is ${toleranceSeconds}s` }

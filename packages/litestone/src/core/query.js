@@ -50,7 +50,36 @@ export function sql(strings, ...values) {
     else                      { sqlStr += '?';       params.push(value) }
   }
   assertNoBareClock(sqlStr)
-  return { _litestoneRaw: true, sql: expandNowTokens(sqlStr).trim(), params }
+  return rawClause(expandNowTokens(sqlStr).trim(), params)
+}
+
+// ─── the brand ────────────────────────────────────────────────────────────────
+//
+// A raw clause is the one value that may reach the SQL PATTERN rather than the
+// parameter list, so what identifies one is a security boundary rather than a
+// convenience. It was the plain property below, which is a shape `JSON.parse`
+// can produce: a request body carrying
+// `{ _litestoneRaw: true, sql: '…' }` passed `isRawClause` and its text was
+// interpolated verbatim, which took a `FILTER (WHERE …)` clause and dumped a
+// whole @guarded column in one request (`FJS-955`). The guard that refused a
+// plain string existed for exactly that reason and could not tell the two
+// apart, because the thing it tested for was forgeable.
+//
+// A symbol cannot appear in JSON, so the brand is unreachable from any wire.
+// `Symbol.for` rather than a module-private symbol: two copies of this package
+// in one process would otherwise each refuse the other's fragments, and a
+// forger who can run JS in this process has already won.
+const RAW = Symbol.for('litestone.rawClause')
+
+/**
+ * The only place a RawClause is made.
+ *
+ * `_litestoneRaw` stays on the object because it is the declared public shape
+ * (`index.d.ts`, and the `$raw` type typegen writes into an app) and it reads
+ * as what the object is. It identifies nothing — `isRawClause` tests the brand.
+ */
+export function rawClause(sql, params = []) {
+  return { [RAW]: true, _litestoneRaw: true, sql, params }
 }
 
 /**
@@ -64,12 +93,13 @@ export function sql(strings, ...values) {
  */
 export function schemaRaw(text) {
   assertNoBareClock(text)
-  return { _litestoneRaw: true, sql: expandNowTokens(text).trim(), params: [] }
+  return rawClause(expandNowTokens(text).trim())
 }
 
-// Check if a value is a RawClause produced by the sql tag
+// Is this a RawClause litestone itself made? The brand, never the property —
+// see `rawClause`.
 export function isRawClause(val) {
-  return val !== null && typeof val === 'object' && val._litestoneRaw === true
+  return val !== null && typeof val === 'object' && val[RAW] === true
 }
 
 // ─── now() — the clock, spelled so it can match a stored DateTime ────────────
@@ -1742,6 +1772,30 @@ export function opaqueSortKind(f) {
   if (f.type?.name === 'Json')  return 'json'
   if (f.type?.name === 'File')  return 'file'
   return null
+}
+
+// Which keys of a model may be named by an aggregate. Deliberately NOT
+// sortableKeysFor: a @from field sorts fine (it is in the SELECT) and cannot be
+// aggregated, and an opaque column is a real column, so it is kept and marked
+// rather than dropped.
+export function aggregatableKeysFor(model) {
+  const columns   = new Set()
+  const computed  = new Set()
+  const transient = new Set()
+  const from      = new Set()
+  const relations = new Set()
+  const opaque    = new Map()
+  for (const f of model.fields) {
+    if (f.type?.kind === 'relation' || f.type?.kind === 'implicitM2M')   { relations.add(f.name); continue }
+    if (f.attributes?.some(a => a.kind === 'computed'))                  { computed.add(f.name);  continue }
+    if (f.attributes?.some(a => a.kind === 'transient'))                 { transient.add(f.name); continue }
+    if (f.attributes?.some(a => a.kind === 'from'))                      { from.add(f.name);      continue }
+    if (f.attributes?.some(a => a.kind === 'edge' || a.kind === 'scoped')) continue
+    const why = opaqueSortKind(f)
+    if (why) opaque.set(f.name, why)
+    columns.add(f.name)
+  }
+  return { columns, computed, transient, from, relations, opaque }
 }
 
 export function sortableKeysFor(model) {

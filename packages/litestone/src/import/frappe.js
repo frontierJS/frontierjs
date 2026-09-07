@@ -15,6 +15,7 @@
 // Same contract as its siblings: the refusal list is the artifact, and it never
 // repairs and never guesses.
 
+import { pascal, camel } from '@frontierjs/toolbelt/inflect'
 import { detectPolymorphic } from './polymorphic.js'
 
 const LAYOUT = new Set(['Section Break', 'Column Break', 'Tab Break', 'HTML', 'Button', 'Heading', 'Fold', 'Image'])
@@ -31,9 +32,6 @@ const TYPES = {
   JSON: 'Json', Geolocation: 'Json',
 }
 
-const pascal = (s) => String(s).replace(/[^A-Za-z0-9]+/g, ' ').trim().split(/\s+/)
-  .map(p => p[0].toUpperCase() + p.slice(1)).join('')
-const camel = (s) => { const p = pascal(s); return p[0].toLowerCase() + p.slice(1) }
 
 export function convert(docs, label = 'schema') {
   const gaps = []

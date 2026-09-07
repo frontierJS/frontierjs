@@ -5,7 +5,7 @@
 // lets litestone reach it without inverting the graph (`FJS-D26`).
 
 import { isKnownCurrency, minorUnits } from '@frontierjs/toolbelt/units'
-import { LEVEL_NAMES }                  from '@frontierjs/toolbelt/gate'
+import { LEVELS }                       from '@frontierjs/toolbelt/gate'
 import { expandCapabilityType } from './capabilities.js'
 // One owner for the range a value round-trips through a JS number in — the
 // validator's, so a refusal here and a refusal at the boundary name one number.
@@ -720,16 +720,33 @@ class Parser {
     this.eat(TK.LBRACE)
 
     const fields      = []
+    const attributes  = []
     let   sql         = null
     let   materialized = false
     let   refreshOn   = []
     let   db          = null
 
+    // A view is a read path onto rows that models guard, so it carries the same
+    // access attributes they do, compiled against the columns IT declares —
+    // never inferred from `@@sql`, which would mean parsing SQL to find out who
+    // is allowed to read it.
+    const ACCESS_ATTRS = new Set(['gate', 'allow', 'deny', 'tenant', 'export'])
+
     while (!this.check(TK.RBRACE)) {
+      // A doc comment may precede either an attribute or a field, exactly as it
+      // may in a model. Read it here so the attribute branch below is reachable
+      // when one does — otherwise a commented `@@export` falls into the field
+      // branch and fails on the `@@`.
+      const pending = this.docComments()
+
       if (this.check(TK.ATAT)) {
         // Model-level attribute
         this.eat(TK.ATAT)
         const attr = this.eat(TK.IDENT).value
+        if (ACCESS_ATTRS.has(attr)) {
+          attributes.push(this.parseModelAttributeBody(attr))
+          continue
+        }
         switch (attr) {
           case 'sql':
             sql = this.parseParenString()
@@ -747,11 +764,14 @@ class Parser {
             break
           }
           default:
-            throw new ParseError(`Unknown view attribute '@@${attr}'`, this.peek())
+            throw new ParseError(
+              `Unknown view attribute '@@${attr}' — a view takes @@sql, @@materialized, ` +
+              `@@refreshOn, @@db, @@export, and the access attributes @@gate, @@allow, @@deny and @@tenant`,
+              this.peek())
         }
       } else {
         // Field declaration: name Type[?]
-        const fieldComments = this.docComments()
+        const fieldComments = pending.length ? pending : this.docComments()
         const fieldName = this.eat(TK.IDENT).value
         const type      = this.parseFieldType()
         fields.push({ name: fieldName, type, comments: fieldComments })
@@ -761,7 +781,7 @@ class Parser {
 
     this.eat(TK.RBRACE)
 
-    return { name, fields, sql, materialized, refreshOn, db, comments }
+    return { name, fields, attributes, sql, materialized, refreshOn, db, comments }
   }
 
 
@@ -1059,19 +1079,44 @@ class Parser {
       // Beside @relation rather than instead of it: storage (a foreign key with
       // referential integrity) and resolution (where the offered values come
       // from, and what is legal) are two facts about one column.
+      // @values(State, dependsOn: countryId) — the list is that country's states
+      //
+      // The dependency is a JOIN and it goes on the BINDING, for the reason the
+      // strength does: a set is reusable and a controlling column is
+      // model-local (`FJS-D122`). Which column of the SOURCE matches is derived
+      // from the relation path and never written here — `on <column>` is the
+      // escape for a source that reaches the same model twice.
       case 'values': {
         this.eat(TK.LPAREN)
         const set = this.eat(TK.IDENT).value
-        let strength = 'required'
-        if (this.maybeEat(TK.COMMA)) {
-          const tok = this.peek()
-          strength  = this.eat(TK.IDENT).value
-          if (!VALUE_STRENGTHS.has(strength)) throw new ParseError(
-            `@values(${set}, ${strength}): unknown strength. One of ${[...VALUE_STRENGTHS].join(', ')}. ` +
+        let strength = null
+        let dependsOn = null, dependsOnSource = null
+        while (this.maybeEat(TK.COMMA)) {
+          const tok  = this.peek()
+          const word = this.eat(TK.IDENT).value
+          // A named argument, told from the positional strength by the colon.
+          if (this.maybeEat(TK.COLON)) {
+            if (word !== 'dependsOn') throw new ParseError(
+              `@values(${set}, ${word}: …): unknown argument. The only named one is 'dependsOn', ` +
+              `which takes the column on THIS model whose value narrows the list.`, tok)
+            if (dependsOn) throw new ParseError(`@values(${set}): 'dependsOn' is declared twice`, tok)
+            dependsOn = this.eat(TK.IDENT).value
+            // `dependsOn: countryId on regionCountryId` — the source side, for
+            // the case the relation walk cannot decide.
+            if (this.check(TK.IDENT) && this.peek().value === 'on') {
+              this.advance()
+              dependsOnSource = this.eat(TK.IDENT).value
+            }
+            continue
+          }
+          if (strength) throw new ParseError(`@values(${set}): a strength is declared twice`, tok)
+          if (!VALUE_STRENGTHS.has(word)) throw new ParseError(
+            `@values(${set}, ${word}): unknown strength. One of ${[...VALUE_STRENGTHS].join(', ')}. ` +
             `Unstated is 'required'.`, tok)
+          strength = word
         }
         this.eat(TK.RPAREN)
-        return { kind: 'values', set, strength }
+        return { kind: 'values', set, strength: strength ?? 'required', dependsOn, dependsOnSource }
       }
 
       // @transient → a field the caller WRITES that is never stored.
@@ -1862,9 +1907,14 @@ class Parser {
         throw new ParseError(`@@gate: unknown key "${key}". Valid keys: read, create, update, delete, write`, this.peek())
       this.eat(TK.COLON)
       const levelToken = this.eat(TK.IDENT)
-      const level = LEVEL_NAMES[levelToken.value]
+      // `Object.hasOwn`, because the value is a caller-supplied identifier and
+      // every candidate map carries `Object.prototype`: a plain index answers
+      // `constructor`, `toString` and `__proto__` with something that is not
+      // undefined, so the typo check below passes and the level becomes a
+      // function (FJS-984).
+      const level = Object.hasOwn(LEVELS, levelToken.value) ? LEVELS[levelToken.value] : undefined
       if (level === undefined)
-        throw new ParseError(`@@gate: unknown level "${levelToken.value}". Valid: ${Object.keys(LEVEL_NAMES).join(', ')}`, levelToken)
+        throw new ParseError(`@@gate: unknown level "${levelToken.value}". Valid: ${Object.keys(LEVELS).join(', ')}`, levelToken)
       named[key] = level
     } while (this.maybeEat(TK.COMMA))
 
@@ -2165,7 +2215,14 @@ class Parser {
   parseModelAttribute() {
     this.eat(TK.ATAT)
     const name = this.eat(TK.IDENT).value
+    return this.parseModelAttributeBody(name)
+  }
 
+  // The body alone, entered with `@@` and the name already eaten. `parseView`
+  // is the second caller: a view may carry the access attributes and nothing
+  // else, and reading them anywhere but here would be a second grammar for
+  // `@@allow`.
+  parseModelAttributeBody(name) {
     switch (name) {
       // @@index([kind])                             — over every row
       // @@index([kind], where: archivedAt == null)   — over the rows it admits
@@ -2549,6 +2606,28 @@ class Parser {
       // invariants and they are not one answer to one question.
       case 'check':  return { kind: 'check',        ...this.parseCheckArgs() }
 
+      // @@export(ndjson)                    — every column, graded per caller
+      // @@export(ndjson, since: updatedAt)   — plus a cursor, for an incremental run
+      //
+      // An export is not a second read path: it is a paginated scoped read, so
+      // this attribute says a dataset MAY leave and in what shape, and says
+      // nothing about who may take it. That is the @@gate beside it, which
+      // validate() requires.
+      case 'export': {
+        this.eat(TK.LPAREN)
+        const format = this.eat(TK.IDENT).value
+        let since = null
+        if (this.check(TK.COMMA)) {
+          this.eat(TK.COMMA)
+          const key = this.eat(TK.IDENT).value
+          if (key !== 'since')
+            throw new ParseError(`@@export takes one option and it is 'since:' — got '${key}'`, this.peek())
+          this.eat(TK.COLON)
+          since = this.eat(TK.IDENT).value
+        }
+        this.eat(TK.RPAREN)
+        return { kind: 'export', format, since }
+      }
       case 'gate':   return { kind: 'gate',         value: this.parseGateArg() }
       case 'transitions': return { kind: 'transitions', ...this.parseTransitionsArg() }
       case 'auth':   return { kind: 'auth' }
@@ -2855,10 +2934,11 @@ class Parser {
     if (tok.type === TK.NUMBER) {
       level = tok.value
     } else if (tok.type === TK.IDENT) {
-      level = LEVEL_NAMES[tok.value]
+      // Guarded for FJS-984's reason — see the `@@gate` site above.
+      level = Object.hasOwn(LEVELS, tok.value) ? LEVELS[tok.value] : undefined
       if (level === undefined)
         throw new ParseError(
-          `@@transitions(${field}) '${name}': unknown level '${tok.value}'. Valid: ${Object.keys(LEVEL_NAMES).join(', ')}`,
+          `@@transitions(${field}) '${name}': unknown level '${tok.value}'. Valid: ${Object.keys(LEVELS).join(', ')}`,
           tok,
         )
     } else {
@@ -2882,18 +2962,24 @@ class Parser {
   //     value  label                // the column a record STORES — default @id
   //     scope  mine                 // a @@scope declared on the source
   //     where  "archivedAt IS NULL"
+  //     order  sortOrder, label      // what a picker offers first — default: the label column
   //   }
   //
   // There is no `binding` here: a strength is a property of the FIELD, not of
   // the list, because one list is legitimately enforced on one field and merely
   // offered on another. It goes on `@values(Name, strength)`.
+  //
+  // `order` is the opposite and sits HERE for the reason strength does not: one
+  // list shown on two fields is the same list, and a per-call order is already
+  // spellable as a directive. It is not membership — nothing here changes what
+  // a column may hold (`FJS-D121`).
   parseValueSet(comments = []) {
     this.eatIdent('valueset')
     const nameTok = this.peek()
     const name    = this.eat(TK.IDENT).value
     this.eat(TK.LBRACE)
 
-    let source = null, value = null, scope = null, where = null
+    let source = null, value = null, scope = null, where = null, order = null, recent = null
     const seen = new Set()
 
     while (!this.check(TK.RBRACE)) {
@@ -2907,9 +2993,52 @@ class Parser {
         case 'value':  value  = this.eat(TK.IDENT).value;  break
         case 'scope':  scope  = this.eat(TK.IDENT).value;  break
         case 'where':  where  = this.eat(TK.STRING).value; break
+        // `order sortOrder, name desc` — a direction binds to the column before
+        // it and defaults to asc, which is the shape `orderBy` already takes on
+        // every read. No valueset key is named asc or desc, so a bare column
+        // followed by the next key is unambiguous.
+        case 'order': {
+          order = []
+          do {
+            const colTok = this.peek()
+            // `recent(Task.assigneeId, createdAt)` — the HEAD: the values this
+            // caller reached for last, read off rows the app already writes.
+            // It is not a sort key, which is why it cannot follow one: the head
+            // is its own bounded query and the columns after it order the page
+            // beneath it (`FJS-D121`).
+            //
+            // The clock is STATED rather than derived. A rank by the wrong
+            // clock draws a plausible order and nothing about it looks wrong,
+            // which is the one failure this whole axis has — so the schema
+            // names the column that says WHEN, the same way @@label names the
+            // column that says WHICH ROW.
+            if (this.peek().value === 'recent' && this.peek(1)?.type === TK.LPAREN) {
+              if (recent || order.length)
+                throw new ParseError(
+                  `valueset '${name}': recent(…) is the head of the list, so it comes first and only once`, colTok)
+              this.advance(); this.eat(TK.LPAREN)
+              const model = this.eat(TK.IDENT).value
+              this.eat(TK.DOT)
+              const field = this.eat(TK.IDENT).value
+              this.eat(TK.COMMA)
+              const clock = this.eat(TK.IDENT).value
+              this.eat(TK.RPAREN)
+              recent = { model, field, clock }
+              continue
+            }
+            const col    = this.eat(TK.IDENT).value
+            let   dir    = 'asc'
+            if (this.check(TK.IDENT) && (this.peek().value === 'asc' || this.peek().value === 'desc'))
+              dir = this.advance().value
+            if (order.some(o => o.field === col))
+              throw new ParseError(`valueset '${name}': order names '${col}' twice`, colTok)
+            order.push({ field: col, dir })
+          } while (this.maybeEat(TK.COMMA))
+          break
+        }
         default:
           throw new ParseError(
-            `valueset '${name}': unknown key '${key}'. A value set takes source, value, scope and where. ` +
+            `valueset '${name}': unknown key '${key}'. A value set takes source, value, scope, where and order. ` +
             `A strength is not one of them — it goes on the field, as @values(${name}, required|open|suggested), ` +
             `because one list can be enforced on one field and only offered on another.`,
             keyTok,
@@ -2919,7 +3048,7 @@ class Parser {
     this.eat(TK.RBRACE)
 
     if (!source) throw new ParseError(`valueset '${name}': no 'source' — a value set is a named list of rows from one model`, nameTok)
-    return { name, source, value, scope, where, comments }
+    return { name, source, value, scope, where, order, recent, comments }
   }
 
   parseEnum(comments = []) {
@@ -3725,7 +3854,7 @@ function expandTenancy(schema) {
   const errors   = []
   const warnings = []
   const t        = schema.tenancy
-  const tagged   = schema.models.filter(m => m.attributes.some(a => a.kind === 'tenant'))
+  const tagged   = [...schema.models, ...(schema.views ?? [])].filter(m => (m.attributes ?? []).some(a => a.kind === 'tenant'))
 
   if (!t) {
     for (const m of tagged)
@@ -3817,6 +3946,45 @@ function expandTenancy(schema) {
       field.attributes.push({ kind: 'default', value: { kind: 'call', fn: 'auth', field: claim }, generated: 'tenancy' })
 
     scoped.push(model.name)
+  }
+
+  // ── views ──────────────────────────────────────────────────────────────────
+  //
+  // A view gets the READ deny and nothing else: it has no create, update or
+  // delete to guard, and no column to stamp. It also does not delegate through
+  // a parent — a view declares no relations, so the fixpoint below has nothing
+  // to walk, and validate() refuses `@@tenant(via:)` on one for that reason.
+  //
+  // The column is the view's OWN, which is the whole reason this is declarable:
+  // the tenant predicate is applied to the projection rather than pushed into
+  // `@@sql`, so nothing here has to read the author's SQL to know what it
+  // selected.
+  for (const view of (schema.views ?? [])) {
+    const tag = (view.attributes ?? []).find(a => a.kind === 'tenant')
+    if (!tag || tag.mode === 'none' || tag.mode === 'via') continue
+
+    const dbName = view.db
+    const driver = dbName ? drivers[dbName] : 'sqlite'
+    if (driver === 'jsonl' || driver === 'logger') continue
+
+    const column = tag.column ?? t.column
+    if (!view.fields.some(f => f.name === column)) {
+      errors.push(
+        `View '${view.name}': @@tenant(column: "${column}") names no column this view declares — ` +
+        `a view is scoped by its own projection, so the column has to be selected by @@sql and declared here`)
+      continue
+    }
+
+    const col         = { type: 'field', name: column }
+    const authClaim   = { type: 'auth',  field: claim }
+    const noPrincipal = { type: 'compare', op: '==', left: authClaim, right: { type: 'literal', value: null } }
+    const mismatch    = { type: 'compare', op: '!=', left: col,       right: authClaim }
+
+    view.attributes.push({
+      kind: 'deny', operations: ['read'], generated: 'tenancy', claim, message: `Outside your ${column}`,
+      expr: { type: 'or', left: noPrincipal, right: mismatch },
+    })
+    scoped.push(view.name)
   }
 
   // ── scoped through a parent ────────────────────────────────────────────────
@@ -4223,6 +4391,26 @@ function valueColumnRefusal(field, schema) {
   if (has('guarded'))    return `it is @guarded — a caller can neither read nor write it, so no caller could ever supply a legal value`
   if (has('encrypted'))  return `it is @encrypted — its stored text is a ciphertext, so an equality against it is not an equality against the value`
   if (has('hashed'))     return `it is @hashed — one-way, so a set built on it can never be offered`
+  return null
+}
+
+// The same shape one column along, and a separate function because the two
+// questions differ: a value column is matched for EQUALITY, an order column is
+// compared for SEQUENCE. A Json or File column is a legal value and a
+// meaningless sort, and @encrypted fails both for different reasons — its
+// ciphertext is neither the value nor its order.
+function orderColumnRefusal(field, schema) {
+  const has = (kind) => field.attributes?.some(a => a.kind === kind)
+
+  if (schema.models.some(m => m.name === field.type.name)) return `it is a relation, not a column`
+  if (field.type.array)  return `it is an array`
+  if (has('computed'))   return `it is @computed — no column, so there is nothing for the database to sort by`
+  if (has('transient'))  return `it is @transient — it is never stored`
+  if (has('guarded'))    return `it is @guarded — the Data boundary refuses an orderBy naming it, so the picker's list would fail to load`
+  if (has('encrypted'))  return `it is @encrypted — it sorts by ciphertext, which is not the order of the values`
+  if (has('hashed'))     return `it is @hashed — one-way, so its order is not the values' order`
+  if (field.type.name === 'Json') return `it is Json — its text sorts, its structure does not`
+  if (field.type.name === 'File') return `it is File — the column holds a storage reference, so its order is the order things were stored under`
   return null
 }
 
@@ -4713,6 +4901,65 @@ function validate(schema) {
     vs.isIdValue  = valName === idField?.name
     vs.labelField = (src.attributes ?? []).find(a => a.kind === 'labelField')?.field ?? null
 
+    // The order a picker offers, checked against the SOURCE — an order naming a
+    // column that is not there is a list that loads alphabetically forever with
+    // nothing said, which is the failure this whole axis exists to end.
+    // Unstated is not an error: the default is the label column, resolved where
+    // the label is (`FJS-D121`), so nothing here restates it.
+    for (const o of vs.order ?? []) {
+      const f = src.fields.find(x => x.name === o.field)
+      if (!f) {
+        errors.push(`valueset '${vs.name}': order '${o.field}' is not a field on '${vs.source}'`)
+        continue
+      }
+      const no = orderColumnRefusal(f, schema)
+      if (no) errors.push(`valueset '${vs.name}': order '${o.field}' — ${no}`)
+    }
+
+    // ── recent(Model.column, clock) — the head ────────────────────────────
+    //
+    // Three things have to be true and each fails invisibly: the column has to
+    // hold values OF THIS SET (a rank over some other column offers a list of
+    // things that are not in it), the clock has to be a stored DateTime (SQLite
+    // orders whatever text it is given), and both have to exist. A head that
+    // resolves to nothing looks exactly like a person who has picked nothing.
+    if (vs.recent) {
+      const at   = `valueset '${vs.name}': recent(${vs.recent.model}.${vs.recent.field}, ${vs.recent.clock})`
+      const rank = modelByName.get(vs.recent.model)
+      if (!rank) {
+        errors.push(`${at} — '${vs.recent.model}' is not a model in this schema`)
+      } else {
+        const col = rank.fields.find(f => f.name === vs.recent.field)
+        if (!col) {
+          errors.push(`${at} — '${vs.recent.field}' is not a field on '${vs.recent.model}'`)
+        } else {
+          // Drawn from THIS set: either the column binds to it, or it is the
+          // foreign key that reaches the source by the column the set stores.
+          const bound = col.attributes?.some(a => a.kind === 'values' && a.set === vs.name)
+          const fk    = rank.fields.find(f =>
+            f.type?.name === vs.source &&
+            f.attributes?.some(a => a.kind === 'relation'
+              && a.fields?.includes(vs.recent.field)
+              && (a.references ?? ['id']).includes(valName)))
+          if (!bound && !fk) errors.push(
+            `${at} — '${vs.recent.field}' does not hold values of this set, so ranking it would offer rows that are not in the list. ` +
+            `Bind it with @values(${vs.name}), or point it at ${vs.source}.${valName} with @relation`)
+        }
+        const clock = rank.fields.find(f => f.name === vs.recent.clock)
+        if (!clock) {
+          const dates = rank.fields.filter(f => f.type?.name === 'DateTime' && !f.type.array).map(f => f.name)
+          errors.push(
+            `${at} — '${vs.recent.clock}' is not a field on '${vs.recent.model}'` +
+            (dates.length ? `. It declares: ${dates.join(', ')}` : ', which declares no DateTime column to rank by'))
+        } else if (clock.type?.name !== 'DateTime') {
+          errors.push(`${at} — '${vs.recent.clock}' is ${clock.type?.name}, and a head is ordered by WHEN. Name a DateTime column`)
+        } else {
+          const why = orderColumnRefusal(clock, schema)
+          if (why) errors.push(`${at} — '${vs.recent.clock}' ${why}`)
+        }
+      }
+    }
+
     // A `where` is SQL, and a browser may never send SQL (Invariant 8) — so a
     // set narrowed that way used to offer the whole source in a picker and have
     // the save refused (`FJS-430`). It becomes a `@@scope` on the source, named
@@ -4733,6 +4980,10 @@ function validate(schema) {
       }
     }
   }
+
+  // The source model of a set, for the binding walk below. Named rather than
+  // re-found inline because the dependency check asks for it three times.
+  const src2 = (vs) => modelByName.get(vs.source) ?? { fields: [] }
 
   // ── @values bindings ─────────────────────────────────────────────────────
   for (const model of schema.models) {
@@ -4760,6 +5011,51 @@ function validate(schema) {
         const fk = field.attributes.find(a => a.kind === 'relation')?.fields?.[0]
         errors.push(`${at} — '${field.name}' is the relation, not the column that holds the value. Put it on ${fk ? `'${fk}'` : 'the foreign key column'}`)
         continue
+      }
+
+      // ── dependsOn — the column of the SOURCE is DERIVED ──────────────────
+      //
+      // `dependsOn: countryId` says this row's `countryId` narrows the list.
+      // Which column of the source it is matched against comes out of the
+      // relation path: `Address.countryId` points at `Country`, so the source
+      // must reach `Country` too, and the column it reaches it by is the one to
+      // compare. Stating both sides would be two places to be wrong; a schema
+      // that cannot decide is refused rather than guessed at (`FJS-D122`).
+      if (bind.dependsOn) {
+        const ctl = model.fields.find(f => f.name === bind.dependsOn)
+        if (!ctl) {
+          errors.push(`${at} — dependsOn '${bind.dependsOn}' is not a field on '${model.name}'`)
+        } else if (bind.dependsOn === field.name) {
+          errors.push(`${at} — dependsOn names '${field.name}', the column it is bound to. A list cannot narrow by itself`)
+        } else if (bind.dependsOnSource) {
+          if (!src2(vs).fields.some(f => f.name === bind.dependsOnSource))
+            errors.push(`${at} — dependsOn ... on '${bind.dependsOnSource}' is not a field on '${vs.source}'`)
+          else bind.dependsOnField = bind.dependsOnSource
+        } else {
+          // What does the controlling column point AT? The relation beside it
+          // carries the target; a plain column has none, and then there is
+          // nothing to walk and the source column must be stated.
+          const target = model.fields.find(f =>
+            f.attributes?.some(a => a.kind === 'relation' && a.fields?.[0] === bind.dependsOn))?.type?.name
+          if (!target) {
+            errors.push(
+              `${at} — dependsOn '${bind.dependsOn}' is not a foreign key, so there is no relation to follow to ` +
+              `'${vs.source}'. Name the column on '${vs.source}' it is matched against: dependsOn: ${bind.dependsOn} on <column>`)
+          } else {
+            const hops = src2(vs).fields
+              .filter(f => f.type?.name === target && f.attributes?.some(a => a.kind === 'relation'))
+              .map(f => f.attributes.find(a => a.kind === 'relation').fields?.[0])
+              .filter(Boolean)
+            if (hops.length === 1) bind.dependsOnField = hops[0]
+            else if (!hops.length) errors.push(
+              `${at} — dependsOn '${bind.dependsOn}' points at '${target}' and '${vs.source}' has no relation to it, ` +
+              `so the two lists are unrelated. Name the column to match on: dependsOn: ${bind.dependsOn} on <column>`)
+            else errors.push(
+              `${at} — dependsOn '${bind.dependsOn}' points at '${target}' and '${vs.source}' reaches it ` +
+              `${hops.length} ways (${hops.join(', ')}), so which one narrows the list is not decidable. ` +
+              `State it: dependsOn: ${bind.dependsOn} on <column>`)
+          }
+        }
       }
 
       // `open` writes a row from what the caller typed, so it needs to know
@@ -5066,6 +5362,40 @@ function validate(schema) {
         if (Array.isArray(attr.fields) && attr.fields.includes(field.name))
           errors.push(`Model '${model.name}': @@${attr.kind} names '${field.name}', which is @transient — it has no column to ${attr.kind === 'index' ? 'index' : attr.kind === 'unique' ? 'constrain' : 'read'}`)
       }
+    }
+  }
+
+  // ── @@softDelete with no deletedAt column to mark ───────────────────────────
+  //
+  // The attribute names a column and the model has to declare it — every read is
+  // ANDed with `deletedAt IS NULL` and `remove` stamps it. Without the field
+  // there is no column, and SQLite resolves the unknown identifier in that WHERE
+  // as a STRING LITERAL rather than raising: `'deletedAt' IS NULL` is false for
+  // every row, so the model answers an empty list to every read and null to
+  // every update, with a 200 and no error anywhere. `restore()` is the only verb
+  // that fails out loud, because it writes the column instead of reading it.
+  //
+  // NULLABILITY is checked and the TYPE is not, which is measured rather than
+  // chosen: `deletedAt String?` behaves identically — litestone writes every
+  // instant as ISO-8601 TEXT — and it is what `introspect` emits, since a real
+  // database's TEXT column cannot say whether it holds a date. A required column
+  // is the other half: it is stamped at create, so every row is born deleted and
+  // invisible to every read, or the create is refused outright.
+  for (const model of schema.models) {
+    if (!model.attributes.some(a => a.kind === 'softDelete')) continue
+    const field = model.fields.find(f => f.name === 'deletedAt')
+    if (!field) {
+      errors.push(
+        `Model '${model.name}': @@softDelete needs a 'deletedAt DateTime?' field and this model has none. ` +
+        `The attribute names that column — every read filters on it and remove stamps it — and without it ` +
+        `every read answers an empty list with no error. Add: deletedAt DateTime?`)
+      continue
+    }
+    if (!field.type.optional) {
+      errors.push(
+        `Model '${model.name}': @@softDelete needs 'deletedAt' to be optional and it is ` +
+        `'${field.type.name}'. A live row holds NULL there, so a required column is stamped at create ` +
+        `and every row is born deleted. Write: deletedAt ${field.type.name}?`)
     }
   }
 
@@ -5929,7 +6259,75 @@ function validate(schema) {
 
   const viewNames = new Set(schema.views.map(v => v.name))
 
+  // ── @@export ───────────────────────────────────────────────────────────────
+  //
+  // One walk over models and views, because the attribute means the same thing
+  // on both: this dataset may leave, in this shape. Who may take it is the
+  // @@gate beside it and is required here even where the schema guards nothing
+  // else — an ungated exportable model is a bulk read of every row by anybody,
+  // which is a different proposition from an ungated model somebody reads one
+  // row of at a time.
+  const EXPORT_FORMATS = new Set(['ndjson', 'csv'])
+  for (const decl of [...schema.models, ...(schema.views ?? [])]) {
+    const ex = (decl.attributes ?? []).find(a => a.kind === 'export')
+    if (!ex) continue
+    const what = (schema.views ?? []).includes(decl) ? 'View' : 'Model'
+
+    if (!EXPORT_FORMATS.has(ex.format))
+      errors.push(
+        `${what} '${decl.name}': @@export format '${ex.format}' is not one this can write — ` +
+        `${[...EXPORT_FORMATS].join(' or ')}.`)
+
+    if (!(decl.attributes ?? []).some(a => a.kind === 'gate'))
+      errors.push(
+        `${what} '${decl.name}': @@export needs a @@gate beside it. An export is a bulk read of every ` +
+        `row a caller may see, so an ungated one is the whole table to anybody. Write @@gate("0") if ` +
+        `this dataset is public on purpose.`)
+
+    if (ex.since) {
+      const field = decl.fields.find(f => f.name === ex.since)
+      if (!field)
+        errors.push(
+          `${what} '${decl.name}': @@export(since: ${ex.since}) names no column this ${what.toLowerCase()} declares — ` +
+          `the cursor is read off the rows that leave.`)
+      else if (field.attributes?.some(a => a.kind === 'computed'))
+        errors.push(
+          `${what} '${decl.name}': @@export(since: ${ex.since}) names a @computed field, which is not a column — ` +
+          `a cursor has to be something the database can order by.`)
+    }
+  }
+
+  // A schema that guards anything guards its views too, and the refusal is at
+  // parse rather than at read: a view is a projection of rows a model gates, so
+  // an ungated one is a way around every gate the schema declares — and it
+  // cannot be inferred from `@@sql` without parsing SQL to find the sources.
+  // `@@gate("0")` is how a schema says a view is public deliberately.
+  const schemaGuards = schema.models.some(m =>
+    m.attributes?.some(a => a.kind === 'gate' || a.kind === 'allow' || a.kind === 'deny') ||
+    m.fields?.some(f => f.attributes?.some(a => a.kind === 'fieldAllow' || a.kind === 'guarded')))
+  const rowTenancy = schema.tenancy?.strategy === 'row'
+
   for (const view of schema.views) {
+    const viewAttrs = view.attributes ?? []
+
+    if (schemaGuards && !viewAttrs.some(a => a.kind === 'gate'))
+      errors.push(
+        `View '${view.name}' must declare @@gate — this schema declares access rules, and a view is a ` +
+        `read path onto the rows they guard. Write @@gate("0") if the view is public on purpose.`)
+
+    if (rowTenancy && !viewAttrs.some(a => a.kind === 'tenant'))
+      errors.push(
+        `View '${view.name}' must declare @@tenant — under 'strategy row' a view's @@sql carries no tenant ` +
+        `predicate, so one tenant reads another's rows. Name the view's own tenant column with ` +
+        `@@tenant(column: "…"), or @@tenant(none) if the view spans tenants on purpose.`)
+
+    // A view has no relations, so a policy that hops one cannot compile and
+    // would otherwise fail later naming a field the author did not write.
+    for (const attr of viewAttrs) {
+      if (attr.kind === 'tenant' && attr.mode === 'via')
+        errors.push(`View '${view.name}': @@tenant(via:) needs a relation and a view declares none — name the column instead`)
+    }
+
     // Must have @@sql
     if (!view.sql)
       errors.push(`View '${view.name}' must declare @@sql("...")`)

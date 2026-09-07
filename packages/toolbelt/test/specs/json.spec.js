@@ -517,3 +517,69 @@ test('jsonPointer: ~ and / are escaped, which is why it is not a join', () => {
   assert.equal(jsonPointer(['~/']), '/~0~1', 'both, in the order the spec states')
   assert.equal(jsonPointer([]), '', 'the whole document is the empty pointer')
 })
+
+/* ── A JSON member is an OWN property ──────────────────────────────── */
+
+// `__proto__` is legal JSON and `JSON.parse` keeps it as an OWN key, so the
+// viewer renders the row and then had to be able to edit around it. Every
+// assertion below is written with `__proto__` on purpose: `constructor` and
+// `toString` store fine under a plain assignment, so a row using either of
+// them passes against the whole defect (`FJS-996`).
+
+const withProto = () => JSON.parse('{"name":"cfg","__proto__":{"inherit":true},"z":9}')
+
+test('json: removing one key does not take a __proto__ sibling with it', function () {
+  // The sharpest shape: the key removed is not the one lost. Under a plain
+  // assignment this answered {"name":"cfg"} — two keys gone, one requested,
+  // and a whole subtree with it.
+  const after = removeIn(withProto(), ['z'])
+  assert.deepEqual(Object.keys(after), ['name', '__proto__'])
+  assert.equal(JSON.stringify(after), '{"name":"cfg","__proto__":{"inherit":true}}')
+
+  // Nested, where the rebuild is one level down.
+  const nested = removeIn(JSON.parse('{"cfg":{"__proto__":{"a":1},"b":2}}'), ['cfg', 'b'])
+  assert.equal(JSON.stringify(nested), '{"cfg":{"__proto__":{"a":1}}}')
+})
+
+test('json: renaming a key TO __proto__ keeps the value', function () {
+  // renameKey rebuilds rather than delete+set so an edit does not surprise the
+  // person. Under a plain assignment it discarded the key and the value both.
+  const after = renameKey(JSON.parse('{"keep":"my data","other":1}'), [], 'keep', '__proto__')
+  assert.equal(JSON.stringify(after), '{"__proto__":"my data","other":1}')
+})
+
+test('json: setIn adds a __proto__ key as an own key, and does not set a prototype', function () {
+  const added = setIn({ a: 1 }, ['__proto__'], 'hello')
+  assert.ok(Object.hasOwn(added, '__proto__'), 'the key exists')
+  assert.equal(JSON.stringify(added), '{"a":1,"__proto__":"hello"}')
+
+  // An OBJECT value is the half that fails differently: assignment replaced the
+  // copy's prototype, so Object.keys and JSON.stringify saw nothing while
+  // `.leaked` and `in` saw it — one document that reads two ways.
+  const obj = setIn({ a: 1 }, ['__proto__'], { leaked: 'yes' })
+  assert.equal(JSON.stringify(obj), '{"a":1,"__proto__":{"leaked":"yes"}}')
+  assert.equal(obj.leaked, undefined)
+  assert.equal('leaked' in obj, false)
+})
+
+test('json: a diff of two documents differing at __proto__ renders the row', function () {
+  // The count and the tree are built by different code, so this failed as
+  // `changed: 1` with nothing to show for it.
+  const d = diffDocs(JSON.parse('{"__proto__":{"a":1}}'), JSON.parse('{"__proto__":{"a":2}}'))
+  assert.equal(d.count.changed, 1)
+  assert.deepEqual(Object.keys(d.merged), ['__proto__'])
+})
+
+test('json: getIn answers a member of the DOCUMENT, never an inherited one', function () {
+  // A JSON reader answering `Object.prototype` or a function is describing a
+  // document nobody wrote. Paired with the same names as real own keys, or a
+  // guard that refused them outright would look identical from here.
+  assert.equal(getIn({ a: 1 }, ['__proto__']), undefined)
+  assert.equal(getIn({ a: 1 }, ['constructor']), undefined)
+  assert.equal(getIn({ a: 1 }, ['toString']), undefined)
+  assert.equal(getIn([1, 2], ['length']), undefined)
+
+  assert.equal(getIn(JSON.parse('{"__proto__":7}'), ['__proto__']), 7)
+  assert.equal(getIn({ constructor: 'blue' }, ['constructor']), 'blue')
+  assert.equal(getIn([1, 2], [1]), 2)
+})

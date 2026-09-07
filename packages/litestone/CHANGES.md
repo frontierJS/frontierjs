@@ -1,5 +1,712 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-07 — a tuple key is a fixture the executed checks can build
+
+`FJS-961`. `expandCompositeId` stamps `@id` on every member of an `@@id([a, b])`,
+and the fixture builder read that attribute alone to mean *the database mints
+this one*. So an `Int` member came out of every payload, no fixture for the model
+could be assembled, and `verifyGateLadder` answered *no fixture could be built,
+so the gate was never asked* on the write paths and threw
+`Validation failed — <col> is required` on create.
+
+**The checker was honest and that is why it survived.** It said it could not ask
+rather than reporting a pass — and the suite beside it read a clean list as
+coverage, so `MetricPoint` and `MetricHour` entered basecamp graded by nothing.
+Nineteen rows of *no fixture could be built* on `MetricPoint` alone, all green.
+
+`isServerAssignedId` is the one owner of *does the database mint this column* and
+is now asked rather than restated: an `Int` `@id` auto-increments only where it
+is the WHOLE key. One half stays here, because this builder seeds MANY rows where
+the create schema describes one — a default that is the same value every row (a
+literal, or `auth()`) is server-assigned and still has to be supplied, or the
+model caps at a single row and basecamp's `HubConfig` (`@default("hub")`) fails
+its second seed.
+
+**The identity the checkers name a row by moved with it.** One column of a tuple
+key is a FILTER, not an identity: it matches every row sharing that column, so an
+update built from it reaches rows the check never seeded and the extra row is
+indistinguishable from the rule under test admitting it. `_keyFields`,
+`_idWhere` and `_rowId` build every `where` and every Set key from the whole key
+in KEY ORDER — the same answer `$primaryKey` gives, read the same way.
+
+Measured: against a mutant schema claiming `MetricPoint` is open, its 28 ladder
+rows come back real `deny`s, which they can only do if the write actually ran.
+The control is a single-column `Int @id`, still absent from the payload.
+
+## 2026-09-07 — a view is reachable from the API realm
+
+`FJS-997`. `buildTableForView` hand-listed the ten reads it forwarded from
+`makeTable`, and four the table grew after that list was written were simply not
+on a view: `findManyAndCount`, `cursorFor`, `orderTotal` and `query`.
+
+**The first is the one that bites.** Junction's base service runs
+`findManyAndCount` for `find`, so `createBaseService({ model: <a view> })` boots
+clean, mounts a route, and answers **500 — `table.findManyAndCount is not a
+function`** on its first request. No service could list a projection, which is
+why nothing had noticed: `FJS-972` gave `view` its first caller, and this is what
+the SECOND caller found.
+
+**Which half is enumerated is now the other way round.** Reads forward;
+`VIEW_BLOCKED_WRITES` names the thirteen a projection refuses. That direction is
+chosen rather than convenient — a missing read is an unreachable view, annoying
+and loud, while a missing write is a write that SUCCEEDS against a
+`@@materialized` view, which is a real table, and is then destroyed by the next
+refresh. So the blocked set is what the tests interrogate: each of the thirteen
+asked rather than assumed, with a model of the same shape beside them as the
+control, and the surface compared against a MODEL's rather than a list written in
+the test.
+
+`cursorFor` is present and refuses, which is the right answer rather than a gap:
+a projection has no key, so no ordering over it is total.
+
+## 2026-09-07 — The Schema Advisor says which database it graded, and refuses one nobody runs
+
+Every row that panel prints is the schema compared to the DDL of ONE live
+database, and nothing said which (`FJS-993`). Under `tenancy { strategy
+database }` the registry redirects every tenant to a file of its own, so the
+declared `database main` path is opened only by readers that are not a fleet —
+Studio among them, which then CREATES it and never migrates it again. Measured
+on `example`: 23 critical *missing FK index* rows against a skeleton frozen
+hours earlier, while the shop the app actually serves carried every index the
+schema declares. The advisor was right about the file it held and the file was
+not the app.
+
+**The database travels with the answer.** `/api/perf/advisor` returns a `source`
+— the file, the tenant, and whether that database is behind the schema grading
+it — and the panel heads the list with it rather than putting it on a badge,
+because the reading and the caveat are read at different moments otherwise.
+
+**Under `strategy database` with no tenant open it refuses to grade.** Labelling
+a wrong red row does not stop somebody acting on it, and there is nothing here
+to compare: the base file is a skeleton no tenant uses. The refusal carries the
+tenant switcher's own button — extracted to `tenantChooseButton`, three callers
+and no fourth copy — so the panel that refused is where you open one.
+
+**A switch re-reads it.** `reopenDatabase` refreshed Overview and the open table
+and left this panel describing the previous database, which is `FJS-982` one
+panel along. `diffAgainstSchema` is now the one owner of *is this database
+behind the schema*, shared with `/api/migrations`.
+
+**`verify:studio:advisor` is the artefact that makes it visible** — three
+studios, a fleet with one tenant and a plain app whose database is one `@@index`
+behind the schema grading it. Every refusal is PAIRED with the same advisor
+answering properly once a tenant is open, because a panel that graded nothing
+satisfies every assertion about a refusal on its own; closing the tenant again
+is its own row, since a switch that only ever opened leaves the panel grading
+the base file with the tenant badge still on screen. Measured against stubs:
+removing the disclosure reds 9 of 26 rows, removing the behind comparison 3.
+
+**`litestone tenant` was broken outright and the drive found it.** The dispatch
+read the first non-flag out of raw argv, which is the command word, so `tenant
+list`, `tenant create` and the other three all answered *Unknown tenant
+subcommand "tenant"*. Nothing in the repo had a caller for it — `example` builds
+its tenants through the registry from its own app.
+
+## 2026-09-07 — Studio says WHY a table is empty, and can run the seed
+
+`No rows` is the sentence a broken query produces, and Studio knew the reason in
+both of the cases that matter without saying it where the emptiness is SEEN. A
+person opens Studio, clicks a table, and concludes the app has no data.
+
+**Opening a tenant left the whole page describing the previous database**
+(`FJS-982`). Measured in a browser on `example`: before opening `flagship`, 1 of
+44 sidebar tables read non-zero and the header said 602.2 KB; after opening it,
+1 of 44 and 602.2 KB. Only the badge, the toast and the row's `active` pill
+moved, so the panel read as unfinished — while `/api/table` had been answering
+the tenant's rows the whole time. The three renders that are facts about *which
+database is open* were written inline in the boot sequence, which was right for
+exactly as long as the open database could not change; `applyDatabaseFacts` is
+the one owner now and `reopenDatabase` calls it on both switches. 1 → **28**
+non-zero tables, 602.2 KB → 1.1 MB. The schema-derived caches are deliberately
+untouched — `_access`, `_advise` and `_catalog` answer about the `.lite` file,
+which every tenant shares — and `_drift` is dropped, because a tenant can be
+behind on migrations while the base database is not.
+
+**The empty state names the cause and carries the way out.** Under
+`tenancy { strategy database }` it says no tenant is open and offers the one
+there is; with a seed declared and nothing anywhere, it names the command. It is
+the same button those panels already carry rather than a second implementation.
+
+**The seed is read off the app's own `package.json`** — `db:seed`, then `seed`,
+then `seed:dev`. `db/seed.ts` is a convention somebody may or may not follow;
+`"db:seed"` is a statement they made. **The client never names the script**: it
+asks to run *the seed* and the server resolves which one that is from a fixed
+list, so nothing caller-supplied reaches the argv — the compare panel's rule for
+a git ref, one command over. Refused under `--readonly`, run with `shell: false`
+in the app's own directory, bounded at five minutes, and both streams are shown,
+because a seeder that prints progress to stdout and its refusal to stderr is the
+common shape. The confirmation shows the script AND what it expands to: Studio
+already ships raw SQL and a JS REPL so a spawn is not a new capability class,
+but a button that runs a file you cannot read is different from one that runs a
+query you can.
+
+On Overview the offer fires only when there is **nothing and something to run** —
+no rows anywhere and a seed declared — and is suppressed while a tenant is
+unopened, where the rows exist and the seed is the wrong advice.
+
+**The way out was a button that threw** (`FJS-989`). The tenant id went into the
+handler as `${JSON.stringify(id)}`, so the markup was
+`onclick="tenantOpen("flagship")"`; the HTML parser ends the attribute at the
+second quote and what survives is a bare `tenantOpen(` — a `SyntaxError` on
+every press. The Tenants panel had the same shape one escaping over,
+`'${esc(id)}'`, which breaks on an apostrophe instead. Both are
+`esc(JSON.stringify(x))` now, the idiom this file already used at the
+row-selection checkbox: an inline handler is a string the HTML parser reads
+FIRST, so the value has to survive attribute parsing before it is ever JS.
+
+The drive had a row over that button and it passed, which is the more useful
+half. It read the `onclick` attribute and tested it against `/tenantOpen/` —
+matched by the truncated `tenantOpen(` — asking what the attribute SAYS rather
+than whether pressing it does anything. It clicks now.
+
+Five assertions in `verify:studio:models`, none of which runs the seed. Measured
+with each half stubbed: the empty-state reason reds 1, the seed row 1, offering
+it unconditionally 3 — the last being the control, since an offer that fires
+whether or not there is anything to fix is one people learn to ignore — and the
+raw-JSON id 2, the second being `consoleErrors`.
+
+## 2026-09-07 — Studio previews, and now says how
+
+`FJS-D230` ruled the line between a preview and an extract, and three defects
+fell out of it. All three are Studio's, all three were silent.
+
+**The route is `/api/table-dump`** (`FJS-978`). It was `/api/export`, which is
+the governed extract's word: `@@export` + `litestone export` means a declared
+dataset, a `@@gate` required beside it, protected columns omitted unless asked,
+and a manifest stamping who took it. Studio's is the owner's view of a table and
+is not any of that. One word may not mean both.
+
+**It withholds protected columns, and names them** (`FJS-976`). Its column list
+knew about relations, `@computed` and `@transient` and nothing about protection,
+and the branch it defaulted to was `asSystem()` — what an operator who has chosen
+no principal gets — so `@secret` and `@guarded` values went into a downloadable
+CSV in plaintext. Measured on a model carrying both: the values are absent now,
+`X-Withheld-Columns` names each one with the attribute that withheld it, and the
+toast says so. Not a privilege escalation: whoever runs Studio holds the file and
+the key already. What was wrong is that the file left looking ordinary. There is
+no way to ask for them back here, deliberately —
+`fli db:export --include-protected` is the path that records the decision.
+
+**The picker says what graded it** (`FJS-977`). Acting as somebody in Studio is a
+real `$setAuth`, so row policies, field policies and gates all apply — the
+premise the issue was filed on, that Studio has no access story, was false. Two
+things it cannot do and neither was visible: the level was graded by toolbelt's
+default resolver rather than the app's, because `studio` was the only one of the
+three principal-taking commands that did not accept `--gate`; and a claim the app
+resolves per request is absent from every principal built here, because Studio
+has no request. Under `strategy row` that is an EMPTY answer rather than a
+narrower one, which is the same screen as a policy doing its job. `studio` takes
+`--gate` now, and the rail says which resolver ran and which declared claims the
+principal does not carry.
+
+**And one of ours** (`FJS-983`). `columnPlan` kept a second list beside
+`isStoredField`, which is the one owner of *is this a column*, and got two of five
+exclusions — so a `@transient`, `@derived`, `@from` or `@edge` field reached every
+extract as a column the database does not have, empty in the file and absent from
+the manifest's omissions. Latent: neither `@@export` in this repo names one. Found
+while pricing `FJS-976`, whose fix is *Studio reuses `columnPlan`*.
+
+`test/verify-studio-preview.mjs` is the drive — 26 assertions, two servers, its
+own schema and database. Restoring the protected columns reds 6 of them.
+
+**Running the other four found a fifth** (`FJS-985`). `verify:studio:explore`
+compared `field:id` to the number of own models, which reads as an identity and
+is not one: a composite key is two `@id` fields on one model, and a `type`
+declares fields and no key at all. 44 against 42, off by exactly `MetricPoint`
+and `MetricHour` — so the row had been red since junction's metrics reached
+`example` and nothing was watching, because that drive is not in `bun run test`.
+Both sides derive now, and the control asserts that including the generated
+models WOULD change the number, counted over every field attribute rather than
+over `@id`: the log model litestone writes declares one `@default` and no key, so
+an `@id`-shaped control is satisfied by a filter that does nothing.
+
+## 2026-09-07 — the reference had the delete verbs backwards
+
+`FJS-974`. `reference.snapshot.md` § `@@softDelete` read *"Deletes mark rather
+than remove, and restore() is the way back"*, which names the soft path `delete`
+and the hard path `remove`. The code is the other way round, and the page is the
+one written for looking a single word up — so the trap was to declare
+`@@softDelete` because rows must be recoverable, read its entry, call `delete()`,
+and destroy the row believing it was marked.
+
+Re-measured before rewriting: on a bare `@@softDelete` schema with three rows,
+`remove()` leaves `count()` at 2, `count({ withDeleted: true })` at 3,
+`onlyDeleted` at `[1]`, and `restore()` puts it back; `delete()` leaves
+`withDeleted` at 2, `onlyDeleted` empty and `restore()` answering `[]`.
+
+**The verbs stay.** `delete` is the ecosystem's word for the row going away — SQL,
+Prisma — so § IV *familiarity vs. precision* argues for the muscle memory here
+rather than against it. One string in `core/catalog.js` and a regenerate, stating
+the PAIR rather than only correcting the inversion, because the entry is where an
+author decides which verb to type. `seeAlso` gained `@keep`, the third fate a
+child can have beside cascade and `@hardDelete`.
+
+The catalog's own shape test caught the first wording — a blurb opens with a
+capital — which is the only mechanical guard this page has.
+
+It restates what `docs/querying.md` already says, deliberately: the reference is
+the lookup page and `querying.md` is the narrative tour, and the whole defect was
+that an author consulting one is by construction not reading the other.
+
+No test was owed. `test/litestone.test.ts` already pins the behavior twice — *a
+hard delete still bypasses the soft-delete filter* and the `afterDelete` hook
+case — which is the point of the defect: prose was the only thing wrong, and
+nothing that runs could see it.
+
+## 2026-09-07 — the governed extract
+
+`FJS-D228` phase 1. Before this the only way data left an FJS app was a person
+clicking `POST /api/export` in Studio, which is a development tool.
+
+`@@export(ndjson | csv [, since: <column>])` — on a **model or a view**, because
+both already declare a projection and a separate declaration would restate the
+columns, the gate and the policies a model has anyway.
+
+**There is almost no enforcement code, and that is the design.** An export is a
+paginated scoped read: `$setAuth(principal)` then `findManyCursor` until the
+pages run out. So a `@@gate` below the caller refuses at the first page, a row
+policy narrows the FILE rather than failing it, a field policy or `@guarded`
+column is absent because the predicate already compiled, and under tenancy the
+extract is one tenant's because the client is. Staff, a shopper and the system
+take three different extracts from one declaration, measured in `example`: 5
+orders, 1 order, 5 orders.
+
+**A `@@gate` is required beside `@@export`**, even where the schema guards
+nothing else — a bulk read of every row is a different proposition from one row
+at a time. `@@gate("0")` says public on purpose.
+
+**Protected columns do not leave, even for a caller who may read them.**
+`@encrypted`, `@secret` and `@guarded` are omitted; an interactive read is a
+screen and an extract is a file that leaves the machine. `includeProtected` is
+explicit and is recorded in the manifest.
+
+**The manifest is the stamped half.** Principal, declared read gate, whether
+anything graded the read at all, the cursor to resume from, the policies that
+bounded it — and `omitted`, the columns that did not leave and why. A manifest
+listing only what an extract contains is a receipt; one that names the omissions
+is evidence.
+
+`litestone export` is the command and `fli db:export` wraps it. `--as` takes an
+ACCOUNT rather than a level, resolved the way `repl --as` resolves one, because a
+synthesized principal evaluates every claim-based policy against nothing.
+`--system` is explicit, stamped, and audited. Under `strategy database` the
+command refuses without `--tenant` and names the tenants it knows, since main
+holds the machinery and none of the rows.
+
+Three things the build turned up. `$primaryKey` answers a **list** — a key can be
+a tuple — and an aggregate view answers an empty one, so the paging strategy is
+chosen from what the dataset offers: cursor where there is a total order, offset
+where there is none, because `findManyCursor` rightly refuses a projection it
+cannot order uniquely. A doc comment before an attribute inside a `view` was a
+parse error, where models have always allowed one. And `cmdExport` needs the
+house `createClient` form — `path` + `resolveFrom: 'schema'` — or a relative
+`database { path }` resolves against the working directory and the command
+reports on an empty database it created on the way (`FJS-449`).
+
+Green: litestone 4505 (27 new in `test/export.test.ts`), junction 2304, cli 1932,
+`example` `verify:views` 12/12 and `fli check` clean.
+
+## 2026-09-07 — a database is a file, not a declaration
+
+`FJS-958`, ruled as `FJS-D232`. Under `strategy database` every sqlite database
+is redirected into the tenant's own file — `tenant.js` has always written every
+one of their DDL sets into it — so two `database` blocks addressed one file
+through two write connections. SQLite allows one writer per file and the single
+transaction manager holds main's, so the second connection's first write waited
+on a lock the caller itself was holding and answered `database is locked`
+forever. Reads worked throughout, which is why a schema declaring a second
+database looked correct until something wrote.
+
+`buildDbRegistry` now groups sqlite declarations by resolved absolute path and
+opens one connection pair per path. `:memory:` is excluded — every
+`new Database(':memory:')` is a database of its own — and access stays per NAME,
+so a `readonly` or `access: false` declaration keeps its throwing stubs on a
+shared handle and does not close the write handle of a readwrite one beside it.
+
+**A `$transaction` spanning two declared databases is therefore atomic under
+`strategy database` and is not atomic outside it.** The tenant registry says so
+at open, beside the warning it already printed for the jsonl and logger
+databases a fleet shares.
+
+Three readers had to follow the unit, each wrong in silence: auto-DDL freshness
+asked an empty `sqlite_master` and a file size, both of which main's own DDL had
+already answered, so the second database's tables were never created; the
+cross-process watcher was one per name, and two on one events table deliver
+every foreign event twice; `_closeAll` checkpointed and closed the shared raw
+handles once per name.
+
+`test/one-file-one-connection.test.ts` — 7 rows, each paired with the same
+schema on two paths, since a fix that collapsed every database onto main's
+connection passes the shared-file half and deletes `FJS-D35`'s measured split.
+
+## 2026-09-07 — four `pascal` copies and two `slugify` copies move to the kit
+
+`import/sql.js`, `import/rails.js`, `import/frappe.js` and `tools/eject.js` each
+carried their own `pascal`, and three of them their own `camel`; the two readers
+that build a model name spelled `pascal(singularize(t))` with splitters that
+disagreed. All four now import `@frontierjs/toolbelt/inflect`, which is where the
+`singularize` half already came from, and `modelOf` is the kit's `modelName`.
+
+`core/migrations.js` and `core/validate.js` each had a `slugify`, one writing `_`
+and one writing `-`, and they answered punctuation differently: `v1.2` was `v12`
+to the `@slug` transform and `v1-2` to the filename. Both are `slug` now, the
+migration one stating `{ sep: '_' }` because a filename segment is what it is.
+
+**`slugify` is gone from the public surface** rather than aliased — no consumer
+imported it, and a second name for the kit's function is the thing the move was
+for. `@slug` still answers `its-a-c-thing`: the kit took an apostrophe exception
+so that test could stay right (`FJS-975`).
+
+## 2026-09-07 — a view carries the rules, and something finally declares one
+
+`FJS-970`, `FJS-972`, and half of `FJS-971`. A `view` was a read path with no
+gate, no row policy and no tenant scope over models that declared all three, and
+the author could not give it any: `parseView` accepted four attributes and threw
+on everything else, so `@@gate` and `@@allow` were parse errors on a view.
+
+The hole was registration rather than a missing mechanism. Every read method
+already calls `plugins.beforeRead(modelName, …)` and
+`buildPolicyFilter(modelName, 'read', …)` with its own closure's name, and a view
+reaches those with `modelName: view.name` — it was enforced by nothing only
+because it was in none of the maps. So `buildAccessMap` and `buildPolicyMap` walk
+`[...models, ...views]`, the row-tenancy desugar gives a view the READ deny
+alone, and `parseModelAttribute` splits into a body callable with the name
+already read, so `@@allow` on a view is the same grammar as `@@allow` on a model
+rather than a second one.
+
+**Policies compile against the columns the VIEW declares.** That is what makes
+this decidable without reading `@@sql`: naming a tenant column the projection
+does not select is a parse error, not a predicate compiled against nothing.
+
+**Fail-closed, at parse.** A schema declaring any access rule makes an ungated
+view an error naming `@@gate("0")` as the way to say *public on purpose*, and
+under `strategy row` a view must state `@@tenant` or `@@tenant(none)`.
+`@@tenant(via:)` is refused — a view declares no relation to hop.
+
+The access snapshot was omitting views too, so `fli test:access --from` graded a
+branch that gated one as having moved nothing. Views are listed now, marked
+`*(view)*`, with `— *no writes*` in the three write columns: a view refuses every
+write by name whatever its gate says, and printing a level there would read as a
+permission somebody could hold.
+
+Both defects survived because nothing had ever declared a view — the whole
+construct was complete and had no caller. `example` declares one now
+(`revenueByStatus`, gated ABOVE the `Order` rows it sums) and `verify:views` is
+its drive, whose headline is that a signed-in shopper who legitimately reads
+their own orders may not read the sum of everybody's.
+
+`litestone advise` also gained `materialized-view-full-refresh`: `@@refreshOn`
+rebuilds the whole projection once per ROW written, synchronously, inside the
+write's transaction, so a `createMany` of 10,000 rows re-aggregates the source
+10,000 times. The strategy is unchanged and the ceiling is now stated —
+`FJS-971` stays open for whether there should be a second one.
+
+Green: litestone 4469 (20 new in `test/view-access.test.ts`), `example`
+`verify:views` 11/11 and `fli check` clean.
+
+## 2026-09-07 — @map reaches the read fast paths, and @@softDelete needs its column
+
+`FJS-969`, found probing whether `FJS-761` was still open. It is not — `@map` is
+applied now — but the implementation reached `ddl.js` and most of the query
+builder and left four raw `"deletedAt"` literals behind, two of them in the read
+fast paths.
+
+Nothing failed. SQLite resolves a double-quoted identifier it cannot bind as a
+STRING LITERAL rather than raising, so `WHERE "deletedAt" IS NULL` became
+`'deletedAt' IS NULL` — false for every row. Every `findMany` and every
+`findUnique` by primary key on a mapped soft-delete model answered nothing, with
+no error, while `count`, `findFirst`, `orderBy`, `select`, `aggregate` and
+`groupBy` answered correctly, because those take the slow path where the clause
+IS mapped. A model half-visible to itself.
+
+The same fallback is why a `@@softDelete` model with no `deletedAt` field was
+accepted: no column, so every read answered an empty list, every update answered
+null, and `restore()` was the only verb that failed out loud — it writes the
+column instead of reading it. Refused at parse now. NULLABILITY is checked and
+the TYPE is not, which is measured rather than chosen: `deletedAt String?`
+behaves identically, including the stamp and the restore, and it is what
+`introspect` emits from a real database, whose TEXT column cannot say whether it
+holds a date. A required column is stamped at create, so every row is born
+deleted.
+
+`introspect` inferred `@@softDelete` from the column NAME alone, so it emits it
+from a nullable column now — otherwise the adoption door writes a schema
+litestone will not load. The repo's own 188-model fixture carried the result of
+the name-only rule, written by hand: `DeletedRecord.deletedAt` is
+`DateTime @default(now())`, the instant a deletion was recorded, and marking that
+model soft-deleting made every row born deleted and invisible to every read.
+
+`test/column-mapping.test.ts` is an ORACLE rather than a list: one model
+declared twice, once with every column mapped and once plain, every operation
+run against both and compared. A path that forgets the translation diverges. It
+had to be that shape — `@map` is not a feature with a call site, it is a fact
+every query has to carry, and the four literals were not in one function.
+
+## 2026-09-07 — a `@unique` on a model with no other validators was never checked
+
+`verifyConstraints` proves a `@unique` by creating a row and writing its value
+again. That probe sat BEHIND a guard written for a different question:
+
+    if (!cases.invalid.length && !cases.boundary.length && !cases.uncheckable?.length) continue
+
+A model whose columns carry no VALUE validator generates no cases at all, so it
+was skipped whole and its `@unique` was never asked about. Three of
+`@frontierjs/auth`'s models are exactly that shape — `Session.token`,
+`Verification.value` and `OauthFlow.state`, each `String @unique @guarded` with
+no `@length` or format beside it — so a schema that dropped the uniqueness of a
+session token migrated cleanly and passed every check in the package. That is a
+security property, not a schema nicety (`FJS-602`).
+
+**Which models to visit is now derived from what the model DECLARES**, rather
+than from what one generator happened to produce for it.
+
+**The filed diagnosis was wrong and the correction is the useful half.** The row
+read the three survivors' shared `@guarded` as the cause — the runner could not
+synthesise a caller able to write the column, so it reported nothing rather than
+reporting that it could not try — and proposed writing through `asSystem()`.
+Measured: `verifyConstraints` already runs as system, and `asSystem()` returns a
+`@guarded` column's value, so the probe reaches it and works. `@guarded` was a
+coincidence of those three models, and reading it as the cause is what pointed
+the row at a fix that would have changed nothing.
+
+Measured against the real `auth.lite` (5 models, real encryption key), each
+mutant graded against the ORIGINAL schema:
+
+| mutant                | before   | after  |
+| --------------------- | -------- | ------ |
+| `Session.token`       | survived | killed |
+| `Verification.value`  | survived | killed |
+| `OauthFlow.state`     | survived | killed |
+| the original          | 0        | 0      |
+
+`litestone mutate --kinds unique-drop` over `packages/basecamp` now scores
+**100% — 9 of 9**, from the filed 63%.
+
+2 tests. Both halves of the pair are asserted — the mutant is caught AND the
+original stays silent, because a runner that reported both satisfies any test
+that only runs the mutant — plus a CONTROL: a model with no validators and no
+`@unique` is still skipped, without which *visit every model* would pass the
+first row and cost a factory build per model on every run. 1 red with the guard
+put back. litestone 4439 pass, typecheck clean.
+
+## 2026-09-07 — a value set can lead its order with what was used last
+
+`order recent(ProductVariant.color, createdAt), sortOrder, name` — the HEAD of
+the list (`FJS-D121`, `FJS-964`). It is not a fourth sort key: the head is its
+own bounded query and the columns after it order the page beneath it, which is
+why the schema carries `recent` and `order` as two facts rather than one mixed
+array.
+
+**The clock is stated.** The ruling sketched `recent(Model.field)`; ranking by
+the wrong clock draws an order that looks perfectly reasonable, so the column
+that says WHEN is named the way `@@label` names the column that says WHICH ROW.
+
+Four refusals at parse, each a way to be quietly wrong: a model or column that
+is not there, a column that does not hold values of this set (ranking it offers
+rows the list does not contain, so the message says which spelling would fix it
+— bind it, or point it at the set's own value column), and a clock that is not a
+stored DateTime, which names the DateTime columns the model does declare. A head
+that is not first, or a second one, is refused for the same reason a sort key
+cannot precede it.
+
+Nothing about it is a rule: two schemas differing only in the head accept and
+refuse the same values.
+
+## 2026-09-07 — a value set can state the order a picker offers
+
+`valueset ProductColor { source Color  value name  scope current  order sortOrder, name }`
+— what the list opens on (`FJS-D121`). It sits on the SET, where the strength
+deliberately does not: one list shown on two fields is the same list, and a
+screen wanting another order already has the per-call `directives` argument.
+
+**The order is a directive, not a rule.** Nothing about it changes what the
+column may hold — membership is the scope's and legality is the strength's — so
+it travels in `x-values.order` and no new check is owed at the boundary.
+
+The parse-time refusals are the substance. An order naming a column the source
+does not have is a list that stays alphabetical forever with nothing said, and
+so is one naming a column whose order is not the values' order: `@encrypted`
+sorts by ciphertext, `@hashed` is one-way, `Json` sorts its text and not its
+structure, `File` sorts by what things were stored under, `@guarded` is refused
+by `$checkOrderBy` at the boundary so the list would fail to load, and
+`@computed`/`@transient` have no column to sort by. Each is refused by name.
+`orderColumnRefusal` is separate from `valueColumnRefusal` because the questions
+differ — a value column is matched for EQUALITY, an order column compared for
+SEQUENCE — and `Json` and `File` are legal values and meaningless sorts.
+
+**Only a DECLARED order is emitted.** The default is the label column ascending
+and is resolved where the label is, so a set that says nothing about order
+travels byte-identical to before.
+
+## 2026-09-06 — `x-aggregatable`, and `aggregatableKeysFor` moves beside its siblings
+
+Which columns may be named by an aggregate now travels, as the NEGATIVE with its
+reason — the shape `FJS-553`/`FJS-554` settled for sortability and filterability
+(`FJS-D226`). It is narrower than either: a `@from` field sorts fine and cannot
+be aggregated, because it is a subquery aliased into the SELECT rather than a
+column `SUM` can be handed. An opaque column (Json, File, `@encrypted`,
+`@hashed`) is marked with what it would actually summarise.
+
+`aggregatableKeysFor` was private to `client.js` and is now exported from
+`query.js` beside `sortableKeysFor` and `filterableKeysFor`, which is where the
+answer to *what may this column do* lives. One owner, two readers.
+
+## 2026-09-06 — a value set can depend on a sibling column
+
+`stateId String @values(States, dependsOn: countryId)` — the list is that
+country's states (`FJS-D122`). The dependency is a JOIN and it goes on the
+BINDING, for the reason the strength does: a set is reusable and a controlling
+column is model-local.
+
+**Which column of the SOURCE it matches is DERIVED.** `Address.countryId` points
+at `Country`, so the source must reach `Country` too and the column it reaches it
+by is the one to compare. Zero paths or two is a parse refusal naming the
+candidates, and `dependsOn: countryId on regionCountryId` is the escape. A schema
+stating both sides of a join it can compute is two places to be wrong.
+
+**The pair is graded in BOTH directions, which is the half a one-way check
+leaves open.** A patch naming only `stateId` is graded against the stored
+`countryId` — and a patch naming only `countryId` is graded against the stored
+`stateId`, because moving the controller is the other way to end up with an
+invalid row. Both are refused field-level, beside the control. A create pays
+nothing extra: both columns are in the payload, so the only read is the one the
+plain check already makes with one more column selected; the stored row is
+fetched only when a write names one half and not the other.
+
+**An `open` dependent set stamps the controller on the row it creates**, or the
+value just added sits outside the list that was just narrowed and the next read
+does not offer it.
+
+`dependsOn` travels on `x-values` as two NAMES, so the picker sends an ordinary
+column filter — nothing new on the wire, and `$checkWhere` already validates it.
+
+17 tests, 5 red with the check stubbed. `example` declares the first one:
+`ProductImage.variantId` may only name a variant of the photograph's own
+product, which is a row the relation alone accepts because both columns are
+valid foreign keys and nothing compared them.
+
+## 2026-09-06 — a RawClause is identified by a brand JSON cannot carry
+
+A raw clause is the one value litestone puts in the SQL PATTERN rather than the
+parameter list, so what identifies one is a security boundary. It was
+`val._litestoneRaw === true` — a shape `JSON.parse` produces.
+
+**Two callers ask the question and they ask it for opposite reasons.**
+`where: { $raw: … }` is an escape hatch a developer writes, and it accepts a
+plain string on purpose. A named aggregate's `filter` is checked precisely to
+tell a developer's fragment from data that arrived off the wire — its refusal of
+a plain string says so in as many words. The second guard could not do its job,
+because the thing it tested for was forgeable by the very input it was written
+against.
+
+**Measured (`FJS-955`).** A request-shaped object —
+`{ _litestoneRaw: true, sql: '…', params: [] }` — passed `isRawClause` and its
+text was interpolated verbatim into `FILTER (WHERE …)`. Closing that paren and
+aliasing lets a subquery ride in the SELECT list: one call answered
+`ada=90000,bea=40000` off a `@guarded` column, to a caller whose own rows carry
+no salary at all. It is not reachable through junction's auto-CRUD — a `$` key
+is transport syntax the bridge routes to directives, and an unknown filter key
+is refused — but `db.order.query(req.query)` is the documented dispatch shape,
+so an app following the docs hands it a caller's object, and the aggregate verb
+under discussion (`FJS-D226`) would make it wire-reachable outright.
+
+**The brand is `Symbol.for('litestone.rawClause')`, and there is now one
+constructor.** JSON has no symbols. `rawClause()` is the only place a fragment
+is made — the `sql` tag, `schemaRaw`, both policy producers and all three in
+`client.js` go through it, so the next fragment built by hand is refused by the
+walls rather than joining them. `_litestoneRaw` stays on the object because it
+is the declared public shape (`index.d.ts`, and the `$raw` type typegen writes
+into an app); it identifies nothing.
+
+9 tests, each refusal paired with the same call through the real tag, plus a
+row-policy read as the control that a brand refusing everything would fail.
+litestone 4398, junction 2276.
+
+## 2026-09-06 — `having` and an aggregate `orderBy` name columns too
+
+`refuseAggregateKeys` is the whole field ladder for an aggregate — @hashed,
+@encrypted, @guarded, @omit(all), and a field-level `@allow('read')` that an
+aggregate has no row to decide against. `_max: { salary }` and `by: ['salary']`
+went through it. The two grammars that name a column INSIDE an expression did
+not, so the ladder refused nothing there.
+
+**Measured, and it is `FJS-393`'s attack on a surface that had no walk**
+(`FJS-954`). A binary search on a HAVING threshold —
+`having: { _sum: { salary: { gt: N } } }` over a two-row fixture — recovered an
+exact salary in 18 requests, and `orderBy: { _sum: { salary: 'desc' } }` ordered
+every group by the column in ONE. The caller reads rows that carry no `salary`
+at all, which is what makes it the same defect: the value is recovered by asking
+ABOUT it.
+
+**Two more failures shared the gap and both were silent.** An unknown name
+answered instead of refusing — SQLite reads an unresolvable quoted identifier as
+a string constant, so `SUM('nope') > 1` is false and the caller is told no group
+matched (`FJS-202`'s shape). And a `@map`'d field compared against its own NAME,
+because these two expressions interpolated the field where every other aggregate
+site calls `_aggCol`. Both are gone with the same three lines.
+
+**The refusals moved to one owner rather than growing a fourth list.** Legality
+for every `orderBy` key on a groupBy is now decided in one place, `$raw`
+included, and the builder emits what survived. A named aggregate in either
+grammar is refused BY NAME — it is computed in the SELECT and was previously
+dropped without a word.
+
+16 tests, 6 red with the guard stubbed. Every refusal is paired with the same
+shape one column away, since a check that refused `having` outright satisfies a
+suite that only asks about the refusal (`FJS-351`); the `@map` rows assert a
+THRESHOLD that separates the two rows rather than a non-empty answer, because
+the field name as a string constant also answers. litestone 4389.
+
+## 2026-09-06 — a patch whose only key is `version` writes nothing
+
+`version` is a PRECONDITION the client sends back, not a value to write. It was
+stripped from `data` correctly and then the bump was appended to the SET clause
+anyway, which MANUFACTURED a column to write when `data` was otherwise empty —
+so a form submitted with nothing edited was a real write: the column went up,
+`@updatedAt` moved with it, the row was announced to every open tab and the audit
+trail gained an `update` entry whose before and after are the same row. The
+stale-write machinery then correctly reported a conflict to everybody else, for a
+change nobody made, and the caller who caused it never saw it (`FJS-368`).
+
+**Which boundary answers was decided by measurement rather than argued.** A model
+with no `@version` already returned the row untouched for `data: {}` — litestone
+holds the rule and only failed to apply it once `@version` was stripped, so the
+two spellings disagreed about the same patch. Junction dropping the key would
+have been a second copy of a rule this package owns, and a direct litestone
+caller would have kept the bug.
+
+**The cause was written down as a feature.** The comment beside the bump said a
+versioned update always has a column to write even when `data` is empty — eight
+lines above the one that says only a write with something to say moves the stamp.
+Hearing held (§ IV, doctrine vs discovery); both corrected.
+
+**Three consequences, one condition.** The bump, the announcement and the audit
+entry. Silencing the bump alone leaves *every open editor is told this row
+changed* true, and `fireCollectionEvent` has said the same thing one scope along
+for as long as it has existed — *nothing matched, so nothing changed*. Nested and
+edge writes are a real change to the row's meaning and still earn all three; only
+a patch naming nothing at all does not.
+
+**What a no-op is not is a silent success.** The precondition is still checked,
+so a version-only patch carrying a STALE version is still a `VersionConflictError`
+— the caller is saying which version they read, and a stale one means their
+screen is wrong whether or not they were writing. The row is still read back and
+returned, which is what separates a no-op from a refusal.
+
+**One existing test pinned the bug.** *The expected version is never written
+literally* patched `{ version: 1 }` and expected 2; against a no-op the two
+answers are the same number, so it can no longer make its own claim. Rewritten
+with a real column, which is now the only shape that can.
+
+6 tests — 3 red with the bump guard stubbed, 1 with the announce/log guard and 1
+with the precondition. One of them is the ORACLE: a model with no `@version`
+answering the same patch the same way, which is what makes this a correction
+rather than a preference. litestone 4373 pass, junction 2276 pass, typecheck
+clean, `example`: `verify:revisions` 38/38. `basecamp`'s hand-written
+`changesNothing()` stays at its six call sites — it short-circuits past service
+work litestone cannot see, and is a shortcut now rather than the only thing
+standing between a form and a phantom conflict.
+
 ## 2026-09-06 — `distinct` is a boolean, and everything else was accepted and ignored
 
 `buildSQL` reads `distinct === true` and nothing else, so `distinct: ['title']`

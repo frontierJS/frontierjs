@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-46 model(s) · 30 enum(s) · 2 database(s)
+50 model(s) · 34 enum(s) · 2 database(s)
 audit → logger · main → sqlite
 ```
 
@@ -23,18 +23,22 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `AccountType` | `individual` · `organization` |
 | `ActorKind` | `api_key` · `support` · `system` · `user` |
 | `AlertSeverity` | `critical` · `info` · `warning` |
-| `AlertSubject` | `server` · `volume` |
+| `AlertStatus` | `firing` · `resolved` |
+| `AlertSubject` | `series` · `server` · `volume` |
 | `AppStatus` | `deploying` · `error` · `running` · `starting` · `stopped` · `stopping` · `unknown` |
 | `AppType` | `container` · `cron` · `daemon` · `database` · `function` · `static` · `worker` |
 | `BackupDestination` | `local` · `s3` |
 | `BackupKind` | `manual` · `scheduled` |
 | `Capability` | `Environment.create` · `Environment.delete` · `Environment.update` · `Environment.variables` · `Server.create` · `Server.delete` · `Server.drain` · `Server.reboot` · `Server.undrain` · `Server.update` |
 | `ChannelKind` | `email` · `pagerduty` · `slack` · `webhook` |
+| `ComparisonOp` | `gt` · `gte` · `lt` · `lte` |
 | `DeployStatus` | `building` · `cancelled` · `deploying` · `failed` · `pending` · `pushing` · `rolled_back` · `success` |
 | `EnvironmentTier` | `development` · `preview` · `production` · `staging` · `test` |
 | `FlagType` | `boolean` · `variant` |
 | `JobKind` | `one_shot` · `scheduled` · `triggered` · `workflow` |
 | `JobStatus` | `cancelled` · `failed` · `pending` · `running` |
+| `MetricType` | `counter` · `gauge` · `histogram` |
+| `NotificationContext` | `AlertEvent` · `Deployment` · `JobRun` · `Workspace` |
 | `NotificationKind` | `alert_firing` · `alert_resolved` · `deploy_failed` · `deploy_success` · `job_failed` · `member_joined` · `weekly_digest` |
 | `ParamGenerator` | `random_hex_16` · `random_hex_32` · `random_hex_64` |
 | `ProviderKind` | `custom` · `hetzner` |
@@ -86,7 +90,7 @@ table `alert_event` · db `main` · gate `2.8.4.8`
 | `rule` | `AlertRule` | — | — | relation |
 | `ruleId` | `String` | no | — | **required on write** |
 | `severity` | `AlertSeverity` | no | — | **required on write** |
-| `status` | `String` | no | `'firing'` | — |
+| `status` | `AlertStatus` | no | `'firing'` | — |
 | `subjectId` | `String` | no | — | **required on write** |
 | `subjectType` | `AlertSubject` | no | — | **required on write** |
 | `valueAtTrigger` | `Float` | no | `0` | — |
@@ -108,15 +112,17 @@ table `alert_rule` · db `main` · gate `2.5`
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `channels` | `AlertRuleChannel[]` | — | — | relation |
-| `condition` | `Json` | no | `'{}'` | — |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `description` | `String` | yes | — | — |
 | `events` | `AlertEvent[]` | — | — | relation |
+| `forMinutes` | `Int` | no | `0` | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `isActive` | `Boolean` | no | `1` | — |
 | `metricName` | `String` | no | — | **required on write** |
 | `name` | `String` | no | — | **required on write** |
+| `operator` | `ComparisonOp` | no | `'gt'` | — |
 | `severity` | `AlertSeverity` | no | `'warning'` | — |
+| `threshold` | `Float` | no | — | **required on write** |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `version` | `Int` | no | `1` | — |
 | `workspace` | `Workspace` | — | — | relation |
@@ -899,6 +905,54 @@ table `job_run` · db `main` · gate `2.8`
 @@deny('update', !check(job, 'read'))
 ```
 
+### `MetricHour`
+
+table `metric_hour` · db `main` · gate `8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `count` | `Int` | no | — | **required on write** |
+| `hour` | `Int` | no | — | id |
+| `increase` | `Float` | yes | — | — |
+| `max` | `Float` | no | — | **required on write** |
+| `min` | `Float` | no | — | **required on write** |
+| `series` | `MetricSeries` | — | — | relation |
+| `seriesId` | `String` | no | — | id |
+| `sum` | `Float` | no | — | **required on write** |
+
+### `MetricPoint`
+
+table `metric_point` · db `main` · gate `8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `at` | `Int` | no | — | id |
+| `series` | `MetricSeries` | — | — | relation |
+| `seriesId` | `String` | no | — | id |
+| `value` | `Float` | no | — | **required on write** |
+
+### `MetricSeries`
+
+table `metric_series` · db `main` · gate `8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `hours` | `MetricHour[]` | — | — | relation |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `labels` | `Json` | no | `'{}'` | — |
+| `labelsKey` | `String` | no | — | unique · **required on write** |
+| `lastSeenAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `name` | `String` | no | — | **required on write** |
+| `points` | `MetricPoint[]` | — | — | relation |
+| `type` | `MetricType` | no | `'gauge'` | — |
+| `unit` | `String` | yes | — | — |
+
+```
+@@index(lastSeenAt)
+@@index(name)
+```
+
 ### `Network`
 
 table `network` · db `main` · gate `2.5` · @@softDelete
@@ -927,6 +981,29 @@ table `network` · db `main` · gate `2.5` · @@softDelete
 @@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+```
+
+### `Notification`
+
+table `notification` · db `main` · gate `0.8.4.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `contextId` | `String` | yes | — | — |
+| `contextType` | `NotificationContext` | yes | — | — |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `data` | `Json` | no | — | **required on write** |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `readAt` | `DateTime` | yes | — | — |
+| `type` | `String` | no | — | **required on write** |
+| `user` | `User` | — | — | relation |
+| `userId` | `String` | no | — | **required on write** |
+
+```
+@@index(createdAt)
+@@index(userId, readAt)
+@@allow('read', userId == auth().id)
+@@allow('update', userId == auth().id)
 ```
 
 ### `NotificationChannel`

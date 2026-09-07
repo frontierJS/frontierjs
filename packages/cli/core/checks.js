@@ -33,7 +33,7 @@
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from 'fs'
 import { join, relative, basename, extname }               from 'path'
 
-import { singularize } from '@frontierjs/toolbelt/inflect'
+import { singularize, modelName } from '@frontierjs/toolbelt/inflect'
 
 // ─── the rule table ───────────────────────────────────────────────────────────
 //
@@ -46,7 +46,7 @@ import { singularize } from '@frontierjs/toolbelt/inflect'
 // module's surface and its callers should not have to care.
 export { findApps } from './runnables.js'
 import { runnables }              from './runnables.js'
-import { appSchemaModels, shippedSchemas } from './app-schema.js'
+import { appSchemaViews, appSchemaModels, shippedSchemas } from './app-schema.js'
 import { readProofs, resolveRun } from './proofs.js'
 import { readPreambles, resolveNeeds } from './preflight.js'
 import { readCourse }             from './tutorial.js'
@@ -521,7 +521,7 @@ const CHECKS = {
         findings.push({
           file: path,
           message: `a resource file is named for its noun — PascalCase, singular. ` +
-                   `${name}.mesa should be ${singular(name)}.mesa.`,
+                   `${name}.mesa should be ${modelName(name)}.mesa.`,
         })
         continue
       }
@@ -543,7 +543,7 @@ const CHECKS = {
       // `Hub.mesa` for `createResource('hub')`, and correct. Judging it against
       // the schema alone would refuse every cross-cutting resource an app has.
       const service = src.match(/createResource\(\s*['"]([A-Za-z0-9_-]+)['"]/)?.[1]
-      if (service && singular(service) === name) continue
+      if (service && modelName(service) === name) continue
 
       findings.push({
         file: path,
@@ -1179,7 +1179,7 @@ const CHECKS = {
     const files = scripts(root, 'api').filter(p => /\.service\.[cm]?[jt]s$/.test(basename(p)))
     if (!files.length) return { skipped: 'no *.service.* under api/' }
 
-    const { resolves, pascalOf, modelNamed } = modelResolver(schema, root)
+    const { resolves, modelNamed } = modelResolver(schema, root)
 
     const findings = []
     for (const path of files) {
@@ -1204,7 +1204,7 @@ const CHECKS = {
 
       // Name the model if the schema has one under that spelling — a rule that
       // says which line to write beats one that says the line is missing.
-      const meant = modelNamed(pascalOf(service))
+      const meant = modelNamed(modelName(service))
 
       // The CALL, which is not the first mention: `import { createBaseService }`
       // is one, and searching forward from it lands on the `(` of the arrow
@@ -1251,7 +1251,7 @@ const CHECKS = {
     const files = sources(root, ['.mesa', ...SCRIPT_EXT], 'web', 'widgets', 'site', 'extension')
     if (!files.length) return { skipped: 'no client surface' }
 
-    const { resolves, pascalOf, modelNamed } = modelResolver(schema, root)
+    const { resolves, modelNamed } = modelResolver(schema, root)
     const findings = []
 
     for (const path of files) {
@@ -1263,7 +1263,7 @@ const CHECKS = {
         if (/\bmodel\s*:\s*['"`]/.test(call)) continue
         if (resolves(service)) continue
 
-        const meant = modelNamed(pascalOf(service))
+        const meant = modelNamed(modelName(service))
         if (!meant) continue
 
         // Two shapes: an options object to add the key to, or no second
@@ -3018,6 +3018,14 @@ function modelResolver(schema, root) {
       .filter(m => !m.external)
       .map(m => [m.name.toLowerCase(), m.name]))
 
+  // A `view` is a legal `model:` for a read-only service and resolves the same
+  // way — its `@@gate` grades the caller at the Data boundary exactly as a
+  // model's does (`FJS-970`). Added to the same map rather than checked beside
+  // it, so every message this rule writes keeps naming one thing.
+  if (root) for (const v of appSchemaViews(root)) {
+    if (!known.has(v.name.toLowerCase())) known.set(v.name.toLowerCase(), v.name)
+  }
+
   const resolves = (name) => {
     const clean = name.replace(/Service$/i, '')
     for (const candidate of [clean, singularize(clean.charAt(0).toLowerCase() + clean.slice(1))]) {
@@ -3027,13 +3035,9 @@ function modelResolver(schema, root) {
     return null
   }
 
-  /** `product-variants` → `ProductVariant`: the model this name plainly MEANT. */
-  const pascalOf = (name) => singularize(name).split(/[-_]/)
-    .map(w => w ? w[0].toUpperCase() + w.slice(1) : w).join('')
-
   const modelNamed = (pascal) => known.get(pascal.toLowerCase()) ?? null
 
-  return { resolves, pascalOf, modelNamed }
+  return { resolves, modelNamed }
 }
 
 // The level scale, as the @@gate grammar spells it. Litestone owns the numbers;
@@ -3208,17 +3212,19 @@ function declaredMoves({ text }) {
 // allow-listed — an allow-list is a thing to maintain, and the words it would
 // hold are exactly the ones a schema uses.
 
+// This was hand-rolled regex, and it was the fifth copy of a fact
+// `@frontierjs/toolbelt/inflect` already owns — the same drift `FJS-D197`
+// names, one package further along. The comment on `service-model` above says
+// the derivation is `singularize`, and for that rule it was; this one did it
+// again in ten lines of endings.
+//
+// The kit is strictly better on every case the copy answered differently.
+// `Series`, `Species` and `News` were FALSE POSITIVES — correctly-named models
+// warned at forever — and `People` was a FALSE NEGATIVE, which is the one that
+// matters: `model People` slipped past the copy in silence, which is precisely
+// the failure this rule exists to prevent.
 function looksPlural(name) {
-  if (/(ss|us|is)$/.test(name)) return false     // Address, Status, Analysis
-  return /(ies|ses|xes|ches|shes)$/.test(name) || /[a-z]s$/.test(name)
-}
-
-function singular(name) {
-  const pascal = name[0].toUpperCase() + name.slice(1)
-  if (/ies$/.test(pascal))  return pascal.slice(0, -3) + 'y'
-  if (/(ses|xes|ches|shes)$/.test(pascal)) return pascal.slice(0, -2)
-  if (/[a-z]s$/.test(pascal)) return pascal.slice(0, -1)
-  return pascal
+  return singularize(name) !== name
 }
 
 // ─── walking ──────────────────────────────────────────────────────────────────

@@ -1332,11 +1332,15 @@ check('a populated network refuses to be deleted, in words',
 
 await goto('/alerts/')
 check('alerts renders', await heading(), 'Alerts')
-check('…and says plainly that nothing evaluates the rules yet',
-  await evaluate(`document.body.textContent`), t => t.includes('not yet evaluated'))
+check('…and says what evaluates these rules, now that something does',
+  await evaluate(`document.body.textContent`), t => t.includes('Evaluated once a minute'))
 await click('New rule')
 await sleep(800)
-await fill({ name: 'DB memory high', metricName: 'memory', threshold: '85' })
+// A series the scrape really writes. `operator` and `forMinutes` are left
+// untouched for `severity`'s reason one line down — both are columns with
+// schema defaults, and a form that had to state them would mean the defaults
+// were not reaching it.
+await fill({ name: 'DB memory high', metricName: 'process.memoryMb', threshold: '85' })
 // severity is left untouched on purpose: it must arrive from the schema's own
 // `@default(warning)`. Until 2026-08-06 the schema defaulted to "medium" and
 // the service refused that value — a vocabulary owned in two places.
@@ -1348,6 +1352,20 @@ check('an alert rule is created',
     + [...document.querySelectorAll('.field-error, .field-group')].map(e => e.textContent).join(' ')`,
     t => t.includes('DB memory high')),
   t => t.includes('DB memory high'))
+// THE CONDITION IS RENDERED, which is the assertion the old shape could not
+// pass. `condition` was a Json blob and this form wrote `{operator, threshold}`
+// while the seeder wrote `{op, value}` — so a seeded rule's card read `> —` and
+// nothing errored anywhere. Columns is what makes both writers the same writer.
+check('…and its condition reads as a condition rather than an em-dash',
+  await waitFor(`document.getElementById('alert-list')?.textContent ?? ''`, t => t.includes('> 85')),
+  t => t.includes('> 85') && !t.includes('> —'))
+// The rule names `process.memoryMb`, which `metricsPlugin` mints on its first
+// scrape — at boot, so it is there. A rule watching a TYPO never fires and looks
+// exactly like a threshold nobody crossed, so the card answers which it is.
+// Only the server can see the series; this is the half that makes anyone find out.
+check('…and the card says whether anything actually writes that series',
+  await waitFor(`document.getElementById('alert-list')?.textContent ?? ''`, t => t.includes('live')),
+  t => t.includes('live') && !t.includes('nothing writes this metric'))
 await click('History')
 check('a rule that never fired says so, rather than showing an empty box',
   await waitFor(`document.getElementById('alert-list')?.textContent ?? ''`, t => t.includes('never fired')),
@@ -1838,12 +1856,40 @@ await click('Add to dashboard')
 check('…and placed once it has one, with the subject named on the card',
   await waitFor(`document.getElementById('widget-grid')?.textContent ?? ''`, t => t.includes('Server health')),
   t => t.includes('Server health') && t.includes('gateway-01'))
-// The card says what it cannot show. `Server.health` is the last heartbeat, not
-// a series, and the sentence comes from the service's vocabulary rather than
-// from the component — so it changes when the gap closes, in one place.
-check('a thin card states what is missing instead of drawing it',
+// The card no longer says it cannot draw a trend, because it can: the heartbeat
+// records `server.cpuPercent{serverId}` and the card reads it back (`FJS-956`).
+// What is asserted is that the FRAME still works for the one kind that
+// legitimately cannot — `service_health` needs latency history and nothing
+// records a ping — because a `needs` sentence nobody prints any more is a
+// mechanism that has quietly stopped, and the card that needs it looks fine.
+await click('Add widget')
+await sleep(600)
+await pick('Service health')
+await sleep(500)
+// The sentence is printed TWICE from one vocabulary field — on the chooser
+// before the card is placed, and on the card afterwards — so both are asserted.
+// A frame that stopped reading `needs` would leave the chooser's copy passing.
+check('the chooser says what the card will not be able to draw',
+  await evaluate(`document.body.textContent`), t => t.includes('latency history'))
+// This kind carries a config field, and Add is refused without it — so the
+// selection is part of placing it, not a nicety.
+await evaluate(`
+  (() => {
+    const sel = document.getElementById('widget-service')
+    sel.value = [...sel.options].find(o => o.value)?.value
+    sel.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+await sleep(400)
+await click('Add to dashboard')
+check('…and the placed card says it too, rather than drawing a plausible line',
+  await waitFor(`document.getElementById('widget-grid')?.textContent ?? ''`,
+                t => t.includes('Not shown')),
+  t => t.includes('Not shown') && t.includes('latency history'))
+// …and the two that were answered do NOT, which is the pair: a frame that
+// printed the sentence unconditionally would satisfy the row above on its own.
+check('…and the server-health card, which can now, does not',
   await evaluate(`document.getElementById('widget-grid')?.textContent ?? ''`),
-  t => t.includes('metric store'))
+  t => !t.includes('metric store'))
 
 // A counter counts. The mock's version is a number typed in when the widget is
 // added, which is a dashboard displaying whatever it was told.

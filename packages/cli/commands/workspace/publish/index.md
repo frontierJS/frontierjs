@@ -21,6 +21,12 @@ flags:
     multiple: true
     description: Only publish packages matching this name
     defaultValue: ''
+  except:
+    char: e
+    type: string
+    multiple: true
+    description: Publish everything but this package — the counterpart to --filter, for a package that needs its own run
+    defaultValue: ''
   tag:
     char: t
     type: string
@@ -34,6 +40,14 @@ flags:
   private:
     type: boolean
     description: Include packages marked private in package.json
+    defaultValue: false
+  allow-dirty:
+    type: boolean
+    description: Publish even though a package has uncommitted files — npm packs the working directory, not the commit
+    defaultValue: false
+  allow-peer-drift:
+    type: boolean
+    description: Publish even though a peer range would no longer resolve, or could not be decided
     defaultValue: false
   changed-only:
     type: boolean
@@ -77,11 +91,28 @@ if (!all.length) {
 
 let packages = all
 
-if (flag.filter) {
-  const filters = Array.isArray(flag.filter) ? flag.filter : [flag.filter]
-  packages = packages.filter(({ pkg, folder }) =>
-    filters.some(f => pkg.name.includes(f) || folder.includes(f))
-  )
+const { matchesSelector } = await import(new URL('file://' + global.fliRoot + '/core/publish-preflight.js'))
+
+if (flag.filter)
+  packages = packages.filter(({ pkg, folder }) => matchesSelector(pkg, folder, flag.filter))
+
+// `--except` is the counterpart to `--filter` and exists for a package that
+// needs its OWN run: one `ws:pub` applies one dist-tag to everything it
+// publishes, so a package going out under a different tag has to be held back
+// from this one rather than tagged differently inside it.
+//
+// Matched the way `--filter` matches, so the two are learned once.
+if (flag.except) {
+  const excepts = Array.isArray(flag.except) ? flag.except : [flag.except]
+  const before  = packages.length
+  packages = packages.filter(({ pkg, folder }) => !matchesSelector(pkg, folder, flag.except))
+  // Named rather than counted. An `--except` that matched nothing is a typo,
+  // and silently publishing the package it was meant to hold back is the one
+  // outcome the flag exists to prevent.
+  if (packages.length === before)
+    log.warn(`--except matched no package: ${excepts.join(', ')}`)
+  else
+    log.info(`--except: holding back ${before - packages.length} package(s)`)
 }
 
 // npm refuses a private package, and step 02 aborts the run on any failure —
@@ -126,6 +157,9 @@ echo('')
 
 context.config.wsRoot     = wsRoot
 context.config.repo       = repo
+// Every member, not the release set: the package a peer range breaks is the one
+// DECLARING it, and that is usually not one of the packages being bumped.
+context.config.members    = all
 context.config.planned    = planned
 context.config.bump       = arg.bump
 context.config.tag        = flag.tag

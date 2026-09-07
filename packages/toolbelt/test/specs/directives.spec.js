@@ -112,3 +112,42 @@ test('directives: the template pair reads like the deleted pair', function () {
   // …and it is a directive, so it never lands among the filters.
   assert.deepEqual(splitParams({ $onlyTemplates: 'true', name: 'x' }).query, { name: 'x' })
 })
+
+// ─── Invariant 10 ─────────────────────────────────────────────────────────────
+
+test('directives: no $-prefixed key survives into the filters', function () {
+  // The set of KNOWN directives is not the test — those were always removed,
+  // which is why nothing failed. What leaked was every other `$` name, each
+  // becoming a WHERE on a column that cannot exist (FJS-988).
+  for (const key of ['$nope', '$$limit', '$limitt', '$', '$__proto__']) {
+    const { query, directives } = splitParams({ [key]: '1', keep: '2' })
+    assert.equal(query[key], undefined, `${key} reached the filters`)
+    assert.deepEqual(Object.keys(query), ['keep'])
+    assert.equal(Object.keys(directives).length, 0)
+  }
+  // Controls: a recognised directive still parses, and an ordinary filter is
+  // untouched — a split that dropped everything would pass the rows above.
+  const r = splitParams({ $limit: '10', status: 'open' })
+  assert.deepEqual(r.query, { status: 'open' })
+  assert.equal(r.directives.limit, 10)
+})
+
+test('directives: a filter named __proto__ survives to the Data boundary', function () {
+  // A WS frame's query bag is JSON.parse'd, so `__proto__` arrives as an OWN
+  // key. Assignment dropped it AND replaced the filters object's prototype, so
+  // `ctx.query` read one way through Object.keys and another through a property
+  // access. Carrying it is what lets the boundary refuse it BY NAME, the way it
+  // already refuses any other undeclared column (`FJS-996`).
+  const frame = JSON.parse('{"__proto__":{"userId":"victim"},"name":"ok","$limit":"5"}')
+  const { query, directives } = splitParams(frame)
+
+  assert.deepEqual(Object.keys(query), ['__proto__', 'name'])
+  assert.equal(JSON.stringify(query), '{"__proto__":{"userId":"victim"},"name":"ok"}')
+  // The object reads the same way whichever way it is read.
+  assert.equal(query.userId, undefined)
+  assert.equal('userId' in query, false)
+  // And the `$` half is still stripped, or this row would pass with the split
+  // removed altogether.
+  assert.equal(directives.limit, 5)
+  assert.equal(query.$limit, undefined)
+})

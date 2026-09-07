@@ -75,12 +75,18 @@ export function deriveAccess(schema) {
     byModel.set(c.model, list)
   }
 
-  const models = [...(schema.models ?? [])]
+  // Views walk with the models. A view is a read path onto rows a model guards
+  // and it carries its own `@@gate` and `@@allow` (`FJS-970`), so leaving it out
+  // is an access surface that omits a way in — and `--from <ref>` would grade a
+  // branch that gated a view as having moved nothing.
+  const models = [...(schema.models ?? []), ...(schema.views ?? []).map(v => ({ ...v, __isView: true }))]
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(model => describeModel(model, byModel.get(model.name) ?? []))
 
   const counts = {
     models:       models.length,
+    views:        models.filter(m => m.isView).length,
+    exportable:   models.filter(m => m.export).length,
     gated:        models.filter(m => m.gate).length,
     unrestricted: models.filter(m => m.unrestricted).length,
     policied:     models.filter(m => Object.keys(m.policies).length > 0).length,
@@ -165,6 +171,17 @@ function describeModel(model, derivedNames = []) {
 
   return {
     name:       model.name,
+    // A view reaches rows through a projection and can be written to by
+    // nothing, so its row is read-only by construction — the flag is what lets
+    // a reader tell that from a model whose write gates simply were not stated.
+    isView:     Boolean(model.__isView),
+    // A dataset that may leave in bulk is part of who-may-do-what, not a
+    // detail beside it: making a model exportable widens access by the whole
+    // table, and `--from <ref>` has to be able to see that happen.
+    export:     (() => {
+      const ex = attrs.find(a => a.kind === 'export')
+      return ex ? { format: ex.format, since: ex.since ?? null } : null
+    })(),
     capabilities: capAttr
       ? { read: Boolean(capAttr.read), columns: capColumns, names: derivedNames }
       : null,
@@ -290,8 +307,31 @@ export function renderAccessSnapshot(access, opts = {}) {
     out.push('| Model | Read | Create | Update | Delete |')
     out.push('| --- | --- | --- | --- | --- |')
     for (const m of gated) {
-      const cells = OPS.map(op => `${m.gate[op]} ${levelLabel(m.gate[op])}`)
-      out.push(`| \`${m.name}\` | ${cells.join(' | ')} |`)
+      // A view refuses every write by name whatever its gate says, so the three
+      // write columns are `—` rather than a level nothing consults — printing
+      // one would read as a permission a caller could hold.
+      const cells = OPS.map(op =>
+        m.isView && op !== 'read' ? '— *no writes*' : `${m.gate[op]} ${levelLabel(m.gate[op])}`)
+      out.push(`| \`${m.name}\`${m.isView ? ' *(view)*' : ''} | ${cells.join(' | ')} |`)
+    }
+    out.push('')
+  }
+
+  // ── Exports ──
+  const exportable = models.filter(m => m.export)
+  if (exportable.length) {
+    out.push('## Bulk export')
+    out.push('')
+    out.push('Datasets `@@export` says may leave in bulk. The rows that do are exactly the ones')
+    out.push('the named principal could read one at a time — an export is a paginated scoped')
+    out.push('read — so the gate and the policies above are what bound it. Protected columns')
+    out.push('are omitted unless the run explicitly asks and is stamped as having asked.')
+    out.push('')
+    out.push('| Dataset | Format | Cursor | Read gate |')
+    out.push('| --- | --- | --- | --- |')
+    for (const m of exportable) {
+      const lvl = m.gate ? `${m.gate.read} ${levelLabel(m.gate.read)}` : '—'
+      out.push(`| \`${m.name}\`${m.isView ? ' *(view)*' : ''} | ${m.export.format} | ${m.export.since ? `\`${m.export.since}\`` : '— *full only*'} | ${lvl} |`)
     }
     out.push('')
   }
@@ -306,7 +346,7 @@ export function renderAccessSnapshot(access, opts = {}) {
     out.push('An operation with no `@@allow` is unrestricted at this layer.')
     out.push('')
     for (const m of policied) {
-      out.push(`### \`${m.name}\``)
+      out.push(`### \`${m.name}\`${m.isView ? ' *(view)*' : ''}`)
       out.push('')
       for (const op of POLICY_OPS) {
         const p = m.policies[op]

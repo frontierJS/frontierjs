@@ -346,16 +346,42 @@ t('usage.writtenWordNotNodeKind', await evaluate(`
 // and a stub per view, so a count taken off it reports declarations nobody made.
 // That is the same class of lie as counting `trait` off the parse, and it is the
 // only panel where it matters.
+//
+// DERIVED, never typed — the same lesson as the Access drive's row counts, met
+// from the other side. This asked whether `field:id` equalled the number of own
+// MODELS, which reads as an identity and is not one: a composite key is two
+// `@id` fields on one model, and a `type` declares fields and no key at all. The
+// moment junction's metrics models reached `example` (`MetricPoint` and
+// `MetricHour`, two `@id` each) the row went red on every run and stayed red,
+// reporting a fixture that had outgrown it as a regression in the panel
+// (`FJS-985`). `generatedWouldDiffer` is what keeps the fix honest: the
+// generated models DO carry an `@id`, so a count including them is a different
+// number, and without that control this row passes against a filter that does
+// nothing.
 t('usage.excludesWhatLitestoneWrote', await evaluate(`
   const gen = exGenerated();
   const use = exUsage();
-  const own = (schema.models || []).filter(m => !gen.has(m.name));
+  const all = schema.models || [];
+  const own = all.filter(m => !gen.has(m.name));
+  const ids   = (list) => list.reduce((n, o) =>
+    n + (o.fields || []).filter(f => (f.attributes || []).some(a => a.kind === 'id')).length, 0);
+  const attrs = (list) => list.reduce((n, o) =>
+    n + (o.fields || []).reduce((m, f) => m + (f.attributes || []).length, 0), 0);
+  const rest       = [...(schema.views || []), ...(schema.types || [])];
   return {
     someGenerated: gen.size > 0,
     modelCount:    use.get('schema:model') === own.length,
-    idPerOwnModel: (use.get('field:id') || 0) === own.length,
+    idCount:       (use.get('field:id') || 0) === ids([...own, ...rest]),
+    // The control, and it is asked of every field attribute rather than of @id:
+    // the log model litestone writes declares exactly one, a @default, and no
+    // key at all — so an @id-shaped control is satisfied by a filter that does
+    // nothing, which is how the first version of this fix passed review and
+    // failed here.
+    generatedWouldDiffer: attrs([...all, ...rest]) !== attrs([...own, ...rest]),
   };
-`), { someGenerated: true, modelCount: true, idPerOwnModel: true })
+`), { someGenerated: true, modelCount: true, idCount: true, generatedWouldDiffer: true })
+
+
 
 t('usage.generatedModelIsShownAndLabelled', await evaluate(`
   exGo({ kind: 'top', word: 'model' });

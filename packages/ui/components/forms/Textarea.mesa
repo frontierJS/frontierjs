@@ -6,7 +6,7 @@
   // bind:this exposes: focus()
 
   import Field from './Field.mesa'
-  import { nameToLabel, uid, resolveError, resolveRule, stated, nativeValidationGuard, lockedBy } from '../../utils.js'
+  import { humanize, uid, resolveError, resolveRule, stated, nativeValidationGuard, lockedBy } from '../../utils.js'
 
   export let value       = ''
   export let placeholder = ''
@@ -32,7 +32,7 @@
 
   export var id = ''
   const textareaId = id || uid('textarea')
-  const autoLabel  = nameToLabel(name)
+  const autoLabel  = humanize(name)
 
   const form     = $context.form
 

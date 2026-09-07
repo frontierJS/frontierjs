@@ -89,6 +89,23 @@ export class LastCredentialError extends AuthError {
   readonly status = 409
 }
 
+/**
+ * A reset was redeemed against an account that has no password to reset.
+ *
+ * Refused rather than turned into a create, deliberately: an account whose only
+ * credential is an OAuth one was never secured by its mailbox, and minting a
+ * password from an emailed token would make mailbox access enough to take it
+ * over. The person adds a provider instead (FJS-987).
+ *
+ * Safe to be specific about — the caller reaching this presented a live reset
+ * token, so they already hold the address, and `requestPasswordReset` stays
+ * silent for exactly the caller who does not.
+ */
+export class NoPasswordCredentialError extends AuthError {
+  readonly name = 'NoPasswordCredentialError'
+  readonly status = 409
+}
+
 /** Nothing here by that id — or nothing the caller may see, which reads the same. */
 export class NotFoundError extends AuthError {
   readonly name = 'NotFoundError'

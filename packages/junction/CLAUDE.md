@@ -94,7 +94,7 @@ src/
                     THROWS when somebody was owed a message, where a schedule
                     that stops being registered is silence
   auth/             IAuth types (implemented by @frontierjs/auth) + providers
-  plugins/          manifest, openapi, webhooks, email, devtools, outbox, backfill, shims
+  plugins/          manifest, openapi, webhooks, email, devtools, outbox, backfill, export, metrics, shims
                     webhooks is OUTBOUND ONLY — register(url, events) registers a
                     SUBSCRIBER and the engine delivers to them. Nothing here receives;
                     the mirror half is IDEAS/inbound-integrations.md § A.

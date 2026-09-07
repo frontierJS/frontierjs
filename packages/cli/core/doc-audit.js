@@ -273,9 +273,19 @@ export function docWordUnknown({ root }) {
 // explicit anchor convention (`<a id="fjs-123">`). A heading slug is a GitHub
 // rendering detail and grading it would report punctuation.
 //
-// A path is resolved three ways — against the repo root, the document's own
-// directory, and the package the document lives in — because all three spellings
-// are in use and none of them is wrong.
+// A LINK is resolved from the document's own directory and from nowhere else,
+// because that is where every renderer, editor and browser resolves it from. It
+// used to be accepted if it resolved from the repo root or the package root too,
+// which made the rule agree with the tree and disagree with the reader:
+// `](packages/litestone/src/core/ddl.js)` written inside `IDEAS/` is
+// `IDEAS/packages/…` to anybody who clicks it, and seventeen of those passed
+// (FJS-750). Those two bases are still probed, and a link that resolves from one
+// of them is REPORTED with the `../` spelling that works — a different finding
+// from a link that resolves nowhere, because the repair is different.
+//
+// A path written as inline CODE keeps all three bases: it is a name a reader
+// navigates by, not a link a tool follows, and repo-root spelling is the ordinary
+// way this repo writes one.
 
 const PATH_LIKE = /^[A-Za-z0-9_@.][A-Za-z0-9_@.\-/]*\.(js|mjs|cjs|ts|tsx|json|md|mesa|lite|css|html|sql|sh|yml|yaml)(:\d+(-\d+)?)?$/
 
@@ -325,6 +335,21 @@ function resolvesAnywhere(root, doc, target) {
   return bases.some(b => existsSync(resolve(b, bare)))
 }
 
+/**
+ * Where a LINK resolves from, as the reader's tool would answer it.
+ *
+ * `'doc'` is the only passing answer. `'root'` and `'package'` mean the file is
+ * there and the link does not reach it, which is the class that was accepted.
+ */
+function linkBase(root, doc, target) {
+  const bare = target.replace(/:\d+(-\d+)?$/, '')
+  if (existsSync(resolve(dirname(doc.path), bare))) return 'doc'
+  if (existsSync(resolve(root, bare)))              return 'root'
+  const pkg = packageRootOf(root, doc.path)
+  if (pkg && existsSync(resolve(pkg, bare)))        return 'package'
+  return null
+}
+
 export function docCitesDead({ root }) {
   const docs = docCorpus(root, { history: false })
   if (!docs.length) return { skipped: 'no documents outside history' }
@@ -357,14 +382,17 @@ export function docCitesDead({ root }) {
     // (a) a relative link. Inline code is masked as well as fences: a
     // destructure quoted in prose — `[...args](fn)` — is a markdown link to a
     // regex and to nothing else.
-    for (const m of maskInline(prose).matchAll(/\[[^\]\n]*\]\(([^)\s]+)\)/g)) {
-      const raw = m[1]
+    for (const m of maskInline(prose).matchAll(/\[([^\]\n]*)\]\(([^)\s]+)\)/g)) {
+      const label = m[1]
+      const raw   = m[2]
       if (/^(https?:|mailto:|tel:|#|<|\{)/.test(raw)) continue
       const [target, frag] = raw.split('#')
       if (!target) continue
       if (target.includes('*') || target.includes('{')) continue
 
-      if (!resolvesAnywhere(root, doc, target)) {
+      const base = linkBase(root, doc, target)
+
+      if (!base) {
         if (m.index < cutoff) findings.push({
           file: doc.path, line: lineOf(doc.text, m.index),
           message: `links to \`${target}\`, which is not in the tree from the repo root, from this file's own ` +
@@ -373,6 +401,37 @@ export function docCitesDead({ root }) {
         })
         continue
       }
+
+      // The file is there and the link does not reach it. Reported rather than
+      // accepted, and separately, because the repair is a prefix rather than a
+      // path: the reader's tool resolves from THIS file's directory and lands on
+      // `${relative(root, dirname(doc.path))}/${target}`, which is nothing.
+      if (base !== 'doc') {
+        const fix = relative(dirname(doc.path), resolve(
+          base === 'root' ? root : packageRootOf(root, doc.path), target.replace(/:\d+(-\d+)?$/, '')))
+        if (m.index < cutoff) findings.push({
+          file: doc.path, line: lineOf(doc.text, m.index),
+          message: `links to \`${target}\`, which exists but is written from the ${base === 'root' ? 'repo root' : 'package root'} ` +
+                   `rather than from this document. Every renderer, editor and browser resolves a link from the ` +
+                   `file it is in, so this one is dead everywhere the check is not looking. Write ` +
+                   `\`${fix}\`.`,
+        })
+        continue
+      }
+
+      // A `file.ext:N` label and a `#Lm` anchor are two statements of one line
+      // number in one string, so they are gradeable against each other with no
+      // parser — which is what separates this from *does line N hold that
+      // symbol*, the half that wants a resolver per language and stays in
+      // `IDEAS/claim-checking.md` § 3. It is also the half that would have caught
+      // the corruption FJS-750's own hand-repair introduced.
+      const anchorN = frag && /^L(\d+)/.exec(frag)
+      const labelN  = /:(\d+)\s*$/.exec(label)
+      if (anchorN && labelN && anchorN[1] !== labelN[1] && m.index < cutoff) findings.push({
+        file: doc.path, line: lineOf(doc.text, m.index),
+        message: `is labelled \`${label.trim()}\` and links to line ${anchorN[1]} of the same file. One of the two ` +
+                 `moved and the other did not, so the reader is told one line and taken to another.`,
+      })
 
       if (frag && /^fjs-/i.test(frag)) {
         const bare = resolve(dirname(doc.path), target)

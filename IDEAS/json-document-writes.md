@@ -589,6 +589,9 @@ they are very different sizes.
 
 ### A. Should an operator-shaped object on a `Json` column be refused?
 
+**Answered 2026-09-07: no. Documented instead.** The behaviour stands and the
+warning is in `packages/litestone/docs/querying.md`, beside `$merge`.
+
 Still true after the build, measured:
 
 ```js
@@ -598,57 +601,43 @@ await db.a.update({ where: { id }, data: { doc: { push: 'x' } } })
 // → doc is now {"push":"x"}
 ```
 
-This is `FJS-D54` working as ruled — the COLUMN decides, and a `Json` column
-carries objects, so these are values. It is also the exact ambiguity that forced
-`$merge` to wear a `$`, and now that the `$` exists the argument for leaving the
-bare spellings alone is weaker than it was: a caller writing `{ increment: 1 }`
-against a document column is reaching for an operator roughly always, and gets
-their document replaced by the operator with nothing said.
+This is `FJS-D54` working as ruled — the COLUMN decides, a `Json` column carries
+objects, so these are values. The alternative was to reserve the five bare
+operator names at the top level of a `Json` column's value and refuse them with
+*did you mean `$merge`*.
 
-**The question is whether the five bare operator names become reserved keys at
-the TOP LEVEL of a `Json` column's value** — refused with *did you mean
-`$merge`, or is this really a document key?* — or whether that is a rule about
-what a document may contain, which the schema deliberately does not have.
+**The decision goes against two of the nine and that is worth recording rather
+than leaving implicit.** It fails *can it be derived instead of restated* — the
+engine could refuse, and a doc note is the restated branch — and it fails *is
+the failure mode proportional to the cost of being wrong*, since the cost is a
+document silently replaced by the operator and the answer is prose. The
+adjudication in tension is **ergonomics vs. strictness**, which says resolve per
+surface by what a mistake destroys, and a mistake here destroys a document.
 
-Cheap either way. What makes it a question rather than a fix is that refusing
-narrows what a `Json` column can hold, which is the one column kind whose whole
-point is that it holds anything.
+**What carries it the other way**: reserving names narrows the one column kind
+whose whole point is that it holds anything, and `{ increment: 1 }` is a
+document somebody may legitimately mean. A refusal there would be the framework
+deciding what a document may contain, which nothing else in the language does.
+The trap is pinned by a test — `a document key spelled like an operator is
+untouched` — so the behaviour cannot change without saying so, which is the one
+of the nine this does answer.
+
+Reopen it if the doc note turns out not to be enough; the fix is small and the
+argument above is the whole of what has to be re-weighed. It has not been
+written into `DECISIONS.md`, because what was decided is *leave it and warn*
+rather than a rule anyone has to look up.
 
 ### B. Does the generated fieldset follow?
 
-**The measurement in § The form is the finding, not this operator.** A
-`Json @type(T)` column reaches the browser with its shape completely described —
-properties, required, `additionalProperties: false` — and `controlFor` answers
-`json`, the same raw-document textarea an undescribed column gets. A person
-edits JSON by hand for a shape the schema fully describes: no labels, no
-per-field validation, no required marker, and a typo is a `ValidationError` on
-submit rather than a red box on a field.
-
-A `Json @type(T)` column could render as a nested fieldset over `$defs.T`, with
-the write going back as `{ $merge: … }` for the keys the form holds — which is
-what `$merge` was built underneath.
-
-**Two things have to be decided before it is worth starting**, and they are the
-reason this is a question and not a ticket:
-
-- **Does a fieldset compose with `<Form>`'s existing generation?** The form
-  generates one control per column over `field-rules.js`'s one table. A nested
-  fieldset is a control that contains controls, which that table has no shape
-  for, and `$context.form` keys errors by field name — the boundary already
-  answers a path (`['typ','theme']`, measured), so something has to decide
-  whether a nested control reads a path or a flattened key.
-- **Is a fieldset even the right answer for the undescribed case?** It cannot
-  be, since there is no shape — so `json` stays the control there, and the kit
-  ends up with two controls for one column type chosen by whether `@type` is
-  present. That is either exactly right or a seam that will confuse people, and
-  it should be argued before either is built.
-
-**And the adoption fact sits under both**: `@type(` is bound to zero fields in
-this repo, so whoever builds B is also the first user of the declaration it
-depends on.
+**Moved out, 2026-09-07** — `IDEAS/typed-json-forms.md`, flagged deferred. It is
+a UI-realm feature with two design questions of its own and it depends on a
+declaration nothing in this repo binds yet, so it stopped being a question about
+this operator and became a record. The measurement that raised it stays in
+§ The form above.
 
 ## See also
 
+- `IDEAS/typed-json-forms.md` — question B, moved out and deferred
 - `FJS-658` — the dot-path key stripped in silence at three layers
 - `FJS-D176` — the ruling this record is asking for · `IDEAS/overview.md` 5.26
 - `packages/litestone/docs/json-types.md` — `Json @type(T)`, and the read-side paths

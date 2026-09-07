@@ -1,5 +1,35 @@
 # Changes — @frontierjs/auth
 
+## 2026-09-07 — `cleanup.ts` had no test, and `stop()` did not stop
+
+`start()` assigned over both live `JobHandle`s, so a second call orphaned the
+first pair with nothing left holding them: `stop()` then halted only the newest
+and the first sweep ran for the life of the process. Measured on the shipped
+code with its interval temporarily at a second — two starts, one stop, **six
+further sweeps in 2.5s**.
+
+It restarts now and warns, rather than throwing: this is reached from a plugin's
+`boot()`, where the failure a throw creates is larger than the one it reports.
+The stop path is a closure rather than `this.stop()`, since the handle's methods
+are shorthand and a caller destructuring `{ start }` off it has no `this`.
+
+**The reason it survived is that the module had no test at all** — its own
+PROJECT_STATE said so and asked whether anything wired it. Answered: the scaffold
+does, both dogfooding apps do not, so nothing here had ever executed it.
+
+**`sweepNow()` is new and is not only for the tests.** A scheduled body lives in
+a closure the scheduler exposes no way to reach, so an inline `deleteMany` can
+only be graded by a test restating the predicate — which agrees with its own copy
+once the shipped one moves. The predicate is named now and the timers call it.
+Measured: dropping the `where`, or reading `createdAt` instead of `expiresAt`,
+reds both sweep rows; neither would have moved a restated copy.
+
+Everything around it was probed and left alone: the scheduler refuses
+`'nonsense'`, `''` and `'0 hour'` by name, all three models carry `expiresAt` and
+an `@@index([expiresAt])`, and the accessor `oauthFlow` matches `model OauthFlow`.
+
+276 passing. `FJS-1000`.
+
 ## 2026-09-05 — support mode: acting as somebody else, bounded and recorded
 
 266 tests, 0 fail (+21). `example`: `verify:support` 24/24, new.

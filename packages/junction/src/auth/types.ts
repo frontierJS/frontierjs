@@ -159,7 +159,7 @@ export interface IAuth {
 
   // API Keys
   createApiKey(userId: string, opts?: ApiKeyOptions):  Promise<{ key: string; id: string }>
-  revokeApiKey(keyId: string, opts?: { userId?: string }): Promise<void>
+  revokeApiKey(keyId: string, opts: { userId: string }): Promise<void>
   verifyApiKey(key: string):                           Promise<SessionContext | null>
 
   // ── The caller acting on their own credentials ────────────────────────

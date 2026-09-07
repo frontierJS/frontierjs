@@ -32,6 +32,7 @@
 // `checks.js`, because the callers include a script that runs before install.
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { spawnSync }                                       from 'node:child_process'
 import { join, relative }                                  from 'node:path'
 import { findSnapshots }        from './snapshots.js'
 // The tree readers both this and `core/runnables.js` use. One answer to *where
@@ -88,6 +89,43 @@ export function collect({ root }) {
     commands:  commands(root),
     registers: registers(root),
   }
+}
+
+// ─── how many files is this ──────────────────────────────────────────────────
+//
+// A reference number, not an audit: *is this package four files or four
+// hundred* is the first thing anybody wants when deciding where to start
+// reading, and it is the one shape of size that does not churn — it moves when
+// a file is added or removed, never when one is edited.
+//
+// **Tracked files, and it has to be.** A directory walk counts whatever is
+// lying around: basecamp reads 272 against 216 tracked and vscode 56 against 33,
+// because one holds SQLite files and a write-ahead log and the other a built
+// `out/` and two `.vsix`. Those are untracked and local, so a walk would give
+// this machine and CI different answers about a committed page — a determinism
+// bug rather than a rounding one.
+//
+// One `git ls-files` for the whole tree, bucketed here, because a call per
+// package is twenty subprocesses for one question. **No git, no numbers** — the
+// field is absent rather than guessed, the same way every other absent source
+// on this page is omitted rather than faked.
+
+function trackedFileCounts(root) {
+  const run = spawnSync('git', ['ls-files', '-z'], {
+    cwd: root, encoding: 'utf8', shell: false, timeout: 20_000,
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+  })
+  if (run.error || run.status !== 0) return null
+
+  const counts = new Map()
+  for (const path of (run.stdout ?? '').split('\0')) {
+    if (!path) continue
+    const parts = path.split('/')
+    // `packages/<folder>/…` is a member; anything else is the workspace's own.
+    const key = parts[0] === 'packages' && parts.length > 2 ? parts[1] : null
+    if (key) counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return counts
 }
 
 // ─── the workspace root ───────────────────────────────────────────────────────
@@ -221,12 +259,14 @@ function packages(root) {
   }
 
   const ceilings = baselines(root)
+  const counts   = trackedFileCounts(root)
 
   for (const m of members) {
     if (m.claimed) continue
     m.topics     = topics(join(dir, m.folder), root)
     m.sections   = readmeSections(join(dir, m.folder))
     m.subsystems = subsystems(join(dir, m.folder))
+    if (counts) m.files = counts.get(m.folder) ?? 0
     // Absent is 0 — the file's own rule, and the reason it is keyed by folder.
     m.baseline = ceilings[m.folder] ?? 0
   }

@@ -145,7 +145,7 @@ import { TIME_PATTERNS } from './core/validate.js'
 import { dependsOnClock } from './core/policy.js'
 import { capabilitiesForModel } from './core/capabilities.js'
 import { isServerAssignedId } from './core/ids.js'
-import { filterableKeysFor, sortableKeysFor } from './core/query.js'
+import { filterableKeysFor, sortableKeysFor, aggregatableKeysFor } from './core/query.js'
 import { sealedStates } from './core/seal.js'
 
 export function generateJsonSchema(schema, options = {}) {
@@ -275,8 +275,22 @@ export function generateJsonSchema(schema, options = {}) {
 function queryabilityFor(model) {
   const { sortable, computed, transient, opaque } = sortableKeysFor(model)
   const { filterable, encrypted }                 = filterableKeysFor(model)
+  // A third answer, and it is narrower than either: a `@from` field sorts fine
+  // and cannot be aggregated, because it is a subquery aliased into the SELECT
+  // rather than a column SUM can be handed (`FJS-D226`).
+  const agg = aggregatableKeysFor(model)
   return (name) => {
     const out = {}
+    if (!agg.columns.has(name)) {
+      out['x-aggregatable'] = agg.computed.has(name)  ? 'computed'
+                            : agg.transient.has(name) ? 'transient'
+                            : agg.from.has(name)      ? 'from'
+                            : agg.relations.has(name) ? 'relation' : 'unknown'
+    } else if (agg.opaque.has(name)) {
+      // A real column SQLite can aggregate the STORAGE of, which answers a
+      // question about ciphertext or serialized text rather than about values.
+      out['x-aggregatable'] = agg.opaque.get(name)
+    }
     if (!sortable.has(name)) {
       out['x-sortable'] = opaque.get(name) ?? (computed.has(name) ? 'computed'
                         : transient.has(name) ? 'transient' : 'unknown')
@@ -513,6 +527,26 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
         // Data boundary will accept. The predicates themselves never travel —
         // a browser may not send SQL and does not need to (Invariant 8).
         ...(vs.scopes?.length ? { scopes: vs.scopes } : {}),
+        // A dependent set: `field` is the column on THIS model whose value
+        // narrows the list, `match` the column on the source it is compared
+        // against. Both are names, like the scopes above — the picker sends an
+        // ordinary column filter and the Data boundary grades the pair, so the
+        // list offered is the list accepted (`FJS-D122`).
+        ...(bind.dependsOn ? { dependsOn: { field: bind.dependsOn, match: bind.dependsOnField } } : {}),
+        // What the picker offers first, when the set states it. Only a DECLARED
+        // order is emitted — the default is the label column ascending and is
+        // resolved where the label is, so a set that says nothing about order
+        // travels byte-identical to before (`FJS-D121`). It is a directive, not
+        // a rule: nothing here changes what the column may hold, and a column
+        // the caller may not sort by is refused by `$checkOrderBy` the same as
+        // any other orderBy.
+        ...(vs.order?.length ? { order: vs.order } : {}),
+        // The HEAD — which model, which column and which clock the rank is read
+        // off. Three names, like the scopes above: the picker asks an ordinary
+        // `aggregate` and the Data boundary grades that read the way it grades
+        // every other one, so what a person sees at the top of the list is what
+        // they could have queried themselves (`FJS-D121`).
+        ...(vs.recent ? { recent: vs.recent } : {}),
       }
     }
 

@@ -25,66 +25,17 @@
 // would be worse than no test at all, because the stamp is then read as
 // evidence. Email is the one kind that cannot be tested: it needs a mailer this
 // app has not configured, and it says so rather than pretending.
+//
+// **HOW a channel is reached lives in `core/delivery.ts`, not here.** The alert
+// evaluator is its second caller, and a per-kind table in two places is a kind
+// added to one of them — tests green, never delivers.
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
-import { secretRef }           from '../../core/credentials.ts'
+import { KINDS, deliverToChannel, testMessage } from '../../core/delivery.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
-
-// ─── Per-kind delivery shape ─────────────────────────────────────────────
-// One table, four consumers: what the credential is called, where the request
-// goes, and what a test payload looks like. Written once here rather than as
-// four branches in `test`, because a kind that is half-declared is a channel
-// that accepts a credential and can never use it.
-//
-// `secretField` is the key inside the Secret's JSON document. `host` is the
-// conduit target's address — never the full URL, because the secret part of a
-// Slack webhook is the PATH, and a target address is stored in conduit's
-// registry and echoed by `GET /conduit-targets`.
-
-interface KindSpec {
-  label:       string
-  secretField: string | null          // null → this kind carries no credential
-  host:        string | null          // null → the address comes from config.url
-  testBody:    (name: string) => unknown
-  describe:    (config: Record<string, unknown>) => string
-}
-
-const KINDS: Record<string, KindSpec> = {
-  slack: {
-    label:       'Slack',
-    secretField: 'webhookUrl',
-    host:        'https://hooks.slack.com',
-    testBody:    (name) => ({ text: `Basecamp test notification from channel “${name}”.` }),
-    describe:    (c) => (c.channel as string) ?? 'the webhook’s default channel',
-  },
-  pagerduty: {
-    label:       'PagerDuty',
-    secretField: 'integrationKey',
-    host:        'https://events.pagerduty.com',
-    testBody:    (name) => ({
-      event_action: 'trigger',
-      payload: { summary: `Basecamp test from “${name}”`, source: 'basecamp', severity: 'info' },
-    }),
-    describe:    () => 'Events API v2',
-  },
-  email: {
-    label:       'Email',
-    secretField: null,
-    host:        null,
-    testBody:    () => null,
-    describe:    (c) => ((c.to as string[]) ?? []).join(', ') || 'no recipients',
-  },
-  webhook: {
-    label:       'Webhook',
-    secretField: 'token',             // optional — a bare webhook needs none
-    host:        null,
-    testBody:    (name) => ({ event: 'basecamp.test', channel: name }),
-    describe:    (c) => (c.url as string) ?? 'no URL',
-  },
-}
 
 export function createChannelsService(app: BasecampApp) {
 
@@ -94,16 +45,6 @@ export function createChannelsService(app: BasecampApp) {
    *  one it would write. `litestone types` would make this unnecessary; until
    *  then it is one cast rather than four. */
   const sys = (): any => $.db.asSystem()
-
-  /** The outbound boundary, or a refusal that names what is missing. `app.conduit`
-   *  is optional on the app type — a Basecamp built without the plugin is a
-   *  legitimate configuration, and a channel test is the one thing here that
-   *  cannot work without it. */
-  function conduitOrRefuse() {
-    if (!app.conduit)
-      throw new BadRequest('Outbound delivery is not configured on this server — no conduit plugin')
-    return app.conduit
-  }
 
   /** A channel plus how many rules deliver through it. The count is what makes
    *  a channel legible — an unused channel and one carrying every page-out look
@@ -287,73 +228,20 @@ export function createChannelsService(app: BasecampApp) {
     },
 
     // ── test ──────────────────────────────────────────────────────────
-    // Deliver a test notification, for real, through app.conduit.
+    // Deliver a test notification, for real, through app.conduit — the same
+    // path an alert takes, because a test down a second path is a test of the
+    // second path.
     async test() {
       const channel = await getScoped('notificationChannel', 'Channel')
-      const kind    = channel.kind as string
-      const spec    = KINDS[kind]
-      const config  = (channel.config ?? {}) as Record<string, unknown>
 
-      if (!spec.host && kind === 'email')
-        throw new BadRequest(
-          'Email delivery needs a mailer, and this app has none configured. ' +
-          'The channel is saved; it cannot be tested yet.'
-        )
-
-      // Where the request goes. For Slack the SECRET is the URL, so the target
-      // address is the host only and the secret path is supplied per-request —
-      // a target address is stored in conduit's registry and echoed by
-      // GET /conduit-targets, which is not a place for a bearer credential.
-      let address = spec.host
-      let path    = '/v2/enqueue'          // PagerDuty's Events API v2; overwritten below for the others
-      let auth: Record<string, unknown> = { type: 'none' }
-      let body    = spec.testBody(channel.name as string) as Record<string, unknown> | null
-
-      if (kind === 'slack') {
-        const url = await readCredential(channel.secretId as string | null, 'webhookUrl')
-        if (!url) throw new BadRequest('This channel has no webhook URL stored — rotate its credential')
-        const parsed = safeUrl(url)
-        if (!parsed) throw new BadRequest('The stored webhook URL is not a URL')
-        address = parsed.origin
-        path    = parsed.pathname + parsed.search
-        if (config.channel) body = { ...body, channel: config.channel }
-      } else if (kind === 'pagerduty') {
-        const key = await readCredential(channel.secretId as string | null, 'integrationKey')
-        if (!key) throw new BadRequest('This channel has no integration key stored — rotate its credential')
-        body = { ...body, routing_key: key }
-      } else {
-        const parsed = safeUrl(config.url as string)
-        if (!parsed) throw new BadRequest('This webhook channel has no valid `url` in its config')
-        address = parsed.origin
-        path    = parsed.pathname + parsed.search
-        // A bare webhook needs no credential. One that has a token gets it as
-        // a header, by REFERENCE — the material is resolved at send time and
-        // never enters the registry.
-        if (channel.secretId)
-          auth = { type: 'api_key', ref: secretRef(channel.secretId as string, 'token'), header: 'X-Basecamp-Token' }
-      }
-
-      const conduit = conduitOrRefuse()
-      const target  = `channel:${channel.id}`
-      // Re-registered on every test rather than once at boot: the address can
-      // change under a rotation, and conduit's register is an upsert.
-      await conduit.register({
-        id:            target,
-        kind:          'provider',
-        protocol:      'http',
-        address:       address as string,
-        auth:          auth as never,
-        registered_at: Date.now(),
-        last_seen_at:  null,
-      })
-
-      const res = await conduit.send({ target, method: 'POST', path, body })
-
-      if (res.error) {
-        // The channel is not marked tested. That is the whole point of the
-        // stamp: it means something arrived.
-        throw new BadRequest(`Delivery failed (${res.error.kind}): ${res.error.message}`)
-      }
+      const res = await deliverToChannel(
+        { conduit: app.conduit as never, sys },
+        channel,
+        testMessage(channel.name as string),
+      )
+      // The channel is not marked tested on a failure. That is the whole point
+      // of the stamp: it means something arrived.
+      if (!res.ok) throw new BadRequest(res.error)
 
       return db().notificationChannel.update({
         where: { id: channel.id },
@@ -377,16 +265,6 @@ export function createChannelsService(app: BasecampApp) {
     },
   })
 
-  // ─── helpers ───────────────────────────────────────────────────────────
-
-  /** Read one field out of a channel's Secret. asSystem() because @encrypted
-   *  values are absent from a scoped read — not redacted, absent. */
-  async function readCredential(secretId: string | null, field: string): Promise<string | null> {
-    if (!secretId) return null
-    const secret = await sys().secret.findFirst({ where: { id: secretId } })
-    if (!secret?.data) return null
-    try { return JSON.parse(secret.data as string)?.[field] ?? null } catch { return null }
-  }
 }
 
 /** NotificationChannel has no `slug` column, so the shared deriveSlug —
@@ -396,14 +274,4 @@ function stampChannel(): void {
   const data = $.data as Record<string, unknown>
   if (!data) return
   data.createdBy   = actor()
-}
-
-/** A URL, or null. `new URL()` throws on anything unparseable, and a throw out
- *  of a config read reaches the caller as a 500 rather than as the 400 it is. */
-function safeUrl(value: unknown): URL | null {
-  if (typeof value !== 'string' || !value) return null
-  try {
-    const u = new URL(value)
-    return u.protocol === 'https:' || u.protocol === 'http:' ? u : null
-  } catch { return null }
 }

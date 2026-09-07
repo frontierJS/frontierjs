@@ -208,7 +208,9 @@ const HELP = `
     ${dim('  --only=users,posts')}                  only emit types for specified models
     ${dim('  --audience=client|system')}             field visibility (default: client)
     ${cyan('litestone studio')} [--no-open]        open local web UI
+    ${dim('  --gate <path[#export]>')}              grade previews with this app's own getLevel
     ${cyan('litestone repl')} [--as|--level|--gate]  a console that boots at a gate level
+    ${cyan('litestone export')} <dataset> --as <who>  take an extract, graded as that account
     ${cyan('litestone doctor')}                     check setup, audit health
     ${cyan('litestone seed')} [SeederClass]             seed the database
     ${cyan('litestone seed run')} [name]               run an infrastructure seed (--force to re-run)
@@ -1226,6 +1228,159 @@ async function cmdVerify(cfg) {
 // is `createTestEnv`'s between `actingAs` and `atLevel`, for the same reason —
 // a ladder walked with the second says nothing about whether the first works.
 
+// ─── export ───────────────────────────────────────────────────────────────────
+//
+// The governed extract (`FJS-D228`). Everything about who may take what is the
+// scoped client's, so this command's whole job is to answer three questions the
+// core cannot: which dataset, as whom, and where do the bytes go.
+//
+// `--as` names an ACCOUNT and not a level, deliberately. A synthesized principal
+// evaluates every claim-based policy against nothing, which is where
+// three-valued logic is least safe — so the standing comes off a real row, found
+// the same way `litestone repl` finds one, and `--gate` names the app's own
+// resolver for the same reason it does there.
+async function cmdExport(cfg) {
+  header('litestone export')
+
+  const parseResult = loadSchema(cfg.schema)
+  const { createClient } = await import('../core/client.js')
+  const { runExport, exportableDatasets } = await import('../export.js')
+
+  const datasets = exportableDatasets(parseResult.schema)
+
+  const name = positional[1]
+  if (!name) {
+    if (!datasets.length)
+      fatal(`No dataset in this schema declares ${cyan('@@export')}.\n` +
+            `     Add it to a model or a view, beside a ${cyan('@@gate')}.`)
+    console.log(`  ${dim('datasets this schema says may leave:')}\n`)
+    for (const d of datasets)
+      console.log(`    ${cyan(d.name)}${dim(` · ${d.kind} · ${d.export.format}${d.export.since ? ` · since ${d.export.since}` : ''}`)}`)
+    console.log(`\n  ${dim(`litestone export ${datasets[0].name} --as <account>`)}`)
+    return
+  }
+
+  const asWho  = getFlag('as')
+  const system = args.includes('--system')
+  if (!asWho && !system)
+    fatal(`Name a standing: ${cyan('--as <account>')}, or ${cyan('--system')}.\n` +
+          `     An export is a bulk read of every row a caller may see, so there is no\n` +
+          `     default caller to be. ${dim('--as takes an email, username, name or id in the @@auth model.')}`)
+
+  const appGetLevel = await loadGateResolver(getFlag('gate'))
+  const plugins = []
+  if (appGetLevel) {
+    const { GatePlugin } = await import('../plugins/gate.js')
+    plugins.push(new GatePlugin({ getLevel: appGetLevel }))
+  }
+
+  // Under `strategy database` the rows are in a TENANT's file and `main` holds
+  // the machinery, so an export with no tenant named is an export of nothing —
+  // which looks exactly like an export of an empty table. Say so rather than
+  // writing the empty file.
+  const tenancy  = parseResult.schema.tenancy
+  const tenantId = getFlag('tenant')
+  let base, tenants = null
+
+  if (tenancy?.strategy === 'database') {
+    const { createTenantRegistry } = await import('../tenant.js')
+    const { dir, registry, migrationsDir } = await tenantOptions(cfg)
+    tenants = await createTenantRegistry({
+      dir, registry, path: cfg.schema,
+      migrationsDir: migrationsDir && existsSync(resolve(migrationsDir)) ? resolve(migrationsDir) : null,
+      encryptionKey: getEncKey(),
+      ...(plugins.length ? { plugins } : {}),
+    })
+    const ids = tenants.list()
+    if (!tenantId)
+      fatal(`This schema is ${cyan('strategy database')}, so name whose data leaves: ${cyan('--tenant <id>')}.\n` +
+            `     ${ids.length ? `Known: ${ids.map(i => cyan(i)).join(', ')}` : dim('No tenants exist yet.')}\n` +
+            `     ${dim('Without one the extract would come from main, which holds the machinery and none of the rows.')}`)
+    if (!tenants.exists(tenantId))
+      fatal(`No tenant ${cyan(tenantId)}. ${ids.length ? `Known: ${ids.map(i => cyan(i)).join(', ')}` : dim('none exist yet')}`)
+    base = await tenants.get(tenantId)
+  } else {
+    if (tenantId) fatal(`${cyan('--tenant')} needs ${cyan('tenancy { strategy database }')} — this schema declares none.`)
+    // `path` + `resolveFrom: 'schema'` is the house form and it is load-bearing
+    // here: a relative `database { path }` otherwise resolves against the working
+    // directory, so running this from `db/` exports zero rows out of a `db/db/`
+    // database it created on the way (`FJS-449`).
+    base = await createClient({
+      parsed:        parseResult,
+      path:          cfg.schema,
+      resolveFrom:   'schema',
+      db:            clientDb(parseResult, cfg),
+      encryptionKey: getEncKey(),
+      ...(plugins.length ? { plugins } : {}),
+    })
+  }
+
+  // Found through the system client: an operator looking somebody up must not
+  // depend on the standing they are about to adopt.
+  const sys   = base.asSystem()
+  const found = asWho ? await findPrincipal(sys, base.$schema, asWho) : { row: null, model: null }
+  if (asWho && !found.model)
+    fatal(`This schema does not say which model holds people.\n` +
+          `     Mark it ${cyan('@@auth')} — or name it here: ${cyan('--as Customer:' + asWho)}.`)
+  if (asWho && !found.row)
+    fatal(`No ${cyan(found.model)} row matches ${cyan(found.needle)}. Tried ${found.tried.join(', ')}.`)
+
+  const fs   = await import('node:fs')
+  const path = await import('node:path')
+
+  const format = getFlag('format') ?? datasets.find(d => d.name === name || d.accessor === name)?.export.format ?? 'ndjson'
+  const toStdout = args.includes('--stdout')
+  const outDir   = getFlag('out') ?? process.cwd()
+  const stem     = path.join(outDir, name)
+  const dataFile = `${stem}.${format}`
+  const manFile  = `${stem}.manifest.json`
+
+  let stream = null
+  if (!toStdout) {
+    fs.mkdirSync(outDir, { recursive: true })
+    stream = fs.createWriteStream(dataFile)
+  }
+  const write = (line) => {
+    if (toStdout) { process.stdout.write(line + '\n'); return }
+    // Backpressure matters: an extract is the one thing here big enough to
+    // outrun a disk, and dropping it on the floor would be silent.
+    return new Promise((res, rej) => stream.write(line + '\n', err => err ? rej(err) : res()))
+  }
+
+  let manifest
+  try {
+    manifest = await runExport(base, name, {
+      as: found.row, system,
+      since:            getFlag('since') ?? null,
+      format:           getFlag('format') ?? null,
+      includeProtected: args.includes('--include-protected'),
+      withDeleted:      args.includes('--with-deleted'),
+      write,
+      tenant: tenantId ?? null,
+    })
+  } catch (e) {
+    if (stream) stream.destroy()
+    fatal(e.message)
+  }
+  if (stream) await new Promise(res => stream.end(res))
+
+  if (toStdout) { process.stderr.write(JSON.stringify(manifest, null, 2) + '\n'); return }
+  fs.writeFileSync(manFile, JSON.stringify(manifest, null, 2) + '\n')
+
+  const omittedProtected = manifest.omitted.filter(o => o.reason === 'protected')
+  console.log(`  ${green('✓')}  ${rel(dataFile)} ${dim(`(${manifest.rows} row${manifest.rows === 1 ? '' : 's'})`)}`)
+  console.log(`  ${green('✓')}  ${rel(manFile)}`)
+  console.log(`\n  taken as   ${system ? cyan('--system') : cyan(String(manifest.takenAs.principal))}` +
+              `${manifest.takenAs.declaredReadGate != null ? dim(`   read gate ${manifest.takenAs.declaredReadGate}`) : ''}`)
+  if (manifest.policiesApplied.length)
+    console.log(`  bounded by ${dim(manifest.policiesApplied.map(r => `${r.kind} ${r.expr}`).join('  ·  '))}`)
+  if (omittedProtected.length)
+    console.log(`  omitted    ${dim(omittedProtected.map(o => `${o.name} ${o.by}`).join(', '))}` +
+                `${args.includes('--include-protected') ? '' : dim('   (--include-protected to keep them)')}`)
+  if (manifest.cursor?.after)
+    console.log(`  resume     ${dim(`--since ${manifest.cursor.after}`)}`)
+}
+
 async function cmdRepl(cfg) {
   header('litestone tinker')
 
@@ -1766,6 +1921,7 @@ async function cmdStudio(cfg) {
   const { status: migStatus, apply: migApply, autoMigrate: migAuto,
           create: migCreate, createForDatabase: migCreateForDb } = await import('../core/migrations.js')
   const { diffSchemas, buildPristine, generateMigrationSQL, summariseDiff } = await import('../core/migrate.js')
+  const { columnPlan }    = await import('../export.js')
 
   // 8502 is dev/tooling/project 0/service 2 in the framework's port scheme —
   // the block reserved whole for tools somebody runs beside whatever app they
@@ -1775,7 +1931,23 @@ async function cmdStudio(cfg) {
   // answered nothing and the tool sat outside the range (`FJS-557`).
   const port        = parseInt(getFlag('port') ?? '8502')
   const parseResult = loadSchema(cfg.schema)
-  const db     = await createClient({ parsed: parseResult, path: cfg.schema, resolveFrom: 'schema', db: clientDb(parseResult, cfg), encryptionKey: getEncKey() })
+
+  // Studio was the only one of the three principal-taking commands that did not
+  // accept `--gate`, so every preview here was graded by toolbelt's default
+  // `gradeStanding` and nothing said so (`FJS-977`). For an app whose own
+  // getLevel reads the same columns that default does, the two agree and the
+  // preview is faithful; for one that grades from anywhere else it silently is
+  // not, in either direction.
+  const gateSpec    = getFlag('gate')
+  const appGetLevel = await loadGateResolver(gateSpec)
+  const gatePlugins = []
+  if (appGetLevel) {
+    const { GatePlugin } = await import('../plugins/gate.js')
+    gatePlugins.push(new GatePlugin({ getLevel: appGetLevel }))
+  }
+
+  const db     = await createClient({ parsed: parseResult, path: cfg.schema, resolveFrom: 'schema', db: clientDb(parseResult, cfg), encryptionKey: getEncKey(),
+                                      ...(gatePlugins.length ? { plugins: gatePlugins } : {}) })
   const rawDb  = db.$db
   const rawDbs = db.$rawDbs
 
@@ -1904,6 +2076,49 @@ async function cmdStudio(cfg) {
     return result
   }
 
+  // ── What the data panels are actually reading ─────────────────────────────
+  //
+  // Two different ways an answer about the live database can describe a
+  // database nobody runs, and neither is visible from the answer.
+  //
+  // Under `tenancy { strategy database }` the rows live in a file per tenant
+  // and the declared `database main` path is opened by every reader that is
+  // NOT a fleet — Studio included. Nothing migrates that file after Studio
+  // creates it, so a panel comparing the schema to its DDL answers about a
+  // skeleton frozen at whatever the schema said the first time Studio ran
+  // (`FJS-993`). The other way is ordinary: an open database can simply be
+  // behind the file it is being graded against.
+  //
+  // This travels WITH the answer rather than sitting on a badge, because the
+  // reading and the caveat are read at different moments otherwise.
+  async function diffAgainstSchema(dbName, handle) {
+    const { buildPristineForDatabase } = await import('../core/migrate.js')
+    const pristineDb = new Database(':memory:')
+    try {
+      const pristine = buildPristineForDatabase(pristineDb, parseResult, dbName)
+      const live     = introspect(handle)
+      return diffSchemas(pristine, live, parseResult, dbName, { pluralize: cfg.pluralize })
+    } finally { pristineDb.close() }
+  }
+
+  // `reason` is what a panel renders INSTEAD of an answer; `behind` heads one
+  // it still gives. They are separate because a tenant that is behind has real
+  // findings and the base skeleton has none worth showing.
+  async function activeDatabaseSource() {
+    const meta = activeDb.$databases?.main
+    const path = (meta && (!meta.driver || meta.driver === 'sqlite') && meta.path)
+      || (cfg.db ? resolve(cfg.db) : null)
+    const src  = { path, tenant: activeTenant, tenantsEnabled, reason: null, behind: null }
+
+    if (tenantsEnabled && !activeTenant) { src.reason = 'no-tenant'; return src }
+
+    try {
+      const diff = await diffAgainstSchema('main', activeRawDbs?.main ?? activeRawDb)
+      if (diff.hasChanges) src.behind = summariseDiff(diff)
+    } catch { /* an unreadable handle is the caller's problem, not this field's */ }
+    return src
+  }
+
   async function getRowCounts() {
     const counts = {}
     const sysDb  = activeDb.asSystem()  // bypass policies — counts should reflect actual data
@@ -2022,7 +2237,7 @@ async function cmdStudio(cfg) {
     return Response.json(data, { status })
   }
 
-  // ── Server-side search / sort helpers for /api/table and /api/export ──────
+  // ── Server-side search / sort helpers for /api/table and /api/table-dump ──
   // Turns the Browse filter box text into a real WHERE clause: substring match
   // on String fields, exact match on numeric fields when the query is numeric,
   // prefix match on DateTime fields when the query looks date-ish.
@@ -2257,8 +2472,14 @@ async function cmdStudio(cfg) {
           } catch (e) { return json({ error: e.message }, 400) }
         }
 
-        // POST /api/export — stream the FULL (filtered) table as CSV or JSON
-        if (path === '/api/export') {
+        // POST /api/table-dump — stream the FULL (filtered) table as CSV or JSON.
+        //
+        // NOT an export. `@@export` + `litestone export` is the governed extract
+        // — a declared dataset, a gate required beside it, protected columns
+        // omitted unless asked, and a manifest stamping who took it. This is the
+        // owner's view of a table, and it is Studio's because Studio previews
+        // (`FJS-D230`). One word may not mean both (`FJS-978`).
+        if (path === '/api/table-dump') {
           const { table, format = 'json', search, withDeleted = false, auth: authCtx } = body
           const model = activeDb.$schema.models.find(m => m.name === table || modelToAccessor(m.name) === table)
           if (!model) return json({ error: `Unknown table: ${table}` }, 400)
@@ -2266,9 +2487,20 @@ async function cmdStudio(cfg) {
           const tableDb  = authCtx ? activeDb.$setAuth(authCtx) : activeDb.asSystem()
           const where    = buildSearchWhere(model, search)
           const ob       = buildOrderBySpec(model, null)
-          const cols     = model.fields
-            .filter(f => f.type.kind !== 'relation' && !f.attributes.find(a => a.kind === 'computed' || a.kind === 'transient'))
-            .map(f => f.name)
+          // `columnPlan` is the one owner of *which columns leave*, shared with
+          // `litestone export`. Studio had a second list here that knew about
+          // relations, `@computed` and `@transient` and nothing about
+          // protection, so the default branch below — `asSystem()`, which is
+          // what an operator who has chosen no principal gets — wrote `@secret`
+          // and `@guarded` values in plaintext into a downloadable CSV
+          // (`FJS-976`).
+          //
+          // There is no way to ask for them back here, deliberately. A dump is
+          // a preview and `fli db:export --include-protected` is the path that
+          // records the decision (`FJS-D230`).
+          const plan     = columnPlan(model, { includeProtected: false })
+          const cols     = plan.columns.map(c => c.name)
+          const withheld = plan.omitted.filter(o => o.reason === 'protected')
           const enc = new TextEncoder()
           const csvCell = (v) => {
             if (v == null) return ''
@@ -2302,6 +2534,9 @@ async function cmdStudio(cfg) {
           return new Response(stream, { headers: {
             'Content-Type':        format === 'csv' ? 'text/csv; charset=utf-8' : 'application/json; charset=utf-8',
             'Content-Disposition': `attachment; filename="${accessor}.${format === 'csv' ? 'csv' : 'json'}"`,
+            // A file with columns missing and nothing saying so is the shape
+            // somebody reconciles against a year later and gets wrong.
+            'X-Withheld-Columns':  withheld.map(o => `${o.name} ${o.by}`).join(', '),
           }})
         }
 
@@ -2373,12 +2608,7 @@ async function cmdStudio(cfg) {
           for (const [dbName, handle] of Object.entries(activeRawDbs)) {
             if (!handle) continue
             try {
-              const { buildPristineForDatabase } = await import('../core/migrate.js')
-              const pristineDb  = new Database(':memory:')
-              const pristine    = buildPristineForDatabase(pristineDb, parseResult, dbName)
-              pristineDb.close()
-              const live        = introspect(handle)
-              const diffResult  = diffSchemas(pristine, live, parseResult, dbName, { pluralize: cfg.pluralize })
+              const diffResult = await diffAgainstSchema(dbName, handle)
               diffs[dbName] = {
                 diff: summariseDiff(diffResult),
                 sql:  diffResult.hasChanges ? generateMigrationSQL(diffResult, parseResult, { pluralize: cfg.pluralize }) : null,
@@ -2402,6 +2632,48 @@ async function cmdStudio(cfg) {
         if (path === '/api/access') {
           const { deriveAccess } = await import('../access.js')
           return json(deriveAccess(currentSchemaParse().schema))
+        }
+
+        // ── GET /api/seed · POST /api/seed/run ──────────────────────────
+        //
+        // A database nothing has seeded is empty for the ordinary reason, and
+        // Studio's answer to that was `No rows` on every table — the same
+        // sentence a broken query produces. The app already says what its seed
+        // is, in the one place it says what all its commands are, so this reads
+        // `package.json` rather than guessing from a filename: `db/seed.ts` is
+        // a convention and `"db:seed"` is a statement.
+        //
+        // **The command is a LOOKUP, exactly like the compare panel's ref.** The
+        // client sends nothing — it asks to run *the seed*, and the server
+        // resolves which script that is from a fixed list of names it knows.
+        // Nothing caller-supplied reaches the argv, and the spawn is
+        // shell-free, so the script's own text cannot be a second command here
+        // however it is written.
+        if (path === '/api/seed') return json(findSeed(cfg))
+
+        if (path === '/api/seed/run') {
+          if (READONLY) return json({ error: 'Studio is running in --readonly mode' }, 403)
+          const seed = findSeed(cfg)
+          if (!seed.script) return json({ error: seed.why ?? 'This project declares no seed' }, 400)
+
+          // Run it where the app lives, not where Studio was started, or a seed
+          // reading `./db/...` writes into a path that does not exist.
+          const run = spawnSync('bun', ['run', seed.script], {
+            cwd: seed.root, encoding: 'utf8', shell: false,
+            timeout: 5 * 60 * 1000, maxBuffer: 8 * 1024 * 1024,
+          })
+
+          // Both streams, always. A seeder that prints its progress to stdout
+          // and its refusal to stderr is the common shape, and showing one of
+          // them is how a failed run reads as a silent one.
+          const output = [run.stdout ?? '', run.stderr ?? ''].filter(Boolean).join('\n').trim()
+          return json({
+            ok:      run.status === 0,
+            code:    run.status,
+            timedOut: run.error?.code === 'ETIMEDOUT',
+            command: seed.command,
+            output:  output.slice(-20000),
+          })
         }
 
         // ── GET /api/refs · POST /api/compare ───────────────────────────
@@ -3129,6 +3401,13 @@ async function cmdStudio(cfg) {
         // GET /api/perf/advisor — schema-level index analysis
         if (path === '/api/perf/advisor') {
           const issues = []
+          const source = await activeDatabaseSource()
+          // Every check below compares the schema to the live DDL, so on a
+          // fleet with no tenant open there is nothing here to compare: the
+          // base file is a skeleton no tenant uses. Grading it and labelling
+          // the label would still put red rows in front of somebody, and a red
+          // row is acted on (`FJS-993`).
+          if (source.reason === 'no-tenant') return json({ issues, source })
           const models = activeDb.$schema.models
           const { modelToTableName } = await import('../core/ddl.js')
           const pluralize = cfg.pluralize ?? false
@@ -3250,7 +3529,7 @@ async function cmdStudio(cfg) {
             } catch {}
           }
 
-          return json({ issues })
+          return json({ issues, source })
         }
 
         // POST /api/perf/analyze — EXPLAIN QUERY PLAN for a SQL statement
@@ -3431,16 +3710,40 @@ async function cmdStudio(cfg) {
           }
         }
 
-        // GET /api/auth-users — returns rows from the @@auth model for the auth picker
+        // GET /api/auth-users — rows from the @@auth model for the auth picker,
+        // and what the picker CANNOT say on its own (`FJS-977`).
+        //
+        // Acting as somebody here is a real `$setAuth`, so row policies, field
+        // policies and gates all apply. What it cannot reproduce is a principal
+        // the REQUEST builds: an app resolves claims per request (junction's
+        // `createApp({ principal })`) and Studio has no request, so a declared
+        // claim that is not a column on this model is absent from every
+        // principal built here. Under `strategy row` that is not a smaller
+        // answer, it is an empty one — and an empty screen from a missing claim
+        // is the same screen as an empty screen from a policy doing its job.
         if (path === '/api/auth-users') {
-          const authModel = activeDb.$schema.models.find(m =>
-            m.attributes.some(a => a.kind === 'auth')
-          ) ?? activeDb.$schema.models.find(m => m.name === 'User' || m.name === 'users')
-          if (!authModel) return json({ users: [], modelName: null })
+          const schema    = activeDb.$schema
+          const authModel = authModelOf(schema)
+
+          // A claim that is a column on the @@auth model rides along on the row
+          // the picker hands to $setAuth. Everything else declared cannot.
+          const onRow     = new Set((authModel?.fields ?? []).map(f => f.name))
+          const declared  = [...(schema.claims ?? [])]
+          if (schema.tenancy?.strategy === 'row' && schema.tenancy.claim) declared.push(schema.tenancy.claim)
+          const offRow    = [...new Set(declared)].filter(c => !onRow.has(c))
+
+          const grading = {
+            gradedBy:   gateSpec ? 'app' : 'default',
+            resolver:   gateSpec || 'gradeStanding',
+            offRow,
+            tenancyClaim: schema.tenancy?.strategy === 'row' ? (schema.tenancy.claim ?? null) : null,
+          }
+
+          if (!authModel) return json({ users: [], modelName: null, ...grading })
           try {
             const rows = await activeDb.asSystem()[modelToAccessor(authModel.name)].findMany({ limit: 50 })
-            return json({ users: rows, modelName: authModel.name })
-          } catch { return json({ users: [], modelName: authModel.name }) }
+            return json({ users: rows, modelName: authModel.name, ...grading })
+          } catch { return json({ users: [], modelName: authModel.name, ...grading }) }
         }
 
         // POST /api/row/update — update a single row
@@ -3578,6 +3881,12 @@ async function cmdStudio(cfg) {
   // be taken by whatever else the run is doing.
   const url = `http://${displayHost}:${server.port}`
   console.log(`  ${green('✓')}  Studio at ${cyan(url)}${hostname !== '127.0.0.1' ? dim(`  (listening on ${hostname})`) : ''}`)
+
+  // A schema that declares gates and a Studio that grades them with somebody
+  // else's resolver is a preview nobody can act on. Said here as well as in the
+  // page, because the two are read at different moments (`FJS-977`).
+  if (!gateSpec && parseResult.schema.models.some(m => m.attributes?.some(a => a.kind === 'gate')))
+    console.log(`     ${dim('levels graded by the default resolver —')} ${cyan('--gate <path>')} ${dim("to use this app's own")}`)
   // Which file is this? Asked of the SCHEMA first, because a declaration wins
   // over `cfg.db` — the same rule `clientDb()` applies when building the client.
   // Testing `cfg.db` instead made this branch unreachable: `cfg.db` defaults to
@@ -4642,6 +4951,45 @@ function git(argv) {
   const run = spawnSync('git', argv, { encoding: 'utf8', shell: false, cwd: process.cwd() })
   if (run.error || run.status !== 0) return null
   return run.stdout.replace(/\n$/, '')
+}
+
+// ─── What this project calls its seed ────────────────────────────────────────
+//
+// Read off `package.json`, because that is where an app states its commands —
+// `db/seed.ts` is a convention somebody may or may not follow and `"db:seed"`
+// is a statement they made. The names are tried in order and the FIRST that
+// exists wins, so a project with both is not ambiguous.
+//
+// The root is found by walking up from the schema: `db/schema.lite` sits inside
+// the app, and Studio may have been started from anywhere.
+const SEED_SCRIPTS = ['db:seed', 'seed', 'seed:dev']
+
+function findSeed(cfg) {
+  let dir = dirname(resolve(cfg.schema))
+  for (let i = 0; i < 6; i++) {
+    const pkgPath = join(dir, 'package.json')
+    if (existsSync(pkgPath)) {
+      let pkg
+      try { pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) }
+      catch (e) { return { script: null, why: `package.json at ${rel(pkgPath)} does not parse (${e.message})` } }
+      const scripts = pkg.scripts ?? {}
+      const script  = SEED_SCRIPTS.find(n => typeof scripts[n] === 'string')
+      if (!script) {
+        return {
+          script: null,
+          root:   dir,
+          why:    `${rel(pkgPath)} declares no seed script — Studio looks for ${SEED_SCRIPTS.map(n => `\`${n}\``).join(', ')}`,
+        }
+      }
+      // What the script IS, shown so a person can see what they are about to
+      // run, and `bun run <name>` is what actually gets spawned.
+      return { script, root: dir, command: `bun run ${script}`, runs: scripts[script] }
+    }
+    const up = dirname(dir)
+    if (up === dir) break
+    dir = up
+  }
+  return { script: null, why: 'no package.json above the schema — nothing here says what a seed would be' }
 }
 
 // ─── The baselines a comparison may name ─────────────────────────────────────
@@ -6410,16 +6758,23 @@ async function main() {
   }
 
   if (cmd === 'tenant') {
-    const subCmd = args.find(a => !a.startsWith('--'))
-    const rest   = args.filter(a => a !== subCmd && !a.startsWith('--'))
-    const cfg    = await loadConfig()
-    await cmdTenant(subCmd, rest, cfg)
+    // `args` is raw argv and still holds the command word, so finding the first
+    // non-flag in it returned "tenant" and every subcommand answered "Unknown
+    // tenant subcommand". `positional` is what main() already destructured.
+    const cfg = await loadConfig()
+    await cmdTenant(sub, rest, cfg)
     return
   }
 
   if (cmd === 'repl') {
     const cfg = await loadConfig()
     await cmdRepl(cfg)
+    return
+  }
+
+  if (cmd === 'export') {
+    const cfg = await loadConfig()
+    await cmdExport(cfg)
     return
   }
 

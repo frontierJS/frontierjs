@@ -32,7 +32,7 @@ let n = 0
 const compile = (src) =>
   compileSource(src, { filename: `/anchor${n++}.mesa`, dev: false }).then(c => c.result)
 
-const anchorsOf = (js) => [...js.matchAll(/\bChild\((\w+),/g)].map(m => m[1])
+const anchorsOf = (js) => [...js.matchAll(/\bChild\(([\w$]+),/g)].map(m => m[1])
 
 const HEAD = `<script>\n  import Child from './Child.mesa'\n  let flag = true\n</script>\n`
 
