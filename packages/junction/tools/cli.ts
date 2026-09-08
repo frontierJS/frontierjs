@@ -24,12 +24,13 @@ const TOOLS: Record<string, string> = {
   jobs:    'jobs-snapshot.ts',
   principal: 'principal-snapshot.ts',
   notifications: 'notifications-snapshot.ts',
+  atlas:   'atlas.ts',
 }
 
 const target = TOOLS[cmd ?? '']
 
 if (!target) {
-  console.log('Usage: junction <init|setup|repl|build|surface|errors|jobs|principal|notifications> [args]')
+  console.log('Usage: junction <init|setup|repl|build|surface|errors|jobs|principal|notifications|atlas> [args]')
   console.log()
   console.log('  init [dir]        scaffold a new Junction project')
   console.log('  setup [audit]     setup wizard, or non-interactive audit')
@@ -40,6 +41,7 @@ if (!target) {
   console.log('  jobs --app <m>    write the jobs snapshot — what runs with no caller (--check in CI)')
   console.log('  principal --app <m>  write the principal snapshot — who a caller becomes (--check in CI)')
   console.log('  notifications --app <m>  write the notifications snapshot — what this app can tell somebody (--check in CI)')
+  console.log('  atlas --app <m>   print the whole app model as JSON — nothing committed, no --check')
   process.exit(cmd ? 1 : 0)
 }
 

@@ -193,6 +193,15 @@ const surface     = await (await fetch(`${UI}/api/access`, {
 const modelCount  = surface.models.length
 const policyCount = surface.models.filter(m => m.policies && Object.keys(m.policies).length).length
 
+// One card per (model, field): a model may declare @@transitions on two columns,
+// and a header naming one field over rows belonging to both is a diagram of a
+// machine that does not exist. Derived from the payload for FJS-773's reason —
+// a typed-in count freezes against a fixture and reports it as a regression.
+const moveCards = surface.models
+  .filter(m => m.transitions.length)
+  .flatMap(m => [...new Set(m.transitions.map(t => t.field))].map(f => ({ m, f })))
+const moveRows  = surface.counts.transitions
+
 t('gates.rowCount',  await evaluate(`return document.querySelectorAll('#acPanel tbody tr').length`), modelCount)
 t('gates.counts',    await evaluate(`return document.getElementById('acCounts').textContent.includes('${modelCount} models')`), true)
 
@@ -255,6 +264,59 @@ t('policies.rendered', await evaluate(`
 
 await evaluate(`acShow('fields'); return true`)
 t('fields.rendered', await evaluate(`return document.querySelectorAll('#acPanel tbody tr').length >= 1`), true)
+
+// ─── moves ────────────────────────────────────────────────────────────────
+//
+// A state machine is access: `@@transitions` says which changes exist, and a
+// per-move @gate is a permission no @@gate on the model can express. Every
+// assertion here is PAIRED with its opposite — a gated move beside an
+// inherited one, a terminal state beside the states that are not — because a
+// panel rendering every move identically satisfies any test that only asks
+// whether the rows appeared.
+await evaluate(`acShow('moves'); return true`)
+
+t('moves.cardsPerModelField', await evaluate(`return document.querySelectorAll('#acPanel .card').length`), moveCards.length)
+t('moves.rowCount',           await evaluate(`return document.querySelectorAll('#acPanel tbody tr').length`), moveRows)
+t('moves.countsLine',         await evaluate(`return document.getElementById('acCounts').textContent.includes('${moveRows} declared moves')`), true)
+
+// The pair the panel exists for. `Order.refund` is @gate(5) on a model that
+// updates at 4, so the badge has to say 5 — and `pay`, which inherits, has to
+// say something else, or a panel printing the model's gate on every row passes.
+const gated    = surface.models.flatMap(m => m.transitions).find(t => t.gate != null)
+const inherit  = surface.models.flatMap(m => m.transitions).find(t => t.gate == null)
+
+t('moves.gateShown', await evaluate(`
+  const row = [...document.querySelectorAll('#acPanel tbody tr')]
+    .find(r => r.querySelector('td b')?.textContent.trim() === ${JSON.stringify(gated.name)});
+  return row.querySelector('td:nth-child(4) .badge')?.textContent.trim();
+`), `${gated.gate} ${['STRANGER','VISITOR','READER','CREATOR','USER','ADMINISTRATOR','OWNER','SYSADMIN','SYSTEM','LOCKED'][gated.gate]}`)
+
+t('moves.inheritedGateIsNotABadge', await evaluate(`
+  const row = [...document.querySelectorAll('#acPanel tbody tr')]
+    .find(r => r.querySelector('td b')?.textContent.trim() === ${JSON.stringify(inherit.name)});
+  return Boolean(row.querySelector('td:nth-child(4) .badge'));
+`), false)
+
+// A state that is only ever a `to` can never be left, which is a design
+// statement rather than a rendering detail. Derived, and asserted with a
+// non-terminal state from the same machine beside it.
+const withTerminal = moveCards.map(({ m, f }) => {
+  const moves = m.transitions.filter(t => t.field === f)
+  const froms = new Set(moves.flatMap(t => t.from))
+  return { m, f, terminal: [...new Set(moves.map(t => t.to))].filter(x => !froms.has(x)), froms: [...froms] }
+}).find(c => c.terminal.length)
+
+t('moves.terminalNamed', await evaluate(`
+  const card = [...document.querySelectorAll('#acPanel .card')]
+    .find(c => c.querySelector('.surface-header b')?.textContent.trim() === ${JSON.stringify(withTerminal.m.name)});
+  return card.querySelector('.alert')?.textContent.includes(${JSON.stringify(withTerminal.terminal[0])});
+`), true)
+
+t('moves.nonTerminalNotNamed', await evaluate(`
+  const card = [...document.querySelectorAll('#acPanel .card')]
+    .find(c => c.querySelector('.surface-header b')?.textContent.trim() === ${JSON.stringify(withTerminal.m.name)});
+  return card.querySelector('.alert')?.textContent.includes(${JSON.stringify(withTerminal.froms[0])});
+`), false)
 
 // ─── drift ────────────────────────────────────────────────────────────────
 

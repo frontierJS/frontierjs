@@ -44,7 +44,7 @@ if (!resolved) {
 
 const { server, user, path } = resolved
 const appId     = deployConf.app_id ?? path.split('/').pop()
-const container = `${appId}-api`
+const container = apiContainer(appId, deployConf)
 const host      = `${user}@${server}`
 
 // Check the machine, then the container

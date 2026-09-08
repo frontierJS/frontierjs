@@ -36,6 +36,12 @@ const isRelation = (f, schema) => (schema.models ?? []).some(m => m.name === f.t
 /** Is there a column? `@computed`, `@transient` and `@derived` have none. */
 const isStored = f => !has(f, 'computed') && !has(f, 'transient') && !has(f, 'derived')
 
+/** The name the emitted SQL uses — `@map` renames the column and nothing else. */
+const fieldColumn = (model, name) => {
+  const f = (model.fields ?? []).find(x => x.name === name)
+  return f?.attributes?.find(a => a.kind === 'map')?.value ?? name
+}
+
 /** A model the app declared, as opposed to one litestone or a plugin added. */
 const authored = schema => (schema.models ?? []).filter(m => !modelAttr(m, 'external'))
 
@@ -326,6 +332,165 @@ export const OPPORTUNITIES = [
         out.push({ model: model.name, field: null,
           message: `${model.name} carries ${cols.map(f => f.name).join(' and ')} and no @@fts. ` +
             `search() is a 400 naming the attribute until one is declared.` })
+      }
+      return out
+    },
+  },
+
+  {
+    id:         'an-open-window-with-nothing-holding-it-open-once',
+    confidence: 'likely',
+    word:       '@@unique',
+    title:      'effective dating with two open windows',
+    blurb:      'A from/to pair whose `to` is nullable is a validity window, and the row with a ' +
+                'null `to` is the one in force. Nothing says there may be only ONE of those per ' +
+                'parent, so a second open window is accepted by the table and the as-at read then ' +
+                'has two answers and picks one. `@@unique([parentId], where: <to> == null)` is the ' +
+                'constraint — a predicate cannot ride a table constraint, so it emits a standalone ' +
+                'partial unique index and does not make the relation one-to-one.',
+    run(schema) {
+      // The STEM is the vocabulary and not any from/to pair. `periodStart` and
+      // `periodEnd` on an invoice line are a service period — two lines with a
+      // null end are ordinary, and a rule that reported them would fire on
+      // every billing schema. A window is what `effective`/`valid`/`active`
+      // name, which is the spelling the language's own docs use.
+      const OPEN  = /^(effective|valid|active)(To|End|Until|Through)$/i
+      const CLOSE = /^(effective|valid|active)(From|Start|Since)$/i
+      const out = []
+      for (const model of authored(schema)) {
+        const fields = model.fields ?? []
+        // The pair has to share a stem, or `startsAt` and `deletedAt` read as a
+        // window. Both halves stored, and the `to` optional — a required one is
+        // a closed period rather than a window with a row in force.
+        const pairs = []
+        for (const f of fields) {
+          const m = OPEN.exec(f.name)
+          if (!m || !isOptional(f) || !isStored(f)) continue
+          if (!fields.some(g => CLOSE.exec(g.name)?.[1]?.toLowerCase() === m[1].toLowerCase() && isStored(g))) continue
+          pairs.push(f)
+        }
+        if (!pairs.length) continue
+
+        // A window is per PARENT, so a model with no relation is a single
+        // timeline and needs no constraint to hold one row open.
+        const parents = fields.filter(f => isRelation(f, schema))
+        if (!parents.length) continue
+
+        for (const to of pairs) {
+          const guarded = (model.attributes ?? []).some(a =>
+            a.kind === 'partialUnique' && a.whereSql?.includes(`"${fieldColumn(model, to.name)}"`))
+          if (guarded) continue
+          out.push({ model: model.name, field: to.name,
+            message: `${model.name}.${to.name} is nullable beside its own start column, so the row ` +
+              `with no ${to.name} is the one in force — and nothing stops there being two. ` +
+              `@@unique([${parents[0].name}Id], where: ${to.name} == null) is what holds one open.` })
+        }
+      }
+      return out
+    },
+  },
+
+  {
+    id:         'a-document-priced-through-a-relation',
+    confidence: 'possible',
+    word:       '@immutable',
+    title:      'a document that reads its price out of the catalogue',
+    blurb:      'A price, a rate or a fee on a document is a value AT AN INSTANT. Reached through ' +
+                'a relation it is the value NOW, so moving the catalogue price silently reprices ' +
+                'every historical receipt — the one bug in this class that nothing raises and ' +
+                'nobody reports, because both readings look correct. The fix is a column on the ' +
+                'document holding what was charged, @immutable once the document is issued.',
+    run(schema) {
+      const priced = new Set(authored(schema)
+        .filter(m => (m.fields ?? []).some(f => has(f, 'money') || has(f, 'scale')))
+        .map(m => m.name))
+      if (!priced.size) return []
+
+      const out = []
+      for (const model of authored(schema)) {
+        const fields = model.fields ?? []
+        if (fields.some(f => has(f, 'money') || has(f, 'scale'))) continue
+
+        // Document-shaped: something about this row is meant to stand. A basket
+        // line legitimately reads the live price, and it declares none of these.
+        const isDocument = (model.attributes ?? []).some(a => a.kind === 'transitions' || a.kind === 'log')
+          || fields.some(f => has(f, 'immutable') || has(f, 'sealed'))
+        if (!isDocument) continue
+
+        // belongsTo ONLY. A hasMany is the other direction — `Customer.orders`
+        // does not read a price through anything — and matching it reported
+        // seven findings on `example`, every one of them backwards.
+        // A header whose LINES hold the amounts holds them. `JournalEntry` has
+        // no money column and is not underpriced — `JournalLine` is where the
+        // debits are, one level down, which is the ordinary document shape.
+        const pricedChild = authored(schema).some(child =>
+          (child.fields ?? []).some(f => f.type?.name === model.name
+            && f.attributes?.some(a => a.kind === 'relation' && a.fields?.length))
+          && (child.fields ?? []).some(f => has(f, 'money') || has(f, 'scale')))
+        if (pricedChild) continue
+
+        const via = fields.find(f =>
+          priced.has(f.type?.name) && f.attributes?.some(a => a.kind === 'relation' && a.fields?.length))
+        if (!via) continue
+
+        // A price that cannot move cannot reprice anything. An @immutable amount,
+        // or a target that is itself a dated version, is the correct shape here —
+        // `example`'s Subscription reads PlanVersion for exactly that reason.
+        const target = authored(schema).find(m => m.name === via.type.name)
+        const amounts = (target.fields ?? []).filter(f => has(f, 'money') || has(f, 'scale'))
+        const frozen  = amounts.every(f => has(f, 'immutable'))
+          || (target.fields ?? []).some(f => /^(effective|valid|active)(From|To)$/i.test(f.name))
+        if (frozen) continue
+
+        out.push({ model: model.name, field: via.name,
+          message: `${model.name} reads its price through ${via.name} (${via.type.name}) and holds ` +
+            `no amount of its own, so a change to ${via.type.name} reprices every ${model.name} ` +
+            `already written.` })
+      }
+      return out
+    },
+  },
+
+  {
+    id:         'a-standing-spelled-on-the-global-row',
+    confidence: 'possible',
+    word:       '@@tenant',
+    title:      'a role column that means one thing in every tenant',
+    blurb:      'Under `tenancy { strategy row }` the @@auth model spans tenants, so a role or ' +
+                'standing column on it is one answer everywhere — the person who administers one ' +
+                'workspace administers all of them. A standing that varies per tenant belongs on ' +
+                'the membership row, which is the model already carrying both the person and the ' +
+                'tenant. Genuinely global standings exist and this is the shape worth a second ' +
+                'look, not a defect.',
+    run(schema) {
+      if (schema.tenancy?.strategy !== 'row') return []
+      const authModel = authored(schema).find(m => modelAttr(m, 'auth'))
+      if (!authModel) return []
+
+      // The lifecycle stages the framework itself reads are not roles: absent
+      // means the app does not model that stage, and they are per PERSON by
+      // construction. A rule that reported them would fire on every app.
+      const LIFECYCLE = /^(emailVerified|verifiedAt|activatedAt|deletedAt)$/
+      const ROLE      = /^(role|isAdmin|isOwner|isStaff|isManager|isEditor|permissions|capabilities)$/i
+
+      // The model carrying both the person and the tenant, if there is one.
+      const membership = authored(schema).find(m =>
+        m !== authModel
+        && (m.fields ?? []).some(f => f.type?.name === authModel.name)
+        && (m.fields ?? []).some(f => f.name === schema.tenancy.column))
+
+      const out = []
+      for (const f of authModel.fields ?? []) {
+        if (LIFECYCLE.test(f.name) || !ROLE.test(f.name) || !isStored(f)) continue
+        const alsoThere = membership && (membership.fields ?? []).some(g => g.name === f.name)
+        out.push({ model: authModel.name, field: f.name,
+          confidence: alsoThere ? 'likely' : 'possible',
+          message: alsoThere
+            ? `${authModel.name}.${f.name} and ${membership.name}.${f.name} are two spellings of one ` +
+              `standing, and only the second can differ per tenant. Whichever the policies read, ` +
+              `the other is answering as well.`
+            : `${authModel.name}.${f.name} is on a model that spans tenants, so it is one answer in ` +
+              `every one of them. A standing that varies per tenant belongs on the membership row.` })
       }
       return out
     },

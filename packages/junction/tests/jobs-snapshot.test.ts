@@ -12,7 +12,8 @@
 
 import { describe, expect, it } from 'bun:test'
 import { createApp, defaultConfig } from '../index.ts'
-import { describeJobs, renderJobsSnapshot } from '../tools/jobs-snapshot.ts'
+import { renderJobsSnapshot } from '../tools/jobs-snapshot.ts'
+import { describeJobs }      from '../src/core/app-model.ts'
 import { quietly } from '../tools/app-module.ts'
 
 function bareApp() {

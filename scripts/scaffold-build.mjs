@@ -52,10 +52,12 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync,
          copyFileSync, rmSync, mkdtempSync }           from 'node:fs'
 import { join, dirname, resolve }                      from 'node:path'
 import { fileURLToPath }                               from 'node:url'
-import { tmpdir }                                      from 'node:os'
+import { tmpdir, homedir }                             from 'node:os'
 import { randomBytes }                                 from 'node:crypto'
 
 import { vendorWorkspacePackages }                     from '../packages/cli/core/vendor.js'
+import { pickWorkBase, daemonCanRead }                 from '../packages/cli/core/docker-context.js'
+import { apiContainerName }                            from '../packages/cli/core/ports.js'
 import { pointAtLocalServer }                          from '../packages/cli/core/tutor.js'
 import { reapTempDirs }                                from '../packages/litestone/src/tmp-dirs.js'
 
@@ -110,6 +112,46 @@ export const daemonBlindHint = (output, dir) => {
     `directory the daemon shares, e.g. FJS_CI_WORKDIR=$HOME/fjs-ci-work.`
 }
 
+// ─── where the work goes ─────────────────────────────────────────────────────
+// One owner for a default that was restated at six call sites, and MEASURED
+// rather than remembered: an explicit $FJS_CI_WORKDIR still wins, and otherwise
+// the daemon is asked whether it can read a context under tmpdir() before one is
+// built there. Probed once per process — the answer cannot change mid-run, and
+// the probe costs a `FROM scratch` build.
+let _workBase = null
+export function ciWorkBase(log = () => {}) {
+  if (_workBase) return _workBase
+  if (process.env.FJS_CI_WORKDIR) return (_workBase = process.env.FJS_CI_WORKDIR)
+
+  const fallback = join(homedir(), 'fjs-ci-work')
+  const picked   = pickWorkBase([tmpdir(), fallback],
+    (dir) => {
+      try { mkdirSync(dir, { recursive: true }) } catch { return false }
+      return daemonCanRead(dir, { mkdtempSync, writeFileSync, rmSync, spawnSync, join })
+    })
+
+  if (picked.tried.length)
+    log(`  the Docker daemon cannot read a build context under ${picked.tried.join(', ')} — using ${picked.base}`)
+
+  return (_workBase = picked.base ?? tmpdir())
+}
+
+// ─── is anything on this port ────────────────────────────────────────────────
+// Asked BEFORE a phase builds an image it cannot then run. Docker answers a busy
+// port with `Bind for 127.0.0.1:<p> failed: port is already allocated`, three
+// minutes and one image build after the point where the answer was already
+// knowable — and it reads as a deploy defect rather than as a machine with
+// something else on it.
+//
+// Sync, because this file is synchronous end to end. `core/probe.js` has an
+// async one for the shipped CLI; they are not merged because unifying them
+// means making one of the two callers change shape, which is more than the
+// question is worth.
+export function portFree(port) {
+  const probe = `const s=require('net').createServer();s.once('error',()=>process.exit(1));s.listen(${port},'127.0.0.1',()=>s.close(()=>process.exit(0)))`
+  return spawnSync(process.execPath, ['-e', probe], { stdio: 'ignore' }).status === 0
+}
+
 /** A scaffold/deploy work directory: previous runs' swept, this one registered
  *  so an interrupt takes it with it. `base` is honored for the reason
  *  $FJS_CI_WORKDIR exists — the Docker daemon must be able to read it. */
@@ -142,7 +184,7 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
   // hands this directory to the Docker daemon as a build context, and a shell
   // with a private /tmp gets `unable to prepare context` about a path that is
   // plainly there.
-  const base = process.env.FJS_CI_WORKDIR || tmpdir()
+  const base = ciWorkBase(log)
   const work = workDir('fjs-scaffold-', base)
 
   try {
@@ -370,7 +412,7 @@ export function scaffoldAndDeploy({ source = 'npm', keep = false, verbose = fals
   // caller's /tmp — a sandboxed or containerised shell with a private tmpfs
   // gets `unable to prepare context: path not found` for a directory that is
   // plainly there. On an ordinary machine and on a CI runner, tmpdir is right.
-  const base = process.env.FJS_CI_WORKDIR || tmpdir()
+  const base = ciWorkBase(log)
   const work = workDir('fjs-deploy-', base)
   const app  = join(work, appName)
 
@@ -480,12 +522,24 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
     return { findings, skipped: 'no git — the server side of this is a clone' }
 
   const appName   = `fjsjrn${process.pid}`
-  const container = `${appName}-api`
   // ports.js: env 7 test · category 1 be · project 0 (what `fli new` scaffolds).
   // 7100 and 7101 are the two sources of scaffoldAndDeploy; this takes the next.
   const PORT = 7102
 
-  const base = process.env.FJS_CI_WORKDIR || tmpdir()
+  // A held port is a SKIP and never a finding — the same verdict the tutor phase
+  // gives, and for the same reason: this phase refuses a busy port rather than
+  // moving to a free one, so a collision is a fact about the machine. Named,
+  // because *port is already allocated* three minutes later names docker.
+  if (!portFree(PORT))
+    return { findings: [], skipped: `port ${PORT} is already in use — something else is on this machine's test tier` }
+  // Asked of the pipeline's own owner rather than spelled again — and the port
+  // has to be read first, because the name is a function of its TIER. Written by
+  // hand this was `${appName}-api`, so once the pipeline started naming a
+  // test-tier container `<app>-api-test`, every assertion here looked for a
+  // container that no longer existed.
+  const container = apiContainerName(appName, PORT)
+
+  const base = ciWorkBase(log)
   const work = workDir('fjs-journal-', base)
   const app  = join(work, appName)
   const srv  = join(work, 'server')

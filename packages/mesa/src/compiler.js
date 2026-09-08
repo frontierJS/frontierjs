@@ -2,7 +2,7 @@
  * @frontierjs/mesa-compiler  v0.1.0
  *
  * Sections
- *   1.  Utils            — assert, Q, isSimpleName, toCamelCase, genId,
+ *   1.  Utils            — assert, Q, isSimpleName, toCamelCase,
  *                          rewriteExpr, rewriteTextResult, rewriteAssignments
  *   2.  xNode IR         — code-generation node graph
  *   3.  Parser           — HTML/template parser
@@ -295,22 +295,12 @@ export const isNumber = (v) =>
   typeof v === 'number' || (v && typeof v === 'string' && !isNaN(v))
 export const isObject = (d) => d !== null && typeof d === 'object'
 
-let _genIdCounter = 0
-/**
- * A unique-per-process id. NOT deterministic — it mixes the clock with a
- * counter, so two compilations of the same source produce different ids.
- * Nothing in the compiler uses it any more; `cssHash` replaced its one caller.
- * Kept because it is a public export.
- */
-export const genId = () =>
-  'm' + (Date.now().toString(36) + (++_genIdCounter).toString(36)).slice(-8)
-
 /**
  * Content-addressed component id — the CSS scope hash.
  *
  * Deterministic by construction: the same style content always produces the
  * same id, in this process or any other. That matters in three ways, and the
- * clock-plus-counter `genId` failed all three.
+ * clock-plus-counter id this replaced failed all three.
  *
  * 1. **Reproducible builds.** The same source compiled twice produced different
  *    scope classes, so build output could never be diffed or content-hashed.
@@ -3967,7 +3957,7 @@ export function processCSS(ctx) {
   // The id is derived from the style content, so it is the same in every
   // compilation of this component — see `cssHash`. `styleNodes` is already
   // populated here, and `process()` below joins it the same way.
-  const cssId = config.cssGenId ? config.cssGenId() : cssHash(styleNodes.map((n) => n.content).join('\n'))
+  const cssId = cssHash(styleNodes.map((n) => n.content).join('\n'))
   ctx.css = {
     id: cssId,
     result: null,

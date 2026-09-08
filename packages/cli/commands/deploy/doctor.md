@@ -543,7 +543,7 @@ if (flag.remote) {
         }
 
         // Container state
-        const container = `${appId}-api`
+        const container = apiContainer(appId, deployConf)
         const containerStatus = ask(`docker inspect ${container} --format '{{.State.Status}}' 2>/dev/null || echo absent`)
         if (containerStatus === 'absent' || !containerStatus) {
           renderCheck(`${container}`, 'info', `not running — first deploy will create it`)

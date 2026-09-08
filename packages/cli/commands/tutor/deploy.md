@@ -63,7 +63,12 @@ context.vars.port     = context.config.port
 
 // The container and the images are named for the app, so the teardown can find
 // everything this lesson built without a list.
-context.config.container = `${context.config.app}-api`
+// Asked of the same owner the pipeline uses, never spelled again here. This
+// line was the tenth hand-written copy of the name, and the one that made the
+// other nine look fixed: the deploy created the tier-suffixed container and the
+// lesson then looked for the unsuffixed one.
+const { apiContainerName } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
+context.config.container = apiContainerName(context.config.app, context.config.port)
 context.vars.container   = context.config.container
 ```
 

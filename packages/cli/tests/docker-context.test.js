@@ -18,6 +18,7 @@ import { tmpdir, homedir } from 'os'
 import { join } from 'path'
 import {
   contextProbe, parseProbe, contextRefusal, pathReason,
+  pickWorkBase, daemonCanRead,
 } from '../core/docker-context.js'
 
 const HOME = '/home/j'
@@ -237,5 +238,72 @@ describe.skipIf(!hasDocker)('a real docker, over real directories', () => {
     expect(h).not.toBeNull()
     expect(o).not.toBeNull()
     expect(o.at(-1)[1]).toContain(homedir())
+  })
+})
+
+
+// ─── choosing a work directory ───────────────────────────────────────────────
+// The other half of the same fact: `contextRefusal` explains a build that has
+// already failed, `pickWorkBase` keeps one from being started somewhere it will.
+
+describe('picking a work base', () => {
+  test('the first readable candidate wins, and nothing was tried before it', () => {
+    const r = pickWorkBase(['/tmp', '/home/x'], () => true)
+    expect(r.base).toBe('/tmp')
+    expect(r.tried).toEqual([])
+  })
+
+  test('an unreadable default falls through, and says which was refused', () => {
+    const r = pickWorkBase(['/tmp', '/home/x'], (d) => d !== '/tmp')
+    expect(r.base).toBe('/home/x')
+    expect(r.tried).toEqual(['/tmp'])
+  })
+
+  // Advisory, never fatal. A machine with no daemon refuses every candidate,
+  // and the phases that care already skip themselves by name.
+  test('every candidate refused still answers the first, rather than throwing', () => {
+    const r = pickWorkBase(['/tmp', '/home/x'], () => false)
+    expect(r.base).toBe('/tmp')
+    expect(r.why).toContain('no candidate')
+  })
+
+  test('no candidates at all is null and not a crash', () => {
+    expect(pickWorkBase([], () => true).base).toBeNull()
+  })
+
+  test('a falsy candidate is skipped rather than probed', () => {
+    const seen = []
+    pickWorkBase([null, '', '/tmp'], (d) => { seen.push(d); return true })
+    expect(seen).toEqual(['/tmp'])
+  })
+})
+
+describe('asking the daemon whether it can read a directory', () => {
+  const fake = (status) => ({
+    mkdtempSync: (p) => p + 'X',
+    writeFileSync: () => {},
+    rmSync: () => {},
+    spawnSync: () => ({ status }),
+    join: (...a) => a.join('/'),
+  })
+
+  test('a build that succeeds means it can', () => {
+    expect(daemonCanRead('/tmp', fake(0))).toBe(true)
+  })
+
+  test('a build that fails means it cannot', () => {
+    expect(daemonCanRead('/tmp', fake(1))).toBe(false)
+  })
+
+  // No daemon and an unwritable path are the same answer to the only question
+  // being asked — *should I put a build context here*.
+  test('a throw is false rather than an exception', () => {
+    expect(daemonCanRead('/tmp', { ...fake(0), mkdtempSync: () => { throw new Error('nope') } })).toBe(false)
+  })
+
+  test('the probe directory is removed even when the build fails', () => {
+    const removed = []
+    daemonCanRead('/tmp', { ...fake(1), rmSync: (p) => removed.push(p) })
+    expect(removed).toEqual(['/tmp/fjs-ctxprobe-X'])
   })
 })

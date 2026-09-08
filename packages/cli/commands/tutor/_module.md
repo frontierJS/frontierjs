@@ -20,11 +20,12 @@ const { createPrompts } = await import(new URL('file://' + global.fliRoot + '/co
 const probe             = await import(new URL('file://' + global.fliRoot + '/core/probe.js'))
 const T                 = await import(new URL('file://' + global.fliRoot + '/core/tutor.js'))
 const B                 = await import(new URL('file://' + global.fliRoot + '/core/browser.js'))
+const DC                = await import(new URL('file://' + global.fliRoot + '/core/docker-context.js'))
 
-const { existsSync, mkdirSync, openSync, readFileSync, writeFileSync, appendFileSync, copyFileSync, rmSync } = await import('node:fs')
+const { existsSync, mkdirSync, openSync, readFileSync, writeFileSync, appendFileSync, copyFileSync, rmSync, mkdtempSync } = await import('node:fs')
 const { join, resolve, basename } = await import('node:path')
 const { homedir }        = await import('node:os')
-const { spawn }          = await import('node:child_process')
+const { spawn, spawnSync } = await import('node:child_process')
 
 // ─── openTutor ────────────────────────────────────────────────────────────────
 //
@@ -36,12 +37,31 @@ const { spawn }          = await import('node:child_process')
 // alone still knows the app directory step 2 created. Without it that flag
 // fails as a TypeError several frames from anything a reader can act on.
 
+// A directory the DAEMON can read, measured rather than assumed. A snap-confined
+// docker cannot read every path this shell can, and the build then fails naming
+// a Dockerfile that is plainly there — so the candidates are tried before one is
+// picked. A machine with no docker answers null and the caller keeps its own.
+const probeWorkBase = (candidates) => {
+  try {
+    const picked = DC.pickWorkBase([...candidates, join(homedir(), 'fjs-work')], (dir) => {
+      try { mkdirSync(dir, { recursive: true }) } catch { return false }
+      return DC.daemonCanRead(dir, { mkdtempSync, writeFileSync, rmSync, spawnSync, join })
+    })
+    // Only interesting when the default was REFUSED — otherwise the caller's
+    // own answer is already right and this should not override it.
+    return picked.tried.length ? picked.base : null
+  } catch { return null }
+}
+
 const openTutor = (context, lesson, { ephemeral = [], base } = {}) => {
   const ws = T.tutorWorkspace({
     name: context.flag.workspace,
     tmp:  context.flag.tmp || !context.flag.workspace,
     cwd:  process.cwd(),
     base,
+    // Only where a base was asked for — that is the lesson which hands its
+    // workspace to a Docker daemon, and the only one that pays a probe for it.
+    probe: base ? probeWorkBase : undefined,
   })
 
   const verdict = T.journalVerdict(T.readJournal(ws.dir), { workspace: ws.dir })

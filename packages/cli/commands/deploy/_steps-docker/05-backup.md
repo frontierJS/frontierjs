@@ -12,7 +12,7 @@ const { appId, deployConf } = context.config
 const { host, path: serverPath } = context.config.api
 const dbPath    = deployConf.db?.path    ?? `${serverPath}/db`
 const backupDir = deployConf.db?.backups ?? `${dbPath}/backups`
-const container = `${appId}-api`
+const container = apiContainer(appId, deployConf)
 
 // ─── The app backs itself up ──────────────────────────────────────────────────
 // This used to shell out to `sqlite3 … '.backup'` on the host, which was wrong

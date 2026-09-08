@@ -1,5 +1,62 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-07 — three opportunities about decisions that cannot be taken back
+
+`advise`'s second list answers *legal and missing*, and every check in it was
+about a word that would have said something better. These three are about a
+shape that loses information: they are still legal, still working, and what is
+wrong about them is unrecoverable by the time anybody notices.
+
+**`an-open-window-with-nothing-holding-it-open-once`** — an `effectiveFrom`/
+`effectiveTo` pair with a nullable end is a validity window, and nothing says
+there may be one open row per parent, so the as-at read has two answers and
+picks one. `FJS-603`'s shape, reported before the second row exists. The STEM is
+the vocabulary rather than any from/to pair: `periodStart`/`periodEnd` on an
+invoice line is a service period, two lines with a null end are ordinary, and a
+rule reporting them fires on every billing schema.
+
+**`a-document-priced-through-a-relation`** — a document with no amount of its
+own, reading a `@money` column through a belongsTo. Moving the catalogue price
+then reprices every receipt already written, and both readings look correct.
+Three exclusions, each measured against `example`: a hasMany is not a price
+lookup (matching it reported seven findings, every one backwards), a target
+that is itself dated cannot move, and a header whose LINES carry the amounts
+carries them one level down.
+
+**`a-standing-spelled-on-the-global-row`** — under `strategy row` the `@@auth`
+model spans tenants, so a role column on it is one answer in every tenant. It
+grades `likely` where the membership row spells the same name, which is two
+answers to one question and only one of them can vary. Its first run on
+`basecamp` found `User.role` beside `WorkspaceMember.role`.
+
+Silent on `example` and on a schema that took every earlier suggestion. 33 → 47
+tests in `test/opportunities.test.ts`, every check asserted in both directions.
+
+## 2026-09-07 — Studio draws the state machines
+
+Studio's Access panel had four tabs and no answer to *which changes exist* — a
+`@@transitions` block reached `access.snapshot.md` and no rendered surface, so
+the one shipped view of who-may-do-what was silent about the moves. `deriveAccess`
+already carried them, per model, with each move's gate, `@system` and `@seals`;
+the payload was on the wire and nothing read it.
+
+**Moves is a fifth tab and no new endpoint.** A per-move `@gate` is the reason it
+belongs beside the gate grid rather than beside the schema: `Order` updates at 4
+and refuses a refund at 5, which no `@@gate` on the model can express. A move
+that states no gate reads *the model's* rather than repeating the number, or a
+panel printing the model's gate on every row would look identical to one that
+works.
+
+**The card is per (model, field)**, because `@@transitions` is per column and a
+header naming one field over rows belonging to two is a diagram of a machine
+that does not exist.
+
+Terminal states are named on the card: a state that is only ever a `to` is a
+row that can never move again, and that is a design statement rather than a
+rendering detail. `verify:studio:access` asserts it with a non-terminal state
+from the same machine beside it, and its counts derive from the same
+`/api/access` the panel renders (`FJS-773`). 21 assertions → 28.
+
 ## 2026-09-07 — a view reaches the generated types, and leaves the gate ladder
 
 Two more of `FJS-999`'s walk. `litestone types` never looked at `schema.views`,

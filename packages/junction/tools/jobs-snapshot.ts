@@ -38,49 +38,8 @@ import { writeFileSync }             from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 
 import { flag, getFlag, rel, fatal, loadApp, checkSnapshot } from './app-module.ts'
-import type { App }                                          from '../src/core/app.ts'
-
-// ─── the two registries ───────────────────────────────────────────────────────
-
-export interface DurableJob {
-  name:        string
-  queue:       string
-  cron:        string | null
-  timeZone:    string | null
-  maxAttempts: number
-  retryDelay:  number[]
-  /** `null` means no bound — a handler that never settles holds its slot (`FJS-295`). */
-  timeout:     number | null
-}
-
-export interface InProcessTimer {
-  id:   string
-  type: 'interval' | 'cron' | 'once'
-  expr: string
-}
-
-export interface JobsSurface {
-  durable:   DurableJob[]
-  timers:    InProcessTimer[]
-  /** Absent means the app installed no queue at all — a different fact from an empty one. */
-  hasQueue:  boolean
-}
-
-// Caravan is an OPTIONAL peer, so both registries are duck-typed rather than
-// imported. An app with no queue is a legitimate app and must not fail here;
-// what it must not do is render the same as an app whose queue is empty, which
-// is why `hasQueue` is a field rather than an inference from `durable.length`.
-export function describeJobs(app: App): JobsSurface {
-  const jobs = (app as { jobs?: { registrations?: () => DurableJob[] } }).jobs
-  const hasQueue = typeof jobs?.registrations === 'function'
-
-  const durable = hasQueue ? jobs!.registrations!() : []
-
-  const scheduler = (app as { scheduler?: { describe?: () => InProcessTimer[] } }).scheduler
-  const timers = typeof scheduler?.describe === 'function' ? scheduler.describe() : []
-
-  return { durable, timers, hasQueue }
-}
+import { describeJobs }                                      from '../src/core/app-model.ts'
+import type { JobsSurface }                                  from '../src/core/app-model.ts'
 
 // ─── rendering ────────────────────────────────────────────────────────────────
 

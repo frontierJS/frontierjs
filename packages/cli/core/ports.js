@@ -741,3 +741,22 @@ export function toolHost(tool, { base = NAME_BASE } = {}) {
 export function toolBaseHost({ base = NAME_BASE } = {}) {
   return `${TOOL_BASE}.${base}`
 }
+
+// ─── the container a deploy runs ─────────────────────────────────────────────
+//
+// The name lives here because it is a function of the TIER, and the tier is
+// what this table means. Nine call sites wrote `${appId}-api` by hand, so the
+// port scheme separated a test run from a dev run and the container name did
+// not — two runs of one lesson on one machine collided on the name while their
+// ports were doing exactly what they were designed to do, and docker reported
+// it as a name conflict rather than as the collision it was.
+//
+// Only the TEST tier is suffixed. Every deployed container in the world is
+// called `<app>-api` today, and renaming them would orphan the running one:
+// `deploy:stop`, `deploy:logs` and a revert all address the name, so a machine
+// mid-upgrade would have a container nothing could reach. The collision that
+// actually happens is CI against a person, and that is the tier boundary.
+export function apiContainerName(appId, port) {
+  const tier = Number.isFinite(port) ? decode(Number(port)).env : null
+  return tier === 'test' ? `${appId}-api-test` : `${appId}-api`
+}

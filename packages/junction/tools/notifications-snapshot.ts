@@ -36,48 +36,8 @@ import { writeFileSync }             from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 
 import { flag, getFlag, rel, fatal, loadApp, checkSnapshot } from './app-module.ts'
-import type { App }                                          from '../src/core/app.ts'
-
-// ─── what a definition answers ────────────────────────────────────────────────
-
-export interface DeclaredNotification {
-  /** The string written to `notifications.type` and read back by the browser. */
-  type:       string
-  /** Transports it can format for, in declaration order. */
-  transports: string[]
-}
-
-export interface NotificationsSurface {
-  declared: DeclaredNotification[]
-  /** Absent means the plugin was never configured — not the same as configured
-   *  and empty, and the reason this is a field rather than `declared.length`. */
-  installed: boolean
-}
-
-type Registry = ReadonlyMap<string, { type?: string; transports?: readonly string[] }>
-
-export function describeNotifications(app: App): NotificationsSurface {
-  const reg = (app as { notifications?: Registry }).notifications
-  const installed = !!reg && typeof reg.forEach === 'function'
-
-  if (!installed) return { declared: [], installed: false }
-
-  const declared: DeclaredNotification[] = []
-  for (const [key, f] of reg!) {
-    declared.push({
-      // The map is keyed by the type, and the factory carries it too. Reading
-      // the key means a registry built by anything is describable here.
-      type:       f?.type ?? key,
-      transports: [...(f?.transports ?? [])],
-    })
-  }
-
-  // Sorted, because the loader walks the directory and the file system's order
-  // is not a fact about the app. A committed file whose rows move when nothing
-  // changed is a diff nobody can read.
-  declared.sort((a, b) => a.type.localeCompare(b.type))
-  return { declared, installed: true }
-}
+import { describeNotifications }                             from '../src/core/app-model.ts'
+import type { NotificationsSurface }                         from '../src/core/app-model.ts'
 
 // ─── rendering ────────────────────────────────────────────────────────────────
 

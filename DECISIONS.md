@@ -9773,6 +9773,13 @@ trace, and every one of those is a second origin.
 `packages/caravan/src/db.ts` (`dispatch({ id })`, the primary key) ·
 [`IDEAS/inbound-integrations.md`](IDEAS/inbound-integrations.md) (the record this answers)
 
+*Decided and unbuilt.* Probed the day it was ruled: `TargetKind` carries no
+`broker`, the router answers `nats` with `NotImplementedTransport`, and conduit
+calls `app.registerHealthCheck` nowhere — so this ruling names three things the
+tree does not have, and a settled question with no artefact reads exactly like a
+built one from every document that cites it. The open work, the obligation
+clause included, is [`FJS-1014`](ISSUES.md#fjs-1014).
+
 ### <a id="fjs-d233"></a>2026-09-07 · `FJS-D233` — FrontierJS ships no cost story, and the reason is that a cost fact has its origin outside the app
 
 Raised by a territory survey that put *cost* on the map because the CNCF platform

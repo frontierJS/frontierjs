@@ -13,7 +13,7 @@ const { host, serverPath, deployConf, appId, apiPort, revertImage } = context.co
 // copy that had drifted would be discovered mid-incident.
 const { container, replaced } = swapContainer(context, {
   host,
-  container: `${appId}-api`,
+  container: apiContainer(appId, deployConf),
   image:     revertImage,
   apiPort,
   dbPath:  deployConf.db?.path ?? `${serverPath}/db`,

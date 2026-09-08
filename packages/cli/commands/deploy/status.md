@@ -37,7 +37,7 @@ const path       = targetConf.path   ?? deployConf.path
 const appId      = deployConf.app_id ?? path.split('/').pop()
 const apiPort    = deployConf.api?.port ?? 3000
 const host       = `${user}@${server}`
-const container  = `${appId}-api`
+const container  = apiContainer(appId, deployConf)
 
 // ─── Is the machine reachable ─────────────────────────────────────────────────
 const machine = machineFor(context, host, path, deployConf.transport)

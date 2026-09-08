@@ -61,7 +61,7 @@ import { findChrome }                          from '../packages/cli/core/browse
 
 // Packs the working tree and builds a scaffolded app against it. Its own file
 // because the mechanism needs more explaining than the phase does.
-import { scaffoldAndBuild, scaffoldAndDeploy, deployJournalCycle, daemonBlindHint } from './scaffold-build.mjs'
+import { scaffoldAndBuild, scaffoldAndDeploy, deployJournalCycle, daemonBlindHint, ciWorkBase, portFree } from './scaffold-build.mjs'
 
 const ROOT       = resolveRoot()
 const ALLOWANCES = join(ROOT, 'scripts', 'ci-allowances.json')
@@ -75,6 +75,9 @@ const baseRef   = readFlag(args, '--base-ref') ?? process.env.FJS_CI_BASE_REF ??
 // Narrows the typecheck and test phases to one package. Coverage and hygiene
 // are repo-wide questions and ignore it.
 const only      = readFlag(args, '--only')
+// Repeatable: `--phase deploy --phase tutor`.
+const wantedPhases = args.reduce((out, a, i) =>
+  a === '--phase' && args[i + 1] ? [...out, args[i + 1]] : out, [])
 
 // A suite that hangs is the one failure mode that costs more than the bug.
 // css drives a real Chrome and litestone applies migrations, so the ceiling is
@@ -100,7 +103,32 @@ const started = Date.now()
 // `const` does not, so running the phases from up here puts every helper
 // constant below them in its temporal dead zone — which throws at the first
 // one that is not a function.
+// Every phase by name, in the order a full run does them. Declared as a table
+// rather than only as a call sequence so `--phase` can name one: chasing a red
+// deploy through a twenty-minute run to reach a three-minute phase is how people
+// learn to stop running CI at all.
+const PHASES = {
+  hygiene, structure, registers, snapshots, access, coverage,
+  registry, advisories, scaffold, typecheck, deploy, tutor, tests,
+}
+
 async function main() {
+  if (wantedPhases.length) {
+    // Refused by name rather than silently running nothing — a typo that
+    // reports a green build is worse than no flag at all.
+    const unknown = wantedPhases.filter(p => !(p in PHASES))
+    if (unknown.length) {
+      console.error(`[ci] --phase ${unknown.join(', ')} — no such phase. One of: ${Object.keys(PHASES).join(' ')}`)
+      process.exit(2)
+    }
+    // Run in the table's order, never the order they were typed: the phases are
+    // not independent — `scaffold` packs what `deploy` then installs.
+    for (const name of Object.keys(PHASES))
+      if (wantedPhases.includes(name)) await PHASES[name]()
+    report()
+    return
+  }
+
   if (!testsOnly) {
     hygiene()
     structure()
@@ -1512,7 +1540,7 @@ function tutor() {
     // workspace, and this shell's /tmp may be private to it — the same
     // environment fact the deploy phase names, so it is named with the same
     // sentence rather than a second one.
-    fail(`${lesson.id} exited ${run.status}${daemonBlindHint(output, process.env.FJS_CI_WORKDIR || tmpdir())}`, output)
+    fail(`${lesson.id} exited ${run.status}${daemonBlindHint(output, ciWorkBase())}`, output)
   }
 
   // ── the course, taken as a course ──────────────────────────────────────────
@@ -1553,7 +1581,7 @@ function tutor() {
 /** Every lesson the machine can run, in the index's order, in ONE workspace —
  *  then a replay and a `--restart` over the app they all left behind. */
 function course(LESSONS, { fli, daemon, chrome, verbose }) {
-  const dir = join(process.env.FJS_CI_WORKDIR || tmpdir(), `fjs-tutor-course-${process.pid}`)
+  const dir = join(ciWorkBase(), `fjs-tutor-course-${process.pid}`)
 
   const runLesson = (id, args, label) => {
     const t0  = Date.now()
@@ -1563,7 +1591,7 @@ function course(LESSONS, { fli, daemon, chrome, verbose }) {
     })
     const output = verbose ? '' : `${run.stdout ?? ''}${run.stderr ?? ''}`
     if (run.status === 0) { ok(label, Date.now() - t0); return true }
-    fail(`${label} exited ${run.status}${daemonBlindHint(output, process.env.FJS_CI_WORKDIR || tmpdir())}`, output)
+    fail(`${label} exited ${run.status}${daemonBlindHint(output, ciWorkBase())}`, output)
     return false
   }
 
@@ -1593,11 +1621,6 @@ function course(LESSONS, { fli, daemon, chrome, verbose }) {
 
 // Is this port bindable RIGHT NOW. A child process rather than `net` here
 // because every phase in this file is synchronous, and a listen is not.
-function portFree(port) {
-  const probe = `const s=require('net').createServer();s.once('error',()=>process.exit(1));s.listen(${port},'127.0.0.1',()=>s.close(()=>process.exit(0)))`
-  return spawnSync(process.execPath, ['-e', probe], { stdio: 'ignore' }).status === 0
-}
-
 // ─── running a package's own script ─────────────────────────
 
 function runScript(dir, script) {

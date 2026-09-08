@@ -17,7 +17,7 @@ const { host, path: serverPath } = context.config.api
 // step 04 has already said so out loud.
 const { container, replaced } = swapContainer(context, {
   host,
-  container: `${appId}-api`,
+  container: apiContainer(appId, deployConf),
   image:     context.config.imageAddress ?? imageTag,
   apiPort,
   dbPath:  deployConf.db?.path ?? `${serverPath}/db`,

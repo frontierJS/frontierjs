@@ -59,7 +59,7 @@ if (targetRelease) {
 // refusal is about: not what was meant, what is up. An unreadable answer decides
 // nothing rather than deciding *the same*.
 const running = machineFor(context, host, serverPath)
-  .capture(`docker inspect ${appId}-api --format '{{.Image}}' 2>/dev/null || echo ''`)
+  .capture(`docker inspect ${apiContainer(appId, deployConf)} --format '{{.Image}}' 2>/dev/null || echo ''`)
 const servingImage = running ? { image: running } : null
 
 const refusals = revertRefusals({

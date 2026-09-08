@@ -12,7 +12,8 @@
 
 import { describe, expect, it } from 'bun:test'
 import { createApp, createService, healthPlugin, defaultConfig } from '../index.ts'
-import { describeSurface, renderSurfaceSnapshot } from '../tools/surface.ts'
+import { renderSurfaceSnapshot } from '../tools/surface.ts'
+import { describeSurface }      from '../src/core/app-model.ts'
 
 async function buildApp() {
   const app = createApp({

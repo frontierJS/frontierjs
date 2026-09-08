@@ -8,6 +8,13 @@ const { loadFrontierConfig, dockerfileScripts } = await import(new URL('file://'
 const { vendorWorkspacePackages, linkedDeps, GENERATED_DIR } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
 const { createMachine } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
 const { dockerLogArgs } = await import(new URL('file://' + global.fliRoot + '/core/docker-logging.js'))
+const { apiContainerName } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
+
+// The container this deploy's API runs in. One reading of the name, shared by
+// the pipeline and by every standalone command that has to find it again —
+// `deploy:logs`, `deploy:status`, `deploy:run`, the revert and the rollback.
+// Nine hand-written copies is how the name came to ignore the port tier.
+const apiContainer = (appId, deployConf) => apiContainerName(appId, deployConf?.api?.port)
 
 // ─── machineFor ───────────────────────────────────────────────────────────────
 // The one way a step reaches the box. Every command a deploy runs goes through

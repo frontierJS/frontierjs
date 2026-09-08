@@ -142,3 +142,64 @@ export function contextRefusal(probe, { host, dockerfile, contextPath }) {
 
   return lines
 }
+
+// ─── choosing a work directory the daemon can read ───────────────────────────
+//
+// The other half of the same fact. `contextRefusal` explains a build that has
+// already failed; this picks a directory it will not fail in.
+//
+// Six call sites resolved `FJS_CI_WORKDIR || tmpdir()` by hand, which is a
+// default restated six times and an operator holding a flag for a condition the
+// machine can measure.
+
+/** The Dockerfile a probe builds. `scratch` pulls nothing, so this needs no
+ *  network and no image — the only question asked is whether the daemon can
+ *  READ the directory. */
+export const PROBE_DOCKERFILE = 'FROM scratch\n'
+
+/**
+ * The first candidate the daemon can read.
+ *
+ * @param candidates  absolute paths, most preferred first
+ * @param canRead     (dir) => boolean — injected, so this is testable with no
+ *                    daemon and no filesystem
+ * @returns { base, why, tried }  — `why` is for the operator, never a guess
+ */
+export function pickWorkBase(candidates = [], canRead = () => true) {
+  const tried = []
+  for (const dir of candidates.filter(Boolean)) {
+    if (canRead(dir)) return { base: dir, why: tried.length ? 'the daemon cannot read the default' : 'the default', tried }
+    tried.push(dir)
+  }
+  // Every candidate refused. The first is still returned rather than throwing:
+  // a phase that skips on no-daemon must not be stopped here by the probe that
+  // was only ever advisory, and the deploy phase says its own piece if it runs.
+  return { base: candidates[0] ?? null, why: 'no candidate could be verified', tried }
+}
+
+/**
+ * Can the daemon read a build context under `dir`? Measured, by building one.
+ *
+ * `FROM scratch` pulls nothing, so this costs a fraction of a second and needs
+ * no network. A daemon that is absent or refusing answers `false` the same way
+ * an unreadable path does, which is correct for the one question the caller is
+ * asking — *should I put a build context here* — and wrong for no other, since
+ * a caller with no daemon has nothing to build anyway.
+ */
+export function daemonCanRead(dir, { mkdtempSync, writeFileSync, rmSync, spawnSync, join }) {
+  let probe = null
+  try {
+    probe = mkdtempSync(join(dir, 'fjs-ctxprobe-'))
+    writeFileSync(join(probe, 'Dockerfile'), PROBE_DOCKERFILE)
+    const r = spawnSync('docker', ['build', '-q', '.'], {
+      cwd: probe, encoding: 'utf8', timeout: 60_000, stdio: 'pipe',
+    })
+    return r.status === 0
+  } catch {
+    // A candidate we cannot even create a directory in is not readable by
+    // anyone, which is the same answer for this caller's purpose.
+    return false
+  } finally {
+    try { if (probe) rmSync(probe, { recursive: true, force: true }) } catch {}
+  }
+}

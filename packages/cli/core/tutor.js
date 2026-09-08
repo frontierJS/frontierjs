@@ -54,9 +54,15 @@ export const journalPath    = (workspace) => join(workspace, JOURNAL_NAME)
 // with a private /tmp gets a Docker build that cannot see a directory plainly
 // there, so `tutor:deploy` asks for somewhere else. $FJS_CI_WORKDIR still wins,
 // because CI states it for the same reason.
-export function tutorWorkspace({ name, tmp = false, cwd = process.cwd(), base: wanted } = {}) {
+export function tutorWorkspace({ name, tmp = false, cwd = process.cwd(), base: wanted, probe } = {}) {
   if (tmp) {
-    const base = process.env.FJS_CI_WORKDIR || wanted || tmpdir()
+    // Measured before it is used, where the caller hands one in. A lesson that
+    // builds an image is the one that cares, and it is also the one whose
+    // failure reads as a missing file — so the answer is asked for rather than
+    // remembered as a flag by somebody who has met it before.
+    const base = process.env.FJS_CI_WORKDIR
+      || (probe ? probe([wanted, tmpdir()].filter(Boolean)) : null)
+      || wanted || tmpdir()
     mkdirSync(base, { recursive: true })
     const dir = mkdtempSync(join(base, 'fjs-tutor-'))
     return { dir, kind: 'temp', app: name || 'my-app' }

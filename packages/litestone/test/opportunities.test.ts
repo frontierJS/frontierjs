@@ -291,6 +291,140 @@ describe('text-model-with-no-search', () => {
   })
 })
 
+
+describe('an-open-window-with-nothing-holding-it-open-once', () => {
+  const ID = 'an-open-window-with-nothing-holding-it-open-once'
+  const WIN = `model P { id Int @id  name String }
+    model R {
+      id            Int       @id
+      planId        Int
+      plan          P         @relation(fields: [planId], references: [id])
+      effectiveFrom DateTime
+      effectiveTo   DateTime?
+    }`
+
+  test('fires on a from/to pair with nothing holding one row open', () => {
+    expect(found(WIN, ID).map(x => `${x.model}.${x.field}`)).toEqual(['R.effectiveTo'])
+  })
+
+  test('silent once the partial unique is declared', () => {
+    expect(found(WIN.replace('effectiveTo   DateTime?',
+      'effectiveTo   DateTime?\n@@unique([planId], where: effectiveTo == null)'), ID)).toEqual([])
+  })
+
+  // The stem is the vocabulary. `periodStart`/`periodEnd` on an invoice line is
+  // a SERVICE PERIOD — two lines with a null end are ordinary — and a rule
+  // reporting them fires on every billing schema. `example` has exactly that
+  // pair and must stay silent.
+  test('silent on a from/to pair that is not an effective-dating stem', () => {
+    expect(found(`model P { id Int @id }
+      model L { id Int @id  pId Int  p P @relation(fields: [pId], references: [id])
+        periodStart DateTime  periodEnd DateTime? }`, ID)).toEqual([])
+  })
+
+  // A window is per PARENT. One timeline needs no constraint to hold one row
+  // open, and reporting it would be advice with nothing to act on.
+  test('silent where there is no parent to be open against', () => {
+    expect(found(`model S { id Int @id  effectiveFrom DateTime  effectiveTo DateTime? }`, ID)).toEqual([])
+  })
+
+  // A required `to` is a closed period, not a window with a row in force.
+  test('silent where the end is required', () => {
+    expect(found(WIN.replace('effectiveTo   DateTime?', 'effectiveTo   DateTime'), ID)).toEqual([])
+  })
+})
+
+describe('a-document-priced-through-a-relation', () => {
+  const ID  = 'a-document-priced-through-a-relation'
+  const CAT = `enum S { draft issued }\n model C { id Int @id  price Int @money(USD) }\n`
+  const DOC = CAT + `model D {
+      id     Int @id
+      cId    Int
+      c      C   @relation(fields: [cId], references: [id])
+      status S   @default(draft)
+      @@transitions(status, draft -> issued)
+    }`
+
+  test('fires where a document holds no amount of its own', () => {
+    expect(found(DOC, ID).map(x => `${x.model}.${x.field}`)).toEqual(['D.c'])
+  })
+
+  test('silent once the document carries the amount', () => {
+    expect(found(DOC.replace('status S   @default(draft)',
+      'charged Int @money(USD) @immutable\n status S @default(draft)'), ID)).toEqual([])
+  })
+
+  // A basket line legitimately reads the live price. Nothing about it is meant
+  // to stand, and it declares none of the words that say otherwise.
+  test('silent on a row that is not document-shaped', () => {
+    expect(found(CAT + `model Line { id Int @id  cId Int  c C @relation(fields: [cId], references: [id]) }`, ID))
+      .toEqual([])
+  })
+
+  // The other direction is not a price lookup at all. Matching it reported
+  // seven findings on `example`, every one of them backwards.
+  test('silent on a hasMany, which reads nothing through anything', () => {
+    expect(found(`enum S { draft issued }
+      model D { id Int @id  status S @default(draft)  lines L[]  @@transitions(status, draft -> issued) }
+      model L { id Int @id  dId Int  d D @relation(fields: [dId], references: [id])  amount Int @money(USD) }`, ID))
+      .toEqual([])
+  })
+
+  // A price that cannot move cannot reprice anything — `example`'s Subscription
+  // reads PlanVersion for exactly that reason.
+  test('silent where the target is itself dated', () => {
+    expect(found(`enum S { draft issued }
+      model V { id Int @id  price Int @money(USD)  effectiveFrom DateTime  effectiveTo DateTime? }
+      model D { id Int @id  vId Int  v V @relation(fields: [vId], references: [id])
+        status S @default(draft)  @@transitions(status, draft -> issued) }`, ID)).toEqual([])
+  })
+
+  // A header whose LINES hold the amounts holds them, one level down.
+  test('silent where a child carries the money', () => {
+    expect(found(`enum S { draft issued }
+      model C { id Int @id  price Int @money(USD) }
+      model H { id Int @id  cId Int  c C @relation(fields: [cId], references: [id])
+        status S @default(draft)  @@transitions(status, draft -> issued) }
+      model HL { id Int @id  hId Int  h H @relation(fields: [hId], references: [id])  amount Int @money(USD) }`, ID))
+      .toEqual([])
+  })
+})
+
+describe('a-standing-spelled-on-the-global-row', () => {
+  const ID  = 'a-standing-spelled-on-the-global-row'
+  const TEN = `tenancy { strategy row  column workspaceId }\n`
+
+  test('likely where the membership row spells the same standing', () => {
+    const out = found(TEN + `
+      model User { id Int @id  role String  @@auth  @@tenant(none) }
+      model Member { id Int @id  workspaceId Int  uId Int  u User @relation(fields: [uId], references: [id])
+        role String }
+      model Workspace { id Int @id  workspaceId Int }`, ID)
+    expect(out.map(x => [x.field, x.confidence])).toEqual([['role', 'likely']])
+  })
+
+  test('possible where no membership row carries it', () => {
+    const out = found(TEN + `
+      model User { id Int @id  isAdmin Boolean @default(false)  @@auth  @@tenant(none) }
+      model Thing { id Int @id  workspaceId Int }`, ID)
+    expect(out.map(x => [x.field, x.confidence])).toEqual([['isAdmin', 'possible']])
+  })
+
+  // The lifecycle stages the framework reads are per PERSON by construction.
+  // A rule reporting them fires on every app, `example` and `basecamp` included.
+  test('silent on the lifecycle columns and on an ordinary one', () => {
+    expect(found(TEN + `
+      model User { id Int @id  emailVerified Boolean @default(false)  name String  @@auth  @@tenant(none) }
+      model Thing { id Int @id  workspaceId Int }`, ID)).toEqual([])
+  })
+
+  // Under `strategy database` a person is inside one tenant already, so the
+  // column means one thing where it is read.
+  test('silent outside row tenancy', () => {
+    expect(found(`model User { id Int @id  role String  @@auth }`, ID)).toEqual([])
+  })
+})
+
 // ─── the set as a whole ───────────────────────────────────────────────────────
 
 describe('a schema that took every suggestion', () => {

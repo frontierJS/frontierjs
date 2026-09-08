@@ -10,7 +10,8 @@
 
 import { describe, expect, test } from 'bun:test'
 import { appPorts, devPorts, scriptsRunBy, projectIdFor, PROJECTS, DYNAMIC_PROJECT_FLOOR, port,
-         GLOBAL, GLOBAL_RANGE, isGlobalPort, isReservedToolingPort } from '../core/ports.js'
+         GLOBAL, GLOBAL_RANGE, isGlobalPort, isReservedToolingPort,
+         apiContainerName } from '../core/ports.js'
 
 // A surface is a directory at the app root (Invariant 3), so a fake tree is
 // exactly a set of directory names — no filesystem needed.
@@ -272,5 +273,40 @@ describe('the global tooling block', () => {
     expect(isReservedToolingPort(8509)).toBe(true)
     expect(isGlobalPort(8509)).toBe(false)
     expect(isGlobalPort(GLOBAL.devtools)).toBe(true)
+  })
+})
+
+
+// ─── the container a deploy runs ─────────────────────────────────────────────
+// The name is a function of the TIER, which is what makes two concurrent runs
+// of one lesson possible. Nine call sites wrote it by hand, so the ports
+// separated a CI run from a person's and the container name did not.
+
+describe('the api container name', () => {
+  test('a test-tier port gets its own container', () => {
+    expect(apiContainerName('my-app', 7103)).toBe('my-app-api-test')
+  })
+
+  // The control that keeps the blast radius at zero. Every deployed container
+  // is called `<app>-api` today; renaming one would orphan it, because stop,
+  // logs and revert all address the name.
+  test('dev and prod are unchanged', () => {
+    expect(apiContainerName('my-app', 8100)).toBe('my-app-api')
+    expect(apiContainerName('my-app', 9100)).toBe('my-app-api')
+  })
+
+  test('an absent port is unchanged rather than guessed at', () => {
+    expect(apiContainerName('my-app', undefined)).toBe('my-app-api')
+    expect(apiContainerName('my-app', null)).toBe('my-app-api')
+  })
+
+  // 3000 is the container's INTERNAL port and appears as a default at several
+  // call sites. It decodes to no tier, and must not be read as one.
+  test("the container's own port is not a tier", () => {
+    expect(apiContainerName('my-app', 3000)).toBe('my-app-api')
+  })
+
+  test('the two tiers cannot collide, which is the whole point', () => {
+    expect(apiContainerName('my-app', 7103)).not.toBe(apiContainerName('my-app', 8100))
   })
 })

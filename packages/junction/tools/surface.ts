@@ -28,84 +28,14 @@ import { writeFileSync }             from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 
 // The loader, the arg helpers and the `--check` compare are shared with
-// `junction jobs` — see tools/app-module.ts.
+// `junction jobs` — see tools/app-module.ts. The MODEL is shared with every
+// other register — see src/core/app-model.ts. This file renders and nothing
+// else.
 import { flag, getFlag, rel, fatal, loadApp, checkSnapshot } from './app-module.ts'
 
-import { buildRoutes, serializeHookMap } from '../src/plugins/manifest/index.ts'
-import type { App }                      from '../src/core/app.ts'
+import { describeSurface }              from '../src/core/app-model.ts'
+import type { Surface }                 from '../src/core/app-model.ts'
 
-const argv = Bun.argv.slice(2)
-
-// ─── the surface ──────────────────────────────────────────────────────────────
-
-export interface SurfaceService {
-  name:          string
-  // Older spellings this service still answers to. A kebab FILENAME derives a
-  // camel service name now (`FJS-570`), and the filename's own spelling stays
-  // mounted — which is a fact about the wire and therefore belongs here.
-  aliases:       string[]
-  model:         string
-  methods:       string[]
-  customMethods: string[]
-  /** The `type` in the seed each method's payload must satisfy, keyed by method. */
-  inputs:        Record<string, string>
-  channel:       string[]
-  transactional: string[]
-  softDelete:    string | null
-  cache:         boolean
-  idField:       string
-  allowBulk:     boolean
-  bulkMax:       number
-  hooks:         Record<string, Record<string, string[]>>
-}
-
-export interface Surface {
-  prefix:    string
-  plugins:   string[]
-  appHooks:  Record<string, Record<string, string[]>>
-  services:  SurfaceService[]
-  routes:    { method: string; path: string; kind: string }[]
-}
-
-export function describeSurface(app: App): Surface {
-  const cfg = app.config as Record<string, unknown>
-
-  const services = [...app.services.values()].map(svc => {
-    const d = svc.describe()
-    // `channel` is a service field rather than part of describe() — normalized
-    // to a list because the declaration takes one name or several.
-    const channel = svc.channel == null ? []
-      : Array.isArray(svc.channel) ? [...svc.channel] as string[]
-      : typeof svc.channel === 'string' ? [svc.channel]
-      : ['(computed)']
-
-    return {
-      name:          d.name,
-      aliases:       app.services.aliasesOf(d.name),
-      model:         d.model,
-      methods:       d.methods,
-      customMethods: d.customMethods,
-      inputs:        d.inputs ?? {},
-      channel,
-      transactional: d.transactional,
-      softDelete:    d.softDelete,
-      cache:         d.cache,
-      idField:       d.idField,
-      allowBulk:     d.allowBulk,
-      bulkMax:       d.bulkMax,
-      hooks:         serializeHookMap(d.hooks) as unknown as Record<string, Record<string, string[]>>,
-    }
-  }).sort((a, b) => a.name.localeCompare(b.name))
-
-  return {
-    prefix:   (cfg.apiPrefix as string) ?? '',
-    // `app._plugins` is already the names, in configure order.
-    plugins:  [...(app._plugins ?? [])],
-    appHooks: serializeHookMap(app._appHooks ?? {}) as unknown as Record<string, Record<string, string[]>>,
-    services,
-    routes:   buildRoutes(app),
-  }
-}
 
 // ─── rendering ────────────────────────────────────────────────────────────────
 //

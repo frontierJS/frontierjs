@@ -35,6 +35,14 @@ src/
                     `type` in the seed, any method) both compile through
                     jsonSchemaToJunctionSchema → createSchema
     envelope.ts     the result envelope — one module, one owner
+    app-model.ts    ONE walk over a built app, for every register that renders
+                    one — describeSurface, describeJobs, describeNotifications,
+                    and describeAppModel composing those over
+                    describePrincipalRealm (which stays in litestone.ts and is
+                    composed, never re-exported). The four tools under ../tools/
+                    RENDER this and hold no walk of their own. A second walk
+                    cannot be joined to these except by name, and a join by name
+                    is a guess
     outbox.ts       the transactional outbox — ctx.enqueue + the relay pass
     build-id.ts     which build this is, and which one the browser is on
                     (`FJS-D160`). The server STATES (`x-fjs-build` on a response,
@@ -85,7 +93,19 @@ src/
   ../tools/surface.ts  `junction surface` — the committed surface.snapshot.md,
                     read off a BUILT app (describe() + buildRoutes()), --check in CI
   ../tools/errors-snapshot.ts  `junction errors` — the committed errors.snapshot.md,
-                    every row a value actually thrown through toFrameworkError()
+                    every row a value actually thrown through toFrameworkError().
+                    The one tool here that takes NO --app: renderErrorsSnapshot()
+                    has no parameter, and the file it writes is junction's own,
+                    not an app's. So it is outside describeAppModel by category
+                    rather than by choice — there is no walk to fold
+  ../tools/atlas.ts  `junction atlas --app <m>` — describeAppModel as JSON on
+                    stdout. Nothing committed and no --check: the four registers
+                    are gated already and a fifth file derived from them would be
+                    a second origin. It exists so a reader outside this package
+                    can ask a CROSS-register question; `fli app:atlas` is the
+                    first. Its shutdown runs under `quietly` where the four
+                    snapshot tools do not — for them stdout is scratch and the
+                    file is the document, here stdout IS the document
   ../tools/notifications-snapshot.ts  `junction notifications` — the committed
                     notifications.snapshot.md: what this app can TELL somebody.
                     `app.notifications` is duck-typed exactly as `app.jobs` is —

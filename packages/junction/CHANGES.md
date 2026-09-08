@@ -1,5 +1,40 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-07 — one walk over a built app, and a JSON reading of it
+
+Four tools shared `loadApp` and nothing else. Each built its own shape out of the
+loaded app, so `example` booted four times to write four files and a fact
+computed twice had nowhere to meet — *which service does this job call*, *what
+standing does this raw route reach the Data boundary at*, recoverable from two
+independent walks only by matching names, and a join by name is a guess.
+
+`src/core/app-model.ts` holds the walks now — `describeSurface`, `describeJobs`,
+`describeNotifications` and their types, moved verbatim — and composes
+`describeAppModel(app)` over those and `describePrincipalRealm`, which stays in
+`core/litestone.ts` and is composed rather than re-exported, because two import
+paths to one function is what the arrangement exists to stop. The three tools
+render and nothing else: `surface.ts` 273 to 203 lines, `jobs-snapshot.ts` 215 to
+174, `notifications-snapshot.ts` 190 to 150.
+
+**Proven by byte compare rather than argued**, which is not true of most refactors
+and is true of this one: `checkSnapshot` already regenerates a snapshot and
+compares it to the committed bytes, so all seven committed registers across
+`example` and `basecamp` were run green BEFORE the move and again after. 2328
+passing, typecheck clean.
+
+`junction atlas --app <m>` is the reading that needed the composition — one boot,
+one walk, `describeAppModel` as JSON on stdout. Nothing committed and no
+`--check`: the four registers are gated already, and a fifth file derived from
+them would be a second origin. Its shutdown runs under `quietly` where the four
+snapshot tools do not — for them stdout is scratch and the file is the document;
+here stdout IS the document, and the shutdown announced itself two lines below
+the JSON on the first run.
+
+`errors` is not in the model and there was nothing to fold.
+`renderErrorsSnapshot()` takes no argument, has no `--app`, and writes junction's
+own `errors.snapshot.md` rather than an app's — a category difference, not an
+asymmetry to state.
+
 ## 2026-09-07 — an unknown `$` directive is a 400, not silence
 
 `$limitt=10` reached the service as nothing at all: the caller asked for ten

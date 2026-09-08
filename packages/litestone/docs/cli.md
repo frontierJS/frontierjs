@@ -92,6 +92,13 @@ the same columns written out in five models. Nothing else can produce this list,
 because every other artefact is derived from the seed and a word absent from the
 seed is absent from all of them.
 
+**Three of them are about a decision that cannot be taken back**, which is why
+they are here rather than in a rule: a second open validity window, a document
+reading its price through a relation so the catalogue reprices what is already
+written, and a standing spelled on a model that spans tenants. Each is legal,
+each works, and each loses information nothing can recover once it is wrong —
+so the confidence is about whether you meant it, never about whether it broke.
+
 Each suggestion names the word it is about and prints the next thing to type —
 `litestone explain @@fts`, and the docs page beside it. A rule carries a
 `severity` because it is a defect; a suggestion carries a `confidence` because

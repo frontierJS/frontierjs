@@ -1491,6 +1491,7 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
         <button class="pill" id="acTabGates"    role="tab" onclick="acShow('gates')">Gates</button>
         <button class="pill" id="acTabLevel"    role="tab" onclick="acShow('level')">By level</button>
         <button class="pill" id="acTabPolicies" role="tab" onclick="acShow('policies')">Policies</button>
+        <button class="pill" id="acTabMoves"    role="tab" onclick="acShow('moves')">Moves</button>
         <button class="pill" id="acTabFields"   role="tab" onclick="acShow('fields')">Fields</button>
       </div>
       <div class="spacer"></div>
@@ -4144,9 +4145,9 @@ function acRender() {
   const c = _access.counts
   document.getElementById('acCounts').textContent =
     `${c.models} models · ${c.gated} gated · ${c.unrestricted} unrestricted · ` +
-    `${c.policied} policied · ${c.protected} with protected fields`
+    `${c.policied} policied · ${c.protected} with protected fields · ${c.transitions} declared moves`
 
-  for (const v of ['gates','level','policies','fields']) {
+  for (const v of ['gates','level','policies','moves','fields']) {
     const tab = document.getElementById('acTab' + cap(v === 'level' ? 'level' : v))
     if (tab) tab.setAttribute('aria-selected', String(v === _acView))
   }
@@ -4156,6 +4157,7 @@ function acRender() {
     _acView === 'gates'    ? acGates()
     : _acView === 'level'  ? acByLevel()
     : _acView === 'policies' ? acPolicies()
+    : _acView === 'moves'  ? acMoves()
     : acFields()
 }
 
@@ -4254,6 +4256,71 @@ function acPolicies() {
         ].join('')).join('')}</tbody>
       </table>
     </article>`).join('')
+}
+
+// ── Moves ──
+//
+// A state machine is access, which is why it is a tab here and not beside the
+// schema: `@@transitions` says which changes EXIST, and a move with @gate(5)
+// is a permission that no @@gate on the model can express — Order refuses a
+// refund at 5 while updating every other column at 4.
+//
+// The from-states are the half a list of names cannot carry. A column whose
+// terminal states have no outbound move is a row that can never move again,
+// and that is a design statement worth being able to see rather than derive.
+function acMoves() {
+  const withMoves = _access.models.filter(m => m.transitions.length)
+  if (!withMoves.length)
+    return `<div class="empty">No model declares <code>@@transitions</code>. ` +
+           `A status column an app writes freely is a state machine nothing enforces.</div>`
+
+  // A model may declare @@transitions on more than one column, so the card is
+  // per (model, field): a header naming one field over rows belonging to two is
+  // a diagram of a machine that does not exist.
+  const cards = []
+  for (const m of withMoves) {
+    const byField = new Map()
+    for (const t of m.transitions) {
+      if (!byField.has(t.field)) byField.set(t.field, [])
+      byField.get(t.field).push(t)
+    }
+    for (const [field, moves] of byField) cards.push({ model: m, field, moves })
+  }
+
+  return cards.map(({ model: m, field, moves }) => {
+    // Every state named on either side. A state that is only ever a `to` is
+    // terminal, and that is the thing worth seeing at a glance.
+    const froms = new Set(), tos = new Set()
+    for (const t of moves) { for (const f of t.from) froms.add(f); tos.add(t.to) }
+    const terminal = [...tos].filter(x => !froms.has(x))
+
+    const rows = moves.map(t => `
+      <tr>
+        <td><b>${esc(t.name)}</b></td>
+        <td><code>${esc(t.from.join(' | '))}</code></td>
+        <td><code>${esc(t.to)}</code></td>
+        <td>${t.gate == null
+              ? `<span class="text-muted">the model's</span>`
+              : `<span class="badge ${acTone(t.gate)}" title="${esc(acLevelLabel(t.gate))} — level ${t.gate}">${t.gate} ${esc(acLevelLabel(t.gate))}</span>`}</td>
+        <td>${[t.system ? '<span class="badge info">@system</span>' : '',
+               t.seals  ? '<span class="badge info">@seals</span>'  : ''].filter(Boolean).join(' ')}</td>
+      </tr>`).join('')
+
+    return `
+      <article class="card outlined">
+        <div class="surface-header">
+          <span><b>${esc(m.name)}</b> <span class="text-muted">on</span> <code>${esc(field)}</code></span>
+          ${m.gate ? `<span class="text-muted">gate <code>${esc(m.gateSource)}</code></span>` : ''}
+        </div>
+        ${terminal.length ? `<div class="alert info"><div class="alert-content">
+          Terminal: ${terminal.map(x => `<code>${esc(x)}</code>`).join(' ')} — nothing moves a row out again.
+        </div></div>` : ''}
+        <table class="table">
+          <thead><tr><th>Move</th><th>From</th><th>To</th><th>Gate</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </article>`
+  }).join('')
 }
 
 // ── Fields ──
