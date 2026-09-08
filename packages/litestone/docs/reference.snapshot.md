@@ -1526,7 +1526,7 @@ model Example {
 ```
 
 - **`mode`** — `none`
-- **Also typed** — `workspace` · `organization` · `organization`
+- **Also typed** — `workspace` · `organization` · `organisation`
 - **Deeper** — [multi-tenancy.md](multi-tenancy.md)
 - **See also** — [`tenancy`](#tenancy-declaration) · [`@@deny`](#deny-model)
 
