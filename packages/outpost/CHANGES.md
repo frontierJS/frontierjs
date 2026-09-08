@@ -1,5 +1,26 @@
 # Changes — @frontierjs/outpost
 
+## 2026-09-07 — the readings basecamp keeps are the readings this sends
+
+`health()` sent `{ load, memory }` and basecamp keeps `cpu`, `memory` and
+`disk`, so two of the three series a real fleet draws had never had a point
+written to them and no CPU threshold could fire
+([`FJS-1027`](../../ISSUES.md#fjs-1027)). Both sides were silent about it and
+both were right to be — a missing reading is a real state — and every test
+either side agreed with itself.
+
+`src/vitals.js` is the reader. It is a module rather than four lines in the
+reporter because **CPU is a rate and `/proc/stat` is a counter**: the
+percentage is the delta between two reads, so it has to remember, and it is
+injectable for the same reason `{ run }` and `{ fetch }` are. The first read
+makes its own window rather than reporting no CPU until the second heartbeat.
+
+`load` still rides along and is still not kept as a series — it is not
+comparable between machines without a core count, and `Server.health` renders
+every key it is handed.
+
+30 → 40 tests.
+
 ## 2026-09-05 — a release could not run what it built
 
 `deploy()` addressed the image as `${image}@${digest}`, and for a build done on

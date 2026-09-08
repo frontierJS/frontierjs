@@ -1,27 +1,43 @@
 {
   "name": "@frontierjs/outpost",
   "version": "0.1.0",
-  "description": "The process a fleet server runs — Basecamp's hands on a machine",
+  "description": "The process a fleet server runs \u2014 Basecamp's hands on a machine",
   "type": "module",
-  "bin": { "outpost": "./src/index.js" },
+  "bin": {
+    "outpost": "./src/index.js"
+  },
   "exports": {
     ".": "./src/index.js",
     "./server": "./src/server.js",
-    "./docker": "./src/docker.js"
+    "./docker": "./src/docker.js",
+    "./vitals": "./src/vitals.js"
   },
   "scripts": {
     "start": "bun src/index.js",
     "test": "bun test",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
-  "engines": { "bun": ">=1.0.0" },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
   "dependencies": {
     "@frontierjs/toolbelt": "workspace:*"
   },
-  "files": ["src", "README.md", "LICENSE"],
-  "keywords": ["frontierjs", "outpost", "fleet", "docker"],
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "frontierjs",
+    "outpost",
+    "fleet",
+    "docker"
+  ],
   "license": "MIT",
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/frontierJS/frontierjs.git",

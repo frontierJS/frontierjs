@@ -32,6 +32,7 @@ import { createBasecampDb }              from './core/db.ts'
 import { createSecretResolver }          from './core/credentials.ts'
 import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts'
 import { registerAllAccounts } from './providers/compute/accounts.ts'
+import { enrollTokenMatches, mintOutpostSecret } from './providers/compute/enrollment.ts'
 import { notificationsPlugin }  from '@frontierjs/notifications'
 import { basecampAuditLog, basecampAuditPreImage, requireOutpostSignature, resolveWorkspaceId } from './core/hooks.ts'
 import { grantsFor } from './core/capabilities.ts'
@@ -681,6 +682,82 @@ export async function buildBasecampApp(
 
       logger.warn('setup data wiped via DELETE /setup (dev only)')
       return ctx.json({ ok: true, message: 'Setup data cleared — reload to run setup again' })
+    })
+  })
+
+  // ── Enrollment — a machine claiming its own credential ────────────────
+  //
+  // A raw route and not a service method, for the reason a webhook is one: the
+  // caller is a machine with no session, presenting a credential of a kind
+  // nothing else in this app accepts. `gate: 0` on `heartbeat` is the nearest
+  // thing and it is already the exception; this is one door further out,
+  // because a heartbeat is signed and this is what a machine has INSTEAD of a
+  // signature — once, before it has anything to sign with.
+  //
+  // Everything about it is arranged so a leaked metadata blob is worth nothing
+  // tomorrow: the token is single-use, it is burned inside the same statement
+  // that reads it, the window is fifteen minutes, and the stored form is a
+  // hash. `providers/compute/enrollment.ts` holds the reasoning.
+  app.configure(function enrollmentRoutes(a) {
+    // `{id}`, not `:id`. Junction's router parses a brace pair and treats
+    // anything else as a STATIC segment, so `:id` registers a literal path
+    // component nothing ever sends and the route answers 405 forever — with
+    // every function behind it correct. Found by the first request that went
+    // down real HTTP, which is `FJS-349`'s shape one layer out.
+    a.post('/servers/{id}/enroll', async (ctx: any) => {
+      const id    = ctx.route?.id
+      // `ctx.body`, not `ctx.data`. A raw route's context is the TRANSPORT's,
+      // where the parsed body is `body` — `data` is the service pipeline's name
+      // for it and is undefined here, which reads as a caller who sent no
+      // token and refuses every request identically.
+      const token = ((ctx.body ?? {}) as { token?: string }).token
+
+      // asSystem(): there is no principal — the caller is a machine that has
+      // never authenticated and is asking for the credential that would let it.
+      const sys    = db.asSystem()
+      const server = id ? await sys.server.findFirst({ where: { id } }) : null
+
+      // ONE answer for every failure: a wrong token, an expired window, a
+      // machine that already enrolled, an id that does not exist. Telling them
+      // apart tells an unauthenticated caller which server ids are real.
+      const refuse = () => ctx.json({ error: 'enrollment refused' }, 401)
+
+      if (!server || !enrollTokenMatches(token, server.enrollTokenHash, server.enrollExpiresAt))
+        return refuse()
+
+      // The BURN is the claim. A conditional update on the hash column: two
+      // requests carrying the same token race here and exactly one matches,
+      // because the first clears it inside the same statement. Reading then
+      // writing would let both through, which is a second machine enrolling as
+      // the first.
+      const claimed = await sys.server.updateMany({
+        where: { id, enrollTokenHash: server.enrollTokenHash },
+        data:  { enrollTokenHash: null, enrollExpiresAt: null },
+      })
+      if (!claimed?.count) return refuse()
+
+      const secret = mintOutpostSecret()
+      const row    = await sys.secret.create({ data: {
+        workspaceId: server.workspaceId,
+        // The unique is [workspaceId, name] and a slug is already unique in the
+        // workspace, so this cannot collide where the machine did not.
+        name:        `outpost:${server.slug}`,
+        kind:        'generic',
+        data:        JSON.stringify({ secret }),
+      }})
+      await sys.server.update({ where: { id }, data: { outpostSecretId: row.id } })
+
+      logger.info('outpost enrolled', { server_id: id, secret_id: row.id })
+
+      // The response is the only place this secret exists outside the database,
+      // and `publicUrl` is the second unknown the exchange answers: the Outpost
+      // cannot see the address the world reaches it at, and this app knows it
+      // because the vendor said so when the machine came up.
+      return ctx.json({
+        secret,
+        publicUrl: server.ipAddress ? `http://${server.ipAddress}:8180` : null,
+        serverId:  id,
+      })
     })
   })
 

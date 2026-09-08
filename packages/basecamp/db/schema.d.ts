@@ -44,7 +44,7 @@ export type WorkspaceStatus = 'active' | 'suspended'
 
 export type SecretKind = 'ssh_key' | 'provider_key' | 'registry_auth' | 'tls_cert' | 'notification' | 'generic'
 
-export type ServerStatus = 'pending' | 'provisioning' | 'installing' | 'online' | 'unreachable' | 'draining' | 'stopped' | 'destroyed'
+export type ServerStatus = 'pending' | 'provisioning' | 'installing' | 'online' | 'unreachable' | 'draining' | 'stopped' | 'destroying' | 'destroyed'
 
 export type ServerRole = 'general' | 'build' | 'database' | 'gateway' | 'worker'
 
@@ -92,7 +92,7 @@ export type NotificationContext = 'Deployment' | 'AlertEvent' | 'JobRun' | 'Work
 
 export type NotificationKind = 'deploy_success' | 'deploy_failed' | 'alert_firing' | 'alert_resolved' | 'member_joined' | 'job_failed' | 'weekly_digest'
 
-export type Capability = 'Environment.create' | 'Environment.delete' | 'Environment.update' | 'Environment.variables' | 'Server.create' | 'Server.delete' | 'Server.drain' | 'Server.reboot' | 'Server.undrain' | 'Server.update'
+export type Capability = 'Environment.create' | 'Environment.delete' | 'Environment.update' | 'Environment.variables' | 'Server.create' | 'Server.delete' | 'Server.destroy' | 'Server.drain' | 'Server.provision' | 'Server.reboot' | 'Server.undrain' | 'Server.update'
 
 // ── Models ───────────────────────────────────────────────────────────────────
 
@@ -1072,6 +1072,41 @@ export interface Server {
   outpostVersion?: string | null
   outpostUrl?: string | null
   lastHeartbeatAt?: string | null
+  /**
+   * ── How a machine this app MADE proves it is that machine ───────────
+   * 
+   * A provisioned box boots with a one-time token in its cloud-init and
+   * exchanges it, once, for a credential of its own. These two columns are
+   * that exchange.
+   * 
+   * `enrollTokenHash` is a HASH and not the token: this row is readable by
+   * every member of the workspace, and a column holding the live secret would
+   * let any of them enroll as the machine. The token itself exists in exactly
+   * two places — the vendor's metadata for that droplet, and the response to
+   * the create call, which is never stored.
+   * 
+   * `enrollExpiresAt` is why a leaked metadata blob is not a standing key. A
+   * machine that has not enrolled inside the window never will, and the
+   * provision job fails it by name rather than leaving a row at `installing`
+   * for a week.
+   * 
+   * Both are cleared on enrollment. A spent token that still hashes to
+   * something is a credential waiting to be replayed.
+   * @guarded
+   */
+  enrollTokenHash?: string | null
+  enrollExpiresAt?: string | null
+  /**
+   * The `Secret` holding THIS machine's own Outpost credential, minted at
+   * enrollment. A bare id for `Domain.certSecretId`'s reason.
+   * 
+   * Null means the machine still signs with the fleet-wide `OUTPOST_SECRET`,
+   * which every machine shares — so one compromised box can forge any other's
+   * check-in (`core/hooks.ts` says so at the verification). Per-server
+   * credentials are what make that column non-null; deleting the fallback is
+   * phase 3, and it can only happen once every machine in a fleet has one.
+   */
+  outpostSecretId?: string | null
   plan: unknown
   actualSpecs?: unknown | null
   health?: unknown | null
@@ -1102,6 +1137,40 @@ export interface ServerCreate {
   outpostVersion?: string | null
   outpostUrl?: string | null
   lastHeartbeatAt?: string | null
+  /**
+   * ── How a machine this app MADE proves it is that machine ───────────
+   * 
+   * A provisioned box boots with a one-time token in its cloud-init and
+   * exchanges it, once, for a credential of its own. These two columns are
+   * that exchange.
+   * 
+   * `enrollTokenHash` is a HASH and not the token: this row is readable by
+   * every member of the workspace, and a column holding the live secret would
+   * let any of them enroll as the machine. The token itself exists in exactly
+   * two places — the vendor's metadata for that droplet, and the response to
+   * the create call, which is never stored.
+   * 
+   * `enrollExpiresAt` is why a leaked metadata blob is not a standing key. A
+   * machine that has not enrolled inside the window never will, and the
+   * provision job fails it by name rather than leaving a row at `installing`
+   * for a week.
+   * 
+   * Both are cleared on enrollment. A spent token that still hashes to
+   * something is a credential waiting to be replayed.
+   */
+  enrollTokenHash?: string | null
+  enrollExpiresAt?: string | null
+  /**
+   * The `Secret` holding THIS machine's own Outpost credential, minted at
+   * enrollment. A bare id for `Domain.certSecretId`'s reason.
+   * 
+   * Null means the machine still signs with the fleet-wide `OUTPOST_SECRET`,
+   * which every machine shares — so one compromised box can forge any other's
+   * check-in (`core/hooks.ts` says so at the verification). Per-server
+   * credentials are what make that column non-null; deleting the fallback is
+   * phase 3, and it can only happen once every machine in a fleet has one.
+   */
+  outpostSecretId?: string | null
   plan?: unknown
   actualSpecs?: unknown | null
   health?: unknown | null
@@ -1129,6 +1198,9 @@ export interface ServerUpdate {
   outpostVersion?: string | null
   outpostUrl?: string | null
   lastHeartbeatAt?: string | null
+  enrollTokenHash?: string | null
+  enrollExpiresAt?: string | null
+  outpostSecretId?: string | null
   plan?: unknown
   actualSpecs?: unknown | null
   health?: unknown | null
@@ -1156,6 +1228,9 @@ export interface ServerWhere extends WhereBase {
   outpostVersion?: string | WhereOp<string> | null
   outpostUrl?: string | WhereOp<string> | null
   lastHeartbeatAt?: string | WhereOp<string> | null
+  enrollTokenHash?: string | WhereOp<string> | null
+  enrollExpiresAt?: string | WhereOp<string> | null
+  outpostSecretId?: string | WhereOp<string> | null
   plan?: unknown | WhereOp<unknown> | null
   actualSpecs?: unknown | WhereOp<unknown> | null
   health?: unknown | WhereOp<unknown> | null

@@ -25,7 +25,7 @@ import { env }                    from '../../core/env.ts'
 import type { TargetDescriptor }  from '@frontierjs/conduit'
 import type {
   ComputeConnector, ComputeSend, ComputeCatalog, ComputeMachine, MachineState,
-  ComputeRegion, ComputeSize, ComputeImage,
+  ComputeRegion, ComputeSize, ComputeImage, MachineSpec,
 } from './index.ts'
 
 /** Where DigitalOcean is. Overridden by `DIGITALOCEAN_URL` for the dev sink.
@@ -154,12 +154,19 @@ export const digitalOcean: ComputeConnector = {
   async machine(send, providerServerId): Promise<ComputeMachine | null> {
     const res = await send({ method: 'GET', path: `/v2/droplets/${encodeURIComponent(providerServerId)}` })
 
-    // A machine the vendor no longer has is an ANSWER — the shop destroyed it,
-    // or somebody did it in their console — so it is null rather than a throw.
-    // Any other failure is not knowing, which must not read as *it is gone*.
+    // A machine the vendor no longer has is an ANSWER — somebody destroyed it
+    // here or in their own console — so it is null rather than a throw. Any
+    // other failure is NOT KNOWING, which must never read as *it is gone*: the
+    // caller turns a null into a `reportDestroyed` move.
+    //
+    // The test is the STATUS and not the kind. Conduit answers every 4xx as
+    // `client_error` on purpose — none of them is retryable and none says the
+    // target is unwell — so `kind` cannot tell a deleted droplet from a
+    // malformed request, and reading `not_found` off it silently never matched
+    // anything at all.
     if (res.error) {
-      if (res.error.kind === 'not_found') return null
-      throw new Error(`DigitalOcean: ${res.error.kind}`)
+      if (res.status === 404) return null
+      throw new Error(`DigitalOcean: ${res.error.kind}${res.status ? ` (HTTP ${res.status})` : ''}`)
     }
 
     const droplet = (res.data as Row | null)?.droplet as Row | undefined
@@ -171,6 +178,67 @@ export const digitalOcean: ComputeConnector = {
       ipAddress:        publicIp(droplet),
       region:           str((droplet.region as Row | undefined)?.slug) || null,
     }
+  },
+
+  async create(send, spec: MachineSpec): Promise<{ providerServerId: string }> {
+    // DO's create is a single POST and it answers the droplet already, with an
+    // id and a status of `new`. `user_data` is cloud-init and is what installs
+    // the Outpost — the machine reaches this app on its own afterwards, so
+    // nothing here opens an SSH connection (`FJS-D241`).
+    const res = await send({ method: 'POST', path: '/v2/droplets', body: {
+      name:      spec.name,
+      region:    spec.region,
+      size:      spec.size,
+      image:     spec.image,
+      user_data: spec.userData,
+      tags:      spec.tags,
+      // Private networking is on by default at DO now and the flag is
+      // deprecated; monitoring is free and is what `Server.health` would
+      // otherwise have to infer.
+      monitoring: true,
+    }})
+
+    if (res.error)
+      throw new Error(`DigitalOcean refused the create: ${res.error.kind}`
+        + `${res.status ? ` (HTTP ${res.status})` : ''}`
+        + `${res.error.message ? ` — ${res.error.message}` : ''}`)
+
+    const id = (res.data as Row | null)?.droplet as Row | undefined
+    // A 2xx with no id is the worst answer this call can give: the machine may
+    // exist and nothing here can name it. Loud, because the tag is then the
+    // only way back to it.
+    if (!id?.id)
+      throw new Error('DigitalOcean accepted the create and answered no droplet id — '
+        + 'the machine may exist; reconcile by tag')
+
+    return { providerServerId: String(id.id) }
+  },
+
+  async destroy(send, providerServerId): Promise<boolean> {
+    const res = await send({
+      method: 'DELETE', path: `/v2/droplets/${encodeURIComponent(providerServerId)}`,
+    })
+
+    // A machine the vendor has never heard of is DESTROYED for our purposes.
+    // Not an error: a destroy that cannot be run twice is one that cannot be
+    // retried, and every path into this one is a job that may be redelivered.
+    if (res.status === 404) return true
+    if (res.error) throw new Error(`DigitalOcean: ${res.error.kind}`)
+    return true
+  },
+
+  async tagged(send, tag): Promise<ComputeMachine[]> {
+    const res = await send({
+      method: 'GET', path: `/v2/droplets?tag_name=${encodeURIComponent(tag)}&per_page=${PER_PAGE}`,
+    })
+    if (res.error) throw new Error(`DigitalOcean: ${res.error.kind}`)
+
+    return rows(res.data, 'droplets').map(d => ({
+      providerServerId: String(d.id ?? ''),
+      status:           STATES[str(d.status)] ?? 'unknown',
+      ipAddress:        publicIp(d),
+      region:           str((d.region as Row | undefined)?.slug) || null,
+    })).filter(m => m.providerServerId)
   },
 
   async verify(send): Promise<boolean> {

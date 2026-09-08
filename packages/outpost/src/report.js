@@ -19,8 +19,14 @@
  */
 
 import { signRequest } from '@frontierjs/toolbelt/signature'
+import { createVitals } from './vitals.js'
 
-export function createReporter(config, { inspector, fetch: doFetch = fetch, log = console } = {}) {
+export function createReporter(config, {
+  inspector,
+  fetch: doFetch = fetch,
+  log            = console,
+  vitals         = createVitals(),
+} = {}) {
 
   /**
    * One signed POST. Every call below goes through it, because the signature is
@@ -52,20 +58,10 @@ export function createReporter(config, { inspector, fetch: doFetch = fetch, log 
     return res.json().catch(() => null)
   }
 
-  /** What the machine feels like, read from the OS rather than from Docker — a
-   *  machine can be fine by Docker's account and out of memory. An absent
-   *  picture is honest; a made-up one is a fleet screen that looks healthy. */
-  async function health() {
-    try {
-      const load  = Number((await Bun.file('/proc/loadavg').text()).split(' ')[0])
-      const mem   = await Bun.file('/proc/meminfo').text()
-      const kb    = name => Number(/(\d+)/.exec(mem.split('\n').find(l => l.startsWith(name)) ?? '')?.[1] ?? 0)
-      const total = kb('MemTotal'), available = kb('MemAvailable')
-      return { load, memory: total ? Math.round(((total - available) / total) * 100) : null }
-    } catch {
-      return {}
-    }
-  }
+  /** What the machine feels like. `vitals` remembers the previous CPU sample —
+   *  `/proc/stat` is cumulative, so a percentage is a delta and this reader has
+   *  to live as long as the process does. */
+  const health = () => vitals.read()
 
   return {
     async heartbeat() {

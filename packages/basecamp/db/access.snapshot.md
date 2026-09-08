@@ -11,7 +11,7 @@ without a schema change you meant to make is a shipped security bug.
 
 ```
 50 models · 1 view · 51 gated · 0 unrestricted
-37 with row policies · 8 with protected fields · 19 declared moves · 5 @system · 0 @seals
+37 with row policies · 9 with protected fields · 22 declared moves · 6 @system · 0 @seals
 ```
 
 ## Gates
@@ -421,6 +421,7 @@ rather than refusing the row.
 | `OauthFlow` | `state` | `@guarded` |
 | `OauthFlow` | `verifier` | `@guarded` |
 | `Secret` | `data` | `@encrypted` |
+| `Server` | `enrollTokenHash` | `@guarded` |
 | `Session` | `token` | `@guarded` |
 | `User` | `emailVerified` | `@allow('write', auth().isAdmin)` |
 | `User` | `role` | `@allow('write', auth().isAdmin)` |
@@ -469,11 +470,14 @@ caller at once. Everything reachable from the target seals with it.
 | `Server` | `status` | `reboot` | online, unreachable → pending | caller | — | — |
 | `Server` | `status` | `drain` | online → draining | caller | 5 ADMINISTRATOR | — |
 | `Server` | `status` | `undrain` | draining → online | caller | 5 ADMINISTRATOR | — |
+| `Server` | `status` | `provision` | pending → provisioning | caller | 5 ADMINISTRATOR | — |
+| `Server` | `status` | `destroy` | pending, provisioning, installing, online, unreachable, draining, stopped → destroying | caller | 5 ADMINISTRATOR | — |
 | `Server` | `status` | `checkIn` | pending, installing, unreachable → online | **application** | — | — |
+| `Server` | `status` | `reportProvisioned` | provisioning → installing | **application** | 5 ADMINISTRATOR | — |
 | `Server` | `status` | `reportRunning` | pending, provisioning, installing, unreachable, stopped → online | **application** | 5 ADMINISTRATOR | — |
 | `Server` | `status` | `reportStopped` | pending, provisioning, installing, online, unreachable, draining → stopped | **application** | 5 ADMINISTRATOR | — |
 | `Server` | `status` | `reportRebuilding` | pending, installing, online, unreachable, draining, stopped → provisioning | **application** | 5 ADMINISTRATOR | — |
-| `Server` | `status` | `reportDestroyed` | pending, provisioning, installing, online, unreachable, draining, stopped → destroyed | **application** | 5 ADMINISTRATOR | — |
+| `Server` | `status` | `reportDestroyed` | destroying → destroyed | **application** | 5 ADMINISTRATOR | — |
 
 ## Capabilities
 
@@ -487,7 +491,7 @@ derived rather than authored: a capability cannot be misspelled into existence.
 | Model | Read | Capabilities |
 | --- | --- | --- |
 | `Environment` | — | `Environment.create` · `Environment.delete` · `Environment.update` · `Environment.variables` |
-| `Server` | — | `Server.create` · `Server.delete` · `Server.drain` · `Server.reboot` · `Server.undrain` · `Server.update` |
+| `Server` | — | `Server.create` · `Server.delete` · `Server.destroy` · `Server.drain` · `Server.provision` · `Server.reboot` · `Server.undrain` · `Server.update` |
 
 A move the ENGINE makes is absent — `@system`, or a gate of 8 or 9. No caller asks
 for one, so it is nobody's grant.

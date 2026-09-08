@@ -95,6 +95,43 @@ title: Cloud spend
   $: vcpu       = shape.reduce((n, r) => n + (r.vcpu  ?? 0), 0)
   $: ram        = shape.reduce((n, r) => n + (r.ramGb ?? 0), 0)
 
+  // ── What this app committed to ─────────────────────────────────────
+  //
+  // Not a bill and it may not be presented as one. This is the sum of the
+  // vendor's own list price for each machine THIS APP bought, copied onto
+  // `plan` at the moment of purchase — so it knows nothing about backups,
+  // bandwidth, snapshots, a discount on the account, or the part of the month
+  // a machine was alive for. A vendor's ledger is `ICloudSpend` and is still
+  // not wired; the callout above says so and must go on saying so.
+  //
+  // It is worth showing anyway because it is the only money here that is not
+  // invented: it is what somebody clicking Provision was told, in the same
+  // minor units the vendor quoted.
+  //
+  // GROUPED BY CURRENCY, never summed across. DigitalOcean quotes USD and
+  // Hetzner EUR, and one fleet can hold both — a single total would be two
+  // currencies added together, which is a number that looks right and means
+  // nothing. An imported machine has no plan price and is simply not in it,
+  // which is why the count it covers is printed beside it rather than left for
+  // a reader to assume is `total`.
+  $: committed = (() => {
+    const by = new Map()
+    let counted = 0
+    for (const s of machines) {
+      const minor = s.plan?.priceMinor
+      const cur   = s.plan?.currency
+      if (typeof minor !== 'number' || !cur) continue
+      by.set(cur, (by.get(cur) ?? 0) + minor)
+      counted++
+    }
+    return { lines: [...by.entries()], counted }
+  })()
+
+  // The divisor belongs to the currency — asking Intl rather than dividing by
+  // 100, which is wrong for the dinar and right for nothing in particular.
+  const money = (minor, currency) =>
+    new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(minor / 100)
+
   // How many there are, and how many are listed below. Two numbers because
   // they can differ: the table is a page and the count is the whole fleet, so
   // saying *N online* under a total the list cannot see would be the truncated
@@ -147,11 +184,17 @@ title: Cloud spend
         </p>
       </Callout>
     {:else}
-      <Callout tone="muted" title="No money is shown here, and none is known">
+      <Callout tone="muted" title="What this app agreed to, not what the vendor will bill">
         <p class="text-body">
-          A cost is an account's, not a fleet's. This app records a
-          <code>providerKind</code> per server and holds no credential for any of them, so
-          month-to-date, a projection and a per-line breakdown would each be a number
+          The committed figure below is the vendor's own list price for each machine
+          bought through this app, copied onto the row at the moment of purchase. It
+          knows nothing about backups, bandwidth, snapshots, an account discount, or
+          the part of a month a machine was alive for — and an imported machine is not
+          in it at all.
+        </p>
+        <p class="text-body">
+          Month-to-date, a projection and a per-line breakdown are the vendor's ledger
+          and are not read yet. Showing them from what is here would be arithmetic
           invented in the browser.
         </p>
         <p class="text-body">
@@ -187,6 +230,19 @@ title: Cloud spend
       <div class="tile-label">Memory</div>
       <div class="tile-value">{ram} GB</div>
       <div class="tile-delta muted">as planned</div>
+    </article>
+    <article class="tile" id="spend-committed">
+      <div class="tile-label">Committed, at list price</div>
+      <div class="tile-value">
+        {committed.lines.length
+          ? committed.lines.map(([cur, minor]) => money(minor, cur)).join(' + ')
+          : '—'}
+      </div>
+      <div class="tile-delta muted">
+        {committed.counted
+          ? `per month · ${committed.counted} of ${total} machines`
+          : 'no machine here was bought through this app'}
+      </div>
     </article>
     <article class="tile">
       <div class="tile-label">Attached disk</div>
@@ -235,6 +291,9 @@ title: Cloud spend
             <td>{s.region}</td>
             <td class="text-sm text-muted">
               {s.plan?.vcpu ?? '—'} vCPU · {s.plan?.ramGb ?? '—'} GB · {s.plan?.diskGb ?? '—'} GB
+              {#if s.plan?.priceMinor != null && s.plan?.currency}
+                · {money(s.plan.priceMinor, s.plan.currency)}/mo
+              {/if}
             </td>
             <td><Badge tone={STATUS_TONE[s.status] ?? 'muted'}>{s.status}</Badge></td>
           </tr>

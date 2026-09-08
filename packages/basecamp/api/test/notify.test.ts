@@ -76,8 +76,15 @@ describe('the kinds, the screen and the files are one vocabulary', () => {
     // throw IS the assertion — a definition that stated a type would answer
     // instead, and that second spelling is what `notifications.type` and
     // `NotificationPreference.kind` cannot afford between them.
+    // Imported FRESH. A module is cached per process and the loader stamps the
+    // definitions it walks, so once anything in this suite has built an app —
+    // which several files do — the cached module answers its type and this
+    // assertion inverts. It passed for as long as it did because no test file
+    // sorting before this one booted one; adding a file that does is what
+    // showed it. The query string is what defeats the module cache, and reading
+    // the source unstamped is what the claim was always about.
     for (const name of fromFiles) {
-      const mod = await import(join(NOTIF_DIR, `${name}.notification.ts`))
+      const mod = await import(`${join(NOTIF_DIR, `${name}.notification.ts`)}?unstamped`)
       expect(() => (mod.default as any).type).toThrow(/has no type/)
     }
   })

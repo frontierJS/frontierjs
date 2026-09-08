@@ -919,6 +919,17 @@
             "string",
             "null"
           ]
+        },
+        "providerKind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProviderKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "WHICH cloud a `provider_key` opens. Null for every other kind.  It is a column rather than a field inside `data` because a vendor name is not a secret: `data` is `@encrypted`, so the key is absent from every read, and *which DigitalOcean accounts does this workspace have* would mean decrypting every secret in the workspace to answer. Here it filters, it indexes, and it reaches a picker as a set.  It reuses `ProviderKind` rather than growing a second vendor vocabulary on `SecretKind`. Two enums listing clouds is two lists to keep in step, and the one that drifts is the one nothing reads."
         }
       },
       "additionalProperties": false,
@@ -1183,6 +1194,24 @@
             }
           ]
         },
+        "enrollExpiresAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outpostSecretId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The `Secret` holding THIS machine's own Outpost credential, minted at enrollment. A bare id for `Domain.certSecretId`'s reason.  Null means the machine still signs with the fleet-wide `OUTPOST_SECRET`, which every machine shares — so one compromised box can forge any other's check-in (`core/hooks.ts` says so at the verification). Per-server credentials are what make that column non-null; deleting the fallback is phase 3, and it can only happen once every machine in a fleet has one."
+        },
         "plan": {
           "default": {},
           "x-aggregatable": "json",
@@ -1245,7 +1274,9 @@
         "moves": {
           "reboot": "Server.reboot",
           "drain": "Server.drain",
-          "undrain": "Server.undrain"
+          "undrain": "Server.undrain",
+          "provision": "Server.provision",
+          "destroy": "Server.destroy"
         },
         "columns": {}
       },
@@ -1276,6 +1307,28 @@
             "gate": 5,
             "system": false
           },
+          "provision": {
+            "from": [
+              "pending"
+            ],
+            "to": "provisioning",
+            "gate": 5,
+            "system": false
+          },
+          "destroy": {
+            "from": [
+              "pending",
+              "provisioning",
+              "installing",
+              "online",
+              "unreachable",
+              "draining",
+              "stopped"
+            ],
+            "to": "destroying",
+            "gate": 5,
+            "system": false
+          },
           "checkIn": {
             "from": [
               "pending",
@@ -1284,6 +1337,14 @@
             ],
             "to": "online",
             "gate": null,
+            "system": true
+          },
+          "reportProvisioned": {
+            "from": [
+              "provisioning"
+            ],
+            "to": "installing",
+            "gate": 5,
             "system": true
           },
           "reportRunning": {
@@ -1326,13 +1387,7 @@
           },
           "reportDestroyed": {
             "from": [
-              "pending",
-              "provisioning",
-              "installing",
-              "online",
-              "unreachable",
-              "draining",
-              "stopped"
+              "destroying"
             ],
             "to": "destroyed",
             "gate": 5,
@@ -4870,6 +4925,7 @@
         "unreachable",
         "draining",
         "stopped",
+        "destroying",
         "destroyed"
       ],
       "title": "ServerStatus"
@@ -4889,7 +4945,8 @@
       "type": "string",
       "enum": [
         "custom",
-        "hetzner"
+        "hetzner",
+        "digitalocean"
       ],
       "title": "ProviderKind"
     },
@@ -5122,7 +5179,9 @@
         "Environment.variables",
         "Server.create",
         "Server.delete",
+        "Server.destroy",
         "Server.drain",
+        "Server.provision",
         "Server.reboot",
         "Server.undrain",
         "Server.update"

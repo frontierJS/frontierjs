@@ -20,6 +20,7 @@
 // is picked up by the next call with nothing re-registered.
 
 import { secretRef }                 from '../../core/credentials.ts'
+import { env }                       from '../../core/env.ts'
 import { connectorFor, targetFor }   from './index.ts'
 import type { ComputeSend }          from './index.ts'
 import type { BasecampApp }          from '../../basecamp.types.ts'
@@ -47,8 +48,18 @@ type SecretRow = { id: string; providerKind?: ProviderKind | null; kind?: string
  * where the row names a cloud this app cannot speak to, because a workspace is
  * allowed to hold a key for something Basecamp has no connector for and that is
  * not a startup failure.
+ *
+ * `address` overrides where the cloud IS. Omitted in every production path, so
+ * the connector's own answer stands. It exists because that answer is read from
+ * `env`, which is a snapshot taken when the module first loads — correct for a
+ * deployed app, and unusable for a caller that only knows where to point after
+ * something has already imported the app. A test pointing a connector at a
+ * stand-in by setting a variable therefore reaches the REAL vendor whenever
+ * some other file imported first, which is an ordering nothing declares.
  */
-export async function registerAccount(app: BasecampApp, secret: SecretRow): Promise<string | null> {
+export async function registerAccount(
+  app: BasecampApp, secret: SecretRow, opts: { address?: string } = {},
+): Promise<string | null> {
   if (!app.conduit) return null
   if (secret.kind && secret.kind !== 'provider_key') return null
 
@@ -56,7 +67,9 @@ export async function registerAccount(app: BasecampApp, secret: SecretRow): Prom
   if (!connector) return null
 
   const target = targetFor(connector.kind, secret.id)
-  await app.conduit.register(connector.descriptor({ accountId: secret.id, ref: tokenRef(secret.id) }))
+  await app.conduit.register(connector.descriptor({
+    accountId: secret.id, ref: tokenRef(secret.id), address: opts.address,
+  }))
   return target
 }
 
@@ -109,15 +122,81 @@ export async function registerAllAccounts(app: BasecampApp, db: any): Promise<nu
  * `error.kind` rather than a thrown string, which is what lets `machine()` tell
  * *the vendor says it is gone* from *we could not ask*.
  */
+/**
+ * Is this address a stand-in on this machine?
+ *
+ * Loopback only. Not *is it the real DigitalOcean* — that test is the wrong way
+ * round: it has to enumerate every vendor origin correctly forever, and the one
+ * it gets wrong is the one that bills somebody. This asks the fail-closed
+ * question instead, so an address nobody recognizes is treated as real.
+ */
+function isStandIn(address: string | undefined): boolean {
+  if (!address) return false
+  try {
+    const host = new URL(address).hostname
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * May this process spend money at a real cloud?
+ *
+ * A GET costs nothing but rate limit. A POST or a DELETE at a vendor creates or
+ * destroys a machine somebody pays for, and the way that goes wrong is not a bug
+ * in a connector — it is a test, a script or a `bun run dev` that meant to be
+ * pointed at a stand-in and was not. P1 measured exactly that: three tests sent
+ * their reads to the real DigitalOcean because an environment variable did not
+ * apply in the order they ran, and reads were all that saved it.
+ *
+ * So the default is REFUSE and the two ways through are both deliberate:
+ *
+ *   `NODE_ENV=production`  — a deployed control plane. Provisioning is its job,
+ *                            and an operator should not have to find a flag to
+ *                            do the thing they installed it for.
+ *   `ALLOW_CLOUD_SPEND=1`  — a developer who means it, on their own account.
+ *
+ * The same shape `BASECAMP_STUB_OUTPOST` already has here, pointed the other
+ * way: that one is refused IN production, this one is only free there.
+ */
+function maySpend(): boolean {
+  return env.NODE_ENV === 'production' || env.ALLOW_CLOUD_SPEND === '1'
+}
+
+/** The methods that can cost money. A GET is not one of them. */
+const SPENDING = new Set(['POST', 'DELETE', 'PUT', 'PATCH'])
+
 export function sendVia(app: BasecampApp, target: string): ComputeSend {
   return async (req) => {
     if (!app.conduit) throw new Error('compute: app.conduit is not configured')
+
+    // The guard is on the TRANSPORT and not on each connector method, which is
+    // what makes it complete: a spending call somebody adds next year is
+    // covered without anybody remembering it exists. Checked against the
+    // registered descriptor's address rather than against what a caller passed,
+    // because the descriptor is what a send actually reaches.
+    if (SPENDING.has(req.method) && !maySpend()) {
+      const descriptor = await app.conduit.resolve(target).catch(() => null)
+      if (!isStandIn(descriptor?.address)) {
+        throw new Error(
+          `compute: refusing to ${req.method} ${req.path} at ${descriptor?.address ?? 'an unknown address'} — `
+          + 'this creates or destroys machines somebody pays for, and this process has not said it means to. '
+          + 'Point the account at a stand-in on localhost, set ALLOW_CLOUD_SPEND=1, or run with NODE_ENV=production.',
+        )
+      }
+    }
+
     const res = await app.conduit.send({
       target,
       method: req.method,
       path:   req.path,
       ...(req.body === undefined ? {} : { body: req.body }),
     })
-    return { data: res.data as unknown, error: res.error as { kind: string; message?: string } | undefined }
+    return {
+      data:   res.data as unknown,
+      status: res.meta?.status,
+      error:  res.error as { kind: string; message?: string } | undefined,
+    }
   }
 }

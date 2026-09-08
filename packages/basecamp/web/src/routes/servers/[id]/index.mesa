@@ -124,6 +124,66 @@ title: Server
    */
   const rowsOf = (result) => Array.isArray(result) ? result : result?.data ?? []
 
+  // ── While a job is working on this machine ─────────────────────────
+  //
+  // Provisioning, installing and destroying are all done by a JOB, in another
+  // process, over minutes. The ROW moves itself — it is watched, so a status
+  // change arrives over the socket with nothing here asking. The TRAIL does
+  // not: `events` is a custom method, no announcement carries it, and the job's
+  // writes reach no channel at all.
+  //
+  // So this polls, and only while something is in flight. It is a poll rather
+  // than a subscription because there is nothing to subscribe to: giving
+  // `ServerEvent` a channel would mean broadcasting an audit trail to every
+  // member of the workspace, which is a wider change than a progress strip
+  // should make.
+  //
+  // The interval is cleared on leaving the state and on destroy, both — the
+  // first is what stops it, the second is what stops it when somebody navigates
+  // away mid-provision, which is the case a status-only guard misses.
+  const IN_FLIGHT = new Set(['pending', 'provisioning', 'installing', 'destroying'])
+  const POLL_MS   = 4000
+
+  let polling = null
+
+  function stopPolling() { if (polling) { clearInterval(polling); polling = null } }
+  $.onDestroy(stopPolling)
+
+  // Named in the expression, not read inside a helper: Mesa decides what an
+  // expression depends on from its own text, so `server.status` has to appear
+  // here or this re-derives for the wrong reason (the note above `moves` says
+  // the same thing about the same trap).
+  $: inFlight = !!server && IN_FLIGHT.has(server.status)
+
+  $: (inFlight, () => {
+    stopPolling()
+    if (!inFlight) return
+    polling = setInterval(() => { loadEvents().catch(() => {}) }, POLL_MS)
+  })
+
+  // The row moving IS the signal that a job wrote something, and it costs
+  // nothing: re-read the trail on every status change, in flight or not. This
+  // is what makes the last event — the one that says *online* — arrive with the
+  // pill rather than up to four seconds after it.
+  //
+  // Derived first, and no optional chaining in the dependency expression:
+  // `$: (server?.status, …)` compiles to a watch signal the component does not
+  // declare, and the module then fails to LOAD — which reaches a person as a
+  // redirect that silently does nothing, because `goto` awaits the dynamic
+  // import and its callers do not await `goto` (`FJS-1023`).
+  $: statusNow = server ? server.status : null
+  $: (statusNow, () => { if (server) loadEvents().catch(() => {}) })
+
+  // What the machine is waiting for, in the words somebody provisioning it
+  // would use. Not the status itself: `installing` is this app's word for *the
+  // box is up and enrolling*, which is not what it says to a reader.
+  const WAITING = {
+    pending:      'Queued. The provisioning job has not picked it up yet.',
+    provisioning: 'Asking the provider for a machine, then waiting for it to boot and get an address.',
+    installing:   'The machine is up. It is installing its outpost and enrolling itself — nothing here connects to it.',
+    destroying:   'Asked the provider to delete it. The row lands on destroyed when the provider confirms.',
+  }
+
   // plan / health / dockerState / labels are Json columns. They arrive as
   // objects — Litestone parses them — so this renders entries rather than
   // JSON.parse'ing a string, which is what the old raw-SQL services had to do.
@@ -164,6 +224,18 @@ title: Server
   {#if error}
     <article class="alert danger">
       <div class="alert-content">{error}</div>
+    </article>
+  {/if}
+
+  {#if inFlight}
+    <!-- `aria-busy` and not a spinner alone: this is the one screen in the app
+         where the interesting state is *nothing has happened yet*, and a reader
+         using a screen reader gets that from the attribute. -->
+    <article class="alert info" id="server-inflight" aria-busy="true">
+      <div class="alert-content">
+        <strong>{server.status}</strong> — {WAITING[server.status]}
+        <span class="text-sm text-muted"> This page follows along; there is nothing to refresh.</span>
+      </div>
     </article>
   {/if}
 

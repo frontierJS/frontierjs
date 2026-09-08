@@ -16,6 +16,7 @@ import { signRequest }            from '@frontierjs/toolbelt/signature'
 import { createOutpostServer }    from '../src/server.js'
 import { createDocker, createInspector, isDigest } from '../src/docker.js'
 import { createReporter }         from '../src/report.js'
+import { createVitals }           from '../src/vitals.js'
 import { readConfig }             from '../src/config.js'
 
 const CONFIG = {
@@ -433,6 +434,133 @@ describe('what this machine tells basecamp', () => {
     // The machine still has containers to run; the next tick is the recovery.
     expect(warned.length).toBeGreaterThan(0)
     expect(warned.join(' ')).toContain('502')
+  })
+})
+
+// ─── what the machine feels like ────────────────────────────────────────────
+//
+// Every reading here is PAIRED with the wrong answer somebody writes first,
+// asserted to differ: a CPU percentage is a delta and reads as a number either
+// way, a memory percentage off MemFree reads as a busy machine, and a disk
+// percentage off `bfree` disagrees with the `df` printed on the box by exactly
+// the root reserve. None of the three fails loudly.
+
+/** `/proc` and `statfs` as canned text, so a reading can be asserted rather
+ *  than compared to whatever the test machine happens to be doing. */
+function fakeOs({ stat = [], meminfo = '', loadavg = '', statfs } = {}) {
+  const reads = []
+  const stats = [...stat]
+  const readText = async (path) => {
+    reads.push(path)
+    if (path === '/proc/stat')     return stats.length > 1 ? stats.shift() : stats[0]
+    if (path === '/proc/meminfo')  return meminfo
+    if (path === '/proc/loadavg')  return loadavg
+    throw new Error(`unexpected read ${path}`)
+  }
+  return { reads, vitals: createVitals({ readText, statfs, sampleMs: 0 }) }
+}
+
+const STAT_A = 'cpu  100 0 100 800 0 0 0 0 0 0\ncpu0 1 2 3 4 5\n'
+// 100 more user, 100 more system, 600 more idle, 200 more iowait.
+const STAT_B = 'cpu  200 0 200 1400 200 0 0 0 0 0\ncpu0 1 2 3 4 5\n'
+// Total climbed, idle fell — the shape a counter reset caught mid-climb leaves.
+const STAT_C = 'cpu  1000 0 1000 700 0 0 0 0 0 0\ncpu0 1 2 3 4 5\n'
+const MEMINFO = 'MemTotal:       1000 kB\nMemFree:         100 kB\nMemAvailable:    250 kB\n'
+const LOADAVG = '0.31 0.20 0.10 1/234 5678\n'
+const STATFS  = async () => ({ blocks: 100, bfree: 20, bavail: 10 })
+
+describe('what the machine feels like', () => {
+
+  test('cpu is the delta between two samples, and iowait is idle', async () => {
+    const { vitals } = fakeOs({ stat: [STAT_A, STAT_B], meminfo: MEMINFO, loadavg: LOADAVG, statfs: STATFS })
+    const health = await vitals.read()
+    // 1000 jiffies passed, 800 of them idle. Counting the 200 iowait as busy
+    // would answer 40 and report every machine copying a file as saturated.
+    expect(health.cpu).toBe(20)
+  })
+
+  test('the first read makes its own window; the second reuses the first', async () => {
+    // `/proc/stat` is cumulative since boot, so one read is not a rate. Without
+    // the second sample the first heartbeat carries no CPU at all — thirty
+    // seconds of every freshly booted machine drawing two bars instead of three.
+    const { vitals, reads } = fakeOs({ stat: [STAT_A, STAT_B], meminfo: MEMINFO, loadavg: LOADAVG, statfs: STATFS })
+    await vitals.read()
+    expect(reads.filter(p => p === '/proc/stat').length).toBe(2)
+
+    await vitals.read()
+    expect(reads.filter(p => p === '/proc/stat').length).toBe(3)
+  })
+
+  test('memory is MemAvailable, not MemFree', async () => {
+    const { vitals } = fakeOs({ stat: [STAT_A, STAT_B], meminfo: MEMINFO, loadavg: LOADAVG, statfs: STATFS })
+    // Page cache is memory the kernel hands back on demand. MemFree answers 90
+    // here and reports every warm machine as nearly out.
+    expect((await vitals.read()).memory).toBe(75)
+  })
+
+  test('disk is df arithmetic — the root reserve is neither free nor available', async () => {
+    const { vitals } = fakeOs({ stat: [STAT_A, STAT_B], meminfo: MEMINFO, loadavg: LOADAVG, statfs: STATFS })
+    // used 80 over used + bavail 90. `1 - bfree/blocks` answers 80 and
+    // disagrees with the `df` printed on the machine by the whole reserve.
+    expect((await vitals.read()).disk).toBe(88.89)
+  })
+
+  test('load rides along unkept — a number to look at, not one to threshold', async () => {
+    // Basecamp keeps cpu, memory and disk as series; anything else lands in
+    // `Server.health` and is read on the server's own screen. Load is here
+    // because it is not comparable between machines without a core count.
+    const { vitals } = fakeOs({ stat: [STAT_A, STAT_B], meminfo: MEMINFO, loadavg: LOADAVG, statfs: STATFS })
+    expect((await vitals.read()).load).toBe(0.31)
+  })
+
+  test('a reading that cannot be taken is absent, not zero', async () => {
+    const { vitals } = fakeOs({
+      stat: [STAT_A, STAT_B], meminfo: MEMINFO, loadavg: LOADAVG,
+      statfs: async () => { throw new Error('ENOSYS') },
+    })
+    const health = await vitals.read()
+    // A machine whose disk cannot be read and a disk at 0% are different facts,
+    // and the second is a fleet screen that looks healthy.
+    expect('disk' in health).toBe(false)
+    expect(health.cpu).toBe(20)
+    expect(health.memory).toBe(75)
+  })
+
+  test('a counter that went backwards is a reboot, and no reading at all', async () => {
+    const { vitals } = fakeOs({ stat: [STAT_B, STAT_A], meminfo: MEMINFO, loadavg: LOADAVG, statfs: STATFS })
+    const health = await vitals.read()
+    expect('cpu' in health).toBe(false)
+    // The others still land — a bad CPU window is not a bad heartbeat.
+    expect(health.memory).toBe(75)
+  })
+
+  test('idle falling while total climbs is not a reading either', async () => {
+    // The half `total > 0` cannot see: a reset caught mid-climb leaves both
+    // counters moving and the arithmetic answers 105.88%, which every consumer
+    // takes for a saturated machine.
+    const { vitals } = fakeOs({ stat: [STAT_A, STAT_C], meminfo: MEMINFO, loadavg: LOADAVG, statfs: STATFS })
+    expect('cpu' in (await vitals.read())).toBe(false)
+  })
+
+  test('two reads inside one jiffy are not a window', async () => {
+    const { vitals } = fakeOs({ stat: [STAT_A], meminfo: MEMINFO, loadavg: LOADAVG, statfs: STATFS })
+    expect('cpu' in (await vitals.read())).toBe(false)
+  })
+
+  test('the heartbeat carries the three keys basecamp keeps as series', async () => {
+    // `core/server-metrics.ts`'s KEPT list is `cpu`/`memory`/`disk`, and for as
+    // long as this reporter sent `load` and `memory` two of the three series
+    // were never written and the card drew one bar (`FJS-1027`).
+    const sent = []
+    const { vitals } = fakeOs({ stat: [STAT_A, STAT_B], meminfo: MEMINFO, loadavg: LOADAVG, statfs: STATFS })
+    const reporter = createReporter(CONFIG, {
+      inspector: createInspector({ run: fakeRunner().run }),
+      fetch: async (url, init) => { sent.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) },
+      log: { warn() {} },
+      vitals,
+    })
+    await reporter.heartbeat()
+    expect(sent[0].health).toEqual({ cpu: 20, memory: 75, disk: 88.89, load: 0.31 })
   })
 })
 

@@ -24,17 +24,38 @@
 
 import type { BasecampApp } from '../basecamp.types.ts'
 
-/** The keys an outpost reports that this app keeps, and what each is called.
- *  Anything else it sends is its own vocabulary — readable on the server's own
- *  screen out of `Server.health`, and not a series. */
-const KEPT: Record<string, string> = {
-  cpu:    'server.cpuPercent',
-  memory: 'server.memoryPercent',
-  disk:   'server.diskPercent',
+/** One reading: the key the Outpost sends, the series it is kept as, what it is
+ *  measured in, and what a person reading a card calls it. Four spellings of one
+ *  thing, in one row, because they were in three files and two of them were
+ *  wrong for a year (`FJS-1027`). */
+export interface ServerReading {
+  key:   string
+  name:  string
+  unit:  string
+  label: string
 }
 
-/** The three series a chart can ask for, in the order a card draws them. */
-export const SERVER_SERIES = Object.values(KEPT)
+/** The keys an outpost reports that this app keeps, in the order a card draws
+ *  them. Anything else it sends is its own vocabulary — readable on the
+ *  server's own screen out of `Server.health`, and not a series. */
+export const SERVER_READINGS: ServerReading[] = [
+  { key: 'cpu',    name: 'server.cpuPercent',    unit: 'percent', label: 'CPU'    },
+  { key: 'memory', name: 'server.memoryPercent', unit: 'percent', label: 'Memory' },
+  { key: 'disk',   name: 'server.diskPercent',   unit: 'percent', label: 'Disk'   },
+]
+
+/** What the Outpost sends that is deliberately NOT a series, and why. Declared
+ *  rather than implied by absence: *nobody kept this on purpose* and *nobody
+ *  noticed this arriving* are the same silence, and the second is the whole of
+ *  `FJS-1027`. `servers.crossing` in the suite grades the Outpost's real output
+ *  against these two lists together. */
+export const SERVER_UNKEPT: Record<string, string> = {
+  load: 'not comparable between machines without a core count, so a threshold ' +
+        'across a fleet would mean different things on each box',
+}
+
+/** The series a chart can ask for, in the order a card draws them. */
+export const SERVER_SERIES = SERVER_READINGS.map(r => r.name)
 
 /**
  * Keep whatever of this check-in is a number.
@@ -61,14 +82,14 @@ export async function recordHealth(
   if (!metrics || !health) return
 
   const when = Date.parse(at)
-  for (const [key, name] of Object.entries(KEPT)) {
-    const value = Number(health[key])
+  for (const reading of SERVER_READINGS) {
+    const value = Number(health[reading.key])
     if (!Number.isFinite(value)) continue
-    await metrics.record(name, value, {
+    await metrics.record(reading.name, value, {
       // `gauge`, and it matters: a percentage read as a counter would have every
       // fall reported as a reset and every hour's `increase` invented.
       type:   'gauge',
-      unit:   'percent',
+      unit:   reading.unit,
       labels: { serverId },
       at:     Number.isFinite(when) ? when : Date.now(),
     })

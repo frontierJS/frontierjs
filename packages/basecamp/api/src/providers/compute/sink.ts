@@ -26,6 +26,10 @@ const PORT = Number(process.env.DO_SINK_PORT ?? 8122)
  *  a screen that validates the prefix is exercised rather than bypassed. */
 const TOKEN = process.env.DO_SINK_TOKEN ?? 'dop_v1_devtoken'
 
+/** How long a created droplet takes to come up, or 0 for never. Zero is the
+ *  default so nothing in-process depends on a timer. */
+const BOOT_MS = Number(process.env.DO_SINK_BOOT_MS ?? 0)
+
 // ─── The catalog it serves ───────────────────────────────────────────────
 // Small and real-shaped. Prices are floats of dollars because that is what DO
 // sends, and the connector turning them into minor units is the thing under
@@ -54,12 +58,11 @@ const IMAGES = [
   { slug: 'debian-12-x64',    distribution: 'Debian', name: '12 x64' },
 ]
 
-/** Droplets this stand-in knows about. Seeded with one so `machine()` has
- *  something to read; nothing here creates any, because creating machines is
- *  phase 2 and a sink that answered a create nobody wrote would be a claim. */
+/** Droplets this stand-in knows about. One is seeded so `machine()` has
+ *  something to read; the rest are made by `POST /v2/droplets`. */
 const DROPLETS = new Map<string, Record<string, unknown>>([
   ['901', {
-    id: 901, name: 'general-01', status: 'active',
+    id: 901, name: 'general-01', status: 'active', tags: [],
     region:   { slug: 'nyc3' },
     networks: { v4: [
       { ip_address: '10.0.0.9',   type: 'private' },
@@ -68,8 +71,84 @@ const DROPLETS = new Map<string, Record<string, unknown>>([
   }],
 ])
 
+/** What each created droplet was asked for, so a test can assert the SPEC that
+ *  crossed the wire rather than only that something was created. The user_data
+ *  is in here, which is the whole install. */
+export const CREATED: Record<string, unknown>[] = []
+
+let nextId = 1000
+
+/** Reset between tests. A stand-in that accumulates state across a suite makes
+ *  *how many machines did this create* unanswerable, which is the one question
+ *  a provisioning test exists to ask. */
+export function resetSink(): void {
+  CREATED.length = 0
+  nextId = 1000
+  for (const id of [...DROPLETS.keys()]) if (id !== '901') DROPLETS.delete(id)
+}
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+
+/**
+ * `POST /v2/droplets` — a create, answered the way DO answers one.
+ *
+ * Two things are deliberate. The new droplet's status is `new` and NOT
+ * `active`: a real create returns before the machine is up, so a caller that
+ * treated the create response as *the machine is ready* would work here and
+ * fail everywhere. And the size and region are CHECKED against the catalog, so
+ * a create naming something that does not exist is refused with DO's own 422
+ * rather than quietly succeeding — which is what makes a picker offering a size
+ * the region lacks a testable mistake.
+ */
+async function createDroplet(req: Request): Promise<Response> {
+  const spec = await req.json().catch(() => null) as Record<string, unknown> | null
+  if (!spec) return json({ id: 'unprocessable_entity', message: 'no body' }, 422)
+
+  const size   = SIZES.find(s => s.slug === spec.size)
+  const region = REGIONS.find(r => r.slug === spec.region)
+
+  if (!size)   return json({ id: 'unprocessable_entity', message: `unknown size ${spec.size}` }, 422)
+  if (!region) return json({ id: 'unprocessable_entity', message: `unknown region ${spec.region}` }, 422)
+  if (!region.available)
+    return json({ id: 'unprocessable_entity', message: `${region.slug} is not available` }, 422)
+  if (!size.regions.includes(region.slug))
+    return json({ id: 'unprocessable_entity',
+                  message: `size ${size.slug} is not offered in ${region.slug}` }, 422)
+
+  const id  = String(nextId++)
+  const row = {
+    id:       Number(id),
+    name:     spec.name,
+    status:   'new',
+    tags:     Array.isArray(spec.tags) ? spec.tags : [],
+    region:   { slug: region.slug },
+    // A machine that is still building has no address yet. A caller waiting for
+    // one is the behavior a real provision has to have.
+    networks: { v4: [] },
+  }
+  DROPLETS.set(id, row)
+  CREATED.push(spec)
+
+  // A real droplet comes up on its own a minute or so later. In-process tests
+  // must not depend on a clock, so this is OFF unless asked for: `sinkBoot` is
+  // the deterministic door and stays the one the unit tests use. A drive that
+  // needs the machine to actually arrive sets `DO_SINK_BOOT_MS` and then waits
+  // for the same thing a real one waits for.
+  if (BOOT_MS > 0) setTimeout(() => sinkBoot(id, `203.0.113.${100 + (Number(id) % 100)}`), BOOT_MS)
+
+  return json({ droplet: row }, 202)
+}
+
+/** Bring a droplet up, as the vendor would a few seconds later. Only a
+ *  stand-in has this: it is how a test reaches the state a real cloud takes a
+ *  minute to arrive at. */
+export function sinkBoot(providerServerId: string, ip = '203.0.113.50'): void {
+  const row = DROPLETS.get(providerServerId)
+  if (!row) return
+  row.status   = 'active'
+  row.networks = { v4: [{ ip_address: ip, type: 'public' }] }
+}
 
 export function startDoSink(port = PORT) {
   return Bun.serve({
@@ -80,8 +159,13 @@ export function startDoSink(port = PORT) {
       // The token is read off the header conduit wrote. A wrong one is DO's own
       // 401 shape, so `error.kind` on the caller's side is the real thing.
       const auth = req.headers.get('authorization') ?? ''
-      if (auth !== `Bearer ${TOKEN}`)
+      if (auth !== `Bearer ${TOKEN}`) {
+        // Named, not silent. A stand-in that refuses without saying what it was
+        // handed turns every credential mistake into the vendor's own opaque
+        // 401, which is the failure this listener exists to make legible.
+        console.error(`[do-sink] refused ${req.method} ${url.pathname} — authorization: ${JSON.stringify(auth)}`)
         return json({ id: 'unauthorized', message: 'Unable to authenticate you.' }, 401)
+      }
 
       if (url.pathname === '/v2/account')
         return json({ account: { uuid: 'acct-dev', email: 'dev@localhost', status: 'active' } })
@@ -90,9 +174,31 @@ export function startDoSink(port = PORT) {
       if (url.pathname === '/v2/sizes')   return json({ sizes:   SIZES   })
       if (url.pathname === '/v2/images')  return json({ images:  IMAGES  })
 
+      // A list filtered by tag — the reconciliation read. Checked BEFORE the
+      // single-droplet route, since both live under /v2/droplets.
+      if (url.pathname === '/v2/droplets') {
+        if (req.method === 'POST') return createDroplet(req)
+
+        const tag = url.searchParams.get('tag_name')
+        const all = [...DROPLETS.values()]
+        return json({ droplets: tag
+          ? all.filter(d => (d.tags as string[] | undefined)?.includes(tag))
+          : all })
+      }
+
       const droplet = url.pathname.match(/^\/v2\/droplets\/([^/]+)$/)
       if (droplet) {
-        const row = DROPLETS.get(decodeURIComponent(droplet[1]))
+        const id  = decodeURIComponent(droplet[1])
+        const row = DROPLETS.get(id)
+
+        if (req.method === 'DELETE') {
+          if (!row) return json({ id: 'not_found', message: 'not found' }, 404)
+          DROPLETS.delete(id)
+          // DO answers 204 with no body. Worth mimicking: a connector that
+          // assumed a JSON body here would work against a fake and fail here.
+          return new Response(null, { status: 204 })
+        }
+
         return row
           ? json({ droplet: row })
           : json({ id: 'not_found', message: 'The resource you requested could not be found.' }, 404)

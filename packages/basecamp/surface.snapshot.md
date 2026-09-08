@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-34 services · 31 routes · 11 plugins · prefix (none)
+34 services · 32 routes · 13 plugins · prefix (none)
 ```
 
 ## App hooks
@@ -574,8 +574,8 @@ name when it declares none.
 
 ### `servers` · model `Server`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `sync`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `heartbeat`
-- **custom methods** — `events`, `feed`, `sync`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `heartbeat`
+- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `sync`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `heartbeat`
+- **custom methods** — `events`, `feed`, `sync`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `heartbeat`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -586,7 +586,11 @@ name when it declares none.
 | before | `patch` | `anonymous` → `autoValidate` |
 | before | `remove` | `anonymous` |
 | before | `sync` | `anonymous` |
+| before | `catalog` | `anonymous` |
 | before | `logEvent` | `anonymous` |
+| before | `provisionStep` | `anonymous` |
+| before | `destroyStep` | `anonymous` |
+| before | `reconcile` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -682,6 +686,7 @@ once; everything else was registered by hand or by a plugin.
 | GET | `/health/live` | raw |
 | GET | `/health/ready` | raw |
 | GET | `/metrics` | raw |
+| POST | `/servers/{id}/enroll` | raw |
 | DELETE | `/setup` | raw |
 | POST | `/setup` | raw |
 | GET | `/setup/probe` | raw |
@@ -698,6 +703,8 @@ In configure order, which is what `requires:` is checked against.
 6. `channels`
 7. `@frontierjs/auth`
 8. `setupRoutes`
-9. `staticRoutes`
-10. `basecamp-cleanup`
-11. `corsPlugin`
+9. `enrollmentRoutes`
+10. `staticRoutes`
+11. `basecamp-cloud-accounts`
+12. `basecamp-cleanup`
+13. `corsPlugin`

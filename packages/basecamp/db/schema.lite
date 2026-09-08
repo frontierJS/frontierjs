@@ -191,7 +191,7 @@ enum UserKind       { human bot ai }
 enum UserStatus      { pending_verification active suspended }
 enum WorkspaceStatus { active suspended }
 enum SecretKind     { ssh_key provider_key registry_auth tls_cert notification generic }
-enum ServerStatus   { pending provisioning installing online unreachable draining stopped destroyed }
+enum ServerStatus   { pending provisioning installing online unreachable draining stopped destroying destroyed }
 enum ServerRole     { general build database gateway worker }
 enum ProviderKind   { custom hetzner digitalocean }
 enum EnvironmentTier { development test preview staging production }
@@ -760,10 +760,16 @@ model Secret {
 
   /// A provider key that does not say which cloud it opens cannot be turned
   /// into a Conduit target, and nothing downstream could tell which connector
-  /// speaks to it. The reverse is refused too: a vendor on an SSH key is a
-  /// column somebody filled in by mistake.
-  @@check("(kind = 'provider_key') = (providerKind IS NOT NULL)",
-          "a provider key names its cloud, and nothing else may")
+  /// speaks to it.
+  ///
+  /// One direction only. The biconditional — a vendor on an SSH key is somebody
+  /// filling in a column by mistake — was written first and refused every row
+  /// the generic verifier builds, since a builder fills every column it can:
+  /// `verifyRowPolicies`, `verifyFieldProtection` and `verifyConstraints` all
+  /// reported *no rows could be built* on this model, which trades five
+  /// executed checks for one tidy rule.
+  @@check("kind != 'provider_key' OR providerKind IS NOT NULL",
+          "a provider key names the cloud it opens")
 
   @@gate("5")
   @@softDelete
@@ -896,6 +902,38 @@ model Server {
   outpostUrl         String?
   lastHeartbeatAt  DateTime?
 
+  /// ── How a machine this app MADE proves it is that machine ───────────
+  ///
+  /// A provisioned box boots with a one-time token in its cloud-init and
+  /// exchanges it, once, for a credential of its own. These two columns are
+  /// that exchange.
+  ///
+  /// `enrollTokenHash` is a HASH and not the token: this row is readable by
+  /// every member of the workspace, and a column holding the live secret would
+  /// let any of them enroll as the machine. The token itself exists in exactly
+  /// two places — the vendor's metadata for that droplet, and the response to
+  /// the create call, which is never stored.
+  ///
+  /// `enrollExpiresAt` is why a leaked metadata blob is not a standing key. A
+  /// machine that has not enrolled inside the window never will, and the
+  /// provision job fails it by name rather than leaving a row at `installing`
+  /// for a week.
+  ///
+  /// Both are cleared on enrollment. A spent token that still hashes to
+  /// something is a credential waiting to be replayed.
+  enrollTokenHash  String?   @guarded
+  enrollExpiresAt  DateTime?
+
+  /// The `Secret` holding THIS machine's own Outpost credential, minted at
+  /// enrollment. A bare id for `Domain.certSecretId`'s reason.
+  ///
+  /// Null means the machine still signs with the fleet-wide `OUTPOST_SECRET`,
+  /// which every machine shares — so one compromised box can forge any other's
+  /// check-in (`core/hooks.ts` says so at the verification). Per-server
+  /// credentials are what make that column non-null; deleting the fallback is
+  /// phase 3, and it can only happen once every machine in a fleet has one.
+  outpostSecretId  String?
+
   plan             Json         @default("{}")
   actualSpecs      Json?
   health           Json?
@@ -976,15 +1014,41 @@ model Server {
   // `reportRunning` and its siblings carry `@gate(5)` BESIDE `@system`, because
   // a person presses *Sync from provider* and the provider's answer decides the
   // move: the engine makes it, an administrator asks for it.
+  // ── Making and unmaking a machine ────────────────────────────────────
+  //
+  // `provision` is a PERSON asking for a machine that does not exist yet, at
+  // ADMINISTRATOR(5) — the same authority as taking one out of rotation, for
+  // the same reason: both cost money and neither is undoable by pressing the
+  // other button. It moves the row to `provisioning` BEFORE the vendor is
+  // called, so a crash between the two leaves a row saying what was attempted
+  // rather than nothing at all.
+  //
+  // `reportProvisioned` is the engine saying the vendor has the machine and it
+  // is reachable. `installing` is where a row waits for its Outpost to enroll,
+  // and `checkIn` is what ends that wait — which is why `installing` was in
+  // that from-list long before anything could produce it.
+  //
+  // `destroy` and `destroying` are the half that platforms skip. Provisioning
+  // is easy; de-provisioning is where they die. A person asks, the row moves,
+  // the vendor is told, and only the vendor's own answer lands `destroyed` —
+  // so a machine this app believes is gone is one the cloud has confirmed is
+  // gone, never one a button claimed.
+  //
+  // `reportDestroyed` therefore narrows to `destroying` alone. It used to
+  // accept every state, which reads as tolerance and is the opposite: a
+  // provider sync could land a live machine in `destroyed` on one bad answer.
   @@transitions(status,
     reboot:           [online, unreachable]                                        -> pending,
     drain:            online                                                       -> draining @gate(5),
     undrain:          draining                                                     -> online   @gate(5),
+    provision:        pending                                                      -> provisioning @gate(5),
+    destroy:          [pending, provisioning, installing, online, unreachable, draining, stopped] -> destroying @gate(5),
     checkIn:          [pending, installing, unreachable]                           -> online   @system,
+    reportProvisioned: [provisioning]                                              -> installing   @system @gate(5),
     reportRunning:    [pending, provisioning, installing, unreachable, stopped]                  -> online       @system @gate(5),
     reportStopped:    [pending, provisioning, installing, online, unreachable, draining]         -> stopped      @system @gate(5),
     reportRebuilding: [pending, installing, online, unreachable, draining, stopped]              -> provisioning @system @gate(5),
-    reportDestroyed:  [pending, provisioning, installing, online, unreachable, draining, stopped]        -> destroyed @system @gate(5))
+    reportDestroyed:  [destroying]                                                               -> destroyed    @system @gate(5))
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, slug])

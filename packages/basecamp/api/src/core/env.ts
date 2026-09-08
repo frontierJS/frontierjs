@@ -92,6 +92,13 @@ export const env = defineEnv({
   // from a request's Host header — that is a value the caller chooses.
   APP_URL:        { default: 'http://localhost:8020' },
 
+  // Where a MACHINE reaches this API. Not `APP_URL`, which is the SPA — a
+  // provisioned box enrolls against the API and has no browser. Stated rather
+  // than derived from a request Host for `APP_URL`'s reason: it is baked into
+  // cloud-init before any request exists, and a value the caller chose would
+  // point a fleet at whatever host the last provisioner used.
+  API_URL:        { default: 'http://localhost:8120' },
+
   // ── Providers ─────────────────────────────────────────────
   // Each one activates the real adapter when set; stubs otherwise.
   INFISICAL_URL:   {},
@@ -118,4 +125,14 @@ export const env = defineEnv({
   // would be one account for the whole install, which is the shape `FJS-1020`
   // is about.
   DIGITALOCEAN_URL: {},
+
+  // Saying, once, that this process may create and destroy machines somebody
+  // pays for. Unset is REFUSE, and `NODE_ENV=production` is the other way
+  // through — a deployed control plane should not need a flag to do the thing
+  // it was installed for, and a laptop should.
+  //
+  // A read is never guarded by it: a GET costs rate limit, not money. The check
+  // is in `providers/compute/accounts.ts` on the transport, so it covers every
+  // spending call including ones nobody has written yet.
+  ALLOW_CLOUD_SPEND: {},
 })

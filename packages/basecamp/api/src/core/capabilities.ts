@@ -57,6 +57,10 @@ const ROLE_GRANTS: Record<string, readonly string[]> = {
   admin:     [
     'Server.create', 'Server.update', 'Server.delete',
     'Server.reboot', 'Server.drain', 'Server.undrain',
+    // Making and unmaking a machine at a cloud. Both are `@gate(5)`, so like
+    // drain and undrain they are absent from `developer` rather than dead
+    // there — and both spend money, which is the same authority the gate says.
+    'Server.provision', 'Server.destroy',
     'Environment.create', 'Environment.update', 'Environment.delete', 'Environment.variables',
   ],
   // OWNER(6) — the same grid. What separates an owner from an administrator is
@@ -65,6 +69,7 @@ const ROLE_GRANTS: Record<string, readonly string[]> = {
   owner:     [
     'Server.create', 'Server.update', 'Server.delete',
     'Server.reboot', 'Server.drain', 'Server.undrain',
+    'Server.provision', 'Server.destroy',
     'Environment.create', 'Environment.update', 'Environment.delete', 'Environment.variables',
   ],
 }

@@ -1,5 +1,176 @@
 # Changes — Basecamp
 
+## 2026-09-08 — the wizard, in a browser, and four defects it found
+
+`docs/PROVISIONING.md` phase 2 is closed. `verify:provision` is the drive — 29
+checks, everything started and stopped by itself: a scratch database, the
+DigitalOcean stand-in as a SEPARATE process, the API, the web server, Chrome.
+
+**A machine now costs a number, and it is the vendor's.** `provision` reads the
+catalog before it writes anything and copies the chosen size's specs and price
+onto `plan` — `vcpu` and `ramGb` are the two sums `view fleetByProvider` already
+made, and `priceMinor`/`currency` turn `/cloud-spend/` from a skeleton into a
+figure. The same read refuses a size that account is not offered, and a size that
+region does not have, at the moment somebody asked rather than inside a job. The
+price may not come from the caller: a client posting `priceMinor` would be
+reporting its own arithmetic back to the person paying the bill. `/cloud-spend/`
+groups by CURRENCY and never sums across one, prints how many machines the figure
+covers, and says in its own words that this is not a bill.
+
+**The detail screen follows a machine being built.** The row is watched, so a
+status change arrives over the socket with nothing asking. The trail is a custom
+method no announcement carries, so it is polled — only while something is in
+flight, cleared on leaving the state AND on destroy. A poll rather than a
+subscription because there is nothing to subscribe to: giving `ServerEvent` a
+channel would broadcast an audit trail to every member of the workspace.
+
+**The enrollment route had never been reachable.** Junction's router parses
+`{id}`; `:id` registers a literal path segment, so `POST /servers/:id/enroll`
+answered 405 to everything while the constant-time compare, the single-use burn
+and the fifteen-minute window behind it were all correct — `FJS-349`'s shape one
+layer out, filed as `FJS-1024`. A second defect sat in the same handler: a raw
+route's parsed body is `ctx.body` and it was read as `ctx.data`, so the token was
+never read and every caller was refused identically. Both found by the first
+request that went down real HTTP; six new checks cover the route end to end,
+including two racing requests presenting one token where exactly one wins and
+exactly one credential is minted.
+
+**A `@@check` only the schema could satisfy.** Making `providerKind` required on
+a provider key gave `/secrets/` a kind somebody can choose and never save: the
+boundary refused correctly and the form had no field to fix it with. The Cloud
+select now appears for that kind alone, reads its options off the schema, and
+filters `custom` — the value that means *no cloud*, which is what the check
+refuses.
+
+**A reactive dependency with an optional chain does not compile, and the cost is
+paid two layers away.** `$: (server?.status, …)` emits a watch signal the
+component never declares, so the module fails to LOAD, sierra's `_navigate`
+rejects on the dynamic import, and `goto` is async with nobody awaiting it. What
+a person sees is a Provision button that does nothing: no console error, no
+failed request, the row already written. `FJS-1025` and `FJS-1026`.
+
+**Two silences closed while chasing that.** The DigitalOcean stand-in now says
+what authorization it refused, and `core/credentials.ts` names which of its six
+`null`s it answered — a credential that does not resolve is a send with no
+credential, and every one of those arrives at the caller as the vendor's own
+opaque 401. Also `servers/create/` is `novalidate`: the kit had been warning that
+a native constraint inside a validated form makes the browser refuse to fire
+submit and show its own bubble instead of the schema's message.
+
+
+## 2026-09-07 — Basecamp makes machines, and unmakes them
+
+`docs/PROVISIONING.md` phase 2, most of it. A cloud account could be reached;
+now a machine can be asked for.
+
+**Nothing spends money by accident.** A POST or a DELETE at a cloud is refused
+unless the target is a stand-in on loopback, or `NODE_ENV=production`, or
+`ALLOW_CLOUD_SPEND=1`. The check is on the TRANSPORT — `sendVia` — and not in
+each connector method, so a spending call somebody adds next year is covered
+without remembering it exists. A GET is never guarded: a read costs rate limit,
+not money. The test is fail-closed and asks *is this a stand-in on my machine*,
+never *is this one of the vendor origins I listed* — that question has to
+enumerate every vendor correctly forever and the one it gets wrong is the one
+that bills somebody. P1 measured the need for it: three tests reached the real
+DigitalOcean because an environment variable did not apply in the order they
+ran, and reads were all that saved it.
+
+**A machine is asked for, and installs itself.** `servers.provision` writes the
+row FIRST — a create that called the cloud first and crashed would leave a
+machine nobody here can name — mints a one-time enrollment token, and dispatches
+`server:provision` under a stated id, so a double-click costs one machine.
+`server-provision.job.ts` is the only job in this app with `maxAttempts: 1`: a
+retry is the queue deciding to spend money again, and the recovery for a
+half-made machine is a person looking at a row.
+
+**The credential is exchanged, never baked in.** Cloud-init carries a one-time
+token and no other secret, because metadata is readable by anything running on
+the box — putting `OUTPOST_SECRET` there would hand every machine the key to
+forge every other machine's check-in, which is the limit `core/hooks.ts` already
+names. `POST /servers/:id/enroll` burns the token in a CONDITIONAL update, so
+two requests racing one token cannot both win, and answers one refusal for every
+failure: telling a wrong token from an expired one tells an unauthenticated
+caller which server ids are real. The response is also where the Outpost learns
+its own public URL, which the process cannot see and this app knows.
+
+**Destroy ships beside create**, because de-provisioning is where integrated
+platforms die. It takes a TYPED confirmation — the machine's name, so a stale
+screen cannot confirm the wrong row — moves to `destroying`, and only the
+vendor's own answer lands `destroyed`. `server:destroy` retries where the
+provision does not: a machine still running after the row says `destroying` is a
+bill, and every step is idempotent.
+
+**`servers.reconcile` asks what a lookup cannot**: what does this cloud have
+that this app does not. It reports and never deletes — a machine it cannot
+account for might be a create still in flight, and a sweep that destroyed what
+it did not recognize would eventually destroy something real.
+
+`api/test/compute.test.ts` is 46 checks now. Suite 305 pass / 0 fail, typecheck
+baseline ratcheted 14 → 13. **A database from before today must be reset** —
+`ServerStatus` gained `destroying` and `Server` gained three columns.
+
+Three things the build measured rather than predicted, all in
+`docs/PROVISIONING.md`: the capability grant table was hand-kept and held to the
+schema by nothing (there is a tripwire now, and it was measured against a stub
+after the first version passed vacuously on a wrong parse key); `@guarded`
+refused the caller's write of the enrollment hash and was right to; and a
+vendor's tag filter is an exact match, so a fleet needs two tags rather than one.
+
+## 2026-09-07 — a machine can name the cloud ACCOUNT it came from
+
+`docs/PROVISIONING.md` phase 1. Basecamp could import a machine and could not
+ask a cloud anything: `servers.sync` built `provider:${providerKind}` and sent
+to it, and nothing anywhere registered such a target, so every send had failed
+`target_not_found` since it was written.
+
+**A cloud account is a `Secret` of kind `provider_key`**, and it now says which
+cloud it opens — `Secret.providerKind`, reusing `ProviderKind` rather than
+growing a second vendor vocabulary on `SecretKind`. No model was minted: an
+account is a name, a vendor and a token, which is what `Secret` already was.
+
+**The target names the account** — `provider:<kind>:<accountId>`, built by
+`targetFor` and nowhere else. That is [FJS-1020](../../ISSUES.md#fjs-1020): keyed
+on the vendor alone, one install holds one DigitalOcean and whichever workspace
+registered it last has its token used to read everybody else's machines.
+`Server.providerId` holds the account and had been written by nothing.
+
+**`providers/compute/` is the boundary**, and it is deliberately not an entry in
+`providers/index.ts`: `provider:<kind>` was already how a service reached a
+cloud, so an interface beside it would be two owners of *talk to a vendor*.
+`digitalocean.ts` is the only file that knows a `/v2/` path, that a price is a
+float of dollars, or that a droplet's state is one of four words. `sink.ts` is
+DigitalOcean standing in for DigitalOcean, on 8122.
+
+**`secrets.verify` asks the vendor.** It set a flag before, and said so in a
+comment: *a verify that always says yes is worse than no verify, because the
+flag is then read as evidence.* For a provider key it now makes the cheapest
+authenticated read the cloud offers, and the answer carries `tested` so a caller
+can tell which of the two just happened.
+
+**The add-server screen offers an account**, and choosing one reads that cloud's
+regions and sizes — off the vendor, every time. The mock wrote DigitalOcean's
+price list out as three JSX constants and they were wrong before anybody read
+them. It does NOT offer to create a machine, because nothing here can yet.
+
+Two things the build found that the plan did not predict. Conduit answers every
+4xx as `client_error` on purpose, so `kind` cannot tell a deleted droplet from a
+malformed request — the connector reads `meta.status`, which `ComputeSend` now
+carries, and `res.error.kind === 'not_found'` had matched nothing at all. And
+`core/env.ts` snapshots `process.env` at module load, so pointing a connector at
+a stand-in with an environment variable works only until some other file imports
+the app first: three tests sent their reads to the real DigitalOcean before
+`registerAccount(…, { address })` existed.
+
+Suite 276 pass / 0 fail, +17 in `api/test/compute.test.ts`. Typecheck baseline
+unmoved at 14. **A database seeded before today must be reset** — `Secret` grew a
+column and a `@@check`.
+
+Two fixes fell out. `KINDS` in the secrets service was missing `notification`,
+so that kind could not be created through the API at all. And
+`api/test/notify.test.ts`'s *no definition states a type* passed only while no
+test file sorting before it built an app — the loader stamps the definitions it
+walks, and a module is cached per process; it imports unstamped now.
+
 ## 2026-09-07 — `ready` is deleted from `ServerStatus`
 
 `FJS-1021`. Three of the enum's nine values were the target of no move in

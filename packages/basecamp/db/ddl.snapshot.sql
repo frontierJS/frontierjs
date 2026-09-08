@@ -356,14 +356,18 @@ CREATE TABLE IF NOT EXISTS "secret" (
   "data" TEXT NOT NULL DEFAULT '{}',
   "isVerified" INTEGER NOT NULL DEFAULT 0,
   "createdBy" TEXT,
+  "providerKind" TEXT,
   "version" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
   CHECK ("kind" IN ('ssh_key', 'provider_key', 'registry_auth', 'tls_cert', 'notification', 'generic')),
+  CHECK ("providerKind" IN ('custom', 'hetzner', 'digitalocean')),
   UNIQUE ("workspaceId", "name"),
+  CHECK (kind != 'provider_key' OR providerKind IS NOT NULL),
   FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
 ) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_secret_workspaceId_providerKind" ON "secret" ("workspaceId", "providerKind") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_secret_deletedAt" ON "secret" ("deletedAt") WHERE "deletedAt" IS NULL;
 
 CREATE TABLE IF NOT EXISTS "api_key" (
@@ -410,6 +414,9 @@ CREATE TABLE IF NOT EXISTS "server" (
   "outpostVersion" TEXT,
   "outpostUrl" TEXT,
   "lastHeartbeatAt" TEXT,
+  "enrollTokenHash" TEXT,
+  "enrollExpiresAt" TEXT,
+  "outpostSecretId" TEXT,
   "plan" TEXT NOT NULL DEFAULT '{}',
   "actualSpecs" TEXT,
   "health" TEXT,
@@ -418,9 +425,9 @@ CREATE TABLE IF NOT EXISTS "server" (
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
-  CHECK ("status" IN ('pending', 'provisioning', 'installing', 'ready', 'online', 'unreachable', 'draining', 'stopped', 'destroyed')),
+  CHECK ("status" IN ('pending', 'provisioning', 'installing', 'online', 'unreachable', 'draining', 'stopped', 'destroying', 'destroyed')),
   CHECK ("role" IN ('general', 'build', 'database', 'gateway', 'worker')),
-  CHECK ("providerKind" IN ('custom', 'hetzner')),
+  CHECK ("providerKind" IN ('custom', 'hetzner', 'digitalocean')),
   UNIQUE ("workspaceId", "slug"),
   FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
 ) STRICT;

@@ -29,7 +29,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `AppType` | `container` · `cron` · `daemon` · `database` · `function` · `static` · `worker` |
 | `BackupDestination` | `local` · `s3` |
 | `BackupKind` | `manual` · `scheduled` |
-| `Capability` | `Environment.create` · `Environment.delete` · `Environment.update` · `Environment.variables` · `Server.create` · `Server.delete` · `Server.drain` · `Server.reboot` · `Server.undrain` · `Server.update` |
+| `Capability` | `Environment.create` · `Environment.delete` · `Environment.update` · `Environment.variables` · `Server.create` · `Server.delete` · `Server.destroy` · `Server.drain` · `Server.provision` · `Server.reboot` · `Server.undrain` · `Server.update` |
 | `ChannelKind` | `email` · `pagerduty` · `slack` · `webhook` |
 | `ComparisonOp` | `gt` · `gte` · `lt` · `lte` |
 | `DeployStatus` | `building` · `cancelled` · `deploying` · `failed` · `pending` · `pushing` · `rolled_back` · `success` |
@@ -41,11 +41,11 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `NotificationContext` | `AlertEvent` · `Deployment` · `JobRun` · `Workspace` |
 | `NotificationKind` | `alert_firing` · `alert_resolved` · `deploy_failed` · `deploy_success` · `job_failed` · `member_joined` · `weekly_digest` |
 | `ParamGenerator` | `random_hex_16` · `random_hex_32` · `random_hex_64` |
-| `ProviderKind` | `custom` · `hetzner` |
+| `ProviderKind` | `custom` · `digitalocean` · `hetzner` |
 | `RunStatus` | `failed` · `pending` · `running` · `success` · `timeout` |
 | `SecretKind` | `generic` · `notification` · `provider_key` · `registry_auth` · `ssh_key` · `tls_cert` |
 | `ServerRole` | `build` · `database` · `gateway` · `general` · `worker` |
-| `ServerStatus` | `destroyed` · `draining` · `installing` · `online` · `pending` · `provisioning` · `stopped` · `unreachable` |
+| `ServerStatus` | `destroyed` · `destroying` · `draining` · `installing` · `online` · `pending` · `provisioning` · `stopped` · `unreachable` |
 | `StepStatus` | `failed` · `pending` · `running` · `skipped` · `success` |
 | `UserKind` | `ai` · `bot` · `human` |
 | `UserStatus` | `active` · `pending_verification` · `suspended` |
@@ -1239,6 +1239,7 @@ table `secret` · db `main` · gate `5` · @@softDelete
 | `isVerified` | `Boolean` | no | `0` | — |
 | `kind` | `SecretKind` | no | `'generic'` | — |
 | `name` | `String` | no | — | **required on write** |
+| `providerKind` | `ProviderKind` | yes | — | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `version` | `Int` | no | `1` | — |
 | `workspace` | `Workspace` | — | — | relation |
@@ -1246,6 +1247,8 @@ table `secret` · db `main` · gate `5` · @@softDelete
 
 ```
 @@unique(name, workspaceId)
+@@index(workspaceId, providerKind)
+@@check(kind != 'provider_key' OR providerKind IS NOT NULL)
 @@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
 @@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
@@ -1264,6 +1267,8 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deletedAt` | `DateTime` | yes | — | — |
 | `dockerState` | `Json` | yes | — | — |
+| `enrollExpiresAt` | `DateTime` | yes | — | — |
+| `enrollTokenHash` | `String` | yes | — | @guarded |
 | `events` | `ServerEvent[]` | — | — | relation |
 | `health` | `Json` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
@@ -1272,6 +1277,7 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 | `labels` | `Json` | no | `'{}'` | — |
 | `lastHeartbeatAt` | `DateTime` | yes | — | — |
 | `name` | `String` | no | — | **required on write** |
+| `outpostSecretId` | `String` | yes | — | — |
 | `outpostUrl` | `String` | yes | — | — |
 | `outpostVersion` | `String` | yes | — | — |
 | `plan` | `Json` | no | `'{}'` | — |
@@ -1303,9 +1309,12 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 @@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 transition status.checkIn: installing, pending, unreachable → online @system
+transition status.destroy: draining, installing, online, pending, provisioning, stopped, unreachable → destroying @gate(5)
 transition status.drain: online → draining @gate(5)
+transition status.provision: pending → provisioning @gate(5)
 transition status.reboot: online, unreachable → pending
-transition status.reportDestroyed: draining, installing, online, pending, provisioning, stopped, unreachable → destroyed @system @gate(5)
+transition status.reportDestroyed: destroying → destroyed @system @gate(5)
+transition status.reportProvisioned: provisioning → installing @system @gate(5)
 transition status.reportRebuilding: draining, installing, online, pending, stopped, unreachable → provisioning @system @gate(5)
 transition status.reportRunning: installing, pending, provisioning, stopped, unreachable → online @system @gate(5)
 transition status.reportStopped: draining, installing, online, pending, provisioning, unreachable → stopped @system @gate(5)

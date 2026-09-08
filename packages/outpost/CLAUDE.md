@@ -11,6 +11,7 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
 | `src/config.js` | every environment variable, and the three that have no safe default |
 | `src/docker.js` | **the one place a command runs on the machine** — `createDocker` for containers, `createInspector` for volumes and disk |
 | `src/server.js` | the inbound half: the route table, and the signature every route but `/health` requires |
+| `src/vitals.js` | what the machine feels like — cpu, memory, disk, load, read from `/proc` and `statfs`. It REMEMBERS: cpu is a delta |
 | `src/report.js` | the outbound half: heartbeat, volume report, disk report — one signed POST, three callers |
 | `src/index.js` | the process: serve, start the timers, stop them on a signal |
 

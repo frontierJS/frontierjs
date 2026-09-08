@@ -29,7 +29,8 @@
     "db:seed": "bun db/seed.js",
     "db:tables": "sqlite3 db/basecamp.db '.schema'",
     "db:reset": "bun run stop; rm -rf db/basecamp.db db/basecamp.db-shm db/basecamp.db-wal db/basecamp-jobs.db db/basecamp-jobs.db-shm db/basecamp-jobs.db-wal db/audit",
-    "verify:screens": "bun web/test/verify-screens.mjs"
+    "verify:screens": "bun web/test/verify-screens.mjs",
+    "verify:provision": "bun web/test/verify-provision.mjs"
   },
   "dependencies": {
     "@frontierjs/auth": "workspace:*",

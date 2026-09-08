@@ -72,13 +72,44 @@ export interface ComputeMachine {
   region:           string | null
 }
 
+/**
+ * What a caller asks for when it wants a machine.
+ *
+ * `userData` is the whole install — cloud-init, carrying the enrollment token.
+ * It is the reason this app needs no SSH at all for a machine it made
+ * (`FJS-D241`), and it is also the reason `tags` matters: a create that
+ * succeeded at the vendor and crashed before recording the id leaves a machine
+ * nobody here knows about, billing forever, and the tag is the ONLY thread back
+ * to it. Every connector must send it.
+ */
+export interface MachineSpec {
+  name:     string
+  region:   string
+  size:     string
+  image:    string
+  userData: string
+  /** `server:<id>` — the `Server` row this machine is. Findable by a
+   *  reconciliation pass, which is what makes an orphan visible at all. */
+  tags:     string[]
+}
+
 /** The send half, bound to one target. Handed to a connector so a connector
  *  never holds `app` and can be exercised against a function in a test. */
 export type ComputeSend = (req: {
   method: 'GET' | 'POST' | 'DELETE'
   path:   string
   body?:  unknown
-}) => Promise<{ data: unknown; error?: { kind: string; message?: string } }>
+}) => Promise<{
+  data:   unknown
+  /** The HTTP status the target answered with, where it answered at all.
+   *  Carried because conduit's `kind` deliberately does not split 4xx by code
+   *  — every one of them is `client_error`, since none is retryable and none
+   *  says anything about the target's health. Which 4xx it was is the caller's
+   *  question, and for a machine read the difference between 404 and 400 is
+   *  *the vendor no longer has it* against *we asked wrongly*. */
+  status?: number
+  error?:  { kind: string; message?: string }
+}>
 
 /**
  * One cloud's dialect. Everything vendor-specific is behind this and nothing
@@ -99,6 +130,31 @@ export interface ComputeConnector {
   /** Does this token work? The call is deliberately the cheapest read the
    *  vendor offers, because it runs when somebody presses Verify. */
   verify(send: ComputeSend): Promise<boolean>
+
+  /**
+   * Make a machine. Answers the vendor's id for it, which is the only thing
+   * that has to survive: with the id the row can be finished later, and
+   * without it the machine is an orphan the tag has to find.
+   */
+  create(send: ComputeSend, spec: MachineSpec): Promise<{ providerServerId: string }>
+
+  /**
+   * Unmake one. Answers whether the vendor accepted the instruction — NOT
+   * whether the machine is gone, which is a later read. A vendor that has
+   * never heard of the id answers true, because *there is nothing to destroy*
+   * and *it is destroyed* are the same outcome and a destroy that cannot be
+   * retried to completion is worse than one that is idempotent.
+   */
+  destroy(send: ComputeSend, providerServerId: string): Promise<boolean>
+
+  /**
+   * Every machine at this account carrying one of our tags.
+   *
+   * The reconciliation read, and the only question that can find what nothing
+   * here recorded. It is a LIST rather than a lookup for exactly that reason:
+   * an orphan has no id on this side to look up with.
+   */
+  tagged(send: ComputeSend, tag: string): Promise<ComputeMachine[]>
 }
 
 // ─── The registry ────────────────────────────────────────────────────────
@@ -128,4 +184,33 @@ export function computeProviders(): { kind: ProviderKind; label: string }[] {
  */
 export function targetFor(kind: ProviderKind, accountId: string): string {
   return `provider:${kind}:${accountId}`
+}
+
+/**
+ * The tag every machine this app makes carries, whichever `Server` it is.
+ *
+ * TWO tags rather than one, because a vendor's tag filter is an EXACT match
+ * and not a prefix — DigitalOcean's `?tag_name=` is, and so is Hetzner's label
+ * selector for a full key. So `basecamp:server:<id>` alone can only be searched
+ * for by somebody who already knows the id, which is precisely what a
+ * reconciliation sweep does not have: an orphan is a machine with no row here.
+ *
+ * The fleet tag is what makes one sweep cover everything; the identity tag is
+ * what turns a found machine back into a row.
+ */
+export const FLEET_TAG = 'basecamp'
+
+/**
+ * The identity tag. One function, three readers — the create that applies it,
+ * the reconcile that reads it back, and the test that asserts it crossed. A tag
+ * spelled differently in any of the three is an orphan reconciliation cannot
+ * see, which is the failure the tag exists to prevent.
+ */
+export function machineTag(serverId: string): string {
+  return `basecamp:server:${serverId}`
+}
+
+/** Both, in the order a vendor lists them back. */
+export function machineTags(serverId: string): string[] {
+  return [FLEET_TAG, machineTag(serverId)]
 }

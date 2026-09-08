@@ -184,11 +184,22 @@ class SecretFactory extends Factory {
     const n     = uid()
     const kinds = ['ssh_key', 'registry_auth', 'provider_key']
     const kind  = kinds[n % 3]
+    // A provider key names the cloud it opens — the schema refuses one that
+    // does not, because a key with no vendor cannot become a Conduit target.
+    const providerKind = kind === 'provider_key' ? 'digitalocean' : null
     return {
-      name:       ['deploy-key', 'registry-auth', 'hetzner-token'][n % 3] + `-${n}`,
+      name:       ['deploy-key', 'registry-auth', 'digitalocean-token'][n % 3] + `-${n}`,
       kind,
-      data:       JSON.stringify({ note: 'seeded example — not a real credential', kind }),
-      isVerified: true,
+      providerKind,
+      // `token` is the field a provider descriptor's ref names. Seeded with a
+      // value that is NOT a token, and left unverified for that reason: Verify
+      // now asks the vendor, so a seeded key that claimed to be verified would
+      // be the one thing the flag is no longer allowed to be — an assertion
+      // nobody made.
+      data:       kind === 'provider_key'
+                    ? JSON.stringify({ token: 'seeded-example-not-a-real-token' })
+                    : JSON.stringify({ note: 'seeded example — not a real credential', kind }),
+      isVerified: kind !== 'provider_key',
     }
   }
 }

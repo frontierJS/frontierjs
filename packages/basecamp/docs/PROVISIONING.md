@@ -1,6 +1,6 @@
 ---
 id: provisioning
-status: proposed
+status: building — P0 and P1 done, P2 done 2026-09-08; P3–P5 open
 dated: 2026-09-07
 ---
 
@@ -197,21 +197,153 @@ what makes `/cloud-spend/` real for a provisioned row without a billing adapter.
 
 ## Phases
 
-**P0 — the register, first.** File the D2 defect (S2, `basecamp`) and record the
-ring-1 hearing as a ruling. Both are cheap and both go stale the moment code lands
-on top of them.
+**P0 — the register, first. — DONE.** [FJS-1020](../../../ISSUES.md#fjs-1020) is
+the D2 defect and [`FJS-D241`](../../../DECISIONS.md#fjs-d241) is the ring-1
+ruling. [FJS-1021](../../../ISSUES.md#fjs-1021) came out of the same reading and
+is why `ready` is gone from `ServerStatus`.
 
-**P1 — the account and the catalog. No machine is created.** `digitalocean` joins
-the enum; the connector, the descriptor and the sink land; `servers.catalog`
-answers; wizard steps 0 and 1 render vendor data; `sync()` is fixed to use the
-account. **Ships value alone** — an imported DO box can be synced, which it cannot
-be today.
+**P1 — the account and the catalog. No machine is created. — BUILT 2026-09-07.**
+`digitalocean` joined the enum; `providers/compute/` holds the boundary, the
+connector and a stand-in on 8122; `servers.catalog` and `servers.providers`
+answer; the add-server screen offers an account and renders that cloud's regions
+and sizes; `sync()` reaches an ACCOUNT. **It shipped value alone** — an imported
+DigitalOcean box can be synced, and `secrets.verify` asks the vendor instead of
+setting a flag.
 
-**P2 — create, enroll, destroy.** They are one phase and cannot be split: a machine
-that exists with no credential is worse than no machine, and one that cannot be
-destroyed is a bill. Adds the `server-provision` and `server-destroy` jobs, the
-enroll route, the events, the live progress, the typed confirmation, the deadline
-and the `fleet:reconcile` pass.
+**One deviation from this plan, and it is in § D2's favour.** An account needed
+somewhere to say WHICH cloud a token opens. This document said no new model, and
+that held — but the answer is a column, `Secret.providerKind`, reusing
+`ProviderKind` rather than growing a second vendor vocabulary on `SecretKind`.
+Two enums listing clouds is two lists to keep in step. The alternative was a
+vendor name inside `Secret.data`, which is `@encrypted`: *which DigitalOcean
+accounts does this workspace have* would then mean decrypting every secret in
+the workspace to answer.
+
+**P2 — create, enroll, destroy. — DONE 2026-09-08.** They are one phase and cannot
+be split: a machine that exists with no credential is worse than no machine, and
+one that cannot be destroyed is a bill.
+
+**Landed**: the guard (below); `provision`/`destroy`/`destroying`/`reportProvisioned`
+on `@@transitions` with `reportDestroyed` narrowed to `destroying` alone;
+`Server.enrollTokenHash`/`enrollExpiresAt`/`outpostSecretId`; the connector's
+`create`, `destroy` and `tagged`; a stand-in that makes and deletes droplets;
+`providers/compute/enrollment.ts` — the token, the hash, the constant-time
+compare and the cloud-init; `servers.provision` and `servers.provisionStep`;
+`server-provision.job.ts`; and `POST /servers/:id/enroll`.
+
+Then the rest of it: `servers.destroy` with its typed confirmation,
+`destroyStep` and `server-destroy.job.ts`; `servers.reconcile`; and the wizard's
+Provision button with the monthly cost beside it.
+
+And the three that closed it. **The size's PRICE is read from the vendor at
+provision and copied onto `plan`** — `vcpu` and `ramGb` are the two sums
+`view fleetByProvider` already made, and `priceMinor`/`currency` are what turn
+`/cloud-spend/`'s money half from a skeleton into a figure. It is the VENDOR's
+number, never the caller's: a client posting `priceMinor` would be reporting its
+own arithmetic back to the person paying the bill. The same read refuses a size
+the account is not offered, and a size that region does not have, at the moment
+somebody asked rather than inside a job.
+
+**The detail screen follows a machine that is being built.** The row is watched,
+so a status change arrives over the socket with nothing asking; the TRAIL is a
+custom method no announcement carries, so it is polled — and only while
+something is in flight. A poll rather than a subscription because there is
+nothing to subscribe to: giving `ServerEvent` a channel would broadcast an audit
+trail to every member of the workspace, which is a wider change than a progress
+strip should make.
+
+**`verify:provision` is the drive**, and it is registered in the root
+`CLAUDE.md` in both tables. 29 checks; § The drive below says what only it can
+ask.
+
+**One gap is left open on purpose.** The per-machine secret enrollment mints is
+verified by nothing: `requireOutpostSignature` still reads the fleet-wide
+`OUTPOST_SECRET`. That is P3, and it is stated in the test file rather than left
+for a reader to infer from a suite that looks complete.
+
+### Four things the drive found that no unit test could
+
+Every one of them was invisible to a green suite, and three were not in the code
+this phase wrote.
+
+**The enrollment route had never been reachable.** Junction's router parses
+`{id}`; `:id` registers a LITERAL path segment, so the route answered 405 to
+everything while the constant-time compare, the single-use burn and the
+fifteen-minute window behind it were all correct. Found by the first request
+that went down real HTTP — [`FJS-349`](../../../ISSUES.md#fjs-349)'s shape one
+layer out, and filed as [`FJS-1024`](../../../ISSUES.md#fjs-1024). A second
+defect sat in the same handler: a raw route's parsed body is `ctx.body`, and it
+was read as `ctx.data`, so the token was never read and every caller was refused
+identically.
+
+**A `@@check` that only the schema could satisfy.** Adding `providerKind` as
+required-on-a-provider-key gave `/secrets/` a kind somebody can choose and never
+save: the boundary refused correctly and the form had no field to fix it with.
+A check with no way to answer it is worse than no check.
+
+**A reactive dependency with an optional chain does not compile, and the cost is
+paid two layers away.** `$: (server?.status, …)` emits a watch signal the
+component never declares; the module then fails to LOAD; sierra's `_navigate`
+awaits that dynamic import and rejects; and `goto` is async with no caller
+awaiting it. What a person sees is a Provision button that does nothing —
+no console error, no failed request, the write already committed in the
+database. [`FJS-1025`](../../../ISSUES.md#fjs-1025) and
+[`FJS-1026`](../../../ISSUES.md#fjs-1026); the second is the one that cost the
+hour.
+
+**The seed already holds DigitalOcean provider keys**, so a drive taking the
+first account in the picker drives the whole rest of the file against somebody
+else's credential and fails at the vendor with an opaque 401. Choose by NAME.
+Two things came out of chasing that: the stand-in now says what authorization it
+refused, and `core/credentials.ts` names which of its six silent `null`s it
+answered — a credential that does not resolve is a send with no credential, and
+every one of those arrives at the caller as the vendor's own 401.
+
+### Three things the build measured
+
+**A capability model's grant table is hand-kept, and nothing held it to the
+schema.** `provision` and `destroy` landed, were gated, and refused every caller
+BY NAME — an owner included — because `ROLE_GRANTS` had never heard of them.
+There is a tripwire now, and the row that matters is the CONTROL beside it: the
+first version read `attributes[].name` where the parse says `kind`, found zero
+moves, and passed vacuously. A tripwire that fires on nothing is the failure it
+exists to catch, one level up. Measured with the two grants removed: it reds.
+
+**`@guarded` refused the write, and the refusal was right.** `provision` wrote
+`enrollTokenHash` through the caller's client and the Data boundary declined —
+that column is system-context on write as well as read. The row is the caller's
+write; the credential artifact is a second statement, as the application. The
+schema saying so is what made the split obvious.
+
+**A vendor's tag filter is an EXACT match, not a prefix.** `basecamp:server:<id>`
+alone can only be searched for by somebody who already knows the id, which is
+exactly what a reconciliation sweep does not have. Every machine carries two
+tags: `basecamp`, which makes one sweep cover everything, and the identity tag,
+which turns a found machine back into a row.
+
+### The guard, and why it is on the transport
+
+A connector's address falls back to the REAL vendor when nothing overrides it.
+For a catalog read that is three harmless 401s. For a create it is a droplet on
+somebody's real bill, and the way that happens is not a bug in a connector — it
+is a test, a script or a `bun run dev` that meant to be pointed at a stand-in and
+was not. P1 measured exactly that: three tests sent their reads to the real
+DigitalOcean because an environment variable did not apply in the order they ran,
+and *reads were all that saved it*.
+
+**So a POST or a DELETE is refused unless the process has said it means to**, and
+the check is in `sendVia` rather than in each connector method — which is what
+makes it complete: a spending call somebody adds next year is covered without
+anybody remembering it exists. Three ways through, and a GET needs none of them:
+
+- the target's address is **loopback** — a stand-in on this machine;
+- `NODE_ENV=production` — a deployed control plane, doing its job;
+- `ALLOW_CLOUD_SPEND=1` — a developer on their own account, on purpose.
+
+**The test is fail-closed and is not *is this a known vendor origin*.** That
+question has to enumerate every vendor correctly forever, and the one it gets
+wrong is the one that bills somebody. An address nobody recognizes is treated as
+real.
 
 **P3 — delete the fleet-wide fallback.** `requireOutpostSignature` reads the
 per-server secret only. This is the phase that actually closes what `core/hooks.ts`
@@ -229,27 +361,60 @@ path.
 
 ## The drive
 
-`verify:provision`, against the sink — **no network, no vendor account, no money**,
-the same arrangement `packages/outpost`'s own suite uses.
+`api/test/compute.test.ts` runs in `bun run test` — 56 checks against the
+stand-in, **no network, no vendor account, no money**. Two tiers,
+because they answer different questions: the DIALECT is graded against a
+hand-written `send` (given these bytes from DigitalOcean, what does this app
+believe), and the SEAM through the real app, where conduit resolves the token
+out of an `@encrypted` column and a real listener on a real port checks the
+header it wrote.
 
-What only it can ask:
+**Where the stand-in is, is a parameter and not an environment variable.**
+`core/env.ts` snapshots `process.env` at module load, so a variable set inside
+`beforeAll` is invisible once any other test file has imported the app — and
+three of these tests sent their reads to the real DigitalOcean until
+`registerAccount(…, { address })` existed. Nothing about import order can now
+change what a send reaches.
 
-- the wizard walks, and the row lands at `provisioning` with the account recorded;
-- the sink saw **one** create, carrying the size, region, image and the tag that
-  names the `Server` row;
-- a second dispatch of the same id creates **nothing** — asserted against the sink's
-  call count, not against a job count, because a job count is what the bug agrees
-  with;
-- an enroll token works once, and the replay is refused;
-- a signed heartbeat with the enrolled secret moves the row to `online`, and the
-  same heartbeat signed with the **fleet** secret is refused after P3;
-- a machine that never enrolls is failed by the deadline and says which step it
-  died at — paired with the machine that enrolls late but inside the window, or the
-  deadline is indistinguishable from a broken wait;
-- a caller at gate 4 is refused create and refused destroy, paired with the same
-  caller still reading the fleet, or the refusal proves nothing about the gate;
-- destroy moves the row and the sink saw the vendor delete;
-- reconcile finds a machine the sink has and this app does not, and **reports** it.
+`verify:provision` is the browser half — 29 checks, and it starts everything
+itself: a scratch database in a temp directory, the DigitalOcean stand-in, the
+API, the web server and Chrome.
+
+**Four things it can ask that nothing else can.**
+
+The picker is offering the **vendor's** list. Every unit test hands the connector
+a canned answer, so *the catalog reached a `<select>`* is a claim no test on
+either side can make — the service could answer correctly and the screen could
+render a hardcoded list, and both halves would be green. Asked as pairs: a region
+the vendor marks unavailable is not offered, and a size `nyc3` has and `fra1`
+does not disappears when the region moves.
+
+**The spend guard is not in the way of the thing it protects.** `sendVia` refuses
+a POST at anything but loopback, and a guard that also refused the stand-in would
+look exactly like a working one to every test that only asks about the refusal.
+This drive provisions for real, through it.
+
+**The machine arrives on its own.** The sink runs as a separate process with
+`DO_SINK_BOOT_MS` set, so a created droplet comes up a few seconds later the way
+a real one does — the row moves `provisioning → installing` because a job polled
+a vendor and found an address, with nothing in the browser asking, which is the
+whole claim the progress strip makes. `sinkBoot` stays the deterministic door the
+unit tests use; nothing in-process depends on a timer.
+
+**The enrollment route is reachable at all**, asked with a real POST carrying a
+wrong token and answered 401 rather than 405.
+
+Plus: a provider key that names no cloud is refused and the message names the
+field, paired with the same form saving once it does; the submit is refused while
+the machine is half chosen and offered once it is not; the cost line quotes the
+vendor's own price before anything is spent; and `/cloud-spend/` sums what was
+committed while still saying, in its own words, that this is not a bill.
+
+**What it does not cover, and where that is covered instead.** Destroy,
+reconcile, the gate ladder and the enrollment window are the unit file's — they
+need a clock stood at, a vendor answer arranged, or a caller at a standing, and
+none of the three is what a browser is for. The enrolled secret signing a
+heartbeat is nobody's yet: it is P3, because nothing verifies against it.
 
 Ports: the sink takes 8122 dev / 7122 in the drive, the next basecamp backend slot
 after the mail sink at 8121 (`packages/cli/core/ports.js`, project id 2).

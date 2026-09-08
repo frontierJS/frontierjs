@@ -30,9 +30,10 @@
   // from a machine nobody on this page is driving, which is the whole of what
   // this card shows. `servers.get()` answers the row itself, so this is the
   // plain form — no `composed:`, and the node IS the value.
-  let row     = null
-  let unwatch = null
-  let trend   = {}      // series name → number[], oldest first
+  let row      = null
+  let unwatch  = null
+  let trend    = {}     // series name → number[], oldest first
+  let readings = []     // the declaration, answered by `metrics` — see below
 
   async function load() {
     error = null
@@ -50,6 +51,7 @@
                                                { from: to - 24 * 3600 * 1000, to })
       // `null` for a series nothing has ever written, which is not the same as
       // an empty one and must not draw a flat line at zero.
+      readings = res?.readings ?? []
       trend = Object.fromEntries(
         Object.entries(res?.series ?? {})
               .map(([name, s]) => [name, s ? s.points.map(p => p.value) : null]))
@@ -63,25 +65,25 @@
   load()
   $.onDestroy(() => { unwatch?.(); row?.release() })
 
-  // Only the three the mock draws, and only when the outpost reported a number.
-  // Anything else the outpost sends is its own vocabulary and belongs on the
-  // server's screen, not on a card three inches wide.
+  // The reading list comes from the ANSWER, never from here. `metrics` returns
+  // it beside the series because it is the declaration — which keys this app
+  // keeps, and what a person calls each — and a card holding its own copy is a
+  // second place for it to be wrong, which is how two of the three bars drew
+  // nothing for a year (`FJS-1027`).
   //
-  // The key on `Server.health` and the series NAME are two spellings of one
-  // reading and are paired here rather than derived: the first is the outpost's
-  // vocabulary, the second is `core/server-metrics.ts`'s, and a card is the one
-  // place they have to meet.
-  const READINGS = [
-    { key: 'cpu',    label: 'CPU',    series: 'server.cpuPercent'    },
-    { key: 'memory', label: 'Memory', series: 'server.memoryPercent' },
-    { key: 'disk',   label: 'Disk',   series: 'server.diskPercent'   },
-  ]
-  $: bars = READINGS
-    .map(r => ({ ...r, value: Number(server?.health?.[r.key]), line: trend[r.series] }))
+  // Only the ones the outpost actually reported: anything else it sends is its
+  // own vocabulary and belongs on the server's screen, not on a card three
+  // inches wide.
+  $: bars = readings
+    .map(r => ({ ...r, value: Number(server?.health?.[r.key]), line: trend[r.name] }))
     .filter(r => Number.isFinite(r.value))
   // Two points is the fewest that is a line. One reading drawn as a sparkline
   // is a dot the reader takes for a flat trend.
   const hasLine = (b) => Array.isArray(b.line) && b.line.length > 1
+  // The reading states its unit; a bar prints a symbol. A card that printed `%`
+  // on whatever it was handed would label the first non-percentage reading
+  // wrongly and say nothing.
+  const symbol = (unit) => unit === 'percent' ? '%' : (unit ?? '')
   const when = (iso) => iso ? new Date(iso).toLocaleString() : 'never'
 </script>
 
@@ -101,7 +103,7 @@
     <!-- `cluster` brings its own gap from the token ladder; the only thing
          stated here is that the bar takes the room the sparkline does not. -->
     <div class="cluster" style="justify-content: space-between">
-      <div style="flex: 1"><Bar label={bar.label} value={bar.value} unit="%" /></div>
+      <div style="flex: 1"><Bar label={bar.label} value={bar.value} unit={symbol(bar.unit)} /></div>
       {#if hasLine(bar)}
         <Sparkline data={bar.line} width={64} height={20}
                    label={`${bar.label} over the last day`} />

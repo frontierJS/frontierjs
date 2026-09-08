@@ -43,11 +43,13 @@
 import { createService, NotFound, BadRequest, normalizeOrderBy, seriesKey, isStale, $ } from '@frontierjs/junction'
 import type { SortParam } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, ws, actor, findScoped, getScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing } from '../../core/resource.ts'
+import { db, ws, actor, findScoped, getScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, slugify } from '../../core/resource.ts'
 import { envRef }                from '../../core/credentials.ts'
-import { recordHealth, SERVER_SERIES } from '../../core/server-metrics.ts'
-import { connectorFor, targetFor, computeProviders } from '../../providers/compute/index.ts'
+import { recordHealth, SERVER_SERIES, SERVER_READINGS } from '../../core/server-metrics.ts'
+import { connectorFor, targetFor, computeProviders, machineTags, FLEET_TAG } from '../../providers/compute/index.ts'
 import { sendVia }               from '../../providers/compute/accounts.ts'
+import { mintEnrollToken, cloudInit } from '../../providers/compute/enrollment.ts'
+import { env }                   from '../../core/env.ts'
 import type { BasecampApp }      from '../../basecamp.types.ts'
 import type { TargetDescriptor } from '@frontierjs/conduit'
 import type { ProviderKind }     from '../../../../db/schema.d.ts'
@@ -156,6 +158,12 @@ export function createServersService(app: BasecampApp) {
       // workspace's accounts — never a token, which is `@encrypted` and absent
       // from the row `providers` reads.
       'catalog', 'providers',
+      // `provision` is a person spending money; `provisionStep` is the job it
+      // dispatched, and is internalOnly.
+      'provision', 'provisionStep',
+      // `destroy` is a person, with a typed confirmation; `destroyStep` is the
+      // job. `reconcile` reads a cloud and writes nothing.
+      'destroy', 'destroyStep', 'reconcile',
       { method: 'heartbeat', gate: 0 },
     ],
 
@@ -429,6 +437,320 @@ export function createServersService(app: BasecampApp) {
       return getScoped('server', 'Server')
     },
 
+    // ── provision — POST /servers  X-Service-Method: provision ───────
+    //
+    // Ask a cloud for a machine that does not exist yet.
+    //
+    // The ROW IS WRITTEN FIRST, at `provisioning`, and the vendor is called by
+    // a job. That order is the whole design: a create that called the cloud
+    // first and crashed before writing would leave a machine nobody here can
+    // name, and the row is what the enrollment token, the tag and every later
+    // step hang off.
+    //
+    // `@gate(5)` on the `provision` move is the authority — no role hook here,
+    // for the reason `drain` and `undrain` have none: the schema says it in the
+    // place `db/access.snapshot.md` prints.
+    async provision() {
+      const data = ($.data ?? {}) as Record<string, unknown>
+      const { name, role, accountId, region, size, image } = data as Record<string, string>
+
+      for (const [key, value] of Object.entries({ name, accountId, region, size, image }))
+        if (!value) throw new BadRequest(`${key} is required to provision a machine`)
+
+      const account = await db().secret.findFirst({ where: { id: accountId } })
+      if (!account) throw new NotFound(`Provider account '${accountId}' not found`)
+
+      const connector = connectorFor(account.providerKind as ProviderKind | null)
+      if (!connector)
+        throw new BadRequest(`'${account.name}' is not an account at a cloud Basecamp can speak to`)
+
+      // The catalog is read HERE, before anything is written, for two reasons
+      // that are one call. A size the vendor does not offer is refused with a
+      // sentence this app wrote, at the moment somebody asked, rather than
+      // inside a job where the failure is a row stuck at `provisioning` and a
+      // vendor's own wording in a log.
+      //
+      // And the PRICE is the vendor's. `/cloud-spend/` reports what a fleet
+      // costs, so the number behind it may not be one a caller sent: a client
+      // that posted `priceMinor` would be reporting its own arithmetic back to
+      // the person paying the bill. One extra call per provision, on a path
+      // that is already asking a cloud to build a computer.
+      const catalog = await connector.catalog(sendVia(app, targetFor(connector.kind, account.id)))
+      const chosen  = catalog.sizes.find(s => s.slug === size)
+      if (!chosen)
+        throw new BadRequest(
+          `'${size}' is not a size ${connector.label} offers this account`)
+      if (chosen.regions.length && !chosen.regions.includes(String(region)))
+        throw new BadRequest(
+          `${connector.label} does not offer '${size}' in ${region}`)
+
+      // The token exists for as long as it takes cloud-init to run. Its HASH is
+      // what the row keeps; the token itself goes into the machine's user_data
+      // and is never stored (`providers/compute/enrollment.ts`).
+      const enroll = mintEnrollToken()
+
+      // The ROW is the caller's write: their gate, their row policies, their
+      // name in the audit trail. The enrollment columns are not in it — they
+      // are `@guarded`, which is a system-context column on write as well as
+      // read, and the Data boundary refuses a scoped client that names one.
+      const server = await db().server.create({ data: {
+        name,
+        slug:            slugify(String(name)),
+        role:            role || 'general',
+        status:          'pending',
+        providerKind:    account.providerKind,
+        providerId:      account.id,
+        region,
+        registerMethod:  'provisioned',
+        // What was ASKED for, recorded before anything is spent. A machine that
+        // never came up is otherwise a row with a name and no answer to *what
+        // was this going to cost*.
+        //
+        // `vcpu` and `ramGb` are the two `view fleetByProvider` sums, and
+        // `priceMinor`/`currency` are what makes `/cloud-spend/` a number
+        // rather than a skeleton. Copied at the moment of purchase and never
+        // re-read: a vendor raising a price next quarter must not silently
+        // restate what this machine cost when it was bought, which is the same
+        // rule `example` holds for an order line.
+        plan:            {
+          size, image, region,
+          vcpu:       chosen.vcpu,
+          ramGb:      Math.round(chosen.memoryMb / 1024),
+          diskGb:     chosen.diskGb,
+          priceMinor: chosen.priceMinor,
+          currency:   chosen.currency,
+        },
+      }})
+
+      // The credential artifact, written AS THE APPLICATION. A second statement
+      // rather than a wider first one: what is being written here is not the
+      // caller's data at all, and the refusal above is the schema saying so.
+      await db().asSystem().server.update({
+        where: { id: server.id },
+        data:  { enrollTokenHash: enroll.hash, enrollExpiresAt: enroll.expiresAt },
+      })
+
+      // The move, not an update naming the column: the from-list, the authority
+      // and the compare-and-swap are one declaration.
+      await db().server.transition(server.id, 'provision')
+      await recordEvent(server.id, 'provision_requested',
+        `Provisioning a ${size} in ${region} at ${connector.label}`,
+        { requested_by: actor(), size, region, image })
+
+      // The token crosses to the job in the DISPATCH rather than being re-read,
+      // because the row holds only its hash and nothing can recover it.
+      await app.jobs.dispatch('server:provision',
+        { serverId: server.id, workspaceId: ws(), enrollToken: enroll.token },
+        // The job's PRIMARY KEY. A second dispatch for this machine is a no-op
+        // for all time — which is what makes a double-click cost one machine.
+        { id: `server:provision:${server.id}` })
+
+      return getScoped('server', 'Server', server.id as string)
+    },
+
+    // ── provisionStep — the job's own writes ─────────────────────────
+    //
+    // `internalOnly`: every one of these moves a machine or spends money, and
+    // the job is the only caller. It is one method rather than four because
+    // they share the read, the connector resolution and the event trail, and
+    // four methods would be four copies of all three.
+    async provisionStep() {
+      const id     = $.id as string
+      const step   = (($.data ?? {}) as Record<string, string>).step
+      const server = await getScoped('server', 'Server', id)
+
+      const connector = connectorFor(server.providerKind as ProviderKind | null)
+      if (!connector) throw new BadRequest('This machine names no cloud Basecamp can speak to')
+      const send = sendVia(app, targetFor(connector.kind, String(server.providerId)))
+
+      if (step === 'start') return server
+
+      if (step === 'create') {
+        const plan  = (server.plan ?? {}) as Record<string, string>
+        const token = (($.data ?? {}) as Record<string, string>).enrollToken
+
+        const made = await connector.create(send, {
+          name:     String(server.slug),
+          region:   String(plan.region ?? server.region),
+          size:     String(plan.size),
+          image:    String(plan.image),
+          tags:     machineTags(server.id as string),
+          userData: cloudInit({
+            serverId:    server.id as string,
+            basecampUrl: env.API_URL,
+            token,
+            outpostPort: 8180,
+          }),
+        })
+
+        // Recorded IMMEDIATELY. Everything between the vendor answering and
+        // this write is the window an orphan is born in, so it is one statement
+        // long and nothing else happens inside it.
+        const updated = await db().server.update({
+          where: { id },
+          data:  { providerServerId: made.providerServerId },
+        })
+        await recordEvent(id, 'provision_created',
+          `${connector.label} is building the machine`, { provider_server_id: made.providerServerId })
+        return updated
+      }
+
+      if (step === 'poll') {
+        const seen = await connector.machine(send, String(server.providerServerId ?? ''))
+
+        // Running AND addressable. A machine the vendor calls running with no
+        // address yet cannot be reached and cannot have enrolled, so moving on
+        // it would report an install that has not started.
+        if (seen?.status === 'running' && seen.ipAddress) {
+          const legal = (await db().server.transitions(server))
+            .some((t: { name: string }) => t.name === 'reportProvisioned')
+          if (legal) {
+            await db().server.update({ where: { id }, data: { ipAddress: seen.ipAddress } })
+            await db().server.transition(id, 'reportProvisioned', { system: true })
+            await recordEvent(id, 'provision_ready',
+              `The machine is up at ${seen.ipAddress} and is installing its outpost`,
+              { ip_address: seen.ipAddress })
+          }
+        }
+        return getScoped('server', 'Server', id)
+      }
+
+      if (step === 'timeout') {
+        await recordEvent(id, 'provision_timeout',
+          'The machine did not come up inside the deadline — it may still exist at the provider',
+          { provider_server_id: server.providerServerId })
+        return server
+      }
+
+      throw new BadRequest(`unknown provisioning step '${step}'`)
+    },
+
+    // ── destroy — POST /servers  X-Service-Method: destroy ───────────
+    //
+    // Unmake a machine this app made. `IDEAS/overview.md` says the reason in
+    // one line: provisioning is easy and DE-provisioning is where integrated
+    // platforms die, so it ships beside the create rather than after it.
+    //
+    // The row moves to `destroying` and the vendor's own answer is what lands
+    // `destroyed` — a machine this app believes is gone is one the cloud has
+    // confirmed is gone, never one a button claimed.
+    //
+    // **A typed confirmation** (`docs/VISION.md` constraint 5): the caller
+    // sends the machine's name back. Not a checkbox — the friction is the
+    // feature, and the thing typed is the thing destroyed, so a stale screen
+    // cannot confirm the wrong row.
+    async destroy() {
+      const id      = $.id as string
+      const server  = await getScoped('server', 'Server', id)
+      const confirm = (($.data ?? {}) as Record<string, string>).confirm
+
+      if (confirm !== server.name)
+        throw new BadRequest(
+          `Type the machine's name to destroy it — '${server.name}'. `
+          + 'This asks the provider to delete it and cannot be undone.')
+
+      const connector = connectorFor(server.providerKind as ProviderKind | null)
+      if (!connector)
+        throw new BadRequest('This machine was imported, not provisioned — remove it instead')
+
+      await db().server.transition(id, 'destroy')
+      await recordEvent(id, 'destroy_requested',
+        `Asked ${connector.label} to destroy this machine`, { requested_by: actor() })
+
+      await app.jobs.dispatch('server:destroy', { serverId: id, workspaceId: ws() },
+        { id: `server:destroy:${id}` })
+
+      return getScoped('server', 'Server', id)
+    },
+
+    // ── destroyStep — the destroy job's own write ────────────────────
+    async destroyStep() {
+      const id     = $.id as string
+      const server = await getScoped('server', 'Server', id)
+
+      const connector = connectorFor(server.providerKind as ProviderKind | null)
+      if (!connector) throw new BadRequest('This machine names no cloud Basecamp can speak to')
+
+      // Nothing to ask the vendor about. A machine that never got an id is one
+      // the create never finished, and it is destroyed by saying so.
+      if (!server.providerServerId) {
+        await db().server.transition(id, 'reportDestroyed', { system: true })
+        await recordEvent(id, 'destroy_finished',
+          'No machine was ever created at the provider', {})
+        return getScoped('server', 'Server', id)
+      }
+
+      const send = sendVia(app, targetFor(connector.kind, String(server.providerId)))
+      await connector.destroy(send, String(server.providerServerId))
+
+      await db().server.transition(id, 'reportDestroyed', { system: true })
+      await recordEvent(id, 'destroy_finished',
+        `${connector.label} has destroyed this machine`,
+        { provider_server_id: server.providerServerId })
+
+      return getScoped('server', 'Server', id)
+    },
+
+    // ── reconcile — GET /servers  X-Service-Method: reconcile ────────
+    //
+    // What does this cloud have that this app does not?
+    //
+    // The one question a lookup cannot ask. An orphan — created at the vendor,
+    // never recorded here, billing forever — has no id on this side to look up
+    // with, which is why every machine this app makes carries
+    // `basecamp:server:<id>` and why this is a LIST over that tag.
+    //
+    // **It reports and never deletes.** A machine it cannot account for might
+    // be a create that is still in flight, a row somebody removed while the
+    // vendor still had the machine, or a genuine leak — and the difference is a
+    // person's to make. A reconciliation that destroyed what it did not
+    // recognize would eventually destroy something real.
+    async reconcile() {
+      const accountId = ($.data as Record<string, unknown> | null)?.accountId ?? $.query.accountId
+      if (!accountId) throw new BadRequest('accountId is required — which provider account to sweep')
+
+      const account = await db().secret.findFirst({ where: { id: String(accountId) } })
+      if (!account) throw new NotFound(`Provider account '${accountId}' not found`)
+
+      const connector = connectorFor(account.providerKind as ProviderKind | null)
+      if (!connector)
+        throw new BadRequest(`'${account.name}' is not an account at a cloud Basecamp can speak to`)
+
+      const send = sendVia(app, targetFor(connector.kind, account.id as string))
+
+      // Every machine this app believes it has at this account, alive. A
+      // destroyed row is deliberately not here: its machine SHOULD be gone, so
+      // one still standing is exactly what this is looking for.
+      const rows = await db().server.findMany({
+        where: { providerId: account.id, status: { not: 'destroyed' } },
+      })
+      const known = new Map(
+        (rows as Record<string, unknown>[])
+          .filter(r => r.providerServerId)
+          .map(r => [String(r.providerServerId), r]),
+      )
+
+      // The tag PREFIX, which is what makes one sweep cover every machine
+      // rather than needing the id it is trying to discover.
+      const tagged = await connector.tagged(send, FLEET_TAG)
+
+      const orphans = tagged.filter(m => !known.has(m.providerServerId))
+      const missing = [...known.entries()]
+        .filter(([pid]) => !tagged.some(m => m.providerServerId === pid))
+        .map(([pid, row]) => ({ id: row.id, name: row.name, providerServerId: pid }))
+
+      return {
+        account:   { id: account.id, name: account.name, providerKind: account.providerKind },
+        // At the vendor, tagged as ours, and unknown here. Money being spent on
+        // nothing.
+        orphans,
+        // Known here and NOT at the vendor. Somebody destroyed it in the
+        // provider's own console, and this app still shows it.
+        missing,
+        checked:   tagged.length,
+      }
+    },
+
     // ── catalog — GET /servers  X-Service-Method: catalog ─────────────
     //
     // What one ACCOUNT can be asked for: regions, sizes and images, read off the
@@ -534,7 +856,13 @@ export function createServersService(app: BasecampApp) {
         out[name] = { unit: series.unit, stale: isStale(series.lastSeenAt), points }
       }
 
-      return { serverId: server.id, from, to, series: out }
+      // `readings` is the DECLARATION and `series` is what the store holds, and
+      // they are answered together because a card needs the first whether or
+      // not the second exists: a machine that has never reported disk still has
+      // a disk bar to draw off `Server.health`. Sending it also means the card
+      // holds no list of its own — it had one, and it was the third hand copy
+      // of a vocabulary two of whose copies were wrong (`FJS-1027`).
+      return { serverId: server.id, from, to, readings: SERVER_READINGS, series: out }
     },
 
     // ── heartbeat — POST /servers/:id  X-Service-Method: heartbeat ────
@@ -705,6 +1033,14 @@ export function createServersService(app: BasecampApp) {
         // discloses account names, which is the model's own read gate.
         catalog:   [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         logEvent:  [internalOnly()],
+        // Every step moves a machine or spends money, and the job is the only
+        // caller. `provision` itself carries no role hook: `@gate(5)` on the
+        // move is the authority, in the place the access snapshot prints it.
+        provisionStep: [internalOnly()],
+        destroyStep:   [internalOnly()],
+        // `reconcile` spends the workspace's token, like `catalog`. `destroy`
+        // carries no role hook: `@gate(5)` on the move is the authority.
+        reconcile:     [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         // heartbeat: HMAC auth at Conduit transport level — no session hook
       },
     },

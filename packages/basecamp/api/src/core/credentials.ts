@@ -65,23 +65,42 @@ export function envRef(name: string): string {
 export function createSecretResolver(db: BasecampDb): CredentialResolver {
   return {
     async get(ref: string): Promise<string | null> {
+      // The two early returns warn for the same reason the four below do: a
+      // credential that does not resolve is a send with no credential, and
+      // every one of these arrives at the caller as the vendor's own 401.
+      const miss = (why: string) => {
+        console.warn(`[credentials] ${ref} resolved to nothing — ${why}`)
+        return null
+      }
+
       const named = ENV_REF.exec(ref)
-      if (named) return (env as Record<string, unknown>)[named[1]] as string ?? null
+      if (named) {
+        const val = (env as Record<string, unknown>)[named[1]]
+        return typeof val === 'string' && val
+          ? val
+          : miss(`${named[1]} is not declared in core/env.ts, or is empty`)
+      }
 
       const m = REF.exec(ref)
-      if (!m) return null
+      if (!m) return miss('not a ref this app issues — expected `secret:<id>[#field]` or `env:<NAME>`')
       const [, id, field] = m
 
       const secret = await (db as any).asSystem().secret.findFirst({ where: { id } })
-      if (!secret?.data) return null
-      if (!field) return secret.data as string
 
+      if (!secret)       return miss('no Secret row with that id')
+      if (!secret.data)  return miss('the row has no data column — it may have been read without decryption')
+      if (!field)        return secret.data as string
+
+      let parsed: unknown
       try {
-        const val = JSON.parse(secret.data as string)?.[field]
-        return typeof val === 'string' ? val : null
+        parsed = JSON.parse(secret.data as string)
       } catch {
-        return null
+        return miss(`the data column is not JSON (${String(secret.data).slice(0, 12)}…)`)
       }
+      const val = (parsed as Record<string, unknown> | null)?.[field]
+      if (typeof val !== 'string')
+        return miss(`the document has no string field '${field}' (keys: ${Object.keys((parsed ?? {}) as object).join(', ') || 'none'})`)
+      return val
     },
   }
 }
