@@ -3,10 +3,10 @@ title: 05-view
 description: The chain of responsibility — what handles a request, in order
 ---
 
-## `fli project:view` — what is between the request and the row
+## `fli project:map --as=serve` — what is between the request and the row
 
 ```console
-fli project:view   # http://localhost:{{viewPort}}
+fli project:map --as=serve   # http://localhost:{{viewPort}}
 ```
 
 The other three tools answer questions about a moment. This one answers a
@@ -72,15 +72,15 @@ if (!await must(context, probe.fileContains({
 await ensureApi(context)
 
 const view = await startServer(context, {
-  name: 'pview',
-  argv: fliArgv('project:view', '--port', String(context.config.viewPort), '--no-open'),
+  name: 'pmap',
+  argv: fliArgv('project:map', '--as=serve', '--port', String(context.config.viewPort), '--no-open'),
   cwd:  app,
   port: context.config.viewPort,
   path: '/',
 })
 if (!await must(context, view.up, {
   likely:    `something already holds ${context.config.viewPort}`,
-  reproduce: `cd ${app} && fli project:view --port ${context.config.viewPort}`,
+  reproduce: `cd ${app} && fli project:map --as=serve --port ${context.config.viewPort}`,
 })) return
 
 const at = (path) => `http://127.0.0.1:${context.config.viewPort}${path}`

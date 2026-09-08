@@ -527,7 +527,7 @@ describe('a @capability that contradicts its neighbor is refused at parse', () =
 // ─── the grant column ─────────────────────────────────────────────────────────
 //
 // Step 4. Enforcement asks *does this caller hold X*; this is where an X comes
-// from. `Capability` is synthesised from the schema's own surface (`FJS-D147`),
+// from. `Capability` is synthesized from the schema's own surface (`FJS-D147`),
 // which is the whole implementation: an enum ARRAY is already a JSON column,
 // already validated member by member at the write, already in `$defs` with its
 // values and already on `db.$enums` — so the typo refusal, the storage and the
@@ -544,7 +544,7 @@ model Role {
 }
 `
 
-describe('Capability is synthesised from the schema', () => {
+describe('Capability is synthesized from the schema', () => {
   it('is the derived set, and reaches $enums so a picker has a list to render', async () => {
     const db = await createClient({ schema: GRANTS, db: ':memory:' })
     expect(db.$enums.Capability).toEqual([
@@ -565,7 +565,7 @@ describe('Capability is synthesised from the schema', () => {
   it('cannot be declared by hand, because two answers to one name is the bug it removes', () => {
     const r = parse(`enum Capability { a b }\nmodel S { id Int @id  n String  @@capabilities }`)
     expect(r.valid).toBe(false)
-    expect(r.errors.join('\n')).toMatch(/synthesised by litestone/)
+    expect(r.errors.join('\n')).toMatch(/synthesized by litestone/)
   })
 
   it('refuses a grant column when nothing declares the grid, rather than shipping a column nobody can write', () => {

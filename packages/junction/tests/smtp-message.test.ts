@@ -186,7 +186,7 @@ describe('retryable comes from the reply code', () => {
     // In process this used to grade a MOCK: `email.test.ts` replaced the smtp
     // shim, and there is only one `SmtpError` class, so `.retryable` came back
     // undefined inside the suite and true alone.
-    expect(new SmtpError('greylisted', 450).retryable).toBe(true)
+    expect(new SmtpError('graylisted', 450).retryable).toBe(true)
     expect(new SmtpError('no mailbox', 550).retryable).toBe(false)
     expect(new SmtpError('socket closed').retryable).toBe(true)
   })

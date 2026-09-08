@@ -1989,7 +1989,7 @@ async function modelVersionField(client: unknown, accessor: string): Promise<str
  * The map is keyed by MODEL name and a service names an accessor, so the
  * candidates are walked the way every other name crossing this boundary is.
  *
- * Not memoised, deliberately: `ctx.locals.db` is a fresh scoped client per
+ * Not memoized, deliberately: `ctx.locals.db` is a fresh scoped client per
  * request, so a cache keyed on it would never hit — and the only caller runs
  * when a request actually carried the directive.
  */
@@ -2091,7 +2091,7 @@ function warnOnce(key: string, message: string): void {
 // `GET /products?bogusColumn=7` answered `200 {"data":[],"total":0}`. So did a
 // misplaced directive (`?limit=100`, where limit belongs on `$limit`), and so
 // did a genuinely empty table. Three different situations, one answer, no error
-// — it cost an hour in `example/`'s prerendered catalogue, which fetched,
+// — it cost an hour in `example/`'s prerendered catalog, which fetched,
 // resolved, rendered "0 of 0 products" and reported nothing wrong (`FJS-109`).
 //
 // Litestone knew the whole time. It validates where-keys already, rejects them
@@ -3454,7 +3454,7 @@ export function announceDataWrites(
       }
     }
     const key = model.toLowerCase()
-    // The singular fallback covers a model whose name pluralises irregularly
+    // The singular fallback covers a model whose name pluralizes irregularly
     // in a way no service name reached — `singularize` and `accessorCandidates`
     // are the same table, so this is one more lookup and not a second rule.
     const hit = index.get(key) ?? index.get(singularize(key).toLowerCase())

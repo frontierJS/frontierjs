@@ -193,7 +193,7 @@ pre code[language] {
 }
 
 /*
- * Every token element is neutralised first. <b>, <em>, <strong>, <i>,
+ * Every token element is neutralized first. <b>, <em>, <strong>, <i>,
  * <sup>, <u>, <ins>, <del> and <dfn> all carry a default weight, slant,
  * decoration or baseline shift, and glow uses them as color carriers
  * rather than for their usual emphasis — so italic strings, superscript

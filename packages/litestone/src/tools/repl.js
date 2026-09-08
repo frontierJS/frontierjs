@@ -113,7 +113,7 @@ export function startRepl({ db, sys, standing, accessors = [], hints = [], out =
 // ─── evaluating ───────────────────────────────────────────────────────────────
 //
 // Wrapped in an async function so top-level await works and a bare expression
-// still answers its value. A single expression is parenthesised so `db.x.count()`
+// still answers its value. A single expression is parenthesized so `db.x.count()`
 // returns rather than being a statement; anything with a newline or a `;` or a
 // leading keyword is a body, where a `return` is the caller's to write.
 

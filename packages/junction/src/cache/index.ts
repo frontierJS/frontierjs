@@ -59,7 +59,7 @@ function unrepresentable(v: unknown): string | null {
     case '[object Set]':    return 'a Set'
     case '[object RegExp]': return 'a RegExp'
   }
-  // A typed array serialises to {"0":…} and reads back as a plain object.
+  // A typed array serializes to {"0":…} and reads back as a plain object.
   if (ArrayBuffer.isView(v) || tag === '[object ArrayBuffer]') return tag.slice(8, -1)
   return null
 }

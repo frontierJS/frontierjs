@@ -53,7 +53,7 @@ is LEGAL.** An enum member may carry `@label("…")`, and the parser gets there 
 calling `parseFieldAttribute` and refusing everything else — so the arm the
 coverage test scrapes is the FIELD arm, and no source scan can see the third
 position. A `positions` axis now states it, checked by DRIVING the parser rather
-than reading it. The lesson generalises past this row: a completeness test built
+than reading it. The lesson generalizes past this row: a completeness test built
 on reading source is blind wherever the parser reuses a routine and filters
 afterwards.
 
@@ -95,7 +95,7 @@ it a route rather than a lint: in Studio the word is a button onto its card, in
 Four false positives, each found by pointing it at `example` and `basecamp`,
 each teaching the check something true — `@guarded` is an access lock and not
 at-rest protection; a `@transient` value has no column to be at rest in; nothing
-in a schema distinguishes a catalogue from a possession; a `@@trait` use is
+in a schema distinguishes a catalog from a possession; a `@@trait` use is
 ERASED at parse, so the repeated-columns check has to compare against the
 declarations that survive. Two `likely` findings stand on basecamp,
 [FJS-410](../ISSUES.md#fjs-410) and [FJS-432](../ISSUES.md#fjs-432).

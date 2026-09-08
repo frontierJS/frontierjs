@@ -55,7 +55,7 @@ describe('the requests row', () => {
     expect(tab.el.textContent).toContain('onmouseover')
   })
 
-  test('an unrecognised transport takes a stated class, not the value it carried', () => {
+  test('an unrecognized transport takes a stated class, not the value it carried', () => {
     const buf = createBuffer()
     buf.addRequest(req({ transport: 'http probes' }))
     const tab = createRequestsTab(buf, {})

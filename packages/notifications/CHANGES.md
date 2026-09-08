@@ -77,7 +77,7 @@ serve — a file that must be renamed while the rows keep the old value — and 
 divergence is reported, because a deliberate rename and a typo are
 indistinguishable from the loader.
 
-**A formatter may be async, which retires a whole shape.** `materialise()` now
+**A formatter may be async, which retires a whole shape.** `materialize()` now
 awaits, so `email:` can render a template where it is read. Under the class,
 `toEmail()` was synchronous, so `example`'s order confirmation needed a
 `static async build()` behind a private constructor holding the rendered

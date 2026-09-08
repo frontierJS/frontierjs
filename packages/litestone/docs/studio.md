@@ -255,7 +255,7 @@ rule told basecamp to delete nine indexes that are the better ones, because on a
 every UNIQUE in full — so the short one is a smaller partial index rather than a
 duplicate. The exemption is in the rule and pinned by a test. The suggestions cost four
 more: a `@guarded` credential is not plaintext to a caller, a `@transient` one
-has no column at all, a catalogue legitimately lets every caller read every row,
+has no column at all, a catalog legitimately lets every caller read every row,
 and a `@@trait` use is ERASED at parse — so the check for repeated columns had
 to compare against the trait DECLARATIONS, which survive.
 

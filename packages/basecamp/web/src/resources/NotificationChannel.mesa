@@ -7,7 +7,7 @@
   //
   // `model:` is stated because this is the irregular case the registry warns
   // about: the service is `channels` and the model is `NotificationChannel`,
-  // which regular English pluralisation does not bridge. Without it
+  // which regular English pluralization does not bridge. Without it
   // modelNameFor() looks for `Channel`, misses, warns, and degrades to a bare
   // make() — validation, labels and field rules all silently stop being
   // schema-derived.

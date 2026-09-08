@@ -310,7 +310,7 @@ function hotFiles(issues, card) {
   return [...counts.values()].sort((a, b) => b.count - a.count || a.file.localeCompare(b.file))
 }
 
-// The deck, memoised on the model. The hub's register links every row to the
+// The deck, memoized on the model. The hub's register links every row to the
 // plate that owns it, and dealing 23 cards per row is 106 deals for one table.
 const DECK = new WeakMap()
 
@@ -319,7 +319,7 @@ function deck_(model) {
   return DECK.get(model)
 }
 
-// Every file any open row names, for the marks on topic tiles. Memoised on the
+// Every file any open row names, for the marks on topic tiles. Memoized on the
 // model: a dossier asks per topic, and 51 topics is 51 walks of the register.
 const NAMED = new WeakMap()
 

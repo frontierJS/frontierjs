@@ -1,4 +1,4 @@
-// src/fake.js — deterministic value catalogue for generated test data
+// src/fake.js — deterministic value catalog for generated test data
 //
 // Not a faker clone. Just enough vocabulary that a generated row reads like a row
 // instead of `Name a4f2`, with two hard rules:
@@ -65,7 +65,7 @@ const TLDS = ['example.com', 'example.org', 'test.dev', 'sample.io']
 
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1)
 
-/** Sentence of `n` words from the catalogue. */
+/** Sentence of `n` words from the catalog. */
 function sentence(rng, n = 8) {
   const words = Array.from({ length: n }, () => rng.pick(WORDS))
   return cap(words.join(' ')) + '.'
@@ -87,7 +87,7 @@ export const FAKE = {
   tld:       (rng) => rng.pick(TLDS),
 }
 
-// Field names that map to a catalogue entry. Matched case-insensitively against
+// Field names that map to a catalog entry. Matched case-insensitively against
 // the field name with separators stripped, so `first_name`, `firstName` and
 // `FirstName` all land on the same generator.
 const FIELD_MAP = {
@@ -106,7 +106,7 @@ const FIELD_MAP = {
   company:      FAKE.company,
   companyname:  FAKE.company,
   organization: FAKE.company,
-  organization: FAKE.company,
+  organisation: FAKE.company,   // spelling-exempt — an app's own column name, not our prose
   street:       FAKE.street,
   address:      FAKE.street,
   addressline1: FAKE.street,
@@ -129,7 +129,7 @@ const FIELD_MAP = {
 }
 
 /**
- * A catalogue value for a field name, or null when nothing fits — the caller then
+ * A catalog value for a field name, or null when nothing fits — the caller then
  * falls back to its own `Label seq` output. Returns null without an rng, which is
  * what keeps unseeded factories deterministic and unchanged.
  */
@@ -140,7 +140,7 @@ export function fakeFor(fieldName, rng) {
   return fn ? fn(rng) : null
 }
 
-/** Human-readable email built from the catalogue — `ada.silva3@example.com`. */
+/** Human-readable email built from the catalog — `ada.silva3@example.com`. */
 export function fakeEmail(rng, seq) {
   if (!rng) return null
   return `${FAKE.firstName(rng).toLowerCase()}.${FAKE.lastName(rng).toLowerCase()}${seq}@${FAKE.tld(rng)}`

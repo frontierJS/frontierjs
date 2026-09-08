@@ -2,7 +2,7 @@
 #
 # It is not in the API's image: a public site is released when its content
 # changes, which is not when the API is, and it stays up when the API is down —
-# a visitor still gets the catalogue, and only the live prices go quiet.
+# a visitor still gets the catalog, and only the live prices go quiet.
 #
 # The build needs the DATABASE, which is the one thing about a prerendered site
 # that surprises people: `load()` runs at build time through `api/src/core/db.ts`, so the

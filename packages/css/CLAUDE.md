@@ -57,7 +57,7 @@ guide/decisions.js the Learn wizard's routing tree — questions and near
                    this file holds only what the reference cannot
                    The other Learn page is `Why this one` — the audit against
                    seven other frameworks, inside guide.js
-guide/search.js    the ⌘K search: tokeniser, ranker, and the term entries built
+guide/search.js    the ⌘K search: tokenizer, ranker, and the term entries built
                    from vocabulary.js. Also owns `slugify` — the section id and
                    the href a result builds to it must be one function
 vocabulary.json    GENERATED from vocabulary.js, committed, shipped. The
@@ -293,7 +293,7 @@ test/run.js        the harness
   that one rule is enough, and scoping it would quietly weaken it. Nothing
   else in the guide uses `.brand`. `comparePage.init` then measures that
   button's contrast in the reader's browser; the colors must go through a
-  canvas, because Chrome serialises the derived fill as `color(xyz-d65 …)`
+  canvas, because Chrome serializes the derived fill as `color(xyz-d65 …)`
   and reading those floats as 8-bit channels is wrong for every color.
 
 - **A theme ships no selector, so every look is a token — and three of the

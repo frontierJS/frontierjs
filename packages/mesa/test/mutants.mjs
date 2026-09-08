@@ -14,7 +14,7 @@
 // DECLARATIVE surface instead. Here that surface is the vocabulary itself — the
 // ~90 runtime functions the compiler emits calls to, read out of `compiler.js`
 // rather than listed by hand, so a function the compiler stops emitting leaves
-// the catalogue on its own.
+// the catalog on its own.
 //
 // One mutant per name: the export is replaced with a function that does nothing
 // and answers `undefined`. The name is still exported, so every `toContain`
@@ -34,7 +34,7 @@
 //
 //   node test/mutants.mjs                  every emitted name
 //   node test/mutants.mjs bindText render  just these
-//   node test/mutants.mjs --list           the catalogue, no runs
+//   node test/mutants.mjs --list           the catalog, no runs
 
 import { readFileSync, writeFileSync, unlinkSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
@@ -46,7 +46,7 @@ const RUNTIME = path.join(DIR, 'src/runtime.js')
 const MUTANT = path.join(DIR, 'src/_mutant-runtime.js')
 const CONFIG = path.join(DIR, '_mutant.vitest.config.js')
 
-// ─── the catalogue ────────────────────────────────────────────────────────────
+// ─── the catalog ────────────────────────────────────────────────────────────
 
 /** Every `$$runtime.<name>` the compiler can emit, read off the compiler. */
 function emittedNames() {
@@ -138,16 +138,16 @@ function suiteFails() {
 const args = process.argv.slice(2)
 const emitted = emittedNames()
 const exported = exportedNames()
-const catalogue = emitted.filter((n) => exported.has(n))
+const catalog = emitted.filter((n) => exported.has(n))
 const skipped = emitted.filter((n) => !exported.has(n))
 
 if (args.includes('--list')) {
-  console.log(`${catalogue.length} mutable names:\n  ${catalogue.join(' ')}`)
+  console.log(`${catalog.length} mutable names:\n  ${catalog.join(' ')}`)
   console.log(`\n${skipped.length} emitted but not a top-level export, so not mutable:\n  ${skipped.join(' ')}`)
   process.exit(0)
 }
 
-const wanted = args.length ? catalogue.filter((n) => args.includes(n)) : catalogue
+const wanted = args.length ? catalog.filter((n) => args.includes(n)) : catalog
 if (!wanted.length) {
   console.error(`no such name. Try --list.`)
   process.exit(1)

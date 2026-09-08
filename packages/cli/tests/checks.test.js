@@ -171,7 +171,7 @@ const CLEAN = {
   // publish check taps, and declares no `publishes:`.
   'site/config/sierra.config.js':
     "export default {\n  target: 'static',\n  routesDir: 'src/routes',\n  db: '../api/src/core/db.ts',\n}\n",
-  'site/src/routes/index.mesa':   '---\nrender: static\n---\n<h1>catalogue</h1>\n',
+  'site/src/routes/index.mesa':   '---\nrender: static\n---\n<h1>catalog</h1>\n',
   'site/src/routes/index.meta.js': 'export async function load() { return { products: [] } }\n',
 }
 
@@ -549,7 +549,7 @@ describe('resources', () => {
 
   test('a filename that is neither a model nor its own service noun is an error', () => {
     // The rule cannot tell a misnamed file from a legitimate Resource over no
-    // model when the service pluralises regularly from the filename — and it
+    // model when the service pluralizes regularly from the filename — and it
     // should not try, because both are correct shapes. What it CAN say is that
     // this file matches neither.
     const root = tree('r-name', { ...CLEAN, 'web/src/resources/Prospect.mesa': resource('pipeline') })
@@ -559,7 +559,7 @@ describe('resources', () => {
     expect(findings[0].message).toMatch(/the service is 'pipeline'/)
   })
 
-  test('a Resource over no model may take its service noun, singularised', () => {
+  test('a Resource over no model may take its service noun, singularized', () => {
     // basecamp's `Hub.mesa` is `createResource('hub')` and is correct — judging
     // against the schema alone refuses every cross-cutting resource an app has.
     const root = tree('r-noun', { ...CLEAN, 'web/src/resources/Hub.mesa': resource('hub') })
@@ -632,7 +632,7 @@ view revenueByStatus {
     const root = tree('r-comment', {
       ...CLEAN,
       'web/src/resources/Lead.mesa':
-        `<script module>\n  // The escape a service that does not pluralise takes:\n` +
+        `<script module>\n  // The escape a service that does not pluralize takes:\n` +
         `  //   createResource('lenses', { model: 'Lens' })\n` +
         `  import { createResource } from '@frontierjs/sierra/junction'\n` +
         `  export const leads = createResource('leads')\n</script>\n`,

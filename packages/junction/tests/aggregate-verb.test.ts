@@ -14,7 +14,7 @@
 //   2. what it REFUSES, each refusal paired with the legal shape one key away
 //   3. it is `find`'s twin — the same where, the same hooks, the same clamp
 //
-// The third is not decoration. An aggregate summarises rows it does not return,
+// The third is not decoration. An aggregate summarizes rows it does not return,
 // so a leak there is a NUMBER that looks perfectly ordinary.
 
 import { describe, test, expect } from 'bun:test'
@@ -201,7 +201,7 @@ describe('it is find’s twin', () => {
 
 describe('the numbers are computed over the rows the caller may READ', () => {
   // The assertion nothing else can make, and the reason the verb is graded at
-  // all: an aggregate summarises rows it does not return, so a leak here is a
+  // all: an aggregate summarizes rows it does not return, so a leak here is a
   // NUMBER that looks perfectly ordinary. A count over everybody's rows and a
   // count over mine are both plausible integers.
   const OWNED = `

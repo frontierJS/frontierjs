@@ -42,7 +42,7 @@ export function createInventoryService() {
     // does not re-check the gate — publishing these would hand every connected
     // browser rows the Data boundary refuses them. The shelf itself DOES
     // announce: `move()` writes ProductVariant, junction taps Litestone's write
-    // events, and `product-variants updated` reaches every open catalogue.
+    // events, and `product-variants updated` reaches every open catalog.
     //
     // That is why `receive` and `adjust` may still set `$.dispatch` to the
     // movement they wrote: with no channel it reaches the in-process bus and

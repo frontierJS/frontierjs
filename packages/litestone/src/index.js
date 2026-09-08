@@ -18,7 +18,7 @@ export { generateDDL, generateDDLForDatabase,
          generateIndexDDL,
          detectM2MPairs, generateJoinTableDDL }  from './core/ddl.js'
 export { introspect, buildPristine, buildPristineForDatabase, diffSchemas,
-         generateMigrationSQL, summariseDiff,
+         generateMigrationSQL, summarizeDiff,
          splitStatements, checksum }             from './core/migrate.js'
 export { create, apply, status, verify,
          listMigrationFiles, unmatchedMigrationFiles,

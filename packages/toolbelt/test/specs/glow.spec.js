@@ -92,7 +92,7 @@ test('glow: an ampersand is escaped, in a token and between tokens', function ()
   })
 })
 
-test('glow: a language that does not tokenise a bracket still escapes it', function () {
+test('glow: a language that does not tokenize a bracket still escapes it', function () {
   /*
    * The slice BETWEEN two tokens is as raw as a token is. It passed for years
    * because `<`, `>` and `&` are punctuation rules in most languages and so

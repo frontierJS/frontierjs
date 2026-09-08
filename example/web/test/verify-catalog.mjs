@@ -1,7 +1,7 @@
 /**
- * web/test/verify-catalogue.mjs — the catalogue, in a real browser.
+ * web/test/verify-catalog.mjs — the catalog, in a real browser.
  *
- * Started by `bun run verify:catalogue`. Unlike the other drives this one
+ * Started by `bun run verify:catalog`. Unlike the other drives this one
  * starts BOTH servers itself and stops them again, because the thing it proves
  * spans them: a `File` column stores a reference in SQLite, the API serves the
  * bytes out of its own object storage, and the browser has to end up with an
@@ -174,7 +174,7 @@ function check(name, actual, expected) {
   else    { fail++; console.log(`  ✗ ${name}\n      got      ${JSON.stringify(actual)}\n      expected ${typeof expected === 'function' ? '(predicate)' : JSON.stringify(expected)}`) }
 }
 
-console.log('\n  catalogue — the API')
+console.log('\n  catalog — the API')
 
 const products = await (await fetch(`${API}/api/products?$limit=100`)).json()
 const variants = await (await fetch(`${API}/api/product-variants?$limit=200`)).json()
@@ -197,12 +197,12 @@ const dup = await fetch(`${API}/api/product-variants`, {
 })
 check('anonymous variant write refused (@@gate)', dup.status, 401)
 
-console.log('\n  catalogue — the products list')
+console.log('\n  catalog — the products list')
 
 await goto('/products/', '.product-row', 10)
 
 // Ten rows, not thirteen: the page size is a PREFERENCE, set on /settings/ and
-// defaulting to 10, so a full catalogue is two pages. The pager is what says
+// defaulting to 10, so a full catalog is two pages. The pager is what says
 // all thirteen arrived.
 check('one page of rows renders', await evaluate(`document.querySelectorAll('.product-row').length`), 10)
 check('the pager counts all 13',
@@ -219,7 +219,7 @@ check('a retired product is pilled',
 check('an out-of-stock family is pilled',
       await evaluate(`[...document.querySelectorAll('.product-row')].some(r => r.textContent.includes('out of stock'))`), true)
 
-console.log('\n  catalogue — one product')
+console.log('\n  catalog — one product')
 
 await goto('/products/1/', 'table.grid tbody tr', 4)
 
@@ -269,7 +269,7 @@ check('clicking a swatch swaps the hero', before !== after && after.length > 0, 
 // and the row policies and `@accept` all on it. A signed URL or an upload route
 // would be a second door with its own answer to who may write.
 
-console.log('\n  catalogue — a photograph somebody uploaded')
+console.log('\n  catalog — a photograph somebody uploaded')
 
 const staffToken = (await (await fetch(`${API}/api/auth/login`, {
   method: 'POST', headers: { 'content-type': 'application/json' },
@@ -400,7 +400,7 @@ await settleImages('.swatch img')
 check('…and the new photograph decoded in the browser that sent it',
       await evaluate(`[...document.querySelectorAll('.swatch img')].every(i => i.naturalWidth > 0)`), true)
 
-// Put the catalogue back. `19 photographs seeded` above counts live rows, and
+// Put the catalog back. `19 photographs seeded` above counts live rows, and
 // this drive added two.
 for (const stale of ((await (await fetch(`${API}/api/product-images?position=99&$limit=50`, { headers: asStaff })).json()).data ?? []))
   await fetch(`${API}/api/product-images/${stale.id}`, { method: 'DELETE', headers: asStaff })

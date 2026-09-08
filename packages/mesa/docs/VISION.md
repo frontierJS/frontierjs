@@ -548,7 +548,7 @@ $: cities, () => { selectedCity = cities[0] }    // only resets when you say so
 ```
 
 Note that under RULE 60 the watch+handler does not fire on mount, so the initial value
-comes from the `let` initialiser rather than from the handler.
+comes from the `let` initializer rather than from the handler.
 
 ---
 
@@ -980,7 +980,7 @@ that the compiler interprets structurally.
 {/each}
 ```
 
-The `(key)` expression is optional and must be the last parenthesised group after
+The `(key)` expression is optional and must be the last parenthesized group after
 the item binding. **With no key a list is keyed by INDEX**, which never collides
 and therefore always renders the array it was given; what it gives up is node
 identity across a reorder — a moved item is rebound into the node already at
@@ -1180,7 +1180,7 @@ name at compile time now.
 ```
 
 **When the caller needs a value from the child, the hole is a snippet prop**,
-which is a parameterised slot and the only form that can take parameters:
+which is a parameterized slot and the only form that can take parameters:
 
 ```html
 <!-- Tooltip.mesa -->
@@ -1206,7 +1206,7 @@ value to the caller, or handing slot content on to a deeper child as a snippet.
 
 > **RULE 35a** — `<slot />` is the preferred mechanism for receiving
 > unattributed content. The `export let children` + `{@render children?.()}`
-> pattern is the form for content the child must parameterise, and is not
+> pattern is the form for content the child must parameterize, and is not
 > legacy for that purpose.
 
 > **RULE 35b** — `<slot>` takes no attribute but `name`. Any other attribute
@@ -1235,7 +1235,7 @@ Options, written last — after the optional `(key)`:
 - `viewport="400px"` — the height of the block's own element, which becomes the
   scroller. Absent, the element is left alone and must already scroll
 
-An unrecognised option is refused by name at compile time.
+An unrecognized option is refused by name at compile time.
 
 The rows and two spacer divs are appended **inside the element the block sits in**;
 that element is the scroller, either because `viewport=` sized it or because the
@@ -2456,7 +2456,7 @@ components hydrate to their initial render and serialize cleanly.
 | 33 | `{@html expr}` injects raw HTML — only use with trusted content |
 | 34 | `{#virtual each}` takes `height=N` (fixed item height in px) and `viewport="Npx"`; the height is measured from the first row when it is not declared, and variable height is not supported |
 | 35 | Snippet props are declared with `export let`; `<slot />` is the preferred mechanism for receiving content from the parent |
-| 35a | `<slot />` is preferred for unattributed content; `export let children = null` + `{@render children?.(value)}` is the form for content the child must PARAMETERISE, and is not legacy for that |
+| 35a | `<slot />` is preferred for unattributed content; `export let children = null` + `{@render children?.(value)}` is the form for content the child must PARAMETERIZE, and is not legacy for that |
 | 35b | `<slot>` takes no attribute but `name` — any other is a compile error, because a slot carries content in and never a value out |
 | 36 | `bind:this` on a component exposes exported `let` props and exported functions — never a DOM node |
 | 37 | `$.mounted(fn)` may only appear once per component — use `Promise.all` inside for multiple operations |

@@ -802,7 +802,7 @@ model Example {
 
 #### `@slug` `[(<field>…)]` <a id="slug-field"></a>
 
-Slugify this field on write. The parenthesised form is not a second transform — it is a call to a `function slug` the schema declares, and without that declaration it is refused by name.
+Slugify this field on write. The parenthesized form is not a second transform — it is a call to a `function slug` the schema declares, and without that declaration it is refused by name.
 
 ```lite
 model Example {
@@ -1526,7 +1526,7 @@ model Example {
 ```
 
 - **`mode`** — `none`
-- **Also typed** — `workspace` · `organization` · `organisation`
+- **Also typed** — `workspace` · `organization` · `organization`
 - **Deeper** — [multi-tenancy.md](multi-tenancy.md)
 - **See also** — [`tenancy`](#tenancy-declaration) · [`@@deny`](#deny-model)
 

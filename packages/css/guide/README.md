@@ -102,7 +102,7 @@ bun run demo        # serves the WORKSPACE root, not the package
 | `guide.js`      | Data, page builders, and a hash router. One file, plain JS.          |
 | `guide.css`     | The guide's own chrome (`.sg-*`) plus a few preview utilities.       |
 | `decisions.js`  | The Learn wizard's routing tree. Questions and near misses only — every fact about a term is read from `../vocabulary.js`. |
-| `search.js`     | The search: the tokeniser, the ranker, and the term entries built from `../vocabulary.js`. It also owns `slugify`. |
+| `search.js`     | The search: the tokenizer, the ranker, and the term entries built from `../vocabulary.js`. It also owns `slugify`. |
 
 Every code block carries a **copy button** — `code()` wraps its own output in
 `.relative` with the control as a SIBLING of the `<pre>`, because `.code`

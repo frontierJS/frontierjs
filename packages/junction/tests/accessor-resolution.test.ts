@@ -274,7 +274,7 @@ describe('the not-found message against a real Litestone client', () => {
 //
 // `GET /products?bogusColumn=7` answered `200 {"data":[],"total":0}` — the same
 // answer as a misplaced directive and as a genuinely empty table. It cost an
-// hour in example/'s prerendered catalogue, which fetched, resolved, rendered
+// hour in example/'s prerendered catalog, which fetched, resolved, rendered
 // "0 of 0 products" and reported nothing wrong.
 //
 // Litestone knew: it validates where-keys, rejects them on writes, and on reads

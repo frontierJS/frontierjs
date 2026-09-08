@@ -87,13 +87,13 @@ be built — with `MT_Unique_Indexes` beside it for uniqueness
 ([Force.com multitenant architecture](https://www.oreilly.com/library/view/the-force-com-multitenant/30000LTI00089/30000LTI00089_ch08lev1sec5.html)).
 It is a beautiful design and **it does not port**. It rests on the database being
 able to combine several single-column indexes cheaply, which Oracle does and
-SQLite does not: three indexed lookups `INTERSECT`ed materialise three sorted id
+SQLite does not: three indexed lookups `INTERSECT`ed materialize three sorted id
 sets, and the measurement above is what that costs — *slower than the full scan
 it was meant to replace* on the broad case. The shape is not wrong; the substrate
 underneath it is a different one.
 
 **Frappe runs DDL.** A `Custom Field` is a doctype row, and saving it
-synchronises the schema — `frappe.db.sql_ddl()` issuing `ALTER TABLE`, per site,
+synchronizes the schema — `frappe.db.sql_ddl()` issuing `ALTER TABLE`, per site,
 across a multi-tenant install
 ([schema sync](https://deepwiki.com/frappe/frappe/2.3-doctype-system-and-metadata-management)).
 This is the one that matches the numbers. And the detail that matters most is not
@@ -278,7 +278,7 @@ read to the reader unless a transaction is open. `ATTACH` through
 `asSystem().sql` lands on the writer, so `findMany` outside a transaction fails
 `no such table: cust.attr`. Wrapping the read in `$transaction` routes it to the
 writer and everything above works, which is a probe rather than a design: it
-serialises every segment behind the write lock.
+serializes every segment behind the write lock.
 
 What is missing is one seam — **a connection hook**. `createClient` runs a
 hardcoded pragma list against each handle and offers nothing to extend it; an
@@ -439,7 +439,7 @@ from `.lite`, so a `FieldDef` row is invisible to it. The second guess was that
 the app would therefore hand-compose children. Also unnecessary: `<Form>` calls
 `resource?.formFields?.({ only, except })` duck-typed, and `$context.form` reads
 `resource?.fields`, so an app can hand `<Form>` a **wrapped resource** whose
-`fields` and `formFields()` merge the schema's rules with one synthesised rule
+`fields` and `formFields()` merge the schema's rules with one synthesized rule
 per declared field — `{ type, required, nullable }` is the whole shape
 `controlFor` needs. Generation then works unchanged, in app code, with no
 framework edit and no children.

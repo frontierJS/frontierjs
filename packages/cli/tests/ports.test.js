@@ -151,7 +151,7 @@ describe('devPorts — what `fli dev` is about to bind', () => {
     expect(rows.map(r => r.surface).sort()).toEqual(['api', 'web'])
     // The whole point: the site's port is NOT among them.
     expect(rows.some(r => r.port === 8610)).toBe(false)
-    // And `appPorts` still answers the catalogue, which `fli ports` wants.
+    // And `appPorts` still answers the catalog, which `fli ports` wants.
     expect(appPorts('/x/example', { name: 'example', exists: five, scripts }).length).toBe(5)
   })
 
@@ -215,7 +215,7 @@ describe('devPorts — what `fli dev` is about to bind', () => {
     expect(scriptsRunBy(scripts)).toEqual(new Set(['a', 'b']))
   })
 
-  test('no manifest at all falls back to the catalogue', () => {
+  test('no manifest at all falls back to the catalog', () => {
     const rows = devPorts('/x/bare', { name: 'bare', exists: treeOf('web', 'api') })
     expect(rows.map(r => r.surface).sort()).toEqual(['api', 'web'])
   })

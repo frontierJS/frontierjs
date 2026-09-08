@@ -32,7 +32,7 @@ import { onDestroy } from '@frontierjs/mesa/runtime'
 
 // ── Normalize ─────────────────────────────────────────────────────────────────
 
-function normaliseMember(raw) {
+function normalizeMember(raw) {
   return {
     connectionId: raw.connectionId,
     userId:       raw.userId,
@@ -127,9 +127,9 @@ export function presence(channelId, options = {}) {
 
   function onSync(payload) {
     if (payload.you) _selfId = payload.you
-    push((payload.members ?? []).map(normaliseMember))
+    push((payload.members ?? []).map(normalizeMember))
   }
-  function onJoin(payload)   { push([..._rawMembers, normaliseMember(payload.member)]) }
+  function onJoin(payload)   { push([..._rawMembers, normalizeMember(payload.member)]) }
   function onLeave(payload)  { push(_rawMembers.filter(m => m.connectionId !== payload.member.connectionId)) }
 
   // Several joins and leaves in one frame. Junction batches them per channel
@@ -149,7 +149,7 @@ export function presence(channelId, options = {}) {
     // reconnect can put a connection in a batch that a `presence:sync` already
     // reported.
     const added = (payload.joined ?? [])
-      .map(normaliseMember)
+      .map(normalizeMember)
       .filter(m => !here.has(m.connectionId))
     push([...kept, ...added])
   }

@@ -100,7 +100,7 @@ That fork is **structural, not accidental** — see item 6.
 
 ---
 
-## 5. The extension-point catalogue — the evidence
+## 5. The extension-point catalog — the evidence
 
 Every way to extend an FJS app, probed 2026-08-02. Signatures taken from the real
 type declarations; the bodies are illustrative.
@@ -394,7 +394,7 @@ the small-mental-model outcome the project wants.
 **"and later" is doing too much work in that sentence, and it was noticed 2026-08-15
 comparing against an outside framework that makes Desktop a headline feature.**
 `desktop` and `mobile` appear in this repository in exactly two places: the clause
-above, and the trailing half of the overview row that summarises it. There is no
+above, and the trailing half of the overview row that summarizes it. There is no
 record, no effort reading, and no stated refusal — which is the worst of the three
 available states, because a reader cannot tell whether it is planned, deferred or
 declined, and neither can we.

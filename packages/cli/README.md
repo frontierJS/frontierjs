@@ -58,7 +58,7 @@ Commands are markdown files under `commands/`, one namespace per directory —
 | `fli deploy` · `deploy:*` | Setup a server, build, swap, health-check, roll back. `deploy:local` is the same pipeline against Docker on this machine |
 | `fli ws:*` | The workspace — version, publish, tag, push, map, atlas, exports, graph |
 | `fli ports:claim` | Take a session's ports out of the scheme rather than guessing |
-| `fli project:map` · `project:view` | What this application IS, read off its committed surface |
+| `fli project:map` | What this application IS — one reading, three presentations (`--as=report\|serve\|json`) |
 
 `fli list` prints all of them, `fli <command> --help` prints one, and
 `fli list --json` is the machine-readable form.
@@ -366,7 +366,7 @@ Directory names are environment variables, one per surface — `WEB_DIR`,
 
 `--project` is consumed before the command runs — it sets `context.paths.*` and
 is stripped from the command's own flags, so it drives an application from
-outside it: `fli project:view --project packages/basecamp`.
+outside it: `fli project:map --project packages/basecamp`.
 
 ---
 
@@ -378,7 +378,7 @@ outside it: `fli project:view --project packages/basecamp`.
 5 tooling.
 
 A scaffolded app is project 0 — web on `8000`, API on `8100`. Global fli tooling
-is reserved — the whole of **8500–8509**, of which **8500 is the GUI, 8501 `project:view`, 8502 db studio and 8503 junction's devtools console** — and the
+is reserved — the whole of **8500–8509**, of which **8500 is the GUI, 8501 `project:map --as=serve`, 8502 db studio and 8503 junction's devtools console** — and the
 broker refuses to hand those out to anything else. `fli ports:claim` takes a
 session's ports out of the scheme and exports them, rather than every app
 hard-coding a guess.

@@ -204,7 +204,7 @@ describe('buildTree', () => {
   })
 
   test('the root route keeps its companion', () => {
-    // The root is SYNTHESISED and the entry's fields are copied onto it one at
+    // The root is SYNTHESIZED and the entry's fields are copied onto it one at
     // a time, so a field left out of that copy is dropped in silence. This one
     // was: `src/routes/index.meta.js` was found, parsed and then discarded, so
     // a home page's load() never ran and the page rendered its empty state with

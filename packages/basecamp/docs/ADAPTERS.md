@@ -79,6 +79,10 @@ hundred and for the dinar by ten (`@frontierjs/toolbelt/units`).
 because that is the only key this app and a vendor's ledger share. There is no
 row of ours in their billing, so any other join is invented.
 
+**Creating a machine is not on this list and must not join it** — `provider:<kind>`
+is already the seam a service sends through, so a compute interface here would be a
+second owner of *talk to a vendor*. The plan is `docs/PROVISIONING.md`.
+
 `ProviderKind` is `custom | hetzner` today. A vendor with an adapter should be a
 member of that enum: the column emits a table CHECK, so a value outside the set
 is refused by a migration, a seed and `asSystem()` alike.

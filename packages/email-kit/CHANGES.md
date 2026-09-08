@@ -134,7 +134,7 @@ this: every defect below is invisible from inside the package.
 - **`exports` could not serve the specifier the README documents.** The map was
   `"./components/*" → "./components/*.mesa"`, so
   `@frontierjs/email-kit/components/Email.mesa` resolved to `Email.mesa.mesa`.
-  Mesa requires the `.mesa` suffix in the specifier — that is how it recognises
+  Mesa requires the `.mesa` suffix in the specifier — that is how it recognizes
   a component import at all — so the documented form was the only one that could
   work, and it was the one that did not. Added the extension-carrying pattern;
   the extensionless form still resolves.

@@ -583,7 +583,7 @@ export function createCartsService() {
       // Copies, not lookups — `OrderLine`'s own header argues why. What matters
       // at this call site is that `l.total` is carried across rather than
       // recomputed: the basket screen showed it, `total` above summed it, and
-      // the line rows have to be the same arithmetic or the itemisation does
+      // the line rows have to be the same arithmetic or the itemization does
       // not add up to what was charged.
       //
       // `description` is the sentence the shopper read, assembled the way the
@@ -749,7 +749,7 @@ async function view(cart: CartRow, client: Record<string, any> = $.db) {
  *
  * The join is nested — line → variant → product — and it goes through the
  * CALLER's client like everything else here. That works for a stranger because
- * the catalogue reads at level 0: `Product` and `ProductVariant` are
+ * the catalog reads at level 0: `Product` and `ProductVariant` are
  * `@@gate("0.4.4.5")`, so a guest may read them and may not write them. The
  * line itself is reached by the token policy.
  *

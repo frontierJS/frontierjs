@@ -65,7 +65,7 @@ export function computeNotices({ servers = [], deployments = [], jobs = [] } = {
     }
 
     const beat = since(s.lastHeartbeatAt, now)
-    if ((s.status === 'online' || s.status === 'ready') && beat !== null && beat > HEARTBEAT_OVERDUE_MS) {
+    if (s.status === 'online' && beat !== null && beat > HEARTBEAT_OVERDUE_MS) {
       add({
         id: `server-heartbeat-${s.id}`, priority: 'warning', category: 'fleet',
         title: `${s.name} heartbeat overdue`,

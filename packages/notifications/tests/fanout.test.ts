@@ -56,7 +56,7 @@ class Welcome extends Notification {
 
 // Authored the way the JSDoc @example blocks used to show — no .build().
 // TypeScript flags this (InAppBuilder is not an InAppMessage), but JavaScript
-// consumers hit it silently, so notify() materialises it rather than shipping
+// consumers hit it silently, so notify() materializes it rather than shipping
 // an empty payload.
 class UnbuiltWelcome extends Notification {
   static type = 'UnbuiltWelcome'
@@ -149,7 +149,7 @@ describe('fan-out to all three transports', () => {
 
 describe('a builder that never had build() called', () => {
   // builders.ts documents build() as "called internally by the driver". It
-  // wasn't. notify() now materialises, so the forgiving path delivers real
+  // wasn't. notify() now materializes, so the forgiving path delivers real
   // content instead of silently delivering nothing.
   test('still delivers a full in-app payload', async () => {
     const before = (await h.rows()).length
@@ -237,7 +237,7 @@ describe('failure paths', () => {
 // ─── drivers ──────────────────────────────────────────────────────────────
 
 describe('transport drivers', () => {
-  test('a custom driver receives the materialised message', async () => {
+  test('a custom driver receives the materialized message', async () => {
     const seen: unknown[] = []
     const slack = { transport: 'slack', send: async (_r: Recipient, m: unknown) => { seen.push(m) } }
     class Slack extends Notification {

@@ -81,7 +81,7 @@ real mistakes live, which draws the boundary this package is one half of:
 
 The reason is not tooling immaturity: doctor-class questions are cross-file.
 *Does this resource name resolve to a model?* cannot be answered from the file
-it appears in, and that is where every entry in the hazard catalogue lives.
+it appears in, and that is where every entry in the hazard catalog lives.
 
 A scaffolded app's `bun run check` runs `fli check` **first**, because it is the
 half a linter cannot reach.

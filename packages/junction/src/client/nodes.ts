@@ -53,7 +53,7 @@ export class Node<T extends Record<string, unknown> = Record<string, unknown>>
   private _overlaySeq = 0
   // The folded view. Cached so repeated reads answer the same object — a Mesa
   // signal compares what it is handed, and `Store._replace` tells its own
-  // materialised rows apart from incoming ones by reference.
+  // materialized rows apart from incoming ones by reference.
   private _view: T | null = null
   private _viewFresh = false
 
@@ -70,7 +70,7 @@ export class Node<T extends Record<string, unknown> = Record<string, unknown>>
    * The row as anyone looking at it should see it: the synced truth with every
    * unconfirmed mutation folded on top, in the order they were submitted.
    *
-   * One read for every view — a list materialises through this and so does a
+   * One read for every view — a list materializes through this and so does a
    * record view, which is why an optimistic patch that moves a sort key also
    * moves the row in an ordered list without anything being taught about it.
    */

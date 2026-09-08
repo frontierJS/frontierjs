@@ -151,7 +151,7 @@ describe('errors', () => {
   })
 
   test('a row under § Closed is not reported by it', () => {
-    // `closed` is in ISSUE_STATUS because the reader SYNTHESISES it for every
+    // `closed` is in ISSUE_STATUS because the reader SYNTHESIZES it for every
     // row down there — which is exactly what made it silently legal in an open
     // section. A rule that fired on both would be unfixable.
     const hits = of(runRegisterCheck({ root: ROOT, today: TODAY }), 'closed-in-open')

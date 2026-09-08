@@ -6,7 +6,7 @@ export function createBuffer({ requests = 200, logs = 500, events = 200 } = {}) 
   // True circular buffer. The previous implementation was `push()` followed by
   // `shift()` on overflow — O(n) per push once full, so at the default 500-log
   // cap every single log line memmoved 500 elements. A write index and modular
-  // arithmetic make it O(1); all() materialises in insertion order only when
+  // arithmetic make it O(1); all() materializes in insertion order only when
   // something actually reads.
   const _ring = (cap) => {
     let buf = new Array(cap)
@@ -27,7 +27,7 @@ export function createBuffer({ requests = 200, logs = 500, events = 200 } = {}) 
         // Full: oldest entry sits at `head`.
         return buf.slice(head).concat(buf.slice(0, head))
       },
-      /** Iterate newest-first without materialising a copy. */
+      /** Iterate newest-first without materializing a copy. */
       *reversed() {
         for (let i = 0; i < count; i++) {
           yield buf[(head - 1 - i + cap * 2) % cap]

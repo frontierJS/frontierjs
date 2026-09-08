@@ -71,7 +71,7 @@
     Your session has ended. <a class="navlink" href="/login/">Sign in</a> and try again.
   </p>
 {:else}
-  <!-- The message is shown rather than summarised: it is the only thing that
+  <!-- The message is shown rather than summarized: it is the only thing that
        distinguishes a timeout from a server error, and the person reading it
        is the one who will report it. -->
   <Alert tone="danger" id="screen-error">{error?.message ?? 'The request failed.'}</Alert>

@@ -2,7 +2,7 @@
   // web/src/resources/Payment.mesa — the Resource layer.
   //
   // Named for the model, exporting the accessor. `model:` is not stated because
-  // it does not need to be: `payments` singularises to `payment`, which is what
+  // it does not need to be: `payments` singularizes to `payment`, which is what
   // `model Payment` resolves to through the one inflection table every other
   // resolver reads (Invariant 2).
   //

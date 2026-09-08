@@ -377,7 +377,7 @@ export interface CreateClientOptions {
    * Reusable named query fragments registered per model. Each scope is an
    * object shaped like findMany args (where, orderBy, limit, etc.). The where
    * may be a function (ctx) => whereObject for dynamic filters that depend on
-   * the current auth context. Parameterised scopes are not supported — use
+   * the current auth context. Parameterized scopes are not supported — use
    * a function that returns a where clause and pass it as a caller override.
    *
    * Scope names cannot collide with built-in table methods, relation field
@@ -580,7 +580,7 @@ export interface LitestoneClient {
    * Whether `$readAs` can ever answer anything but the row it was given.
    *
    * `'open'` for a model whose read gate is 0 with no read policy and no field
-   * policy — a catalogue, which is also the busiest channel an app has, so this
+   * policy — a catalog, which is also the busiest channel an app has, so this
    * is what keeps grading a broadcast affordable. Read off the SCHEMA, so a
    * policy added later turns it `'graded'` with nothing to remember.
    *
@@ -853,7 +853,7 @@ export declare function buildPristine(db: unknown, parseResult: ParseResult): un
 export declare function buildPristineForDatabase(db: unknown, parseResult: ParseResult, dbName: string): unknown
 export declare function diffSchemas(pristine: unknown, live: unknown, parseResult: ParseResult, dbName?: string, opts?: { pluralize?: boolean }): { hasChanges: boolean; [key: string]: unknown }
 export declare function generateMigrationSQL(diff: unknown, parseResult: ParseResult, opts?: { pluralize?: boolean }): string
-export declare function summariseDiff(diff: unknown): string
+export declare function summarizeDiff(diff: unknown): string
 export declare function splitStatements(sql: string): string[]
 export declare function checksum(str: string): string
 

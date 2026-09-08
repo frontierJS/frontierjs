@@ -1589,7 +1589,7 @@ if (useWorkspace) {
 // That is how four defects sat undetected on the deploy path (FJS-232, 237, 238,
 // 239 — all found by reading, none by anything failing). The deploy path now
 // packs those packages into the build context instead (`fli deploy:vendor`,
-// FJS-241), so a local scaffold containerises; what it still installs is one
+// FJS-241), so a local scaffold containerizes; what it still installs is one
 // machine's working tree, which is the right thing while testing a change to a
 // package and the wrong thing to hand somebody as a starting point.
 const fjsSource = (flag.source || process.env.FJS_SOURCE || 'npm').toLowerCase()
@@ -1892,7 +1892,7 @@ if (useExample) {
   }
 }
 
-// make:deploy — Dockerfile + frontier.config.js deploy block. It containerises
+// make:deploy — Dockerfile + frontier.config.js deploy block. It containerizes
 // the API, so a project with none has nothing for it to write: the widget
 // surface ships its own static origin from widgets/deploy/.
 if (useDeploy && useApi) {

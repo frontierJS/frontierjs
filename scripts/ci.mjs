@@ -1228,7 +1228,7 @@ function scaffold() {
 
 // ─── phase 6c · deploy ──────────────────────────────────────
 // `fli new` → `fli make:deploy` → `fli deploy:local`: does the deploy pipeline
-// containerise a real app? ~30s and it needs a Docker daemon, so it sits in the
+// containerize a real app? ~30s and it needs a Docker daemon, so it sits in the
 // full tier rather than the pre-push one.
 //
 // Three defects lived on this path and all three were found by reading, because
@@ -1240,7 +1240,7 @@ function scaffold() {
 // **Both package sources, because they answer different questions.** `npm` is
 // the only thing in this repo that tests the PUBLISHED framework — every id in
 // the register is a statement about the working tree, and the two drift
-// independently (FJS-252). `local` is the working tree containerised, which was
+// independently (FJS-252). `local` is the working tree containerized, which was
 // impossible until the build started packing the tree into its own context
 // (FJS-241) and is therefore the half most likely to break again.
 //
@@ -1314,7 +1314,7 @@ function deploy() {
 
   if (update && fixed.length) saveAllowances()
 
-  if (clean(from)) ok('a scaffolded app containerises and answers health, from npm and from the tree', Date.now() - t0)
+  if (clean(from)) ok('a scaffolded app containerizes and answers health, from npm and from the tree', Date.now() - t0)
 
   // ── the transition cycle ─────────────────────────────────
   // Everything above runs `fli deploy:local`, which is a different command from
@@ -1326,7 +1326,7 @@ function deploy() {
   // bytes it was reverting from, and a resumed deploy started `undefined`.
   //
   // It is a separate phase rather than a fourth source above because it asks a
-  // different question: not *does the framework install and containerise* but
+  // different question: not *does the framework install and containerize* but
   // *can serving state be moved and put back*. ~4 minutes and six real image
   // builds, so it is in the full tier only.
   const c0 = Date.now()

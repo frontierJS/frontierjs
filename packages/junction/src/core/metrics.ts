@@ -86,7 +86,7 @@ export function isStale(lastSeenAt: string | Date, now = Date.now(), toleranceMs
  *
  * The format is OpenMetrics' own — `name{k="v",k2="v2"}` — which means a key
  * read out of this database is a name a person can paste into any exporter's
- * documentation and recognise.
+ * documentation and recognize.
  *
  * Values are escaped for `\`, `"` and newline, the three characters that would
  * otherwise let one label's VALUE close the brace and forge another label.

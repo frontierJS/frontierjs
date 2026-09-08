@@ -4,7 +4,7 @@
  * `<slot tipId={tipId} />` compiled, rendered the caller's content and
  * delivered nothing; there is no `let:` directive to read such a value with
  * either, so the recommended spelling for a hole was also the one that could
- * not parameterise it. `@frontierjs/ui`'s `Tooltip` shipped the
+ * not parameterize it. `@frontierjs/ui`'s `Tooltip` shipped the
  * documented-but-impossible form for as long as it existed (`FJS-299`).
  *
  * Silence was the one clearly wrong answer, so this is refused by name — the

@@ -1198,7 +1198,7 @@ Runs automatically after `vite build`:
   ```
 
   Component directories are scanned **recursively** and keyed on the basename, so a
-  component's directory organises it and its name identifies it. A **component** is
+  component's directory organizes it and its name identifies it. A **component** is
   injected where the template uses it as a `<Tag>`; a **module binding** where any code —
   a `<script>` body or a `{…}` expression — uses it as a bare identifier. Prose is not
   code: `<p>Use dayjs</p>` imports nothing. Neither is a property access (`x.writable`),

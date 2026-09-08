@@ -149,11 +149,11 @@ describe('gate-with-nothing-saying-whose-row', () => {
 
   test('asks rather than asserts where it cannot see an owner', () => {
     // `Product` in a shop schema: every caller reading every product is what a
-    // catalogue IS, and the first cut called all five of example's models a
-    // finding. Nothing in a schema distinguishes a catalogue from a possession.
+    // catalog IS, and the first cut called all five of example's models a
+    // finding. Nothing in a schema distinguishes a catalog from a possession.
     const f = found(`model Product { id Int @id  name String  @@gate("0.4.4.5") }`, ID)
     expect(f.map(x => x.confidence)).toEqual(['possible'])
-    expect(f[0].message).toContain('catalogue')
+    expect(f[0].message).toContain('catalog')
   })
 
   test('the tenant column counts as an owner — on the model that spans tenants', () => {

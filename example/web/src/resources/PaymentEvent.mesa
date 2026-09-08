@@ -1,7 +1,7 @@
 <script module>
   // web/src/resources/PaymentEvent.mesa — the Resource layer.
   //
-  // `model:` is stated. `payment-events` singularises to `payment-event`, and
+  // `model:` is stated. `payment-events` singularizes to `payment-event`, and
   // the model is `PaymentEvent` — the hyphenated URL and the PascalCase model
   // are the same two words in two spellings, and a resolver that guessed
   // between them would be a fourth rule. A miss warns and degrades to a bare

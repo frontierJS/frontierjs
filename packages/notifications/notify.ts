@@ -19,7 +19,7 @@ import { sendEmail }  from './drivers/email.ts'
 // is caught eagerly as NotificationDriverNotFoundError like any other.
 const BUILT_IN_TRANSPORTS = new Set(['inApp', 'email'])
 
-// ─── Message materialisation ─────────────────────────────────────────────────
+// ─── Message materialization ─────────────────────────────────────────────────
 //
 // inApp() and mail() return chainable BUILDERS whose values live in private
 // fields; build() turns one into the plain message the drivers read. The
@@ -44,7 +44,7 @@ const BUILT_IN_TRANSPORTS = new Set(['inApp', 'email'])
 // It wasn't. This is that call, in one place, so the failure mode is a working
 // delivery rather than a silent empty one. Already-built messages have no
 // build() method and pass through untouched.
-async function materialise(message: unknown): Promise<unknown> {
+async function materialize(message: unknown): Promise<unknown> {
   // Awaited, because a formatter may be async — which is what lets a body be
   // RENDERED where it is read. A class had to hide that behind a static async
   // factory and a private constructor, since `toEmail()` was synchronous.
@@ -93,7 +93,7 @@ export async function notify(
   // ── Step 1: format once, validate eagerly — fail before any delivery ─────
   const messages = new Map<string, unknown>()
   for (const transport of transports) {
-    const message = await materialise(notification.getMessageFor(transport, recipient))
+    const message = await materialize(notification.getMessageFor(transport, recipient))
     if (message === undefined) {
       throw new NotificationTransportNotImplementedError(transport, notificationType)
     }

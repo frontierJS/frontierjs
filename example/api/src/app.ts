@@ -593,7 +593,7 @@ app.post(WEBHOOK_PATH, async (ctx) => {
 // The same shape as the route above and a different dialect. Stripe signs
 // `"<timestamp>.<raw body>"` under `Stripe-Signature`; this project signs a
 // canonical string over method, path, timestamp, nonce and a body hash. Neither
-// is wrong and neither generalises, which is why a connector owns its vendor's
+// is wrong and neither generalizes, which is why a connector owns its vendor's
 // (`FJS-D153`).
 //
 // `ctx.rawBody` and not `ctx.body`: the signature is over BYTES, and

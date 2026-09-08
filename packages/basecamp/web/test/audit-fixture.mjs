@@ -9,7 +9,7 @@
 // resolve at all.
 //
 // The seeder writes about fourteen trail rows per workspace, which is a fleet
-// with a full catalogue and a trail that fits on one screen — fine as an
+// with a full catalog and a trail that fits on one screen — fine as an
 // example, useless as a fixture for a window, since a window with nothing past
 // its edge is indistinguishable from a hard cap.
 //

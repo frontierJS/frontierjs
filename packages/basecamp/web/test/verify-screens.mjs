@@ -14,7 +14,7 @@
 //
 // That is also why this is a separate drive from `verify.mjs`: that one asserts
 // the first-run wizard owns an EMPTY app, and three of the screens here are
-// about rendering a populated catalogue. An empty grid and a broken query look
+// about rendering a populated catalog. An empty grid and a broken query look
 // identical, which is the whole reason `db/seed.js` exists.
 //
 // ─── Traps this file has already paid for ────────────────────────────────
@@ -232,10 +232,10 @@ try {
   ok('signed in as the seeded owner')
 
   // ─── Blueprints ────────────────────────────────────────────────────────
-  console.log('\n  /blueprints/ — the catalogue')
+  console.log('\n  /blueprints/ — the catalog')
   await goto('/blueprints/')
   await until(`document.querySelectorAll('#blueprint-grid .card').length`, n => n > 0,
-    'the catalogue never rendered a card')
+    'the catalog never rendered a card')
 
   const cards = await evaluate(`document.querySelectorAll('#blueprint-grid .card').length`)
   // Seven of eight: Ghost is seeded withdrawn, and a withdrawn blueprint is off

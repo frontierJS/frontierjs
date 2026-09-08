@@ -46,7 +46,7 @@ export async function runPostBuild(config, routeTable, outDir, root, prerendered
   // which URLs `/products/:slug/` stands for. A static build does know — the
   // pages are on disk, `getStaticPaths()` named them — so it hands over what it
   // emitted. Before this, a prerendered storefront's sitemap listed four URLs
-  // for a thirteen-product catalogue and nothing said so (`FJS-502`).
+  // for a thirteen-product catalog and nothing said so (`FJS-502`).
   //
   // A prerendered page can still opt out: `indexed` has already dropped drafts
   // and `robots: noindex`, so anything the route table excluded is excluded

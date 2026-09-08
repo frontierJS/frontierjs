@@ -73,7 +73,7 @@ it is not part of this spec, though it deserves a doc line.
 **Cost:** small · **Unblocks:** bare-specifier imports in rendered trees
 
 > **Done.** `renderComponent` / `renderFile` take `options.tmpDir`; it is resolved
-> per call (`defaultTmpDir()`, memoised, no longer a module-level `const`), created
+> per call (`defaultTmpDir()`, memoized, no longer a module-level `const`), created
 > if missing, and threaded through the recursive `compileTree` path so one import
 > graph cannot be split across two directories. The default is unchanged and stays
 > `findMesaDir()` — a temp module carries `import '@frontierjs/mesa/runtime.js'`,

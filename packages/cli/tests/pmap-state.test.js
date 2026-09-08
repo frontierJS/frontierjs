@@ -1,4 +1,4 @@
-// pview-state.test.js — `fli project:view` answers whether the app is running.
+// pmap-state.test.js — `fli project:map --as=serve` answers whether the app is running.
 //
 // The viewer is read off FILES, so it draws a complete chain of responsibility
 // for an app that is not started and looks identical either way. `/state` is
@@ -29,7 +29,7 @@ const CLI  = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const REPO = resolve(CLI, '../..')
 const APP  = resolve(REPO, 'example')
 
-// Tooling on the TEST tier, so a drive cannot collide with a `project:view`
+// Tooling on the TEST tier, so a drive cannot collide with a `project:map --as=serve`
 // somebody has open on 8501.
 const PORT = 7502
 const BASE = `http://localhost:${PORT}`
@@ -45,7 +45,7 @@ const hasApp = existsSync(resolve(APP, 'db', 'schema.lite'))
 describe.if(hasApp)('GET /state', () => {
 
   test('the command serves it, and it is the shape the badge reads', async () => {
-    child = spawn('bun', [resolve(CLI, 'bin/fli.js'), 'project:view', '--port', String(PORT), '--no-open'], {
+    child = spawn('bun', [resolve(CLI, 'bin/fli.js'), 'project:map', '--as=serve', '--port', String(PORT), '--no-open'], {
       cwd: APP, stdio: 'ignore', detached: true,
     })
 

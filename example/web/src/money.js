@@ -2,7 +2,7 @@
 //
 // One owner, because there were five. `` `£${n.toFixed(2)}` `` was written out
 // in the products list, the product page, the basket, the home page's Banked
-// tile and the prerendered catalogue island — and the API wrote a bare
+// tile and the prerendered catalog island — and the API wrote a bare
 // `toFixed(2)` into two email bodies, an amount with no currency at all in the
 // one place a reader is being told what they were charged. That is `FJS-408`'s
 // shape exactly, one magnitude later.

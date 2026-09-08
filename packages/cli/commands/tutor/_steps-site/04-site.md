@@ -11,7 +11,7 @@ fli make:site
 
 That writes `site/` — its own Vite config on its own port, its own routes, its
 own tests, its own `deploy/`. It is a **peer** of `api/` and `web/`, and the
-reason is worth two sentences because it looks like over-organisation until it
+reason is worth two sentences because it looks like over-organization until it
 bites.
 
 A Vite root is one output directory, and `vite build` empties `outDir` before it

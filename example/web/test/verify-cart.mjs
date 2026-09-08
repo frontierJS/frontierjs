@@ -2,7 +2,7 @@
  * web/test/verify-cart.mjs — a stranger fills a basket and buys, in a real
  * browser.
  *
- * Started by `bun run verify:cart`. Like verify-catalogue it starts BOTH
+ * Started by `bun run verify:cart`. Like verify-catalog it starts BOTH
  * servers itself, because what it proves spans them and a dev server serves
  * the code it started with.
  *
@@ -190,7 +190,7 @@ const api = (path, opts = {}) => fetch(`${API}/api${path}`, opts)
 // checking the shop's books, which is a member of staff's question.
 //
 // It used to ask anonymously and be answered, which is the leak these gates
-// closed — the catalogue's `@@gate("0.4.4.5")` had been pasted onto the ledger.
+// closed — the catalog's `@@gate("0.4.4.5")` had been pasted onto the ledger.
 let staffToken = null
 async function asStaff(path) {
   staffToken ??= (await (await fetch(`${API}/api/auth/login`, {
@@ -367,7 +367,7 @@ check('the guest became exactly one customer, lowercased',
 //
 // The basket is a shopper's object with a shopper's lifetime — swept when it is
 // abandoned, emptiable after the order was placed — so an order that pointed at
-// one for its itemisation would lose it. `carts.checkout` copies the lines at
+// one for its itemization would lose it. `carts.checkout` copies the lines at
 // the moment of sale, and these are the assertions that the copy is a copy: the
 // price, the quantity and the wording, written down and not looked up.
 const reference = await evaluate(
@@ -384,7 +384,7 @@ check('…how many', billed[0]?.quantity, 2)
 // does for itself.
 //
 // The subtotal and not the total, since shipping and tax arrived: `total` is
-// what the card is charged and `subtotal` is what the itemisation explains.
+// what the card is charged and `subtotal` is what the itemization explains.
 // `verify:money` is where the rest of the breakdown is proved to add up.
 check('…and the lines add up to the subtotal',
       billed.reduce((n, l) => n + l.lineTotal, 0), placed?.subtotal)

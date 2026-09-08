@@ -9,7 +9,7 @@ import { createBaseService } from '@frontierjs/junction'
 // boundary would let through, and naming only those two is what turns a
 // pointless 403 into a 405.
 //
-// `model:` is stated rather than derived. `payment-events` singularises to
+// `model:` is stated rather than derived. `payment-events` singularizes to
 // `payment-event`, which resolves — but a model whose name is two words is the
 // exact case where three resolvers agreeing is worth not relying on, and the
 // declaration costs one line (Invariant 2).

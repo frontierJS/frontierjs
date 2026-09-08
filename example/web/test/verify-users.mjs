@@ -2,7 +2,7 @@
  * web/test/verify-users.mjs — user management: the roster, and adding somebody to it.
  *
  * Started by `bun run verify:users`. It starts BOTH servers itself and stops
- * them again, for `verify-catalogue`'s reason: what it proves spans them, and a
+ * them again, for `verify-catalog`'s reason: what it proves spans them, and a
  * drive that assumed a running pair would pass against whichever build those
  * were serving.
  *

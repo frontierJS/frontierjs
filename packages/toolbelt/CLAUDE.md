@@ -229,7 +229,7 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
   inside 1-12, so a misplaced name became a number rather than an error
   (`FJS-1009`). Each field carries its own table, which is also why month names
   work at all.
-- **An unrecognised 3-letter code does NOT throw, and the separator is a
+- **An unrecognized 3-letter code does NOT throw, and the separator is a
   no-break space.** Intl accepts any well-formed code and prints it where the
   symbol goes, joined with U+00A0. Only a malformed code (fewer than three
   letters) raises, and that is the branch the `catch` exists for. An assertion
@@ -263,7 +263,7 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
   path, query, timestamp, nonce, body hash — joined with newlines, so no part
   may contain one. The query is the one line allowed to be EMPTY: a request with
   no parameters signs an empty line rather than omitting one, or a query could
-  be smuggled into the path. It is canonicalised — pairs sorted by key then
+  be smuggled into the path. It is canonicalized — pairs sorted by key then
   value, RFC 3986 encoded (`encodeURIComponent` leaves `!'()*` alone and the RFC
   reserves them) — because nothing preserves parameter order across a proxy or a
   client library, and an order-sensitive signature fails intermittently and
@@ -292,7 +292,7 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
   the canonical string is a fleet-wide 401 nobody can diagnose.
 - **`canonicalQuery` checks `Array.isArray` BEFORE `.entries()`.** An Array has
   an `entries()` of its own and it answers index/value pairs, so a list of pairs
-  canonicalises as `0=to%2Calice` — a well-formed string that agrees with
+  canonicalizes as `0=to%2Calice` — a well-formed string that agrees with
   nothing.
 - **`createStore` is NOT here and must not arrive.** `FJS-D16` named it to move
   and the ruling is amended: a store is state. Admitting one costs the standing
@@ -385,7 +385,7 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
   `cases`, so `singularize`/`pluralize` agreed with each other for as long as
   both were wrong. Assert the singular you expect, not that it survives.
 - **A word the rules cannot reach is still not a bug to fix here.** `lens` as
-  an INPUT singularises to `len`: `pens` is a real plural with the same ending,
+  an INPUT singularizes to `len`: `pens` is a real plural with the same ending,
   so telling them apart needs a dictionary. `inflect.spec.js` asserts that
   limit rather than hiding it. (`lenses` → `lens` does work — that is the list.)
 

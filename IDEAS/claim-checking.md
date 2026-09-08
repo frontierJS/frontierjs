@@ -293,7 +293,7 @@ symbol in it. Both are reproduced verbatim in the session that filed this.
 
 - `VERIFYING.md` — the practice this would automate
 - `packages/cli/core/register-check.js` · `core/proofs.js` · `core/checks.js` — the three built pieces
-- `scripts/ci.mjs` § the `snapshots` phase — the best design in the tree, and the one most worth generalising
+- `scripts/ci.mjs` § the `snapshots` phase — the best design in the tree, and the one most worth generalizing
 - `ISSUES.md` § Conventions — `stale?`, and why it is load-bearing
 - `IDEAS/committed-artifacts.md` — the adjacent argument about generated files
 - `IDEAS/package-map.md` § `atlas` — the app-model-as-product sibling

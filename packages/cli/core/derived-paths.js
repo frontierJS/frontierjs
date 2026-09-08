@@ -3,7 +3,7 @@
 //
 // One owner, because four commands write or read the JSON Schema — `db:push`
 // regenerates it after applying a change, `db:jsonschema` writes it on demand,
-// `validate` regenerates it and reads it back, and `project:view` tests whether
+// `validate` regenerates it and reads it back, and `project:map` tests whether
 // it is there. Four literals is four chances for two of them to disagree, and
 // the way that shows up is the worst kind: `validate` regenerating one file and
 // reading another, which is a clean pass over a schema nobody looked at.

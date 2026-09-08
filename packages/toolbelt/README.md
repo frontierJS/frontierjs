@@ -203,7 +203,7 @@ twenty irregulars, one knew none but had the guards that stop `status` becoming
 English's regular rules plus a fixed irregular table (`person`/`people`,
 `index`/`indices`, `datum`/`data`, 21 in all). **Not a dictionary, and it cannot
 become one** — the gaps are structural: `bases` is `basis` and never `base`,
-`houses` singularises to `hous`, `lens` to `len`, because `pens` is a real
+`houses` singularizes to `hous`, `lens` to `len`, because `pens` is a real
 plural with the same ending. A word the rules cannot reach is said by hand:
 `@@map` in the Data realm, `createResource('lenses', { model: 'Lens' })` in the
 UI.

@@ -34,9 +34,9 @@ test('redact: one entry covers every spelling of a header', function () {
     assert.equal(isSecretKey(ordinary), false, ordinary)
 })
 
-test('redact: the set is normalised, so no entry can be unreachable', function () {
+test('redact: the set is normalized, so no entry can be unreachable', function () {
   // An entry written with a capital or an underscore would never match, because
-  // the lookup normalises the QUERY. This asserts the stored form.
+  // the lookup normalizes the QUERY. This asserts the stored form.
   for (const name of SECRET_KEY_NAMES) assert.equal(name, name.toLowerCase().replace(/[-_]/g, ''))
 })
 
@@ -85,7 +85,7 @@ test('redact: a non-plain object is returned WHOLE', function () {
 })
 
 test('redact: redactBy takes the predicate, so the schema can ask too', function () {
-  // Junction's error sanitiser passes the SCHEMA's protected set through this
+  // Junction's error sanitizer passes the SCHEMA's protected set through this
   // same walk. One walker, two predicates — a second walker is how the cycle
   // guard comes to exist in one of them and not the other.
   const protectedFields = { ssn: 'encrypted' }

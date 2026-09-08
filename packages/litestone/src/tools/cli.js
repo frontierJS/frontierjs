@@ -22,7 +22,7 @@ import { Database }                                from 'bun:sqlite'
 // directory, so on-disk assets must be embedded instead (see studio.html).
 import { parse, parseFile, inlineImports, inlineImportsFromDisk, resolveImportSpecifier } from '../core/parser.js'
 import { buildPristine, introspect, diffSchemas,
-         generateMigrationSQL, summariseDiff }         from '../core/migrate.js'
+         generateMigrationSQL, summarizeDiff }         from '../core/migrate.js'
 import { create, apply, status, verify,
          createForDatabase, listMigrationFiles, migrationStatements,
          describeSkipped, appliedMigrations,
@@ -719,12 +719,12 @@ async function cmdDryRun(label, cfg) {
       if (!diffResult.hasChanges) {
         console.log(`  ${green('✓')}  ${multi ? name + ': ' : ''}schema is in sync — no migration needed`)
         if (diffResult.residue.length)
-          console.log(summariseDiff(diffResult).split('\n').slice(1).map(l => `  ${yellow(l)}`).join('\n'))
+          console.log(summarizeDiff(diffResult).split('\n').slice(1).map(l => `  ${yellow(l)}`).join('\n'))
         console.log()
         continue
       }
 
-      console.log(summariseDiff(diffResult).split('\n').map(l => `  ${l}`).join('\n'))
+      console.log(summarizeDiff(diffResult).split('\n').map(l => `  ${l}`).join('\n'))
       console.log()
       console.log(`  ${dim('─── SQL preview (not written) ' + '─'.repeat(33))}`)
       console.log()
@@ -1920,7 +1920,7 @@ async function cmdStudio(cfg) {
   const { createClient }  = await import('../core/client.js')
   const { status: migStatus, apply: migApply, autoMigrate: migAuto,
           create: migCreate, createForDatabase: migCreateForDb } = await import('../core/migrations.js')
-  const { diffSchemas, buildPristine, generateMigrationSQL, summariseDiff } = await import('../core/migrate.js')
+  const { diffSchemas, buildPristine, generateMigrationSQL, summarizeDiff } = await import('../core/migrate.js')
   const { columnPlan }    = await import('../export.js')
 
   // 8502 is dev/tooling/project 0/service 2 in the framework's port scheme —
@@ -2114,7 +2114,7 @@ async function cmdStudio(cfg) {
 
     try {
       const diff = await diffAgainstSchema('main', activeRawDbs?.main ?? activeRawDb)
-      if (diff.hasChanges) src.behind = summariseDiff(diff)
+      if (diff.hasChanges) src.behind = summarizeDiff(diff)
     } catch { /* an unreadable handle is the caller's problem, not this field's */ }
     return src
   }
@@ -2610,7 +2610,7 @@ async function cmdStudio(cfg) {
             try {
               const diffResult = await diffAgainstSchema(dbName, handle)
               diffs[dbName] = {
-                diff: summariseDiff(diffResult),
+                diff: summarizeDiff(diffResult),
                 sql:  diffResult.hasChanges ? generateMigrationSQL(diffResult, parseResult, { pluralize: cfg.pluralize }) : null,
               }
             } catch (e) { diffs[dbName] = { diff: e.message, sql: null } }
@@ -3023,7 +3023,7 @@ async function cmdStudio(cfg) {
               const diffResult = diffSchemas(pristine, live, parsed, dbName, { pluralize: cfg.pluralize })
               diffs[dbName] = {
                 hasChanges: diffResult.hasChanges,
-                summary:    diffResult.hasChanges ? summariseDiff(diffResult) : null,
+                summary:    diffResult.hasChanges ? summarizeDiff(diffResult) : null,
                 sql:        diffResult.hasChanges ? generateMigrationSQL(diffResult, parsed, { pluralize: cfg.pluralize }) : null,
               }
             } catch (e) { diffs[dbName] = { error: e.message } }
@@ -3404,7 +3404,7 @@ async function cmdStudio(cfg) {
           const source = await activeDatabaseSource()
           // Every check below compares the schema to the live DDL, so on a
           // fleet with no tenant open there is nothing here to compare: the
-          // base file is a skeleton no tenant uses. Grading it and labelling
+          // base file is a skeleton no tenant uses. Grading it and labeling
           // the label would still put red rows in front of somebody, and a red
           // row is acted on (`FJS-993`).
           if (source.reason === 'no-tenant') return json({ issues, source })
@@ -5099,7 +5099,7 @@ async function cmdMutate(cfg) {
   // FJS-264 class: anything loading a schema from a PATH owes the imports.
   //
   // `inlineImportsFromDisk` rather than `parseFile`, because what is wanted here
-  // is TEXT — the mutation catalogue is line-oriented, and `createTestEnv` keys
+  // is TEXT — the mutation catalog is line-oriented, and `createTestEnv` keys
   // its template cache on the same string.
   //
   // A fragment that could not be read is named rather than skipped: its models
@@ -5904,11 +5904,11 @@ async function cmdSeedRun(seedName, cfg) {
   const dbPath = getFlag('db') ? resolve(getFlag('db')) : cfg.db
   const force  = flag('force')
 
-  // ── Catalogue helper — returns Map<name, { source, file, sql, display }> ───
+  // ── Catalog helper — returns Map<name, { source, file, sql, display }> ───
   // Built-ins come from BUILTIN_SEEDS (embedded at build time, so they exist in
   // a compiled binary); user seeds are read from disk. User seeds with the same
   // name as a built-in override it (last-write-wins on the Map).
-  const catalogue = () => {
+  const catalog = () => {
     const out = new Map()
     for (const [name, sql] of Object.entries(BUILTIN_SEEDS))
       out.set(name, { source: 'builtin', file: null, sql, display: '(bundled)' })
@@ -5926,7 +5926,7 @@ async function cmdSeedRun(seedName, cfg) {
 
   // ── List mode ──────────────────────────────────────────────────────────────
   if (!seedName) {
-    const seeds = catalogue()
+    const seeds = catalog()
     if (!seeds.size) {
       console.log(`  ${dim('No seeds available.')}`)
       console.log(`  Add .sql or .js files to ${cyan('./seeds/')} or set ${cyan('seedsDir')} in litestone.config.js\n`)
@@ -5958,7 +5958,7 @@ async function cmdSeedRun(seedName, cfg) {
   if (!dbPath)
     fatal(`No database specified. Pass ${cyan('--db=<path>')} or set ${cyan('db')} in litestone.config.js`)
 
-  const seeds    = catalogue()
+  const seeds    = catalog()
   const seedRef  = seeds.get(seedName)
 
   if (!seedRef) {

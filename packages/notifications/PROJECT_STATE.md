@@ -97,7 +97,7 @@ throws is logged and the rest still run.
 
 - **Fan-out runs on the queue, after the response.** A test that asserts
   immediately after the call asserts on nothing. `example/` dispatches a job.
-- **`materialise()` is a forgiveness, not a contract.** `inApp()` and `mail()`
+- **`materialize()` is a forgiveness, not a contract.** `inApp()` and `mail()`
   return builders; `.build()` is what turns one into a message. `notify()` calls
   it if a builder reaches it un-built — without that, reading the chainable
   methods as values delivered an empty payload and reported success. TypeScript

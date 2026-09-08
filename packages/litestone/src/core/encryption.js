@@ -260,7 +260,7 @@ export function isCiphertext(value) {
 }
 
 // Normalize key: hex string, Buffer, or Uint8Array → 32-byte Buffer
-export function normaliseKey(raw) {
+export function normalizeKey(raw) {
   if (!raw || (typeof raw === 'string' && !raw.trim())) return null
   if (typeof raw === 'string') return Buffer.from(raw, 'hex')
   return Buffer.from(raw)

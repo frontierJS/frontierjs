@@ -8,13 +8,13 @@ import type { LitestoneClient, ParseResult, Factory, FactoryRng, FactoryRow } fr
 export { Factory, defineFactory, Seeder, runSeeder, loadFixture, parseCsv } from './index.js'
 export type { FactoryRng, FactoryRow, FactoryOverrides, FactorySpec, LoadFixtureOptions } from './index.js'
 
-// ─── Value catalogue ─────────────────────────────────────────────────────────
+// ─── Value catalog ─────────────────────────────────────────────────────────
 
-/** Catalogue generators, all driven by the caller's seeded rng. */
+/** Catalog generators, all driven by the caller's seeded rng. */
 export declare const FAKE: Record<string, (rng: FactoryRng, ...rest: number[]) => string>
 
 /**
- * A catalogue value for a well-known field name (`firstName`, `city`, `company`,
+ * A catalog value for a well-known field name (`firstName`, `city`, `company`,
  * …), or null when nothing fits. Returns null without an rng — which is what keeps
  * unseeded factories byte-identical to their old output.
  */

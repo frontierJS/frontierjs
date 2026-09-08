@@ -14,7 +14,7 @@
   let loading = true
 
   const TONE = {
-    online: 'success', ready: 'success', draining: 'warning',
+    online: 'success', draining: 'warning',
     unreachable: 'danger', destroyed: 'danger', stopped: 'muted',
   }
 

@@ -845,7 +845,7 @@ log.success(makeResource('x'))
 //
 // project/view.md explains in a comment that it injects a <script> tag. That
 // mid-sentence mention opened a second "block" with no close, so the strip loop
-// deleted the rest of the file: project:view compiled cleanly, parsed cleanly,
+// deleted the rest of the file: the served project map compiled cleanly, parsed cleanly,
 // built its map — and returned without ever starting its server.
 // Truncated output still parses, so the shipped-command parse sweep cannot see
 // this. Assert the tail survives.

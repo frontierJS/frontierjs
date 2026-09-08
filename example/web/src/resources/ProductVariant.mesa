@@ -7,7 +7,7 @@
   // `model:` is STATED here, and this is the case the option exists for. The
   // registry resolves a model from the service name by inflection, and the
   // service is called `product-variants` because that is its URL segment —
-  // which singularises to `product-variant`, a model name nothing declares.
+  // which singularizes to `product-variant`, a model name nothing declares.
   // A miss warns and degrades to a bare `make()`, so the symptom would be a
   // form with no fields rather than an error.
 

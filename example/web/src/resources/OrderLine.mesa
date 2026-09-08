@@ -2,7 +2,7 @@
   // web/src/resources/OrderLine.mesa — the Resource layer.
   //
   // Named for the model, exporting the accessor, `model:` stated for the reason
-  // the service states it: `order-lines` singularises correctly, and a two-word
+  // the service states it: `order-lines` singularizes correctly, and a two-word
   // model is where a resolver disagreement would be silent (Invariant 2).
   //
   // ─── Why this file has no markup half ─────────────────────────────────────

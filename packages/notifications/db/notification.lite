@@ -59,7 +59,7 @@ model Notification {
   // renders rather than a text box.
   //
   // Spelt contextType/contextId because the in-app driver names those. The
-  // reference catalogue prefers subjectType/subjectId for anything NEW; here
+  // reference catalog prefers subjectType/subjectId for anything NEW; here
   // the package has already chosen, and a rename is a migration plus a package
   // change.
   contextType String?

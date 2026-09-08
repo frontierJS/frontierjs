@@ -2,7 +2,7 @@
  * search.spec.js — the guide's search, held to the two things that make one
  * useful: everything is findable, and the first row is the right one.
  *
- * What is under test is guide/search.js — the tokeniser, the ranker and the
+ * What is under test is guide/search.js — the tokenizer, the ranker and the
  * term entries built from VOCAB. The other half of the corpus is harvested
  * from the rendered pages by guide.js and cannot be reached from here; that
  * half is self-correcting, because it is read out of the same markup the

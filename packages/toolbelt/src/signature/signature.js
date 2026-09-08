@@ -111,7 +111,7 @@ export function canonicalQuery(query) {
     pairs = [...new URLSearchParams(query.replace(/^\?/, ''))]
   } else if (Array.isArray(query)) {
     // Before the `.entries()` branch: an Array has one too, and it answers
-    // index/value pairs, so a list of pairs would canonicalise as `0=to,alice`.
+    // index/value pairs, so a list of pairs would canonicalize as `0=to,alice`.
     pairs = query.map(([k, v]) => [k, v])
   } else if (typeof query.entries === 'function') {
     pairs = [...query.entries()]

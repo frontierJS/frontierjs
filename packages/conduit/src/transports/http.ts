@@ -27,7 +27,7 @@ const DEFAULT_MAX_BYTES    = 10 * 1024 * 1024  // 10 MiB
 
 // Equal jitter: half the nominal backoff, plus a random half. Without it,
 // N callers hitting the same degraded provider retry in lockstep and
-// arrive as a synchronised thundering herd on every wave.
+// arrive as a synchronized thundering herd on every wave.
 function backoffWithJitter(attempt: number): number {
   const base = RETRY_BACKOFF_MS[attempt - 1] ?? 1500
   return Math.round(base / 2 + Math.random() * (base / 2))
@@ -425,7 +425,7 @@ export class HttpTransport extends BaseTransport {
 
       // Caller's fault, not the target's — retrying sends the same bad
       // request, or re-buffers the same oversized response.
-      if (err instanceof SerialiseError || err instanceof ResponseTooLargeError) {
+      if (err instanceof SerializeError || err instanceof ResponseTooLargeError) {
         return this.fail('invalid_request', (err as Error).message, {
           retryable: false
         })
@@ -585,10 +585,10 @@ function sleep(ms: number) {
 
 // ─── Body handling ────────────────────────────────────────────
 
-class SerialiseError extends Error {
+class SerializeError extends Error {
   constructor(cause: Error) {
     super(`Request body could not be serialized: ${cause.message}`)
-    this.name = 'SerialiseError'
+    this.name = 'SerializeError'
   }
 }
 
@@ -617,7 +617,7 @@ function serialize(body: unknown, encoding: BodyEncoding): EncodedBody {
   try {
     return encodeBody(body, encoding)
   } catch (err) {
-    throw new SerialiseError(err as Error)
+    throw new SerializeError(err as Error)
   }
 }
 

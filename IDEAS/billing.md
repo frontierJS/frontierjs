@@ -58,7 +58,7 @@ Roughly ten models. The three that carry the argument:
 - **`Plan` and its versions.** A price that changed in March must not reprice a
   subscription sold in February. That is **reference data with a validity
   window** — effective dating with the interval count left open, which is
-  candidate A's temporal gap in the small. Kill Bill's catalogue is the prior art
+  candidate A's temporal gap in the small. Kill Bill's catalog is the prior art
   worth reading before writing this.
 - **`Subscription`** — a `@@transitions` state machine (`trialing → active →
   past_due → cancelled`, plus `paused`), which is the framework feature this

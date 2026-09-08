@@ -12,7 +12,7 @@ for testing on a phone.
 
 ## What it is
 
-A realistic SaaS admin, not a component catalogue. `../guide/` already
+A realistic SaaS admin, not a component catalog. `../guide/` already
 shows every class in isolation; the point of this one is the opposite — to put
 the vocabulary under the pressure of a screen that has to actually work, and
 see what breaks.

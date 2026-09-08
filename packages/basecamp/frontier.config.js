@@ -30,7 +30,7 @@ export default {
       // 8120 everywhere: the port scheme's backend slot for project 2
       // (packages/cli/core/ports.js), which is what the Dockerfile EXPOSEs, what
       // compose publishes, and what `bun run api` binds — so the URL is the same
-      // whether the stack is containerised or not.
+      // whether the stack is containerized or not.
       port: 8120,
 
       // No apiPrefix in this app, so health is at the bare path. It matters more

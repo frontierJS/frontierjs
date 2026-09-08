@@ -143,7 +143,7 @@ if (!await must(context, probe.fileContains({ path: home, needle: TAG, name: 'th
 // and `.mesa` is not one it knows — so the bare path is served as a static
 // file and answers 200 with the source, which reads as a component that
 // compiled to itself. The query is what Vite appends when a module imports a
-// file it cannot recognise, and it is the only spelling that runs the plugin.
+// file it cannot recognize, and it is the only spelling that runs the plugin.
 //
 // A file that does not compile answers 500 with the compiler's own sentence in
 // the body, which is why the probe reports a status separately from a missing

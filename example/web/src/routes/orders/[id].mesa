@@ -59,7 +59,7 @@ title: Order
   let custRow     = null
   let unwatchCust = null
   let items    = []        // OrderLine rows — what was bought
-  let itemsError = null    // why the itemisation is empty, when it is empty for a reason
+  let itemsError = null    // why the itemization is empty, when it is empty for a reason
   let error    = null
   let busy     = null
   let confirm  = null      // the move awaiting confirmation, or null
@@ -79,7 +79,7 @@ title: Order
   // schema's own gate rather than of a number written here.
   $: maySeeMoney = payments.can('read', session.level)
 
-  // What an itemisation shows. A UI decision, like the orders list's own
+  // What an itemization shows. A UI decision, like the orders list's own
   // columns — but every value under it is a column `OrderLine` declares.
   const columns = [
     { key: 'description', label: 'Item' },
@@ -132,7 +132,7 @@ title: Order
     unwatchCust?.(); custRow?.release()
   })
 
-  /** What hangs off the order and does NOT move with it — the itemisation and
+  /** What hangs off the order and does NOT move with it — the itemization and
    *  the money. Each is its own read for its own reason (see loadItems and
    *  loadMoney), and neither changes when the status does. */
   async function loadDetails() {
@@ -156,7 +156,7 @@ title: Order
    *  A separate read rather than an `include` on the order, for the reason the
    *  payments read is separate: the two answer different questions and one of
    *  them is gated differently. It is also what makes the empty case legible —
-   *  an order with no itemisation and an order whose itemisation could not be
+   *  an order with no itemization and an order whose itemization could not be
    *  read are two states, and joining would collapse them into a shorter list.
    *
    *  The second argument is the DIRECTIVES themselves, not a bag holding them.
@@ -405,7 +405,7 @@ title: Order
         <Alert tone="danger" id="items-error">{itemsError}</Alert>
       {:else if !items.length}
         <p class="text-sm text-muted" id="no-items">
-          This order has no itemisation. Lines are written by
+          This order has no itemization. Lines are written by
           <Mono>carts.checkout</Mono> at the moment of sale, so an order raised
           by hand on this screen has none — and nothing writes them afterwards,
           which is the point.
@@ -468,7 +468,7 @@ title: Order
 
         <p class="text-sm text-muted">
           Every column here is a copy taken at the moment of sale — the price,
-          the SKU and the wording. Editing the catalogue does not move them,
+          the SKU and the wording. Editing the catalog does not move them,
           which is what makes this a record of what was bought rather than a
           view of what is on sale.
         </p>

@@ -574,7 +574,7 @@ long seed — a rebuild advances `seq`, which changes every generated value.
 
 **Well-known field names get real words when seeded.** `firstName`, `lastName`,
 `city`, `country`, `company`, `street`, `postcode`, `title`, `description`, `body`
-and friends draw from a small built-in catalogue, matched case- and
+and friends draw from a small built-in catalog, matched case- and
 separator-insensitively (`first_name` = `firstName`):
 
 ```js
@@ -585,7 +585,7 @@ separator-insensitively (`first_name` = `firstName`):
 
 Only when a seed was set. **Unseeded output is unchanged** (`FirstName 1`,
 `City 1`) — schema-derived test *cases* have to stay stable and diff-able. The
-catalogue pool is small, so a `@unique` column also carries the seq token.
+catalog pool is small, so a `@unique` column also carries the seq token.
 
 **`@regex` is best-effort.** Patterns cannot be inverted in general; the generator
 covers the common subset (anchors, literals, `\d`/`\w`/`\s`, character classes with
@@ -615,7 +615,7 @@ await makeTestClient(schemaText, { factories: { user: UserFactory } })
 ```
 
 Everything a subclass can do, with nothing declared twice. `traits` on a subclass
-is an instance field, which initialises only after `super()` returns — the sole
+is an instance field, which initializes only after `super()` returns — the sole
 reason `Factory`'s constructor returns a Proxy. Here it is known up front, so that
 path never runs.
 

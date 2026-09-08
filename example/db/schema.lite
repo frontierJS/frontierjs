@@ -106,10 +106,10 @@ database audit {
 // hypothetical: `InventoryMovement.variant` is `onDelete: Restrict` precisely so
 // a shelf that has moved cannot be deleted out from under its own tape — which
 // meant that a product which had ever sold could not be taken out of the
-// catalogue AT ALL. The refusal was right and there was no other way out.
+// catalog AT ALL. The refusal was right and there was no other way out.
 //
 // It is NOT a second `active`. `active: false` is *we are not selling this right
-// now*: the row stays in the catalogue, staff see it, it comes back for next
+// now*: the row stays in the catalog, staff see it, it comes back for next
 // season. `deletedAt` is *this is not ours any more*. What makes them different
 // rather than merely differently spelled is `@unique` — a deleted product keeps
 // its slug, deliberately, because a way back that fails when a stranger has
@@ -139,7 +139,7 @@ database audit {
 //   OrderLine · InventoryMovement · PaymentEvent
 //                      append-only — written once, never edited
 
-// ─── Catalogue ────────────────────────────────────────────────────────────
+// ─── Catalog ────────────────────────────────────────────────────────────
 
 /// Which of the three a piece of merch carries. A brand is a small fixed set
 /// the shop does not invent, so it is an enum; a Collection — the thing a
@@ -203,7 +203,7 @@ model Product {
 
   /// The storefront URL segment. A real column rather than @generated from the
   /// name, because a slug must SURVIVE a rename: a link somebody bookmarked is
-  /// not something the catalogue may rewrite. @generated would also make it
+  /// not something the catalog may rewrite. @generated would also make it
   /// readOnly, and the merchant is the one who decides it.
   slug String @length(1, 80) @unique @lower
 
@@ -215,8 +215,8 @@ model Product {
 
   /// Not a second `active`, and the difference is which question it answers.
   /// `active: false` is *we are not selling this right now* — it stays in the
-  /// catalogue, staff see it, it comes back for next season. This is *it is not
-  /// ours any more*, and until it existed the catalogue had no way to say so:
+  /// catalog, staff see it, it comes back for next season. This is *it is not
+  /// ours any more*, and until it existed the catalog had no way to say so:
   /// `InventoryMovement.variant` is `onDelete: Restrict`, so a product that had
   /// ever sold one unit could not be deleted, correctly and with no way out.
   ///
@@ -245,7 +245,7 @@ model Product {
   /// it costs no extra round trip, it is not a column, and it cannot go stale
   /// because there is nothing cached to invalidate.
   ///
-  /// `priceFrom` / `priceTo` are the range the catalogue prints as `£10–£14`,
+  /// `priceFrom` / `priceTo` are the range the catalog prints as `£10–£14`,
   /// and they are the same two numbers whether one variant exists or twelve —
   /// equal when there is nothing to choose between.
   ///
@@ -262,10 +262,10 @@ model Product {
   /// scan picks the first plain string — here `name`, correctly, but by luck.
   @@label(name)
 
-  /// The catalogue is searchable, and it is searchable on the SERVER.
+  /// The catalog is searchable, and it is searchable on the SERVER.
   ///
   /// This is the one thing a prerendered storefront cannot do for itself. The
-  /// catalogue island is handed the products that were baked into the page, so
+  /// catalog island is handed the products that were baked into the page, so
   /// what it can filter is what was baked — which is every product in a shop
   /// this size and a page of them in a shop that is not. A search box that
   /// silently means *of the ones on this page* is the kind of wrong that looks
@@ -402,7 +402,7 @@ model ProductVariant {
   @@label(sku)
   
   /// The storefront never asks for a variant it cannot sell: the product page,
-  /// the buy box and the catalogue all read `{ productId, active: true }`, and
+  /// the buy box and the catalog all read `{ productId, active: true }`, and
   /// the prerender runs that once per product. A plain index on `productId`
   /// carries every retired colorway the shop has ever run, which is the half
   /// nothing reads. The predicate is ANDed with `@@softDelete`'s own clause, so
@@ -627,9 +627,9 @@ model Customer {
   
   /// Read needs a SIGNED-IN caller, and the policies below decide which rows.
   ///
-  /// It was `"0.4.4.5"` — the catalogue's gate, pasted onto the ledger — so
+  /// It was `"0.4.4.5"` — the catalog's gate, pasted onto the ledger — so
   /// `GET /api/customers` with no token at all answered every customer's name
-  /// and email. Four models legitimately read at 0 and they are all catalogue:
+  /// and email. Four models legitimately read at 0 and they are all catalog:
   /// the prerendered storefront reads them with no session, which is the whole
   /// of what a public shop front is. This is not one of them.
   ///
@@ -1029,7 +1029,7 @@ model Order {
   ///
   /// The ONE money column here that is not `@system`, and the exception is
   /// deliberate: staff raise an order by hand for a sale that happened on the
-  /// telephone, and that order has a total and no itemisation — no lines, and
+  /// telephone, and that order has a total and no itemization — no lines, and
   /// therefore no breakdown to add up. A screen renders the five above only
   /// where there are lines to explain, which is the same condition under which
   /// they were computed at all.
@@ -1067,7 +1067,7 @@ model Order {
   trackingCode   String?      @system @label("Tracking")
   
   /// What was bought. An order that carries only a total is a receipt with the
-  /// itemisation torn off — see `model OrderLine` for what that cost.
+  /// itemization torn off — see `model OrderLine` for what that cost.
   lines          OrderLine[]
   
   /// `@keep`, for the reason `Customer.orders` is: the order can be taken out
@@ -1080,7 +1080,7 @@ model Order {
   /// ─── Removal ────────────────────────────────────────────────────────────
   ///
   /// The orders screen has a Delete button behind level 5, and until this column
-  /// it destroyed the row and cascaded into `OrderLine` — an itemised financial
+  /// it destroyed the row and cascaded into `OrderLine` — an itemized financial
   /// record gone on one mis-click behind a two-button popover. `(cascade)`
   /// stamps the lines with the same instant, so an order and what it was made of
   /// leave together and come back together.
@@ -1112,7 +1112,7 @@ model Order {
   
   /// Whose order this is, when the buyer had an account at the moment of sale.
   ///
-  /// DENORMALISED from `Customer.userId`, deliberately. A row policy compares
+  /// DENORMALIZED from `Customer.userId`, deliberately. A row policy compares
   /// columns on its own model against `auth()` and does not traverse a
   /// relation, and `@from` crosses one only to AGGREGATE (`count: true`) — so
   /// *the orders of the customer this account is linked to* has nowhere to be
@@ -1168,7 +1168,7 @@ model Order {
   /// receipts.
   ///
   /// `subtotal = 0` is the exemption, and it is the shape of an order staff
-  /// raised by hand: a total, and no lines to itemise. What it cannot say is
+  /// raised by hand: a total, and no lines to itemize. What it cannot say is
   /// *no lines* — a CHECK may not hold a subquery, which is the same wall
   /// `@@fts`'s membership note runs into further up this file.
   @@check("subtotal = 0 OR total = subtotal - discount + shipping + tax",
@@ -1200,7 +1200,7 @@ model Order {
 /// statement about a MOMENT and its neighbors are statements about now. A
 /// variant's price is what the shop charges today; `unitPrice` is what this
 /// shopper was charged, and re-reading the first to render the second rewrites
-/// what past customers paid every time somebody edits the catalogue. Same for
+/// what past customers paid every time somebody edits the catalog. Same for
 /// the wording: `description` is the sentence that was on the screen, and a
 /// colorway renamed next year does not un-sell this one.
 ///
@@ -1253,7 +1253,7 @@ model OrderLine {
   /// administrator has nothing to say to this table either, and putting 5 here
   /// would offer a generated form for editing what a customer was charged.
   ///
-  /// Read was 0. That is the catalogue's answer and this is the sales ledger:
+  /// Read was 0. That is the catalog's answer and this is the sales ledger:
   /// every SKU, every quantity and every price the shop has ever charged,
   /// answerable to anyone with `curl`. Same paste as `Order` and `Customer`.
   @@gate("1.8.8.8")
@@ -1265,7 +1265,7 @@ model OrderLine {
   /// id would not be one, and it is not stored.
   ///
   /// The bound is ONE hop (`FJS-D221`), which is why `Order.userId` is a
-  /// denormalised copy of `Customer.userId` and has to stay one: reaching the
+  /// denormalized copy of `Customer.userId` and has to stay one: reaching the
   /// customer from a line is two hops and is a parse error.
   @@allow('read', order.userId == auth().id)
   
@@ -1621,7 +1621,7 @@ model Plan {
   /// a subquery rather than joined, so the pricing page costs one query.
   currentPrice Int?         @from(PlanVersion, max: price, where: "effectiveTo IS NULL")
 
-  /// A pricing page is public, exactly as the catalogue is. Editing what a shop
+  /// A pricing page is public, exactly as the catalog is. Editing what a shop
   /// charges is staff, at the same level as a `Discount`.
   @@gate("0.5.5.5")
 }
@@ -2506,7 +2506,7 @@ model Employee {
 ///
 /// Named for the WINDOW rather than for the terms it carries, and the rename
 /// was `fli check`'s: `model EmploymentTerms` reads as a plural, so
-/// `employment-terms` singularises to `EmploymentTerm` and Invariant 2's three
+/// `employment-terms` singularizes to `EmploymentTerm` and Invariant 2's three
 /// resolvers stop agreeing — a resource file over it would resolve to no model
 /// at all. `PayWindow` is what every comment in `api/src/employment.ts` already
 /// called it.

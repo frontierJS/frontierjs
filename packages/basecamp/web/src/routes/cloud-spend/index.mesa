@@ -114,7 +114,7 @@ title: Cloud spend
   const TONE = { healthy: 'success', unconfigured: 'muted', unreachable: 'danger', degraded: 'warning' }
 
   const STATUS_TONE = {
-    online: 'success', ready: 'success',
+    online: 'success',
     draining: 'warning', provisioning: 'warning', installing: 'warning', pending: 'warning',
     unreachable: 'danger', destroyed: 'danger', stopped: 'muted',
   }

@@ -146,6 +146,8 @@ export const RULES = [
     title: 'every lesson is one the tutorial index lists' },
   { id: 'skill-pointer',        scope: 'repo', severity: 'error', invariant: null,
     title: 'every skill CLAUDE.md names is a SKILL.md whose frontmatter agrees' },
+  { id: 'american-spelling',    scope: 'repo', severity: 'warn',  invariant: null,
+    title: 'one spelling, and it is the American one' },
 
   // The notes, graded against the tree — `core/doc-audit.js`. Prose is the one
   // artefact here with no compiler, no test and no snapshot behind it, and it is
@@ -502,7 +504,7 @@ const CHECKS = {
     return { findings }
   },
 
-  // Invariant 19. **The schema decides**, rather than a pluralisation rule this
+  // Invariant 19. **The schema decides**, rather than a pluralization rule this
   // file would have to keep in step with sierra's: the filename must name a
   // model, or the resource must state the `model:` it means. That is the same
   // conclusion `modelNameFor()` reaches when it misses — except it warns into a
@@ -547,7 +549,7 @@ const CHECKS = {
           findings.push({
             file: path,
             message: `states model: '${stated[1]}', a view, and is named ${name}.mesa while the service is ` +
-                     `'${svc}'. A Resource over a view takes its SERVICE noun singularised — ` +
+                     `'${svc}'. A Resource over a view takes its SERVICE noun singularized — ` +
                      `${modelName(svc)}.mesa — because a projection is named like an accessor and has no ` +
                      `PascalCase name for the tree to carry.`,
           })
@@ -562,7 +564,7 @@ const CHECKS = {
       }
       if (known.has(name)) continue
 
-      // A Resource over no model takes its SERVICE noun, singularised — which is
+      // A Resource over no model takes its SERVICE noun, singularized — which is
       // `Hub.mesa` for `createResource('hub')`, and correct. Judging it against
       // the schema alone would refuse every cross-cutting resource an app has.
       const service = src.match(/createResource\(\s*['"]([A-Za-z0-9_-]+)['"]/)?.[1]
@@ -572,7 +574,7 @@ const CHECKS = {
         file: path,
         message: `no model named ${name} in db/schema.lite${service ? `, and the service is '${service}'` : ''}. ` +
                  `Either the file is misnamed, or this is a Resource over no model and should take its ` +
-                 `service noun singularised — and if the service does not pluralise regularly from the ` +
+                 `service noun singularized — and if the service does not pluralize regularly from the ` +
                  `model, say so with model:.`,
       })
     }
@@ -1245,7 +1247,7 @@ const CHECKS = {
       findings.push({
         file: path, line: lineOf(code, call ? call.index : 0),
         ...(edit ? { edit } : {}),
-        message: `createBaseService with no model:, and '${service}' resolves to none — it singularises ` +
+        message: `createBaseService with no model:, and '${service}' resolves to none — it singularizes ` +
                  `to '${singularize(service)}', while db.<accessor> is the model name with a lower first ` +
                  `letter, so a hyphenated name never meets it. The miss is silent and fails open: the ` +
                  `@@gate is not found and the model is served to anyone. State it — ` +
@@ -2674,6 +2676,7 @@ const CHECKS = {
   'doc-unchecked-count': ({ root }) => docUncheckedCount({ root, countables: [...COUNTABLES, checkRulesCountable(RULES)] }),
   'invariant-enforcer': ({ root }) => invariantEnforcer({ root }),
   'skill-pointer':      ({ root }) => skillPointer({ root }),
+  'american-spelling':  ({ root }) => americanSpelling({ root }),
 }
 
 // ─── reading source ───────────────────────────────────────────────────────────
@@ -3246,6 +3249,117 @@ function declaredMoves({ text }) {
 // the failure this rule exists to prevent.
 function looksPlural(name) {
   return singularize(name) !== name
+}
+
+// ─── american-spelling ────────────────────────────────────────────────────────
+//
+// `FJS-D192` flipped this repo from British to American, prose and identifiers
+// alike, and nothing graded it — so it re-drifted, and the second sweep
+// (`FJS-D239`'s neighbour, 2026-09-07) was 1,131 replacements across 285 files.
+// A ruling nothing measures is a ruling that has to be re-applied by hand every
+// few weeks, which is `FJS-D190`'s argument about invariants one tier down.
+//
+// **The table is the -ise/-ize family and nothing else.** It is the one that
+// actually drifts, because both spellings look correct to a reader and neither
+// is flagged by any editor. `-our`, `-re` and `-ce` are not graded: `colour`
+// went with `FJS-D192` itself and stayed gone, and a rule that fires on `centre`
+// would have to know it is not a proper noun.
+//
+// **Three legitimate English nouns are the reason this is a word list and not a
+// suffix rule**: `parenthesis`, `synthesis` and `initialism` all carry `-is-`
+// and none is a British spelling. Every entry below therefore carries enough
+// letters that it cannot match one — each needs the `-e`, `-ing` or `-ation`
+// those nouns do not have. A suffix rule tried on this repo rewrote `analyses`,
+// the plural of `analysis`, in `toolbelt/inflect` AND in the test that guards
+// it, in one commit, leaving nothing to fail — the comment there is a warning
+// rather than history.
+//
+// **What is deliberately not graded**: `cancelled`, which `FJS-D192` names as
+// its one standing exception (a persisted enum value across `example` and
+// `basecamp`, so a rename is a migration); the two append-only archives, whose
+// entries record what was written; and generated `*.snapshot.*`, which is its
+// generator's output rather than anybody's prose.
+
+const BRITISH = [
+  'summarise', 'normalise', 'serialise', 'sanitise', 'memoise', 'materialise',
+  'recognise', 'initialise', 'organise', 'optimise', 'minimise', 'maximise',
+  'finalise', 'visualise', 'anonymise', 'tokenise', 'itemise', 'humanise',
+  'pluralise', 'singularise', 'generalise', 'neutralise', 'canonicalise',
+  'synchronise', 'containerise', 'parameterise', 'internalise', 'editorialise',
+  'institutionalise', 'parenthesise', 'synthesise', 'deserialise',
+  'normalisation', 'organisation', 'optimisation', 'itemisation',
+  'materialisation', 'memoisation', 'pluralisation', 'neutralisation',
+  'containerisation', 'singularisation',
+  'normalising', 'organising', 'optimising', 'summarising', 'sanitising',
+  'materialising', 'recognising', 'initialising', 'synthesising',
+  'parenthesising', 'synchronising', 'pluralising', 'generalising',
+  'tokenising', 'finalising', 'maximising', 'visualising', 'anonymising',
+  'catalogue', 'greylist', 'labelling',
+]
+
+const BRITISH_RE = new RegExp(`(${BRITISH.join('|')})`, 'i')
+const SPELL_EXT  = /\.(js|ts|mjs|cjs|jsx|tsx|md|lite|mesa|json|html|css|sql|yml|yaml)$/
+// Four exemptions beyond the archives, and the last is the one that matters.
+// `*.live.*` is `ws:atlas --live`'s deliberately ungated output and `out/` is a
+// build directory. This file is where the table above lives, so a rule reading
+// its own source would report every word it exists to find — the shape a
+// dictionary check always has, and cheaper to state than to encode around by
+// splitting the strings.
+//
+// **`test/fixtures/corpus/` is foreign input and grading it would be wrong**,
+// not merely noisy: those schemas are fetched from real projects so the readers
+// meet input nobody here wrote, and `Organisation` is Documenso's own model
+// name. Correcting it would edit somebody else's schema and break the very
+// property the corpus exists for. The rule grades what this repo WROTE.
+const SPELL_SKIP = /\.snapshot\.|\.live\.|\/out\/|test\/fixtures\/corpus\/|docs\/handoff-archive\/|ISSUES_ARCHIVE\.md$|core\/checks\.js$/
+
+function americanSpelling({ root }) {
+  const findings = []
+  const seen     = new Set()
+
+  walk(root, 6, (dir) => {
+    for (const name of safeRead(dir)) {
+      if (!SPELL_EXT.test(name)) continue
+      const file = join(dir, name)
+      const rel  = relative(root, file)
+      if (SPELL_SKIP.test(rel) || seen.has(rel)) continue
+      seen.add(rel)
+      let text
+      try { if (!statSync(file).isFile()) continue; text = readFileSync(file, 'utf8') }
+      catch { continue }
+      if (!BRITISH_RE.test(text)) continue
+      text.split('\n').forEach((line, i) => {
+        const m = BRITISH_RE.exec(line)
+        if (!m) return
+        // The escape, and it is narrow on purpose: a line carrying `spelling-exempt`
+        // is one where the British form is INPUT rather than prose — a synonym
+        // table holding what a searcher types, a matcher for a column an app
+        // named itself. Correcting those deletes the entry rather than fixing a
+        // spelling. It takes a reason on the same line because the marker is the
+        // only thing a reader will see.
+        if (/spelling-exempt/.test(line)) return
+        // One finding per LINE and at most three per file: a sweep is one
+        // action, and a hundred rows of the same word is a report nobody reads.
+        if (findings.filter(f => f.file === file).length >= 3) return
+        findings.push({ file, line: i + 1,
+          message: `writes \`${m[1]}\` — this repo is American throughout, prose and identifiers ` +
+                   `alike (\`FJS-D192\`). Write \`${american(m[1])}\`.` })
+      })
+    }
+  })
+  return { findings }
+}
+
+// The American form of one British word, derived rather than paired: every entry
+// in the table above differs only in `s` → `z`, except the three that are a
+// different word. A second column would be a second thing to keep in step.
+function american(word) {
+  const lower = word.toLowerCase()
+  const out = lower === 'catalogue' ? 'catalog'
+            : lower === 'greylist'  ? 'graylist'
+            : lower === 'labelling' ? 'labeling'
+            : lower.replace(/is(e|a|i)/, 'iz$1')
+  return word[0] === word[0].toUpperCase() ? out[0].toUpperCase() + out.slice(1) : out
 }
 
 // ─── walking ──────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 <!--
   The buy box — the one island on this site that WRITES.
 
-  Everything else here reads: the catalogue filters, the prices correct
+  Everything else here reads: the catalog filters, the prices correct
   themselves, the account page lists orders somebody already placed. This one
   puts a row in a table, and the row belongs to a shopper with no account at
   all — `Cart` is `@@gate("0.0.0.5")` and its rows are reached by `@@allow('read',
@@ -64,7 +64,7 @@
       live  = next
       state = 'ready'
     } catch {
-      // A storefront whose shop is unreachable is still a catalogue. It just
+      // A storefront whose shop is unreachable is still a catalog. It just
       // cannot sell, and it says so rather than offering a button that fails.
       state = 'offline'
     }

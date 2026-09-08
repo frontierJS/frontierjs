@@ -1340,8 +1340,8 @@ export const EXAMPLES = {
   $context.theme  = theme             // provides theme to any descendant
   $context.region = region            // provides snapshot region downward
 
-  // ── Catalogue (static const — no deps) ───────────────────────────────────
-  const catalogue = [
+  // ── Catalog (static const — no deps) ───────────────────────────────────
+  const catalog = [
     { id: 1, name: 'Apples',     price: 1.20, emoji: '🍎' },
     { id: 2, name: 'Bread',      price: 2.50, emoji: '🍞' },
     { id: 3, name: 'Coffee',     price: 8.99, emoji: '☕' },
@@ -1351,7 +1351,7 @@ export const EXAMPLES = {
   ]
 
   // ── Derived consts ────────────────────────────────────────────────────────
-  const filtered   = catalogue.filter(p =>
+  const filtered   = catalog.filter(p =>
     p.name.toLowerCase().includes(query.toLowerCase())
   )
   const cartTotal  = cart.reduce((s, i) => s + i.price * i.qty, 0)

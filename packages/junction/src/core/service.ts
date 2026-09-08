@@ -54,7 +54,7 @@ export type CacheDeclaration =
        * rows are real, they just belong to somebody else.
        *
        * Declare it for a service over a model no tenant owns — a `@@tenant(none)`
-       * lookup table, a public catalogue. It is a statement about the DATA, so
+       * lookup table, a public catalog. It is a statement about the DATA, so
        * it is the app's to make: the framework can see that a tenant is in
        * scope and cannot see whether the answer depended on it.
        */
@@ -335,7 +335,7 @@ export interface Service {
   /**
    * The resolved pipelines for these app-level hooks.
    *
-   * The one owner. Memoised on the app map's identity and a version this
+   * The one owner. Memoized on the app map's identity and a version this
    * service's own `hooks()` bumps, so both inputs are in the key and a stale
    * answer cannot be handed out. Callers pass the app hooks they intend to run;
    * they get pipelines that include them.
@@ -597,7 +597,7 @@ async function _callService(
   // derived autoFilter behind it — and a custom method runs neither.
   liftReservedQuery(ctx, service.name, service.reservedQuery)
 
-  // One owner, memoised on the app hooks it was HANDED — so a call always runs
+  // One owner, memoized on the app hooks it was HANDED — so a call always runs
   // the hooks its caller passed, which the old compiled-cache rung could not
   // promise.
   const pipelineSource = service.pipelines(appHooks)
@@ -2413,7 +2413,7 @@ export function createService(def: ServiceDefinition): Service {
 
   // ── The pipeline, and its one owner ───────────────────────────────────────
   //
-  // Memoised on BOTH inputs: the app's hook map by identity, and the service's
+  // Memoized on BOTH inputs: the app's hook map by identity, and the service's
   // own by a version that `hooks()` bumps. That is what makes staleness
   // impossible rather than remembered — there used to be a `_compiledPipelines`
   // cache with four writers, a hand invalidation, a registry that monkey-patched

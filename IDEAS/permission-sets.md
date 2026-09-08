@@ -114,7 +114,7 @@ useful part:
 | Theirs | Shape | FJS today |
 | --- | --- | --- |
 | `roles` + `permission-groups` | verbs × nouns, assigned per user | **nothing declared** — the predicate compiles, see below |
-| `account-group-product-line-access` | which subset of the catalogue an account group sees | `@@allow` |
+| `account-group-product-line-access` | which subset of the catalog an account group sees | `@@allow` |
 | `customer-product-line-access` | the same, per customer | `@@allow` |
 | `users-territories` | which subset of the map a rep sees | `@@allow` |
 | account mode / sysadmin | ordered standing | `@@gate` |
@@ -280,7 +280,7 @@ enum Permission {
   invoices_write  @label("Edit invoices")
   /// Void a posted invoice. Irreversible.
   invoices_void   @label("Void an invoice")
-  catalog_read    @label("View catalogue")
+  catalog_read    @label("View catalog")
   catalog_price   @label("Set prices")
 }
 
@@ -346,7 +346,7 @@ clerk, and both are level 4 — which is the grid, running, with no mechanism ad
 **The role editor is `<Form {resource} />` and nothing else.** `@label` on an enum
 member reaches the client as `x-labels` on the `Permission` `$def`, so the
 multiselect a `Permission[]` column already generates carries *Void an invoice*
-rather than `invoices_void`. No display table, no second source, no catalogue. The
+rather than `invoices_void`. No display table, no second source, no catalog. The
 `///` doc comment is there for the longer sentence when a screen wants one.
 
 ### Several roles, and the rule that keeps it a union
@@ -531,7 +531,7 @@ opinion.
 
 **The template for how a capability should reach a method is `input:`.**
 `{ method: 'recordTracking', input: 'TrackingUpdate' }` does not put the shape in the
-service — it names a `type` in the seed. Which generalises to the rule the whole
+service — it names a `type` in the seed. Which generalizes to the rule the whole
 layering seems to want:
 
 > The seed owns what a thing is. A service names which one applies. A service never
@@ -730,7 +730,7 @@ Step 1 shipped 2026-08-26. The rest, in dependency order:
 | ~~1~~ | ~~the two declarations, and the derived set~~ | **shipped** — `@@capabilities`, `@@capabilities(all)`, `@capability`, `deriveCapabilities()` |
 | ~~2~~ | ~~the refusals~~ | half shipped with 1 (`@capability` without the model's switch); the half that needs a held name folded into 4 |
 | ~~3~~ | ~~enforcement~~ | **shipped 2026-08-26** — `CapabilityPlugin` auto-installed on the gate's seam (so every read path is free), a move graded where the transition's `@gate` is, a column graded beside `@system`, four contradictions refused at parse. 19 tests against a real client |
-| ~~4~~ | ~~the grant column~~ | **shipped 2026-08-26** — `Capability` synthesised as a real enum, so storage, the typo refusal and the picker come from tested machinery; the escalation guard as a property of the column (subset, never a rank); the hand-written literal inside a predicate resolved at parse. 14 tests |
+| ~~4~~ | ~~the grant column~~ | **shipped 2026-08-26** — `Capability` synthesized as a real enum, so storage, the typo refusal and the picker come from tested machinery; the escalation guard as a property of the column (subset, never a rank); the hand-written literal inside a predicate resolved at parse. 14 tests |
 | ~~5~~ | ~~affordance and snapshot~~ | **shipped 2026-08-26** — `x-capabilities` (names, never a verdict), `$capabilitiesFor` on all four flavors with its `unknown` bucket, a derived section in `access.snapshot.md`, and a grid change graded on the access axis. 14 tests |
 | ~~6~~ | ~~cli~~ | **shipped 2026-08-26** — `litestone access --for <who>`, `capabilityDrift` on the `--from` comparison (which is where a rename is computable — **`migrate create` cannot see one**, measured), and `fli check`'s `capability-ladder`. 11 tests |
 | ~~7~~ | ~~basecamp adopts it~~ | **shipped 2026-08-26** — `Server` and `Environment` opt in (10 capabilities, grouped by model, which is a picker), `WorkspaceMember.capabilities` is the grant column, and `membershipClaim({ capabilities })` reads it onto `auth().capabilities` off the row the standing already comes from — per request, per workspace, cached nowhere, which settles `FJS-D149`'s owed probe by executing it. **Adoption found three defects in the mechanism and one in the record.** The record said this deletes `refuseRoleAboveOwn`: it does not, because all three membership writers are `asSystem()`, which has no principal, so *what you hold* is undefined there rather than merely skipped — and the guard needed the ladder axis KEPT beside the new subset one, since `admin` and `owner` hold the same grid. In the mechanism: `@system` moves derived as capabilities (basecamp's `Server` offered eight where three are human); `access.js` re-derived the picker's list by hand instead of asking `deriveCapabilities`, and the two disagreed the moment the derivation learned something (Invariant 4); and **a finer grant ADDED to the coarse one instead of replacing it** — writing a `@capability` column also demanded `Model.update` and a move also demanded it, so `Server.reboot` alone could not reboot and `Environment.variables` could only be handed to somebody who already held every other edit. That last one is the complaint this whole record was written to answer, shipped inverted, and invisible to every unit test because no fixture had ever held one grant and not the other |
@@ -766,7 +766,7 @@ model Role {
 }
 ```
 
-`Capability` is a type litestone synthesises from the schema's own surface, the way
+`Capability` is a type litestone synthesizes from the schema's own surface, the way
 `File` is a built-in that carries behavior — D139 already says the set is derived,
 so the type IS that set. The alternative spelling is `String[] @capability`, which
 works and is less good: validation becomes attribute-driven where the type already
@@ -1070,7 +1070,7 @@ language stops being reviewable.
   capabilities) carries the escalation guard as a property of the column, so the
   operator buys one of the three things the declaration buys and only if every model
   remembers to write it. What remains open is the spelling: `Capability[]` as a
-  synthesised type, recommended, against `String[] @capability`.
+  synthesized type, recommended, against `String[] @capability`.
 - ~~**What answers *what can this person do*, once roles union?**~~ Ruled by `FJS-D148`:
   `db.$capabilitiesFor(principal)` on every flavor of client, the shape `$checkWhere` and
   `$protectedFields` already have, with a CLI as a caller rather than a second

@@ -8,7 +8,7 @@ const { findProjectRoot, findWorkspaceRoot, fliTmpRoot, sweepStaleTmp } = await 
 // A monorepo with two FJS apps inside it — the shape of this repo (example/,
 // packages/basecamp/). Walking up to the .git root landed on a directory with
 // no db/schema.lite, so every paths.* pointed at nothing and project:map /
-// project:view refused to run from inside either app.
+// the project map refused to run from inside either app.
 let ROOT
 const p = (...s) => join(ROOT, ...s)
 

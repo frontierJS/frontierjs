@@ -2772,7 +2772,7 @@ describe('track() stores values, trackDerived() derives', () => {
     let fired = 0
     const cb = () => { fired++; return 'RET' }
     // Exactly what the compiler emits for `export let ondone`. Arity used to
-    // decide this, so `<Child ondone={() => n++} />` was memoised and called
+    // decide this, so `<Child ondone={() => n++} />` was memoized and called
     // during setup, and on:click bound the return value instead of the callback.
     const sig = track(cb, undefined, undefined, null)
     expect(fired).toBe(0)
@@ -2789,7 +2789,7 @@ describe('track() stores values, trackDerived() derives', () => {
     expect(trackedGet(sig)).toBe(bump)
   })
 
-  it('trackDerived memoises and tracks its dependencies', () => {
+  it('trackDerived memoizes and tracks its dependencies', () => {
     const [n, setN] = createSignal(1)
     const d = trackDerived(() => n() * 2, undefined, undefined, null)
     expect(trackedGet(d)).toBe(2)

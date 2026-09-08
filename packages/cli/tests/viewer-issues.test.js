@@ -1,4 +1,4 @@
-// ─── viewer-issues.test.js — what `fli project:view` calls a finding ───────────
+// ─── viewer-issues.test.js — what the served project map calls a finding ──────
 //
 // `collectIssues` had no test, and both of its checks were wrong for every row
 // they ever printed.

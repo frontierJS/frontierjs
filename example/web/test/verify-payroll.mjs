@@ -66,7 +66,7 @@ const RUN = String(Date.now()).slice(-6)
 
 // ─── servers ──────────────────────────────────────────────────────────────
 //
-// This drive starts and stops both, for `verify:catalogue`'s reason and for one
+// This drive starts and stops both, for `verify:catalog`'s reason and for one
 // of its own. **A dev server serves the code it STARTED with**, and this domain
 // is the sharpest case of that in the repository: a payroll service registered
 // after the process booted is not a 500 that names itself, it is

@@ -31,6 +31,7 @@ import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
 import { createBasecampDb }              from './core/db.ts'
 import { createSecretResolver }          from './core/credentials.ts'
 import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts'
+import { registerAllAccounts } from './providers/compute/accounts.ts'
 import { notificationsPlugin }  from '@frontierjs/notifications'
 import { basecampAuditLog, basecampAuditPreImage, requireOutpostSignature, resolveWorkspaceId } from './core/hooks.ts'
 import { grantsFor } from './core/capabilities.ts'
@@ -685,6 +686,25 @@ export async function buildBasecampApp(
 
   app.configure(function staticRoutes(a) {
     a.get('/', () => Bun.file(new URL('../../web/index.html', import.meta.url).pathname))
+  })
+
+  // ── Cloud accounts as Conduit targets ─────────────────────────────────
+  // A `Secret` of kind `provider_key` IS a cloud account, and it becomes an
+  // address here. `boot()` and not `register()`: the descriptor goes into
+  // conduit's own registry, so this cannot run before that plugin has bound
+  // `app.conduit` — which `requires` states rather than leaves to file order.
+  //
+  // The mail target above is declared in the options list because it is
+  // CONFIGURATION — two env vars, known before anything reads a row. An account
+  // is a row somebody typed into a form, so it is registered on write
+  // (secrets.service) and re-registered for every existing row here.
+  app.configure({
+    name:     'basecamp-cloud-accounts',
+    requires: ['conduit'],
+    boot:     async () => {
+      const n = await registerAllAccounts(app as unknown as BasecampApp, db)
+      if (n) logger.info('conduit: cloud accounts registered', { count: n })
+    },
   })
 
   // ── Graceful shutdown ─────────────────────────────────────────────────

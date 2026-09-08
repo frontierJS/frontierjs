@@ -2748,13 +2748,13 @@ describe('allowBulk guard', () => {
 // hooks the transport had just handed over. A stale entry was a wrong answer,
 // not a slow one.
 //
-// pipelines(appHooks) is memoised on both inputs — the app map by identity, the
+// pipelines(appHooks) is memoized on both inputs — the app map by identity, the
 // service's own by a version hooks() bumps — so staleness is unreachable rather
 // than remembered.
 
 describe('pipelines — one owner', () => {
 
-  it('memoises on the app hooks it is given', async () => {
+  it('memoizes on the app hooks it is given', async () => {
     const svc = createService({ name: 'pings', find: async () => [] })
     const h1  = { before: { all: [async function a() {}] } }
     const h2  = { before: { all: [async function b() {}] } }

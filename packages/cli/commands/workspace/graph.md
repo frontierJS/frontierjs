@@ -19,7 +19,7 @@ flags:
     defaultValue: false
 ---
 
-Visualises which packages depend on which, so you know what order to build
+Visualizes which packages depend on which, so you know what order to build
 and publish in. Workspace interdependencies are highlighted — external deps
 are counted but hidden by default (use `--external` to show them).
 

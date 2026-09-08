@@ -28,7 +28,7 @@ render: static
   -->
   <noscript>
     <h1>Basket</h1>
-    <p>Your basket needs JavaScript. <a class="link" href="/catalog/">Back to the catalogue</a>.</p>
+    <p>Your basket needs JavaScript. <a class="link" href="/catalog/">Back to the catalog</a>.</p>
   </noscript>
 
   <Basket client:load />

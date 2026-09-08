@@ -1999,7 +1999,7 @@ class Parser {
     return this.parsePolicyPrimary()
   }
   parsePolicyPrimary() {
-    // A parenthesised group is an OPERAND like any other, so the comparison
+    // A parenthesized group is an OPERAND like any other, so the comparison
     // check below applies to it too. It used to return immediately, which made
     // `(a ? 1 : 2) == 1` a parse error — harmless while the language was
     // predicate-only and in the way the moment it produces values.
@@ -2024,7 +2024,7 @@ class Parser {
         `Membership is 'in' with the list on the right — 'auth().id in memberIds'.`, next)
     return left
   }
-  // A comparison operand: a parenthesised expression, or a plain value.
+  // A comparison operand: a parenthesized expression, or a plain value.
   parsePolicyOperand() {
     if (!this.check(TK.LPAREN)) return this.parsePolicyValue()
     this.eat(TK.LPAREN)
@@ -2531,7 +2531,7 @@ class Parser {
       case 'deny': {
         this.eat(TK.LPAREN)
         const opStr = this.eat(TK.STRING).value
-        const operations = normalisePolicyOps(opStr, this.peek())
+        const operations = normalizePolicyOps(opStr, this.peek())
         this.eat(TK.COMMA)
         const expr = this.parsePolicyExpr()
         let message = null
@@ -2816,7 +2816,7 @@ class Parser {
       }
 
       // A state is an enum member or a boolean literal. `true`/`false` are their
-      // own token, so an enum-only reader stopped at the tokeniser and the
+      // own token, so an enum-only reader stopped at the tokenizer and the
       // commonest two-state machine in any schema had no declaration at all.
       // A state is an enum member, and a member may be quoted — so a move onto
       // `"To Receive and Bill"` names it the way the enum declares it.
@@ -3185,7 +3185,7 @@ class Parser {
 
 const VALID_POLICY_OPS = new Set(['read', 'create', 'update', 'post-update', 'delete'])
 
-function normalisePolicyOps(str, token) {
+function normalizePolicyOps(str, token) {
   if (str === 'all')   return ['read', 'create', 'update', 'post-update', 'delete']
   if (str === 'write') return ['create', 'update', 'delete']
   const parts = str.split(',').map(s => s.trim())
@@ -5117,8 +5117,8 @@ function validate(schema) {
     if (db.replication && (db.driver === 'jsonl' || db.driver === 'logger'))
       errors.push(`database '${db.name}': replication is not supported for ${db.driver} databases`)
     // `model` names the trail's own table. On a logger database it is optional
-    // — an auto `<db>Logs` is synthesised when it is absent — and on a SQLite
-    // one it is required, because there is nothing to synthesise INTO: a table
+    // — an auto `<db>Logs` is synthesized when it is absent — and on a SQLite
+    // one it is required, because there is nothing to synthesize INTO: a table
     // the app never declared cannot carry a `@@gate`, an `@@allow`, an index or
     // a migration, and those are the whole reason to put a trail in SQLite
     // rather than in a directory of jsonl.
@@ -6217,7 +6217,7 @@ function validate(schema) {
   for (const model of schema.models) {
     for (const attr of model.attributes) {
       if (attr.kind !== 'allow' && attr.kind !== 'deny') continue
-      // Operations already validated by normalisePolicyOps at parse time.
+      // Operations already validated by normalizePolicyOps at parse time.
       // Warn if model is on a jsonl database — policies aren't supported there.
       const dbAttr = model.attributes.find(a => a.kind === 'db')
       if (dbAttr) {

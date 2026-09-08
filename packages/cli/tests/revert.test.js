@@ -399,7 +399,7 @@ describe('the whole picture', () => {
     expect(kinds(blocking(r))).toEqual(['no-image'])
   })
 
-  test('every kind the checker can produce is in the catalogue', () => {
+  test('every kind the checker can produce is in the catalog', () => {
     const produced = new Set([
       ...kinds(check({ since: [t('t', 'r', 'succeeded', { crossesPivot: 1 })] })),
       ...kinds(check({ target: RELEASE('r1', { retentionUntil: '2000-01-01T00:00:00.000Z' }) })),

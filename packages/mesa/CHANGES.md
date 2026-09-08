@@ -548,7 +548,7 @@ initializer LAZY, so `const handle = subscribe(id)` never subscribed when nothin
 **The narrowing then broke a real screen, and that is the more useful half.** A call to a
 binding the script holds is a second door reactivity comes through: `useStore` hands back a
 getter, so `Math.max(10, ...rows().map(f))` reads a signal INSIDE the call where no name the
-closure walks can see it. `example`'s catalogue computed its price ceiling once against an
+closure walks can see it. `example`'s catalog computed its price ceiling once against an
 empty store and every filter above it collapsed to one row — green in every unit suite, caught
 by `verify`. A const calling a LOCAL binding is now derived on the strength of the call. An
 imported call is not, which is `EXTERNAL_REACTIVITY.md`'s standing rule rather than a new one.
@@ -821,7 +821,7 @@ parse time. Attributes, `style:` and component props keep the old path, where `n
 `FJS-857`.
 
 `el.value` is always a string and the generic bind path wrote it straight to the signal, so a
-component initialised `let qty = 1` held `"12"` after the first keystroke: `qty + 1` was
+component initialized `let qty = 1` held `"12"` after the first keystroke: `qty + 1` was
 `"121"`, `qty > 10` compared lexicographically, and a value posted to the API arrived as a
 string a JSON-Schema `type: integer` refuses one realm away. The write direction was fine,
 which is why every round trip that set the value from code passed.
@@ -998,11 +998,11 @@ is a PAIR — the forwarded attribute beside the same expression on a plain
 element — so a fix that froze both would look like a fix that froze neither.
 `example`: `verify:payroll` is the app-level half, where it was found.
 
-## 2026-08-30 — a parenthesised dep list is grouping, and nothing else
+## 2026-08-30 — a parenthesized dep list is grouping, and nothing else
 
 `FJS-599`. 1351 vitest + 89 runtime-browser + 47 vite-browser, 0 fail.
 
-A `$:` dep list is a comma expression, so a parenthesised group inside one is
+A `$:` dep list is a comma expression, so a parenthesized group inside one is
 another `SequenceExpression` rather than a leaf. It reached the collector as a
 single node, whose `memberPath` is null and whose `collectRefs` is the ROOT
 alone — so `$: (a.x, a.y), () => f()` was silently replaced by a watch on the
@@ -1010,7 +1010,7 @@ whole object. That is wrong on its own: a property change fires no whole-object
 watch, and the handler never runs.
 
 `flattenSeq` and `watchDeps` are the fix, and the assertion is byte-identity
-against the unparenthesised twin rather than a list of expected shapes — parens
+against the unparenthesized twin rather than a list of expected shapes — parens
 are grouping, so `$: (a.x, a.y), h` must compile to exactly what `$: a.x, a.y, h`
 compiles to, however deeply they nest. The same flattening runs for the bare
 multi-path form and for a `$: { }` group entry.
@@ -1148,8 +1148,8 @@ by refusing and a silent failure to gain by allowing. The tracking fix was the
 alternative and is not free: `ctx.accessors[root]` would become a sequence
 expression, and two call sites compare that string by equality.
 
-Conservative on purpose — only an initialiser that is VISIBLY a primitive
-refuses (`0`, `''`, `false`, `null`, a template literal, no initialiser at all).
+Conservative on purpose — only an initializer that is VISIBLY a primitive
+refuses (`0`, `''`, `false`, `null`, a template literal, no initializer at all).
 `let x = count()` has the same hole and is not decidable here, and a rule that
 guessed would refuse `let rows = []`.
 
@@ -1165,12 +1165,12 @@ behavioral cases that mount real components — a plain `let` re-rendering on it
 own, and the deep watch still tracking a mutation on an object and on a named
 path, which is the half that must not regress.
 
-## 2026-08-25 — the SSR serialiser escapes, and there are tests that say so
+## 2026-08-25 — the SSR serializer escapes, and there are tests that say so
 
 `FJS-500`, `FJS-475`. 1305 vitest + 82 runtime-browser + 47 vite-browser, 0 fail.
 
 `<p>{text}</p>` sets `textContent` at runtime and is the safest expression in
-the language. At BUILD time it renders into happy-dom and serialises with
+the language. At BUILD time it renders into happy-dom and serializes with
 `container.innerHTML`, and 14.12.3 did not re-escape a text node on the way out
 — so `renderComponent` over that component with
 `text = '<img src=x onerror=alert(1)>'` emitted the tag live, and every
@@ -1179,7 +1179,7 @@ prerendered page in every Sierra static build was publishing unescaped strings.
 **Nothing in this package's code was wrong, which is why nothing here could see
 it.** The client path is correct; only the round trip through the DOM was not,
 so the runtime suite and both browser drives agreed the escaping worked. The
-bare serialiser is one line: `div.textContent = '<script>alert(1)<\/script>'`
+bare serializer is one line: `div.textContent = '<script>alert(1)<\/script>'`
 reads back as live markup.
 
 `happy-dom` is `^20.11.6`, which was already `FJS-475`'s stated fix and had been
@@ -1188,7 +1188,7 @@ for the API rewrite. Three advisories, two critical, go with it.
 
 **Four tests pin the behavior, and they were run against 14.12.3 first to
 confirm they fail.** An assertion about a dependency belongs in the suite and
-not in a version range: a downgrade, a second resolved copy or a serialiser
+not in a version range: a downgrade, a second resolved copy or a serializer
 regression is red now, rather than an injected script on a page a CDN holds.
 They cover the four things a naive fix gets wrong — markup in an interpolation,
 a closing tag breaking out of its element, an ampersand that must not be
@@ -1206,16 +1206,16 @@ trusts. Measured on 14.12.3, through the same round trip:
 
 which re-parses to an `<a>` carrying `onmouseover`, `autofocus`, `x` and a stray
 `1`. `<img alt={…}>` and `<a href={…}>` are database strings on every
-prerendered catalogue page.
+prerendered catalog page.
 
 They assert by RE-PARSING the output and counting the element's attributes
 rather than by matching text, and the difference is not stylistic:
 `title="&quot; onmouseover=alert(1)"` contains the characters `onmouseover=`
 and is completely safe, so a string test grades the encoding while the question
 is whether an attribute was added. The payload is asserted to survive intact as
-a VALUE — escaping is not sanitising, and a product called `5" pipe` has to come
+a VALUE — escaping is not sanitizing, and a product called `5" pipe` has to come
 back as `5" pipe`. The fifth is the agreement test this suite is built on: the
-client sets the attribute through the DOM and never serialises, SSR sets the
+client sets the attribute through the DOM and never serializes, SSR sets the
 same one and does, and the two outputs must be equal.
 
 ## 2026-08-24 — `++` answers a value, and postfix answers the right one
@@ -1926,7 +1926,7 @@ Rewritten to the absolute path resolved against the ORIGINAL file. A path and
 not a `file://` URL: Node takes either, and Vite's import-analysis refuses the
 URL form — one of the two callers here is a Vite SSR runner.
 
-Found on `example`'s prerendered catalogue, where the page silently stopped
+Found on `example`'s prerendered catalog, where the page silently stopped
 being built.
 
 
@@ -2397,7 +2397,7 @@ tests use, which declares no options.
 
 They parse now. Options come last, after the optional `(key)`, and are scanned
 at **bracket depth 0** so a destructuring default (`as { name = 'anon' }`) and an
-`=` inside a key expression stay part of the binding. An unrecognised option is
+`=` inside a key expression stay part of the binding. An unrecognized option is
 refused by name with the list of the ones that exist — the rule this package
 already applies to `mesa:*` — and a `height` that is not a positive number of
 pixels is refused the same way, rather than reaching the runtime as `NaN` and
@@ -2561,7 +2561,7 @@ exist. Nothing in the workspace can catch that: `bun install` answers from
 Deleting the fork exposed a second, older defect and it is fixed in the same
 pass — **`FJS-261`**. rehype writes `<` as `&#x3C;` and `&` as `&#x26;`;
 `compiler-md.js`'s decode table knew neither, so both survived into `glow()`,
-which tokenised `&`, `#` and `;` as three separate punctuation tokens in three
+which tokenized `&`, `#` and `;` as three separate punctuation tokens in three
 `<i>` elements — which is also why no browser could put them back together. A
 ```html``` fence reading `<div>x</div>` reached the reader as `&#x3C;div>x…`,
 and `a && b` as `a &#x26;&#x26; b`. Every fence in every `.md` page mesa
@@ -3693,7 +3693,7 @@ script module never runs and the page is simply blank.
 not parse, both of which compiled cleanly, ran in dev, and failed only at
 `vite build`.
 
-The component function is named after the file. That name was sanitised for
+The component function is named after the file. That name was sanitized for
 invalid *characters* and nothing else, so it could be:
 
 - **a reserved word** — `new.mesa` → `export default function new(…)`. Known
@@ -3918,7 +3918,7 @@ Pinned in `emission.test.js` as current behavior:
 
 - **A destructuring assignment to reactive lets is not rewritten.**
   `[a, b] = [b, a]` emits `[$runtime.get(…), $runtime.get(…)] = …`, which does
-  not parse. `rewriteAssignments` only recognises a bare `Identifier` on the
+  not parse. `rewriteAssignments` only recognizes a bare `Identifier` on the
   left.
 - **`{@const}` inside `{#each}` calls the loop index as a getter**, so
   `{@const isLast = i === list.length - 1}` compiles to `i()` and throws.
@@ -4430,7 +4430,7 @@ $: { cart.total }   // bare member read — and no path watch registered either
 `fn is not a function` the first time `a` changed — so this replaces a runtime
 crash with a build-time message that names the form the author wanted.
 
-The parenthesised sequence and the handler shorthand have **identical ASTs** —
+The parenthesized sequence and the handler shorthand have **identical ASTs** —
 `{ (a, b) }` and `{ a, syncFn }` are both `SequenceExpression` with an
 `Identifier` tail. The parens are the only distinguishing feature, so the check
 reads them from source position. That is what RULE 14b is really about.

@@ -310,7 +310,7 @@ Descope, Okta and Semperis on nOAuth · Auth0 on OAuth CSRF · Supabase identity
 - Where do `state`, the PKCE verifier and the OIDC nonce live? `Verification` is
   already *identifier, guarded value, expiry* with a sweep in `cleanup.ts`. What is
   the identifier before a user exists?
-- One OIDC engine plus per-provider normalisers, or a provider table? Discovery
+- One OIDC engine plus per-provider normalizers, or a provider table? Discovery
   covers Google, Microsoft, Okta and Auth0 generically; GitHub and Apple do not.
 - Can a caller unlink their last credential and lock themselves out?
 - Which surfaces are supported at v1 — `web/` certainly, but `site/`, `widgets/` and

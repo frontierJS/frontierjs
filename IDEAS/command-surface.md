@@ -86,7 +86,7 @@ deploy failed* from *the SSH host is down*.
 
 **Why it matters more here than in oclif.** This is the CLI half of
 `IDEAS/agent-surface.md`. A registry of 197 commands, each with a described,
-typed flag set and a machine-readable result, **is** a tool catalogue — the same
+typed flag set and a machine-readable result, **is** a tool catalog — the same
 derivation `herald` proposes over services, over a surface that already exists and
 already has descriptions written by hand. Nothing else in this list changes what the
 framework can be pointed at.
@@ -255,7 +255,7 @@ command is written in.
 
 ## See also
 
-- `IDEAS/agent-surface.md` — item 2 is its CLI half; the registry is already a tool catalogue with the descriptions written
+- `IDEAS/agent-surface.md` — item 2 is its CLI half; the registry is already a tool catalog with the descriptions written
 - `IDEAS/slices.md` — item 1 is the command-shaped part of the same mechanism (3.1, 3.2)
 - `IDEAS/diagnostics.md` — `fli doctor` is the other half of item 3: one turns the hazard list executable, the other turns the command list honest
 - `packages/cli/CLAUDE.md` — the traps each of these is aimed at

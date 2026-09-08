@@ -410,7 +410,7 @@ describe('admin routes over real routes', () => {
     expect(jobsOf(app).find(id)!.name).toBe('report')
   })
 
-  it('the body becomes the job data, so a scheduled handler can be re-parameterised', async () => {
+  it('the body becomes the job data, so a scheduled handler can be re-parameterized', async () => {
     const app = await createTestApp()
     app.configure(createCaravan(opts({ admin: true })))
     jobsOf(app).schedule('sweep', '0 3 * * *', async () => {})

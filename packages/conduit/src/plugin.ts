@@ -132,7 +132,7 @@ export function conduit(opts: ConduitOptions = {}): Plugin {
     },
 
     // boot() runs during app.start() — safe to do async work here.
-    // Initialises the store and loads any static targets from opts.targets.
+    // Initializes the store and loads any static targets from opts.targets.
     async boot(app: App): Promise<void> {
       await conduitFor(app, 'boot').init()
     },

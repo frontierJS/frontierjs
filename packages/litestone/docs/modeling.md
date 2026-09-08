@@ -198,7 +198,7 @@ there and not refused here.
   takes arbitrary SQL and is the answer whenever the derivation is a **value**
   rather than a question: `@generated("{qty} * {price}")`. `{field}` expands to
   `"field"`, so no quote-escaping. `VIRTUAL` by default, `@generated("…",
-  stored)` to materialise it; a `@@index` on either works.
+  stored)` to materialize it; a `@@index` on either works.
   **In backticks it is a template rather than SQL** —
   ``@generated(`{firstName} {lastName}`)`` — which is the form to reach for
   whenever the value is a **string joined out of columns**, because the SQL

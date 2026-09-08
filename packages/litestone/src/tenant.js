@@ -70,7 +70,7 @@ function assertSafeId(id) {
 // length of a request and releases in a `finally`, so eviction can close a
 // client whose every lease has ended, now, rather than waiting for a collection
 // that file-descriptor pressure does not trigger. A client from a bare `get()`
-// was never leased and is dropped instead — bun finalises a Database on GC, so
+// was never leased and is dropped instead — bun finalizes a Database on GC, so
 // the last holder to let go still closes it.
 //
 // **A fan-out inserts COLD.** `tenants.query` walks every tenant, so through a
@@ -95,11 +95,11 @@ class LRUPool {
     // target weakly, so registering one cannot be the reason it stays alive,
     // and the callback is what lets `stats()` say how many evicted clients are
     // still outstanding. A count only — nothing branches on it, because a
-    // finaliser is not guaranteed to run.
+    // finalizer is not guaranteed to run.
     this.retired   = 0
     this.overflows = 0
     this.warned    = false
-    this.finaliser = typeof FinalizationRegistry === 'function'
+    this.finalizer = typeof FinalizationRegistry === 'function'
       ? new FinalizationRegistry(() => { this.retired-- })
       : null
   }
@@ -197,9 +197,9 @@ class LRUPool {
   // which is how a warning teaches everyone to ignore it. `#overflow` is the
   // condition that is really about the pool being too small.
   #retire(db) {
-    if (!this.finaliser) return
+    if (!this.finalizer) return
     this.retired++
-    this.finaliser.register(db, null)
+    this.finalizer.register(db, null)
   }
 
   delete(id) {
@@ -463,7 +463,7 @@ class TenantRegistry {
 
   /**
    * Create a new tenant. Throws if already exists.
-   * Initialises schema via migrations (if dir configured) or DDL.
+   * Initializes schema via migrations (if dir configured) or DDL.
    */
   async create(id, meta = {}) {
     assertSafeId(id)

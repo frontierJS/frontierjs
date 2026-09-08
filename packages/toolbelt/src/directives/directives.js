@@ -159,7 +159,7 @@ export function splitParams(params) {
       // key through — `$nope`, `$$limit`, a misspelled `$limitt` — each landing
       // in the filters as a WHERE on a column that cannot exist, which is the
       // consequence this function's own contract names (FJS-988). The
-      // recognised names were removed correctly, so nothing failed.
+      // recognized names were removed correctly, so nothing failed.
       if (k.startsWith('$') || RESERVED_PARAMS.has(k)) continue
       Object.defineProperty(query, k, { value: params[k], writable: true, enumerable: true, configurable: true })
     }

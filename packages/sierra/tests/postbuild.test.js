@@ -110,7 +110,7 @@ describe('runPostBuild — what counts as a page', () => {
   // `indexed` drops every dynamic route, because an SPA cannot know which URLs
   // `/products/:slug/` stands for. A static build DOES know — getStaticPaths()
   // named them and the files are on disk — so a storefront's sitemap listed
-  // four URLs for a thirteen-product catalogue, and nothing said so.
+  // four URLs for a thirteen-product catalog, and nothing said so.
   const table = {
     all:       ['/', '/catalog/', '/products/:slug/', '/secret/', '/wip/'],
     indexed:   ['/', '/catalog/'],

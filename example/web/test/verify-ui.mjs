@@ -518,9 +518,9 @@ try {
   `))
 
   // A filter that matches nothing is a different situation from an empty
-  // catalogue, and the empty snippet says so.
+  // catalog, and the empty snippet says so.
   //
-  // `retired` ALONE is not an empty filter: the catalogue seeds one retired
+  // `retired` ALONE is not an empty filter: the catalog seeds one retired
   // product on purpose, so that status matches exactly one row. The drive has
   // to ask for a combination that really is empty — an ACTIVE product's name
   // AND the retired status (FJS-260).

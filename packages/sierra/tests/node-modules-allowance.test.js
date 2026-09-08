@@ -69,7 +69,7 @@ describe('node_modules allowance', () => {
   // sierra left every one of them untransformed — `Unexpected JSX expression`
   // at line 1 of CopyButton.mesa, for an app that had installed it correctly.
   // Same bug as the one above, one package over, found the same way: by
-  // containerising an app so it could not resolve the workspace.
+  // containerizing an app so it could not resolve the workspace.
   test('every @frontierjs package that ships .mesa is compiled', async () => {
     expect(await transformed('/app/node_modules/@frontierjs/ui/components/display/CopyButton.mesa')).toBe(true)
     expect(await transformed('/app/node_modules/@frontierjs/ui/components/forms/Input.mesa')).toBe(true)

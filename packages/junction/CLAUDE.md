@@ -430,7 +430,7 @@ src/
     SMTP — an email an earlier `after` hook already sent stays sent. Queue the
     effect with `ctx.afterCommit(fn)` and it runs after the commit instead.
   - **It holds SQLite's single write lock for the whole pipeline**, `after` hooks
-    included, so an `after` hook doing network I/O serialises every write in the
+    included, so an `after` hook doing network I/O serializes every write in the
     app behind it. Off by default for that reason, and the same reason
     irreversible work belongs in Caravan.
   - Two orderings carry it and both already held: `withLitestoneDb` is an
@@ -474,7 +474,7 @@ src/
   declared there and a second implementation of it is a second answer to who may
   read — and this owns the fan-out and nothing else.
   **The unit is a COHORT**, keyed on the principal's VALUE — a canonical
-  serialization of the session, memoised on the object `verifySession`
+  serialization of the session, memoized on the object `verifySession`
   answered — because the term that multiplies is the ENCODING and not the
   verdict: Phoenix says so about `handle_out` ("encoded N times instead of a
   single shared encoding") and measured here it is 288 ns against 684 ns. Two
@@ -490,7 +490,7 @@ src/
   here that delivers a row to somebody who may not read it.
   **Three things are deliberately NOT graded and none is a hole**: a model
   `$readGrading` calls `open` (gate 0, no read policy, no field policy — a
-  catalogue), a LIST payload (a bulk write announces a COUNT, which names no
+  catalog), a LIST payload (a bulk write announces a COUNT, which names no
   row), and a call with no Data boundary on its context (a raw route, a test
   harness) — which is a different thing from a boundary that was asked and
   threw, and that one refuses.
@@ -783,7 +783,7 @@ src/
   about what is VALID if they were wired naively: litestone transforms BEFORE
   validating, junction's `def.transform` runs AFTER, so `@trim @length(3,12)` on
   `'  ab  '` fails at one and passes at the other. `FJS-401`.
-- **`svc.pipelines(appHooks)` is memoised on BOTH inputs** — the app map by
+- **`svc.pipelines(appHooks)` is memoized on BOTH inputs** — the app map by
   identity, the service's own by a version `hooks()` bumps. That is what makes
   staleness unreachable. `app.hooks()` reassigns `app._appHooks` rather than
   mutating it, and anything that starts mutating it in place defeats the memo

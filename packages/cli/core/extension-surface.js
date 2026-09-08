@@ -215,7 +215,7 @@ export function extensionDeployReadme({ appName = 'app' } = {}) {
   return `# Shipping ${appName}
 
 Two stores, two review queues, and neither is the API's deploy. This directory
-holds packaging; nothing is containerised.
+holds packaging; nothing is containerized.
 
 \`\`\`sh
 fli extension:build --browser both      # dist/chrome/ and dist/firefox/

@@ -155,7 +155,7 @@ and whether a live resource may use offset at all.
 **Both are ruled, and the framing above turned out to be the wrong one**
 ([`FJS-D145`](../DECISIONS.md#fjs-d145), 2026-08-25). Nobody who does live data
 pages at all: TanStack DB's query-driven sync goes from ten rows to twenty by
-sending the delta, Zero keeps a limited query live as a materialised view, and
+sending the delta, Zero keeps a limited query live as a materialized view, and
 Relay appends into a connection. So the answer is a **window that grows** —
 `limit` is the window, `more()` raises it — with a keyset cursor as the wire
 under it and never a concept an application types. `offset` is what you ASK for;
@@ -244,7 +244,7 @@ The rest, in one line each, with the argument in the ruling:
 - **The incremental placement stays** — `insert`/`drop`/`place`/`verdict` are
   the expensive half a query engine buys and they are already correct. The
   entity map goes underneath. No dataflow engine.
-- **`store.get()` keeps answering rows**, materialised, so no screen changes.
+- **`store.get()` keeps answering rows**, materialized, so no screen changes.
 - **Lifetime is a TTL**, not a reference count. No `retain` in application code.
 - **A detail read is a view of one** — `resource.record(id)`, the same path with
   the id as its query. `service.get(id)` stays raw and dead, exactly as
@@ -263,7 +263,7 @@ order the features are interesting in.
 2. ~~**The node map**, model-keyed, in junction's client.~~ **Done 2026-08-25.**
    `junction/src/client/nodes.ts`. jetty still gets it by importing rather than
    by a second repair, and that pass is not made yet (`FJS-493`).
-3. ~~**Lists hold ids**, `store.get()` materialising.~~ **Done** — and no screen
+3. ~~**Lists hold ids**, `store.get()` materializing.~~ **Done** — and no screen
    changed, because `useStore` is the one bridge and nothing calls the store
    directly.
 4. ~~**TTL.**~~ **Done** — `nodeTtlMs`, default 30s.

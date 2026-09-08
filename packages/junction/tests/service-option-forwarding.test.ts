@@ -132,7 +132,7 @@ describe('createService — model inference from the service name', () => {
     const log: Log = []
     const svc = createService({ name: 'leads', db: mkDb(log) })
 
-    // 'leads' → db.lead, the same singularisation createBaseService does.
+    // 'leads' → db.lead, the same singularization createBaseService does.
     await svc.remove(ctx('remove'))
 
     expect(log.join('\n')).toContain('delete where')

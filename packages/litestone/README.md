@@ -1704,7 +1704,7 @@ await db.$setAuth(req.user).customer.mine.aggregate({ _count: true })
 
 **Scopes are not policies.** Scopes are opt-in — you have to call them. If a where clause must apply for security, write it as `@@allow`/`@@deny`, not as a scope.
 
-**Parameterised scopes are not supported.** Write a function that returns a `where` clause and pass it as a caller override. See [docs/querying.md](./docs/querying.md#scopes) for full details.
+**Parameterized scopes are not supported.** Write a function that returns a `where` clause and pass it as a caller override. See [docs/querying.md](./docs/querying.md#scopes) for full details.
 
 ---
 
@@ -2259,7 +2259,7 @@ litestone import <path>              a Prisma/Rails/Postgres/Frappe schema → .
                                      graded by what the reading could not express
 litestone edge eject <Model>.<field> promote an @edge/@scoped field to a real model [--apply]
 litestone optimize [table]           merge FTS5 index segments
-litestone transform [config.js]      anonymise / shard pipeline (dev only)
+litestone transform [config.js]      anonymize / shard pipeline (dev only)
 
 litestone backup [dest]              back up every database (SQLite + JSONL/logger)
                                        --vacuum  compact first

@@ -7,7 +7,7 @@
   //
   // `model:` is stated because this is the irregular case the registry warns
   // about: the service is `flags` and the model is `FeatureFlag`, which regular
-  // English pluralisation does not bridge. Without it modelNameFor() looks for
+  // English pluralization does not bridge. Without it modelNameFor() looks for
   // `Flag`, misses, warns, and degrades to a bare make() — validation, labels
   // and field rules all silently stop being schema-derived.
   import { createResource } from '@frontierjs/sierra/junction'

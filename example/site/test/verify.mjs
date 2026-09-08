@@ -463,7 +463,7 @@ try {
     return Number(document.getElementById('live-plans-moved').textContent.trim());
   `))
 
-  // ── the catalogue, and its two islands ───────────────────────────────────
+  // ── the catalog, and its two islands ───────────────────────────────────
   await cmd('Page.navigate', { url: `${ORIGIN}/catalog/` })
   await evaluate(HARNESS)
 
@@ -512,7 +512,7 @@ try {
       slugs: [...document.querySelectorAll('#catalog-list li')].map(li => li.dataset.slug).sort(),
     };
   `))
-  // A row links to the page that exists for it. The catalogue and
+  // A row links to the page that exists for it. The catalog and
   // getStaticPaths() are two readings of `active: true`, and a link to a page
   // the build did not emit is a 404 nothing here would otherwise catch.
   t('catalog.linksResolve', await evaluate(`

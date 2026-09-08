@@ -84,7 +84,7 @@ src/
   index.js         — public API re-exports
   index.d.ts       — static TypeScript declarations
 
-references/          — the catalogue: one .lite per common model, heavy /// notes,
+references/          — the catalog: one .lite per common model, heavy /// notes,
                        parsed by test/references.test.ts. NOT shipped, imported or
                        installed by anything — a shape you read before writing a
                        model half a dozen apps have already written differently.
@@ -656,7 +656,7 @@ db.$readAs('order', row, principal)
 db.$readGrading('product') // 'open' | 'graded' — whether $readAs can ever
                            // answer anything but the row it was given. Gate 0,
                            // no read policy, no field policy → open, so a
-                           // catalogue costs nothing. An UNKNOWN accessor is
+                           // catalog costs nothing. An UNKNOWN accessor is
                            // 'graded': the other siblings answer {} because
                            // *I cannot judge this* is not *this is wrong*, and
                            // here it is a permission, so it falls the other way
@@ -740,7 +740,7 @@ value in list             — membership. The list is ALWAYS the right operand:
                             What the schema can refuse is refused at startup
 cond ? a : b              — a value chosen by a condition. Looser than `||` and
                             RIGHT-associative, so `a ? x : b ? y : z` nests into
-                            the else. A parenthesised group is an operand on
+                            the else. A parenthesized group is an operand on
                             either side of a comparison. In BOTH compilers —
                             CASE WHEN in SQL, `?:` in JS
 expr1 && expr2  expr1 || expr2  !expr
@@ -1016,7 +1016,7 @@ await storage.download(user.avatar)          // → Buffer
 Append-only log database. No migrations, no schema. Rows appended to `<path>/<model>.jsonl`.
 
 **More than one process writes it, and the companion index's write transaction is
-what serialises them** (`FJS-D180`, `FJS-665`). A byte offset cannot be computed
+what serializes them** (`FJS-D180`, `FJS-665`). A byte offset cannot be computed
 before the append or recovered after it, so `create`/`createMany` hold
 `BEGIN IMMEDIATE` on `<path>/<model>.jsonl.index.db` across `stat`+`append`, and
 the index row naming the offset commits with it. A transaction rather than a
@@ -1384,7 +1384,7 @@ holds it across every await it makes, and closing it left a MIXED client rather
 than a dead one. `retain(id)` is what makes an eviction able to close anything:
 junction's `withTenantDb` pins for the length of a request, so a client whose
 every lease has ended closes at the next eviction, and one from a bare `get()`
-is dropped for bun's finaliser instead. A fan-out inserts COLD into a ring, so
+is dropped for bun's finalizer instead. A fan-out inserts COLD into a ring, so
 an admin dashboard does not evict the tenants being served.
 
 **Row tenancy desugars into `@@deny`, never `@@allow`.** Allows are OR'd within
@@ -1501,7 +1501,7 @@ total.
 
 `_keyCols()` reads the model ATTRIBUTE, because that is the only place the key's
 column ORDER is stated, and `$primaryKey(accessor)` is the same answer for the
-layer above. `normaliseOrderBy` still defaults to `id` and must: it is pure and
+layer above. `normalizeOrderBy` still defaults to `id` and must: it is pure and
 has no model in scope, so the default belongs at the caller that has one.
 
 ## SQLite gotchas
@@ -1788,7 +1788,7 @@ cell means.
   does not follow an import, so reading the file's own bytes made every mutant of
   an importing schema die for a reason unrelated to the mutation — all 300 of
   basecamp's, and the command refused outright. `inlineImportsFromDisk` rather
-  than `parseFile`, because the catalogue is line-oriented and wants text; a
+  than `parseFile`, because the catalog is line-oriented and wants text; a
   fragment that cannot be read is NAMED, since its models are otherwise silently
   outside the run. What this buys is reach: the `@secret` and `@guarded` columns
   auth ships are only mutable once the fragment is in.
@@ -1851,14 +1851,14 @@ cell means.
   `@@allow`, `@guarded`, `@scoped` or `@@softDelete`; they all live above SQLite.
   ``where: { $raw: sql`…` }`` keeps every policy and is the escape hatch to reach
   for. A JS migration is exempt — the runner hands it the system client.
-- **`$transaction` serialises per client, and re-entrancy is decided by the async
+- **`$transaction` serializes per client, and re-entrancy is decided by the async
   context rather than by the depth counter.** One connection holds one
   transaction, so a second REQUEST arriving while the first awaits used to look
   exactly like a genuinely nested call: it took a SAVEPOINT inside the first
   request's transaction, was told it committed, and lost its rows when that
   request rolled back (`FJS-244`). A nested call inherits an `AsyncLocalStorage`
   store and still SAVEPOINTs; anything else waits on a FIFO lock. This only
-  serialises what SQLite already does — two `BEGIN IMMEDIATE`s cannot overlap on
+  serializes what SQLite already does — two `BEGIN IMMEDIATE`s cannot overlap on
   one connection. `createMany`/`upsertMany` go through the same lock, awaiting the
   acquire while their batch body stays synchronous.
 - **Row tenancy is a NARROWING, so it desugars into `@@deny` and never
@@ -1871,7 +1871,7 @@ cell means.
   and orphan rows are visible to everybody. Both directions are pinned in
   `test/tenancy.test.ts` against a real client — a policy that admits everything
   and a policy that is not applied at all look identical from one side.
-- **`$close()` finalises the statement cache, and without that it closes
+- **`$close()` finalizes the statement cache, and without that it closes
   nothing.** bun's `close()` is `sqlite3_close_v2` — it defers the real
   destruction until the last prepared statement is finalized — and `wrapDb`
   holds up to 500. Measured: a close with one live statement freed **0 file

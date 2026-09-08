@@ -14,7 +14,7 @@ import { Database } from 'bun:sqlite'
 import { join } from 'path'
 import { tempDir } from '../src/tmp-dirs.js'
 import { parse } from '../src/core/parser.js'
-import { buildPristine, introspect, diffSchemas, normaliseDdl, summariseDiff } from '../src/core/migrate.js'
+import { buildPristine, introspect, diffSchemas, normalizeDdl, summarizeDiff } from '../src/core/migrate.js'
 import { autoMigrate } from '../src/core/migrations.js'
 
 const SCHEMA = `
@@ -120,24 +120,24 @@ model Account {
   it('reaches the summary, where "in sync — no changes needed" was the false sentence', () => {
     const bad  = against(SCHEMA, [`CREATE TABLE "account" ("id" TEXT NOT NULL PRIMARY KEY, "email" TEXT NOT NULL UNIQUE COLLATE NOCASE) STRICT`])
     const good = against(SCHEMA, [AS_DECLARED])
-    expect(summariseDiff(bad.diff)).toContain('COLLATE NOCASE')
-    expect(summariseDiff(good.diff)).toBe('✓ schema is in sync — no changes needed')
+    expect(summarizeDiff(bad.diff)).toContain('COLLATE NOCASE')
+    expect(summarizeDiff(good.diff)).toBe('✓ schema is in sync — no changes needed')
   })
 })
 
-describe('normaliseDdl', () => {
+describe('normalizeDdl', () => {
   it('does not report the spacing ALTER TABLE ADD COLUMN leaves behind', () => {
     // Measured before it was written: 162 of 694 objects across the corpus
     // schemas differ by exactly this after a real v1 → v2 migration, and not
     // one of them is a difference.
     const created = `CREATE TABLE "t" ( "a" TEXT NOT NULL, "b" INTEGER ) STRICT`
     const altered = `CREATE TABLE "t" ( "a" TEXT NOT NULL , "b" INTEGER) STRICT`
-    expect(normaliseDdl(created)).toBe(normaliseDdl(altered))
+    expect(normalizeDdl(created)).toBe(normalizeDdl(altered))
   })
 
   it('still reports a difference that is one', () => {
-    expect(normaliseDdl(`CREATE TABLE "t" ("a" TEXT)`))
-      .not.toBe(normaliseDdl(`CREATE TABLE "t" ("a" TEXT COLLATE NOCASE)`))
+    expect(normalizeDdl(`CREATE TABLE "t" ("a" TEXT)`))
+      .not.toBe(normalizeDdl(`CREATE TABLE "t" ("a" TEXT COLLATE NOCASE)`))
   })
 })
 

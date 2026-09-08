@@ -44,7 +44,7 @@ const { readAppAtlas } =
 // ─── one boot, one walk ───────────────────────────────────────────────────────
 //
 // `core/app-entry.js` owns finding the app and spawning `junction atlas`,
-// because `project:view` folds the same model into its page and two spawns of
+// because `project:map` folds the same model into its page and two spawns of
 // one command is how the two come to disagree about which app they described.
 
 const { model, entry, error } = readAppAtlas(context.paths.root)

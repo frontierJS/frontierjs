@@ -144,7 +144,7 @@ describe('a custom method takes the model’s read gate as its floor', () => {
 
   test('a read-gate-0 model stays open to a stranger — the storefront and the basket', async () => {
     // Not an exception to the rule, it IS the rule: the floor is *can you read
-    // this model*, and a public catalogue answers yes to everyone. Defaulting
+    // this model*, and a public catalog answers yes to everyone. Defaulting
     // to the strictest WRITE gate instead — the first shape tried — closed
     // this, which is how it was caught.
     const s = await shop()

@@ -12,7 +12,7 @@
 //     → orderedGroup([{ deps: [a], handler: <the VALUE of b> }])
 //     → "fn is not a function" the first time `a` changed
 //
-// The parenthesised sequence and the handler shorthand have identical ASTs —
+// The parenthesized sequence and the handler shorthand have identical ASTs —
 // `{ (a, b) }` and `{ a, syncFn }` are both SequenceExpressions with an
 // Identifier tail — so the parens are the only thing distinguishing them, and
 // the check reads them from source position. See RULE 14b.
@@ -36,7 +36,7 @@ describe('inert blocks are reported', () => {
     expect(e[0]).toContain('is empty')
   })
 
-  test('parenthesised sequence — the case that used to throw at runtime', async () => {
+  test('parenthesized sequence — the case that used to throw at runtime', async () => {
     const e = await inertErrors(`let a = 1, b = 2\n$: { (a, b) }`)
     expect(e).toHaveLength(1)
     expect(e[0]).toContain('does nothing')
@@ -112,7 +112,7 @@ describe('handlers inside a block must be inline functions', () => {
     expect(await inertErrors(`let a = 1\nfunction syncFn(){}\n$: a, syncFn`)).toEqual([])
   })
 
-  test('a parenthesised sequence gets the watch-oriented message instead', async () => {
+  test('a parenthesized sequence gets the watch-oriented message instead', async () => {
     const e = await inertErrors(`let a = 1, b = 2\n$: { (a, b) }`)
     expect(e[0]).not.toContain('must be an inline')
     expect(e[0]).toContain('$: (a, b)')

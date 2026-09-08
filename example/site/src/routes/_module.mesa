@@ -22,7 +22,7 @@
     <a class="topbar-brand" href="/">FrontierJS Supply Co.</a>
     <nav class="topbar-nav" aria-label="Storefront">
       <a href="/">Home</a>
-      <a href="/catalog/">Catalogue</a>
+      <a href="/catalog/">Catalog</a>
       <a href="/pricing/">Pricing</a>
       <a href="/account/">Account</a>
       <!--

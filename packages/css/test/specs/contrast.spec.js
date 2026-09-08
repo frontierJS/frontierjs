@@ -167,7 +167,7 @@ TINTED.forEach(function (subject) {
   });
 });
 
-test('contrast: a tone rendered as text generalises to a hue no theme defines', function () {
+test('contrast: a tone rendered as text generalizes to a hue no theme defines', function () {
   /*
    * The sibling of the fill test below, and the same claim: --tone-ink is
    * a derivation, so a brand nobody here has seen must clear AA too. A

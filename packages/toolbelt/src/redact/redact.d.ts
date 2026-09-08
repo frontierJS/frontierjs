@@ -7,7 +7,7 @@
  * Same reason as `/gate` and `/query`.
  */
 
-/** The normalised credential name set: lower-cased, `-` and `_` removed. */
+/** The normalized credential name set: lower-cased, `-` and `_` removed. */
 export const SECRET_KEY_NAMES: ReadonlySet<string>
 
 /** What a redacted value reads as. */

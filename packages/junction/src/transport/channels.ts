@@ -203,7 +203,7 @@ export class Channel {
 //
 // **A model that can only ever say yes is skipped entirely.** `$readGrading`
 // answers `open` for a model whose read gate is 0 and which declares no read
-// policy and no field policy — a catalogue, which is also the busiest channel
+// policy and no field policy — a catalog, which is also the busiest channel
 // an app has. Asked of the SCHEMA rather than declared by the app, so a policy
 // added later turns its channel from open to graded with nothing to remember.
 //
@@ -381,7 +381,7 @@ function stableKey(v: unknown, depth = 0): string | null {
   return `{${parts.join(',')}}`
 }
 
-// Memoised on the session OBJECT, which is the one thing identity is good for
+// Memoized on the session OBJECT, which is the one thing identity is good for
 // here: `verifySession` runs once per socket and the object it answers does not
 // change while that socket is open, so the serialization is paid once per
 // connection instead of once per connection per publish. Weak, so it is

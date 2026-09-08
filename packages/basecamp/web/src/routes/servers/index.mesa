@@ -143,7 +143,6 @@ title: Servers
   // bad news get one — 'pending' and 'provisioning' are neither.
   const TONE = {
     online:      'success',
-    ready:       'success',
     draining:    'warning',
     unreachable: 'danger',
     stopped:     'muted',

@@ -59,12 +59,12 @@ if (!await must(context, probe.fileContains({
 
 // Step 5 raises this gate and reads the verdict, so the baseline has to hold
 // the LOW one. Lessons share a workspace and two of the others raise the same
-// line, so an app arriving here already changed is ordinary — normalised rather
+// line, so an app arriving here already changed is ordinary — normalized rather
 // than assumed, since the alternative is a lesson whose last step depends on
 // which lessons you ran before it.
 editSchema(context, '@@gate("4.4.4.6")', '@@gate("0.4.4.6")')
 
-// The same normalisation for the column this lesson adds. Running it twice in
+// The same normalization for the column this lesson adds. Running it twice in
 // one workspace would otherwise capture a baseline that ALREADY has `priority`,
 // and step 3's expand would be graded `unchanged` — a lesson reporting that
 // nothing happened because it had already happened.

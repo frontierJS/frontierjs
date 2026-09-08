@@ -130,7 +130,7 @@ function readStatement(st, enums, tables, gap) {
   }
 }
 
-// Split a parenthesised list on commas that are not nested.
+// Split a parenthesized list on commas that are not nested.
 function splitTop(s) {
   const out = []
   let depth = 0, cur = '', q = false
@@ -295,7 +295,7 @@ function readColumn(raw, t, enums, gap) {
   if (!type) {
     type = 'String'
     if (/^tsvector$/i.test(typeText))
-      // A materialised search vector. .lite answers the same need with @@fts,
+      // A materialized search vector. .lite answers the same need with @@fts,
       // which is SQLite FTS5 — a different engine on a different table, so it is
       // a REPLACEMENT the author makes and never a column this can convert.
       gap('search-vector-column', t.model, name, typeText,

@@ -149,12 +149,12 @@ function is exactly what a user writes for a callback:
 ```
 
 and the child's `export let ondone` compiles to `track($$option.props.ondone)`.
-Both were memoised and **invoked during setup**, so `on:click={ondone}` bound
+Both were memoized and **invoked during setup**, so `on:click={ondone}` bound
 the callback's return value. `let f = () => …` had it too.
 
 Arity cannot separate a compiler-generated derivation from a user callback —
 both are `() => …`. So the compiler now says which it means: `trackDerived()`
-always memoises, `track()` always stores. Three emission sites are derivations
+always memoizes, `track()` always stores. Three emission sites are derivations
 (derived `const`, two `$context` reads); the rest are values.
 
 ### 6. Block teardown

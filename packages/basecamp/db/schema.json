@@ -4,6 +4,7 @@
     "Credential": {
       "type": "object",
       "title": "Credential",
+      "x-litestone-kind": "model",
       "properties": {
         "userId": {
           "type": "string"
@@ -65,6 +66,7 @@
     "Session": {
       "type": "object",
       "title": "Session",
+      "x-litestone-kind": "model",
       "properties": {
         "userId": {
           "type": "string"
@@ -83,6 +85,30 @@
           "type": [
             "string",
             "null"
+          ]
+        },
+        "impersonatingUserId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "SUPPORT MODE — this session is an operator's, and while these are set it resolves to somebody else.  Three columns on the operator's OWN row rather than a second session or a second model. A session minted for the subject would be a credential to keep somewhere, swap for, and lose with the tab; clearing a column is a way back that cannot be forgotten. The permanent record is the audit trail, which this model already writes through @@log(audit) and which outlives the row by construction — a second table recording the same episode would be a second origin for it.  `impersonationEndsAt` is READ AT RESOLUTION, so an episode stops applying the instant it lapses whether or not anything has swept it. The reason is required by the route and nullable here, for every row written before these columns existed."
+        },
+        "impersonationReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "impersonationEndsAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },
@@ -116,6 +142,7 @@
     "Verification": {
       "type": "object",
       "title": "Verification",
+      "x-litestone-kind": "model",
       "properties": {
         "purpose": {
           "$ref": "#/$defs/VerificationPurpose"
@@ -158,6 +185,7 @@
     "OauthFlow": {
       "type": "object",
       "title": "OauthFlow",
+      "x-litestone-kind": "model",
       "description": "An authorization in flight.  `Oauth` and not `OAuth`, for the reason basecamp's `ThreeCX` is not `3CX`: the accessor is the model name with its first character lowered and nothing else, so `OAuthFlow` would be reached as `db.oAuthFlow`.  NOT a Verification, and the reuse was the mistake: nobody is proving anything here, there is no address yet and there may be no account at the end of it. `state` is a CSRF token echoed back by a redirect rather than a secret sent to a person, its life is minutes rather than hours, and it carries a PKCE verifier that no other row in this schema has a use for. Three different answers to what a column means is three tables wearing one name.",
       "properties": {
         "provider": {
@@ -187,9 +215,179 @@
         "delete": 8
       }
     },
+    "MetricSeries": {
+      "type": "object",
+      "title": "MetricSeries",
+      "x-litestone-kind": "model",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "labels": {
+          "default": {},
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "labelsKey": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/MetricType",
+          "default": "gauge"
+        },
+        "unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lastSeenAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "labelsKey"
+      ],
+      "x-gate": {
+        "read": 8,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
+      "x-relations": [
+        {
+          "field": "points",
+          "model": "MetricPoint",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "hours",
+          "model": "MetricHour",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "MetricPoint": {
+      "type": "object",
+      "title": "MetricPoint",
+      "x-litestone-kind": "model",
+      "properties": {
+        "seriesId": {
+          "type": "string"
+        },
+        "at": {
+          "type": "integer"
+        },
+        "value": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "seriesId",
+        "at",
+        "value"
+      ],
+      "x-gate": {
+        "read": 8,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
+      "x-relations": [
+        {
+          "field": "series",
+          "model": "MetricSeries",
+          "type": "belongsTo",
+          "fields": [
+            "seriesId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "MetricHour": {
+      "type": "object",
+      "title": "MetricHour",
+      "x-litestone-kind": "model",
+      "properties": {
+        "seriesId": {
+          "type": "string"
+        },
+        "hour": {
+          "type": "integer"
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "sum": {
+          "type": "number"
+        },
+        "count": {
+          "type": "integer"
+        },
+        "increase": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "seriesId",
+        "hour",
+        "min",
+        "max",
+        "sum",
+        "count"
+      ],
+      "x-gate": {
+        "read": 8,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
+      "x-relations": [
+        {
+          "field": "series",
+          "model": "MetricSeries",
+          "type": "belongsTo",
+          "fields": [
+            "seriesId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
     "User": {
       "type": "object",
       "title": "User",
+      "x-litestone-kind": "model",
       "properties": {
         "email": {
           "type": "string",
@@ -242,7 +440,9 @@
           ]
         },
         "scopes": {
-          "default": []
+          "default": [],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         },
         "isSystemAdmin": {
           "type": "boolean",
@@ -306,6 +506,7 @@
     "Account": {
       "type": "object",
       "title": "Account",
+      "x-litestone-kind": "model",
       "properties": {
         "type": {
           "$ref": "#/$defs/AccountType",
@@ -367,6 +568,7 @@
     "Workspace": {
       "type": "object",
       "title": "Workspace",
+      "x-litestone-kind": "model",
       "properties": {
         "accountId": {
           "type": "string"
@@ -389,7 +591,9 @@
           "type": "string"
         },
         "settings": {
-          "default": {}
+          "default": {},
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         },
         "status": {
           "$ref": "#/$defs/WorkspaceStatus",
@@ -528,6 +732,7 @@
     "WorkspaceMember": {
       "type": "object",
       "title": "WorkspaceMember",
+      "x-litestone-kind": "model",
       "properties": {
         "workspaceId": {
           "type": "string"
@@ -539,6 +744,16 @@
           "$ref": "#/$defs/WorkspaceRole",
           "default": "viewer",
           "description": "This caller's authority in this workspace. Nobody may change their own."
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Capability"
+          },
+          "default": [],
+          "description": "What this membership may do on the models that declare @@capabilities — the grid that runs BESIDE the ladder rather than under it (`FJS-D146`). Stamped from the role at every write through `grantsFor()`; a role is the default set and not a synonym for one, so an operator may take a grant away from one person without inventing a role for them.  Read onto the principal as `auth().capabilities` by `membershipClaim`, per request and per workspace — the same person holds a different set in each, which is why it is a column here and not a field on the session.",
+          "x-aggregatable": "array",
+          "x-sortable": "array"
         },
         "invitedBy": {
           "type": [
@@ -613,6 +828,7 @@
     "Invitation": {
       "type": "object",
       "title": "Invitation",
+      "x-litestone-kind": "model",
       "properties": {
         "workspaceId": {
           "type": "string",
@@ -671,6 +887,7 @@
     "Secret": {
       "type": "object",
       "title": "Secret",
+      "x-litestone-kind": "model",
       "properties": {
         "workspaceId": {
           "type": "string",
@@ -688,7 +905,10 @@
         },
         "data": {
           "type": "string",
-          "default": "{}"
+          "default": "{}",
+          "x-aggregatable": "encrypted",
+          "x-sortable": "encrypted",
+          "x-filterable": "encrypted"
         },
         "isVerified": {
           "type": "boolean",
@@ -732,6 +952,7 @@
     "ApiKey": {
       "type": "object",
       "title": "ApiKey",
+      "x-litestone-kind": "model",
       "properties": {
         "workspaceId": {
           "type": "string",
@@ -764,7 +985,9 @@
           "items": {
             "type": "string"
           },
-          "default": []
+          "default": [],
+          "x-aggregatable": "array",
+          "x-sortable": "array"
         },
         "expiresAt": {
           "anyOf": [
@@ -864,6 +1087,7 @@
     "Server": {
       "type": "object",
       "title": "Server",
+      "x-litestone-kind": "model",
       "properties": {
         "workspaceId": {
           "type": "string",
@@ -887,7 +1111,7 @@
           "default": "general"
         },
         "providerKind": {
-          "type": "string",
+          "$ref": "#/$defs/ProviderKind",
           "default": "custom"
         },
         "providerId": {
@@ -960,7 +1184,9 @@
           ]
         },
         "plan": {
-          "default": {}
+          "default": {},
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         },
         "actualSpecs": {
           "anyOf": [
@@ -968,7 +1194,9 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         },
         "health": {
           "anyOf": [
@@ -976,7 +1204,9 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         },
         "dockerState": {
           "anyOf": [
@@ -984,10 +1214,14 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         },
         "labels": {
-          "default": {}
+          "default": {},
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         }
       },
       "additionalProperties": false,
@@ -1001,6 +1235,19 @@
         "create": 4,
         "update": 4,
         "delete": 5
+      },
+      "x-capabilities": {
+        "operations": {
+          "create": "Server.create",
+          "update": "Server.update",
+          "delete": "Server.delete"
+        },
+        "moves": {
+          "reboot": "Server.reboot",
+          "drain": "Server.drain",
+          "undrain": "Server.undrain"
+        },
+        "columns": {}
       },
       "x-transitions": {
         "status": {
@@ -1044,7 +1291,6 @@
               "pending",
               "provisioning",
               "installing",
-              "ready",
               "unreachable",
               "stopped"
             ],
@@ -1057,7 +1303,6 @@
               "pending",
               "provisioning",
               "installing",
-              "ready",
               "online",
               "unreachable",
               "draining"
@@ -1070,7 +1315,6 @@
             "from": [
               "pending",
               "installing",
-              "ready",
               "online",
               "unreachable",
               "draining",
@@ -1085,7 +1329,6 @@
               "pending",
               "provisioning",
               "installing",
-              "ready",
               "online",
               "unreachable",
               "draining",
@@ -1152,6 +1395,7 @@
     "ServerEvent": {
       "type": "object",
       "title": "ServerEvent",
+      "x-litestone-kind": "model",
       "properties": {
         "serverId": {
           "type": "string"
@@ -1163,7 +1407,9 @@
           "type": "string"
         },
         "metadata": {
-          "default": {}
+          "default": {},
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         }
       },
       "additionalProperties": false,
@@ -1198,13 +1444,20 @@
     "OutpostNonce": {
       "type": "object",
       "title": "OutpostNonce",
+      "x-litestone-kind": "model",
       "properties": {
+        "nonce": {
+          "type": "string"
+        },
         "seenAt": {
           "type": "string",
           "format": "date-time"
         }
       },
       "additionalProperties": false,
+      "required": [
+        "nonce"
+      ],
       "x-gate": {
         "read": 8,
         "create": 8,
@@ -1215,6 +1468,7 @@
     "Volume": {
       "type": "object",
       "title": "Volume",
+      "x-litestone-kind": "model",
       "properties": {
         "serverId": {
           "type": "string"
@@ -1247,7 +1501,9 @@
           "items": {
             "type": "string"
           },
-          "default": []
+          "default": [],
+          "x-aggregatable": "array",
+          "x-sortable": "array"
         },
         "createdOnServer": {
           "anyOf": [
@@ -1300,6 +1556,7 @@
     "Network": {
       "type": "object",
       "title": "Network",
+      "x-litestone-kind": "model",
       "properties": {
         "workspaceId": {
           "type": "string",
@@ -1325,7 +1582,9 @@
           "default": "netbird"
         },
         "config": {
-          "default": {}
+          "default": {},
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         }
       },
       "additionalProperties": false,
@@ -1365,6 +1624,7 @@
     "ServerNetwork": {
       "type": "object",
       "title": "ServerNetwork",
+      "x-litestone-kind": "model",
       "properties": {
         "serverId": {
           "type": "string"
@@ -1427,6 +1687,7 @@
     "Project": {
       "type": "object",
       "title": "Project",
+      "x-litestone-kind": "model",
       "properties": {
         "workspaceId": {
           "type": "string",
@@ -1454,10 +1715,14 @@
           "default": "active"
         },
         "tags": {
-          "default": []
+          "default": [],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         },
         "metadata": {
-          "default": {}
+          "default": {},
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         }
       },
       "additionalProperties": false,
@@ -1501,6 +1766,7 @@
     "Environment": {
       "type": "object",
       "title": "Environment",
+      "x-litestone-kind": "model",
       "properties": {
         "projectId": {
           "type": "string"
@@ -1529,7 +1795,10 @@
           "default": false
         },
         "variables": {
-          "default": []
+          "default": [],
+          "description": "The environment's variables — a separate grant from editing the environment itself. Renaming a staging environment and reading its secrets are the same `update` to the gate and are not the same act.",
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         }
       },
       "additionalProperties": false,
@@ -1545,6 +1814,17 @@
         "create": 4,
         "update": 4,
         "delete": 5
+      },
+      "x-capabilities": {
+        "operations": {
+          "create": "Environment.create",
+          "update": "Environment.update",
+          "delete": "Environment.delete"
+        },
+        "moves": {},
+        "columns": {
+          "variables": "Environment.variables"
+        }
       },
       "x-relations": [
         {
@@ -1601,6 +1881,7 @@
     "App": {
       "type": "object",
       "title": "App",
+      "x-litestone-kind": "model",
       "properties": {
         "workspaceId": {
           "type": "string",
@@ -1629,10 +1910,14 @@
           "default": "unknown"
         },
         "source": {
-          "default": {}
+          "default": {},
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         },
         "config": {
-          "default": {}
+          "default": {},
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         },
         "port": {
           "type": [
@@ -1722,6 +2007,7 @@
     "Domain": {
       "type": "object",
       "title": "Domain",
+      "x-litestone-kind": "model",
       "properties": {
         "workspaceId": {
           "type": "string",
@@ -1825,6 +2111,7 @@
     "AppServer": {
       "type": "object",
       "title": "AppServer",
+      "x-litestone-kind": "model",
       "properties": {
         "appId": {
           "type": "string"
@@ -1917,6 +2204,7 @@
     "AppNetwork": {
       "type": "object",
       "title": "AppNetwork",
+      "x-litestone-kind": "model",
       "properties": {
         "appId": {
           "type": "string"
@@ -1985,6 +2273,7 @@
     "Deployment": {
       "type": "object",
       "title": "Deployment",
+      "x-litestone-kind": "model",
       "properties": {
         "appId": {
           "type": "string"
@@ -2057,7 +2346,9 @@
           ]
         },
         "configSnapshot": {
-          "default": {}
+          "default": {},
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         },
         "triggeredBy": {
           "type": [
@@ -2231,6 +2522,7 @@
     "DeploymentStep": {
       "type": "object",
       "title": "DeploymentStep",
+      "x-litestone-kind": "model",
       "properties": {
         "deploymentId": {
           "type": "string"
@@ -2308,6 +2600,7 @@
     "Job": {
       "type": "object",
       "title": "Job",
+      "x-litestone-kind": "model",
       "properties": {
         "workspaceId": {
           "type": "string",
@@ -2367,7 +2660,9 @@
           "default": "manual"
         },
         "triggerConfig": {
-          "default": {}
+          "default": {},
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         },
         "timeoutSeconds": {
           "type": "integer",
@@ -2503,6 +2798,7 @@
     "JobRun": {
       "type": "object",
       "title": "JobRun",
+      "x-litestone-kind": "model",
       "properties": {
         "jobId": {
           "type": "string"
@@ -2549,7 +2845,9 @@
           ]
         },
         "output": {
-          "default": {}
+          "default": {},
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         }
       },
       "additionalProperties": false,
@@ -2582,6 +2880,7 @@
     "Recipe": {
       "type": "object",
       "title": "Recipe",
+      "x-litestone-kind": "model",
       "properties": {
         "workspaceId": {
           "type": "string",
@@ -2682,6 +2981,7 @@
     "RecipeRun": {
       "type": "object",
       "title": "RecipeRun",
+      "x-litestone-kind": "model",
       "properties": {
         "recipeId": {
           "type": "string"
@@ -2800,6 +3100,7 @@
     "DiskUsage": {
       "type": "object",
       "title": "DiskUsage",
+      "x-litestone-kind": "model",
       "properties": {
         "serverId": {
           "type": "string"
@@ -2879,6 +3180,7 @@
     "CleanupRun": {
       "type": "object",
       "title": "CleanupRun",
+      "x-litestone-kind": "model",
       "properties": {
         "serverId": {
           "type": "string"
@@ -2892,7 +3194,9 @@
           "items": {
             "type": "string"
           },
-          "default": []
+          "default": [],
+          "x-aggregatable": "array",
+          "x-sortable": "array"
         },
         "keepImages": {
           "type": "integer",
@@ -2911,7 +3215,9 @@
           "default": 0
         },
         "detail": {
-          "default": {}
+          "default": {},
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         },
         "error": {
           "type": [
@@ -2978,6 +3284,7 @@
     "FeatureFlag": {
       "type": "object",
       "title": "FeatureFlag",
+      "x-litestone-kind": "model",
       "properties": {
         "workspaceId": {
           "type": "string",
@@ -3004,10 +3311,14 @@
           "items": {
             "type": "string"
           },
-          "default": []
+          "default": [],
+          "x-aggregatable": "array",
+          "x-sortable": "array"
         },
         "variants": {
-          "default": []
+          "default": [],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         },
         "isEnabled": {
           "type": "boolean",
@@ -3066,6 +3377,7 @@
     "FlagOverride": {
       "type": "object",
       "title": "FlagOverride",
+      "x-litestone-kind": "model",
       "properties": {
         "flagId": {
           "type": "string"
@@ -3134,6 +3446,7 @@
     "NotificationChannel": {
       "type": "object",
       "title": "NotificationChannel",
+      "x-litestone-kind": "model",
       "properties": {
         "workspaceId": {
           "type": "string",
@@ -3149,7 +3462,9 @@
           "$ref": "#/$defs/ChannelKind"
         },
         "config": {
-          "default": {}
+          "default": {},
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         },
         "secretId": {
           "type": [
@@ -3170,7 +3485,10 @@
           ],
           "title": "Credential",
           "writeOnly": true,
-          "x-litestone-kind": "transient"
+          "x-litestone-kind": "transient",
+          "x-aggregatable": "transient",
+          "x-sortable": "transient",
+          "x-filterable": "transient"
         },
         "isActive": {
           "type": "boolean",
@@ -3246,6 +3564,7 @@
     "AlertRule": {
       "type": "object",
       "title": "AlertRule",
+      "x-litestone-kind": "model",
       "properties": {
         "workspaceId": {
           "type": "string",
@@ -3268,10 +3587,22 @@
           "default": "warning"
         },
         "metricName": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
         },
-        "condition": {
-          "default": {}
+        "operator": {
+          "$ref": "#/$defs/ComparisonOp",
+          "default": "gt"
+        },
+        "threshold": {
+          "type": "number"
+        },
+        "forMinutes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1440,
+          "default": 0
         },
         "isActive": {
           "type": "boolean",
@@ -3281,7 +3612,8 @@
       "additionalProperties": false,
       "required": [
         "name",
-        "metricName"
+        "metricName",
+        "threshold"
       ],
       "x-litestone-policies": true,
       "x-version": "version",
@@ -3328,6 +3660,7 @@
     "AlertRuleChannel": {
       "type": "object",
       "title": "AlertRuleChannel",
+      "x-litestone-kind": "model",
       "properties": {
         "ruleId": {
           "type": "string"
@@ -3380,19 +3713,20 @@
     "AlertEvent": {
       "type": "object",
       "title": "AlertEvent",
+      "x-litestone-kind": "model",
       "properties": {
         "ruleId": {
           "type": "string"
         },
         "status": {
-          "type": "string",
+          "$ref": "#/$defs/AlertStatus",
           "default": "firing"
         },
         "severity": {
           "$ref": "#/$defs/AlertSeverity"
         },
         "subjectType": {
-          "type": "string"
+          "$ref": "#/$defs/AlertSubject"
         },
         "subjectId": {
           "type": "string"
@@ -3471,6 +3805,7 @@
     "Dashboard": {
       "type": "object",
       "title": "Dashboard",
+      "x-litestone-kind": "model",
       "properties": {
         "workspaceId": {
           "type": "string",
@@ -3555,6 +3890,7 @@
     "DashboardWidget": {
       "type": "object",
       "title": "DashboardWidget",
+      "x-litestone-kind": "model",
       "properties": {
         "dashboardId": {
           "type": "string"
@@ -3575,7 +3911,9 @@
           ]
         },
         "config": {
-          "default": {}
+          "default": {},
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         },
         "cols": {
           "type": "integer",
@@ -3645,6 +3983,7 @@
     "AuditEvent": {
       "type": "object",
       "title": "AuditEvent",
+      "x-litestone-kind": "model",
       "properties": {
         "workspaceId": {
           "type": [
@@ -3661,8 +4000,15 @@
           ]
         },
         "actorType": {
-          "type": "string",
+          "$ref": "#/$defs/ActorKind",
           "default": "user"
+        },
+        "onBehalfOfId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "SUPPORT MODE — who the operator was acting AS.  `actorId` stays the person who really did it, which is the opposite of what every hand-rolled impersonation records and is the whole complaint in `FJS-142`. Null outside an episode.  NOT `subjectId`, which on this model is the ROW that was acted on. The framework's own trail uses `subjectId` for the PERSON, in the sense a data subject is a person; this table already spent the word, so it uses another."
         },
         "action": {
           "type": "string"
@@ -3679,7 +4025,9 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         }
       },
       "additionalProperties": false,
@@ -3714,6 +4062,7 @@
     "Blueprint": {
       "type": "object",
       "title": "Blueprint",
+      "x-litestone-kind": "model",
       "properties": {
         "slug": {
           "type": "string",
@@ -3856,7 +4205,9 @@
           ]
         },
         "links": {
-          "default": []
+          "default": [],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         },
         "deprecatedAt": {
           "anyOf": [
@@ -3901,6 +4252,7 @@
     "BlueprintParam": {
       "type": "object",
       "title": "BlueprintParam",
+      "x-litestone-kind": "model",
       "properties": {
         "blueprintId": {
           "type": "string"
@@ -3993,6 +4345,7 @@
     "RegistryImage": {
       "type": "object",
       "title": "RegistryImage",
+      "x-litestone-kind": "model",
       "properties": {
         "workspaceId": {
           "type": "string",
@@ -4082,6 +4435,7 @@
     "Backup": {
       "type": "object",
       "title": "Backup",
+      "x-litestone-kind": "model",
       "properties": {
         "kind": {
           "$ref": "#/$defs/BackupKind",
@@ -4171,6 +4525,7 @@
     "HubConfig": {
       "type": "object",
       "title": "HubConfig",
+      "x-litestone-kind": "model",
       "properties": {
         "name": {
           "type": "string",
@@ -4261,9 +4616,82 @@
         "delete": 7
       }
     },
+    "Notification": {
+      "type": "object",
+      "title": "Notification",
+      "x-litestone-kind": "model",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "data": {
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "contextType": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NotificationContext"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contextId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "readAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "userId",
+        "type",
+        "data"
+      ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 0,
+        "create": 8,
+        "update": 4,
+        "delete": 8
+      },
+      "x-relations": [
+        {
+          "field": "user",
+          "model": "User",
+          "type": "belongsTo",
+          "fields": [
+            "userId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
     "NotificationPreference": {
       "type": "object",
       "title": "NotificationPreference",
+      "x-litestone-kind": "model",
       "properties": {
         "userId": {
           "type": "string"
@@ -4308,6 +4736,46 @@
         }
       ]
     },
+    "fleetByProvider": {
+      "type": "object",
+      "title": "fleetByProvider",
+      "x-litestone-kind": "view",
+      "description": "The fleet, counted. What the cloud-spend screen used to assemble in the browser out of `servers.find({ limit: 200 })`, which is a count that goes quietly wrong on the 201st machine — the number a report exists to be right about, capped by a page size nobody chose for that reason.  **Not `@@materialized`, and that is the decision worth reading.** A materialized view is rebuilt on every write to a source it names, inside the writing transaction; the source here is `Server`, and every outpost heartbeat writes one. A tally over a few hundred rows costs nothing at read time and a full recompute per heartbeat costs the fleet — so this one is a plain `CREATE VIEW` and `example`'s `revenueByStatus`, whose source moves when somebody buys something, is not.  **`deletedAt IS NULL` is written out because a view inherits no clause of `@@softDelete`.** `Server` soft-deletes; nothing would have said so, and a removed machine would have gone on being counted with every screen looking correct.  The grain is provider × region because those are the two tallies the screen draws; a roll-up to one provider is a sum over rows that are all here, which is the difference between rolling up a projection and re-deriving one.",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "readOnly": true
+        },
+        "providerKind": {
+          "type": "string",
+          "readOnly": true
+        },
+        "region": {
+          "type": "string",
+          "readOnly": true
+        },
+        "servers": {
+          "type": "integer",
+          "readOnly": true
+        },
+        "vcpu": {
+          "type": "integer",
+          "readOnly": true
+        },
+        "ramGb": {
+          "type": "integer",
+          "readOnly": true
+        }
+      },
+      "additionalProperties": false,
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 2,
+        "create": 9,
+        "update": 9,
+        "delete": 9
+      }
+    },
     "VerificationPurpose": {
       "type": "string",
       "enum": [
@@ -4316,6 +4784,15 @@
         "oauthLink"
       ],
       "title": "VerificationPurpose"
+    },
+    "MetricType": {
+      "type": "string",
+      "enum": [
+        "counter",
+        "gauge",
+        "histogram"
+      ],
+      "title": "MetricType"
     },
     "AccountType": {
       "type": "string",
@@ -4389,7 +4866,6 @@
         "pending",
         "provisioning",
         "installing",
-        "ready",
         "online",
         "unreachable",
         "draining",
@@ -4408,6 +4884,14 @@
         "worker"
       ],
       "title": "ServerRole"
+    },
+    "ProviderKind": {
+      "type": "string",
+      "enum": [
+        "custom",
+        "hetzner"
+      ],
+      "title": "ProviderKind"
     },
     "EnvironmentTier": {
       "type": "string",
@@ -4511,6 +4995,43 @@
       ],
       "title": "AlertSeverity"
     },
+    "AlertSubject": {
+      "type": "string",
+      "enum": [
+        "server",
+        "volume",
+        "series"
+      ],
+      "title": "AlertSubject"
+    },
+    "ComparisonOp": {
+      "type": "string",
+      "enum": [
+        "gt",
+        "gte",
+        "lt",
+        "lte"
+      ],
+      "title": "ComparisonOp"
+    },
+    "AlertStatus": {
+      "type": "string",
+      "enum": [
+        "firing",
+        "resolved"
+      ],
+      "title": "AlertStatus"
+    },
+    "ActorKind": {
+      "type": "string",
+      "enum": [
+        "user",
+        "api_key",
+        "system",
+        "support"
+      ],
+      "title": "ActorKind"
+    },
     "ChannelKind": {
       "type": "string",
       "enum": [
@@ -4569,6 +5090,16 @@
       ],
       "title": "BackupDestination"
     },
+    "NotificationContext": {
+      "type": "string",
+      "enum": [
+        "Deployment",
+        "AlertEvent",
+        "JobRun",
+        "Workspace"
+      ],
+      "title": "NotificationContext"
+    },
     "NotificationKind": {
       "type": "string",
       "enum": [
@@ -4581,6 +5112,22 @@
         "weekly_digest"
       ],
       "title": "NotificationKind"
+    },
+    "Capability": {
+      "type": "string",
+      "enum": [
+        "Environment.create",
+        "Environment.delete",
+        "Environment.update",
+        "Environment.variables",
+        "Server.create",
+        "Server.delete",
+        "Server.drain",
+        "Server.reboot",
+        "Server.undrain",
+        "Server.update"
+      ],
+      "title": "Capability"
     }
   }
 }

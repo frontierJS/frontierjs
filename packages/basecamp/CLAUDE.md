@@ -259,7 +259,7 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   a delete: `@@softDelete(cascade)` stamps every child, a status change stamps
   nothing.
 - **A `find` that answers one object reaches the browser as an EMPTY list.** The
-  Junction client normalises anything that is not a list — or `{ total, data:
+  Junction client normalizes anything that is not a list — or `{ total, data:
   [] }` — into `list(name, [])`: 200, no warning, and the screen then renders
   nothing while the API is answering correctly. `GET /hub` was written this way
   and could only be seen in a browser. **`find` means a list**; a service
@@ -460,7 +460,7 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   form `{operator, threshold}`, the seed `{op, value}`, the card reading
   `.operator` — so every seeded rule rendered an em-dash and nothing errored
   (`FJS-D227`). It is `operator`/`threshold`/`forMinutes` now. The rule the
-  ruling generalises: **`Json` is right where nothing joins, queries or
+  ruling generalizes: **`Json` is right where nothing joins, queries or
   interprets the value; the moment something reads INTO it to decide, it is a
   language and belongs in the schema.** Beside it, `core/delivery.ts` is the only
   place that knows how a `NotificationChannel` is reached — it takes its client

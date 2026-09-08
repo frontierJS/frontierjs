@@ -68,7 +68,7 @@ const RESOLVED_INSPECT_ID     = '\0@frontierjs/mesa-inspect'
  * compiler by package name would serve a stale snapshot of it.
  *
  * `options.compilerPath` still wins, for a consumer testing a compiler build
- * that is not this one — and the answer is memoised per PLUGIN INSTANCE, never
+ * that is not this one — and the answer is memoized per PLUGIN INSTANCE, never
  * at module scope: two `mesa()` calls in one config are the ordinary case
  * (`FJS-D16`), and a shared memo hands the second whichever compiler the first
  * asked for, dropping its `compilerPath` with nothing said.

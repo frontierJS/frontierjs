@@ -19,7 +19,7 @@ This file describes what it currently does.
 | Realm | State |
 | --- | --- |
 | **Data** (`db/`) | **Real.** `schema.lite` is the seed — 45 models, 26 enums, 0 errors and one standing warning; the migration is generated from it and verified against a fresh database. **All 45 declare `@@gate`**, graded per WORKSPACE by `api/src/core/gate.ts`. **Three carry a declared state machine** — `Server`, `Deployment` and `Job`, 19 gated transitions — so a status move is a compare-and-swap with its own authority level rather than a from-list in a service file. Row scoping is the declared `tenancy { }` block rather than hand-written allows: **fourteen `@@tenant(none)`** by name, **seventeen** scoped by their own `workspaceId`, and **fourteen through a parent** — inferred, not declared, and reported as that one warning. `@@tenant(via: rel)` is the wrong answer for seven of the fourteen: two scoped parents get one deny each and they are AND'd, so naming one drops the other |
-| **API** (`api/`) | **Real.** **27 services** + 5 job files on Litestone accessors, zero raw SQL. Twenty-two are workspace-scoped; **five are not** and each says so in the schema rather than in a hook — `hub` (over no model), plus `blueprints`, `hub-config`, `backups` and `notification-preferences`, whose models are `@@tenant(none)`, which is what makes junction's `tenantClaimGuard` exempt them. Four sit behind `requireSystemAdmin`; `blueprints` reads at VISITOR(1), because browsing the catalogue is what a person with no workspace yet is doing |
+| **API** (`api/`) | **Real.** **27 services** + 5 job files on Litestone accessors, zero raw SQL. Twenty-two are workspace-scoped; **five are not** and each says so in the schema rather than in a hook — `hub` (over no model), plus `blueprints`, `hub-config`, `backups` and `notification-preferences`, whose models are `@@tenant(none)`, which is what makes junction's `tenantClaimGuard` exempt them. Four sit behind `requireSystemAdmin`; `blueprints` reads at VISITOR(1), because browsing the catalog is what a person with no workspace yet is doing |
 | **UI** (`web/`) | **Real.** Sierra SPA over every service — 40 route files, driven end to end in a browser by `bun run verify`, and the BUILT output probed by `bun run verify:build` |
 
 ## How to run it
@@ -633,7 +633,7 @@ the sentence is wrong rather than the behavior — `FJS-248`.
 
 `bun run image:up` builds an image from the working tree and brings up the
 stack; `bun run image:down` stops it. Same URL as `bun run dev` — 8020 — so
-containerised and not are the same address, deliberately.
+containerized and not are the same address, deliberately.
 
 **The image carries the tree.** Nine `workspace:*` dependencies that a Docker
 build resolves no better than the `link:` specs `fli new --source local` writes

@@ -81,7 +81,7 @@ export function rewriteStack(err, seen = new Set()) {
   if (typeof stack === 'string') {
     const next = rewriteStackString(stack)
     // Only assign when it changed: `stack` is a getter on some hosts and
-    // writing it unconditionally would materialise one for nothing.
+    // writing it unconditionally would materialize one for nothing.
     if (next !== stack) { try { err.stack = next } catch { /* frozen */ } }
   }
 

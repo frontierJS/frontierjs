@@ -1819,12 +1819,12 @@ export function generateFactory(schema, modelName, options = {}) {
             } else if (starts || ends) {
               value = `${starts}${token}${ends}`
             } else {
-              // A well-known field name gets a catalogue value when seeded, so a
+              // A well-known field name gets a catalog value when seeded, so a
               // generated row reads like a row. Unseeded output is unchanged —
               // schema-derived test CASES must stay stable.
               const fake = fakeFor(name, rng)
               if (fake != null) {
-                // The catalogue is a small pool — two rows CAN draw the same name.
+                // The catalog is a small pool — two rows CAN draw the same name.
                 // A @unique column carries the seq token so it still cannot collide.
                 value = attrs.some(a => a.kind === 'unique') ? `${fake} ${token}` : fake
               } else {
@@ -2750,7 +2750,7 @@ async function _tenantValues(schema, chain) {
  * is what lets the shared chain keep its sequence — two chains per model would
  * both write seq 1 and collide on every `@unique`.
  *
- * `parents` is memoised per tenant so a diamond gets ONE parent: two would be
+ * `parents` is memoized per tenant so a diamond gets ONE parent: two would be
  * legitimate rows and would also leave a delegated child ambiguous about which
  * of them its rule delegated through.
  */
@@ -2851,7 +2851,7 @@ function _tenantMove(schema, model, tenant, parents) {
 // called twice hands back two factories that both write seq 1 — the same
 // `@unique` slug, the same composite key — and the second write fails with a
 // UNIQUE error that is indistinguishable from the rule under test working.
-// Memoised per accessor, one chain per model per run, sequence advancing.
+// Memoized per accessor, one chain per model per run, sequence advancing.
 
 function _chains(schema, sys) {
   const registry = {}

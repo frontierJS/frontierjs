@@ -908,7 +908,7 @@ describe('the proxy path list is what the app mounts', () => {
   })
 })
 
-// ─── The catalogue, and the four services that take no workspace ─────────────
+// ─── The catalog, and the four services that take no workspace ─────────────
 // `Blueprint`, `HubConfig`, `Backup` and `NotificationPreference` are all
 // `@@tenant(none)`, which means junction's `tenantClaimGuard` exempts them —
 // `isRowScoped(db, service)` is false, so a caller with no workspace claim is
@@ -916,7 +916,7 @@ describe('the proxy path list is what the app mounts', () => {
 // junction, keyed off this app's schema, and nothing in either file names the
 // other. These tests are what would catch it moving.
 
-describe('the catalogue takes no workspace', () => {
+describe('the catalog takes no workspace', () => {
   test('a caller with no membership anywhere can read it', async () => {
     // `outsider` is authenticated and belongs to nothing — VISITOR(1), which is
     // exactly what `@@gate("1.7")` admits. Through a workspace-scoped service
@@ -928,7 +928,7 @@ describe('the catalogue takes no workspace', () => {
 
   test('and writing it is the hub tier, not a workspace role', async () => {
     // An OWNER of a workspace — the highest standing a workspace grants — is
-    // still refused, because the catalogue belongs to the installation.
+    // still refused, because the catalog belongs to the installation.
     await expect(env.as(owner).service('blueprints').create({
       name: 'Nope', slug: 'nope', category: 'Database',
       description: 'x', version: '1', image: 'nope:1',
@@ -993,7 +993,7 @@ describe('the catalogue takes no workspace', () => {
   })
 })
 
-describe('the registry mirror is a tenant service, unlike the catalogue beside it', () => {
+describe('the registry mirror is a tenant service, unlike the catalog beside it', () => {
   test('one workspace cannot see another workspace images', async () => {
     const sys = env.system as any
     const other = await sys.workspace.findFirst({ where: { name: 'Other' } })

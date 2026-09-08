@@ -1,9 +1,9 @@
 // src/services/blueprints/blueprints.service.ts
-// The deployment catalogue — what an operator can pick from, and the fields
+// The deployment catalog — what an operator can pick from, and the fields
 // they fill in before it becomes an App.
 //
 // Mounted at /blueprints. **The one service here that takes no workspace.**
-// `Blueprint` is `@@tenant(none)` because the catalogue is curated for the whole
+// `Blueprint` is `@@tenant(none)` because the catalog is curated for the whole
 // installation rather than authored per tenant — see the model's own comment —
 // so there is no `sessionScope` on this file and no `X-Workspace-Id` to send.
 // What stands in for it is the gate: `@@gate("1.7")` reads at VISITOR(1), so a
@@ -51,7 +51,7 @@ export function createBlueprintsService(_app: BasecampApp) {
     name:  'blueprints',
     model: 'Blueprint',
 
-    // No `channel:`. A catalogue change is the hub editing one shared row, not
+    // No `channel:`. A catalog change is the hub editing one shared row, not
     // a workspace's data moving — and `workspaceChannel` is the only channel
     // this app has, which would broadcast a hub edit into whichever workspace
     // the editor happened to be looking at.
@@ -173,7 +173,7 @@ export function createBlueprintsService(_app: BasecampApp) {
     hooks: {
       before: {
         // Reads are the gate's — `@@gate("1.7")` refuses a caller with no
-        // session, which is every reader this catalogue has to keep out.
+        // session, which is every reader this catalog has to keep out.
         create:    [requireSystemAdmin(), refuseInlineParams],
         patch:     [requireSystemAdmin(), refuseInlineParams],
         remove:    [requireSystemAdmin()],

@@ -420,7 +420,7 @@ describe('log', () => {
     expect(entries[0].data.correlationId).toBe(entries[1].data.correlationId)
   })
 
-  test('is memoised per call — a child logger per line would allocate per line', async () => {
+  test('is memoized per call — a child logger per line would allocate per line', async () => {
     let first: unknown, second: unknown
     const { app: a } = logging(createService({
       name: 'orders', methods: ['find'],

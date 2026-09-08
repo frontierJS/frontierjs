@@ -14,7 +14,7 @@
 
 import { writeFileSync, mkdirSync, rmSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { convert, summarise } from '../../../src/import/index.js'
+import { convert, summarize } from '../../../src/import/index.js'
 
 export const TARGETS = {
   erpnext: {
@@ -133,7 +133,7 @@ if (import.meta.main) {
     const r = await fetchOne(k)
     const kinds = {}
     for (const g of r.gaps) (kinds[g.kind] ||= []).push(g)
-    const s = summarise(r.gaps)
+    const s = summarize(r.gaps)
     console.log(`${k.padEnd(12)} ${String(r.models).padStart(3)} models · ${r.gaps.length} unexpressed ` +
                 `(${s.changed} changed · ${s.lost} lost · ${s.noted} noted)`)
     for (const [kind, v] of Object.entries(kinds).sort((a, b) => b[1].length - a[1].length))

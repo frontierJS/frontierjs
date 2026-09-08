@@ -374,7 +374,7 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
     produces.** Mesa flushes on a microtask, so a plain read straight after a
     click sees the previous value.
   - **`t.press('Enter')` activates a focused control, and only because Enter
-    carries `text: '\r'`.** Chrome synthesises a button's click from the
+    carries `text: '\r'`.** Chrome synthesizes a button's click from the
     character, so an Enter sent without one travels through every listener and
     activates nothing — indistinguishable from a component that ignores Enter.
   - **A `[Mesa]` console warning fails the run.** The framework reports a

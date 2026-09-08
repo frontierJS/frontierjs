@@ -320,7 +320,7 @@ const result = await app.conduit.send<ServerResponse>({
   method:     'POST',               // HTTP verb or protocol-specific method
   path:       '/servers',           // path on the remote
   query:      { page: 2, tag: ['a', 'b'] },  // ?page=2&tag=a&tag=b
-  body:       { name: 'web-01' },   // JSON-serialisable
+  body:       { name: 'web-01' },   // JSON-serializable
   headers:    { 'X-Custom': '1' },  // merged with auth headers — auth wins
   timeout_ms: 5_000,                // overrides global default
 })
@@ -356,7 +356,7 @@ conduit({
 
 Open → requests fail immediately with `circuit_open` and **nothing leaves the process**. After `reset_ms` exactly one trial request is admitted; success closes the breaker, failure reopens it for another full window.
 
-Only failures that implicate the target count — `connection_failed`, `timeout`, `server_error`. An unresolvable credential, an unserialisable body or a typo'd method is your bug, and tripping a breaker on it would hide the real error behind `circuit_open` forever.
+Only failures that implicate the target count — `connection_failed`, `timeout`, `server_error`. An unresolvable credential, an unserializable body or a typo'd method is your bug, and tripping a breaker on it would hide the real error behind `circuit_open` forever.
 
 **Which is why `server_error` is 5xx and nothing else.** It used to be every non-2xx and every unusable body as well, and one word fed three consumers that disagree about it: the retry decision, the `retryable` flag a background job acts on, and this count. Five 404s in a row opened the breaker on a target that had answered every one of them, after which correct requests were shed locally (`FJS-684`). A 404 is not evidence of an outage and neither is an error page; `client_error` and `invalid_response` say so and stay out of the count.
 

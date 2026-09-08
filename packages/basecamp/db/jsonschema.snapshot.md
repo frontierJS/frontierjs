@@ -125,7 +125,7 @@ validates, and a select that silently drops an option.
 - `UserStatus` — `pending_verification`, `active`, `suspended`
 - `WorkspaceStatus` — `active`, `suspended`
 - `SecretKind` — `ssh_key`, `provider_key`, `registry_auth`, `tls_cert`, `notification`, `generic`
-- `ServerStatus` — `pending`, `provisioning`, `installing`, `ready`, `online`, `unreachable`, `draining`, `stopped`, `destroyed`
+- `ServerStatus` — `pending`, `provisioning`, `installing`, `online`, `unreachable`, `draining`, `stopped`, `destroyed`
 - `ServerRole` — `general`, `build`, `database`, `gateway`, `worker`
 - `ProviderKind` — `custom`, `hetzner`
 - `EnvironmentTier` — `development`, `test`, `preview`, `staging`, `production`
@@ -426,7 +426,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `volumes` — hasMany `Volume`
 - relation `appServers` — hasMany `AppServer`
 - relation `serverNetworks` — hasMany `ServerNetwork`
-- transitions on `status` — `reboot`: online|unreachable → pending · `drain`: online → draining @5 · `undrain`: draining → online @5 · `checkIn`: pending|installing|unreachable → online @system · `reportRunning`: pending|provisioning|installing|ready|unreachable|stopped → online @system @5 · `reportStopped`: pending|provisioning|installing|ready|online|unreachable|draining → stopped @system @5 · `reportRebuilding`: pending|installing|ready|online|unreachable|draining|stopped → provisioning @system @5 · `reportDestroyed`: pending|provisioning|installing|ready|online|unreachable|draining|stopped → destroyed @system @5
+- transitions on `status` — `reboot`: online|unreachable → pending · `drain`: online → draining @5 · `undrain`: draining → online @5 · `checkIn`: pending|installing|unreachable → online @system · `reportRunning`: pending|provisioning|installing|unreachable|stopped → online @system @5 · `reportStopped`: pending|provisioning|installing|online|unreachable|draining → stopped @system @5 · `reportRebuilding`: pending|installing|online|unreachable|draining|stopped → provisioning @system @5 · `reportDestroyed`: pending|provisioning|installing|online|unreachable|draining|stopped → destroyed @system @5
 - capabilities — `Server.create` · `Server.update` · `Server.delete` · `Server.reboot` · `Server.drain` · `Server.undrain` · read is not graded
 
 | Field | Type | Required | Label | Rules | Messages |

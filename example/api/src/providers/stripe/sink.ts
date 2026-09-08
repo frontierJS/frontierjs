@@ -195,7 +195,7 @@ export function startStripeSink(): { stop(): void; port: number } {
             }, { status: 400 })
           }
           // The decline. Stripe's own magic amounts are card-driven; a single
-          // reserved amount is the same idea with nothing to tokenise, and it is
+          // reserved amount is the same idea with nothing to tokenize, and it is
           // what makes `translate()`'s card_error branch reachable.
           if (amount === 4242) {
             return Response.json({

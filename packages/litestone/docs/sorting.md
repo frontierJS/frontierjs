@@ -42,7 +42,7 @@ serialization or an encoding, not the value:
 Sorting *within* an array has no definition here; the question is only whether
 the column may be a sort key at all, and the answer is no. Sort by a column that
 holds the value itself — for an array that usually means a `@from` count, or a
-denormalised column written on change.
+denormalized column written on change.
 
 ### Asking without running the query
 

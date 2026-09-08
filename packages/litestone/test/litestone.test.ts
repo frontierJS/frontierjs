@@ -16,7 +16,7 @@ import { generateDDL, isSoftDelete,
 import { splitStatements, introspect,
          buildPristine, diffSchemas,
          generateMigrationSQL,
-         summariseDiff }              from '../src/core/migrate.js'
+         summarizeDiff }              from '../src/core/migrate.js'
 import { createClient, ValidationError } from '../src/core/client.js'
 import { AccessDeniedError }              from '../src/core/plugin.js'
 // The stored envelope is asserted by PARSING it rather than by a prefix
@@ -25,7 +25,7 @@ import { AccessDeniedError }              from '../src/core/plugin.js'
 import { parseEnvelope, keyId }           from '../src/core/encryption.js'
 import { buildWhere, buildOrderBy, sql, now,
          encodeCursor, decodeCursor,
-         normaliseOrderBy, buildCursorWhere,
+         normalizeOrderBy, buildCursorWhere,
          isNamedAgg, buildNamedAggExpr,
          quoteIdent } from '../src/core/query.js'
 import { create, apply, status,
@@ -706,17 +706,17 @@ describe('query helpers', () => {
     expect(() => decodeCursor('!!!invalid')).toThrow()
   })
 
-  test('normaliseOrderBy', () => {
+  test('normalizeOrderBy', () => {
     // `nulls` is part of a sort key, defaulted to where SQLite puts them:
     // first ascending, last descending. A cursor compares against this
     // position, so dropping it loses every row on one side of the nulls
     // (`FJS-780`).
-    const r = normaliseOrderBy([{ createdAt: 'desc' }, { id: 'asc' }])
+    const r = normalizeOrderBy([{ createdAt: 'desc' }, { id: 'asc' }])
     expect(r[0]).toEqual({ col: 'createdAt', dir: 'DESC', nulls: 'LAST' })
     expect(r[1]).toEqual({ col: 'id', dir: 'ASC', nulls: 'FIRST' })
   })
 
-  // Parenthesised because one field and many now go through one loop. The
+  // Parenthesized because one field and many now go through one loop. The
   // single-field fast path was the same comparison written a second time, and
   // only the multi-field copy would have been made NULL-aware.
   test('buildCursorWhere — single ASC', () => {
@@ -862,11 +862,11 @@ describe('query helpers', () => {
     expect(r).toBe('"id" ASC')
   })
 
-  test('normaliseOrderBy — handles object form', () => {
+  test('normalizeOrderBy — handles object form', () => {
     // This asserted that a STATED `nulls` was dropped, which is what let the
     // cursor and the scan disagree about the order (`FJS-780`): `buildOrderBy`
     // emitted `NULLS LAST` and `findManyCursor` did not.
-    const r = normaliseOrderBy([{ name: { dir: 'asc', nulls: 'last' } }, { id: 'desc' }])
+    const r = normalizeOrderBy([{ name: { dir: 'asc', nulls: 'last' } }, { id: 'desc' }])
     expect(r).toEqual([
       { col: 'name', dir: 'ASC',  nulls: 'LAST' },
       { col: 'id',   dir: 'DESC', nulls: 'LAST' },
@@ -6463,14 +6463,14 @@ describe('@secret field attribute', () => {
 
   test('$rotateKey — the client that rotated can still read what it re-encrypted', async () => {
     const db  = await makeDb(`model Secret { id Int @id; token String @secret }`, 'rotate-self', { encryptionKey: ENC_KEY })
-    const sys = db.asSystem()                       // memoised, and taken FIRST
+    const sys = db.asSystem()                       // memoized, and taken FIRST
     await sys.secret.create({ data: { id: 1, token: 'tok-abc' } })
     expect(((await sys.secret.findUnique({ where: { id: 1 } })) as any).token).toBe('tok-abc')
 
     await db.$rotateKey(NEW_KEY)
 
     // The proxy handed out before the rotation, and a fresh one: asSystem() is
-    // memoised in `_systemProxy`, so these are the same object and both used to
+    // memoized in `_systemProxy`, so these are the same object and both used to
     // answer null.
     expect(((await sys.secret.findUnique({ where: { id: 1 } })) as any).token).toBe('tok-abc')
     expect(((await db.asSystem().secret.findUnique({ where: { id: 1 } })) as any).token).toBe('tok-abc')
@@ -6478,7 +6478,7 @@ describe('@secret field attribute', () => {
   })
 
   test('$rotateKey — a scoped client made before the rotation reads through it', async () => {
-    // $setAuth is NOT memoised, so a client made AFTER the rotation always
+    // $setAuth is NOT memoized, so a client made AFTER the rotation always
     // worked and one made BEFORE did not. That difference is what made the
     // defect look intermittent.
     const db     = await makeDb(`model Secret { id Int @id; token String @secret }`, 'rotate-scoped', { encryptionKey: ENC_KEY })
@@ -11100,7 +11100,7 @@ describe('enum transitions — conflict and upsert', () => {
   // isPrimary / isSuspended / isPublished are the two-state machines every
   // schema has, and the two directions are routinely different authorities.
   // `true`/`false` are their own token, so an enum-only reader stopped at the
-  // tokeniser and the declaration did not exist.
+  // tokenizer and the declaration did not exist.
 
   test('@@transitions names a Boolean column, with a per-move gate', async () => {
     const { db: bdb } = await makeTestClient(`
@@ -12766,7 +12766,7 @@ describe('defineFactory', () => {
   })
 })
 
-describe('value catalogue', () => {
+describe('value catalog', () => {
   const PERSON = `
     model Person {
       id          Int    @id @default(autoincrement())
@@ -12780,13 +12780,13 @@ describe('value catalogue', () => {
     }
   `
 
-  test('seeded rows use the catalogue; unseeded output is unchanged', async () => {
+  test('seeded rows use the catalog; unseeded output is unchanged', async () => {
     const seeded = await makeTestClient(PERSON, { seed: 42, autoFactories: true })
     const row: any = seeded.factories.person.buildOne()
     expect(row.firstName).not.toMatch(/^FirstName /)
     expect(row.city).not.toMatch(/^City /)
     expect(row.email).toMatch(/^[a-z]+\.[a-z]+\d+@/)
-    // No catalogue entry for this name — falls back to the old shape
+    // No catalog entry for this name — falls back to the old shape
     expect(row.whatever).toMatch(/^Whatever /)
     seeded.db.$close()
 
@@ -12798,7 +12798,7 @@ describe('value catalogue', () => {
     plain.db.$close()
   })
 
-  test('same seed, same catalogue values', async () => {
+  test('same seed, same catalog values', async () => {
     const a = await makeTestClient(PERSON, { seed: 7, autoFactories: true })
     const b = await makeTestClient(PERSON, { seed: 7, autoFactories: true })
     expect(a.factories.person.seed(7).buildOne()).toEqual(b.factories.person.seed(7).buildOne())
@@ -12820,7 +12820,7 @@ describe('value catalogue', () => {
     }
   })
 
-  test('a @unique catalogue column still cannot collide', async () => {
+  test('a @unique catalog column still cannot collide', async () => {
     // The city pool is smaller than the row count — the seq token is what saves it.
     const { db, factories } = await makeTestClient(
       `model P { id Int @id @default(autoincrement()); city String @unique }`,
@@ -13736,7 +13736,7 @@ describe('policyExprToString', () => {
     expect(roundTrip("a == 'draft'")).toBe("a == 'draft'")
   })
 
-  test('negation of a comparison is parenthesised and re-parses the same', () => {
+  test('negation of a comparison is parenthesized and re-parses the same', () => {
     expect(roundTrip('!(a == 1)')).toBe('!(a == 1)')
     expect(roundTrip('!(a == 1 && b == 2)')).toBe('!(a == 1 && b == 2)')
   })
@@ -14045,7 +14045,7 @@ describe('a ternary in the policy expression language', () => {
     expect(ids(await db.asSystem().task.findMany({ where: { $scope: 'tiered' } }))).toEqual([1, 5])
   })
 
-  test('a parenthesised group is an operand on BOTH sides of a comparison', async () => {
+  test('a parenthesized group is an operand on BOTH sides of a comparison', async () => {
     // Only the left side took one, so `ownerId == (open ? auth().id : …)` —
     // a ternary choosing which value to compare against, which is most of what
     // a ternary is for here — was a parse error on the right and legal on the left.
@@ -18510,7 +18510,7 @@ describe('Scopes', () => {
 
   test('throws when scope is not an object literal', async () => {
     const { createClient } = await import('../src/core/client.js')
-    // Top-level function form rejected — parameterised scopes are intentionally not supported
+    // Top-level function form rejected — parameterized scopes are intentionally not supported
     await expect(createClient({
       schema: SCHEMA, db: ':memory:',
       scopes: { Customer: { foo: ((days: number) => ({ where: { x: days } })) as any } } as any,
@@ -24900,7 +24900,7 @@ describe('enum arrays', () => {
       // Sorting orders rows by the serialized JSON, so it is refused — the
       // column still FILTERS, through json_each.
       'x-sortable': 'array',
-      // Aggregating it would summarise the serialized text rather than the
+      // Aggregating it would summarize the serialized text rather than the
       // values in it, which is the same reason ordering by it is refused.
       'x-aggregatable': 'array',
       // Every array column is NOT NULL DEFAULT '[]' whether it says so or not,

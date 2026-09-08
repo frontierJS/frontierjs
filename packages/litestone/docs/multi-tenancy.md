@@ -102,7 +102,7 @@ Junction's `withTenantDb` does exactly this for every request, so an app on
 Junction gets it without writing a line. A client evicted after its last lease
 ended is closed immediately; one still leased stays open until the last holder
 lets go; and a client from a bare `get()` was never leased, so it is dropped and
-bun's finaliser closes it when nothing references it. Releasing twice is a
+bun's finalizer closes it when nothing references it. Releasing twice is a
 no-op, so a `finally` is safe on a path that already released.
 
 `tenants.poolStats()` answers `{ pooled, leased, retired, overflows, maxOpen }`.

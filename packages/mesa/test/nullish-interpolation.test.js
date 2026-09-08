@@ -93,7 +93,7 @@ describe('a nullish interpolation is coerced in the emitted module', () => {
     )
   })
 
-  it("parenthesises the operand — `${a || b ?? ''}` is a SyntaxError", async () => {
+  it("parenthesizes the operand — `${a || b ?? ''}` is a SyntaxError", async () => {
     const out = await cx(`<script>let a = null, b = 'x'</script><p>{a || b}</p>`)
     expect(out).toContain(`($$runtime.get($$sig_a) || $$runtime.get($$sig_b)) ?? ''`)
     expect(() => acorn.parse(out, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()

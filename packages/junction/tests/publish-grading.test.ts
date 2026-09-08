@@ -204,7 +204,7 @@ describe('cohorts', () => {
 describe('what is not graded, and why that is not a hole', () => {
   test('a model that can only ever say yes is skipped entirely', async () => {
     // `$readGrading` answers `open` for a model whose read gate is 0 and which
-    // declares no read policy and no field policy — a catalogue, which is also
+    // declares no read policy and no field policy — a catalog, which is also
     // the busiest channel an app has. Asked of the SCHEMA, so a policy added
     // later turns the channel from open to graded with nothing to remember.
     const manager = createChannelManager()

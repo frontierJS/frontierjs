@@ -10918,7 +10918,7 @@ $custom-colors: ("brand": (#6d28d9, #fff));`, 'bash')}
           <dd>
             You never leave the file you are in, the tooling completes the
             class names, and unused CSS is genuinely gone. For a team that
-            has internalised it, the long class attribute is not the cost it
+            has internalized it, the long class attribute is not the cost it
             looks like here. Nothing in this package competes with that.
           </dd>
           <dt>Bootstrap</dt>

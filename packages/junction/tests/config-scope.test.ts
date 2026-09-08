@@ -224,7 +224,7 @@ describe('the allow-list is the safe half', () => {
   })
 })
 
-describe('memoisation and invalidation', () => {
+describe('memoization and invalidation', () => {
   test('resolves once per tenant, and concurrent callers share one resolve', async () => {
     let calls = 0
     const app = createApp({
@@ -251,14 +251,14 @@ describe('memoisation and invalidation', () => {
 
     name = 'Second'
     await app.loadTenantConfig('acme')
-    expect(app.configFor('acme').name).toBe('First')     // memoised, as designed
+    expect(app.configFor('acme').name).toBe('First')     // memoized, as designed
 
     app.invalidateTenantConfig('acme')
     await app.loadTenantConfig('acme')
     expect(app.configFor('acme').name).toBe('Second')
   })
 
-  test('a FAILED resolve is not memoised — the row may be a second from existing', async () => {
+  test('a FAILED resolve is not memoized — the row may be a second from existing', async () => {
     let fail = true
     const app = createApp({
       config: { name: 'floor' } as never,

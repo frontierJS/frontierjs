@@ -245,7 +245,7 @@ export async function openChrome({ windowSize = '1280,900', bootstrap } = {}) {
    *  everything twice and reads exactly like a control that cannot filter.
    *
    *  `text` also decides whether the browser runs a key's DEFAULT ACTION.
-   *  Enter on a focused <button> is a click Chrome synthesises from the
+   *  Enter on a focused <button> is a click Chrome synthesizes from the
    *  character, so an Enter with no `text` moves through every listener and
    *  activates nothing — a control that ignores Enter and a harness that never
    *  pressed it look identical. That is why Enter carries `\r` in the table

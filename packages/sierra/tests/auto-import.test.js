@@ -76,10 +76,10 @@ describe('injectAutoImports', () => {
     expect(scriptContent).toContain('import Button from')
   })
 
-  test('synthesises a script block when the file has none', () => {
+  test('synthesizes a script block when the file has none', () => {
     const source = `<Button />`
     const result = injectAutoImports(source, map)
-    // A synthesised instance script, not bare text. Prepending the import
+    // A synthesized instance script, not bare text. Prepending the import
     // statement to a script-less file put it where Mesa parses TEMPLATE
     // content, so the page rendered the literal words `import Button from …`
     // and called `Button` as an undefined free identifier (`FJS-796`).
@@ -465,7 +465,7 @@ describe('a local binding shadows a registered module name', () => {
     unchanged('<script>\n  function show({ page }) { return page.title }\n</script>')
   })
 
-  test('an arrow parameter, parenthesised and bare', () => {
+  test('an arrow parameter, parenthesized and bare', () => {
     unchanged('<script>\n  const f = (page) => page.title\n</script>')
     unchanged('<script>\n  const f = page => page.title\n</script>')
   })

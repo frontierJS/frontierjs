@@ -1,6 +1,6 @@
 // The buyable rows beneath a product. `model:` is STATED rather than derived:
 // the filename is the service name and the URL segment, and 'product-variants'
-// singularises to 'product-variant', which is not what the Litestone accessor
+// singularizes to 'product-variant', which is not what the Litestone accessor
 // is called. Naming the model is what keeps the three resolvers that read it —
 // the query, the @@gate check and the field validation — pointed at one table.
 //
@@ -117,7 +117,7 @@ export function createProductVariantsService() {
      *
      * Addressed by SKU rather than by id, because a SKU is what a merchant
      * pastes into a `data-sku` attribute and an id is a number they would have
-     * to look up. It reads at level 0 like the rest of the catalogue.
+     * to look up. It reads at level 0 like the rest of the catalog.
      *
      * What it does NOT answer is anything about other people's baskets: `held`
      * stays here, and `available` crosses. Same line `availability` draws.

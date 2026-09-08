@@ -40,7 +40,7 @@ describe('@@gate is written as digits', () => {
   // The parser stores the string AS WRITTEN — the cascade of a missing position
   // is applied by whoever reads the gate, not here. Worth pinning, because the
   // refusal below builds a four-position string and it would be easy to read
-  // that as the parser normalising one.
+  // that as the parser normalizing one.
   it('the string is stored verbatim; the cascade is the reader\'s', () => {
     expect(gateOf(model('@@gate("4")'))).toBe('4')
     expect(gateOf(model('@@gate("2.4")'))).toBe('2.4')

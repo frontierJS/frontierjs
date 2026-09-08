@@ -71,7 +71,7 @@ const collectFlags = async (p) => {
   return result
 }
 
-// ─── YAML serialisers ─────────────────────────────────────────────────────────
+// ─── YAML serializers ─────────────────────────────────────────────────────────
 
 const serializeArgs = (args) => {
   if (!args.length) return null

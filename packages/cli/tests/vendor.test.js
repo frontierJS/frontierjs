@@ -1,7 +1,7 @@
 // ─── vendor.test.js — the build context a Dockerfile installs from ───────────
 //
 // What is being asserted is FJS-241: an app depending on the framework by
-// `link:` or `workspace:` could not be containerised at all, because neither
+// `link:` or `workspace:` could not be containerized at all, because neither
 // spec resolves inside a Docker build. The fix packs those packages into the
 // app's own build context, so the tests build a real miniature workspace and run
 // a real `bun pm pack` over it — a fake packer would agree with anything.

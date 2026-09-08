@@ -24,7 +24,7 @@ import { sys } from '../../../../api/src/core/db.ts'
  * `active: false` is a product the shop has retired, and a retired product must
  * not get a page: a URL that exists is a URL a search engine keeps. It also
  * means the set of pages changes between builds, which is the honest shape of a
- * catalogue — and is why the drive counts files against the database rather
+ * catalog — and is why the drive counts files against the database rather
  * than against a number written down here.
  */
 export async function getStaticPaths() {

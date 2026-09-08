@@ -1604,7 +1604,7 @@ function extractJSON(text) {
 
 // Vite's dev server proxies this to api.anthropic.com and attaches the credential
 // there — see vite.config.js. Posting to the real host from here would need the key
-// in the bundle, and the built page has no proxy, so its recogniser cannot work.
+// in the bundle, and the built page has no proxy, so its recognizer cannot work.
 const API_URL = '/anthropic/v1/messages'
 const MODEL   = 'claude-opus-5'
 
@@ -1615,7 +1615,7 @@ async function callClaude(prompt, maxTokens = 8000) {
     body: JSON.stringify({
       model: MODEL,
       max_tokens: maxTokens,
-      // Recognition is catalogue matching, not deep reasoning; medium keeps the
+      // Recognition is catalog matching, not deep reasoning; medium keeps the
       // thinking spend down without flattening the property/variant/novel call.
       output_config: { effort: 'medium' },
       messages: [{ role: 'user', content: prompt }]

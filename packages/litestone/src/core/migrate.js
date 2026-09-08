@@ -292,7 +292,7 @@ export function introspect(db) {
 // What this cannot tell apart is two statements differing only by whitespace
 // INSIDE a string literal. Nothing here emits one, and the alternative is a SQL
 // parser standing behind a tripwire whose whole value is not needing one.
-export function normaliseDdl(sql) {
+export function normalizeDdl(sql) {
   return sql
     .replace(/\s+/g, ' ')
     .replace(/IF NOT EXISTS /gi, '')
@@ -477,7 +477,7 @@ export function indexPredicate(sql) {
   return m ? m[1].replace(/\s+/g, ' ').trim() : null
 }
 
-export function normaliseTriggerSql(sql) {
+export function normalizeTriggerSql(sql) {
   return sql
     .replace(/CREATE\s+TRIGGER\s+IF\s+NOT\s+EXISTS/i, 'CREATE TRIGGER')
     .replace(/\s+/g, ' ')
@@ -989,7 +989,7 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
   for (const [name, p] of Object.entries(pristineTrigs)) {
     if (!inScope(p.table)) continue
     const l = liveTrigs[name]
-    if (rebuilding.has(p.table) || !l || normaliseTriggerSql(l.sql) !== normaliseTriggerSql(p.sql))
+    if (rebuilding.has(p.table) || !l || normalizeTriggerSql(l.sql) !== normalizeTriggerSql(p.sql))
       changedTriggers.push({ name, table: p.table, sql: p.sql })
   }
   const droppedTriggers = Object.entries(liveTrigs)
@@ -1084,8 +1084,8 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
       if (type === 'trigger' && !OWNED_TRIGGER.test(name)) continue
     }
     if (p?.sql === l?.sql) continue
-    const pn = p ? normaliseDdl(p.sql) : null
-    const ln = l ? normaliseDdl(l.sql) : null
+    const pn = p ? normalizeDdl(p.sql) : null
+    const ln = l ? normalizeDdl(l.sql) : null
     if (pn === ln) continue
     residue.push({ type, name, table, pristine: pn, live: ln })
   }
@@ -1440,7 +1440,7 @@ function residueLines(diffResult) {
     `      live    : ${r.live ?? '(absent)'}`)
 }
 
-export function summariseDiff(diffResult) {
+export function summarizeDiff(diffResult) {
   const leftovers = residueLines(diffResult)
   if (!diffResult.hasChanges)
     return leftovers.length

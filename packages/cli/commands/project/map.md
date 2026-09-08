@@ -103,7 +103,7 @@ if (as === 'json') {
 }
 
 if (as === 'serve') {
-  await serveProjectMap(context, map, { port: flag.port, open: flag.open })
+  await serveProjectMap(context, map, { port: flag.port, open: flag.open, atlas: flag.atlas, log })
   return
 }
 

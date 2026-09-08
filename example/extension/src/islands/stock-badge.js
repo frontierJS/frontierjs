@@ -64,7 +64,7 @@ export default defineIsland({
         const found = await products.service.find({ slug })
         const rows  = Array.isArray(found) ? found : (found?.data ?? [])
         const product = rows[0]
-        if (!product) { value.textContent = 'not in the catalogue'; return }
+        if (!product) { value.textContent = 'not in the catalog'; return }
 
         const vs   = await variants.service.find({ productId: product.id })
         const list = Array.isArray(vs) ? vs : (vs?.data ?? [])

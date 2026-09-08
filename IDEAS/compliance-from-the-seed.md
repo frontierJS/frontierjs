@@ -68,7 +68,7 @@ consumes it. Today every app writes this by hand and misses three tables.
 Same traversal, with `onDelete` semantics the migration already encodes. The
 interesting part is what erasure means for columns that *must* survive — an
 `AuditEvent` that is `LOCKED` cannot be deleted even by `asSystem()`, which is
-correct, and means the schema must be able to express **anonymise** distinctly from
+correct, and means the schema must be able to express **anonymize** distinctly from
 **delete**. That is a ruling to make, not an implementation detail.
 
 ### 4. A permission diff on every pull request — **shipped 2026-08-15**
@@ -201,7 +201,7 @@ Proposed home: **`@frontierjs/marshal`** (see `IDEAS/package-map.md`).
 
 ## Open questions
 
-- **Anonymise vs delete.** `LOCKED` models cannot be deleted at all, by design. So
+- **Anonymize vs delete.** `LOCKED` models cannot be deleted at all, by design. So
   the schema needs to say what erasure *means* per model, and the honest default is
   probably "refuse, loudly" rather than a silent partial erasure.
 - **Is `@pii` a category or a boolean?** A category (contact, identifier, financial,

@@ -89,7 +89,7 @@ out/                  build output, not source
 - **`@from`'s first argument is the model name, PascalCase** — `@from(Lead, …)`.
   litestone's docs used to show the lowercase form, which does not parse. Probe
   the parser before copying a doc example into a completion list.
-- **Never synthesise an attribute name from a bare word.** Hover used to try
+- **Never synthesize an attribute name from a bare word.** Hover used to try
   `word`, `'@'+word`, `'@@'+word`, so `function slug(…)` documented itself as
   the `@slug` transform — as would any model or field named `trim`, `email`,
   `url`. `wordAt()` already scans back through `@`, so an attribute arrives

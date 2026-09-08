@@ -15,7 +15,7 @@ dated: 2026-08-29
 the one that made the command usable: `area`, the package NARROWED by the row's own
 words, because four rows name sierra and a package match answered *run everything*.
 And the first run of the check found what §1 predicted — **zero unresolvable targets
-and seven drives of twenty-eight that no row named**, `verify:catalogue` and
+and seven drives of twenty-eight that no row named**, `verify:catalog` and
 `verify:tenants` among them. Six rows were written to close them, which is the
 feature paying for itself before its own UI exists.
 

@@ -511,7 +511,7 @@ in the file tree.** `AlertRule.mesa` exporting `alerts` states, at a glance,
 that `modelNameFor()` cannot bridge those two and `model:` has to be given —
 which was previously a paragraph inside the file that you had to open to find.
 `AuditEvent.mesa` is the same shape. A resource over no model at all keeps its
-service noun, singularised: `Portal.mesa`.
+service noun, singularized: `Portal.mesa`.
 
 Applied repo-wide the same day. `packages/basecamp`: 13 files renamed, 36 call
 sites. `example/`: `shop.mesa` — three resources in one file — split into
@@ -564,7 +564,7 @@ already there: a **Declaration** is what the schema states, a **Hook** is what r
 naming a keyword twice is what § 2 exists to forbid.
 
 A **Projection** was to be a *stored or served* shape derived from the seed for
-reading — a materialised view, a serialized subset, a report. What the compiler
+reading — a materialized view, a serialized subset, a report. What the compiler
 derives at build time stays **derived**; what a component computes stays
 **derived**. Adopted because the existing vocabulary had no noun for "a second
 shape of the same truth, kept in sync", and FJS-005's fix
@@ -625,7 +625,7 @@ but a copy. `example` carries the same id on `Customer`, `Order` and
 is the whole of what keeps three columns saying the same thing
 ([`FJS-499`](ISSUES.md#fjs-499)).
 
-**This is Axiom 1 with the sign flipped.** The denormalised column is a second
+**This is Axiom 1 with the sign flipped.** The denormalized column is a second
 origin for one fact. Nothing declares the two are the same fact, nothing fails
 when they diverge, and the failure when they do is a row readable by the wrong
 person — which is the quietest possible failure, because a policy that admits
@@ -1161,7 +1161,7 @@ ruling they are a defect, which is what they are.
 says every row of this model spans tenants and is checked at parse; a nullable
 claim column says one row has no owner and is checked by nothing. A table
 holding both kinds — some rows a tenant's, some rows everyone's — is two models
-wearing one name, and the second one is a catalogue: basecamp's `Blueprint`
+wearing one name, and the second one is a catalog: basecamp's `Blueprint`
 carries no column at all for exactly this reason and says so at its declaration.
 
 **The delegated spelling answers the other way, deliberately, and that is now
@@ -1317,13 +1317,13 @@ then gating it by ladder, and the capability is unreachable for exactly the call
 was written for. A `fli check` warning, in the family that reads the seed — not an
 error, because a deliberately high floor under a grid is a legitimate belt-and-braces.
 
-### <a id="fjs-d147"></a>2026-08-25 · `FJS-D147` — the grant column is a synthesised `Capability[]` type, the column tier is `@capability`, and none of this is a package.
+### <a id="fjs-d147"></a>2026-08-25 · `FJS-D147` — the grant column is a synthesized `Capability[]` type, the column tier is `@capability`, and none of this is a package.
 
 Two spellings and a packaging question, settled together because they are one
 question about where this lives.
 
 **The column that holds grants is typed, not attributed.** `capabilities
-Capability[]` — `Capability` is a type litestone synthesises from the schema's own
+Capability[]` — `Capability` is a type litestone synthesizes from the schema's own
 surface, the way `File` is a built-in carrying behavior. `FJS-D139` already rules
 that the set is derived, so the type IS that set: validation, the escalation guard and
 the role editor's picker all read one source.
@@ -1584,7 +1584,7 @@ the caller's own `NOT` — and `fromExprMap` already proves an expression can
 stand where a column does. It was rejected on cost: a masked expression carries
 PARAMS, a single clause repeats the column reference an unbounded number of
 times (`between`, `in`, `contains`), and every operator branch in `buildWhere`
-would have to materialise the expression and push its parameters in textual
+would have to materialize the expression and push its parameters in textual
 order. The top-level AND buys the same safety for one parameter push.
 
 ### <a id="fjs-d113"></a>2026-08-21 · `FJS-D113` — a tenant claim and a per-request standing are the SAME thing: claims on the principal, resolved by one seam, before the Data boundary scopes the client.
@@ -2435,7 +2435,7 @@ the frame is the term paid per recipient. **So the unit is a COHORT and not a
 connection**, which is Hasura's answer — subscribers sharing session variables
 multiplex, and only differing authorization contexts force separate work. The
 key is the principal's VALUE — a canonical serialization of the session,
-memoised on the object `verifySession` answered — so two principals that
+memoized on the object `verifySession` answered — so two principals that
 serialize identically are one cohort and two that do not can never collide the
 way a hashed key would. Measured over 100 connections: **14.9 µs** where the
 model needs no grading, **49.8 µs** for one cohort, **445.6 µs** for 100
@@ -2447,7 +2447,7 @@ built once per SOCKET: `_wsOpen` calls `verifySession` per connection and
 `@frontierjs/auth` answers a fresh object each time, so no two sockets ever
 shared one and the cohort was a per-connection loop wearing the word cohort. The
 correction does not change what a cohort MEANS — it is still one verdict and one
-encoding per distinct authorization context — only how one is recognised, and
+encoding per distinct authorization context — only how one is recognized, and
 the collapse the numbers above describe is what an application gets now rather
 than what it got then.
 
@@ -2471,7 +2471,7 @@ is the cost that would make this unaffordable.
 
 **A model that can only ever say yes is skipped entirely.** `$readGrading`
 answers `open` for a model whose read gate is 0 with no read policy and no field
-policy — a catalogue, which is also the busiest channel an app has. Read off the
+policy — a catalog, which is also the busiest channel an app has. Read off the
 SCHEMA, so a policy added later turns that channel from open to graded with
 nothing to remember.
 
@@ -2665,7 +2665,7 @@ Java deprecated `finalize()` over, .NET puts behind `Dispose`, and the
 already has the answer: a request IS the unit of work, so it pins on entry and
 releases in a `finally`. Nothing an app writes changes, and nothing an app can
 forget. A client from a bare `tenants.get()` was never leased, so it is dropped
-rather than closed and the finaliser remains the backstop for it — the honest
+rather than closed and the finalizer remains the backstop for it — the honest
 split, because the pool genuinely does not know who holds that one.
 
 **A fan-out is a scan and gets a ring.** `tenants.query` walks every tenant, so
@@ -2679,7 +2679,7 @@ the scan resistance being off in silence for the small pools that need it most.
 
 **What follows for anything else that hands out a handle**: a close is not a
 close until the things holding the connection open are released, and a pool that
-cannot say who is holding one cannot close it. `$close()` therefore finalises the
+cannot say who is holding one cannot close it. `$close()` therefore finalizes the
 statement cache and every path afterwards throws `ClientClosedError` — a
 half-working client is worse than a refused one, and it is what made this defect
 read as random for as long as it existed.
@@ -3796,14 +3796,14 @@ announce })` → `collection`. **Not per model**, and not adaptive on size. Per
 model was the tempting one — it is where `@@log` and `@@softDelete` live, and
 declared-in-the-seed is the house thesis — but the batch size is a property of
 the CALL: one `Order` model carries both a three-row cancel and a
-two-million-row purge, and a model-level flag materialises the purge. Adaptive
+two-million-row purge, and a model-level flag materializes the purge. Adaptive
 was the other tempting one and it is not decidable: the count is unknowable
 before the statement without a second query, so a threshold would have to spend
 the memory before it could apply. Prior art is uniform on the shape and split on
 the dial — Sequelize per call (`individualHooks`), Django per method, Rails per
 verb, Ecto and Prisma refuse the question. `none` exists because a nightly purge
 nobody is watching should not send every tab back to the server either, and
-because *no subscribers* is not something a caller can express. An unrecognised
+because *no subscribers* is not something a caller can express. An unrecognized
 value is refused BY NAME before the statement runs: `announce: 'row'` is somebody
 who wanted per-row announcements, and quietly handing them the coarse one is the
 class of bug `FJS-307` closed.
@@ -3866,7 +3866,7 @@ contributes `User`/`Session`) is what would make the two one transaction.
 
 **Not the default.** `BEGIN IMMEDIATE` holds SQLite's single write lock for the
 whole pipeline including the after hooks, so an `after` hook doing network I/O
-serialises every write in the app behind it. Declaring it is how an app says
+serializes every write in the app behind it. Declaring it is how an app says
 that trade is worth making for a given service.
 
 **It required a Litestone fix first** (`FJS-244`): `$transaction` treated a
@@ -3940,7 +3940,7 @@ that are about the *shape* of a query rather than a fact about a row: bundled
 The paragraph above collapsed two different things into the
 function registry, and the cell it emptied is one nothing else fills.
 
-| | Declared in | Materialises a property? | A browser can name it? |
+| | Declared in | Materializes a property? | A browser can name it? |
 | --- | --- | --- | --- |
 | `@derived(expr)` | schema | **yes** — row, generated type, JSON Schema, generated form | yes — `where: { overdue: true }` |
 | `@@scope(name, expr)` | schema | **no** — a name and a predicate | yes — `where: { $scope: 'overdue' }` |
@@ -4344,7 +4344,7 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
-### <a id="fjs-d237"></a>2026-09-07 · `FJS-D237` — an unrecognised `$` parameter is REFUSED by junction's bridge and DROPPED by sierra's router. One grammar, two surfaces, two answers, because a refusal costs a retry on one and a navigation on the other.
+### <a id="fjs-d237"></a>2026-09-07 · `FJS-D237` — an unrecognized `$` parameter is REFUSED by junction's bridge and DROPPED by sierra's router. One grammar, two surfaces, two answers, because a refusal costs a retry on one and a navigation on the other.
 
 `$limitt=10` used to land in the filters as a `WHERE` on a column nobody
 declared, which the Data boundary reported three layers from the cause
@@ -4508,7 +4508,7 @@ policy filter, exactly as it is for `find`. Reusing the clamp keeps one owner
 for *how much may come back*.
 
 **It rides `find`'s gate, and `readOnly` becomes `['find', 'get', 'aggregate']`.**
-An aggregate summarises rows a row policy already filtered, so *may read* and
+An aggregate summarizes rows a row policy already filtered, so *may read* and
 *may count* are one permission by default. Where they are not — a salary average
 over rows each person may see one of — the per-method `gate:` in a `methods:`
 entry is the answer that already exists, rather than a new tier.
@@ -4588,7 +4588,7 @@ the two reversed it.**
 
 **Swapping would be a security downgrade.** The canonical string here is
 `METHOD\npath\nquery\ntimestamp\nnonce\nbodyHash`; Standard Webhooks signs
-`msg_id.timestamp.payload`. Ours binds the method, the path and the canonicalised
+`msg_id.timestamp.payload`. Ours binds the method, the path and the canonicalized
 query, so a captured signature cannot be replayed against a different endpoint on
 the same host, and the query is signed because a subscriber URL carrying a
 parameter would otherwise verify unchanged against any other value of it
@@ -4962,7 +4962,7 @@ comment and one half-working validator, and that half was the defect.
 So a REST client's `PUT` can never become a bulk write, which is worth a verb.
 
 **The alternative was ruled out rather than overlooked.** Making `update`
-genuinely replace means junction synthesising the null-out set for every absent
+genuinely replace means junction synthesizing the null-out set for every absent
 writable column — deciding what *absent* means for a default, an `@immutable`, a
 `@system` and a `File` — and handing every caller a write that silently discards
 what they did not restate. That is a feature with a design of its own, not the
@@ -5087,7 +5087,7 @@ fixture the way an app does.
 **The gap.** Invariant 2 names three resolvers that depend on a model's name
 agreeing. A kebab-case service FILENAME was a fourth spelling and nothing
 reconciled it, so `product-variants.service.ts` broke two resolutions at once.
-`deriveModelName('product-variants')` singularises to `product-variant`, which
+`deriveModelName('product-variants')` singularizes to `product-variant`, which
 is not the accessor — which is why all six multi-word services in `example`
 hand-write `model:` — and Sierra's `serviceNameFor('ProductVariant')` answers
 `productVariants`, which matched nothing. **Every relation picker onto a
@@ -5307,7 +5307,7 @@ the store became changes the answer.
 growing, not by stepping. There is no page 3, and the reason is that nobody who
 does live data has one: TanStack DB's query-driven sync goes from ten products
 to twenty by sending the delta rather than reloading, Zero keeps a limited query
-live as a materialised view, and Relay appends into a connection. The framework
+live as a materialized view, and Relay appends into a connection. The framework
 had the incompatible half — a `channel:` subscription pushing rows into a store
 that pages by position, with no coherent answer to *what does page 3 mean now*.
 
@@ -5458,10 +5458,10 @@ one somebody actually writes.
 **3. The source is `createApp({ tenantConfig })`, a resolver, and never a
 declaration.** `FJS-D113`'s ground, unchanged: the source is a row for one app, a
 file for another and a control plane for a third, so a declaration would have to
-name one. Memoised per tenant — the PROMISE rather than the value, so two
+name one. Memoized per tenant — the PROMISE rather than the value, so two
 requests for one tenant arriving together resolve once — with
 `app.invalidateTenantConfig(id?)` as the explicit way out, because a memo with
-none is a config change that needs a restart. A failed resolve is not memoised:
+none is a config change that needs a restart. A failed resolve is not memoized:
 the row it reads may be a second from existing.
 
 **The resolve happens where the tenant is already resolved, not at the point of
@@ -5547,7 +5547,7 @@ already the one answer to which spellings name it (Invariant 2).
 and position per event, which is the expensive half of what a query engine
 does, and they are already correct — `FJS-011` and `FJS-270` bought them.
 Nothing here replaces them with a dataflow engine; the entity map goes
-underneath and they run on top. `store.get()` keeps answering materialised rows,
+underneath and they run on top. `store.get()` keeps answering materialized rows,
 so no screen in either app changes, and the ids become the honest interior.
 
 **Lifetime is a TTL, not a reference count.** Apollo and Relay both ship
@@ -5602,7 +5602,7 @@ paginated field.
 **Build order, and it is not the order the features are interesting in.**
 (1) this ruling; (2) the node map, model-keyed, in junction's client, since it
 owns the socket and the store and jetty needs it too; (3) lists hold ids, with
-`store.get()` materialising so nothing above changes; (4) TTL; (5)
+`store.get()` materializing so nothing above changes; (4) TTL; (5)
 `resource.record(id)`, which is the first behavior anybody sees and is proven
 by `example`'s `verify:live` — a second tab patches a product and the detail
 screen moves; (6) the transaction and the overlay; (7) cursor paging,
@@ -5732,7 +5732,7 @@ argument is sound and it does not reach the 401.
 committed `surface.snapshot.md` in this repo carry the move as a diff — which is
 the point of committing them. An app whose before-hook depended on running for
 unauthenticated callers on a gated model was depending on the defect. A public
-model (`@@gate("0…")`) is unaffected, so a signup or a public catalogue service
+model (`@@gate("0…")`) is unaffected, so a signup or a public catalog service
 does not change.
 
 **What it does not fix.** An app-level `around: { all: […] }` hook still precedes
@@ -6279,7 +6279,7 @@ The shape is Feathers 5's, adapted rather than copied:
 | options are a separate `app.use()` argument | options stay on the definition; the built `Service` loses its index signature |
 | options behind a `SERVICE` symbol | `describe()` — one answer for /manifest, OpenAPI and /metrics |
 | custom methods **declared** in `methods:` | `methods:` declares; the scan is the compat fallback |
-| a per-method hook manager owns the chain | `pipelines(appHooks)`, memoised on both inputs |
+| a per-method hook manager owns the chain | `pipelines(appHooks)`, memoized on both inputs |
 | `wrapService` guards re-wrapping | `Symbol.for('junction.service')`, and the loader tests it |
 
 **`methods:` inverts.** It used to be validated *against* the scan; it is now the
@@ -6532,7 +6532,7 @@ hooks: { before: { create: [requireWorkspaceRole(…), captureCredential, stampC
 ```
 
 `ctx.locals` and not `ctx.data`: locals is per-call scratch that nothing
-serialises, which is exactly what a value on its way somewhere else should be.
+serializes, which is exactly what a value on its way somewhere else should be.
 The `delete` is written out even though `autoValidate` would strip the key
 anyway — a reader should see the field leave the payload on purpose, and the
 hook must behave the same if it is ever reused on a service with no model.
@@ -6796,7 +6796,7 @@ this — Select, Combobox, RadioGroup, multiselect — so a prop each is four
 implementations that drift. `resource.options()` already takes the draft record,
 so it is the one place holding both the list and the current value: it appends
 the stored value as an option carrying `disabled: true` and `unavailable: true`.
-`Select` already normalises `{ value, label, disabled }`, so the controls need no
+`Select` already normalizes `{ value, label, disabled }`, so the controls need no
 change at all.
 
 **The word is generic, because the control cannot know which cause it is.**
@@ -6932,7 +6932,7 @@ missed it.** `useStore` hands back a getter, so `const rows = useStore(s).get`
 is an ordinary function and `Math.max(10, ...rows().map(f))` reads a signal
 INSIDE the call, where no name the closure walks can see it. Blanket promotion
 had been covering that by accident, through the memo's runtime auto-tracking.
-Narrowed, `example`'s catalogue computed its price ceiling once against an
+Narrowed, `example`'s catalog computed its price ceiling once against an
 empty store and every filter above it collapsed to one row — caught by
 `verify`, green in every unit suite, because the two halves of the promotion
 had never been separable before. A const whose initializer CALLS a local
@@ -7484,7 +7484,7 @@ nothing, because it is decidable, and the previous behavior was worse than
 either alternative: `$: { (a, b) }` compiled to
 `orderedGroup([{ deps: [a], handler: <the value of b> }])` and threw
 `fn is not a function` the first time `a` changed. The message names the form
-the author wanted, and it distinguishes the two intents — an unparenthesised
+the author wanted, and it distinguishes the two intents — an unparenthesized
 sequence with an identifier tail is an attempted `dep, handlerRef` and is told
 to write `() => f()`, anything else is told to drop the braces.
 
@@ -7504,7 +7504,7 @@ prop (VISION §9.5, implemented 2026-08-04), and `{@render row(order)}` hands
 `() => order` rather than the value.
 
 Why: a named slot cannot take a parameter, so a snippet prop is the only
-parameterised composition the language has — a table that draws rows, a
+parameterized composition the language has — a table that draws rows, a
 component with a trailing icon per item, a list with a per-row action. And a
 snippet's DOM is built once, so an argument read as a value is frozen at that
 moment: the first version of this shipped a kit `Table` that drew its first
@@ -8122,6 +8122,52 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d241"></a>2026-09-07 · `FJS-D241` — a machine Basecamp made is installed by cloud-init, not over SSH. Ring 1 keeps its place and loses its mechanism.
+
+`IDEAS/deploy-plane.md` § *The bootstrap ring* ruled ring 1 as **Basecamp
+installs the Outpost, one-shot over SSH, authenticated with a `Secret` of kind
+`ssh_key`**. The rings are right and are untouched: `fli deploy` installs
+Basecamp, Basecamp installs the Outpost, the Outpost deploys applications, and
+the plane never upgrades itself through ring 2. What is replaced is how the
+second one reaches a machine.
+
+**Two things in the tree already disagreed with SSH.** The Outpost
+self-registers — it heartbeats, and `servers.heartbeat` is what registers
+`outpost:<id>` as a Conduit target — so nothing needs a session held open from
+this side. And every vendor Basecamp can provision through takes `user_data` at
+create, so a machine this app made can be handed its whole install at birth,
+before anything exists to connect to.
+
+**What SSH costs is not effort, it is surface.** It puts fleet private keys in
+this application, an SSH client in its container, and a code path whose failure
+mode is a hung socket at the moment an operator is watching a wizard.
+Registration-by-heartbeat has none of those and is already built.
+
+**§ IV's *doctrine vs. discovery* is the hearing this is the outcome of.** The
+code is smarter than the principle, so the doctrine is amended in writing rather
+than gone around — the divergence both directions share is the undocumented one.
+
+**The split is by how a machine ARRIVES, and it is the whole rule.** A
+**provisioned** machine — one Basecamp asked a vendor to create — is installed by
+cloud-init and never reached over SSH. An **imported** machine, somebody else's
+box, is installed by one command an operator pastes, which is the same script
+cloud-init would have run. `Secret` of kind `ssh_key` keeps its meaning and its
+model: it is a person's recovery path, not a channel this application drives.
+
+**The credential is an enrollment token and never the fleet secret.** Metadata
+is readable by anything running on the box, so `user_data` carries a single-use,
+short-lived token, which the Outpost exchanges once for a secret of its own —
+and that exchange is also where it learns its public URL, which the process
+cannot see and Basecamp knows from the create call. Baking `OUTPOST_SECRET` into
+every machine's metadata would hand each of them the key to forge every other
+machine's check-in, which is the concentration `core/hooks.ts` already names as
+the limit of today's scheme. So this ruling does not merely move the install
+mechanism; it is what makes per-server credentials reachable at all.
+
+*Lives in:* `packages/basecamp/docs/PROVISIONING.md` § D4 · `IDEAS/deploy-plane.md`
+§ The bootstrap ring · `packages/basecamp/api/src/core/hooks.ts`
+§ requireOutpostSignature
+
 ### <a id="fjs-d238"></a>2026-09-07 · `FJS-D238` — a service addresses a row by ONE column, so a model whose key is a tuple is not a service model. The refusal is at the boundary, on every path that names a row.
 
 `idField` is the whole of how a service reaches one row: `get`, `update`,
@@ -8264,7 +8310,7 @@ publishing it early is the one move that would make the evolution policy
 dishonest.
 
 **The deferral is safe for the same reason [`FJS-D12`](#fjs-d12)'s is.** That
-ruling holds the i18n seam open with six constraints so the catalogue can be
+ruling holds the i18n seam open with six constraints so the catalog can be
 generated rather than excavated. The constraint here is (3): where a subject is a
 closed vocabulary, its reference is derived and gated, so the site's raw material
 accrues on its own and none of it is a debt. What is authored by hand is the
@@ -8941,6 +8987,23 @@ opposite of what the file is for.
 
 ### <a id="fjs-d192"></a>2026-09-03 · `FJS-D192` — house style is American spelling, not British. The rule flipped; the words did too, except where a word is data.
 
+**Amended 2026-09-07: it re-drifted, because nothing graded it.** Four days after
+the flip the repo held **1,131 British occurrences across 285 files** — the first
+sweep had reached the words it went looking for and the ruling had no artefact
+that could find the rest. `fli check`'s `american-spelling` is that artefact now.
+
+Two things the second sweep learned that the ruling did not say. **A suffix rule
+is the wrong instrument**: `parenthesis`, `synthesis` and `initialism` are not
+British, and a previous find/replace rewrote `analyses` — the plural of
+`analysis` — in `toolbelt/inflect` and in the test that guards it, in one commit,
+leaving nothing to fail. And **the exception is a CLASS rather than one word**:
+`cancelled` is a persisted value, but litestone's catalog synonyms deliberately
+carry `organisation` because that table holds what a SEARCHER types, and  <!-- spelling-exempt — a ruling quoting the spelling it retired -->
+`fake.js` matches a column an app named itself. Correcting input is deleting the
+entry. So the rule takes `spelling-exempt` inline with a reason, and exempts the
+fetched corpus fixtures wholesale — grading those would edit somebody else's
+schema.
+
 The house-style line had said British spelling in prose since it was written,
 and it was followed: `behavior`, `serialize`, `color` and their kin spread
 through every `.md` file, every code comment and every string in the repo as
@@ -9011,7 +9074,7 @@ scaffold. One path, two documents, disagreeing about whether it had ever
 worked — and nothing could tell you which was right.
 
 Everything else here that carries knowledge executes it. `fli check` runs the
-live-hazard catalogue, `fli proves` runs the drive table, `core/preflight.js`
+live-hazard catalog, `fli proves` runs the drive table, `core/preflight.js`
 runs the *Start first* column, the `snapshots` phase reruns every committed
 artefact's own generator. The tutorial is the same shape and gets the same
 answer: **`fli tutor` is four commands, each step's prose is the lesson text,
@@ -9087,7 +9150,7 @@ entry point `files:` omits is a broken install.
 `catalog.snapshot.md` — 98 words, asserted against the parser's own switch arms
 in both directions — so the AGENTS file carries the judgement half (which word
 to reach for, what a legal spelling means when it is the wrong one) and points
-at the catalogue for the language. A hand-written word list beside a generated
+at the catalog for the language. A hand-written word list beside a generated
 one is the copy `FJS-D33` refuses, and it goes stale in the direction that reads
 as authoritative. Where a package has no such artefact the file carries the
 vocabulary itself, which is why `packages/css/AGENTS.md` is a different shape
@@ -9154,7 +9217,7 @@ fifteen-minute wait to reach a feature that is already safe to reach immediately
 A declared verb costs nothing and says what it does.
 
 **A freshness check on `--resume` was built and then removed, and the reason
-generalises.** *A lock whose step moved seconds ago is a live run* looks sound and
+generalizes.** *A lock whose step moved seconds ago is a live run* looks sound and
 is not: the recorded time is when a step STARTED, and nothing records one ending
 or a pulse inside it — so a fresh timestamp is equally consistent with a run three
 seconds into a five-minute build and with a run killed three seconds into it. It
@@ -9175,7 +9238,7 @@ lock file itself to reach the resume it was testing and now asserts the refusal
 names the step, offers `--resume`, and that `--resume` continues the same
 transition.
 
-### <a id="fjs-d133"></a>2026-08-24 · `FJS-D133` — the live-hazard catalogue is `fli check`'s rule table. `fli doctor` stays what it already is: fli's own setup.
+### <a id="fjs-d133"></a>2026-08-24 · `FJS-D133` — the live-hazard catalog is `fli check`'s rule table. `fli doctor` stays what it already is: fli's own setup.
 
 `IDEAS/diagnostics.md` proposed `fli doctor` — § Live hazards turned into
 executable rules — and was written before `fli check` existed. Both commands now
@@ -9552,7 +9615,7 @@ instructions plus what the build can assert. And it ships as a signed upload to
 two web stores under a review measured in days, which no deploy here waits for.
 `--template extension-only` is the project whose product is the extension.
 
-**The rule this generalises to**, for whatever surface comes next: a directory
+**The rule this generalizes to**, for whatever surface comes next: a directory
 at the app root earns the name when its **config**, its **tests** and its
 **release** are all different answers. One of the three differing is a folder;
 all three is a sub-project. `db/` stays at the root under every one of them,
@@ -9881,7 +9944,7 @@ has in common. A schema states what the app is; it states nothing about what a
 vendor charges, and no amount of declaration gets closer to the invoice.
 
 **It would have one owner per provider**, which is to say ten. That is precisely
-the shape [`FJS-D215`](#fjs-d215) generalised out of `FJS-D153`: a package that
+the shape [`FJS-D215`](#fjs-d215) generalized out of `FJS-D153`: a package that
 publishes a boundary ships the mechanism and never the vendor, because a rate
 card change would otherwise ship a framework release to every app that installed
 it for something else.
@@ -10071,7 +10134,7 @@ Closes `FJS-533`. Extends `FJS-D138`.
 
 ### <a id="fjs-d153"></a>2026-08-27 · `FJS-D153` — an official Conduit connector is its own package. Conduit owns the mechanism, never the vendor.
 
-Asked of Stripe, and the answer generalises to every provider this project would
+Asked of Stripe, and the answer generalizes to every provider this project would
 maintain a connection to.
 
 **Conduit is the outbound boundary, and a boundary that knows a vendor stops
@@ -10168,7 +10231,7 @@ because there is one implementation rather than because anyone noticed.
 ### <a id="fjs-d110"></a>2026-08-15 · `FJS-D110` — SQLite is the only database FrontierJS supports, and serverless follows from that rather than being refused separately.
 
 Both were recorded
-because they were *silences*: an outside framework's feature catalogue listing
+because they were *silences*: an outside framework's feature catalog listing
 *"DynamoDB, SQLite, MySQL, Postgres"* and *"Serverless — on-demand, auto-scaling,
 zero maintenance"* mapped to nothing here, and a grep for `postgres` or `mysql`
 across all of `IDEAS/` returns one incidental mention inside a Fly anecdote. *Which
@@ -10328,7 +10391,7 @@ Closes `FJS-D16`; fixes `FJS-038` and the duplication half of `FJS-059`.
 `packages/cli/commands/auth/install.md` · `packages/litestone/src/core/parser.js`
 (`parseFile`).
 
-### <a id="fjs-d12"></a>2026-08-15 · `FJS-D12` — FrontierJS ships English, and the seam is reserved by six constraints rather than by a catalogue.
+### <a id="fjs-d12"></a>2026-08-15 · `FJS-D12` — FrontierJS ships English, and the seam is reserved by six constraints rather than by a catalog.
 
 The premise the row was filed under
 expired before the ruling did: it said i18n had to be decided *before* schema→UI
@@ -10337,7 +10400,7 @@ string — a label is `@label` where the schema declares one and the title-cased
 column name otherwise, which is exactly what a hand-written control already
 resolved. What generation multiplies is call sites, not strings. So this is no
 longer a gate on anything; it is the question of what may be written down now so
-that a catalogue can arrive later without a `.lite` syntax change.
+that a catalog can arrive later without a `.lite` syntax change.
 
 **Nobody in this space has solved it at the schema level, and that survey is what
 makes deferring safe.** ZenStack is the closest cousin — the same shape of
@@ -10347,7 +10410,7 @@ exactly our `@required("…")`; it has no i18n at all, and the community answer 
 to key off the error CODE and translate on the client. Prisma declares no labels,
 so it has no problem to have. Rails is the one that proves the cheap path:
 `human_attribute_name` resolves a DERIVED key path and falls back to the
-humanised column name, and validation messages are keyed by the validator's name
+humanized column name, and validation messages are keyed by the validator's name
 — zero authored keys, and zero cost for an app that never translates. Django adds
 lazy resolution (`gettext_lazy`), so the declaration holds a promise and the
 locale is decided at render rather than at parse. Payload does two separate
@@ -10357,14 +10420,14 @@ fallback locale. Drupal's three-way split states the shape most clearly —
 interface strings, configuration strings, content — three mechanisms on purpose,
 and conflating any two is the classic mistake. Paraglide is the modern mechanism:
 compile messages into typed tree-shakeable functions, so a page carries the
-strings it uses instead of a catalogue and a parser.
+strings it uses instead of a catalog and a parser.
 
 **What we take is the derived key, and the rest is six constraints that cost
 nothing today:**
 
 1. **`@label` is a default English string, never a key.** A string's address is
    derived — `Model.field.label` — the way litestone already derives a table
-   name. No `.lite` syntax changes when a catalogue arrives.
+   name. No `.lite` syntax changes when a catalog arrives.
 2. **An error carries a stable code and its params; the sentence is a fallback,
    not the contract.** `x-messages` is already keyed by rule name *and* by the
    JSON Schema keyword it compiles to, and `toFieldErrors` is already the one
@@ -10376,20 +10439,20 @@ nothing today:**
    argument.
 4. **`@frontierjs/toolbelt/inflect` is structural English and never takes a
    locale.** It crosses `model Post` ⇄ `posts` ⇄ `db.post` for five callers, so a
-   locale there renames tables (Invariant 2). Message pluralisation is CLDR
+   locale there renames tables (Invariant 2). Message pluralization is CLDR
    plural categories and belongs in a different module.
 5. **A kit component's strings are props with English defaults.**
    `@frontierjs/ui` peers on mesa and css alone, and a component that needs a
-   catalogue installed before it can render `Close` is unusable by an app that
+   catalog installed before it can render `Close` is unusable by an app that
    has none — Invariant 13's argument, applied to strings.
 6. **Formatting gets one owner the day it arrives.** There is no `Intl.` anywhere
    in the tree today; keeping it that way by rule is what stops locale-aware
    dates and numbers landing at every call site.
 
-Deferred to V2: catalogues, locale negotiation, pluralisation, per-locale data,
+Deferred to V2: catalogs, locale negotiation, pluralization, per-locale data,
 and `lexicon` as a package. The deferral is safe because of (1) and (2) — every
 user-facing string is addressable and every error is identifiable, so the
-catalogue is GENERATED rather than excavated.
+catalog is GENERATED rather than excavated.
 
 **Three things are reserved as ours, as candidates rather than commitments.** A
 `strings.snapshot.md` gated by the `snapshots` phase, derived from the seed, so a
@@ -10409,7 +10472,7 @@ Closes `FJS-D12`, and retires the *1.5 precedes 1.1* dependency in
 ### <a id="fjs-d31"></a>2026-08-14 · `FJS-D31` — FrontierJS wraps third-party binaries, it does not fork or republish them. It controls the VERSION, never the artifact.
 
 Asked of
-Litestream specifically, and the answer generalises.
+Litestream specifically, and the answer generalizes.
 
 Litestream ships as GitHub release tarballs, `.deb`, Homebrew and a Docker image;
 there is no official npm channel. So publishing `@frontierjs/litestream` would

@@ -43,7 +43,7 @@
 // a sibling directory, which is what closed FJS-241: a Docker build cannot see a
 // `file:` tarball outside its own context, so an app packed the old way was
 // installable on this machine and nowhere else. One packer, so the app this
-// phase installs and the app `scaffoldAndDeploy` containerises are made the same
+// phase installs and the app `scaffoldAndDeploy` containerizes are made the same
 // way — the two used to answer the packaging question separately.
 // ============================================================
 
@@ -372,7 +372,7 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
 //          it. Every id in the register is a statement about the working tree,
 //          and a user's experience is a function of the tree AND the registry
 //          (FJS-252). Losing this would leave the registry untested.
-//   local  the WORKING TREE, containerised. `fli new --source local` writes
+//   local  the WORKING TREE, containerized. `fli new --source local` writes
 //          `link:` specs, which a Docker build cannot resolve — that was FJS-241,
 //          and it made this path unrunnable for anyone working in the workspace
 //          for as long as it stood. `fli deploy:local` now packs the tree into
@@ -409,7 +409,7 @@ export function scaffoldAndDeploy({ source = 'npm', keep = false, verbose = fals
 
   // $FJS_CI_WORKDIR overrides the base directory. The Docker DAEMON has to be
   // able to read the build context, and it does not necessarily share the
-  // caller's /tmp — a sandboxed or containerised shell with a private tmpfs
+  // caller's /tmp — a sandboxed or containerized shell with a private tmpfs
   // gets `unable to prepare context: path not found` for a directory that is
   // plainly there. On an ordinary machine and on a CI runner, tmpdir is right.
   const base = ciWorkBase(log)
@@ -1085,7 +1085,7 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
       console.log(`\n─── scaffold + deploy (--source ${source}) ──────────`)
       const { findings, skipped } = scaffoldAndDeploy({ source, keep, verbose })
       if (skipped) console.log(`  ! skipped — ${skipped}`)
-      else if (!findings.length) console.log('  ✓ containerises and answers health')
+      else if (!findings.length) console.log('  ✓ containerizes and answers health')
       problems.push(...findings)
     }
   }

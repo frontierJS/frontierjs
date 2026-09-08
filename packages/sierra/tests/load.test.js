@@ -96,7 +96,7 @@ describe('loaders map in the route table', () => {
   })
 
   test('the ROOT route gets a loader when it has a companion', () => {
-    // The root is a synthesised node and its fields are copied from the entry
+    // The root is a synthesized node and its fields are copied from the entry
     // one at a time, so it is the one route that can lose a companion without
     // anything saying so — and did.
     const loadersStart = routeTable.indexOf('export const loaders =')

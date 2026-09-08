@@ -371,7 +371,7 @@ export class Factory {
       : overrides
 
     // Generated values carry a short seq token, so a @unique column is unique by
-    // construction — but the token pool is finite and the value catalogue is small,
+    // construction — but the token pool is finite and the value catalog is small,
     // so at scale two rows can still collide. Rebuilding advances the seq, which
     // changes every generated value; retry rather than fail a 5000-row seed.
     let row

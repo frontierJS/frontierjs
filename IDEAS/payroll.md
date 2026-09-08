@@ -348,7 +348,7 @@ argument for ruling 2.
 
 **`fli check` caught the model name, and it was not a false positive.** `model
 EmploymentTerms` reads as a plural, so the service `employment-terms`
-singularises to `EmploymentTerm` and Invariant 2's three resolvers stop
+singularizes to `EmploymentTerm` and Invariant 2's three resolvers stop
 agreeing — a resource file over it would resolve to no model at all. Renamed to
 `PayWindow`, which is what every comment in `employment.ts` already called it.
 
@@ -934,7 +934,7 @@ suspected, worth executing.
   a legitimate no-op on an update and means the opposite under a named move — and
   the early return that answered the first to both skipped the gate, the
   capability and `@system` as well. **The mitigation named here made it worse**:
-  `$transaction` serialises the callers, so each re-reads after the winner
+  `$transaction` serializes the callers, so each re-reads after the winner
   committed, which is precisely the state that return called a no-op — four
   transactions, four successes. What actually held `completeIfDone` is its own
   `status !== 'draft'` READ, and it had to, because these run on `asSystem()`,

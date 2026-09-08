@@ -673,7 +673,7 @@ const FIELD = [
     'field',
     'transform',
     '[(<field>…)]',
-    'Slugify this field on write. The parenthesised form is not a second transform — it is a call to a `function slug` the schema declares, and without that declaration it is refused by name.',
+    'Slugify this field on write. The parenthesized form is not a second transform — it is a call to a `function slug` the schema declares, and without that declaration it is refused by name.',
     'slug String @slug',
     { seeAlso: ['function'] }
   ),
@@ -1440,8 +1440,10 @@ export function tierFor(row) {
  * wrong CONCEPT, which is why the list is short and hand-picked rather than
  * generated from a thesaurus.
  *
- * Both spellings of a word are deliberate. `organisation` is not this repo's
- * spelling (FJS-D192) and is exactly what somebody types.
+ * Both spellings of a word are deliberate. `organisation` is not this repo's  spelling-exempt
+ * spelling (FJS-D192) and is exactly what somebody types, so it is marked
+ * `spelling-exempt` rather than corrected: this table holds a SEARCHER's words,
+ * and correcting them is deleting the entry.
  */
 export const SYNONYMS = {
   'field:from':        ['aggregate', 'rollup', 'roll-up', 'denormalized'],
@@ -1474,7 +1476,7 @@ export const SYNONYMS = {
   'model:transitions': ['workflow', 'status'],
   'model:gate':        ['permission', 'rbac', 'role', 'authorization'],
   'model:allow':       ['rls', 'row level security'],
-  'model:tenant':      ['workspace', 'organization', 'organisation'],
+  'model:tenant':      ['workspace', 'organization', 'organisation'],  // spelling-exempt — a searcher's word, not ours
   'model:external':    ['legacy table', 'existing table'],
   'model:index':       ['performance', 'speed up', 'query plan'],
   'model:label':       ['display name', 'human name'],

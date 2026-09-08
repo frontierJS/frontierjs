@@ -42,7 +42,7 @@ export interface ConfigHost {
   tenantConfig?: TenantConfigStore | null
 }
 
-// One read-only view per config object. Memoised because `$.config` is read per
+// One read-only view per config object. Memoized because `$.config` is read per
 // call and a fresh Proxy per read would be an allocation on the hot path for a
 // value that does not change.
 const _views = new WeakMap<object, AppConfig>()
@@ -58,7 +58,7 @@ const REFUSED = (path: string) =>
  *
  * Deep, because the shallow version refuses `$.config.name = x` and admits
  * `$.config.http.cors.origin = x`, which is the same defect one level down and
- * the one somebody actually writes. Nested views are memoised in the same map,
+ * the one somebody actually writes. Nested views are memoized in the same map,
  * so a path read twice is one object both times and `===` still holds.
  */
 export function readOnlyConfig<T extends object>(cfg: T, path = ''): T {
@@ -243,7 +243,7 @@ export interface TenantConfigStore {
   /** The resolved config for a tenant, or null if it has not been loaded. Sync,
    *  because `$.config` is a property read. */
   peek:       (tenantId: string) => AppConfig | null
-  /** Resolve and memoise. Called by the hook that established the tenant. */
+  /** Resolve and memoize. Called by the hook that established the tenant. */
   load:       (tenantId: string) => Promise<AppConfig>
   /** Forget one tenant, or all of them. The explicit invalidation, because a
    *  memo with no way out is a config change that needs a restart. */
@@ -270,7 +270,7 @@ export function createTenantConfigStore(floor: () => AppConfig, opts: TenantConf
           return merged
         })
         .catch(err => {
-          // A failed resolve must not be memoised as a failure for the life of
+          // A failed resolve must not be memoized as a failure for the life of
           // the process — the row it reads may be a second away from existing.
           memo.delete(tenantId)
           throw err

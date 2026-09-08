@@ -116,7 +116,7 @@ by EXECUTING it, which is exactly the class `verifyRowPolicies` reports rather t
 answers, so it closes H3 and H4 together.
 
 Everything else — how `membershipClaim` queries, where `liftRowTenant` sits, the
-tenant pool, memoisation — is interior and may keep moving.
+tenant pool, memoization — is interior and may keep moving.
 
 ---
 
@@ -231,7 +231,7 @@ Three clauses, and only the third is new work by the time the phases above land.
    are unreachable **by construction** rather than by a deny-list, which is the half
    that makes it safe.
 3. **Source** — `createApp({ tenantConfig })`, a resolver answering a plain object
-   per tenant id, memoised with an explicit invalidation. A resolver rather than a
+   per tenant id, memoized with an explicit invalidation. A resolver rather than a
    declaration for [FJS-D113](../ISSUES.md#fjs-d113)'s reason: the source is a row
    for one app, a file for another and a control plane for a third.
 
@@ -282,7 +282,7 @@ choosing the mutation.
 
 **The correction.** This plan's first draft said Laravel needs the tenant serialized
 into a queued job by hand. It does not — `QueueTenancyBootstrapper` puts the tenant
-id in the payload and re-initialises on the way out. **Django** is the one requiring
+id in the payload and re-initializes on the way out. **Django** is the one requiring
 manual serialize-and-restore. The corrected reading is more useful: the two systems
 split on exactly the seam junction already has, and `app.runAs(actor, { tenant })`
 is on the side that works.

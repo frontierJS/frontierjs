@@ -3022,7 +3022,7 @@ function ovAccess(access) {
   if (!models.length) return ''
   // Read at 0 is the one worth naming on a front page: it is the level at which
   // a signed-out stranger is answered, and it is the right answer for a public
-  // catalogue and the wrong one for everything else.
+  // catalog and the wrong one for everything else.
   const open   = models.filter(m => m.gate?.read === 0 && !m.external)
   const locked = models.filter(m => Math.max(...Object.values(m.gate || { x: 0 })) >= 9)
   const rows = [
@@ -3661,7 +3661,7 @@ async function loadMigrations() {
 // something to say: STRANGER means unauthenticated callers reach this, SYSTEM
 // and LOCKED mean nothing short of asSystem() does. The levels in between are
 // the ordinary case and are left muted — a gradient of color across 0–9 would
-// be editorialising about which gate is "good".
+// be editorializing about which gate is "good".
 
 let _access = null
 let _acView = 'gates'
@@ -3858,7 +3858,7 @@ function palSearch() {
     const shown = sigil + w.word
     // With the sigil and without, because that is how a word is written and how
     // somebody looking for it types it — `@@gate` and `gate` both land. Then the
-    // SYNONYMS the catalogue already carries, ranked last and with no hit span,
+    // SYNONYMS the catalog already carries, ranked last and with no hit span,
     // since the match is not in the text on screen: typing `rbac` or
     // `permission` finds `@@gate`, which is the word somebody who does not know
     // this language yet actually has.

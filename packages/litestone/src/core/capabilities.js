@@ -113,11 +113,11 @@ export function capabilityDeclarations(schema) {
   return out
 }
 
-/** The name of the synthesised type. A schema declaring its own is refused. */
+/** The name of the synthesized type. A schema declaring its own is refused. */
 export const CAPABILITY_TYPE = 'Capability'
 
 /**
- * Synthesise `enum Capability` from the schema's own surface, so a column that
+ * Synthesize `enum Capability` from the schema's own surface, so a column that
  * HOLDS capabilities is declared `Capability[]` rather than `String[]`.
  *
  * `FJS-D147`. It is a real enum rather than a new kind of thing, and that is the
@@ -127,7 +127,7 @@ export const CAPABILITY_TYPE = 'Capability'
  * `$defs` with its values, and already answered by `db.$enums`. So the typo
  * refusal, the storage and the picker all come from machinery that exists.
  *
- * The type is only synthesised where something declares the grid — a
+ * The type is only synthesized where something declares the grid — a
  * `Capability[]` over an empty set would refuse every value it was ever given,
  * which is a column that cannot be written and cannot say why.
  */
@@ -140,13 +140,13 @@ export function expandCapabilityType(schema) {
     for (const field of model.fields ?? [])
       if (field.type?.name === CAPABILITY_TYPE) usedBy.push(`${model.name}.${field.name}`)
 
-  // An app's own `enum Capability` and the synthesised one cannot both be the
+  // An app's own `enum Capability` and the synthesized one cannot both be the
   // answer, and silently preferring either is the failure D139 exists to remove:
   // one spelling would validate against a hand-written list and read as though it
   // validated against the derived one.
   if (declared) {
     errors.push(
-      `enum ${CAPABILITY_TYPE}: '${CAPABILITY_TYPE}' is synthesised by litestone from the models that ` +
+      `enum ${CAPABILITY_TYPE}: '${CAPABILITY_TYPE}' is synthesized by litestone from the models that ` +
       `declare @@capabilities, so it cannot also be declared. A capability is a reference to something ` +
       `the schema already states (FJS-D139) — rename this enum, or drop it and let the type derive.`)
     return errors
@@ -165,7 +165,7 @@ export function expandCapabilityType(schema) {
     name:     CAPABILITY_TYPE,
     values:   values.map(name => ({ name, comments: [] })),
     comments: [],
-    synthesised: true,
+    synthesized: true,
   })
 
   // Only once a model has opted in. Below that `auth().capabilities` is the app's

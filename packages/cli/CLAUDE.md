@@ -189,7 +189,7 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
 - **`context.exec` refuses an option it does not have, and reading the child's
   output is `stdio`.** It takes `command`, `dry`, `describe` and `allowFailure`,
   plus what `execSync` understands, and anything else throws by name — an
-  unrecognised key used to be spread through and silently ignored, which is
+  unrecognized key used to be spread through and silently ignored, which is
   what made `capture: true` parse `''` and print *Failed — check output above*
   under the output it was meant to read (`FJS-537`). Ask for a pipe:
   `stdio: ['ignore', 'pipe', 'inherit']`. **`allowFailure: true` answers the
@@ -400,7 +400,7 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
 - **`core/vendor.js` is why an app built from local sources can ship, and it has
   three callers.** `link:` and `workspace:` resolve to a workspace on one machine
   and to nothing inside a Docker build, so `bun install` failed once per package
-  and the scaffold this repo produces could not be containerised at all
+  and the scaffold this repo produces could not be containerized at all
   (`FJS-241`). It packs those packages into `deploy/generated/vendor/` and writes
   `app-manifest.json` pointed at the tarballs — **`overrides` included**, or
   sierra installs mesa from npm and the image runs two trees at once, which is
@@ -506,7 +506,31 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   two callers each.** The going-back path is the one nobody exercises until the
   day it matters, so `_steps-revert` calls the same functions `_steps-docker`
   does rather than a copy of them.
-- **`project:map` and `project:view` read the API surface; they never scan for
+- **`project:map` is one reading presented three ways, and `project:view` is
+  gone.** They were two commands over one tree and they DISAGREED — 54 models
+  against 42, because one counted `$defs` by shape and the fix landed in the
+  other (`FJS-1016`) — and they collected different fields, so *what does this
+  project contain* had two answers depending on which you asked. `FJS-D223` one
+  scope down, applied rather than re-argued: **one axis, so one flag**, and
+  `--as` absorbs `--json`. `buildProjectMap` in `_module.md` is the one reader;
+  `--layer` narrows what is COLLECTED, `--out` is a destination on its own axis.
+  **`--as=serve` does not exit**, which is the one asymmetry — every other `--as`
+  value anywhere answers and stops — so the flag description says so rather than
+  leaving somebody to find it.
+  **`fli project:map --json | jq` was broken for the life of the flag**: one
+  `Reading schema...` line went to stdout above the object, while the flag's own
+  prose said to pipe it. Every progress note is suppressed when stdout is the
+  document.
+- **A `<script>` block in a `_module.md` is MODULE scope and does not see `log`,
+  `flag`, `echo` or `arg`.** The compiler puts it above `run()`, where those are
+  destructured from `context`, so `log` there resolves to zx's global — a
+  FUNCTION with no `.info`, so the failure is `log.info is not a function` at the
+  first call rather than anything naming scope. The command body is inside
+  `run()` and sees the real one, which is why code can work in a command and
+  break the moment it is lifted into the namespace helpers. Every helper here
+  takes what it needs as a parameter; `deploy/_module.md` already did, on all 18
+  of its `log.*` calls, which is what makes it the pattern.
+- **`project:map` reads the API surface; it never scans for
   it.** What a service answers is decided at CONSTRUCTION — `collectCustomMethods`,
   read back through `svc.describe()` — so a regex over `*.service.ts` cannot
   agree with it in the general case, and the viewer it fed had no way to be
@@ -536,7 +560,7 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   ever say one word. The raw routes are where that question has an answer that
   varies, and `--ungraded` is where it is asked.
 - **`readAppAtlas` has two callers and ANSWERS a failure rather than throwing
-  one.** `app:atlas` renders the model; `project:view --atlas` (default on) folds
+  one.** `app:atlas` renders the model; `project:map --atlas` (default on) folds
   its jobs, notifications and principal halves into a page otherwise built from
   files — three panels no file can answer, since a job registers itself by being
   autoloaded, a notification takes its type from its own file name, and a
@@ -544,12 +568,12 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   disagree about which app they described, so the spawn is in `core/app-entry.js`
   and neither command owns it. **The failure is returned because the two callers
   need it differently**: `app:atlas` has nothing without the model and stops,
-  while `project:view`'s whole property is that it needs no bun and no running
+  while `project:map`'s whole property is that it needs no bun and no running
   server — so a missing bun or an app that will not build costs it three panels
   and leaves every file-derived one intact. The page prints WHICH of the three
   reasons it was (`--no-atlas`, a boot failure, no snapshot), because an app with
   no jobs and an app nobody could boot must not draw the same empty table.
-- **`project:view` has ONE viewer and `collectIssues` has a test.** Both of its
+- **`project:map --as=serve` has ONE viewer and `collectIssues` has a test.** Both of its
   checks were wrong for every row they ever printed, and both survived because
   nothing ran the function (`FJS-1017`). There is deliberately no per-service
   gateAuth check now: the hook is `around.all` and `createBaseService` installs
@@ -649,13 +673,13 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   list, so nothing goes stale the day somebody adds a surface, and it names a
   script the manifest actually declares, because two conventions are live (the
   apps here call it `api`, `fli new` writes `dev:api`). **Two functions and the
-  difference is the bug** (`FJS-568`): `appPorts()` is the CATALOGUE — every
+  difference is the bug** (`FJS-568`): `appPorts()` is the CATALOG — every
   surface that exists (Invariant 3), which is what `runnables.js` wants —
   and `devPorts()` is what `fli dev` refuses on, that set narrowed to the
   surfaces this app's own `dev` script actually runs, walked transitively
   through its `bun run` targets. They are the same set only in a scaffolded
   app, where `fli new` composes every surface into one `dev`; `example` has
-  five surfaces and starts two, so the catalogue refused on a storefront's
+  five surfaces and starts two, so the catalog refused on a storefront's
   8610 that `bun run dev` would never have bound. A `dev` that runs no other
   script cannot be narrowed and is not — that is a one-surface app whose `dev`
   IS the surface command. **An app's own `dev`
@@ -783,7 +807,7 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   nothing; and a session read all three signposts, concluded the language could
   not express money, and filed a defect against the ruling (`FJS-560`).
 - **Neither carries a list of what ships, on purpose** — a list here rots exactly
-  the way the roadmap did. `roadmap-shipped` asks the generated catalogue, the
+  the way the roadmap did. `roadmap-shipped` asks the generated catalog, the
   same authority `litestone explain` asks. Its two quieteners are derived too:
   **scaffolding comes out of the file itself** (an attribute appearing in two
   sections' samples is holding them up rather than being their subject, which is

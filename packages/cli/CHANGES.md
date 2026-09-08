@@ -1,5 +1,86 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-07 — `american-spelling`, and the sweep it exists to make unnecessary
+
+**[`FJS-D192`](../../DECISIONS.md#fjs-d192) had no enforcer, so it re-drifted.** The ruling flipped
+this repo from British to American, prose and identifiers alike; nothing graded it, and five weeks
+later the sweep was **1,131 replacements across 285 files** — `normaliseOrderBy`, `summariseDiff`,  <!-- spelling-exempt — a ruling quoting the spelling it retired -->
+`SerialiseError`, `memoise` in twenty-nine files, and `catalogue` 421 times against a CLI command  <!-- spelling-exempt — quoting the spelling this rule retired -->
+already spelled `catalog`.
+
+`american-spelling` is a `scope: 'repo'` warning. Three things about it are the design rather than
+the implementation.
+
+**It is a word list and not a suffix rule.** `parenthesis`, `synthesis` and `initialism` all carry
+`-is-` and none is British, so every entry carries enough letters that it cannot match one. This is
+not hypothetical: a suffix sweep once rewrote `analyses`, the plural of `analysis`, in
+`toolbelt/inflect` AND in the test that guards it, in one commit — leaving nothing to fail. The
+comment there is a warning, not history, and this rule is written to respect it.
+
+**It grades what this repo WROTE.** `test/fixtures/corpus/` is exempt because those schemas are
+fetched from real projects so the importers meet input nobody here wrote — `Organisation` is  <!-- spelling-exempt — quoting the spelling this rule retired -->
+Documenso's own model name, and correcting it would edit somebody else's schema and destroy the  <!-- spelling-exempt — a ruling quoting the spelling it retired -->
+property the corpus exists for. Build output, `*.live.*`, the two append-only archives and
+`checks.js` itself are exempt too; the last because a dictionary rule that read its own table would
+report every word it exists to find.
+
+**`spelling-exempt` is the inline escape, and the sweep is what proved it necessary.** Litestone's
+catalog SYNONYMS table deliberately carried both spellings of one word — the comment beside it says
+so and names this ruling — because that table holds what a SEARCHER types rather than what this repo
+writes. The sweep collapsed the pair into a duplicate and `catalog.test.ts` caught it: *a synonym
+belongs to one row — two owners is a coin toss*. Correcting input is deleting the entry, so the
+marker takes a reason on the same line and the rule skips that line.
+
+## 2026-09-07 — `project:map` and `project:view` are one command
+
+They were two readings of one tree and they disagreed. `project:map` assembled
+its model inline, `project:view` had a `buildMap()` of its own, and the two
+answered **54 models against 42** over `example` — one counted `$defs` by shape
+and the fix for that landed only in the other (`FJS-1016`). They also collected
+different fields: env health and the app atlas existed in the page's model and
+nowhere else, so *what does this project contain* had two answers depending on
+which command you asked.
+
+`FJS-D223` one scope down, and applied rather than re-argued — **one axis, so one
+flag**, and `--as` absorbs `--json`:
+
+```
+fli project:map                the terminal report
+fli project:map --as=serve     FJSChain in a browser
+fli project:map --as=json      the model
+fli project:map --out m.json   a destination, on its own axis
+```
+
+`project:view` is deleted with no alias; nothing outside this tree depends on the
+spelling. `buildProjectMap` in `_module.md` is the one reader. `--layer` narrows
+what is COLLECTED rather than what is shown, so a narrowed run is cheaper and its
+JSON says only what it looked at.
+
+**`--as=serve` does not exit.** Every other `--as` value anywhere answers and
+stops; this one is a server. It is in the flag description rather than left to be
+discovered.
+
+**`fli project:map --json | jq` was broken for the life of the flag.** One
+`Reading schema...` line went to stdout above the object, while the flag's own
+prose said to use it to pipe output to tooling. Progress notes are suppressed
+whenever stdout is the document — the same defect `junction atlas` had on its
+first run, one package over.
+
+**The report gained what only the page had**: jobs, crons, notifications and the
+principal realm, plus a warning for a required secret that is not set. A field
+the model carries and one presentation drops is the shape this merge removes
+(`FJS-927`).
+
+**One trap found by moving code.** A `<script>` block in a `_module.md` compiles
+to MODULE scope, above `run()` — so `log` there is zx's global, a function with
+no `.info`, and the server threw `log.info is not a function` the moment it was
+lifted out of a command body. Everything the namespace helpers need is a
+parameter now; `deploy/_module.md` already did this on all 18 of its `log.*`
+calls, which is what says it is the pattern rather than a workaround.
+
+`pview` becomes `pmap` on port 8501, with the tutor's `tools` lesson and
+`tests/pview-state.test.js` renamed with it. 1995 passing.
+
 ## 2026-09-07 — `project:view`'s 33 warnings were all false, and the React viewer is gone
 
 **The gateAuth check was inverted.** `collectIssues` read the per-method `before`
@@ -185,7 +266,7 @@ pair, a real `model:` one line below a comment.
 The other half is that the rule knew only models. A Resource over a `view` is
 Invariant 19's second half with a declaration behind it: a projection is named
 like an accessor, so no PascalCase filename can BE its name and the file takes
-its SERVICE noun singularised. Accepted only when the stated name is a declared
+its SERVICE noun singularized. Accepted only when the stated name is a declared
 view AND the filename is that noun — a misnamed projection file is still an
 error, rather than a branch that stops looking.
 
@@ -393,7 +474,7 @@ a committed file is there whether or not anything is running, and a link that
 appeared only while a server was up would be absent exactly when somebody wants
 to read what the tree looks like. `tests/browser/specs/view.spec.mjs` asserts the
 bytes that come back carry the generator line, because the GUI serves its own
-dashboard for any path it does not recognise — so a wrong route reads as a
+dashboard for any path it does not recognize — so a wrong route reads as a
 working link until somebody looks at what loaded.
 
 
@@ -796,7 +877,7 @@ edits `db/schema.lite` and nothing writes a table, so `priority` was declared an
 not built — and the next thing to write a Note through the API, three lessons
 later, was refused with `table note has no column named priority` by a page that
 has nothing to do with that lesson. It applies the expand at the end now, which
-is what the verdict it just printed says to do; and its baseline step normalises
+is what the verdict it just printed says to do; and its baseline step normalizes
 the column out first, so a second run in one workspace does not compare against
 its own result.
 
@@ -1121,7 +1202,7 @@ is worse than none; the hint says `--format hex` now.
 `FJS-537`. 1755 + 39 pass. Typecheck clean.
 
 `config.exec` spread its options straight into `execSync`, where an
-unrecognised key changes nothing — the child writes to the terminal under the
+unrecognized key changes nothing — the child writes to the terminal under the
 default `stdio: 'inherit'` and the call answers `null`. It is refused by name
 now, the way `createClient` refuses an unknown option: a typo in an options bag
 is a statement the author just made, and forwarding it makes the mistake
@@ -1213,7 +1294,7 @@ same command.
 that was not, answering whatever version the machine happened to have downloaded
 once. Nothing said a word.
 
-**Bun memoises a resolution for the life of the process**, so re-resolving after
+**Bun memoizes a resolution for the life of the process**, so re-resolving after
 `auth:install`'s own `bun install` returned the same cached answer — which is
 why checking the directory and resolving anyway is not a fix.
 
@@ -2256,7 +2337,7 @@ claimed compare-and-set, and different bytes are a different Release and
 therefore a new transition. The lock was only ever what made it unreachable.
 
 **A freshness check on `--resume` was built and then removed, and the reason
-generalises.** *A lock whose step moved seconds ago is a live run* looks sound and
+generalizes.** *A lock whose step moved seconds ago is a live run* looks sound and
 is not: the recorded time is when a step STARTED, and nothing records one ending
 or a pulse inside it — so a fresh timestamp is equally consistent with a run three
 seconds into a five-minute build and with a run killed three seconds into it. It
@@ -2705,7 +2786,7 @@ matches to 1 path, 3 area and 6 symbol.
 **Two rules grade the table itself, and this is the half that paid first.**
 `proof-target` (error) — a row naming a drive that is gone. `proof-drive-named`
 (warn) — a drive no row names. The first run: zero unresolvable targets, and
-**seven drives of twenty-eight that no row named**, `verify:catalogue` and
+**seven drives of twenty-eight that no row named**, `verify:catalog` and
 `verify:tenants` among them, so nobody changing a `File` column or tenancy was
 being told to run either. Six rows were written to close them.
 
@@ -2803,7 +2884,7 @@ refusal is unactionable in the worst way: it is *correct* that something is on
 8610, and stopping it changes nothing about whether `bun run dev` can run.
 
 `devPorts()` is the fix, and it is a second function rather than a change to the
-first, because both questions are real: `runnables.js` wants the catalogue, and
+first, because both questions are real: `runnables.js` wants the catalog, and
 the preflight wants what this command binds. It narrows `appPorts()` to the
 surfaces the `dev` script actually runs, resolved transitively through its
 `bun run` targets.
@@ -2902,7 +2983,7 @@ citing a filename does not. A `docs/` with no index is skipped until it holds
 four pages, because a directory of one file is not lying to anyone.
 
 **`roadmap-shipped`** — a roadmap section whose fenced sample uses an attribute
-`catalog.snapshot.md` already carries. It asks the generated catalogue rather
+`catalog.snapshot.md` already carries. It asks the generated catalog rather
 than carrying a list, for the reason the rule exists: a list here would rot the
 way the roadmap did. Scoped to fenced code, because a paragraph may legitimately
 cite a shipped attribute in an argument while a sample demonstrating one is
@@ -3383,7 +3464,7 @@ option because four neighbors use it, which is how a wrong idiom spreads.
 open severity table is counted as open by everything that reads the register —
 its own tally, `ws:map`, `ws:atlas`, and whoever is choosing what to work on.
 Sixteen had accumulated in this repo, one of them the only S1 (fixed two days
-earlier). `closed` is in `ISSUE_STATUS` because the READER synthesises it for
+earlier). `closed` is in `ISSUE_STATUS` because the READER synthesizes it for
 every row under § Closed, which is exactly what made it silently legal as a
 hand-written cell where it means the opposite.
 
@@ -3570,7 +3651,7 @@ package needed a new way to say which file is which.
 differently here. Adding a column is what an app is for; adding `@@tenant(none)`
 or a policy is the app's business too; changing the package's own column is the
 class that costs something, and it is silent by construction — the package's code
-goes on writing to a column whose declaration it no longer recognises. No
+goes on writing to a column whose declaration it no longer recognizes. No
 manifest key, no language change, no parser: a line scan over a file in
 `node_modules`, reached through that package's own `exports` map.
 
@@ -3657,7 +3738,7 @@ literal — was reported as a missing command called `roo`.
 
 ## 2026-08-24 — eleven rules that read the app's own source, `--fix`, and the ratchet
 
-823 tests, 62 of them new. `IDEAS/diagnostics.md`'s live-hazard catalogue
+823 tests, 62 of them new. `IDEAS/diagnostics.md`'s live-hazard catalog
 starts executing, and it executes **inside `fli check`** rather than in a new
 command — ruled `FJS-D133`, because `fli doctor` already exists and means *can
 this machine run fli*, and a scaffolded app's `bun run check` already calls the
@@ -4028,7 +4109,7 @@ no-command short-circuit ran first. Those are the two places somebody who
 installed the package off npm looks before filing a bug, and both lied.
 
 - **`fliVersion(root)`** in `core/utils.js` reads the installed `package.json`,
-  memoised **per root** rather than once — the argument exists so a caller
+  memoized **per root** rather than once — the argument exists so a caller
   holding its own path can ask, and a single cached answer would hand it this
   package's version for someone else's directory.
 - **Four readers**: `fli --version`, `-v`, the bare `fli` usage header, and the
@@ -4088,7 +4169,7 @@ where it previously reported two errors.
 and an edit page, and until now each carried its own copy of the same ~180
 lines: an `Object.entries(resource.fields)` loop deciding control-per-type, a
 `pickers` block resolving a related service through a hand-rolled English
-pluraliser, an `errors` array, a `saving` flag, and a `<style>` block of hex
+pluralizer, an `errors` array, a `saving` flag, and a `<style>` block of hex
 colors. They had already drifted — one filtered `id` by name, the other asked
 the resource for its idField, and only one rendered a picker at all.
 
@@ -4107,7 +4188,7 @@ schema at runtime (an admin covers every model and cannot name them) and a
 per-row delete, plus the gate affordances. `related()` is gone from the
 generated admin resources file — the picker asks the resource, which resolves
 the related service through Sierra's registry, so a scaffolded app no longer
-ships a second pluraliser.
+ships a second pluralizer.
 
 **`@frontierjs/ui` is now part of what an app is given** (`core/app-config.js`,
 and `fli new`'s web half). A generated page imports the kit; an app without it
@@ -4174,7 +4255,7 @@ It then composes `auth:install`, which wrote `api/src/auth.ts` — a second
 `createLitestoneAuth` over a second `createClient` on the same SQLite file,
 imported by nothing — and printed next-steps naming `api/src/server.ts`, which
 exists in no app this scaffold writes, telling the reader to call
-`createApp({ auth })` again. `auth:install` recognises the wired layout now and
+`createApp({ auth })` again. `auth:install` recognizes the wired layout now and
 scaffolds nothing into it.
 
 **The dead file was the more complete one, and that is where the defect lived.**
@@ -4197,7 +4278,7 @@ three. `authCleanup` is started from `app.ts` rather than constructed in a file
 nothing imports, and `AUTH_SECRET` is declared in `core/env.ts` rather than
 generated into `.env` and named nowhere.
 
-Declaring it **required** is what found `FJS-360`: every containerised deploy
+Declaring it **required** is what found `FJS-360`: every containerized deploy
 then refused to boot, correctly, over a value that no code in
 `@frontierjs/auth` or junction reads — auth signs with `encryptionKey`, and the
 only other mention anywhere is `defineEnv`'s soft-warning table, which knows the
@@ -4944,7 +5025,7 @@ ranked ideas and 39 papers**, all three whole in the dossier, all three in ⌘K.
 Both readers had to learn a convention written for people. A ruling is a date,
 an optional `FJS-D##` and a bolded claim leading a paragraph. An idea's Status
 column is written four ways in four adjacent rows — `**defect**`, `` `contested`
-— see ISSUES.md ``, `~~shipped~~`, `part-shipped` — so it normalises to one word
+— see ISSUES.md ``, `~~shipped~~`, `part-shipped` — so it normalizes to one word
 and keeps the cell whole beside it. A paper introduces itself with its **H1**,
 not its opening paragraph: all 39 open on the same `**Status: IDEA. Nothing here
 is built.**` boilerplate, so the generic reader had every one of them saying the
@@ -5756,7 +5837,7 @@ lowercase, three Resources in one file — and two packages with a fifth markdow
 file at their root.
 
 The two that were not real became rules: a Resource over no model may take its
-own service noun singularised (basecamp's `Hub.mesa` is `createResource('hub')`
+own service noun singularized (basecamp's `Hub.mesa` is `createResource('hub')`
 and is correct), and a schema with neither `api/` nor `web/` beside it is a
 fixture rather than an app that got the layout wrong.
 

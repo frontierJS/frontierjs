@@ -8,7 +8,7 @@
 //
 // That purity is the property worth keeping. A pass that needs a row, a caller
 // or a database is not one of these, and putting one here would make the whole
-// set unsafe to memoise at build time.
+// set unsafe to memoize at build time.
 //
 // Three doc blocks in here had drifted away from the function they describe —
 // something was inserted between them — so each is reunited with its own pass.
@@ -867,7 +867,7 @@ export function buildRelationMap(schema) {
 
 export function guardedKeysFor(model) {
   const out = new Set()
-  // @secret synthesises @guarded onto the field at parse, so one condition
+  // @secret synthesizes @guarded onto the field at parse, so one condition
   // answers both — the same single fact buildFieldPolicyMap reads for the write.
   for (const f of model.fields ?? [])
     if (f.attributes?.some(a => a.kind === 'guarded')) out.add(f.name)

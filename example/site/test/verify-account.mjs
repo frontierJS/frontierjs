@@ -109,11 +109,11 @@ const anonLines  = await fetch(`${API}/api/order-lines`)
 const anonCust   = await fetch(`${API}/api/customers`)
 check('the sales ledger is not public', [anonOrders.status, anonLines.status, anonCust.status], [401, 401, 401])
 
-// …and the catalogue still is, which is what makes the storefront possible at
+// …and the catalog still is, which is what makes the storefront possible at
 // all. The two answers are the whole reason the gates were wrong: they were the
 // same string.
 const anonProducts = await fetch(`${API}/api/products`)
-check('and the catalogue still is — the storefront reads it with no session',
+check('and the catalog still is — the storefront reads it with no session',
       anonProducts.status, 200)
 
 const login = await fetch(`${API}/api/auth/login`, {

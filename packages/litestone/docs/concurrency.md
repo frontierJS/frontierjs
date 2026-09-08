@@ -34,7 +34,7 @@ An ordinary indexed read is tens of microseconds and none of this applies to it.
 
 ## Waiting for another process
 
-SQLite serialises writers with a file lock. A connection that finds it held
+SQLite serializes writers with a file lock. A connection that finds it held
 either waits or fails at once with `SQLITE_BUSY`, and `busy_timeout` is which.
 **SQLite's default is zero** — fail at once — which is almost never what an app
 wants, so litestone sets a floor on every connection it opens.

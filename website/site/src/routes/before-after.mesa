@@ -270,7 +270,7 @@ render: static
         <div class="snip"><p class="where">Your package, anywhere</p><pre class="code">{@html sample.S18}</pre></div>
       </div>
       <p class="derived">
-        One boundary turns a thrown value into a status, and it recognises a numeric
+        One boundary turns a thrown value into a status, and it recognizes a numeric
         <code>status</code> without registration. <strong>Your errors need no dependency on
         the framework</strong> — and for a third-party error you cannot modify, register a
         mapper instead.

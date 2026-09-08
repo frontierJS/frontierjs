@@ -5950,7 +5950,7 @@ function AddKeyModal({ onClose, onAdd }) {
                   </div>
                 </div>
               ) : (
-                <div style={{fontSize:12,color:T.red}}>✗ Unrecognised key format — must start with <code style={{fontFamily:'monospace'}}>ssh-ed25519</code>, <code style={{fontFamily:'monospace'}}>ssh-rsa</code>, or <code style={{fontFamily:'monospace'}}>ecdsa-sha2-nistp256</code></div>
+                <div style={{fontSize:12,color:T.red}}>✗ Unrecognized key format — must start with <code style={{fontFamily:'monospace'}}>ssh-ed25519</code>, <code style={{fontFamily:'monospace'}}>ssh-rsa</code>, or <code style={{fontFamily:'monospace'}}>ecdsa-sha2-nistp256</code></div>
               )}
             </div>
           )}

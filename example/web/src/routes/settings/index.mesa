@@ -69,7 +69,7 @@ title: Settings
     label: c.code === BASE ? `${c.label} — as stored` : c.label,
   }))
 
-  // How much of the seeded catalogue this session may act on, as a number
+  // How much of the seeded catalog this session may act on, as a number
   // rather than a sentence. Reads the same gate table the buttons do.
   const REACHABLE = ['read', 'create', 'update', 'delete']
   const allowed = REACHABLE.filter(op => orders.can(op, session.level)).length
@@ -188,7 +188,7 @@ title: Settings
       />
 
       <!-- Every price in the app, including the basket and the prerendered
-           catalogue. The hint says the rate out loud because it is FIXED: a
+           catalog. The hint says the rate out loud because it is FIXED: a
            toggle that only swapped the symbol would show one number as two
            different amounts, and a real shop takes a rate from a provider and
            records which one an order was charged at. -->

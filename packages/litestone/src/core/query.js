@@ -1387,7 +1387,7 @@ export function decodeCursor(token, fields = null) {
 // Parse orderBy into a consistent array of { col, dir } objects.
 // Relation orderBy items ({ rel: { field: 'asc' } }) are skipped — they are
 // not DB columns and cannot be used as cursor fields.
-export function normaliseOrderBy(orderBy) {
+export function normalizeOrderBy(orderBy) {
   if (!orderBy) return [{ col: 'id', dir: 'ASC' }]
   const items = Array.isArray(orderBy) ? orderBy : [orderBy]
   // A cursor is the ORDER BY read back off the last row and compared against —

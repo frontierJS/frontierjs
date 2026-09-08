@@ -17,7 +17,7 @@
 //
 // ── What a rule here may grade ───────────────────────────────────────────────
 //
-// Only a claim with an AUTHORITY in the tree: a generated catalogue, a file
+// Only a claim with an AUTHORITY in the tree: a generated catalog, a file
 // path, a register id, a directory anyone can count. What a paragraph ARGUES is
 // out of scope and must stay out — a rule that grades reasoning is a rule that
 // fires on good prose, and the first thing anyone does with one of those is turn
@@ -86,7 +86,7 @@ function walkMd(dir, out, root) {
  */
 export function docCorpus(root, { history = true, registers = true, proposals = true } = {}) {
   // `.claude/skills` is the disclosed half of the root `CLAUDE.md` — a hazard
-  // catalogue or a seam index moved behind a pointer is the same document at a
+  // catalog or a seam index moved behind a pointer is the same document at a
   // different rung, and a citation in it rots the same way.
   const dirs  = ['IDEAS', 'docs', 'packages', 'website', join('.claude', 'skills')]
   const files = []
@@ -179,7 +179,7 @@ const DENIES_IT = /(there is no|no such|does not (?:exist|carry|have)|never exis
 // Metasyntax. `@@name` stands for *whatever the attribute is called*, and a rule
 // that cannot tell that from a claim reports the sentence teaching the notation.
 // The cost is stated: an attribute genuinely named one of these would be missed
-// here, and would be caught by the catalogue's own completeness test instead.
+// here, and would be caught by the catalog's own completeness test instead.
 const PLACEHOLDERS = new Set(['@x', '@y', '@n', '@name', '@@name', '@attr', '@@attr',
   '@word', '@@word', '@anything', '@@anything', '@funcName', '@funcCall', '@attributes'])
 
@@ -204,8 +204,8 @@ export function npmScopes(root) {
   return out
 }
 
-/** Every `@word` the generated catalogues carry, in any column. */
-export function catalogueWords(root) {
+/** Every `@word` the generated catalogs carry, in any column. */
+export function catalogWords(root) {
   const words = new Set()
   let found   = 0
   for (const name of readdirSyncSafe(join(root, 'packages'))) {
@@ -220,9 +220,9 @@ export function catalogueWords(root) {
 
 export function docWordUnknown({ root }) {
   const scopes = npmScopes(root)
-  const { words, found } = catalogueWords(root)
+  const { words, found } = catalogWords(root)
   if (!found)      return { skipped: 'no packages/*/catalog.snapshot.md to grade a schema word against' }
-  if (!words.size) return { skipped: 'the catalogue names no attributes' }
+  if (!words.size) return { skipped: 'the catalog names no attributes' }
 
   const findings = []
   for (const doc of docCorpus(root, { history: false, registers: false, proposals: false })) {
@@ -253,7 +253,7 @@ export function docWordUnknown({ root }) {
         seen.add(word)
         findings.push({
           file: doc.path, line,
-          message: `\`${word}\` is not a word the schema language has — the generated catalogue does not carry it, ` +
+          message: `\`${word}\` is not a word the schema language has — the generated catalog does not carry it, ` +
                    `so a reader copying this line gets a parse error the document has already told them to expect ` +
                    `to work. Fix the spelling, or say which register the gap is filed in.`,
         })
@@ -541,8 +541,8 @@ function countMatches(file, re) {
   return [...text.matchAll(re)].length
 }
 
-/** One catalogue section's rows — the table under a `## <heading>`. */
-function catalogueSection(root, heading) {
+/** One catalog section's rows — the table under a `## <heading>`. */
+function catalogSection(root, heading) {
   const file = join(root, 'packages', 'litestone', 'catalog.snapshot.md')
   const text = readSafe(file)
   if (text === null) return null
@@ -565,7 +565,7 @@ export const COUNTABLES = [
 
   { id:     'litestone-words',
     count:  root => {
-      const parts = ['Declarations', 'Field attributes', 'Model attributes'].map(h => catalogueSection(root, h))
+      const parts = ['Declarations', 'Field attributes', 'Model attributes'].map(h => catalogSection(root, h))
       return parts.every(p => p !== null) ? parts.reduce((a, b) => a + b, 0) : null
     },
     what:   'words',
@@ -575,7 +575,7 @@ export const COUNTABLES = [
     authority: 'packages/litestone/catalog.snapshot.md' },
 
   { id:     'litestone-field-attrs',
-    count:  root => catalogueSection(root, 'Field attributes'),
+    count:  root => catalogSection(root, 'Field attributes'),
     what:   'field attributes',
     owner:  'packages/litestone/',
     marker: /catalog|\.lite|attribute/i,
@@ -583,7 +583,7 @@ export const COUNTABLES = [
     authority: 'packages/litestone/catalog.snapshot.md § Field attributes' },
 
   { id:     'litestone-model-attrs',
-    count:  root => catalogueSection(root, 'Model attributes'),
+    count:  root => catalogSection(root, 'Model attributes'),
     what:   'model attributes',
     owner:  'packages/litestone/',
     marker: /catalog|\.lite|attribute/i,

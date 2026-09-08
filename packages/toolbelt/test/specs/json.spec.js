@@ -288,7 +288,7 @@ test('json: expandToDepth terminates on a cycle', function () {
 
 // ── summarize / preview / format ──────────────────────────────────────────────
 
-test('json: a container summarises to its size', function () {
+test('json: a container summarizes to its size', function () {
   assert.deepEqual(summarize([1, 2, 3]), { kind: 'array', size: 3, preview: '[1,2,3]' })
   assert.equal(summarize({ a: 1 }).size, 1)
   assert.equal(summarize('x').size, null)

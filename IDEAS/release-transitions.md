@@ -834,7 +834,7 @@ compare-and-set, and different bytes are a different Release and therefore a new
 transition. The lock was only what made it unreachable.
 
 **A freshness check on `--resume` was built and then removed, and the reason
-generalises.** *A lock whose step moved seconds ago is a live run* looks sound and
+generalizes.** *A lock whose step moved seconds ago is a live run* looks sound and
 is not: the recorded time is when a step STARTED, and nothing records one ending
 or a pulse inside it — so a fresh timestamp is equally consistent with a run three
 seconds into a five-minute build and with a run killed three seconds into it. It

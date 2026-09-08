@@ -208,7 +208,7 @@ function balanced(src, open) {
  * An ALLOW-LIST and not a validation, because the value arrives over HTTP and
  * ends up in an argv: `fli` resolves a target from a branch by default, and the
  * only two it takes explicitly are these. A name that is not one of them is
- * refused rather than sanitised (Invariant 8 — a caller-supplied name never
+ * refused rather than sanitized (Invariant 8 — a caller-supplied name never
  * enters a pattern, and a shell is a pattern).
  */
 export const TARGETS = {

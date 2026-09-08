@@ -366,7 +366,7 @@ export interface App {
   configFor: (tenantId?: string | null) => AppConfig
 
   /**
-   * Resolve and memoise a tenant's configuration.
+   * Resolve and memoize a tenant's configuration.
    *
    * The async half of `configFor`, which is a property read and cannot await.
    * Called for you by the hook that establishes the tenant and by `runAs`, so an
@@ -375,7 +375,7 @@ export interface App {
    */
   loadTenantConfig: (tenantId: string) => Promise<AppConfig>
 
-  /** Forget a tenant's memoised config, or every tenant's. The explicit
+  /** Forget a tenant's memoized config, or every tenant's. The explicit
    *  invalidation, because a memo with no way out is a config change that needs
    *  a restart. */
   invalidateTenantConfig: (tenantId?: string) => void
@@ -641,7 +641,7 @@ export interface AppOptions {
   principal?:   import('./litestone.ts').PrincipalResolver
 
   /**
-   * This tenant's configuration, resolved per tenant and memoised (`FJS-D126`).
+   * This tenant's configuration, resolved per tenant and memoized (`FJS-D126`).
    *
    * A resolver rather than a declaration, on `FJS-D113`'s ground: the source is
    * a row for one app, a file for another and a control plane for a third.

@@ -46,7 +46,7 @@ refuse the write anyway — saying so on open beats saying it after a long form 
 filled in. `reportInvalid` already existed for exactly this sentence, *a control
 showing a value it cannot hand over*.
 
-Controls needed no change: `Select` already normalises `{ value, label,
+Controls needed no change: `Select` already normalizes `{ value, label,
 disabled }`, so a disabled entry renders on its own.
 
 `nameToLabel` is now `humanize` from `@frontierjs/toolbelt/humanize` — one
@@ -1113,7 +1113,7 @@ arithmetically gives the first item going down — right by accident — and
 `items[(-1-1+n)%n]` going up. Both ends are named rather than computed.
 
 Two things came out of the drive itself. `t.press('Enter')` activated nothing,
-because Chrome synthesises a button's click from the key's `text` and Enter was
+because Chrome synthesizes a button's click from the key's `text` and Enter was
 being sent without one — an Enter that no component handles and an Enter the
 harness never really pressed look identical. And `--verbose` prints passing
 assertions, which is how you find where a spec that THREW got to.

@@ -88,7 +88,7 @@ gets built.
 
 ## The idea
 
-**Litestone materialises a scoped view set for the current identity, and raw SQL runs
+**Litestone materializes a scoped view set for the current identity, and raw SQL runs
 against that view set only.**
 
 ```js

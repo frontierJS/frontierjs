@@ -140,7 +140,7 @@ axis.
 
 Nothing here argues for removing a word that is carrying an application. It argues
 that the next word should be priced in grid cells, and that the ones carrying nothing
-should be found — `litestone advise` and the catalogue are already most of the way to
+should be found — `litestone advise` and the catalog are already most of the way to
 answering *which words does any app in this repo actually use*.
 
 ## 6. What would falsify this

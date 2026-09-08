@@ -330,7 +330,7 @@ export function injectAutoImports(source, map) {
     return source.slice(0, idx) + '\n' + injected + '\n' + source.slice(idx)
   }
 
-  // No instance script — SYNTHESISE one. Returning `injected + source` put the
+  // No instance script — SYNTHESIZE one. Returning `injected + source` put the
   // import statements where Mesa parses template content, so the page rendered
   // the literal text `import Card from '…'` and called `Card` as an undefined
   // free identifier, with the build exiting 0; with an interpolated name the

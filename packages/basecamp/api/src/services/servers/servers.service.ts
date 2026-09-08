@@ -46,8 +46,11 @@ import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, get
 import { db, ws, actor, findScoped, getScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing } from '../../core/resource.ts'
 import { envRef }                from '../../core/credentials.ts'
 import { recordHealth, SERVER_SERIES } from '../../core/server-metrics.ts'
+import { connectorFor, targetFor, computeProviders } from '../../providers/compute/index.ts'
+import { sendVia }               from '../../providers/compute/accounts.ts'
 import type { BasecampApp }      from '../../basecamp.types.ts'
 import type { TargetDescriptor } from '@frontierjs/conduit'
+import type { ProviderKind }     from '../../../../db/schema.d.ts'
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -148,6 +151,11 @@ export function createServersService(app: BasecampApp) {
       'find', 'get', 'create', 'update', 'patch', 'remove', 'restore',
       'events', 'feed', 'sync', 'logEvent', 'metrics',
       'reboot', 'drain', 'undrain',
+      // Both read a vendor rather than a row. They take the model's own read
+      // gate, because what they disclose is a price list and the NAMES of this
+      // workspace's accounts — never a token, which is `@encrypted` and absent
+      // from the row `providers` reads.
+      'catalog', 'providers',
       { method: 'heartbeat', gate: 0 },
     ],
 
@@ -331,25 +339,48 @@ export function createServersService(app: BasecampApp) {
 
       await recordEvent(id, 'sync_requested', 'Status sync requested', { requested_by: actor() })
 
-      if (server.providerKind && server.providerKind !== 'custom') {
-        const targetId = `provider:${server.providerKind}`
-        const result   = await app.conduit.send({
-          target:  targetId,
-          method:  'GET',
-          path:    `/servers/${server.providerServerId}`,
-          headers: { 'x-basecamp-server-id': id },
-        })
+      const connector = connectorFor(server.providerKind)
 
-        if (result.error) {
-          if (result.error.kind === 'target_not_found') {
-            app.logger.warn('conduit: provider target not registered', { target: targetId, server_id: id })
-          } else {
-            app.logger.error('conduit: provider sync failed', { target: targetId, kind: result.error.kind })
-          }
+      // Three ways there is nothing to ask, and they are different sentences.
+      // A machine somebody else made has no vendor; a vendor with no connector
+      // is a key this app cannot spend; an account that was never recorded is
+      // the row half-filled. Each is recorded on the machine's own trail,
+      // because *Sync* answering nothing at all is what sent an operator to the
+      // logs (`FJS-743`'s shape).
+      if (!connector) {
+        if (server.providerKind && server.providerKind !== 'custom')
+          await recordEvent(id, 'sync_unsupported',
+            `Basecamp has no connector for ${server.providerKind}`, {})
+      } else if (!server.providerId) {
+        await recordEvent(id, 'sync_no_account',
+          'This machine names no provider account, so there is no token to ask with', {})
+      } else {
+        const targetId = targetFor(connector.kind, server.providerId as string)
+        const send     = sendVia(app, targetId)
+
+        let reportedMachine: Awaited<ReturnType<typeof connector.machine>> = null
+        let failed: string | null = null
+
+        try {
+          reportedMachine = await connector.machine(send, String(server.providerServerId ?? ''))
+        } catch (err) {
+          failed = String(err)
+        }
+
+        if (failed) {
+          app.logger.error('conduit: provider sync failed', { target: targetId, server_id: id, error: failed })
+          await recordEvent(id, 'sync_failed', `Could not read this machine from ${connector.label}`,
+            { target: targetId })
         } else {
-          const providerData = result.data as Record<string, unknown> | null
-          const reported     = providerData?.status as string | undefined
-          const move         = reported ? PROVIDER_MOVES[reported] : undefined
+          // A vendor that no longer has the machine is an ANSWER and is the one
+          // report that arrives as an absence — `deleting` is what it means
+          // here, so it goes through the same table every other word does.
+          const reported = reportedMachine ? reportedMachine.status : 'deleting'
+          const move     = reported === 'unknown' ? undefined : PROVIDER_MOVES[reported]
+
+          if (reported === 'unknown')
+            await recordEvent(id, 'sync_unrecognized',
+              `${connector.label} reported a state this app does not recognize`, {})
 
           if (reported && move && PROVIDER_TARGET[move] !== server.status) {
             // Ask the machine rather than write the value. `transitions(row)`
@@ -382,12 +413,69 @@ export function createServersService(app: BasecampApp) {
                 { provider_status: reported, server_status: server.status })
             }
           }
+
+          // The vendor's own answer about where the machine IS. Recorded on the
+          // row because an address that moved is the commonest reason a
+          // previously reachable machine stops answering, and the operator
+          // reading this screen has no other way to find out.
+          if (reportedMachine?.ipAddress && reportedMachine.ipAddress !== server.ipAddress)
+            await db().server.update({
+              where: { id },
+              data:  { ipAddress: reportedMachine.ipAddress, version: server.version },
+            })
         }
-      } else {
-        app.logger.debug('conduit: sync skipped — no provider configured', { server_id: id })
       }
 
       return getScoped('server', 'Server')
+    },
+
+    // ── catalog — GET /servers  X-Service-Method: catalog ─────────────
+    //
+    // What one ACCOUNT can be asked for: regions, sizes and images, read off the
+    // vendor every time.
+    //
+    // Not cached and not a table in this repo. The mock wrote DigitalOcean's
+    // price list out as three JSX constants and they were wrong before anybody
+    // read them — a catalog is the vendor's to state, and the only copy that
+    // cannot drift is the one that is not kept (`docs/PROVISIONING.md` § D3).
+    //
+    // The account is named by the caller and CONFINED by the read above it:
+    // `getScoped` on the secret runs at the caller's own standing, so an account
+    // in another workspace answers 404 before a vendor is touched.
+    async catalog() {
+      const accountId = ($.data as Record<string, unknown> | null)?.accountId
+                     ?? $.query.accountId
+      if (!accountId) throw new BadRequest('accountId is required — which provider account to ask')
+
+      const account = await db().secret.findFirst({ where: { id: String(accountId) } })
+      if (!account) throw new NotFound(`Provider account '${accountId}' not found`)
+
+      const connector = connectorFor(account.providerKind as ProviderKind | null)
+      if (!connector)
+        throw new BadRequest(`'${account.name}' is not an account at a cloud Basecamp can speak to`)
+
+      const target = targetFor(connector.kind, account.id as string)
+      return { provider: connector.kind, ...(await connector.catalog(sendVia(app, target))) }
+    },
+
+    // ── providers — GET /servers  X-Service-Method: providers ────────
+    //
+    // Which clouds this app can speak to, and which accounts this workspace
+    // holds for them. One call, because a wizard's first step needs both and
+    // asking twice makes the empty case flicker.
+    async providers() {
+      const accounts = await db().secret.findMany({
+        where:   { kind: 'provider_key' },
+        orderBy: { name: 'asc' },
+      })
+      return {
+        providers: computeProviders(),
+        // `data` is @encrypted and absent from the row, so nothing here can
+        // leak a token: what a picker needs is an id, a name and a vendor.
+        accounts: (accounts as Record<string, unknown>[]).map(a => ({
+          id: a.id, name: a.name, providerKind: a.providerKind, isVerified: a.isVerified,
+        })),
+      }
     },
 
     // ── heartbeat — POST /servers/:id  X-Service-Method: heartbeat ────
@@ -611,6 +699,11 @@ export function createServersService(app: BasecampApp) {
         // update level. A hook here would be the same sentence twice, and the
         // one in the seed is the one `db/access.snapshot.md` can see.
         sync:      [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
+        // `catalog` SPENDS the workspace's vendor token — a rate limit is per
+        // token, so a viewer refreshing a picker is somebody else's failed
+        // deploy. `providers` is not here: it reads rows this app owns and
+        // discloses account names, which is the model's own read gate.
+        catalog:   [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         logEvent:  [internalOnly()],
         // heartbeat: HMAC auth at Conduit transport level — no session hook
       },

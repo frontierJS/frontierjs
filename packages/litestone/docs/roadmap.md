@@ -115,7 +115,7 @@ Haversine formula in JS — no SQLite extension required.
 
 ### `@slug` collision handling — the attribute SHIPS, this half does not
 
-`@slug` ships and slugifies the column on write; the parenthesised form calls a
+`@slug` ships and slugifies the column on write; the parenthesized form calls a
 `function slug` the schema declares. See
 [reference.snapshot.md](reference.snapshot.md#slug-field).
 

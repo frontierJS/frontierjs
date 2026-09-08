@@ -30,8 +30,8 @@
 
 // ─── the names ────────────────────────────────────────────────────────────────
 //
-// Compared after normalising: lower-cased, with `-` and `_` removed, so one
-// entry covers `x-api-key`, `X_API_KEY` and `xApiKey`. Held as the normalised
+// Compared after normalizing: lower-cased, with `-` and `_` removed, so one
+// entry covers `x-api-key`, `X_API_KEY` and `xApiKey`. Held as the normalized
 // form so the comparison is a single Set lookup rather than a walk.
 
 const RAW_SECRET_KEYS = [
@@ -52,7 +52,7 @@ const RAW_SECRET_KEYS = [
 
 const norm = (name) => String(name).toLowerCase().replace(/[-_]/g, '')
 
-/** The normalised name set. Exported so a caller can see the floor it is getting. */
+/** The normalized name set. Exported so a caller can see the floor it is getting. */
 export const SECRET_KEY_NAMES = Object.freeze(new Set(RAW_SECRET_KEYS.map(norm)))
 
 /** Is this key name a credential by convention? */
@@ -96,7 +96,7 @@ export const REDACTED = '[redacted]'
  * A copy of `value` with every key `isSecret` answers true for replaced.
  *
  * The predicate is a parameter because the two questions above share this walk
- * and nothing else: junction's error sanitiser passes the SCHEMA's protected
+ * and nothing else: junction's error sanitizer passes the SCHEMA's protected
  * set, the logger passes `isSecretKey`. One walker, two predicates — a second
  * walker is how the cycle guard comes to exist in one of them and not the other.
  *

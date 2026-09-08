@@ -10,7 +10,7 @@ import { createBaseService } from '@frontierjs/junction'
 // at the door.
 //
 // `model:` is stated rather than derived, for the reason `payment-events` gives:
-// `order-lines` singularises to `order-line` and resolves, and a two-word model
+// `order-lines` singularizes to `order-line` and resolves, and a two-word model
 // is exactly where relying on three resolvers agreeing is not worth the line it
 // saves (Invariant 2).
 export function createOrderLinesService() {

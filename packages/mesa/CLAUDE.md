@@ -190,7 +190,7 @@ defaults to whatever `dev` is, and the path in it is relative to `locRoot`.
   that costs a redundant effect run and a glitch-freedom test says so.
 - **`<slot>` takes no attribute but `name`.** A slot carries content IN and
   never a value out; there is no `let:` to read one with. Refused at compile
-  time (VISION RULE 35b, `FJS-304`). A hole the child must PARAMETERISE is a
+  time (VISION RULE 35b, `FJS-304`). A hole the child must PARAMETERIZE is a
   snippet prop — `export let children` + `{@render children?.(value)}` — which
   §9.6 no longer calls legacy, because for that job it is the only form.
 - **Scoped styles do not reach into child components** — use `:global(...)`. The

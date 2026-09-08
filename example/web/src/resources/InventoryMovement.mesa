@@ -3,7 +3,7 @@
   //
   // Named for the model, exporting the accessor. `model:` is stated because the
   // service is called `inventory`: it is a service over the LEDGER, and
-  // 'inventory' singularises to 'inventory', which is not a model anything
+  // 'inventory' singularizes to 'inventory', which is not a model anything
   // declares. A miss warns and degrades to a bare `make()`, so the symptom
   // would be a screen with no field metadata rather than an error.
   //

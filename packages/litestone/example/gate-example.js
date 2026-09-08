@@ -5,11 +5,9 @@
 // Run:  bun example/gate-example.js
 //
 // ─── @@gate notation ─────────────────────────────────────────────────────────
-// Named (canonical):  @@gate(read: READER, write: USER, delete: OWNER)
-//   Keys: read, create, update, delete — plus `write`, shorthand for
-//   create+update+delete unless one is given explicitly.
-// Compact:            @@gate("2.4.4.6")   ← same gate as digits, R.C.U.D
-// Shorthand:          @@gate("4")         ← all four ops = USER
+// @@gate("2.4.4.6")   four positions, R.C.U.D — read, create, update, delete
+// @@gate("4")         one position: every op requires USER. A position not
+//                     written takes the one before it (`FJS-D239`).
 //
 // Levels: 0=STRANGER 1=VISITOR 2=READER 3=CREATOR 4=USER 5=ADMINISTRATOR
 //         6=OWNER 7=SYSADMIN 8=SYSTEM (only asSystem()) 9=LOCKED (nobody, ever)
@@ -47,43 +45,39 @@ const ROLE_LEVELS = {
 
 const SCHEMA = `
   // Public-ish data — anyone verified can read, admins manage, owners delete
-  // Compact: @@gate("2.5.5.6")
   model Account {
     id   Int @id
     name String
-    @@gate(read: READER, write: ADMINISTRATOR, delete: OWNER)
+    @@gate("2.5.5.6")
   }
 
   // Catalog — even visitors browse, members buy, owners delete
-  // Compact: @@gate("1.4.4.6")
   model Product {
     id    Int @id
     name  String
     price Int
-    @@gate(read: VISITOR, write: USER, delete: OWNER)
+    @@gate("1.4.4.6")
   }
 
   // Sales leads — creators can add, members manage, owners delete
-  // Compact: @@gate("3.3.4.6")
   model Lead {
     id   Int @id
     name String
-    @@gate(read: CREATOR, create: CREATOR, update: USER, delete: OWNER)
+    @@gate("3.3.4.6")
   }
 
   // Messaging — readers see it, members write it, admins moderate (delete)
   model Message {
     id   Int @id
     body String
-    @@gate(read: READER, write: USER, delete: ADMINISTRATOR)
+    @@gate("2.4.4.5")
   }
 
   // Audit trail — admins read, only background jobs write, delete locked forever
-  // Compact: @@gate("5.8.8.9")
   model AuditLog {
     id     Int @id
     action String
-    @@gate(read: ADMINISTRATOR, write: SYSTEM, delete: LOCKED)
+    @@gate("5.8.8.9")
   }
 
   // System config — admins read, only system creates, everything else locked
@@ -91,7 +85,7 @@ const SCHEMA = `
     id  Int @id
     key String
     val String
-    @@gate(read: ADMINISTRATOR, create: SYSTEM, update: LOCKED, delete: LOCKED)
+    @@gate("5.8.9.9")
   }
 `
 

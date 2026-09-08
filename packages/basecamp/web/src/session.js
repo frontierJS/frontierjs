@@ -109,20 +109,26 @@ async function loadWorkspace() {
   // — the switch persisted, then undid itself on the next load, silently.
   const remembered = typeof localStorage !== 'undefined' ? localStorage.getItem(WORKSPACE_KEY) : null
 
-  // The fallback: the caller's oldest membership.
-  const { workspace_id: fallback } = await api('/auth/workspace')
-
-  // Adopt something BEFORE listing: /workspaces is itself scoped, and a request
-  // carrying no X-Workspace-Id is refused with 400.
-  adoptWorkspace(remembered ?? fallback ?? null)
-
+  // The list BEFORE anything is adopted. `Workspace` is `@@tenant(none)` — the
+  // tenant itself cannot be scoped by the tenant claim — so /workspaces answers
+  // with no X-Workspace-Id, and adopting first only bought a window in which
+  // every request named a workspace nobody had checked the caller belongs to.
+  // The shell reloads on `session.workspaceId`, so that window is three
+  // Forbidden refusals in the API log on the first sign-in after a db reset,
+  // when the remembered id belongs to a workspace that no longer exists.
   const list = await api('/workspaces')
   _w.workspaces = list?.data ?? []
 
-  // The list is the authority on membership, which can be revoked between
-  // sessions. A remembered workspace the caller no longer belongs to drops back
-  // to the default rather than leaving every request scoped to nothing.
-  if (!_w.workspaces.some(w => w.id === session.workspaceId)) adoptWorkspace(fallback ?? null)
+  // Membership can also be revoked between sessions, which is the same test.
+  if (remembered && _w.workspaces.some(w => w.id === remembered)) {
+    adoptWorkspace(remembered)
+    return
+  }
+
+  // The fallback: the caller's oldest membership, named by the server off the
+  // membership row itself, so it needs no second check here.
+  const { workspace_id: fallback } = await api('/auth/workspace')
+  adoptWorkspace(fallback ?? null)
 }
 
 // The client stamps X-Workspace-Id on every request from here on. Without it

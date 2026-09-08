@@ -174,7 +174,7 @@ Four concurrent `send()` calls before the connection is established, verified:
 
 Each `open` handler runs `this.ws = ws` and `startPing(ws)`, so `this.ws` and `this.pingTimer` are overwritten and the three earlier sockets become untracked — still open on both ends, each with **an orphaned `setInterval` that is never cleared**, pinging forever. `destroy()` clears only the one timer it still has a handle on. This leaks a socket and a timer per concurrent burst, permanently, and keeps the event loop alive at shutdown.
 
-**Fix:** memoise the in-flight connect promise; clear any prior ping timer before starting a new one.
+**Fix:** memoize the in-flight connect promise; clear any prior ping timer before starting a new one.
 
 ### 2.2 A stream consumer hangs forever if the socket drops mid-stream
 
@@ -203,7 +203,7 @@ NO THROW — stream yielded 0 chunks and ended silently
 
 "The outpost is unreachable" is indistinguishable from "the outpost had no logs". The core layer gets this right for `target_not_found` (`conduit.ts:91`); the transport contradicts it.
 
-### 2.4 `send()` throws on non-serialisable bodies, contradicting the never-throw contract
+### 2.4 `send()` throws on non-serializable bodies, contradicting the never-throw contract
 
 `src/transports/http.ts:67–69` — `JSON.stringify(req.body)` sits **outside** the `try` block. Verified:
 
@@ -280,7 +280,7 @@ Two `?` — the second parameter is silently mangled. Relatedly, GET parameters 
 
 `IConduit.resolve()`/`list()` are async and the store is presented as the pluggable backend, but the synchronous signature makes Redis, Postgres or any HTTP-backed registry **impossible to implement**. The two shipped stores are in-memory and SQLite, both single-node. Conduit is therefore effectively single-instance for dynamically registered outposts: run two Hub replicas and an outpost that registers against one is invisible to the other. That is a significant constraint to discover after adoption, and it is not mentioned in the README.
 
-Knock-on: `stats()` calls `store.list()` (`conduit.ts:118`), so every `/metrics` scrape does a full table scan and a `JSON.parse` per row, deserialising every secret into memory — while the interface comment advertises it as a cheap *"synchronous snapshot"*.
+Knock-on: `stats()` calls `store.list()` (`conduit.ts:118`), so every `/metrics` scrape does a full table scan and a `JSON.parse` per row, deserializing every secret into memory — while the interface comment advertises it as a cheap *"synchronous snapshot"*.
 
 ### 3.5 Stores return live references
 
@@ -353,7 +353,7 @@ Three structural problems make that hard to fix with the shipped tooling:
 - **Optional peer dependency is not optional** (§1.6) — the barrel hard-requires Junction.
 - **Test doubles ship in the production entry point.** Verified: `import('src/index.ts')` exposes `StubTransport` and `createTestConduit`, despite `testing.ts:4` instructing consumers to import from `/testing`. `index.ts:9–15` also re-exports `createSQLiteStore` as a value, so the barrel pulls in `bun:sqlite` for everyone.
 - **`declare module` makes `app.conduit` non-optional** on every Junction `App` project-wide (`plugin.ts:25–29`). Any project that has the package installed but not configured gets a type that claims `app.conduit` exists while it is `undefined` at runtime. It should be `conduit?: IConduit`.
-- **The plugin factory creates one shared instance** (`plugin.ts:36`), so reusing a plugin object across two apps silently shares state. `boot()` also calls `app.conduit.init()` rather than `instance.init()`, so it initialises whatever was attached last.
+- **The plugin factory creates one shared instance** (`plugin.ts:36`), so reusing a plugin object across two apps silently shares state. `boot()` also calls `app.conduit.init()` rather than `instance.init()`, so it initializes whatever was attached last.
 - **`init()` re-applies `opts.targets` on every boot**, overwriting `last_seen_at` for static targets and wiping heartbeat state on restart.
 - **README drift** — the file layout tree (`README.md:371–390`) shows `conduit/index.ts`; the actual tree is `src/index.ts`, and `package.json` is omitted. Same drift pattern as Junction §9.
 - **Missing:** `files` field, `.gitignore`, `.npmignore`, LICENSE text (MIT is declared), CI config, `bin`/build step. Exports point at raw `.ts`, so the package is Bun-only for consumers — defensible given `engines.bun`, but the README never says so.

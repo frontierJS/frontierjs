@@ -133,10 +133,10 @@ not fail.
 
 **It now runs for both package sources.** It began as an npm-only test, because a
 Docker build cannot see a `file:` tarball outside its context — the same wall
-`link:` hits — so it proved the *pipeline* containerises a real app rather than
+`link:` hits — so it proved the *pipeline* containerizes a real app rather than
 proving the working tree does. `FJS-241` closed that by packing into the app,
 and the phase gained a second run against `--source local`: the working tree,
-containerised. The npm half stays, and is now the only thing in the repo testing
+containerized. The npm half stays, and is now the only thing in the repo testing
 the PUBLISHED framework (`FJS-252`).
 
 ---
@@ -228,10 +228,14 @@ deploy` is not a competitor to the fleet tool; it is the fleet tool's installer*
 it should be scoped and judged by that job — which is also why it does not need to
 grow multi-node, blue-green or a scheduler.
 
-**Ring 1 — Basecamp installs the Outpost.** One-shot over SSH, authenticated with a
-`Secret` of kind `ssh_key` (already modeled), driving `pending → provisioning →
-installing → ready` and writing `ServerEvent` rows as it goes. After the first
-heartbeat, SSH stops being the channel and becomes the recovery path.
+**Ring 1 — Basecamp installs the Outpost.** Driving `pending → provisioning →
+installing` and writing `ServerEvent` rows as it goes. ~~One-shot over SSH,
+authenticated with a `Secret` of kind `ssh_key` (already modeled)~~ — **struck by
+[`FJS-D241`](../DECISIONS.md#fjs-d241)**: a machine Basecamp provisioned is
+installed by cloud-init and never reached over SSH, and an imported one by a
+command an operator pastes. The ring is unchanged; only how it reaches a machine
+is. `ssh_key` keeps its meaning as a person's recovery path. (`ready` was deleted
+from `ServerStatus` on 2026-09-07 — see [FJS-1021](../ISSUES.md#fjs-1021).)
 
 **Ring 2 — the Outpost deploys applications.** `Deployment` and `DeploymentStep` are
 the record; the Outpost is the executor. This is where build-once pays: the Outpost pulls

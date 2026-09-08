@@ -1,9 +1,9 @@
 ---
-title: Catalogue
+title: Catalog
 render: static
 ---
 <!--
-  The public catalogue — prerendered to plain HTML at build time.
+  The public catalog — prerendered to plain HTML at build time.
 
   There is no `publishes:` in the frontmatter above, which is a claim: this page
   contains nothing that is not public. The build CHECKS that claim rather than
@@ -38,7 +38,7 @@ render: static
 </script>
 
 <div class="container stack">
-  <h1>Catalogue</h1>
+  <h1>Catalog</h1>
   <p class="text-muted">{data?.products?.length ?? 0} products, prerendered.</p>
 
   <CatalogList client:load products={data?.products ?? []} />

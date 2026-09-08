@@ -115,9 +115,9 @@ export async function resolveExecutor(app: BasecampApp, appId: string): Promise<
     return { kind: 'none', reason: 'This app is not placed on any server — place it on one first' }
 
   // A machine that is draining or unreachable still holds the app; it is not a
-  // machine to send a release to. `ready` is a server that has an outpost and
-  // has not yet reported for work, which is exactly what a first deploy targets.
-  const usable = placements.find((p: any) => ['online', 'ready'].includes(p.server?.status))
+  // machine to send a release to. `online` is the whole of what can take one:
+  // a machine that is up and has not been drained.
+  const usable = placements.find((p: any) => p.server?.status === 'online')
   if (!usable) {
     const states = [...new Set(placements.map((p: any) => p.server?.status ?? 'missing'))].join(', ')
     return { kind: 'none', reason: `No server holding this app can take a release (${states})` }

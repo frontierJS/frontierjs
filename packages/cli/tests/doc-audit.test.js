@@ -73,7 +73,7 @@ describe('doc-word-unknown', () => {
     'packages/litestone/package.json':        PKG,
   }
 
-  test('reports a schema word the catalogue does not carry', () => {
+  test('reports a schema word the catalog does not carry', () => {
     const root = tree('word-bad', { ...base,
       'packages/litestone/docs/traits.md': 'A trait may not hold `@@id([...])` — same reason.\n' })
     const out = docWordUnknown({ root })
@@ -82,7 +82,7 @@ describe('doc-word-unknown', () => {
     expect(out.findings[0].line).toBe(1)
   })
 
-  test('says nothing about words the catalogue carries', () => {
+  test('says nothing about words the catalog carries', () => {
     const root = tree('word-good', { ...base,
       'packages/litestone/docs/schema.md':
         'A column is `@id`, an amount is `@money`, and a move may carry `@gate(5)`.\n' })
@@ -115,7 +115,7 @@ describe('doc-word-unknown', () => {
     expect(docWordUnknown({ root }).findings).toHaveLength(0)
   })
 
-  test('with no catalogue it skips rather than passing', () => {
+  test('with no catalog it skips rather than passing', () => {
     const root = tree('word-nocat', { 'README.md': 'A column is `@nonsense`.\n' })
     expect(docWordUnknown({ root }).skipped).toBeTruthy()
   })

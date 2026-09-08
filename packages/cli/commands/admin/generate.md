@@ -315,7 +315,7 @@ const { listPage, createPage, editPage } =
 
 const adminPages = (m, paths, res) => {
   // The FILE is named for the model and the EXPORT for the service (invariant
-  // 19), and the export name is read off the file rather than pluralised again
+  // 19), and the export name is read off the file rather than pluralized again
   // here — `fli make:resource Person --service people` writes `people` into
   // `Person.mesa`, which no plural rule applied to `Person` would have found.
   // Two imports off one file: the default export is the model's DEFAULT FORM —
@@ -386,7 +386,7 @@ your login response.
 
 **The admin uses the app's own Resources and declares none of its own.** A model
 with a `web/src/resources/<Model>.mesa` is imported from it — export name and
-service string both read out of the file, never pluralised again — and a model
+service string both read out of the file, never pluralized again — and a model
 without one gets that file written, once, from the same template
 `fli make:resource` uses. Nothing already there is overwritten, `--force`
 included: `--force` is about the generated pages, which are disposable, and a

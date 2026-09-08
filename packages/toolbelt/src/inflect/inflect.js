@@ -19,7 +19,7 @@
  * copies of these rules used to answer that question and they did not agree:
  * the two in litestone knew twenty irregulars, junction's knew none but had the
  * guards that stop `status` becoming `statu`, and sierra's was `endsWith('s')`.
- * A model named `Status` therefore resolved in three places and singularised to
+ * A model named `Status` therefore resolved in three places and singularized to
  * `statuse` in the fourth, where the miss is silent — a warning and a resource
  * with no schema.
  *
@@ -32,7 +32,7 @@
  * This kit never takes a locale. What it inflects is structural — a table name,
  * an accessor, a service path — so a Spanish caller still reads `db.person`
  * from `model Person`, and teaching these rules a second language renames tables
- * in every schema that already has one. Pluralising a MESSAGE for a reader is a
+ * in every schema that already has one. Pluralizing a MESSAGE for a reader is a
  * different problem with different rules (CLDR plural categories, one/few/many/
  * other) and belongs in whatever answers it, never here.
  *
@@ -87,7 +87,7 @@ const SES_BARE_S = new Set([
  * Words whose singular and plural are the SAME word. Not a rule and not
  * derivable: nothing in `series` distinguishes it from `movies`, and every
  * ending-based guess gets one of the two wrong. Both directions must return the
- * word untouched, or the pair stops round-tripping — `series` singularised to
+ * word untouched, or the pair stops round-tripping — `series` singularized to
  * `sery` is what made a correctly-named `model MetricSeries` fail invariant 2's
  * check, and the check was right to ask.
  *
@@ -101,7 +101,7 @@ const INVARIANT = new Set([
 ])
 
 /*
- * Singulars that end in `-ie` and pluralise to `-ies`, where the `-y` rule
+ * Singulars that end in `-ie` and pluralize to `-ies`, where the `-y` rule
  * below would otherwise invent a word.
  *
  * A LIST rather than a rule, for SES_BARE_S's reason: `movies` and `bodies` are
@@ -180,7 +180,7 @@ export function pluralize(word) {
 
   /* The irregular table is consulted FIRST. It used to come last, behind the
      sibilant rule, so seven of its own entries were unreachable — `index` was
-     caught by `x$` and pluralised to `indexes`, `analysis` and `crisis` by
+     caught by `x$` and pluralized to `indexes`, `analysis` and `crisis` by
      `s$`, and the table said otherwise in vain. */
   const lower = word.toLowerCase()
   if (INVARIANT.has(lower)) return word
@@ -194,7 +194,7 @@ export function pluralize(word) {
 /**
  * The singular of an English word. A word that is already singular comes back
  * unchanged wherever the rules can tell — which is what the `us`/`is`/`as`
- * guards are for: without them `status` singularises to `statu` and the model
+ * guards are for: without them `status` singularizes to `statu` and the model
  * it names is never found.
  *
  * @param {string} word

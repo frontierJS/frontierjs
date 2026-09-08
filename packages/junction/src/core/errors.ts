@@ -277,7 +277,7 @@ export function fromStatusCode(code: number, message?: string): FrameworkError {
   return err
 }
 
-// ─── The wire's own sanitiser ─────────────────────────────────────────────
+// ─── The wire's own sanitizer ─────────────────────────────────────────────
 //
 // `toFrameworkError` answers what the error IS. This answers what may be SAID
 // about it to whoever is on the other end of the socket, and the two are not

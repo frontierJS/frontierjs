@@ -1,6 +1,6 @@
 // watch-paren-deps.test.js
 //
-// A `$:` dep list is a comma expression, so a PARENTHESISED group inside one is
+// A `$:` dep list is a comma expression, so a PARENTHESIZED group inside one is
 // another SequenceExpression rather than a leaf. `$: (a.x, a.y), () => f()`
 // therefore reached the dep collector as a single node whose path is null and
 // whose identifier set is the ROOT alone, and the two paths were silently
@@ -14,7 +14,7 @@
 // which reaches a browser as a dead screen and a console error (`FJS-599`).
 //
 // The two halves are separable and both are asserted here. The silent half is
-// asserted as byte-identity against the unparenthesised twin, because that is
+// asserted as byte-identity against the unparenthesized twin, because that is
 // the whole claim — the parens are grouping and must mean nothing. The loud
 // half is asserted as "every `$$watch_*` this module reads, it also declares",
 // which is a property over the emitted string rather than a list of shapes, so
@@ -50,7 +50,7 @@ const watchSigs = (js) => ({
 
 // ─── The silent half: parens are grouping ─────────────────────────────────────
 
-describe('a parenthesised dep list means what the unparenthesised one means', () => {
+describe('a parenthesized dep list means what the unparenthesized one means', () => {
 
   const IMPORT = `import { a } from './s.js'\nfunction f(){}`
 
@@ -94,7 +94,7 @@ describe('a parenthesised dep list means what the unparenthesised one means', ()
 describe('every watch signal read is a watch signal declared', () => {
 
   const CASES = {
-    'a parenthesised list beside a bare path':
+    'a parenthesized list beside a bare path':
       `$: a.x\n$: (a.x, a.y), () => f()`,
     'a bare dep on a root another watch proxied':
       `$: a.x\n$: a, () => f()`,
@@ -157,7 +157,7 @@ describe('mounted', () => {
     }
   }
 
-  test('a parenthesised path list fires on a property change', async () => {
+  test('a parenthesized path list fires on a property change', async () => {
     const r = await render(
       `<script>\n  let o = { x: 1, y: 2 }\n  let log = ''\n` +
       `  $: (o.x, o.y), () => { log = 'x' + o.x + 'y' + o.y }\n` +
@@ -173,7 +173,7 @@ describe('mounted', () => {
     r.end()
   })
 
-  test('a parenthesised list beside a bare path mounts — the ReferenceError case', async () => {
+  test('a parenthesized list beside a bare path mounts — the ReferenceError case', async () => {
     const r = await render(
       `<script>\n  let o = { x: 1, y: 2 }\n  let log = ''\n` +
       `  $: o.x\n` +

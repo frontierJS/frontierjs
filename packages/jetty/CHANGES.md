@@ -110,7 +110,7 @@ the shape has moved — a wrapper that mounts and never registers is worse than 
 unwrapped module, so this is a build-time answer rather than one at somebody's
 desk. And `test/phase9.test.js` drives the function with **real compiler
 output**: both branches of the lookahead, the rename, the wrapper, and the
-unrecognised-shape throw. Negative-controlled — the old lookahead turns 3 of its
+unrecognized-shape throw. Negative-controlled — the old lookahead turns 3 of its
 7 red.
 
 **Why ~450 green tests said nothing.** The only cover was `test/hmr-fullflow.mjs`

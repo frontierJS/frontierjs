@@ -12,7 +12,7 @@
  *   • a push updates a row nobody's list holds, because somebody else may be
  *     looking at it
  *   • the list's own membership and placement rules are UNCHANGED — they run
- *     on materialised rows, so `live-order.test.ts` is the negative control
+ *     on materialized rows, so `live-order.test.ts` is the negative control
  *   • an unbound Store is what it always was, which is what the fifteen Store
  *     cases in `client.test.ts` are the negative control for
  *   • a released node lingers for the TTL and then goes
@@ -458,7 +458,7 @@ describe('resource().mutate()', () => {
 
     const gate = held()
     const done = r.mutate(1, { n: 9 }, () => gate.promise)
-    // The list materialises through the node, so the optimistic value is what
+    // The list materializes through the node, so the optimistic value is what
     // any consumer sorts and renders.
     expect(r.store.get().map(x => x.n)).toEqual([9, 2])
 

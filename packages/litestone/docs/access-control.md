@@ -186,7 +186,7 @@ CASE keyword:
 @@allow('create', priority > 8 ? auth().isAdmin == true : auth() != null)
 ```
 
-A parenthesised group is an operand on **either** side of a comparison, so a
+A parenthesized group is an operand on **either** side of a comparison, so a
 ternary can choose the value being compared against:
 
 ```
@@ -800,7 +800,7 @@ model Role {
 }
 ```
 
-**`Capability` is a type litestone synthesises from this schema's own surface** — the
+**`Capability` is a type litestone synthesizes from this schema's own surface** — the
 set is derived, so the type IS that set. It is a real enum, which is the whole of the
 implementation: an enum array is already a JSON column, already validated member by
 member at the write, already emitted into `$defs` with its values. So one declaration

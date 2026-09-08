@@ -4730,7 +4730,7 @@ describe('markdown code fences — highlighting comes from @frontierjs/toolbelt'
 
   it('a `<` or `&` in a fence reaches the reader as itself', async () => {
     // rehype writes `<` as `&#x3C;` and `&` as `&#x26;`. The decode table used
-    // to know neither, so both survived into glow, which tokenised `&`, `#` and
+    // to know neither, so both survived into glow, which tokenized `&`, `#` and
     // `;` as three separate punctuation tokens in three <i> elements — which is
     // also why no browser could put them back together (FJS-261).
     const r = await compileSource(['```html', '<div>x</div>', '```'].join('\n'), { filename: 'test.md' })

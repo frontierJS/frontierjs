@@ -2487,7 +2487,7 @@ export const TEMPLATES = [
   },
   {
     id: "tpl_llm_summary",
-    name: "LLM Document Summariser",
+    name: "LLM Document Summarizer",
     description: "Pull docs from S3 or URL → chunk → summarize with GPT-4o → store result",
     category: "AI & LLM",
     tags: ["ai", "llm", "documents"],
@@ -2805,7 +2805,7 @@ export const ExecReviewMode = ({ exec, onBack }) => {
     : Object.entries(flow.nodes ?? {}).map(([id,n]) => ({ id, ...n }))
   const rawEdges = Array.isArray(flow.edges) ? flow.edges : []
 
-  // Fallback: synthesise nodes from nodeStates if flow has no nodes
+  // Fallback: synthesize nodes from nodeStates if flow has no nodes
   const syntheticNodes = rawNodes.length === 0
     ? Object.keys(exec.nodeStates ?? {}).map((id,i) => ({
         id, type:"code", meta:{ name:id }, config:{},

@@ -200,7 +200,7 @@ describe('a computed member names a variable (FJS-D212)', () => {
  * function and a const CALLING it reads a signal inside the call — a
  * dependency with no name for the closure to walk. Blanket promotion covered
  * this by accident through runtime auto-tracking; the narrowing dropped it and
- * `example`'s catalogue computed its price ceiling once against an empty store.
+ * `example`'s catalog computed its price ceiling once against an empty store.
  * Every unit suite stayed green, which is why the pair below is here.
  */
 import { describe as d2, it as i2, expect as e2 } from 'vitest'

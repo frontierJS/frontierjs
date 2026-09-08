@@ -335,7 +335,7 @@ Prefer projects that ship a Prisma schema (one file, mechanical) — marked ⚡.
 | Project | Shape | Probes |
 | --- | --- | --- |
 | **Lago** | modern usage-based billing (Rails/Postgres) | `BillableMetric`, `Charge`, `Plan`, `Subscription`, `Invoice`, `CreditNote`, `Wallet`, `Coupon` — the nearest existing thing to what candidate C would write. Money precision, credit-note-not-edit, usage rollup |
-| **Kill Bill** | the long-lived billing reference (Java/MySQL) | an **effective-dated catalogue** — plan versions with a valid-from. Immutable invoice items, a subscription event stream. Candidate A's temporal gap, met in the small domain |
+| **Kill Bill** | the long-lived billing reference (Java/MySQL) | an **effective-dated catalog** — plan versions with a valid-from. Immutable invoice items, a subscription event stream. Candidate A's temporal gap, met in the small domain |
 
 **Feeding candidate A**
 

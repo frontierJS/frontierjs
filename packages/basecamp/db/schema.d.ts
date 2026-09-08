@@ -44,11 +44,11 @@ export type WorkspaceStatus = 'active' | 'suspended'
 
 export type SecretKind = 'ssh_key' | 'provider_key' | 'registry_auth' | 'tls_cert' | 'notification' | 'generic'
 
-export type ServerStatus = 'pending' | 'provisioning' | 'installing' | 'ready' | 'online' | 'unreachable' | 'draining' | 'stopped' | 'destroyed'
+export type ServerStatus = 'pending' | 'provisioning' | 'installing' | 'online' | 'unreachable' | 'draining' | 'stopped' | 'destroyed'
 
 export type ServerRole = 'general' | 'build' | 'database' | 'gateway' | 'worker'
 
-export type ProviderKind = 'custom' | 'hetzner'
+export type ProviderKind = 'custom' | 'hetzner' | 'digitalocean'
 
 export type EnvironmentTier = 'development' | 'test' | 'preview' | 'staging' | 'production'
 
@@ -890,6 +890,20 @@ export interface Secret {
   data: string
   isVerified: boolean
   createdBy?: string | null
+  /**
+   * WHICH cloud a `provider_key` opens. Null for every other kind.
+   * 
+   * It is a column rather than a field inside `data` because a vendor name is
+   * not a secret: `data` is `@encrypted`, so the key is absent from every read,
+   * and *which DigitalOcean accounts does this workspace have* would mean
+   * decrypting every secret in the workspace to answer. Here it filters, it
+   * indexes, and it reaches a picker as a set.
+   * 
+   * It reuses `ProviderKind` rather than growing a second vendor vocabulary on
+   * `SecretKind`. Two enums listing clouds is two lists to keep in step, and
+   * the one that drifts is the one nothing reads.
+   */
+  providerKind?: ProviderKind | null
   /** @version */
   version: number
   createdAt: string
@@ -905,6 +919,20 @@ export interface SecretCreate {
   data?: string
   isVerified?: boolean
   createdBy?: string | null
+  /**
+   * WHICH cloud a `provider_key` opens. Null for every other kind.
+   * 
+   * It is a column rather than a field inside `data` because a vendor name is
+   * not a secret: `data` is `@encrypted`, so the key is absent from every read,
+   * and *which DigitalOcean accounts does this workspace have* would mean
+   * decrypting every secret in the workspace to answer. Here it filters, it
+   * indexes, and it reaches a picker as a set.
+   * 
+   * It reuses `ProviderKind` rather than growing a second vendor vocabulary on
+   * `SecretKind`. Two enums listing clouds is two lists to keep in step, and
+   * the one that drifts is the one nothing reads.
+   */
+  providerKind?: ProviderKind | null
 }
 
 export interface SecretUpdate {
@@ -915,6 +943,7 @@ export interface SecretUpdate {
   data?: string
   isVerified?: boolean
   createdBy?: string | null
+  providerKind?: ProviderKind | null
   version: number
 }
 
@@ -926,6 +955,7 @@ export interface SecretWhere extends WhereBase {
   data?: string | WhereOp<string> | null
   isVerified?: boolean | WhereOp<boolean> | null
   createdBy?: string | WhereOp<string> | null
+  providerKind?: ProviderKind | WhereOp<ProviderKind> | null
   version?: number | WhereOp<number> | null
   createdAt?: string | WhereOp<string> | null
   updatedAt?: string | WhereOp<string> | null

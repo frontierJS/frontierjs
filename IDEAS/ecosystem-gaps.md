@@ -119,7 +119,7 @@ retired.
 
 ### 4. Internationalization — **ruled 2026-08-15 (`FJS-D12`); deferred to V2**
 
-**Still missing entirely.** No message catalogues, no pluralization, no locale
+**Still missing entirely.** No message catalogs, no pluralization, no locale
 negotiation, no per-locale formatting. What changed is that this is now a
 deliberate deferral with a seam held open, rather than an unanswered question.
 
@@ -134,7 +134,7 @@ deliberate deferral with a seam held open, rather than an unanswered question.
 > schema and stays a **default English string** — the key is DERIVED
 > (`Model.field.label`), which is Rails' `human_attribute_name` and costs an
 > untranslated app nothing. The UI resolves it; the schema never becomes a
-> catalogue, and no `.lite` syntax has to change when one arrives.
+> catalog, and no `.lite` syntax has to change when one arrives.
 >
 > **It also did not shape schema→UI, which shipped without it.** A generator
 > authors no string, so what it multiplies is call sites. The premise this item
@@ -420,7 +420,7 @@ which is the same collision seen from the legal end.
 
 ### 16. Push and SMS delivery — one is a driver, the other is not
 
-Added 2026-08-15, comparing against an outside framework's feature catalogue, which
+Added 2026-08-15, comparing against an outside framework's feature catalog, which
 lists *"emails, SMSs, direct, and push notifications & webhooks"* as one line. Four of
 those five ship here. The two that do not are usually named together and should not be:
 one is an afternoon and one is a design.

@@ -91,7 +91,7 @@ test('inflect: an irregular that a regular rule also matches still wins', functi
 
 test('inflect: a singular that ends in s is left alone', function () {
   /*
-   * `model Status` is the case FJS-192 was filed for. sierra singularised it
+   * `model Status` is the case FJS-192 was filed for. sierra singularized it
    * to `statuse`, `modelNameFor` missed, and the resource degraded to a bare
    * make() with a warning — the failure is silent, which is why the guards are
    * a test rather than a comment.
@@ -103,7 +103,7 @@ test('inflect: a singular that ends in s is left alone', function () {
 
 test('inflect: a singular ending in a bare s is NOT reachable', function () {
   /*
-   * `lens` singularises to `len`, and no rule can prevent it: `pens` and
+   * `lens` singularizes to `len`, and no rule can prevent it: `pens` and
    * `plans` are real plurals with the same ending, so telling them apart needs
    * a dictionary rather than a rule. The guards cover the endings that are
    * reliably singular (`ss`, `us`, `is`, `as`) and stop there. A schema whose
@@ -265,7 +265,7 @@ test('inflect: what this protects — a service resolves to its model or fails O
   // the assertion that names the cost rather than the spelling: `model Cookie`
   // with a `cookies` service resolved to `Cooky`, which is nothing.
   assert.equal(singularize('cookies'), 'cookie')
-  assert.ok(singularize('cookies') !== 'cooky', 'cookies must not singularise to cooky')
+  assert.ok(singularize('cookies') !== 'cooky', 'cookies must not singularize to cooky')
 })
 
 /* ── Shape ─────────────────────────────────────────────────────────── */
@@ -405,7 +405,7 @@ test('inflect: shape answers empty for what is not a name, never [object Object]
 
 test('inflect: humanize is a machine name as a person reads it', function () {
   // The spellings the two callers actually meet: a schema field name (a
-  // control labelling a field that declared no `@label`) and a stored code (a
+  // control labeling a field that declared no `@label`) and a stored code (a
   // picker showing a value whose row it could not read, `FJS-D225`).
   const cases = [
     ['firstName',   'First Name'],

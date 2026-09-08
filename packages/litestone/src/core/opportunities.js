@@ -144,7 +144,7 @@ export const OPPORTUNITIES = [
     title:      'a gate with no row policy',
     blurb:      'A @@gate is per MODEL: it answers *may a caller at this level do this at all*, ' +
                 'never *to which rows*. Without a @@allow beside it, a caller who clears the gate ' +
-                'reaches every row in the table — which is right for a catalogue and wrong for ' +
+                'reaches every row in the table — which is right for a catalog and wrong for ' +
                 'anything belonging to somebody. Nothing in a schema distinguishes those two, so ' +
                 'this raises only where litestone can SEE the rows belong to someone: a relation ' +
                 'to the @@auth model, or the tenant column. Everywhere else it asks.',
@@ -165,7 +165,7 @@ export const OPPORTUNITIES = [
         // Owned means structurally owned, never name-shaped: a relation whose
         // target is the principal, or the column the tenancy block names.
         // `Product` in a shop schema has neither, and every caller reading every
-        // product is what a catalogue IS.
+        // product is what a catalog IS.
         const owned = (model.fields ?? []).some(f =>
           (authModel && f.type?.name === authModel) || (claim && f.name === claim))
 
@@ -175,7 +175,7 @@ export const OPPORTUNITIES = [
             ? `${model.name} is @@gate("${gate.value}"), carries the row's owner, and declares no ` +
               `@@allow — so any caller who clears the gate reads and writes everybody's rows.`
             : `${model.name} is @@gate("${gate.value}") and declares no @@allow, so a caller who ` +
-              `clears the gate reaches every row. Right for a catalogue; worth stating either way.` })
+              `clears the gate reaches every row. Right for a catalog; worth stating either way.` })
       }
       return out
     },
@@ -394,9 +394,9 @@ export const OPPORTUNITIES = [
     id:         'a-document-priced-through-a-relation',
     confidence: 'possible',
     word:       '@immutable',
-    title:      'a document that reads its price out of the catalogue',
+    title:      'a document that reads its price out of the catalog',
     blurb:      'A price, a rate or a fee on a document is a value AT AN INSTANT. Reached through ' +
-                'a relation it is the value NOW, so moving the catalogue price silently reprices ' +
+                'a relation it is the value NOW, so moving the catalog price silently reprices ' +
                 'every historical receipt — the one bug in this class that nothing raises and ' +
                 'nobody reports, because both readings look correct. The fix is a column on the ' +
                 'document holding what was charged, @immutable once the document is issued.',

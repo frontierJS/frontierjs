@@ -9,7 +9,7 @@
 //   db.productVariant                the Litestone accessor
 //
 // It broke two resolutions, not one. `deriveModelName('product-variants')`
-// singularises to `product-variant`, which is not the accessor — which is why
+// singularizes to `product-variant`, which is not the accessor — which is why
 // all six multi-word services in `example` hand-write `model:` — and Sierra's
 // `serviceNameFor('ProductVariant')` answers `productVariants`, which matched
 // nothing. So every relation picker onto a multi-word model rendered, opened,

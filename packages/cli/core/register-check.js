@@ -223,7 +223,7 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
         'the id was issued twice — reissue THIS one, since the ruling is the half other documents cite')
     }
 
-    // `closed` is in ISSUE_STATUS because the READER synthesises it for every row
+    // `closed` is in ISSUE_STATUS because the READER synthesizes it for every row
     // under § Closed — which is what made it silently legal as a hand-written
     // cell in an open section, where it means the opposite. A row saying it is
     // done, in the table of what is not, is counted as open by everything that

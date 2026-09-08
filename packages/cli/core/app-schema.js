@@ -118,7 +118,7 @@ export function declaredModels(text) {
  *     schema is whatever version happened to be in that cache (`FJS-666` was
  *     found this way: an `accountId Int?` where the tree says `String?`, and no
  *     `@@auth`, which leaves every claim in every policy ungraded).
- *   • bun memoises a resolution for the life of the process, so re-resolving
+ *   • bun memoizes a resolution for the life of the process, so re-resolving
  *     after a `bun install` returns the same cached answer — which is why this
  *     cannot be fixed by checking the directory and then resolving anyway.
  *

@@ -87,7 +87,7 @@ const INLINE_TYPES = new Set([
 // An id is a PATH SEGMENT, so it is the one input here that can leave the
 // store. `join(root, '../../../../outside/p2' + '.file')` writes two directories
 // above the root and `Bun.file` reads back out of it — measured (`FJS-692`).
-// Refused by NAME rather than sanitised: a silently rewritten id is a file
+// Refused by NAME rather than sanitized: a silently rewritten id is a file
 // nobody can find again.
 const ID_RE = /^[A-Za-z0-9_-]{1,128}$/
 

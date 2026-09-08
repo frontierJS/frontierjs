@@ -1,7 +1,7 @@
 // What the shop sells on a cycle, and what it costs.
 //
 // `@@gate("0.5.5.5")` on both — a pricing page is read by a caller with no
-// session, exactly as the catalogue and the delivery options are, and only
+// session, exactly as the catalog and the delivery options are, and only
 // staff change what a shop charges.
 //
 // Two services rather than one over a nested read, because they answer

@@ -1,5 +1,5 @@
 // db/blueprints.js
-// The starter catalogue — eight third-party applications, as `Blueprint` rows.
+// The starter catalog — eight third-party applications, as `Blueprint` rows.
 //
 // Read out of `docs/mock/BasecampUI.jsx`'s own `BLUEPRINTS` constant rather than
 // invented, and converted column for column: the mock's nested `app` block is
@@ -14,7 +14,7 @@
 // is the honest answer, and the card falls back to its own surface.
 //
 // This is seed data, not shipped data. A real installation curates its own; what
-// this is for is having a catalogue on screen, because an empty grid looks
+// this is for is having a catalog on screen, because an empty grid looks
 // exactly like a broken query.
 
 export const BLUEPRINTS = [

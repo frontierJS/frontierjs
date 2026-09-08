@@ -175,7 +175,7 @@ because whichever provider gains an adapter first is the one that fills them.
 | `DigitalOceanView` | 258 | DO droplets, volumes, floating IPs, **spend** | **Built** — `/cloud-spend/`. The real half is the inventory a bill is computed from — machines by provider and region, planned vCPU and RAM, attached disk. There is no DigitalOcean in `providers/index.ts` and no price column anywhere, so the money is the skeleton |
 | `GitActivityView` | 304 | Git host — repos, CI status | **Built** — `/git-activity/`, reporting the adapter's own state off `/portal/`. `IGit.listRepos()` answers a name and a clone URL, so even a wired adapter could not fill the table — widening the interface is the work |
 | `ObservabilityView` | 24 | A metrics source. The mock reads `LOGS`; nothing here stores or streams metrics | **Built** — `/observability/`, the same portal read. `IObservability` declares `queryLogs` and `queryMetrics` and no service exposes either, deliberately: a read here needs a window, a service and a level, which is a service to design rather than a pass-through to ship |
-| Provider half of `ProvisionServerView` | — | Already built as a screen, but provisioning is mocked | — |
+| Provider half of `ProvisionServerView` | — | Compute — creating a machine, not reading one | **Planned, not built** — `docs/PROVISIONING.md`. The screen is an IMPORT form; nothing here has ever made a call that creates something at a vendor. The plan refuses an `ICompute` in `providers/index.ts`: `provider:<kind>` is already the seam, and the connector is a conduit target |
 | `RegistryView` | 112 | A container registry (also listed in C — which one depends on whether we mirror or query) | **Built** — § Phase 13, against the mirror |
 
 ### E. Shell chrome, not screens (5) ✅ built 2026-08-06 — § Phase 1
@@ -964,7 +964,7 @@ hottest path, forever, for a row auth had just fetched. Closed with
 is the one place every issued session is built.
 
 **A `find` that answers one object becomes an EMPTY list in the browser**
-(`FJS-144`). `GET /hub` was the overview; the client normalises anything that is
+(`FJS-144`). `GET /hub` was the overview; the client normalizes anything that is
 not a list into `list(name, [])`, so the screen received `{ data: [] }` with a
 200 and rendered nothing at all. The API was correct throughout — only the
 browser could see it. `find` means a list; the overview is an action.
@@ -1004,7 +1004,7 @@ that was never opened is a guess about what somebody will want.
 
 | Model | Tenancy | Gate (R.C.U.D) | The decision in it |
 | --- | --- | --- | --- |
-| `Blueprint` | `@@tenant(none)` | 1 · 7 · 7 · 7 | A curated catalogue, not a per-workspace one |
+| `Blueprint` | `@@tenant(none)` | 1 · 7 · 7 · 7 | A curated catalog, not a per-workspace one |
 | `BlueprintParam` | `@@tenant(none)` | 1 · 7 · 7 · 7 | A child model, not a Json array |
 | `RegistryImage` | `workspaceId` | 2 · 8 · 8 · 5 | Mirror a registry, do not query it live |
 | `Backup` | `@@tenant(none)` | 7 · 7 · 8 · 7 | The outcome is the machine's, like every *Run |
@@ -1062,7 +1062,7 @@ pass.
 
 Every one of these is a model with nothing on top of it. **No services, no
 resources, no screens, and the seed writes none of these rows** — a `HubConfig`
-row does not exist until something creates one, and the catalogue is empty. That
+row does not exist until something creates one, and the catalog is empty. That
 is the next phase and it is deliberately not this one: a service written against
 a model nobody has opened a screen onto is two guesses stacked.
 
@@ -1178,7 +1178,7 @@ and a separate piece of work.
 
 | Route | View | Reads |
 | --- | --- | --- |
-| `/blueprints/` | `BlueprintMarketplaceView` | `blueprints` — the catalogue, no workspace |
+| `/blueprints/` | `BlueprintMarketplaceView` | `blueprints` — the catalog, no workspace |
 | `/registry/` | `RegistryView` | `registry` — the mirror, workspace-scoped |
 | `/hub/backups/` | `HubBackupView` | `backups` + `hub-config` |
 | `/hub/settings/` | `HubSettingsView` | `hub-config` — the singleton |
@@ -1189,7 +1189,7 @@ seeds a database of its own in a temp directory and starts and stops both
 servers, so it touches nothing local and never asks anybody to reset a dev
 fleet. That is also why it is separate from `verify`, which asserts the
 first-run wizard owns an EMPTY app — three of these screens are about rendering
-a populated catalogue, and an empty grid looks exactly like a broken query.
+a populated catalog, and an empty grid looks exactly like a broken query.
 
 ### What the drive found, which the build did not
 

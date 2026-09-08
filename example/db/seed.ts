@@ -63,7 +63,7 @@ const DEMO = {
   buyer: { email: 'robin@buyer.test', password: 'correct-horse-battery', name: 'Robin Vale', role: 'user' },
 }
 
-// ─── The catalogue ────────────────────────────────────────────────────────
+// ─── The catalog ────────────────────────────────────────────────────────
 //
 // Thirteen products, one row per option combination beneath them, and one
 // photograph per colorway. Bigger than the four flat rows this file used to
@@ -83,7 +83,7 @@ const APPAREL = ['s', 'm', 'l'] as const
 
 /// What a larger cut costs on top. Apparel only, and it is here rather than as
 /// a flat price per product because a price lives on the VARIANT: with one
-/// price per family the range the catalogue renders could never differ from
+/// price per family the range the catalog renders could never differ from
 /// itself, and the code path that formats it would never run. The drive asserts
 /// a range on screen, which is what keeps that honest.
 const SIZE_UPLIFT: Record<string, number> = { s: 0, m: 0, l: 2, xl: 4, xxl: 6 }   // dollars
@@ -113,7 +113,7 @@ type SeedProduct = {
   active?:     boolean
 }
 
-const CATALOGUE: SeedProduct[] = [
+const CATALOG: SeedProduct[] = [
   {
     slug: 'explorer-tee', name: 'FrontierJS Explorer Tee', brand: 'frontierjs',
     description: 'Heavyweight cotton, screen-printed front. The explorer walks first and finds what matters.',
@@ -329,7 +329,7 @@ async function seedColors() {
   }
 }
 
-async function seedCatalogue() {
+async function seedCatalog() {
   // Before the variants, and not only for the swatches: `color` binds to
   // ProductColor as `open`, so a variant naming a colorway that is not on the
   // list would ADD it — silently, with no hex, from a seed file. The list is
@@ -339,7 +339,7 @@ async function seedCatalogue() {
   // Guarded per PRODUCT rather than per table. The table guard the rest of this
   // file uses answers "has anything been seeded", which stops a thirteenth
   // product added here from ever reaching a database that already has twelve.
-  for (const p of CATALOGUE) {
+  for (const p of CATALOG) {
     const existing = await reseed<any>(sys.product, { slug: p.slug })
     if (existing) continue
 
@@ -412,7 +412,7 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
   // app needs in order to be clickable exist", and products existing says
   // nothing about orders.
 
-  await seedCatalogue()
+  await seedCatalog()
   await seedMoney()
 
   // By EMAIL rather than by count, and the reason is `@@softDelete`: `count()`
@@ -435,12 +435,12 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
   // three the screens were built around are present".
   const customers = await sys.customer.findMany({ orderBy: { id: 'asc' } })
 
-  // The three, ITEMISED — and the totals are not typed here.
+  // The three, ITEMIZED — and the totals are not typed here.
   //
   // An order says what was bought (`model OrderLine`), so a seed that stated a
   // total beside a list of items could state one the items do not add up to.
-  // Every number below is summed from real catalogue rows, which also means a
-  // price edit in CATALOGUE above cannot leave this block quietly wrong.
+  // Every number below is summed from real catalog rows, which also means a
+  // price edit in CATALOG above cannot leave this block quietly wrong.
   //
   // Two lines on ORD-1002 and a quantity of two on ORD-1003, deliberately: a
   // one-line order of one thing is the shape that renders correctly whatever
@@ -472,7 +472,7 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
       }
       // Lines arrived after these orders did, so a database seeded before them
       // has orders with nothing in them. Backfilled rather than left, because
-      // an itemisation that is empty for the three rows every screen was built
+      // an itemization that is empty for the three rows every screen was built
       // around reads as the feature not working.
       if (await sys.orderLine.count({ where: { orderId: existing.id } }) === 0) {
         await sys.orderLine.createMany({ data: lines.map(l => ({ ...l, orderId: existing.id })) })
@@ -549,7 +549,7 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
   // because a row policy cannot name a column on a related model (`FJS-499`) —
   // the schema says so where the columns are declared. A seed that wrote only
   // the order would give the account page an order it can open and an
-  // itemisation it cannot read, which is the exact failure the second column
+  // itemization it cannot read, which is the exact failure the second column
   // exists to prevent, arriving as an empty table rather than an error.
   const buyerRecord = await reseed<any>(sys.customer, { email: DEMO.buyer.email })
   if (buyerUser && buyerRecord && !await reseed<any>(sys.order, { reference: 'ORD-2001' })) {
@@ -912,11 +912,11 @@ async function priceOrder(
 }
 
 /**
- * Catalogue rows → order lines, priced and worded from what is actually there.
+ * Catalog rows → order lines, priced and worded from what is actually there.
  *
  * The line's copies are made HERE rather than restated in the block above, for
  * the same reason `carts.checkout` makes them at the moment of sale: the price
- * and the description are facts about the catalogue at the time the order was
+ * and the description are facts about the catalog at the time the order was
  * placed, and a seed that typed them would be asserting a second opinion about
  * what the shop sells.
  *
@@ -931,7 +931,7 @@ async function orderLinesFor(items: Array<{ sku: string, quantity: number }>) {
       where:   { sku },
       include: { product: true },
     })
-    if (!variant) throw new Error(`seed: no variant with sku ${sku} — the catalogue above changed`)
+    if (!variant) throw new Error(`seed: no variant with sku ${sku} — the catalog above changed`)
 
     const product = (variant as Record<string, any>).product ?? {}
     out.push({

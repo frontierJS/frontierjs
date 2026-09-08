@@ -4,7 +4,7 @@
   // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18).
   // No markup: everything is module scope, which is what <script module> means.
   //
-  // **Named for its service noun, singularised** (invariant 19's second half,
+  // **Named for its service noun, singularized** (invariant 19's second half,
   // for a resource over no model). The service is `fleet` and the declaration
   // is `view fleetByProvider` — a projection is named like an accessor, so
   // there is no PascalCase name for the tree to carry and `model:` says which

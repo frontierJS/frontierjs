@@ -27,7 +27,7 @@
 
 import { parse } from './core/parser.js'
 
-// ─── the mutation catalogue ───────────────────────────────────────────────────
+// ─── the mutation catalog ───────────────────────────────────────────────────
 //
 // Each entry finds its occurrences on one line and returns the replacement line.
 // Line-oriented because `.lite` is: a `@@` attribute owns its line, and a field's
@@ -103,7 +103,7 @@ const MUTATIONS = [
     describe: (m) => `@${m.rule} removed`,
     apply(line) {
       const out = []
-      // Both the bare and the parenthesised form exist for most of these
+      // Both the bare and the parenthesized form exist for most of these
       // (`@email` and `@email("Use your work address")`), and _dropToken takes
       // the argument list when there is one.
       for (const rule of ['email', 'url', 'phone', 'date', 'datetime', 'time',

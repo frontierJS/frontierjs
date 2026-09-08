@@ -30,7 +30,7 @@ Any of these does it on its own:
 - a multi-line opening tag
 - certain `style` values
 
-The comment then serialises as `<!--[if mso]-->` — *closed* — and the VML behind
+The comment then serializes as `<!--[if mso]-->` — *closed* — and the VML behind
 it becomes live markup: `<v:roundrect …>` parses as `<v :roundrect="" …>`.
 
 **Every recipient, on every client, sees the button twice.** Nothing throws, the

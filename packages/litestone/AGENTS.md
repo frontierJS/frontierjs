@@ -273,7 +273,7 @@ hatch to reach for first.
 | `db/access.snapshot.md` *(in your app)* | the whole declared access surface | `fli test:access` |
 | `db/jsonschema.snapshot.md` *(in your app)* | what crosses to the browser | `litestone jsonschema --snapshot` |
 
-The catalogue's completeness is asserted against the parser's own switch arms in
+The catalog's completeness is asserted against the parser's own switch arms in
 both directions by `test/catalog.test.ts` — a word with no entry fails the suite
 and an entry with no word fails it too. So the table cannot drift from the
 language, which is the only reason this file is allowed not to repeat it.

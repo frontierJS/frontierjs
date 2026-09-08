@@ -201,7 +201,7 @@ implies the index's, and it must prove it **at prepare time**. That is a sharper
 constraint than *does the caller restate the predicate*, and it decides the
 feature.
 
-**Litestone parameterises every value-carrying filter.** A `$scope` compiles to
+**Litestone parameterizes every value-carrying filter.** A `$scope` compiles to
 a bound parameter — measured through a real client:
 
 ```
@@ -220,7 +220,7 @@ bound column, literal predicate  : SEARCH note USING COVERING INDEX idx_pending
 ```
 
 **So restating the predicate does not help** — a caller's restatement is
-parameterised too. The reachable set is decided by the emitter, never by the
+parameterized too. The reachable set is decided by the emitter, never by the
 caller, which also disposes of the `@@scope` alternative in its naive form.
 
 **Why the derived soft-delete index escapes this**, and it is not a general
@@ -392,7 +392,7 @@ Effort: S for 1–3, S for 4. The expensive part is step 4's judgement, not its 
 ```
 
 The storefront reads `{ productId, active: true }` on the product page, the buy
-box and the catalogue, once per product at prerender. It is here rather than in a
+box and the catalog, once per product at prerender. It is here rather than in a
 fixture because three things can only be proven in an app: the migrator adding a
 partial index to a database that already holds rows, the predicate ANDing with
 `@@softDelete`'s own clause (`WHERE ("deletedAt" IS NULL) AND ("active" = 1)`),

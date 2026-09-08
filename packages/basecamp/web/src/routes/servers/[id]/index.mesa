@@ -107,7 +107,7 @@ title: Server
   }
 
   const TONE = {
-    online: 'success', ready: 'success', draining: 'warning',
+    online: 'success', draining: 'warning',
     unreachable: 'danger', stopped: 'muted', destroyed: 'muted',
   }
 

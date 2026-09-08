@@ -510,7 +510,7 @@ which any emission still calling the named function satisfies whatever the
 arguments or the surrounding effect — so this replaces one runtime export at a
 time with a function that does nothing, leaves the name exported, and runs the
 whole vitest suite. The compiled output is unchanged byte for byte; only the
-behavior is gone. A survivor is a construct nothing executes. The catalogue is
+behavior is gone. A survivor is a construct nothing executes. The catalog is
 read off `compiler.js` rather than listed, so a function the compiler stops
 emitting leaves on its own, and the expected survivors are named with their
 reason in the file — a boundary that stops being true shows up as an unexpected

@@ -57,7 +57,7 @@ export const CAT = {
 
 export const GLOBAL = {
   gui:      8500,   // fli web GUI
-  pview:    8501,   // fli project:view (FJSChain)
+  pmap:     8501,   // fli project:map --as=serve (FJSChain)
   studio:   8502,   // litestone db studio
   devtools: 8503,   // junction's API console — app.configure(devtools())
   proxy:    8504,   // fli ports:proxy — the FALLBACK when 80 cannot be bound
@@ -246,7 +246,7 @@ export function appPorts(appRoot, { name, scripts, env = 'dev', exists } = {}) {
  * `dev` starts a subset, which is what every app in this repo does.
  *
  * Anchored on `run`, never on a bare token that happens to be a script name:
- * `cd web && vite` tokenises to a `web` that is a directory, and an app whose
+ * `cd web && vite` tokenizes to a `web` that is a directory, and an app whose
  * web surface is also called `web` would match it and re-introduce the bug this
  * exists to fix.
  *

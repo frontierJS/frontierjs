@@ -256,7 +256,7 @@ function coerceYamlValue(val) {
 // mid-sentence — `project/view.md` explains that it "injects a <script> tag" in
 // a comment — is talking about one, not opening one. Without the anchor that
 // mention matched, and since nothing closed it the no-close fallback below ate
-// the rest of the file: `project:view` built its map and exited without ever
+// the rest of the file: the served project map built its model and exited without ever
 // starting the server, silently.
 //
 // Returns { start, end, inner }, or null when there is no script block.

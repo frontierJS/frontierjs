@@ -23,7 +23,7 @@ the first time either side moves.
 The counterpart file is [schema-variants.md](schema-variants.md), which decides
 when several nouns share a table. **This decides which nouns the framework
 should own at all.** The two are easy to confuse and the failure modes are
-opposite: variants over-merge one app's schema, and machinery over-generalises
+opposite: variants over-merge one app's schema, and machinery over-generalizes
 across apps.
 
 ## The test

@@ -69,7 +69,7 @@ model AuditEvent {
   /// because it points at a different model per row and a foreign key names one
   /// table.
   ///
-  /// **This spelling is the catalogue's preference for anything new.**
+  /// **This spelling is the catalog's preference for anything new.**
   /// `Notification` in this tree spells the same idea
   /// `contextType`/`contextId`, because its package chose first. Two spellings,
   /// one concept, and neither is wrong — see references/README.md.

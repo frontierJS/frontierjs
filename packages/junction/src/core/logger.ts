@@ -88,7 +88,7 @@ const BOLD  = paint('\x1b[1m')
 // allocates nothing. A copy would allocate a second object per line on the
 // hottest path in the process.
 //
-// `redactBy` is what the sanitiser in `core/errors.ts` calls with the SCHEMA's
+// `redactBy` is what the sanitizer in `core/errors.ts` calls with the SCHEMA's
 // protected set. Same walk, different predicate — this one answers for names
 // that are on no row.
 

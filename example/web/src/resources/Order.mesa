@@ -13,7 +13,7 @@
   // is the accessor: the same split the Data realm already makes between
   // `model Order` and `db.order`. It also puts the irregular cases in the
   // filename, where they are visible — `AlertRule.mesa` exporting `alerts` says
-  // out loud that regular pluralisation does not bridge those two.
+  // out loud that regular pluralization does not bridge those two.
   //
   // Read this file next to db/schema.lite. Nothing here restates anything there:
   // no field list, no types, no enum values, no required list, no relations, no

@@ -376,7 +376,7 @@ describe('resource().more()', () => {
 // strictness*, resolved per surface by what a mistake destroys (`FJS-D237`).
 // The names in the message come from toolbelt's own table, never a copy here.
 
-describe('an unrecognised $ directive', () => {
+describe('an unrecognized $ directive', () => {
 
   const app = () => createTestApp({
     services: [() => createService({

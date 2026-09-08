@@ -87,7 +87,7 @@ is left maps one-to-one onto things FJS models already hold.
 | `ZonedDateTime` | A wall-clock time **in a place**. Names a different instant when the rules change. | Nothing. This is the gap. A meeting, a scheduled report, "the shop opens at 09:00" |
 | `PlainDate` | A calendar date with no time and no instant at all. | Nothing. A birthday is a `DateTime` today, which is failure #1 in a column |
 | `PlainTime` | A wall-clock time with no date. | Nothing. Opening hours |
-| `Duration` | A length of time. Serialises `P90D`. | Nothing. `@retain(90d)` in `IDEAS/compliance-from-the-seed.md` is a string |
+| `Duration` | A length of time. Serializes `P90D`. | Nothing. `@retain(90d)` in `IDEAS/compliance-from-the-seed.md` is a string |
 
 Immutable, every operation returns a new value, no global state, no mutable
 configuration singleton, no `Date` subclass, no prototype extension.
@@ -155,7 +155,7 @@ Four defects to close, all confirmed by probe:
 
 - **Bare text is mangled.** `format(d, 'Today is DDDD')` currently returns
   `'Todin the afternoony i1 Sunday'`, because every unbracketed letter matching a token
-  is substituted. The fix is a real tokeniser rather than a chained `String.replace`;
+  is substituted. The fix is a real tokenizer rather than a chained `String.replace`;
   the README's own examples do not bracket their literals and would break today.
 - **The locale is hardcoded `'en'`** in three places, while the README claims the
   library respects the user's locale and shows Spanish output. Take a locale.

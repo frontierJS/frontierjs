@@ -2,7 +2,7 @@
  * web/test/verify-money.mjs — what a basket costs, and why.
  *
  * Started by `bun run verify:money`. Starts both servers and Chrome itself,
- * like verify:cart and verify:catalogue, because what it proves spans them and
+ * like verify:cart and verify:catalog, because what it proves spans them and
  * a dev server serves the code it started with.
  *
  * ─── What is under test ───────────────────────────────────────────────────
@@ -274,7 +274,7 @@ await ask('discountRefused', () => sys.order.create({ data: {
   subtotal: 10, discount: 50, shipping: 45, tax: 0, total: 5 } }))
 
 // The exemption, and it is a real order rather than a loophole: staff raise one
-// by hand with a total and nothing to itemise. A CHECK may not hold a subquery,
+// by hand with a total and nothing to itemize. A CHECK may not hold a subquery,
 // so 'no lines' cannot be said and 'subtotal = 0' is what stands in for it.
 await ask('handRaisedAccepted', () => sys.order.create({ data: {
   reference: P + '-5', status: 'pending', customerId: 1, subtotal: 0, total: 40 } }))
@@ -303,7 +303,7 @@ check('…and one cent out is refused, because cents do not drift',
       dataBoundary.offByOneRefused, 'the breakdown does not add up to the total')
 check('a discount larger than the subtotal is refused',
       dataBoundary.discountRefused, 'a discount cannot be larger than the subtotal')
-check('…while an order with no lines to itemise is exempt',
+check('…while an order with no lines to itemize is exempt',
       dataBoundary.handRaisedAccepted, 'accepted')
 check('a redemption past the limit is refused — with the gate bypassed',
       dataBoundary.redemptionsRefused, 'a code cannot be redeemed more times than its limit')
@@ -346,7 +346,7 @@ const variants = (await (await api('/product-variants?$limit=50&$orderBy=id')).j
 const priced   = (want) => variants.find(v => v.price === want && v.active && v.stock > 5)
 /** A hoodie and a mug: 83, which is over the free-delivery threshold of 75 and
  *  under it once a tenth is taken off. The whole crossing case is these two
- *  rows, so they are found by PRICE rather than by SKU — a catalogue edit that
+ *  rows, so they are found by PRICE rather than by SKU — a catalog edit that
  *  moves them should fail here loudly rather than quietly stop testing it. */
 const HOOD = priced(cents(65))
 const MUG  = priced(cents(18))

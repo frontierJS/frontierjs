@@ -6,7 +6,7 @@ render: static
 <!--
   The account page, and there is no `index.meta.js` beside it — deliberately.
 
-  Every other route here has a `load()` that reads the catalogue at build time,
+  Every other route here has a `load()` that reads the catalog at build time,
   and the build proves what it published. This one reads NOTHING at build time
   and could not: whose account it is is not known until a browser opens it, and
   `Order` is `@@gate("1.4.4.5")` now, so a `load()` that asked would be refused

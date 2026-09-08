@@ -106,7 +106,7 @@ function renderDefault(def, liteType) {
   const s = String(def).trim()
   if (!s || /^NULL$/i.test(s)) return { attr: null, expr: null }
 
-  // An expression. SQLite parenthesises one in `dflt_value`; a bare function
+  // An expression. SQLite parenthesizes one in `dflt_value`; a bare function
   // call reaches us from a hand-written DDL, so both shapes are tested.
   // `PRAGMA table_info` does not always keep the parentheses SQLite stored, so
   // the unquoted shapes count too: a function call, and a `||` concatenation.

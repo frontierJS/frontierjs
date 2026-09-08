@@ -353,7 +353,7 @@ Two things it does not do, and both matter:
   `@frontierjs/caravan` and let the queue own delivery — noting that Caravan's
   queue is its own SQLite file, so dispatching buys retries, not atomicity.
 - **It holds SQLite's single write lock for the whole pipeline**, `after` hooks
-  included, so an `after` hook doing network I/O serialises every write in the
+  included, so an `after` hook doing network I/O serializes every write in the
   app behind it. That is why it is off by default, and why irreversible work
   belongs in a job rather than in an `after` hook.
 
@@ -1862,7 +1862,7 @@ store.remove(1)                              // remove by id
 store.set([])                                // replace all
 ```
 
-**URL normalization** — pass `http://`, `https://`, `ws://`, or `wss://` — the client normalises to `http(s)://` for requests and converts back to `ws(s)://` for the WebSocket connection:
+**URL normalization** — pass `http://`, `https://`, `ws://`, or `wss://` — the client normalizes to `http(s)://` for requests and converts back to `ws(s)://` for the WebSocket connection:
 
 ```typescript
 createJunctionClient({ url: 'ws://localhost:3000' })   // works fine

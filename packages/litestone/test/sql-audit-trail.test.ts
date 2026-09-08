@@ -8,7 +8,7 @@
 // it (`IDEAS/logbook.md`).
 //
 // The rule that makes it safe: on a SQLite database `model` is REQUIRED. There
-// is nothing to synthesise into — a table the app never declared cannot carry a
+// is nothing to synthesize into — a table the app never declared cannot carry a
 // gate, a policy, an index or a migration, and those are the entire reason to
 // put the trail here instead.
 

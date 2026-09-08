@@ -129,7 +129,7 @@ export class SmtpError extends Error {
    * Is trying again a reasonable thing to do?
    *
    * DERIVED from the reply code's first digit, which is what that digit is for:
-   * RFC 5321 4yz is a transient negative — a greylist, a full mailbox, a
+   * RFC 5321 4yz is a transient negative — a graylist, a full mailbox, a
    * server too busy — and 5yz is permanent. A hand-kept list of codes would be
    * a second statement of the same rule and would drift.
    *
@@ -137,7 +137,7 @@ export class SmtpError extends Error {
    * timeout, a socket that closed mid-session — and those are transient too:
    * nothing about the message was rejected.
    *
-   * Without this a greylist 450 and a hard bounce 550 retried identically, so
+   * Without this a graylist 450 and a hard bounce 550 retried identically, so
    * the queue burned its whole ladder on an address that will never accept.
    */
   get retryable(): boolean {

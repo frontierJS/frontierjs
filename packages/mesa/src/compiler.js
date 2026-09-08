@@ -861,7 +861,7 @@ export function rewriteTextResult(pe, accessorMap, opts) {
   // `?? ''` per interpolation, not once around the whole literal: the template
   // stringifies each hole on its own, so `hi {x} there` prints `hi undefined
   // there` however the outside is guarded. The parentheses are load-bearing —
-  // `${a || b ?? ''}` is a SyntaxError, so an un-parenthesised operand takes the
+  // `${a || b ?? ''}` is a SyntaxError, so an un-parenthesized operand takes the
   // whole module down (FJS-D208).
   const hole = (v) => (coerceNullish ? `(${v}) ?? ''` : v)
   return (
@@ -1663,7 +1663,7 @@ export function parseHTML(source) {
           continue
         }
         if (reader.probe('<![CDATA[')) {
-          // Recognised only so the refusal can name it. Left to the generic
+          // Recognized only so the refusal can name it. Left to the generic
           // reader failure it read `Wrong syntax at: ![CDATA[ x < y ]]>` —
           // thirty raw bytes and no line — a fragment to search for rather than
           // a diagnostic (`FJS-882`). It arrives by copy-paste, out of an SVG
@@ -2325,7 +2325,7 @@ function boundaryWatchSet(asyncVars, body) {
 function memberPath(node) {
   if (!node) return null
   // `a?.b` parses as a ChainExpression wrapping the member, so a soft path
-  // reached here as an unrecognised node and was dropped — `$: store?.a`
+  // reached here as an unrecognized node and was dropped — `$: store?.a`
   // registered no watch at all, while `soft: p.includes('?.')` below and every
   // `?.`-aware split in the emitter waited for a path that never arrived.
   if (node.type === 'ChainExpression') return memberPath(node.expression)
@@ -2337,14 +2337,14 @@ function memberPath(node) {
   return null
 }
 
-// A `$:` dep list is a comma expression, and a PARENTHESISED group inside one
+// A `$:` dep list is a comma expression, and a PARENTHESIZED group inside one
 // is another SequenceExpression rather than a leaf. `$: (a.x, a.y), () => f()`
 // therefore arrived as a single node whose memberPath is null and whose
 // collectRefs is the root alone, so the two paths were silently replaced by a
 // watch on the whole object — and where the component also held a bare
 // `$: a.x`, the emitter went on to reference `$$watch_a`, which nothing
-// declares (`FJS-599`). Flattening is what makes the parenthesised form compile
-// to exactly what its unparenthesised twin compiles to.
+// declares (`FJS-599`). Flattening is what makes the parenthesized form compile
+// to exactly what its unparenthesized twin compiles to.
 function flattenSeq(exprs) {
   return exprs.flatMap((e) =>
     e.type === 'SequenceExpression' ? flattenSeq(e.expressions) : [e]
@@ -3152,7 +3152,7 @@ export function analyzeScript(raw, ast) {
           const inner = raw.slice(body.start + 1, body.end - 1).trim()
 
           // Distinguish "you probably meant a handler" from "you probably meant
-          // a watch". An unparenthesised sequence with an identifier tail is the
+          // a watch". An unparenthesized sequence with an identifier tail is the
           // shape of an attempted `dep, handlerRef`, which blocks no longer take.
           const looksLikeHandlerRef = body.body.some((stmt) => {
             if (stmt.type !== 'ExpressionStatement') return false
@@ -3428,7 +3428,7 @@ export function analyzeScript(raw, ast) {
   // getter, so `const rows = useStore(s).get` is a plain function and
   // `Math.max(...rows().map(f))` reads a signal inside the call — which the
   // blanket promotion covered by accident, through runtime auto-tracking, and
-  // which the narrowing dropped: `example`'s catalogue computed its price
+  // which the narrowing dropped: `example`'s catalog computed its price
   // ceiling once against an empty store and every filter above it collapsed to
   // one row.
   //
@@ -5976,7 +5976,7 @@ export function makeComponent(node, option = {}) {
   //
   // rendered a table with a head and an empty body, silently: no compile error,
   // no runtime error, `row` simply arrived as undefined and `{@render row?.()}`
-  // optional-chained away. This is the only parameterised composition Mesa has
+  // optional-chained away. This is the only parameterized composition Mesa has
   // — a named slot cannot take `r` — so a component kit that draws rows, cells
   // or trailing icons cannot be written without it.
   //
@@ -7400,7 +7400,7 @@ export function emitScript(ctx) {
     .forEach((v) => {
       if (defaultNeedsDeferring(v, ctx)) {
         // Snapshot still means snapshot: step 5b runs before any effect, so the
-        // value taken is the one the declarations were initialised with.
+        // value taken is the one the declarations were initialized with.
         mod.head.push(
           xNode.raw(`let ${v.name} = $$option.props?.${v.name};`)
         )
@@ -7599,7 +7599,7 @@ export function emitScript(ctx) {
       // `const bump = () => { n = n + 1 }`, the most ordinary handler there is —
       // otherwise compiled to `$$runtime.get($$sig_n) = …`. That is not valid
       // JavaScript, so the module threw on load, and analysis.errors was empty.
-      // initNode is absent for a synthesised declarator (a destructured pattern
+      // initNode is absent for a synthesized declarator (a destructured pattern
       // expanded into flat vars), and rewriteAssignments needs a real node to
       // take its source offset from.
       const rewrittenInit = rewriteExpr(
@@ -9322,7 +9322,7 @@ export async function compile(source, config = {}) {
     // Display name — what dev tooling shows. Always the readable one.
     const _displayName = _basename.replace(/\.mesa$/, '').replace(/[^a-zA-Z0-9_$]/g, '_') || 'Component'
     // Identifier — must not collide with anything else at module scope, and must
-    // not be a reserved word. Sanitising characters is not enough:
+    // not be a reserved word. Sanitizing characters is not enough:
     //
     //   new.mesa       → `export default function new(…)`     — never parses
     //   leads.mesa     → `export const leads = …` in <script module>

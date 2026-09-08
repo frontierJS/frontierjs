@@ -158,7 +158,7 @@ Invariant 4 exists to prevent.
 They are not lint rules, for a concrete reason: doctor's inputs are `parseFile()`, the
 service registry and `project:map --json`, and its questions are cross-file. *Does this
 resource name resolve to a model?* cannot be answered from the file it appears in, and
-that is where every check in the hazard catalogue lives.
+that is where every check in the hazard catalog lives.
 
 ---
 

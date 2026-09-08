@@ -18,5 +18,5 @@ render: static
     The link may be old, or the product may have been retired — a retired
     product loses its page, deliberately.
   </p>
-  <p><a class="btn" href="/catalog/">Browse the catalogue</a></p>
+  <p><a class="btn" href="/catalog/">Browse the catalog</a></p>
 </div>

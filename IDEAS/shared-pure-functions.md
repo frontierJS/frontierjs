@@ -35,7 +35,7 @@ The honest count, after reading every hit:
 | Helper | Real copies | Do they agree? |
 | --- | --- | --- |
 | `glow` | 2 | **No** — one is the pre-fix fork |
-| pluralise / singularise | 4 | **No** — three different rule sets, three quality levels |
+| pluralize / singularize | 4 | **No** — three different rule sets, three quality levels |
 | `slugify` | 4 | **No** — four different outputs for the same input |
 | `escapeHTML` | 2 | **No** — one omits `'` |
 | `deepMerge` | 3 | **No**, and correctly so — see § Refuse |
@@ -86,13 +86,13 @@ agree. Each carries its own plural rules:
 
 | Where | Rules | `statuses` → | `people` → |
 | --- | --- | --- | --- |
-| [ddl.js:7](../packages/litestone/src/core/ddl.js#L7) `pluralizeWord` | 20 irregulars + `es`/`ies` | *(pluraliser)* | `person` → `people` ✓ |
+| [ddl.js:7](../packages/litestone/src/core/ddl.js#L7) `pluralizeWord` | 20 irregulars + `es`/`ies` | *(pluralizer)* | `person` → `people` ✓ |
 | [introspect.js:25](../packages/litestone/src/tools/introspect.js#L25) `toSingular` | 20 irregulars, mirrored | `status` ✓ | `person` ✓ |
 | [litestone.ts:340](../packages/junction/src/core/litestone.ts#L340) `deriveModelName` | `ies`/`ses`, no irregulars | `status` ✓ | `people` ✗ |
 | [resource.js:501](../packages/sierra/src/junction/resource.js#L501) inline | `ies`/`s` only | `statuse` ✗ | `people` ✗ |
 
 Litestone knows that `model Status` gets table `statuses` and that `Person`
-gets `people`. Sierra's inline singulariser — the one behind `createResource`,
+gets `people`. Sierra's inline singularizer — the one behind `createResource`,
 the thing an app author actually calls — knows neither, so `modelNameFor` misses
 and the resource degrades to a bare `make()` with a warning. That is why
 `schema-registry.js` is documented as "regular English plurals only" and why

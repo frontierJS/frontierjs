@@ -93,7 +93,7 @@ Four rules cut across them. **The two job registries are separate sections** —
   JSON (a `DateTime` reads back an ISO string), which is what a response body and
   a WS frame carry too. A `Date`, a `Map`, a `Set`, a `RegExp`, a `BigInt`, `NaN`
   and a typed array throw naming the key and the way out, at any depth, because
-  each of them SERIALISES and comes back as something else — the silent half of
+  each of them SERIALIZES and comes back as something else — the silent half of
   eleven measured divergences between the two drivers (`FJS-898`). Top-level
   `undefined` is refused for a second reason: `get()` answers it for a miss.
   **The memory driver holds the value encoded**, so `get()` hands back a fresh

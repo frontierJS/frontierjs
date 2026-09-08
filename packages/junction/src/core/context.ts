@@ -640,7 +640,7 @@ export type CallContext = ServiceContext & {
    * correlation id has been on `RequestMeta` the whole time — and nothing read
    * it into a log entry.
    *
-   * Memoised per call, because a `child()` per read allocates a logger for
+   * Memoized per call, because a `child()` per read allocates a logger for
    * every line. Read `app.logger` directly for anything not inside a call; the
    * two coexist and the module-scope one is correct and unbound.
    */

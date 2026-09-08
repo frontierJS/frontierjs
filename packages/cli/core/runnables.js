@@ -429,7 +429,7 @@ export const KINDS = ['surface', 'tool', 'drive', 'suite', 'task', 'snapshot']
 //
 // Two callers with different needs, which is why it takes rows rather than a
 // root and why the child lookup is passed in: the GUI knows what it started,
-// and `project:view` starts nothing and must not have to import a table of
+// and `project:map` starts nothing and must not have to import a table of
 // processes to ask whether an app is answering.
 //
 // Four answers, and `unknown` is one of them. A row with no port cannot be

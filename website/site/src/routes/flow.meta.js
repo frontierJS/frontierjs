@@ -27,7 +27,7 @@ model Lead {
   createdAt DateTime   @default(now())
 
   // Gate — the ordinal level check, per operation
-  @@gate(read: READER, write: USER, delete: ADMINISTRATOR)
+  @@gate("2.4.4.5")
 
   // Policy — a row predicate, compiled into the SQL
   @@allow('read', ownerId == auth().id)

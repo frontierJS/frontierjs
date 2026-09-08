@@ -21,7 +21,7 @@ interface OrderRow { id: number; reference: string; createdAt: string }
 /**
  * Cancel every `pending` order older than `days`.
  *
- * Parameterised so it can be RUN rather than waited for: a cron whose only
+ * Parameterized so it can be RUN rather than waited for: a cron whose only
  * proof is `nextRuns()` is a schedule, not a behavior. The scheduled fire
  * passes no data and gets the default; `POST /jobs/run/sweep-abandoned` with
  * `{"days":0}` treats every pending order as abandoned, which is how the drive

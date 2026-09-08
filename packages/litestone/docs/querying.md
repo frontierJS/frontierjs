@@ -387,7 +387,7 @@ ScopeError: "Customer.create" conflicts with a built-in table method.
 
 Scopes are *opt-in* convenience — you have to call them. Policies (`@@allow` / `@@deny`) are *enforced* — they apply to every query whether you remember them or not. If a `where` clause must apply for security reasons, write it as a policy. Use scopes for the everyday "show me active customers" patterns where forgetting them is a bug, not a vulnerability.
 
-### Parameterised scopes
+### Parameterized scopes
 
 Not supported. Write a function that returns a `where` clause and pass it as a caller override:
 

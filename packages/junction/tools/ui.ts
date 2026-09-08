@@ -3,7 +3,7 @@
 //
 // One ANSI palette, one set of line-style helpers, one readline prompter.
 // Spacing conventions differ slightly between tools (indent widths,
-// separator lengths), so helpers that vary are parameterised and callers
+// separator lengths), so helpers that vary are parameterized and callers
 // pass what they need — the rendered bytes stay identical to the old
 // per-tool copies.
 

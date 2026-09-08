@@ -35,7 +35,7 @@ describe('an id is a path segment (FJS-692)', () => {
     await expect(store.save('../../../../outside/p2', 'x.txt', 'pwned'))
       .rejects.toThrow(/not a valid id/)
     // Nothing was written anywhere. The refusal names the id rather than
-    // sanitising it: a silently rewritten id is a file nobody can find again.
+    // sanitizing it: a silently rewritten id is a file nobody can find again.
     // Nothing outside the store — the escape wrote `outside/p2.file` two
     // directories above the root, which is what a `.toThrow` alone would miss.
     expect(await readdir(root)).not.toContain('outside')

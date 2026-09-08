@@ -73,7 +73,7 @@ async function transform(plugin, source, id = `${ROOT}/A.mesa`) {
 const parses = (js) =>
   expect(() => parse(js, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()
 
-// ─── output the wrap no longer recognises ─────────────────────────────────────
+// ─── output the wrap no longer recognizes ─────────────────────────────────────
 
 describe('a compiler whose output shape has moved on', () => {
   test('canInject fires on it, and not on the shape one line away', () => {
@@ -104,7 +104,7 @@ describe('a compiler whose output shape has moved on', () => {
 
   // The control. Same plugin, same options, output that only differs by the
   // pop_component() line — the boundary is injected.
-  test('the shape it does recognise is wrapped', async () => {
+  test('the shape it does recognize is wrapped', async () => {
     const plugin   = await freshPlugin({ compilerPath: STUB })
     const { code } = await transform(plugin, JSON.stringify({ result: WRAPPABLE }))
 

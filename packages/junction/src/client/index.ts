@@ -2224,7 +2224,7 @@ export interface StoreBinding {
  * Bound, the list holds ids and the values come from the registry, so a row
  * this list has never heard about being patched somewhere else still reaches
  * it, and two views of one row cannot disagree. `get()` still answers
- * materialised rows, which is why no screen changed when this landed:
+ * materialized rows, which is why no screen changed when this landed:
  * `useStore` is the one bridge from here to a Mesa signal.
  *
  * UNBOUND it is what it always was — rows, held here, no registry — and that
@@ -2241,7 +2241,7 @@ export class Store<T extends Record<string, unknown> = Record<string, unknown>> 
   // Held so a node written by ANOTHER view refreshes this list. Released as
   // soon as an id leaves, which is what lets the node's TTL start running.
   private _watches: Map<unknown, () => void> = new Map()
-  // Materialised rows, rebuilt on demand. Cached so repeated get() calls answer
+  // Materialized rows, rebuilt on demand. Cached so repeated get() calls answer
   // the same array — a Mesa signal compares what it is handed.
   private _cache: T[] | null = null
   // A node write during _replace would otherwise re-enter notify while the list
@@ -2339,7 +2339,7 @@ export class Store<T extends Record<string, unknown> = Record<string, unknown>> 
   }
 
   // ── The one write ──────────────────────────────────────────────────────────
-  // Every mutator above works on a materialised array and hands the result
+  // Every mutator above works on a materialized array and hands the result
   // here, so the membership and placement rules are the same lines they were
   // before nodes existed and only the ends changed.
   private _replace(rows: T[], notify = true): void {
@@ -2368,7 +2368,7 @@ export class Store<T extends Record<string, unknown> = Record<string, unknown>> 
         // list already had it.
         if (keep.has(row[idField])) continue
         // Only rows that came from OUTSIDE become truth. Every mutator here
-        // works on a materialised array, so most of what arrives is this
+        // works on a materialized array, so most of what arrives is this
         // store's own view of a node — and once a node carries an unconfirmed
         // mutation, writing that view back would commit the optimistic value as
         // if the server had sent it. Reference is the test: a node answers the

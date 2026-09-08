@@ -12,7 +12,7 @@ import { slug } from '@frontierjs/toolbelt/inflect'
 import { Database } from 'bun:sqlite'
 import {
   introspect, buildPristine, buildPristineForDatabase, diffSchemas,
-  generateMigrationSQL, summariseDiff, checksum, splitStatements,
+  generateMigrationSQL, summarizeDiff, checksum, splitStatements,
 } from './migrate.js'
 import { generateDDLForDatabase, detectM2MPairs, generateJoinTableDDL, planEdgeStorage, generateEdgeSideTableDDL } from './ddl.js'
 
@@ -212,7 +212,7 @@ export function historyGap(parseResult, dir = './migrations', { pluralize = fals
 
   const diff = diffSchemas(pristine, shadow.schema, parseResult, dbName, { pluralize })
   if (!diff.hasChanges) return { ok: true, files: shadow.files }
-  return { ok: false, pending: true, diff, summary: summariseDiff(diff), files: shadow.files }
+  return { ok: false, pending: true, diff, summary: summarizeDiff(diff), files: shadow.files }
 }
 
 // ─── DRIFT + BASELINE ─────────────────────────────────────────────────────────
@@ -228,7 +228,7 @@ export function driftAgainstLive(rawDb, parseResult, dir = './migrations', { plu
 
   const diff = diffSchemas(shadow.schema, introspect(rawDb), parseResult, dbName, { pluralize })
   return diff.hasChanges
-    ? { ok: false, drifted: true, diff, summary: summariseDiff(diff), files: shadow.files }
+    ? { ok: false, drifted: true, diff, summary: summarizeDiff(diff), files: shadow.files }
     : { ok: true, files: shadow.files }
 }
 
@@ -317,7 +317,7 @@ function createAgainstHistory(parseResult, dbName, label, dir, { pluralize = fal
 
   const sql     = generateMigrationSQL(diffResult, parseResult, { pluralize })
   const name    = nextMigrationName(dir, label)
-  const summary = summariseDiff(diffResult)
+  const summary = summarizeDiff(diffResult)
 
   // A dropped column is one line of the diff summary, sitting among the adds
   // and the index changes, and it is the only line that destroys something. The
@@ -664,7 +664,7 @@ export function verify(db, parseResult, dir = './migrations', { pluralize = fals
   // `in-sync` and the leftovers ride along — a caller that does not read them
   // is where it was, and one that does can say what the differ could not.
   if (!diffResult.hasChanges) return diffResult.residue.length
-    ? { state: 'in-sync', message: summariseDiff(diffResult), residue: diffResult.residue }
+    ? { state: 'in-sync', message: summarizeDiff(diffResult), residue: diffResult.residue }
     : { state: 'in-sync', message: '✓ schema is in sync' }
 
   // Check if there are pending migrations that would explain the diff
@@ -676,7 +676,7 @@ export function verify(db, parseResult, dir = './migrations', { pluralize = fals
       state:   'pending',
       message: `${pending.length} migration${pending.length > 1 ? 's' : ''} not yet applied`,
       pending: pending.map(r => r.file),
-      diff:    summariseDiff(diffResult),
+      diff:    summarizeDiff(diffResult),
     }
   }
 
@@ -688,7 +688,7 @@ export function verify(db, parseResult, dir = './migrations', { pluralize = fals
   return {
     state:   'drift',
     message: '⚠  live db has drifted from schema.lite',
-    diff:    summariseDiff(diffResult),
+    diff:    summarizeDiff(diffResult),
     ...(skipped.length ? { skipped, note: describeSkipped(skipped) } : {}),
   }
 }

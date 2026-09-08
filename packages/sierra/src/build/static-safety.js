@@ -76,7 +76,7 @@
  * open question in the idea file to its conclusion: the rule is not "level 0
  * only", it is "the route declares the level it publishes at", with 0 as the
  * default. A build that legitimately reads a gated model through `asSystem()`
- * to publish a public catalogue says so once, in the route.
+ * to publish a public catalog says so once, in the route.
  *
  * ── When the check does not run ───────────────────────────────────────────
  *

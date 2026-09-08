@@ -817,7 +817,7 @@ outside a surface composite, and they aren't chained onto it, they nest inside.
   reader's browser and writes the ratio into the prose: **7.10:1**,
   independently confirmed by a standalone probe. Nobody wrote that text
   color down; `#6d28d9` was the only value in the rule
-- ⚠️ The measurement goes through a canvas, not a regex. Chrome serialises
+- ⚠️ The measurement goes through a canvas, not a regex. Chrome serializes
   the derived fill as `color(xyz-d65 …)` and parsing those floats as 8-bit
   channels gives a plausible wrong answer for every color
 - ✅ One concession stated in the open: **Pico needs no class for a spinner**
@@ -1150,7 +1150,7 @@ outside a surface composite, and they aren't chained onto it, they nest inside.
   the Pane and `0.8 inherited` on the Card and the Row inside it
 - ⚠️ **`tokenValue()` looks a property up by PROPERTY, not by selector.** The
   first version asked for the selector as authored — `*, *::before, *::after`
-  — and got nothing, because the CSSOM serialises that as
+  — and got nothing, because the CSSOM serializes that as
   `*, ::before, ::after`, dropping the redundant `*`. The tint ramp read as
   absent and the three swatches it feeds rendered as nothing at all, on a page
   whose whole claim is that its numbers are live

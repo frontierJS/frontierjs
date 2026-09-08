@@ -100,7 +100,7 @@ tell.
   is asking for a service over a model no tenant owns — which is the next line.
 - **A service over a `@@tenant(none)` model is NOT partitioned.** `isRowScoped(client,
   accessor)` already answers exactly this and is already in the file
-  ([litestone.ts:2538](../packages/junction/src/core/litestone.ts)); it is memoised per
+  ([litestone.ts:2538](../packages/junction/src/core/litestone.ts)); it is memoized per
   client per accessor, so the cost is one map lookup.
 - `bustCache` clears the `{service}:` prefix and therefore every tenant's entries. That
   stays — over-invalidation is safe and under-invalidation is this row again — but the
@@ -205,7 +205,7 @@ has to answer, with the shape I would argue for:
 1. **Where does a tenant's config come from?** A resolver, `createApp({ tenantConfig })`,
    answering a plain object per tenant id — not a declaration, for `FJS-D113`'s reason:
    the source is a row for one app, a file for another, and a control plane for a third.
-   Memoised per tenant with an explicit invalidation, because it is read per call.
+   Memoized per tenant with an explicit invalidation, because it is read per call.
 2. **How is it read?** `$.config` through the ambient call, resolving the current
    tenant's answer over `app.config` as the floor, so an app reads one thing and a
    tenant that overrides nothing costs nothing. `app.configFor(tenant)` for the caller

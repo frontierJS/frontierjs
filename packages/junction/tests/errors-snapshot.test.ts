@@ -40,7 +40,7 @@ describe('junction errors — the snapshot', () => {
   it('runs Litestone\'s real error classes through, constructed', async () => {
     const body = await renderErrorsSnapshot()
 
-    // Constructed, not synthesised from the name: `status` and `retryable` are
+    // Constructed, not synthesized from the name: `status` and `retryable` are
     // set in the constructor, so a row built from a name alone would report
     // every one of these as a 500 with no retryable — which is what the first
     // draft did for the two classes whose constructors take arguments.

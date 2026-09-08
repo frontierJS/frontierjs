@@ -107,4 +107,15 @@ export const env = defineEnv({
   NETBIRD_TOKEN:   {},
   NANGO_URL:       {},
   NANGO_SECRET:    {},
+
+  // ── Clouds ────────────────────────────────────────────────
+  // Where a cloud's API is, when it is not the real one. Unset means the real
+  // vendor, so a workspace that adds a token reaches DigitalOcean; set means a
+  // stand-in, which is how a drive provisions nothing and spends nothing.
+  //
+  // There is no token here on purpose. A cloud credential belongs to a
+  // WORKSPACE and lives in a `Secret` a person typed into a form — an env var
+  // would be one account for the whole install, which is the shape `FJS-1020`
+  // is about.
+  DIGITALOCEAN_URL: {},
 })

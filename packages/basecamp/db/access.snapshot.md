@@ -470,10 +470,10 @@ caller at once. Everything reachable from the target seals with it.
 | `Server` | `status` | `drain` | online → draining | caller | 5 ADMINISTRATOR | — |
 | `Server` | `status` | `undrain` | draining → online | caller | 5 ADMINISTRATOR | — |
 | `Server` | `status` | `checkIn` | pending, installing, unreachable → online | **application** | — | — |
-| `Server` | `status` | `reportRunning` | pending, provisioning, installing, ready, unreachable, stopped → online | **application** | 5 ADMINISTRATOR | — |
-| `Server` | `status` | `reportStopped` | pending, provisioning, installing, ready, online, unreachable, draining → stopped | **application** | 5 ADMINISTRATOR | — |
-| `Server` | `status` | `reportRebuilding` | pending, installing, ready, online, unreachable, draining, stopped → provisioning | **application** | 5 ADMINISTRATOR | — |
-| `Server` | `status` | `reportDestroyed` | pending, provisioning, installing, ready, online, unreachable, draining, stopped → destroyed | **application** | 5 ADMINISTRATOR | — |
+| `Server` | `status` | `reportRunning` | pending, provisioning, installing, unreachable, stopped → online | **application** | 5 ADMINISTRATOR | — |
+| `Server` | `status` | `reportStopped` | pending, provisioning, installing, online, unreachable, draining → stopped | **application** | 5 ADMINISTRATOR | — |
+| `Server` | `status` | `reportRebuilding` | pending, installing, online, unreachable, draining, stopped → provisioning | **application** | 5 ADMINISTRATOR | — |
+| `Server` | `status` | `reportDestroyed` | pending, provisioning, installing, online, unreachable, draining, stopped → destroyed | **application** | 5 ADMINISTRATOR | — |
 
 ## Capabilities
 

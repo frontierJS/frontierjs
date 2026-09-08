@@ -135,7 +135,7 @@ title: Infrastructure graph
   function toggle(kind) { show = { ...show, [kind]: !show[kind] } }
 
   const STATUS_TONE = {
-    online: 'success', ready: 'success', running: 'success', primary: 'success',
+    online: 'success', running: 'success', primary: 'success',
     draining: 'warning', starting: 'warning', deploying: 'warning', stopping: 'warning',
     unreachable: 'danger', error: 'danger', destroyed: 'danger',
   }

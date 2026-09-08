@@ -117,7 +117,7 @@ class ServerFactory extends Factory {
       slug:         `${role}-${String(n).padStart(2, '0')}`,
       // A fleet where every machine is healthy teaches you nothing about the
       // UI. These are all real ServerStatus values.
-      status:       rng ? rng.pick(['online', 'online', 'online', 'ready', 'draining', 'unreachable']) : 'online',
+      status:       rng ? rng.pick(['online', 'online', 'online', 'draining', 'unreachable']) : 'online',
       role,
       providerKind: 'hetzner',
       region,
@@ -694,11 +694,11 @@ export class BasecampSeeder extends Seeder {
 }
 
 /**
- * What no workspace owns — the catalogue, the settings, an archive, and one
+ * What no workspace owns — the catalog, the settings, an archive, and one
  * person's answer about notifications.
  */
 async function seedInstallation(sys, owner, users) {
-  // ── The catalogue ───────────────────────────────────────────────────
+  // ── The catalog ───────────────────────────────────────────────────
   // Written blueprint-then-params, which is the same two calls the service
   // makes a caller do and for the same reason: the create schema is closed and
   // `params` is a relation, so a single payload carrying both is refused.
@@ -723,7 +723,7 @@ async function seedInstallation(sys, owner, users) {
   }
 
   // One withdrawn entry, because *deprecated* is a state the list has to hide
-  // and the detail page has to still resolve — and a catalogue where every row
+  // and the detail page has to still resolve — and a catalog where every row
   // is live cannot show either.
   const ghost = await sys.blueprint.findFirst({ where: { slug: 'ghost' } })
   await sys.blueprint.update({
@@ -910,7 +910,7 @@ if (import.meta.main) {
       'notificationPreference',
       'credential', 'verification', 'user', 'account',
       // The installation's own rows. None carries a workspaceId, so nothing
-      // above takes them with it — a --force that left the catalogue behind
+      // above takes them with it — a --force that left the catalog behind
       // fails on the first blueprint's `@unique` slug, and one that left
       // `HubConfig` behind fails on its constant primary key. Both would read
       // as a broken seeder rather than as an incomplete clear.

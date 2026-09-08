@@ -355,7 +355,7 @@ describe('the report', () => {
     expect(lines).toEqual([...lines].sort((a, b) => a - b))
   })
 
-  test('every finding names a rule the catalogue declares', async () => {
+  test('every finding names a rule the catalog declares', async () => {
     const { RULES } = await import('../core/build-check.js')
     const all = inspectBuild({
       dockerfile: 'FROM alpine\nWORKDIR /app\nCOPY . .\nENV JWT_SECRET=x\n',

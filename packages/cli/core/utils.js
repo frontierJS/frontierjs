@@ -305,7 +305,7 @@ export function findWorkspaceRoot(start) {
 //                     user means. Without this, a nested app inside a monorepo
 //                     (example/, packages/basecamp/) resolves to the repo's .git
 //                     root, and every paths.* points at a directory with no
-//                     schema — which is what made `fli project:view` unusable
+//                     schema — which is what made the served project map unusable
 //                     there.
 //   3. `.git/`      — git repository root. Treats the whole repo as one project
 //                     even when there are nested package.jsons (e.g. ksite sites

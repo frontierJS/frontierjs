@@ -256,7 +256,7 @@ many* would surprise everybody — and `clampPage` bounds the groups returned,
 with no new knob: the work bound is the where, exactly as it is for `find`.
 
 16 tests. The two that matter most are a hook's narrowing reaching the numbers,
-and a row policy leaving each caller their own — an aggregate summarises rows it
+and a row policy leaving each caller their own — an aggregate summarizes rows it
 does not return, so a leak there is a NUMBER that looks perfectly ordinary.
 `@frontierjs/testing` refused the new method until `OPTS_AT` learned where its
 options sit, which is that tripwire doing its job.
@@ -858,7 +858,7 @@ four fields above, one field along.
 `SmtpError.retryable` is derived from the reply code's first digit, which is
 what that digit is for: RFC 5321 4yz is a transient negative and 5yz is
 permanent, and a failure with no reply behind it (a refused connection, a
-timeout) is transient too. A greylist 450 and a hard bounce 550 used to retry
+timeout) is transient too. A graylist 450 and a hard bounce 550 used to retry
 identically, so a queue burned its whole ladder on an address that will never
 accept.
 
@@ -1162,7 +1162,7 @@ The key is now a canonical serialization of the session, which is what actually
 decides the answer — `$readAs` grades the gate, the row policy and the field
 policies out of the principal's own fields, and `sessionGateLevel` reads five
 more. Two principals that serialize identically cannot be graded differently,
-which is the property a hash only approximates. It is memoised on the session
+which is the property a hash only approximates. It is memoized on the session
 object, so the serialization is paid once per connection rather than once per
 connection per publish, and the memo is weak.
 
@@ -1336,7 +1336,7 @@ Stubbed one at a time they fail 1 / 1 / 2 / 1.
 ## 2026-09-03 — HEAD, OPTIONS, and the difference between 404 and 405
 
 `FJS-753`. 1913 pass. Typecheck clean. `example`: `verify` 58/58,
-`verify:cart` 32/32, `verify:catalogue` 35/35, `verify:pay` 24/24.
+`verify:cart` 32/32, `verify:catalog` 35/35, `verify:pay` 24/24.
 `basecamp` 211/211.
 
 Three answers a transport owes every caller, and this one gave none of them.
@@ -1377,7 +1377,7 @@ a raw socket the method arrives verbatim and is refused.
 ## 2026-09-03 — a body that declares no length is bounded too
 
 `FJS-751`. 1903 pass. Typecheck clean. `example`: `verify` 58/58,
-`verify:catalogue` 35/35, `verify:pay` 24/24, `verify:jobs` 12/12,
+`verify:catalog` 35/35, `verify:pay` 24/24, `verify:jobs` 12/12,
 `verify:notify` 11/11.
 
 `Content-Length` is optional — a chunked request states none — so the pre-read
@@ -1951,7 +1951,7 @@ browser and is left alone, which is what keeps `curl` and the drives working.
 path.** `../../../../outside/p2` wrote two directories above the root and read
 back out of it. `assertSafeId` is on both path builders rather than on the entry
 points, so there is no way to reach the filesystem from that module without
-having passed it, and it refuses by NAME rather than sanitising — a silently
+having passed it, and it refuses by NAME rather than sanitizing — a silently
 rewritten id is a file nobody can find again. Beside it: `nosniff` on every
 response and `attachment` for anything outside a small image allow-list that
 EXCLUDES svg (the type comes off a caller-supplied filename, so an upload named
@@ -2081,7 +2081,7 @@ full-replace survived in one comment and one half-working validator.
 **What stays is the id.** `patch` without one is a bulk write over a query;
 `update` refuses without one, so a REST client's `PUT` can never become a bulk
 write. Making it genuinely replace was ruled out rather than overlooked: junction
-would have to synthesise the null-out set for every absent writable column and
+would have to synthesize the null-out set for every absent writable column and
 hand every caller a write that silently discards what they did not restate.
 
 5 of the 9 tests in `tests/update-semantics.test.ts` fail on the old wiring, and
@@ -2178,7 +2178,7 @@ session variables: two tabs of one person are one verdict and one frame. Over
 **49.8 µs** for one cohort, **445.6 µs** for 100 distinct principals.
 
 **A model that can only ever say yes is skipped**, read off the schema rather
-than declared: gate 0, no read policy, no field policy — a catalogue, which is
+than declared: gate 0, no read policy, no field policy — a catalog, which is
 also the busiest channel an app has.
 
 **Undecidable refuses, inapplicable does not.** A boundary that throws refuses
@@ -2288,7 +2288,7 @@ a client compiles under the APP's tsconfig with no node types, and a bare
 
 `FJS-570`, ruled `FJS-D159`. A kebab-case service FILENAME was a fourth spelling
 of a name Invariant 2 says three resolvers must agree on, and it broke two
-resolutions at once: `deriveModelName('product-variants')` singularises to
+resolutions at once: `deriveModelName('product-variants')` singularizes to
 `product-variant`, which is not the accessor — which is why all six multi-word
 services in `example` hand-write `model:` — and Sierra's
 `serviceNameFor('ProductVariant')` answered `productVariants`, which matched
@@ -2602,7 +2602,7 @@ it is silent on a model with no `@@softDelete`, where `remove` is already the ha
 delete the directive is asking about and there is nothing to decline.
 
 **Whether the model soft-deletes is ASKED** — `db.$softDelete` through
-`modelSoftDeletes`, memoised per client, keyed through `accessorCandidates` like every
+`modelSoftDeletes`, memoized per client, keyed through `accessorCandidates` like every
 other name that crosses this boundary. Deriving it here would be a second reading of
 `@@softDelete`, and two readings drift. `in` rather than a bare read, so a Litestone
 older than the capability answers `false` and degrades to the previous behavior instead
@@ -2776,7 +2776,7 @@ reported *the create page is broken*.
 ## 2026-08-25 — a tenant carries configuration (`FJS-D126`, ruled and built)
 
 The source half. `createApp({ tenantConfig, tenantConfigKeys })` — a resolver
-answering a plain object per tenant id, memoised, over `app.config` as the floor.
+answering a plain object per tenant id, memoized, over `app.config` as the floor.
 
 ```js
 createApp({
@@ -2811,10 +2811,10 @@ A key the resolver answers that the list does not name is **refused by name, not
 dropped**: a dropped key is a tenant whose configuration silently does not apply,
 which arrives as a support ticket reading *the feature is broken*.
 
-Memoised per tenant, holding the **promise** rather than the value, so two
+Memoized per tenant, holding the **promise** rather than the value, so two
 requests for one tenant arriving together resolve once. `invalidateTenantConfig(id?)`
 is the explicit way out — a memo with none is a config change that needs a
-restart. A **failed** resolve is deliberately not memoised: the row it reads may
+restart. A **failed** resolve is deliberately not memoized: the row it reads may
 be a second from existing.
 
 The floor is never mutated. Every tenant's config is a fresh object with the
@@ -2908,10 +2908,10 @@ carrying `'5'`, and two nodes there means a push moves exactly one of them.
 Identity rather than filtering, which is what makes `String(id)` right here and
 wrong in a query string (`FJS-D125`).
 
-**`Store` is a view.** Bound, it holds ids and materialises through the
+**`Store` is a view.** Bound, it holds ids and materializes through the
 registry; `get()` still answers rows, so no screen changed — `useStore` is the
 one bridge to a Mesa signal and nothing in either app calls `subscribe` or
-`get` directly. Every mutator still works on a materialised array, so the
+`get` directly. Every mutator still works on a materialized array, so the
 membership and placement rules are the same lines they were and
 `live-order.test.ts` is the negative control for them. **Unbound it is exactly
 what it was**, which is not a shim: a `Store` is constructible alone and the
@@ -2955,7 +2955,7 @@ screen when this started. Both are asserted.
 
 One consequence worth knowing: `Store._replace` now writes a row back as truth
 only when it did not come from the node itself. Every mutator here works on a
-materialised array, so most of what it hands back is this store's own view —
+materialized array, so most of what it hands back is this store's own view —
 and once a node carries an unconfirmed mutation, writing that view back would
 commit the optimistic value as if the server had sent it.
 
@@ -3993,7 +3993,7 @@ builder is made: any `await` between `.post(path)` and `.send(body)` let the
 request go out first, with no body and without any header set after that point.
 Nothing said so — it succeeded, the service saw `null`, and the test asserted
 against that. Found writing the signature tests, where computing a signature is
-itself an await. Lazy now, memoised on first `then()`.
+itself an await. Lazy now, memoized on first `then()`.
 
 
 ## 2026-08-18 — a service can reserve a query key, and the reservation is lifted
@@ -5256,7 +5256,7 @@ and none declares a status, so all three reach a caller as a 500 with
 `FJS-190`, and the same fix: if you own the class, give it a status.
 
 Constructing them is load-bearing: `status` and `retryable` are set in the
-constructor, so a row synthesised from a class NAME reports every one as a 500
+constructor, so a row synthesized from a class NAME reports every one as a 500
 with no retryable. That is exactly what the first draft did for the two classes
 whose constructors take arguments a probe has to guess.
 
@@ -5390,7 +5390,7 @@ row that this mechanism can already roll back.
 
 **What it costs.** `BEGIN IMMEDIATE` holds SQLite's single write lock for the
 whole pipeline, `after` hooks included. An `after` hook doing network I/O
-serialises every write in the app behind it. Off by default for that reason.
+serializes every write in the app behind it. Off by default for that reason.
 
 Also fixed while testing it: `createBaseService` dropped a `transactional`
 declaration, so a service written with the base factory and spread through the
@@ -5471,7 +5471,7 @@ effective chain is known, so an app-level `after: { all: [publish(…)] }` — t
 shape that would double a whole app at once — is caught too. Marked hooks and
 never names: an app may call its own hook `publish`, and suppressing a real one on
 a name collision would silently stop broadcasting, which is this defect inverted.
-Closes `FJS-045`, verified unrealised first — 17 basecamp services use the hook
+Closes `FJS-045`, verified unrealized first — 17 basecamp services use the hook
 and none also declares `channel:`.
 
 13 tests. Suites green, typecheck at baseline, `example`: verify + **verify:live**
@@ -5918,7 +5918,7 @@ GET /products                 →  200 {"data":[],"total":0}     ← genuinely e
 ```
 
 Three situations, one answer, no error. It cost an hour in `example/`'s
-prerendered catalogue, which fetched, resolved, rendered "0 of 0 products" and
+prerendered catalog, which fetched, resolved, rendered "0 of 0 products" and
 reported nothing wrong.
 
 **Litestone knew the whole time.** It validates where-keys, rejects them on
@@ -6408,7 +6408,7 @@ any patch helper written with `??` has the same hole.
 ## 2026-08-02 — router: fixed and dynamic routes no longer share a keyspace
 
 `src/transport/router.ts`. The method cache was one object, with dynamic routes
-stashed under the key `'D'`. A route registered at **`/D`** normalises to
+stashed under the key `'D'`. A route registered at **`/D`** normalizes to
 exactly `'D'` and collided: `build()` threw
 `methodCache.D.push is not a function`, and `lookup()` would have returned the
 bucket array as if it were a route.

@@ -291,7 +291,7 @@
       "relation": "Mesa's reactivity model. Fine-grained signals, compile-away components, no virtual DOM. createSignal maps directly to Mesa's runtime primitives.",
       "gap": "Library, not framework. Mesa takes the runtime, Sierra supplies everything above it.",
       "stance": "adopted",
-      "fjsWay": "The reactivity model is taken wholesale — fine-grained signals, components that run once, no virtual DOM, ownership scopes for anything with a lifetime. Mesa's runtime primitives are recognisably the same primitives. What sits on top is a compiler that owns the template, which is what lets one component render to a live DOM, to static HTML with islands, or to table-based markup for an email."
+      "fjsWay": "The reactivity model is taken wholesale — fine-grained signals, components that run once, no virtual DOM, ownership scopes for anything with a lifetime. Mesa's runtime primitives are recognizably the same primitives. What sits on top is a compiler that owns the template, which is what lets one component render to a live DOM, to static HTML with islands, or to table-based markup for an email."
     }
   ]
 }

@@ -47,7 +47,7 @@ Both are scanned at startup. Project commands override core commands with the sa
 | `core/prose.js` | Prose-driven dry-run — interpolates `context.vars` into prose section |
 | `core/ports.js` | Port broker — `[ENV][CATEGORY][PROJECT][SERVICE]` 4-digit scheme, lock file at `~/.fli/sessions.lock` |
 | `web/index.html` | Single-file Web GUI — sidebar, form/source view, SSE output. Written in `@frontierjs/css` |
-| `web/viewer/index.html` | FJSChain — chain-of-responsibility diagram for `project:view`. Written in `@frontierjs/css` |
+| `web/viewer/index.html` | FJSChain — chain-of-responsibility diagram for `project:map --as=serve`. Written in `@frontierjs/css` |
 | `core/assets.js` | The styling language and the highlighter a browser gets, from the copy this fli holds |
 
 ### Command file anatomy
@@ -126,7 +126,7 @@ These provide functions and constants that prepend to every command in the names
 
 - **`context.wsRoot()` finds the workspace it is standing in (2026-08-10)** — it read `$WORKSPACE_DIR` or prompted, so every `ws:*` command needed an env var set to run against the repo the user was already inside, and a stale global default silently redirected them to another monorepo. `findWorkspaceRoot()` walks up for a `packages/` dir whose parent declares `workspaces` or is a git root; the env var is now the fallback for running from outside any workspace. It is deliberately not `findProjectRoot`, which stops at the deepest `db/schema.lite` and answers `packages/basecamp` from inside basecamp.
 
-- **Nested-app support for `project:*` (2026-08-05)** — `project:map` / `project:view` could not run inside `example/` or `packages/basecamp`: `findProjectRoot` walked past both to the repo's `.git` root, so `paths.db` held no `schema.lite`. Root resolution now recognises `db/schema.lite` as an app marker (below `.fli.json`, above `.git`), and a global `--project <dir>` / `FLI_PROJECT` pins it explicitly from anywhere. Three defects surfaced underneath: the compiler deleted every line after a `<script>` tag *mentioned* in a comment, which is why `project:view` built its map and exited without starting the server; `scanFiles` was not recursive, so basecamp's `services/<name>/<name>.service.ts` layout reported 0 services; and `--no-open` was declared as flag `no-open`, which minimist never binds. All four fixed, with regression tests for root resolution and for the compiler truncation (a truncated file still parses, so the shipped-command parse sweep could not see it).
+- **Nested-app support for `project:*` (2026-08-05)** — `project:map` / `project:view` could not run inside `example/` or `packages/basecamp`: `findProjectRoot` walked past both to the repo's `.git` root, so `paths.db` held no `schema.lite`. Root resolution now recognizes `db/schema.lite` as an app marker (below `.fli.json`, above `.git`), and a global `--project <dir>` / `FLI_PROJECT` pins it explicitly from anywhere. Three defects surfaced underneath: the compiler deleted every line after a `<script>` tag *mentioned* in a comment, which is why `project:view` built its map and exited without starting the server; `scanFiles` was not recursive, so basecamp's `services/<name>/<name>.service.ts` layout reported 0 services; and `--no-open` was declared as flag `no-open`, which minimist never binds. All four fixed, with regression tests for root resolution and for the compiler truncation (a truncated file still parses, so the shipped-command parse sweep could not see it).
 
 - **`ksite:setup`** — first-time setup walkthrough for fresh ksite clones. Per-action confirmation, `--force` to bypass `config_ranSetup` guard, `--skip` for category, `--yes` to auto-accept. Cross-platform JS file edits (no `sed -i` hacks).
 - **`ksite:update`** (alias `ksite-update`) — pulls KSITE_DIR canonical, mirrors framework dirs to local site. `--force` to skip version-gate and dirty-checkout warning, `--no-install` to skip final npm install. Major-version compatibility check between local and canonical site/package.json.
@@ -325,7 +325,7 @@ DEV_CAPTAIN, CAPROVER_URL, CAPROVER_TOKEN
 
 ### Port schema
 
-`[ENV][CATEGORY][PROJECT][SERVICE]` 4-digit structure. ENV: 7=test, 8=dev, 9=prod. Global tooling reserves `8500`–`8509` whole: `8500` (gui), `8501` (pview), `8502` (studio), `8503` (junction devtools). Dynamic project ports assigned at runtime via `~/.fli/sessions.lock` with O_EXCL file lock for atomicity.
+`[ENV][CATEGORY][PROJECT][SERVICE]` 4-digit structure. ENV: 7=test, 8=dev, 9=prod. Global tooling reserves `8500`–`8509` whole: `8500` (gui), `8501` (project map, served), `8502` (studio), `8503` (junction devtools). Dynamic project ports assigned at runtime via `~/.fli/sessions.lock` with O_EXCL file lock for atomicity.
 
 ### Startup cost
 

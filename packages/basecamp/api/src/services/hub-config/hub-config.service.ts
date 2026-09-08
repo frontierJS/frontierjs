@@ -56,7 +56,7 @@ export function createHubConfigService(_app: BasecampApp) {
      *
      * NOT an invented row of defaults. `baseUrl` and `adminEmail` are required
      * with no default because nothing can guess them, and answering a
-     * synthesised object would let a screen show settings that are not stored —
+     * synthesized object would let a screen show settings that are not stored —
      * every reader would then have to know which of them were real.
      */
     async current() {

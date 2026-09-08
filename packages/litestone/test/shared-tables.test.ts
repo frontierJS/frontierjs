@@ -5,7 +5,7 @@
 // A table is built from a ~5,900-line closure and `$setAuth(user)` could not
 // reuse one, because the principal differs per request. So a request touching
 // five models rebuilt five of them — 172 µs on the 188-model fixture — and a
-// fully materialised scoped client held 3.6 MB, which under `strategy database`
+// fully materialized scoped client held 3.6 MB, which under `strategy database`
 // is per tenant. What made it fixable is that not one of the reads `makeTable`
 // performs while CONSTRUCTING the object is per-flavor: the four keys a flavor
 // decides (`auth`, `isSystem`, `scopedBy`, `tables`) are read only inside method

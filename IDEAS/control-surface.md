@@ -26,7 +26,7 @@ Count what a person in this workspace can start:
 
 | Kind | How many | Where the list lives |
 | --- | --- | --- |
-| Tooling servers on the reserved block | 4 (`gui` 8500 · `project:view` 8501 · `db studio` 8502 · junction `devtools` 8503) | `core/ports.js` § GLOBAL |
+| Tooling servers on the reserved block | 4 (`gui` 8500 · `project:map --as=serve` 8501 · `db studio` 8502 · junction `devtools` 8503) | `core/ports.js` § GLOBAL |
 | Surface categories per app | 7 (api · web · site dev · site served · widgets dev · widgets served · extension dev) | `core/ports.js` § CAT, `appPorts()` |
 | Apps with ports assigned | 8 | `core/ports.js` § PROJECTS |
 | Browser drives | 25 | `verify*` scripts in 5 `package.json` files |
@@ -84,8 +84,8 @@ one item worse. `GLOBAL` has five free slots and this is not what they are for.
 
 So: **it is `fli gui`'s front page.** 8500 is already the number typed from memory,
 the shell is built, the SSE runner is built, and every tile's *run* action is a
-command the runner can already execute. `fli project:view` becomes a tile on it
-rather than a rival to it — which is also the honest reading of what `project:view`
+command the runner can already execute. `fli project:map --as=serve` becomes a tile on it
+rather than a rival to it — which is also the honest reading of what the served map
 is: a map of one app's chain of responsibility, excellent, and not a place from which
 anything is launched.
 
@@ -180,7 +180,7 @@ Without that, a tile for the mail sink can only be hand-written, which §4 forbi
 hand-written lines that are the best *what can I do now* text in the repo:
 
 ```
-curl http://localhost:8110/api/products      # 200, the catalogue reads at 0
+curl http://localhost:8110/api/products      # 200, the catalog reads at 0
 curl http://localhost:8110/api/orders        # 401, the ledger does not
 ```
 

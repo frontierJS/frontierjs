@@ -214,7 +214,7 @@ function findFactory(
  * `productVariants`** (`FJS-570`). A kebab or snake filename is a FOURTH
  * spelling of a name Invariant 2 says three resolvers must agree on, and until
  * this it was reconciled nowhere: `deriveModelName('product-variants')`
- * singularises to `product-variant`, which is not the accessor — which is why
+ * singularizes to `product-variant`, which is not the accessor — which is why
  * all six multi-word services in `example` hand-write `model:` — and Sierra's
  * `serviceNameFor('ProductVariant')` answers `productVariants`, which matched
  * nothing, so every relation picker onto a multi-word model offered an empty

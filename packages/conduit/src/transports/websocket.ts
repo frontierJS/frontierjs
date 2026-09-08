@@ -233,7 +233,7 @@ export class WebSocketTransport extends BaseTransport {
   private async getConnection(): Promise<WebSocket | null> {
     if (this.ws?.readyState === WebSocket.OPEN) return this.ws
 
-    // Memoise the in-flight connect. Without this, N concurrent sends made
+    // Memoize the in-flight connect. Without this, N concurrent sends made
     // before the socket is up each opened their own socket; every `open`
     // handler overwrote this.ws and this.pingTimer, so all but the last
     // became untracked — still open on both ends, each with an orphaned

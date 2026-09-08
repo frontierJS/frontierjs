@@ -230,7 +230,7 @@ describe('a member of a tuple key does not identify a row (FJS-694)', () => {
   const client = () => createClient({ resolveFrom: '/tmp', db: ':memory:', schema: SCHEMA })
 
   it('the default ordering is the KEY, not a column called id', async () => {
-    // `normaliseOrderBy` defaults to the literal `id`, which it must — it is a
+    // `normalizeOrderBy` defaults to the literal `id`, which it must — it is a
     // pure function with no model in scope. A composite-keyed model has no such
     // column, so every derived list over one answered
     // `400 Unknown orderBy field 'id'` and was unreachable.

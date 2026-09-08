@@ -1,5 +1,5 @@
 <!--
-  The catalogue list — prerendered, then live, then asked.
+  The catalog list — prerendered, then live, then asked.
 
   This is an ISLAND. The build renders it to plain HTML inside comment markers
   (so a crawler and a reader with no JavaScript see every product), and
@@ -20,7 +20,7 @@
   ─── Why the SEARCH asks the shop ─────────────────────────────────────────
 
   Everything above is what was baked, and what an island can filter is what was
-  baked into it. In a shop this size that is the whole catalogue; in a shop that
+  baked into it. In a shop this size that is the whole catalog; in a shop that
   is not, it is a page of it, and a search box that quietly means *of the ones
   on this page* is the kind of wrong that looks right until the shop grows.
 
@@ -124,7 +124,7 @@
 
 <div class="stack">
   <div class="field-group">
-    <label for="catalog-search">Search the catalogue</label>
+    <label for="catalog-search">Search the catalog</label>
     <input
       id="catalog-search"
       class="field"
@@ -146,7 +146,7 @@
          shopper who is not told that reads a short list as a small shop. -->
     <p id="catalog-offline" class="text-sm text-warning">
       The shop could not be reached, so this is a search of the products on
-      this page rather than of the whole catalogue.
+      this page rather than of the whole catalog.
     </p>
   {/if}
 

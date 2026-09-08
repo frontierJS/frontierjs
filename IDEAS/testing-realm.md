@@ -719,7 +719,7 @@ and Vitest run it. Three reasons, all already paid for in this repo: Invariant 1
 says a clean compile is not proof of valid JS, and a broken *test* fails silently
 green rather than loudly red; the ejection research above says people leave a
 first-party runner over env vars before boot, coverage/HTML reporting and IDE
-integration, every one of which a bespoke runtime maximises at once; and `--only`,
+integration, every one of which a bespoke runtime maximizes at once; and `--only`,
 watch, breakpoints and per-test rerun are free from the standard runner and months
 of work otherwise.
 
@@ -758,7 +758,7 @@ a rule rather than writing it down:
 - two packages with a fifth markdown file at their root.
 
 **The two false positives became rules**, which is the more useful half of a
-first run: a Resource over no model may take its own service noun singularised
+first run: a Resource over no model may take its own service noun singularized
 (basecamp's `Hub.mesa` is `createResource('hub')` and is correct), and a schema
 with neither `api/` nor `web/` beside it is a fixture rather than an app that got
 the layout wrong. A check that scolds every fixture in a repo is a check people

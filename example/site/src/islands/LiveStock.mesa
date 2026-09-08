@@ -48,7 +48,7 @@
       state = 'ready'
     } catch {
       // A static page must survive its API being down: it is still a
-      // catalogue, it just cannot say what is in stock.
+      // catalog, it just cannot say what is in stock.
       state = 'offline'
     }
   })
@@ -65,7 +65,7 @@
     <p class="text-muted" id="live-stock-state">Checking with the shop…</p>
   {:else if state === 'offline'}
     <p class="text-muted" id="live-stock-state">
-      The catalogue above is up to date as of the last build; live availability is unavailable.
+      The catalog above is up to date as of the last build; live availability is unavailable.
     </p>
   {:else}
     <p class="text-muted" id="live-stock-state">

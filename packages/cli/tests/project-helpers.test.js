@@ -1,4 +1,4 @@
-// ─── project-helpers.test.js — what `fli project:map` and `project:view` read ──
+// ─── project-helpers.test.js — what `fli project:map` reads ───────────────────
 //
 // FJS-254: the two viewers used to derive "what is this service" from regexes
 // over service source. They could not have been right — junction decides at
@@ -334,7 +334,7 @@ describe('extractResourceMeta', () => {
 // file — "a trimmed copy of the real shape". A copy is frozen at the moment it
 // was written, so the only failure it can catch is one somebody hand-typed into
 // it: change a heading in `renderSurfaceSnapshot` one package over and the
-// fixture stays green while `project:view` silently shows fewer services.
+// fixture stays green while `project:map` silently shows fewer services.
 //
 // **The oracle is the file's own summary line.** Every snapshot states
 // `N services · N routes · N plugins`, written by the renderer straight off the

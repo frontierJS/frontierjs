@@ -2,7 +2,7 @@
 title: Products
 ---
 <script>
-  // The catalogue, one row per PRODUCT — the family, not the buyable thing.
+  // The catalog, one row per PRODUCT — the family, not the buyable thing.
   //
   // Which means every number in this table is an aggregate over a second
   // table: a price is a range because four colorways may not agree, and stock
@@ -45,7 +45,7 @@ title: Products
 
   // The image store is loaded with a limit above the seeded row count on
   // purpose: a default page of 20 would leave later products with no
-  // thumbnail, which looks like a catalogue problem rather than a paging one.
+  // thumbnail, which looks like a catalog problem rather than a paging one.
   // The price and stock columns no longer have that hazard at all — they
   // arrive on the product row.
   Promise.all([
@@ -91,7 +91,7 @@ title: Products
   const names      = rows().map(p => p.name)
   const brandNames = [...new Set(rows().map(p => p.brand))]
 
-  // The ceiling is the dearest variant in the catalogue, which is what
+  // The ceiling is the dearest variant in the catalog, which is what
   // `priceTo` already is per product. Read a price off the product itself and
   // it would be 10 — the floor — and the slider would filter everything out.
   const ceiling = Math.max(10, ...rows().map(p => Math.ceil(p.priceTo ?? 0)))

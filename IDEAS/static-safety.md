@@ -101,7 +101,7 @@ check off globally — the point is that publishing gated data becomes a thing s
   downstream of authorization-as-data.
 - **It is cheap.** No new grammar, no runtime cost, no new package. It is a check in
   an existing build step.
-- **It generalises.** The same comparison covers `@guarded` columns (should never
+- **It generalizes.** The same comparison covers `@guarded` columns (should never
   appear in prerendered output at all) and `@scoped` models (a page prerendered
   without a viewer is meaningless for scoped data, which is a *correctness* bug
   before it is a security one — the page silently shows one arbitrary tenant's rows,
@@ -165,7 +165,7 @@ Two cautions, both inherited from above rather than new:
 ## Open questions
 
 - **Is level 0 the right bar, or should it be "the gate the build ran as"?** A static
-  build that reads through `asSystem()` to publish a public product catalogue from a
+  build that reads through `asSystem()` to publish a public product catalog from a
   gated `Product` model is a real and reasonable pattern. That argues the rule is
   really "the route must declare the level it publishes at," with 0 as the default.
 - **Islands complicate it in the right direction.** A `client:*` island fetches at

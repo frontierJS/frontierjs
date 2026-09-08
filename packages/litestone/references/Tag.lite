@@ -162,7 +162,7 @@ model TagAttachment {
   tagId       Int
 
   /// The polymorphic subject — same spelling as `AuditEvent`, which is the
-  /// catalogue's preference for anything new. `String` for the id because it
+  /// catalog's preference for anything new. `String` for the id because it
   /// must hold whatever the taggable models use, and `Int` cannot hold a uuid
   /// while `String` holds both.
   ///

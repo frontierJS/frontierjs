@@ -72,7 +72,7 @@ never a text color to pick.
 
 `utils.js` exports `tone(name)`, which maps the older prop spellings onto the
 seven: `error` → `danger`, `red` → `danger`, `green` → `success`, `gray` →
-`muted`, and so on. An unrecognised name resolves to `''` (untoned) rather
+`muted`, and so on. An unrecognized name resolves to `''` (untoned) rather
 than guessing, so a typo renders in the component's own default instead of
 silently wrong. Every component still accepts its previous `color=` / `type=`
 prop through that map.

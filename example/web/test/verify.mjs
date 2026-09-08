@@ -49,7 +49,7 @@ const P_SLUG = `cdp-tee-${P_RUN}`
 // `Order` and `Customer` read at level 1 with a row policy apiece, so the
 // assertions below that check what LANDED — as opposed to what the screen
 // shows — need a caller. They used to ask anonymously and be answered, which
-// is the leak those gates closed: the catalogue's `@@gate("0.4.4.5")` had been
+// is the leak those gates closed: the catalog's `@@gate("0.4.4.5")` had been
 // pasted onto the sales ledger.
 let _staff = null
 async function ledger(path) {
@@ -284,7 +284,7 @@ try {
   // number of NULLs in a UNIQUE column and rejects a second '', which is why
   // blankToNull exists; every seeded variant leaves it unset, so a NULL that
   // had become '' would fail on the second row and there would be no
-  // catalogue at all.
+  // catalog at all.
   //
   // Asked from NODE and not from inside the page. The page can only reach the
   // API through the dev server's proxy, and this same drive is run against the
@@ -338,7 +338,7 @@ try {
   // This used to assert the field-level policy from here — `notes` is
   // `@allow('read', auth().role == 'admin')`, so the column was ABSENT rather
   // than blank for an anonymous caller. That worked because `Customer` read at
-  // level 0, which is the catalogue's gate on the shop's address book. The
+  // level 0, which is the catalog's gate on the shop's address book. The
   // field policy is still asserted, twice, at level 4 and level 5 — where the
   // rows exist and the difference is the one the policy is about.
   await goto('/customers/')
@@ -376,7 +376,7 @@ try {
   // This used to assert the AFFORDANCES a stranger sees — every move button
   // rendered disabled, delete disabled — over a table full of real orders. That
   // was only ever possible because `Order` read at level 0, which is the
-  // catalogue's gate pasted onto the sales ledger: every order in the shop was
+  // catalog's gate pasted onto the sales ledger: every order in the shop was
   // answerable to `curl` with no token.
   //
   // The affordance assertions are still made, twice, at level 4 and level 5 —
@@ -461,7 +461,7 @@ try {
   })
 
   // Taken away again. The name and slug are per-run so nothing collides with the
-  // next run either way — this is about the CATALOGUE, which is a demo people
+  // next run either way — this is about the CATALOG, which is a demo people
   // look at: a drive that leaves a row behind every time fills it with rubbish.
   // Soft-deleted, like any other removal here, so the row keeps its @unique
   // values and stops appearing in a list.
@@ -762,7 +762,7 @@ try {
 
   // The lines add up to the SUBTOTAL, and the receipt adds up to the total —
   // two separate claims, and they became two the day shipping and tax arrived.
-  // What the itemisation explains is the goods; what the card was charged is the
+  // What the itemization explains is the goods; what the card was charged is the
   // goods plus a delivery, less a code, plus somebody else's tax.
   //
   // Every figure is read off the SCREEN and compared against a number with
@@ -1125,7 +1125,7 @@ const expected = {
   'nav.current':         'Home',
 
   // TEN, not thirteen: the page size is a preference set on /settings/, and the
-  // catalogue is now longer than one page of it.
+  // catalog is now longer than one page of it.
   'products.rows':         10,
   'products.priceRange':   true,
   'products.manyNullBarcodes': { nulls: 43, none: true },
@@ -1141,7 +1141,7 @@ const expected = {
   // The whole point: for an anonymous caller the column is not in the table at
   // all, because it was not in the response at all.
   // A stranger reads no customers at all — the address book is not the
-  // catalogue, and the screen says so rather than showing an empty table.
+  // catalog, and the screen says so rather than showing an empty table.
   'customers.anonSeesNothing': { rows: 0, told: true },
   // The field policy, both sides. `notes` is @allow('read', role == 'admin'),
   // so the column is ABSENT at level 4 and present at 5 — stripped at the Data
@@ -1181,7 +1181,7 @@ const expected = {
   // Was a 500 GeneralError until the Litestone error classes carried a status.
   'moves.illegalStatus': { status: 409, name: 'Conflict' },
   // Two lines, in the order they were written. Every cell is a COPY taken at
-  // the moment of sale — editing the catalogue does not move them.
+  // the moment of sale — editing the catalog does not move them.
   'order.items': [
     ['Junction Camp Mug — Coal · one', 'JCT-MUG-COL-ONE', '1', '$18.00', '$18.00'],
     ['Junction Cap — Parchment · one', 'JCT-CAP-PCH-ONE', '1', '$24.00', '$24.00'],

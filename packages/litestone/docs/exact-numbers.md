@@ -195,7 +195,7 @@ point is.
 The second is load-bearing. `Intl.NumberFormat` does **not** throw on an unknown
 code — `ZZZ` and `BTC` both resolve to two decimals in silence — so a mistyped
 `@money(UDS)` would take scale 2 and be wrong by a factor of a hundred wherever
-the real currency has none. Litestone refuses an unrecognised code at parse.
+the real currency has none. Litestone refuses an unrecognized code at parse.
 
 ### Per-row currency
 

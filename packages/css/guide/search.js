@@ -11,7 +11,7 @@
  *
  * ── The division of labor ────────────────────────────────────────────
  *
- *   here        the ranker, the tokeniser, and the term entries built
+ *   here        the ranker, the tokenizer, and the term entries built
  *               from VOCAB
  *   guide.js    harvests page and section entries out of the rendered
  *               pages, and draws the palette

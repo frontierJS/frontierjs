@@ -315,7 +315,7 @@ second trail beside its first, so one screen can show *what somebody did* and
 *what actually changed underneath it*.
 
 The rule that keeps it honest: on a SQLite database `model` is **required**.
-There is nothing to synthesise into, and a table the app never declared can
+There is nothing to synthesize into, and a table the app never declared can
 carry no gate, no policy, no index and no migration — which are the entire
 reason to be here rather than in a directory of jsonl.
 
@@ -371,7 +371,7 @@ file should cite them.
 **A `fli check` rule per hole that is statically decidable.** The unbound
 database path (phase 0), an app declaring `@@log` with no deploy binding, and a
 service reaching for `console.error` where `$.log` is in scope. `checks.js` is
-where the live-hazard catalogue executes (`FJS-D133`) and every one of these is
+where the live-hazard catalog executes (`FJS-D133`) and every one of these is
 currently a paragraph in `CLAUDE.md`.
 
 **A drive.** `example`'s `verify:retro` is already the only drive that reads

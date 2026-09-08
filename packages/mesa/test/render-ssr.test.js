@@ -145,7 +145,7 @@ describe('renderToHTML — the serializer escapes (FJS-500)', () => {
   // attribute value that escapes its own quotes injects an EVENT HANDLER onto
   // an element the page already trusts. `<img alt={product.alt}>` and
   // `<a href={product.slug}>` are both database strings on every prerendered
-  // catalogue page in `example/site`.
+  // catalog page in `example/site`.
   //
   // These assert by RE-PARSING the output rather than by matching text, and
   // that is the whole difference between a real test and a spelling test:
@@ -171,7 +171,7 @@ describe('renderToHTML — the serializer escapes (FJS-500)', () => {
 
     const a = reparse(html, 'a')
     // The payload survives as a VALUE — intact, which is the correct outcome:
-    // escaping is not sanitising, and a product genuinely called `5" pipe`
+    // escaping is not sanitizing, and a product genuinely called `5" pipe`
     // must come back as `5" pipe`.
     expect(a.getAttribute('title')).toBe('" onmouseover=alert(1) autofocus x="')
     // …and it added nothing. Asked as a count so a payload shaped differently
@@ -181,7 +181,7 @@ describe('renderToHTML — the serializer escapes (FJS-500)', () => {
   })
 
   it('a URL from the database cannot add a handler to the link carrying it', async () => {
-    // The shape a prerendered catalogue actually has: one `<a>` per product,
+    // The shape a prerendered catalog actually has: one `<a>` per product,
     // its href a column. A slug is the least-reviewed string in a shop.
     const Comp = await build(`<script>
   export let slug = ''

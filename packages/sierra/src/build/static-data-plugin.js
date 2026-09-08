@@ -65,7 +65,7 @@ export function staticDataPlugin(config, sierraContext) {
           res.statusCode = status
           res.setHeader('Content-Type', 'application/json')
           // A loader's answer is this navigation's, and a dev server that let a
-          // browser cache it would show yesterday's catalogue after an edit.
+          // browser cache it would show yesterday's catalog after an edit.
           res.setHeader('Cache-Control', 'no-store')
           res.end(JSON.stringify(body))
         }

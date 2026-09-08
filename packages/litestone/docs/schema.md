@@ -17,7 +17,7 @@ Schemas live in `.lite` files. Syntax is close to Prisma's SDL with SQLite-nativ
 | `File[]` | `TEXT` JSON array | multiple files |
 | `EnumName` | `TEXT` + CHECK | `string` |
 | `EnumName[]` | `TEXT` JSON, no CHECK | `string[]` — a set of declared values |
-| `Capability[]` | `TEXT` JSON, no CHECK | `string[]` — synthesised from the models declaring `@@capabilities`; see `access-control.md` |
+| `Capability[]` | `TEXT` JSON, no CHECK | `string[]` — synthesized from the models declaring `@@capabilities`; see `access-control.md` |
 | `Type[]` | `TEXT` JSON | `Array` (auto-parsed) |
 | `Type?` | nullable | `null` when absent |
 
@@ -1136,7 +1136,7 @@ taking the dash with it.
 
 The template compiles at parse and nothing below that point knows it happened:
 a `GENERATED ALWAYS AS` column, `VIRTUAL` by default and
-``@generated(`…`, stored)`` to materialise it, filterable and sortable and
+``@generated(`…`, stored)`` to materialize it, filterable and sortable and
 indexable, refused on write, `readOnly` at the client. The unknown-field,
 self-reference and cycle checks are the ones `@generated` already ran.
 

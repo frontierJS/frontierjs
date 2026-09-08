@@ -38,7 +38,7 @@ global.fliRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // Falls back to cwd if nothing matches (e.g. running in /tmp)
 //
 // `--project <dir>` (or FLI_PROJECT) pins it explicitly, so a command can be
-// run against an app that isn't cwd — `fli project:view --project example`
+// run against an app that isn't cwd — `fli project:map --project example`
 // from a monorepo root. Stripped from the command's flags in bootstrap.js.
 const { findProjectRoot, fliTmpRoot, sweepStaleTmp } = await import('../core/utils.js')
 

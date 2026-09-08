@@ -16,7 +16,7 @@
 // kit and sierra are untouched, and `{ type, required, nullable }` is the whole
 // shape `controlFor` needs to pick a control.
 
-/** One synthesised field rule per declared field, keyed the way a payload is. */
+/** One synthesized field rule per declared field, keyed the way a payload is. */
 function rulesFor(defs) {
   const out = {}
   for (const d of defs ?? []) {

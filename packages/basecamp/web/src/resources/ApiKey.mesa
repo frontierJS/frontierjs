@@ -6,7 +6,7 @@
   // everything is module scope, which is what <script module> means.
   //
   // `model:` is stated because the service is `api-keys` — hyphenated, so it
-  // is the URL segment the mock uses — and modelNameFor() singularises English
+  // is the URL segment the mock uses — and modelNameFor() singularizes English
   // plurals, not kebab-case. Without it the lookup misses, warns, and degrades
   // to a bare make(): labels, required fields and validation all silently stop
   // being schema-derived.

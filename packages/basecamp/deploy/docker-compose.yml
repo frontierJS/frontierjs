@@ -12,7 +12,7 @@
 #
 # Ports follow packages/cli/core/ports.js — env 8 (dev), project 2 (basecamp):
 # 8020 is basecamp's frontend and 8120 its backend, the same pair `bun run dev`
-# uses, so the URL is the same whether the stack is containerised or not.
+# uses, so the URL is the same whether the stack is containerized or not.
 
 services:
   api:

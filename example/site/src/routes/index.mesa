@@ -95,7 +95,7 @@ render: static
           at 2.97:1. Setting `color` here by hand is what breaks that.
         -->
         <a class="btn hero-btn" href="#merch">Get the merch</a>
-        <a class="btn outlined hero-btn-2" href="/catalog/">Browse the catalogue</a>
+        <a class="btn outlined hero-btn-2" href="/catalog/">Browse the catalog</a>
       </div>
     </div>
 
@@ -205,7 +205,7 @@ render: static
     have to be current — stock, your basket, the price on the shelf — ask the
     shop when you open it.
   </p>
-  <p><a class="btn" href="/catalog/">Browse the whole catalogue</a></p>
+  <p><a class="btn" href="/catalog/">Browse the whole catalog</a></p>
 </div>
 
 <style>

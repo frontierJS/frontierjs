@@ -104,10 +104,10 @@ t('samples.shellCmd',   /<code language="sh">[\s\S]*?<strong>npx<\/strong>/.test
 // happy-dom 14 the prerender turned escaped markup back into live markup, so
 // this page shipped a real <script> tag inside a code sample and threw two
 // SyntaxErrors. The samples are the product; this is the page that proves the
-// serialiser fix reaches a real build.
+// serializer fix reaches a real build.
 t('samples.entitiesPreserved', {
   // No sample may hold a LIVE tag: glow escapes every `<` it emits, and the
-  // prerenderer must not turn it back. The tag is tokenised now, so the check
+  // prerenderer must not turn it back. The tag is tokenized now, so the check
   // is on the two halves rather than on the string `&lt;script&gt;`.
   live:    pres.every(p => !/<(?:script|style|iframe)[ >]/.test(p)),
   escaped: pres.some(p => p.includes('&lt;') && textOf(p).includes('<script>')),
@@ -478,10 +478,10 @@ try {
                     && getComputedStyle(cm).color !== ink };
   `))
 
-  // A token element must not keep its own meaning. code.css neutralises all
+  // A token element must not keep its own meaning. code.css neutralizes all
   // nine, because glow uses them as color carriers — without it every string
   // is italic and every comment is superscript, which reads as a broken page.
-  t('samples.neutralised', await evaluate(`
+  t('samples.neutralized', await evaluate(`
     const code = document.querySelector('pre.code code[language]');
     const em   = code.querySelector('em');
     const cs   = getComputedStyle(em);

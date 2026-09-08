@@ -45,7 +45,7 @@ export function html(strings, ...values) {
  *
  * Escaping alone would keep the markup intact and still let an arbitrary string
  * become a class name; a class is a selector other code matches on, so the value
- * is chosen from a list rather than sanitised toward one.
+ * is chosen from a list rather than sanitized toward one.
  */
 export function classSuffix(value, allowed, fallback) {
   const v = String(value ?? '').toLowerCase()

@@ -1,7 +1,7 @@
-// The reference catalogue is `.lite` rather than prose for one reason: a
+// The reference catalog is `.lite` rather than prose for one reason: a
 // reference that cannot parse is a reference that is wrong, and this is the only
 // format where that is checkable. So a parser rule that moves takes the
-// catalogue with it, instead of leaving a folder of plausible stale examples.
+// catalog with it, instead of leaving a folder of plausible stale examples.
 //
 // Two traps a reference file falls into, both measured before this was written:
 //
@@ -48,7 +48,7 @@ describe('reference models', () => {
       const { schema } = parse(src)
       const names = (schema?.models ?? []).map((m: any) => m.name)
       expect(names.length).toBeGreaterThan(0)
-      // Invariant 19's habit, applied to the catalogue: the file IS the noun.
+      // Invariant 19's habit, applied to the catalog: the file IS the noun.
       // A file may declare more than one model where the second exists only to
       // serve the first (Tag + TagAttachment); the first is the file's name.
       expect(names[0]).toBe(file.replace(/\.lite$/, ''))
@@ -57,7 +57,7 @@ describe('reference models', () => {
     it(`${file} is listed in the README`, () => {
       // The list is the point of the folder, so a file nobody indexed is the
       // silent failure here — it exists, it parses, and nobody looking at the
-      // catalogue can see it.
+      // catalog can see it.
       expect(README).toContain(`\`${file.replace(/\.lite$/, '')}\``)
     })
   }

@@ -29,7 +29,7 @@ ecosystem changes that.
 
 Litestone has three instances of the second and none of the first:
 `AuditEvent.subjectType/subjectId`, `Notification.contextType/contextId`, and the
-`TagAttachment` sketch in the reference catalogue. All three are two plain
+`TagAttachment` sketch in the reference catalog. All three are two plain
 columns and a naming convention, which is the honest shape.
 
 ## What a real polymorphic relation would cost
@@ -143,7 +143,7 @@ open, and an open set is the case no relation can serve.
 **The open set keeps `subjectType`/`subjectId` and keeps admitting what it cannot
 do.** Two plain columns, an index on the pair, and a job to sweep attachments
 whose subject is gone — because the database will not. `AuditEvent.lite` and
-`Tag.lite` in the reference catalogue already say this at the place somebody
+`Tag.lite` in the reference catalog already say this at the place somebody
 copies from.
 
 The worst outcome available here is a declaration that *looks* like a relation
@@ -204,7 +204,7 @@ of one, which is the same fact that stops `@@arc` from scaling to an open set.
 - `packages/litestone/references/Tag.lite` — the open-set case, with both honest
   answers argued at the file somebody copies
 - `packages/litestone/references/AuditEvent.lite` — the polymorphic subject in
-  production, and the spelling the catalogue prefers
+  production, and the spelling the catalog prefers
 - `schema-variants.md` — 4.26, the closed-set narrowing
 - `packages/litestone/docs/roadmap.md` § `resolveMany()` — an unbuilt batch
   resolver for the open set. It fixes the N+1 on reading polymorphic subjects and

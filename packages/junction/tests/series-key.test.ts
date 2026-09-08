@@ -58,7 +58,7 @@ describe('seriesKey — the identity of one series', () => {
     expect(seriesKey('m', { p: 'a\nb' })).toBe('m{p="a\\nb"}')
   })
 
-  test('the format is OpenMetrics\', so a key is a name a person recognises', () => {
+  test('the format is OpenMetrics\', so a key is a name a person recognizes', () => {
     // Not a private encoding: `name{k="v"}` is what every exporter's
     // documentation writes, so a key read out of this database can be pasted
     // into one and understood.

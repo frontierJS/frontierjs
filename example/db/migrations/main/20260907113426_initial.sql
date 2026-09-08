@@ -407,7 +407,7 @@ CREATE INDEX IF NOT EXISTS "idx_order_deletedAt" ON "order" ("deletedAt") WHERE 
 -- statement about a MOMENT and its neighbors are statements about now. A
 -- variant's price is what the shop charges today; `unitPrice` is what this
 -- shopper was charged, and re-reading the first to render the second rewrites
--- what past customers paid every time somebody edits the catalogue. Same for
+-- what past customers paid every time somebody edits the catalog. Same for
 -- the wording: `description` is the sentence that was on the screen, and a
 -- colorway renamed next year does not un-sell this one.
 -- 
@@ -904,7 +904,7 @@ CREATE TABLE IF NOT EXISTS "employee" (
 -- 
 -- Named for the WINDOW rather than for the terms it carries, and the rename
 -- was `fli check`'s: `model EmploymentTerms` reads as a plural, so
--- `employment-terms` singularises to `EmploymentTerm` and Invariant 2's three
+-- `employment-terms` singularizes to `EmploymentTerm` and Invariant 2's three
 -- resolvers stop agreeing — a resource file over it would resolve to no model
 -- at all. `PayWindow` is what every comment in `api/src/employment.ts` already
 -- called it.

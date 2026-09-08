@@ -812,11 +812,11 @@ a `render: static` route's `load()` runs in Node at build time, its companion
 may never enter the browser graph, and so the client route table has no loader
 for it. Sierra said so once per route — at `info`, among thirty lines of Vite
 output — and the page underneath was indistinguishable from one whose query
-found nothing. `example/site/`'s catalogue read *0 products, prerendered*.
+found nothing. `example/site/`'s catalog read *0 products, prerendered*.
 
 The dev server is a Node process. So the loader runs there, at
 `/__sierra/static-data` (`build/static-data-plugin.js`), and the browser gets
-JSON. `example`'s catalogue now reads *12 products* in dev, and the page's own
+JSON. `example`'s catalog now reads *12 products* in dev, and the page's own
 `head()` comes back on the same round trip because the router asks for it after
 the data.
 
@@ -1157,7 +1157,7 @@ stands for a set nothing can enumerate — and wrong for a static build, where
 `getStaticPaths()` named the set and the files are on disk.
 
 `example`'s storefront emitted 14 pages and wrote `sitemap.xml (4 URLs)`, with
-every product page missing: a catalogue invisible to the crawler it was
+every product page missing: a catalog invisible to the crawler it was
 prerendered for, and the build's own log calling it a success.
 
 `prerenderRoutes` reports the URLs it emitted — it is the only thing that knows
@@ -1625,7 +1625,7 @@ it explains cannot be pre-bundled: esbuild's scan meets a `.mesa`, dies, and the
 entries are dropped from `_metadata.json`. Vite still rewrites `virtual:sierra`'s
 imports to the `.vite/deps/` paths — which now 200 with the SPA fallback's HTML
 and an empty content type. The browser refuses that as a module, so the router
-never initialises and the page is blank behind one MIME-type line.
+never initializes and the page is blank behind one MIME-type line.
 
 **Every app that installed sierra from npm.** Nothing in this repo could see it:
 an app here resolves sierra to `packages/`, and Vite does not pre-bundle a linked
@@ -2123,7 +2123,7 @@ no options.
 
 Sierra held two of the five copies: `_pluralOf` in `schema-registry.js` and an
 inline `endsWith('ies') ? … : endsWith('s')` in `createResource`. The inline one
-was the weakest of the five — `statuses` singularised to `statuse`,
+was the weakest of the five — `statuses` singularized to `statuse`,
 `modelNameFor` missed, and the resource degraded to a bare `make()` with a
 console warning. Both call `@frontierjs/toolbelt/inflect` now.
 
@@ -2206,7 +2206,7 @@ field dropped in silence is the failure the whole row exists to end.
 
 `resource.options(fk)` fills a picker with no name written anywhere: the
 relation says which model answers, the registry says which service serves it,
-and the related model's own fields say which column a person recognises. That
+and the related model's own fields say which column a person recognizes. That
 last crossing needed `serviceNameFor(model)` in `schema-registry.js` — the
 plural rules were already there and every call site was spelling
 `model.toLowerCase() + 's'`, which is not even the rule the registry uses. One
@@ -2220,7 +2220,7 @@ those two answers are read from.
 
 Two defects in the Mesa plugin, both of them invisible in this repo and both
 fatal for an app that installs the framework rather than resolving it out of the
-workspace. Found by containerising basecamp, which is the first time anything
+workspace. Found by containerizing basecamp, which is the first time anything
 here has built an app that could not see `packages/`.
 
 **The node_modules allowance named one package.** `FJS-251` fixed the literal
@@ -2395,7 +2395,7 @@ happily and failing on first import. 833 tests unchanged.
 made it the weaker half of what it was modeled on. Two changes.
 
 **Directories are scanned recursively**, keyed on the basename. A component's
-directory organises it; its name identifies it — the same split the repo already
+directory organizes it; its name identifies it — the same split the repo already
 makes between a resource file and its accessor. `node_modules`, `dist` and
 dot-directories are skipped, because a misconfigured path otherwise walks the
 whole dependency graph before it fails.

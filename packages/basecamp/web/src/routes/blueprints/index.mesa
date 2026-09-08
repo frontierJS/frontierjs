@@ -2,7 +2,7 @@
 title: Blueprints
 ---
 <script>
-  // The mock's BlueprintMarketplaceView — the deployment catalogue.
+  // The mock's BlueprintMarketplaceView — the deployment catalog.
   //
   // Two things separate this screen from every other one in the app:
   //
@@ -13,7 +13,7 @@ title: Blueprints
   //   the thing to notice rather than an omission.
   //
   //   Reading it is VISITOR(1) and writing it is the hub tier. A person with no
-  //   membership anywhere can browse the catalogue — which is what somebody who
+  //   membership anywhere can browse the catalog — which is what somebody who
   //   has just accepted an invitation is — and only a sysadmin can change it.
   //   The write controls are rendered for a sysadmin only; the refusal is the
   //   server's either way, which is where a refusal has to live.
@@ -26,7 +26,7 @@ title: Blueprints
   // was built from survives, and a path that turns the params into the app's own
   // environment. Neither is invented here. What the detail pane shows instead is
   // the whole of what would be sent — image, ports, storage and every parameter
-  // with its rule — because a catalogue whose entries cannot be inspected is a
+  // with its rule — because a catalog whose entries cannot be inspected is a
   // list of logos.
   import { session } from '../../session.js'
   import { blueprints } from '../../resources/Blueprint.mesa'
@@ -146,7 +146,7 @@ title: Blueprints
 <div class="section-header">
   <h1>Blueprints</h1>
   <span class="text-sm text-muted">
-    Pre-configured applications. The same catalogue in every workspace.
+    Pre-configured applications. The same catalog in every workspace.
   </span>
 </div>
 
@@ -191,8 +191,8 @@ title: Blueprints
 {:else if !shown.length}
   <EmptyState title="Nothing matches">
     {rows.length
-      ? 'No blueprint in this catalogue matches that search.'
-      : 'This installation has no catalogue yet. A sysadmin curates it.'}
+      ? 'No blueprint in this catalog matches that search.'
+      : 'This installation has no catalog yet. A sysadmin curates it.'}
   </EmptyState>
 {:else}
   <div class="grid cols-3" id="blueprint-grid">
@@ -262,7 +262,7 @@ title: Blueprints
             <td><code>{p.key}</code></td>
             <td class="text-sm">{p.label}</td>
             <!-- A secret's DEFAULT is not a secret: it is what ships with the
-                 catalogue, never anybody's value. What a person types goes to a
+                 catalog, never anybody's value. What a person types goes to a
                  Secret, which is @encrypted and never read back. -->
             <td class="text-sm text-muted">{p.defaultValue || '—'}</td>
             <td>

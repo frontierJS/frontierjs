@@ -94,7 +94,7 @@ seed is absent from all of them.
 
 **Three of them are about a decision that cannot be taken back**, which is why
 they are here rather than in a rule: a second open validity window, a document
-reading its price through a relation so the catalogue reprices what is already
+reading its price through a relation so the catalog reprices what is already
 written, and a standing spelled on a model that spans tenants. Each is legal,
 each works, and each loses information nothing can recover once it is wrong —
 so the confidence is about whether you meant it, never about whether it broke.

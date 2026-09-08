@@ -125,7 +125,7 @@ test('directives: no $-prefixed key survives into the filters', function () {
     assert.deepEqual(Object.keys(query), ['keep'])
     assert.equal(Object.keys(directives).length, 0)
   }
-  // Controls: a recognised directive still parses, and an ordinary filter is
+  // Controls: a recognized directive still parses, and an ordinary filter is
   // untouched — a split that dropped everything would pass the rows above.
   const r = splitParams({ $limit: '10', status: 'open' })
   assert.deepEqual(r.query, { status: 'open' })

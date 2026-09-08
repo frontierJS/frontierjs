@@ -72,7 +72,7 @@ test('code: inside a <pre> the container owns the type', function () {
   assert.equal(style(box.querySelector('code[language]'), 'font-size'), '29px');
 });
 
-/* ── Neutralisation ────────────────────────────────────────────────── */
+/* ── Neutralization ────────────────────────────────────────────────── */
 
 test('code: token elements carry color, not emphasis', function () {
   /*

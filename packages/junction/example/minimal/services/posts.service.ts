@@ -11,7 +11,7 @@
 //   posts.service.ts    → service 'posts'   — the filename, and the URL
 //   db.post             the Litestone accessor
 //
-// The accessor is tried literally first and then singularised, so
+// The accessor is tried literally first and then singularized, so
 // `createBaseService({})`, `{ model: 'posts' }` and `{ model: 'post' }` all
 // reach `model Post`. Name it explicitly when the mapping isn't regular
 // (an @@external model mirroring a foreign table, say).

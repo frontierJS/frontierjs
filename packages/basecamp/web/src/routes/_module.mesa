@@ -88,7 +88,7 @@ siteName: Basecamp
     { id: 'go-observability', group: 'Navigate', label: 'Observability', sub: 'metrics and logs', action: () => goto('/observability/') },
     { id: 'go-portal',      group: 'Navigate', label: 'Portal',      sub: 'shared appliances',  action: () => goto('/portal/') },
     { id: 'go-registry',    group: 'Navigate', label: 'Registry',    sub: 'images this workspace pushed', action: () => goto('/registry/') },
-    { id: 'go-blueprints',  group: 'Navigate', label: 'Blueprints',  sub: 'the deployment catalogue', action: () => goto('/blueprints/') },
+    { id: 'go-blueprints',  group: 'Navigate', label: 'Blueprints',  sub: 'the deployment catalog', action: () => goto('/blueprints/') },
     { id: 'go-settings',    group: 'Navigate', label: 'Your settings', sub: 'password, notifications, sessions', action: () => goto('/settings/') },
     { id: 'go-admin',       group: 'Navigate', label: 'Admin',       action: () => goto('/admin/') },
     { id: 'go-audit',       group: 'Navigate', label: 'Audit trail', sub: 'Admin', action: () => goto('/admin/audit/') },

@@ -1,7 +1,7 @@
 {
   "name": "oracle-mockup",
   "version": "0.0.0",
-  "description": "Entity/pattern recogniser mockup — not a workspace member, run from this directory",
+  "description": "Entity/pattern recognizer mockup — not a workspace member, run from this directory",
   "private": true,
   "type": "module",
   "scripts": {

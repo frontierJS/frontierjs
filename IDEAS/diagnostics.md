@@ -4,7 +4,7 @@ status: shipped
 dated: 2026-08-04
 ---
 
-# Idea — `fli doctor`: the landmine catalogue as a runnable check
+# Idea — `fli doctor`: the landmine catalog as a runnable check
 
 **Status: PART SHIPPED 2026-08-24, under a different name.** Ruled `FJS-D133`:
 the rules live in **`fli check`**'s registry, not in a second command — `fli
@@ -172,7 +172,7 @@ shipped beside it, and the build-time half landed as two switched-on rules.
 - **Does it overlap `atlas`?** Both read `project:map --json`. Probably the same
   substrate, different question — atlas asks *what is this app*, doctor asks *what is
   wrong with it*.
-- ~~**Static analysis has limits.**~~ **Answered, and the answer generalises.**
+- ~~**Static analysis has limits.**~~ **Answered, and the answer generalizes.**
   Proving a `render: static` route reads gated data needs the prerenderer, and
   that check is Sierra's. But *is the proof switched on* is decidable from text,
   and it is where this class actually fails: a static surface wiring no `db:`

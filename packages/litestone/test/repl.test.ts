@@ -99,7 +99,7 @@ describe('evaluating', () => {
     expect(out).toContain('7')
   })
 
-  it('a body with a statement in it needs no parenthesising', async () => {
+  it('a body with a statement in it needs no parenthesizing', async () => {
     const out = await session(['const n = 2; return n * 3'])
     expect(out).toContain('6')
   })

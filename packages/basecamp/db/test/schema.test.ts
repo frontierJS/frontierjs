@@ -95,7 +95,7 @@ async function client(opts: Record<string, unknown> = {}): Promise<any> {
  * A raw database with the migration replayed, for the two tests that inspect
  * what the migration BUILT rather than what a client does with it.
  */
-// Memoised: replaying the migration is 45 CREATE TABLEs and both callers only
+// Memoized: replaying the migration is 45 CREATE TABLEs and both callers only
 // READ metadata off the result, so a second replay buys nothing and cost the
 // suite a flake — bun's default per-test budget is 5s, and on a loaded machine
 // one replay is most of it. Restore the per-call build if a caller ever writes.
@@ -318,7 +318,7 @@ describe('generated migration', () => {
     // since `OauthFlow`, which is an authorization in flight and deliberately
     // NOT a Verification — see the note above the model. 45 since the six the
     // mock's last unbuilt screens need: `Blueprint` + `BlueprintParam` (a
-    // hub-curated catalogue, so `@@tenant(none)` and no workspace column),
+    // hub-curated catalog, so `@@tenant(none)` and no workspace column),
     // `RegistryImage` (observed, which commits to MIRRORING a registry rather
     // than querying it live), `Backup` and `HubConfig` (the installation, which
     // no workspace owns) and `NotificationPreference` (one row per person and
@@ -341,7 +341,7 @@ describe('generated migration', () => {
     expect(nonStrict).toEqual([])
     raw.close()
   // Replaying 46 CREATE TABLEs is most of bun's 5s default on a loaded machine,
-  // and the memoised `freshDb()` only spares the SECOND caller. An explicit
+  // and the memoized `freshDb()` only spares the SECOND caller. An explicit
   // budget rather than a faster test: what this asserts is the shape of the
   // migration, and timing it out says nothing about that.
   }, 30_000)
@@ -687,7 +687,7 @@ describe('the gate ladder', () => {
       model Thing {
         id   String @id @default(uuid())
         name String
-        @@gate(read: ADMINISTRATOR)
+        @@gate("5.5.5.5")
       }
     `
     const db = await createClient({ schema: gatedSchema, db: ':memory:' })

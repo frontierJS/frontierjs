@@ -61,7 +61,7 @@
 ///   the tenant itself Workspace, and WorkspaceMember, which is what the claim
 ///                     is READ from
 ///   the installation  HubConfig and Backup describe the whole install,
-///                     Blueprint/BlueprintParam are one curated catalogue
+///                     Blueprint/BlueprintParam are one curated catalog
 ///                     every workspace sees, NotificationPreference has no
 ///                     workspace column at all, and OutpostNonce is a machine's
 ///                     spent credential, which no workspace owns and no
@@ -191,9 +191,9 @@ enum UserKind       { human bot ai }
 enum UserStatus      { pending_verification active suspended }
 enum WorkspaceStatus { active suspended }
 enum SecretKind     { ssh_key provider_key registry_auth tls_cert notification generic }
-enum ServerStatus   { pending provisioning installing ready online unreachable draining stopped destroyed }
+enum ServerStatus   { pending provisioning installing online unreachable draining stopped destroyed }
 enum ServerRole     { general build database gateway worker }
-enum ProviderKind   { custom hetzner }
+enum ProviderKind   { custom hetzner digitalocean }
 enum EnvironmentTier { development test preview staging production }
 enum AppType        { container worker database daemon cron static function }
 enum AppStatus      { unknown stopped starting running stopping deploying error }
@@ -740,15 +740,36 @@ model Secret {
   isVerified  Boolean    @default(false)
   createdBy   String?
 
+  /// WHICH cloud a `provider_key` opens. Null for every other kind.
+  ///
+  /// It is a column rather than a field inside `data` because a vendor name is
+  /// not a secret: `data` is `@encrypted`, so the key is absent from every read,
+  /// and *which DigitalOcean accounts does this workspace have* would mean
+  /// decrypting every secret in the workspace to answer. Here it filters, it
+  /// indexes, and it reaches a picker as a set.
+  ///
+  /// It reuses `ProviderKind` rather than growing a second vendor vocabulary on
+  /// `SecretKind`. Two enums listing clouds is two lists to keep in step, and
+  /// the one that drifts is the one nothing reads.
+  providerKind ProviderKind?
+
   version     Int        @version
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @default(now()) @updatedAt
   deletedAt   DateTime?
 
+  /// A provider key that does not say which cloud it opens cannot be turned
+  /// into a Conduit target, and nothing downstream could tell which connector
+  /// speaks to it. The reverse is refused too: a vendor on an SSH key is a
+  /// column somebody filled in by mistake.
+  @@check("(kind = 'provider_key') = (providerKind IS NOT NULL)",
+          "a provider key names its cloud, and nothing else may")
+
   @@gate("5")
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, name])
+  @@index([workspaceId, providerKind])
 }
 
 // A token Basecamp ISSUES — the third direction, and the one the two models
@@ -843,12 +864,22 @@ model Server {
   status           ServerStatus @default(pending)
   role             ServerRole   @default(general)
 
-  // Which cloud, and the two ids that mean something only THERE — an account and
-  // a machine. Not a relation: those rows live in somebody else's database, so
-  // there is no key to point at and nothing to cascade. What the column can be
-  // told is which clouds this app knows, and a value outside the set is refused
-  // by a table CHECK rather than sitting there naming an integration nobody
-  // wrote. Add a member when a provider is added.
+  // Which cloud, WHICH ACCOUNT of it, and which machine there.
+  //
+  // `providerKind` can be told which clouds this app knows, and a value outside
+  // the set is refused by a table CHECK rather than sitting there naming an
+  // integration nobody wrote. Add a member when a provider is added.
+  //
+  // `providerId` is the `Secret` holding this workspace's token for that cloud —
+  // a bare id, no @relation, the same shape as `Domain.certSecretId`, because
+  // `Secret` is @@softDelete and a machine whose key was retired should say so
+  // rather than vanish with it. It is what makes the Conduit target address an
+  // ACCOUNT (`provider:<kind>:<providerId>`) instead of a vendor, so two
+  // workspaces can each hold their own DigitalOcean without sharing a token
+  // (`FJS-1020`).
+  //
+  // `providerServerId` is the machine's id at the vendor, which means something
+  // only THERE: no key to point at and nothing to cascade.
   providerKind     ProviderKind @default(custom)
   providerId       String?
   providerServerId String?
@@ -927,8 +958,8 @@ model Server {
   // old map flipped the row back to `online` silently.
   //
   // `checkIn` names the from-set heartbeat has always used. A server sitting at
-  // `ready` or `provisioning` that starts checking in stays where it is; that
-  // is today's behavior written down rather than a decision made here.
+  // `provisioning` that starts checking in stays where it is; that is today's
+  // behavior written down rather than a decision made here.
   // Two kinds of move, and `@system` is what says which.
   //
   // `reboot`, `drain` and `undrain` are a PERSON's: somebody decides, and the
@@ -950,10 +981,10 @@ model Server {
     drain:            online                                                       -> draining @gate(5),
     undrain:          draining                                                     -> online   @gate(5),
     checkIn:          [pending, installing, unreachable]                           -> online   @system,
-    reportRunning:    [pending, provisioning, installing, ready, unreachable, stopped]           -> online       @system @gate(5),
-    reportStopped:    [pending, provisioning, installing, ready, online, unreachable, draining]  -> stopped      @system @gate(5),
-    reportRebuilding: [pending, installing, ready, online, unreachable, draining, stopped]       -> provisioning @system @gate(5),
-    reportDestroyed:  [pending, provisioning, installing, ready, online, unreachable, draining, stopped] -> destroyed @system @gate(5))
+    reportRunning:    [pending, provisioning, installing, unreachable, stopped]                  -> online       @system @gate(5),
+    reportStopped:    [pending, provisioning, installing, online, unreachable, draining]         -> stopped      @system @gate(5),
+    reportRebuilding: [pending, installing, online, unreachable, draining, stopped]              -> provisioning @system @gate(5),
+    reportDestroyed:  [pending, provisioning, installing, online, unreachable, draining, stopped]        -> destroyed @system @gate(5))
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, slug])
@@ -2022,7 +2053,7 @@ model AuditEvent {
 }
 
 // ============================================================
-// CATALOGUE
+// CATALOG
 // ============================================================
 // What can be deployed, and what has been pushed to the registry. Both are
 // things an operator PICKS from rather than authors, and they sit at opposite
@@ -2033,7 +2064,7 @@ model AuditEvent {
 // parameters a person fills in before it becomes an App.
 //
 // **Hub-curated, so it carries no workspaceId and says `@@tenant(none)`.** The
-// mock's marketplace is a catalogue of third-party software (n8n, Postgres,
+// mock's marketplace is a catalog of third-party software (n8n, Postgres,
 // Redis, Meilisearch, Plausible); not one of its entries is somebody's own.
 // Making it workspace-scoped would give every tenant a private copy of the same
 // nine rows, and the alternative — a nullable `workspaceId` meaning *shared* —
@@ -2109,13 +2140,13 @@ model Blueprint {
 
   params         BlueprintParam[]
 
-  // Read by anyone signed in — VISITOR(1), because browsing the catalogue is
+  // Read by anyone signed in — VISITOR(1), because browsing the catalog is
   // what a person with no workspace yet is doing. Written by the hub tier only.
   @@gate("1.7")
   @@log(audit)
   @@index([category])
 
-  // @@tenant(none) — a curated catalogue is the same nine rows for every
+  // @@tenant(none) — a curated catalog is the same nine rows for every
   // workspace, and there is no column to scope it by
   @@tenant(none)
 }
@@ -2138,7 +2169,7 @@ model BlueprintParam {
   hint         String?         @trim @length(0, 200)
 
   // NOT `@secret`, and the difference matters: this is the value shipped with
-  // the catalogue (`admin`, `UTC`, `256mb`), never anybody's. What a person
+  // the catalog (`admin`, `UTC`, `256mb`), never anybody's. What a person
   // types lands in a `Secret` or in the app's own env, where `secret` below
   // says which.
   defaultValue String?         @length(0, 500)
@@ -2496,7 +2527,7 @@ view fleetByProvider {
   // revenue view is gated ABOVE its orders because a shop's total is a
   // different fact from one shopper's order, and a fleet's shape is the same
   // fact as its machines. Gating it higher would hide a summary from the
-  // people who can already read every row it summarises.
+  // people who can already read every row it summarizes.
   @@gate("2")
 
   // WHICH workspace — the tenancy block at the top of this file, resolved per

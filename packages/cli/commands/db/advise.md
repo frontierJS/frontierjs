@@ -66,5 +66,5 @@ A rule carries a severity because it is a defect. A suggestion carries a
 `confidence` because the schema is not wrong and you may have meant it —
 `likely` where litestone can SEE the thing it is asserting (a model that carries
 the row's owner and declares no `@@allow`), and `possible` where it is asking.
-Nothing here distinguishes a catalogue from a possession, so it says so rather
+Nothing here distinguishes a catalog from a possession, so it says so rather
 than guessing.

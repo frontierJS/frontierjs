@@ -42,7 +42,7 @@ flags:
     defaultValue: 8500
   view-port:
     type: number
-    description: Port for fli project:view
+    description: Port for fli project:map --as=serve
     defaultValue: 8501
   studio-port:
     type: number
@@ -98,7 +98,7 @@ memory. They never move with the app.
 | `fli gui` | 8500 | what is there, what is running, and does anything fail a check |
 | `fli db:studio` | 8502 | what is actually in the database |
 | junction's console | 8503 | what happened to that call |
-| `fli project:view` | 8501 | what handles a request, and in what order |
+| `fli project:map --as=serve` | 8501 | what handles a request, and in what order |
 
 **Start at the GUI.** It is the only one that knows about the other three — it
 lists everything startable in this project, shows which of them is up right

@@ -370,7 +370,7 @@ function buildTreeFromEntries(entries, routesDir, layoutMap, trailingSlash) {
 
   // Find the root index if it exists.
   //
-  // The root is a SYNTHESISED node — it stands for the routes directory itself
+  // The root is a SYNTHESIZED node — it stands for the routes directory itself
   // — so the entry's fields are copied onto it rather than the entry being
   // used. `companion` was missing from that copy, which meant
   // `src/routes/index.meta.js` was found by the scan, parsed, and then dropped:

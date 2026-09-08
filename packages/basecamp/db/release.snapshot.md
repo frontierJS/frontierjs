@@ -45,7 +45,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `RunStatus` | `failed` · `pending` · `running` · `success` · `timeout` |
 | `SecretKind` | `generic` · `notification` · `provider_key` · `registry_auth` · `ssh_key` · `tls_cert` |
 | `ServerRole` | `build` · `database` · `gateway` · `general` · `worker` |
-| `ServerStatus` | `destroyed` · `draining` · `installing` · `online` · `pending` · `provisioning` · `ready` · `stopped` · `unreachable` |
+| `ServerStatus` | `destroyed` · `draining` · `installing` · `online` · `pending` · `provisioning` · `stopped` · `unreachable` |
 | `StepStatus` | `failed` · `pending` · `running` · `skipped` · `success` |
 | `UserKind` | `ai` · `bot` · `human` |
 | `UserStatus` | `active` · `pending_verification` · `suspended` |
@@ -1305,10 +1305,10 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 transition status.checkIn: installing, pending, unreachable → online @system
 transition status.drain: online → draining @gate(5)
 transition status.reboot: online, unreachable → pending
-transition status.reportDestroyed: draining, installing, online, pending, provisioning, ready, stopped, unreachable → destroyed @system @gate(5)
-transition status.reportRebuilding: draining, installing, online, pending, ready, stopped, unreachable → provisioning @system @gate(5)
-transition status.reportRunning: installing, pending, provisioning, ready, stopped, unreachable → online @system @gate(5)
-transition status.reportStopped: draining, installing, online, pending, provisioning, ready, unreachable → stopped @system @gate(5)
+transition status.reportDestroyed: draining, installing, online, pending, provisioning, stopped, unreachable → destroyed @system @gate(5)
+transition status.reportRebuilding: draining, installing, online, pending, stopped, unreachable → provisioning @system @gate(5)
+transition status.reportRunning: installing, pending, provisioning, stopped, unreachable → online @system @gate(5)
+transition status.reportStopped: draining, installing, online, pending, provisioning, unreachable → stopped @system @gate(5)
 transition status.undrain: draining → online @gate(5)
 ```
 

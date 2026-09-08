@@ -258,7 +258,7 @@ Three properties make this materially better than handwritten equivalents:
    (`IDEAS/slices.md`). That removes the last hand-maintained part from the slice
    format.
 
-Open sub-questions specific to this: are derived tests materialised as files a
+Open sub-questions specific to this: are derived tests materialized as files a
 developer can read and edit (codegen — inspectable, driftable), or produced at run
 time from the schema (derivation — always current, opaque)? The framework's own
 precedent points at **derivation**, since Litestone migrations are the one place it

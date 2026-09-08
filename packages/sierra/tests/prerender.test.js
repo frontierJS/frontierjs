@@ -55,7 +55,7 @@ describe('fillPath', () => {
 
   test('an EMPTY param is refused, because it overwrites the parent page', () => {
     // The quiet half of the same defect: '' fills to /products//, which
-    // collapses to products/index.html — the catalogue's own page, replaced by
+    // collapses to products/index.html — the catalog's own page, replaced by
     // one product, build exit 0, a tick printed beside it. A nullable slug
     // column or an import that did not fill one is all it takes.
     expect(() => fillPath('/products/:slug/', { slug: '' })).toThrow(/empty/)
@@ -63,7 +63,7 @@ describe('fillPath', () => {
 
   test('an ordinary slug still fills — including one with hyphens and unicode', () => {
     // The negative control: a check that refused every param satisfies the two
-    // rows above and emits no catalogue at all (`FJS-351`).
+    // rows above and emits no catalog at all (`FJS-351`).
     expect(fillPath('/products/:slug/', { slug: 'navy-tee' })).toBe('/products/navy-tee/')
     expect(fillPath('/products/:slug/', { slug: 'caf\u00e9-au-lait' })).toBe('/products/caf\u00e9-au-lait/')
     expect(fillPath('/products/:id/', { id: 42 })).toBe('/products/42/')

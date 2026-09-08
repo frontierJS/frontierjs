@@ -42,7 +42,7 @@ const SCHEMA = `
 
 // The same shape as SCHEMA, plus the grant column. Separate because a
 // `Capability[]` only exists once a model declares `@@capabilities` — the type is
-// synthesised from the models that opt in, so an empty grid makes it unwritable.
+// synthesized from the models that opt in, so an empty grid makes it unwritable.
 const GRANTS = `
   tenancy { strategy row  column workspaceId  claim workspaceId }
 

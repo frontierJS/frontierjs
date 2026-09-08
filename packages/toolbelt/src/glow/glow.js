@@ -285,7 +285,7 @@ export function parseRow(row, lang) {
   /* A block comment that opens and closes on one line, after code.
      parseSyntax leaves these to be highlighted rather than swallowing the
      line, so the comment needs a token of its own — without it the words
-     inside get tokenised as code. Markdown has neither syntax. */
+     inside get tokenized as code. Markdown has neither syntax. */
   if (!isMD(lang)) tags.unshift(...INLINE_COMMENT_TAGS)
 
   for (const el of tags) {

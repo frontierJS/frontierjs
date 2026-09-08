@@ -12,7 +12,7 @@
  * ─── The three things this proves and nothing else here can ───────────────
  *
  *   the DATA     a product created at one shop is not at the other, and the
- *                second shop starts with a catalogue of its own — empty
+ *                second shop starts with a catalog of its own — empty
  *   the PEOPLE   `User`, `Credential` and `Session` are in the tenant's file, so
  *                an account at one shop is not an account at another. This is
  *                the assertion the whole arrangement stands on: it is what a
@@ -101,10 +101,10 @@ await shopAuth.createUser({ ...LOCAL, name: 'High Street Manager', role: 'admin'
 console.log('\n  the data')
 
 const flagshipList = await (await at(null, '/products?$limit=200')).json()
-check('the flagship has its catalogue', flagshipList.total > 10, true)
+check('the flagship has its catalog', flagshipList.total > 10, true)
 
 const theirs = await (await at(HOST, '/products?$limit=200')).json()
-check('the new shop starts with a catalogue of its own — empty', theirs.total, 0)
+check('the new shop starts with a catalog of its own — empty', theirs.total, 0)
 
 // A product written straight into the second shop's file. Through the registry
 // rather than over HTTP, because creating one needs a signed-in seller and what
@@ -118,7 +118,7 @@ check('it is in the shop that made it',
       (await (await at(HOST, '/products?$limit=200')).json()).data.some(p => p.id === mine.id), true)
 check('…and in no other, by name',
       (await (await at(null, '/products?$limit=200')).json()).data.some(p => p.name === mine.name), false)
-check('…nor is the flagship’s catalogue in it — one product, the one it made',
+check('…nor is the flagship’s catalog in it — one product, the one it made',
       (await (await at(HOST, '/products?$limit=200')).json()).total, 1)
 
 // The isolation is the filesystem, so it is checkable as one.

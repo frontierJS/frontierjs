@@ -1,7 +1,7 @@
 # Reference models
 
 **The shape we think a common model should have, one file each.** Not shipped,
-not imported, not installed by anything — a catalogue you read before writing a
+not imported, not installed by anything — a catalog you read before writing a
 model that half a dozen apps have already written differently.
 
 The question these answer is *what columns does an `AuditEvent` actually need*,
@@ -14,7 +14,7 @@ edit it; that is the whole intended workflow.
 Because a reference that cannot parse is a reference that is wrong, and `.lite`
 is the one format where that is checkable. `references.test.js` parses every file
 in this folder and fails on an error, so a rule that moves in the parser takes
-the catalogue with it rather than leaving twenty plausible stale examples.
+the catalog with it rather than leaving twenty plausible stale examples.
 
 The notes are `///` doc comments, which is where the notes belong anyway — the
 example app's own schema is written that way, and this is that habit extracted.
@@ -48,7 +48,7 @@ of.
 Where the tree already has an instance, it is named, and where instances
 disagree, the disagreement is the finding.
 
-## Two things this catalogue found on its first pass
+## Two things this catalog found on its first pass
 
 **The polymorphic subject exists twice under two names.** `AuditEvent` in
 basecamp carries `subjectType` / `subjectId` with an `@@index` on the pair;
@@ -56,7 +56,7 @@ basecamp carries `subjectType` / `subjectId` with an `@@index` on the pair;
 idea — *which row is this row about*. Two apps in one repo, one concept, two
 spellings, and nothing anywhere could have noticed.
 
-The catalogue's preference is **`subjectType` / `subjectId`** for anything new.
+The catalog's preference is **`subjectType` / `subjectId`** for anything new.
 That is a recommendation for the next model, not a demand to migrate the two that
 exist: renaming a column is a migration, and neither is wrong.
 
@@ -67,7 +67,7 @@ hand-written structural type plus a file in this folder. A reference model is
 the wrong home for a shape a package's own code depends on: the package changes
 a column, every app's copy is stale, and nothing can compare them. It ships
 `db/notification.lite` now, `fli check`'s `package-model-drift` grades an app's
-copy against it, and this catalogue's entry is a POINTER rather than a second
+copy against it, and this catalog's entry is a POINTER rather than a second
 copy — the same shape `User` and `Credential` already had.
 
 ## The running list
@@ -94,7 +94,7 @@ replace.
 | OPERATIONS | `Event` · `FeatureFlag` | not written — basecamp has `FeatureFlag` + `FlagOverride` |
 | storage | an upload record | not written — open whether a row per file is machinery at all |
 
-**Not in this catalogue, deliberately**: `Offer`, `Payment`, `Document`,
+**Not in this catalog, deliberately**: `Offer`, `Payment`, `Document`,
 `Contact`, `Visit`, `Task`, `Schedule`, `Asset`, `Location`. Each is a real noun
 in some app and a different one in the next — a landscaping `Offer` carries
 `rate`, `mode` and `unit`; a shop's product carries `slug`, `brand`, images and

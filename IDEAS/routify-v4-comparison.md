@@ -51,7 +51,7 @@ treats one app as one thing.
 | Feature | On `web/` (SPA console) | On `site/` (prerendered) |
 | --- | --- | --- |
 | `runParallel` tree batch | the request cost is real, but the active tree is not statically decidable | `load()` runs at BUILD time; nobody is waiting |
-| `runSync` parent-to-child | serialises what Sierra already runs in parallel | moot, build-time |
+| `runSync` parent-to-child | serializes what Sierra already runs in parallel | moot, build-time |
 | XXHash3 render skip | no per-request SSR to skip | no per-request SSR to skip |
 | SSG invalidation | not applicable | **the real question** |
 | REST sync + sequence ids | `@version` is the answer; sequence ids solve the wrong problem | defensible — one writer, and that writer is nobody |
@@ -87,7 +87,7 @@ compiler pass: after a per-row store, how much drilling is left?
 **There is no per-request SSR to skip.** Sierra's targets are `spa`, `static`,
 `widget` and the extension surface. `static` emits HTML and CSS and no script
 at all — `islands/loader.js` is the whole interactivity story, not an
-optimisation on a working one — and Mesa has no hydration, so an island
+optimization on a working one — and Mesa has no hydration, so an island
 *replaces* prerendered markup rather than adopting it. The proposal's §2 targets
 a render mode neither framework has.
 
@@ -166,7 +166,7 @@ Recorded because a comparison that only scores the other side is worthless.
 
 - **Island props are baked into the marker**, as JSON inside an HTML comment.
   So on `site/` the drilling complaint has teeth that it does not have on
-  `web/`: the build has to serialise a seed down the tree, and the node registry
+  `web/`: the build has to serialize a seed down the tree, and the node registry
   cannot reach it because there is no client store at build time. Two different
   problems wearing one name, and only one of them is solved here.
 - **No per-request SSR at all.** Not a gap by accident — `FJS-543` is why a

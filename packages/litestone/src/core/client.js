@@ -25,7 +25,7 @@ import {
   deserializeRow, serializeRow,
   coerceBooleans, serializeBooleans,
   encodeCursor, decodeCursor,
-  normaliseOrderBy, buildCursorWhere, extractCursorValues,
+  normalizeOrderBy, buildCursorWhere, extractCursorValues,
   filterableKeysFor, sortableKeysFor, aggregatableKeysFor, opaqueSortKind, OPAQUE_SORT,
 } from './query.js'
 import { validate, applyTransforms, buildValidationMap, validateJsonPatch, ValidationError } from './validate.js'
@@ -36,7 +36,7 @@ import { capabilityDeclarations, capabilityNames } from './capabilities.js'
 import { buildPolicyMap, buildScopeMap, compileScope, policyExprToString, buildPolicyFilter, checkCreatePolicy, checkPostUpdatePolicy, policyVerdict, evalJs, compileFieldPredicate, referencesRow, delegationProblems, buildClaimSet, checkFieldPolicies, authClaimsUsed } from './policy.js'
 import {
   encryptField, decryptField, encryptDeterministic, hashField,
-  normaliseKey, comparisonEncoderFor, parseEnvelope, verifiesAs, makeKeyring, keyId, legacyForm,
+  normalizeKey, comparisonEncoderFor, parseEnvelope, verifiesAs, makeKeyring, keyId, legacyForm,
 } from './encryption.js'
 import { backupSqliteTo } from './backup.js'
 import { resolveTenancy } from './tenancy.js'
@@ -81,7 +81,7 @@ export * from './errors.js'
 // every subscribed tab reload its page.
 //
 // `rows` is the opt-in that buys precision, and what it costs is MEMORY
-// proportional to the batch — a `deleteMany` over 100k rows materialises 100k
+// proportional to the batch — a `deleteMany` over 100k rows materializes 100k
 // rows because somebody subscribed. That is why it cannot be the default, and
 // why it cannot be decided by size: the count is unknowable before the statement
 // without a second query, so this is declared rather than guessed (FJS-D34).
@@ -1626,7 +1626,7 @@ async function loadComputedFields(computedInput) {
 //
 // Keys beginning with `$` are not fields ($validate is a cross-field validator
 // array) and travel through untouched.
-function normaliseComputed(computedFns, schema) {
+function normalizeComputed(computedFns, schema) {
   if (!computedFns) return {}
 
   const readableFields = {}
@@ -1737,7 +1737,7 @@ const _txOwned = new AsyncLocalStorage()
 // touches used to be rebuilt, because `$setAuth(user)` cannot reuse one: the
 // principal differs per request, so `makeTable` ran again for each flavor
 // (`FJS-722`). Measured on the 188-model fixture, a request touching five
-// models paid 261 µs doing it, and a fully materialised scoped client held
+// models paid 261 µs doing it, and a fully materialized scoped client held
 // 3.6 MB — which under `strategy database` is per tenant.
 //
 // What made it fixable is what the build actually READS. Inside `makeTable`,
@@ -3235,7 +3235,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // empty on almost every model, so the per-write cost is a size test.
   const _capabilityWriteKeys = ctx.capabilityMap?.[modelName]?.columns ?? new Set()
   // The columns that HOLD capabilities, as opposed to the ones a capability grades.
-  // Typed `Capability[]` — litestone synthesises that enum from the schema's own
+  // Typed `Capability[]` — litestone synthesizes that enum from the schema's own
   // surface, so the type carries both the typo refusal and the escalation guard.
   const _grantColumns = new Set(
     (_modelForKeys?.fields ?? []).filter(f => f.type?.name === 'Capability').map(f => f.name))
@@ -5243,7 +5243,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // to the field.
   let _keyColsCache = null
   // Declared `Type?`. Read from the model rather than asked of the caller, and
-  // memoised because a cursor asks it per field per page.
+  // memoized because a cursor asks it per field per page.
   let _nullableCache = null
   function _isNullable(col) {
     if (!_nullableCache) {
@@ -5307,13 +5307,13 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // from — a scan that skips a row, which is the thing this exists to stop.
   function cursorFields(orderBy) {
     const keyCols = _keyCols()
-    // `normaliseOrderBy` defaults to the literal `id`, which it has to — it is
+    // `normalizeOrderBy` defaults to the literal `id`, which it has to — it is
     // a pure function with no model in scope. Here there IS one, and a
     // composite-keyed model has no column called `id`: the default ordering
     // named one that does not exist, so every derived list over such a model
     // was a 400 (`FJS-694`).
     const fields = orderBy
-      ? normaliseOrderBy(orderBy)
+      ? normalizeOrderBy(orderBy)
       : keyCols.map(c => ({ col: c, dir: 'ASC', nulls: 'FIRST' }))
 
     // Whether the column can hold NULL, read off the model. `buildCursorWhere`
@@ -5625,7 +5625,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   function finalize(rows, ps) {
     return ps ? trimAllToSelect(rows, ps.requestedFields, ps.injectedFKs) : rows
   }
-  function finaliseOne(row, ps) {
+  function finalizeOne(row, ps) {
     if (!ps || !row) return row
     return Object.fromEntries(
       Object.entries(row).filter(([k]) => ps.requestedFields.has(k) && !ps.injectedFKs.has(k))
@@ -6153,7 +6153,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const _ffT0 = _nt ? performance.now() : 0
       let row               = read(readDb.query(sql).get(...params), { mode: 'list', selectedFields: ps?.requestedFields })
       if (_nt) fireQuery({ operation: 'findFirst', args, sql, params, duration: _nt ? performance.now() - _ffT0 : 0, rowCount: row ? 1 : 0 })
-      if (row) { withIncludes([row], ps, include); row = finaliseOne(row, ps); attachFlatEdges([row], scopedBy) }
+      if (row) { withIncludes([row], ps, include); row = finalizeOne(row, ps); attachFlatEdges([row], scopedBy) }
       else row = null
       if (plugins?.hasPlugins && row) await plugins.afterRead(modelName, [row], ctx, { select })
       // ── Logging ──────────────────────────────────────────────────────────────
@@ -6204,7 +6204,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       if (_nt) fireQuery({ operation: 'findUnique', args, sql, params, duration: _nt ? performance.now() - _fuT0 : 0, rowCount: rows.length })
       if (rows.length > 1) throw new Error(`findUnique on "${tableName}" returned more than one row`)
       let row = rows[0] ?? null
-      if (row) { withIncludes([row], ps, include); row = finaliseOne(row, ps); attachFlatEdges([row], scopedBy) }
+      if (row) { withIncludes([row], ps, include); row = finalizeOne(row, ps); attachFlatEdges([row], scopedBy) }
       // The same tail `findFirst`, `findMany` and `findManyAndCount` all have,
       // and it had never been here. Two consequences, both silent:
       //
@@ -7057,7 +7057,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       let created = _crOut.row
       const ps = parseArgs(select, include)
       if (ps || include) withIncludes([created], ps, include)
-      created = finaliseOne(created, ps)
+      created = finalizeOne(created, ps)
       fireRowEvent('create', 'create', created)
       if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'create', created, ctx)
       // ── Logging ──────────────────────────────────────────────────────────────
@@ -7452,7 +7452,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (_upDone) return null
       const ps = parseArgs(select === false ? null : select, include)
       if (ps || include) withIncludes([updated], ps, include)
-      const finalRow = select === false ? null : finaliseOne(updated, ps)
+      const finalRow = select === false ? null : finalizeOne(updated, ps)
       // The same suppression `emitTransitionEvent` applies, asked here so the
       // update can say whether the move is going to be announced separately.
       // A patch that named no column wrote nothing, so there is nothing to
@@ -8840,7 +8840,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // policy is about the row as it IS, so it is one evaluation for the whole
       // call. `post-update` is about the row as it WOULD BE, so it is one per
       // distinct TARGET — a machine's moves usually share few of those, and
-      // both are memoised, which is what keeps this off the per-row cost the
+      // both are memoized, which is what keeps this off the per-row cost the
       // issue was worried about.
       //
       // The would-be row is the current one with the column moved. That is what
@@ -9915,7 +9915,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     }
   }
 
-  const computedFns   = normaliseComputed(await loadComputedFields(computedInput), schema)
+  const computedFns   = normalizeComputed(await loadComputedFields(computedInput), schema)
 
   // ── Lock primitive — auto-creates _locks in main db on first use ──────────
   let _isSystemCtx = false
@@ -10118,11 +10118,11 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   }
 
   // Validate encryption key — fail fast if @encrypted fields exist but no key given
-  const encKey = normaliseKey(encryptionKey ?? null)
+  const encKey = normalizeKey(encryptionKey ?? null)
   const prevKeys = (Array.isArray(previousEncryptionKeys) ? previousEncryptionKeys
                    : previousEncryptionKeys ? [previousEncryptionKeys] : [])
     .map((k, i) => {
-      const b = normaliseKey(k)
+      const b = normalizeKey(k)
       // Same refusal the current key gets, and for the same reason: a hex string
       // that is not 32 bytes decodes short and would silently never match.
       if (!b || b.length !== 32)
@@ -10540,7 +10540,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // ── A trail that is an ordinary SQLite table ──────────────────────────────
   // Built on FIRST USE rather than up front, because `buildTableForModel` is
   // declared below this point and an app with no SQL trail must pay nothing.
-  // Memoised, and built against a system context for the reason `getLogTable`
+  // Memoized, and built against a system context for the reason `getLogTable`
   // states: the row is the engine's, not the caller's.
   const _sqlLogTables = new Map()
   ctx.sqlLogTableFor = (modelName) => {
@@ -10773,7 +10773,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   //   - { where, orderBy?, limit?, ... }            — static args (object literal)
   //   - { where: (ctx) => ({ ... }), ... }          — dynamic where, evaluated per-call
   //
-  // Parameterised scopes are NOT supported — write a function that returns a
+  // Parameterized scopes are NOT supported — write a function that returns a
   // where clause and pass it as a caller override instead. See spec for rationale.
   //
   // Internal shape after validation: scopesByAccessor[accessor][scopeName] = scopeDef
@@ -10821,7 +10821,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
 
       // Shape guard. We accept anything object-shaped — runtime mistakes (typos
       // in keys) surface naturally when the scope is used. We do NOT accept
-      // a top-level function: that would have meant a parameterised scope, which
+      // a top-level function: that would have meant a parameterized scope, which
       // is intentionally not supported in v1 (see spec).
       if (rawScope == null || typeof rawScope !== 'object' || Array.isArray(rawScope)) {
         throw new Error(`scopes: "${modelName}.${scopeName}" must be an object like { where, orderBy?, limit?, ... }. Got ${Array.isArray(rawScope) ? 'an array' : typeof rawScope}.`)
@@ -10868,7 +10868,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   }
 
   // ── resolveScopeStack ─────────────────────────────────────────────────────
-  // Evaluates a stack of scope definitions against a ctx, materialising
+  // Evaluates a stack of scope definitions against a ctx, materializing
   // dynamic `where` functions. Returns array of resolved arg objects.
   function resolveScopeStack(scopeStack, evalCtx) {
     return scopeStack.map(scopeDef => {
@@ -11192,7 +11192,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   }
 
   // The tenancy declaration, resolved — null when the schema declares none.
-  // A schema fact, so it is on every flavor of client, and memoised because
+  // A schema fact, so it is on every flavor of client, and memoized because
   // resolving reads env vars and the filesystem's idea of cwd.
   //
   // What it is FOR: everything above the Data realm has to know whether this
@@ -11366,7 +11366,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       : row
   }
 
-  // A context for somebody else, memoised per principal object. `$setAuth`
+  // A context for somebody else, memoized per principal object. `$setAuth`
   // builds lazy tables and installs scopes because it returns a CLIENT; this
   // needs only the context the rules read, which is what makes grading a
   // recipient affordable at all.
@@ -11386,7 +11386,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // Whether $readAs can ever answer anything but the row it was given. A model
   // whose read gate is 0 (or absent) and which declares no read policy and no
   // field policy admits every reader and hides no column, so grading it is pure
-  // cost — a catalogue is that shape, and a catalogue is the busiest channel an
+  // cost — a catalog is that shape, and a catalog is the busiest channel an
   // app has.
   //
   // Answered from the SCHEMA rather than guessed at by the caller, so a policy
@@ -11724,7 +11724,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     if (!ctx.enc.key)
       throw new Error('$rotateKey requires an encryption key on this client — pass { encryptionKey: process.env.ENCRYPTION_KEY } to createClient()')
 
-    const newKey = normaliseKey(rawNewKey)
+    const newKey = normalizeKey(rawNewKey)
     if (!newKey || newKey.length !== 32)
       throw new Error('New encryption key must be 32 bytes (64 hex chars)')
 
@@ -11804,7 +11804,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     }
 
     // One assignment reaches every client derived from this one, including the
-    // memoised asSystem() proxy built before the rotation. That is the whole
+    // memoized asSystem() proxy built before the rotation. That is the whole
     // reason the key lives in a cell.
     //
     // The OLD key stays on the ring, and that is what makes a partial rotation
@@ -11939,7 +11939,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // All table operations through this wrapper bypass @guarded, @encrypted,
   // and @@gate checks. Use for auth checks, background jobs, admin operations.
   //
-  // Memoised PER SCOPE, keyed by the context it was reached from, so
+  // Memoized PER SCOPE, keyed by the context it was reached from, so
   // `db.asSystem()` and `db.$setAuth(u).asSystem()` are different proxies and
   // the second one keeps `u`. It used to be one root-level memo handed out by
   // every scoped client, which discarded the principal — so the composition
@@ -12365,7 +12365,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     // Prevents large WAL files being left behind and speeds up next open.
     //
     // The wrapper's close() comes FIRST and does two things a raw close cannot:
-    // it finalises the cached statements, without which bun's deferred close
+    // it finalizes the cached statements, without which bun's deferred close
     // frees nothing, and it arms the throw — so a caller still holding this
     // client is told so by name rather than being served off a closed handle
     // for whichever queries happen to be cached (`FJS-640`).

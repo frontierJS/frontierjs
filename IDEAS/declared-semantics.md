@@ -261,7 +261,7 @@ in the operations, not in the accumulation.
 | SQL `DECIMAL(p,s)` · PG `numeric` | scale declared, arithmetic exact, the database enforces it | nothing — **and SQLite has no such type**, which is the whole of this section |
 | **Prisma `Decimal`** | a decimal type in the schema language, `decimal.js` on the JS side | **it does not work on the database this repo uses.** Prisma's own maintainers record that there is no reliable way to store a Decimal in SQLite; values are written and read back different (`prisma#20635`) |
 | Rails + money-rails | integer minor units beside a per-row currency; a `Money` that refuses `USD + EUR` | the semantics live in the **column name** — the gem finds the field by its `_cents` suffix. A convention, not a schema fact |
-| Django + django-money | one declaration creates **two columns**, `amount` and `<name>_currency` | the decimal places are the author's (`decimal_places=2`), never the currency's — the JPY mistake, institutionalised |
+| Django + django-money | one declaration creates **two columns**, `amount` and `<name>_currency` | the decimal places are the author's (`decimal_places=2`), never the currency's — the JPY mistake, institutionalized |
 | Stripe | integer minor units, no float anywhere on the wire, a published zero-decimal list | the list is prose, so every client library hardcodes a copy that goes stale |
 | Java `BigDecimal` | exact, carries its own scale | `equals` compares scale, so `2.0` and `2.00` are unequal |
 | .NET `decimal` | exact base-10 **in the language** — the one mainstream primitive that got it right | still not a currency, and knows nothing about minor units |

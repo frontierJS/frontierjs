@@ -103,7 +103,7 @@ export function layoutChainFor(routeFile, routesDirAbs) {
  * slug of `../../../../etc/cron.d/evil` wrote an HTML file outside the output
  * directory, on the build machine. The quieter half is the same three
  * functions: `''` fills to `/products//`, which collapses to
- * `products/index.html` — the catalogue's own page, replaced by one product,
+ * `products/index.html` — the catalog's own page, replaced by one product,
  * with the build exiting 0 and printing a tick beside it.
  */
 export function fillPath(routePath, params) {
@@ -390,7 +390,7 @@ export async function prerenderRoutes(opts) {
   // to one file is silent otherwise: last write wins, exit 0, a tick printed.
   const writtenFrom = new Map()
   // …and collected rather than thrown at the first one, for the same reason the
-  // static-safety gate below is: a catalogue with four colliding rows should
+  // static-safety gate below is: a catalog with four colliding rows should
   // print four lines, not make the author rebuild three more times.
   const collisions = []
 
@@ -550,7 +550,7 @@ export async function prerenderRoutes(opts) {
       // Two getStaticPaths() entries that fill to one file. Refused rather than
       // warned, alongside the empty-param case in fillPath: one file is one
       // page, so the second entry does not produce a bad page, it produces no
-      // page — and a build that exits 0 ships a catalogue one product short
+      // page — and a build that exits 0 ships a catalog one product short
       // with the evidence in a log CI does not read (`FJS-803`).
       //
       // The escape is in the app and there is deliberately no option for it: a

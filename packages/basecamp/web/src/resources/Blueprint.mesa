@@ -8,7 +8,7 @@
   // No `model:` — `blueprints` is the regular plural of `Blueprint`.
   //
   // **This resource reaches a service that takes no workspace.** `Blueprint` is
-  // `@@tenant(none)`: the catalogue is curated for the whole installation, so
+  // `@@tenant(none)`: the catalog is curated for the whole installation, so
   // there is no tenant to scope it by. The client stamps `X-Workspace-Id` on
   // every call regardless and the service ignores it, exactly as `hub` does —
   // the header is not what makes a service tenant-scoped, the schema is.

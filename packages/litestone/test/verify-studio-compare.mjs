@@ -444,7 +444,7 @@ t('palette.findsAWordEitherWayItIsTyped', await probe(`
   return { bare: bare.includes('@@gate'), sigil: sigil.includes('@@gate') };
 `), { bare: true, sigil: true })
 
-// The synonyms the catalogue already carries. Somebody who does not know this
+// The synonyms the catalog already carries. Somebody who does not know this
 // language yet types `rbac`, not `@@gate` — and that mapping is in the data, so
 // not reading it is the palette declining to answer a question it can.
 t('palette.findsAWordByAWordItIsNotCalled', await probe(`
@@ -515,7 +515,7 @@ t('palette.theKeyboardMovesAndOpens', await probe(`
 // the corpus — a model name, a panel name, a word — and every piece of it is
 // escaped; the query only picks where the underline starts and stops. So this
 // is not an injection test and is not named as one: it asserts the box survives
-// input nobody sanitised on the way in, which is the shape that used to throw.
+// input nobody sanitized on the way in, which is the shape that used to throw.
 t('palette.aQueryThatIsMarkupIsJustAQuery', await probe(`
   await palOpen();
   document.getElementById('palInput').value = '<img src=x onerror=1>';

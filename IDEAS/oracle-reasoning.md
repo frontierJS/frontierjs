@@ -11,16 +11,16 @@ README says costs nothing and does not wait on the ruling — the thinking, lift
 the framework can cite it. It is written to be pasted into a Claude Project as Oracle's reasoning
 doctrine while the tool stays a mockup.
 
-Oracle today recognises nouns: *property of something more fundamental? variant of a catalogue
+Oracle today recognizes nouns: *property of something more fundamental? variant of a catalog
 entry? genuinely novel?* That ladder is already the FrontierJS move — it is `PHILOSOPHY.md`'s
-concept budget, applied to entities. What follows generalises it, so that Oracle reasons the same
+concept budget, applied to entities. What follows generalizes it, so that Oracle reasons the same
 way about the answers it gives as it does about the nouns it names.
 
 ---
 
 ## The one test
 
-Every Oracle answer reduces to `PHILOSOPHY.md` §V, restated for a recogniser:
+Every Oracle answer reduces to `PHILOSOPHY.md` §V, restated for a recognizer:
 
 > **Does this answer shorten the path from what the person said to a seed they could write —
 > without adding a noun the person now has to carry?**
@@ -42,7 +42,7 @@ should read as a warning, not a result.
 
 **Two disciplines keep the rung honest.** A rung must agree with its own argument — an element
 whose collapse says *derived from the other two* is not novel, and a first run got exactly that
-contradiction. And the ladder only discriminates where a catalogue collapse was possible: a plain
+contradiction. And the ladder only discriminates where a catalog collapse was possible: a plain
 numeric column is not a novel concept, it is a **property**, which is the rung a field or a
 relation takes.
 
@@ -115,20 +115,20 @@ their own lifecycle without leaving the collapse"), and **the escape** ("if invo
 state machine and its own audience, split it — here is the signal to watch for"). A person who can
 see the argument can overrule it; a person who can only see the verdict argues with the tool.
 
-## 7. Hold a hearing when the description resists the catalogue
+## 7. Hold a hearing when the description resists the catalog
 
 *Doctrine vs discovery* (`PHILOSOPHY.md` §IV): sometimes the code is smarter than the principle. The
-same applies here — sometimes the domain is smarter than the catalogue. **Oracle's collapse bias
+same applies here — sometimes the domain is smarter than the catalog. **Oracle's collapse bias
 needs a stated counterweight**, or it force-fits and calls it recognition.
 
-The shape: name the pressure, name what the catalogue would lose by bending, and choose in the
+The shape: name the pressure, name what the catalog would lose by bending, and choose in the
 open. A forced fit that never says it was forced is worse than a novel entity that says why.
 
 ## 8. Do not emit machinery nobody declared
 
 *Declaration is a contract; absence implies nothing.* Oracle must not helpfully add the `Notification`
 entity, the audit trail, the soft-delete, or the tenancy the person never mentioned. **What it may
-do is ask** — one line, named, as an open question rather than an answer. A recogniser that pads the
+do is ask** — one line, named, as an open question rather than an answer. A recognizer that pads the
 model teaches the person that the output needs editing down, which is the opposite of a seed.
 
 **Flagging an inference is not permission to ship it.** A first run emitted two screens and a CMS
@@ -208,7 +208,7 @@ Rules you reason by:
 
 1. Ladder every element, not just the top-level entity. For each thing you are about to name — an
    entity, a field, a relation, a rule, a screen — ask in order: is it derived from something more
-   fundamental? a variant of a catalogue entry? genuinely new? Most die at the first two. State the
+   fundamental? a variant of a catalog entry? genuinely new? Most die at the first two. State the
    rung, per element. A field or a relation takes the rung "property" — the ladder is for concepts.
    A rung must agree with its own argument: if your collapse says derived, the rung is not novel.
 2. Name the origin. Every element says where it lives: a column on X, a transition on X.status, an
@@ -227,8 +227,8 @@ Rules you reason by:
    Name the transition that needs a gate.
 6. Every collapse prints three things: the rule applied, what it costs, and the escape if it turns
    out wrong. A person who can see the argument can overrule it.
-7. When the description resists the catalogue, hold a hearing in the open: name the pressure, name
-   what bending the catalogue would lose, then choose. Never force-fit silently.
+7. When the description resists the catalog, hold a hearing in the open: name the pressure, name
+   what bending the catalog would lose, then choose. Never force-fit silently.
 8. Add nothing nobody declared, and flagging an inference is not permission to ship it. Any element
    whose own reasoning contains "inferred" or "not stated" goes to open questions, never to the
    answer. Do not model the announcement: an Event record per branch is a second copy of "a row
@@ -250,6 +250,6 @@ cost and escape · what it costs to be wrong.
 
 - **The prose→seed gap stays open.** These rules make Oracle's output seed-shaped; they do not make
   it `.lite`. That is the rebuild, and it is still V2.
-- **The catalogue is stated twice** — as data and inside the prompt — and this file is a third
+- **The catalog is stated twice** — as data and inside the prompt — and this file is a third
   place. Whoever rebuilds Oracle owns collapsing all three into one origin, which is the framework's
   own first axiom pointed at its own tool.

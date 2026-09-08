@@ -222,7 +222,7 @@ function _domDepth(node) {
 // after it in the snapshot is dropped, and because those nodes were already
 // removed from _queue they are never re-notified for this write. They stay
 // stale until some unrelated later change happens to wake them. Containing the
-// error per node keeps one broken effect from silently desynchronising the rest
+// error per node keeps one broken effect from silently desynchronizing the rest
 // of the page, which is the same choice Solid, Svelte and Vue make.
 function _runNode(node) {
   if (_halted) return
@@ -5150,7 +5150,7 @@ export function island(anchor, Comp, props, block, meta) {
  *   <Child handler={bump} />            // named fn, length 0
  *
  * and the child's `export let ondone` compiles to track($option.props.ondone).
- * Both were therefore memoised and *invoked during setup*, so `on:click={ondone}`
+ * Both were therefore memoized and *invoked during setup*, so `on:click={ondone}`
  * bound the callback's return value instead of the callback. `let f = () => …`
  * had the same problem. Arity cannot distinguish a derivation the compiler
  * generated from a callback the user passed — both are `() => …` — so the
@@ -5253,7 +5253,7 @@ const TEMPLATE_FRAGMENT = 1
  * That is not cosmetic. `formaction` on a submit control OVERRIDES its form's
  * action, so a prerendered form shipped by `target: 'static'` posted to
  * whatever origin built it — and the localhost URL of the build machine went
- * into a public file. Found in `example/`'s prerendered catalogue, where a
+ * into a public file. Found in `example/`'s prerendered catalog, where a
  * search box that never submits anything still carried both attributes.
  *
  * Parsing is the same path that produced the original, so what ships is what

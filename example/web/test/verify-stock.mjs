@@ -2,7 +2,7 @@
  * web/test/verify-stock.mjs — the shelf, the holds against it, and the tape.
  *
  * Started by `bun run verify:stock`. Starts BOTH servers itself, like
- * verify-cart and verify-catalogue, because what it proves spans them.
+ * verify-cart and verify-catalog, because what it proves spans them.
  *
  * ─── What is under test ───────────────────────────────────────────────────
  *
@@ -146,8 +146,8 @@ const user  = await bearerFor('user')
 // drives have already bought from asserts the same facts — which is the shape
 // FJS-080 was, and it reads as a regression in whatever you changed last.
 
-const catalogue = await (await api('/product-variants?$limit=500&$orderBy=sku')).json()
-const shelf = catalogue.data.find(v => v.active && v.stock >= 4 && v.stock <= 30)
+const catalog = await (await api('/product-variants?$limit=500&$orderBy=sku')).json()
+const shelf = catalog.data.find(v => v.active && v.stock >= 4 && v.stock <= 30)
 if (!shelf) { console.error('no shelf between 4 and 30 to test with'); stopAll(); process.exit(1) }
 
 const V = shelf.id
@@ -438,7 +438,7 @@ check("the page's total is the server's, not the browser's own arithmetic",
 // The browser carries its own token, so this basket is a fresh one taken by
 // clicking rather than the one held over the API above.
 await evaluate(`(localStorage.removeItem('shop_cart'), true)`)
-const spare = catalogue.data.find(v => v.active && v.stock > 0 && v.id !== V)
+const spare = catalog.data.find(v => v.active && v.stock > 0 && v.id !== V)
 await goto(`/products/${spare.productId}/`, '#buy-add', 1)
 await until(async () => await evaluate(`document.querySelector('#buy-add') && !document.querySelector('#buy-add').disabled`))
 await evaluate(`(document.querySelector('#buy-add').click(), true)`)

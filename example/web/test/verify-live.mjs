@@ -186,7 +186,7 @@ try {
   //
   // It used to be SIGNED OUT, and the header said so: *orders are publicly
   // readable, so it needs no session*. They are not any more — `Order` read at
-  // level 0 was the catalogue's gate on the sales ledger — so the watcher signs
+  // level 0 was the catalog's gate on the sales ledger — so the watcher signs
   // in like a person would. That does not weaken the argument: an echo is one
   // CLIENT seeing its own write, and the writer here is a fetch from node with
   // a token of its own. Two sockets, two sessions, one row.

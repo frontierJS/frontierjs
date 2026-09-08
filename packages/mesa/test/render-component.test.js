@@ -426,7 +426,7 @@ describe('renderComponent — tmpDir', () => {
     // walks up to a node_modules) and an absolute one survives; a relative one
     // did not — so a component importing a sibling store, formatter or table
     // of constants failed to render, which is an ordinary thing for a page or
-    // an island to do. Measured on `example`'s prerendered catalogue, where
+    // an island to do. Measured on `example`'s prerendered catalog, where
     // the whole page silently stopped being built.
     await writeFile(path.join(APP, 'money.js'),
       `export const money = (n) => '$' + n.toFixed(2)\n`)

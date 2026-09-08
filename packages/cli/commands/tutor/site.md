@@ -51,7 +51,7 @@ context.vars.apiPort   = context.config.apiPort
 
 An app has two audiences and they want opposite things. The console you have
 been building is behind a sign-in, is allowed to be slow, and must be current.
-The other half — the marketing pages, the catalogue, the thing a search engine
+The other half — the marketing pages, the catalog, the thing a search engine
 reads — is public, has to be fast, and can be a little out of date.
 
 `site/` is that half, and it is a **surface**: a peer of `api/` and `web/` with

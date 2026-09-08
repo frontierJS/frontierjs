@@ -488,7 +488,7 @@ describe('a row cannot be moved out of its tenant', () => {
 //
 // Two halves, and the second one is what the first needed. Keeping the
 // tenancy-generated denies under a system context is the rule; `asSystem()`
-// being memoised PER SCOPE is what gives it a claim to keep, because a scoped
+// being memoized PER SCOPE is what gives it a claim to keep, because a scoped
 // client used to hand back the root's identity-free proxy.
 
 const VAULT_SCHEMA = `
@@ -530,7 +530,7 @@ describe('asSystem() and row tenancy', () => {
     const two = db.$setAuth({ id: 2, workspaceId: 2 })
     expect(one.asSystem()).not.toBe(db.asSystem())
     expect(one.asSystem()).not.toBe(two.asSystem())
-    // Still memoised, per scope.
+    // Still memoized, per scope.
     expect(one.asSystem()).toBe(one.asSystem())
   })
 

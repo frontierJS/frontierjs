@@ -73,7 +73,7 @@ and ratios of 1e300 and 1e-320, and the sum invariant holds in every one.
 
 ## 2026-09-07 — `/directives` reports the `$` names it does not know
 
-`unknownDirectives(params)` — the unrecognised `$` keys, in arrival order. New
+`unknownDirectives(params)` — the unrecognized `$` keys, in arrival order. New
 because `FJS-988` stopped a typo'd directive landing in the filters and what
 replaced it was silence: `$limitt=10` returned the default page with a 200.
 
@@ -473,7 +473,7 @@ two sides with different encoders 401 every request carrying one of the five.
 It takes a search string, a `URLSearchParams`, an array of pairs or a plain
 object, because a signer holds a URL and a verifier holds whatever its transport
 parsed. `Array.isArray` is tested BEFORE `.entries()` — an Array has one of its
-own and it answers index/value pairs, so a list of pairs would canonicalise as
+own and it answers index/value pairs, so a list of pairs would canonicalize as
 `0=to%2Calice`, a well-formed string that agrees with nothing. A `path` carrying
 its own `?` is split rather than signed whole, so a verifier reading a raw
 request URL and a signer holding the two apart reach the same string.
@@ -1042,7 +1042,7 @@ because a project that wants one usually ends up wanting two.
   regular rules plus a 21-word irregular table. Five copies of these rules used
   to resolve Invariant 2 and disagree; they now call this one (`FJS-192`). The
   table is consulted FIRST, which litestone's copy did not do — seven of its own
-  entries were unreachable behind the sibilant rule, so `index` pluralised to
+  entries were unreachable behind the sibilant rule, so `index` pluralized to
   `indexes` while the table said `indices`.
 - **`encode()` escapes `&`, and the text BETWEEN two tokens is escaped too.** It
   handled `<` and `>` only, so a source line reading `&amp;` came back as

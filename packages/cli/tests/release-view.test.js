@@ -64,7 +64,7 @@ test('the target table names exactly the targets fli takes, and each maps to fla
   expect(TARGETS.stage).toEqual(['--stage'])
 })
 
-test('a target that is not in the table is refused by name, never sanitised', async () => {
+test('a target that is not in the table is refused by name, never sanitized', async () => {
   for (const bad of ['; rm -rf /', '--exec=evil', 'production ', 'PRODUCTION', '__proto__', 'constructor']) {
     const out = await releaseTarget({ root, fliRoot: CLI, target: bad })
     expect(out.ok).toBe(false)

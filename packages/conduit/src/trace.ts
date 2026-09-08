@@ -37,7 +37,7 @@ export function createTraceContext(opts: TraceContextOptions = {}) {
   return (req: ConduitRequest): Record<string, string> => {
     const current = opts.current?.() ?? null
 
-    const traceId = normaliseId(current?.trace_id, 32) ?? randomHex(32)
+    const traceId = normalizeId(current?.trace_id, 32) ?? randomHex(32)
     // A new span id per outbound call — the parent is whatever the caller's
     // current span is, so the target's work hangs off ours.
     const spanId  = randomHex(16)
@@ -77,8 +77,8 @@ export function parseTraceparent(header: string | undefined | null):
   if (version !== '00') return null
   if (!/^[0-9a-f]{2}$/.test(flags)) return null
 
-  const trace = normaliseId(traceId, 32)
-  const span  = normaliseId(spanId, 16)
+  const trace = normalizeId(traceId, 32)
+  const span  = normalizeId(spanId, 16)
   if (!trace || !span) return null
 
   return { trace_id: trace, parent_id: span, sampled: (parseInt(flags, 16) & 1) === 1 }
@@ -102,7 +102,7 @@ export function parseTraceparent(header: string | undefined | null):
 export function traceIdFrom(value: string | undefined | null): string | null {
   if (!value) return null
 
-  const direct = normaliseId(value.replace(/-/g, ''), 32)
+  const direct = normalizeId(value.replace(/-/g, ''), 32)
   if (direct) return direct
 
   return fnv64(value, 0x811c9dc5) + fnv64(value, 0x01000193)
@@ -129,7 +129,7 @@ function randomHex(chars: number): string {
 // A trace id must be exactly `chars` lowercase hex and not all zeroes.
 // Anything else is discarded rather than propagated malformed — a broken
 // traceparent is worse than a fresh one, since collectors drop the span.
-function normaliseId(value: string | undefined, chars: number): string | null {
+function normalizeId(value: string | undefined, chars: number): string | null {
   if (!value) return null
   const hex = value.toLowerCase()
   if (hex.length !== chars) return null

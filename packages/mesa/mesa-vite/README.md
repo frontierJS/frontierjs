@@ -45,7 +45,7 @@ It is imported lazily, so putting the plugin in a config file does not pull
 ~290 KB of compiler into a process that may never transform anything.
 
 `options.compilerPath` still wins, for testing against a compiler build that is
-not the installed one — and the answer is memoised per PLUGIN INSTANCE, so two
+not the installed one — and the answer is memoized per PLUGIN INSTANCE, so two
 `mesa()` calls in one config each keep the compiler they asked for:
 
 ```js

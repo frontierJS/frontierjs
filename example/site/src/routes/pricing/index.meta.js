@@ -1,11 +1,11 @@
 // site/src/routes/pricing/index.meta.js — the pricing page's build-time data.
 //
 // load() runs in Node at BUILD time and whatever it returns is baked into a
-// public HTML file, so the same rule the catalogue lives under applies: Sierra
+// public HTML file, so the same rule the catalog lives under applies: Sierra
 // taps this client with $tapQuery while this runs and refuses to emit the page
 // if anything read here is gated above what the route declares (nothing, so
 // level 0). `Plan` and `PlanVersion` are both `@@gate("0.5.5.5")` — a pricing
-// page is public exactly as a catalogue is, and only staff change what a shop
+// page is public exactly as a catalog is, and only staff change what a shop
 // charges.
 //
 // ─── Why `currentPrice` and not a second query ─────────────────────────────

@@ -11,7 +11,7 @@
  * both halves — the sibling is found with no configuration, and `compilerPath`
  * still wins for a caller testing a build that is not this one.
  *
- * The answer is memoised per PLUGIN INSTANCE (`FJS-880`). Cases still reset the
+ * The answer is memoized per PLUGIN INSTANCE (`FJS-880`). Cases still reset the
  * module registry, so a test inherits nothing from the one before it, and the
  * pair at the end is what the memo's SCOPE is: two plugins in one config, each
  * holding the compiler it asked for.
@@ -29,7 +29,7 @@ import { fileURLToPath }              from 'node:url'
 const STUB = fileURLToPath(new URL('./fixtures/stub-compiler.mjs', import.meta.url))
 const ROOT = '/app'
 
-/** A plugin from a FRESH module registry — see the note about memoisation. */
+/** A plugin from a FRESH module registry — see the note about memoization. */
 async function freshPlugin(options = {}, command = 'serve') {
   vi.resetModules()
   const { default: mesaPlugin } = await import('../mesa-vite/index.js')

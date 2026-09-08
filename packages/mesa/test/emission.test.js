@@ -819,7 +819,7 @@ describe('the {class} passthrough', () => {
 
 /**
  * The component function is named after the FILE, and that name has to be a
- * legal, unused identifier at module scope. Sanitising invalid characters is
+ * legal, unused identifier at module scope. Sanitizing invalid characters is
  * not enough — two ways it still produced code that would not parse:
  *
  *   new.mesa    → `export default function new(…)`  — a reserved word

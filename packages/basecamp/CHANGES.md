@@ -1,5 +1,63 @@
 # Changes — Basecamp
 
+## 2026-09-07 — `ready` is deleted from `ServerStatus`
+
+`FJS-1021`. Three of the enum's nine values were the target of no move in
+`@@transitions` — `installing`, `ready` and `unreachable` — and the seed was
+their only producer, which is why five screens carried a tone for each and every
+tone looked earned in development.
+
+`ready` is the one that was read in a live decision: `resolveExecutor` picked a
+placement with `['online', 'ready'].includes(p.server?.status)`, so the branch
+deciding where a release lands was graded against a value no write could produce.
+
+Deleted rather than given a producer. Both facts it would have carried are held
+elsewhere — *outpost up* is `lastHeartbeatAt`, *not carrying work* is
+`AppServer` — and *up, but do not place work here* is `draining`, which exists
+and is gated at 5. A state whose whole content is derivable from two other facts
+is a third origin.
+
+Nine source sites: the enum, four `@@transitions` from-lists and the comment
+naming it as a resting place; `executor.ts`'s placement condition;
+`notices.js`'s heartbeat-overdue guard; the seed's status pick; and five tone
+maps (`servers/index`, `servers/[id]`, `FleetBody`, `infra-graph`,
+`cloud-spend`). Regenerated: the migration, `schema.json`, `schema.d.ts` and the
+jsonschema, release and access snapshots. Suite 259 pass / 0 fail, typecheck
+baseline unmoved at 14.
+
+**A database seeded before today may hold `ready` rows**, which the new CHECK
+refuses — `bun run db:reset` if a migration complains. Neither database in this
+working tree held one.
+
+`installing` and `unreachable` stay open under the same id: `installing` gets its
+producer from `docs/PROVISIONING.md` phase 2, and `unreachable` wants a sweep,
+because staleness is noticed only in the browser today and the badge and the
+notice bar disagree about the same machine on the same page.
+
+## 2026-09-08 — the workspace is verified before it is stamped
+
+`FJS-1019`. Signing in put three `Forbidden` refusals in the API log —
+`servers.find`, `deployments.find`, `jobs.find`, all in the same millisecond,
+each answered *you do not belong to the `workspaceId` this request names* —
+and then the same reads succeeded a moment later. The client swallowed them
+(`loadAttention()` catches), so the only evidence was the server's log.
+
+`loadWorkspace()` adopted the remembered workspace BEFORE asking which ones the
+caller belongs to, on the stated ground that `/workspaces` is itself scoped and
+would answer 400 without the header. `Workspace` is `@@tenant(none)` — the
+tenant cannot be scoped by the tenant claim — so that was never true, and what
+the ordering bought was a window of one round trip in which every request named
+a workspace nobody had checked. `_module.mesa` reloads its three stores on
+`session.workspaceId`, so the window is not theoretical: the first sign-in after
+a database reset stamps an id from the previous database, and the shell asks for
+it three times.
+
+The list comes first now, the remembered id is adopted only if it is in it, and
+otherwise the server names the fallback off the membership row itself. Verified
+against the running app with a workspace id from no database planted in
+`localStorage`: the three calls that used to be refused now carry the caller's
+real workspace on the first attempt.
+
 ## 2026-09-07 — a screen with no record says which of three things happened
 
 `FJS-968`, filed as one screen and found to be three failures across seven.
@@ -809,7 +867,7 @@ suspected cause passes 7/7.
 seeding a database of its own in a temp directory and starting and stopping both
 servers, so it touches nothing local and never asks anybody to reset a dev fleet.
 Separate from `verify`, which asserts the first-run wizard owns an EMPTY app —
-three of these screens are about rendering a populated catalogue, and an empty
+three of these screens are about rendering a populated catalog, and an empty
 grid looks exactly like a broken query.
 
 **It found three things the build did not.**
@@ -859,7 +917,7 @@ by nothing yet.
 would have been built against an empty list — which is the state that looks
 exactly like a broken query.
 
-**The catalogue is `db/blueprints.js`**, eight applications read out of the
+**The catalog is `db/blueprints.js`**, eight applications read out of the
 mock's own `BLUEPRINTS` constant rather than invented, converted column for
 column: the nested `app` block flattened (those columns are `App`'s where they
 overlap) and `params` written as `BlueprintParam` rows, because that list is an
@@ -873,7 +931,7 @@ call it somebody's identity, so they are null and the card falls back to its own
 surface.
 
 **Ghost is seeded withdrawn**, because *deprecated* is a state the list has to
-hide and the detail page has to still resolve, and a catalogue where every row is
+hide and the detail page has to still resolve, and a catalog where every row is
 live cannot show either. Measured: 7 offered of 8, and the CMS category correctly
 absent from the filter list.
 
@@ -925,7 +983,7 @@ a signed-in caller with no tenant claim; it exempts a service whose model is
 reachable, and a hook could not have done it. The exemption lives in junction,
 keyed off this app's schema, and neither file names the other — the test that
 would catch it moving is a sysadmin with no workspace on the session reading the
-catalogue.
+catalog.
 
 **What it found.**
 
@@ -979,7 +1037,7 @@ case decided the other way** (`FJS-153`).
 
 | Model | Tenancy | Gate | The decision in it |
 | --- | --- | --- | --- |
-| `Blueprint` | `@@tenant(none)` | `1.7` | A curated catalogue, not a per-workspace one |
+| `Blueprint` | `@@tenant(none)` | `1.7` | A curated catalog, not a per-workspace one |
 | `BlueprintParam` | `@@tenant(none)` | `1.7` | A child model, not a Json array |
 | `RegistryImage` | `workspaceId` | `2.8.8.5` | Mirror a registry, do not query it live |
 | `Backup` | `@@tenant(none)` | `7.7.8.7` | The outcome is the machine's, like every *Run |
@@ -2238,7 +2296,7 @@ single `kill()`.
 
 `node deploy/build.mjs --run` builds an image from the WORKING TREE and brings
 up the stack; `http://localhost:8020` is the same URL `bun run dev` serves, so
-containerised and not are the same address.
+containerized and not are the same address.
 
 **The image carries the tree, not the registry.** Basecamp depends on nine
 `@frontierjs` packages as `workspace:*`, which a Docker build can resolve no more
@@ -2281,7 +2339,7 @@ here resolves the framework out of `packages/`.
 `db/generate.js` stays out of the image on purpose. It imports litestone by
 relative workspace path so the DDL emitter is the tree's and never the stale copy
 `bun install` leaves under `node_modules/.bun` — a deliberate choice that cannot
-survive containerisation and should not. Drift is a question about the
+survive containerization and should not. Drift is a question about the
 repository; `bun run db:check` answers it on the host.
 
 Proven by running the whole app loop against the container through the proxy —
@@ -2817,7 +2875,7 @@ only one that does not outrank you.
   login, `verifySession`, an API key and `createUser` alike. Spread last, so an
   app that states a field wins.
 - **A `find` that answers one object becomes an EMPTY list in the browser**
-  (`FJS-144`). `GET /hub` was the overview; the client normalises anything that
+  (`FJS-144`). `GET /hub` was the overview; the client normalizes anything that
   is not a list into `list(name, [])`, so the screen received `{ data: [] }`
   with a 200 and rendered nothing at all. The API was correct throughout — only
   the browser could see it. `find` means a list; the overview is an action now.

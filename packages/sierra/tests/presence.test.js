@@ -292,7 +292,7 @@ describe('the store the frames build', () => {
     expect(store.get().members[0].meta.typing).toBe(true)
   })
 
-  test('absent meta normalises to {}', () => {
+  test('absent meta normalizes to {}', () => {
     _client.emit('event', 'presence:sync', {
       channelId: ROOM, you: 'conn-self',
       members: [{ connectionId: 'conn-b', userId: 2, joinedAt: new Date() }],
