@@ -255,6 +255,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `.` | `src/index.js` | yes |
 | exports | `./server` | `src/server.js` | yes |
 | exports | `./docker` | `src/docker.js` | yes |
+| exports | `./vitals` | `src/vitals.js` | yes |
 | bin | `outpost` | `src/index.js` | yes |
 
 ## `@frontierjs/sierra`
