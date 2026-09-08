@@ -37,6 +37,18 @@ const DISK_PATH = '/'
  *  that it is paid once at startup and never again. */
 const FIRST_SAMPLE_MS = 100
 
+/**
+ * The three fields of a `statfs` answer this reads. Stated rather than inferred
+ * from the default: node's own type is overloaded across `bigint`, so a caller
+ * injecting a plain object is refused by a signature it satisfies completely.
+ *
+ * @typedef {{ blocks: number, bfree: number, bavail: number }} Blocks
+ *
+ * @param {object}                                [deps]
+ * @param {(path: string) => Promise<string>}     [deps.readText]
+ * @param {(path: string) => Promise<Blocks>}     [deps.statfs]
+ * @param {number}                                [deps.sampleMs]
+ */
 export function createVitals({
   readText = (path) => Bun.file(path).text(),
   statfs   = nodeStatfs,
