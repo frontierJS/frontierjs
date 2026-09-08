@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/conduit",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "The outbound half of an app's third-party integrations. Declared targets, resolved credentials, one send().",
   "type": "module",
   "license": "MIT",
