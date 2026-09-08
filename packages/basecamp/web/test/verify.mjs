@@ -1856,6 +1856,25 @@ await click('Add to dashboard')
 check('…and placed once it has one, with the subject named on the card',
   await waitFor(`document.getElementById('widget-grid')?.textContent ?? ''`, t => t.includes('Server health')),
   t => t.includes('Server health') && t.includes('gateway-01'))
+
+// The bars are the readings the ANSWER declares, filtered by what this machine
+// actually reported — the card holds no list of its own, which is how two of
+// its three bars drew nothing for a year (`FJS-1027`). gateway-01's heartbeats
+// carry cpu and memory and have never carried disk, so the pair is: two bars
+// drawn, and the third ABSENT rather than a zero. A card inventing a flat disk
+// bar at 0% is the failure this separates — *never reported* and *empty* are
+// different facts and only the first is worth telling somebody.
+const healthCard = `(() => {
+  const card = [...document.querySelectorAll('#widget-grid article.card')]
+    .find(c => c.querySelector('h2')?.textContent.trim() === 'Server health')
+  return card?.textContent ?? ''
+})()`
+check('the card draws the readings this machine reported',
+  await waitFor(healthCard, t => t.includes('CPU')),
+  t => t.includes('CPU') && t.includes('Memory'))
+check('…and nothing at all for the one it never has',
+  await evaluate(healthCard),
+  t => !t.includes('Disk'))
 // The card no longer says it cannot draw a trend, because it can: the heartbeat
 // records `server.cpuPercent{serverId}` and the card reads it back (`FJS-956`).
 // What is asserted is that the FRAME still works for the one kind that

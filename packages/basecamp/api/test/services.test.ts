@@ -27,6 +27,7 @@ import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor, grantsWithin } from '../src/core/capabilities.ts'
 import { refuseGrantAboveOwn }    from '../src/core/hooks.ts'
 import { MEMBERSHIP }             from '@frontierjs/junction'
+import { SERVER_READINGS }        from '../src/core/server-metrics.ts'
 
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
@@ -1712,6 +1713,19 @@ describe('a server keeps its readings, and only its own workspace may read them'
     expect((await newest()).value).toBe(77)
     await checkIn({ cpu: 41 })
     expect((await newest()).value).toBe(77)
+  })
+
+  test('the answer declares the readings as well as holding them', async () => {
+    // `readings` is the DECLARATION and `series` is what the store has, and a
+    // card needs the first whether or not the second exists — a machine that
+    // has never reported disk still has a disk bar to draw off `Server.health`.
+    // Answering it is also what keeps the card from holding a list of its own,
+    // which is where two of the three spellings were wrong (`FJS-1027`).
+    const res = await env.as(owner).service('servers').call('metrics', box.id, {}) as any
+    expect(res.readings).toEqual(SERVER_READINGS)
+    // Every declared reading is answerable: the name it states is a key of
+    // `series`, or a card asks for a series this answer never carries.
+    for (const r of res.readings) expect(r.name in res.series).toBe(true)
   })
 
   test('a member reads their own server\'s series', async () => {
