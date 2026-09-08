@@ -1,5 +1,34 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-07 — `fli test:snapshots --fix`
+
+**The remedy for a stale snapshot was 26 commands a person rebuilt from a failure message.** The
+list was never missing — every snapshot carries the command that wrote it in its own header, and
+`findSnapshots` has read that since the phase was built. What was missing was the WRITE: the engine
+appended `--check` unconditionally, so the one thing it could not do was the thing you wanted after
+it failed.
+
+`--fix` is the same argv with one fewer argument. Nothing new reaches a shell, so `SNAPSHOT_BINS`
+and the plain-flag-or-path rule still govern what may run.
+
+**It regenerates and then RECHECKS**, rather than trusting the write. A generator that exits 0
+having written nothing is exactly the shape a stale snapshot already has, and the two failures are
+reported as different sentences — *did not run* against *ran and did not settle*, the second being
+a bug in the generator rather than a stale file.
+
+**A list was the obvious answer and it was the wrong one.** A hand-written set of pre-push commands
+is a second origin for something already derived, and it fails OPEN: add a kind of snapshot, forget
+the list, push stale. `snapshots.js` exists so that adding a kind costs a generator and never an
+edit here, and a list would have quietly repealed that.
+
+Found two stale snapshots on its first run, both left by the same day's spelling sweep —
+`example/db/ddl.snapshot.sql` and `example/site/routes.snapshot.md`, where a storefront page title
+still read `Catalogue`.  <!-- spelling-exempt — naming the string that was fixed -->
+
+**And `scripts/hooks/pre-push` said something untrue.** Its header claimed *hygiene, coverage and
+typecheck only*; the fast tier runs ten phases, `snapshots` among them. So push-time detection was
+already wired and the comment was talking anybody who read it out of relying on it.
+
 ## 2026-09-07 — `american-spelling`, and the sweep it exists to make unnecessary
 
 **[`FJS-D192`](../../DECISIONS.md#fjs-d192) had no enforcer, so it re-drifted.** The ruling flipped

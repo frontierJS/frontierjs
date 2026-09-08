@@ -218,7 +218,21 @@ function binEntry(manifestPath, pkgName, bin) {
   return existsSync(file) ? file : null
 }
 
-export function checkSnapshots({ root, only = null, timeoutMs = 15 * 60 * 1000, maxBuffer = 64 * 1024 * 1024 } = {}) {
+// ─── checkSnapshots ───────────────────────────────────────────────────────────
+//
+//   checkSnapshots({ root })              → reruns each generator with `--check`
+//   checkSnapshots({ root, write: true }) → reruns each WITHOUT it, rewriting
+//
+// The write half exists because the remedy was 26 commands a person rebuilt
+// from a failure message, and the three anybody remembers are the three they
+// happen to have hit before. A generator defines its snapshot, so regenerating
+// is a whole repair rather than a partial one — which is what `fli check --fix`
+// requires of a rule before it may run under that flag.
+//
+// It is the same argv with one fewer argument. Nothing new reaches a shell, so
+// the allow-list above still governs what may run.
+
+export function checkSnapshots({ root, only = null, write = false, timeoutMs = 15 * 60 * 1000, maxBuffer = 64 * 1024 * 1024 } = {}) {
   const entries = findSnapshots({ root }).filter(e => !only || only.includes(e.file))
   const results = []
 
@@ -241,7 +255,8 @@ export function checkSnapshots({ root, only = null, timeoutMs = 15 * 60 * 1000, 
       continue
     }
 
-    const run = spawnSync('bun', [generator, ...entry.argv.slice(1), '--check'], {
+    const argv = write ? entry.argv.slice(1) : [...entry.argv.slice(1), '--check']
+    const run  = spawnSync('bun', [generator, ...argv], {
       cwd:        join(root, entry.dir),
       encoding:   'utf8',
       shell:      false,
@@ -259,7 +274,7 @@ export function checkSnapshots({ root, only = null, timeoutMs = 15 * 60 * 1000, 
     results.push({
       ...entry,
       ok:     run.status === 0,
-      error:  run.status === 0 ? null : 'no longer matches its source',
+      error:  run.status === 0 ? null : write ? 'could not be regenerated' : 'no longer matches its source',
       stdout: run.stdout ?? '',
       stderr: run.stderr ?? '',
     })

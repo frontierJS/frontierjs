@@ -4,8 +4,14 @@ description: Recheck every committed snapshot in this app — each one names the
 alias: test-snapshots
 examples:
   - fli test:snapshots
+  - fli test:snapshots --fix
   - fli test:snapshots --list
 flags:
+  fix:
+    char: f
+    type: boolean
+    description: Rerun every generator so each snapshot is rewritten, then recheck
+    defaultValue: false
   list:
     char: l
     type: boolean
@@ -46,6 +52,43 @@ if (flag.list) {
   return
 }
 
+// `--fix` regenerates and then RECHECKS, rather than trusting the write. A
+// generator that exits 0 having written nothing is the failure this catches,
+// and it is the shape a stale snapshot already has.
+if (flag.fix) {
+  const wrote = checkSnapshots({ root, write: true })
+
+  echo('')
+  echo('  fli test:snapshots --fix\n')
+
+  if (wrote.failed) {
+    for (const line of formatSnapshotResults(wrote.results)) echo(line)
+    echo('')
+    echo(`  ${wrote.failed} of ${wrote.checked} generator(s) did not run. Nothing else was left half-written —`)
+    echo('  each snapshot is written by its own command, so the ones above are the only ones missed.')
+    echo('')
+    process.exitCode = 1
+    return
+  }
+
+  const after = checkSnapshots({ root })
+  if (after.failed) {
+    for (const line of formatSnapshotResults(after.results)) echo(line)
+    echo('')
+    echo(`  ${after.failed} of ${after.checked} still do not match after regenerating — the generator ran`)
+    echo('  and did not settle. That is a bug in the generator, not a stale snapshot.')
+    echo('')
+    process.exitCode = 1
+    return
+  }
+
+  for (const r of after.results) echo(`  ✓  ${r.file}`)
+  echo('')
+  echo(`  ${after.checked} snapshot(s) rewritten and current. Read the diff before committing.`)
+  echo('')
+  return
+}
+
 const { results, checked, failed } = checkSnapshots({ root })
 
 if (flag.json) {
@@ -71,8 +114,8 @@ if (failed) {
   for (const line of formatSnapshotResults(results)) echo(line)
   echo('')
   echo(`  ${failed} of ${checked} snapshot(s) are stale or uncheckable.`)
-  echo('  Regenerate, read the diff, then commit — a line that moved without a change')
-  echo('  you meant to make is a bug that ships.')
+  echo('  `fli test:snapshots --fix` reruns every one of them. Read the diff, then commit —')
+  echo('  a line that moved without a change you meant to make is a bug that ships.')
   echo('')
   process.exitCode = 1
   return

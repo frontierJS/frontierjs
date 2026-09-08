@@ -6,10 +6,16 @@
 # Edit THIS file, not the copy in .git/hooks — the installer symlinks, so a
 # change here is live, and .git/hooks is not in git.
 #
-# Runs hygiene, coverage and typecheck only. The suites take minutes and drive
-# a real browser; blocking every push on them trains people to reach for
-# --no-verify, which disables the cheap checks too. The suites belong in the
-# workflow, where they cost nobody's attention.
+# Runs the fast tier: hygiene, structure, registers, snapshots, access,
+# coverage, registry, advisories, scaffold and typecheck. What it does NOT run
+# is deploy, tutor and the suites — those take minutes and drive a real browser,
+# and blocking every push on them trains people to reach for --no-verify, which
+# disables the cheap checks too. They belong in the workflow, where they cost
+# nobody's attention.
+#
+# `snapshots` is in this tier on purpose: a committed generated file that no
+# longer matches its source is exactly the thing a person cannot see in their
+# own diff. `fli test:snapshots --fix` rewrites every one of them.
 #
 # Bypass: git push --no-verify
 # ============================================================

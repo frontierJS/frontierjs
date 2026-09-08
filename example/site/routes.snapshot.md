@@ -51,7 +51,7 @@ this section exists to show.
 - `/404/` — render: `static` · title: `Page not found — FrontierJS Supply Co.`
 - `/account/` — description: `Sign in to see what you have ordered.` · render: `static` · title: `Your account — FrontierJS Supply Co.`
 - `/cart/` — render: `static` · title: `Basket`
-- `/catalog/` — render: `static` · title: `Catalogue`
+- `/catalog/` — render: `static` · title: `Catalog`
 - `/pricing/` — description: `What a standing order costs, and what each one includes.` · render: `static` · title: `Pricing — FrontierJS Supply Co.`
 - `/products/:slug/` — render: `static`
 
