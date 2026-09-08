@@ -258,12 +258,53 @@ t('level.7.systemGateDenied', await evaluate(`
 // ─── policies and fields ──────────────────────────────────────────────────
 
 await evaluate(`acShow('policies'); return true`)
+// The Claims card sits above these and is not one of them — it is about the
+// schema rather than about a model, so it carries an id and is excluded here.
 t('policies.rendered', await evaluate(`
-  return document.querySelector('#acPanel .card') ? document.querySelectorAll('#acPanel .card').length : 0;
+  return document.querySelectorAll('#acPanel .card:not(#acClaimsCard)').length;
 `), policyCount)
 
 await evaluate(`acShow('fields'); return true`)
 t('fields.rendered', await evaluate(`return document.querySelectorAll('#acPanel tbody tr').length >= 1`), true)
+
+// ─── claims ───────────────────────────────────────────────────────────────
+//
+// The panel's whole claim is that a name resolving to nothing LOOKS the same as
+// one that resolves. So the graded rows are asserted beside an ungraded one —
+// and `example` has none, deliberately, which is why the second half edits the
+// schema to make one rather than asserting against a fixture that already
+// disagrees with the app.
+await evaluate(`acShow('policies'); return true`)
+
+const claims = surface.claims
+
+t('claims.cardRendered', await evaluate(`
+  return Boolean(document.getElementById('acClaimsCard'));
+`), true)
+
+t('claims.rowPerName', await evaluate(`
+  const card = [...document.querySelectorAll('#acPanel .card')]
+    .find(c => c.querySelector('.surface-header b')?.textContent.trim() === 'Claims');
+  return card.querySelectorAll('tbody tr').length;
+`), claims.used.length)
+
+// The SOURCE is the half that makes the badge actionable: `cartToken` is a
+// top-level `claim` and `isAdmin` is one of the framework's own, and a panel
+// printing one word for both says nothing about where to go and change it.
+const bySource = Object.fromEntries(claims.used.map(c => [c.name, c.source]))
+t('claims.sourceNamed', await evaluate(`
+  const card = [...document.querySelectorAll('#acPanel .card')]
+    .find(c => c.querySelector('.surface-header b')?.textContent.trim() === 'Claims');
+  const row = [...card.querySelectorAll('tbody tr')]
+    .find(r => r.querySelector('code')?.textContent.trim() === 'auth().cartToken');
+  return row.querySelector('td:nth-child(3)').textContent.trim();
+`), bySource.cartToken)
+
+t('claims.allGradedOnExample', await evaluate(`
+  const card = [...document.querySelectorAll('#acPanel .card')]
+    .find(c => c.querySelector('.surface-header b')?.textContent.trim() === 'Claims');
+  return card.querySelectorAll('tbody .badge.danger').length;
+`), 0)
 
 // ─── moves ────────────────────────────────────────────────────────────────
 //
@@ -317,6 +358,47 @@ t('moves.nonTerminalNotNamed', await evaluate(`
     .find(c => c.querySelector('.surface-header b')?.textContent.trim() === ${JSON.stringify(withTerminal.m.name)});
   return card.querySelector('.alert')?.textContent.includes(${JSON.stringify(withTerminal.froms[0])});
 `), false)
+
+// ─── an ungraded claim ────────────────────────────────────────────────────
+//
+// The negative control for everything above, and it cannot come from `example`:
+// the app is correct, so the only way to see the failing side is to introduce
+// it. A misspelling — `auth().isStaf` — is exactly the shape FJS-666 is about,
+// and it parses, builds and reads as a policy doing its job.
+{
+  const edited = ORIGINAL_SCHEMA.replace("@@allow('read', auth().isStaff)", "@@allow('read', auth().isStaf)")
+  if (edited === ORIGINAL_SCHEMA) { console.error('claims: no isStaff read policy to misspell'); process.exit(1) }
+  writeFileSync(SCHEMA, edited, 'utf8')
+
+  await evaluate(`_access = await api('/access'); acShow('policies'); return true`)
+
+  t('claims.ungradedIsFlagged', await evaluate(`
+    const card = document.getElementById('acClaimsCard');
+    const row = [...card.querySelectorAll('tbody tr')]
+      .find(r => r.querySelector('code')?.textContent.trim() === 'auth().isStaf');
+    return row.querySelector('.badge.danger')?.textContent.trim();
+  `), 'ungraded')
+
+  // A count in a header nobody can act on is decoration. The model card
+  // carrying the typo has to say so too, or the reader is told a claim is
+  // ungraded and left to grep for it.
+  t('claims.modelCardMarked', await evaluate(`
+    const cards = [...document.querySelectorAll('#acPanel .card:not(#acClaimsCard)')]
+      .filter(c => c.querySelector('.badge.danger')?.textContent.trim() === 'ungraded claim');
+    return cards.length > 0;
+  `), true)
+
+  // And the model that does NOT name it must stay unmarked, or a panel marking
+  // everything passes the row above.
+  t('claims.unaffectedModelUnmarked', await evaluate(`
+    const card = [...document.querySelectorAll('#acPanel .card')]
+      .find(c => c.querySelector('.surface-header b')?.textContent.trim() === 'Cart');
+    return card ? Boolean(card.querySelector('.badge.danger')) : false;
+  `), false)
+
+  writeFileSync(SCHEMA, ORIGINAL_SCHEMA, 'utf8')
+  await evaluate(`_access = await api('/access'); acRender(); return true`)
+}
 
 // ─── drift ────────────────────────────────────────────────────────────────
 

@@ -35,8 +35,21 @@ const SHOWN_SEPARATELY = new Set([
   'x-messages', 'enum', 'anyOf', 'oneOf',
 ])
 
-const isModel = (def) => def?.type === 'object' && !!def.properties
+// A definition STATES its kind (`x-litestone-kind`), because the three that live
+// in `$defs` are structurally identical: `type === 'object' && properties` is
+// true of a model, a `type` declaration and a view alike, so counting models by
+// shape counted payload shapes among them — this file reported `54 models · 0
+// other` over a schema declaring 43 models and 11 types (`FJS-1015`).
+const kindOf  = (def) => def?.['x-litestone-kind'] ?? null
+const isModel = (def) => kindOf(def) === 'model'
+const isView  = (def) => kindOf(def) === 'view'
+const isType  = (def) => kindOf(def) === 'type'
 const isEnum  = (def) => Array.isArray(def?.enum)
+// Anything shaped like a definition whose kind this reader does not know — a
+// kind added later, or a schema generated before the key existed. It is a
+// counted row rather than a silent drop, which is the whole point of stating
+// the kind instead of inferring it.
+const isObjectDef = (def) => def?.type === 'object' && !!def.properties
 
 const refName = (ref) => typeof ref === 'string' ? ref.replace('#/$defs/', '') : null
 
@@ -117,11 +130,12 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
   // same fields, the same gate, the same closed object — and separate numbers
   // because they are not the same thing to a reader: nothing writes a view, so
   // `55 models` over a schema holding 54 was the count reading as the claim.
-  const isView = (d) => isModel(d) && d['x-litestone-view'] === true
-  const models = names.filter(n => isModel(defs[n]) && !isView(defs[n]))
+  const models = names.filter(n => isModel(defs[n]))
   const views  = names.filter(n => isView(defs[n]))
+  const types  = names.filter(n => isType(defs[n]))
   const enums  = names.filter(n => isEnum(defs[n]))
-  const others = names.filter(n => !isModel(defs[n]) && !isEnum(defs[n]))
+  const others = names.filter(n => !isModel(defs[n]) && !isView(defs[n]) &&
+                                   !isType(defs[n])  && !isEnum(defs[n]))
 
   const out = []
 
@@ -144,6 +158,7 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
   const many = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
   out.push(`${many(Object.keys(defs).length, 'definition')} · ${many(models.length, 'model')} · ` +
            (views.length ? `${many(views.length, 'view')} · ` : '') +
+           (types.length ? `${many(types.length, 'type')} · ` : '') +
            `${many(enums.length, 'enum')} · ${others.length} other`)
   out.push('```')
   out.push('')
@@ -161,9 +176,13 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
   out.push('| Name | Kind |')
   out.push('| --- | --- |')
   for (const name of names) {
-    const kind = isView(defs[name])  ? 'view'
-               : isModel(defs[name]) ? 'model'
-               : isEnum(defs[name])  ? 'enum' : 'type'
+    // The kind a definition STATES, never one inferred from its shape. An object
+    // definition carrying no kind is `unknown` rather than folded into the
+    // nearest guess — a schema generated before the key existed, or a kind this
+    // reader predates, and either is a thing to see rather than to mislabel.
+    const kind = kindOf(defs[name])
+               ?? (isEnum(defs[name]) ? 'enum'
+                 : isObjectDef(defs[name]) ? 'unknown' : 'other')
     out.push(`| \`${name}\` | ${kind} |`)
   }
   out.push('')
@@ -189,7 +208,24 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
   out.push('rule names `x-messages` answers for, which is what a failure is allowed to say.')
   out.push('')
 
-  for (const name of [...models, ...views]) {
+  // Types are rendered here rather than as a line in § Other definitions, which
+  // is where this file intended them and never sent them: `isModel` matched by
+  // shape, so a `type` landed among the models with a full table and the
+  // one-line form was dead code. The table is what a reader wants — a declared
+  // `type` is what a service's `input:` validates against, so its fields and
+  // rules are as consequential as a model's — and dropping to a one-liner when
+  // the classification was fixed would have deleted 153 lines of documentation
+  // for definitions that are still `$ref`-able.
+  let section = 'model'
+  for (const name of [...models, ...views, ...types]) {
+    if (section === 'model' && types.includes(name)) {
+      section = 'type'
+      out.push('## Types')
+      out.push('')
+      out.push('`type T { … }` declarations. No table, no rows, no gate — a payload shape a')
+      out.push('`$ref` points at, and what a service `input:` validates against.')
+      out.push('')
+    }
     const def      = defs[name]
     const required = new Set(def.required ?? [])
     const props    = Object.entries(def.properties ?? {})
@@ -209,7 +245,7 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
     // Said on the definition rather than left to be inferred from a gate of 9
     // on three operations: a projection is read-only because it is a
     // projection, and the locked writes are the consequence.
-    if (def['x-litestone-view']) meta.unshift('view — read-only')
+    if (isView(def)) meta.unshift('view — read-only')
     if (meta.length) bullets.push(`- ${meta.join(' · ')}`)
 
     // Relations — the ONLY place a relation exists on the client, and what
@@ -278,7 +314,7 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
     // A projection has no create mode to differ from, and every line this
     // block could write about one — "required — nothing" — reads as a fact
     // about a form that does not exist.
-    const cDef      = def['x-litestone-view'] ? null : cDefs[name]
+    const cDef      = isView(def) ? null : cDefs[name]
     if (cDef) {
       const cProps    = new Set(Object.keys(cDef.properties ?? {}))
       const cRequired = cDef.required ?? []
@@ -302,7 +338,9 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
   if (others.length) {
     out.push('## Other definitions')
     out.push('')
-    out.push('`type` blocks and the file reference — they resolve through the same `$defs`.')
+    out.push('Definitions stating a kind this reader does not know — a schema generated')
+    out.push('before `x-litestone-kind` existed, or a kind added since. Listed rather than')
+    out.push('dropped, because a definition nothing can classify is a thing to see.')
     out.push('')
     for (const name of others) {
       const def   = defs[name]

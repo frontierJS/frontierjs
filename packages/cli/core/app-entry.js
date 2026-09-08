@@ -20,6 +20,7 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve, dirname }         from 'node:path'
+import { spawnSync }                from 'node:child_process'
 
 export const SURFACE_FILE = 'surface.snapshot.md'
 
@@ -77,3 +78,57 @@ export const surfaceMissingHint = (root) =>
   `no ${SURFACE_FILE} under ${root} (looked in ${SURFACE_DIRS.join(', ')}) — run ` +
   '`junction surface --app <entry>` from the API surface to write one. ' +
   'The app is read off a built app, never scanned (FJS-254).'
+
+// ─── the model itself ─────────────────────────────────────────────────────────
+//
+// One owner for *how do you get the app model*, because there are two callers —
+// `app:atlas`, which renders it, and `project:view`, which folds three of its
+// four halves into a page built from files. Two spawns of one command is how the
+// two come to disagree about which app they described.
+//
+// It ANSWERS a failure rather than throwing one. `project:view`'s whole property
+// is that it needs no bun and no boot — it reads files — so a missing bun or an
+// app that will not build has to degrade that page rather than end it, and only
+// the caller knows which of those it is.
+
+/**
+ * Boot the app once and read `describeAppModel` off it.
+ *
+ * `{ model, entry }` on success, `{ error, entry }` otherwise — never a throw.
+ * `entry` is null when there was no snapshot to find the app with.
+ *
+ * `{ run }` swaps the spawner, which is what lets this be tested with no bun,
+ * no app and no boot — the same reason outpost injects its runner.
+ */
+export function readAppAtlas(root, { run: runner = spawnSync } = {}) {
+  let entry = null
+  try {
+    entry = appEntry(root)
+  } catch (err) {
+    return { entry: null, error: err.message }
+  }
+  if (!entry) return { entry: null, error: surfaceMissingHint(root) }
+
+  // argv, never a shell: the flags come out of a file's header, and a file in a
+  // repo is not the same trust level as a string somebody typed. Run from the
+  // snapshot's own directory, because the app resolves its database and its
+  // services against the cwd its own scripts use.
+  const run = runner('bunx', ['junction', 'atlas', ...entry.args], {
+    cwd:       entry.dir,
+    encoding:  'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+  })
+
+  if (run.error?.code === 'ENOENT') {
+    return { entry, error: 'bunx not found — junction is Bun-only, so reading the app model needs bun on PATH' }
+  }
+  if (run.status !== 0) {
+    const tail = (run.stderr ?? '').trim().split('\n').slice(-6).join('\n')
+    return { entry, error: `junction atlas failed under ${entry.dir}${tail ? `\n${tail}` : ''}` }
+  }
+  try {
+    return { entry, model: JSON.parse(run.stdout) }
+  } catch {
+    return { entry, error: 'junction atlas did not answer JSON — something wrote to its stdout' }
+  }
+}

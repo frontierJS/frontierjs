@@ -3086,9 +3086,8 @@ const GATE_LEVELS = {
 }
 
 /**
- * Every level a schema requires, in both spellings the grammar accepts —
- * `@@gate("0.4.4.5")` and `@@gate(read: READER, write: USER)` — plus the
- * `@gate(N)` a `@@transitions` clause hangs on one move.
+ * Every level a schema requires — `@@gate("0.4.4.5")`, plus the `@gate(N)` a
+ * `@@transitions` clause hangs on one move.
  *
  * A line scan like `models()`, for its reason: this must answer with no
  * database, no migration and no installed litestone.
@@ -3110,31 +3109,18 @@ function capabilityModels({ text }) {
 
     if (/@@capabilities\b/.test(line)) current.grid = true
 
-    // BOTH spellings. Reading only the compact one would make this rule silent on
-    // every schema that writes its gate by name — which is the shape `example`
-    // and `basecamp` use, so the rule would have been dead where it matters most.
+    // One spelling (`FJS-D239`). The named form used to be read here too, on
+    // the stated grounds that `example` and `basecamp` wrote their gates that
+    // way — which was not true of either, and had not been true of any app: the
+    // named form reached five declarations in litestone's own example and
+    // nothing else, against 320 written as digits.
     const compact = line.match(/@@gate\s*\(\s*['"`]([\d.]+)['"`]\s*\)/)
-    const named   = compact ? null : line.match(/@@gate\s*\(([^)]*[A-Za-z][^)]*)\)/)
-
     if (compact) {
       // "R.C.U.D" with inheritance: a position not stated takes the one before it.
       const [r = 0, c = r, u = c, d = u] = compact[1].split('.').map(Number)
       current.gate       = { read: r, create: c, update: u, delete: d }
       current.gateSource = compact[1]
       current.gateLine   = i + 1
-    } else if (named) {
-      const lvl = (t) => /^\d$/.test(t) ? Number(t) : (GATE_LEVELS[t.toUpperCase()] ?? null)
-      const kv  = {}
-      for (const m2 of named[1].matchAll(/\b(read|create|update|delete|write|all)\s*:\s*([A-Za-z0-9_]+)/g))
-        kv[m2[1]] = lvl(m2[2])
-      if (Object.values(kv).some(v => v != null)) {
-        // `write:` is create+update+delete, `all:` is every position — the same
-        // widening the parser gives them.
-        const pick = (op) => kv[op] ?? (op === 'read' ? kv.all : (kv.write ?? kv.all)) ?? kv.all ?? 0
-        current.gate       = { read: pick('read'), create: pick('create'), update: pick('update'), delete: pick('delete') }
-        current.gateSource = named[1].trim()
-        current.gateLine   = i + 1
-      }
     }
   }
   return out.filter(m => m.grid)
@@ -3160,11 +3146,8 @@ function declaredGates({ text }) {
     const where = model ? `model ${model}'s` : 'a'
 
     for (const g of line.matchAll(/@@gate\s*\(([^)]*)\)/g)) {
-      const body    = g[1]
-      const compact = body.match(/^\s*['"`]([\d.]+)['"`]\s*$/)
-      const levels  = compact
-        ? compact[1].split('.').map(Number)
-        : [...body.matchAll(/\b(?:read|create|update|delete|write)\s*:\s*([A-Za-z0-9_]+)/g)].map(k => level(k[1]))
+      const compact = g[1].match(/^\s*['"`]([\d.]+)['"`]\s*$/)
+      const levels  = compact ? compact[1].split('.').map(Number) : []
       for (const n of levels)
         if (n != null && !Number.isNaN(n)) out.push({ level: n, line: i + 1, what: `${where} @@gate` })
     }

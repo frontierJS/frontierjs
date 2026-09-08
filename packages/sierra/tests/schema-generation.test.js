@@ -373,7 +373,7 @@ describe('a view reaches the browser', () => {
     // The name as declared. The plural rules cannot reach a service called
     // `revenue` over a projection called `revenueByStatus`, which is the case
     // `createResource('revenue', { model: 'revenueByStatus' })` answers.
-    expect(schemaFor('revenueByStatus')?.['x-litestone-view']).toBe(true)
+    expect(schemaFor('revenueByStatus')?.['x-litestone-kind']).toBe('view')
     expect(schemaFor('revenue')).toBeNull()
   })
 

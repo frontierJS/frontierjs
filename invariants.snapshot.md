@@ -11,7 +11,7 @@ resolve by `fli check`'s `invariant-enforcer`.
 enforced, which is the whole reason this file exists — so the gap is written down
 rather than left to be rediscovered.
 
-Covered: **16 of 19**.
+Covered: **17 of 19**.
 
 ### 1. Dependency direction
 
@@ -62,7 +62,9 @@ Covered: **16 of 19**.
 
 ### 8. Caller-supplied names never enter a SQL pattern
 
-**none** — nothing in this repo fails when it stops being true.
+| Kind | What | Covers |
+| --- | --- | --- |
+| test | `packages/litestone/test/identifier-refusals.test.ts` | every door a caller names a column through — where, orderBy, select, include's nested copies of all three, groupBy, having, aggregate and the write filters — each refusal PAIRED with the legal name one hop away, plus the invariant stated directly off the query tap: the hostile name appears in no statement the client sent |
 
 ### 9. Patch semantics: an explicit `null` clears
 
@@ -143,6 +145,5 @@ statement that no mechanical check can reach it — and until one of the two is
 recorded, neither has been decided.
 
 - **4. One owner per translation**
-- **8. Caller-supplied names never enter a SQL pattern**
 - **16. Runnable examples are verified, not sketches**
 

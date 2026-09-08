@@ -97,9 +97,10 @@ Clarifications settled by the code:
   the gate ladder, enforced by default when declared). Row/field predicates
   (`@@allow`/`@@deny`, compiled into SQL) are a second, orthogonal mechanism —
   Litestone's docs call them **policies**. Don't use one word for both.
-- **The gate ladder** is the 0–9 scale (`STRANGER`…`LOCKED`) implemented as
-  `LEVELS` in `packages/litestone/src/plugins/gate.js`. Named levels are the
-  canonical way to write gates (`@@gate(read: READER, write: USER, …)`).
+- **The gate ladder** is the 0–9 scale (`STRANGER`…`LOCKED`), owned by
+  `@frontierjs/toolbelt/gate` — the scale, the comparison and the grader
+  (`FJS-D197`). A gate is written as digits, `@@gate("2.4.4.6")`, four positions
+  read.create.update.delete (`FJS-D239`).
 - Model naming: **PascalCase, singular — always**; `@@external` models exempt
   (`FJS-D42`).
 - **A Hook has three tiers and a new `on*` states its tier** (`FJS-D06`). A

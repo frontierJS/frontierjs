@@ -27,6 +27,51 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d239"></a>2026-09-07 · `FJS-D239` — a gate is written as DIGITS, and the named form is deleted. `FJS-D43` is reversed by its own corpus.
+
+`FJS-D43` made `@@gate(read: READER, write: USER, delete: OWNER)` canonical and
+kept `@@gate("2.4.4.6")` as shorthand. Five weeks later the corpus had voted:
+**five named declarations against 320 written as digits, and all five of the
+named ones were in litestone's own example schema.** No app had ever written
+one. That is not a canonical form being adopted slowly; it is a canonical form
+that nothing adopted, and nothing measured it because no check graded which
+spelling a schema used.
+
+**Reversed rather than re-argued.** § IV's *doctrine vs. discovery* is the
+hearing this is the outcome of: the code is smarter than the principle here, and
+the answer is to amend the doctrine in writing rather than to keep a preference
+the whole repo declined. `FJS-D43`'s reasoning was never wrong about
+legibility — a digit string does need the ladder to read — and that cost is
+accepted rather than denied. It is paid once, against a scale that has one owner
+(`@frontierjs/toolbelt/gate`, `FJS-D197`) and ten entries.
+
+**Deleted rather than demoted, and the reason is not tidiness.** A demoted alias
+is still a second spelling of one thing, which is what § 2's vocabulary table
+exists to forbid and is exactly why `FJS-D46` was withdrawn three days ago. Two
+measurements decided it. The named branch had **no test at any point** — the
+grammar carried a form nothing executed. And `fli check` had grown a **second
+parser of the gate grammar** to read it, which had drifted into accepting a key
+the language never had (`all:`) and carried a comment justifying itself with
+*`example` and `basecamp` both write gates by name*, which was true of neither
+and of no app. A second spelling had bought a second parser, a false claim and a
+dead branch, and had bought no schema anything.
+
+**The refusal names the answer.** § IV's *familiarity vs. precision* asks that
+muscle memory fail loudly and helpfully, so the parser keeps enough of the named
+form to grade it and then refuses with the digit string it means:
+`@@gate(read: READER, write: USER, delete: OWNER)` is
+`@@gate("2.4.4.6")`. A schema written last month gets the translation in place
+rather than a grammar error pointing at a colon.
+
+**What it does not settle.** *Is a single ordered 0–9 scale the right model at
+all* is a different question and stays open — `@@capabilities` (`FJS-D146`) is
+the grid beside the ladder, and `IDEAS/pros-and-cons.md` still argues the
+legibility cost this ruling accepts.
+
+`FJS-D43` · `FJS-D197` · `packages/litestone/src/core/parser.js`
+(`parseGateArg`, which now refuses) · `packages/cli/core/checks.js` (one reader
+of the grammar, not two) · `packages/litestone/docs/access-control.md`.
+
 ### <a id="fjs-d203"></a>2026-09-04 · `FJS-D203` — `@@strict` is deleted and `@@noStrict` stays. One word for a boolean whose default is already the answer.
 
 Two words spelled one boolean, and the default was strict either way. The
@@ -561,6 +606,7 @@ foreign physical table and keep its name verbatim.
 *Lives in:* all examples/docs in `packages/litestone`; enforce in scaffolds and reviews.
 
 ### <a id="fjs-d43"></a>2026-08-01 · `FJS-D43` — Named gate syntax is canonical; digits are the compact form.
+**Status:** superseded-by [`FJS-D239`](#fjs-d239) — reversed, and the named form deleted.
 `@@gate(read: READER, write: USER, delete: OWNER)` in all docs and new schemas;
 `@@gate("2.4.4.6")` remains valid shorthand. `write:` expands to
 create+update+delete unless one is given explicitly; missing keys cascade
@@ -2819,8 +2865,39 @@ is doubly true for the audience this framework is increasingly written for — a
 warning on stderr is not a return value and not an exception, so an agent
 writing the app never sees it at all (`IDEAS/provable-enforcement.md` §4).
 
-`FJS-634` · `packages/litestone/src/core/client.js` (`checkWhereKeys`) ·
-`src/core/query.js` (`quoteIdent`, the one owner of putting a name in a pattern).
+**Amended 2026-09-07 (`FJS-1015`), on who the owner is and on how many doors
+there are.** The closing citation called `quoteIdent` *the one owner of putting a
+name in a pattern*. It is not one and never was: it is called nine times, all of
+them inside `query.js`, and `client.js` — which emits the statements — calls it
+zero times and interpolates a name at roughly two hundred sites. Coverage there
+was never the mechanism, and could not be: everything `client.js` emits is
+schema-derived, and the parser pins a name to `[a-zA-Z_][a-zA-Z0-9_]*`, so
+quoting a name that cannot carry a quote buys nothing. **What holds Invariant 8
+is the refusal this ruling installed**, and the citation is corrected to say so.
+
+**The sharper half is that this ruling's own attack string still worked.** It
+names `id" = 2) OR ("id` and refuses it in `where`. Four doors away it did not:
+`include`'s nested `select`, `where` and `orderBy`, and a relation-hop `orderBy`,
+all of which grade a name against a DIFFERENT model and had no grader at all —
+`withArgValidation` closes over one model and nothing followed the hop. The
+nested `select` put the string into a SELECT list unquoted; the nested `where`
+put it in quoted, which SQLite read as a string literal and answered an empty
+relation with no error — *this ruling's own second failure, one option along*.
+
+**So the general form is amended too.** *A rule that fails open is not softened
+by a warning* is right and is not the whole rule. The other half: **a refusal
+installed at one door is not a rule, it is an instance** — and the artefact that
+tells them apart is a test that enumerates the doors. Invariant 8 carried
+**none** until this amendment; it now carries
+`packages/litestone/test/identifier-refusals.test.ts`, which asks every door,
+pairs every refusal with the legal name one hop away, and states the invariant
+directly off the query tap rather than through a thrown error.
+
+`FJS-634` · `FJS-1015` · `packages/litestone/src/core/client.js`
+(`checkWhereKeys`, `collectOrderByKeyProblems`, `checkIncludeArgs` — the
+refusals, which are the owner) · `src/core/query.js` (`quoteIdent`, the escape,
+for the sites that emit a name a refusal did not already grade) ·
+`test/identifier-refusals.test.ts` (the enforcer).
 
 ### <a id="fjs-d168"></a>2026-09-01 · `FJS-D168` — a cross-row invariant stays in application code, and the reason is that its moment is the LAST CHILD WRITE. The seal is the one case where something else says *now*.
 

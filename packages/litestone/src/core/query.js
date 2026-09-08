@@ -12,10 +12,21 @@ import { ValidationError } from './validate.js'
 // identifier it cannot bind as a STRING LITERAL rather than raising, so a name
 // that merely does not exist compares two constants and answers nothing.
 //
-// Doubling is SQL's own escape. Every identifier this package emits goes
-// through here, whether it came from the schema or from a caller — a helper
-// that only the untrusted sites remember to call is one audit away from a site
-// that forgot.
+// Doubling is SQL's own escape, and this is where it happens — but the
+// invariant is held UPSTREAM, by refusal, and not here. Every door a caller
+// names a column through grades that name against the model and throws by name
+// (`checkWhereKeys`, `collectOrderByKeyProblems`, the select and groupBy
+// checks, and `checkIncludeArgs` for the nested copies of all three), so a name
+// this function has to defend against is one that already got past a refusal.
+// `test/identifier-refusals.test.ts` is where that is asserted, door by door,
+// each refusal paired with the legal name one hop away.
+//
+// Reading the coverage here as the mechanism is the mistake to avoid, and it
+// has a cost: everything this package emits is schema-derived, the parser pins
+// a name to `[a-zA-Z_][a-zA-Z0-9_]*`, and quoting a name that cannot carry a
+// quote buys nothing — while a door with no refusal buys a caller the whole
+// statement. `FJS-1015` was exactly that: four nested doors with no refusal,
+// and quoting was doing its job at three of them.
 
 export function quoteIdent(name) {
   return `"${String(name).replace(/"/g, '""')}"`

@@ -535,6 +535,50 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   `gateAuth` is derived and installed unconditionally, so the column could only
   ever say one word. The raw routes are where that question has an answer that
   varies, and `--ungraded` is where it is asked.
+- **`readAppAtlas` has two callers and ANSWERS a failure rather than throwing
+  one.** `app:atlas` renders the model; `project:view --atlas` (default on) folds
+  its jobs, notifications and principal halves into a page otherwise built from
+  files — three panels no file can answer, since a job registers itself by being
+  autoloaded, a notification takes its type from its own file name, and a
+  resolver is installed in code. Two spawns of one command is how the two come to
+  disagree about which app they described, so the spawn is in `core/app-entry.js`
+  and neither command owns it. **The failure is returned because the two callers
+  need it differently**: `app:atlas` has nothing without the model and stops,
+  while `project:view`'s whole property is that it needs no bun and no running
+  server — so a missing bun or an app that will not build costs it three panels
+  and leaves every file-derived one intact. The page prints WHICH of the three
+  reasons it was (`--no-atlas`, a boot failure, no snapshot), because an app with
+  no jobs and an app nobody could boot must not draw the same empty table.
+- **`project:view` has ONE viewer and `collectIssues` has a test.** Both of its
+  checks were wrong for every row they ever printed, and both survived because
+  nothing ran the function (`FJS-1017`). There is deliberately no per-service
+  gateAuth check now: the hook is `around.all` and `createBaseService` installs
+  it unconditionally — zero occurrences in any `before` chain of any snapshot
+  here — so the question has no varying answer per service, and it is asked of
+  the raw routes instead. Models are filtered on the stated `x-litestone-kind`
+  (`FJS-1016`), never on `type === 'object'`, which is true of a `type`
+  declaration and a view as well. *No resource binds to this service* is a
+  COLUMN in the services panel rather than an issue — an API-only service is
+  correctly bound by nothing, and 24 such rows pushed the real findings off the
+  page. `tests/viewer-issues.test.js` reaches the two pure functions by
+  evaluating the page's script block with the browser stubbed; every negative in
+  it is PAIRED with a finding that must still fire, or a `collectIssues`
+  returning nothing would pass.
+- **`package.json`'s `test` script is an explicit file list, so a new test file
+  runs nowhere until it is named there.** It is not a glob and adding one is
+  silent — the file passes in isolation and is absent from `bun run test`.
+- **`readApiSurface` is graded against the real committed snapshots, not only the
+  fixture.** The fixture in `tests/project-helpers.test.js` describes itself as *a
+  trimmed copy of the real shape*, and a copy is frozen at the moment it was
+  written — the only failure it can catch is one somebody hand-typed into it.
+  **The oracle is each snapshot's own summary line** (`N services · N routes · N
+  plugins`), which the renderer writes straight off the model and the parse never
+  reads, since it sits in a code fence above the first `##`. So two halves of one
+  file grade each other and no number is kept in step here. Measured: moving the
+  service heading in a real snapshot reds exactly one test and every fixture test
+  stays green, which is the hole. The files are DISCOVERED with `git ls-files`, so
+  a new app is covered without an edit — and the count is asserted first, because
+  discovery alone fails open.
 - **`core/crud-templates.js` is the one answer to what a generated CRUD page
   looks like**, and it has two callers for the reason every shared engine here
   does: `make:scaffold` and `admin:generate` both emit a list, a create form and

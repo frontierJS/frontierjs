@@ -83,6 +83,12 @@ export const ENFORCERS = {
         covers: '§ audit log redaction — `@secret`, `@encrypted` and `@guarded` log as `[redacted]` in a ' +
                 'field entry and in a `before`/`after` snapshot' }],
 
+  8: [{ kind: 'test', at: 'packages/litestone/test/identifier-refusals.test.ts',
+        covers: 'every door a caller names a column through — where, orderBy, select, include\'s nested ' +
+                'copies of all three, groupBy, having, aggregate and the write filters — each refusal ' +
+                'PAIRED with the legal name one hop away, plus the invariant stated directly off the ' +
+                'query tap: the hostile name appears in no statement the client sent' }],
+
   9: [{ kind: 'test', at: 'packages/junction/tests/patch-defaults.test.ts',
         covers: 'presence, not truthiness — an explicit `null` clears where an absent key does not' },
       { kind: 'test', at: 'packages/litestone/test/valuesets.test.ts',

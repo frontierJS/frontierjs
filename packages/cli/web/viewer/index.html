@@ -396,7 +396,13 @@ function buildModel(map) {
   const resources = map.resources ?? []
   const surface   = map.surface   ?? null
 
-  const modelEntries = Object.entries(defs).filter(([, d]) => d.type === 'object' && !d['x-litestone-file'])
+  // A definition STATES its kind. Filtering on shape (`type === 'object'`) is
+  // true of a `type` declaration and a view as well, so eleven payload shapes
+  // were listed as models and each warned about a missing `@@gate` it cannot
+  // carry (`FJS-1015`). A schema too old to say is treated as no models rather
+  // than as every definition — the panel then says the schema needs
+  // regenerating, which is true, where the guess said something false.
+  const modelEntries = Object.entries(defs).filter(([, d]) => d['x-litestone-kind'] === 'model')
   const enumEntries  = Object.entries(defs).filter(([, d]) => d.type === 'string' && d.enum)
 
   const models = modelEntries.map(([name, def]) => ({
@@ -457,8 +463,95 @@ function buildModel(map) {
     services, resources, surface, relations, channels, nouns, packages,
     migrations: map.migrations ?? [],
     env:        map.env ?? null,
+    atlas:      map.atlas ?? { skipped: true },
     issues:     collectIssues({ services, resources, surface, models, env: map.env, packages }),
   }
+}
+
+// ─── the three read off a BUILT app ───────────────────────────────────────────
+//
+// Every panel above is derived from a file. These three cannot be: a job
+// registers itself by being autoloaded, a notification takes its type from its
+// own file name, and a principal resolver is installed in code. So they come
+// from `junction atlas`, and when that could not run they say WHICH of the three
+// reasons it was rather than rendering as though the app has none — an app with
+// no jobs and an app nobody could boot must not draw the same empty table.
+
+function atlasUnavailable(what) {
+  const a = MODEL.atlas ?? {}
+  if (a.skipped) return empty(`${what} not read`, 'Started with --no-atlas, so the app was never built. Re-run without it to fill this panel.')
+  if (a.error)   return empty(`${what} unavailable`, a.error)
+  return null
+}
+
+function jobsPanel() {
+  const gone = atlasUnavailable('Jobs')
+  if (gone) return gone
+
+  const jobs = MODEL.atlas?.jobs
+  if (!jobs?.hasQueue) return empty('No queue installed', 'This app configures no app.jobs, so nothing here is durable — a different statement from a queue with no jobs in it.')
+  if (!jobs.durable.length && !jobs.timers.length) {
+    return empty('A queue, and no handlers', 'Every dispatch this app makes will find nothing to run it.')
+  }
+
+  const rows = jobs.durable.map(j => [
+    `<code>${esc(j.name)}</code>`,
+    j.cron ? `<code>${esc(j.cron)}</code>` : '<span class="text-muted">on dispatch</span>',
+    String(j.maxAttempts),
+    j.timeout == null ? '<span class="badge warning">none</span>' : `${j.timeout}ms`,
+  ])
+  const timers = jobs.timers.map(t => [`<code>${esc(t.id)}</code>`, esc(t.type), `<code>${esc(t.expr)}</code>`])
+
+  return `
+    <section class="stack gap-sm">
+      <h3 class="h6">Durable work — <code>app.jobs</code></h3>
+      <p class="text-xs text-muted">A row in the queue database, a retry budget, and the principal that asked for it re-resolved when it runs. Survives a restart.</p>
+      ${table(['job', 'schedule', 'attempts', 'timeout'], rows)}
+    </section>
+    <section class="stack gap-sm">
+      <h3 class="h6">In-process timers — <code>app.scheduler</code></h3>
+      <p class="text-xs text-muted">No persistence, no retry, no principal; gone with the process, and running in every replica rather than once across them.</p>
+      ${timers.length ? table(['id', 'kind', 'declared'], timers) : '<p class="text-sm text-muted">None registered.</p>'}
+    </section>`
+}
+
+function notificationsPanel() {
+  const gone = atlasUnavailable('Notifications')
+  if (gone) return gone
+
+  const n = MODEL.atlas?.notifications
+  if (!n?.installed) return empty('No notifications plugin', 'This app has no app.notifications, so nothing here can send — a different statement from a plugin configured and finding nothing.')
+  if (!n.declared.length) return empty('Configured, and nothing registered', 'Every app.notify this app makes will throw, naming a definition the loader never saw.')
+
+  return `
+    <p class="text-xs text-muted">The type is <strong>persisted</strong> — written into <code>notifications.type</code> and read back by the browser to choose a renderer, so a type that moves orphans every row already written under the old string.</p>
+    ${table(['type', 'transports'], n.declared.map(d => [
+      `<code>${esc(d.type)}</code>`,
+      d.transports.length ? d.transports.map(t => `<code>${esc(t)}</code>`).join(' · ') : '<span class="badge warning">none</span>',
+    ]))}`
+}
+
+function principalPanel() {
+  const gone = atlasUnavailable('The principal realm')
+  if (gone) return gone
+
+  const p = MODEL.atlas?.principal
+  if (!p) return empty('No tenancy, no resolver', 'This app declares no tenancy and installs no principal resolver. That is an answer, not a gap.')
+
+  const t = p.tenancy ?? {}
+  const d = p.resolver?.described ?? {}
+  const rows = [
+    ['tenancy strategy', t.strategy ? `<code>${esc(t.strategy)}</code>` : '<span class="text-muted">none</span>'],
+    ['resolved by',      t.resolve  ? esc(t.resolve) : '<span class="text-muted">—</span>'],
+    ['resolver',         p.resolver?.name ? `<code>${esc(p.resolver.name)}</code>` : '<span class="text-muted">none installed</span>'],
+    ['kind',             d.kind ? esc(d.kind) : '<span class="text-muted">—</span>'],
+    ['claims it builds', d.claims?.length ? d.claims.map(c => `<code>${esc(c)}</code>`).join(' · ') : '<span class="text-muted">none</span>'],
+    ['named by',         d.namedBy ? esc(d.namedBy) : '<span class="text-muted">—</span>'],
+  ]
+
+  return `
+    <p class="text-xs text-muted">Who a caller arrives as, and who they become. Read off a built app — a resolver is installed in code and appears in no schema.</p>
+    ${table(['', ''], rows)}`
 }
 
 function gateStr(g) { return [g.read, g.create, g.update, g.delete].join('.') }
@@ -487,19 +580,14 @@ function collectIssues({ services, resources, surface, models, env, packages }) 
     ref:      'run `junction surface --app <entry>` at the project root',
   })
 
-  for (const svc of services) {
-    const writes = ['create', 'patch', 'update', 'remove']
-    const ungated = writes.filter(m => {
-      if (!svc.methods.includes(m)) return false
-      const chain = [...(svc.hooks?.before?.[m] ?? []), ...(svc.hooks?.before?.all ?? [])]
-      return !chain.includes('gateAuth')
-    })
-    if (ungated.length) out.push({
-      severity: 'warning',
-      msg:      `Service '${svc.name}' has no gateAuth on ${ungated.join(', ')}`,
-      ref:      `surface.snapshot.md → Services → ${svc.name} → before`,
-    })
-  }
+  // There is deliberately NO per-service gateAuth check. One lived here and was
+  // false for every row it ever printed: it read the per-method `before` chain,
+  // and `gateAuth` is an `around.all` hook that `createBaseService` installs
+  // unconditionally — zero occurrences in any `before` chain of any snapshot in
+  // this repo. So it fired on exactly the services that expose a write method
+  // and reported *ungated* about the one thing gated on every path (`FJS-1016`).
+  // Where that question HAS a varying answer is the raw routes, which run below
+  // the pipeline; the atlas panels are where it is asked.
 
   for (const m of models) {
     if (!m.gate) out.push({
@@ -518,13 +606,10 @@ function collectIssues({ services, resources, surface, models, env, packages }) 
     })
   }
 
-  for (const svc of services) {
-    if (!resources.some(r => r.service === svc.name) && resources.length) out.push({
-      severity: 'info',
-      msg:      `Service '${svc.name}' has no resource in the UI realm`,
-      ref:      'web/src/resources/ — nothing on the client binds to it',
-    })
-  }
+  // *No resource binds to this service* is a fact about coverage, not a defect —
+  // a read-side service an API caller uses is correctly bound by nothing — and
+  // twenty-four rows of it pushed the real findings off the page. It is a column
+  // in the services panel now.
 
   for (const p of packages) {
     if (!p.installed) out.push({
@@ -996,6 +1081,9 @@ const PANELS = [
   { id: 'resources',  label: 'resources',  source: 'project',   render: () => resourcesPanel() },
   { id: 'channels',   label: 'channels',   source: 'project',   render: () => channelsPanel() },
   { id: 'relations',  label: 'relations',  source: 'project',   render: () => relationsPanel() },
+  { id: 'jobs',       label: 'jobs',       source: 'project',   render: () => jobsPanel() },
+  { id: 'notifications', label: 'notifications', source: 'project', render: () => notificationsPanel() },
+  { id: 'principal',  label: 'principal',  source: 'project',   render: () => principalPanel() },
   { id: 'migrations', label: 'migrations', source: 'project',   render: () => migrationsPanel() },
   { id: 'env',        label: 'env',        source: 'project',   render: () => envPanel() },
   { id: 'workflows',  label: 'workflows',  source: 'reference', render: () => workflowsPanel() },
@@ -1117,7 +1205,7 @@ function servicesPanel() {
 
   return `
     <p class="text-xs text-muted">Read off <code>${esc(MODEL.surface?.file ?? '')}</code>, written by <code>${esc(MODEL.surface?.generatedBy ?? '')}</code>.</p>
-    ${table(['service', 'model', 'methods', 'custom', 'channel'], MODEL.services.map(s => [
+    ${table(['service', 'model', 'methods', 'custom', 'channel', 'resource'], MODEL.services.map(s => [
       `<code>${esc(s.name)}</code>`,
       // The snapshot names a model only where the service declares one, and the
       // reader repeats the service name otherwise. A model is PascalCase
@@ -1127,7 +1215,14 @@ function servicesPanel() {
       s.methods.map(m => `<code>${esc(m)}</code>`).join(' '),
       s.customMethods.map(m => `<code>${esc(m)}</code>`).join(' ') || '—',
       s.channel ? `<span class="badge success">${esc(s.channel)}</span>` : '—',
-    ]))}`
+      // Which Resource binds to this service — coverage, not a defect. A
+      // read-side service an API caller uses is correctly bound by nothing, so
+      // it reads as a dash here rather than as a finding in Issues.
+      MODEL.resources.filter(r => r.service === s.name)
+        .map(r => `<code>${esc(r.name)}</code>`).join(' ') || '<span class="text-muted">—</span>',
+    ]))}
+    <p class="text-xs text-muted">A dash under <strong>resource</strong> means nothing on the client binds to
+    that service. That is coverage rather than a defect — an API-only service is correctly bound by nothing.</p>`
 }
 
 function routesPanel() {

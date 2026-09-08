@@ -57,7 +57,7 @@ model Lead {
   accountId   Int
   workspaceId Int
   status      LeadStatus @default(new)
-  @@gate(read: READER, write: USER, delete: ADMINISTRATOR)
+  @@gate("2.4.4.5")
   @@transitions(status,
     qualify: new              -> qualified,
     close:   [new, qualified] -> closed)
@@ -2455,26 +2455,28 @@ describe('a model graded by capability is not also graded by ladder', () => {
     expect(only(root, 'capability-ladder').findings).toEqual([])
   })
 
-  test('it reads the NAMED gate form too, which is what this repo writes', () => {
-    // Reading only `@@gate("2.5.5.6")` would make the rule silent on every schema
-    // that spells its gate by name — `example` and `basecamp` both do — so it
-    // would have been dead exactly where it matters.
-    const root = tree('cap-named', {
+  test('a gate whose writes sit above its read is the finding', () => {
+    // The pair to the row above: that one is flat and says nothing, this one
+    // climbs and must. Both are written as digits — `FJS-D239` deleted the
+    // named form, and the tests here used to assert the rule read it "because
+    // `example` and `basecamp` both write it that way", which was true of
+    // neither and of no app: five declarations against 320.
+    const root = tree('cap-climbing', {
       ...CLEAN,
       'db/schema.lite': SCHEMA +
         '\nmodel Invoice {\n  id Int @id\n  workspaceId Int\n' +
-        '  @@gate(read: READER, write: USER, delete: ADMINISTRATOR)\n  @@capabilities\n}\n',
+        '  @@gate("2.4.4.5")\n  @@capabilities\n}\n',
     })
     const { findings } = only(root, 'capability-ladder')
     expect(findings).toHaveLength(1)
     expect(findings[0].message).toMatch(/create, update, delete need level 4\/4\/5 where read needs 2/)
   })
 
-  test('a named gate that is flat says nothing', () => {
-    const root = tree('cap-named-flat', {
+  test('a gate that is flat says nothing', () => {
+    const root = tree('cap-flat', {
       ...CLEAN,
       'db/schema.lite': SCHEMA +
-        '\nmodel Invoice {\n  id Int @id\n  workspaceId Int\n  @@gate(all: READER)\n  @@capabilities\n}\n',
+        '\nmodel Invoice {\n  id Int @id\n  workspaceId Int\n  @@gate("2.2.2.2")\n  @@capabilities\n}\n',
     })
     expect(only(root, 'capability-ladder').findings).toEqual([])
   })

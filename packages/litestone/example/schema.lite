@@ -86,7 +86,7 @@ model Account {
 
   @@db(main)
   @@index([slug])
-  @@gate(read: READER, write: ADMINISTRATOR, delete: OWNER)
+  @@gate("2.5.5.6")
   @@allow('read', auth() != null)
 }
 
@@ -118,7 +118,7 @@ model User {
   @@index([accountId])
   @@index([email])
   @@index([displayName])
-  @@gate(read: READER, write: USER, delete: OWNER)
+  @@gate("2.4.4.6")
   @@allow('read',   accountId == auth().accountId)
   @@allow('update', id == auth().id || auth().role == 'admin')
   @@allow('delete', auth().role == 'admin')
@@ -143,7 +143,7 @@ model Product {
   @@softDelete
   @@index([slug])
   @@index([salePrice])
-  @@gate(read: VISITOR, write: USER, delete: OWNER)
+  @@gate("1.4.4.6")
   @@allow('read', true)
 }
 
@@ -169,7 +169,7 @@ model Lead {
   @@index([accountId])
   @@index([status])
   @@index([fullName])
-  @@gate(read: CREATOR, create: CREATOR, update: USER, delete: OWNER)
+  @@gate("3.3.4.6")
   @@allow('read',   accountId == auth().accountId)
   @@allow('create', accountId == auth().accountId)
   @@allow('update', accountId == auth().accountId)
@@ -197,7 +197,7 @@ model Message {
   @@index([userId])
   @@index([accountId])
   @@index([channel])
-  @@gate(read: READER, write: USER, delete: ADMINISTRATOR)
+  @@gate("2.4.4.5")
   @@allow('read', accountId == auth().accountId)
 }
 

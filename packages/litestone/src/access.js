@@ -40,7 +40,7 @@ export const REACHABLE_LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8]
 // is.
 // Imported as well as re-exported: `export … from` does not bind the name in
 // this module's own scope, and describeModel below calls it.
-import { policyExprToString } from './core/policy.js'
+import { policyExprToString, buildClaimSet, authClaimSites } from './core/policy.js'
 import { deriveCapabilities } from './core/capabilities.js'
 export { policyExprToString }
 
@@ -54,6 +54,7 @@ export { policyExprToString }
 //     transitions: [{ field, name, from, to, gate, system }],
 //     unrestricted: boolean,
 //   }],
+//   claims: { active, unknown, used: [{ name, known, source, sites }] },
 //   levels, counts
 // }
 //
@@ -96,7 +97,48 @@ export function deriveAccess(schema) {
     sealingMoves: models.reduce((n, m) => n + m.transitions.filter(t => t.seals).length, 0),
   }
 
-  return { models, levels: LEVELS, counts }
+  return { models, levels: LEVELS, counts, claims: describeClaims(schema) }
+}
+
+// ─── the claims a policy names ────────────────────────────────────────────────
+//
+// A predicate reads as complete whether or not `auth().isStaff` resolves to
+// anything, and a name that resolves to nothing is UNKNOWN: the SQL half's
+// `NOT (NULL = 1)` excludes everyone and the JS half's `null === true` excludes
+// nobody, so one misspelling is a lockout on read and an open door on create
+// (`FJS-666`). Neither side reads as a mistake, which is why this belongs on
+// the surface rather than in a warning nobody scrolls back to.
+//
+// What is decidable HERE is what the schema can say. `createClient({ claims })`
+// is resolved per request and is on no row and in no file, so `known: false`
+// means *this schema cannot say* rather than *this claim does not exist* — the
+// same disclosure `--gate` owes a preview. `active: false` is the third state
+// and it is not a milder second: with no `@@auth` model and no `claim` line
+// there is nothing to compare against at all, and litestone grades none of them.
+function describeClaims(schema) {
+  const set   = buildClaimSet(schema, null)
+  const sites = authClaimSites(schema)
+
+  const byName = new Map()
+  for (const site of sites) {
+    if (!byName.has(site.name)) byName.set(site.name, [])
+    byName.get(site.name).push(site)
+  }
+
+  const used = [...byName]
+    .map(([name, at]) => ({
+      name,
+      known:  set.active ? set.has(name) : null,
+      source: set.has(name) ? set.names.get(name) : null,
+      sites:  at.sort((a, b) => a.model.localeCompare(b.model)),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  return {
+    active:  set.active,
+    unknown: used.filter(c => c.known === false).map(c => c.name),
+    used,
+  }
 }
 
 function describeModel(model, derivedNames = []) {

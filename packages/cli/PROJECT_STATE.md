@@ -48,7 +48,6 @@ Both are scanned at startup. Project commands override core commands with the sa
 | `core/ports.js` | Port broker — `[ENV][CATEGORY][PROJECT][SERVICE]` 4-digit scheme, lock file at `~/.fli/sessions.lock` |
 | `web/index.html` | Single-file Web GUI — sidebar, form/source view, SSE output. Written in `@frontierjs/css` |
 | `web/viewer/index.html` | FJSChain — chain-of-responsibility diagram for `project:view`. Written in `@frontierjs/css` |
-| `web/viewer/legacy.html` | The React FJSChain it replaced, kept for comparison — `fli project:view --legacy` |
 | `core/assets.js` | The styling language and the highlighter a browser gets, from the copy this fli holds |
 
 ### Command file anatomy
@@ -461,7 +460,7 @@ ANTHROPIC_API_KEY=sk-...
 - **Runtime**: Bun, ZX globals (only in compiled commands), `bunx` for package execution
 - **Frontend**: Mesa components + Sierra routing (`.mesa` routes, plain-JS Resource modules), Ink (planned TUI)
 - **Testing**: `bun test` (built-in), Playwright for E2E elsewhere, `bunx litestone` for JSON Schema validation
-- **Visualization**: FJSChain — plain HTML/JS in `@frontierjs/css`, served with no network (`legacy.html` is the React page it replaced)
+- **Visualization**: FJSChain — plain HTML/JS in `@frontierjs/css`, served with no network
 - **Port management**: `core/ports.js` with lock manager at `~/.fli/sessions.lock`
 - **Deploy infrastructure**: SSH + Docker + nginx, no external platform required (CapRover is legacy fallback only)
 - **Monorepo scope**: `@frontierjs`

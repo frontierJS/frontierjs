@@ -159,21 +159,34 @@ export function buildClaimSet(schema, declared = null) {
   }
 }
 
-// Every `auth().x` a schema names, for the one-line notice an inactive set owes.
-export function authClaimsUsed(schema) {
-  const used = new Set()
-  const walk = (n) => {
+// Every `auth().x` a schema names, WITH the rule that names it.
+//
+// The notice an inactive set owes needs the names alone; a reader being shown
+// which claims are graded needs to know where to look, and *the schema names an
+// ungraded claim* is not actionable without it. One walk, because two would
+// disagree about a node kind the day the expression grammar grows one.
+export function authClaimSites(schema) {
+  const sites = []
+  const walk = (n, at) => {
     if (!n || typeof n !== 'object') return
-    if (n.type === 'auth' && n.field) used.add(n.field)
-    for (const k of ['left', 'right', 'expr', 'cond', 'then', 'else']) if (n[k]) walk(n[k])
+    if (n.type === 'auth' && n.field) sites.push({ name: n.field, ...at })
+    for (const k of ['left', 'right', 'expr', 'cond', 'then', 'else']) if (n[k]) walk(n[k], at)
   }
   for (const model of schema?.models ?? []) {
     for (const a of model.attributes ?? [])
-      if (a.kind === 'allow' || a.kind === 'deny' || a.kind === 'scope') walk(a.expr)
+      if (a.kind === 'allow' || a.kind === 'deny' || a.kind === 'scope')
+        walk(a.expr, { model: model.name, kind: a.kind, op: a.operation ?? a.name ?? null, field: null })
     for (const f of model.fields ?? [])
-      for (const a of f.attributes ?? []) if (a.kind === 'fieldAllow') walk(a.expr)
+      for (const a of f.attributes ?? [])
+        if (a.kind === 'fieldAllow')
+          walk(a.expr, { model: model.name, kind: 'fieldAllow', op: a.operation ?? null, field: f.name })
   }
-  return used
+  return sites
+}
+
+// Every `auth().x` a schema names, for the one-line notice an inactive set owes.
+export function authClaimsUsed(schema) {
+  return new Set(authClaimSites(schema).map(s => s.name))
 }
 
 // ─── `in` is checked against the schema, once, at startup ─────────────────────

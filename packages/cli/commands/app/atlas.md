@@ -38,54 +38,18 @@ correctly rather than guessed at.
 under node.
 
 ```js
-const { appEntry, surfaceMissingHint } =
+const { readAppAtlas } =
   await import(new URL('file://' + global.fliRoot + '/core/app-entry.js'))
-const { spawnSync } = await import('child_process')
-
-// ─── where the app is, and how it was described ───────────────────────────────
-
-let entry
-try {
-  entry = appEntry(context.paths.root)
-} catch (err) {
-  log.error(err.message)
-  return
-}
-
-if (!entry) {
-  log.error(surfaceMissingHint(context.paths.root))
-  return
-}
 
 // ─── one boot, one walk ───────────────────────────────────────────────────────
 //
-// argv, never a shell: the flags come out of a file's header, and a file in a
-// repo is not the same trust level as a string somebody typed. Run from the
-// snapshot's own directory, because the app resolves its database and its
-// services against the cwd its own scripts use.
+// `core/app-entry.js` owns finding the app and spawning `junction atlas`,
+// because `project:view` folds the same model into its page and two spawns of
+// one command is how the two come to disagree about which app they described.
 
-const run = spawnSync('bunx', ['junction', 'atlas', ...entry.args], {
-  cwd:      entry.dir,
-  encoding: 'utf8',
-  maxBuffer: 64 * 1024 * 1024,
-})
-
-if (run.error?.code === 'ENOENT') {
-  log.error('bunx not found — junction is Bun-only, so this needs bun on PATH')
-  return
-}
-if (run.status !== 0) {
-  log.error(`junction atlas failed under ${entry.dir}`)
-  if (run.stderr) echo(run.stderr.trim().split('\n').slice(-12).join('\n'))
-  return
-}
-
-let model
-try {
-  model = JSON.parse(run.stdout)
-} catch {
-  log.error('junction atlas did not answer JSON — something wrote to its stdout')
-  echo(run.stdout.slice(0, 400))
+const { model, entry, error } = readAppAtlas(context.paths.root)
+if (error) {
+  log.error(error)
   return
 }
 

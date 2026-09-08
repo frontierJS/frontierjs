@@ -652,43 +652,27 @@ the app had installed.
 
 ### @@gate syntax
 
-The canonical form is **named**: level names per operation, self-documenting,
-no decoder ring.
-
-```prisma
-model Post {
-  @@gate(read: VISITOR, write: USER, delete: OWNER)
-}
-
-model AdminSetting {
-  @@gate(read: ADMINISTRATOR, write: ADMINISTRATOR, delete: LOCKED)
-}
-```
-
-Keys: `read`, `create`, `update`, `delete`, and the shorthand `write`, which
-expands to create + update + delete unless one of those is given explicitly:
-
-```prisma
-@@gate(read: STRANGER, write: USER)                  // 0.4.4.4
-@@gate(read: READER, write: USER, delete: OWNER)     // 2.4.4.6 — delete overrides write
-@@gate(write: USER)                                  // 0.4.4.4 — read defaults to STRANGER
-```
-
-Missing keys cascade: `read` defaults to `STRANGER` (0), `create` from `read`,
-`update` from `create`, `delete` from `update`.
-
-**Compact form** — the same four positions as a digit string
-(`Read.Create.Update.Delete`), useful once you know the level scale by heart:
+A gate is a digit string: four positions, `Read.Create.Update.Delete`, each one
+the level that operation requires.
 
 ```prisma
 @@gate("R.C.U.D")      // four positions — required level for each op
-@@gate("4")            // shorthand: all ops require USER (level 4+)
+@@gate("4")            // one position: every op requires USER (level 4+)
 @@gate("2.4.4.6")      // READER to read, USER to write, OWNER to delete
-@@gate("1.8.8.9")      // anyone can read, SYSTEM to write, LOCKED to delete
+@@gate("1.8.8.9")      // anyone signed in reads, SYSTEM writes, LOCKED deletes
 ```
 
-Both forms compile to the same gate; use whichever reads better — new schemas
-and all documentation examples use the named form.
+**A position not written takes the one before it**, so `"4"` is `"4.4.4.4"` and
+`"2.4"` is `"2.4.4.4"`. Read defaults to `0` (`STRANGER`) when nothing is
+written at all.
+
+**There is one spelling** (`FJS-D239`). A named form —
+`@@gate(read: READER, write: USER)` — was canonical here for five weeks and was
+written in five declarations, all of them in this package's own example, against
+320 written as digits; it is now a parse error, and the error names the digit
+string you meant. Two spellings of one thing cost every reader the translation
+and cost `fli check` a second parser of the same grammar, which had invented a
+key (`all:`) the language never had.
 
 ## The identity models — the one recipe worth copying
 

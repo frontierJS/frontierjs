@@ -1,5 +1,131 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-07 — one spelling for a gate
+
+**[`FJS-D239`](../../DECISIONS.md#fjs-d239) reverses [`FJS-D43`](../../DECISIONS.md#fjs-d43).** The
+named form — `@@gate(read: READER, write: USER, delete: OWNER)` — was canonical for five weeks.
+Measured: **five declarations against 320 written as digits**, and all five of the named ones were
+in this package's own example schema. No app had ever written one.
+
+Deleted rather than demoted. A demoted alias is still a second spelling of one thing, and two
+measurements settled it: the named branch had **no test at any point**, and `fli check` had grown a
+**second parser of the gate grammar** to read it — one that had drifted into accepting a key the
+language never had (`all:`) and carried a comment justifying itself with *`example` and `basecamp`
+both write gates by name*, true of neither.
+
+**The refusal computes the answer.** `parseGateArg` keeps enough of the named form to grade it and
+then refuses with the digit string it means, so a schema written last month gets the translation in
+place rather than a grammar error pointing at a colon:
+
+    @@gate: the named form is not the gate syntax — write the levels.
+    @@gate(read: READER, write: USER, delete: OWNER) is @@gate("2.4.4.6"),
+    read.create.update.delete on the level ladder.
+
+`test/gate-syntax.test.ts` is new and covers what the deleted branch never had. Its refusal rows are
+the five declarations that were actually in the example schema, paired with what each was converted
+to — so the refusal is graded against the conversion that happened rather than a fresh computation
+of it. It also pins that the parser stores the gate string **verbatim**: the cascade of a missing
+position belongs to whoever reads the gate, not to the parse.
+
+## 2026-09-07 — a definition states its kind, instead of being guessed at by shape
+
+`$defs` holds three kinds — a model, a `type` declaration and a view — and
+nothing said which. Every consumer told them apart by shape, and `type ===
+'object' && properties` is true of all three, so `jsonschema.snapshot.md` read
+`54 models · 1 view · 20 enums · 0 other` over a schema declaring 42 models and
+11 types: eleven payload shapes counted as tables, in a committed CI-gated
+artefact whose own `0 other` claimed nothing was unclassified (`FJS-1016`). One
+layer up, `fli project:view` warned that each of those eleven *declares no
+`@@gate`* — which a `type` cannot carry.
+
+**There was no marker to read.** `x-litestone-view` flagged the one exception and
+a model was the ABSENCE of it, which is the shape of the bug rather than a fix
+that was missed: absence cannot distinguish *a model* from *a kind this reader
+predates*. The *no `x-` key* heuristic worked only by luck, and six real models
+here carry no `x-relations` either.
+
+`x-litestone-kind` is stated on every definition — `model`, `type`, `view`, and
+`FileRef`, which is a `type` to anyone resolving a `$ref` at it.
+`x-litestone-view` is retired rather than aliased, three readers repointed. The
+comment on the fix says the reason plainly: stated on every kind so that absence
+means *predates this key* rather than *model*.
+
+**The snapshot gained a `## Types` section, and that is a restoration rather than
+a feature.** § Other definitions already said it held *`type` blocks and the file
+reference* and never received one, because `isModel` matched by shape first — so
+the one-line form was dead code and the twelve were rendered as models with full
+tables. Reclassifying them without a section would have deleted 153 lines of
+documentation for definitions that are still `$ref`-able, so they keep their
+tables under a heading that is true. § Other definitions now holds what its name
+says: a kind this reader cannot classify, listed rather than dropped.
+
+Counts read `42 models · 1 view · 12 types · 20 enums · 0 other`. `basecamp` is
+byte-identical — it declares no types. 4600 passing.
+
+## 2026-09-07 — Invariant 8 gets a door list, and an enforcer
+
+**[`FJS-1015`](../../ISSUES.md#fjs-1015).** `withArgValidation` wraps a table method and closes
+over ONE model. The top-level `where`, `orderBy` and `select` refuse an unknown key by name; an
+`include` hops to another model and nothing followed it. Four doors were ungraded, and they broke
+four different ways — one put the name in a SELECT list unquoted and broke the statement, one put
+it in a WHERE quoted, where SQLite reads an unbindable identifier as a string literal and answers
+an **empty relation with no error**, one dropped it, and a relation-hop `orderBy` reached the join
+because the hop was skipped rather than descended.
+
+The silent one is the reason this survived. An empty relation is what an empty relation looks like.
+
+**Fixed by deriving rather than restating.** `checkIncludeArgs` resolves the hop's target out of
+`ctx.models` and calls the same graders the top level calls, so no message is written twice;
+`sortHopFor` hands `collectOrderByKeyProblems` the target's sort sets at any depth. `$checkOrderBy`
+takes the resolver too — junction grades a caller's orderBy through it, and without it the bridge
+would report clean on what the boundary refuses.
+
+**`quoteIdent` is not the owner and the header no longer says it is.** It is called nine times, all
+in `query.js`; `client.js` emits the statements and calls it zero times. That was never the
+mechanism and could not be — everything emitted there is schema-derived and the parser pins a name
+to `[a-zA-Z_][a-zA-Z0-9_]*`. Refusal is the owner; quoting is the escape. [`FJS-D169`](../../DECISIONS.md#fjs-d169)
+is amended to say so, including that its own attack string still worked four doors from where it
+was refused.
+
+**`test/identifier-refusals.test.ts` is the lasting half.** Invariant 8 read **none** in
+`invariants.snapshot.md`. It now asks eighteen doors with two hostile shapes each — one that closes
+the quote, one that merely does not exist — pairs every refusal with the legal name one hop away,
+and states the invariant directly off the query tap: the hostile name appears in no statement the
+client sent. Measured: 10 of 56 rows red with the fix stubbed.
+
+## 2026-09-07 — Studio says whether a claim is graded
+
+`@@allow('read', auth().isStaff)` renders identically whether or not `isStaff`
+resolves to anything, and a name that resolves to nothing is NULL to both
+compilers — which disagree about what NULL means. The SQL half's
+`NOT (NULL = 1)` excludes everyone and the JS half's `null === true` excludes
+nobody, so one misspelling is a lockout on read and an open door on create
+(`FJS-666`), and the refusing side reads exactly like a policy working strictly.
+`createClient` warns once at startup; the one rendered surface for who-may-do-what
+said nothing.
+
+`deriveAccess` now carries `claims: { active, unknown, used }` — every
+`auth().x` the schema names, whether the schema can grade it, which of the four
+sources declares it, and the rules that name it. **`authClaimSites` is the walk
+and `authClaimsUsed` derives from it**, because two walks over one expression
+grammar disagree the day it grows a node.
+
+The Access panel's Policies tab opens on a Claims card, and a model card whose
+policies name an ungraded claim is marked — a count in a header nobody can act
+on is decoration. **`known: null` is a third state and not a milder second**:
+with no `@@auth` model and no `claim` line litestone grades none of them, and
+the panel says that instead of implying they passed.
+
+The disclosure it owes is stated in the card: `createClient({ claims })` is
+resolved per request and is in no file, so *ungraded* means this schema cannot
+say. Nothing here reaches the committed `access.snapshot.md` — the surface is
+what a diff reviews, and this is a question about one schema rather than about
+two.
+
+`verify:studio:access` 28 → 35. The ungraded half cannot come from `example`,
+which is correct, so the drive misspells `auth().isStaff` in the file under the
+running server and asserts the unaffected model card stays unmarked beside it.
+
 ## 2026-09-07 — three opportunities about decisions that cannot be taken back
 
 `advise`'s second list answers *legal and missing*, and every check in it was

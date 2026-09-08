@@ -4232,6 +4232,69 @@ function acByLevel() {
 
 function acSetLevel(n) { _acLevel = n; acRender() }
 
+// ── Claims ──
+//
+// A predicate reads as complete whether or not the name in it resolves. An
+// UNKNOWN claim is NULL to both compilers, and they disagree about what NULL
+// means: the SQL half excludes everyone, the JS half excludes nobody — a
+// lockout on read and an open door on create, from one misspelling, with
+// neither side looking like a mistake.
+//
+// `known: null` is the third state and it is not a milder second. With no
+// @@auth model and no `claim` line there is nothing to compare against, so
+// litestone grades NONE of them and this panel may not imply otherwise.
+function acUngradedHere(model) {
+  return (_access.claims?.used ?? [])
+    .filter(c => c.known === false && c.sites.some(s => s.model === model))
+    .map(c => c.name)
+}
+
+function acClaims() {
+  const cl = _access.claims
+  if (!cl || !cl.used.length) return ''
+
+  if (!cl.active) return `
+    <div class="alert warning"><div class="alert-content">
+      <b>${cl.used.length} claim${cl.used.length === 1 ? '' : 's'} named and none graded.</b>
+      This schema declares no <code>@@auth</code> model and no <code>claim</code>, so there is
+      nothing to compare <code>${cl.used.map(c => esc('auth().' + c.name)).join('</code>, <code>')}</code>
+      against — a misspelling here compiles to NULL, which is a lockout on read and an open door
+      on create. Mark the principal model <code>@@auth</code>, or declare the names that are on no
+      column with a top-level <code>claim</code>.
+    </div></div>`
+
+  const rows = cl.used.map(c => `
+    <tr>
+      <td><code>auth().${esc(c.name)}</code></td>
+      <td>${c.known
+            ? `<span class="badge success">graded</span>`
+            : `<span class="badge danger">ungraded</span>`}</td>
+      <td>${c.known ? esc(c.source) : '<span class="text-muted">nothing declares it</span>'}</td>
+      <td class="text-muted">${c.sites.length} rule${c.sites.length === 1 ? '' : 's'} ·
+        ${esc([...new Set(c.sites.map(s => s.model))].slice(0, 4).join(', '))}${
+          new Set(c.sites.map(s => s.model)).size > 4 ? '…' : ''}</td>
+    </tr>`).join('')
+
+  return `
+    <article class="card outlined" id="acClaimsCard">
+      <div class="surface-header">
+        <span><b>Claims</b> <span class="text-muted">named by a policy</span></span>
+        ${cl.unknown.length
+          ? `<span class="badge danger">${cl.unknown.length} ungraded</span>`
+          : `<span class="text-muted">all graded</span>`}
+      </div>
+      <div class="alert info"><div class="alert-content">
+        A claim resolved per request — <code>createClient({ claims })</code> — is on no row and in
+        no file, so <b>ungraded</b> here means this schema cannot say, not that the claim does not
+        exist. Junction's <code>principal.snapshot.md</code> § Claims is where that list lives.
+      </div></div>
+      <table class="table">
+        <thead><tr><th>Claim</th><th></th><th>Declared by</th><th>Named in</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </article>`
+}
+
 // ── Policies ──
 // Shown beside the gate on purpose: a gate REFUSES and a policy FILTERS, so
 // "gate passes, policy excludes you" is an empty screen with a 200 rather than
@@ -4242,10 +4305,11 @@ function acPolicies() {
   if (!withPolicies.length)
     return `<div class="empty">No model declares <code>@@allow</code> or <code>@@deny</code>.</div>`
 
-  return withPolicies.map(m => `
+  return acClaims() + withPolicies.map(m => `
     <article class="card outlined">
       <div class="surface-header">
-        <span><b>${esc(m.name)}</b></span>
+        <span><b>${esc(m.name)}</b>${acUngradedHere(m.name).length
+          ? ` <span class="badge danger" title="ungraded: ${esc(acUngradedHere(m.name).join(', '))}">ungraded claim</span>` : ''}</span>
         ${m.gate ? `<span class="text-muted">gate <code>${esc(m.gateSource)}</code></span>` : ''}
       </div>
       <table class="table">

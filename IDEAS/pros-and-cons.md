@@ -160,9 +160,12 @@ anyway so the thesis reads as a choice.**
 
 ### 2. `@@gate("2.4.4.5")` — positional magic numbers on a linear ladder
 
-> *Partly answered 2026-08-26.* Named levels are canonical (`FJS-D43`), and the second
-> vocabulary exists: `@@capabilities` is a grid beside the ladder, ANDed with the gate
-> (`FJS-D146`). The ladder stays the floor.
+> *Partly answered 2026-08-26, and the syntax half went the other way 2026-09-07.*
+> `FJS-D43` made named levels canonical; `FJS-D239` reversed it and deleted the named
+> form — measured, it had five declarations against 320 written as digits. So the
+> syntax criticism below stands undiminished and is now the ruling's known cost. The
+> second-vocabulary half is answered: `@@capabilities` is a grid beside the ladder,
+> ANDed with the gate (`FJS-D146`). The ladder stays the floor.
 
 Two separate problems stacked.
 

@@ -244,7 +244,7 @@ model Account {
   createdAt DateTime @default(now())
 
   @@index([slug])
-  @@gate(read: READER, write: ADMINISTRATOR, delete: OWNER)
+  @@gate("2.5.5.6")
 }
 
 model User {
@@ -363,8 +363,7 @@ model User {
 @@fts([field1, field2])          FTS5 full-text search virtual table
 @@index([col1, col2])            composite index
 @@unique([col1, col2])           composite unique constraint
-@@gate(read: L, create: L, update: L, delete: L)   level-based access control — `write` = shorthand
-@@gate("R.C.U.D")                compact digit form of the same gate
+@@gate("R.C.U.D")                level-based access control — read.create.update.delete
 @@allow('read'|'create'|'update'|'delete'|'write'|'all', expr)  row-level policy
 @@allow('read'|..., expr, "custom error message")
 @@deny('read'|..., expr)         row-level deny (always wins over allow)

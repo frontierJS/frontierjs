@@ -373,8 +373,8 @@ describe('a view reaches the generated JSON Schema', () => {
   })
 
   test('it says it is a projection, which readOnly columns alone do not', () => {
-    expect(defs().revenueByStatus['x-litestone-view']).toBe(true)
-    expect(defs().Order['x-litestone-view']).toBeUndefined()
+    expect(defs().revenueByStatus['x-litestone-kind']).toBe('view')
+    expect(defs().Order['x-litestone-kind']).toBe('model')
   })
 
   test('the create and update modes are the same document', () => {

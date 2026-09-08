@@ -1,5 +1,86 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-07 — `project:view`'s 33 warnings were all false, and the React viewer is gone
+
+**The gateAuth check was inverted.** `collectIssues` read the per-method `before`
+chain for `gateAuth`, which is an `around.all` hook `createBaseService` installs
+unconditionally — measured, zero occurrences in any `before` chain of any
+snapshot in this repo and one in `around · all` on every service. So it fired on
+exactly the 22 services that expose a write method and called *ungated* the one
+thing gated on every path: a feature list dressed as a security finding
+(`FJS-1017`). It is DELETED rather than repaired, because the hook is
+unconditional and the question has no varying answer per service. Where it does
+vary is the raw routes, which run below the pipeline, and `fli app:atlas
+--ungraded` is where that is asked.
+
+**The other 11 were `type` declarations.** Models were filtered out of `$defs` by
+shape, so eleven payload shapes were warned about for a `@@gate` they cannot
+carry. They are filtered on the stated `x-litestone-kind` now — litestone's half
+is `FJS-1016`.
+
+**Both survived because `collectIssues` had no test**, which is the finding under
+the findings. `tests/viewer-issues.test.js` grades it, every negative PAIRED with
+a finding that must still fire — a function returning `[]` satisfies the
+negatives alone. Measured against the code it replaced: restoring the shape
+filter reds 2 and restoring the gateAuth check reds 1. Its DOM stub exists only
+to get at the two pure functions; nothing in it asserts on the page.
+
+**The `test` script is an explicit file list**, so the new file ran nowhere until
+it was added to it — a test that exists and is never run. Every other file in
+`tests/` was already named; this one was the exception and briefly the proof.
+
+**24 `info` rows left Issues for the services panel.** *No resource binds to this
+service* is coverage, not a defect — an API-only service is correctly bound by
+nothing — and 24 of them pushed the real findings off the page. It is a
+`resource` column now, with the sentence saying a dash is not a problem.
+
+**`--legacy` and `web/viewer/legacy.html` are removed.** The React page it kept
+for comparison was the last thing here that loaded from a CDN, and the injected
+env-health panel — ~110 lines of script, its `/__envhealth.js` route and the tag
+splice — existed only to serve it, since the current page has that panel in it.
+`project:view` now has one viewer, needs no network, and `modelCount` stopped
+making the same shape guess the page did.
+
+## 2026-09-07 — `project:view` reads three panels off a built app, and the surface parse is graded against real files
+
+**Three panels no file can answer.** A job registers itself by being autoloaded,
+a notification takes its type from its own file name, and a principal resolver is
+installed in code — so jobs, notifications and the principal realm were in
+neither `project:view` nor `project:map`, and the two commands between them
+covered one of the four registers. `--atlas` (default on) boots the app once
+through `junction atlas` and folds the other three in.
+
+**It degrades rather than fails, and that is the point of the flag.** This
+viewer's property is that it needs no bun and no running server; booting an app
+needs bun. So a missing bun or an app that will not build costs three panels and
+leaves every file-derived panel beside it untouched — measured: with `bunx`
+stubbed to exit 127 the map still carried 38 services. The page prints WHICH of
+the three reasons it was, because an app with no jobs and an app nobody could
+boot must not draw the same empty table. `--no-atlas` skips the boot outright.
+
+`readAppAtlas` in `core/app-entry.js` is the one owner of the spawn, because two
+spawns of one command is how two views come to disagree about which app they
+described. It RETURNS a failure rather than throwing one: `app:atlas` has nothing
+without the model and stops, `project:view` renders around it, and only the
+caller knows which it is. Its spawner is injectable, which is what lets all three
+paths be exercised with no bun, no app and no boot.
+
+**And the surface parse is now graded against the files it actually reads.**
+`readApiSurface` had only the fixture in `tests/project-helpers.test.js`, which
+describes itself as *a trimmed copy of the real shape* — a copy is frozen at the
+moment it was written, so the only failure it could catch was one somebody
+hand-typed into it. The oracle is each snapshot's own `N services · N routes · N
+plugins` summary, written by the renderer straight off the model and never read
+by the parse, since it sits in a code fence above the first `##`; two halves of
+one file grade each other and no number is kept in step here.
+
+**Measured, and this is the hole**: moving the service heading in a real snapshot
+reds exactly ONE test — the new one — while every fixture test stays green. The
+files are discovered with `git ls-files` so a new app is covered without an edit,
+and the count is asserted first, because discovery alone fails open. No drift
+today: the parse agrees with both apps exactly (38·38·12 and 34·31·11). 1988
+passing.
+
 ## 2026-09-07 — `fli app:atlas`, and the entry read off a header rather than probed
 
 Four committed registers answer four questions about a built app, and the fifth —

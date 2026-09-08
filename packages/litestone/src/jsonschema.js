@@ -208,6 +208,7 @@ export function generateJsonSchema(schema, options = {}) {
     const def = {
       type:                 'object',
       title:                t.name,
+      'x-litestone-kind':   'type',   // a payload shape — no table, no rows, no gate
       properties:           props,
       additionalProperties: false,    // reflects strict-by-default at the type
     }
@@ -244,6 +245,12 @@ export function generateJsonSchema(schema, options = {}) {
       type:  'object',
       title: 'FileRef',
       description: 'Litestone file reference — stored as JSON in SQLite, bytes in object storage.',
+      // A `type` because that is what it IS to a consumer: a payload shape a
+      // `$ref` points at, with no table and no rows. It is not user-declared,
+      // which is what `x-litestone-file` says; the kind answers a different
+      // question and every definition answers it, or absence stops meaning
+      // *a reader that predates this kind*.
+      'x-litestone-kind': 'type',
       'x-litestone-file': true,
       properties: {
         key:        { type: 'string',              description: 'Object storage key' },
@@ -375,7 +382,11 @@ function viewToJsonSchema(view, schema, enumDefs, typeDefs, opts) {
   // What tells a consumer this is a projection at all. A `<Form>` over one is a
   // bug rather than an empty form, and readOnly properties alone do not say so:
   // a model of nothing but `@computed` columns emits the same shape.
-  result['x-litestone-view'] = true
+  //
+  // It overwrites the `model` this was built as, which is the arrangement: a
+  // view is generated through `modelToJsonSchema` because a projection is
+  // described exactly as a table is, and the kind is the one thing that differs.
+  result['x-litestone-kind'] = 'view'
 
   return result
 }
@@ -662,6 +673,15 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   const result = {
     type:       'object',
     title:      model.name,
+    // WHAT THIS DEFINITION IS. `$defs` holds three kinds — a model, a `type`
+    // declaration and a view — and until this key they were told apart by
+    // guessing: `type === 'object' && properties` is true of all three, so a
+    // consumer counting models counted `type` declarations among them and a
+    // consumer warning about a missing `@@gate` warned about payload shapes
+    // that cannot carry one. Stated on every kind rather than flagged on the
+    // exceptions, because absence then means *a kind this reader predates*
+    // rather than *a model*, which is the mistake being removed.
+    'x-litestone-kind': 'model',
     ...(model.comments?.length ? { description: model.comments.join(' ') } : {}),
     properties,
     additionalProperties: false,

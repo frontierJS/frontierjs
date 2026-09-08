@@ -1897,10 +1897,19 @@ class Parser {
       return val
     }
 
-    // Named form — parse key: LEVEL pairs
+    // The named form is REFUSED, and the refusal computes the answer
+    // (`FJS-D239`). `@@gate(read: READER, …)` was the canonical spelling for
+    // five weeks and reached five declarations, all of them in this package's
+    // own example, against 320 written as digits — so it was a second spelling
+    // of one thing, which is what the vocabulary table exists to forbid, and it
+    // had no test of its own at any point.
+    //
+    // Refused rather than quietly dropped because a schema carrying it parses
+    // today: a caller who wrote it gets the digit string for what they meant,
+    // in place, rather than a grammar error pointing at a colon.
     const VALID_KEYS = new Set(['read', 'create', 'update', 'delete', 'write'])
-
     const named = {}
+    const spelled = []
     do {
       const key = this.eat(TK.IDENT).value
       if (!VALID_KEYS.has(key))
@@ -1916,24 +1925,26 @@ class Parser {
       if (level === undefined)
         throw new ParseError(`@@gate: unknown level "${levelToken.value}". Valid: ${Object.keys(LEVELS).join(', ')}`, levelToken)
       named[key] = level
+      spelled.push(`${key}: ${levelToken.value}`)
     } while (this.maybeEat(TK.COMMA))
 
     this.eat(TK.RPAREN)
 
-    // Expand 'write' shorthand → create, update, delete
     if ('write' in named) {
       if (!('create' in named)) named.create = named.write
       if (!('update' in named)) named.update = named.write
       if (!('delete' in named)) named.delete = named.write
       delete named.write
     }
-
-    // Build dotted string — missing positions cascade from read (same as parseGateString)
     const r = named.read   ?? 0
     const c = named.create ?? r
     const u = named.update ?? c
     const d = named.delete ?? u
-    return `${r}.${c}.${u}.${d}`
+    throw new ParseError(
+      `@@gate: the named form is not the gate syntax — write the levels. ` +
+      `@@gate(${spelled.join(', ')}) is @@gate("${r}.${c}.${u}.${d}"), ` +
+      `read.create.update.delete on the level ladder.`,
+      this.peek())
   }
 
   // ─── Policy expression parser ──────────────────────────────────────────────

@@ -17,6 +17,7 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { resolve, dirname, join }                        from 'path'
 import { fileURLToPath, pathToFileURL }                  from 'url'
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'fs'
+import { execSync }                                        from 'child_process'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
 const ROOT  = resolve(__dir, '..')
@@ -325,4 +326,65 @@ describe('extractResourceMeta', () => {
     const meta = extractResourceMeta(resource(`export const nothing = 1`), '/x/Thing.mesa')
     expect(meta).toEqual({ name: 'Thing', model: null, service: null, hooks: [] })
   })
+})
+
+// ─── the parse against the files it actually reads ────────────────────────────
+//
+// Every test above grades `readApiSurface` against a fixture written in this
+// file — "a trimmed copy of the real shape". A copy is frozen at the moment it
+// was written, so the only failure it can catch is one somebody hand-typed into
+// it: change a heading in `renderSurfaceSnapshot` one package over and the
+// fixture stays green while `project:view` silently shows fewer services.
+//
+// **The oracle is the file's own summary line.** Every snapshot states
+// `N services · N routes · N plugins`, written by the renderer straight off the
+// model — and the parse never reads that line, because it sits in a code fence
+// above the first `##` section. So the two halves of one file are independent,
+// and comparing them needs no number kept in step here.
+
+describe('readApiSurface against the real committed snapshots', () => {
+
+  const REPO = resolve(ROOT, '../..')
+
+  // Discovered rather than listed, so an app added later is covered without an
+  // edit. Discovery alone fails OPEN — finding nothing would pass every
+  // assertion below — so the count is asserted first.
+  const found = [...new Set(
+    execSync('git ls-files -- "*surface.snapshot.md"', { cwd: REPO, encoding: 'utf8' })
+      .split('\n').filter(Boolean),
+  )]
+
+  test('there are snapshots to grade', () => {
+    expect(found.length).toBeGreaterThan(0)
+  })
+
+  for (const rel of found) {
+    // `readApiSurface` looks in `api/` then the app root, so the root it takes
+    // is the directory ABOVE an `api/` snapshot and the snapshot's own
+    // otherwise — which is the same rule, asked from the caller's side.
+    const dir  = dirname(resolve(REPO, rel))
+    const root = dir.endsWith('/api') ? dirname(dir) : dir
+
+    test(`${rel} — the parse agrees with the file's own counts`, () => {
+      const surface = readApiSurface(root)
+      expect(surface).not.toBeNull()
+
+      const summary = readFileSync(resolve(REPO, rel), 'utf8')
+        .match(/^(\d+) services · (\d+) routes · (\d+) plugins/m)
+      expect(summary).not.toBeNull()
+
+      const [, services, routes, plugins] = summary.map(Number)
+      expect({
+        services: surface.services.length,
+        routes:   surface.routes.length,
+        plugins:  surface.plugins.length,
+      }).toEqual({ services, routes, plugins })
+    })
+
+    // The header is what `app:atlas` runs to get the model, so a parse that
+    // loses it is a command that cannot find the app at all.
+    test(`${rel} — carries the generator that wrote it`, () => {
+      expect(readApiSurface(root).generatedBy).toMatch(/^junction surface --app \S+/)
+    })
+  }
 })

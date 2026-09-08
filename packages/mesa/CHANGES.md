@@ -1,5 +1,22 @@
 # Changes — @frontierjs/mesa
 
+## 2026-09-07 — the scope id has no second answer
+
+**[`FJS-D86`](../../DECISIONS.md#fjs-d86) / Invariant 12, closed by deletion.** The ruling says a
+CSS scope id is content-addressed and never generated, and `processCSS` opened with
+`config.cssGenId ? config.cssGenId() : cssHash(…)` — a hook that voids the identity the ruling
+exists to hold. One occurrence in the whole repo, which was the branch itself: no caller here, no
+caller in any app, absent from the docs and from every snapshot. It could have been wrong with
+nothing saying so.
+
+The generator it existed to install went with it. `genId` was a clock-plus-counter id whose own
+docstring said nothing in the compiler used it and that it was kept because it was a public export
+— which under the evolution policy is not a reason.
+
+What replaces it is the unconditional `cssHash`, which is what every compilation already ran.
+`test/render-ssr.test.js` § *CSS scope ids are content-addressed* is the pin, and it stays written
+in the past tense on purpose: the shape still invites the same mistake.
+
 ## 2026-09-07 — the suite, measured
 
 **[FJS-888](../../ISSUES.md#fjs-888), narrowed.** The row said the compiler suite grades

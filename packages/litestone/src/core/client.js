@@ -784,6 +784,79 @@ function walkGuardedInclude(include, modelName, g, out, depth = 0) {
   return out
 }
 
+// ─── nested include arguments ─────────────────────────────────────────────
+//
+// `where`, `orderBy` and `select` refuse an unknown key BY NAME — at the top
+// level. An `include` hops to another model, `withArgValidation` closes over
+// this one, and nothing followed it, so the nested copies of those same three
+// options reached SQL ungraded. One door, three different failures:
+//
+//   include > select   the key went into the relation's SELECT list UNQUOTED,
+//                      so a name carrying a `"` broke the statement's structure
+//                      rather than being refused.
+//   include > where    the key was quoted, and SQLite resolves a double-quoted
+//                      identifier it cannot bind as a STRING LITERAL — two
+//                      constants compared, an empty relation, and no error.
+//   include > orderBy  accepted, and dropped.
+//
+// `walkGuardedInclude` already recurses this exact shape to ask whether a
+// column is @guarded. This is the existence check beside it, and it calls the
+// same generic graders the top level does rather than restating their wording.
+function checkIncludeArgs(include, modelName, method, ctx, isWrite, depth = 0) {
+  if (!include || typeof include !== 'object' || depth > 12) return
+  const rels = ctx.relationMap?.[modelName] ?? {}
+  for (const [k, v] of Object.entries(include)) {
+    const rel    = rels[k]
+    const target = rel && ctx.models?.[rel.targetModel]
+    if (!target || !v || typeof v !== 'object' || Array.isArray(v)) continue
+    const name = rel.targetModel
+
+    const keys = filterableKeysFor(target)
+    for (const d of Object.values(ctx.edgeMap?.[name] ?? {})) keys.filterable.add(d.as)
+    checkWhereKeys(v.where, keys, name, method, isWrite,
+      new Set(Object.keys(ctx.scopeMap?.[name] ?? {})), ctx)
+    checkWhereKeys(v.cursor, keys, name, method, isWrite,
+      new Set(Object.keys(ctx.scopeMap?.[name] ?? {})), ctx)
+
+    const { sortable, relations, computed, transient, opaque } = sortableKeysFor(target)
+    const problems = collectOrderByKeyProblems(
+      v.orderBy, sortable, relations, computed, opaque, false, transient, [], null,
+      sortHopFor(ctx, name))
+    if (problems.length) throw new ValidationError([{
+      path:    ['include', k, 'orderBy', problems[0].key],
+      message: problems[0].message.replace('%MODEL%', `${name}.${method}`),
+    }])
+
+    if (v.select && typeof v.select === 'object' && !Array.isArray(v.select)) {
+      const selectable = new Set()
+      for (const f of target.fields) if (!transient.has(f.name)) selectable.add(f.name)
+      for (const d of Object.values(ctx.edgeMap?.[name] ?? {})) selectable.add(d.as)
+      for (const [sk, sv] of Object.entries(v.select)) {
+        if (!sv || selectable.has(sk)) continue
+        throw new ValidationError([{
+          path:    ['include', k, 'select', sk],
+          message: `Unknown field '${sk}' in select for ${name}.${method}` +
+                   (suggestKey(sk, selectable) ? `. Did you mean: ${suggestKey(sk, selectable)}?` : ''),
+        }])
+      }
+    }
+    checkIncludeArgs(v.include, name, method, ctx, isWrite, depth + 1)
+  }
+}
+
+// The resolver `collectOrderByKeyProblems` takes for a relation hop: a relation
+// name on `modelName` to the sort sets of what it points at. Returned lazily
+// per hop rather than built for every model up front, because most orderBys
+// name no relation at all.
+function sortHopFor(ctx, modelName) {
+  return (relName) => {
+    const rel    = ctx.relationMap?.[modelName]?.[relName]
+    const target = rel && ctx.models?.[rel.targetModel]
+    if (!target) return null
+    return { ...sortableKeysFor(target), model: rel.targetModel, hop: sortHopFor(ctx, rel.targetModel) }
+  }
+}
+
 // Every place a caller's arguments name a column. `select` is absent on purpose
 // — it is answered by the strip, which is the half that already worked.
 function collectGuardedArgs(args, modelName, g) {
@@ -1006,7 +1079,7 @@ function collectWhereKeyProblems(where, filterable, computed, encrypted, out = [
 //
 // `allowAggregates` is groupBy/aggregate, where `_count` and `_sum` are the
 // point of the query rather than a typo.
-function collectOrderByKeyProblems(orderBy, sortable, relations, computed, opaque, allowAggregates, transient = null, out = [], shown = null) {
+function collectOrderByKeyProblems(orderBy, sortable, relations, computed, opaque, allowAggregates, transient = null, out = [], shown = null, hop = null) {
   if (!orderBy) return out
   // What the caller is TOLD is sortable. Legality stays `sortable`.
   const list = shown ?? sortable
@@ -1017,7 +1090,25 @@ function collectOrderByKeyProblems(orderBy, sortable, relations, computed, opaqu
       // check — the same standing `where`'s `$raw` has.
       if (key === '$raw')                         continue
       if (allowAggregates && key.startsWith('_')) continue
-      if (relations.has(key))                     continue
+      // A relation hop. `{ author: { name: 'asc' } }` sorts the parent by a
+      // column of the CHILD, so the name under it is graded against the child's
+      // model and not this one — and skipping the hop outright is how a caller's
+      // string reached the join's ORDER BY ungraded (Invariant 8). `hop`
+      // resolves the target the way `walkGuardedOrderBy` already does; without
+      // one there is nothing to grade against and the hop is passed over.
+      if (relations.has(key)) {
+        const sets = val && typeof val === 'object' && !Array.isArray(val)
+          ? hop?.(key) : null
+        if (!sets) continue
+        const nested = collectOrderByKeyProblems(
+          val, sets.sortable, sets.relations, sets.computed, sets.opaque,
+          // `{ posts: { _count: 'asc' } }` counts the relation rather than
+          // naming a column of it, so the aggregate form is legal here whatever
+          // it was one level up.
+          true, sets.transient, [], null, sets.hop)
+        for (const p of nested) out.push({ ...p, via: key, message: p.message.replace('%MODEL%', sets.model) })
+        continue
+      }
       if (sortable.has(key))                      continue
       const opaqueWhy = opaque?.get(key)
       if (opaqueWhy) {
@@ -1290,7 +1381,7 @@ function withArgValidation(table, model, ctx) {
     const problems = collectOrderByKeyProblems(
       args?.orderBy, sortableHere, relations, computed, opaque,
       method === 'groupBy' || method === 'aggregate', transient, [],
-      _shownSet(sortableHere, hidden),
+      _shownSet(sortableHere, hidden), sortHopFor(ctx, modelName),
     )
     if (!problems.length) return
     const p = problems[0]
@@ -1442,6 +1533,7 @@ function withArgValidation(table, model, ctx) {
       checkWhereKeys(args?.where, whereKeys, modelName, method, isWrite, scopeNames, ctx)
       checkOrderBy(args, method)
       checkSelect(args, method, isWrite)
+      checkIncludeArgs(args?.include, modelName, method, ctx, isWrite)
       // After the key checks, so a caller naming a column that does not exist
       // still hears about the typo rather than a predicate they cannot see.
       if (checkFieldRead()) args = applyFieldRead(args, method)
@@ -11137,7 +11229,8 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     // Legality is still the schema's — what narrows is only what the 400 SAYS,
     // which is the half junction puts in front of an unauthenticated caller.
     return collectOrderByKeyProblems(orderBy, sortable, relations, computed, opaque, opts.aggregates === true, transient, [],
-                                     _shownSet(sortable, _guardedNames(model, ctx)))
+                                     _shownSet(sortable, _guardedNames(model, ctx)),
+                                     sortHopFor(ctx, model.name))
       .map(p => ({ ...p, message: p.message.replace('%MODEL%', model.name) }))
   }
 

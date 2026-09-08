@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-75 definitions · 54 models · 1 view · 20 enums · 0 other
+75 definitions · 42 models · 1 view · 12 types · 20 enums · 0 other
 ```
 
 ## Definitions
@@ -88,18 +88,18 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `PayRunStatus` | enum |
 | `PayComponentKind` | enum |
 | `NotificationContext` | enum |
-| `SegmentQuery` | model |
-| `TrackingUpdate` | model |
-| `PlanChange` | model |
-| `PlanPrice` | model |
-| `DiscountCode` | model |
-| `ShippingChoice` | model |
-| `CheckoutDetails` | model |
-| `EmploymentPay` | model |
-| `AsAtQuery` | model |
-| `StockReceipt` | model |
-| `StockAdjustment` | model |
-| `FileRef` | model |
+| `SegmentQuery` | type |
+| `TrackingUpdate` | type |
+| `PlanChange` | type |
+| `PlanPrice` | type |
+| `DiscountCode` | type |
+| `ShippingChoice` | type |
+| `CheckoutDetails` | type |
+| `EmploymentPay` | type |
+| `AsAtQuery` | type |
+| `StockReceipt` | type |
+| `StockAdjustment` | type |
+| `FileRef` | type |
 
 ## Enums
 
@@ -922,6 +922,21 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 **On create**: required — `email` · not accepted — `id`
 
+### `revenueByStatus`
+
+- view — read-only · gate `read:5 create:9 update:9 delete:9` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `status` | `string` | — | — | — | — |
+| `orders` | `integer` | — | — | — | — |
+| `total` | `integer` | — | — | — | — |
+
+## Types
+
+`type T { … }` declarations. No table, no rows, no gate — a payload shape a
+`$ref` points at, and what a service `input:` validates against.
+
 ### `SegmentQuery`
 
 - closed (`additionalProperties: false`)
@@ -1061,13 +1076,3 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `uploadedAt` | `string` | yes | — | `format: "date-time"` | — |
 
 **On create**: required — `key`, `bucket`, `provider`, `size`, `mime`, `uploadedAt`
-
-### `revenueByStatus`
-
-- view — read-only · gate `read:5 create:9 update:9 delete:9` · closed (`additionalProperties: false`)
-
-| Field | Type | Required | Label | Rules | Messages |
-| --- | --- | --- | --- | --- | --- |
-| `status` | `string` | — | — | — | — |
-| `orders` | `integer` | — | — | — | — |
-| `total` | `integer` | — | — | — | — |
