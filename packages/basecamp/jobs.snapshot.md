@@ -31,13 +31,14 @@ it re-resolved when it runs. Survives a restart.
 | `job:run` | `jobs` | on dispatch | — | 3 | 5000, 30000, 120000 | **none** |
 | `recipe:run` | `fleet` | on dispatch | — | 2 | 10000 | **none** |
 | `retention` | `default` | `0 4 * * *` | — | 3 | default | **none** |
+| `server-reachability` | `default` | `* * * * *` | — | 3 | default | **none** |
 | `server:destroy` | `fleet` | on dispatch | — | 3 | 10000, 60000 | **none** |
 | `server:provision` | `fleet` | on dispatch | — | 1 | default | **none** |
 | `weekly-digest` | `default` | `0 9 * * 1` | — | 3 | default | **none** |
 
-10 handler(s), 3 of them on a clock.
+11 handler(s), 4 of them on a clock.
 
-**9 with no timeout.** Absent means no bound, honestly — but a
+**10 with no timeout.** Absent means no bound, honestly — but a
 handler that never settles holds its slot for the life of the process, and on a
 single-concurrency queue everything behind it waits (`FJS-295`). Worth knowing
 which ones those are, which is why the column is here rather than omitted when

@@ -364,10 +364,15 @@ function generateVirtualSierra(config, tableOutput, sierraConfigPath, sierraCont
     // second copy is +26 KB gzipped on `example` and the delta is +2 KB
     // (`FJS-807`); `schema-plugin.js` computes it from the two generated
     // documents.
+    //
+    // The fourth is the same for READ mode — the `@computed` / `@generated` /
+    // `@derived` / `@from` family, which no write schema carries and every
+    // display surface needs. It is the cheaper of the two deltas.
     lines.push(
       `registerSchemas(${JSON.stringify(sierraContext.schemaDefs)}, ` +
       `${JSON.stringify(sierraContext.schemaModels ?? null)}, ` +
-      `${JSON.stringify(sierraContext.schemaUpdate ?? null)})`
+      `${JSON.stringify(sierraContext.schemaUpdate ?? null)}, ` +
+      `${JSON.stringify(sierraContext.schemaRead ?? null)})`
     )
     lines.push(``)
   }

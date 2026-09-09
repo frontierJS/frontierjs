@@ -15,9 +15,25 @@ them:
 
 ```console
 OUTPOST_SERVER_ID   which row it is — one that cannot name its server reports as nobody
-OUTPOST_SECRET      the fleet secret — one without it accepts every command, or none
+OUTPOST_SECRET      this machine's OWN key, learned by enrolling
 BASECAMP_URL        where to report
 ```
+
+**The secret is per machine, and getting one is a step of its own.** There is no
+fleet-wide key that also works: one string every machine holds means a
+compromised box can forge any other machine's check-in, and two accepted keys
+means the weaker one is the one an attacker uses. So a machine that has not
+enrolled is refused — with one sentence for every refusal, because telling *no
+such machine* apart from *that signature is wrong* tells an unauthenticated
+caller which server ids are real.
+
+Enrolling is an exchange, and it happens twice below. `issueEnrollment` mints a
+**single-use** token and prints the command an operator would paste on a real
+box; `POST /servers/{id}/enroll` takes that token once and answers with the
+secret. The token is burned inside the same statement that reads it, so two
+machines racing the same token means exactly one enrolls. On a provisioned
+machine cloud-init does this and nobody types anything; here the lesson does what
+`install.sh` does, minus Docker, Bun and a systemd unit.
 
 `OUTPOST_PUBLIC_URL` is the fourth and it is **stated rather than derived**,
 because a process cannot see the address the world reaches it at. It is what the
@@ -50,6 +66,64 @@ if (!await must(context, await ensureFleet(context), {
   likely: 'the control plane is not answering — run this lesson from the start',
 })) return
 
+const as = {
+  'content-type':   'application/json',
+  authorization:    `Bearer ${context.config.token}`,
+  'x-workspace-id': context.config.workspaceId,
+}
+
+// ── the exchange ──────────────────────────────────────────────────────────
+// Two calls, because they are two different callers. `issueEnrollment` is the
+// OPERATOR, at gate 5, saying this machine may join the fleet; the enroll route
+// is the MACHINE, unauthenticated by definition, spending the token it was
+// given. Running them as one call would be a control plane that hands out
+// credentials to whoever asks.
+const issued = await probe.httpJson({
+  url:      hubUrl(context, `/servers/${context.config.serverId}`),
+  method:   'POST',
+  headers:  { ...as, 'x-service-method': 'issueEnrollment' },
+  expect:   (j) => typeof j.token === 'string' && j.token.length > 0 && typeof j.command === 'string',
+  describe: 'a single-use enrollment token, and the command that spends it',
+  name:     'the operator issues this machine a credential',
+})
+
+if (!await must(context, issued, {
+  likely: 'issueEnrollment was refused — it is gate 5, the same rung as provision and destroy',
+})) return
+
+// No bearer and no workspace header, deliberately: this is the machine, and it
+// has nothing to authenticate with yet. That is the whole reason the token is
+// single-use and lives fifteen minutes.
+const enrolled = await probe.httpJson({
+  url:      hubUrl(context, `/servers/${context.config.serverId}/enroll`),
+  method:   'POST',
+  headers:  { 'content-type': 'application/json' },
+  body:     JSON.stringify({ token: issued.json.token }),
+  expect:   (j) => typeof j.secret === 'string' && j.secret.length > 0,
+  describe: 'the machine trades its token for a key of its own',
+  name:     'and the machine spends it, once',
+})
+
+if (!await must(context, enrolled, {
+  likely:    'the exchange was refused — every refusal here says the same sentence on purpose',
+  reproduce: `curl -s -X POST ${hubUrl(context, `/servers/${context.config.serverId}/enroll`)} -H 'content-type: application/json' -d '{"token":"…"}'`,
+})) return
+
+// The negative control, and it is the claim rather than tidiness: a token that
+// still worked the second time would pass every assertion above and leave the
+// burn untested. Replayed with the SAME token, which is what a retry or a
+// second machine reading the same metadata blob would send.
+if (!await must(context, await probe.httpStatus({
+  url:      hubUrl(context, `/servers/${context.config.serverId}/enroll`),
+  method:   'POST',
+  headers:  { 'content-type': 'application/json' },
+  body:     JSON.stringify({ token: issued.json.token }),
+  expect:   401,
+  name:     'and it is worth nothing the second time',
+})) ) return
+
+context.config.outpostSecret = enrolled.json.secret
+
 const machine = await startOutpost(context)
 
 if (!await must(context, machine.up, {
@@ -57,12 +131,6 @@ if (!await must(context, machine.up, {
   reproduce: `cd ${context.config.outpost} && OUTPOST_SERVER_ID=${context.config.serverId} OUTPOST_SECRET=… BASECAMP_URL=${hubUrl(context)} bun run start`,
   detail:    serverLog(machine),
 })) return
-
-const as = {
-  'content-type':   'application/json',
-  authorization:    `Bearer ${context.config.token}`,
-  'x-workspace-id': context.config.workspaceId,
-}
 
 // Polled rather than slept on: the first heartbeat goes out as the process
 // starts, so this is normally answered on the first try, and a machine whose
@@ -102,5 +170,5 @@ if (!await must(context, await probe.httpJson({
   likely: 'the heartbeat landed but registered no address — OUTPOST_PUBLIC_URL was not set',
 })) return
 
-remember(context, '05-outpost', { publicUrl })
+remember(context, '05-outpost', { publicUrl, outpostSecret: enrolled.json.secret })
 ```

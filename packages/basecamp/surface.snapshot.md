@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-34 services · 32 routes · 13 plugins · prefix (none)
+34 services · 33 routes · 14 plugins · prefix (none)
 ```
 
 ## App hooks
@@ -249,8 +249,8 @@ name when it declares none.
 
 ### `deployments` · model `Deployment`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `startRun`, `stepStatus`, `finishRun`
-- **custom methods** — `startRun`, `stepStatus`, `finishRun`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `rollback`, `startRun`, `stepStatus`, `finishRun`
+- **custom methods** — `rollback`, `startRun`, `stepStatus`, `finishRun`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -574,8 +574,8 @@ name when it declares none.
 
 ### `servers` · model `Server`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `sync`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `heartbeat`
-- **custom methods** — `events`, `feed`, `sync`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `heartbeat`
+- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `sync`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `heartbeat`
+- **custom methods** — `events`, `feed`, `sync`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `heartbeat`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -591,6 +591,7 @@ name when it declares none.
 | before | `provisionStep` | `anonymous` |
 | before | `destroyStep` | `anonymous` |
 | before | `reconcile` | `anonymous` |
+| before | `issueEnrollment` | `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -685,6 +686,7 @@ once; everything else was registered by hand or by a plugin.
 | GET | `/health` | raw |
 | GET | `/health/live` | raw |
 | GET | `/health/ready` | raw |
+| GET | `/install.sh` | raw |
 | GET | `/metrics` | raw |
 | POST | `/servers/{id}/enroll` | raw |
 | DELETE | `/setup` | raw |
@@ -704,7 +706,8 @@ In configure order, which is what `requires:` is checked against.
 7. `@frontierjs/auth`
 8. `setupRoutes`
 9. `enrollmentRoutes`
-10. `staticRoutes`
-11. `basecamp-cloud-accounts`
-12. `basecamp-cleanup`
-13. `corsPlugin`
+10. `installRoute`
+11. `staticRoutes`
+12. `basecamp-cloud-accounts`
+13. `basecamp-cleanup`
+14. `corsPlugin`

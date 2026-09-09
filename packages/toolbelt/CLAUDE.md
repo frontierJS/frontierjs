@@ -52,9 +52,12 @@ src/gate/            the access LADDER — the 0-9 scale, `levelPasses` (8 and 9
                      screen from it in plain node — and the dependency
                      direction forbids two of the three from asking the first.
                      Ships a `.d.ts`: junction re-exports the type
-src/directives/      the `$` convention — which params are directives, and how
-                     a bag of them splits into filters + directives. Two
-                     boundaries read it: junction's bridge and sierra's router
+src/directives/      the `$` convention — which params are directives, how a
+                     bag of them splits into filters + directives, and the way
+                     back. Two boundaries read it (junction's bridge, sierra's
+                     router) and two callers WRITE one: junction's browser
+                     client, and a page rebuilding a URL. Ships a `.d.ts`, for
+                     `/query`'s reason
 src/query/           what a query STRING means — types, structure, and the way
                      back. Sibling of /directives: that one says which params
                      are directives, this one says what the values are. Three
@@ -353,10 +356,14 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
   answers 400 naming them, and sierra's router drops, because a router has
   nowhere to put an error a person could act on (`FJS-D237`). The list a refusal
   prints is derived from this table, never copied. The kit
-  holds the read direction only; junction's browser client writes `$` names from
-  a typed `QueryDirectives` on two paths that share nothing, and junction's own suite
-  asserts every name it emits is one this table strips. Adding a directive means
-  both ends, and that test is what says so.
+  holds BOTH directions — `parseDirectives` reads, `directiveParams` writes —
+  because a URL is round-tripped rather than only consumed: junction's client
+  sends one, and sierra's router hands one back to a page that has to write the
+  next. Junction's client held its own field-by-field copy of the write half and
+  named itself the one table in its own comment; a generated list page then
+  handed its filter bar `page.query`, which by construction holds no directive,
+  and typing in a filter dropped the sort a header had just set (`FJS-1047`). A
+  directive is one row and it is wired both ways or neither.
 - **A new subpath is invisible to a vite that is already running.** The exports
   map is read at server start, so the error names the very file that plainly
   has the entry — *"./directives" is not exported ... (see exports field in

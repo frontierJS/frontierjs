@@ -135,13 +135,14 @@
 
 import { getClient } from '@frontierjs/sierra/junction'
 import {
-  schemaFor, updateSchemaFor, modelNameFor, serviceNameFor, hasSchemas, allSchemas, resolveRef, suggestModel,
+  schemaFor, updateSchemaFor, readSchemaFor, modelNameFor, serviceNameFor, hasSchemas, allSchemas, resolveRef, suggestModel,
 } from './schema-registry.js'
 import {
   derefFieldSchema, buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
   validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError, ResourceHookError,
-  toFieldErrors, controlFor, defaultControlFor, formFieldList, labelFieldFor, labelFieldInfo, matchesQuery, sealedFor,
+  toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, columnLabel, labelFieldFor, labelFieldInfo, matchesQuery, sealedFor,
+  displayFor, defaultDisplayFor, registerDisplay, unregisterDisplay, registeredDisplays, filterOpFor,
   registerControl, unregisterControl, registeredControls,
 } from './field-rules.js'
 import { singularize } from '@frontierjs/toolbelt/inflect'
@@ -154,7 +155,8 @@ export {
   buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
   validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError, ResourceHookError,
-  toFieldErrors, controlFor, defaultControlFor, formFieldList, labelFieldFor, labelFieldInfo, matchesQuery, sealedFor,
+  toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, labelFieldFor, labelFieldInfo, matchesQuery, sealedFor,
+  displayFor, defaultDisplayFor, registerDisplay, unregisterDisplay, registeredDisplays, filterOpFor,
   registerControl, unregisterControl, registeredControls,
 }
 
@@ -560,6 +562,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // A schema passed by hand carries one mode and this stays null, which reads
   // as *the two modes agree* — the behavior before `FJS-807`.
   let updateModel = null
+  let readModel   = null
 
   if (!schema) {
     const singular = singularize(serviceName)
@@ -573,6 +576,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     if (resolvedName) {
       schema      = schemaFor(resolvedName)
       updateModel = updateSchemaFor(resolvedName)
+      readModel   = readSchemaFor(resolvedName)
       model       = resolvedName
     }
 
@@ -650,6 +654,21 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // What an edit form needs beyond it is which columns are frozen for the row
   // it opened on, and that is `sealedFields(record)`.
   const updateFields = schema ? buildFieldRules(updateModel ?? modelDef) : {}
+
+  // ── And the read mode ───────────────────────────────────────────────────────
+  //
+  // The third table, and the one a DISPLAY surface reads. Both tables above are
+  // write schemas: they carry what a caller may send, so neither holds a
+  // `@computed` total, a `@generated` name, a `@derived` value or a `@from`
+  // rollup — every one of which is a column a table most wants and none of
+  // which any write mode emits at all.
+  //
+  // Handed out rather than left to the caller to ask for, because the failure
+  // is silent in the direction nobody checks: `columnList` shows every
+  // read-only column its rule map holds, so a table given the write table ranks
+  // a model that appears to have no computed columns and renders a screen that
+  // looks finished.
+  const readFields = schema ? buildFieldRules(readModel ?? modelDef) : {}
 
   /** Which rule table judges this method's payload. */
   function rulesFor(method) {
@@ -1225,6 +1244,175 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     // `{ field, model }`, which is what lets an app claim `Order.notes` rather
     // than every markdown column in the app.
     return formFieldList(fields, { ...opts, model })
+  }
+
+  /**
+   * Which columns a TABLE shows of this model, ranked, and what it left out.
+   *
+   * `formFields()`' counterpart, and not the same question: a form shows what
+   * is WRITABLE, a table what is READABLE and IDENTIFYING. So this reads the
+   * READ table — the only one carrying a `@computed` total or a `@generated`
+   * name — and ranks rather than takes the first few, because the order columns
+   * sit in a file is an order somebody chose for unrelated reasons.
+   *
+   * The model's own two answers travel with the call, so a hand-written table
+   * and a generated one cannot rank differently: `x-identify` is the business
+   * key a person recognizes and `x-label-field` the column that names the row.
+   *
+   * Answers `{ columns, omitted }` — every field not shown is named with a
+   * reason, for `formFields()`' reason exactly.
+   */
+  function columns(opts) {
+    const answer = columnList(readFields, {
+      identify: modelDef?.['x-identify'],
+      label:    modelDef?.['x-label-field'],
+      ...opts,
+    })
+    // The renderer is resolved with the column rather than by the caller, for
+    // `formFields()`' reason: the model name has to travel so a registered
+    // display can claim `Order.total` rather than every money column in the
+    // app, and a caller assembling that context by hand is a caller who can get
+    // it wrong on one screen out of six.
+    return {
+      ...answer,
+      columns: answer.columns.map(c => ({
+        ...c, ...displayFor(c.rule, { field: c.name, model }),
+      })),
+    }
+  }
+
+  /**
+   * Which columns a filter bar may offer, and with which question.
+   *
+   * Two inputs and they answer different halves. **`x-filterable` says whether
+   * the Data boundary will take a `where` on this column at all** — absent
+   * means yes, a string says why not (`computed` · `transient` · `encrypted`),
+   * and it is the same function `$checkWhere` refuses with, so an offer here
+   * cannot outrun what the boundary accepts. **`filterOpFor(display)` says what
+   * a filter over that KIND asks**, which is why this is not a third registry:
+   * the column already has one kind and `displayFor` named it.
+   *
+   * A column that cannot be filtered is RETURNED with the reason rather than
+   * dropped, exactly as an unplaceable control and an unrenderable column are.
+   * A bar renders the ones with an `op`; anything else has an answer for why
+   * it is not there.
+   *
+   * Ranked and labelled by `columns()`, so the bar offers what the table shows
+   * and in the same order — two lists derived from one is what stops a filter
+   * appearing for a column nobody can see.
+   *
+   * **`search` is the third answer and it is the model's, not a column's.**
+   * `$search` is served by `table.search()`, which a Litestone client offers
+   * only under `@@fts` and refuses by name below it, so the question is *does
+   * this model answer at all* — one answer per model, where the other two are
+   * one per column. It carries the indexed columns and their labels, because a
+   * box that cannot say what it searches leaves a person to guess why a word
+   * they can SEE in the table did not match. Refused with a reason rather than
+   * answered `null`, for the same rule as a column with no `op`.
+   */
+  function filters(opts = {}) {
+    const { columns: cols, omitted } = columns({ limit: 99, ...opts })
+
+    const ftsFields = readModel?.['x-search']
+    const search    = ftsFields?.length
+      ? {
+          fields: ftsFields,
+          // The read schema is asked per field rather than the ranked column
+          // list, because `@@fts` may index a column the table does not show —
+          // one past the limit, or one no `columns()` tier ranks — and a label
+          // resolved off the list would come back undefined for exactly those.
+          labels: ftsFields.map(n => columnLabel(n, readModel?.properties?.[n])),
+        }
+      : { fields: null, reason: 'the model declares no @@fts, so the Data boundary refuses $search by name' }
+
+    return {
+      search,
+      filters: cols.map((c) => {
+        // The boundary's own answer first: a `@computed` column has no column
+        // to compare, and no display name makes it filterable.
+        const refused = readModel?.properties?.[c.name]?.['x-filterable']
+        if (refused) return { ...c, op: null, kind: null, reason: refused }
+
+        const f = filterOpFor(c.display)
+        if (!f) return { ...c, op: null, kind: null, reason: `no filter for a ${c.display ?? 'column of unknown kind'}` }
+        return { ...c, ...f }
+      }),
+      omitted,
+    }
+  }
+
+  /**
+   * The columns a FORM cannot show — what a detail screen puts above one.
+   *
+   * A form shows what is writable, so everything a server owns is missing from
+   * it BY RULE: a `@computed` total, a `@generated` name, a `@from` rollup, a
+   * `@system` timestamp, the `@version`. Those are most of what a person opens
+   * a record to read, and until the read schema reached the browser a detail
+   * screen could not render one of them.
+   *
+   * **Defined against the form rather than restated**, so the two cannot drift:
+   * a column belongs here exactly when `formFields()` offers no control for it.
+   * That is the same question `controlFor` answers when it refuses a read-only
+   * column and says the value wants the surface that did not exist yet.
+   *
+   * Answers `columns()`' shape — ranked, with a display resolved and `omitted`
+   * carrying whatever the limit cut — so a caller renders it with the same
+   * `<Cell>` a table uses.
+   */
+  function summary(opts = {}) {
+    const offered = new Set(
+      formFields().filter(f => f.control).map(f => f.name),
+    )
+    return columns({ limit: 99, ...opts, except: [...offered, ...(opts.except ?? [])] })
+  }
+
+  /**
+   * This model's child collections, each with the column that points back.
+   *
+   * A detail view is a model PLUS its relations, and the to-many half is the
+   * one a screen cannot render from this model's schema alone: a `hasMany`
+   * entry names the child model and carries no foreign key, because the key is
+   * on the child. So the child's own schema is asked for the `belongsTo` that
+   * points back here, and that column is what filters its list.
+   *
+   * A child whose schema is not registered is REPORTED rather than skipped —
+   * usually a model with no service, which is the case a generated admin meets
+   * first and the one that is silent otherwise.
+   *
+   * @returns {{field, model, service, foreignKey, reason?}[]}
+   */
+  function children() {
+    const out = []
+
+    for (const rel of Object.values(relations)) {
+      if (rel.type !== 'hasMany') continue
+
+      const childDef = schemaFor(rel.model)
+      if (!childDef) {
+        out.push({ field: rel.field, model: rel.model, service: null, foreignKey: null,
+                   reason: `no schema registered for ${rel.model}` })
+        continue
+      }
+
+      // The back-reference, by MODEL rather than by name: a child may call the
+      // relation anything, and two children of one parent is ordinary.
+      const back = Object.values(buildRelations(childDef))
+        .find(r => r.type === 'belongsTo' && r.model === model)
+
+      if (!back?.foreignKeys?.length) {
+        out.push({ field: rel.field, model: rel.model, service: serviceNameFor(rel.model), foreignKey: null,
+                   reason: `${rel.model} declares no belongsTo back to ${model}` })
+        continue
+      }
+
+      out.push({
+        field: rel.field, model: rel.model,
+        service: serviceNameFor(rel.model),
+        foreignKey: back.foreignKeys[0],
+      })
+    }
+
+    return out
   }
 
   /**
@@ -1918,7 +2106,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     more, hasMore: junctionResource.hasMore,
     fields, relations, gate, can, transitions, validate, normalize, coerce,
     version, versionField: versionOf, conflict,
-    formFields, options, sealedFields,
+    formFields, columns, summary, children, filters, options, sealedFields,
     labelField: labelInfo.field, labelSource: labelInfo.source,
     fieldErrors, context, hooks: addHooks,
   }
@@ -1953,6 +2141,10 @@ function _emptyResource(name) {
     fields:    {},
     relations: {},
     formFields: () => [],
+    columns:    () => ({ columns: [], omitted: [] }),
+    summary:    () => ({ columns: [], omitted: [] }),
+    children:   () => [],
+    filters:    () => ({ filters: [], omitted: [], search: { fields: null, reason: 'no schema for this model' } }),
     // The envelope every caller destructures. A bare array here read back as
     // `r.options === undefined` and threw inside the render.
     options:    () => Promise.resolve({ options: [], total: 0, truncated: false }),

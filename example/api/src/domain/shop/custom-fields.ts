@@ -1,23 +1,40 @@
 // api/src/domain/shop/custom-fields.ts — the one owner of the translation
-// between a key a SHOP invented and a column the schema declared.
+// between a key a SHOP invented and a query the boundary can answer.
 //
-// Three functions, and they are one fact read three ways: `allocateSlot` binds a
-// key to a pooled column, `projectSlots` re-keys a payload into `Customer.slots`,
-// `compileSegment` rewrites an audience's terms into a `where`. Anything that
-// learns two of the three is a screen showing values that no query can find —
-// which is silent, because both halves look correct on their own.
+// Two functions, and they are one fact read two ways: `compileSegment` rewrites
+// an audience's terms into a `where`, `matchesAudience` asks the same terms of
+// ONE row. Anything that learns one of them and not the other is a discount
+// advertised to somebody the checkout then declines — which is silent, because
+// both halves look correct on their own.
 //
-// It is pure and takes no client, so `verify:custom-fields` can assert the
-// allocation and the compilation without a database, and the service is the only
-// thing that has to know where a `CustomField` row comes from.
+// **Nothing here knows a slot exists.** `Customer` declares
+// `@@extensible(fields, declaredBy: CustomField, max: { text: 8, number: 4 })`
+// and `Product` declares the same word without the `max:`, so the pool, its
+// order, the mirror kept beside it and the slot each declaration takes are all
+// the Data boundary's. This file used to carry an allocator, a projector and a
+// pool derived by parsing `db/schema.lite` back out — the schema's own facts,
+// restated where they could drift, and drift there is invisible: an index
+// changes no answer.
+//
+// What is left is the half the framework cannot have, because it is a policy
+// rather than a mechanism: a term on a field this shop declared and did not get
+// a slot for is REPORTED rather than refused. The boundary refuses one, and it
+// is right to — there is no index to read it by. A merchant building an
+// audience needs to be told which of their terms did not apply, which is a
+// sentence and not an error.
+//
+// It is pure and touches no client and no file, so `verify:custom-fields` can
+// assert the compilation without a database, and the service is the only thing
+// that has to know where a `CustomField` row comes from.
 //
 // ─── Why a compiled `where` and not SQL ───────────────────────────────────
 //
-// The output is an ordinary litestone `where` over declared columns. That keeps
-// the model's `@@gate`, both row policies and `@@softDelete` on a segment for
-// free, and it is why `IDEAS/scoped-sql.md`'s refusal — raw SQL is `asSystem()`
-// only — costs this feature nothing. A segment builder that emitted SQL would
-// have had to re-derive every one of those rules in application code.
+// The output is an ordinary litestone `where` over the tenant's own keys. That
+// keeps the model's `@@gate`, both row policies and `@@softDelete` on a segment
+// for free, and it is why `IDEAS/scoped-sql.md`'s refusal — raw SQL is
+// `asSystem()` only — costs this feature nothing. A segment builder that
+// emitted SQL would have had to re-derive every one of those rules in
+// application code.
 
 import { matchesQuery } from '@frontierjs/toolbelt/match'
 
@@ -29,70 +46,6 @@ export type CustomField = {
   key:  string
   type: CustomFieldType
   slot: string | null
-}
-
-/**
- * The pool, exactly as `Customer` declares it, in the order a slot is handed
- * out. Order is load-bearing rather than cosmetic: the model carries ONE
- * composite index and a leading prefix is what serves a one- or two-term
- * segment, so the field a shop declares first has to land leftmost.
- *
- * Twelve single-column indexes were measured at 139 ms on a three-term segment
- * against the composite's 2.7 ms — SQLite picks one index and filters the rest,
- * which is the same sentence that sinks the index-sidecar design.
- */
-export const POOL: Record<CustomFieldType, readonly string[]> = {
-  text:   ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8'],
-  number: ['n1', 'n2', 'n3', 'n4'],
-}
-
-/**
- * Which pooled column a newly-declared field takes, or `null` when its pool is
- * full.
- *
- * `null` is an answer and not a failure. The field still stores, still displays
- * and still edits; only a segment naming it degrades to a scan, and the service
- * says so rather than pretending. Refusing the declaration instead would tell a
- * shop about an implementation detail they can neither see nor act on.
- */
-export function allocateSlot(declared: CustomField[], type: CustomFieldType): string | null {
-  const taken = new Set(declared.map(d => d.slot).filter(Boolean))
-  return POOL[type].find(slot => !taken.has(slot)) ?? null
-}
-
-/**
- * The slot-keyed mirror of a customer's `fields`, rebuilt whole on every save.
- *
- * Whole rather than merged, because a key REMOVED from `fields` has to leave the
- * mirror too — merging would leave the old value in its slot and a segment would
- * keep matching a row that no longer holds the value.
- *
- * An unpromoted or absent key is omitted rather than written as null: a missing
- * JSON path and a null one both read as NULL through `json_extract`, so writing
- * it costs bytes on every row and buys nothing.
- */
-export function projectSlots(
-  fields:   Record<string, unknown> | null | undefined,
-  declared: CustomField[],
-): Record<string, unknown> {
-  const slots: Record<string, unknown> = {}
-  if (!fields) return slots
-
-  for (const def of declared) {
-    if (!def.slot) continue
-    const value = fields[def.key]
-    if (value === undefined || value === null || value === '') continue
-
-    // The column's affinity is REAL or TEXT and nothing coerces on the way in,
-    // so a number arriving as a string would sort as text and compare wrong.
-    if (def.type === 'number') {
-      const n = Number(value)
-      if (Number.isFinite(n)) slots[def.slot] = n
-    } else {
-      slots[def.slot] = String(value)
-    }
-  }
-  return slots
 }
 
 /** One condition of an audience, in the shop's own vocabulary. */
@@ -114,28 +67,28 @@ export interface CompiledSegment {
 /**
  * An audience's terms → a litestone `where`.
  *
- * A term on an UNPROMOTED field is returned in `unindexed` rather than dropped.
- * Dropping it would widen the audience in silence, which is the one failure mode
- * that cannot be seen from either side: the request succeeds, the count looks
- * plausible, and a discount goes to people it was never meant for.
- */
-/**
- * The shape map `matchesQuery` needs, built from the pool rather than from the
- * JSON Schema.
+ * Nested under the blob column and written in the SHOP's own keys, which is the
+ * shape `@@extensible` reads: the slot is chosen and rewritten at the Data
+ * boundary, so nothing above it can be handed a stale one. Under the column
+ * rather than bare because the declarations are DATA — a shop could declare
+ * `name` tomorrow, and a bare key would shadow the real column or be shadowed
+ * by it depending on which won.
  *
- * The pool's types are a fact about this module — a `t` slot is TEXT and an `n`
- * slot is REAL — so deriving them here keeps this file pure and keeps the two
- * readers of a segment reading the same table.
+ * A term on an UNPROMOTED field is returned in `unindexed` rather than included.
+ * The boundary refuses one and is right to: there is no index to read it by. But
+ * refusing the whole audience would take a merchant's other four terms with it,
+ * so the promoted terms are applied and the rest are HANDED BACK. Dropping them
+ * silently is the one failure mode nothing downstream can see — the request
+ * succeeds, the count looks plausible, and a discount goes to people it was
+ * never meant for.
  */
-export const SLOT_SHAPES: Record<string, { type: string; nullable: true }> =
-  Object.fromEntries([
-    ...POOL.text  .map(s => [s, { type: 'string', nullable: true as const }]),
-    ...POOL.number.map(s => [s, { type: 'number', nullable: true as const }]),
-  ])
-
-export function compileSegment(terms: SegmentTerm[], declared: CustomField[]): CompiledSegment {
+export function compileSegment(
+  terms:    SegmentTerm[],
+  declared: CustomField[],
+  blob      = 'fields',
+): CompiledSegment {
   const byKey     = new Map(declared.map(d => [d.key, d]))
-  const where:     Record<string, unknown> = {}
+  const keys:      Record<string, unknown> = {}
   const unindexed: SegmentTerm[] = []
   const unknown:   string[]      = []
 
@@ -144,18 +97,24 @@ export function compileSegment(terms: SegmentTerm[], declared: CustomField[]): C
     if (!def)      { unknown.push(term.key); continue }
     if (!def.slot) { unindexed.push(term);   continue }
 
+    // The promoted column's affinity is REAL or TEXT, so a number arriving as a
+    // string would compare as text.
     const value = def.type === 'number' ? Number(term.value) : term.value
 
     // Two terms on one field would overwrite each other as plain keys, so the
     // second and later ones are ANDed the way litestone spells it.
-    const existing = where[def.slot]
+    const existing = keys[term.key]
     const clause   = term.op === 'eq' ? value : { [term.op]: value }
-    where[def.slot] = existing === undefined
+    keys[term.key] = existing === undefined
       ? clause
       : { ...(typeof existing === 'object' && existing !== null ? existing : { equals: existing }),
           ...(typeof clause   === 'object' ? clause : { equals: clause }) }
   }
 
+  // `{}` and not `{ fields: {} }` — an empty object under the column is a
+  // comparison of the document against nothing, where no audience at all is
+  // every row.
+  const where = Object.keys(keys).length ? { [blob]: keys } : {}
   return { where, unindexed, unknown }
 }
 
@@ -164,20 +123,39 @@ export function compileSegment(terms: SegmentTerm[], declared: CustomField[]): C
  *
  * The second reader of a compiled segment, and the reason `compileSegment`
  * answers a `where` rather than SQL: the same object that goes to
- * `findMany({ where })` for the list goes to `matchesQuery` for one row, so a
- * shopper at checkout and a merchant reading the audience cannot be told
- * different things by two implementations of one rule.
+ * `findMany({ where })` for the list is read here for ONE row, so a shopper at
+ * checkout and a merchant reading the audience cannot be told different things
+ * by two implementations of one rule.
+ *
+ * It reads the BLOB and not the promoted columns, which is what makes it the
+ * same function for a model with a pool and a model without one: `fields` is on
+ * every row that has any, where a slot column exists only where `max:` does.
  *
  * Three-valued like `matchesQuery` itself. `null` means undecidable from this
- * record — the row arrived through a `select` that dropped a slot column, which
- * is the case a boolean would have to guess at, and guessing wrong here either
+ * record — the row arrived through a `select` that dropped the blob, which is
+ * the case a boolean would have to guess at, and guessing wrong here either
  * refuses a valid code or honors an invalid one.
  */
 export function matchesAudience(
+  declared: CustomField[],
   where:    Record<string, unknown>,
   customer: Record<string, unknown> | null | undefined,
+  blob      = 'fields',
 ): boolean | null {
   if (!where || Object.keys(where).length === 0) return true   // no audience is everybody
   if (!customer) return null
-  return matchesQuery(SLOT_SHAPES, customer, where)
+
+  const terms = where[blob] as Record<string, unknown> | undefined
+  if (!terms) return null
+  // Absent is undecidable; an empty blob is a decidable no. `null` and `{}` are
+  // both legitimate stored values, so the test is key presence.
+  if (!(blob in customer)) return null
+  const values = (customer[blob] ?? {}) as Record<string, unknown>
+
+  // The shape map comes from the same declarations `compileSegment` read, so the
+  // two readers of one segment cannot be handed different types.
+  const shapes = Object.fromEntries(declared
+    .map(d => [d.key, { type: d.type === 'number' ? 'number' : 'string', nullable: true as const }]))
+
+  return matchesQuery(shapes, values, terms)
 }

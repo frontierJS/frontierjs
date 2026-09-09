@@ -28,6 +28,7 @@ title: Cloud spend
   import { volumes } from '../../resources/Volume.mesa'
   import { portal } from '../../resources/Portal.mesa'
   import { formatBytes as size } from '@frontierjs/toolbelt/units'
+  import { money }               from '../../money.js'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -127,10 +128,6 @@ title: Cloud spend
     return { lines: [...by.entries()], counted }
   })()
 
-  // The divisor belongs to the currency — asking Intl rather than dividing by
-  // 100, which is wrong for the dinar and right for nothing in particular.
-  const money = (minor, currency) =>
-    new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(minor / 100)
 
   // How many there are, and how many are listed below. Two numbers because
   // they can differ: the table is a page and the count is the whole fleet, so
@@ -279,7 +276,7 @@ title: Cloud spend
         description="Nothing is being paid for, which is the one honest number on this screen."
       >
         {#snippet action()}
-          <Button variant="primary" href="/servers/create/">Add a server</Button>
+          <Button variant="primary" href="/servers/provision/">Provision a machine</Button>
         {/snippet}
       </EmptyState>
     {:else}

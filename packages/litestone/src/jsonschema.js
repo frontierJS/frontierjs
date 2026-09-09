@@ -146,7 +146,7 @@ import { TIME_PATTERNS } from './core/validate.js'
 import { dependsOnClock } from './core/policy.js'
 import { capabilitiesForModel } from './core/capabilities.js'
 import { isServerAssignedId } from './core/ids.js'
-import { filterableKeysFor, sortableKeysFor, aggregatableKeysFor } from './core/query.js'
+import { filterableKeysFor, sortableKeysFor, aggregatableKeysFor, identifyingKeysFor } from './core/query.js'
 import { sealedStates } from './core/seal.js'
 
 export function generateJsonSchema(schema, options = {}) {
@@ -705,6 +705,39 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   // identifies a row does not depend on whether you are writing one.
   const labelAttr = model.attributes.find(a => a.kind === 'labelField')
   if (labelAttr) result['x-label-field'] = labelAttr.field
+
+  // ── x-identify ─────────────────────────────────────────────────────────────
+  // The same question for a SET: which columns identify a row to a person, so a
+  // generated table can rank its columns by something other than the order they
+  // sit in the file. Answered here rather than in the browser because the
+  // subtraction reads `@relation(fields:)` and the tenancy block, and a client
+  // re-deriving it off `x-relations` would answer the same question from a
+  // different input. Emitted only when there is one — a FACT key, see below.
+  const identifying = identifyingKeysFor(model, schema)
+  if (identifying.length) result['x-identify'] = identifying
+
+  // ── x-search ───────────────────────────────────────────────────────────────
+  // Whether `$search` will answer for this model, and over which columns. A
+  // Litestone table serves `search()` only under `@@fts`, and refuses by name
+  // below it, so a client without this either offers a search box on every
+  // model — where nearly all of them answer with a 400 — or on none.
+  //
+  // The `x-` keys come in TWO POLARITIES and reading one by the other's rule is
+  // silent both ways. `x-sortable` and `x-filterable` are REFUSALS: absent
+  // means permitted, a string says why not. `x-label-field`, `x-identify`,
+  // `x-gate` and this are FACTS: absent means there is none. That is why the
+  // name is not `x-searchable` — the `-able` suffix is what both refusal keys
+  // wear, and a reader who carries the convention across answers backwards
+  // about every model in the schema.
+  //
+  // The FIELDS rather than a flag, because they cost one array on the one model
+  // in a schema that usually declares this, and they are the same answer
+  // `buildFtsMap` gives the server — one shape, two readers. A box can then say
+  // what it searches, which is the question a person asks when it misses.
+  // Emitted on every mode, like the two above: whether a model is searchable
+  // does not depend on whether you are writing one.
+  const ftsAttr = model.attributes.find(a => a.kind === 'fts')
+  if (ftsAttr?.fields?.length) result['x-search'] = ftsAttr.fields
 
   // ── x-gate ─────────────────────────────────────────────────────────────────
   // Emitted when the model has @@gate — structural metadata, emitted on all modes.

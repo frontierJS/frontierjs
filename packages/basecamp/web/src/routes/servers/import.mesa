@@ -1,0 +1,93 @@
+---
+title: Import a machine
+---
+<script>
+  import { goto } from '@frontierjs/sierra/router'
+  import { servers } from '../../resources/Server.mesa'
+  import { ResourceValidationError } from '@frontierjs/sierra/junction'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Select from '@frontierjs/ui/components/forms/Select.mesa'
+  import Input  from '@frontierjs/ui/components/forms/Input.mesa'
+
+  // RECORD a machine that already exists. The sibling screen,
+  // /servers/provision/, BUYS one.
+  //
+  // Nothing here talks to a cloud, so there is no account, no catalog and no
+  // price: the region is a label of the operator's own choosing, because an
+  // imported box may be under a desk. What this writes is a row and an
+  // intention — the machine itself learns nothing until an outpost on it
+  // checks in.
+
+  let draft  = servers.make({ name: '', ipAddress: '', region: '', role: 'general' })
+  let errors = []
+  let failed = null
+  let saving = false
+
+  $: (draft.name, draft.ipAddress, draft.region, draft.role)
+
+  $: roles = servers.fields?.role?.enum ?? ['general']
+
+  const problem = (field) => errors.find(e => e.field === field)?.message
+
+  async function save(e) {
+    e.preventDefault()
+    errors = []; failed = null; saving = true
+    try {
+      // The field is `ipAddress`, camelCase, because the wire contract is the
+      // SCHEMA's field names. `ip_address` would not error: autoValidate strips
+      // unknown keys, the create succeeds, and the column comes back null.
+      const created = await servers.service.create(draft)
+      goto(`/servers/${created.id}/`)
+    } catch (err) {
+      errors = err instanceof ResourceValidationError ? err.errors : []
+      failed = err.message
+    } finally {
+      saving = false
+    }
+  }
+</script>
+
+<div class="section-header">
+  <h1>Import a machine</h1>
+  <Button variant="ghost" href="/servers/">Back to list</Button>
+</div>
+
+<div class="container narrow">
+  <form class="card stack" novalidate on:submit={save}>
+    {#if failed}
+      <!-- id'd because the shell's fleet-notice bar is also `.alert.danger`. -->
+      <article class="alert danger" id="form-error">
+        <div class="alert-content">{failed}</div>
+      </article>
+    {/if}
+
+    <p class="text-sm text-muted">
+      This records a machine Basecamp did not create. Nothing is billed and nothing
+      is contacted. To buy one instead, <a href="/servers/provision/">provision a machine</a>.
+    </p>
+
+    <Input label="Name" name="name" id="name" required
+           value={draft.name} oninput={(e) => draft.name = e.target.value}
+           hint="The slug is derived from this by the service, and must be unique in the workspace."
+           error={problem('name')} />
+
+    <Select label="Role" name="role" id="role" placeholder=""
+            options={roles} value={draft.role}
+            onchange={(e) => draft.role = e.target.value} />
+
+    <Input label="IP address" name="ipAddress" id="ipAddress" placeholder="10.0.1.10"
+           value={draft.ipAddress} oninput={(e) => draft.ipAddress = e.target.value}
+           error={problem('ipAddress')} />
+
+    <Input label="Region" name="region" id="region" placeholder="nbg1"
+           value={draft.region} oninput={(e) => draft.region = e.target.value}
+           hint="A label of your own — an imported machine has no catalog to pick from." />
+
+    <div class="cluster">
+      <Button variant="primary" type="submit" disabled={saving || !draft.name}>
+        {saving ? 'Importing…' : 'Import machine'}
+      </Button>
+      <Button variant="ghost" href="/servers/">Cancel</Button>
+    </div>
+  </form>
+</div>

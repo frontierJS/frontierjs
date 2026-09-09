@@ -20,6 +20,17 @@ was neither a missing feature nor an engineering trade, but a direct collision
 with the thing the framework is for. Every number below was measured on this
 tree, not reasoned about.
 
+**In progress as of 2026-09-08, in a separate session.** The ergonomics half is
+being taken there. A second consumer arrived the same day:
+`conversion-maid-tech.md` reads an application where tenant-declared fields are
+in production use — a free-JSON `custom` column on **six** models (`Account`,
+`User`, `Client`, `Task`, `Asset`, `Group` — counted off `db/prisma/schema.prisma`),
+with the field list, its default and its visibility stored per account. There is
+no segment predicate: a `client_segment` is a hand-picked membership list
+(`api/src/models/group.model.js`), so nothing there filters on a declared key at
+all. It is the same shape this file designs, built the way this
+file argues against, so it is worth reading as the negative control.
+
 ## The shape
 
 A customer of your SaaS adds a field at three o'clock on a Tuesday and builds an
@@ -317,6 +328,12 @@ than this, and turns the cap from a wall into a choice.
 
 ## What `@@extensible` would add
 
+**Revised by Phase 1 below, which measured it.** The sketch here names three
+copy-pasted pieces and a `max:` that is always present; both turned out to be
+wrong in the same direction — the pool is the OPTIONAL half, and the piece that
+actually needs owning is not in the list. Read this for the argument and Phase 1
+for the shape.
+
 The pool above needs no framework change, and it costs an app three hand-written
 pieces that every app with this feature will write identically: the allocator,
 the slot projector, and the segment compiler. That is the case for a
@@ -447,6 +464,311 @@ framework edit and no children.
 That second ruling is the one worth carrying: **the seam already exists and is a
 duck-typed call.** If it later deserves to be a real extension point, the shape
 it should take is the one an app is already forced to discover.
+
+## Phase 1 — the second model, and the one thing it settled (2026-09-08)
+
+Everything above is about ONE model with a pool. The question left open by it is
+the one that decides whether `@@extensible` is a word: **is a declared key that
+is never segmented on the same feature, or a different one?** It was answered by
+building it rather than argued — `example` now has a second extensible model,
+`Product`, carrying declared keys and **no pool at all**, and the assertions are
+in `verify:custom-fields` (55 rows, `blob.*` and `assembler.*`).
+
+**They are one feature, and the evidence is that almost nothing had to change.**
+
+| what | change for a model with no pool |
+| --- | --- |
+| the form assembler (`web/src/custom-fields.js`) | **none.** `rulesFor` reads `key`, `type`, `label` — it never knew a slot existed |
+| `compileSegment` | **none.** Every term comes back `unindexed`, through the path a full pool's thirteenth field already took |
+| the declaration route over HTTP | **none.** Same route, same hook, same 201 |
+| the allocator's caller | **one line** — `pool ? allocateSlot(pool, declared, type) : null` |
+
+The sharpest row is `assembler.aPromotedFieldAndAnUnpromotedOneRenderIdentically`:
+a promoted `Customer` field and an unpromoted `Product` one of the same type
+produce the same rule object, label aside. If those had differed, the two tiers
+would be two features and would need two names.
+
+So the pool is not the feature. **The feature is *a key a tenant declares*, and a
+pool is an optimization some of those keys get** — which inverts the sketch
+above, where `max:` is always present.
+
+### The draft
+
+```lite
+model Customer {
+  id     Int  @id
+  fields Json @default("{}")
+
+  // Segmentable: 12 slots and the composite index that serves them.
+  @@extensible(fields, declaredBy: CustomField, max: { text: 8, number: 4 })
+}
+
+model Product {
+  id     Int  @id
+  fields Json @default("{}")
+
+  // The ordinary case. Keys store, render and edit; a segment naming one is
+  // reported `unindexed`. No pool, no mirror, no index, no tax on every write.
+  @@extensible(fields, declaredBy: CustomField)
+}
+```
+
+`max:` absent is the common declaration and `max:` present is the one that costs
+something — measured above at ~0.25 µs per row per declared column, paid by
+every write to that table forever, including by tenants who declared nothing.
+
+### What it must own, ranked by how silently the hand-written version fails
+
+**1. Scoping the declarations to the model. This is the whole of it.** Adding the
+second model turned two `customField.findMany({})` calls into bugs that fail in
+total silence — `customers.service.ts`'s `declared()` and `carts.service.ts`'s
+`declaredFields()`, the second of which feeds `Discount.audience`. Unnarrowed, a
+key declared on a product is an accepted segment term over customers that matches
+**nobody**: the request succeeds, the count is plausible, and a discount goes to
+the wrong people. That is the exact failure this whole feature exists to prevent,
+reintroduced by adding a model to it. `declaredBy:` knows which model is asking
+and no service can get it wrong.
+
+**2. The pool and its index as ONE fact.** Allocation order and index column
+order are the same thing and were two hand-written lists here; measured at 20,000
+rows, the disagreement cost the two-term segment its second column —
+`(t1=?)` where the agreeing order gives `(t1=? AND n1>?)`. A generated pool
+cannot disagree with its own index.
+
+**3. The mirror.** `ctx.system.add('slots')` in a `validated:` hook, per model,
+is `FJS-644`'s seam used correctly and it is still a hook an app must remember.
+
+**4. `$checkWhere` answering on a declared key**, so `autoFilter` stops refusing
+one and a segment is an ordinary `where` with its gate and row policies intact.
+
+### What it must NOT own, and each was tried
+
+**The rendering.** The assembler is pool-agnostic, app-side, and about thirty
+lines. `formFieldList`, `validateAgainstFields` and `coerceToSchema` all take a
+plain `Record<string, rule>` — only `buildFieldRules` takes a schema — so a
+runtime field list is already a first-class input to sierra's form layer. There
+is nothing to add there and Phase 0's second ruling stands.
+
+**A default, and whether a list offers the key as a column.** Both are ORDINARY
+COLUMNS on the declaring model (`defaultValue String?`, `show Boolean`), because
+what a shop stores about its own field is the shop's business and no attribute
+can enumerate it. `default` is already one of the keys a field rule carries, so a
+declared default prefills a generated form with nothing added to `<Form>`; `show`
+decides a table's columns and never an answer, which keeps it an affordance
+(Invariant 6).
+
+**Refusing an undeclared key.** A dump is a dump. maid.tech validates nothing
+across six models and that is not the thing wrong with it — the declared list
+there exists to RENDER, and making declaration a precondition of writing would
+remove the only property that makes the untyped tier worth having.
+
+### Two refusals the language made unprompted, and both were right
+
+`@@unique([model, slot])` over a nullable column was refused by name, with the
+three escapes listed including the one this design wants —
+`nullsDistinct: true`, because a model with no pool declares every field with
+`slot` null and those rows are not in conflict.
+
+The migration was refused too: `adds NOT NULL column(s) with no DEFAULT:
+custom_field.model`. `example` is a fixture and was reset. **An app with rows
+cannot do that**, which is the real adoption blocker and has nothing to do with
+slots: giving an existing single-model declaration table a required discriminator
+is a backfill. Any app converting to this hits it first.
+
+### Tier 1, whole — and it needs no framework change
+
+The pool is the optimization. What is left when you take it away is the tier
+every consumer so far actually runs, and it is two tables and one column. Run
+against a real client, 11 assertions, all green:
+
+```lite
+enum CustomFieldType { text number }
+
+/// What a tenant has declared. A ROW, so adding a field is not a deploy.
+model CustomField {
+  id           Int             @id
+  model        String          @length(1, 40)
+  key          String          @lower @length(1, 40) @regex("^[a-z][a-z0-9_]*$")
+  label        String          @length(1, 80)
+  type         CustomFieldType
+  defaultValue String?         @length(0, 200)
+  show         Boolean         @default(true)
+
+  @@unique([model, key])
+  @@gate("5.5.5.5")
+}
+
+model Product {
+  id     Int    @id
+  name   String @length(1, 80)
+  fields Json   @default("{}")      // the dump
+}
+```
+
+`Product` gains exactly one column — `"fields" TEXT NOT NULL DEFAULT '{}'` — and
+**no server code at all**: no hook, no `ctx.system`, no mirror, no projector, no
+segment compiler. `CustomField` takes derived CRUD like any model. The only thing
+an app writes is the ~30-line rule assembler in the browser, and even that is
+assembling rather than teaching: `formFieldList`, `validateAgainstFields` and
+`coerceToSchema` all take a plain `Record<string, rule>`, so a runtime field list
+is already a first-class input to sierra's form layer.
+
+**A declared key is not a whitelist, and that is the feature.** An undeclared key
+in the blob is accepted; declaring says what a form OFFERS, not what may be
+written. Making declaration a precondition of writing would remove the only
+property that makes an untyped tier worth having, and no consumer read so far
+validates it.
+
+### And it must not be a `type`, which was tried
+
+The obvious economy is to skip the table and describe the blob instead —
+`fields Json @default("{}") @type(ClientFields)`. It parses, and it inverts the
+feature. **A `type` is CLOSED on write**, measured:
+
+```
+a key the type declares         ACCEPTED  → {"care":"wash 30"}
+a key the tenant added at 3pm   refused   → fields.fabric: unknown field — type ClientFields has …
+```
+
+So a tenant adding a key on Tuesday has every write refused until somebody edits
+the `.lite` and deploys, which is the one thing this design exists to avoid. A
+`type` says *these keys, decided at build time*; tier 1 says *keys decided at
+runtime, by somebody who cannot deploy*. Same column, opposite claims.
+
+Where both are wanted they are **two columns, because they answer to two
+different people**:
+
+```lite
+model Client {
+  address Json @type(Address)      // yours — closed, typed, validated
+  fields  Json @default("{}")      // theirs — open, whatever they declared
+}
+```
+
+The same probe also asked whether the SET could live in one typed column
+(`type Set { fields Def[] }`, since `Json @type(T[])` is a parse error). It
+cannot, and the reason is worth carrying: that wrapper is exactly the depth at
+which type validation stops running (`FJS-1030`), so the column would look
+declared, generate a TypeScript interface, emit a JSON Schema with every
+constraint intact — and validate nothing. Strictly worse than an honest blob,
+which at least does not read as guarded. Two more holes were found in the same
+sitting: an enum member inside a type is never validated (`FJS-1031`), and a
+`@default` its own `@type` would refuse is accepted with no word from the parser
+(`FJS-1032`).
+
+**All three survived because nothing in this repo declares one.** Eleven `type`s
+across `example` and the packages, zero nested, and zero used as `Json @type(T)`
+on a column — they are all service `input:` contracts. Shipped complete, never
+run: the shape of `FJS-970` and `FJS-972` one realm over.
+
+### Still open after Phase 1 — every one of these is answered in Phase 2 below
+
+- **What `max:` says about index ORDER, which is a bet and not a fact.** Measured
+  at 20,000 rows on the two orders a generated pool could pick: four text terms
+  reach four columns under text-first and one under interleaved (0.03 ms against
+  0.94), and the trade runs the other way on a mixed pair (0.21 ms against 0.06).
+  Neither is right for both mixes, so a generator has to choose one and say so.
+  `max: { text: 8, number: 4 }` states the shape; it does not yet state the order.
+- **How `declaredBy` finds the key columns.** The declaring model needs a column
+  holding the model name, one holding the key and one holding the slot. Convention
+  (`model` / `key` / `slot`) or named arguments — unresolved, and it is the
+  difference between an attribute that reads a model and one that dictates it.
+- Whether one `@@extensible` model may serve several extensible models, which is
+  what `example` now does and what makes the scoping rule load-bearing.
+- **Whether `shape:` is an alternative to `declaredBy:` at all**, given the three
+  defects above. Naming a `type` to say what one declaration LOOKS like is the
+  cleanest answer to the column-guessing question, and it is only worth having
+  once `FJS-1030` and `FJS-1031` are closed — a shape whose constraints do not
+  run is a comment with syntax.
+
+## Phase 2 — built, and `example` is the first user (2026-09-08)
+
+`@@extensible(column, declaredBy: Model[, max: { kind: N }])` ships. What closed
+each of Phase 1's four open questions was building the thing, and three of the
+four were answered by MEASUREMENT rather than by argument.
+
+**The order.** Three orderings × six field mixes at 20,000 rows scored **13
+index columns reached, all three** — the trade is conserved, so there is no
+ordering that is better, only orderings better for different mixes. That makes
+the order a statement rather than a search: the pool is laid down by the RATIO
+`max:` declares, so `{ text: 8, number: 4 }` is 2:1 and lays two text per
+number, and an app expecting mostly text says so and gets a run of text at the
+front. Not a `order:` argument, because the ratio already carries it and a
+second way to say one thing is the thing this file's own § *What it must not
+become* refuses.
+
+**`declaredBy` finds its columns by convention** — `model`, `key`, `type`, and
+`slot` where `max:` is present — and whichever is missing is named at parse.
+Convention rather than named arguments because a second spelling for columns the
+app has already written is a second thing to keep in step; what keeps it from
+being a silent guess is that the refusal is by name. **`shape:` was not built
+and no longer looks worth building**: naming a `type` answers *what one
+declaration looks like*, and four column names looked for by name answer the
+same question with nothing new to learn.
+
+**One declaring model serves several extensible models**, which is what makes the
+scoping rule load-bearing rather than tidy: `$declaredFields()` is narrowed to
+the model it was called on and cannot be widened, because a plain `findMany`
+answers with another model's keys and the failure is TOTAL SILENCE — a key
+declared on a product becomes an accepted term in a query over customers,
+matching nobody, request succeeding, count plausible.
+
+### The fourth thing, which Phase 1 did not have on its list
+
+**The slot is allocated at the Data boundary.** Phase 1 ranked what
+`@@extensible` should own by how silently the hand-written version fails, and
+put the allocator outside it — it looked like app policy. It is not: the three
+things it takes are the pool, its order, and what is already spoken for, and all
+three are facts the schema states. What made the case was the ranking's own
+test. An app writing the allocator reads `max:` back out of the parsed seed and
+the order off the generated index, and when that goes wrong every declaration
+reads as *the pool is full* — a slotless field stores, renders and edits exactly
+like a promoted one, every query still answers correctly, and only the plan is
+different. That is the same silence the feature exists to end.
+
+A slot the payload STATES is honored rather than recomputed, which is the half
+that keeps a restore possible: re-deriving them would repoint live fields onto
+slots whose values were written for other keys, and unlike the mirror that does
+not self-heal.
+
+### What adopting it deleted from `example`
+
+The app was the hand-written version this whole file is about, so the diff is
+the measurement:
+
+| gone | what it was |
+| ---- | ----------- |
+| `core/schema.ts` | a second reader of `db/schema.lite`, parsing it as a DOCUMENT at import to derive the pool |
+| `derivePool` / `hasPool` | a regex over `@generated("json_extract(…)")` and a search for the composite index that covered every slot |
+| `allocateSlot` | first-free-of-kind over that derived order |
+| `projectSlots` | the mirror, rebuilt whole on every save |
+| `custom-fields.service.ts`'s hook | the allocator's caller, plus `ctx.system.add('slot')` |
+| `customers.service.ts`'s three `validated:` hooks | the projector's callers, plus `ctx.system.add('slots')` on each |
+| twelve `@generated` columns, the mirror and one `@@index` in the seed | one `@@extensible(…, max: { text: 8, number: 4 })` |
+
+What is left in `api/src/domain/shop/custom-fields.ts` is two functions over the
+shop's own keys that name no slot at all — and they are the half a framework
+cannot have, because they are a POLICY: a term on a declared-but-unpromoted
+field is REPORTED to the merchant rather than refused. The boundary refuses one
+and is right to, since there is no index to read it by; a segment builder needs
+to be told which of its terms did not apply, which is a sentence and not an
+error.
+
+**Two defects became unreachable rather than fixed.** `FJS-660` (the hook with
+Feathers' `(data, params)` signature, so every declaration over HTTP was a 500)
+and `FJS-644` (a hook writing a `@system` column without saying so, so every
+customer create over HTTP was a 403) were both defects in code that no longer
+exists. Neither was findable from one side of the crossing, which is why
+`verify:custom-fields` grew an `http.*` section, and that section is now the
+half of the drive that still grades something the framework cannot.
+
+**And the migration is the honest cost.** `CustomField.model` is NOT NULL with
+no default, so `migrate create` wrote the rebuild COMMENTED OUT — correctly:
+what the old rows meant is a fact about the app. Here it is `'Customer'` and it
+is exact rather than a guess, because `key` was `@unique` on its own until this
+change, which is only correct while one model has any declarations. **That
+backfill is the real conversion blocker for an app with live rows**, and it is
+one hand-written `INSERT … SELECT` rather than a hazard.
 
 ## See also
 

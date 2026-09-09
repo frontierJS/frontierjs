@@ -197,7 +197,7 @@ function _stripNode(node) {
  * Returns null rather than throwing: a schema that doesn't parse should warn
  * and leave the app running on explicitly-passed schemas, not fail the build.
  *
- * @returns {Promise<{ defs: object, models: string[], updatePatch: object } | null>}
+ * @returns {Promise<{ defs: object, models: string[], updatePatch: object, readPatch: object } | null>}
  */
 export async function generateSchemas(schemaPath, warn, root = process.cwd()) {
   const litestone = await loadLitestone(root, warn, schemaPath)
@@ -270,6 +270,16 @@ export async function generateSchemas(schemaPath, warn, root = process.cwd()) {
   const updateDefs  = stripProse(generateJsonSchema(result.schema, { mode: 'update' })?.$defs ?? {})
   const updatePatch = diffSchemaModes(defs, updateDefs)
 
+  // The third mode, on the same terms and for less. A read schema is what a
+  // table and a detail view rank and render — it is the only one carrying
+  // `@computed`, `@generated`, `@derived` and `@from` — and measured over
+  // `example` the delta is +640 bytes gzipped against the update delta's
+  // +1361, so the argument that kept the second mode a patch does not reach
+  // this one at all. A COPY would be +7 KB, which is the number `FJS-785` is
+  // about.
+  const readDefs  = stripProse(generateJsonSchema(result.schema, { mode: 'full' })?.$defs ?? {})
+  const readPatch = diffSchemaModes(defs, readDefs)
+
   // $defs holds models, enums, `type` declarations and FileRef side by side —
   // it is the whole document's definition table, not a list of models. Taking
   // the model names from the parse result instead of from Object.keys(defs) is
@@ -295,7 +305,7 @@ export async function generateSchemas(schemaPath, warn, root = process.cwd()) {
   const models = [...(result.schema?.models ?? []), ...(result.schema?.views ?? [])]
     .map(m => m.name).filter(Boolean)
 
-  return { defs, models, updatePatch }
+  return { defs, models, updatePatch, readPatch }
 }
 
 /**
@@ -350,6 +360,7 @@ export function schemaPlugin(config, sierraContext) {
       sierraContext.schemaDefs   = generated?.defs   ?? null
       sierraContext.schemaModels = generated?.models ?? null
       sierraContext.schemaUpdate = generated?.updatePatch ?? null
+      sierraContext.schemaRead   = generated?.readPatch ?? null
       sierraContext.schemaPath   = schemaPath
 
       if (generated) {
@@ -378,6 +389,7 @@ export function schemaPlugin(config, sierraContext) {
         sierraContext.schemaDefs   = generated?.defs   ?? null
         sierraContext.schemaModels = generated?.models ?? null
         sierraContext.schemaUpdate = generated?.updatePatch ?? null
+      sierraContext.schemaRead   = generated?.readPatch ?? null
 
         // virtual:sierra embeds the schemas, so it has to be rebuilt. A full
         // reload rather than an HMR update: make() defaults are read when a

@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-85 definitions · 50 models · 1 view · 34 enums · 0 other
+86 definitions · 50 models · 1 view · 35 enums · 0 other
 ```
 
 ## Definitions
@@ -87,6 +87,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `SecretKind` | enum |
 | `ServerStatus` | enum |
 | `ServerRole` | enum |
+| `ServerEventKind` | enum |
 | `ProviderKind` | enum |
 | `EnvironmentTier` | enum |
 | `AppType` | enum |
@@ -127,11 +128,12 @@ validates, and a select that silently drops an option.
 - `SecretKind` — `ssh_key`, `provider_key`, `registry_auth`, `tls_cert`, `notification`, `generic`
 - `ServerStatus` — `pending`, `provisioning`, `installing`, `online`, `unreachable`, `draining`, `stopped`, `destroying`, `destroyed`
 - `ServerRole` — `general`, `build`, `database`, `gateway`, `worker`
+- `ServerEventKind` — `created`, `removed`, `reboot_requested`, `drain_started`, `drain_cancelled`, `provision_requested`, `provision_created`, `provision_ready`, `provision_timeout`, `destroy_requested`, `destroy_finished`, `enrollment_issued`, `sync_requested`, `status_synced`, `status_sync_ignored`, `sync_failed`, `sync_no_account`, `sync_unsupported`, `sync_unrecognized`, `came_online`, `unreachable`, `recipe_ran`, `recipe_failed`, `cleanup_queued`, `cleanup_ran`, `cleanup_failed`, `volume_removed`, `volumes_pruned`
 - `ProviderKind` — `custom`, `hetzner`, `digitalocean`
 - `EnvironmentTier` — `development`, `test`, `preview`, `staging`, `production`
 - `AppType` — `container`, `worker`, `database`, `daemon`, `cron`, `static`, `function`
 - `AppStatus` — `unknown`, `stopped`, `starting`, `running`, `stopping`, `deploying`, `error`
-- `DeployStatus` — `pending`, `building`, `pushing`, `deploying`, `success`, `failed`, `cancelled`, `rolled_back`
+- `DeployStatus` — `pending`, `building`, `success`, `failed`, `cancelled`, `rolled_back`
 - `StepStatus` — `pending`, `running`, `success`, `failed`, `skipped`
 - `JobKind` — `one_shot`, `scheduled`, `triggered`, `workflow`
 - `JobStatus` — `pending`, `running`, `failed`, `cancelled`
@@ -147,8 +149,8 @@ validates, and a select that silently drops an option.
 - `ParamGenerator` — `random_hex_16`, `random_hex_32`, `random_hex_64`
 - `BackupKind` — `manual`, `scheduled`
 - `BackupDestination` — `local`, `s3`
-- `NotificationContext` — `Deployment`, `AlertEvent`, `JobRun`, `Workspace`
-- `NotificationKind` — `deploy_success`, `deploy_failed`, `alert_firing`, `alert_resolved`, `member_joined`, `job_failed`, `weekly_digest`
+- `NotificationContext` — `Deployment`, `AlertEvent`, `JobRun`, `Server`, `Workspace`
+- `NotificationKind` — `deploy_success`, `deploy_failed`, `alert_firing`, `alert_resolved`, `server_unreachable`, `member_joined`, `job_failed`, `weekly_digest`
 - `Capability` — `Environment.create`, `Environment.delete`, `Environment.update`, `Environment.variables`, `Server.create`, `Server.delete`, `Server.destroy`, `Server.drain`, `Server.provision`, `Server.reboot`, `Server.undrain`, `Server.update`
 
 ## Models
@@ -427,7 +429,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `volumes` — hasMany `Volume`
 - relation `appServers` — hasMany `AppServer`
 - relation `serverNetworks` — hasMany `ServerNetwork`
-- transitions on `status` — `reboot`: online|unreachable → pending · `drain`: online → draining @5 · `undrain`: draining → online @5 · `provision`: pending → provisioning @5 · `destroy`: pending|provisioning|installing|online|unreachable|draining|stopped → destroying @5 · `checkIn`: pending|installing|unreachable → online @system · `reportProvisioned`: provisioning → installing @system @5 · `reportRunning`: pending|provisioning|installing|unreachable|stopped → online @system @5 · `reportStopped`: pending|provisioning|installing|online|unreachable|draining → stopped @system @5 · `reportRebuilding`: pending|installing|online|unreachable|draining|stopped → provisioning @system @5 · `reportDestroyed`: destroying → destroyed @system @5
+- transitions on `status` — `reboot`: online|unreachable → pending · `drain`: online → draining @5 · `undrain`: draining → online @5 · `provision`: pending → provisioning @5 · `destroy`: pending|provisioning|installing|online|unreachable|draining|stopped → destroying @5 · `checkIn`: pending|installing|unreachable → online @system · `loseContact`: online → unreachable @system · `reportProvisioned`: provisioning → installing @system @5 · `reportRunning`: pending|provisioning|installing|unreachable|stopped → online @system @5 · `reportStopped`: pending|provisioning|installing|online|unreachable|draining → stopped @system @5 · `reportRebuilding`: pending|installing|online|unreachable|draining|stopped → provisioning @system @5 · `reportDestroyed`: destroying → destroyed @system @5
 - capabilities — `Server.create` · `Server.update` · `Server.delete` · `Server.reboot` · `Server.drain` · `Server.undrain` · `Server.provision` · `Server.destroy` · read is not graded
 
 | Field | Type | Required | Label | Rules | Messages |
@@ -449,7 +451,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `sshUser` | `string` = `"root"` | — | — | — | — |
 | `sshKeyId` | `string`? | — | — | — | — |
 | `outpostVersion` | `string`? | — | — | — | — |
-| `outpostUrl` | `string`? | — | — | — | — |
 | `lastHeartbeatAt` | `string`? | — | — | `format: "date-time"` | — |
 | `enrollExpiresAt` | `string`? | — | — | `format: "date-time"` | — |
 | `outpostSecretId` | `string`? | — | — | — | — |
@@ -470,7 +471,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `serverId` | `string` | yes | — | — | — |
-| `kind` | `string` | yes | — | — | — |
+| `kind` | `ServerEventKind` | yes | — | — | — |
 | `message` | `string` | yes | — | — | — |
 | `metadata` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 
@@ -682,7 +683,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `environment` — belongsTo `Environment` via `environmentId` · optional
 - relation `triggeredByUser` — belongsTo `User` via `triggeredBy` · optional
 - relation `steps` — hasMany `DeploymentStep`
-- transitions on `status` — `build`: pending → building · `push`: building → pushing · `release`: pushing → deploying · `succeed`: building|pushing|deploying → success · `fail`: pending|building|pushing|deploying → failed · `cancel`: pending|building|pushing|deploying → cancelled · `rollback`: success → rolled_back @5
+- transitions on `status` — `build`: pending → building @system · `succeed`: building → success @system · `fail`: pending|building → failed @system · `cancel`: pending|building → cancelled · `rollback`: success → rolled_back @5
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |

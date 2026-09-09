@@ -1,0 +1,49 @@
+<script>
+  // filter-bar.mesa — the bar's four built-in control branches, and the search
+  // box the model decides.
+  //
+  // What this exists to catch is a class of bug a compile test and a render
+  // test are both blind to: a control handed a prop it does not have. The kit's
+  // three controls disagree about their callback — `Input` and `Select` fire
+  // `oninput` with the EVENT, `MultiSelect` fires `onchange` with the VALUE —
+  // so the bar adapts per branch, and getting one wrong renders a control that
+  // looks finished and writes nothing. Every branch is driven here for that
+  // reason: one adapter being right says nothing about the other three.
+  //
+  // The operators come from `filterOpFor` rather than being typed out, so this
+  // cannot pass while the fixture and the real table disagree about what a
+  // `money` column asks.
+  import FilterBar from '../../../components/display/FilterBar.mesa'
+  import { filterOpFor } from '@frontierjs/sierra/field-rules'
+
+  const col = (name, label, display, extra = {}) => ({
+    name, label, display, ...extra, ...filterOpFor(display),
+  })
+
+  const filters = [
+    col('title',  'Title',  'text'),
+    col('status', 'Status', 'enum', { rule: { enum: ['open', 'paid'] } }),
+    col('total',  'Total',  'money'),
+    col('active', 'Active', 'boolean'),
+  ]
+
+  // `resource.filters().search` — the two answers it gives.
+  const searchable = { fields: ['body', 'title'], labels: ['Body', 'Title'] }
+  const refused    = { fields: null, reason: 'the model declares no @@fts' }
+
+  // A sort and a page size that must survive, and an offset that must not.
+  let query = { $orderBy: 'title', $limit: 20, $offset: 40 }
+  let last  = ''
+
+  function apply(next) { query = next; last = JSON.stringify(next) }
+</script>
+
+<div id="searchable">
+  <FilterBar {filters} search={searchable} value={query} onchange={apply} />
+</div>
+
+<div id="unsearchable">
+  <FilterBar {filters} search={refused} value={{}} onchange={() => {}} />
+</div>
+
+<output id="out">{last}</output>

@@ -119,6 +119,13 @@ true on purpose:
   was, and a file renamed by the fix is the fix working.
 - **`unknown-status`**, **`unknown-severity`**, **`malformed-date`** — a value
   outside the vocabulary the register declares in its own conventions table.
+- **`id-section`** — a row filed under a section its ID PREFIX does not belong
+  to. `ISSUES.md` holds two registers in one file and the reader tells them
+  apart by section, while the conventions table tells them apart by prefix:
+  `FJS-D##` is a ruling, `FJS-###` is a defect. So a defect id among the
+  questions, or a ruling id under a severity heading, is exact and needs no
+  judgment. § Closed and the archive hold both on purpose — a question that
+  gets its ruling closes under the id it was asked under.
 
 A **warning** is a register that is thin, and every one is a legitimate state to
 be in on the way somewhere:

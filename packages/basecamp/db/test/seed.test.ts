@@ -14,9 +14,11 @@
 // seeder classes imported and called: the script owns its own migrate step, its
 // auth wiring and its `--force` list, and every failure above was in that half.
 //
-// Everything lands in a throwaway directory — the script resolves DATABASE_URL
-// and the declared `audit` logger path against the CWD, so running it from a
-// tmpdir keeps the developer's own fleet and audit trail untouched.
+// Everything lands in a throwaway directory, and BOTH declared paths are stated
+// rather than one of them being stated and the other inherited. A database is
+// two paths here — `database main` and `database audit` — and isolating by CWD
+// alone moved them both by accident of where the process started, which is a
+// property the run depends on and does not say (`FJS-633`).
 
 import { test, expect, describe, afterAll } from 'bun:test'
 import { Database } from 'bun:sqlite'
@@ -38,7 +40,9 @@ function scratch(): string {
 async function runSeed(dir: string, args: string[] = []): Promise<{ code: number; out: string }> {
   const proc = Bun.spawn(['bun', SEED, ...args], {
     cwd:   dir,
-    env:   { ...process.env, DATABASE_URL: join(dir, 'db', 'basecamp.db') },
+    env:   { ...process.env,
+             DATABASE_URL: join(dir, 'db', 'basecamp.db'),
+             AUDIT_PATH:   join(dir, 'db', 'audit/') },
     stdout: 'pipe',
     stderr: 'pipe',
   })

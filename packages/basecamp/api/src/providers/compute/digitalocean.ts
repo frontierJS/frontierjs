@@ -23,9 +23,10 @@
 import { minorUnits, roundMinor } from '@frontierjs/toolbelt/units'
 import { env }                    from '../../core/env.ts'
 import type { TargetDescriptor }  from '@frontierjs/conduit'
+import { FLEET }                  from './index.ts'
 import type {
   ComputeConnector, ComputeSend, ComputeCatalog, ComputeMachine, MachineState,
-  ComputeRegion, ComputeSize, ComputeImage, MachineSpec,
+  ComputeRegion, ComputeSize, ComputeImage, MachineSpec, MachineMark,
 } from './index.ts'
 
 /** Where DigitalOcean is. Overridden by `DIGITALOCEAN_URL` for the dev sink.
@@ -63,15 +64,21 @@ function toRegion(r: Row): ComputeRegion {
 function toSize(s: Row): ComputeSize {
   // `* 10 ** minorUnits(...)` and not `* 100`: the exponent is the currency's.
   const dollars = num(s.price_monthly)
+  const minor   = roundMinor(dollars * 10 ** minorUnits(CURRENCY))
+  const regions = Array.isArray(s.regions) ? (s.regions as unknown[]).map(str).filter(Boolean) : []
+
   return {
-    slug:       str(s.slug),
-    label:      str(s.description) || str(s.slug),
-    vcpu:       num(s.vcpus),
-    memoryMb:   num(s.memory),
-    diskGb:     num(s.disk),
-    priceMinor: roundMinor(dollars * 10 ** minorUnits(CURRENCY)),
-    currency:   CURRENCY,
-    regions:    Array.isArray(s.regions) ? (s.regions as unknown[]).map(str).filter(Boolean) : [],
+    slug:     str(s.slug),
+    label:    str(s.description) || str(s.slug),
+    vcpu:     num(s.vcpus),
+    memoryMb: num(s.memory),
+    diskGb:   num(s.disk),
+    currency: CURRENCY,
+    // DO states one price and a list of regions that have the size, so every
+    // entry here is the same number. Filling the map rather than carrying the
+    // flat price is what makes this and Hetzner's per-location pricing one
+    // shape — and the keys are the availability list either way.
+    prices:   Object.fromEntries(regions.map(r => [r, minor])),
   }
 }
 
@@ -93,6 +100,31 @@ const STATES: Record<string, MachineState> = {
   active:  'running',
   off:     'off',
   archive: 'deleting',
+}
+
+// ─── DO's spelling of a mark ─────────────────────────────────────────────
+// Flat tag strings, which is what DO takes. The colon is legal here and is not
+// at Hetzner, which is why the caller states a mark and this file states the
+// spelling.
+
+const identityTag = (mark: MachineMark) => `${mark.fleet}:server:${mark.serverId}`
+
+/** What a create applies. Both, since a sweep selects on the fleet tag and a
+ *  lookup on the identity one, and DO's filter is a single exact value. */
+const markTags = (mark: MachineMark): string[] =>
+  mark.serverId ? [mark.fleet, identityTag(mark)] : [mark.fleet]
+
+/** Which single tag answers this mark. */
+const selectorTag = (mark: MachineMark): string =>
+  mark.serverId ? identityTag(mark) : mark.fleet
+
+/** The `Server` a droplet says it is, read back off its tags. Null where
+ *  nothing marked it — a droplet somebody made in their own console. */
+function markedServer(droplet: Row): string | null {
+  const prefix = `${FLEET}:server:`
+  const tags   = Array.isArray(droplet.tags) ? (droplet.tags as unknown[]).map(str) : []
+  const hit    = tags.find(t => t.startsWith(prefix))
+  return hit ? hit.slice(prefix.length) || null : null
 }
 
 /** The public v4 address, or null. A droplet that is still building has an
@@ -177,6 +209,7 @@ export const digitalOcean: ComputeConnector = {
       status:           STATES[str(droplet.status)] ?? 'unknown',
       ipAddress:        publicIp(droplet),
       region:           str((droplet.region as Row | undefined)?.slug) || null,
+      serverId:         markedServer(droplet),
     }
   },
 
@@ -191,7 +224,7 @@ export const digitalOcean: ComputeConnector = {
       size:      spec.size,
       image:     spec.image,
       user_data: spec.userData,
-      tags:      spec.tags,
+      tags:      markTags(spec.mark),
       // Private networking is on by default at DO now and the flag is
       // deprecated; monitoring is free and is what `Server.health` would
       // otherwise have to infer.
@@ -227,9 +260,10 @@ export const digitalOcean: ComputeConnector = {
     return true
   },
 
-  async tagged(send, tag): Promise<ComputeMachine[]> {
+  async marked(send, mark): Promise<ComputeMachine[]> {
     const res = await send({
-      method: 'GET', path: `/v2/droplets?tag_name=${encodeURIComponent(tag)}&per_page=${PER_PAGE}`,
+      method: 'GET',
+      path:   `/v2/droplets?tag_name=${encodeURIComponent(selectorTag(mark))}&per_page=${PER_PAGE}`,
     })
     if (res.error) throw new Error(`DigitalOcean: ${res.error.kind}`)
 
@@ -238,6 +272,7 @@ export const digitalOcean: ComputeConnector = {
       status:           STATES[str(d.status)] ?? 'unknown',
       ipAddress:        publicIp(d),
       region:           str((d.region as Row | undefined)?.slug) || null,
+      serverId:         markedServer(d),
     })).filter(m => m.providerServerId)
   },
 

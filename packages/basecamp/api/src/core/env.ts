@@ -69,8 +69,16 @@ export const env = defineEnv({
                     default: DEV_ENCRYPTION_KEY },
 
   // ── Outpost communication ───────────────────────────────────
-  OUTPOST_SECRET: { required: true, minLength: 16,
-                  default: 'outpost-dev-secret' },
+  // There is no fleet-wide outpost secret any more, and its absence is the
+  // point. Every machine holds a credential of its own, minted at enrollment
+  // and stored as a `Secret` row: `Server.outpostSecretId` names it, and it is
+  // what this app verifies inbound and signs with outbound. One string that
+  // opened every machine was the thing per-machine credentials existed to
+  // replace, so leaving it declared — required, at that — would be a variable
+  // an operator sets, a deploy writes, and nothing reads.
+  //
+  // A machine that has not enrolled is refused and its screen prints the one
+  // command that fixes it. `providers/compute/enrollment.ts` holds the design.
 
   // ── Mail ──────────────────────────────────────────────────
   // Unset MAIL_URL and unset RESEND_API_KEY means this app cannot send mail,
@@ -117,14 +125,18 @@ export const env = defineEnv({
 
   // ── Clouds ────────────────────────────────────────────────
   // Where a cloud's API is, when it is not the real one. Unset means the real
-  // vendor, so a workspace that adds a token reaches DigitalOcean; set means a
-  // stand-in, which is how a drive provisions nothing and spends nothing.
+  // vendor, so a workspace that adds a token reaches DigitalOcean or Hetzner;
+  // set means a stand-in, which is how a drive provisions nothing and spends
+  // nothing. One per cloud rather than one shared override: the two stand-ins
+  // are separate listeners on separate ports, and a single variable would point
+  // both connectors at whichever of them a test started last.
   //
   // There is no token here on purpose. A cloud credential belongs to a
   // WORKSPACE and lives in a `Secret` a person typed into a form — an env var
   // would be one account for the whole install, which is the shape `FJS-1020`
   // is about.
   DIGITALOCEAN_URL: {},
+  HETZNER_URL:      {},
 
   // Saying, once, that this process may create and destroy machines somebody
   // pays for. Unset is REFUSE, and `NODE_ENV=production` is the other way

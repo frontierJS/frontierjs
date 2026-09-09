@@ -1,5 +1,148 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-09 — `studio --host` is refused without `--token`
+
+Studio serves a JS REPL holding `db` and `sys`, raw SQL, and schema and
+migration writes, and it has no authentication of its own. `--token` and
+`--readonly` both worked; nothing connected either to `--host`, so a
+non-loopback bind with no token answered `POST /api/repl` to every interface
+([`FJS-1029`](../../ISSUES.md#fjs-1029)). The pairing was stated in a source
+comment, which is advice that fails open — indistinguishable from a guard.
+
+The refusal runs before the schema is read and before a database is opened, so a
+misconfigured start costs nothing and leaves no handle behind, and it **names
+what the flag would expose** rather than merely declining: an operator who
+cannot see that reaches for the opt-out. It says in words that `--readonly` is
+not the substitute — it blocks the REPL and leaves `/api/query`'s SELECT open,
+which is every row of every table.
+
+**Loopback is the exemption rather than the absence of the flag**, so
+`--host=127.0.0.1` and `--host=localhost` still start; refusing the default said
+out loud would teach people the flag itself is the problem. The set is literal
+and conservative, so `127.0.0.2` needs a token. `--insecure` is the opt-out.
+
+Five tests in `test/cli-smoke.test.ts`, every refusal PAIRED with the legitimate
+shape one flag away — a guard that refused `--host` outright would satisfy both
+refusal rows and make the flag useless to the two callers who reach for it, a
+container and a LAN. Stubbing the condition reds 2 of 5; the three controls pass
+either way, by design.
+
+## 2026-09-08 — `@@extensible` — a column whose keys the tenant declares
+
+Every CRM, help desk, ATS and marketing tool has the same pair: a customer of
+your app adds a field on a Tuesday and builds an audience out of it on
+Wednesday. A column is a migration and a migration is a deploy, so the field
+cannot be a column — and a blob nobody has described cannot be put on a form or
+filtered on.
+
+```lite
+model Customer {
+  fields Json @default("{}")
+  @@extensible(fields, declaredBy: CustomField, max: { text: 8, number: 4 })
+}
+```
+
+Four things follow from that line and the app writes none of them. **The
+expansion**: a `fieldsSlots` mirror, one `@generated` VIRTUAL column per slot,
+and ONE composite index over the pool, laid down by the ratio `max:` declares.
+**The projection**, in `writeData` rather than in the eight write verbs, because
+`makeTable` hand-restates its rule sequence per method and a derived column
+added at eight call sites has a ninth nobody noticed. **The allocation** — a
+declaration states no slot and gets the first free one of its kind, in the
+composite's own order. And **the query**: `where: { fields: { tier: 'gold' } }`
+is rewritten onto the slot, nested under the column because the declarations are
+DATA and a bare key could shadow a real column the day a tenant declares `name`.
+
+`max:` is the optional half and the two tiers are ONE attribute. Without it a
+declared key stores, renders and edits and is never promoted; everything above
+the Data boundary is the same either way, which is what makes a tenant's key on
+a pool-less model and a promoted key on a pooled one take the same form rule.
+
+**Declaring is not a whitelist.** An undeclared key in the blob is accepted —
+making declaration a precondition of writing removes the only property that
+makes an untyped column worth having. The column may not carry `@type` for the
+same reason, and the two are refused together by name.
+
+`$declaredFields()` reads them, scoped to the model it was called on and not
+widenable: one declaring table serves every extensible model, so a plain
+`findMany` answers with another model's keys and the failure is total silence —
+a key declared on a product becomes an accepted term in a query over customers,
+matching nobody, request succeeding, count plausible. A model with no
+`@@extensible` refuses rather than answering an empty list.
+
+Ten semantic refusals at parse, each PAIRED with the legal shape one word away.
+`test/extensible.test.ts` is 48 rows; measured against stubs, the mirror
+projection reds 12, the allocation 9, the `max:` expansion 7, the semantic
+refusals 7, the where rewrite 4 and the declaration cache 1.
+`docs/extensible-columns.md` is the page.
+
+`example` is the first user, and adopting it deleted more than it added: a
+service hook that chose the slot, three `validated:` hooks that rebuilt the
+mirror, a `core/schema.ts` that parsed the seed back to derive the pool, and
+`derivePool`/`allocateSlot`/`projectSlots` beside them. What is left in that app
+is two functions over the shop's own keys that name no slot at all.
+
+## 2026-09-08 — `@@refreshOn` decides WHEN a materialized view is rebuilt, not whether
+
+`@@materialized` required `@@refreshOn`, and that declaration installs a ROW
+trigger per source table, each running `DELETE` plus the whole `@@sql`. A
+`createMany` of 10,000 rows re-aggregated the source 10,000 times, inside the
+write's own transaction, and nothing declaring `@@materialized` could decline it
+([`FJS-971`](../../ISSUES.md#fjs-971), [`FJS-D245`](../../DECISIONS.md#fjs-d245)).
+
+The *requires* rule is gone. Naming no sources is the second strategy: no
+triggers, and the table is rebuilt when `db.<view>.refresh()` is called. **No
+word was coined** — a `mode:` argument would be a second origin for a fact
+`@@refreshOn`'s own presence already carries.
+
+`refresh()` requires `asSystem()`, because the rebuild runs `@@sql` over every
+source row with no policy applied while the view's `@@gate` grades reading the
+result. It is `undefined` on a trigger-refreshed view, where the table is
+already correct at rest and a second rebuild path is two owners of one fact.
+
+What it does not do is tell you the view is behind: you own the staleness, which
+is why it is opt-in and why `advise` states the trade where an author reads it.
+
+## 2026-09-08 — `@type` validated one level down, and not before
+
+**A `type` inside a `type` was graded by nothing.** `@type(T)` states the value
+is validated on every write, and it was — at depth 0. `validateTypedJson`'s type
+check was an if/else chain with arms for the builtin scalars and for
+`Json @type(Other)` and no final arm, so any field whose declared type was
+neither fell off the end in silence: a field typed as another type directly
+(`one Leaf`), an enum member, and every element of an array, since the array
+branch asserted `Array.isArray` and stopped. One root cause, three faces
+([`FJS-1030`](../../ISSUES.md#fjs-1030), [`FJS-1031`](../../ISSUES.md#fjs-1031)).
+
+The chain is now `checkOne(value, path)`, called once for a scalar and once per
+ELEMENT, with an enum arm and a nested-type arm beneath it. Paths carry the
+index — `c.list.1.key`. Enums resolve before types because the parser accepts
+both under one name, so the order is stated rather than assumed, and a nested
+field inherits the parent's strictness: it carries no `@type` to say otherwise
+and a nested document is part of the same document.
+
+**And a `@default` its own `@type` refuses is now a parse error**
+([`FJS-1032`](../../ISSUES.md#fjs-1032)) — `Json @default("{}") @type(T)` with a
+required key in `T` stored a document the same schema rejects from a caller. It
+is graded by calling the WRITE-PATH validator rather than by a check written in
+the parser, because *does this value satisfy this type* must have one definition.
+The payoff is measurable: a default carrying a nested or an enum violation is
+refused only because the fix above reached it, and a second implementation would
+have passed both.
+
+**Why it lasted.** Eleven `type`s across `example` and the packages, zero nested,
+and zero used as `Json @type(T)` on a column — they are all service `input:`
+contracts. Shipped complete and never run, which is `FJS-970`'s shape one realm
+over. Found by asking whether a `type` could hold a tenant-declared field list;
+it cannot, because a type is CLOSED on write (`IDEAS/tenant-declared-fields.md`
+Phase 1).
+
+`test/typed-json-depth.test.ts` — 18 rows, every refusal paired with the same
+document one value different, the depth-0 rows kept as the control that the fix
+reached DOWN rather than switching everything on. Measured against stubs:
+removing element grading reds 5, the nested-type arm 6, the enum arm 3, the
+parse check 4.
+
 ## 2026-09-07 — one spelling for a gate
 
 **[`FJS-D239`](../../DECISIONS.md#fjs-d239) reverses [`FJS-D43`](../../DECISIONS.md#fjs-d43).** The

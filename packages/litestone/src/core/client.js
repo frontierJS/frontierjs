@@ -982,6 +982,11 @@ function whereKeysFor(model, ctx) {
   return keys
 }
 
+// The operators a Json column takes on its WHOLE value. A `where` on an
+// extensible column carrying one of these is comparing the document, not
+// reaching into it.
+const JSON_WHOLE_OPS = new Set(['equals', 'not', 'in', 'notIn', 'isNull', 'isNotNull'])
+
 function collectWhereKeyProblems(where, filterable, computed, encrypted, out = [], scopes = null, transient = null, rel = null, path = '', depth = 0) {
   if (!where || typeof where !== 'object' || Array.isArray(where)) return out
   const at = (k) => path ? `${path}.${k}` : k
@@ -4377,7 +4382,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
         if (typeAttr && ctx.typeMap?.size) {
           const errs = validateJsonPatch(
             patch, typeAttr.name, ctx.typeMap, typeAttr.strict !== false,
-            [key], mf.type.optional ? 'create' : 'partial')
+            [key], mf.type.optional ? 'create' : 'partial', ctx.enumTypeMap)
           if (errs.length) throw new ValidationError(errs)
         }
         // coalesce because json_patch(NULL, …) answers NULL and raises nothing,
@@ -4526,6 +4531,78 @@ function makeTable(readDb, writeDb, shape, ctx) {
    * `@required("…")` carries the wording; `@label("Customer")` names the field
    * when there is none. Neither creates the rule — the absence of `?` did.
    */
+  // ── @@extensible, resolved once per table ───────────────────────────────────
+  //
+  // The pool's shape is a fact about the SCHEMA, so it is read here; which key
+  // holds which slot is a fact about the DATA, so that is read below.
+  const _extensible = (() => {
+    const ext = ctx.models[modelName]?.attributes?.find(a => a.kind === 'extensible')
+    if (!ext?.max) return null   // no pool means no mirror to keep
+    const decl = ctx.models[ext.declaredBy]
+    // Which enum member means a numeric slot is decided by the SEED's own
+    // `max:` keys and the affinity the expansion gave them, so this asks the
+    // expanded columns rather than matching on the word 'number'. It reads the
+    // stamped kind and not the column's first letter: the letter is an artefact
+    // of how the pool was named, and a member renamed from `number` to
+    // `numeric` would have moved every value into a text slot with nothing
+    // failing.
+    const numeric = new Set(ctx.models[modelName].fields
+      .filter(f => f.extKind && f.type.name === 'Float').map(f => f.extKind))
+    return {
+      column:      ext.column,
+      mirror:      `${ext.column}Slots`,
+      declaredBy:  ext.declaredBy,
+      declTable:   decl ? modelToTableName(decl, ctx.pluralize ?? false) : null,
+      kindOf:      (k) => (numeric.has(k) ? 'number' : 'text'),
+    }
+  })()
+
+  /**
+   * This model's declarations, read straight off the declaring table.
+   *
+   * A raw read rather than the declaring table's own verbs, because this runs
+   * INSIDE a write of a different model: going back through the API would apply
+   * that model's gate to a caller who is writing a customer, and refuse a write
+   * for want of a permission on a table they never named. What the mirror is
+   * built from is not a thing the caller is reading.
+   *
+   * Cached per client and dropped whenever the declaring table is written, so a
+   * key declared at three o'clock is projected by the next write rather than by
+   * the next process.
+   */
+  /**
+   * The pool `target` declares — its slots in INDEX order and the kind each one
+   * holds — or null where that model has no pool.
+   *
+   * Takes a model NAME rather than reading this table's own, because its caller
+   * is the DECLARING table: one declaring table serves every extensible model,
+   * so the pool a row is allocated out of is chosen per row and never per
+   * client. `Customer` may have a pool while `Product` has none, and both are
+   * declared through the same table on the same day.
+   */
+  function extPoolFor(target) {
+    const model = ctx.models?.[target]
+    if (!model?.attributes?.some(a => a.kind === 'extensible' && a.max)) return null
+    const index = model.attributes.find(a => a.kind === 'index' && a.generated === 'extensible')
+    if (!index) return null
+    return {
+      order: index.fields,
+      kind:  Object.fromEntries(model.fields.filter(f => f.extKind).map(f => [f.name, f.extKind])),
+    }
+  }
+
+  function _extDeclarations() {
+    if (!_extensible?.declTable) return []
+    const cache = (ctx.extDecl ??= new Map())
+    const hit   = cache.get(modelName)
+    if (hit) return hit
+    const rows = readDb.query(
+      `SELECT "key", "type", "slot" FROM "${_extensible.declTable}" WHERE "model" = ?`
+    ).all(modelName) ?? []
+    cache.set(modelName, rows)
+    return rows
+  }
+
   function requiredFailure(f) {
     const attrs  = f.attributes ?? []
     const custom = attrs.find(a => a.kind === 'required')?.message
@@ -4581,6 +4658,98 @@ function makeTable(readDb, writeDb, shape, ctx) {
         delete cleaned[k]
       }
       if (cleaned) data = cleaned
+    }
+
+    // A write to a table somebody DECLARES from invalidates every cached list:
+    // a field declared at three o'clock has to be projected by the next write,
+    // not by the next process.
+    if (ctx.extDeclarers?.has(modelName)) ctx.extDecl?.clear()
+
+    // ── @@extensible — the slot a declaration takes ───────────────────────
+    //
+    // Allocated here rather than by the app, because the three things it takes
+    // are all facts the schema states: the pool, the order, and which slots are
+    // already spoken for. An app writing this by hand has to read `max:` back
+    // out of the parsed seed to get the pool and off the generated `@@index` to
+    // get the order, which is the same fact restated in a second place — and
+    // the place it goes wrong is silent, since a declaration with no slot
+    // stores, renders and edits exactly like one that has one. Every field then
+    // reads as *the pool is full*, every query still answers correctly, and
+    // only the plan is different.
+    //
+    // Absent means allocate; a slot the payload STATES is honored. An import
+    // restoring declarations has to be able to say which slot each one held,
+    // and re-deriving them would repoint live fields onto slots whose mirrors
+    // were written for somebody else — which does not self-heal the way the
+    // mirror does, because the values are already in the wrong columns.
+    if (creating && ctx.extDeclarers?.has(modelName)
+        && data && typeof data === 'object' && !Array.isArray(data)
+        && !('slot' in data) && _fieldsByName.has('slot')) {
+      const pool = extPoolFor(String(data.model ?? ''))
+      let slot = null
+      if (pool) {
+        // Raw, and narrowed by model, for the reason `_extDeclarations` is:
+        // this runs inside somebody's write and must not put the declaring
+        // table's own gate in front of it. Narrowed because one declaring table
+        // serves every extensible model and `t1` on a customer is not `t1` on a
+        // product.
+        const taken = new Set(readDb.query(
+          `SELECT "slot" FROM "${tableName}" WHERE "model" = ? AND "slot" IS NOT NULL`
+        ).all(String(data.model)).map(r => r.slot))
+        // First free of the matching kind, in INDEX order — so the field a
+        // tenant declares first lands leftmost, where a one-term query reaches
+        // it. A full pool answers null, which is the ordinary end of a pool and
+        // not a failure: the field still stores and still renders.
+        slot = pool.order.find(s => pool.kind[s] === String(data.type) && !taken.has(s)) ?? null
+      }
+      data    = { ...data, slot }
+      stamped = stamped ? new Set([...stamped, 'slot']) : new Set(['slot'])
+    }
+
+    // ── @@extensible — the slot mirror ────────────────────────────────────
+    //
+    // The tenant's keys go in the blob; the mirror is the same values re-keyed
+    // onto the pooled columns so a query can reach an index. It is DERIVED, so
+    // the caller never sends it and never has to know a slot exists.
+    //
+    // Here rather than in each write verb because `writeData` is the one place
+    // every payload passes through: `makeTable` hand-restates its rule sequence
+    // per method, so a derived column added at eight call sites has a ninth
+    // nobody noticed, and a mirror that is not rebuilt is a query that matches
+    // the value a row used to hold.
+    //
+    // Rebuilt WHOLE rather than merged: a key removed from the blob has to
+    // leave the mirror too, or a query goes on finding a row by a value it no
+    // longer has. Absent means leave it alone — a patch naming other columns is
+    // not a statement about these — and Invariant 9's explicit null clears.
+    if (_extensible && data && typeof data === 'object' && !Array.isArray(data)
+        && _extensible.column in data) {
+      const declared = _extDeclarations()
+      const blob     = data[_extensible.column]
+      const slots    = {}
+      // An unpromoted or absent key is omitted rather than written null: a
+      // missing JSON path and a null one both read NULL through json_extract,
+      // so writing it costs bytes on every row and buys nothing.
+      if (blob && typeof blob === 'object') {
+        for (const d of declared) {
+          if (!d.slot) continue
+          const v = blob[d.key]
+          if (v === undefined || v === null || v === '') continue
+          // The column's affinity is REAL or TEXT and nothing coerces on the
+          // way in, so a number arriving as a string would sort as text and
+          // compare wrong.
+          if (_extensible.kindOf(d.type) === 'number') {
+            const n = Number(v)
+            if (Number.isFinite(n)) slots[d.slot] = n
+          } else {
+            slots[d.slot] = String(v)
+          }
+        }
+      }
+      data = { ...data, [_extensible.mirror]: slots }
+      // The framework filled it, so the @system refusal below has to let it
+      // past — the same hatch `@updatedBy` and the tenancy stamp ride on.
+      stamped = stamped ? new Set([...stamped, _extensible.mirror]) : new Set([_extensible.mirror])
     }
 
     // ── @guarded, the write half ──────────────────────────────────────────
@@ -4806,7 +4975,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // here once, with their wording built at the throw site, so an authored
     // `@minItems(2, "Pick at least two tags")` reached the browser through
     // `x-messages` and was ignored by the server (FJS-194).
-    if (model && ctx.hasValidation[modelName]) validate(transformed, model, computedFns, ctx.typeMap)
+    if (model && ctx.hasValidation[modelName]) validate(transformed, model, computedFns, ctx.typeMap, ctx.enumTypeMap)
 
     // Encrypt @encrypted / hash @hashed fields before write
     if (ctx.enc.key && hasFieldPolicy) {
@@ -5083,6 +5252,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const fromMap = outerIsAliased ? _fromExprMapAliased : _fromExprMap
     if (!where) return buildWhere(where, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter, fieldKinds, columnMap)
     where = _hasScopes ? expandScopes(where) : where
+    where = _extensible ? rewriteExtensibleWhere(where) : where
     let rewritten = where
     if (ctx.enc.key) {
       rewritten = rewriteEncryptedWhere(where)
@@ -5092,6 +5262,60 @@ function makeTable(readDb, writeDb, shape, ctx) {
       }
     }
     return buildWhere(rewritten, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter, fieldKinds, columnMap)
+  }
+
+  /**
+   * `where: { fields: { tier: 'gold' } }` → `where: { t1: 'gold' }`.
+   *
+   * The tenant's own key is what crosses the wire and the slot never leaves the
+   * Data boundary — a caller cannot know which pooled column their field landed
+   * in, and should not have to.
+   *
+   * Nested under the blob column rather than spelled bare, because a bare
+   * `{ tier: … }` cannot be told from a real column of that name: the
+   * declarations are DATA, so a tenant could declare `name` tomorrow and shadow
+   * or be shadowed by a column, silently, depending on which won. Under the
+   * column there is no collision to resolve.
+   *
+   * A key that is not declared, or is declared and holds no slot, is REFUSED by
+   * name rather than dropped or scanned. Dropping widens the result set in
+   * silence, which is the failure this whole feature exists to prevent — the
+   * request succeeds, the count looks plausible, and the answer is about more
+   * rows than were asked for.
+   */
+  function rewriteExtensibleWhere(where) {
+    if (!where || typeof where !== 'object') return where
+    if (Array.isArray(where)) return where.map(rewriteExtensibleWhere)
+
+    const out = {}
+    for (const [key, val] of Object.entries(where)) {
+      if (key === 'AND' || key === 'OR' || key === 'NOT') {
+        out[key] = rewriteExtensibleWhere(val)
+        continue
+      }
+      // Only the blob, and only when handed an object of keys. An operator
+      // object (`{ equals: … }`) is the column being compared whole, which is
+      // what a Json column has always meant and still does.
+      if (key !== _extensible.column || !val || typeof val !== 'object' || Array.isArray(val)
+          || Object.keys(val).some(k => JSON_WHOLE_OPS.has(k))) {
+        out[key] = val
+        continue
+      }
+
+      const declared = _extDeclarations()
+      const byKey    = new Map(declared.map(d => [d.key, d]))
+      for (const [k, v] of Object.entries(val)) {
+        const d = byKey.get(k)
+        if (!d) throw new ValidationError([{ path: [_extensible.column, k], message:
+          `'${k}' is not a field this ${modelName} declares` +
+          (declared.length ? `. Declared: ${declared.map(x => x.key).join(', ')}` : ' — nothing is declared yet') }])
+        if (!d.slot) throw new ValidationError([{ path: [_extensible.column, k], message:
+          `'${k}' is declared but holds no slot, so there is no index to read it by and no filter that would be honest. ` +
+          `It stores and it displays; raising the pool with max: is what makes it filterable` }])
+        out[d.slot] = v
+      }
+    }
+    return out
   }
 
   function rewriteEncryptedWhere(where) {
@@ -8167,6 +8391,33 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       return { count }
     },
 
+    // ── $declaredFields ─────────────────────────────────────────────────────
+    //
+    // What THIS model's tenant has declared, off the model `@@extensible` names.
+    //
+    // It exists because the read is scoped by a value nobody can see they are
+    // missing: one declaring table serves every extensible model, so a plain
+    // `findMany({})` answers with another model's keys and the failure is
+    // total silence — a key declared on a product becomes an accepted segment
+    // term over customers that matches NOBODY, request succeeding, count
+    // plausible. Two services in one app got this wrong the day a second model
+    // became extensible, which is what moved the scoping in here.
+    //
+    // The caller's own client is used, so the declaring model's `@@gate` and
+    // every row policy on it apply exactly as they would to a direct read.
+    async $declaredFields(opts = {}) {
+      const ext = ctx.models[modelName]?.attributes?.find(a => a.kind === 'extensible')
+      if (!ext) throw new CapabilityNotDeclaredError(modelName, '$declaredFields()', '@@extensible',
+        'Nothing declares keys for this model, so there is no list to answer with.')
+      // ctx.tables is keyed by accessor (camelCase singular), not model name.
+      const tbl = ctx.tables?.[modelToAccessor(ext.declaredBy)]
+      if (!tbl) throw new Error(`${modelName}.$declaredFields(): no table for '${ext.declaredBy}'`)
+      return await tbl.findMany({
+        ...opts,
+        where: { ...(opts.where ?? {}), model: modelName },
+      })
+    },
+
     // ── restore ─────────────────────────────────────────────────────────────
     // Soft-delete tables only — sets deletedAt = NULL.
     async restore({ where } = {}) {
@@ -10198,6 +10449,18 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // declared — keeps the makeTable hot path branch-free.
   const typeMap = new Map((schema.types ?? []).map(t => [t.name, t]))
 
+  // Enum members by name, for the same validation. A SECOND map rather than
+  // entries in the one above: the parser accepts a type and an enum sharing a
+  // name, so one lookup could not say which a field meant.
+  const enumTypeMap = new Map((schema.enums ?? []).map(e => [e.name, e.values.map(v => v.name)]))
+
+  // Which models are somebody's `@@extensible(declaredBy:)`. Writing one
+  // invalidates the cached declaration lists, so a field declared at three
+  // o'clock is projected by the next write rather than by the next process.
+  const extDeclarers = new Set(schema.models
+    .flatMap(m => m.attributes.filter(a => a.kind === 'extensible'))
+    .map(a => a.declaredBy))
+
   // Warn about @computed fields with no extension
   for (const model of schema.models) {
     for (const field of computedSets[model.name] ?? []) {
@@ -10447,6 +10710,8 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     schema,
     hasValidation: validationMap,
     typeMap,
+    enumTypeMap,
+    extDeclarers,
     fieldPolicyMap,
     policyMap,
     hasPolicies:   Object.keys(policyMap).length > 0,
@@ -10638,6 +10903,42 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       }
       // A write a view must refuse even where `makeTable` never offered it.
       for (const key of VIEW_REFUSED) if (!(key in out)) out[key] = writeBlocked
+
+      // `refresh()` is the other half of `@@materialized` and exists only where
+      // the schema declared no `@@refreshOn`: with triggers installed the table
+      // is already correct at rest, so a second way to rebuild it would be two
+      // owners of one fact.
+      //
+      // It requires `asSystem()`, and that is derived rather than chosen: the
+      // rebuild runs `@@sql` over every source row with no policy applied, so
+      // any caller who could ask for it could publish an aggregate of rows they
+      // may not read. The view's own `@@gate` grades READING the result and
+      // says nothing about that.
+      if (view.materialized && !(view.refreshOn ?? []).length) {
+        out.refresh = () => {
+          if (!ctx.isSystem)
+            throw new Error(
+              `"${view.name}".refresh() recomputes from every source row and requires asSystem()`
+            )
+          const sql = view.sql.trim().replace(/;$/, '')
+          // A SAVEPOINT rather than a BEGIN: `refresh()` is the shape a job
+          // calls inside a `$transaction` that has already taken the write
+          // lock, and a nested BEGIN is an error rather than a no-op. Emptied
+          // and refilled together, or a reader between the two statements sees
+          // a view that exists and holds nothing.
+          const sp = `refresh_${view.name}`
+          conn.writeDb.run(`SAVEPOINT "${sp}"`)
+          try {
+            conn.writeDb.run(`DELETE FROM "${view.name}"`)
+            conn.writeDb.run(`INSERT INTO "${view.name}" ${sql}`)
+            conn.writeDb.run(`RELEASE "${sp}"`)
+          } catch (err) {
+            conn.writeDb.run(`ROLLBACK TO "${sp}"`)
+            conn.writeDb.run(`RELEASE "${sp}"`)
+            throw err
+          }
+        }
+      }
       return out
   }
 

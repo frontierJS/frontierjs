@@ -312,15 +312,23 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   it sends, and a `find` that answers anything but a list throws rather than
   guessing. NAMED keys and no `data` is still the clearest shape for an action
   that answers more than one thing — `volumes.usage`, `cleanup.targets`.
-- **The three API snapshots stay at the PACKAGE ROOT here, and `example`'s four
-  moved into `api/`.** A snapshot belongs in the surface it describes, and the
-  `snapshots` phase reruns each generator from the snapshot's own directory — so
-  moving them means the app has to boot from `api/`, and this one cannot: its
-  database and its audit trail both follow the process CWD, deliberately, which
-  is what `db/test/seed.test.ts` isolates a run with (`api/src/core/db.ts` says
-  so and says not to "fix" it). `AUDIT_PATH` exists and nothing sets it, which
-  is the way out and is `FJS-633`. Until then, generate all three from the
-  package root as their headers say.
+- **The three API snapshots are still at the PACKAGE ROOT here, and `example`'s
+  four are in `api/` — but the reason is gone.** A snapshot belongs in the
+  surface it describes, and the `snapshots` phase reruns each generator from the
+  snapshot's own directory, so moving them needs the app to boot from `api/`.
+  It could not: both declared paths followed the process CWD, so a generator
+  rerun anywhere else opened a NEW database that litestone then migrated to the
+  full schema — working, empty, and indistinguishable from the real one by
+  anything but its contents. `core/db.ts` passes `resolveFrom: 'schema'` now —
+  and the anchor is the APP ROOT rather than the schema's directory, since
+  `schemaAnchor` steps out of one named `db`, so both declared paths keep their
+  `./db/` prefix and rewriting either relative to `db/` moves the whole app
+  and every caller that redirects one path names the other (`FJS-633`), so the
+  app answers the same database from any directory and the move is available.
+  It has not been made: a moved snapshot reads to CI's `snapshots` phase as one
+  removed plus one added, so it costs a `removedSnapshots` allowance, and that
+  is a separate change from the one that unblocked it. Generate all three from
+  the package root as their headers still say.
 - **`API_PATHS` is DERIVED from `surface.snapshot.md` — do not add a path to it.**
   It was a hand-kept copy of the service registry and went stale six times;
   three of those were paths this app's source names nowhere, because a plugin

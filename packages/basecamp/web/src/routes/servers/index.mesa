@@ -173,7 +173,14 @@ title: Servers
 
 <div class="section-header">
   <h1>Servers</h1>
-  <Button variant="primary" href="/servers/create/">Add server</Button>
+  <!-- Two acts, two buttons, and the primary one is the one that costs money —
+       which is deliberate. They were a single "Add server" whose meaning was
+       decided by a dropdown four fields into the form, so a workspace with no
+       cloud account could not tell provisioning existed at all. -->
+  <div class="cluster">
+    <Button variant="primary" href="/servers/provision/">Provision a machine</Button>
+    <Button variant="outlined" href="/servers/import/">Import existing</Button>
+  </div>
 </div>
 
 {#if error}
@@ -216,7 +223,10 @@ title: Servers
 {:else if !rows.length}
   <article class="alert info">
     <div class="alert-content">
-      No servers match. Clear the filters, <a href="/servers/create/">add one</a>, or seed the example fleet with <code>bun run db:seed</code>.
+      No servers match. Clear the filters,
+      <a href="/servers/provision/">provision one</a>,
+      <a href="/servers/import/">import one you already have</a>,
+      or seed the example fleet with <code>bun run db:seed</code>.
     </div>
   </article>
 {:else}

@@ -173,7 +173,7 @@ rather than refusing the row.
 | `CreditNote` | `userId` | `@system` |
 | `Customer` | `notes` | `@allow('read', auth().role == 'admin')` |
 | `Customer` | `userId` | `@system` |
-| `Customer` | `slots` | `@system` |
+| `Customer` | `fieldsSlots` | `@system` |
 | `CustomField` | `slot` | `@system` |
 | `Discount` | `redemptions` | `@system` |
 | `Invoice` | `subtotal` | `@system` |

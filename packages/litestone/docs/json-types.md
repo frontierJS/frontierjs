@@ -117,6 +117,27 @@ model User {
 
 In loose mode, extra keys are silently kept on write and returned on read. The declared keys are still validated.
 
+**Strict is what makes a type unsuitable for a blob whose keys somebody else decides.** A tenant-declared field — a key a customer of your app adds at three o'clock on a Tuesday — is refused by a strict type until the `.lite` changes and the app deploys, which is the one thing that kind of column exists to avoid. Where an app wants both, they are two columns, because they answer to two different people:
+
+```
+model Client {
+  address Json @type(Address)      // yours   — closed, typed, validated
+  fields  Json @default("{}")      // theirs  — open, whatever they declared
+}
+```
+
+## A default the type refuses
+
+A `@default` on a typed column has to be a document the type accepts, and the parser refuses one that is not:
+
+```
+type Care  { symbol String }
+model Item { care Json @default("{}") @type(Care) }
+// → Model 'Item', field 'care': @default("{}") is a value @type(Care) refuses — symbol: is required.
+```
+
+Without that, a row written with no value for the column would hold a document the same schema rejects from a caller. Give the default every key the type requires, or make those keys optional.
+
 ## Validators inside types
 
 Validators work the same inside a type as they do on columns:
@@ -230,7 +251,16 @@ model Place {
 }
 ```
 
-Validation walks recursively. An invalid `lat` reports at `address.coords.lat`. Cycles (`A` references `B` references `A`) are detected at parse time and rejected.
+Validation walks recursively and the error path names where it failed. An invalid `lat` reports at `address.coords.lat`. Cycles (`A` references `B` references `A`) are detected at parse time and rejected.
+
+**Three shapes are the same walk**, and each is graded to the bottom: a field reached through `Json @type(Other)` as above, a field typed as another type directly (`coords Coordinates`), and **every element of an array**:
+
+```js
+await db.thing.create({ data: { doc: { items: [{ key: 'ok' }, { key: 'BAD KEY' }] } } })
+// → ValidationError: doc.items.1.key: must match pattern ^[a-z]+$
+```
+
+An enum used inside a type is checked for membership the way a column-level enum is. A nested field carries no `@type` of its own, so it inherits the strictness of the type it sits in.
 
 ## Nullable typed JSON
 

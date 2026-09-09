@@ -23294,6 +23294,79 @@ describe('view block — schema views', () => {
     db.$close()
   })
 
+  test('materialized view with no @@refreshOn: refreshed by refresh(), and only by it', async () => {
+    // The other refresh strategy (`FJS-971`). Declaring `@@materialized` with
+    // no `@@refreshOn` installs no triggers, so the cost the trigger strategy
+    // pays — a full re-aggregation per ROW written, inside the write's own
+    // transaction — is not paid at all, and the table is rebuilt when asked.
+    //
+    // The pair is the test: a source write must leave this view UNCHANGED,
+    // where the trigger view above must change on the same write. One
+    // assertion alone passes against a view that never works.
+    const db = await makeDb(`
+      model Order {
+        id        Int   @id
+        accountId Int
+        total     Float
+      }
+      view orderTotals {
+        accountId Int
+        total     Float
+        @@materialized
+        @@sql("SELECT accountId, SUM(total) AS total FROM [order] GROUP BY accountId")
+      }
+    `, 'view-materialized-on-demand')
+
+    await db.order.createMany({ data: [
+      { id: 1, accountId: 1, total: 100 },
+      { id: 2, accountId: 2, total: 30 },
+    ]})
+
+    // Nothing has asked, so nothing has been computed.
+    expect((await db.orderTotals.findMany()).length).toBe(0)
+
+    await (db.asSystem() as any).orderTotals.refresh()
+    let rows = await db.orderTotals.findMany({ orderBy: { accountId: 'asc' } })
+    expect(rows.length).toBe(2)
+    expect(rows[0].total).toBe(100)
+
+    // A source write moves nothing until the next refresh — which is what
+    // makes this a different strategy rather than a broken trigger.
+    await db.order.create({ data: { id: 3, accountId: 1, total: 25 } })
+    rows = await db.orderTotals.findMany({ orderBy: { accountId: 'asc' } })
+    expect(rows[0].total).toBe(100)
+
+    await (db.asSystem() as any).orderTotals.refresh()
+    rows = await db.orderTotals.findMany({ orderBy: { accountId: 'asc' } })
+    expect(rows[0].total).toBe(125)
+
+    // A rebuild reads every source row with no policy applied, so it is
+    // asSystem()-only. Paired with the call above, or a refresh that refused
+    // everybody would satisfy this on its own.
+    let err: any = null
+    try { await (db as any).orderTotals.refresh() }
+    catch (e) { err = e }
+    expect(err).not.toBeNull()
+    expect(err.message).toContain('asSystem()')
+
+    // And the verb exists only where there is no other owner of the fact: a
+    // trigger-refreshed view is already correct at rest.
+    const triggered = await makeDb(`
+      model Order { id Int @id; accountId Int; total Float }
+      view orderTotals {
+        accountId Int
+        total     Float
+        @@materialized
+        @@sql("SELECT accountId, SUM(total) AS total FROM [order] GROUP BY accountId")
+        @@refreshOn([Order])
+      }
+    `, 'view-materialized-triggered-no-verb')
+    expect((triggered.asSystem() as any).orderTotals.refresh).toBeUndefined()
+    triggered.$close()
+
+    db.$close()
+  })
+
   test('view supports findFirst / findUnique / count / exists', async () => {
     const db = await makeDb(`
       model Order { id Int @id; accountId Int; total Float }

@@ -1,0 +1,253 @@
+---
+title: Provision a machine
+---
+<script>
+  import { goto } from '@frontierjs/sierra/router'
+  import { servers } from '../../resources/Server.mesa'
+  import { ResourceValidationError } from '@frontierjs/sierra/junction'
+  import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+  import Select   from '@frontierjs/ui/components/forms/Select.mesa'
+  import Input    from '@frontierjs/ui/components/forms/Input.mesa'
+  import Callout  from '@frontierjs/ui/components/display/Callout.mesa'
+  import { money } from '../../money.js'
+
+  // BUY a machine at a cloud. The sibling screen, /servers/import/, RECORDS one
+  // that already exists.
+  //
+  // They were one form with a dropdown deciding which, and the submit button
+  // read the dropdown to say what it was about to do. Two things were wrong
+  // with that and only the second is about looks. A workspace with no provider
+  // key saw a picker whose only entry was "no cloud", so the whole feature was
+  // invisible from the one screen it lives on. And a control four fields up
+  // decided whether pressing the button spent money — which is the wrong thing
+  // for a dropdown to decide, because the two acts differ in what they COST,
+  // not in how many fields they take.
+
+  let draft   = servers.make({ name: '', region: '', role: 'general' })
+  let errors  = []
+  let failed  = null
+  let saving  = false
+
+  let accounts    = []
+  let loadingAcct = true
+  let accountId   = ''
+  let catalog     = null      // regions + sizes + images, off the vendor
+  let loadingCat  = false
+  let catError    = null
+  let size        = ''
+  let image       = ''
+
+  $: (draft.name, draft.region, draft.role)
+
+  $: roles = servers.fields?.role?.enum ?? ['general']
+
+  const problem = (field) => errors.find(e => e.field === field)?.message
+
+  // The account list and the clouds this app can speak to arrive together —
+  // one call, because a first step needing both would otherwise flicker
+  // through a state where there are providers and no accounts.
+  async function loadAccounts() {
+    try {
+      const answer = await servers.service.invoke('providers', null)
+      accounts = answer.accounts ?? []
+      // One account is not a choice. Choosing it is what a person would do
+      // next and there is nothing else they could have meant.
+      if (accounts.length === 1) await chooseAccount(accounts[0].id)
+    } catch (err) {
+      failed = err.message
+    } finally {
+      loadingAcct = false
+    }
+  }
+  loadAccounts()
+
+  // Read every time an account is chosen rather than cached. A price list is
+  // the vendor's to state and the only copy that cannot go stale is the one
+  // that is not kept.
+  async function chooseAccount(id) {
+    accountId = id
+    catalog   = null
+    catError  = null
+    if (!id) { draft.region = ''; size = ''; return }
+
+    loadingCat = true
+    try {
+      catalog = await servers.service.invoke('catalog', null, { accountId: id })
+      // Nothing is preselected. A region and a size are a place and a price,
+      // and a default there is a choice made on somebody's behalf that they
+      // then have to notice.
+      draft.region = ''
+      size         = ''
+      // The image IS defaulted where the vendor offers an obvious one. An OS is
+      // a detail most people have no opinion about.
+      image = catalog.images.find(i => /ubuntu/i.test(i.label))?.slug
+           ?? catalog.images[0]?.slug ?? ''
+    } catch (err) {
+      catError = err.message
+    } finally {
+      loadingCat = false
+    }
+  }
+
+  $: account = accounts.find(a => a.id === accountId) ?? null
+
+
+  $: regionOptions = (catalog?.regions ?? [])
+    .filter(r => r.available)
+    .map(r => ({ value: r.slug, label: `${r.label} (${r.slug})` }))
+
+  $: chosen = (catalog?.sizes ?? []).find(s => s.slug === size) ?? null
+
+  // What the chosen size costs in the chosen REGION. A price is per region at
+  // Hetzner and flat at DigitalOcean, and `prices` is the same map for both —
+  // so this is one reader and there is no branch on which cloud it is.
+  $: chosenPrice = chosen && draft.region ? chosen.prices[draft.region] : null
+
+  // Only the sizes this REGION has, which is the same fact as *priced there*:
+  // a picker offering a size the region cannot give is a create that fails at
+  // the vendor with a message nobody here wrote, and a size with no price
+  // there is a cost line with a hole in it.
+  $: sizeOptions = (catalog?.sizes ?? [])
+    .filter(s => !draft.region || s.prices[draft.region] != null)
+    .map(s => ({
+      value: s.slug,
+      label: `${s.label} — ${s.vcpu} vCPU, ${Math.round(s.memoryMb / 1024)} GB, `
+           + `${s.diskGb} GB`
+           + (draft.region ? ` · ${money(s.prices[draft.region], s.currency)}/mo` : ''),
+    }))
+
+  async function save(e) {
+    e.preventDefault()
+    errors = []; failed = null; saving = true
+    try {
+      const created = await servers.service.invoke('provision', null, {
+        name: draft.name, role: draft.role,
+        accountId, region: draft.region, size, image,
+      })
+      goto(`/servers/${created.id}/`)
+    } catch (err) {
+      errors = err instanceof ResourceValidationError ? err.errors : []
+      failed = err.message
+    } finally {
+      saving = false
+    }
+  }
+</script>
+
+<div class="section-header">
+  <h1>Provision a machine</h1>
+  <Button variant="ghost" href="/servers/">Back to list</Button>
+</div>
+
+<div class="container narrow">
+  {#if loadingAcct}
+    <p class="text-sm text-muted" id="accounts-loading">Looking for cloud accounts…</p>
+  {:else if !accounts.length}
+    <!-- The screen this page exists for, and the state it is in on a fresh
+         install. A picker whose only entry is a placeholder reads as a dead
+         control, so the empty case says what is missing and links straight at
+         the thing that fixes it. Without this the feature is reachable only by
+         somebody who already knew it was there. -->
+    <Callout tone="info" title="No cloud account yet" id="no-accounts">
+      <p class="text-body">
+        Basecamp buys machines through an account you hold at a cloud. Add the
+        provider's API token as a <a href="/secrets/">Secret</a> — kind
+        <strong>Provider key</strong>, and name which cloud it opens — and it
+        appears here.
+      </p>
+      <p class="text-body">
+        Already have a machine somewhere? <a href="/servers/import/">Import it</a>
+        instead — that needs no account.
+      </p>
+    </Callout>
+  {:else}
+    <form class="card stack" novalidate on:submit={save}>
+      {#if failed}
+        <!-- id'd because the shell's fleet-notice bar is also `.alert.danger`:
+             a check looking for "the form reported a refusal" would otherwise
+             match an unreachable machine somewhere else in the workspace. -->
+        <article class="alert danger" id="form-error">
+          <div class="alert-content">{failed}</div>
+        </article>
+      {/if}
+
+      <Select label="Cloud account" name="account" id="account"
+              placeholder="Choose an account"
+              options={accounts.map(a => ({
+                value: a.id,
+                label: `${a.name} (${a.providerKind})${a.isVerified ? '' : ' — unverified'}`,
+              }))}
+              value={accountId}
+              onchange={(e) => chooseAccount(e.target.value)}
+              hint="A provider key in Secrets. Choosing one reads that cloud's regions and sizes." />
+
+      {#if account && !account.isVerified}
+        <article class="alert warning" id="account-unverified">
+          <div class="alert-content">
+            This token has not been checked against {account.providerKind}. Verify it in
+            <a href="/secrets/">Secrets</a> — the catalog below will not load until it works.
+          </div>
+        </article>
+      {/if}
+
+      <!-- `bind:` is not used on a component here: a component binding takes a
+           writable top-level `let` in the caller, and `draft.name` is a member
+           expression. The callback is the way a field of a record is written. -->
+      <Input label="Name" name="name" id="name" required
+             value={draft.name} oninput={(e) => draft.name = e.target.value}
+             hint="The slug is derived from this by the service, and must be unique in the workspace."
+             error={problem('name')} />
+
+      <Select label="Role" name="role" id="role" placeholder=""
+              options={roles} value={draft.role}
+              onchange={(e) => draft.role = e.target.value} />
+
+      {#if catError}
+        <article class="alert danger" id="catalog-error">
+          <div class="alert-content">Could not read the catalog: {catError}</div>
+        </article>
+      {:else if loadingCat}
+        <p class="text-sm text-muted" id="catalog-loading">Reading regions and sizes from {account?.providerKind}…</p>
+      {:else if catalog}
+        <Select label="Region" name="region" id="region" placeholder="Choose a region"
+                options={regionOptions} value={draft.region}
+                onchange={(e) => { draft.region = e.target.value; size = '' }}
+                hint="Read from {account?.providerKind} just now — unavailable regions are not offered." />
+
+        <Select label="Size" name="size" id="size"
+                placeholder={draft.region ? 'Choose a size' : 'Choose a region first'}
+                disabled={!draft.region}
+                options={sizeOptions} value={size}
+                onchange={(e) => size = e.target.value}
+                hint="Only the sizes this region has." />
+
+        <Select label="OS image" name="image" id="image" placeholder="Choose an image"
+                options={(catalog.images ?? []).map(i => ({ value: i.slug, label: i.label }))}
+                value={image}
+                onchange={(e) => image = e.target.value} />
+
+        {#if chosen && chosenPrice != null}
+          <article class="alert warning" id="provision-cost">
+            <div class="alert-content">
+              This creates a machine at {account?.providerKind} and starts billing:
+              <strong>{chosen.label}</strong> in {draft.region} —
+              <strong>{money(chosenPrice, chosen.currency)}/month</strong>.
+              It boots, installs its own outpost and reports back; nothing here connects to it.
+            </div>
+          </article>
+        {/if}
+      {/if}
+
+      <div class="cluster">
+        <!-- Disabled until everything it costs money to get wrong is answered.
+             There is no fallback act on this screen any more: the only thing
+             this button can do is spend. -->
+        <Button variant="primary" type="submit"
+                disabled={saving || !(accountId && draft.name && draft.region && size && image)}>
+          {saving ? 'Provisioning…' : 'Provision machine'}
+        </Button>
+        <Button variant="ghost" href="/servers/">Cancel</Button>
+      </div>
+    </form>
+  {/if}
+</div>

@@ -14,6 +14,76 @@ finished.
 
 ---
 
+# Handoff — 2026-09-08 (reading a real legacy app onto FJS, and what it graded here)
+
+> **The session was an audit of an application this framework did not build** —
+> `/home/j/code/KOBAMI/my.maid.tech`, seven years old, Feathers on Express +
+> Prisma + Svelte 5 in legacy mode, whose `.lite` conversion was already done.
+> The question was what ELSE would make it hard to move. It produced two records
+> — `IDEAS/conversion-maid-tech.md` (assessment) and
+> `IDEAS/tenant-authored-queries.md` (proposal, ranked 4.32) — and the headline
+> is the one nobody expected: **nothing needs to be added to FJS for any of the
+> hard parts.** Every Tier-1 blocker had an owner in the tree, and five are
+> answered better here than the app answers them itself.
+
+> **Reading the code got five things wrong and the database got them right.**
+> The tenant-configurable permission matrix looked like the deepest blocker and
+> is two accounts of 148, one of them empty. Delegations have their own model,
+> service and a branch in `getLevel` — and **zero rows**, because `getLevel`
+> reads `delegation?.level` off a model whose column is `role`, so every
+> delegate ever resolved to `undefined` standing. Meanwhile per-account
+> dropdowns, which read as an incidental JSON key, are used by **92 of 148**.
+> The order those were found in is the transferable part: the source says what
+> was BUILT and the rows say what was ADOPTED, and an audit that reads only the
+> first sizes the work by how much code exists.
+
+> **The transformer probe is what turned an audit into a proposal.** The app
+> runs stored JavaScript through `vm.createContext` over 13 of its 72 reports.
+> Probed on Bun 1.3.11 rather than argued about:
+> `this.constructor.constructor("return typeof Bun")()` inside that context
+> answers `"object"`, and `process.env` is 89 keys away — one expression, no
+> import — while `timeout` covers synchronous work and not a returned Promise.
+> That settles the DIRECTION rather than the design: Bun has no isolate API and
+> no permission model on `Worker`, so the question stops being *which sandbox*.
+> What the transformer column actually wants is a declared expression evaluated
+> and never executed, and litestone already has that language with two compilers
+> and an oracle — which makes this the **second** proposal wanting `evalJs` as a
+> third reader, after `declared-field-state.md`. Neither justifies the third
+> reader alone.
+
+> **The same probe then graded this tree, which is why it is worth carrying.**
+> Five `new Function` / `node:vm` sites here; four are a dynamic-import shim and
+> an operator console, correctly bound to loopback with `--token` and
+> `--readonly` both real. The gap is that **nothing connects them**:
+> `--host` does not require `--token`, and the pairing lives in a source
+> comment. Confirmed by running studio with `--host=127.0.0.1` — loopback on
+> purpose, since probing it on `0.0.0.0` would be the defect — and getting an
+> unauthenticated `/api/repl` to evaluate `process.env`. Filed
+> [`FJS-1029`](ISSUES.md#fjs-1029).
+
+> **Three existing records gained a second consumer and one lost a false
+> status.** `tables-from-the-seed.md` and `tenant-declared-fields.md` are being
+> worked in separate sessions and now carry dated notes pointing at the app —
+> 292 route files of list/detail/filter for the first, tenant-declared columns
+> in production for the second, built the way that record argues against, which
+> makes it a negative control rather than a restatement.
+> `content-collections.md` got the larger addition, because the app answers two
+> of its open questions with evidence: it IS the *files synced into a table*
+> third answer, running, with the conflict question dissolved by writing a
+> commit first and a row second — and its editing surface, which that record
+> called `foundry` territory and a much larger project, is **14 files and 2,460
+> lines** serving 100 sites and 9,355 documents. Counting those documents also
+> found that the named collection is the RAREST noun in a real CMS: blocks,
+> settings, menus and templates outnumber it 50 to one.
+
+> **`support-mode.md` said *PROPOSED, nothing here is built* in its body while
+> its own frontmatter said `shipped` and the code agreed with the frontmatter.**
+> Struck in place per `PHILOSOPHY.md` §VII rather than left as two answers. It
+> is the cheapest possible instance of the thing that file warns about, and it
+> survived four days in the register nobody re-reads.
+
+---
+
 # Handoff — 2026-09-06/07 (the last two value-set axes, and what building them found)
 
 > **The session was a walk down `IDEAS/value-sets.md`'s open questions, and it
@@ -90,57 +160,3 @@ finished.
 
 ---
 
-# Handoff — 2026-09-05 (a lesson for the thing an app has to say)
-
-> **`@frontierjs/notifications` had no tutorial coverage of any kind**, and
-> neither did the mail path under it — `app.notify`, `defineNotification` and
-> `IMail` appeared in no lesson. `tutor:notify` is lesson 7 now, eight steps and
-> twenty assertions, sitting after `tutor:jobs` because the two are the same
-> argument from opposite ends: one is *do it later*, the other is *tell somebody
-> now*, and the refusal in this one points back at the other.
-
-> **Every beat was measured before it was written**, which is the only reason
-> the sharp ones are in it. A rename of a notification file is silent in BOTH
-> directions — the old rows keep the old type and nothing warns — and it is only
-> when a `type:` is stated that the loader says anything at all. A transport
-> declared with no formatter refuses with `data: { committed: true }` on the
-> response, so the note the hook fired on was written and stayed written while
-> nothing was delivered. Neither of those is in the README; both are what an
-> app hits at four in the afternoon.
-
-> **The absence is asserted against a count taken a moment earlier**, and paired
-> with the identical request once the transport is removed. A refusal with no
-> control beside it is also what a broken app does.
-
-> **Found by running it**: the step that states `type:` guarded on
-> `src.includes('type:')`, and the file's own header comment says *the file
-> names the type: NoteAdded* — so the guard read as already-done, the edit never
-> happened, and the failure surfaced two assertions later as the loader being
-> blamed for not reporting. Same shape as the `editSchema` bug the course run
-> found the day before: a guard that asks a whole file whether it contains a
-> string is asking the wrong question, and both times the wrong answer arrived
-> disguised as a different component's bug.
-
-> **`FJS-910` came out of writing step 1.** `@frontierjs/auth` ships its schema
-> as `.lite` files an app imports, which is what lets an upgrade reach an
-> installed app and what `fli check`'s `package-model-drift` grades against.
-> `@frontierjs/notifications` ships none: its one required model exists only in
-> a README, every app types it out, and the drift rule skips with *no dependency
-> ships a .lite file*. The lesson has to write the model into the app for the
-> same reason.
-
-> **The course caught what the lesson could not.** The `Notification` model
-> tripped `fli check`'s `polymorphic-subject`, and the symptom was two lessons
-> away: `tutor:tools` asserts the check panel is CLEAN before it breaks it on
-> purpose, so a lesson that leaves a warning behind makes a later lesson accuse
-> a panel that is reporting correctly. Reproduced as three commands in one
-> workspace, fixed in the model, and the package README now says the same thing
-> to every app that copies it.
-
-> **The insert renumbered six lessons** — a heading, a `Lesson N done` line and a
-> next-pointer each — and none of that was checked by hand: `tutor-order` and
-> `tutor-lesson-named` are rules, so a missed one is an error rather than a
-> stale sentence. That machinery was built two days ago for exactly this move
-> and this is the first time it has been used.
-
----

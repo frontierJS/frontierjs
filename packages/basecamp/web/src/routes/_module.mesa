@@ -108,7 +108,8 @@ siteName: Basecamp
 
     { id: 'new-project', group: 'Create', label: 'New project',    action: () => goto('/projects/create/') },
     { id: 'new-dashboard', group: 'Create', label: 'New dashboard', action: () => goto('/dashboards/') },
-    { id: 'new-server',  group: 'Create', label: 'Provision server', action: () => goto('/servers/create/') },
+    { id: 'new-server',    group: 'Create', label: 'Provision a machine', action: () => goto('/servers/provision/') },
+    { id: 'import-server', group: 'Create', label: 'Import a machine',    action: () => goto('/servers/import/') },
     { id: 'new-network', group: 'Create', label: 'New network',       action: () => goto('/networks/') },
     { id: 'new-alert',   group: 'Create', label: 'New alert rule',    action: () => goto('/alerts/') },
     { id: 'new-channel', group: 'Create', label: 'New channel',       action: () => goto('/channels/') },

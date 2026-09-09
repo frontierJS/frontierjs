@@ -19,10 +19,13 @@
  * does not name lands in the WHERE clause as a column nobody declared — which
  * the Data boundary reports as a filter typo, three layers from the cause.
  *
- * The read direction only. Junction's browser client writes `$` names on the
- * way out (`buildQueryString` / `buildWsQuery`) from a typed QueryDirectives,
- * field by field rather than by table lookup; its own suite asserts that every
- * name it emits is one this table strips, which is the property that matters.
+ * BOTH directions, off one table. `parseDirectives` reads and `directiveParams`
+ * writes, because a URL is round-tripped rather than only consumed: Junction's
+ * client sends one and Sierra's router hands one back to a page that has to
+ * write the next. Junction's client held its own field-by-field copy of the
+ * write half and named itself the one table in its own comment, which is the
+ * shape `FJS-306` is about — a directive added to a list somebody has to
+ * remember is a directive half wired.
  */
 
 /*
@@ -49,6 +52,14 @@ const asText = (v) => (typeof v === 'string' && v !== '' ? v : undefined)
 const asBool = (v) => (v === undefined ? undefined : truthy(v))
 
 /*
+ * The write direction, for the two rows that do not travel as themselves. A
+ * list of field names is a comma-joined string on the wire, where the parser
+ * takes `$select` as-is — so writing the array would put `[object Object]` or a
+ * JSON string where a reader expects names.
+ */
+const asCsv = (v) => (Array.isArray(v) ? v.join(',') : v)
+
+/*
  * The directives proper — each has a structured form on the other side, and
  * this is the ONE place the pairing is written down.
  *
@@ -67,8 +78,8 @@ const DIRECTIVES = Object.freeze([
   // and a numeric-looking one must not be read as a number (`FJS-D145`).
   { param: '$after',         name: 'after',         read: asText  },
   { param: '$orderBy',       name: 'orderBy',       read: asIs    },
-  { param: '$select',        name: 'select',        read: asIs    },
-  { param: '$populate',      name: 'populate',      read: asIs    },
+  { param: '$select',        name: 'select',        read: asIs,   write: asCsv },
+  { param: '$populate',      name: 'populate',      read: asIs,   write: asCsv },
   { param: '$search',        name: 'search',        read: asText  },
   { param: '$withDeleted',   name: 'withDeleted',   read: asBool  },
   { param: '$onlyDeleted',   name: 'onlyDeleted',   read: asBool  },
@@ -132,6 +143,41 @@ export function parseDirectives(params) {
   }
 
   return d
+}
+
+/**
+ * The structured directives → the `$` keys that carry them.
+ *
+ * `parseDirectives`' inverse, off the same table, which is the whole reason it
+ * is here. Junction's browser client held a hand-written copy of this list and
+ * called itself the one table in its own comment; sierra needs the same inverse
+ * to hand a URL's directives to a component that speaks `$` (Invariant 10 makes
+ * the `$` form the transport vocabulary, so anything ROUND-TRIPPING a URL needs
+ * both directions). A second list goes stale on the next directive, which is
+ * the failure this table was built to end (`FJS-306`).
+ *
+ * Values keep their own types — `encodeQueryString` and the transport's parser
+ * are inverses by construction (`FJS-D125`), so a structure travels AS a
+ * structure and a JSON string here would be read back as text (`FJS-962`). The
+ * two rows that do NOT travel as themselves say so in the table.
+ *
+ * Absent stays absent, for `parseDirectives`' reason: an empty object means
+ * nothing was asked, which is not asking for the defaults.
+ *
+ * @param {object | null | undefined} directives
+ * @returns {Record<string, unknown>}
+ */
+export function directiveParams(directives) {
+  const p = {}
+  if (!directives || typeof directives !== 'object') return p
+
+  for (const { param, name, write } of DIRECTIVES) {
+    const value = directives[name]
+    if (value === undefined || value === null) continue
+    p[param] = write ? write(value) : value
+  }
+
+  return p
 }
 
 /**

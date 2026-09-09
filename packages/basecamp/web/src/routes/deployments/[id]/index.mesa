@@ -2,7 +2,7 @@
 title: Deployment
 ---
 <script>
-  import { page }         from '@frontierjs/sierra/router'
+  import { page, goto }   from '@frontierjs/sierra/router'
   import { status }       from '@frontierjs/sierra/junction'
   import { session }      from '../../../session.js'
   import { deployments }  from '../../../resources/Deployment.mesa'
@@ -62,6 +62,17 @@ title: Deployment
     } catch (e) { error = e.message }
   }
 
+  async function rollback() {
+    error = null
+    try {
+      // The answer is the REPLACEMENT — a new release of the old bytes, not a
+      // rerun of the old row — and it is the one with a status worth watching,
+      // so this page follows it. The release just retired keeps its own page.
+      const replacement = await deployments.service.invoke('rollback', deployment.id, {})
+      goto(`/deployments/${replacement.id}/`)
+    } catch (e) { error = e.message }
+  }
+
   const TONE = { success: 'success', failed: 'danger', cancelled: 'muted', rolled_back: 'warning' }
   const STEP_TONE = { success: 'success', failed: 'danger', running: 'info', skipped: 'muted' }
 
@@ -82,6 +93,10 @@ title: Deployment
   // disabled rather than vanishing.
   $: moves    = deployment ? deployments.transitions(deployment, session.level) : []
   $: cancelIt = moves.find(m => m.name === 'cancel')
+  // `rollback` is `@gate(5)` where this model updates at USER(4), so a
+  // developer sees it DISABLED rather than absent — *not senior enough* is
+  // advice somebody can act on, where a missing button is not.
+  $: rollbackIt = moves.find(m => m.name === 'rollback')
   // In-flight IS cancellable, on this machine — the same fact, not a second one.
   $: running  = !!cancelIt
 </script>
@@ -95,6 +110,10 @@ title: Deployment
       <span class="pill {TONE[deployment.status] ?? ''}" id="deploy-status">{deployment.status}</span>
       {#if cancelIt}
         <Button variant="ghost" tone="danger" disabled={!cancelIt.allowed} onclick={cancel}>Cancel</Button>
+      {/if}
+      {#if rollbackIt}
+        <Button variant="ghost" tone="warning" id="deploy-rollback"
+                disabled={!rollbackIt.allowed} onclick={rollback}>Roll back</Button>
       {/if}
       <Button variant="ghost" href="/deployments/">All deployments</Button>
     </div>

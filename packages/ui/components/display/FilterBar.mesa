@@ -1,0 +1,204 @@
+<script>
+  // FilterBar.mesa
+  // The controls over a list's query, and nothing about where that query lives.
+  //
+  // `FormField.mesa` and `Cell.mesa` one surface along, on the same terms: the
+  // column already has ONE kind — `displayFor` named it — and sierra's
+  // `filterOpFor(display)` says what a filter over that kind ASKS. This renders
+  // the asking. A registration wins over the built-in table, exactly as it does
+  // for a control and for a display.
+  //
+  // ── It does not touch the URL, deliberately ──────────────────────────────
+  //
+  // The filter state lives in the URL (Invariant 10) and this kit peers only on
+  // mesa and css — it cannot import the router, and should not: a component
+  // that navigates is one you cannot put two of on a page, or render in a
+  // dialog, or test without a route table. So it takes the query it should
+  // show and hands back the next one. The PAGE navigates.
+  //
+  // ── Two rules that are wrong quietly if you get them backwards ───────────
+  //
+  // **A cleared filter is an ABSENT key, never an empty one.** `?status=` is a
+  // filter FOR the empty string, and `@frontierjs/toolbelt/query` will
+  // faithfully deliver it — an empty table with a filter that looks unset. So
+  // `undefined` is the only empty here, and clearing DELETES the key.
+  //
+  // **A filter change resets paging.** Page 3 of a different question is not
+  // page 3, so `$offset` and `$after` go whenever the filters move. Without it
+  // the first thing anybody does — filter while on page 2 — shows nothing.
+  //
+  // ── A control's callback is TRANSLATED, never forwarded ──────────────────
+  //
+  // `onvalue(v)` is this file's own vocabulary and no kit control has that
+  // prop. The three used here disagree: `Input` and `Select` fire `oninput`
+  // with the EVENT, `MultiSelect` fires `onchange` with the VALUE. So each
+  // branch adapts, exactly as `FormField.mesa`'s table does one surface along.
+  // Forwarding `onvalue` straight through is silent — the prop lands as an
+  // attribute, every control renders, and none of them writes anything.
+
+  import { filterComponent, defaultFilterProps } from '../../controls.js'
+  import Input       from '../forms/Input.mesa'
+  import Select      from '../forms/Select.mesa'
+  import MultiSelect from '../forms/MultiSelect.mesa'
+  import Button      from '../forms/Button.mesa'
+
+  // `resource.filters().filters` — the ranked columns, each with `op` and
+  // `kind`, or `op: null` and a reason.
+  export let filters = []
+  // The current query, `page.query` shaped: `{ status: { in: ['paid'] } }`.
+  export let value   = {}
+  // (nextQuery) => void. The page writes it to the URL.
+  export let onchange = undefined
+  // A bound column's rows, by column name, once they arrive.
+  export let options  = {}
+  // `resource.filters().search` — `{ fields, labels }` where the model declares
+  // `@@fts`, `{ fields: null, reason }` where it does not. A box is drawn only
+  // for the first, because `$search` below `@@fts` is refused by the Data
+  // boundary, and a box that answers 400 on every word is worse than none.
+  export let search   = undefined
+
+  // A const is derived when something it reads is reactive (`FJS-D212`), so
+  // this re-evaluates when the caller hands over a new list.
+  const offered = filters.filter(f => f.op)
+
+  /** What this column currently filters by, unwrapped from its operator. */
+  function current(f) {
+    const held = value?.[f.name]
+    if (held === undefined || held === null) return undefined
+    if (f.kind === 'range') return { gte: held.gte, lte: held.lte }
+    const op = Array.isArray(f.op) ? f.op[0] : f.op
+    return held?.[op] ?? held
+  }
+
+  const searchable = search?.fields?.length ? search : null
+  const searching  = value?.$search ?? ''
+
+  /** Is anything filtered at all? Drives the clear-all affordance. */
+  const active = searching !== '' || offered.some(f => current(f) !== undefined)
+
+  /**
+   * `$search` is a DIRECTIVE, not a column filter, so it is written by name and
+   * never through `write()` — there is no operator to wrap it in and no column
+   * it belongs to. What it shares is the paging rule: results for a different
+   * question do not have a page 3 either.
+   */
+  function writeSearch(next) {
+    const query = { ...value }
+    if (next === undefined || next === null || next === '') delete query.$search
+    else query.$search = next
+    delete query.$offset
+    delete query.$after
+    onchange?.(query)
+  }
+
+  /**
+   * Write one column's filter and hand back the whole query.
+   *
+   * `undefined` deletes rather than blanking, which is the rule above; and the
+   * paging directives go with any change, which is the other one.
+   */
+  function write(f, next) {
+    const query = { ...value }
+
+    const empty = next === undefined || next === null || next === ''
+      || (Array.isArray(next) && !next.length)
+      || (f.kind === 'range' && next.gte === undefined && next.lte === undefined)
+
+    if (empty) delete query[f.name]
+    else if (f.kind === 'range') {
+      const range = {}
+      if (next.gte !== undefined && next.gte !== '') range.gte = next.gte
+      if (next.lte !== undefined && next.lte !== '') range.lte = next.lte
+      query[f.name] = range
+    } else {
+      query[f.name] = { [Array.isArray(f.op) ? f.op[0] : f.op]: next }
+    }
+
+    delete query.$offset
+    delete query.$after
+
+    onchange?.(query)
+  }
+
+  function clearAll() {
+    const query = {}
+    // Sorting and page SIZE are not filters and survive a clear: somebody who
+    // sorted by total and then cleared the filters still meant that sort.
+    // `$search` is not on that list — it is WHAT is being asked for, and Clear
+    // means all of it.
+    for (const k of ['$orderBy', '$limit']) if (value?.[k] !== undefined) query[k] = value[k]
+    onchange?.(query)
+  }
+
+  /** A bound column's rows, or the enum's own members. */
+  function optionsFor(f) {
+    if (options?.[f.name]?.length) return options[f.name]
+    return f.rule?.options ?? f.rule?.enum ?? []
+  }
+
+  const entryFor = (f) => (f.display ? filterComponent(f.display) : null)
+</script>
+
+<div class="filter-bar cluster" {...$attributes}>
+  {#if searchable}
+    <Input
+      type="search"
+      value={searching}
+      placeholder={'Search ' + searchable.labels.join(', ')}
+      oninput={(e) => writeSearch(e.target.value)}
+    />
+  {/if}
+
+  {#each offered as f}
+    {#if entryFor(f)}
+      {@const Custom = entryFor(f).component}
+      <Custom {...(entryFor(f).props ?? defaultFilterProps)({
+        value: current(f), onvalue: (v) => write(f, v), column: f, options: optionsFor(f),
+      })} />
+    {:else if f.kind === 'set'}
+      <MultiSelect
+        multiple
+        value={current(f) ?? []}
+        options={optionsFor(f)}
+        placeholder={f.label}
+        onchange={(next) => write(f, next)}
+      />
+    {:else if f.kind === 'exact'}
+      <Select
+        value={current(f) ?? ''}
+        options={[{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }]}
+        placeholder={f.label}
+        oninput={(e) => write(f, e.target.value === '' ? undefined : e.target.value === 'true')}
+      />
+    {:else if f.kind === 'range'}
+      <span class="filter-range">
+        <Input
+          type={f.display === 'time' ? 'date' : 'number'}
+          value={current(f)?.gte ?? ''}
+          placeholder={f.label + ' from'}
+          oninput={(e) => write(f, { ...current(f), gte: e.target.value })}
+        />
+        <Input
+          type={f.display === 'time' ? 'date' : 'number'}
+          value={current(f)?.lte ?? ''}
+          placeholder={f.label + ' to'}
+          oninput={(e) => write(f, { ...current(f), lte: e.target.value })}
+        />
+      </span>
+    {:else}
+      <Input
+        value={current(f) ?? ''}
+        placeholder={f.label}
+        oninput={(e) => write(f, e.target.value)}
+      />
+    {/if}
+  {/each}
+
+  {#if active}
+    <Button variant="ghost" size="sm" onclick={clearAll}>Clear</Button>
+  {/if}
+</div>
+
+<style>
+  .filter-range { display: inline-flex; gap: var(--space-xs); align-items: center; }
+</style>

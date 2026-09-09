@@ -1,4 +1,4 @@
-// src/providers/compute/sink.ts — DigitalOcean, standing in for DigitalOcean.
+// src/providers/compute/digitalocean-sink.ts — DigitalOcean, standing in for DigitalOcean.
 //
 // A dev listener speaking the real thing's shape: a bearer token, `/v2/` paths,
 // each list under its own envelope key, prices as floats of dollars, and a
@@ -15,7 +15,7 @@
 // rate limit and no droplet lifecycle. It answers the four reads this app makes
 // and the one refusal worth testing, which is a token it does not recognize.
 //
-//   bun api/src/providers/compute/sink.ts
+//   bun api/src/providers/compute/digitalocean-sink.ts
 //
 // Port 8122 — project 2 (basecamp), backend, the slot after the mail sink at
 // 8121 (`packages/cli/core/ports.js`).

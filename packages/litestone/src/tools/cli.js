@@ -209,6 +209,7 @@ const HELP = `
     ${dim('  --audience=client|system')}             field visibility (default: client)
     ${cyan('litestone studio')} [--no-open]        open local web UI
     ${dim('  --gate <path[#export]>')}              grade previews with this app's own getLevel
+    ${dim('  --host <addr> --token <secret>')}      serve beyond loopback; the token is required there
     ${cyan('litestone repl')} [--as|--level|--gate]  a console that boots at a gate level
     ${cyan('litestone export')} <dataset> --as <who>  take an extract, graded as that account
     ${cyan('litestone doctor')}                     check setup, audit health
@@ -1930,6 +1931,45 @@ async function cmdStudio(cfg) {
   // for its whole life, which the scheme had never heard of: the reserved slot
   // answered nothing and the tool sat outside the range (`FJS-557`).
   const port        = parseInt(getFlag('port') ?? '8502')
+
+  // ── --host without --token ────────────────────────────────────────────────
+  // Refused here, before the schema is read and before a database is opened, so
+  // a misconfigured start costs nothing and leaves no handle behind.
+  //
+  // The two guards below both work and nothing connected them: `--token` was
+  // consulted only inside `if (TOKEN)`, so `--host=0.0.0.0` with no token served
+  // `/api/repl` — arbitrary JS holding `db` and `sys` — to every interface, and
+  // the pairing was stated in a comment (`FJS-1029`). Advice that fails open
+  // reads exactly like a guard.
+  //
+  // `--readonly` is NOT the substitute: it blocks the REPL and leaves
+  // `/api/query`'s SELECT open, which is every row of every table.
+  //
+  // Loopback is the exemption rather than the absence of `--host`, because
+  // `--host=127.0.0.1` is the default said out loud and refusing it would teach
+  // people that the flag itself is the problem.
+  const hostFlag = getFlag('host') ?? null
+  const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
+  if (hostFlag && !LOOPBACK.has(hostFlag) && !getFlag('token') && !flag('insecure')) {
+    console.error(`
+  ${red('✗')}  ${bold(`--host=${hostFlag}`)} serves Studio beyond loopback, and Studio has no
+      authentication of its own. Off 127.0.0.1 this exposes, to anything that
+      can reach the port:
+
+        POST /api/repl    arbitrary JS holding \`db\` and \`sys\`
+        POST /api/query   raw SQL
+        POST /api/schema-source, /api/migrations/*   schema and migration writes
+
+      Pair it with a bearer token:
+
+        litestone studio --host=${hostFlag} --token=$(openssl rand -hex 16)
+
+      ${dim('--readonly is not a substitute — it blocks the REPL and leaves /api/query\'s SELECT open.')}
+      ${dim('--insecure says you meant it anyway.')}
+`)
+    process.exit(1)
+  }
+
   const parseResult = loadSchema(cfg.schema)
 
   // Studio was the only one of the three principal-taking commands that did not
@@ -1954,8 +1994,8 @@ async function cmdStudio(cfg) {
   // ── Studio flags ───────────────────────────────────────────────────────────
   // --readonly: block every mutating endpoint (row writes, imports, schema
   //   saves, migrations, maintenance, REPL, non-SELECT SQL, transform runs).
-  // --token:    require a bearer token on every /api call — pair with --host
-  //   when exposing Studio beyond loopback.
+  // --token:    require a bearer token on every /api call. Required by the
+  //   --host guard above, which refuses a non-loopback bind without one.
   const READONLY = flag('readonly')   // bare boolean flag — getFlag() returns null for these
   const TOKEN    = getFlag('token') ?? null
 
@@ -2325,9 +2365,9 @@ async function cmdStudio(cfg) {
   }
 
   // Bind to loopback by default — Studio exposes raw SQL, a JS REPL, and
-  // schema writes, so it must not listen on all interfaces unless explicitly
-  // asked (--host=0.0.0.0 for containers/LAN use).
-  const hostname = getFlag('host') ?? '127.0.0.1'
+  // schema writes. A non-loopback --host is refused above unless it carries a
+  // --token, so by the time this runs the bind is either loopback or authed.
+  const hostname = hostFlag ?? '127.0.0.1'
   const server = Bun.serve({
     port,
     hostname,

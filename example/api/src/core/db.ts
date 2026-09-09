@@ -39,6 +39,12 @@ const HERE = import.meta.dir
 // The FILE. It is what every relative `database { path }` and the `tenancy { }`
 // block resolve against once `resolveFrom: 'schema'` is stated below, and it is
 // now also where the schema itself comes from (`FJS-449`).
+//
+// It lived in a `core/schema.ts` beside this file, which parsed the seed as a
+// DOCUMENT to derive the slot pool the custom-field service allocated out of —
+// kept apart so a drive could read the pool without booting the tenant registry.
+// `@@extensible` owns the pool now, so there is no second reader and no reason
+// for a second module.
 export const SCHEMA_FILE = join(HERE, '../../../db/schema.lite')
 
 // ─── The client ───────────────────────────────────────────────────────────

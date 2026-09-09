@@ -20,21 +20,36 @@
 import type { TargetDescriptor } from '@frontierjs/conduit'
 import type { ProviderKind }     from '../../../../db/schema.d.ts'
 import { digitalOcean }          from './digitalocean.ts'
+import { hetzner }               from './hetzner.ts'
 
 // ─── What a caller gets back ─────────────────────────────────────────────
 
-/** A machine size, as a picker needs it. Money is minor units plus a currency,
- *  never a float and never a symbol — the same rule `@money` holds at the Data
- *  boundary, because the divisor belongs to the currency. */
+/**
+ * A machine size, as a picker needs it. Money is minor units plus a currency,
+ * never a float and never a symbol — the same rule `@money` holds at the Data
+ * boundary, because the divisor belongs to the currency.
+ *
+ * `prices` is a MAP and not one number, and that is Hetzner's doing: it prices
+ * a server type per LOCATION, where DigitalOcean prices a size once and lists
+ * the regions that have it. A single `priceMinor` would have had to pick one of
+ * Hetzner's, and the number it picked is quoted on the wizard's cost line and
+ * copied onto `Server.plan` — the two places in this app that may not be
+ * casually wrong about money.
+ *
+ * Its KEYS are the availability list, so there is no second `regions` field to
+ * disagree with it. A size is offered where it is priced: DigitalOcean's flat
+ * price fills every region it named, and a Hetzner type absent from a location
+ * has no entry there, which is the same statement.
+ */
 export interface ComputeSize {
-  slug:        string
-  label:       string
-  vcpu:        number
-  memoryMb:    number
-  diskGb:      number
-  priceMinor:  number
-  currency:    string
-  regions:     string[]
+  slug:      string
+  label:     string
+  vcpu:      number
+  memoryMb:  number
+  diskGb:    number
+  currency:  string
+  /** Region slug → the monthly price there, in minor units. */
+  prices:    Record<string, number>
 }
 
 export interface ComputeRegion { slug: string; label: string; available: boolean }
@@ -44,6 +59,21 @@ export interface ComputeCatalog {
   regions: ComputeRegion[]
   sizes:   ComputeSize[]
   images:  ComputeImage[]
+}
+
+/** Where a size is offered, which is where it has a price. One reader per
+ *  question rather than a `regions` field every connector would have to keep in
+ *  step with `prices` by hand. */
+export function sizeRegions(size: ComputeSize): string[] {
+  return Object.keys(size.prices)
+}
+
+/** What this size costs in this region, or null where it is not offered there.
+ *  Null rather than 0: *not sold here* and *free* are different answers and one
+ *  of them is a cost line reading zero. */
+export function priceIn(size: ComputeSize, region: string): number | null {
+  const minor = size.prices[region]
+  return typeof minor === 'number' ? minor : null
 }
 
 /**
@@ -70,6 +100,12 @@ export interface ComputeMachine {
   status:           MachineState
   ipAddress:        string | null
   region:           string | null
+  /** The `Server` this machine SAYS it is, read back off the mark this app
+   *  wrote when it created it. Null where nothing marked it, which is what
+   *  somebody else's machine looks like. It is reconciliation's thread: an
+   *  orphan carrying a server id is a row that was deleted on this side, and
+   *  one carrying none was never ours. */
+  serverId:         string | null
 }
 
 /**
@@ -77,10 +113,10 @@ export interface ComputeMachine {
  *
  * `userData` is the whole install — cloud-init, carrying the enrollment token.
  * It is the reason this app needs no SSH at all for a machine it made
- * (`FJS-D241`), and it is also the reason `tags` matters: a create that
- * succeeded at the vendor and crashed before recording the id leaves a machine
- * nobody here knows about, billing forever, and the tag is the ONLY thread back
- * to it. Every connector must send it.
+ * (`FJS-D241`), and `mark` is the reason a create that succeeded at the vendor
+ * and crashed before recording the id is recoverable: the machine is then one
+ * nobody here knows about, billing forever, and the mark is the only thread
+ * back to it. Every connector must send it.
  */
 export interface MachineSpec {
   name:     string
@@ -88,9 +124,7 @@ export interface MachineSpec {
   size:     string
   image:    string
   userData: string
-  /** `server:<id>` — the `Server` row this machine is. Findable by a
-   *  reconciliation pass, which is what makes an orphan visible at all. */
-  tags:     string[]
+  mark:     MachineMark
 }
 
 /** The send half, bound to one target. Handed to a connector so a connector
@@ -148,19 +182,21 @@ export interface ComputeConnector {
   destroy(send: ComputeSend, providerServerId: string): Promise<boolean>
 
   /**
-   * Every machine at this account carrying one of our tags.
+   * Every machine at this account carrying this mark.
    *
    * The reconciliation read, and the only question that can find what nothing
    * here recorded. It is a LIST rather than a lookup for exactly that reason:
-   * an orphan has no id on this side to look up with.
+   * an orphan has no id on this side to look up with. A mark with no `serverId`
+   * asks about the whole fleet, which is what a sweep has to be able to ask.
    */
-  tagged(send: ComputeSend, tag: string): Promise<ComputeMachine[]>
+  marked(send: ComputeSend, mark: MachineMark): Promise<ComputeMachine[]>
 }
 
 // ─── The registry ────────────────────────────────────────────────────────
 
 const CONNECTORS: Partial<Record<ProviderKind, ComputeConnector>> = {
   digitalocean: digitalOcean,
+  hetzner,
 }
 
 /** The connector for a cloud, or null where this app cannot speak to it.
@@ -187,30 +223,42 @@ export function targetFor(kind: ProviderKind, accountId: string): string {
 }
 
 /**
- * The tag every machine this app makes carries, whichever `Server` it is.
+ * How this app marks a machine it made — a STRUCTURE, not a string.
  *
- * TWO tags rather than one, because a vendor's tag filter is an EXACT match
- * and not a prefix — DigitalOcean's `?tag_name=` is, and so is Hetzner's label
- * selector for a full key. So `basecamp:server:<id>` alone can only be searched
- * for by somebody who already knows the id, which is precisely what a
- * reconciliation sweep does not have: an orphan is a machine with no row here.
+ * It used to be `string[]`, and that was DigitalOcean's shape wearing the
+ * boundary's name. DO takes a list of tags and `basecamp:server:<id>` is a
+ * legal one. Hetzner has no tags at all: it has labels, a map, whose keys must
+ * match a DNS-label grammar that a colon is not in — so the identity mark could
+ * not be written there in the spelling the CALLER had already chosen, and a
+ * connector handed the flattened string would have had to parse that spelling
+ * back out of it. Every connector re-deriving one grammar is how two of them
+ * come to disagree, and a machine marked in a spelling reconciliation cannot
+ * select on is precisely the orphan a mark exists to prevent.
  *
- * The fleet tag is what makes one sweep cover everything; the identity tag is
- * what turns a found machine back into a row.
+ * So the caller says what the mark MEANS and each connector says how its vendor
+ * writes it. Two facts rather than one, because a sweep and a lookup are
+ * different questions and a vendor's filter answers only exact ones — DO's
+ * `?tag_name=` and Hetzner's `label_selector` are both matches and neither is a
+ * prefix, so an identity mark alone could only be searched for by somebody who
+ * already has the id, which is what a sweep does not have.
  */
-export const FLEET_TAG = 'basecamp'
-
-/**
- * The identity tag. One function, three readers — the create that applies it,
- * the reconcile that reads it back, and the test that asserts it crossed. A tag
- * spelled differently in any of the three is an orphan reconciliation cannot
- * see, which is the failure the tag exists to prevent.
- */
-export function machineTag(serverId: string): string {
-  return `basecamp:server:${serverId}`
+export interface MachineMark {
+  /** Every machine this app made, at any account — what one sweep selects on. */
+  fleet:     string
+  /** Which `Server` this is. Absent on a sweep, which asks about all of them. */
+  serverId?: string
 }
 
-/** Both, in the order a vendor lists them back. */
-export function machineTags(serverId: string): string[] {
-  return [FLEET_TAG, machineTag(serverId)]
+/** The fleet every machine here belongs to. One word, so a connector's spelling
+ *  of it is derived from this and never typed again. */
+export const FLEET = 'basecamp'
+
+/** The mark one machine carries. */
+export function markFor(serverId: string): MachineMark {
+  return { fleet: FLEET, serverId }
+}
+
+/** The mark a sweep asks by — the fleet, and no machine in particular. */
+export function fleetMark(): MachineMark {
+  return { fleet: FLEET }
 }

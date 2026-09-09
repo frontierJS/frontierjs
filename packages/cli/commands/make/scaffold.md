@@ -194,9 +194,12 @@ const { resourceFile } =
 // either page and a column added to schema.lite later still shows up without
 // regenerating. The create page and the edit page render the same tag.
 //
-// The list is the exception, and deliberately: which of twenty columns belong in
-// a table is a judgement, so it is named here and that file is where to change
-// it.
+// The list is no longer an exception either. Which of twenty columns belong in
+// a table is still a judgement, but it is one the schema can make: `columns()`
+// ranks the read schema by the column that NAMES the row, the business key it
+// declares, a bound enum, then money and time — so a column added later is
+// ranked with the rest instead of missing from a list frozen at generate time.
+// The page says how to pin the set if this model wants a different answer.
 
 const { listPage, createPage, editPage } =
   await import(resolve(global.fliRoot, 'core/crud-templates.js'))
@@ -213,13 +216,11 @@ const routePages = (model, plural, fields) => {
     `import { ${plural} } from '../../resources/${model}.mesa'`,
   ]
   const basePath      = `/${plural}/`
-  const columns       = (fields.length ? fields.map(f => f.name) : ['id'])
-    .map(name => ({ key: name, label: toLabel(name) }))
 
   return {
     list: listPage({
       title: pluralLabel, heading: pluralLabel, newLabel: `New ${singularLabel}`,
-      basePath, imports, res: plural, columns,
+      basePath, imports, res: plural,
     }),
     create: createPage({
       title: `New ${singularLabel}`, heading: `New ${singularLabel}`,
@@ -260,9 +261,11 @@ children IS the form — every writable column in schema order, each with the
 control its type implies, the picker rows for a foreign key fetched from the
 related service, and a rejection mapped back under the field that caused it — so
 neither route names a field, a type or an enum member, and a column added to
-`schema.lite` later appears on the next reload without regenerating. The **list** route is the exception and names its columns, because
-which fields belong in a table is a judgement call and that file is where to
-make it.
+`schema.lite` later appears on the next reload without regenerating — the
+**list** route included, which asks `columns()` to rank the model's own read
+schema rather than freezing a column set at generate time. The page shows how to
+pin the set where a model wants a different answer, and `omitted` names every
+column it left out.
 
 The pages themselves live in `core/crud-templates.js`, shared with
 `fli admin:generate`: two commands emitting one form is how the two drifted

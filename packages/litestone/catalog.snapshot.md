@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**101 words** — 12 declarations · 63 field attributes · 26 model attributes.
+**102 words** — 12 declarations · 63 field attributes · 27 model attributes.
 
 ## Declarations
 
@@ -112,6 +112,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@noStrict` | Shape the table |  |  |  |  |
 | `@@fts` | Shape the table | ([field, …][, tokenize: unicode61\|ascii\|porter\|trigram]) | in a model | tokenize: unicode61 · ascii · porter · trigram |  |
 | `@@capabilities` | Decide who may | [(all)] |  | scope: all |  |
+| `@@extensible` | Shape the table | (column, declaredBy: Model[, max: { kind: N }]) |  |  |  |
 | `@@softDelete` | Shape the table | [(cascade)] |  | mode: cascade |  |
 | `@@hasTemplates` | Shape the table | [(<field>)] |  |  |  |
 | `@@gate` | Decide who may | ("<read>.<create>.<update>.<delete>" \| "<n>") |  |  |  |

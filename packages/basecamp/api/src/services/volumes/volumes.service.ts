@@ -40,6 +40,7 @@ import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/ju
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor }  from '../../core/resource.ts'
 import type { BasecampApp }     from '../../basecamp.types.ts'
+import type { ServerEventKind } from '../../../../db/schema.d.ts'
 
 // ─── The outpost's wire contract ───────────────────────────────────────────
 // snake_case, like the heartbeat payload and unlike every other call into this
@@ -119,7 +120,7 @@ export function createVolumesService(app: BasecampApp) {
    *  disappeared is answerable from the fleet feed rather than only the audit
    *  trail. Both are read by /activity/. */
   async function recordEvent(
-    serverId: string, kind: string, message: string,
+    serverId: string, kind: ServerEventKind, message: string,
     metadata: Record<string, unknown> = {},
   ) {
     await db().serverEvent.create({ data: { serverId, kind, message, metadata } })

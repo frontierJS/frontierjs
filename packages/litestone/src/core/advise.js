@@ -517,7 +517,7 @@ export const RULES = [
         const sources = view.refreshOn.join(', ')
         out.push({
           model: view.name, field: null,
-          message: `${view.name} is @@materialized on ${sources}. The refresh is a full rebuild — DELETE plus the whole @@sql — and it runs once per ROW written to ${view.refreshOn.length > 1 ? 'any of those tables' : 'that table'}, synchronously, inside the write's own transaction. A createMany of 10,000 rows therefore re-aggregates ${view.refreshOn.length > 1 ? 'the sources' : 'the source'} 10,000 times. That is the right trade where the sources take single writes and a stale answer is unacceptable, and the wrong one wherever bulk writes or a large source table are ordinary — there, drop @@materialized and read the plain view, or keep the aggregate in a model a job writes.`,
+          message: `${view.name} is @@materialized on ${sources}. The refresh is a full rebuild — DELETE plus the whole @@sql — and it runs once per ROW written to ${view.refreshOn.length > 1 ? 'any of those tables' : 'that table'}, synchronously, inside the write's own transaction. A createMany of 10,000 rows therefore re-aggregates ${view.refreshOn.length > 1 ? 'the sources' : 'the source'} 10,000 times. That is the right trade where the sources take single writes and a stale answer is unacceptable, and the wrong one wherever bulk writes or a large source table are ordinary — there, drop @@refreshOn and keep @@materialized — the table is then rebuilt only when db.${view.name}.refresh() is called, which is the same aggregate at a cost somebody chose — or drop @@materialized and read the plain view.`,
         })
       }
       return out

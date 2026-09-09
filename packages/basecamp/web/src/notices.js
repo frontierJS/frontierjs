@@ -19,13 +19,15 @@ export const PRIORITY_ORDER = { critical: 0, warning: 1, info: 2 }
 export const PRIORITY_TONE = { critical: 'danger', warning: 'warning', info: 'info' }
 
 const MINUTE = 60_000
-const HEARTBEAT_OVERDUE_MS = 10 * MINUTE
 const DEPLOY_STUCK_MS      = 15 * MINUTE
 const CPU_WARN             = 85   // percent — the mock's thresholds
 const MEM_CRITICAL         = 90
 
-// A deployment in one of these has started and not finished.
-const DEPLOY_IN_FLIGHT = ['building', 'pushing', 'deploying']
+// A deployment in one of these has started and not finished. One state, and it
+// is a list because the pipeline can grow another — it carried three, two of
+// which no write could produce, so *in flight* meant `building` and read as
+// though it meant more (`FJS-517`).
+const DEPLOY_IN_FLIGHT = ['building']
 
 function ageLabel(ms) {
   if (!Number.isFinite(ms)) return 'unknown'
@@ -61,18 +63,14 @@ export function computeNotices({ servers = [], deployments = [], jobs = [] } = {
         detail: 'The outpost has not responded. Check the server or restart the outpost.',
         href: `/servers/${s.id}/`, action: 'View server',
       })
-      continue  // an unreachable server's heartbeat being stale is the same fact
     }
 
-    const beat = since(s.lastHeartbeatAt, now)
-    if (s.status === 'online' && beat !== null && beat > HEARTBEAT_OVERDUE_MS) {
-      add({
-        id: `server-heartbeat-${s.id}`, priority: 'warning', category: 'fleet',
-        title: `${s.name} heartbeat overdue`,
-        detail: `Last seen ${ageLabel(beat)} — it may have lost the outpost connection.`,
-        href: `/servers/${s.id}/`, action: 'View server',
-      })
-    }
+    // There is no second, softer *heartbeat overdue* notice here any more, and
+    // its absence is the point. It compared `lastHeartbeatAt` to a constant of
+    // its own while `HubConfig.heartbeatTimeoutSeconds` was the installation's
+    // stated answer to the same question — two deadlines, one of them in a
+    // browser, disagreeing for any operator who changed the setting. The column
+    // is driven now (`server-reachability.job.ts`), so the row above says it.
 
     // Pressure. `Server.health` is written by servers.heartbeat from whatever
     // the outpost reported — see the note at the foot of this file about the

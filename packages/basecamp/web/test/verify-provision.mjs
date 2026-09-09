@@ -55,12 +55,16 @@ const CHROME    = process.env.FJS_CHROME ?? 'google-chrome'
 const API_PORT  = 8120
 const WEB_PORT  = 8020
 const SINK_PORT = 7122          // test tier, basecamp, the DO stand-in
+const HZ_PORT   = 7124          // …and the Hetzner one, the next slot along
 const BASE      = `http://localhost:${WEB_PORT}`
 const API       = `http://localhost:${API_PORT}`
 const SINK      = `http://localhost:${SINK_PORT}`
+const HZ_SINK   = `http://localhost:${HZ_PORT}`
 const EMAIL     = 'sam@example.com'
 const PASSWORD  = 'hunter2hunter2'
 const DO_TOKEN  = 'dop_v1_devtoken'
+// 64 characters and no prefix, which is Hetzner's shape and not DigitalOcean's.
+const HZ_TOKEN  = 'hz'.padEnd(64, '0')
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const children = []
@@ -100,8 +104,23 @@ seed.stderr.on('data', d => { seedErr += d })
 const seedCode = await new Promise(r => seed.on('exit', r))
 if (seedCode !== 0) fail(`db/seed.js exited ${seedCode}\n${seedErr}`)
 
+// ─── No cloud account, to start with ─────────────────────────────────────
+// `db/seed.js` writes provider keys of its own — a fleet with nothing in it
+// teaches you nothing about the UI. They are removed here for two reasons and
+// both are assertions below: the EMPTY state is the one a fresh install is in
+// and is where this feature was undiscoverable, and with them gone the account
+// this drive makes is the only one, so a picker offering it cannot be confused
+// with a picker offering somebody else's.
+{
+  const { Database } = await import('bun:sqlite')
+  const db = new Database(DB)
+  db.run("DELETE FROM secret WHERE kind = 'provider_key'")
+  db.close()
+}
+
 // ─── Refuse a port that already answers ──────────────────────────────────
-for (const [name, port] of [['API', API_PORT], ['web', WEB_PORT], ['DO sink', SINK_PORT]]) {
+for (const [name, port] of [['API', API_PORT], ['web', WEB_PORT],
+                            ['DO sink', SINK_PORT], ['Hetzner sink', HZ_PORT]]) {
   const answered = await fetch(`http://localhost:${port}/`).then(() => true).catch(() => false)
   if (answered) fail(`Something already answers on :${port} (${name}). Stop it — this drive would test it instead.`)
 }
@@ -111,7 +130,7 @@ for (const [name, port] of [['API', API_PORT], ['web', WEB_PORT], ['DO sink', SI
 // Authorization header conduit really wrote, from a Secret that was really
 // decrypted — and the created droplet really comes up a few seconds later
 // rather than being moved by a function call.
-const sinkProc = spawn('bun', ['api/src/providers/compute/sink.ts'], {
+const sinkProc = spawn('bun', ['api/src/providers/compute/digitalocean-sink.ts'], {
   cwd: PKG, stdio: ['ignore', 'ignore', 'pipe'], detached: true,
   env: { ...process.env, DO_SINK_PORT: String(SINK_PORT), DO_SINK_BOOT_MS: '4000' },
 })
@@ -120,6 +139,16 @@ children.push(sinkProc)
 // here as the vendor's own opaque 401 and there is nothing to look at.
 const sinkRefusals = []
 sinkProc.stderr.on('data', d => { const t = String(d); if (/refused/.test(t)) sinkRefusals.push(t.trim()) })
+
+// The SECOND cloud, and a second process for the reason the first one is one:
+// two vendors answered by one listener would share a router and an error shape,
+// which is exactly what a second connector is here to disprove.
+const hzProc = spawn('bun', ['api/src/providers/compute/hetzner-sink.ts'], {
+  cwd: PKG, stdio: ['ignore', 'ignore', 'pipe'], detached: true,
+  env: { ...process.env, HZ_SINK_PORT: String(HZ_PORT), HZ_SINK_BOOT_MS: '4000' },
+})
+children.push(hzProc)
+hzProc.stderr.on('data', d => { const t = String(d); if (/refused/.test(t)) sinkRefusals.push(t.trim()) })
 
 const api = spawn('bun', ['api/index.ts'], {
   cwd: PKG, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
@@ -130,6 +159,7 @@ const api = spawn('bun', ['api/index.ts'], {
     // spend guard allows the POST without `ALLOW_CLOUD_SPEND` — which is the
     // guard's own claim and is asserted below rather than assumed.
     DIGITALOCEAN_URL: SINK,
+    HETZNER_URL:      HZ_SINK,
   },
 })
 children.push(api)
@@ -362,6 +392,28 @@ try {
   await until(`location.pathname`, p => p === '/', 'sign-in never landed on the overview')
   ok('signed in as the seeded owner')
 
+  // ─── Getting there at all ──────────────────────────────────────────────
+  // The half that was broken and had nothing to do with the code: a person
+  // could not find this feature. One button said "Add server" and whether it
+  // provisioned was decided by a dropdown four fields down.
+  console.log('\n  /servers/ — two acts, two buttons')
+  await goto('/servers/')
+  const buttons = await evaluate(
+    `[...document.querySelectorAll('.section-header a, .section-header button')].map(e => e.textContent.trim())`)
+  check('the list offers provisioning by name', buttons.some(b => /provision a machine/i.test(b)), buttons.join(' | '))
+  check('and importing as a separate act', buttons.some(b => /import existing/i.test(b)), buttons.join(' | '))
+
+  // ─── The empty state, which is what a fresh install shows ──────────────
+  await goto('/servers/provision/')
+  await until(`!!document.getElementById('no-accounts') || !!document.getElementById('account')`, v => v,
+    'the provision screen never settled')
+  check('with no cloud account it says so, rather than showing a dead picker',
+    await evaluate(`!!document.getElementById('no-accounts')`))
+  const empty = await text('#no-accounts')
+  check('…and points at the Secret that fixes it', /provider key/i.test(empty ?? ''), empty?.replace(/\s+/g, ' ').slice(0, 140))
+  check('…and at importing, for somebody who has a machine already',
+    await evaluate(`!!document.querySelector('#no-accounts a[href="/servers/import/"]')`))
+
   // ─── The account ───────────────────────────────────────────────────────
   // An account is a `Secret` of kind `provider_key` that NAMES a cloud. Made
   // through the screen rather than written into the database, because the
@@ -423,8 +475,8 @@ try {
   ok('and with the cloud named it is stored')
 
   // ─── The wizard reads the VENDOR ───────────────────────────────────────
-  console.log('\n  /servers/create/ — the catalog is the account\'s')
-  await goto('/servers/create/')
+  console.log('\n  /servers/provision/ — the catalog is the account\'s')
+  await goto('/servers/provision/')
   await until(`!!document.getElementById('account')`, v => v, 'the create form never rendered')
   await instrument()
 
@@ -432,6 +484,12 @@ try {
     `[...document.getElementById('account').options].map(o => o.textContent.trim())`)
   check('the account appears, named with its cloud',
     accounts.some(a => a.includes('do-main') && a.includes('digitalocean')), accounts.join(' | '))
+
+  // One account is not a choice, so the screen makes it. Asserted rather than
+  // assumed: without it a person adds their only cloud account and lands on a
+  // picker asking them to pick it.
+  const preselected = await evaluate(`document.getElementById('account').value`)
+  check('a workspace with ONE account has it chosen already', !!preselected, `value=${preselected}`)
 
   // BY NAME, never by position. A seeded workspace can already hold a provider
   // key, and taking the first option would silently drive the whole rest of
@@ -493,6 +551,10 @@ try {
   // The button is DISABLED until a provision has everything it costs money to
   // get wrong. Asserted here, one field short, because a submit that fell back
   // to `create` on a missing field would record a machine nobody made.
+  // The name is filled FIRST so the halfway assertion is about the size and the
+  // image. With it blank the button is disabled for a reason this row does not
+  // mean, and the check would pass against a screen that never arms at all.
+  await fill({ name: 'drive-web-01' })
   const halfway = await evaluate(`document.querySelector('form button[type=submit]').disabled`)
   check('the submit is refused while the machine is only half chosen', halfway === true, `disabled=${halfway}`)
 
@@ -509,15 +571,16 @@ try {
     /creates a machine/i.test(cost ?? '') && /billing/i.test(cost ?? ''))
 
   const label = await evaluate(`document.querySelector('form button[type=submit]').textContent.trim()`)
-  check('the button says which of the two things is about to happen',
-    label === 'Provision server', label)
+  // One act per screen now, so the button states it flatly instead of inferring
+  // it from a dropdown four fields up.
+  check('the button names the act, and it is the only one this screen does',
+    label === 'Provision machine', label)
 
   // ─── Provision ─────────────────────────────────────────────────────────
   // Through the spend guard, for real. `sendVia` refuses a POST at anything
   // that is not loopback and the stand-in is on localhost, so this is the only
   // assertion that the guard is not also in the way of the thing it protects.
   console.log('\n  provisioning')
-  await fill({ name: 'drive-web-01' })
   const armed = await evaluate(`!document.querySelector('form button[type=submit]').disabled`)
   check('and offered once every one of them is answered', armed === true)
   await evaluate(`document.querySelector('form button[type=submit]').click()`)
@@ -533,7 +596,7 @@ try {
     unhandled === '[]', String(unhandled).slice(0, 300))
 
   // The refusal, if there is one, is on the page — reported instead of a bare
-  // `/servers/create/`, which says only that nothing happened.
+  // the provision path, which says only that nothing happened.
   await until(`(() => {
       const p = location.pathname
       if (/^\\/servers\\/[0-9a-f-]{36}\\/$/.test(p)) return true
@@ -585,6 +648,71 @@ try {
   check('and the trail says what was asked for',
     /s-2vcpu-4gb/.test(trail ?? '') && /nyc3/.test(trail ?? ''), trail?.replace(/\s+/g, ' ').slice(0, 160))
 
+  // ─── The machine comes online, and the open page follows ───────────────
+  //
+  // This drive stands in for the machine. Every step below is one cloud-init
+  // takes: read the token the vendor's metadata service handed it, exchange it
+  // once for a credential of its own, then sign with THAT.
+  //
+  // The token is the REAL one — read out of the dispatched job's payload, which
+  // is where `servers.provision` put it and the only place it exists outside
+  // the machine. Minting a second token here would prove the enrollment route
+  // works and say nothing about whether the token cloud-init actually carries
+  // does.
+  console.log('\n  the machine enrolls and comes online')
+  const enrollToken = await (async () => {
+    const { Database } = await import('bun:sqlite')
+    const jobs = new Database(DB.replace('.db', '-jobs.db'), { readonly: true })
+    const row = jobs.query(
+      "SELECT data FROM jobs WHERE name = 'server:provision' ORDER BY created_at DESC LIMIT 1").get()
+    jobs.close()
+    try { return JSON.parse(row?.data ?? '{}').enrollToken ?? '' } catch { return '' }
+  })()
+  check('the token cloud-init carries is the one the app dispatched',
+    /^bcen_[0-9a-f]{64}$/.test(enrollToken), enrollToken ? 'shaped wrong' : '(none found)')
+
+  const enrolled = await fetch(`${API}/servers/${serverId}/enroll`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token: enrollToken }),
+  })
+  const credential = (await enrolled.json()).secret
+  check('the exchange hands back a credential of its own', enrolled.status === 200 && !!credential)
+
+  /** A heartbeat, signed the way the outpost on that machine signs one. */
+  async function heartbeat(secret) {
+    const { signRequest } = await import('@frontierjs/toolbelt/signature')
+    const body = JSON.stringify({ outpost_version: '0.4.1', health: { cpu: 4, memory: 12 } })
+    const path = `/servers/${serverId}`
+    const headers = await signRequest({
+      secret, method: 'POST', path, query: '', body,
+      timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
+    })
+    return fetch(API + path, {
+      method: 'POST',
+      headers: { ...headers, 'content-type': 'application/json', 'x-service-method': 'heartbeat' },
+      body,
+    })
+  }
+
+  // The FLEET key first, and it must be refused. That is the property the whole
+  // per-machine credential exists for: one string every machine holds must not
+  // open this machine's door. Asserted BEFORE the acceptance, so a run that
+  // stopped here could not be read as a pass.
+  const fleet = await heartbeat('outpost-dev-secret')
+  check('the fleet-wide key is REFUSED for a machine that has its own',
+    fleet.status === 401, `${fleet.status}`)
+
+  const own = await heartbeat(credential)
+  check('and its own credential is accepted', own.status === 200, `${own.status}`)
+
+  // The half only a browser can ask. The page has been open since before the
+  // machine existed; nothing here reloads it.
+  const online = await until(`document.getElementById('server-status')?.textContent?.trim()`,
+    v => v === 'online', 'the open page never saw the machine come online', 20_000)
+  check('the page that has been open all along says `online`', online === 'online')
+  check('and the progress strip is gone, because nothing is in flight now',
+    await evaluate(`!document.getElementById('server-inflight')`))
+
   // ─── The machine enrolls itself ────────────────────────────────────────
   // Over real HTTP at the real route, with no session, no signature and no
   // principal — which is what cloud-init has. This route answered 405 to
@@ -597,6 +725,116 @@ try {
   })
   check('a wrong token is refused by the route — which is REACHED, not 405',
     wrong.status === 401, `${wrong.status}`)
+
+  // ─── A second cloud, on the same screen ────────────────────────────────
+  //
+  // Everything above is one vendor, and a wizard driven by one vendor cannot
+  // say whether it reads a catalog or knows DigitalOcean. This is the same
+  // screen against Hetzner, and nothing in it was changed to make that work.
+  //
+  // Two things live only here. A price is per LOCATION at Hetzner, so the SAME
+  // size in two regions is two figures — which no assertion at DigitalOcean can
+  // make, because its price does not move. And it is the first non-dollar
+  // currency this app has ever rendered, so the divisor being the currency's
+  // stops being a comment and becomes a number on a screen.
+  console.log('\n  a second cloud — the same wizard, a different vendor')
+
+  await goto('/secrets/')
+  await until(`!!document.getElementById('new-secret')`, v => v, 'the secrets screen never rendered')
+  await click('#new-secret')
+  await until(`!!document.getElementById('name')`, v => v, 'the secret form never opened')
+  await fill({ name: 'hz-main', kind: 'provider_key' })
+  await until(`!!document.getElementById('providerKind')`, v => v, 'the cloud field never appeared')
+
+  const clouds2 = await options('providerKind')
+  check('the second cloud is offered too, off the schema rather than a list here',
+    clouds2.includes('hetzner') && clouds2.includes('digitalocean'), clouds2.join(', '))
+
+  await fill({ providerKind: 'hetzner', data: JSON.stringify({ token: HZ_TOKEN }) })
+  await evaluate(`document.querySelector('form button[type=submit]').click()`)
+  await until(`document.body.textContent.includes('hz-main')`, v => v,
+    'the Hetzner key never appeared in the list')
+  ok('a Hetzner key is stored the same way')
+
+  await goto('/servers/provision/')
+  await until(`!!document.getElementById('account')`, v => v, 'the provision form never rendered')
+
+  // Two accounts now, so the picker is a real choice and the one chosen decides
+  // which vendor is read. Chosen by NAME: taking the first would drive the rest
+  // of this section against DigitalOcean and every assertion below would be
+  // about the wrong cloud.
+  const hzOption = await evaluate(
+    `[...document.getElementById('account').options].find(o => o.textContent.includes('hz-main'))?.value ?? ''`)
+  check('both accounts are offered, and they name their clouds', !!hzOption, hzOption)
+  await fill({ account: hzOption })
+
+  await until(`(() => {
+      const r = document.getElementById('region')
+      if (!r) return 'no #region'
+      return [...r.options].some(o => o.value === 'nbg1') ? true : 'regions: '
+        + [...r.options].map(o => o.value).join(',')
+    })()`, v => v === true, "the Hetzner catalog never reached the region picker", 20_000)
+
+  const hzRegions = await options('region')
+  check('the regions are HETZNER\'s, and DigitalOcean\'s are gone',
+    hzRegions.includes('nbg1') && hzRegions.includes('fsn1') && hzRegions.includes('hel1')
+      && !hzRegions.includes('nyc3'), hzRegions.join(', '))
+
+  await fill({ region: 'nbg1' })
+  const nbg = await until(`[...document.getElementById('size').options].map(o => o.value).filter(Boolean)`,
+    v => v.length, 'sizes never arrived for nbg1')
+  check('nbg1 offers cpx11 and NOT the Arm size, which is sold in one location',
+    nbg.includes('cpx11') && !nbg.includes('cax11'), nbg.join(', '))
+
+  await fill({ region: 'fsn1' })
+  const fsn = await until(`[...document.getElementById('size').options].map(o => o.value).filter(Boolean)`,
+    v => v.includes('cax11') ? v : false, 'fsn1 never offered the Arm size')
+  check('and fsn1 does — the picker narrows by region at the second vendor too',
+    fsn.includes('cax11'))
+
+  // ── the same size, two regions, two prices ──
+  await fill({ region: 'nbg1' })
+  await until(`[...document.getElementById('size').options].some(o => o.value === 'cpx11')`, v => v,
+    'nbg1 never offered cpx11 again')
+  await fill({ size: 'cpx11' })
+  await fill({ image: 'ubuntu-24.04' })
+  const costNbg = await until(`document.getElementById('provision-cost')?.textContent ?? ''`,
+    t => /€/.test(t) ? t : false, 'the Hetzner cost line never appeared')
+  check('the cost is in EUR, formatted by the currency and not by a hundred',
+    /€5\.18/.test(costNbg), costNbg.replace(/\s+/g, ' ').trim().slice(0, 120))
+
+  await fill({ region: 'hel1' })
+  await until(`[...document.getElementById('size').options].some(o => o.value === 'cpx11')`, v => v,
+    'hel1 never offered cpx11')
+  await fill({ size: 'cpx11' })
+  const costHel = await until(`document.getElementById('provision-cost')?.textContent ?? ''`,
+    t => /€/.test(t) && !/€5\.18/.test(t) ? t : false,
+    'the price never moved with the region', 10_000)
+  check('and the SAME size in another region is another price — the map, on a screen',
+    /€5\.77/.test(costHel), costHel.replace(/\s+/g, ' ').trim().slice(0, 120))
+
+  // ── and it really provisions, at the other vendor ──
+  await fill({ region: 'nbg1' })
+  await until(`[...document.getElementById('size').options].some(o => o.value === 'cpx11')`, v => v,
+    'nbg1 never offered cpx11 for the provision')
+  await fill({ name: 'drive-hz-01', size: 'cpx11', image: 'ubuntu-24.04' })
+  await until(`!document.querySelector('form button[type=submit]').disabled`, v => v,
+    'the Hetzner provision was never armed')
+  await evaluate(`document.querySelector('form button[type=submit]').click()`)
+
+  await until(`(() => {
+      const p = location.pathname
+      if (/^\\/servers\\/[0-9a-f-]{36}\\/$/.test(p)) return true
+      const err = document.querySelector('#form-error .alert-content')
+      return err ? 'refused: ' + err.textContent.trim() : p
+    })()`, v => v === true,
+    'provisioning at the second vendor never landed on the machine', 30_000)
+  ok('provisioning at the second cloud lands on the machine, through the same guard')
+
+  const hzTrail = await until(`document.getElementById('server-events')?.textContent ?? ''`,
+    t => /cpx11/.test(t) ? t : false, 'the trail never named what was asked for', 20_000)
+  check('and the trail names the vendor\'s own words, not DigitalOcean\'s',
+    /cpx11/.test(hzTrail) && /nbg1/.test(hzTrail), hzTrail.replace(/\s+/g, ' ').slice(0, 140))
 
   // ─── Cloud spend ───────────────────────────────────────────────────────
   // The price the vendor quoted, copied onto the row at purchase, summed. Not a
@@ -611,8 +849,71 @@ try {
     /24\.00/.test(committed ?? ''), committed?.replace(/\s+/g, ' ').trim())
   check('and it says how many machines it covers, since an imported one is in none of it',
     /of \d+ machines/.test(committed ?? ''), committed?.replace(/\s+/g, ' ').trim())
+  // The grouping, which had nothing to group until there were two clouds: two
+  // currencies cannot be added, so they are listed. A tile that summed them
+  // would print one plausible number that is nobody's bill.
+  check('and the two currencies are listed rather than added together',
+    /24\.00/.test(committed ?? '') && /€/.test(committed ?? ''),
+    committed?.replace(/\s+/g, ' ').trim())
   check('the screen still refuses to call it a bill',
     /not what the vendor will bill/i.test(await body()))
+
+  // ─── The other act ─────────────────────────────────────────────────────
+  // The screen this one was split from. Asserted because the split is only a
+  // gain if BOTH halves still work: a rename that left importing broken would
+  // pass every row above.
+  console.log('\n  /servers/import/ — the act that costs nothing')
+  await goto('/servers/import/')
+  await until(`!!document.getElementById('ipAddress')`, v => v, 'the import form never rendered')
+  check('it says plainly that nothing is billed and nothing is contacted',
+    /nothing is billed/i.test(await body()))
+  check('and offers no account, region catalog or price',
+    await evaluate(`!document.getElementById('account') && !document.getElementById('size')`))
+
+  await fill({ name: 'under-the-desk', ipAddress: '10.0.1.9', region: 'dc1' })
+  await evaluate(`document.querySelector('form button[type=submit]').click()`)
+  await until(`location.pathname`, p => /^\/servers\/[0-9a-f-]{36}\/$/.test(p),
+    'importing never landed on the machine', 20_000)
+  const imported = await text('#server-status')
+  // `pending`, not `provisioning`: nothing was bought, so no job is working on
+  // it and no cloud will ever answer about it.
+  check('an imported machine lands at `pending`, with no job working on it',
+    imported === 'pending', imported)
+  // The PAIR, and it is the whole point of the row. `pending` alone cannot say
+  // whether anything is working on this machine: a provisioned one is queued,
+  // an imported one is parked. The provisioned machine above showed the strip
+  // at `provisioning`; this one must not show it at `pending`, or the screen is
+  // telling an operator their own box is queued for a job that will never run.
+  check('and NO progress strip — nothing is queued for a machine nobody bought',
+    await evaluate(`!document.getElementById('server-inflight')`))
+
+  // ─── …and it is told how to get a credential ───────────────────────────
+  // An imported machine holds nothing. There is no fleet-wide key any more, so
+  // until it enrolls its check-ins are refused — which is a machine somebody
+  // has not finished installing rather than one that is broken, and the screen
+  // has to say which.
+  check('the screen says it has no credential of its own',
+    await evaluate(`!!document.getElementById('needs-enrollment')`))
+
+  await click('#needs-enrollment button')
+  await until(`!!document.getElementById('enroll-command')`, v => v,
+    'the install command never appeared')
+  const command = await text('#enroll-command')
+  check('and hands over one command to run on it',
+    /curl -fsSL .*\/install\.sh \| sudo env /.test(command ?? ''), command?.trim()?.slice(0, 120))
+  // The token is an env var, never in the URL: a URL puts it in an access log,
+  // a proxy's, and the shell history of whoever pasted it.
+  check('…carrying the token as an environment variable, not in the URL',
+    /ENROLL_TOKEN=bcen_[0-9a-f]{64}/.test(command ?? '')
+    && !/install\.sh\?/.test(command ?? ''), command?.trim()?.slice(0, 160))
+
+  // The script the command fetches is public and carries nothing. Asserted from
+  // the browser because that is the origin a person's machine would fetch it
+  // from, and a route that only answered in a unit test would pass there.
+  const script = await fetch(`${API}/install.sh`)
+  const text0  = await script.text()
+  check('the script it fetches is served, and holds no credential',
+    script.status === 200 && !text0.includes('bcen_'), `${script.status}`)
 
   // ─── The console ───────────────────────────────────────────────────────
   console.log('\n  the console')

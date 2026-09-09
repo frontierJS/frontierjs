@@ -9,6 +9,15 @@
  * and a unit test on either side passes with the crossing broken (the shape
  * `verify:values` exists for).
  *
+ * **Both models declare `@@extensible` now, and most of what this drive used to
+ * grade is gone from the app.** The pool, the order slots are handed out in, the
+ * slot each declaration takes and the mirror kept beside the blob are the Data
+ * boundary's; `custom-fields.ts` is two functions over the shop's own keys and
+ * names no slot. So the rows below are about the CROSSING and no longer about an
+ * app-side derivation: what they can still see, and nothing else here can, is
+ * whether a key declared through this app's service is a key this app's segment
+ * finds.
+ *
  * **`http.*` is a second crossing and it was found the same way the first one
  * predicts.** For its whole life this drive reached the pure functions and the
  * client directly, so nothing between an HTTP request and them had ever run —
@@ -56,17 +65,30 @@ import { spawn }         from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { createClient }  from '@frontierjs/litestone'
 import { db, ENCRYPTION_KEY } from '../../api/src/core/db.ts'
-import { allocateSlot, compileSegment, projectSlots, matchesAudience, POOL }
+import { compileSegment, matchesAudience }
   from '../../api/src/domain/shop/custom-fields.ts'
+import { withCustomFields, shownFields } from '../../web/src/custom-fields.js'
 import { discountProblem, priceBasket } from '../../api/src/domain/shop/pricing.ts'
 import { results, report } from './lib/report.mjs'
 
 const sys = db.asSystem()
+
+// `Customer` declares `@@extensible(fields, declaredBy: CustomField, max: …)`
+// and `Product` declares the same word without the `max:`, so one has a pool and
+// the other has none. Both are read off the parsed seed rather than listed here,
+// and the seed is read through the CLIENT rather than parsed a second time —
+// the app has no module that reads it as a document any more, which is the point
+// of the section below.
+const customerModel = db.$schema.models.find(m => m.name === 'Customer')
+const POOL = {
+  order: customerModel.attributes.find(a => a.kind === 'index' && a.generated === 'extensible').fields,
+  type:  Object.fromEntries(customerModel.fields.filter(f => f.extKind).map(f => [f.name, f.extKind])),
+}
 const RUN = String(Date.now()).slice(-6)
 const { got, t } = results()
 
 let failedEarly = null
-const made = { customers: [], fields: [] }
+const made = { customers: [], fields: [], products: [] }
 
 // ─── The API, started and stopped by this drive ────────────────────────────
 //
@@ -126,11 +148,14 @@ async function withApi(body) {
   } finally { stop() }
 }
 
-const mkCustomer = async (tag, fields, declared) => {
+// The mirror is not built here and cannot be: `Customer.fieldsSlots` is the
+// expansion of `@@extensible(max:)`, derived inside `writeData` from whatever
+// `fields` holds. This helper used to project it by hand and hand it in.
+const mkCustomer = async (tag, fields) => {
   const row = await sys.customer.create({ data: {
     name: `CF ${tag}`, firstName: 'CF', lastName: tag,
     email: `cf-${RUN}-${tag}@example.test`,
-    fields, slots: projectSlots(fields, declared),
+    fields,
   } })
   made.customers.push(row.id)
   return row
@@ -138,29 +163,42 @@ const mkCustomer = async (tag, fields, declared) => {
 
 try {
   // ─── The pool, and what a full one answers ──────────────────────────────
-  const before = await sys.customField.findMany({})
+  const before = await sys.customField.findMany({ where: { model: 'Customer' } })
   t('pool.startsFromWhateverTheShopHad', Array.isArray(before))
 
-  const declare = async (key, type, label = key) => {
-    const declared = await sys.customField.findMany({})
+  // `model:` is the second half of a declaration, and it is the WHOLE of it now:
+  // `slot` is filled at the Data boundary out of the pool the named model
+  // declares, so nothing here allocates and nothing here says `system: ['slot']`.
+  // `Customer` has a pool and `Product` has none, and this one call covers both.
+  const declare = async (model, key, type, label = key, extra = {}) => {
     const row = await sys.customField.create({
-      data: { key: `${key}_${RUN}`, label, type, slot: allocateSlot(declared, type) },
-      system: ['slot'],
+      data: { model, key: `${key}_${RUN}`, label, type, ...extra },
     })
     made.fields.push(row.id)
     return row
   }
 
-  const tier = await declare('tier',  'text',   'Loyalty tier')
-  const ltv  = await declare('ltv',   'number', 'Lifetime value')
-  t('declare.aTextFieldTakesATextSlot',   POOL.text.includes(tier.slot))
-  t('declare.aNumberFieldTakesANumberSlot', POOL.number.includes(ltv.slot))
+  // The control is a generated column that is not a slot: `Customer.fullName` is
+  // `@generated` too, and a pool read off that attribute alone would take it for
+  // a text slot. Both rows read `type`, which is keyed by the KIND each expanded
+  // column was stamped with — reading a slot's kind back off its first letter is
+  // one enum rename away from coercing every value into the wrong affinity.
+  t('pool.aGeneratedColumnThatIsNotASlotIsNotInIt', !('fullName' in POOL.type))
+  t('pool.isTheTwelveTheSeedDeclares',              Object.keys(POOL.type).length === 12)
+
+  const tier = await declare('Customer', 'tier', 'text',   'Loyalty tier')
+  const ltv  = await declare('Customer', 'ltv',  'number', 'Lifetime value')
+  t('declare.aTextFieldTakesATextSlot',   POOL.type[tier.slot] === 'text')
+  t('declare.aNumberFieldTakesANumberSlot', POOL.type[ltv.slot]  === 'number')
   t('declare.theTwoPoolsDoNotShare',      tier.slot !== ltv.slot)
 
   // ─── The crossing ───────────────────────────────────────────────────────
-  const declared = await sys.customField.findMany({})
-  const gold   = await mkCustomer('gold',   { [tier.key]: 'gold',   [ltv.key]: 900 }, declared)
-  const bronze = await mkCustomer('bronze', { [tier.key]: 'bronze', [ltv.key]: 40  }, declared)
+  // `$declaredFields()` and not a findMany: one declaring table carries both
+  // models' keys, and the narrowing is the accessor rather than a `where` the
+  // caller has to remember.
+  const declared = await sys.customer.$declaredFields()
+  const gold   = await mkCustomer('gold',   { [tier.key]: 'gold',   [ltv.key]: 900 })
+  const bronze = await mkCustomer('bronze', { [tier.key]: 'bronze', [ltv.key]: 40  })
 
   t('crossing.theValueSurvivesTheWrite',
     (await sys.customer.findUnique({ where: { id: gold.id } }))[tier.slot] === 'gold')
@@ -181,14 +219,14 @@ try {
   t('crossing.theHumanKeyIsStillReadable', back.fields?.[tier.key] === 'gold')
 
   // ─── The negative control: the pool runs out ────────────────────────────
-  const spare = POOL.text.length - (await sys.customField.findMany({}))
-    .filter(d => d.type === 'text' && d.slot).length
-  for (let i = 0; i < spare; i++) await declare(`filler${i}`, 'text')
-  const overflow = await declare('overflow', 'text', 'Overflowed')
+  const spare = POOL.order.filter(sl => POOL.type[sl] === 'text').length
+    - (await sys.customer.$declaredFields()).filter(d => d.type === 'text' && d.slot).length
+  for (let i = 0; i < spare; i++) await declare('Customer', `filler${i}`, 'text')
+  const overflow = await declare('Customer', 'overflow', 'text', 'Overflowed')
   t('pool.theOneAfterTheLastGetsNoSlot', overflow.slot === null)
 
-  const withOverflow = await sys.customField.findMany({})
-  const late = await mkCustomer('late', { [overflow.key]: 'yes', [tier.key]: 'gold' }, withOverflow)
+  const withOverflow = await sys.customer.$declaredFields()
+  const late = await mkCustomer('late', { [overflow.key]: 'yes', [tier.key]: 'gold' })
   const lateBack = await sys.customer.findUnique({ where: { id: late.id } })
   t('pool.anUnpromotedFieldStillStores',  lateBack.fields?.[overflow.key] === 'yes')
   t('pool.andStillReadsBack',             lateBack.fields?.[overflow.key] === 'yes')
@@ -205,6 +243,84 @@ try {
   const nope = compileSegment([{ key: 'never_declared', op: 'eq', value: 1 }], withOverflow)
   t('pool.anUndeclaredKeyIsUnknownNotUnindexed',
     nope.unknown.length === 1 && nope.unindexed.length === 0)
+
+  // ─── The other half: a declared field on a model with NO pool ──────────
+  //
+  // `Product` carries `fields` and no slot columns, which is the ORDINARY shape
+  // of this feature rather than a degraded one. Everything above is about a key
+  // a segment can filter on; this is about a key a shop just wants somewhere to
+  // put, and the question the section exists to answer is whether the two are
+  // one feature or two.
+  //
+  // Each row is PAIRED with the customer field declared a moment ago, because
+  // *no pool* and *the allocator is broken* answer identically from this side.
+  const care = await declare('Product', 'care', 'text', 'Care symbol',
+                             { defaultValue: 'machine wash 30', show: true })
+  const sku  = await declare('Product', 'supplier_sku', 'text', 'Supplier SKU',
+                             { defaultValue: '', show: false })
+
+  t('blob.aModelWithNoPoolAllocatesNoSlot',   care.slot === null)
+  t('blob.andTheCustomerFieldStillGotOne',    tier.slot !== null)
+  t('blob.itIsNotRefused',                    care.id > 0 && care.key.startsWith('care_'))
+
+  // The same key on two models is two fields. It was `key @unique` while
+  // `Customer` was the only model with any, so this write was an error.
+  const careOnCustomer = await declare('Customer', 'care', 'text', 'Care note')
+  t('blob.theSameKeyOnTwoModelsIsTwoFields',
+    careOnCustomer.key === care.key && careOnCustomer.id !== care.id)
+
+  const prod = await sys.product.create({ data: {
+    name: `CF Widget ${RUN}`, slug: `cf-widget-${RUN}`, brand: 'frontierjs', active: true,
+    fields: { [care.key]: 'hand wash only' },
+  } })
+  made.products.push(prod.id)
+  const prodBack = await sys.product.findUnique({ where: { id: prod.id } })
+  t('blob.theValueStoresAndReadsBack', prodBack.fields?.[care.key] === 'hand wash only')
+
+  // No projection, no mirror, no hook. The service half of the pool is absent
+  // here and nothing had to be written in its place.
+  t('blob.thereIsNoMirrorToGoStale', !('fieldsSlots' in prodBack))
+
+  // A segment over these is every term unindexed and none unknown — the same
+  // answer the thirteenth CUSTOMER field gets, from the same function, which is
+  // what says the two tiers share one compiler rather than resembling one.
+  const prodDeclared = await sys.product.$declaredFields()
+  const prodSeg = compileSegment([{ key: care.key, op: 'eq', value: 'hand wash only' }], prodDeclared)
+  t('blob.everyTermIsUnindexedRatherThanUnknown',
+    prodSeg.unindexed.length === 1 && prodSeg.unknown.length === 0 &&
+    Object.keys(prodSeg.where).length === 0)
+
+  // ─── And the assembler is one assembler ────────────────────────────────
+  //
+  // The claim the whole section is for: the code that turns declarations into
+  // form fields is the SAME code for both models, and it never mentions a slot.
+  const custRules = withCustomFields({ fields: {}, formFields: () => [] }, [tier, ltv]).fields
+  const prodRules = withCustomFields({ fields: {}, formFields: () => [] }, prodDeclared).fields
+
+  t('assembler.oneFunctionRendersBoth',
+    `fields.${tier.key}` in custRules && `fields.${care.key}` in prodRules)
+  // The sharpest row here, and it is the whole finding: a PROMOTED customer
+  // field and an UNPROMOTED product field of the same type produce the same
+  // rule, label aside. If they differed, the two tiers would be two features
+  // and would need two names.
+  const bare = r => JSON.stringify({ ...r, label: undefined })
+  t('assembler.aPromotedFieldAndAnUnpromotedOneRenderIdentically',
+    bare(custRules[`fields.${tier.key}`]) === bare(prodRules[`fields.${sku.key}`]))
+
+  // The default reaches the rule under the key a COLUMN's default arrives under,
+  // so a generated form prefills a declared field with nothing added to <Form>.
+  t('assembler.aDeclaredDefaultReachesTheRule',
+    prodRules[`fields.${care.key}`].default === 'machine wash 30')
+  t('assembler.anEmptyDefaultIsAbsentRatherThanBlank',
+    !('default' in prodRules[`fields.${sku.key}`]))
+
+  // `show` decides a TABLE's columns and never an answer. Asserted as a pair,
+  // because a filter that returned nothing satisfies the hidden half alone.
+  const shown = shownFields(prodDeclared)
+  t('assembler.showChoosesTableColumns',
+    shown.some(d => d.key === care.key) && !shown.some(d => d.key === sku.key))
+  t('assembler.andAHiddenFieldIsStillOnTheForm',
+    `fields.${sku.key}` in prodRules)
 
   // ─── The audience: one predicate, two readers ───────────────────────────
   const terms  = [{ key: tier.key, op: 'eq', value: 'gold' }]
@@ -238,7 +354,7 @@ try {
     priceBasket([{ total: 5000 }], { discount: code, customer: bronzeRow,  declaredFields: declared }).discount === 0)
 
   t('audience.matchesAudienceSaysUndecidableRatherThanGuessing',
-    matchesAudience(compileSegment(terms, declared).where, { /* slot dropped */ }) === null)
+    matchesAudience(declared, compileSegment(terms, declared).where, { /* blob dropped */ }) === null)
 
   // ─── The index. Nothing behavioral can see this one ────────────────────
   //
@@ -260,10 +376,20 @@ try {
     encryptionKey: ENCRYPTION_KEY,
   })
   const psys = probe.asSystem()
+
+  // The declarations come FIRST and the mirror is never written here. This block
+  // used to hand `slots:` in directly, which meant the fixture agreed with any
+  // pool it liked and the EXPLAIN below was about columns nothing had bound a
+  // key to. Now `tier` takes t1, `band` takes t2 and `ltv` takes n1 because the
+  // boundary allocated them in the composite's own order, and the rows below
+  // reach those columns only if the projection put them there.
+  for (const [key, type] of [['tier', 'text'], ['band', 'text'], ['ltv', 'number']])
+    await psys.customField.create({ data: { model: 'Customer', key, label: key, type } })
+
   const bulk = []
   for (let i = 0; i < 3000; i++) bulk.push({
     name: `P${i}`, firstName: 'P', lastName: String(i), email: `p${i}@probe.test`,
-    fields: {}, slots: { t1: ['gold', 'silver', 'bronze'][i % 3], n1: i },
+    fields: { tier: ['gold', 'silver', 'bronze'][i % 3], band: `src${i % 5}`, ltv: i },
   })
   await psys.customer.createMany({ data: bulk })
   await psys.sql`ANALYZE`
@@ -285,6 +411,25 @@ try {
     .map(r => r.detail).join(' | ')
   t('index.aRawQueryMissingTheSoftDeleteClauseScans', /SCAN/.test(rawDetail))
 
+  // ─── Which slots the order hands out, which the one-term plan cannot see ──
+  //
+  // A composite is read left to right, so the plan above passes under ANY order
+  // of the pool — `t1` is leading in all of them. The order only becomes visible
+  // on a second term, and it is a BET rather than a fact: `max: { text: 8,
+  // number: 4 }` is a 2:1 ratio and lays the pool down `t1,t2,n1,t3,t4,n2,…`,
+  // which allocates a shop's first two TEXT fields adjacently. Measured at
+  // 20,000 rows against
+  // the interleaved alternative (`t1,n1,t2,n2,…`): four text terms reach four
+  // columns here and one there, 0.03 ms against 0.94 — and the trade runs the
+  // other way on a mixed pair, 0.21 ms against 0.06. Text-first is the bet
+  // because a shop declares mostly text; this row is what makes it a decision
+  // somebody can revisit with a number rather than a list nobody compares.
+  const twoText = (await psys.sql`
+    EXPLAIN QUERY PLAN SELECT id FROM customer
+    WHERE t1 = 'gold' AND t2 = 'src1' AND deletedAt IS NULL`).map(r => r.detail).join(' | ')
+  t('index.twoTextTermsReachTwoColumnsOfTheComposite',
+    /t1=\? AND t2=\?/.test(twoText))
+
   // ─── The other crossing: the same feature over HTTP ─────────────────────
   //
   // Everything above holds the client in its own hand. A request does not: it
@@ -303,38 +448,49 @@ try {
 
     const key = `http_${RUN}`
 
-    const [ds, declaredRow] = await post('/custom-fields', { key, label: 'HTTP tier', type: 'text' })
+    const [ds, declaredRow] = await post('/custom-fields',
+      { model: 'Customer', key, label: 'HTTP tier', type: 'text' })
     if (declaredRow?.id) made.fields.push(declaredRow.id)
     t('http.declaringAFieldIsNotA500', ds === 201)
-    t('http.andTheApplicationAllocatedTheSlot', typeof declaredRow?.slot === 'string')
+    t('http.andTheBoundaryAllocatedTheSlot', typeof declaredRow?.slot === 'string')
 
-    // The 403. A hook derives `slots` and the Data boundary refuses a payload
-    // naming a `@system` column — so the write has to say the application is
-    // the one supplying it (`ctx.system.add('slots')`).
+    // The same request against a model with no pool. It is the same route, the
+    // same hook and the same 201 — the only difference is a null the seed
+    // decided, which is what makes this one feature rather than two.
+    const [blobStatus, blobRow] = await post('/custom-fields',
+      { model: 'Product', key: `${key}_p`, label: 'HTTP care', type: 'text' })
+    if (blobRow?.id) made.fields.push(blobRow.id)
+    t('http.declaringOnAPoollessModelIsTheSame201', blobStatus === 201)
+    t('http.andItsSlotIsNullRatherThanAnError', blobRow?.slot === null)
+
+    // The 403. `fieldsSlots` is `@system` and derived, so a service filling it
+    // by hand had to say `ctx.system.add('slots')` on all three of its write
+    // hooks and the one that forgot was every customer create over HTTP
+    // (`FJS-644`). Nothing here fills it, so there is nothing to forget — this
+    // row is what says the boundary's own derivation does not trip its own
+    // refusal.
     const [cs, row] = await post('/customers', {
       name: `HTTP ${RUN}`, firstName: 'HTTP', lastName: RUN,
       email: `cf-${RUN}-http@example.test`, fields: { [key]: 'gold' },
     })
     if (row?.id) made.customers.push(row.id)
     t('http.creatingACustomerIsNotA403', cs === 201)
-    t('http.andTheMirrorWasBuiltByTheHook', row?.slots?.[declaredRow?.slot] === 'gold')
+    t('http.andTheMirrorWasDerived', row?.fieldsSlots?.[declaredRow?.slot] === 'gold')
     t('http.andTheGeneratedColumnReadsIt', row?.[declaredRow?.slot] === 'gold')
 
-    // The pair, and the half that says the seam widened one CALL rather than
-    // the model: the same column, sent by the CALLER this time. The hook runs
-    // either way and rebuilds the mirror from `fields`, so what lands is the
-    // derived value and never the one that was posted — naming a column is the
-    // application vouching for what IT put there, not a hole a payload climbs
-    // through. Asserted on the stored value, because a 201 alone is what a
-    // service that simply accepted the forgery would also answer.
+    // The pair: the same column, sent by the CALLER this time. The derivation
+    // runs either way and rebuilds the mirror from `fields`, so what lands is
+    // the derived value and never the one that was posted. Asserted on the
+    // stored value, because a 201 alone is what a service that simply accepted
+    // the forgery would also answer.
     const [bs, forged] = await post('/customers', {
       name: `HTTP2 ${RUN}`, firstName: 'HTTP2', lastName: RUN,
-      email: `cf-${RUN}-http2@example.test`, fields: { [key]: 'bronze' }, slots: { t1: 'forged' },
+      email: `cf-${RUN}-http2@example.test`, fields: { [key]: 'bronze' }, fieldsSlots: { t1: 'forged' },
     })
     if (forged?.id) made.customers.push(forged.id)
     t('http.aCallersOwnSlotsAreOverwrittenByTheHook',
-      bs === 201 && forged?.slots?.[declaredRow?.slot] === 'bronze'
-      && !Object.values(forged?.slots ?? {}).includes('forged'))
+      bs === 201 && forged?.fieldsSlots?.[declaredRow?.slot] === 'bronze'
+      && !Object.values(forged?.fieldsSlots ?? {}).includes('forged'))
 
     // A patch rebuilds the mirror WHOLE, so the old value has to leave its slot
     // — merging would keep segmenting a row on a value it no longer holds.
@@ -376,10 +532,17 @@ try {
   for (const id of made.fields) {
     try { await sys.customField.delete({ where: { id } }) } catch {}
   }
+  // `Product` soft-deletes and keeps its unique name and slug, same as a
+  // customer's email — hiding one leaves both claimed for every later run.
+  for (const id of made.products) {
+    try { await sys.product.delete({ where: { id }, withDeleted: true }) } catch {}
+  }
 }
 
 const expected = {
   'pool.startsFromWhateverTheShopHad': true,
+  'pool.aGeneratedColumnThatIsNotASlotIsNotInIt': true,
+  'pool.isTheTwelveTheSeedDeclares': true,
   'declare.aTextFieldTakesATextSlot': true,
   'declare.aNumberFieldTakesANumberSlot': true,
   'declare.theTwoPoolsDoNotShare': true,
@@ -404,12 +567,28 @@ const expected = {
   'audience.matchesAudienceSaysUndecidableRatherThanGuessing': true,
   'index.aPromotedSegmentReachesAnIndex': true,
   'index.andItIsTheCompositeOverThePool': true,
+  'blob.aModelWithNoPoolAllocatesNoSlot': true,
+  'blob.andTheCustomerFieldStillGotOne': true,
+  'blob.itIsNotRefused': true,
+  'blob.theSameKeyOnTwoModelsIsTwoFields': true,
+  'blob.theValueStoresAndReadsBack': true,
+  'blob.thereIsNoMirrorToGoStale': true,
+  'blob.everyTermIsUnindexedRatherThanUnknown': true,
+  'assembler.oneFunctionRendersBoth': true,
+  'assembler.aPromotedFieldAndAnUnpromotedOneRenderIdentically': true,
+  'assembler.aDeclaredDefaultReachesTheRule': true,
+  'assembler.anEmptyDefaultIsAbsentRatherThanBlank': true,
+  'assembler.showChoosesTableColumns': true,
+  'assembler.andAHiddenFieldIsStillOnTheForm': true,
   'index.aRawQueryMissingTheSoftDeleteClauseScans': true,
+  'index.twoTextTermsReachTwoColumnsOfTheComposite': true,
 
   'http.declaringAFieldIsNotA500': true,
-  'http.andTheApplicationAllocatedTheSlot': true,
+  'http.andTheBoundaryAllocatedTheSlot': true,
+  'http.declaringOnAPoollessModelIsTheSame201': true,
+  'http.andItsSlotIsNullRatherThanAnError': true,
   'http.creatingACustomerIsNotA403': true,
-  'http.andTheMirrorWasBuiltByTheHook': true,
+  'http.andTheMirrorWasDerived': true,
   'http.andTheGeneratedColumnReadsIt': true,
   'http.aCallersOwnSlotsAreOverwrittenByTheHook': true,
   'http.aPatchMovesTheMirror': true,

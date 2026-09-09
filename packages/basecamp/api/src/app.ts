@@ -32,7 +32,7 @@ import { createBasecampDb }              from './core/db.ts'
 import { createSecretResolver }          from './core/credentials.ts'
 import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts'
 import { registerAllAccounts } from './providers/compute/accounts.ts'
-import { enrollTokenMatches, mintOutpostSecret } from './providers/compute/enrollment.ts'
+import { enrollTokenMatches, mintOutpostSecret, installScript } from './providers/compute/enrollment.ts'
 import { notificationsPlugin }  from '@frontierjs/notifications'
 import { basecampAuditLog, basecampAuditPreImage, requireOutpostSignature, resolveWorkspaceId } from './core/hooks.ts'
 import { grantsFor } from './core/capabilities.ts'
@@ -518,7 +518,25 @@ export async function buildBasecampApp(
     },
     error: {
       all: [(ctx) => {
-        logger.error(`${ctx.service}.${ctx.method} failed`, ctx.error ?? undefined)
+        // A refusal is not a fault, and this hook used to log both at ERROR: an
+        // appliance nobody has configured, a stranger's 401 and a role that may
+        // not act all arrived in the log looking like the app had broken, and
+        // they buried the 500s that had (`FJS-1018`).
+        //
+        // The status is READ rather than re-derived — junction sets
+        // `ctx.error` to a FrameworkError before this runs, and `code` is the
+        // HTTP status it decided. Restating that mapping here would be a second
+        // answer to a question junction already owns.
+        //
+        // Two tiers, not three: the app either FAILED (5xx, and somebody has to
+        // look) or REFUSED (4xx, and it worked). A ladder finer than that is a
+        // judgement about which refusals matter, which belongs on the screen
+        // reading the log rather than in the line being written.
+        const err    = ctx.error as (Error & { code?: number }) | null
+        const status = err?.code ?? 500
+        const what   = `${ctx.service}.${ctx.method} failed`
+        if (status >= 500) logger.error(what, err ?? undefined)
+        else               logger.warn(what, { status, message: err?.message })
       }],
     },
   })
@@ -759,6 +777,21 @@ export async function buildBasecampApp(
         serverId:  id,
       })
     })
+  })
+
+  // The install script, served to anybody who asks.
+  //
+  // Unauthenticated on purpose and it is not an oversight: the script carries no
+  // credential at all. Its three inputs — where to report, which row, and a
+  // single-use enrollment token — arrive as environment variables on the
+  // machine, so what is served here is worth nothing to whoever fetches it.
+  //
+  // Putting the token in this URL instead would put it in an access log, in a
+  // proxy's, and in the shell history of whoever pasted the command.
+  app.configure(function installRoute(a) {
+    a.get('/install.sh', () => new Response(installScript(), {
+      headers: { 'content-type': 'text/x-shellscript; charset=utf-8' },
+    }))
   })
 
   app.configure(function staticRoutes(a) {

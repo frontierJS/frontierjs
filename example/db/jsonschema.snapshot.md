@@ -272,6 +272,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
 | `description` | `string`? | — | — | `minLength: 0` `maxLength: 2000` | — |
 | `brand` | `Brand` | yes | — | — | — |
+| `fields` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `active` | `boolean` = `true` | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 | `variantCount` | `integer` | — | — | `x-aggregatable` `x-litestone-from` `x-litestone-kind` | — |
@@ -354,22 +355,22 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `userId` | `string`? | — | — | `x-litestone-kind` | — |
 | `orderCount` | `integer` | — | — | `x-aggregatable` `x-litestone-from` `x-litestone-kind` | — |
 | `fields` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
-| `slots` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` `x-litestone-kind` | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
+| `fieldsSlots` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` `x-litestone-kind` | — |
 | `t1` | `string`? | — | — | `x-litestone-kind` | — |
 | `t2` | `string`? | — | — | `x-litestone-kind` | — |
+| `n1` | `number`? | — | — | `x-litestone-kind` | — |
 | `t3` | `string`? | — | — | `x-litestone-kind` | — |
 | `t4` | `string`? | — | — | `x-litestone-kind` | — |
+| `n2` | `number`? | — | — | `x-litestone-kind` | — |
 | `t5` | `string`? | — | — | `x-litestone-kind` | — |
 | `t6` | `string`? | — | — | `x-litestone-kind` | — |
+| `n3` | `number`? | — | — | `x-litestone-kind` | — |
 | `t7` | `string`? | — | — | `x-litestone-kind` | — |
 | `t8` | `string`? | — | — | `x-litestone-kind` | — |
-| `n1` | `number`? | — | — | `x-litestone-kind` | — |
-| `n2` | `number`? | — | — | `x-litestone-kind` | — |
-| `n3` | `number`? | — | — | `x-litestone-kind` | — |
 | `n4` | `number`? | — | — | `x-litestone-kind` | — |
-| `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `name`, `firstName`, `lastName`, `email` · not accepted — `id`, `fullName`, `orderCount`, `t1`, `t2`, `t3`, `t4`, `t5`, `t6`, `t7`, `t8`, `n1`, `n2`, `n3`, `n4`, `version`
+**On create**: required — `name`, `firstName`, `lastName`, `email` · not accepted — `id`, `fullName`, `orderCount`, `version`, `t1`, `t2`, `n1`, `t3`, `t4`, `n2`, `t5`, `t6`, `n3`, `t7`, `t8`, `n4`
 
 ### `CustomField`
 
@@ -378,12 +379,15 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
+| `model` | `string` | yes | — | `minLength: 1` `maxLength: 40` | — |
 | `key` | `string` | yes | — | `pattern: "^[a-z][a-z0-9_]*$"` `minLength: 1` `maxLength: 40` | — |
 | `label` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
 | `type` | `CustomFieldType` | yes | — | — | — |
+| `defaultValue` | `string`? | — | — | `minLength: 0` `maxLength: 200` | — |
+| `show` | `boolean` = `true` | — | — | — | — |
 | `slot` | `string`? | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `key`, `label`, `type` · not accepted — `id`
+**On create**: required — `model`, `key`, `label`, `type` · not accepted — `id`
 
 ### `Discount`
 

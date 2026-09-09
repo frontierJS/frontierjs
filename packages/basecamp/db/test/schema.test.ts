@@ -2020,11 +2020,22 @@ describe('Deployment and Job declare their own state machines', () => {
     // of a SCOPED client — which is what every request holds.
     const dev = as(db, ws, 'developer')
 
-    expect((await dev.deployment.update({ where: { id: d.id }, data: { status: 'building' } })).status)
-      .toBe('building')
+    // `build` is the ENGINE's move. `deployments.patch` allows `status` and a
+    // developer reaches it, so without this a release could be walked to
+    // `success` by hand — a fabricated history on the surface that answers
+    // *what shipped* (`FJS-517`).
+    await expect(dev.deployment.update({ where: { id: d.id }, data: { status: 'building' } }))
+      .rejects.toThrow(/is @system/)
+
+    // The pair, or *the engine's moves are marked* cannot be told from *this
+    // caller can move nothing*: `cancel` is a person's and the same developer
+    // makes it.
+    expect((await dev.deployment.update({ where: { id: d.id }, data: { status: 'cancelled' } })).status)
+      .toBe('cancelled')
 
     // building -> pending is not declared, and the refusal NAMES what is legal
     // from here, which the old `TERMINAL.includes(...)` guard never did.
+    await sys.deployment.update({ where: { id: d.id }, data: { status: 'building' } })
     await expect(dev.deployment.update({ where: { id: d.id }, data: { status: 'pending' } }))
       .rejects.toThrow(/from 'building' to 'pending'/)
 
@@ -2051,7 +2062,7 @@ describe('Deployment and Job declare their own state machines', () => {
 
     // The same list `resource.transitions(row)` hands the browser.
     expect((await sys.deployment.transitions(d)).map((m: any) => m.name).sort())
-      .toEqual(['cancel', 'fail', 'push', 'succeed'])
+      .toEqual(['cancel', 'fail', 'succeed'])
 
     const done = await sys.deployment.transitions({ ...d, status: 'success' })
     expect(done.map((m: any) => m.name)).toEqual(['rollback'])

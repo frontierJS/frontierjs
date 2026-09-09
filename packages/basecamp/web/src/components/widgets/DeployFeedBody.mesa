@@ -17,7 +17,7 @@
 
   const TONE = {
     success: 'success', failed: 'danger', cancelled: 'muted',
-    rolled_back: 'warning', building: 'info', deploying: 'info', pushing: 'info', pending: 'muted',
+    rolled_back: 'warning', building: 'info', pending: 'muted',
   }
 
   async function load() {

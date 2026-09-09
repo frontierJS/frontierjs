@@ -13,7 +13,7 @@
 // POST /portal/:id  → ping (force health check, admin only) — dispatched
 //                    by X-Service-Method: ping, not a /ping sub-path
 
-import { createService, NotFound, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, roleOf, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import type { BasecampApp }        from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
@@ -107,6 +107,17 @@ function buildEntry(svc: typeof SERVICES[0], adapter: unknown, status: ServiceSt
   }
 }
 
+/**
+ * Whether a value can be an appliance id at all.
+ *
+ * `!id` is the guard everyone writes and it lets through the two values that
+ * caused this: `'null'` and `'undefined'` are non-empty strings, which is what
+ * a template literal produces from a variable that was not set.
+ */
+function isUsableId(id: unknown): id is string {
+  return typeof id === 'string' && id !== '' && id !== 'null' && id !== 'undefined'
+}
+
 export function createPortalService(app: BasecampApp) {
   return createService({
     name: 'portal',
@@ -121,6 +132,23 @@ export function createPortalService(app: BasecampApp) {
     },
 
     async get() {
+      // Two different failures wore one sentence. `$.id` is null when the call
+      // carried no id at all, and the string 'null' when a caller interpolated
+      // one, and `Portal service 'null' not found` was the answer to both — and
+      // to an appliance that genuinely is not in the registry (`FJS-1018`). A
+      // reader of the log could not tell *a screen is asking wrong* from *this
+      // appliance is gone*, which is the difference between a bug in this app
+      // and a configuration somebody removed.
+      //
+      // Separated by STATUS as well as wording: a value that is not an id is
+      // the caller's mistake (400) and a real id nobody serves is a miss (404).
+      // The string forms are checked because `!id` does not catch them — they
+      // are what a template writes when the value it interpolated was empty.
+      if (!isUsableId($.id))
+        throw new BadRequest(
+          `portal.get needs an appliance id and was given ${JSON.stringify($.id)}. ` +
+          `A screen that reached here interpolated an empty value into a call or a URL.`)
+
       const svc = SERVICES.find(s => s.id === $.id)
       if (!svc) throw new NotFound(`Portal service '${$.id}' not found`)
 
@@ -130,6 +158,11 @@ export function createPortalService(app: BasecampApp) {
 
     async create() {
       const id  = ($.data as Record<string, unknown>)?.id as string ?? $.id as string
+      // Same separation as get(): a ping is addressed to an appliance, so a
+      // value that cannot be one is the caller's mistake rather than a miss.
+      if (!isUsableId(id))
+        throw new BadRequest(
+          `portal ping needs an appliance id and was given ${JSON.stringify(id)}.`)
       const svc = SERVICES.find(s => s.id === id)
       if (!svc) throw new NotFound(`Portal service '${id}' not found`)
 

@@ -60,13 +60,18 @@ function fail(msg) { console.error(`\n✗ ${msg}\n`); cleanup().then(() => proce
 // ─── A database of its own ───────────────────────────────────────────────
 const SCRATCH = mkdtempSync(join(tmpdir(), 'basecamp-screens-'))
 const DB      = join(SCRATCH, 'basecamp.db')
+// A database is TWO declared paths, and redirecting one of them is what this
+// drive used to do: `database main` moved here and `database audit` followed
+// the CWD, which is `PKG`, so every audit row 83 checks generate landed in the
+// developer's own `db/audit/` and nothing failed either way (`FJS-633`).
+const AUDIT   = join(SCRATCH, 'audit/')
 
 console.log('\nBasecamp — the screens\n')
 console.log(`  seeding ${DB}`)
 
 const seed = spawn('bun', ['db/seed.js'], {
   cwd: PKG, stdio: ['ignore', 'ignore', 'pipe'],
-  env: { ...process.env, DATABASE_URL: DB },
+  env: { ...process.env, DATABASE_URL: DB, AUDIT_PATH: AUDIT },
 })
 let seedErr = ''
 seed.stderr.on('data', d => { seedErr += d })
@@ -88,7 +93,7 @@ for (const [name, port] of [['API', API_PORT], ['web', WEB_PORT]]) {
 // and killing every child would take the dev server and the browser with it.
 const api = spawn('bun', ['api/index.ts'], {
   cwd: PKG, stdio: 'ignore', detached: true,
-  env: { ...process.env, DATABASE_URL: DB, APP_URL: BASE },
+  env: { ...process.env, DATABASE_URL: DB, APP_URL: BASE, AUDIT_PATH: AUDIT },
 })
 children.push(api)
 children.push(spawn('bun', ['run', 'web'], { cwd: PKG, stdio: 'ignore', detached: true }))
@@ -184,7 +189,7 @@ async function until(expression, predicate, label, ms = 15_000) {
 async function auditFixture(n, tag) {
   const p = spawn('bun', ['web/test/audit-fixture.mjs', String(n), tag], {
     cwd: PKG, stdio: ['ignore', 'ignore', 'pipe'],
-    env: { ...process.env, DATABASE_URL: DB },
+    env: { ...process.env, DATABASE_URL: DB, AUDIT_PATH: AUDIT },
   })
   let err = ''
   p.stderr.on('data', d => { err += d })

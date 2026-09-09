@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-50 model(s) · 34 enum(s) · 2 database(s)
+50 model(s) · 35 enum(s) · 2 database(s)
 audit → logger · main → sqlite
 ```
 
@@ -32,18 +32,19 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `Capability` | `Environment.create` · `Environment.delete` · `Environment.update` · `Environment.variables` · `Server.create` · `Server.delete` · `Server.destroy` · `Server.drain` · `Server.provision` · `Server.reboot` · `Server.undrain` · `Server.update` |
 | `ChannelKind` | `email` · `pagerduty` · `slack` · `webhook` |
 | `ComparisonOp` | `gt` · `gte` · `lt` · `lte` |
-| `DeployStatus` | `building` · `cancelled` · `deploying` · `failed` · `pending` · `pushing` · `rolled_back` · `success` |
+| `DeployStatus` | `building` · `cancelled` · `failed` · `pending` · `rolled_back` · `success` |
 | `EnvironmentTier` | `development` · `preview` · `production` · `staging` · `test` |
 | `FlagType` | `boolean` · `variant` |
 | `JobKind` | `one_shot` · `scheduled` · `triggered` · `workflow` |
 | `JobStatus` | `cancelled` · `failed` · `pending` · `running` |
 | `MetricType` | `counter` · `gauge` · `histogram` |
-| `NotificationContext` | `AlertEvent` · `Deployment` · `JobRun` · `Workspace` |
-| `NotificationKind` | `alert_firing` · `alert_resolved` · `deploy_failed` · `deploy_success` · `job_failed` · `member_joined` · `weekly_digest` |
+| `NotificationContext` | `AlertEvent` · `Deployment` · `JobRun` · `Server` · `Workspace` |
+| `NotificationKind` | `alert_firing` · `alert_resolved` · `deploy_failed` · `deploy_success` · `job_failed` · `member_joined` · `server_unreachable` · `weekly_digest` |
 | `ParamGenerator` | `random_hex_16` · `random_hex_32` · `random_hex_64` |
 | `ProviderKind` | `custom` · `digitalocean` · `hetzner` |
 | `RunStatus` | `failed` · `pending` · `running` · `success` · `timeout` |
 | `SecretKind` | `generic` · `notification` · `provider_key` · `registry_auth` · `ssh_key` · `tls_cert` |
+| `ServerEventKind` | `came_online` · `cleanup_failed` · `cleanup_queued` · `cleanup_ran` · `created` · `destroy_finished` · `destroy_requested` · `drain_cancelled` · `drain_started` · `enrollment_issued` · `provision_created` · `provision_ready` · `provision_requested` · `provision_timeout` · `reboot_requested` · `recipe_failed` · `recipe_ran` · `removed` · `status_sync_ignored` · `status_synced` · `sync_failed` · `sync_no_account` · `sync_requested` · `sync_unrecognized` · `sync_unsupported` · `unreachable` · `volume_removed` · `volumes_pruned` |
 | `ServerRole` | `build` · `database` · `gateway` · `general` · `worker` |
 | `ServerStatus` | `destroyed` · `destroying` · `draining` · `installing` · `online` · `pending` · `provisioning` · `stopped` · `unreachable` |
 | `StepStatus` | `failed` · `pending` · `running` · `skipped` · `success` |
@@ -582,13 +583,11 @@ table `deployment` · db `main` · gate `2.4.4.4`
 @@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
-transition status.build: pending → building
-transition status.cancel: building, deploying, pending, pushing → cancelled
-transition status.fail: building, deploying, pending, pushing → failed
-transition status.push: building → pushing
-transition status.release: pushing → deploying
+transition status.build: pending → building @system
+transition status.cancel: building, pending → cancelled
+transition status.fail: building, pending → failed @system
 transition status.rollback: success → rolled_back @gate(5)
-transition status.succeed: building, deploying, pushing → success
+transition status.succeed: building → success @system
 ```
 
 ### `DeploymentStep`
@@ -1278,7 +1277,6 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 | `lastHeartbeatAt` | `DateTime` | yes | — | — |
 | `name` | `String` | no | — | **required on write** |
 | `outpostSecretId` | `String` | yes | — | — |
-| `outpostUrl` | `String` | yes | — | — |
 | `outpostVersion` | `String` | yes | — | — |
 | `plan` | `Json` | no | `'{}'` | — |
 | `providerId` | `String` | yes | — | — |
@@ -1311,6 +1309,7 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 transition status.checkIn: installing, pending, unreachable → online @system
 transition status.destroy: draining, installing, online, pending, provisioning, stopped, unreachable → destroying @gate(5)
 transition status.drain: online → draining @gate(5)
+transition status.loseContact: online → unreachable @system
 transition status.provision: pending → provisioning @gate(5)
 transition status.reboot: online, unreachable → pending
 transition status.reportDestroyed: destroying → destroyed @system @gate(5)
@@ -1329,7 +1328,7 @@ table `server_event` · db `main` · gate `2.4.8.8`
 | --- | --- | --- | --- | --- |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
-| `kind` | `String` | no | — | **required on write** |
+| `kind` | `ServerEventKind` | no | — | **required on write** |
 | `message` | `String` | no | — | **required on write** |
 | `metadata` | `Json` | no | `'{}'` | — |
 | `server` | `Server` | — | — | relation |

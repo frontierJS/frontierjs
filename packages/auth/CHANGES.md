@@ -1,5 +1,21 @@
 # Changes — @frontierjs/auth
 
+## 2026-09-08 — 1.0.4 closes the schema an installed app could not parse
+
+**`1.0.3` shipped `@guarded(all)` and the language had deleted that argument.** The tree's copy was
+corrected on 2026-09-04 with [`FJS-827`](../../ISSUES.md#fjs-827) and nothing here could see the
+difference: every app in this workspace resolves auth to `packages/auth/`, so the published bytes
+were read by nothing. An app installing from npm could not boot.
+
+Verified against the tarball rather than the tree, which is the only check that means anything for
+this class: `npm pack @frontierjs/auth@1.0.4` carries bare `@guarded` on all six columns, and the
+`registry` CI phase — which unpacks every `.lite` a published `exports` map offers and parses it
+with the tree's own parser — answers `6 published schema(s) parse`.
+
+`knownPublishedSchemas` is empty again. The entry was keyed `name@version` so it would go stale on
+the release that fixed it, and it did: the phase refused the run by name before the entry was
+removed. [`FJS-921`](../../ISSUES.md#fjs-921) closed.
+
 ## 2026-09-07 — the query needed the reader the body already had
 
 `GET /auth/email/verify?token[gt]=` verified somebody else's email address with

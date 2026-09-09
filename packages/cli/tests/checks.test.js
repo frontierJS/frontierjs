@@ -482,6 +482,34 @@ describe('package-model-drift', () => {
         line + '\n}\n',
     })
 
+    // A brace inside a note used to END the model: `declaredColumns` closes one
+    // when its depth reaches zero, and it counted braces in comment text — so
+    // every field after the note was invisible, and the rule compared half a
+    // model against the package's whole one.
+    //
+    // The brace is UNBALANCED on purpose. A note carrying both nets to zero and
+    // the depth never moves, so it proves nothing — which is what the first
+    // version of these two rows did, passing either way.
+    test('an unbalanced brace in a note does not end the model', () => {
+      // The row that fires: under the old reading the model closes early, and
+      // what the rule reports about a schema it can only half see is a finding
+      // this schema does not deserve.
+      const root = app('brace-note-clean',
+        '  filler       String?   // …and closes like } this\n  subjectType  Subject?')
+      expect(only(root, 'package-model-drift').findings).toEqual([])
+    })
+
+    test('…and real drift after such a note is still found', () => {
+      // The control. It passes either way by design — its job is to show the
+      // fix did not simply blind the rule, which is the other way to make the
+      // row above green.
+      const root = app('brace-note-drift',
+        '  filler       String?   // …and closes like } this\n  subjectType  Subject')
+      const { findings } = only(root, 'package-model-drift')
+      expect(findings).toHaveLength(1)
+      expect(findings[0].message).toContain('subjectType')
+    })
+
     test('an enum in place of the package’s String is not drift', () => {
       expect(only(app('enum', '  subjectType  Subject?'), 'package-model-drift').findings).toEqual([])
     })
@@ -1367,6 +1395,48 @@ describe('detail-read-dead', () => {
     expect(only(root, 'detail-read-dead').findings).toEqual([])
   })
 
+  test('the assignment inside a .then callback is the same dead read', () => {
+    // The spelling a GENERATOR reaches for, and the one that was invisible: the
+    // call is a statement and the assignment is forward, inside the callback
+    // that resolves it, where the backward walk above cannot see it. It was
+    // what `fli admin:generate` emitted once per model, which is the worst
+    // place for a blind spot — a hand-written screen is one screen and a
+    // generated one is every screen.
+    const root = tree('drd-then', screen(
+      "<script>\n  let record = null\n" +
+      "  orders.service.get(id)\n" +
+      "    .then(row => { record = row })\n" +
+      "    .catch(e => { failed = e.message })\n</script>\n"))
+    const { findings } = only(root, 'detail-read-dead')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/`record` keeps a row/)
+  })
+
+  test('a .then that keeps nothing is not a dead read', () => {
+    // The control beside it. A callback that acts on the row rather than
+    // parking it has nothing to go stale, so a rule matching every `.then`
+    // after a `get()` would report the shape it should be recommending.
+    const root = tree('drd-then-transient', screen(
+      "<script>\n  function open(id) {\n" +
+      "    orders.service.get(id)\n" +
+      "      .then(row => goto('/orders/' + row.reference))\n  }\n</script>\n"))
+    expect(only(root, 'detail-read-dead').findings).toEqual([])
+  })
+
+  test('an unrelated assignment three lines down is not this read', () => {
+    // What bounds the forward walk. Without the chain guard the loop scans on
+    // from any `get()` and pairs the first `NAME =` inside any arrow function
+    // it meets — so a one-shot read followed by an unrelated loop reports a
+    // variable that has nothing to do with it, and a rule that fires on
+    // everything cannot be told from one that works.
+    const root = tree('drd-then-unrelated', screen(
+      "<script>\n  async function totals(id) {\n" +
+      "    const row = await orders.service.get(id)\n" +
+      "    lines.forEach(x => { total = total + x.amount })\n" +
+      "    return total\n  }\n</script>\n"))
+    expect(only(root, 'detail-read-dead').findings).toEqual([])
+  })
+
   test('watching it is what silences the rule', () => {
     const root = tree('drd-record', screen(
       "<script>\n  let order = null\n  const row = orders.record(page.params.id)\n" +
@@ -1672,6 +1742,70 @@ describe('transition-methods', () => {
     expect(findings[0].message).toMatch(/'closed'\) names no move/)
   })
 
+  // ── comments inside the block ──────────────────────────────────────────
+  //
+  // The clause split is on top-level commas, so a comma inside a comment splits
+  // a move in half — the name is lost and the fragments arrive as moves nobody
+  // declared. It reached a real schema: basecamp's `loseContact` sits under a
+  // six-line note carrying three commas, so the move went missing and a working
+  // `transition(id, 'loseContact')` was reported as a call that "has never
+  // worked", with a STATE listed among the moves the rule thought were there.
+  //
+  // Each case is a PAIR — the same machine with the comment removed must still
+  // report nothing — because a parse that dropped every clause would satisfy
+  // any test asking only that the false positive is gone.
+
+  test('a comma inside a line comment does not split a move', () => {
+    const moves = 'qualify: new -> qualified,\n' +
+      '    // The counterpart, and the only one nothing asks for: it is noticed,\n' +
+      '    // rather than requested, which is a different fact with a different fix.\n' +
+      '    close: [new, qualified] -> closed'
+    const root = tree('tm-comment-comma', app(moves,
+      "export const q = () => $.db.lead.transition($.id, 'qualify')\n" +
+      "export const c = () => $.db.lead.transition($.id, 'close')\n"))
+    expect(only(root, 'transition-methods').findings).toHaveLength(0)
+  })
+
+  test('…and the move it guards is still DECLARED, not merely unreported', () => {
+    // The pair that matters, and it is the sharper direction: the row above
+    // passes if the comment made the whole block unreadable, because a rule that
+    // declared nothing reports nothing. This drives a move that does NOT exist,
+    // so the message has to list the two that do.
+    const moves = 'qualify: new -> qualified,\n' +
+      '    // A note, with a comma in it.\n' +
+      '    close: [new, qualified] -> closed'
+    const root = tree('tm-comment-declared', app(moves,
+      "export const q = () => $.db.lead.transition($.id, 'qualify')\n" +
+      "export const c = () => $.db.lead.transition($.id, 'close')\n" +
+      "export const x = () => $.db.lead.transition($.id, 'archive')\n"))
+    const { findings } = only(root, 'transition-methods')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/'archive'\) names no move/)
+    expect(findings[0].message).toMatch(/Declared moves: qualify, close\./)
+  })
+
+  test('a trailing comment on a clause line is dropped too', () => {
+    const moves = 'qualify: new -> qualified,   // asked for, by a person\n' +
+      '    close: [new, qualified] -> closed  // noticed, not asked for'
+    const root = tree('tm-comment-trailing', app(moves,
+      "export const q = () => $.db.lead.transition($.id, 'qualify')\n" +
+      "export const c = () => $.db.lead.transition($.id, 'close')\n"))
+    expect(only(root, 'transition-methods').findings).toHaveLength(0)
+  })
+
+  test('a block comment is dropped, including the parens inside it', () => {
+    // A `(` or `)` in a comment breaks the BALANCE scan rather than the clause
+    // split, which is why comments go before it: an unbalanced count runs the
+    // block to the end of the file and takes every later model with it.
+    const moves = 'qualify: new -> qualified,\n' +
+      '    /* close is the one nobody asks for (it is noticed), so: */\n' +
+      '    close: [new, qualified] -> closed'
+    const root = tree('tm-comment-block', app(moves,
+      "export const q = () => $.db.lead.transition($.id, 'qualify')\n" +
+      "export const c = () => $.db.lead.transition($.id, 'close')\n"))
+    expect(only(root, 'transition-methods').findings).toHaveLength(0)
+  })
+
   test('a from-LIST is one clause, and the move keeps its name', () => {
     // The parse that costs the most: `close: [new, qualified] -> closed` splits
     // on a top-level comma only. Split naively it becomes two clauses, the name
@@ -1871,6 +2005,40 @@ describe('gate-unreachable', () => {
       'db/schema.lite': 'model Lead {\n  id Int @id\n  @@gate("0.4.4.5")\n}\n',
     }))
     expect(only(root, 'gate-unreachable').findings).toHaveLength(1)
+  })
+
+  // ── a gate that is only a note ─────────────────────────────────────────
+  //
+  // `declaredGates` skipped a line that STARTS with `//` and read one that ends
+  // with it, so a trailing note mentioning a level declared it. The rule then
+  // reports a rung nobody can reach that nobody wrote — and it is the shape
+  // that survives, because the finding reads exactly like a real one.
+  //
+  // A PAIR: the same schema with a real gate at that level must still be
+  // reported, or a fix that read no gates at all would satisfy the first row.
+
+  test('a level named only in a trailing comment is not a declaration', () => {
+    const root = tree('gu-comment-only', app5({
+      'db/schema.lite':
+        'model Lead {\n  id Int @id\n  status String  // was @@gate("5") once\n  @@gate("0.0.0.0")\n}\n',
+    }))
+    expect(only(root, 'gate-unreachable').findings).toHaveLength(0)
+  })
+
+  test('…and the same level declared for real still is', () => {
+    const root = tree('gu-comment-real', app5({
+      'db/schema.lite':
+        'model Lead {\n  id Int @id\n  status String  // a note, mentioning nothing\n  @@gate("0.0.0.5")\n}\n',
+    }))
+    expect(only(root, 'gate-unreachable').findings).toHaveLength(1)
+  })
+
+  test('a block comment spanning lines hides what is inside it', () => {
+    const root = tree('gu-comment-block', app5({
+      'db/schema.lite':
+        'model Lead {\n  id Int @id\n  /* the old shape was\n     @@gate("5")\n     and is not any more */\n  @@gate("0.0.0.0")\n}\n',
+    }))
+    expect(only(root, 'gate-unreachable').findings).toHaveLength(0)
   })
 
   test('a standing column the shipped resolver reads answers it', () => {

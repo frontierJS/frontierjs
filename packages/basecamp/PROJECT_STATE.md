@@ -588,9 +588,14 @@ Also: `enum JobRunStatus` became `enum RunStatus`, shared by `JobRun`,
 
 **Nothing here is scheduled**, and both screens say why: a sweep or a recipe on
 a timer is a `Job` with a cron expression, and a second scheduler on either
-screen would be a second owner of when the fleet gets touched. The mock's
-per-server disk BARS are also not built — they need free space on `/`, which is
-a different reading from `docker system df`.
+screen would be a second owner of when the fleet gets touched.
+
+The per-server disk bars **are built** (2026-09-08). They wanted free space on
+`/`, which is a different reading from `docker system df`, and the Outpost's
+`vitals.js` has answered it since `FJS-1027`: `cleanup.usage` carries `fullness`
+off the heartbeat, and the bar is the kit's `tone="auto"`. A machine that has
+sent no reading gets a sentence rather than a bar at zero, which on this number
+reads as an empty disk.
 
 ## What holds `User` at USER(4) (2026-08-14)
 

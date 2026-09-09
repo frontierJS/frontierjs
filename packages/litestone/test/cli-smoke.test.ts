@@ -1250,3 +1250,112 @@ model Widget {
     expect(existsSync(join(elsewhere, 'out', 'audit', 'a.jsonl'))).toBe(true)
   })
 })
+
+// ─── studio --host without --token ───────────────────────────────────────────
+//
+// Studio serves a JS REPL holding `db` and `sys`, raw SQL, and schema and
+// migration writes, and it has no authentication of its own. `--token` and
+// `--readonly` both worked and nothing connected either to `--host`: the token
+// was consulted only inside `if (TOKEN)`, so a non-loopback bind with no token
+// answered `POST /api/repl` (`FJS-1029`). The pairing was stated in a source
+// comment, which is advice that fails open — indistinguishable from a guard.
+//
+// Every refusal here is PAIRED with the legitimate shape one flag away. A
+// guard that refused `--host` outright would satisfy any test asking only
+// about the refusal, and would have made the flag unusable for the two callers
+// who need it: a container and a LAN.
+//
+// The bind under test is `127.0.0.2` rather than `0.0.0.0`: it is outside the
+// exempt set so the guard sees a non-loopback host, and it is really loopback
+// so the suite never opens a port to the network to prove a point about
+// opening ports to the network.
+
+describe('studio refuses a non-loopback bind that carries no token', () => {
+  async function studioDir(label: string) {
+    const dir = makeFixtureDir(label)
+    await runCli(dir, ['migrate', 'create', 'init'])
+    await runCli(dir, ['migrate', 'apply'])
+    return dir
+  }
+
+  /** Start studio, read back the port it actually bound, and hand over the proc. */
+  async function serve(dir: string, args: string[]) {
+    const { proc, output } = await spawnUntil(
+      dir, ['studio', '--port=0', '--no-open', ...args],
+      buf => buf.includes('Studio at'),
+      { timeoutMs: 20_000 },
+    )
+    // The bound port, not the requested one — asserting against 0 would grade
+    // a server nothing can reach.
+    const port = Number(output.match(/Studio at http:\/\/[^\s:]+:(\d+)/)?.[1])
+    return { proc, port }
+  }
+
+  test('--host with no token is refused, and the refusal names what it would expose', async () => {
+    const dir = await studioDir('studio-host-guard')
+    const r   = await runCli(dir, ['studio', '--host=0.0.0.0', '--port=0', '--no-open'])
+
+    expect(r.exit).toBe(1)
+    const said = r.stdout + r.stderr
+    // Named rather than merely refused: an operator who cannot see what the
+    // flag opens reaches for the opt-out, which is the outcome this exists to
+    // avoid.
+    expect(said).toContain('/api/repl')
+    expect(said).toContain('--token')
+    // `--readonly` is the wrong fix and the message has to say so: it blocks
+    // the REPL and leaves /api/query's SELECT open, which is every row.
+    expect(said).toContain('--readonly is not a substitute')
+  })
+
+  test('--readonly does NOT satisfy the guard', async () => {
+    const dir = await studioDir('studio-host-readonly')
+    const r   = await runCli(dir, ['studio', '--host=0.0.0.0', '--readonly', '--port=0', '--no-open'])
+    expect(r.exit).toBe(1)
+  })
+
+  test('the default bind and an explicit loopback one both still start', async () => {
+    // The control. A guard that refused every --host would pass both rows
+    // above, and this is the pair that separates the two.
+    const dir = await studioDir('studio-host-loopback')
+    for (const args of [[], ['--host=127.0.0.1'], ['--host=localhost']]) {
+      const { proc, port } = await serve(dir, args)
+      try {
+        expect(port).toBeGreaterThan(0)
+        const res = await fetch(`http://127.0.0.1:${port}/api/info`)
+        expect(res.status).toBe(200)
+      } finally { await killProc(proc) }
+    }
+  }, 60_000)
+
+  test('--host with a token starts, and the token is what stands between the REPL and a stranger', async () => {
+    const dir = await studioDir('studio-host-token')
+    const { proc, port } = await serve(dir, ['--host=127.0.0.2', '--token=s3cret'])
+    try {
+      expect(port).toBeGreaterThan(0)
+      const repl = (headers: Record<string, string>) =>
+        fetch(`http://127.0.0.2:${port}/api/repl`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...headers },
+          body:    JSON.stringify({ code: 'return 1 + 1' }),
+        })
+
+      expect((await repl({})).status).toBe(401)
+      expect((await repl({ Authorization: 'Bearer nope' })).status).toBe(401)
+
+      // The pair. A server that answered 401 to everything satisfies both rows
+      // above and is a broken Studio rather than a guarded one.
+      const ok = await repl({ Authorization: 'Bearer s3cret' })
+      expect(ok.status).toBe(200)
+      expect((await ok.json() as any).result).toBe(2)
+    } finally { await killProc(proc) }
+  }, 40_000)
+
+  test('--insecure is the opt-out, and it is the only thing that opens a tokenless bind', async () => {
+    const dir = await studioDir('studio-host-insecure')
+    const { proc, port } = await serve(dir, ['--host=127.0.0.2', '--insecure'])
+    try {
+      expect(port).toBeGreaterThan(0)
+      expect((await fetch(`http://127.0.0.2:${port}/api/info`)).status).toBe(200)
+    } finally { await killProc(proc) }
+  }, 40_000)
+})

@@ -210,6 +210,26 @@ model Product {
   description String? @length(0, 2000)
   brand       Brand
 
+  /// What this shop records about a product that this schema does not name —
+  /// a care symbol, a supplier code, a fabric.
+  ///
+  /// The SAME feature as `Customer.fields` and deliberately half of it: keys
+  /// declared as `CustomField` rows, rendered by the same assembler, and no
+  /// slot pool underneath. A catalog is browsed and filtered by variant, price
+  /// and text, none of which is a shop-declared key, so the pool's cost — a
+  /// tax on every write to this table, forever, paid by shops that declared
+  /// nothing — buys nothing here. A term on one of these in a segment is
+  /// reported `unindexed` rather than refused.
+  fields      Json     @default("{}")
+
+  /// The same word as `Customer`'s, one argument short. No `max:` means no
+  /// mirror, no promoted columns and no index — a declared key here stores,
+  /// renders and edits and is never segmented on, which is the ORDINARY half of
+  /// this feature rather than a degraded one. The two tiers being one attribute
+  /// is what makes a shop's `care` field on a product and its `tier` field on a
+  /// customer render through the same assembler and take the same form rule.
+  @@extensible(fields, declaredBy: CustomField)
+
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
 
@@ -547,59 +567,6 @@ model Customer {
   /// — an audience nobody can select is a field nobody can use.
   fields      Json       @default("{}")
 
-  /// The same values re-keyed onto the pool below, written by
-  /// `api/src/domain/shop/custom-fields.ts` on every save and read by nobody.
-  ///
-  /// `@system` because the argument for locking it is entirely about the WRITE:
-  /// a caller who could set it directly could put a value in a slot that no
-  /// `CustomField` row claims, and then a segment would select rows on a field
-  /// the shop never declared. There is nothing to hide — every value in here is
-  /// a value of `fields`, one key along, and `fields` is read by anyone who may
-  /// read the customer.
-  ///
-  /// It was `@guarded` and that was the wrong half of the pair: `@guarded`
-  /// locks BOTH directions and has no hatch, so the hook that derives this
-  /// column was refused for naming it and every customer create over HTTP was a
-  /// 403 (`FJS-644`). `@system` is the one that means *the application writes
-  /// this and the caller does not*, and its hatch is a statement: the hook says
-  /// `ctx.system.add('slots')`, which keeps the gate, both row policies,
-  /// `@@softDelete` and the audit actor where `asSystem()` would drop all four.
-  slots       Json       @default("{}") @system
-
-  /// ─── The pool ───────────────────────────────────────────────────────────
-  ///
-  /// Twelve promoted columns. A `CustomField` row binds a shop's own key to one
-  /// of them, so the divergence between two shops is in the BINDING, which is a
-  /// row, and never in this file, which is the schema. That is what lets one
-  /// migrator serve every shop.
-  ///
-  /// GENERATED ALWAYS AS ... VIRTUAL, so they store nothing and the table does
-  /// not grow. Measured at 200k rows: a slot costs no storage (68 → 74 MB from
-  /// 10 slots to 200, and that spread is the index) and slows no read (0.3–0.9
-  /// ms at every pool size). What it costs is WRITES — SQLite parses the whole
-  /// table definition per statement, about 0.25 µs per row per column, so ten
-  /// slots is 12.6 µs an insert and two hundred is 62 µs.
-  ///
-  /// **An unused slot is a tax on every write to this table, paid by every shop
-  /// including the ones that declared nothing.** So the number comes from this
-  /// model's write rate and nothing else. A customer row is written once at
-  /// checkout and rarely after, which would justify forty; it is twelve because
-  /// this is also the app people read to learn the pattern, and a cap you can
-  /// reach is a cap you can see working. `verify:custom-fields` declares the
-  /// thirteenth on purpose.
-  t1 String? @generated("json_extract({slots}, '$.t1')")
-  t2 String? @generated("json_extract({slots}, '$.t2')")
-  t3 String? @generated("json_extract({slots}, '$.t3')")
-  t4 String? @generated("json_extract({slots}, '$.t4')")
-  t5 String? @generated("json_extract({slots}, '$.t5')")
-  t6 String? @generated("json_extract({slots}, '$.t6')")
-  t7 String? @generated("json_extract({slots}, '$.t7')")
-  t8 String? @generated("json_extract({slots}, '$.t8')")
-  n1 Float?  @generated("json_extract({slots}, '$.n1')")
-  n2 Float?  @generated("json_extract({slots}, '$.n2')")
-  n3 Float?  @generated("json_extract({slots}, '$.n3')")
-  n4 Float?  @generated("json_extract({slots}, '$.n4')")
-  
   /// ─── Removal, and why the orders do not go with it ──────────────────────
   ///
   /// A customer asks to be taken off the books. Until this column the shop
@@ -636,16 +603,37 @@ model Customer {
   /// 1 rather than 4 because a shopper who has registered and not yet clicked
   /// the link in their email is VISITOR(1), and their own order history is
   /// exactly the thing they should be able to see while they wait.
-  /// ONE composite over the pool, and the obvious shape is the wrong one.
-  /// Measured at 200k rows on a three-term segment: twelve single-column
-  /// indexes give 139 ms, because SQLite picks ONE of them and filters the rest
-  /// — the same sentence that makes Salesforce's index-sidecar design slower
-  /// than the scan it replaces. This is 2.7 ms.
+  /// ─── The pool ───────────────────────────────────────────────────────────
   ///
-  /// So allocation ORDER is load-bearing: a leading prefix is what serves a
-  /// one-term or two-term segment, and `allocateSlot` hands out t1 before t2 so
-  /// the field a shop declares first lands leftmost.
-  @@index([t1, t2, t3, t4, n1, n2, t5, t6, t7, t8, n3, n4])
+  /// `fields` above is what a person reads and edits; this is the half that
+  /// makes an audience selectable on it. A `CustomField` row binds a shop's own
+  /// key to one of twelve promoted columns, so the divergence between two shops
+  /// is in the BINDING, which is a row, and never in this file, which is the
+  /// schema. That is what lets one migrator serve every shop.
+  ///
+  /// The columns, their mirror and the ONE composite index over them are the
+  /// expansion of this line. They were written out by hand here, and beside
+  /// them the application kept a pool it derived by parsing this file back —
+  /// the same fact in two places, drifting in both directions in silence, since
+  /// an index changes no answer. The number is what remains a decision: an
+  /// unused slot is a tax on every write to this table, forever, paid by every
+  /// shop including the ones that declared nothing. Measured at 200k rows, a
+  /// VIRTUAL slot costs no storage and slows no read, and SQLite parses the
+  /// whole table definition per statement — about 0.25 µs per row per column,
+  /// so ten slots is 12.6 µs an insert and two hundred is 62 µs.
+  ///
+  /// A customer row is written once at checkout and rarely after, which would
+  /// justify forty. It is twelve because this is also the app people read to
+  /// learn the pattern, and a cap you can reach is a cap you can see working —
+  /// `verify:custom-fields` declares the thirteenth on purpose.
+  ///
+  /// 8:4 is the RATIO as much as the total: the pool is laid out two text per
+  /// number, so a shop's first two text fields land adjacently at the front of
+  /// the composite where a two-term segment reaches them. Measured across three
+  /// orderings and six field mixes the total index columns reached was 13 for
+  /// all three — the trade is conserved, so the order follows the mix a shop
+  /// actually declares rather than an ordering that is better.
+  @@extensible(fields, declaredBy: CustomField, max: { text: 8, number: 4 })
 
   @@gate("1.4.4.5")
   
@@ -683,13 +671,39 @@ type SegmentQuery {
 
 model CustomField {
   id     Int             @id
+
+  /// Which model carries it. A shop declares fields on more than one thing and
+  /// the two are not one namespace — `notes` on a product and `notes` on a
+  /// customer are different fields, which is why the key is unique per model
+  /// below rather than on its own.
+  ///
+  /// It is a plain string and not an enum because the set is the app's models,
+  /// which the seed already names; an enum here would be a second list to keep.
+  model  String          @length(1, 40)
+
   /// The shop's own name for it, as it appears in a segment and on a form.
   /// Lowercase and underscored because it is an identifier a person types into
   /// a query builder, and `@lower` means two shops cannot disagree with
   /// themselves about `VAT_Number` and `vat_number`.
-  key    String          @unique @lower @length(1, 40) @regex("^[a-z][a-z0-9_]*$")
+  key    String          @lower @length(1, 40) @regex("^[a-z][a-z0-9_]*$")
   label  String          @length(1, 80)
   type   CustomFieldType
+
+  /// What a form puts in the box before anybody types. Reaches the browser as
+  /// the field rule's `default`, which is the same key a column's `@default`
+  /// arrives under, so a generated form prefills a declared field the way it
+  /// prefills a declared column and no screen applies it by hand.
+  ///
+  /// A string whatever the type is: it is what somebody typed into a settings
+  /// form, and the control coerces it the way it coerces anything else a person
+  /// types. Storing a number here would need a second column nothing reads.
+  defaultValue String?    @length(0, 200)
+
+  /// Whether a list offers it as a column. An affordance and never a rule —
+  /// the value is readable by anyone who may read the row whatever this says,
+  /// and a field hidden here is one screen's default rather than a permission
+  /// (Invariant 6).
+  show   Boolean         @default(true)
 
   /// Which pooled column carries it, or null when the pool for its type is
   /// full. Null is an ANSWER and not a failure: the field still stores and
@@ -697,10 +711,16 @@ model CustomField {
   /// the declaration instead would tell a shop about an implementation detail
   /// they cannot see and cannot act on.
   ///
-  /// `@system` because the application allocates it. A caller choosing their
-  /// own slot could take one another field already holds, and `@unique` is the
-  /// second half of saying so — the two together are why this cannot collide.
-  slot   String?         @unique @system
+  /// `@system` because the Data boundary allocates it — `@@extensible(max:)`
+  /// fills it on create out of the pool that model declares, so no service here
+  /// carries an allocator and nothing in this app names a slot. A caller
+  /// choosing their own could take one another field already holds, and
+  /// `@@unique([model, slot])` below is the second half of saying so.
+  ///
+  /// A slot the payload STATES is honored rather than recomputed, which is what
+  /// lets a restore put each field back where it was: re-deriving them would
+  /// repoint live fields onto slots whose values were written for other keys.
+  slot   String?         @system
 
   /// Frozen once bound. Re-pointing a live field at a different slot would
   /// leave every existing row's value in the old one, so every segment on it
@@ -708,6 +728,18 @@ model CustomField {
   /// prevent, reintroduced by an edit. Changing which slot a field uses is a
   /// delete and a re-declare, which is honest about what it costs: a rebuild.
   createdAt DateTime     @default(now())
+
+  /// One key per model, and one slot per model.
+  ///
+  /// Both were `@unique` on the column alone while `Customer` was the only
+  /// model with declared fields, and both are wrong the moment a second one
+  /// has them: two models cannot each declare `notes`, and two models with
+  /// pools of their own cannot each hand out `t1`.
+  @@unique([model, key])
+  /// `nullsDistinct` because an unslotted field is deliberately unconstrained:
+  /// a model with no pool declares every one of its fields with `slot` null,
+  /// and those rows are not in conflict with each other.
+  @@unique([model, slot], nullsDistinct: true)
 
   /// Staff-only, both directions. Reading the list is how a segment builder
   /// offers its options, so a shopper has no use for it; writing it changes

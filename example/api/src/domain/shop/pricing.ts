@@ -222,7 +222,7 @@ export function discountProblem(
     if (unknown.length || unindexed.length)
       return `${discount.code} cannot be checked right now`
 
-    if (matchesAudience(where, audience.customer) !== true)
+    if (matchesAudience(audience.declared ?? [], where, audience.customer) !== true)
       return `${discount.code} is only for selected customers`
   }
 

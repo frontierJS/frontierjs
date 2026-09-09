@@ -11,6 +11,12 @@
 // It sits beside the service rather than inside it because the job imports it
 // and the service imports the job's definition to dispatch: one module both can
 // reach is what keeps that from being a cycle.
+//
+// It is also where the disk picture is KEPT over time. The row is a snapshot —
+// `@@unique([serverId])`, overwritten every report — so the trend has to be
+// written at the same moment from the same numbers, or the two answer
+// differently about the same instant. `core/server-metrics.ts` owns what the
+// series are called; this file owns when they are written.
 
 // ─── The outpost's wire contract ───────────────────────────────────────────
 // snake_case, like the heartbeat and the volume report and unlike every other
@@ -25,6 +31,9 @@ export interface DiskReport {
   build_cache?: { size_bytes?: number; reclaimable_bytes?: number }
 }
 
+import { recordDiskUsage } from '../../core/server-metrics.ts'
+import type { BasecampApp } from '../../basecamp.types.ts'
+
 const int = (n: unknown): number => Math.max(0, Math.round(Number(n) || 0))
 
 /**
@@ -36,7 +45,7 @@ const int = (n: unknown): number => Math.max(0, Math.round(Number(n) || 0))
  * second later would be a second answer to the same question. One owner, so the
  * two cannot disagree about which key means what.
  */
-export async function applyDiskReport(sys: any, serverId: string, data: DiskReport) {
+export async function applyDiskReport(app: BasecampApp, sys: any, serverId: string, data: DiskReport) {
   const row = {
     imagesTotal:                int(data.images?.total),
     imagesUnused:               int(data.images?.unused),
@@ -55,7 +64,14 @@ export async function applyDiskReport(sys: any, serverId: string, data: DiskRepo
   // it a machine checking in every minute would grow a row a minute and the
   // screen would show the first one it found.
   const existing = await sys.diskUsage.findFirst({ where: { serverId } })
-  return existing
-    ? sys.diskUsage.update({ where: { id: existing.id }, data: row })
-    : sys.diskUsage.create({ data: { serverId, ...row } })
+  const written  = existing
+    ? await sys.diskUsage.update({ where: { id: existing.id }, data: row })
+    : await sys.diskUsage.create({ data: { serverId, ...row } })
+
+  // AFTER the row, and from the same `row` rather than from `written`: the
+  // series is a second reading of what this report said, and re-reading the
+  // database for it would let a column default or a coercion put a different
+  // number on the graph from the one on the screen.
+  await recordDiskUsage(app, serverId, row, row.reportedAt)
+  return written
 }

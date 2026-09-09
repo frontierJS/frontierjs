@@ -28,6 +28,7 @@
   // is the whole reason this markup is not on either of them.
   import Form   from '@frontierjs/ui/components/forms/Form.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import { withCustomFields } from '@/custom-fields.js'
 
   export let record      = undefined   // absent → Form makes one from the schema
   export let method      = undefined   // Form's auto | create | patch
@@ -37,13 +38,24 @@
   export let submitId    = undefined   // a drive needs to find the button
   export let actions     = null        // snippet — replaces the whole button row
 
+  /// This shop's own `CustomField` rows for a product, when the screen has them.
+  ///
+  /// The SAME prop and the same assembler `Customer.mesa` uses, and neither
+  /// this file nor `withCustomFields` mentions a slot: a declared field is a
+  /// rule with a type, a label and maybe a default, and whether one of them is
+  /// also promoted to an indexed column is a fact about the Data boundary that
+  /// no form has any use for. A product's are never promoted; a customer's are.
+  export let declaredFields = null
+
+  $: _resource = withCustomFields(products, declaredFields)
+
   // Everything else — class, style, ondone, onerror, showError — rides
   // $attributes onto <Form>, which is where those props are declared. A caller
   // wanting entirely different buttons passes an `actions` snippet the same
   // way: <Form> takes a snippet prop over its own slot.
 </script>
 
-<Form resource={products} bind:record={record} {method} {actions} {...$attributes}>
+<Form resource={_resource} bind:record={record} {method} {actions} {...$attributes}>
   <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
   <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
 </Form>

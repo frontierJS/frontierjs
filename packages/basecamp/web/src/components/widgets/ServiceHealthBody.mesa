@@ -24,8 +24,14 @@
 
   async function load() {
     error = null; missing = false
+    // `!id` alone lets through the two values a template writes when the thing
+    // it interpolated was not set: the STRINGS 'null' and 'undefined' are both
+    // truthy, and the service could not tell one from an appliance that is
+    // genuinely gone (`FJS-1018`). Checked here as well as at the boundary,
+    // because a widget with no service chosen is a STATE this screen draws and
+    // not a call worth making.
     const id = widget?.config?.serviceId
-    if (!id) { loading = false; missing = true; return }
+    if (!id || id === 'null' || id === 'undefined') { loading = false; missing = true; return }
     try {
       entry = await portal.service.get(id)
     } catch (e) {

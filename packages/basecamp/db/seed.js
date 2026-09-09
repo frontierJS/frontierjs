@@ -136,7 +136,7 @@ class DeploymentFactory extends Factory {
   definition(_seq, rng) {
     const seq    = uid()
     const status = rng
-      ? rng.pick(['success', 'success', 'success', 'failed', 'rolled_back', 'deploying'])
+      ? rng.pick(['success', 'success', 'success', 'failed', 'rolled_back', 'building'])
       : 'success'
     const sha = (rng ? rng.str(7) : 'abc1234')
     return {
@@ -150,7 +150,7 @@ class DeploymentFactory extends Factory {
       toImage:       `zot.local/acme/app:${sha}`,
       durationMs:    rng ? rng.int(20_000, 240_000) : 60_000,
       startedAt:     new Date(Date.now() - seq * 3_600_000).toISOString(),
-      finishedAt:    status === 'deploying'
+      finishedAt:    status === 'building'
         ? null
         : new Date(Date.now() - seq * 3_600_000 + 90_000).toISOString(),
     }
@@ -834,7 +834,7 @@ async function seedSteps(db, deployment) {
   // A failed deployment stops where it failed — the later steps never ran, and
   // recording them as 'pending' is what a real interrupted run leaves behind.
   const failedAt = deployment.status === 'failed'   ? 2
-                 : deployment.status === 'deploying' ? 3
+                 : deployment.status === 'building' ? 3
                  : -1
 
   for (const [i, name] of STEPS.entries()) {

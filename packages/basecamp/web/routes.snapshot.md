@@ -11,7 +11,7 @@ the diff: a URL that changed without a change you meant to make is a link
 somebody else already published.
 
 ```
-48 routes · 3 layouts · target spa · trailing slash always
+49 routes · 3 layouts · target spa · trailing slash always
 ```
 
 ## Routes
@@ -66,7 +66,8 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/secrets/` | `src/routes/secrets/index.mesa` | `src/routes/_module.mesa` | — |
 | `/servers/` | `src/routes/servers/index.mesa` | `src/routes/_module.mesa` | — |
 | `/servers/:id/` | `src/routes/servers/[id]/index.mesa` | `src/routes/_module.mesa` | `id` |
-| `/servers/create/` | `src/routes/servers/create.mesa` | `src/routes/_module.mesa` | — |
+| `/servers/import/` | `src/routes/servers/import.mesa` | `src/routes/_module.mesa` | — |
+| `/servers/provision/` | `src/routes/servers/provision.mesa` | `src/routes/_module.mesa` | — |
 | `/settings/` | `src/routes/settings/index.mesa` | `src/routes/_module.mesa` | — |
 | `/setup/` | `src/routes/setup/index.mesa` | `src/routes/_module.mesa` | — |
 | `/volumes/` | `src/routes/volumes/index.mesa` | `src/routes/_module.mesa` | — |
@@ -122,7 +123,8 @@ this section exists to show.
 - `/secrets/` — siteName: `Basecamp` · title: `Secrets`
 - `/servers/` — siteName: `Basecamp` · title: `Servers`
 - `/servers/:id/` — siteName: `Basecamp` · title: `Server`
-- `/servers/create/` — siteName: `Basecamp` · title: `Add server`
+- `/servers/import/` — siteName: `Basecamp` · title: `Import a machine`
+- `/servers/provision/` — siteName: `Basecamp` · title: `Provision a machine`
 - `/settings/` — siteName: `Basecamp` · title: `Your settings`
 - `/setup/` — siteName: `Basecamp` · title: `First run`
 - `/volumes/` — siteName: `Basecamp` · title: `Volumes`
@@ -132,6 +134,6 @@ this section exists to show.
 Every `_module.mesa` reached by a route. One that is here and wraps nothing
 you expected is a directory boundary in the wrong place.
 
-- `src/routes/_module.mesa` — 39 routes: `/`, `/activity/`, `/alerts/`, `/api-keys/`, `/apps/:id/`, `/blueprints/`, `/channels/`, `/cleanup/`, `/cloud-spend/`, `/dashboards/`, `/dashboards/:id/`, `/deployments/`, `/deployments/:id/`, `/dns/`, `/environments/:id/`, `/flags/`, `/git-activity/`, `/infra-graph/`, `/invite/:token/`, `/jobs/`, `/jobs/:id/`, `/login/`, `/networks/`, `/observability/`, `/onboarding/`, `/portal/`, `/portal/:id/`, `/projects/`, `/projects/:id/`, `/projects/create/`, `/recipes/`, `/registry/`, `/secrets/`, `/servers/`, `/servers/:id/`, `/servers/create/`, `/settings/`, `/setup/`, `/volumes/`
+- `src/routes/_module.mesa` — 40 routes: `/`, `/activity/`, `/alerts/`, `/api-keys/`, `/apps/:id/`, `/blueprints/`, `/channels/`, `/cleanup/`, `/cloud-spend/`, `/dashboards/`, `/dashboards/:id/`, `/deployments/`, `/deployments/:id/`, `/dns/`, `/environments/:id/`, `/flags/`, `/git-activity/`, `/infra-graph/`, `/invite/:token/`, `/jobs/`, `/jobs/:id/`, `/login/`, `/networks/`, `/observability/`, `/onboarding/`, `/portal/`, `/portal/:id/`, `/projects/`, `/projects/:id/`, `/projects/create/`, `/recipes/`, `/registry/`, `/secrets/`, `/servers/`, `/servers/:id/`, `/servers/import/`, `/servers/provision/`, `/settings/`, `/setup/`, `/volumes/`
 - `src/routes/admin/_module.mesa` — 3 routes: `/admin/`, `/admin/adapters/`, `/admin/audit/`
 - `src/routes/hub/_module.mesa` — 6 routes: `/hub/`, `/hub/backups/`, `/hub/flags/`, `/hub/settings/`, `/hub/users/`, `/hub/workspaces/`

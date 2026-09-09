@@ -29,7 +29,7 @@
   },
   "scripts": {
     "test": "vitest run",
-    "test:safety": "bun tests/static-safety-real.mjs",
+    "test:safety": "bun tests/static-safety-real.mjs && bun tests/filter-operators-real.mjs",
     "test:widgets": "cd tests/fixtures/widget-site && node ../../../src/tools/cli.js widgets --config config/sierra.config.js && node test/verify.mjs",
     "test:watch": "vitest",
     "typecheck": "node ../../scripts/typecheck.mjs",
@@ -38,7 +38,7 @@
   },
   "dependencies": {
     "@frontierjs/toolbelt": "workspace:*",
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.3.2"
   },
   "devDependencies": {
     "@frontierjs/junction": "workspace:*",

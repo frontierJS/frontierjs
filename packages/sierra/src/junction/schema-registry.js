@@ -53,6 +53,30 @@ let _models = {}
  */
 let _updateModels = {}
 
+/**
+ * The same models in READ mode — what a row a caller RECEIVED can hold.
+ *
+ * The third mode, and the one no display surface can do without. Create and
+ * update are both WRITE schemas, which is why the second ships as a delta off
+ * the first; a read schema differs from either by the family of columns nobody
+ * writes:
+ *
+ *   `@computed` / `@generated`  → the property at all, `readOnly`
+ *   `@derived`, `@from`         → the property at all, plus its `x-litestone-*`
+ *   server-assigned `@id`       → the property at all
+ *
+ * Without it a generated table can rank and render only what a caller may
+ * WRITE, so a computed total — the example this exists for — reaches no screen,
+ * and `columnList` cannot show a column its rule map was never given.
+ *
+ * **Read is not a superset of create**, which is why this is a third table
+ * rather than a replacement: a `@transient` column is present in both write
+ * modes and absent here, being written and never read back.
+ *
+ * @type {Record<string, object>}
+ */
+let _readModels = {}
+
 /** @type {Record<string, string>} accessor / service name → model name */
 let _index = {}
 
@@ -77,11 +101,17 @@ function _looksLikeModel(def) {
  *        model — see `diffSchemaModes`. Omitted (an older build, or a schema
  *        passed by hand) → the update tables are the create ones, which is the
  *        behavior before `FJS-807` and degrades rather than fails.
+ * @param {object} [readPatch] the same for READ mode. Omitted → the read tables
+ *        are the create ones, which is what every build before this emitted: a
+ *        display surface then sees the columns a caller may WRITE and no
+ *        others, so a `@computed` total is missing from a table that otherwise
+ *        looks finished.
  */
-export function registerSchemas(defs, modelNames, updatePatch) {
+export function registerSchemas(defs, modelNames, updatePatch, readPatch) {
   _defs = defs ?? {}
   _models = {}
   _updateModels = {}
+  _readModels = {}
   _index = {}
 
   const names = modelNames ?? Object.keys(_defs).filter(n => _looksLikeModel(_defs[n]))
@@ -91,6 +121,7 @@ export function registerSchemas(defs, modelNames, updatePatch) {
     if (!def) continue
     _models[modelName] = def
     _updateModels[modelName] = applySchemaModePatch(def, updatePatch?.[modelName])
+    _readModels[modelName]   = applySchemaModePatch(def, readPatch?.[modelName])
 
     const accessor = modelName.charAt(0).toLowerCase() + modelName.slice(1)
     // Every spelling a caller might reasonably use: the model name as declared,
@@ -327,6 +358,21 @@ export function schemaFor(...names) {
 export function updateSchemaFor(...names) {
   const key = modelNameFor(...names)
   return key ? (_updateModels[key] ?? _models[key] ?? null) : null
+}
+
+/**
+ * The same model in READ mode — what a row a caller received can hold.
+ *
+ * What a TABLE and a DETAIL VIEW rank and render, where `schemaFor` is what a
+ * create form fills in. Falls back the same way, so a caller can use it
+ * unconditionally.
+ *
+ * @param   {...string} names  candidates, first match wins
+ * @returns {object|null}
+ */
+export function readSchemaFor(...names) {
+  const key = modelNameFor(...names)
+  return key ? (_readModels[key] ?? _models[key] ?? null) : null
 }
 
 /**

@@ -9,7 +9,7 @@ import { LEVELS }                       from '@frontierjs/toolbelt/gate'
 import { expandCapabilityType } from './capabilities.js'
 // One owner for the range a value round-trips through a JS number in — the
 // validator's, so a refusal here and a refusal at the boundary name one number.
-import { EXACT_INT_MAX } from './validate.js'
+import { EXACT_INT_MAX, validateJsonPatch } from './validate.js'
 import { compileStatic, policyExprToString } from './policy.js'
 import { sealedStates, sealFaults } from './seal.js'
 
@@ -2430,6 +2430,66 @@ class Parser {
         return { kind: 'labelField', field }
       }
       case 'external': return { kind: 'external' }  // table exists outside migrations
+      // @@extensible(fields, declaredBy: CustomField)
+      // @@extensible(fields, declaredBy: CustomField, max: { text: 8, number: 4 })
+      //
+      // A column whose KEYS a tenant declares at runtime, and a model whose rows
+      // are those declarations. `max:` is the optional half and it is what costs
+      // something: it generates a pool of promoted columns so a declared key can
+      // be filtered on, and an unused slot is a tax on every write to this table
+      // forever, paid by every tenant including the ones who declared nothing.
+      //
+      // The declaring model is named rather than described, and its columns are
+      // found by convention with a refusal that names what is missing — see
+      // § extensible in validate(). One spelling, and a loud failure, beats a
+      // second set of names for columns the app has already written.
+      case 'extensible': {
+        this.eat(TK.LPAREN)
+        const column = this.eat(TK.IDENT).value
+        let declaredBy = null
+        let max        = null
+
+        while (this.maybeEat(TK.COMMA)) {
+          const argName = this.eat(TK.IDENT).value
+          if (argName !== 'declaredBy' && argName !== 'max')
+            throw new ParseError(
+              `@@extensible: unknown argument '${argName}' — expected 'declaredBy' or 'max'`, this.peek())
+          this.eat(TK.COLON)
+          if (argName === 'declaredBy') {
+            declaredBy = this.eat(TK.IDENT).value
+            continue
+          }
+          // `max: { text: 8, number: 4 }` — one entry per member of the
+          // declaring model's own type enum, so the pool's SHAPE is stated in
+          // the app's own vocabulary rather than in slot names.
+          this.eat(TK.LBRACE)
+          max = {}
+          while (!this.check(TK.RBRACE)) {
+            const kind = this.eat(TK.IDENT).value
+            this.eat(TK.COLON)
+            if (!this.check(TK.NUMBER))
+              throw new ParseError(`@@extensible(max: { ${kind}: … }): expected a number`, this.peek())
+            const n = this.eat(TK.NUMBER).value
+            if (!Number.isInteger(n) || n < 1)
+              throw new ParseError(`@@extensible(max: { ${kind}: ${n} }): expected a whole number of slots, 1 or more`, this.peek())
+            if (kind in max)
+              throw new ParseError(`@@extensible(max: …): '${kind}' is given twice`, this.peek())
+            max[kind] = n
+            if (!this.maybeEat(TK.COMMA)) break
+          }
+          this.eat(TK.RBRACE)
+          if (!Object.keys(max).length)
+            throw new ParseError(`@@extensible(max: {}): a pool with no slots is the declaration without max:`, this.peek())
+        }
+        this.eat(TK.RPAREN)
+
+        if (!declaredBy)
+          throw new ParseError(
+            `@@extensible(${column}, …) needs declaredBy: — a blob with nobody declaring its keys is an ordinary Json column`,
+            this.peek())
+
+        return { kind: 'extensible', column, declaredBy, max }
+      }
       case 'softDelete': {
         // @@softDelete          — soft delete, no cascade
         // @@softDelete(cascade) — soft delete, cascade to child tables
@@ -4170,6 +4230,116 @@ function expandTenancy(schema) {
 // onMissing = 'error'. @scoped resolves ref to the @@auth model. The resolved
 // descriptor replaces the raw attribute in place and is also stashed as field.edge
 // for downstream (DDL / client) lookups. Returns an array of error strings.
+// ─── @@extensible ─────────────────────────────────────────────────────────────
+//
+// `max:` expands into exactly what an app writes by hand today: a mirror column
+// the application fills, one `@generated` column per slot reading it, and ONE
+// composite index over the pool. Expansion rather than a new path through the
+// DDL writer, so every downstream reader — migrations, `ddl.snapshot.sql`,
+// introspect, the JSON Schema, the access snapshot — sees ordinary columns and
+// has nothing to learn.
+//
+// It also removes the defect the hand-written version has by construction: the
+// allocation order and the index column order were two lists that had to agree
+// and did not, which costs a two-term segment its second column with nothing
+// failing. Here they are one list, built once.
+//
+// ── The order is a BET, and it is the app's rather than this function's ──
+//
+// A composite is read left to right, so which slots sit at the front decides
+// which segments reach the index. Measured at 20,000 rows over three orderings
+// and six field mixes, the total index columns reached was **13 for all three**
+// — the trade is conserved, there is no ordering that is better, only orderings
+// that are better for different mixes. So the only honest input is the ratio the
+// app itself declared: `max: { text: 8, number: 4 }` is 2:1, and the pool is
+// laid down two text per number. An app that expects mostly text says so and
+// gets a run of text at the front.
+const SLOT_AFFINITY = { text: 'String', number: 'Float', boolean: 'Boolean' }
+
+function expandExtensible(schema) {
+  const errors = []
+
+  for (const model of schema.models) {
+    for (const ext of model.attributes.filter(a => a.kind === 'extensible')) {
+      if (!ext.max) continue
+
+      const decl     = schema.models.find(m => m.name === ext.declaredBy)
+      const typeName = decl?.fields.find(f => f.name === 'type')?.type.name
+      const members  = schema.enums.find(e => e.name === typeName)?.values.map(v => v.name) ?? []
+      if (!members.length) continue   // already refused in validate()
+
+      // The mirror. `@system` because the application derives it from the blob:
+      // a caller naming it could put a value in a slot the declarations do not
+      // point at, which every segment would then match on.
+      const mirror = `${ext.column}Slots`
+      if (!model.fields.some(f => f.name === mirror)) {
+        model.fields.push({
+          name: mirror,
+          type: { kind: 'scalar', name: 'Json', array: false, optional: false },
+          attributes: [
+            { kind: 'default', value: { kind: 'string', value: '{}' }, generated: 'extensible' },
+            { kind: 'system', generated: 'extensible' },
+          ],
+          comments: [], generated: 'extensible',
+        })
+      }
+
+      // One queue per kind, in the order the enum declares them, then drained
+      // by the declared ratio so the front of the index matches the mix the app
+      // said it expects.
+      const queues = {}
+      for (const kind of members) {
+        const n = ext.max[kind] ?? 0
+        const p = kind.slice(0, 1)
+        queues[kind] = Array.from({ length: n }, (_, i) => `${p}${i + 1}`)
+      }
+      const total = Object.values(queues).reduce((a, q) => a + q.length, 0)
+      const unit  = Object.fromEntries(members.map(k =>
+        [k, Math.max(1, Math.round((ext.max[k] ?? 0) / Math.min(...members.map(m2 => ext.max[m2] || Infinity))))]))
+
+      const order = []
+      while (order.length < total) {
+        let moved = false
+        for (const kind of members) {
+          for (let i = 0; i < unit[kind]; i++) {
+            const slot = queues[kind]?.shift()
+            if (!slot) break
+            order.push([slot, kind]); moved = true
+          }
+        }
+        if (!moved) break
+      }
+
+      for (const [slot, kind] of order) {
+        if (model.fields.some(f => f.name === slot)) {
+          errors.push(`Model '${model.name}': @@extensible(max: …) needs the column '${slot}' and this model already declares one. Rename it — the pool's names are taken from the declaring model's own type enum`)
+          continue
+        }
+        model.fields.push({
+          name: slot,
+          type: { kind: 'scalar', name: SLOT_AFFINITY[kind] ?? 'String', array: false, optional: true },
+          attributes: [{ kind: 'generated', expr: `json_extract("${mirror}", '$.${slot}')`, stored: false, generated: 'extensible' }],
+          // The kind is stamped rather than read back off the name. `n1` is a
+          // number because the enum member `number` begins with an `n`, which
+          // is a fact about the expansion and not about the column, so every
+          // reader that re-derived it from the prefix was one rename away from
+          // coercing a value into the wrong affinity in silence.
+          comments: [], generated: 'extensible', extKind: kind,
+        })
+      }
+
+      // ONE composite. Several single-column indexes measured 139 ms on a
+      // three-term segment against the composite's 2.7 ms: SQLite picks one
+      // index and filters the rest, which is the same sentence that sinks the
+      // pivot-table designs this pool replaces.
+      if (order.length)
+        model.attributes.push({ kind: 'index', fields: order.map(([s]) => s), sorts: null, where: null, generated: 'extensible' })
+    }
+  }
+
+  return errors
+}
+
 function expandEdgeAttributes(schema) {
   const errors = []
   const lowerFirst = s => s.charAt(0).toLowerCase() + s.slice(1)
@@ -5467,6 +5637,122 @@ function validate(schema) {
     }
   }
 
+  // ── @@extensible ────────────────────────────────────────────────────────────
+  //
+  // The attribute names a column and a model and nothing else, and everything
+  // it needs from that model is found by CONVENTION — `model`, `key`, `type`,
+  // and `slot` where a pool is asked for. Convention rather than named
+  // arguments because a second spelling for columns the app has already written
+  // is a second thing to keep in step; a REFUSAL naming the missing column is
+  // what keeps that from being a silent guess.
+  for (const model of schema.models) {
+    const exts = model.attributes.filter(a => a.kind === 'extensible')
+    if (!exts.length) continue
+
+    const seen = new Set()
+    for (const ext of exts) {
+      const where = `Model '${model.name}': @@extensible(${ext.column}, declaredBy: ${ext.declaredBy})`
+
+      if (seen.has(ext.column))
+        errors.push(`${where} — '${ext.column}' is declared extensible twice. One column has one set of declarations`)
+      seen.add(ext.column)
+
+      const blob = model.fields.find(f => f.name === ext.column)
+      if (!blob) { errors.push(`${where} — there is no field '${ext.column}' on this model`); continue }
+      if (blob.type.name !== 'Json')
+        errors.push(`${where} — '${ext.column}' is ${blob.type.name} and has to be Json. The keys are a tenant's, so the column cannot have a shape`)
+
+      // A `@type` closes the column to the keys the FILE names, which is the
+      // one thing an extensible column may not be: a key declared at runtime
+      // would be refused until somebody deploys.
+      if (blob?.attributes.some(a => a.kind === 'type'))
+        errors.push(`${where} — '${ext.column}' also carries @type, which closes it to the keys this file names. A tenant declaring a key would be refused until the next deploy, which is what @@extensible exists to avoid`)
+
+      const decl = schema.models.find(m => m.name === ext.declaredBy)
+      if (!decl) { errors.push(`${where} — there is no model '${ext.declaredBy}'`); continue }
+
+      const need = [
+        ['model', f => f.type.name === 'String', 'String — which model a declaration is for'],
+        ['key',   f => f.type.name === 'String', 'String — the tenant\'s own name for the field'],
+        ['type',  f => f.type.kind === 'enum',   'an enum — what KIND of field it is'],
+      ]
+      if (ext.max) need.push(['slot', f => f.type.name === 'String' && f.type.optional,
+                              'String? — which pooled column carries it, null when there is none'])
+
+      for (const [name, ok, want] of need) {
+        const f = decl.fields.find(x => x.name === name)
+        if (!f)      errors.push(`${where} — '${ext.declaredBy}' has no '${name}' column. A declaring model needs ${name}: ${want}`)
+        else if (!ok(f)) errors.push(`${where} — '${ext.declaredBy}.${name}' is ${f.type.name}${f.type.optional ? '?' : ''} and has to be ${want}`)
+      }
+
+      // `max:` is keyed by the declaring model's own type enum, which is what
+      // makes `{ text: 8 }` mean anything. A key that is not a member would
+      // generate a pool no declaration can ever reach.
+      const typeField = decl.fields.find(x => x.name === 'type')
+      if (ext.max && typeField?.type.kind === 'enum') {
+        const en = schema.enums.find(e => e.name === typeField.type.name)
+        const members = new Set(en?.values.map(v => v.name) ?? [])
+        for (const kind of Object.keys(ext.max)) {
+          if (!members.has(kind))
+            errors.push(`${where} — max: names '${kind}', which is not a member of ${typeField.type.name} (${[...members].join(', ')}). A pool nothing can be declared into is a tax on every write and reachable by nobody`)
+        }
+      }
+
+      // A declaring model whose key is not unique PER MODEL is the drift this
+      // attribute exists to prevent: two models cannot each declare `notes`,
+      // and one model cannot declare it twice.
+      const hasKeyUnique = decl.attributes.some(a =>
+        (a.kind === 'uniqueIndex' || a.kind === 'partialUnique') &&
+        Array.isArray(a.fields) && a.fields.length === 2 &&
+        a.fields.includes('model') && a.fields.includes('key'))
+      if (!hasKeyUnique)
+        errors.push(`${where} — '${ext.declaredBy}' does not declare @@unique([model, key]). Without it one model can declare a key twice, and the second declaration is a field whose value nothing can find`)
+    }
+  }
+
+  // ── A @default its own @type would refuse ───────────────────────────────────
+  //
+  // `fields Json @default("{}") @type(T)` where T has a required key parses
+  // clean, stores `{}` on every create that names no value, and that value
+  // would be REFUSED if a caller sent it. The column's two attributes state
+  // different documents and the default wins in silence (`FJS-1032`).
+  //
+  // Decidable here because both halves are literals: the default is text in
+  // the file and the type is a shape in the same file, so nothing has to run.
+  // It is graded by the WRITE-PATH validator rather than by a check written
+  // here, because *does this value satisfy this type* must have one definition
+  // — a second one in the parser would drift from the one that refuses a
+  // caller, which is the only way this check could ever be wrong in the
+  // direction that matters.
+  {
+    const typeMap = new Map((schema.types ?? []).map(t => [t.name, t]))
+    const enums   = new Map((schema.enums ?? []).map(e => [e.name, e.values.map(v => v.name)]))
+    if (typeMap.size) for (const model of schema.models) {
+      for (const field of model.fields) {
+        const typeAttr = field.attributes.find(a => a.kind === 'type')
+        const defAttr  = field.attributes.find(a => a.kind === 'default')
+        if (!typeAttr || !defAttr || defAttr.value?.kind !== 'string') continue
+        if (!typeMap.has(typeAttr.name)) continue
+
+        let parsed
+        try { parsed = JSON.parse(defAttr.value.value) }
+        catch {
+          errors.push(`Model '${model.name}', field '${field.name}': @default is not JSON, and the column is @type(${typeAttr.name}) — ` +
+                      `a typed column's default has to be a document the type accepts`)
+          continue
+        }
+
+        const errs = validateJsonPatch(parsed, typeAttr.name, typeMap, typeAttr.strict !== false, [], 'full', enums)
+        if (!errs.length) continue
+        const said = errs.map(e => `${e.path.join('.') || '(root)'}: ${e.message}`).join('; ')
+        errors.push(
+          `Model '${model.name}', field '${field.name}': @default(${JSON.stringify(defAttr.value.value)}) is a value @type(${typeAttr.name}) refuses — ${said}. ` +
+          `A row written with no value for this column would hold a document the same schema rejects from a caller. ` +
+          `Give the default every key the type requires, or make those keys optional`)
+      }
+    }
+  }
+
   // ── Attribute legality, asked of FACETS rather than of pairs ────────────────
   //
   // The block above is one pair — `@unique` × `@encrypted` — ruled once, with a
@@ -6351,9 +6637,13 @@ function validate(schema) {
     if (view.db && jsonlNames.has(view.db))
       errors.push(`View '${view.name}': @@db(${view.db}) — views cannot be declared on jsonl databases`)
 
-    // @@materialized requires @@refreshOn
-    if (view.materialized && view.refreshOn.length === 0)
-      errors.push(`View '${view.name}': @@materialized requires @@refreshOn([...]) declaring source models`)
+    // @@refreshOn is what makes a materialized view TRIGGER-refreshed, and its
+    // absence is the other refresh strategy rather than an omission: the table
+    // is rebuilt when `db.<view>.refresh()` is called and at no other time. It
+    // used to be required here, which left the trigger strategy as the only one
+    // and its cost — a full re-aggregation per ROW written, inside the write's
+    // own transaction — unavoidable for anything declaring `@@materialized`
+    // (`FJS-971`).
 
     // @@refreshOn model names must exist
     for (const ref of view.refreshOn) {
@@ -6950,6 +7240,7 @@ export function parseFile(filePath) {
   expandHasTemplatesAttributes(schema)
   allErrors.push(...expandAuthorshipAttributes(schema))
   allErrors.push(...expandEdgeAttributes(schema))
+  allErrors.push(...expandExtensible(schema))
   const tenancy = expandTenancy(schema)
   allErrors.push(...tenancy.errors)
   allWarnings.push(...tenancy.warnings)
@@ -6998,10 +7289,11 @@ export function parse(src) {
   expandHasTemplatesAttributes(schema)
   const authorshipErrors = expandAuthorshipAttributes(schema)
   const edgeErrors = expandEdgeAttributes(schema)
+  const extErrors  = expandExtensible(schema)
   const tenancy = expandTenancy(schema)
   resolveTransitions(schema)
   const capabilityErrors = expandCapabilityType(schema)
   const { valid, errors, warnings } = validate(schema)
-  const merged = [...compositeIdErrors, ...authorshipErrors, ...edgeErrors, ...tenancy.errors, ...capabilityErrors, ...errors]
+  const merged = [...compositeIdErrors, ...authorshipErrors, ...edgeErrors, ...extErrors, ...tenancy.errors, ...capabilityErrors, ...errors]
   return { schema, valid: merged.length === 0, errors: merged, warnings: [...tenancy.warnings, ...warnings] }
 }

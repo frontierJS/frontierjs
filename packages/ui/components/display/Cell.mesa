@@ -1,0 +1,154 @@
+<script>
+  // Cell.mesa
+  // One value of one row, rendered for READING.
+  //
+  // `FormField.mesa` one surface along, and deliberately its twin: sierra's
+  // `displayFor` answers a NAME, a registration may claim that name, and this
+  // table is what the kit answers otherwise. The two halves live in different
+  // packages because the naming side must run in plain Node and the rendering
+  // side may not import sierra (`FJS-D17`).
+  //
+  // ── What this file is instead of ─────────────────────────────────────────
+  //
+  // Every generated list page carried a copy of five lines that stringified a
+  // value by its JS type:
+  //
+  //   if (typeof v === 'boolean') return v ? 'yes' : 'no'
+  //   if (typeof v === 'object')  return JSON.stringify(v)
+  //   return String(v)
+  //
+  // A JS type cannot answer any of the questions that matter. `@money` holds
+  // MINOR UNITS, so a price came out as `1299` — wrong in the way that looks
+  // right, which is the only way a number goes wrong quietly. An enum rendered
+  // its member name where the schema declared a `@label`. A relation rendered
+  // an id nobody recognizes. A `DateTime` rendered whichever way `String()`
+  // felt, with no answer to instant-or-wall-clock. Every one of those facts is
+  // DECLARED and none of them was read.
+  //
+  // ── null is rendered, never skipped ──────────────────────────────────────
+  //
+  // An empty cell and a cell holding an empty string look identical and mean
+  // different things, so nothing here returns '' — the em dash is the answer.
+
+  import { formatMoney } from '@frontierjs/toolbelt/units'
+  import { cx } from '../../utils.js'
+  import { displayComponent, defaultDisplayProps } from '../../controls.js'
+  import Json from './Json.mesa'
+  import Badge from './Badge.mesa'
+
+  // The value from the record. `undefined` and `null` are both "nothing here".
+  export let value  = undefined
+  // The entry from `resource.columns()` — `name`, `rule`, `tier`, and whatever
+  // `displayFor` answered: `currency`, `options`, `model`, `time`.
+  export let column = undefined
+  // The whole row, for a display that needs a sibling column.
+  export let record = undefined
+
+  const EMPTY = '—'
+
+  const empty = value === null || value === undefined
+
+  // An enum's `@label`, normalized onto `rule.options` by buildFieldRules. The
+  // member NAME is the fallback and not the answer: `awaiting_payment` is what
+  // a schema declaring `@label("Awaiting payment")` was written to avoid.
+  function enumLabel(v) {
+    const opts = column?.options
+    if (!Array.isArray(opts)) return String(v)
+    const hit = opts.find(o => (o?.value ?? o) === v)
+    return hit?.label ?? String(v)
+  }
+
+  // Money is the reason this component exists. `formatMoney` derives the scale
+  // from the CURRENCY rather than assuming two places, which is what makes a
+  // dinar right and a yen right.
+  function money(v) {
+    const currency = column?.currency
+      ?? (record && column?.currencyField ? record[column.currencyField] : null)
+      ?? 'USD'
+    return formatMoney(v, currency)
+  }
+
+  function scaled(v) {
+    const places = Number.isInteger(column?.scale) ? column.scale : 0
+    return (v / 10 ** places).toFixed(places)
+  }
+
+  // An instant is a moment everyone shares and a wall clock is a reading on
+  // somebody's wall; rendering the second in the viewer's zone moves an
+  // appointment. So the declaration decides, and only a resolved instant is
+  // localized.
+  function time(v) {
+    const kind = column?.time?.kind
+    if (kind === 'date' || kind === 'wall') return String(v).replace('T', ' ').replace(/Z$/, '')
+    const d = new Date(v)
+    return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString()
+  }
+
+  function fileLabel(v) {
+    if (typeof v === 'string') return v.split('/').pop()
+    return v?.name ?? v?.key?.split('/').pop() ?? 'file'
+  }
+
+  // A registration wins, exactly as it does for a control.
+  // A number reads as a column when its digits line up, which is a property of
+  // the CELL rather than of any one renderer — money, a scaled integer and a
+  // plain count all want it and a name does not.
+  const numeric = column?.display === 'money' || column?.display === 'scale'
+    || column?.display === 'number' || column?.display === 'time'
+
+  // A registration wins, exactly as it does for a control.
+  const entry = column?.display ? displayComponent(column.display) : null
+  const Display = entry?.component
+  const props = entry ? (entry.props ?? defaultDisplayProps)({ value, column, record }) : {}
+</script>
+
+<!-- One element per cell, and the caller's attributes land on it. A branch
+     below contributes the CONTENT and never the box, so a table putting
+     `class="right"` on a money cell reaches the same place whatever the column
+     turned out to be — including a column an app's own display claimed. -->
+<span
+  class={cx('cell', column?.display ? `cell-${column.display}` : null, numeric ? 'tabular' : null)}
+  {class}
+  {...$attributes}
+>
+  {#if Display}
+    <Display {...props} />
+  {:else if empty}
+    <span class="muted">{EMPTY}</span>
+  {:else if column?.display === 'money'}
+    {money(value)}
+  {:else if column?.display === 'scale'}
+    {scaled(value)}
+  {:else if column?.display === 'number'}
+    {value}
+  {:else if column?.display === 'boolean'}
+    {value ? 'yes' : 'no'}
+  {:else if column?.display === 'enum'}
+    <Badge>{enumLabel(value)}</Badge>
+  {:else if column?.display === 'time'}
+    {time(value)}
+  {:else if column?.display === 'file'}
+    {fileLabel(value)}
+  {:else if column?.display === 'list'}
+    {Array.isArray(value) ? value.map(enumLabel).join(', ') : String(value)}
+  {:else if column?.display === 'json'}
+    <Json {value} expand={0} />
+  {:else if column?.display === 'relation'}
+    <!-- The id is what the row HOLDS; a label needs the related row, which this
+         component does not have. Rendering the id is honest, and a `relation`
+         display bound by the app is how it becomes a name. -->
+    {value}
+  {:else if column?.display === null}
+    <!-- displayFor could not place this column and said why. The cell shows the
+         nothing it has rather than pretending, and the reason rides the entry
+         for whoever generated the table. -->
+    <span class="muted" title={column?.reason ?? ''}>{EMPTY}</span>
+  {:else}
+    {String(value)}
+  {/if}
+</span>
+
+<style>
+  .muted   { color: var(--text-muted); }
+  .tabular { font-variant-numeric: tabular-nums; }
+</style>

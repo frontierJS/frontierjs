@@ -195,7 +195,7 @@ const TOP = [
     'schema',
     'declare',
     '<name> { fields… @@sql(…) [@@materialized] [@@refreshOn([…])] [@@db(…)] [@@gate(…)] [@@allow(…)] [@@deny(…)] [@@tenant(…)] }',
-    'A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table refreshed on the models named in `@@refreshOn` — a FULL rebuild per row written to a source, so `litestone advise` notes the cost. A view is a read path onto rows the models guard, so it carries the same access attributes they do, compiled against the columns the VIEW declares rather than inferred from `@@sql`: where the schema declares any access rule a view must state a `@@gate` (`@@gate("0")` says public on purpose), and under `strategy row` it must state `@@tenant` naming its own tenant column or `@@tenant(none)`.',
+    'A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table, and `@@refreshOn` decides WHEN it is rebuilt rather than whether: naming source models installs triggers, which is a FULL rebuild per row written to one of them, so `litestone advise` notes the cost; naming none means the table is rebuilt when `db.<view>.refresh()` is called and at no other time, which requires `asSystem()` because the rebuild reads every source row with no policy applied. A view is a read path onto rows the models guard, so it carries the same access attributes they do, compiled against the columns the VIEW declares rather than inferred from `@@sql`: where the schema declares any access rule a view must state a `@@gate` (`@@gate("0")` says public on purpose), and under `strategy row` it must state `@@tenant` naming its own tenant column or `@@tenant(none)`.',
     'view accountStats {\n  accountId Int\n  total     Int\n  @@sql("SELECT accountId, COUNT(*) AS total FROM Event GROUP BY accountId")\n  @@gate("5")\n}'
   ),
 
@@ -962,6 +962,19 @@ const MODEL = [
     }
   ),
   t(
+    'extensible',
+    'model',
+    'shape',
+    '(column, declaredBy: Model[, max: { kind: N }])',
+    'A column whose KEYS a tenant declares at runtime, and the model whose rows are those declarations — a customer of your app adds a field on a Tuesday, with no deploy. The column stays an ordinary Json blob: declaring says what a form OFFERS, not what may be written. `max:` is the optional half and it is the half that costs — it generates a pool of promoted columns so a declared key can be FILTERED on, and an unused slot is a tax on every write to that table forever, paid by every tenant including the ones who declared nothing. Its keys are members of the declaring model\'s own type enum, and the pool is laid down in that ratio, because a composite index is read left to right and the mix an app declared is the only statement anyone has about which segments should reach it. The declaring model is found by convention — `model`, `key`, `type`, and `slot` where a pool is asked for — with a refusal naming whichever is missing.',
+    '@@extensible(fields, declaredBy: CustomField, max: { text: 8, number: 4 })',
+    {
+      context: 'enum FieldKind { text number }\n\nmodel CustomField {\n  id    Int    @id\n  model String\n  key   String\n  type  FieldKind\n  slot  String?\n\n  @@unique([model, key])\n  @@unique([model, slot], nullsDistinct: true)\n}',
+      extraFields: 'fields Json @default("{}")',
+      seeAlso: ['type', 'generated', 'index', 'gate'],
+    }
+  ),
+  t(
     'softDelete',
     'model',
     'shape',
@@ -1311,6 +1324,7 @@ export const DOCS = {
   'field:maxItems': 'schema.md',
   'field:uniqueItems': 'schema.md',
   'field:type': 'json-types.md',
+  'model:extensible': 'extensible-columns.md',
 
   // access
   'field:allow': 'access-control.md',
@@ -1413,7 +1427,7 @@ export const TIERS = {
     'field:type','field:lt', 'field:gt',
     // model attributes
     'model:id', 'model:arc', 'model:map', 'model:external', 'model:noStrict',
-    'model:fts','model:check',
+    'model:fts','model:check', 'model:extensible',
   ],
 }
 

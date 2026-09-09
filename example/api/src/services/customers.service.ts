@@ -1,6 +1,5 @@
 import { createBaseService, $ }             from '@frontierjs/junction'
-import type { ServiceContext }             from '@frontierjs/junction'
-import { compileSegment, projectSlots }    from '../domain/shop/custom-fields.ts'
+import { compileSegment }                  from '../domain/shop/custom-fields.ts'
 import type { CustomField, SegmentTerm }   from '../domain/shop/custom-fields.ts'
 
 // `notes` is `@allow('read', auth().role == 'admin')` in the schema — a field
@@ -8,31 +7,29 @@ import type { CustomField, SegmentTerm }   from '../domain/shop/custom-fields.ts
 // service's responses for anyone the predicate rejects without a line here.
 //
 // The custom-field half is `api/src/domain/shop/custom-fields.ts`. This file
-// owns only WHERE the declarations come from and WHEN the mirror is rebuilt;
-// the translation itself is over there, because a segment has to compile in a
-// test with no database and no request.
+// owns only WHERE the declarations come from; the translation itself is over
+// there, because a segment has to compile in a test with no database and no
+// request.
 //
-// `ctx.system.add('slots')` is what makes the mirror writable from here at all.
-// `Customer.slots` is `@system`, so the Data boundary refuses a payload naming
-// it; the value is derived rather than sent, and this is the call saying so.
-// Without it every customer create and every customer patch carrying `fields`
-// is a 403 (`FJS-644`).
-
-/** Every field this shop has declared. One read, reused across a call. */
-const declared = (): Promise<CustomField[]> => $.db.customField.findMany({})
+// It also owned WHEN the slot mirror was rebuilt, on three `validated:` hooks
+// that are gone. `Customer` declares `@@extensible(fields, declaredBy:
+// CustomField, max: …)`, so the mirror is derived in `writeData` — the one
+// funnel every payload passes through — and a create, an update and a patch
+// cannot take it in three directions. The hook version was three hand-restated
+// copies of one rule and it had already cost a 403: the column is `@system`, so
+// deriving it here meant saying `ctx.system.add('slots')` on every one of them,
+// and the write that forgot was every customer create over HTTP (`FJS-644`).
 
 /**
- * Re-key this payload's `fields` onto the slot pool, and say who is writing it.
+ * Every field this shop has declared ON A CUSTOMER. One read, reused across a call.
  *
- * The two lines belong together and separating them is the bug: the mirror is
- * derived here, so `slots` is not a value the caller sent, and the Data boundary
- * refuses a `@system` column a payload names unless the call states it.
+ * `$declaredFields()` and not a `findMany` over `CustomField`, because the
+ * narrowing is the whole of it: one declaring table carries the declarations for
+ * every model that has any, and unnarrowed a key declared on a product becomes
+ * an accepted segment term over customers that matches nobody. The accessor
+ * cannot be widened — the model is the one it was called on.
  */
-const rebuildSlots = async (ctx: ServiceContext) => {
-  const data = ctx.data as Record<string, unknown>
-  data.slots = projectSlots(data.fields as Record<string, unknown> | null, await declared())
-  ctx.system.add('slots')
-}
+const declared = (): Promise<CustomField[]> => $.db.customer.$declaredFields()
 
 export function createCustomersService() {
   return createBaseService({
@@ -47,29 +44,6 @@ export function createCustomersService() {
       'find', 'get', 'create', 'update', 'patch', 'remove', 'restore',
       { method: 'segment', input: 'SegmentQuery' },
     ],
-
-    hooks: {
-      // `validated:` and not `before:`. The mirror is derived from the payload,
-      // so it needs a `ctx.data` the validator has already coerced, and it reads
-      // the database, so it needs a caller the gate has already graded. Before
-      // FJS-D124 there was nowhere in a service to say both.
-      validated: {
-        // A create and an update both state the whole row, so the mirror is
-        // rebuilt from whatever `fields` is — including absent, which projects
-        // to `{}` and is what a replace dropping the blob means.
-        create: [rebuildSlots],
-        update: [rebuildSlots],
-        patch:  [async ctx => {
-          // Absent means leave the stored blob alone; an explicit null clears it.
-          // Testing key presence rather than `??` is Invariant 9 — a `??` here
-          // would rebuild the mirror from nothing on every unrelated patch and
-          // empty every slot the row held.
-          if (!ctx.data || !('fields' in ctx.data)) return
-          await rebuildSlots(ctx)
-        }],
-      },
-    },
-
 
     /**
      * Who is in this audience.

@@ -8,7 +8,7 @@ dated: 2026-09-03
 
 **Status: IDEA. The page half is built and is described accurately below; the
 collection half does not exist.** Dated 2026-09-03. Do not cite this file as
-describing behaviour — see `VERIFYING.md`.
+describing behavior — see `VERIFYING.md`.
 
 ---
 
@@ -172,20 +172,99 @@ usual snapshot pattern. The fifth is a design question.
 
 ---
 
+## Evidence from a CMS that has been running for years
+
+Added 2026-09-08 from `conversion-maid-tech.md`. Numbers are counted in that
+application's production database; the shapes are read off its source. It is one
+application and it is not a survey — but it is a content system with **100 sites
+and 9,355 documents**, and it answers two of the open questions below with
+something better than argument.
+
+**It is the third answer, and the conflict question does not arise.** GitHub is
+the source of truth: a `Site` carries a `repoUrl`, a write goes through a `git`
+service as a **commit**, and only then is the row updated. `Page.sha` is the git
+blob sha and `Page.git` holds the raw API item, so a sync fetches content only
+when the sha moved. Rows are never authoritative and are never written first —
+which is why *which one wins on conflict* has no answer there rather than a hard
+one. The row is an INDEX, and treating it as one is the whole design.
+
+**A directory IS the collection declaration.** The document's `type` is derived
+from its path — `site/content/pages/`, `.../collections/`, `.../blocks/`,
+`.../menus/`, `.../settings/`, `.../media/` — plus two filename conventions:
+`_module.md` is a directory's own metadata and `__template.md` is the default for
+new documents in that directory. Neither convention has an equivalent in this
+record, and the second is what makes a non-developer editor possible at all.
+
+**The dominant noun is not the collection.** Counted across all 100 sites:
+
+| type | count | what it is |
+| --- | --- | --- |
+| page | 3,381 | a document at a path |
+| image | 3,165 | binary, stored apart |
+| block | 1,802 | a reusable fragment a page composes |
+| setting | 502 | a structured document — **`.json`, not markdown** |
+| folder | 164 | `_module.md`, a directory's own metadata |
+| menu | 80 | an ordered list of links |
+| template | 67 | `__template.md`, the default for new documents here |
+| collection | 46 | a named set |
+
+**Blocks, settings, menus and templates outnumber the named collections 50 to
+one.** A design that ships *a collection of posts* and nothing else covers 46 of
+9,355 documents. Two of those rows are the interesting ones: a **block** is
+content that is not a page and is composed into one, and a **setting** is a
+content document that is not markdown at all — so *frontmatter validated against a
+`type`* is the wrong shape for 502 of them and the right shape for the rest.
+
+**Binary is a separate store, and this record says nothing about it.** Images go
+to a second SQLite file as BLOBs keyed `(siteId, path)` with the row's `content`
+nulled. 3,165 of 9,355 documents are that. `File` columns and `FileStorage` are
+the obvious owner here, and an asset that is addressed by PATH rather than by id
+is the part that does not fall out of them.
+
+**It is multi-tenant, which this record does not consider.** `@@unique([siteId,
+path])` — the path is the identity, WITHIN a site, and one deployment serves a
+hundred of them. A content collection scoped by tenant is a different problem from
+a content directory beside the app's source, and the difference lands on
+everything: where the files are, who may edit one, and whether a build exists at
+all.
+
+**Point 1 of § *What is missing* is understated.** Frontmatter there is parsed
+three ways in one file — a YAML library for the document, a hoist of `title` and
+`image` into indexed columns, and a hand-written line scanner for `tags` that
+stops at the first line not beginning with `-`. Three readers, one of them wrong,
+and nothing compares them. That is the same shape as `@@allow`'s two halves
+before they had an oracle.
+
+**No full-text search exists over any of it**, so the fourth open question gets no
+evidence either way — which is worth saying, because a system this size not having
+solved it is weak evidence that it is not the first thing anyone reaches for.
+
+---
+
 ## Open questions
 
-- **Files or rows?** Stated above and genuinely open. Files buy git review and a
-  database-free prerender; rows buy a CMS, a draft state, and search for free. A
-  third answer — files as the source, synced into a table at build — gets both and
-  owes an answer about which one wins on conflict.
+- **Files or rows?** Stated above and **the third answer has now been seen
+  running** (§ *Evidence from a CMS…*): files as the source, synced into a table,
+  where the sync is one-directional and sha-gated so the conflict this question
+  worried about cannot occur — a write is a commit first and a row second. What
+  that shape costs is a round trip to a git host on every save, and a document
+  that exists in the index and not in the repository if the second half fails.
+  What remains open is not *which wins* but **whether the sync is at BUILD time or
+  continuous**: at build time it is a loader, continuously it is a service and a
+  webhook, and only the second serves an editor.
 - **Is this a package or sierra's?** The routing, the compiler and the prerender
   are already sierra's and mesa's. What is new is a declaration and an index,
   which argues for sierra rather than a new name.
-- **Does the non-developer audience actually get served by this?** Honestly, no.
-  Files in git do not help somebody who does not have a checkout. That audience
-  needs an editing surface, which is `foundry` territory and a much larger
-  project. This proposal serves the developer who is tired of pasting paragraphs
-  into markup, and should say so rather than claim the bigger prize.
+- **Does the non-developer audience actually get served by this?** The answer
+  here was *no, that is `foundry` territory and a much larger project*, and the
+  second half of that is **measured wrong**: the CMS in § *Evidence from a CMS…*
+  serves 100 sites and 9,355 documents from **14 files and 2,460 lines** of editing
+  UI. It is small because the index and the git service do the work and the screen
+  is a list, an editor and a save. The first half stands — files in git do not
+  help somebody with no checkout — but *therefore the editor is a big project* does
+  not follow from it, and this record should stop claiming it does. What the editor
+  actually needs from this proposal is the two conventions named above: a
+  directory's own metadata, and a per-directory template for new documents.
 - **What does it do about `@@fts`?** The storefront search finding a product and
   not a help article is the concrete symptom, and it is the strongest argument for
   content-as-rows.

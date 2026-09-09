@@ -161,7 +161,7 @@ title: Infrastructure graph
     description="The graph is made of servers, apps, networks and domains. Add one and it appears here."
   >
     {#snippet action()}
-      <Button variant="primary" href="/servers/create/">Add a server</Button>
+      <Button variant="primary" href="/servers/provision/">Provision a machine</Button>
     {/snippet}
   </EmptyState>
 {:else if view}

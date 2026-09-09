@@ -10,6 +10,7 @@
 // the row exists.
 
 import type { BasecampApp } from '../basecamp.types.ts'
+import type { ServerEventKind } from '../../../db/schema.d.ts'
 
 /** Output kept per run, per stream. An outpost that cats a log file can answer
  *  megabytes, and a row nothing can render is a row nobody reads — the tail is
@@ -36,7 +37,7 @@ export function tail(text: unknown): string | null {
 export async function recordServerEvent(
   app: BasecampApp,
   serverId: string,
-  kind: string,
+  kind: ServerEventKind,
   message: string,
   metadata: Record<string, unknown> = {},
 ): Promise<void> {

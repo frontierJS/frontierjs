@@ -495,7 +495,13 @@ const startOutpost = (context) => startServer(context, {
   logs:   join(context.config.ws.dir, '.tutor'),
   env:    {
     OUTPOST_SERVER_ID:  context.config.serverId,
-    OUTPOST_SECRET:     context.config.secret,
+    // The machine's OWN secret, learned by enrolling, and never the fleet-wide
+    // one. Basecamp stopped accepting `OUTPOST_SECRET` as an authentication
+    // input when per-machine credentials landed — one string every machine
+    // holds means a compromised box can forge any other machine's check-in —
+    // and this lesson went on handing over the fleet key, so every heartbeat
+    // was answered 401 and the lesson died at step 5 (`FJS-1041`).
+    OUTPOST_SECRET:     context.config.outpostSecret,
     BASECAMP_URL:       hubUrl(context),
     OUTPOST_PORT:       String(context.config.outpostPort),
     OUTPOST_PUBLIC_URL: `http://127.0.0.1:${context.config.outpostPort}`,

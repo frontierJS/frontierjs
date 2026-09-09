@@ -53,6 +53,7 @@ export const RULES = [
   { id: 'closed-in-open',   level: 'error', what: 'a closed row still sitting in an open section — every count above it is wrong' },
   { id: 'row-shape',        level: 'error', what: 'a row whose columns do not line up with its table — read into the wrong fields, and any cell past the header\'s width is dropped when rendered' },
   { id: 'unknown-severity', level: 'error', what: 'an open row in a section with no severity' },
+  { id: 'id-section',       level: 'error', what: 'an id filed under a section its prefix does not belong to — a `FJS-D##` is a ruling and a `FJS-###` is a defect, so neither needs judgment to place' },
   { id: 'cross-register-id', level: 'error', what: 'an open decision QUESTION whose id already names a ruling — either the ruling landed and nothing closed the row, or the two are different subjects wearing one id' },
   { id: 'ruling-status',    level: 'error', what: 'a ruling declaring a status outside the vocabulary, or retiring itself without naming what replaced it' },
   { id: 'malformed-date',   level: 'error', what: 'a date that is not ISO-8601' },
@@ -199,6 +200,37 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
     }
 
     if (row.closed) continue
+
+    // ── the id says which register a row belongs to ──
+    //
+    // `ISSUES.md` holds two registers in one file, and the reader tells them
+    // apart by SECTION while every other document tells them apart by PREFIX —
+    // the register's own Conventions row says `FJS-D##` is a ruling and
+    // `FJS-###` is a defect. Neither rule written for misplacement can see the
+    // two disagree. `row-shape` grades on the CELL COUNT and both tables
+    // declare four columns, so a closed defect parked among the questions reads
+    // as a decision whose Question cell holds a date; and the status branch is
+    // only reached for a row carrying a severity, which a decision-section row
+    // never does — so `closed-in-open`, the rule written for exactly this
+    // direction, is skipped for exactly the table where it is invisible. Five
+    // rows sat there and every rule passed over them (`FJS-1033`).
+    //
+    // § Closed and the archive are exempt in BOTH directions, and that is the
+    // lifecycle rather than a loophole: a question that gets its ruling closes
+    // as a row under the id it was asked under, so twenty-seven `FJS-D##` rows
+    // legitimately sit there. What is exact is the two OPEN cases.
+    const isRulingId = /^FJS-D\d+$/i.test(String(row.id ?? ''))
+    if (row.severity === 'decision' && !isRulingId) {
+      add('id-section', row,
+        `${row.id} is a defect id sitting under ${row.severity}`,
+        'a `FJS-###` belongs under a severity heading; move it, or reissue it as a `FJS-D##` if it ' +
+        'really is a question waiting for a ruling')
+    } else if (SEVERITY.includes(row.severity) && isRulingId) {
+      add('id-section', row,
+        `${row.id} is a ruling id sitting under ${row.severity}`,
+        'a question waiting for a ruling belongs in the decisions section, which is the table somebody ' +
+        'reads to pick one — under a severity it is counted as a defect by every tally')
+    }
 
     // ── the question and the ruling that answers it ──
     //

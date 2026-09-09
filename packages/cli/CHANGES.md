@@ -1,5 +1,155 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-09 — `register:check` grades a row's section against its id
+
+`ISSUES.md` holds two registers in one file. The reader tells them apart by
+SECTION; the conventions table tells them apart by PREFIX — `FJS-D##` is a
+ruling, `FJS-###` is a defect — and nothing compared the two, so five closed
+defects sat in § Needs a decision and every rule passed over them
+([`FJS-1033`](../../ISSUES.md#fjs-1033)).
+
+**Both existing rules are blind there by construction.** `row-shape` grades on
+the CELL COUNT and both tables declare four columns, so a closed defect parked
+among the questions reads as a decision whose Question cell holds a date. And
+the status branch is only reached for a row carrying a severity, which a
+decision-section row never does — so `closed-in-open`, written for exactly this
+direction, is skipped for exactly the table where the misplacement is invisible.
+
+`id-section` is an error rather than a warning because the two cases need no
+judgment: a defect id under the decisions heading, a ruling id under a severity
+one.
+
+**§ Closed and the archive are exempt in both directions, and that is the
+lifecycle rather than a loophole** — a question that gets its ruling closes as a
+row under the id it was asked under, and twenty-seven `FJS-D##` rows
+legitimately sit in this repo's own § Closed. A rule reading the prefix
+everywhere would report the normal end of every decision as a fault.
+
+Each firing case is PAIRED with the legitimate shape one prefix away, and the
+live row over this repo's own register is load-bearing rather than decorative:
+the five were fixed by hand, so a green answer has to mean the placement is
+holding. Measured — stubbing the prefix test reds 3 of 4, the § Closed control
+passing either way by design.
+
+## 2026-09-09 — `tutor:fleet` enrolls the machine instead of handing it a fleet key
+
+The lesson gave the Outpost a fleet-wide `OUTPOST_SECRET` that basecamp had
+stopped accepting, so the first heartbeat was answered 401 and the lesson died
+at step 5 — taking the `tutor` CI phase with it
+([`FJS-1041`](../../ISSUES.md#fjs-1041)). The app was right and the lesson was
+stale, which is the class the phase exists to catch.
+
+`05-outpost` now runs the exchange `install.sh` runs on a real machine, minus
+Docker, Bun and a systemd unit: `issueEnrollment` mints a single-use token,
+`POST /servers/{id}/enroll` spends it, and the machine starts on the key it got
+back. **Two calls because they are two callers** — the operator at gate 5 saying
+this machine may join, and the machine, unauthenticated by definition, spending
+what it was given. One call would be a control plane handing credentials to
+whoever asks.
+
+The negative control is the claim rather than tidiness: the SAME token is
+replayed and must answer 401. A token that still worked would pass every other
+row and leave the burn — a conditional update on the hash column — untested.
+
+`outpostSecret` is threaded to 06 and 07, which restart the machine when nothing
+is answering. Measured: reverting the one line reds step 5 and blocks 06-08, 19
+checks against 25.
+
+## 2026-09-08 — `fli check` read comment text as schema
+
+Three of `core/checks.js`'s line scans skipped a line that STARTS with `//` and
+read one that ends with it. The rules read `.lite` as text on purpose — they
+must answer with no database, no migration and no installed litestone — so
+comment text arrived as content to a regex.
+
+**Found on basecamp**, where `transition-methods` reported
+`transition(…, 'loseContact')` as *"a call that has never worked, found by
+whoever asks for it first"* — about a move declared on the line below the note.
+The clause split is on top-level commas and the six-line comment above it
+carries three, so the move was cut in half, its name lost, and a STATE appeared
+among the moves the rule listed as declared. Measured: strip the comment lines
+from that one block and the finding goes 1 → 0 with the schema otherwise
+untouched.
+
+**Two siblings had it and one was worse.** `declaredGates` read a trailing
+`// was @@gate("7") once` as a declaration, so `gate-unreachable` reports a rung
+nobody can reach that nobody wrote. `declaredColumns` counts braces to decide
+where a model ENDS and counted them in comment text — an unbalanced `}` in a
+note closes the model early and every field after it goes invisible to
+`package-model-drift`, which then compares half a model against a package's
+whole one. Four columns became two.
+
+**One owner**: `withoutComments(line, inBlock)`, dropping both of the language's
+forms the way litestone's own lexer does, read by all three. A quoted string is
+not lexed, and that is stated rather than handled — the alternative is a string
+lexer inside a scan whose whole point is needing no parser.
+
+Nine tests, each a pair, and the pairs took two attempts: the first version of
+the `declaredColumns` rows used a note carrying BOTH braces, which nets to zero,
+so they passed either way — the failure the test file's own header exists to
+prevent. The brace is unbalanced now, and the row that fires is separated in
+writing from the control that legitimately does not.
+
+**Why it matters more than a warning count.** `core/checks.js` is the shared
+engine — CI's `structure` phase and every client app's `fli check` — and house
+style is heavily-commented schemas, so it fired exactly where the style is
+followed. A check that is wrong is worse than no check.
+
+## 2026-09-08 — `app:atlas` and `project:map` stay two commands, and stop parsing one file twice
+
+**Ruled `FJS-D240`: they are not [`FJS-D223`](../../DECISIONS.md#fjs-d223)'s shape.** D223's test is
+ONE READER, and it states it as a measurement — `core/repo-atlas.js` performs no filesystem reads at
+all, so `ws:map` and `ws:atlas` could only ever have been two renderings of one collection. These are
+two collections that overlap: `app:atlas` collects `describeAppModel` off a built app, `project:map`
+collects a file tree, the committed snapshot, migrations, packages and the environment and folds in
+three of the model's four halves. A merge would offer no second presentation — only a flag naming
+which model to build.
+
+**`--atlas` is a COLLECTION flag on `--layer`'s axis and `--as` is a presentation flag.** Folding a
+second command in would put a third value on the collection axis and call it a presentation, which
+reads D223 backwards. Measured on `example`: `--no-atlas` 278 ms, the default 637 ms, `app:atlas`
+488 ms — one command means the file-only read pays a boot on every run, or the flag that avoids it
+is the *which model* flag.
+
+**What was real is the duplication.** `core/app-entry.js` and `commands/project/_module.md` each
+carried `SURFACE_FILE`, `SURFACE_DIRS`, a `surfaceFile()` walk, the `generated by:` header parse and
+`surfaceMissingHint`. **One had already drifted**: the same missing-file sentence read *Services are
+read off a built app* in one copy and *The app is read off a built app* — a tautology — in the other,
+and nothing graded that they agreed. A snapshot format with two parsers grows two answers.
+
+`readApiSurface` moves whole into `core/app-entry.js` and CALLS `surfaceFile` and `generatedBy`
+rather than restating them, which is the half that makes the collapse permanent rather than tidy.
+141 lines leave the command module for 11. `project:map` imports it the way it already imports
+`readAppAtlas`, so one module answers both of that command's questions about the app.
+
+**The test stopped reaching a parser through a regex over a `<script>` block.** Two of the three
+helpers `tests/project-helpers.test.js` used to extract are a plain import now; only
+`extractResourceMeta`, which genuinely lives in the namespace module, is still extracted. Measured:
+13 of its 31 rows red with the moved parser stubbed.
+
+One stale comment fixed on the way — `app-entry.js` justified returning a failure rather than
+throwing by *`project:map`'s whole property is that it needs no bun and no boot*, which stopped being
+true the day `--atlas` began defaulting to true. The degrade is still right, for a different reason:
+the model is one section of a report whose others are files.
+
+## 2026-09-08 — `ws:pub --tolerate-republish`
+
+**A publish run does not stop at the first failure — it collects them and throws at the end.** So a
+run that loses its auth window partway leaves some packages on the registry and some not, and both
+recoveries were broken: re-running the same command bumps again and skips a version, while resetting
+and re-running hits `bun publish` exiting 1 on every package that already went out. Step 02's own
+comment promised *fix the failure and re-run*, and that advice did not survive the case it was
+written for.
+
+**It is a flag rather than the default, and that is the decision rather than the caution.** A version
+the registry already holds normally means the bump did not happen — and a release that quietly
+published nothing looks exactly like one that worked. Silencing that by default trades a loud
+failure for a silent one, which is the wrong direction for the one command here that cannot be
+undone.
+
+The partial-failure warning now names both recoveries and which one costs a version, because the
+moment it prints is the moment somebody has to choose between them.
+
 ## 2026-09-07 — `fli test:snapshots --fix`
 
 **The remedy for a stale snapshot was 26 commands a person rebuilt from a failure message.** The

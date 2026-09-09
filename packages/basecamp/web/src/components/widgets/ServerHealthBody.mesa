@@ -74,9 +74,16 @@
   // Only the ones the outpost actually reported: anything else it sends is its
   // own vocabulary and belongs on the server's screen, not on a card three
   // inches wide.
+  //
+  // The value has to BE a number, not merely coerce to one: `health` is an open
+  // Json document another process writes, and `Number(null)` is 0 — a disk bar
+  // at 0% reads as an empty disk, which is the opposite of what a machine that
+  // sent no figure means. The API's own rule is `readingOf` in
+  // `core/server-metrics.ts`; a browser cannot import it, so the shape is
+  // stated twice on purpose and this is the second one.
   $: bars = readings
-    .map(r => ({ ...r, value: Number(server?.health?.[r.key]), line: trend[r.name] }))
-    .filter(r => Number.isFinite(r.value))
+    .map(r => ({ ...r, value: server?.health?.[r.key], line: trend[r.name] }))
+    .filter(r => typeof r.value === 'number' && Number.isFinite(r.value))
   // Two points is the fewest that is a line. One reading drawn as a sparkline
   // is a dot the reader takes for a flat trend.
   const hasLine = (b) => Array.isArray(b.line) && b.line.length > 1

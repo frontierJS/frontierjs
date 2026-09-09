@@ -1,5 +1,23 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-08 — a move made inside another service's call, pinned
+
+`announceDataWrites` suppresses a transition on `announcingService() === name`,
+where the name is the service the MODEL indexes to. A webhook settling an order
+makes the move inside `payments`' call over a model `orders` owns, so the two
+names differ and the announcement stands — which was an argument in
+[FJS-567](../../ISSUES.md) and executed by nothing: the FJS-463 case covers a
+move made in NO service call, and that one passes with the suppression widened
+to *any call is announcing*.
+
+Two assertions in `tests/data-write-announcement.test.ts`, a pair. The move
+inside `payments`' call reaches the channel as `orders pay`; the same move
+inside the owning service's call still announces once, because a fix that
+announced everything satisfies the first alone. Measured: widening the
+suppression to `announcingService()` reds the first and leaves the second green.
+No source change — `verify:pay` is 24/24 over four runs including one on a fresh
+seed, and the row closed as not reproducible.
+
 ## 2026-09-07 — one walk over a built app, and a JSON reading of it
 
 Four tools shared `loadApp` and nothing else. Each built its own shape out of the

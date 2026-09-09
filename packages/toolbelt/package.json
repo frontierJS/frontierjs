@@ -12,7 +12,10 @@
       "types": "./src/cron/cron.d.ts",
       "default": "./src/cron/cron.js"
     },
-    "./directives": "./src/directives/directives.js",
+    "./directives": {
+      "types": "./src/directives/directives.d.ts",
+      "default": "./src/directives/directives.js"
+    },
     "./gate": {
       "types": "./src/gate/gate.d.ts",
       "default": "./src/gate/gate.js"

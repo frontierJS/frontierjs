@@ -56,9 +56,24 @@ const OUTPOST_PORT = 3011
 // port formula — env 8, category 1 (backend), project 2, service 1 — beside the
 // API on 8120, the same shape `example` uses for its sink on 8111.
 const MAIL_PORT = 8121
-// What `api/src/core/env.ts` defaults OUTPOST_SECRET to. A real fleet sets it;
-// this drive is the machine as well as the operator, so it holds both sides.
-const OUTPOST_SECRET = process.env.OUTPOST_SECRET ?? 'outpost-dev-secret'
+// One credential PER MACHINE, learned by enrolling. There is no fleet-wide
+// outpost secret any more: a machine that has not enrolled is refused whatever
+// it signs with, and a machine that has is refused anything but its own key.
+// This drive is the machines as well as the operator, so it does what a machine
+// does — exchange a one-time token, once, for a key nothing else holds.
+//
+// Keyed by server id and looked up per call, which is the same rule the app
+// answers on its side (`OUTPOST_SUBJECT` in core/hooks.ts): the machine is named
+// in the path for a heartbeat and in `server_id` for the two reports. A single
+// shared secret here would be this drive disagreeing with the app about what a
+// machine is.
+const machineKeys = new Map()
+
+/** Which machine is this outpost call about? Path id, else the body says. */
+function machineOf(path, body) {
+  const inPath = path.match(/^\/servers\/([0-9a-f-]{36})/)?.[1]
+  return inPath ?? body?.server_id ?? null
+}
 const BASE     = `http://localhost:${WEB_PORT}`
 // Per run, never a fixed path. A Chrome orphaned by a hard kill keeps the
 // directory open, so a shared one is deleted out from under a live browser and
@@ -222,8 +237,13 @@ const SINK_DIGEST = 'sha256:' + 'a1'.repeat(32)
 // and reports every container as up. What is NOT faked is the Outpost — its
 // route table, its snake_case wire contract and its signature check are the
 // shipped ones, so a change to either side of the protocol shows up here.
-const realOutpost = createOutpostServer(
-  { serverId: 'drive', secret: OUTPOST_SECRET, version: '0.4.1',
+let realOutpost = null
+
+/** Build the real Outpost around the credential this machine was handed. It
+ *  verifies Basecamp's calls with the same key it signs its own with, so it
+ *  cannot exist before the exchange. */
+const buildOutpost = (secret) => createOutpostServer(
+  { serverId: 'drive', secret, version: '0.4.1',
     publicUrl: `http://localhost:${OUTPOST_PORT}`, workDir: '/tmp/outpost-drive' },
   {
     docker: createDocker({
@@ -287,6 +307,14 @@ const realOutpost = createOutpostServer(
       // clients hiding real bugs, one layer out.
       if (req.method === 'POST' && ['/pull', '/deploy', '/stop', '/health-check'].includes(req.url)) {
         outpostSaw.deploy.push({ path: req.url, body: JSON.parse(body || '{}') })
+        // Nothing should reach here before the machine enrolled: Basecamp only
+        // learns this address from a heartbeat, and a heartbeat needs the
+        // credential the exchange hands over. Said out loud so a request that
+        // arrives early is a named failure rather than a null dereference.
+        if (!realOutpost) {
+          res.statusCode = 503
+          return res.end(JSON.stringify({ error: 'the drive has not enrolled this machine yet' }))
+        }
         const answer = await realOutpost.handle(new Request(`http://localhost:${OUTPOST_PORT}${req.url}`, {
           method: 'POST', headers: req.headers, body,
         }))
@@ -555,8 +583,15 @@ async function apiCall(path, { method = 'GET', body, workspace, header, outpost 
   // the hash is of the body, so signing a re-serialization would not match.
   const payload = body ? JSON.stringify(body) : undefined
   if (outpost) {
+    const machine = machineOf(path, body)
+    const secret  = machineKeys.get(machine)
+    // Named rather than answered 401. A drive that signed with the wrong key
+    // would report the app refusing a machine, which is the assertion working —
+    // and the fixture, not the app, would be wrong.
+    if (!secret) throw new Error(
+      `no enrolled key for machine ${machine ?? '(none named)'} — call enrollAs() before signing as it`)
     Object.assign(headers, await signRequest({
-      secret: OUTPOST_SECRET, method, path, body: payload ?? '',
+      secret, method, path, body: payload ?? '',
       // The kit is pure — the clock and the nonce belong to whoever is calling.
       timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
     }))
@@ -888,7 +923,10 @@ check('status filter is built from the schema enum',
   await evaluate(`[...document.querySelectorAll('#filter-status option')].map(o => o.value).join(',')`),
   t => t.includes('online') && t.includes('draining') && t.includes('unreachable'))
 
-await click('Add server')
+// `Import existing`, not the primary button beside it: this section adds a
+// machine by address, which is now its own screen. The primary act on
+// /servers/ buys one at a cloud and is `verify:provision`'s.
+await click('Import existing')
 await sleep(1500)
 // camelCase, because the wire contract is the schema's field names. `ip_address`
 // would not error — autoValidate strips it and the column comes back null.
@@ -912,6 +950,45 @@ check('pending offers no drain',
 // the only path in the app a machine uses. Bringing the server online this way
 // is also what makes the drain path reachable.
 const serverId = serverPath.split('/').filter(Boolean)[1]
+
+// ─── The machine gets a credential of its own ────────────────────────────
+// The two steps a real imported machine takes, and the only two: an operator
+// issues an enrollment token, and the machine exchanges it — once, inside a
+// short window — for a key nothing else holds. There is no fleet-wide secret to
+// fall back on, so everything a machine does below this line depends on it.
+async function enrollAs(id, workspaceId, { announce = false } = {}) {
+  // `issueEnrollment` reads the machine through the CALLER's scoped client, so
+  // the workspace here MUST be the one the machine is in — a wrong one is a 404
+  // rather than a header nobody consults.
+  const issued = await apiCall(`/servers/${id}`, {
+    method: 'POST', token, workspace: workspaceId,
+    header: { 'x-service-method': 'issueEnrollment' },
+  })
+  // The token rides in the command as an env var, never in the URL — a URL puts
+  // it in an access log, a proxy's, and the shell history of whoever pasted it.
+  const enrollToken = issued.command.match(/ENROLL_TOKEN=(bcen_[0-9a-f]+)/)?.[1]
+
+  const exchanged = await fetch(`http://localhost:${API_PORT}/servers/${id}/enroll`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token: enrollToken }),
+  })
+  const enrolled = await exchanged.json()
+  if (!enrolled.secret) throw new Error(`enrollAs(${id}): ${exchanged.status} ${JSON.stringify(enrolled)}`)
+
+  machineKeys.set(id, enrolled.secret)
+
+  if (announce) {
+    check('an operator can issue an enrollment token', !!issued?.command, true)
+    check('…carrying a single-use token, in the command rather than a URL',
+      !!enrollToken && !issued.command.includes(`install.sh?`), true)
+    check('the machine exchanges it for a key of its own', exchanged.status === 200, true)
+  }
+  return enrolled.secret
+}
+
+// The browser switched to Skunkworks in §8 and every row since belongs to it.
+await enrollAs(serverId, secondWs.id, { announce: true })
+
 // The heartbeat payload is the OUTPOST's contract and it is snake_case
 // (`outpost_version`), unlike every other call in this file — the schema's
 // camelCase applies to model fields, and these are not model fields. Sending
@@ -996,6 +1073,15 @@ const releaseServer = await apiCall('/servers', {
   method: 'POST', workspace: secondWs.id,
   body: { name: 'deploy-01', slug: 'deploy-01', role: 'general', ipAddress: '10.0.0.9' },
 })
+// This is the machine the REAL Outpost stands in for — `/pull`, `/deploy`,
+// `/stop` and `/health-check` are the only routes delegated to it, and they are
+// all this machine's. So the outpost is built with THIS machine's key: Basecamp
+// signs outbound with the credential of the machine it is addressing, and the
+// far side verifies with the one it was handed. Two machines are two keys, and
+// a single shared one would be the drive disagreeing with the app.
+await enrollAs(releaseServer.id, secondWs.id)
+realOutpost = buildOutpost(machineKeys.get(releaseServer.id))
+
 await apiCall(`/servers/${releaseServer.id}`, {
   method: 'POST', workspace: secondWs.id, outpost: true,
   // The URL is what registers the Conduit target `outpost:<id>`; without it the
@@ -1091,6 +1177,28 @@ check('a finished release offers no cancel',
   await evaluate(`[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Cancel')`),
   false)
 
+// …and the move it DOES offer, which is the pair: both buttons are read off
+// `@@transitions(status, …)` at this caller's level, so a screen that rendered
+// neither and a screen that rendered both would each satisfy the row above
+// alone (`FJS-517`).
+check('…and offers to roll it back instead',
+  await evaluate(`document.getElementById('deploy-rollback')?.textContent.trim() ?? ''`),
+  'Roll back')
+
+// The refusal, in words, on the screen. This is the app's FIRST release, so
+// there is no predecessor to put back — and the ordering the service is built
+// around says the release must be exactly where it was afterwards. A rollback
+// that retired this release and then discovered it had nowhere to go is the
+// worst outcome the method has available, and it is invisible from the button.
+await click('Roll back')
+check('rolling back a first release says why, rather than doing half of it',
+  await waitFor(`document.querySelector('.alert.danger')?.textContent ?? ''`,
+                t => t.includes('roll back')),
+  t => t.includes('first release'))
+check('…and the release is still exactly where it was',
+  await evaluate(`document.getElementById('deploy-status')?.textContent.trim()`),
+  'success')
+
 
 // What the machine was actually asked to do. A release that reports six green
 // steps having sent nothing is the exact failure this section exists for, and
@@ -1137,7 +1245,7 @@ check('⌘K opens the palette',
   await evaluate(`!!document.querySelector('.fjs-cp-panel')`), true)
 check('…and the fleet is in it, not just the nav',
   await evaluate(`document.querySelector('.fjs-cp-panel')?.textContent ?? ''`),
-  t => t.includes('Provision server') && t.includes('gateway-01'))
+  t => t.includes('Provision a machine') && t.includes('gateway-01'))
 await evaluate(`document.querySelector('.fjs-cp-input')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
 await sleep(400)
 check('…and Escape closes it', await evaluate(`!!document.querySelector('.fjs-cp-panel')`), false)
@@ -1789,6 +1897,39 @@ await evaluate(`[...document.querySelectorAll('#volume-filters button')]
 check('the unused filter is the service\'s answer, not the browser\'s',
   await waitFor(`document.body.textContent`, t => t.includes('No volumes')),
   t => t.includes('No volumes') && !t.includes('/var/lib/docker/volumes/pg-data'))
+
+// ── 13c-ter. How full the disk is ────────────────────────────────────
+// Every other number on /cleanup/ comes from `docker system df` and is about
+// DOCKER. This one is the disk, off the heartbeat's `statfs('/')` — a different
+// wire on a different clock — and it is the denominator the rest of the screen
+// needs: bytes a sweep would free mean nothing without it.
+//
+// The pair is one machine in two states, and only a browser can ask it. Absent
+// and zero are the same value to every reader that coerces, and they render as
+// opposite claims: a sentence saying the machine has not reported, against a
+// green bar saying the disk is empty. gateway-01 has been checking in with
+// `{ cpu, memory }` all run, so the absent half is its real state here.
+
+await goto('/cleanup/')
+check('cleanup renders', await heading(), 'Disk cleanup')
+check('a machine that has not reported its disk says so, rather than drawing an empty one',
+  await waitFor(`document.getElementById('fullness-${serverId}')?.textContent ?? ''`,
+    t => t.includes('has not reported')),
+  t => t.includes('has not reported how full it is') && !t.includes('%'))
+
+// The same machine, one check-in later. A machine reporting its disk for the
+// first time on a later heartbeat is the ordinary case, not a contrivance: the
+// reading is per-check-in and an outpost that could not take it sends no key.
+await apiCall(`/servers/${serverId}`, {
+  method: 'POST', workspace: secondWs.id, outpost: true,
+  body: { outpost_version: '0.4.1', health: { cpu: 12, memory: 41, disk: 63 } },
+  header: { 'x-service-method': 'heartbeat' },
+})
+await goto('/cleanup/')
+check('…and once it has, the bar is drawn at what the machine measured',
+  await waitFor(`document.getElementById('fullness-${serverId}')?.textContent ?? ''`,
+    t => t.includes('63')),
+  t => t.includes('Disk in use') && t.includes('63%'))
 
 // ── 13c-quater. Dashboards — a vocabulary, not a stored query ────────
 // The phase's whole question was whether a widget's data source is declared or
@@ -2673,7 +2814,7 @@ const AUDIT = `(() => {
   return out
 })()`
 
-for (const route of [appDetailPath, boardPath, '/', '/dashboards/', '/projects/', '/projects/create/', '/servers/', '/servers/create/',
+for (const route of [appDetailPath, boardPath, '/', '/dashboards/', '/projects/', '/projects/create/', '/servers/', '/servers/provision/', '/servers/import/',
                      '/deployments/', '/jobs/', '/networks/', '/volumes/', '/cleanup/', '/recipes/',
                      '/alerts/', '/channels/', '/flags/', '/secrets/',
                      '/api-keys/', '/activity/', '/portal/',

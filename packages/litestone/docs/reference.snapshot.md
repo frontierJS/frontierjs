@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Studio's Explore panel, which also places a word into your schema and shows you
 the diff first.
 
-**101 words** — 12 declarations · 63 field attributes · 26 model attributes.
+**102 words** — 12 declarations · 63 field attributes · 27 model attributes.
 
 ## Index
 
@@ -40,7 +40,7 @@ the diff first.
 **Model attributes**
 
 - *Identify a row* — [`@@id`](#id-model)
-- *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@check`](#check-model) · [`@@arc`](#arc-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model)
+- *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@check`](#check-model) · [`@@arc`](#arc-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@extensible`](#extensible-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model)
 - *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@export`](#export-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
 - *Wire it to the app* — [`@@auth`](#auth-model) · [`@@log`](#log-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
 
@@ -120,7 +120,7 @@ model Product {
 
 ### `view` `<name> { fields… @@sql(…) [@@materialized] [@@refreshOn([…])] [@@db(…)] [@@gate(…)] [@@allow(…)] [@@deny(…)] [@@tenant(…)] }` <a id="view-declaration"></a>
 
-A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table refreshed on the models named in `@@refreshOn` — a FULL rebuild per row written to a source, so `litestone advise` notes the cost. A view is a read path onto rows the models guard, so it carries the same access attributes they do, compiled against the columns the VIEW declares rather than inferred from `@@sql`: where the schema declares any access rule a view must state a `@@gate` (`@@gate("0")` says public on purpose), and under `strategy row` it must state `@@tenant` naming its own tenant column or `@@tenant(none)`.
+A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table, and `@@refreshOn` decides WHEN it is rebuilt rather than whether: naming source models installs triggers, which is a FULL rebuild per row written to one of them, so `litestone advise` notes the cost; naming none means the table is rebuilt when `db.<view>.refresh()` is called and at no other time, which requires `asSystem()` because the rebuild reads every source row with no policy applied. A view is a read path onto rows the models guard, so it carries the same access attributes they do, compiled against the columns the VIEW declares rather than inferred from `@@sql`: where the schema declares any access rule a view must state a `@@gate` (`@@gate("0")` says public on purpose), and under `strategy row` it must state `@@tenant` naming its own tenant column or `@@tenant(none)`.
 
 ```lite
 view accountStats {
@@ -1385,6 +1385,34 @@ model Example {
 - **Legal** — in a model
 - **`tokenize`** — `unicode61` · `ascii` · `porter` · `trigram`
 - **Deeper** — [full-text-search.md](full-text-search.md)
+
+#### `@@extensible` `(column, declaredBy: Model[, max: { kind: N }])` <a id="extensible-model"></a>
+
+A column whose KEYS a tenant declares at runtime, and the model whose rows are those declarations — a customer of your app adds a field on a Tuesday, with no deploy. The column stays an ordinary Json blob: declaring says what a form OFFERS, not what may be written. `max:` is the optional half and it is the half that costs — it generates a pool of promoted columns so a declared key can be FILTERED on, and an unused slot is a tax on every write to that table forever, paid by every tenant including the ones who declared nothing. Its keys are members of the declaring model's own type enum, and the pool is laid down in that ratio, because a composite index is read left to right and the mix an app declared is the only statement anyone has about which segments should reach it. The declaring model is found by convention — `model`, `key`, `type`, and `slot` where a pool is asked for — with a refusal naming whichever is missing.
+
+```lite
+enum FieldKind { text number }
+
+model CustomField {
+  id    Int    @id
+  model String
+  key   String
+  type  FieldKind
+  slot  String?
+
+  @@unique([model, key])
+  @@unique([model, slot], nullsDistinct: true)
+}
+
+model Example {
+  id Int @id
+  fields Json @default("{}")
+  @@extensible(fields, declaredBy: CustomField, max: { text: 8, number: 4 })
+}
+```
+
+- **Deeper** — [extensible-columns.md](extensible-columns.md)
+- **See also** — [`type`](#type-declaration) · [`@generated`](#generated-field) · [`@@index`](#index-model) · [`@@gate`](#gate-model)
 
 #### `@@softDelete` `[(cascade)]` <a id="softdelete-model"></a>
 

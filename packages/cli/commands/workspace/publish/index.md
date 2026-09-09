@@ -57,6 +57,10 @@ flags:
     type: boolean
     description: Version, tag and publish, but leave the commit and tags local
     defaultValue: false
+  tolerate-republish:
+    type: boolean
+    description: Do not fail on a version the registry already holds — the recovery flag, for finishing a run that published some of its packages and not others
+    defaultValue: false
   affected:
     char: a
     type: boolean
@@ -73,6 +77,14 @@ shape it is in rather than being told.
 
 A package marked `private` in its `package.json` is skipped — npm refuses it,
 and a failed publish aborts the run before anything is pushed.
+
+`--tolerate-republish` is the recovery flag. A run that publishes some of its
+packages and not others leaves versions the registry already holds, and
+`bun publish` exits 1 on those — so the obvious *fix the failure and re-run*
+fails on exactly the packages that succeeded. It is a flag rather than the
+default because the error it silences is worth hearing on an ordinary run: a
+version already on the registry means the bump did not happen, and a release
+that quietly published nothing looks identical to one that worked.
 
 `--no-push` stops after publishing: the release commit and its tags stay local.
 Worth reaching for when this repo's `pre-push` hook is a CI tier — a release
@@ -164,6 +176,7 @@ context.config.planned    = planned
 context.config.bump       = arg.bump
 context.config.tag        = flag.tag
 context.config.otp        = flag.otp
+context.config.tolerate   = flag['tolerate-republish']
 context.config.released   = []
 context.config.startTime  = Date.now()
 

@@ -11,7 +11,7 @@ without a schema change you meant to make is a shipped security bug.
 
 ```
 50 models · 1 view · 51 gated · 0 unrestricted
-37 with row policies · 9 with protected fields · 22 declared moves · 6 @system · 0 @seals
+37 with row policies · 9 with protected fields · 21 declared moves · 10 @system · 0 @seals
 ```
 
 ## Gates
@@ -456,12 +456,10 @@ caller at once. Everything reachable from the target seals with it.
 
 | Model | Field | Move | From → To | Made by | Level | Seals |
 | --- | --- | --- | --- | --- | --- | --- |
-| `Deployment` | `status` | `build` | pending → building | caller | — | — |
-| `Deployment` | `status` | `push` | building → pushing | caller | — | — |
-| `Deployment` | `status` | `release` | pushing → deploying | caller | — | — |
-| `Deployment` | `status` | `succeed` | building, pushing, deploying → success | caller | — | — |
-| `Deployment` | `status` | `fail` | pending, building, pushing, deploying → failed | caller | — | — |
-| `Deployment` | `status` | `cancel` | pending, building, pushing, deploying → cancelled | caller | — | — |
+| `Deployment` | `status` | `build` | pending → building | **application** | — | — |
+| `Deployment` | `status` | `succeed` | building → success | **application** | — | — |
+| `Deployment` | `status` | `fail` | pending, building → failed | **application** | — | — |
+| `Deployment` | `status` | `cancel` | pending, building → cancelled | caller | — | — |
 | `Deployment` | `status` | `rollback` | success → rolled_back | caller | 5 ADMINISTRATOR | — |
 | `Job` | `status` | `start` | pending, failed → running | caller | — | — |
 | `Job` | `status` | `idle` | running → pending | caller | — | — |
@@ -473,6 +471,7 @@ caller at once. Everything reachable from the target seals with it.
 | `Server` | `status` | `provision` | pending → provisioning | caller | 5 ADMINISTRATOR | — |
 | `Server` | `status` | `destroy` | pending, provisioning, installing, online, unreachable, draining, stopped → destroying | caller | 5 ADMINISTRATOR | — |
 | `Server` | `status` | `checkIn` | pending, installing, unreachable → online | **application** | — | — |
+| `Server` | `status` | `loseContact` | online → unreachable | **application** | — | — |
 | `Server` | `status` | `reportProvisioned` | provisioning → installing | **application** | 5 ADMINISTRATOR | — |
 | `Server` | `status` | `reportRunning` | pending, provisioning, installing, unreachable, stopped → online | **application** | 5 ADMINISTRATOR | — |
 | `Server` | `status` | `reportStopped` | pending, provisioning, installing, online, unreachable, draining → stopped | **application** | 5 ADMINISTRATOR | — |

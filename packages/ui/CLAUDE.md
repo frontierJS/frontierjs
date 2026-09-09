@@ -472,6 +472,16 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   duration is stated. **The test that matters is node identity** — a
   remove-and-add looks identical on screen and loses the reader's place in the
   stack.
+- **A control's callback is TRANSLATED by the dispatcher, never forwarded.**
+  `onvalue(v)` is the registry's vocabulary — the name a `props` builder is
+  handed — and no kit control has that prop. The three a bar or a form reaches
+  for disagree: `Input` and `Select` fire `oninput` with the EVENT, `MultiSelect`
+  fires `onchange` with the VALUE. `FormField.mesa`'s table adapts per control
+  and `FilterBar.mesa` has to do the same. Forwarding the name straight through
+  is SILENT — mesa lands an unknown prop as an attribute, so every control draws,
+  every placeholder reads correctly, and nothing writes (`FJS-1046`). It shipped
+  green: the compile test compiled it, the render test rendered it, and the drive
+  had never opened the component.
 - Errors arrive through `toFieldErrors()` (sierra's `field-rules.js`), which is
   the one owner of "a thrown value → per-field messages". `<Form>` calls it and
   knows nothing else about error shapes.

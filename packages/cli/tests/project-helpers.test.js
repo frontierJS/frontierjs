@@ -24,22 +24,26 @@ const ROOT  = resolve(__dir, '..')
 
 global.fliRoot ??= ROOT
 
-// The namespace helpers live in a `<script>` block, which is how the runtime
-// gives them to every command in the namespace. Loaded as a real module rather
-// than through `new Function`: the block opens with `import … from 'fs'`, which
-// is only legal at module scope.
+// The surface reader is a plain module (`FJS-D240`) — `app:atlas` and
+// `project:map` both import it, so it is imported here too.
+const { readApiSurface, surfaceMissingHint } = await import(resolve(ROOT, 'core/app-entry.js'))
+
+// `extractResourceMeta` is not, and cannot be: it lives in the `<script>` block,
+// which is how the runtime gives a helper to every command in the namespace.
+// Loaded as a real module rather than through `new Function`, because the block
+// opens with `import … from 'fs'` and that is only legal at module scope.
 async function loadModuleHelpers() {
   const src = readFileSync(resolve(ROOT, 'commands/project/_module.md'), 'utf8')
   const script = src.match(/<script>([\s\S]+?)<\/script>/)
   if (!script) throw new Error('No <script> block in project/_module.md')
 
   const file = resolve(ROOT, `.tmp-project-helpers-${process.pid}.mjs`)
-  writeFileSync(file, `${script[1]}\nexport { readApiSurface, surfaceMissingHint, extractResourceMeta }\n`)
+  writeFileSync(file, `${script[1]}\nexport { extractResourceMeta }\n`)
   try { return await import(pathToFileURL(file).href) }
   finally { rmSync(file, { force: true }) }
 }
 
-const { readApiSurface, surfaceMissingHint, extractResourceMeta } = await loadModuleHelpers()
+const { extractResourceMeta } = await loadModuleHelpers()
 
 let TMP
 beforeEach(() => {

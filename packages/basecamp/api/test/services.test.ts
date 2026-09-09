@@ -27,7 +27,8 @@ import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor, grantsWithin } from '../src/core/capabilities.ts'
 import { refuseGrantAboveOwn }    from '../src/core/hooks.ts'
 import { MEMBERSHIP }             from '@frontierjs/junction'
-import { SERVER_READINGS }        from '../src/core/server-metrics.ts'
+import { SERVER_READINGS, readingOf } from '../src/core/server-metrics.ts'
+import { NOTIFICATION_KINDS }     from '../src/services/notification-preferences/kinds.ts'
 
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
@@ -453,6 +454,34 @@ describe('the audit trail records what changed', () => {
   })
 })
 
+
+/**
+ * Enroll a machine and hand back the credential it went away with.
+ *
+ * There is no fleet-wide outpost secret any more: every machine holds one of
+ * its own, minted at enrollment, and a machine that has not enrolled is refused
+ * whatever it signs with. So a test that wants to be an outpost has to become
+ * one first — which is the same two steps a real machine takes, cloud-init or a
+ * pasted command.
+ *
+ * The token is written straight onto the row rather than issued through the
+ * service, because these fixtures are not testing the issuing path — that is
+ * `compute.test.ts`'s, along with the gate on it.
+ */
+async function enrollMachine(serverId: string): Promise<string> {
+  const { mintEnrollToken, hashEnrollToken } =
+    await import('../src/providers/compute/enrollment.ts')
+  const token = mintEnrollToken().token
+  await (env.system as any).server.update({
+    where: { id: serverId },
+    data:  { enrollTokenHash: hashEnrollToken(token), enrollExpiresAt: new Date(Date.now() + 60_000) },
+  })
+  const res = await env.http.post(`/servers/${serverId}/enroll`).send({ token })
+  const secret = (res.body as { secret?: string }).secret
+  if (!secret) throw new Error(`enrollMachine(${serverId}): ${res.status} ${res.text}`)
+  return secret
+}
+
 // ─── The endpoints a MACHINE calls ───────────────────────────────────────────
 // `servers.heartbeat`, `volumes.report` and `cleanup.report` are exempted from
 // sessionScope because an outpost holds no session. Until 2026-08-19 that
@@ -463,7 +492,11 @@ describe('the audit trail records what changed', () => {
 // every later /exec, /deploy and /system/prune for that machine at a host the
 // caller owns, signed with this app's own secret.
 describe('an outpost endpoint takes a signature or nothing', () => {
-  const SECRET = process.env.OUTPOST_SECRET ?? 'outpost-dev-secret'
+  // The machine's OWN credential. There is no fleet key to borrow: a machine
+  // that has not enrolled is refused whatever it signs with, so this fixture
+  // enrolls first, exactly as a real one does.
+  let SECRET: string
+  beforeAll(async () => { SECRET = await enrollMachine(machine.id as string) })
 
   /** The same headers conduit sends, from the same module it signs with. */
   async function signed(path: string, body: unknown) {
@@ -1070,7 +1103,11 @@ describe('the installation settings are one row, behind the hub tier', () => {
 describe('a person notification preferences are their own', () => {
   test('every kind answers, defaulted, before anybody has chosen', async () => {
     const out = await env.as(developer).service('notification-preferences').find()
-    expect(out.data.length).toBe(7)
+    // The count is derived, not typed in: `kinds.ts` IS the list this screen
+    // renders, and a literal here freezes at whatever it was the day it was
+    // written — which is what a kind added to the enum and the files but not to
+    // the table would slip past.
+    expect(out.data.length).toBe(NOTIFICATION_KINDS.length)
     expect(out.data.every((r: any) => r.source === 'default')).toBe(true)
     // The defaults are a judgement, not a shrug: a failure is emailed, a success
     // is not. Asserting one of each keeps that from being quietly inverted.
@@ -1653,7 +1690,9 @@ describe('a server keeps its readings, and only its own workspace may read them'
   /** A check-in the way an outpost makes one: over HTTP, HMAC-signed. The
    *  method is exempt from `authenticate` and refuses a service call by name,
    *  so driving it any other way would drive something the outpost does not. */
-  const SECRET = process.env.OUTPOST_SECRET ?? 'outpost-dev-secret'
+  // Enrolled, because there is no fleet key. Same two steps a real machine takes.
+  let SECRET: string
+  beforeAll(async () => { SECRET = await enrollMachine(box.id as string) })
 
   async function checkIn(health: Record<string, unknown>) {
     const body = { outpost_version: '1.0.0', health }
@@ -1715,6 +1754,33 @@ describe('a server keeps its readings, and only its own workspace may read them'
     expect((await newest()).value).toBe(77)
   })
 
+  test('…and a reading sent as NULL is the same silence, not a zero', async () => {
+    // The other way an absent reading arrives, and the one that coerces. An
+    // outpost omits a key it could not read, but `health` is an open Json
+    // document written by another process at another version, and `Number(null)`
+    // is 0 — so the value that means *I could not take this reading* was the one
+    // spelling that wrote a real point at zero. A disk series at 0% is worse
+    // than a gap: it draws a graph, and every alert rule watching it reads a
+    // machine with room to spare.
+    //
+    // Paired with `cpu` in the same body, or a rule that dropped the whole
+    // check-in would satisfy the assertion above it.
+    const sys  = env.system as any
+    const disk = await sys.metricSeries.findFirst({
+      where: { labelsKey: seriesKey('server.diskPercent', { serverId: box.id }) },
+    })
+    const cpu  = await sys.metricSeries.findFirst({
+      where: { labelsKey: seriesKey('server.cpuPercent', { serverId: box.id }) },
+    })
+    const newestOf = async (id: string) => (await sys.metricPoint.findMany({
+      where: { seriesId: id }, orderBy: { at: 'desc' }, limit: 1,
+    }))[0]
+
+    await checkIn({ cpu: 55, disk: null })
+    expect((await newestOf(disk.id)).value).toBe(77)
+    expect((await newestOf(cpu.id)).value).toBe(55)
+  })
+
   test('the answer declares the readings as well as holding them', async () => {
     // `readings` is the DECLARATION and `series` is what the store has, and a
     // card needs the first whether or not the second exists — a machine that
@@ -1771,5 +1837,364 @@ describe('a server keeps its readings, and only its own workspace may read them'
     await expect(env.as(owner).service('servers').call('metrics', box.id,
       { from: Date.now(), to: Date.now() - 3_600_000 }))
       .rejects.toThrow(/from must be before to/)
+  })
+})
+
+// ─── the disk picture over time ─────────────────────────────────────────────
+//
+// `DiskUsage` is `@@unique([serverId])` and stays that way: a second table of
+// readings beside the metric store would be a second owner of one idea
+// (`FJS-956`). So the trend is a series, written from the same report that
+// overwrites the row, and read back off the HOURLY FOLD.
+//
+// The fold is the half a unit test on either side cannot see. Raw points live
+// 48 hours and this graph spans a week, so a reader that took the raw tier
+// answers *nothing happened before Tuesday* for every machine in the fleet —
+// and looks completely correct on a database seeded a minute ago.
+
+describe('a machine\'s disk is kept over time, folded', () => {
+  let box: any
+
+  beforeAll(async () => {
+    const sys = env.system as any
+    box = await sys.server.create({
+      data: { workspaceId: ws.id, name: 'disk-box', slug: `dbox-${Math.random().toString(36).slice(2, 8)}`,
+              status: 'pending' },
+    })
+  })
+
+  let SECRET: string
+  beforeAll(async () => { SECRET = await enrollMachine(box.id as string) })
+
+  /** A disk report the way an outpost makes one: over HTTP, HMAC-signed, at the
+   *  COLLECTION with the server named in the body. Driving `applyDiskReport`
+   *  directly would agree with a report that never reaches it. */
+  async function reportDisk(body: Record<string, unknown>) {
+    const payload = { server_id: box.id, ...body }
+    const path = '/cleanup'
+    const req  = env.http.post(path).set('x-service-method', 'report')
+    for (const [k, v] of Object.entries(await signRequest({
+      secret: SECRET, method: 'POST', path, body: JSON.stringify(payload),
+      timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
+    }))) req.set(k, v)
+    const res = await req.send(payload)
+    expect(res.status).toBe(200)
+  }
+
+  const REPORT = {
+    images:      { total: 12, unused: 4, dangling: 1, size_bytes: 4_000, reclaimable_bytes: 1_500 },
+    containers:  { running: 3, stopped: 2, reclaimable_bytes: 700 },
+    build_cache: { size_bytes: 900, reclaimable_bytes: 300 },
+  }
+
+  const seriesOf = async (name: string) => (env.system as any).metricSeries.findFirst({
+    where: { labelsKey: seriesKey(name, { serverId: box.id }) },
+  })
+  const newestPoint = async (seriesId: string) => ((await (env.system as any).metricPoint.findMany({
+    where: { seriesId }, orderBy: { at: 'desc' }, limit: 1,
+  }))[0])
+
+  test('one report writes the snapshot AND both series', async () => {
+    await reportDisk(REPORT)
+
+    const sys = env.system as any
+    // The row is still the snapshot it was — one per machine, overwritten.
+    expect(await sys.diskUsage.count({ where: { serverId: box.id } })).toBe(1)
+
+    const held = await seriesOf('server.dockerBytes')
+    const free = await seriesOf('server.dockerReclaimableBytes')
+    expect(held).toBeTruthy()
+    expect(free).toBeTruthy()
+    expect(held.unit).toBe('bytes')
+  })
+
+  test('each series is a SUM, and it is not the sum somebody writes first', async () => {
+    // Both wrong answers are plausible and both read as a number. `dockerBytes`
+    // off images alone loses the build cache, which is the figure that grows
+    // between deploys and the one a full disk is usually made of; the
+    // reclaimable sum off images alone under-promises what a sweep frees.
+    const held = await newestPoint((await seriesOf('server.dockerBytes')).id)
+    const free = await newestPoint((await seriesOf('server.dockerReclaimableBytes')).id)
+
+    expect(held.value).toBe(4_000 + 900)
+    expect(held.value).not.toBe(4_000)
+    expect(free.value).toBe(1_500 + 700 + 300)
+    expect(free.value).not.toBe(1_500)
+  })
+
+  test('a volume\'s bytes are NOT in the reclaimable sum', async () => {
+    // The same omission `cleanup.usage` makes for the fleet total: an unused
+    // volume's size comes from `Volume`, which owns per-disk sizes, so counting
+    // it here too would double it the first time a report was missed.
+    const sys = env.system as any
+    await sys.volume.create({
+      data: { serverId: box.id, name: `vol-${Math.random().toString(36).slice(2, 8)}`,
+              driver: 'local', sizeBytes: 5_000, inUse: false },
+    })
+    await reportDisk(REPORT)
+    const free = await newestPoint((await seriesOf('server.dockerReclaimableBytes')).id)
+    expect(free.value).toBe(1_500 + 700 + 300)
+  })
+
+  test('usage answers the declaration, not just the numbers', async () => {
+    const res = await env.as(owner).service('cleanup').call('usage', {}) as any
+    expect(res.readings.map((r: any) => r.name))
+      .toEqual(['server.dockerBytes', 'server.dockerReclaimableBytes'])
+    // `of` computes the sums and must not travel: it is a function, and what it
+    // computes is already in the points.
+    for (const r of res.readings) expect('of' in r).toBe(false)
+  })
+
+  test('the trend is read off the FOLD, so raw points alone draw nothing', async () => {
+    // The assertion the whole read is shaped by, and it fails silently the other
+    // way: raw is kept 48 hours, this graph spans seven days, and on a database
+    // written a minute ago a raw read looks perfect.
+    const res = await env.as(owner).service('cleanup').call('usage', {}) as any
+    const mine = res.servers.find((s: any) => s.serverId === box.id)
+    // Points exist — the reports above wrote them — and nothing has folded yet.
+    expect(await (env.system as any).metricPoint.count({
+      where: { seriesId: (await seriesOf('server.dockerBytes')).id },
+    })).toBeGreaterThan(0)
+    expect(mine.trend['server.dockerBytes']).toBeUndefined()
+  })
+
+  test('…and an hour that HAS been folded is drawn, oldest first', async () => {
+    const sys    = env.system as any
+    const series = await seriesOf('server.dockerBytes')
+    const hour   = 3_600_000
+    const now    = Math.floor(Date.now() / hour) * hour
+
+    // Three hours, written newest first on purpose: the read orders by hour
+    // DESC and reverses, because a bound that truncates has to drop the OLDEST
+    // hours — ascending with a limit drops the newest, which is a graph that
+    // silently stops days ago.
+    for (const [ago, max] of [[1, 7_000], [3, 5_000], [2, 6_000]] as [number, number][])
+      await sys.metricHour.create({
+        data: { seriesId: series.id, hour: now - ago * hour, min: max, max, sum: max, count: 1 },
+      })
+
+    const res  = await env.as(owner).service('cleanup').call('usage', {}) as any
+    const mine = res.servers.find((s: any) => s.serverId === box.id)
+    // `max`, not the mean: a disk graph is read for its high-water mark, and
+    // averaging an hour removes exactly the spike somebody is looking for.
+    expect(mine.trend['server.dockerBytes']).toEqual([5_000, 6_000, 7_000])
+  })
+
+  test('an hour older than the window is not drawn', async () => {
+    const sys    = env.system as any
+    const series = await seriesOf('server.dockerBytes')
+    const hour   = 3_600_000
+    const old    = Math.floor((Date.now() - 30 * 24 * hour) / hour) * hour
+    await sys.metricHour.create({
+      data: { seriesId: series.id, hour: old, min: 1, max: 1, sum: 1, count: 1 },
+    })
+
+    const res  = await env.as(owner).service('cleanup').call('usage', {}) as any
+    const mine = res.servers.find((s: any) => s.serverId === box.id)
+    expect(mine.trend['server.dockerBytes']).toEqual([5_000, 6_000, 7_000])
+  })
+
+  test('a machine that has never reported has no trend at all', async () => {
+    // Absent rather than empty, the same distinction `reported` makes one line
+    // up: a machine whose outpost has never checked in is not a machine with a
+    // flat disk.
+    const sys   = env.system as any
+    const fresh = await sys.server.create({
+      data: { workspaceId: ws.id, name: 'quiet-box', slug: `qbox-${Math.random().toString(36).slice(2, 8)}`,
+              status: 'pending' },
+    })
+    const res  = await env.as(owner).service('cleanup').call('usage', {}) as any
+    const mine = res.servers.find((s: any) => s.serverId === fresh.id)
+    expect(mine.trend).toEqual({})
+    expect(mine.reported).toBe(false)
+  })
+})
+
+// ─── how full the disk actually is ──────────────────────────────────────────
+//
+// Every other number on the cleanup screen is `docker system df`'s and is about
+// DOCKER. None of them is the denominator: *12 GB reclaimable* is not worth a
+// sweep on a disk at 40% and is tonight's incident on one at 96%, and until now
+// the screen carried the numerator alone.
+//
+// The reading comes off the HEARTBEAT — the outpost's `statfs('/')` — which is a
+// different wire from the disk report on its own slower clock. So a machine can
+// have either reading without the other, and the screen has to say which one is
+// missing rather than drawing a bar at zero, because on this number zero is not
+// a small answer: it reads as *there is room here*, which is the exact opposite
+// of what an unheard-from machine means.
+
+describe('the cleanup screen is told how full each disk is', () => {
+  let box: any
+  const usage = async () => await env.as(owner).service('cleanup').call('usage', {}) as any
+  const mine  = async (id: string) => (await usage()).servers.find((s: any) => s.serverId === id)
+
+  beforeAll(async () => {
+    const sys = env.system as any
+    box = await sys.server.create({
+      data: { workspaceId: ws.id, name: 'full-box', slug: `fbox-${Math.random().toString(36).slice(2, 8)}`,
+              status: 'online', lastHeartbeatAt: new Date().toISOString(),
+              health: { cpu: 12, memory: 40, disk: 94.2 } },
+    })
+  })
+
+  test('the mount reading reaches the read the screen makes', async () => {
+    const row = await mine(box.id)
+    expect(row.fullness).toBe(94.2)
+    // The instant travels with it. A percentage with nothing beside it is read
+    // as current, and this one is as old as the machine's last check-in.
+    expect(row.fullnessAt).toBeTruthy()
+  })
+
+  test('a machine that has never spoken has NO fullness, and it is not zero', async () => {
+    // The pair, and the one that decides the whole shape. Both answers render:
+    // `null` is a sentence saying the machine has not reported, and 0 is a green
+    // bar saying the disk is empty.
+    const sys   = env.system as any
+    const quiet = await sys.server.create({
+      data: { workspaceId: ws.id, name: 'quiet-disk', slug: `qd-${Math.random().toString(36).slice(2, 8)}`,
+              status: 'pending' },
+    })
+    const row = await mine(quiet.id)
+    expect(row.fullness).toBe(null)
+    expect(row.fullness).not.toBe(0)
+  })
+
+  test('a machine that sent `disk: null` is the same absence', async () => {
+    // `Number(null)` is 0, so this is the spelling that turns *I could not read
+    // it* into a disk with 100% free. Paired with a sibling key that survives,
+    // or dropping the whole health document would pass this row.
+    const sys = env.system as any
+    const odd = await sys.server.create({
+      data: { workspaceId: ws.id, name: 'odd-disk', slug: `od-${Math.random().toString(36).slice(2, 8)}`,
+              status: 'online', lastHeartbeatAt: new Date().toISOString(),
+              health: { cpu: 30, disk: null } },
+    })
+    expect((await mine(odd.id)).fullness).toBe(null)
+    expect(readingOf({ cpu: 30, disk: null }, 'cpu')).toBe(30)
+  })
+
+  test('the two wires are independent — a heartbeat without a disk report', async () => {
+    // `box` has never sent a `cleanup.report`, so every Docker figure on its
+    // card is absent while the bar draws. A screen that hung the bar off
+    // `reported` would show nothing here, which is the arrangement this test
+    // exists to refuse.
+    const row = await mine(box.id)
+    expect(row.reported).toBe(false)
+    expect(row.fullness).toBe(94.2)
+  })
+
+  test('…and a disk report without a heartbeat', async () => {
+    // The other direction, and it is not the same claim: this machine's Docker
+    // figures are all real and its bar has nothing to draw. Two absences, two
+    // sentences.
+    const sys  = env.system as any
+    const dark = await sys.server.create({
+      data: { workspaceId: ws.id, name: 'dark-disk', slug: `dd-${Math.random().toString(36).slice(2, 8)}`,
+              status: 'pending' },
+    })
+    await sys.diskUsage.create({
+      data: { serverId: dark.id, imagesTotal: 3, imagesUnused: 1, imagesDangling: 0,
+              imageBytes: 1_000, buildCacheBytes: 100, containersRunning: 1, containersStopped: 0,
+              imagesReclaimableBytes: 200, containersReclaimableBytes: 0,
+              buildCacheReclaimableBytes: 100, reportedAt: new Date().toISOString() },
+    })
+    const row = await mine(dark.id)
+    expect(row.reported).toBe(true)
+    expect(row.fullness).toBe(null)
+  })
+
+  test('another workspace\'s machine is not in the answer at all', async () => {
+    // `fleetOf` is the tenancy boundary for this whole service, and it now
+    // carries a machine's health rather than its name alone — so the widened
+    // select is asserted to be still inside the same scope.
+    const sys       = env.system as any
+    const elsewhere = await sys.workspace.findFirst({ where: { name: 'Other' } })
+    const theirs    = await sys.server.create({
+      data: { workspaceId: elsewhere.id, name: 'their-disk',
+              slug: `td-${Math.random().toString(36).slice(2, 8)}`, status: 'online',
+              health: { disk: 99 } },
+    })
+    expect((await usage()).servers.find((s: any) => s.serverId === theirs.id)).toBeUndefined()
+  })
+})
+
+// ─── a refusal is not a fault, and a bad id is not a miss (FJS-1018) ─────────
+//
+// `NotFound: Portal service 'null' not found` turned up in the API log during
+// ordinary use and every wired caller was driven without producing it. What the
+// row actually COST was two conflations, and both are here.
+//
+// The first is that one sentence answered three different questions — no id at
+// all (`$.id` is null), a caller that interpolated an empty value (the STRING
+// 'null'), and an appliance genuinely absent from the registry. A reader could
+// not tell a bug in this app from a configuration somebody removed.
+//
+// The second is the app-wide one and is the reason the row was worth filing:
+// the `error:` hook logged EVERY thrown service error at ERROR, so an ordinary
+// 404 — and every 401 a stranger causes, and every 403 the gate is there to
+// give — read as a fault and buried the 500s that are.
+
+describe('a bad appliance id names itself, and a refusal is not logged as a fault', () => {
+  const portalAs = (who: any) => env.as(who).service('portal')
+
+  test('an id that is not an id is a 400, and a real id nobody serves is a 404', async () => {
+    // The pair is the assertion. A guard that refused everything would satisfy
+    // either row alone, and refusing *nothing* is where this started.
+    const bad = await portalAs(owner).get('null').catch((e: any) => e)
+    expect(bad).toBeInstanceOf(Error)
+    expect(bad.code ?? bad.status).toBe(400)
+    // Named, so the log says which of the two happened.
+    expect(String(bad.message)).toContain('needs an appliance id')
+
+    const miss = await portalAs(owner).get('no-such-appliance').catch((e: any) => e)
+    expect(miss).toBeInstanceOf(Error)
+    expect(miss.code ?? miss.status).toBe(404)
+    expect(String(miss.message)).toContain('not found')
+  })
+
+  test('the string forms are the ones a template writes, and `!id` misses them', async () => {
+    // 'undefined' and '' are the same mistake at two spellings, and only one of
+    // them is falsy — which is why the widget's own guard had to widen too.
+    for (const id of ['undefined', '']) {
+      const e = await portalAs(owner).get(id).catch((err: any) => err)
+      expect(e.code ?? e.status).toBe(400)
+    }
+  })
+
+  test('a real appliance still answers, which is what says the guard is not refusing everything', async () => {
+    const rows  = (await portalAs(owner).find()).data
+    expect(rows.length).toBeGreaterThan(0)
+    const entry = await portalAs(owner).get(rows[0].id)
+    expect(entry.id).toBe(rows[0].id)
+  })
+
+  test('a 4xx is logged as a refusal and a 5xx as a fault', async () => {
+    // Graded against the SHIPPED hook by capturing what the real logger wrote,
+    // not against a copy of it retyped here: a copy passes whatever the hook
+    // does, which is the failure this whole row is an instance of.
+    const lines: any[] = []
+    const write = process.stdout.write.bind(process.stdout)
+    ;(process.stdout as any).write = (chunk: any, ...rest: any[]) => {
+      const text = typeof chunk === 'string' ? chunk : String(chunk)
+      for (const line of text.split('\n'))
+        if (line.startsWith('{')) { try { lines.push(JSON.parse(line)) } catch {} }
+      return write(chunk, ...rest)
+    }
+    try {
+      // A refusal the app exists to give.
+      await portalAs(owner).get('no-such-appliance').catch(() => {})
+    } finally {
+      ;(process.stdout as any).write = write
+    }
+
+    const said = lines.filter(l => l.message === 'portal.get failed')
+    expect(said.length).toBeGreaterThan(0)
+    // The claim: a 404 is a refusal. It used to be written at ERROR, which is
+    // what made an ordinary miss read as a fault and buried the real ones.
+    expect(said.every(l => l.level === 'warn')).toBe(true)
+    // And the status is CARRIED, so the line says which refusal it was — the
+    // whole reason 400 and 404 were separated a few rows up.
+    expect(said.some(l => l.data?.status === 404)).toBe(true)
   })
 })

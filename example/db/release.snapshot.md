@@ -172,6 +172,7 @@ table `customer` · db `main` · gate `1.4.4.5` · @@softDelete
 | `deletedAt` | `DateTime` | yes | — | — |
 | `email` | `String` | no | — | unique · **required on write** |
 | `fields` | `Json` | no | `'{}'` | — |
+| `fieldsSlots` | `Json` | no | `'{}'` | @system |
 | `firstName` | `String` | no | — | **required on write** |
 | `fullName` | `String` | yes | — | — |
 | `id` | `Int` | no | — | id |
@@ -186,7 +187,6 @@ table `customer` · db `main` · gate `1.4.4.5` · @@softDelete
 | `orderCount` | `Int` | — | — | from |
 | `orders` | `Order[]` | — | — | relation |
 | `paymentMethods` | `PaymentMethod[]` | — | — | relation |
-| `slots` | `Json` | no | `'{}'` | @system |
 | `subscriptions` | `Subscription[]` | — | — | relation |
 | `t1` | `String` | yes | — | — |
 | `t2` | `String` | yes | — | — |
@@ -200,7 +200,7 @@ table `customer` · db `main` · gate `1.4.4.5` · @@softDelete
 | `version` | `Int` | no | `1` | — |
 
 ```
-@@index(t1, t2, t3, t4, n1, n2, t5, t6, t7, t8, n3, n4)
+@@index(t1, t2, n1, t3, t4, n2, t5, t6, n3, t7, t8, n4)
 @@allow('read', auth().isStaff)
 @@allow('read', userId == auth().id)
 ```
@@ -212,11 +212,19 @@ table `custom_field` · db `main` · gate `5.5.5.5`
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `defaultValue` | `String` | yes | — | — |
 | `id` | `Int` | no | — | id |
-| `key` | `String` | no | — | unique · **required on write** |
+| `key` | `String` | no | — | **required on write** |
 | `label` | `String` | no | — | **required on write** |
-| `slot` | `String` | yes | — | unique · @system |
+| `model` | `String` | no | — | **required on write** |
+| `show` | `Boolean` | no | `1` | — |
+| `slot` | `String` | yes | — | @system |
 | `type` | `CustomFieldType` | no | — | **required on write** |
+
+```
+@@unique(key, model)
+@@unique(model, slot)
+```
 
 ### `Discount`
 
@@ -805,6 +813,7 @@ table `product` · db `main` · gate `0.4.4.5` · @@softDelete(cascade)
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deletedAt` | `DateTime` | yes | — | — |
 | `description` | `String` | yes | — | — |
+| `fields` | `Json` | no | `'{}'` | — |
 | `id` | `Int` | no | — | id |
 | `images` | `ProductImage[]` | — | — | relation |
 | `name` | `String` | no | — | unique · **required on write** |

@@ -3,6 +3,7 @@ title: Server
 ---
 <script>
   import { page, goto } from '@frontierjs/sierra/router'
+  import { humanize } from '@frontierjs/toolbelt/inflect'
   import { servers } from '../../../resources/Server.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
@@ -141,7 +142,14 @@ title: Server
   // The interval is cleared on leaving the state and on destroy, both — the
   // first is what stops it, the second is what stops it when somebody navigates
   // away mid-provision, which is the case a status-only guard misses.
-  const IN_FLIGHT = new Set(['pending', 'provisioning', 'installing', 'destroying'])
+  // `pending` is the ambiguous one and it is not decidable from the status
+  // alone. A machine this app is BUYING sits at `pending` until the job picks
+  // it up; a machine somebody IMPORTED sits there forever, because no job will
+  // ever touch it and nothing but an outpost checking in will move it. Telling
+  // an operator their imported box is *queued* is a sentence that never comes
+  // true. `registerMethod` is the discriminator and it is already on the row.
+  const IN_FLIGHT   = new Set(['provisioning', 'installing', 'destroying'])
+  const IF_BUYING   = new Set(['pending'])
   const POLL_MS   = 4000
 
   let polling = null
@@ -153,7 +161,9 @@ title: Server
   // expression depends on from its own text, so `server.status` has to appear
   // here or this re-derives for the wrong reason (the note above `moves` says
   // the same thing about the same trap).
-  $: inFlight = !!server && IN_FLIGHT.has(server.status)
+  $: inFlight = !!server && (
+       IN_FLIGHT.has(server.status)
+       || (IF_BUYING.has(server.status) && server.registerMethod === 'provisioned'))
 
   $: (inFlight, () => {
     stopPolling()
@@ -177,6 +187,27 @@ title: Server
   // What the machine is waiting for, in the words somebody provisioning it
   // would use. Not the status itself: `installing` is this app's word for *the
   // box is up and enrolling*, which is not what it says to a reader.
+  // The install command for a machine that has no credential yet. Held in a
+  // local rather than on the row, because it carries a token the server will
+  // not answer twice.
+  let enrollCommand  = null
+  let enrollWindowMs = 15 * 60 * 1000
+  let enrollError    = null
+
+  async function issueEnrollment() {
+    enrollError = null; busy = 'enroll'
+    try {
+      const issued = await servers.service.invoke('issueEnrollment', page.params.id)
+      enrollCommand  = issued.command
+      enrollWindowMs = issued.windowMs ?? enrollWindowMs
+      await loadEvents()
+    } catch (e) {
+      enrollError = e.message
+    } finally {
+      busy = null
+    }
+  }
+
   const WAITING = {
     pending:      'Queued. The provisioning job has not picked it up yet.',
     provisioning: 'Asking the provider for a machine, then waiting for it to boot and get an address.',
@@ -235,6 +266,42 @@ title: Server
       <div class="alert-content">
         <strong>{server.status}</strong> — {WAITING[server.status]}
         <span class="text-sm text-muted"> This page follows along; there is nothing to refresh.</span>
+      </div>
+    </article>
+  {/if}
+
+  {#if server.outpostSecretId === null}
+    <!-- A machine with no credential of its own. Provisioned machines get one
+         from cloud-init, which nobody types; an imported machine has no install
+         to be handed anything at, so this is that moment.
+
+         Shown for every such machine rather than only for unreachable ones: a
+         box that is checking in on nothing at all is exactly the case somebody
+         needs to fix and has no other sign of. -->
+    <article class="alert info" id="needs-enrollment">
+      <div class="alert-content">
+        <strong>This machine has no credential of its own.</strong>
+        Run one command on it and it gets one, after which it signs its own check-ins.
+        {#if enrollError}
+          <p class="text-sm" id="enroll-error">{enrollError}</p>
+        {/if}
+        {#if enrollCommand}
+          <!-- Shown ONCE. The token is returned by the service and stored
+               nowhere it can be read back — the same rule an invitation link
+               follows, and for the same reason. Issuing again is how somebody
+               who lost it gets another, and it revokes this one. -->
+          <p class="text-sm text-muted">
+            Run this on the machine within {Math.round(enrollWindowMs / 60000)} minutes.
+            It is shown once; issue another if you lose it.
+          </p>
+          <pre class="code-block" id="enroll-command"><code>{enrollCommand}</code></pre>
+        {:else}
+          <div class="cluster">
+            <Button variant="primary" disabled={busy === 'enroll'} onclick={issueEnrollment}>
+              {busy === 'enroll' ? 'Issuing…' : 'Get the install command'}
+            </Button>
+          </div>
+        {/if}
       </div>
     </article>
   {/if}
@@ -323,7 +390,11 @@ title: Server
               <div class="text-muted text-sm">{when(event.createdAt)}</div>
               <div class="cluster">
                 <strong>{event.message}</strong>
-                <span class="badge muted">{event.kind}</span>
+                <!-- `humanize`, not the identifier. `provision_requested` is a
+                     value the schema owns and a person reads, and the two are
+                     different axes of one name — `@frontierjs/toolbelt/inflect`
+                     is the one owner of the reader axis. -->
+                <span class="badge muted">{humanize(event.kind)}</span>
               </div>
             </div>
           </article>

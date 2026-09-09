@@ -30,6 +30,13 @@ function rulesFor(defs) {
       required: false,
       nullable: true,
       label:    d.label || d.key,
+      // `default` is one of the keys a rule CARRIES, so a declared field
+      // prefills the way a declared column does and no screen applies it by
+      // hand. Absent stays absent: an empty string written into every new row
+      // is not the same as a field nobody filled in.
+      ...(d.defaultValue == null || d.defaultValue === ''
+        ? {}
+        : { default: d.type === 'number' ? Number(d.defaultValue) : d.defaultValue }),
     }
   }
   return out
@@ -43,6 +50,18 @@ function rulesFor(defs) {
  * as a column `Customer` does not have.
  */
 export const fieldKey = def => `fields.${def.key}`
+
+/**
+ * Which declared fields a LIST offers as columns.
+ *
+ * `show` is the shop's default for the column and nothing more: the value is
+ * readable by anyone who may read the row whatever it says, so this decides a
+ * table's columns and never an answer (Invariant 6). Separate from
+ * `withCustomFields` because a form shows every declared field and a table
+ * shows the ones somebody chose.
+ */
+export const shownFields = (defs, override = null) =>
+  (defs ?? []).filter(d => override?.[d.key] ?? d.show !== false)
 
 /**
  * A resource that answers for the schema's columns AND this shop's own fields.

@@ -541,3 +541,99 @@ describe('unparsed-record', () => {
     expect(of(runRegisterCheck({ root: REPO, staleDays: 0 }), 'unparsed-record')).toHaveLength(0)
   })
 })
+
+// ─── the id says which register a row belongs to (FJS-1033) ──────────────────
+//
+// `ISSUES.md` holds two registers in one file. The reader tells them apart by
+// SECTION; every other document tells them apart by PREFIX. Five closed defects
+// sat in § Needs a decision and every rule passed over them, because the two
+// rules written for misplacement are blind here by construction: `row-shape`
+// grades on the cell count and both tables declare four columns, and the status
+// branch is only reached for a row carrying a severity, which a decision-section
+// row never does.
+//
+// Both firing cases are paired with the legitimate shape one prefix away, and
+// the third control is the one the design turns on: § Closed holds BOTH kinds
+// on purpose, because a question that gets its ruling closes under the id it
+// was asked under.
+
+describe('an id filed under the wrong section', () => {
+  let dir
+  const fixture = (files) => {
+    dir = mkdtempSync(join(tmpdir(), 'fli-idsection-'))
+    for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, name), body)
+    return runRegisterCheck({ root: dir, staleDays: 0 })
+  }
+  afterAll(() => { try { rmSync(dir, { recursive: true, force: true }) } catch {} })
+
+  const DEFECTS = [
+    '## S2 — high',
+    '| Id | Pkg | Title | Status | Verified | Detail |',
+    '| --- | --- | --- | --- | --- | --- |',
+  ]
+  const QUESTIONS = [
+    '',
+    '## Needs a decision',
+    '| Id | Pkg | Question | Detail |',
+    '| --- | --- | --- | --- |',
+  ]
+
+  test('a defect id among the questions is reported, and a ruling id there is not', () => {
+    const result = fixture({ 'ISSUES.md': [
+      ...DEFECTS,
+      ...QUESTIONS,
+      '| <a id="fjs-900"></a>FJS-900 | cli | **A defect parked among the questions.** | — |',
+      // The pair. This is what the table is FOR, and a rule that fired on both
+      // would be one nobody could leave switched on.
+      '| <a id="fjs-d90"></a>FJS-D90 | cli | **A question waiting for a ruling.** | — |',
+      '',
+    ].join('\n') })
+
+    const hits = of(result, 'id-section')
+    expect(hits.map(h => h.id)).toEqual(['FJS-900'])
+    // Named, because the fix is not the same in both directions: this one may
+    // be a misfiled defect or a question issued under the wrong prefix.
+    expect(hits[0].message).toContain('defect id')
+  })
+
+  test('a ruling id under a severity heading is reported, and a defect id there is not', () => {
+    const result = fixture({ 'ISSUES.md': [
+      ...DEFECTS,
+      '| <a id="fjs-d91"></a>FJS-D91 | cli | **A question filed as a defect.** | open | 2026-08-17 | — |',
+      '| <a id="fjs-901"></a>FJS-901 | cli | **An ordinary defect.** | open | 2026-08-17 | — |',
+      ...QUESTIONS,
+      '',
+    ].join('\n') })
+
+    const hits = of(result, 'id-section')
+    expect(hits.map(h => h.id)).toEqual(['FJS-D91'])
+    expect(hits[0].message).toContain('ruling id')
+  })
+
+  test('§ Closed holds both kinds, and that is the lifecycle rather than a loophole', () => {
+    // The control the design turns on. A question that gets its ruling closes
+    // as a row under the id it was asked under — twenty-seven of them sit in
+    // this repo's own § Closed — so a rule reading the prefix everywhere would
+    // report the normal end of every decision as a fault.
+    const result = fixture({ 'ISSUES.md': [
+      ...DEFECTS,
+      ...QUESTIONS,
+      '',
+      '## Closed',
+      '| Id | Title | Closed | How |',
+      '| --- | --- | --- | --- |',
+      '| <a id="fjs-902"></a>FJS-902 | cli — **A defect that was fixed.** | 2026-08-17 | fixed |',
+      '| <a id="fjs-d92"></a>FJS-D92 | cli — **A question that got its ruling.** | 2026-08-17 | ruled |',
+      '',
+    ].join('\n') })
+
+    expect(of(result, 'id-section')).toHaveLength(0)
+  })
+
+  test('this repo files every row under the section its id names', () => {
+    // The live half. `FJS-1033` fixed the five by hand and left the rule open,
+    // so a green answer here is the placement holding rather than the rule
+    // never having been asked.
+    expect(of(runRegisterCheck({ root: REPO, staleDays: 0 }), 'id-section')).toHaveLength(0)
+  })
+})

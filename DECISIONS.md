@@ -2100,6 +2100,135 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d248"></a>2026-09-08 · `FJS-D248` — Analytical data lives in SQLite. *Query with another engine* and *store in another engine* are two questions, and only the second is the commitment `FJS-D228` deferred.
+
+`FJS-D229` asked what holds analytical data and was deliberately left open by
+`FJS-D228`, with the instruction *do not rule this from a guess: the trigger is
+real strain against the floor, and until then the answer is SQLite*. That answer
+has been sitting in the OPEN register for a year of design decisions, which is
+the shape `FJS-D190` named one tier up — **a default that everything relies on
+and nothing states reads exactly like an unanswered question**, and the next
+person to reach for it finds a row that says *unruled* and a sentence that says
+*SQLite*.
+
+**The floor has not been strained. It has not been stood on.** No `.lite` in this
+repo declares `@@materialized` at all: `example`'s `revenueByStatus` and
+basecamp's `fleetByProvider` are both plain views, and basecamp's carries a doc
+comment explaining why it is not materialized. Zero declarations is not weak
+evidence of *no strain* — it is the absence of the workload the question is about.
+
+**The trigger D229 named is gone, and that is the substantive change.**
+`FJS-971`'s refresh ceiling was where strain would first show. `FJS-D245` made it
+a choice rather than a ceiling: a materialized view is now either
+trigger-refreshed at a stated per-row cost or rebuilt on demand. So the one place
+the floor was measurably low has been raised without a new engine, which is the
+outcome a premature ruling would have foreclosed.
+
+**The question splits, and the split is the ruling.** *Reading* our data with
+another engine and *storing* data in one are different commitments wearing one
+name. DuckDB attaches a SQLite file directly — `ATTACH 'app.db' (READ_ONLY)` —
+and queries it in place, no migration, no copy, nothing living in DuckDB.
+**That is available to any operator today, costs this framework nothing, and is
+not a decision this project gets to make**: it is a person pointing a tool at a
+file they own. It needs no `DATABASE_DRIVERS` entry, no dependency, no runtime,
+and it is reversible by closing the process.
+
+The irreversible half is STORAGE — the moment anyone's analytics live somewhere
+that is not the app's own file. That is what carries a native runtime dependency
+where nothing shipped today has one outside bun's own sqlite, forks the
+consistency model, and sets the ceiling that decides whether this is *analytics
+for the app* or *analytics for the business*.
+
+**And storage is more expensive than D229 accounted for, by exactly one
+mechanism.** A second store has to be FED, and `FJS-D247` measured that the feed
+does not exist: the write tap is an at-most-once Observer and cannot carry
+durable capture, bun's SQLite ships `SQLITE_ENABLE_PREUPDATE_HOOK` and
+`SQLITE_ENABLE_SESSION` both off, and the two are mutually exclusive upstream
+regardless — leaving a trigger-written change table, at per-row cost inside the
+transaction. So *adopt a second engine* is not one decision, it is two, and the
+second one is the one nobody costs when they make the first.
+
+**Ruled: SQLite, and the reopening condition is named rather than left to
+feel.** The question comes back when an app in this repo or a real engagement
+declares an analytical read that a `view` serves and that misses a stated latency
+budget on real row counts, with the EXPLAIN and the counts recorded — the
+standard the partial-index and policy-path work already meets, where `SCAN` is
+not the signal and the plan is read. Until such a measurement exists, a fourth
+`DATABASE_DRIVERS` entry is not authorized, and this ruling is what a proposal
+for one has to answer.
+
+The nine, answered before the edit: no new origin (nothing is built), no new
+concept — the ruling REMOVES one, since *analytical storage* stops being an open
+territory and becomes a default with a trigger; the complexity is the problem's
+and we decline to add ours; predictability improves, because the answer moves
+from a sentence inside an open row to a ruling other documents can cite; one
+owner, litestone; the boundary is `DATABASE_DRIVERS` and it is a closed set of
+three; the failure mode is proportional, since a read-only attach is reversible
+and storage is not, which is why only the second is withheld. The ninth — *can
+this be wrong without anything saying so* — is the reason the reopening
+condition is a MEASUREMENT and not a judgment: a default nobody can falsify is
+the failure this ruling exists to end.
+
+### <a id="fjs-d245"></a>2026-09-08 · `FJS-D245` — `@@refreshOn` decides WHEN a materialized view is rebuilt, not whether. Its absence is the second refresh strategy, and the verb it enables is `asSystem()`-only.
+
+`@@materialized` had one refresh strategy and required the declaration that
+installs it. SQLite fires a ROW trigger, so a `createMany` of 10,000 orders
+re-aggregated the whole source 10,000 times, synchronously, inside the write's
+own transaction (`FJS-971`). The cost was stated in `litestone advise` and could
+not be declined by anyone who wanted a materialized view at all.
+
+**A second strategy is a freshness guarantee, and a freshness guarantee cannot be
+derived — it has to be declared.** What was already in the schema is the
+declaration: `@@refreshOn([Order])` names the sources whose writes rebuild the
+table, so naming none means nothing rebuilds it on a write. Dropping the
+*requires* rule is the whole change. **No word was coined**, and that is the
+test the alternative failed: a `mode: deferred` argument would have been a second
+origin for a fact `@@refreshOn`'s own presence already carries, and a schema can
+then say two contradictory things about one view.
+
+Three flavors, decidable from the declaration alone: a plain `view` is recomputed
+per read; `@@materialized` with `@@refreshOn` is a table always correct at rest,
+paid per source row written; `@@materialized` alone is a table rebuilt when
+`db.<view>.refresh()` is called and at no other time.
+
+**Two things follow, and both are derived rather than chosen.**
+
+**`refresh()` requires `asSystem()`.** The rebuild runs `@@sql` over every source
+row with no policy applied. A view's `@@gate` grades reading the RESULT and says
+nothing about that, so any caller who could ask for a refresh could publish an
+aggregate of rows they may not read — the inversion `FJS-999` and
+`example`'s `verify:views` already pin one axis over.
+
+**The verb exists only where there is no `@@refreshOn`.** With triggers installed
+the table is already correct at rest, so a second way to rebuild it is two owners
+of one fact (Invariant 4). `refresh` is `undefined` on a trigger-refreshed view
+rather than a no-op, because a no-op is the shape somebody builds a schedule on
+top of before finding out it was never needed.
+
+**What this buys is not freshness and the trade has to be said plainly: you own
+the staleness.** Nothing reports that an on-demand view is behind, and that is
+the honest cost of the strategy rather than a gap to fill later — a *last
+refreshed at* column would be a second fact about the same table, kept by
+whichever writer remembered. It is opt-in for that reason, and `litestone advise`
+names it as the third way out of the trigger cost rather than the default.
+
+**It also removes the pressure that was pointed at the wrong question.**
+`FJS-D229` — SQLite or a second engine — waits on real strain against the floor,
+and the refresh ceiling was the first place strain would have shown. It is now a
+choice rather than a ceiling, so the honest state of D229 is unchanged: no
+`.lite` in this repo declares `@@materialized` at all, and until one does and
+strains, the answer stays SQLite.
+
+Built with the nine answered first: no new origin, no new word, the complexity is
+the problem's (freshness is a real choice), predictability is improved because
+the strategy is readable off the declaration, one owner per rebuild, the boundary
+is `refresh()` and it is typed and tested as a PAIR — a source write must leave
+the on-demand view unchanged where the trigger view changes on the same write, or
+the assertion passes against a view that never works. The one question it does
+not pass cleanly is *can this be wrong without anything saying so*: a stale view
+is silent, which is why the staleness is opt-in and why `advise` states the trade
+at the point somebody chooses it.
+
 ### <a id="fjs-d232"></a>2026-09-07 · `FJS-D232` — A database is a FILE. Two `database` blocks resolving to one path are one connection, and a transaction across them is atomic.
 
 `FJS-D35` measured that litestone opens one connection per `database`
@@ -4343,6 +4472,71 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d247"></a>2026-09-08 · `FJS-D247` — Litestone's write tap takes many subscribers and has one owner. Orion attaches to it; the data layer's ingest may not, because a post-commit Observer cannot be durable.
+
+`FJS-D231` asked who owns the subscriber when two products want the same tap —
+orion consumes it to ACT, `FJS-D228`'s ingest half to RECORD. The question
+assumed one subscriber and a contest for it. **Probing the seam answered a
+different and better question: the two consumers do not want the same thing, and
+one of them cannot have it at all.**
+
+**`$tapEvents` is already a `Set`.** The Data layer takes N subscribers today, so
+two tap implementations was never the failure mode a shared seam with no named
+owner risks. What needed saying is the CONTRACT, and it is already built:
+`dispatchEvent` wraps every subscriber in `setImmediate` and swallows throws,
+and `fireEvent` holds an announcement until COMMIT through one funnel
+(`FJS-D170`). **A tap subscriber is an Observer** (`FJS-D06`): it runs after the
+transaction, it receives, and it may not fail the write that announced it.
+
+**Orion attaches to the tap, directly, as one more subscriber.** *Act on a write*
+is exactly what that contract offers, and it needs no permission from junction:
+the seam is litestone's, it is public on the generated client, and adding a
+subscriber costs nothing an existing one can observe.
+
+**Junction's `announceDataWrites` is one subscriber among them and stays the
+single owner of the OTHER translation** — *a write becomes an announcement in the
+API realm* (Invariant 4). Nothing new attaches beside it. A consumer wanting
+every write attaches to the tap instead, and that is not a workaround: the
+junction path is keyed to `servicesFor(model)` in every branch, so a model no
+service covers reaches it never — correct for channels, since a channel is
+service-named, and the reason a data-shaped consumer belongs one layer down.
+
+**The ingest half cannot use the tap, at any ownership.** An event dispatched
+after commit, out of band, has no transactional boundary: a process that dies in
+that window loses it with nothing recorded that it was owed. `cross-process.js`
+already states the same limit for `_litestone_events` — at-most-once across a
+crash, deliberately. **So *record every write with no gaps* is not a subscriber
+question and D231's framing could not have produced it.**
+
+What ingest may use is `FJS-D228`'s call, not this one, and the field already
+draws the line where our two consumers sit: **an outbox carries curated business
+events, CDC carries data replication into an analytical store.** The outbox is
+built and durable — `ctx.enqueue` writes its row inside the call's own
+transaction, so intent is recorded iff the write committed — but it is a verb a
+service calls by name and captures nothing on its own; using it for every write
+means a hand-kept enqueue per service, the drift class this repo has been bitten
+by twice.
+
+**Engine-level CDC is measured as unavailable, and that is a floor rather than a
+today.** Junction is Bun-only; bun's SQLite is compiled with
+`SQLITE_ENABLE_PREUPDATE_HOOK = 0` and `SQLITE_ENABLE_SESSION = 0` (probed,
+3.51.2, no hook surface on `Database`), and upstream the two are mutually
+exclusive on one connection in any case. The remaining route is a trigger-written
+change table, which is the cost shape `FJS-D245` just ruled on one table over —
+per row, inside the transaction. Whoever builds ingest starts from that
+sentence rather than rediscovering it.
+
+The nine, answered before the edit: no new origin (the tap exists and keeps its
+one owner), no new concept, the complexity is the problem's — durability is a
+real difference between the two consumers and not one we introduced —
+predictability improves because the contract is now stated where the seam is,
+one owner per translation is preserved rather than doubled, the boundary is
+`$tapEvents` and is typed and tested, and the failure mode is proportional:
+attaching an Observer costs nothing, while the thing that WOULD have been
+expensive — building ingest on a lossy tap — is the one this forbids. The
+question it does not settle is *what does ingest use instead*, which is
+`FJS-D228`'s to answer and is named here rather than left implied.
 
 ### <a id="fjs-d237"></a>2026-09-07 · `FJS-D237` — an unrecognized `$` parameter is REFUSED by junction's bridge and DROPPED by sierra's router. One grammar, two surfaces, two answers, because a refusal costs a retry on one and a navigation on the other.
 
@@ -6774,6 +6968,227 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d249"></a>2026-09-08 · `FJS-D249` — The `x-` keys come in TWO POLARITIES, and `x-search` is a FACT key. What a boundary refuses is emitted per column; what a model IS, per model.
+`x-search` on a model names the columns `@@fts` indexes, and its absence means
+the Data boundary will refuse `$search` by name. That is the opposite reading
+from `x-sortable` and `x-filterable`, where absence means PERMITTED and a string
+says why not — and the split had never been written down.
+
+**It has to be written down because reading one family by the other's rule is
+silent in both directions.** A consumer applying the refusal convention to
+`x-search` concludes every model is searchable; one applying the fact convention
+to `x-sortable` concludes no column can be sorted. Neither throws, and both are
+wrong about every ordinary column, which is the corpus any test would use.
+`FJS-1043` was that mistake in the small: `x-sortable` never reached a rule, so
+`!rule['x-sortable']` answered TRUE for every column including the `@computed`
+ones the boundary throws on, and the exception-only emit is exactly what made it
+invisible.
+
+**So the name is not `x-searchable`.** The `-able` suffix is what both refusal
+keys wear; wearing it here would invite the misreading in the one place the
+convention is inverted. The two families read as: `x-sortable` · `x-filterable`
+are REFUSALS, `x-label-field` · `x-identify` · `x-gate` · `x-search` are FACTS.
+
+**The value is the indexed COLUMNS rather than a flag**, and it costs one array
+on the one model in a schema that usually declares this — `example` declares
+`@@fts` on one model of about fifty. Two returns: it is `buildFtsMap`'s own
+answer, so the emit restates a shape rather than coining one; and a box can say
+what it searches, which is the question a person asks when a word they can SEE
+in the table does not match.
+
+**The `$` table now writes as well as reads, and that is the same ruling one
+layer down.** A page cannot hand a filter bar the URL's query without both
+directions: `splitParams` takes every `$` key out of `page.query`, so the bar
+speaks a vocabulary the page can only rebuild. Junction's browser client already
+held a field-by-field copy of the write half and called itself the one table in
+its own comment. `directiveParams(directives)` is now in
+`@frontierjs/toolbelt/directives` beside `parseDirectives`, off the same rows,
+and junction calls it — because a directive wired in one direction only is
+`FJS-306` wearing the other face, and it is what made `FJS-1047` possible.
+`/directives` ships a `.d.ts` for `/query`'s reason, which junction's
+`client-types.test.ts` stated the moment the client reached for it.
+
+**Question 9 set the scope and it was not the emit.** A key with no consumer
+fails nothing for as long as nothing reads it — which is `FJS-1043` again — so
+this landed as emit, reader and box together: `resource.filters()` answers
+`search` beside the column filters, refused with a REASON rather than `null` for
+`controlFor`'s rule, and `FilterBar.mesa` draws a box only where the fields are
+there. `@frontierjs/ui`'s drive opens the component, which it had never done.
+
+*Lives in:* `packages/litestone/src/jsonschema.js` ·
+`packages/toolbelt/src/directives/directives.js` ·
+`packages/sierra/src/junction/resource.js` ·
+`packages/ui/components/display/FilterBar.mesa` ·
+`packages/cli/core/crud-templates.js`; pinned in
+`litestone/test/model-search.test.ts` (every row a PAIR over ONE schema, since an
+emit that always fires and one that never fires each satisfy a one-sided test),
+`toolbelt/test/specs/directives.spec.js` (every name written is a name the table
+strips) and `ui/test/browser/specs/filter-bar.spec.mjs`.
+
+### <a id="fjs-d246"></a>2026-09-08 · `FJS-D246` — A filter is a SECOND BINDING on `displayFor`'s names, not a third resolver. What a kind of column is asked WITH is a table.
+`filterOpFor(display)` in Sierra's `field-rules.js` maps a display name to the
+question that kind of column answers — `text` → `contains`, a number, money,
+scale or time → a `gte`/`lte` range, an enum or a relation → `in`, a boolean →
+`equals`, a list → `hasSome` — and `registerFilterComponent(name, Component)` in
+`@frontierjs/ui/controls` binds the same name to the control that collects it.
+One name, three bindings: the cell that renders it, the control that edits it,
+the input that filters on it.
+
+**Why not a third resolver.** `FJS-D242` bought a second registry with a
+measured argument — `controlFor` and `displayFor` disagree at their FIRST
+branch, since a control is a thing that WRITES and refuses every column a table
+most wants. A filter resolver would have no such branch: every display name a
+table renders is a column a `where` can name, and the two lists would be the
+same list maintained twice. So the cost of a third table is `FJS-785`'s cost
+with none of `FJS-D242`'s return, and the nine questions turn on the one that
+decides most proposals — *can this be derived instead of restated*. It can. It
+is a `switch` over names that already exist.
+
+**What a display name cannot answer is asked of the BOUNDARY first.**
+`resource.filters()` reads `x-filterable` before it reads the table, because a
+`@computed` column has a display and no column to compare, and a plain
+`@encrypted` one stores ciphertext under a random IV that no plaintext can
+match. Neither is decidable from *how it is rendered*. A refused column is
+RETURNED carrying its reason rather than dropped, which is `controlFor`'s rule
+and `displayFor`'s rule unchanged.
+
+**Two behavioral rules live in `FilterBar.mesa` and nowhere else**: writing a
+filter deletes `$offset` and `$after`, because page 3 of the old query is not
+page 3 of the new one and a cursor minted against it is a token the server will
+refuse; and clearing every filter PRESERVES `$orderBy` and `$limit`, which are
+how the person is reading rather than what they are reading. The bar does not
+import the router — it takes `value` and `onchange`, so the page owns the URL
+and Invariant 10 keeps one owner for the crossing.
+
+**The seam is graded by an ORACLE, not restated.** `filterOpFor` and litestone's
+`buildWhere` are two statements of one rule, so
+`packages/sierra/tests/filter-operators-real.mjs` puts every operator the table
+hands out to a REAL litestone client and asserts every kind it refuses is
+refused in the boundary's own words. It runs under bun beside
+`static-safety-real.mjs` for that file's reason: a fake boundary agrees with
+whatever the table says, which is the entire thing under test. Measured against
+stubs — `text` → `equals` reds 1, `json` → `contains` 1, `list` → `contains` 2.
+
+*Lives in:* `packages/sierra/src/junction/field-rules.js` ·
+`packages/sierra/src/junction/resource.js` · `packages/ui/controls.js` ·
+`packages/ui/components/display/FilterBar.mesa` ·
+`packages/cli/core/crud-templates.js`; the argument is
+`IDEAS/tables-from-the-seed.md` § Question 4.
+
+### <a id="fjs-d242"></a>2026-09-08 · `FJS-D242` — A DISPLAY is the mirror of a control and is a second registry, because the two tables disagree at their first branch.
+`displayFor(rule, ctx)` in Sierra's `field-rules.js` answers *how is this column
+RENDERED for reading*; `registerDisplay(name, resolve)` contributes to it and
+`registerDisplayComponent(name, Component)` in `@frontierjs/ui/controls` binds
+the name — `FJS-D17`'s split unchanged, for its dependency reason unchanged.
+
+**Why a second table and not a mode on the first.** `controlFor` answers
+`{ control: null, reason: 'readOnly' }` for `@system`, `@computed`,
+`@generated`, `@from` and `@version`, and never offers those columns to a
+registry at all, because a control is a thing that WRITES and the Data boundary
+refuses them by name. Every one of them is a column a table most wants. The two
+resolvers disagree at their first branch, so they are two resolvers; where they
+agree they agree on a NAME, which is the only thing that has to cross. The
+cheaper shapes were priced and both fail on that: one registry with a `readonly`
+mode never sees the columns, and one resolver with two component slots shares
+the half that differs and doubles the half that does not.
+
+**What it answers comes from the DECLARATION, never the value's JS type**, and
+that is the whole content: `@money` and a count are both integers, so the
+five-line renderer this replaces printed `1299` for a price — wrong in the way
+that looks right. Also an enum's `@label` against its member name, a foreign key
+against the id it holds, and whether a `DateTime` is an instant or a wall clock.
+
+**`display: null` is an ANSWER and is never dropped**, carrying a reason, which
+is `controlFor`'s rule carried over: filtering an unplaceable column out would
+reproduce, inside the generator, the bug the generator exists to end.
+
+The registry WALK is one function for both — `_askRegistry(entries, rule, ctx,
+{ noun, key })` — because the decline rule, the throw guard and the `by` stamp
+are three rules whose whole value is being the same for both surfaces.
+
+*Lives in:* `packages/sierra/src/junction/field-rules.js` ·
+`packages/ui/controls.js` · `packages/ui/components/display/Cell.mesa`; pinned in
+`packages/sierra/tests/display-for.test.js`, whose sharpest row is a PAIR on one
+`@computed` column — no control, and a display — since either alone is satisfied
+by a table that says the same thing about everything.
+
+### <a id="fjs-d243"></a>2026-09-08 · `FJS-D243` — A column list is RANKED from the schema and the caller may pin it; the seed gains no keyword for it.
+`columnList(fields, { only, except, limit, identify, label })` answers
+`{ columns, omitted }`. Five tiers — the column that NAMES the row, the business
+key `x-identify` declares, a bound enum, money and time, then the rest —
+with declaration order breaking a tie WITHIN a tier and never across one.
+
+**A form shows what is WRITABLE; a table shows what is READABLE and
+IDENTIFYING**, so this is not `formFieldList` and nothing is dropped here for
+being read-only. A table has a second question a form never had — *which few* —
+and the answer it replaced was `Object.keys(fields).slice(0, 5)`, named in its
+own source as the one choice in that file that is not a consequence of the
+schema.
+
+**No new declaration, decided by counting readers rather than by taste.** A
+person-facing column SET was chosen in exactly one place in the tree, and one
+reader is a caller argument: a keyword serving a single consumer is an origin of
+truth bought for nothing, and the seed is the Data realm. What reopens it is a
+second reader — a detail summary line, a picker subtitle, a ⌘K row, an audit row
+— and it is then spelled `@@label([a, b, c])`, the existing noun widened, never
+a second beside it.
+
+**The label tier refuses `labelFieldInfo`'s `scan` answer**, which is the first
+plain string column: taking it would be the same arbitrariness one guess further
+down. `declared` and `conventional` are answers; otherwise the tier is empty.
+
+**`only` bypasses the ranking and its order wins**, because naming the columns is
+also naming the order you want them in — and `omitted` is what stops that being
+a silent escape: every field not returned is named with a reason, so a column
+added to `.lite` that does not appear is answerable without reading the page.
+
+*Lives in:* `packages/sierra/src/junction/field-rules.js` (`columnList`,
+`columnLabel`) · `packages/cli/core/crud-templates.js`, whose five-line `cell()`
+and second column mode are deleted by this ruling; pinned in
+`packages/sierra/tests/column-list.test.js`.
+
+### <a id="fjs-d244"></a>2026-09-08 · `FJS-D244` — A detail view is one level deep, its children are LINKS, and what the form cannot show is a surface of its own.
+Four answers, taken at the 80% and not the 20%.
+
+**One level.** The graph is a screen designer's call, and `record(id,
+{ composed: true })` (`FJS-D161`) already covers a `get()` that answers more than
+the row.
+
+**A child collection is a link, not a nested table.** A nested table is a
+judgement per screen — how many rows, which columns, what it does at four
+hundred — and a link is right without knowing the model, costing no second query
+on a page nobody asked one of. `resource.children()` resolves each: a `hasMany`
+names the child model and carries NO key, because the key is a column on the
+child, so the child's own schema answers with the `belongsTo` pointing back —
+matched by MODEL rather than by name, since a child may call the relation
+anything and two children of one parent is ordinary.
+
+**A relation with nowhere to point is reported, not skipped.** The case a
+generated admin meets first is a child model with no service, registered
+nowhere; silence there is a collection missing from a screen with nothing said.
+
+**`resource.summary()` is every column the form offers no control for** — a
+computed total, a generated name, a system timestamp, the `@version`. **Defined
+against the form rather than restated**, so the two cannot drift, and it is a
+PARTITION: every column is in one list or the other and never both. The
+discriminator is `f.control` and not `f.name`, because a `@system` column IS in
+the form's field list carrying `{ control: null, reason: 'readOnly' }` — the
+list reports a field it cannot place rather than dropping it — and excluding by
+name would take that column out of both lists and lose it from every screen.
+
+**A filtered list is a URL** (Invariant 10): the generated list reads
+`page.query` and `page.directives`, so a child link IS the filter — copied,
+bookmarked, survived by the back button. The route a child lives on is the one
+thing a page cannot derive, so `admin:generate` writes the model → route map
+ONCE and every detail page imports it; a copy per page is the written-twice
+failure `crud-templates.js` exists to end, and a single-model regeneration would
+leave the rest stale.
+
+*Lives in:* `packages/sierra/src/junction/resource.js` (`summary`, `children`) ·
+`packages/cli/core/crud-templates.js` · `packages/cli/commands/admin/generate.md`
+(`_routes.js`); pinned in `packages/sierra/tests/resource-schema-modes.test.js`.
+Argued in `IDEAS/tables-from-the-seed.md`.
+
 ### <a id="fjs-d225"></a>2026-09-06 · `FJS-D225` — a stored value the list no longer offers is SHOWN, disabled and marked, never dropped.
 
 The UI half of `FJS-D122`, and it turned out not to be about dependent sets at
@@ -8121,6 +8536,66 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d240"></a>2026-09-08 · `FJS-D240` — `fli app:atlas` and `fli project:map` are TWO commands. [`FJS-D223`](#fjs-d223) does not reach them, and what looked like its shape was five copies of one file reader.
+
+Both were built on 2026-09-07, both take `--as`, and both boot the same app
+through the same `readAppAtlas`. Filed the same day as the question *are these
+one command* — which is the right question to ask and the wrong answer to give.
+
+**D223's test is ONE READER, and it is stated there as a measurement**:
+`collect()` in `core/repo-map.js` is the one reader and `core/repo-atlas.js`
+performs no filesystem reads at all, so the two pages could only ever be two
+renderings. That is not this. `app:atlas` collects `describeAppModel` off a
+BUILT app; `project:map` collects a file tree, a committed snapshot, migrations,
+packages and the environment, and folds in three of the app model's four halves.
+Two collections that overlap, not one collection drawn twice — so a merge would
+have no second presentation to offer, only a flag saying which model to build.
+
+**`--atlas` is a COLLECTION flag and `--as` is a presentation flag, which is the
+distinction the merge would have destroyed.** `--atlas` sits on the axis
+`--layer` already occupies: *what is gathered*. `--as` answers *how it is shown*.
+Two axes, correctly separated today. Absorbing `app:atlas` would put a third
+value on the collection axis and call it a presentation, which reads D223
+backwards — the ruling that says a boolean and an enum on ONE axis are two
+spellings of one question does not license folding a SECOND axis into the first.
+
+**The cost is measured and it runs the other way.** On `example`:
+`project:map --no-atlas` 278 ms, `project:map` 637 ms, `app:atlas` 488 ms. One
+command means either the file-only read pays a boot on every run, or the flag
+that avoids it is the *which model* flag above.
+
+**What was real is the duplication, and the fix is not a merge.**
+`core/app-entry.js` and `commands/project/_module.md` each carried
+`SURFACE_FILE`, `SURFACE_DIRS`, a `surfaceFile()` walk, the `generated by:`
+header parse and `surfaceMissingHint` — five pieces, two copies each. **One had
+already drifted**: the same sentence read *Services are read off a built app* in
+one and *The app is read off a built app* in the other, the second being a
+tautology nobody would write on purpose. Nothing graded that they agreed, and
+a snapshot format is exactly the thing that changes under two parsers.
+
+**So `core/app-entry.js` becomes the one owner of the committed API surface** —
+where it is, what wrote it, what it says, and what to tell a caller when it is
+absent. `readApiSurface` moves there whole and CALLS `surfaceFile` and
+`generatedBy` rather than restating them, which is the half that makes the
+collapse permanent rather than tidy. `project:map` imports it the same way it
+already imports `readAppAtlas`, so one module answers both of that command's
+questions about the app.
+
+**The test stops reading a markdown `<script>` block to reach it.**
+`tests/project-helpers.test.js` extracted the module's source into a temp file
+and re-exported three helpers; two of them are now a plain import, and only
+`extractResourceMeta` — which genuinely lives in the command module — is still
+extracted. A parser reached through a regex over a `<script>` block is one
+nobody can find by grepping for its importers.
+
+**Not ruled here**: whether `--atlas` should default to true. It does, so the
+command that reads files boots by default and degrades with a warning when it
+cannot. That is the right default for *what is this project* and it makes the
+comment justifying the degrade stale, which is fixed with this ruling and not
+by it.
+
+*Lives in:* `packages/cli/core/app-entry.js` · `packages/cli/commands/project/_module.md` · `packages/cli/commands/app/atlas.md`
 
 ### <a id="fjs-d241"></a>2026-09-07 · `FJS-D241` — a machine Basecamp made is installed by cloud-init, not over SSH. Ring 1 keeps its place and loses its mechanism.
 

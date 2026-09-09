@@ -28,6 +28,7 @@ import { BUILD_HEADER, BUILD_FIELD } from '../core/build-id.ts'
 // so it must read the caller's `-createdAt` the way the server compiles it.
 import { NodeRegistry, nodeKey, type NodeView } from './nodes.ts'
 import { encodeQueryString } from '@frontierjs/toolbelt/query'
+import { directiveParams as toDirectiveParams } from '@frontierjs/toolbelt/directives'
 import { isListResult, wrapResult, ResultShapeError, type ListResult, type ServiceResult } from '../core/envelope.ts'
 import type { QueryDirectives } from '../core/directives.ts'
 import { comparatorFor } from '../core/sort.ts'
@@ -2131,30 +2132,21 @@ function _normalizePrefix(value: string | undefined, fallback: string): string {
  *
  * One table, read by both builders. The client prefers the socket whenever one
  * is up, so a directive emitted on one path only is a difference nothing can
- * see from the call site — `$populate` was exactly that once. Values stay in
- * their own types here; the HTTP builder stringifies, the WS builder does not.
+ * see from the call site — `$populate` was exactly that once.
+ *
+ * **The table is `@frontierjs/toolbelt/directives`, the same one the bridge
+ * strips by**, rather than the field-by-field copy that used to sit here.
+ * `parseDirectives` and `directiveParams` are one row each, so a Data-realm
+ * feature that grows a per-call option cannot arrive wired in one direction
+ * (Invariant 10, `FJS-306`). Values stay in their own types: a structure
+ * travels AS a structure, because `encodeQueryString` and the transport's
+ * parser are inverses by construction (`FJS-D125`) and a JSON string is not —
+ * the reader takes `$orderBy` as-is, so `[{"sortOrder":"asc"}]` arrived as
+ * text, was split on commas and refused as a column name, making every
+ * non-string orderBy from this client a 400 (`FJS-962`).
  */
 function directiveParams(d: QueryDirectives | null | undefined): Record<string, unknown> {
-  const p: Record<string, unknown> = {}
-  if (!d) return p
-  if (d.limit       != null) p['$limit']       = d.limit
-  if (d.offset      != null) p['$offset']      = d.offset
-  if (d.after       != null) p['$after']       = d.after
-  // The structure travels AS a structure. `encodeQueryString` writes it in
-  // bracket notation and the transport's parser reads it back — they are
-  // inverses by construction (`FJS-D125`) — where a JSON string is neither: the
-  // reader takes `$orderBy` as-is, so `[{"sortOrder":"asc"}]` arrived as text,
-  // was split on commas and refused as a column name. Every non-string orderBy
-  // from this client was a 400 (`FJS-962`).
-  if (d.orderBy     != null) p['$orderBy']     = d.orderBy
-  if (d.select      != null) p['$select']      = Array.isArray(d.select)   ? d.select.join(',')   : d.select
-  if (d.populate    != null) p['$populate']    = Array.isArray(d.populate) ? d.populate.join(',') : d.populate
-  if (d.search      != null) p['$search']      = d.search
-  if (d.withDeleted != null) p['$withDeleted'] = d.withDeleted
-  if (d.onlyDeleted != null) p['$onlyDeleted'] = d.onlyDeleted
-  if (d.withTemplates != null) p['$withTemplates'] = d.withTemplates
-  if (d.onlyTemplates != null) p['$onlyTemplates'] = d.onlyTemplates
-  return p
+  return toDirectiveParams(d)
 }
 
 function buildWsQuery(

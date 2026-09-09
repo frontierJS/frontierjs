@@ -40,19 +40,25 @@
 // The old parseServer()/parseEvent() JSON.parse helpers are gone — parsing an
 // already-parsed object is how you get "[object Object]" in a column.
 
-import { createService, NotFound, BadRequest, normalizeOrderBy, seriesKey, isStale, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Forbidden, normalizeOrderBy, seriesKey, isStale, $ } from '@frontierjs/junction'
 import type { SortParam } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor, findScoped, getScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, slugify } from '../../core/resource.ts'
-import { envRef }                from '../../core/credentials.ts'
+import { secretRef }             from '../../core/credentials.ts'
 import { recordHealth, SERVER_SERIES, SERVER_READINGS } from '../../core/server-metrics.ts'
-import { connectorFor, targetFor, computeProviders, machineTags, FLEET_TAG } from '../../providers/compute/index.ts'
+import { connectorFor, targetFor, computeProviders, markFor, fleetMark, priceIn, sizeRegions } from '../../providers/compute/index.ts'
 import { sendVia }               from '../../providers/compute/accounts.ts'
-import { mintEnrollToken, cloudInit } from '../../providers/compute/enrollment.ts'
+import { mintEnrollToken, cloudInit, installCommand, ENROLL_WINDOW_MS } from '../../providers/compute/enrollment.ts'
 import { env }                   from '../../core/env.ts'
+
+/** The port an outpost listens on. `packages/cli/core/ports.js` — project 8
+ *  (outpost), backend. Named once: it reaches a machine twice, in the cloud-init
+ *  a provisioned box boots with and in the command a person pastes, and two
+ *  literals is two places for them to disagree. */
+const OUTPOST_PORT = 8180
 import type { BasecampApp }      from '../../basecamp.types.ts'
 import type { TargetDescriptor } from '@frontierjs/conduit'
-import type { ProviderKind }     from '../../../../db/schema.d.ts'
+import type { ProviderKind, ServerEventKind } from '../../../../db/schema.d.ts'
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -96,7 +102,7 @@ export function createServersService(app: BasecampApp) {
 
   async function recordEvent(
     serverId: string,
-    kind:     string,
+    kind:     ServerEventKind,
     message:  string,
     metadata: Record<string, unknown> = {}
   ) {
@@ -119,7 +125,7 @@ export function createServersService(app: BasecampApp) {
    * workspace would get a transition error rather than a 404 — a state oracle
    * over a row they may not read.
    */
-  async function transition(opts: { name: string; kind: string; message: string }) {
+  async function transition(opts: { name: string; kind: ServerEventKind; message: string }) {
     const id = $.id as string
     await getScoped('server', 'Server')   // 404s outside the caller's workspace
 
@@ -163,7 +169,7 @@ export function createServersService(app: BasecampApp) {
       'provision', 'provisionStep',
       // `destroy` is a person, with a typed confirmation; `destroyStep` is the
       // job. `reconcile` reads a cloud and writes nothing.
-      'destroy', 'destroyStep', 'reconcile',
+      'destroy', 'destroyStep', 'reconcile', 'issueEnrollment',
       { method: 'heartbeat', gate: 0 },
     ],
 
@@ -480,9 +486,15 @@ export function createServersService(app: BasecampApp) {
       if (!chosen)
         throw new BadRequest(
           `'${size}' is not a size ${connector.label} offers this account`)
-      if (chosen.regions.length && !chosen.regions.includes(String(region)))
+      // What it costs THERE. A size is priced per region at Hetzner and once at
+      // DigitalOcean, so this is the same read for both — and a null is *not
+      // sold in that region*, which is the availability answer as well as the
+      // money one. They cannot disagree, because they are one field.
+      const priceMinor = priceIn(chosen, String(region))
+      if (priceMinor === null)
         throw new BadRequest(
-          `${connector.label} does not offer '${size}' in ${region}`)
+          `${connector.label} does not offer '${size}' in ${region}`
+          + `${sizeRegions(chosen).length ? ` — it has ${sizeRegions(chosen).join(', ')}` : ''}`)
 
       // The token exists for as long as it takes cloud-init to run. Its HASH is
       // what the row keeps; the token itself goes into the machine's user_data
@@ -517,7 +529,7 @@ export function createServersService(app: BasecampApp) {
           vcpu:       chosen.vcpu,
           ramGb:      Math.round(chosen.memoryMb / 1024),
           diskGb:     chosen.diskGb,
-          priceMinor: chosen.priceMinor,
+          priceMinor,
           currency:   chosen.currency,
         },
       }})
@@ -574,12 +586,12 @@ export function createServersService(app: BasecampApp) {
           region:   String(plan.region ?? server.region),
           size:     String(plan.size),
           image:    String(plan.image),
-          tags:     machineTags(server.id as string),
+          mark:     markFor(server.id as string),
           userData: cloudInit({
             serverId:    server.id as string,
             basecampUrl: env.API_URL,
             token,
-            outpostPort: 8180,
+            outpostPort: OUTPOST_PORT,
           }),
         })
 
@@ -705,6 +717,64 @@ export function createServersService(app: BasecampApp) {
     // vendor still had the machine, or a genuine leak — and the difference is a
     // person's to make. A reconciliation that destroyed what it did not
     // recognize would eventually destroy something real.
+    // ── issueEnrollment — a credential for a machine we did not buy ──
+    //
+    // A provisioned machine gets its token in cloud-init, which nobody types. An
+    // IMPORTED machine has no install to be handed anything at, so this is that
+    // moment: it mints the same single-use token and prints the one command that
+    // uses it.
+    //
+    // `@gate(5)` by hand rather than by a transition, because this is not a
+    // move: the machine's status does not change, and what the caller is being
+    // trusted with is the ability to enroll a machine as somebody's fleet member.
+    // The same rung `provision` and `destroy` sit on, for the same reason.
+    //
+    // Running it AGAIN is allowed and replaces the token — a person who lost the
+    // command needs another one, and the old token stops working the moment this
+    // overwrites its hash. Which is also the revoke: there is no separate verb.
+    async issueEnrollment() {
+      const id     = $.id as string
+      const server = await db().server.findFirst({ where: { id } })
+      if (!server) throw new NotFound(`Server '${id}' not found`)
+
+
+      // The token's HASH is what the row keeps. `@guarded` refuses a scoped
+      // client here, and it is right to: what is being written is a credential
+      // artifact rather than the caller's data, so it is a second statement made
+      // as the application.
+      const enroll = mintEnrollToken()
+      await db().asSystem().server.update({
+        where: { id },
+        data:  { enrollTokenHash: enroll.hash, enrollExpiresAt: enroll.expiresAt },
+      })
+
+      await recordEvent(id, 'enrollment_issued',
+        'An enrollment token was issued for this machine',
+        { issued_by: actor(), expires_at: enroll.expiresAt.toISOString() })
+
+      // The token is returned ONCE and stored nowhere it can be read back. The
+      // same rule an invitation link follows, for the same reason.
+      //
+      // `token` is returned BESIDE the command rather than only inside it. The
+      // command is derived from the token, so a caller that has to recover it
+      // with a regex over a shell string is re-deriving the input from the
+      // output — and the one caller that must is an installer rather than a
+      // person, which is the half `install.sh` covers on a real machine and
+      // nothing covers anywhere else. It discloses nothing the command did not:
+      // the value is already in that string, single-use, and behind @gate(5).
+      return {
+        command:   installCommand({
+          serverId:    id,
+          basecampUrl: env.API_URL,
+          token:       enroll.token,
+          outpostPort: OUTPOST_PORT,
+        }),
+        token:     enroll.token,
+        expiresAt: enroll.expiresAt.toISOString(),
+        windowMs:  ENROLL_WINDOW_MS,
+      }
+    },
+
     async reconcile() {
       const accountId = ($.data as Record<string, unknown> | null)?.accountId ?? $.query.accountId
       if (!accountId) throw new BadRequest('accountId is required — which provider account to sweep')
@@ -730,13 +800,19 @@ export function createServersService(app: BasecampApp) {
           .map(r => [String(r.providerServerId), r]),
       )
 
-      // The tag PREFIX, which is what makes one sweep cover every machine
-      // rather than needing the id it is trying to discover.
-      const tagged = await connector.tagged(send, FLEET_TAG)
+      // The FLEET mark, which is what makes one sweep cover every machine rather
+      // than needing the id it is trying to discover.
+      const found = await connector.marked(send, fleetMark())
 
-      const orphans = tagged.filter(m => !known.has(m.providerServerId))
+      // An orphan carries the mark back: `serverId` is the row it says it is,
+      // which separates *a machine whose row was deleted here* from *a machine
+      // marked by something else entirely*. Without it an orphan is a vendor id
+      // and a person has to go and look.
+      const orphans = found
+        .filter(m => !known.has(m.providerServerId))
+        .map(m => ({ ...m, claimsServerId: m.serverId }))
       const missing = [...known.entries()]
-        .filter(([pid]) => !tagged.some(m => m.providerServerId === pid))
+        .filter(([pid]) => !found.some(m => m.providerServerId === pid))
         .map(([pid, row]) => ({ id: row.id, name: row.name, providerServerId: pid }))
 
       return {
@@ -747,7 +823,7 @@ export function createServersService(app: BasecampApp) {
         // Known here and NOT at the vendor. Somebody destroyed it in the
         // provider's own console, and this app still shows it.
         missing,
-        checked:   tagged.length,
+        checked:   found.length,
       }
     },
 
@@ -967,6 +1043,23 @@ export function createServersService(app: BasecampApp) {
       const target = `outpost:${id}`
       const known  = await app.conduit.resolve(target).catch(() => null)
 
+      // WHICH key this app signs TO the machine with, and it is the same
+      // question `core/hooks.ts` answers for the inbound half. A machine that
+      // enrolled verifies with the secret it was handed — its own — so a target
+      // signed with anything else is refused by the machine it names.
+      //
+      // There is no fleet-key branch, and the reason is that it could not be
+      // reached: a target is registered HERE and nowhere else, this method is
+      // behind the signature guard, and that guard now refuses a machine with
+      // no `outpostSecretId`. A machine that has not enrolled cannot heartbeat,
+      // so it can never have a target — an `envRef('OUTPOST_SECRET')` here would
+      // be a branch nothing can take, and a reader would have to prove that
+      // before believing the fleet key is out of the picture.
+      //
+      // A REF, never the material: the registry hands descriptors back over
+      // `GET /conduit-targets`.
+      const outboundRef = secretRef(server.outpostSecretId as string, 'secret')
+
       if (data.outpost_url && known?.address !== data.outpost_url) {
         await app.conduit.register({
           id:            target,
@@ -979,7 +1072,7 @@ export function createServersService(app: BasecampApp) {
           // an outpost failed `auth_failed` naming credential `undefined`; and the
           // material was written into the registry, where `GET /conduit-targets`
           // hands it back. Nothing had ever sent to an outpost, so neither showed.
-          auth:          { type: 'hmac', ref: envRef('OUTPOST_SECRET') },
+          auth:          { type: 'hmac', ref: outboundRef },
           registered_at: Date.now(),
           last_seen_at:  Date.now(),
         } as TargetDescriptor)
@@ -1005,8 +1098,11 @@ export function createServersService(app: BasecampApp) {
     // what actually happened, and a caller writing their own lines into it is
     // the one thing it must not allow.
     async logEvent() {
+      // Typed as the enum, and the enum is what actually refuses a bad value:
+      // this cast says what the caller is expected to send, the CHECK on the
+      // column is what happens when they do not.
       const { kind, message, metadata } = ($.data ?? {}) as {
-        kind: string; message: string; metadata?: Record<string, unknown>
+        kind: ServerEventKind; message: string; metadata?: Record<string, unknown>
       }
       await recordEvent(String($.id), kind, message, metadata ?? {})
       return { serverId: String($.id), kind }
@@ -1041,6 +1137,13 @@ export function createServersService(app: BasecampApp) {
         // `reconcile` spends the workspace's token, like `catalog`. `destroy`
         // carries no role hook: `@gate(5)` on the move is the authority.
         reconcile:     [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
+        // `issueEnrollment` hands out a credential that makes a machine a
+        // member of this fleet — the same weight as buying or destroying one,
+        // which are `@gate(5)` moves. It is not a move, so the authority is
+        // stated here rather than in the schema, in the same place and the same
+        // vocabulary as every other role hook on this service. A second ladder
+        // written by hand inside the method is what this replaced.
+        issueEnrollment: [requireWorkspaceRole(app, 'admin', 'owner')],
         // heartbeat: HMAC auth at Conduit transport level — no session hook
       },
     },

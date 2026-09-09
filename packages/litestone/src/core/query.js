@@ -1809,6 +1809,69 @@ export function aggregatableKeysFor(model) {
   return { columns, computed, transient, from, relations, opaque }
 }
 
+// Which columns identify a row TO A PERSON — the answer `@@label` gives for one
+// column, for a set. A table ranking its columns and a filter bar deciding
+// which column deserves an equals box rather than a LIKE both ask it, and
+// neither can derive it: the order columns sit in a file is the order somebody
+// reordered them for unrelated reasons.
+//
+// A unique tuple MINUS the members that only scope it. Under row tenancy every
+// business key is composite and the tenant column leads it —
+// `@@unique([workspaceId, name])` — so a per-field boolean marks `sku` in a
+// database-per-tenant app and NOTHING in a row-tenant one, and a ranking that
+// finds no identifying column does not fail, it falls through. Subtracting a
+// foreign key covers the tenant column's own relation and every scoped parent
+// above it (`[serverId, name]` is a Server's), which is why this needs no
+// tenancy fixpoint: it asks which members identify, never whether the tuple is
+// per-tenant.
+//
+// Four exclusions, each for a different reason and none of them a judgement:
+//   - a `partialUnique` is a separate node kind whose predicate says only SOME
+//     rows are constrained, so it identifies none of them
+//   - `nullsDistinct: true` says the tuple is merely unique WHEN PRESENT
+//   - a protected column is not displayable at all, and a token is the unique
+//     most models have
+//   - a `@system` unique is a handle the server assigned, which identifies a
+//     row to the SYSTEM and not to a reader — the distinction this whole
+//     answer is about
+//
+// `@id` is absent because a table already shows it, and a `global` unique is
+// kept unchanged: it is unique across the installation on purpose.
+export function identifyingKeysFor(model, schema) {
+  const modelNames = new Set((schema?.models ?? []).map(m => m.name))
+  const fks        = new Set()
+  for (const f of model.fields) {
+    if (f.type?.array || !modelNames.has(f.type?.name)) continue
+    const rel = f.attributes?.find(a => a.kind === 'relation' && a.fields)
+    if (rel) for (const col of rel.fields) fks.add(col)
+  }
+
+  const tenantColumn = schema?.tenancy?.strategy === 'row' ? schema.tenancy.column : null
+  const byName       = new Map(model.fields.map(f => [f.name, f]))
+
+  const identifies = (name) => {
+    if (name === tenantColumn || fks.has(name)) return false
+    const f = byName.get(name)
+    if (!f) return false
+    return !f.attributes?.some(a => EXCLUDED_FROM_IDENTITY.has(a.kind))
+  }
+
+  const keys = []
+  for (const f of model.fields)
+    if (f.attributes?.some(a => a.kind === 'unique') && identifies(f.name)) keys.push(f.name)
+
+  for (const a of model.attributes) {
+    if (a.kind !== 'uniqueIndex' || a.nullsDistinct) continue
+    for (const name of a.fields) if (identifies(name)) keys.push(name)
+  }
+
+  return [...new Set(keys)]
+}
+
+const EXCLUDED_FROM_IDENTITY = new Set([
+  'guarded', 'encrypted', 'secret', 'hashed', 'system', 'id',
+])
+
 export function sortableKeysFor(model) {
   const sortable  = new Set()
   const relations = new Set()

@@ -452,11 +452,28 @@ export function workspaceChannel(app: BasecampApp): import('@frontierjs/junction
 // `ctx.$raw.rawBody`: re-serializing `ctx.data` to hash it would mean both sides
 // agreeing on key order and spacing forever.
 //
-// One secret for the fleet (`OUTPOST_SECRET`), which is what conduit already
-// signs outbound with. The limit is worth stating: a machine that is compromised
-// can forge any other machine's check-in. Per-server secrets need a mint and a
-// hand-over at install time — ring 1 in `IDEAS/deploy-plane.md`, which is not
-// built.
+// ─── Which secret ────────────────────────────────────────────────────────
+//
+// Every machine signs with a credential of its OWN, and there is no second key
+// that also works. A provisioned machine exchanges a one-time enrollment token
+// for one during cloud-init; an imported machine gets the same exchange from
+// `servers.issueEnrollment`, which prints the one command that runs it.
+// `Server.outpostSecretId` names the row either way, and a machine that has not
+// enrolled is REFUSED — see `outpostSecretFor` below.
+//
+// The fleet-wide `OUTPOST_SECRET` is not an authentication input here. It was
+// one string every machine held, so while it was accepted any compromised box
+// could forge any other machine's check-in, and two accepted keys means the
+// weaker one is the one an attacker uses. It survived only while an imported
+// machine had no way to get a credential of its own. The variable still signs
+// OUTBOUND to a machine that has not enrolled.
+//
+// Dropping it also closed a hole rather than only narrowing one. Enrollment
+// minted a secret, wrote it to the machine through cloud-init, and nothing on
+// this side ever read it: the outpost signed with what it had been given and
+// this hook compared against the fleet key, so **a provisioned machine could
+// never come online**. Measured — own secret 401, fleet secret 200, row stuck at
+// `installing` forever.
 //
 // Replay protection is the app's own database and therefore survives a restart
 // and is shared between replicas (`OutpostNonce`, `FJS-376`). It used to be a
@@ -498,6 +515,68 @@ async function rememberNonce(app: BasecampApp, nonce: string, windowMs: number):
   }
 }
 
+/**
+ * Which machine is this request about?
+ *
+ * One entry per guarded endpoint, and a table rather than a header for a
+ * reason: the id is already in each of these requests, so a header carrying it
+ * again would be a second place it can be wrong and nothing would compare them.
+ * A new outpost endpoint adds a row here — and an endpoint that is guarded with
+ * no row resolves to null, which refuses rather than falling through to the
+ * fleet key.
+ *
+ * `servers.heartbeat` addresses the machine in the path; the two `report`
+ * methods carry it in the body as `server_id`, which is the OUTPOST's
+ * snake_case contract and not this app's.
+ */
+const OUTPOST_SUBJECT: Record<string, (ctx: ServiceContext) => string | null> = {
+  'servers.heartbeat': ctx => (ctx.id as string) ?? null,
+  'volumes.report':    ctx => ((ctx.data as { server_id?: string })?.server_id) ?? null,
+  'cleanup.report':    ctx => ((ctx.data as { server_id?: string })?.server_id) ?? null,
+}
+
+/**
+ * The secret this machine signs with, and whether it is its own.
+ *
+ * `null` is a refusal and never a fall-through to the fleet key: a request that
+ * names no machine, or names one that does not exist, is not a request the
+ * fleet secret should be able to rescue.
+ */
+async function outpostSecretFor(
+  app: BasecampApp, serverId: string | null,
+): Promise<{ secret: string; own: boolean } | null> {
+  if (!serverId) return null
+
+  const sys    = app.db.asSystem() as any
+  const server = await sys.server.findFirst({ where: { id: serverId } })
+  if (!server) return null
+
+  // No fleet-wide fallback, and that is the point of the phase rather than a
+  // tightening. `OUTPOST_SECRET` is one string every machine would hold, so
+  // while it was accepted here any compromised box could forge any other
+  // machine's check-in — and two accepted keys means the weaker one is the one
+  // an attacker uses. It survived only while an imported machine had no way to
+  // get a credential of its own; `servers.issueEnrollment` is that way, so it
+  // goes. The variable still signs OUTBOUND to a machine that has not enrolled,
+  // and is no longer an authentication input.
+  //
+  // A machine with no credential is REFUSED, and the screen for it says so and
+  // prints the one command that fixes it. That is a machine an operator has not
+  // finished installing, which is a different thing from one that is broken.
+  if (!server.outpostSecretId) return null
+
+  const row = await sys.secret.findFirst({ where: { id: server.outpostSecretId } })
+  // The row is named and gone. Refuse: falling back to the fleet key here would
+  // silently re-open the hole for exactly the machine that had been closed.
+  if (!row?.data) return null
+  try {
+    const value = JSON.parse(row.data as string)?.secret
+    return typeof value === 'string' && value ? { secret: value, own: true } : null
+  } catch {
+    return null
+  }
+}
+
 /** The raw search string of a request URL, `''` when there is none or it will not parse. */
 function searchOf(url: string | undefined): string {
   if (!url) return ''
@@ -508,15 +587,32 @@ export function requireOutpostSignature(app: BasecampApp, { only = [] }: { only?
   const guarded = new Set(only)
   const TOLERANCE_S = 300
 
+  // ONE sentence for every refusal on this door, the same rule the enrollment
+  // route follows. *No such machine* and *that signature is wrong* must not be
+  // distinguishable from outside: the caller here is unauthenticated by
+  // definition, and telling the two apart tells them which server ids are real.
+  // The reason is logged and never returned.
+  const REFUSED = 'This endpoint requires a signed outpost request'
+
   return async (ctx: ServiceContext): Promise<void> => {
     if (!guarded.has(`${ctx.service}.${ctx.method}`)) return
 
-    // `env`, not `process.env`: this app's env module is where a default is
-    // applied and a too-short value is refused at boot, and reading the raw
-    // variable answers undefined for every developer running the default —
-    // which this hook would report, correctly and uselessly, as *no secret is
-    // configured on this side*.
-    const secret = env.OUTPOST_SECRET
+    // WHICH machine, then WHICH key — see `outpostSecretFor` above. A null is a
+    // refusal and never a fall-through: a request naming no machine, or one
+    // that does not exist, is not something the fleet key should rescue.
+    //
+    // Resolved before `$raw` is read so that an endpoint guarded with no
+    // subject row refuses on its own terms rather than on the transport's.
+    const subject = OUTPOST_SUBJECT[`${ctx.service}.${ctx.method}`]?.(ctx) ?? null
+    const keyed   = await outpostSecretFor(app, subject)
+    if (!keyed) {
+      app.logger.warn('outpost signature refused', {
+        service: ctx.service, method: ctx.method,
+        reason: subject ? 'no usable secret for that machine' : 'the request names no machine',
+      })
+      throw new Unauthorized(REFUSED)
+    }
+    const secret = keyed.secret
     const raw    = (ctx as {
       $raw?: {
         rawBody?: string
@@ -553,12 +649,10 @@ export function requireOutpostSignature(app: BasecampApp, { only = [] }: { only?
     })
 
     if (!result.ok) {
-      // The reason is logged and never returned: a caller learns that the
-      // signature was refused, not whether the clock or the secret was wrong.
       app.logger.warn('outpost signature refused', {
         service: ctx.service, method: ctx.method, reason: result.reason,
       })
-      throw new Unauthorized('This endpoint requires a signed outpost request')
+      throw new Unauthorized(REFUSED)
     }
   }
 }

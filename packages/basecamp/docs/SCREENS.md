@@ -96,7 +96,7 @@ screens reading hardcoded arrays — which is exactly what the mock already is.
 | `DeploymentsView` | 65 | `routes/deployments/index.mesa` |
 | `DeploymentDetailView` | 308 | `routes/deployments/[id]/index.mesa` |
 | `ServersView` | 358 | `routes/servers/index.mesa` |
-| `ProvisionServerView` | 843 | `routes/servers/create.mesa` |
+| `ProvisionServerView` | 843 | `routes/servers/provision.mesa` — and `routes/servers/import.mesa` beside it, since the mockup's one view was two acts |
 | `ServerDetailView` | 491 | `routes/servers/[id]/index.mesa` |
 | `JobsView` | 111 | `routes/jobs/index.mesa` |
 | `AuditLogView` | 61 | `routes/admin/audit/index.mesa` |
@@ -693,10 +693,9 @@ reload does not settle: it sits on "Loading…" with no error until some other
 call is made. Not worked around here; the last `verify` check reads a fresh
 navigation instead, and the live path is proven by its own check above it.
 
-**The mock's per-server disk-usage bars are not built.** They need what the
-outpost reports about the filesystem, not about volumes — that is
-`DiskCleanupView`'s data, and it acts as well as reports, so it wants the job
-queue.
+**The mock's per-server disk-usage bars are built** (2026-09-08), on
+`DiskCleanupView` where the data is. They needed what the outpost reports about
+the FILESYSTEM rather than about volumes, which is `vitals.js`'s `statfs('/')`.
 
 ## Phase 8 — a saved view names a kind ✅ done 2026-08-10
 
@@ -889,9 +888,12 @@ and both screens say why they do not: a sweep or a recipe on a timer is a `Job`
 with a cron expression, and a second scheduler on either screen would be a
 second owner of when the fleet gets touched.
 
-**The mock's per-server disk BARS are not built.** They need what the outpost
-reports about the filesystem — free space on `/` — which is a different reading
-from `docker system df` and belongs with the health payload rather than here.
+**The mock's per-server disk BARS are built** (2026-09-08). They needed what the
+outpost reports about the filesystem — free space on `/` — which is a different
+reading from `docker system df` and rides the heartbeat rather than the disk
+report. `cleanup.usage` answers `fullness` per machine, and the two wires are
+independent: a machine can have either reading without the other, so the card
+says which one is missing rather than drawing a bar at zero.
 
 ## Phase 10 — the tier above every tenant ✅ done 2026-08-10
 

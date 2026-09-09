@@ -497,3 +497,82 @@ describe('two services over one model (FJS-765)', () => {
     expect(seen).toEqual(['orders#5'])  // the declared one is
   })
 })
+
+// ─── A move made inside ANOTHER service's call (FJS-567) ────────────────────
+//
+// The webhook shape. `payments.record` settles an order: the call in progress
+// is `payments`, the model being moved belongs to `orders`, and the write goes
+// through `$.db.order.transition()` rather than the owning service. Suppression
+// compares `announcingService()` against the service the MODEL indexes to, so
+// the two names differ and the move has to announce — a suppression widened to
+// "any service call is announcing" would swallow this and leave the seller's
+// tab on `pending` with the money taken.
+//
+// The control is the pair below it: the same move made inside the OWNING
+// service's call still announces exactly once, because that is the case
+// suppression exists for. A fix that announced everything passes the first
+// assertion alone.
+
+describe('a transition inside another service call announces (FJS-567)', () => {
+
+  const TRANSITIONS = `
+    enum OrderStatus { pending paid shipped }
+    model Order {
+      id     Int         @id
+      status OrderStatus @default(pending)
+      @@transitions(status, pay: pending -> paid, ship: paid -> shipped)
+    }
+    model Payment { id Int @id  note String }
+  `
+
+  async function mk() {
+    const db = await createClient({ db: ':memory:', schema: TRANSITIONS })
+    const app = createApp({ db: db as never })
+    const move = (id: number) =>
+      (db as never as Record<string, { transition(i: number, n: string): Promise<unknown> }>)
+        .order.transition(id, 'pay')
+
+    app.services.register(createService({ name: 'orders', model: 'Order', db: db as never, channel: 'orders' }))
+    // The webhook's caller. It owns Payment and moves an Order.
+    app.services.register(createService({
+      name: 'payments', model: 'Payment', db: db as never,
+      // The move rides an ordinary payments write, which is what a webhook
+      // route does: the call in progress is `payments` throughout.
+      hooks: { after: { create: [async () => { await move(1) }] } },
+    } as never))
+    app.configure(channels(() => {}))
+    await app._startForTest()
+
+    const frames: Array<{ event: string }> = []
+    app.channels!.channel('orders').join({
+      socket: { readyState: 1, send: (f: string) => { frames.push(JSON.parse(f)); return 1 } },
+    } as never)
+    return { db, app, frames, move }
+  }
+
+  test('the move reaches the channel under its own name', async () => {
+    const { db, app, frames } = await mk()
+    await (db as never as Record<string, { create(a: unknown): Promise<{ id: number }> }>)
+      .order.create({ data: {} })
+    await tick()
+    frames.length = 0
+
+    await app.service('payments').create({ id: 1, note: 'webhook' })
+    await tick()
+
+    expect(frames.map(f => f.event)).toEqual(['orders pay'])
+  })
+
+  test('the same move inside the OWNING service call announces once', async () => {
+    const { db, app, frames, move } = await mk()
+    await (db as never as Record<string, { create(a: unknown): Promise<{ id: number }> }>)
+      .order.create({ data: {} })
+    await tick()
+    frames.length = 0
+
+    // `patch` to the target state IS the move, and callService announces it.
+    await app.service('orders').patch(1, { status: 'paid' })
+    await tick()
+    expect(frames.map(f => f.event)).toEqual(['orders patched'])
+  })
+})

@@ -38,12 +38,24 @@ const imports  = [
   `import { orders } from '../../resources/Order.mesa'`,
 ]
 const basePath = '/orders/'
-const columns  = [{ key: 'reference', label: 'Reference' }, { key: 'total', label: 'Total' }]
-
 const GENERATED = {
+  // Two shapes of one page, because the column set is emitted differently for
+  // each and only one of them is what a scaffold writes: the ranked default
+  // asks the resource at runtime, and `only` bakes the names in.
   'make:scaffold — list page': listPage({
     title: 'Orders', heading: 'Orders', newLabel: 'New Order',
-    basePath, imports, res: 'orders', columns,
+    basePath, imports, res: 'orders',
+  }),
+  'make:scaffold — list page with a pinned column set': listPage({
+    title: 'Orders', heading: 'Orders', newLabel: 'New Order',
+    basePath, imports, res: 'orders', only: ['reference', 'total'],
+  }),
+  // What `fli admin:generate` writes: the same page plus the gate notice, the
+  // per-row delete and the session import, none of which the scaffold emits.
+  'admin:generate — list page': listPage({
+    title: 'Orders', heading: 'Orders', newLabel: 'New Order',
+    basePath, imports, res: 'orders', gate: true, rowDelete: true,
+    sessionImport: "import { session } from '../../session.js'",
   }),
   'make:scaffold — create page': createPage({
     title: 'New Order', heading: 'New Order', submitLabel: 'Create Order',

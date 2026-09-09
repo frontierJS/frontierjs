@@ -27,7 +27,7 @@
 // No `workspaceId` on either model — a disk is meaningless without its server,
 // so the scope is the join, the same one `volumes` and `servers.feed` make.
 
-import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, $, seriesKey } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor }  from '../../core/resource.ts'
 import {
@@ -37,29 +37,52 @@ import type { ReclaimFigures } from './targets.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 
 import { applyDiskReport } from './disk-report.ts'
+import { DISK_READINGS, readingOf } from '../../core/server-metrics.ts'
 import type { DiskReport } from './disk-report.ts'
 import cleanupRun from '../../jobs/cleanup-run.job.ts'
 import { announce } from '../../channels.ts'
+import type { ServerEventKind } from '../../../../db/schema.d.ts'
 
 export function createCleanupService(app: BasecampApp) {
 
   /** The system client, typed once — the accessors have no generated types yet. */
   const sys = (): any => $.db.asSystem()
 
-  /** The caller's fleet, as id → name. The tenancy boundary for this whole
+  /** A machine, as this service needs it. `fullness` is how full the MOUNT is —
+   *  the outpost's `statfs('/')` reading off the heartbeat — where every other
+   *  figure on this screen comes from `docker system df` and is about Docker.
+   *  The two answer different questions and the screen needs both: bytes a
+   *  sweep would free mean nothing without the disk they would be freed on. */
+  interface FleetMember {
+    name:     string
+    fullness: number | null
+    /** When the machine last spoke. A percentage with no instant beside it is
+     *  read as current, and this one is as old as the last check-in. */
+    at:       string | null
+  }
+
+  /** The caller's fleet, as id → machine. The tenancy boundary for this whole
    *  service: neither model carries a workspace, so a query that skipped this
    *  would answer another workspace's disks to anyone holding an id. */
-  async function fleetOf(): Promise<Map<string, string>> {
+  async function fleetOf(): Promise<Map<string, FleetMember>> {
     const rows = await db().server.findMany({
       where:  { workspaceId: ws() },
-      select: { id: true, name: true },
+      select: { id: true, name: true, health: true, lastHeartbeatAt: true },
       limit:  500,
     })
-    return new Map(rows.map((s: { id: string; name: string }) => [s.id, s.name]))
+    return new Map(rows.map((s: any) => [s.id as string, {
+      name:     s.name as string,
+      // Absent rather than zero, which is why this goes through the reading
+      // rule instead of reading the key: a machine that sent no disk figure and
+      // a disk with nothing on it are different facts, and 0% is the one that
+      // reads as *there is room here*.
+      fullness: readingOf(s.health as Record<string, unknown> | null, 'disk'),
+      at:       (s.lastHeartbeatAt as string | null) ?? null,
+    }]))
   }
 
   async function recordEvent(
-    serverId: string, kind: string, message: string,
+    serverId: string, kind: ServerEventKind, message: string,
     metadata: Record<string, unknown> = {},
   ) {
     await db().serverEvent.create({ data: { serverId, kind, message, metadata } })
@@ -77,6 +100,70 @@ export function createCleanupService(app: BasecampApp) {
     const run = await db().cleanupRun.findUnique({ where: { id: runId } })
     if (!run) throw new NotFound(`Cleanup run '${runId}' not found`)
     return run as Record<string, any>
+  }
+
+  /** How far back the sweep graph looks. Seven days, because the question this
+   *  answers is *did last Tuesday's sweep help* and a `CleanupRun` is the thing
+   *  it is read against. */
+  const TREND_DAYS = 7
+
+  /**
+   * The disk trend for a fleet, read from the HOURLY FOLD.
+   *
+   * Not the raw tier, and that is the whole reason this is a separate read from
+   * the figures above it: raw points are kept for 48 hours and the question here
+   * spans a week, so a raw read would answer *nothing happened before Tuesday*
+   * for every machine. The current figure on the screen comes from `DiskUsage`
+   * and is live; this is the history behind it, and the newest hour is still
+   * being folded, so the line stops up to an hour short of the badge beside it.
+   *
+   * `max`, not the mean: a disk graph is read for its high-water mark, and the
+   * spike a person is looking for is exactly what averaging an hour removes.
+   *
+   * ─── The access decision ──────────────────────────────────────────────
+   *
+   * `MetricSeries` and `MetricHour` are `@@gate("8")` and `@@tenant(none)`, so
+   * this reads at SYSTEM — and the confinement is `fleetOf()` one line up,
+   * which ran at the caller's own standing. The ids reaching this function are
+   * machines this caller may already read, which is the same shape
+   * `servers.metrics` takes and the same reason: a policy over the label would
+   * be fail-open for every app that installs junction and writes none.
+   */
+  async function diskTrend(ids: string[]): Promise<Map<string, Record<string, number[]>>> {
+    const out = new Map<string, Record<string, number[]>>()
+    if (!ids.length) return out
+
+    // The series' identity is `seriesKey`'s and is never spelled here: a second
+    // spelling is a second series, and each then holds half the readings.
+    const wanted = new Map<string, { serverId: string; name: string }>()
+    for (const id of ids)
+      for (const r of DISK_READINGS) wanted.set(seriesKey(r.name, { serverId: id }), { serverId: id, name: r.name })
+
+    const series = await sys().metricSeries.findMany({
+      where: { labelsKey: { in: [...wanted.keys()] } }, limit: wanted.size,
+    })
+    if (!series.length) return out
+
+    const of = new Map<string, { serverId: string; name: string }>(
+      series.map((row: any) => [row.id as string, wanted.get(row.labelsKey as string)!]))
+
+    // DESC and reversed, never ASC: this is bounded, and a bound that truncates
+    // has to drop the OLDEST hours. Ascending with a limit drops the newest,
+    // which is a graph that silently stops days ago.
+    const hours = await sys().metricHour.findMany({
+      where:   { seriesId: { in: [...of.keys()] }, hour: { gte: Date.now() - TREND_DAYS * 24 * 3_600_000 } },
+      orderBy: { hour: 'desc' },
+      limit:   ids.length * DISK_READINGS.length * 24 * TREND_DAYS,
+    })
+
+    for (const row of hours.reverse() as any[]) {
+      const where = of.get(row.seriesId as string)
+      if (!where) continue
+      const forServer = out.get(where.serverId) ?? {}
+      ;(forServer[where.name] ??= []).push(row.max as number)
+      out.set(where.serverId, forServer)
+    }
+    return out
   }
 
   // The gated half is the file's own `sys()` above: `CleanupRun` is
@@ -159,7 +246,7 @@ export function createCleanupService(app: BasecampApp) {
       // The outpost has just run `docker system df` to work out what it freed,
       // so its answer is fresher than the last report. Same function the report
       // endpoint uses, so the two cannot disagree about which key means what.
-      if (usage) await applyDiskReport(sys(), run.serverId as string, usage)
+      if (usage) await applyDiskReport(app, sys(), run.serverId as string, usage)
 
       const finishedAt = Date.now()
       const startedMs  = run.startedAt ? Date.parse(String(run.startedAt)) : finishedAt
@@ -195,7 +282,7 @@ export function createCleanupService(app: BasecampApp) {
       return {
         total, limit, offset,
         data: rows.map((r: Record<string, unknown>) => ({
-          ...r, serverName: fleet.get(r.serverId as string) ?? null,
+          ...r, serverName: fleet.get(r.serverId as string)?.name ?? null,
         })),
       }
     },
@@ -204,7 +291,7 @@ export function createCleanupService(app: BasecampApp) {
       const fleet = await fleetOf()
       const row   = await db().cleanupRun.findFirst({ where: { id: $.id as string } })
       if (!row || !fleet.has(row.serverId as string)) throw new NotFound(`Cleanup run '${$.id}' not found`)
-      return { ...row, serverName: fleet.get(row.serverId as string) ?? null }
+      return { ...row, serverName: fleet.get(row.serverId as string)?.name ?? null }
     },
 
     // ── targets — POST /cleanup  X-Service-Method: targets ────────────
@@ -231,7 +318,7 @@ export function createCleanupService(app: BasecampApp) {
 
       const ids = [...fleet.keys()]
 
-      const [disks, volumes, runs] = await Promise.all([
+      const [disks, volumes, runs, trendBy] = await Promise.all([
         db().diskUsage.findMany({ where: { serverId: { in: ids } }, limit: 500 }),
         // Unused volumes come from `Volume`, which already owns per-disk sizes.
         // A count on DiskUsage would be a second answer, and the two would part
@@ -245,6 +332,7 @@ export function createCleanupService(app: BasecampApp) {
         db().cleanupRun.findMany({
           where: { serverId: { in: ids } }, orderBy: { createdAt: 'desc' }, limit: 500,
         }),
+        diskTrend(ids),
       ])
 
       // `any` for the same reason `db()` is: the Litestone accessors have no
@@ -279,9 +367,17 @@ export function createCleanupService(app: BasecampApp) {
           RECLAIM_TARGET_NAMES.map(t => [t, estimateTarget(t, figures)]))
 
         const last = lastBy.get(id)
+        const box  = fleet.get(id)
         return {
           serverId:   id,
-          serverName: fleet.get(id) ?? id,
+          serverName: box?.name ?? id,
+          // How full the MOUNT is, which is the denominator every other figure
+          // on this screen is missing: 12 GB reclaimable is not worth a sweep on
+          // a disk at 40% and is tonight's incident on one at 96%. Null when the
+          // machine has never sent one — a bar at zero would say the opposite of
+          // what an unheard-from machine means.
+          fullness:   box?.fullness ?? null,
+          fullnessAt: box?.at ?? null,
           // Absent, not zeroed. A machine whose outpost has never reported is not
           // a machine with nothing to reclaim, and the screen says so.
           reported:   !!disk,
@@ -297,10 +393,20 @@ export function createCleanupService(app: BasecampApp) {
           lastCleanup: last
             ? { id: last.id, status: last.status, freedBytes: last.freedBytes, finishedAt: last.finishedAt }
             : null,
+          // Series name → the hourly high-water marks, oldest first. Absent
+          // rather than empty for a machine that has never reported, the same
+          // distinction `reported` makes one line up.
+          trend: trendBy.get(id) ?? {},
         }
       })
 
-      return { servers, reported: disks.length, totalReclaimableBytes }
+      // The DECLARATION beside the figures, the shape `servers.metrics` answers
+      // in: a screen holding its own list of what each series is called is a
+      // second place for it to be wrong (`FJS-1027`). `of` does not travel — it
+      // is a function, and what it computes is already in the numbers.
+      const readings = DISK_READINGS.map(({ name, unit, label }) => ({ name, unit, label }))
+
+      return { servers, readings, reported: disks.length, totalReclaimableBytes }
     },
 
     // ── report — POST /cleanup  X-Service-Method: report ──────────────
@@ -326,7 +432,7 @@ export function createCleanupService(app: BasecampApp) {
       // open cleanup screen never hears that the picture changed.
       $.locals.workspaceId = server.workspaceId
 
-      return applyDiskReport(sys(), serverId, data)
+      return applyDiskReport(app, sys(), serverId, data)
     },
 
     // ── run — POST /cleanup  X-Service-Method: run ────────────────────
@@ -363,7 +469,7 @@ export function createCleanupService(app: BasecampApp) {
       const unreachable: string[] = []
       for (const id of candidates) {
         if (await app.conduit.resolve(`outpost:${id}`)) reachable.push(id)
-        else unreachable.push(fleet.get(id) as string)
+        else unreachable.push(fleet.get(id)?.name as string)
       }
 
       if (!reachable.length)
@@ -386,7 +492,7 @@ export function createCleanupService(app: BasecampApp) {
           { queue: 'fleet', priority: 5 })
         await recordEvent(id, 'cleanup_queued',
           `Disk cleanup queued (${targets.join(', ')})`, { requested_by: actor() })
-        runs.push({ ...run, serverName: fleet.get(id) ?? null })
+        runs.push({ ...run, serverName: fleet.get(id)?.name ?? null })
       }
 
       return { runs, queued: runs.length, unreachable, targets, keepImages }

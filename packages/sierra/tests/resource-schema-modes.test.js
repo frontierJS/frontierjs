@@ -1,7 +1,18 @@
 /**
  * tests/resource-schema-modes.test.js
  *
- * The browser is handed the schema for the write it is making.
+ * The browser is handed the schema for the thing it is DOING.
+ *
+ * Three modes, and the split is write-versus-read rather than one-per-screen.
+ * Create and update are both write schemas — which is why the second ships as a
+ * delta off the first — and READ is the third, carrying the family of columns
+ * no caller ever sends: `@computed`, `@generated`, `@derived`, `@from`. Without
+ * it a table and a detail view can rank and render only what may be WRITTEN, so
+ * a computed total reaches no screen and the screen still looks finished.
+ *
+ * Read is NOT a superset of create, which is why it is a third table rather
+ * than a replacement: a `@transient` column is present in both write modes and
+ * absent here, being written and never read back.
  *
  * Litestone generates a CREATE schema and an UPDATE schema and they are
  * different documents. Three facts exist only in the update one and all three
@@ -82,7 +93,7 @@ async function build(source) {
   const path = join(dir, 'schema.lite')
   writeFileSync(path, source)
   const generated = await generateSchemas(path, () => {}, SIERRA_ROOT)
-  registerSchemas(generated.defs, generated.models, generated.updatePatch)
+  registerSchemas(generated.defs, generated.models, generated.updatePatch, generated.readPatch)
   return { ...generated, path }
 }
 
@@ -95,6 +106,7 @@ model Invoice {
   note    String?
   total   Float         @immutable @default(0)
   status  InvoiceStatus @default(draft)
+  lines   Int           @computed
   audit   String?       @system
   @@transitions(status,
     issue: draft -> issued @seals
@@ -248,6 +260,164 @@ describe('sealedFields — which columns are frozen for THIS row', () => {
   })
 })
 
+describe('the read mode, which is what a display surface reads', () => {
+  test('a @computed column is in NEITHER write mode and in the read one', async () => {
+    // The premise, asserted against the real generator rather than assumed.
+    // A create schema and an update schema are both write schemas, so neither
+    // holds a column nobody writes.
+    const { defs, readPatch, updatePatch } = await build(SOURCE)
+    expect(defs.Invoice.properties).not.toHaveProperty('lines')
+    expect(applySchemaModePatch(defs.Invoice, updatePatch?.Invoice).properties)
+      .not.toHaveProperty('lines')
+    expect(applySchemaModePatch(defs.Invoice, readPatch?.Invoice).properties)
+      .toHaveProperty('lines')
+  })
+
+  test('applying the read delta reproduces the read schema exactly — both real apps', async () => {
+    // The round trip is what stops the patch format drifting between the build
+    // half and the browser half, and it is asked of the schemas people actually
+    // ship rather than of this file's fixture.
+    for (const app of ['example', 'packages/basecamp']) {
+      const schema = parseFile(resolve(REPO_ROOT, app, 'db', 'schema.lite')).schema
+      const create = stripProse(generateJsonSchema(schema)?.$defs ?? {})
+      const read   = stripProse(generateJsonSchema(schema, { mode: 'full' })?.$defs ?? {})
+      const patch  = (await import('../src/junction/schema-registry.js')).diffSchemaModes(create, read)
+      for (const name of Object.keys(read))
+        expect(applySchemaModePatch(create[name], patch[name])).toEqual(read[name])
+    }
+  })
+
+  test('the resource shows a computed column in columns() and never in formFields()', async () => {
+    // The pair that is the whole point. One resource, two lists, and the column
+    // has to be in exactly one of them: a form that offered `lines` would ask
+    // for a value the Data boundary refuses, and a table that omitted it is the
+    // screen this work exists to fix.
+    await build(SOURCE)
+    const invoices = createResource('invoices', { model: 'Invoice' })
+
+    expect(invoices.formFields().map(f => f.name)).not.toContain('lines')
+    expect(invoices.columns({ limit: 99 }).columns.map(c => c.name)).toContain('lines')
+  })
+
+  test('a @transient column goes the other way, which is why read is a third table', async () => {
+    // Read is not a superset of create. A column written and never read back is
+    // in both write modes and in neither display list, so `columns()` cannot
+    // simply be `formFields()` with more.
+    const src = `
+      model Signup {
+        id      Int    @id @default(autoincrement())
+        email   String
+        confirm String @transient
+        @@gate("0.0.0.0")
+      }
+    `
+    const { defs, readPatch } = await build(src)
+    expect(defs.Signup.properties).toHaveProperty('confirm')
+    expect(applySchemaModePatch(defs.Signup, readPatch?.Signup).properties)
+      .not.toHaveProperty('confirm')
+
+    const signups = createResource('signups', { model: 'Signup' })
+    expect(signups.formFields().map(f => f.name)).toContain('confirm')
+    expect(signups.columns({ limit: 99 }).columns.map(c => c.name)).not.toContain('confirm')
+  })
+})
+
+describe('a detail view is a model plus its relations', () => {
+  test('summary() is exactly what the form cannot offer a control for', async () => {
+    await build(SOURCE)
+    // Defined against the form rather than restated, so the two cannot drift.
+    // Asserted as a PARTITION: every column is in one list or the other and
+    // never both, which is the property a screen rendering both depends on.
+    const invoices = createResource('invoices', { model: 'Invoice' })
+    const onForm   = invoices.formFields().filter(f => f.control).map(f => f.name)
+    const inFacts  = invoices.summary().columns.map(c => c.name)
+
+    expect(inFacts).toContain('lines')                     // @computed — absent from a write schema entirely
+    expect(onForm).toContain('note')                       // ordinary, writable
+
+    // The discriminator, and the reason this is `f.control` and not `f.name`:
+    // `audit` is `@system`, so it IS in the form's field list — carrying
+    // `{ control: null, reason: 'readOnly' }`, because the list reports a field
+    // it cannot place rather than dropping it. Excluding by NAME would take it
+    // out of both lists and lose the column from every screen.
+    expect(invoices.formFields().map(f => f.name)).toContain('audit')
+    expect(inFacts).toContain('audit')
+
+    expect(inFacts.filter(n => onForm.includes(n))).toEqual([])
+  })
+
+  test('a summary column carries its display, so a cell renders it', async () => {
+    await build(SOURCE)
+    // The payoff of the read mode: a total nobody writes is still a number
+    // rendered from its declaration rather than stringified.
+    const invoices = createResource('invoices', { model: 'Invoice' })
+    const lines    = invoices.summary().columns.find(c => c.name === 'lines')
+    expect(lines.display).toBe('number')
+    expect(lines.label).toBe('Lines')
+  })
+
+  let LINKED
+
+  test('children() resolves the foreign key from the CHILD, which is where it lives', async () => {
+    // A hasMany carries the child model and no key — the key is a column on the
+    // child — so the child's own belongsTo is what answers, matched by MODEL
+    // rather than by name, since a child may call the relation anything.
+    LINKED = await build(`
+      model Shop {
+        id     Int    @id @default(autoincrement())
+        name   String
+        orders Order[]
+        @@gate("0.0.0.0")
+      }
+      model Order {
+        id       Int      @id @default(autoincrement())
+        shopId   Int
+        shop     Shop     @relation(fields: [shopId], references: [id])
+        courier  Courier? @relation(fields: [courierId], references: [id])
+        courierId Int?
+        ref      String
+        @@gate("0.0.0.0")
+      }
+      model Courier {
+        id     Int     @id @default(autoincrement())
+        name   String
+        orders Order[]
+        @@gate("0.0.0.0")
+      }
+    `)
+    // `Order` carries TWO belongsTo — a Shop and a Courier — so taking the
+    // first one found answers `courierId` for half the models it is asked
+    // about. The match is by MODEL, and a child may call the relation anything.
+    const shops = createResource('shops', { model: 'Shop' })
+    expect(shops.children()).toEqual([
+      { field: 'orders', model: 'Order', service: 'orders', foreignKey: 'shopId' },
+    ])
+
+    const couriers = createResource('couriers', { model: 'Courier' })
+    expect(couriers.children()).toEqual([
+      { field: 'orders', model: 'Order', service: 'orders', foreignKey: 'courierId' },
+    ])
+  })
+
+  test('a child whose schema is not registered is reported rather than skipped', () => {
+    // The case a generated admin meets first: a child model with no service is
+    // not registered, so there is nothing to link at. Silence would be a
+    // collection missing from a screen with nothing said, which is the failure
+    // this whole surface exists to end.
+    //
+    // The schema is the SAME one as the row above, registered without the
+    // child — a pair, because the reported answer has to be the one that
+    // changed rather than the only one this model can give.
+    registerSchemas({ Shop: LINKED.defs.Shop }, ['Shop'])
+    const shops = createResource('shops', { model: 'Shop' })
+
+    expect(shops.children()).toEqual([
+      { field: 'orders', model: 'Order', service: null, foreignKey: null,
+        reason: 'no schema registered for Order' },
+    ])
+  })
+})
+
 describe('degrading', () => {
   test('no delta means the two modes agree — the behavior before FJS-807', async () => {
     const { defs, models } = await build(SOURCE)
@@ -256,5 +426,83 @@ describe('degrading', () => {
     expect(plans.sealedFields({ id: 1, code: 'P-1' })).toEqual([])
     await plans.save({ id: 1, code: 'P-1', name: 'x' })
     expect(_calls.at(-1)[2]).toHaveProperty('code')
+  })
+})
+
+describe('a search box is offered only where the boundary will answer', () => {
+  // `$search` reaches `table.search()`, which a Litestone client serves only
+  // under `@@fts` and refuses by name below it. Nothing in the generated schema
+  // said which models those were, so a generated bar could offer a box on every
+  // model — where nearly all of them answer 400 — or on none (`FJS-1040`).
+  //
+  // Every assertion here is a PAIR over ONE schema. An emit that fires always
+  // and an emit that never fires each satisfy a one-sided test, and those are
+  // exactly the two ways this goes wrong.
+  const SEARCH_SOURCE = `
+    model Article {
+      id      Int    @id @default(autoincrement())
+      title   String
+      body    String
+      slug    String
+      @@fts([body, title])
+      @@gate("0.0.0.0")
+    }
+
+    model Tag {
+      id   Int    @id @default(autoincrement())
+      name String
+      @@gate("0.0.0.0")
+    }
+  `
+
+  test('the indexed columns reach the browser, and the model beside it says no', async () => {
+    await build(SEARCH_SOURCE)
+    const articles = createResource('articles', { model: 'Article' })
+    const tags     = createResource('tags',     { model: 'Tag' })
+
+    expect(articles.filters().search.fields).toEqual(['body', 'title'])
+    expect(tags.filters().search.fields).toBe(null)
+    expect(tags.filters().search.reason).toMatch(/@@fts/)
+  })
+
+  test('a refusal carries its reason rather than answering null', async () => {
+    // The rule `filters()` already follows for a column with no operator, and
+    // `controlFor` before it: an unofferable thing comes back saying why. A bar
+    // that dropped it would reproduce, inside the generator, the silence the
+    // generator exists to end.
+    await build(SEARCH_SOURCE)
+    const search = createResource('tags', { model: 'Tag' }).filters().search
+    expect(search).not.toBe(null)
+    expect(search.reason).toBeTruthy()
+  })
+
+  test('the labels are resolved for columns the TABLE does not show', async () => {
+    // `@@fts` may index a column no `columns()` tier ranks or that the limit
+    // cuts, so labels resolved off the ranked list would come back undefined
+    // for exactly those. Asked with a limit of one, which leaves at most one
+    // column standing while both indexed columns still need a label.
+    await build(SEARCH_SOURCE)
+    const articles = createResource('articles', { model: 'Article' })
+    const shown    = articles.columns({ limit: 1 }).columns.map(c => c.name)
+    const search   = articles.filters({ limit: 1 }).search
+
+    expect(shown.length).toBe(1)
+    expect(search.labels).toEqual(['Body', 'Title'])
+    expect(search.labels.every(Boolean)).toBe(true)
+  })
+
+  test('search and the column filters are separate answers about one model', async () => {
+    // The two live at different levels and neither may be read as the other's.
+    // `Tag.name` is an ordinary filterable string on a model that answers no
+    // `$search` at all — a bar reading one key for both would either offer a
+    // box here or drop the `name` filter on Article.
+    await build(SEARCH_SOURCE)
+    const tags     = createResource('tags',     { model: 'Tag' }).filters()
+    const articles = createResource('articles', { model: 'Article' }).filters()
+
+    expect(tags.search.fields).toBe(null)
+    expect(tags.filters.find(f => f.name === 'name').op).toBe('contains')
+    expect(articles.search.fields).toEqual(['body', 'title'])
+    expect(articles.filters.find(f => f.name === 'slug').op).toBe('contains')
   })
 })

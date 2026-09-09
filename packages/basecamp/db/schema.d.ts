@@ -48,6 +48,8 @@ export type ServerStatus = 'pending' | 'provisioning' | 'installing' | 'online' 
 
 export type ServerRole = 'general' | 'build' | 'database' | 'gateway' | 'worker'
 
+export type ServerEventKind = 'created' | 'removed' | 'reboot_requested' | 'drain_started' | 'drain_cancelled' | 'provision_requested' | 'provision_created' | 'provision_ready' | 'provision_timeout' | 'destroy_requested' | 'destroy_finished' | 'enrollment_issued' | 'sync_requested' | 'status_synced' | 'status_sync_ignored' | 'sync_failed' | 'sync_no_account' | 'sync_unsupported' | 'sync_unrecognized' | 'came_online' | 'unreachable' | 'recipe_ran' | 'recipe_failed' | 'cleanup_queued' | 'cleanup_ran' | 'cleanup_failed' | 'volume_removed' | 'volumes_pruned'
+
 export type ProviderKind = 'custom' | 'hetzner' | 'digitalocean'
 
 export type EnvironmentTier = 'development' | 'test' | 'preview' | 'staging' | 'production'
@@ -56,7 +58,7 @@ export type AppType = 'container' | 'worker' | 'database' | 'daemon' | 'cron' | 
 
 export type AppStatus = 'unknown' | 'stopped' | 'starting' | 'running' | 'stopping' | 'deploying' | 'error'
 
-export type DeployStatus = 'pending' | 'building' | 'pushing' | 'deploying' | 'success' | 'failed' | 'cancelled' | 'rolled_back'
+export type DeployStatus = 'pending' | 'building' | 'success' | 'failed' | 'cancelled' | 'rolled_back'
 
 export type StepStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped'
 
@@ -88,9 +90,9 @@ export type BackupKind = 'manual' | 'scheduled'
 
 export type BackupDestination = 'local' | 's3'
 
-export type NotificationContext = 'Deployment' | 'AlertEvent' | 'JobRun' | 'Workspace'
+export type NotificationContext = 'Deployment' | 'AlertEvent' | 'JobRun' | 'Server' | 'Workspace'
 
-export type NotificationKind = 'deploy_success' | 'deploy_failed' | 'alert_firing' | 'alert_resolved' | 'member_joined' | 'job_failed' | 'weekly_digest'
+export type NotificationKind = 'deploy_success' | 'deploy_failed' | 'alert_firing' | 'alert_resolved' | 'server_unreachable' | 'member_joined' | 'job_failed' | 'weekly_digest'
 
 export type Capability = 'Environment.create' | 'Environment.delete' | 'Environment.update' | 'Environment.variables' | 'Server.create' | 'Server.delete' | 'Server.destroy' | 'Server.drain' | 'Server.provision' | 'Server.reboot' | 'Server.undrain' | 'Server.update'
 
@@ -1070,7 +1072,6 @@ export interface Server {
   sshUser: string
   sshKeyId?: string | null
   outpostVersion?: string | null
-  outpostUrl?: string | null
   lastHeartbeatAt?: string | null
   /**
    * ── How a machine this app MADE proves it is that machine ───────────
@@ -1135,7 +1136,6 @@ export interface ServerCreate {
   sshUser?: string
   sshKeyId?: string | null
   outpostVersion?: string | null
-  outpostUrl?: string | null
   lastHeartbeatAt?: string | null
   /**
    * ── How a machine this app MADE proves it is that machine ───────────
@@ -1196,7 +1196,6 @@ export interface ServerUpdate {
   sshUser?: string
   sshKeyId?: string | null
   outpostVersion?: string | null
-  outpostUrl?: string | null
   lastHeartbeatAt?: string | null
   enrollTokenHash?: string | null
   enrollExpiresAt?: string | null
@@ -1226,7 +1225,6 @@ export interface ServerWhere extends WhereBase {
   sshUser?: string | WhereOp<string> | null
   sshKeyId?: string | WhereOp<string> | null
   outpostVersion?: string | WhereOp<string> | null
-  outpostUrl?: string | WhereOp<string> | null
   lastHeartbeatAt?: string | WhereOp<string> | null
   enrollTokenHash?: string | WhereOp<string> | null
   enrollExpiresAt?: string | WhereOp<string> | null
@@ -1253,7 +1251,7 @@ export type ServerOrderBy =
 export interface ServerEvent {
   id: string
   serverId: string
-  kind: string
+  kind: ServerEventKind
   message: string
   metadata: unknown
   createdAt: string
@@ -1262,7 +1260,7 @@ export interface ServerEvent {
 export interface ServerEventCreate {
   id?: string
   serverId: string
-  kind: string
+  kind: ServerEventKind
   message: string
   metadata?: unknown
 }
@@ -1270,7 +1268,7 @@ export interface ServerEventCreate {
 export interface ServerEventUpdate {
   id?: string
   serverId?: string
-  kind?: string
+  kind?: ServerEventKind
   message?: string
   metadata?: unknown
 }
@@ -1278,7 +1276,7 @@ export interface ServerEventUpdate {
 export interface ServerEventWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   serverId?: string | WhereOp<string> | null
-  kind?: string | WhereOp<string> | null
+  kind?: ServerEventKind | WhereOp<ServerEventKind> | null
   message?: string | WhereOp<string> | null
   metadata?: unknown | WhereOp<unknown> | null
   createdAt?: string | WhereOp<string> | null

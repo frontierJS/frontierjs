@@ -6,11 +6,20 @@ dated: 2026-09-04
 
 # Idea — Support mode: bounded, audited impersonation
 
-**Status: PROPOSED. Nothing here is built.** Dated 2026-09-04, **cut down 2026-09-05**
+**Status: SHIPPED.** Dated 2026-09-04, **cut down 2026-09-05**
 against the question *what does this buy over one level simpler* — which removed a model,
 a gate, two indexes and a phase. What that pass found is recorded in § *What was cut and
 what it cost*, because the pieces are worth adding in the order they earn it rather than
 worth forgetting.
+
+**The status line above read *PROPOSED, nothing here is built* against its own
+frontmatter until 2026-09-08; it is struck rather than kept, per `PHILOSOPHY.md`
+§ VII.** What is built, read off the tree on that date: `Session` carries
+`impersonatingUserId`, `impersonationReason` and `impersonationEndsAt`;
+`packages/auth/services.ts` refuses five operations inside an episode through
+`refuseInSupport`; the actor swap is pinned by `litestone/test/support-attribution.test.ts`;
+and `example`'s `verify:support` drives an episode end to end. The remainder is
+the declared-trail silence that test's fifth row asserts as still-broken.
 
 Promoted out of `compliance-from-the-seed.md` §6, which argued the *why* in eleven lines
 and named no mechanism. It closes [`FJS-142`](../ISSUES.md#fjs-142), which is filed

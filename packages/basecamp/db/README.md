@@ -16,11 +16,20 @@ bun db/generate.js --print   # dump DDL to stdout
 
 ```
 database main { path env("DATABASE_URL", "./db/basecamp.db") }
-database audit { path "./db/audit/" driver logger retention 90d }
+database audit { path env("AUDIT_PATH", "./db/audit/") driver logger retention 90d }
 ```
 
-Both paths resolve against the **process CWD**, not the schema file — start the
-API from the package root.
+Both paths resolve against the **app root**, not the process CWD —
+`api/src/core/db.ts` passes `resolveFrom: 'schema'`, so the app answers the same
+database from the package root, from `api/`, or from a generator rerun anywhere
+else. **The root is not the schema's directory**: `schemaAnchor` steps out of a
+directory named `db`, which is where this schema lives, so both paths keep the
+`./db/` they had when a package-root launch was assumed. Rewriting them relative
+to `db/` moves the database and the trail, and litestone migrates whatever it
+finds — so the app works, against a file nobody meant.
+
+A deployment binds both absolutely (`/data/basecamp.db`, `/data/audit/`) and an
+absolute path has no anchor, so it is unaffected either way.
 
 **A declaration wins over `createClient({ db })`, silently.** The option is not
 an error and produces no warning; it is simply ignored. `api/src/core/db.ts`
@@ -305,11 +314,14 @@ process → 51 rows. **Nothing is lost** — this is visibility lag, not data lo
 and it is the whole explanation for the "audit logger writes 0 rows" note that
 sat unexplained in the root `CLAUDE.md`.
 
-**3. The path is CWD-relative, not schema-relative.** `path "./audit/"` resolves
-against the process working directory, so where the audit trail lands depends on
-where you launch the API from. That matches `DATABASE_URL`'s existing
-`./basecamp.db` default, but it is a foot-gun for a tool whose whole job is
-accountability.
+**3. A database here is TWO paths, and stating one of them looks complete.**
+`database main` and `database audit` are separate declarations with separate env
+vars, so a run that redirects `DATABASE_URL` and says nothing about
+`AUDIT_PATH` gets an isolated database and the developer's own audit trail —
+which is what `web/test/verify-screens.mjs` did for its whole life, with nothing
+failing on either side (`FJS-633`). Both are anchored to the schema now, so the
+CWD no longer isolates anything by accident, and `db/test/db-paths.test.ts`
+asserts that every caller redirecting one names the other.
 
 The `AuditEvent` model is a different thing and both are wanted: `@@log(audit)`
 is automatic row-level change capture, `AuditEvent` is the application-level

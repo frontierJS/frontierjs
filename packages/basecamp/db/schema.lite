@@ -142,8 +142,21 @@
 // a database this schema never described. `env()` keeps DATABASE_URL working —
 // the fallback is what every local run uses.
 //
-// Resolved against the PROCESS CWD, like the audit path below, so both assume
-// the API is started from the package root.
+// Both paths are relative to THIS FILE — `core/db.ts` passes
+// `resolveFrom: 'schema'` — so the API answers the same database whether it was
+// started from the package root, from `api/`, or from anywhere else. The anchor
+// used to be the process CWD, which made *where the data is* a fact about how
+// the process happened to be launched rather than one this file states; a drive
+// then redirected one of the two paths and inherited the other, and its audit
+// rows landed in the developer's own trail with nothing failing (`FJS-633`).
+//
+// The anchor is the APP ROOT and not `db/`: `schemaAnchor` takes the schema
+// file's directory and steps out of it when it is named `db`, so these paths
+// keep the spelling they had when the CWD was the anchor and a package-root
+// launch was assumed. Writing them relative to `db/` instead moves both.
+//
+// A deployment is unaffected either way: it binds both absolutely
+// (`/data/basecamp.db`, `/data/audit/`), and an absolute path has no anchor.
 //
 // NOTE: this declaration WINS over `createClient({ db })`. Passing both is not
 // an error and produces no warning — the option is simply ignored — so core/db.ts
@@ -193,11 +206,46 @@ enum WorkspaceStatus { active suspended }
 enum SecretKind     { ssh_key provider_key registry_auth tls_cert notification generic }
 enum ServerStatus   { pending provisioning installing online unreachable draining stopped destroying destroyed }
 enum ServerRole     { general build database gateway worker }
+
+/// What happened to one machine, as `ServerEvent.kind`.
+///
+/// Was a free `String`. Twenty-eight values had accumulated across six files
+/// with no list anywhere, so *what can happen to a machine* was answerable only
+/// by grepping, and `servers.logEvent` takes the kind off a payload — typed
+/// `string`, with `recordServerEvent` swallowing a failed write, so a
+/// misspelled kind landed as a row and rendered on the machine's own trail as
+/// whatever had been typed.
+///
+/// Grouped by what does the writing, which is also the order an operator meets
+/// them in. A value here is a MIGRATION, and that is the right price: every one
+/// of them is written by a literal in this repo, so adding a kind is already a
+/// code change and a deploy.
+enum ServerEventKind {
+  // A person, through the servers service.
+  created removed reboot_requested drain_started drain_cancelled
+  // Buying a machine, and unmaking one.
+  provision_requested provision_created provision_ready provision_timeout
+  destroy_requested destroy_finished
+  // The credential a machine holds.
+  enrollment_issued
+  // Reading a vendor. `status_sync_ignored` is a state this app recognized and
+  // declined to move on; `sync_unrecognized` is a word the vendor sent that it
+  // has never seen. Two different silences, and collapsing them loses the one
+  // that means a connector needs a new row.
+  sync_requested status_synced status_sync_ignored sync_failed
+  sync_no_account sync_unsupported sync_unrecognized
+  // The machine itself.
+  came_online unreachable
+  // Work run on it, through the outpost.
+  recipe_ran recipe_failed cleanup_queued cleanup_ran cleanup_failed
+  // Disks.
+  volume_removed volumes_pruned
+}
 enum ProviderKind   { custom hetzner digitalocean }
 enum EnvironmentTier { development test preview staging production }
 enum AppType        { container worker database daemon cron static function }
 enum AppStatus      { unknown stopped starting running stopping deploying error }
-enum DeployStatus   { pending building pushing deploying success failed cancelled rolled_back }
+enum DeployStatus   { pending building success failed cancelled rolled_back }
 enum StepStatus     { pending running success failed skipped }
 enum JobKind        { one_shot scheduled triggered workflow }
 enum JobStatus      { pending running failed cancelled }
@@ -310,13 +358,14 @@ enum BackupDestination { local s3 }
 /// `asSystem()` are all held to the set too.
 ///
 /// Add a member when a notification starts pointing somewhere new.
-enum NotificationContext { Deployment AlertEvent JobRun Workspace }
+enum NotificationContext { Deployment AlertEvent JobRun Server Workspace }
 
 enum NotificationKind {
   deploy_success
   deploy_failed
   alert_firing
   alert_resolved
+  server_unreachable
   member_joined
   job_failed
   weekly_digest
@@ -899,7 +948,6 @@ model Server {
   sshKeyId         String?
 
   outpostVersion     String?
-  outpostUrl         String?
   lastHeartbeatAt  DateTime?
 
   /// ── How a machine this app MADE proves it is that machine ───────────
@@ -1044,6 +1092,13 @@ model Server {
     provision:        pending                                                      -> provisioning @gate(5),
     destroy:          [pending, provisioning, installing, online, unreachable, draining, stopped] -> destroying @gate(5),
     checkIn:          [pending, installing, unreachable]                           -> online   @system,
+    // The counterpart to `checkIn`, and the only move nothing on the machine
+    // asks for: basecamp NOTICES the absence of one. `online` alone is the
+    // from-list on purpose — `stopped` and `draining` are states an operator
+    // PUT the machine in, and a box that was deliberately stopped is stopped
+    // rather than unreachable; `installing` is an enrollment that never
+    // completed, which is a different fact with a different fix.
+    loseContact:      online                                                       -> unreachable @system,
     reportProvisioned: [provisioning]                                              -> installing   @system @gate(5),
     reportRunning:    [pending, provisioning, installing, unreachable, stopped]                  -> online       @system @gate(5),
     reportStopped:    [pending, provisioning, installing, online, unreachable, draining]         -> stopped      @system @gate(5),
@@ -1062,7 +1117,7 @@ model ServerEvent {
   serverId  String
   server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
-  kind      String
+  kind      ServerEventKind
   message   String
   metadata  Json     @default("{}")
   createdAt DateTime @default(now())
@@ -1439,21 +1494,29 @@ model Deployment {
 
   @@gate("2.4.4.4")
   // The release pipeline, declared once and enforced at the Data boundary
-  // rather than as a TERMINAL/CANCELLABLE list in the service. `succeed` comes
-  // from `building` as well as the later two because the job short-circuits
-  // a no-op release; `pushing` and `deploying` are written by a fuller
-  // pipeline and by the seed, and the UI already tones them.
+  // rather than as a TERMINAL/CANCELLABLE list in the service.
+  //
+  // `pushing` and `deploying` are GONE rather than given producers. The push
+  // was collapsed into one call to the machine deliberately, so the only thing
+  // that ever wrote either was the seed — which made a dev database show a
+  // release in a state the running app can never reach, on four screens that
+  // toned it (`FJS-517`, and `ready` on `ServerStatus` one issue earlier).
+  // A registry push landing later costs one enum value and one move.
+  //
+  // Three are the ENGINE's and two are a person's, which is what marking them
+  // says: `deployments.patch` allows `status` and is reachable by a developer,
+  // so a release could be walked to `success` by hand — a fabricated history on
+  // the surface that answers *what shipped*. The job writes all three through
+  // `asSystem()` already.
   //
   // `rollback` is @gate(5): the model's update gate is USER(4), and undoing a
   // release someone else shipped is not the same authority as shipping one.
   @@transitions(status,
-    build:    pending                                 -> building,
-    push:     building                                -> pushing,
-    release:  pushing                                 -> deploying,
-    succeed:  [building, pushing, deploying]          -> success,
-    fail:     [pending, building, pushing, deploying] -> failed,
-    cancel:   [pending, building, pushing, deploying] -> cancelled,
-    rollback: success                                 -> rolled_back @gate(5))
+    build:    pending             -> building    @system,
+    succeed:  building            -> success     @system,
+    fail:     [pending, building] -> failed      @system,
+    cancel:   [pending, building] -> cancelled,
+    rollback: success             -> rolled_back @gate(5))
   @@log(audit)
   @@index([appId])
   @@index([workspaceId])

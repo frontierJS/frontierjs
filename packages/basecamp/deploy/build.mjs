@@ -81,8 +81,7 @@ if (!existsSync(ENV_FILE)) {
     '# Written once by deploy/build.mjs. Git-ignored.\n' +
     '# ENCRYPTION_KEY is what the data volume is readable with — do not rotate it\n' +
     '# without also discarding the volume.\n' +
-    `ENCRYPTION_KEY=${key()}\n` +
-    `OUTPOST_SECRET=${key()}\n`)
+    `ENCRYPTION_KEY=${key()}\n`)
   log('  ✓ deploy/.env written — keep it, or the data volume becomes unreadable')
 }
 

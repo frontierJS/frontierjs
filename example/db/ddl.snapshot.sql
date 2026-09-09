@@ -116,6 +116,7 @@ CREATE TABLE IF NOT EXISTS "product" (
   "slug" TEXT NOT NULL UNIQUE,
   "description" TEXT,
   "brand" TEXT NOT NULL,
+  "fields" TEXT NOT NULL DEFAULT '{}',
   "active" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
@@ -172,33 +173,38 @@ CREATE TABLE IF NOT EXISTS "customer" (
   "userId" TEXT UNIQUE,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "fields" TEXT NOT NULL DEFAULT '{}',
-  "slots" TEXT NOT NULL DEFAULT '{}',
-  "t1" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t1')) VIRTUAL,
-  "t2" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t2')) VIRTUAL,
-  "t3" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t3')) VIRTUAL,
-  "t4" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t4')) VIRTUAL,
-  "t5" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t5')) VIRTUAL,
-  "t6" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t6')) VIRTUAL,
-  "t7" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t7')) VIRTUAL,
-  "t8" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t8')) VIRTUAL,
-  "n1" REAL GENERATED ALWAYS AS (json_extract("slots", '$.n1')) VIRTUAL,
-  "n2" REAL GENERATED ALWAYS AS (json_extract("slots", '$.n2')) VIRTUAL,
-  "n3" REAL GENERATED ALWAYS AS (json_extract("slots", '$.n3')) VIRTUAL,
-  "n4" REAL GENERATED ALWAYS AS (json_extract("slots", '$.n4')) VIRTUAL,
   "deletedAt" TEXT,
-  "version" INTEGER NOT NULL DEFAULT 1
+  "version" INTEGER NOT NULL DEFAULT 1,
+  "fieldsSlots" TEXT NOT NULL DEFAULT '{}',
+  "t1" TEXT GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.t1')) VIRTUAL,
+  "t2" TEXT GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.t2')) VIRTUAL,
+  "n1" REAL GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.n1')) VIRTUAL,
+  "t3" TEXT GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.t3')) VIRTUAL,
+  "t4" TEXT GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.t4')) VIRTUAL,
+  "n2" REAL GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.n2')) VIRTUAL,
+  "t5" TEXT GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.t5')) VIRTUAL,
+  "t6" TEXT GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.t6')) VIRTUAL,
+  "n3" REAL GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.n3')) VIRTUAL,
+  "t7" TEXT GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.t7')) VIRTUAL,
+  "t8" TEXT GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.t8')) VIRTUAL,
+  "n4" REAL GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.n4')) VIRTUAL
 ) STRICT;
-CREATE INDEX IF NOT EXISTS "idx_customer_t1_t2_t3_t4_n1_n2_t5_t6_t7_t8_n3_n4" ON "customer" ("t1", "t2", "t3", "t4", "n1", "n2", "t5", "t6", "t7", "t8", "n3", "n4") WHERE "deletedAt" IS NULL;
+CREATE INDEX IF NOT EXISTS "idx_customer_t1_t2_n1_t3_t4_n2_t5_t6_n3_t7_t8_n4" ON "customer" ("t1", "t2", "n1", "t3", "t4", "n2", "t5", "t6", "n3", "t7", "t8", "n4") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_customer_deletedAt" ON "customer" ("deletedAt") WHERE "deletedAt" IS NULL;
 
 CREATE TABLE IF NOT EXISTS "custom_field" (
   "id" INTEGER NOT NULL PRIMARY KEY,
-  "key" TEXT NOT NULL UNIQUE,
+  "model" TEXT NOT NULL,
+  "key" TEXT NOT NULL,
   "label" TEXT NOT NULL,
   "type" TEXT NOT NULL,
-  "slot" TEXT UNIQUE,
+  "defaultValue" TEXT,
+  "show" INTEGER NOT NULL DEFAULT 1,
+  "slot" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("type" IN ('text', 'number'))
+  CHECK ("type" IN ('text', 'number')),
+  UNIQUE ("model", "key"),
+  UNIQUE ("model", "slot")
 ) STRICT;
 
 -- A code somebody types at the till.

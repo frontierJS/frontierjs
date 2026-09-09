@@ -10,7 +10,7 @@
 
 import {
   DIRECTIVE_PARAMS, TRANSPORT_PARAMS, RESERVED_PARAMS,
-  parseDirectives, splitParams, unknownDirectives,
+  parseDirectives, directiveParams, splitParams, unknownDirectives,
 } from '../../src/directives/directives.js'
 
 /* ── The table ─────────────────────────────────────────────────────── */
@@ -174,4 +174,69 @@ test('directives: the unknown $ names are reported, and the list is THIS table',
     assert.deepEqual(unknownDirectives({ [name]: '1' }), [], `${name} is known`)
   }
   assert.deepEqual(unknownDirectives(null), [])
+})
+
+/* ── Writing ───────────────────────────────────────────────────────── */
+
+test('directives: every name written is a name this table strips', function () {
+  // The property that makes the two halves one table. Junction's client held a
+  // hand-written copy of the write list and named itself the one table in its
+  // own comment; a name emitted there and absent here lands in the WHERE clause
+  // as a column nobody declared, three layers from the cause (`FJS-988`).
+  const every = {
+    limit: 1, offset: 2, after: 'cur', orderBy: { name: 'asc' },
+    select: ['a', 'b'], populate: ['c'], search: 'wid',
+    withDeleted: true, onlyDeleted: false,
+    withTemplates: true, onlyTemplates: false,
+  }
+  const params = directiveParams(every)
+
+  assert.deepEqual(Object.keys(params).sort(), [...DIRECTIVE_PARAMS].sort(),
+    'every row of the table is written, and nothing else is')
+  for (const k of Object.keys(params)) assert.ok(RESERVED_PARAMS.has(k), k + ' is stripped')
+  assert.deepEqual(splitParams(params).query, {},
+    'so nothing it writes survives as a filter')
+})
+
+test('directives: a structure travels AS a structure', function () {
+  // `encodeQueryString` and the transport's parser are inverses by construction
+  // (`FJS-D125`). A JSON string here is not one: the reader takes `$orderBy`
+  // as-is, so `[{"sortOrder":"asc"}]` arrived as text, was split on commas and
+  // refused as a column name — every non-string orderBy was a 400 (`FJS-962`).
+  const p = directiveParams({ orderBy: [{ total: 'desc' }] })
+  assert.deepEqual(p.$orderBy, [{ total: 'desc' }])
+  assert.ok(typeof p.$orderBy !== 'string')
+})
+
+test('directives: the two rows that do not travel as themselves', function () {
+  // A list of field names is comma-joined, because the READER takes $select
+  // as-is. The control beside it is every other row, which passes through — a
+  // writer that joined everything would turn an orderBy object into text.
+  const p = directiveParams({ select: ['id', 'name'], populate: ['lines'], search: 'a,b' })
+  assert.equal(p.$select, 'id,name')
+  assert.equal(p.$populate, 'lines')
+  assert.equal(p.$search, 'a,b', 'a comma in a VALUE is not a list')
+})
+
+test('directives: absent stays absent, on the way out too', function () {
+  // `parseDirectives`' rule in the other direction. A writer that emitted the
+  // defaults would turn *no opinion* into an explicit ask on every call.
+  assert.deepEqual(directiveParams({}), {})
+  assert.deepEqual(directiveParams(null), {})
+  assert.deepEqual(directiveParams({ limit: undefined, orderBy: null }), {})
+  assert.deepEqual(directiveParams({ limit: 0 }), { $limit: 0 },
+    'a limit of 0 is count-only, not missing')
+  assert.deepEqual(directiveParams({ onlyDeleted: false }), { $onlyDeleted: false },
+    'and false is an answer, which is why the test is null-ish and not truthy')
+})
+
+test('directives: a URL round-trips', function () {
+  // What a page does: read the directives off a URL, hand them to a component
+  // that speaks `$`, take the next query back. A row that survives one
+  // direction and not the other loses a person their sort when they type in a
+  // filter box, which nothing anywhere reports.
+  const url = { $limit: '20', $offset: '40', $orderBy: '-total', $search: 'wid', $withDeleted: 'true' }
+  const back = directiveParams(parseDirectives(url))
+  assert.deepEqual(parseDirectives(back), parseDirectives(url))
+  assert.equal(back.$limit, 20, 'and it comes back TYPED, having been parsed once')
 })

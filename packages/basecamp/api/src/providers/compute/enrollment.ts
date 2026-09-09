@@ -106,27 +106,35 @@ export function mintOutpostSecret(): string {
 }
 
 /**
- * The cloud-init a provisioned machine boots with.
+ * The install, as one script, and it is the SAME script both ways a machine
+ * gets one.
  *
- * Written here rather than in the connector because it is the same script at
- * every cloud — `user_data` is the one thing the vendors agree about. What
- * differs is only how it is handed over, which is the connector's business.
+ * A provisioned machine receives it as cloud-init `user_data`, with the four
+ * values baked in. An imported machine receives it as a command a person pastes,
+ * with the four values on the command line. Two copies of an install is two
+ * things to keep in step, and the one nobody ran is the one that rots — which
+ * is exactly what happened to the `site/` surface (`FJS-758`).
  *
- * It carries the enrollment TOKEN and no other credential, and the app's URL,
- * and nothing else: everything the Outpost needs afterwards comes back in the
- * enrollment response.
+ * It carries NO credential. The enrollment token is an input, and it is the only
+ * secret involved: the box exchanges it, once, inside a short window, for a
+ * credential of its own. That is why this can be served unauthenticated at
+ * `GET /install.sh` — there is nothing in it worth having.
+ *
+ * `set -eu` and a failing curl is deliberate: a machine whose enrollment did not
+ * happen must not come up looking healthy. The deadline on the Basecamp side is
+ * what turns that into a reported failure rather than a silent one.
+ *
+ * Every shell variable is unbraced on purpose. This is a JavaScript template
+ * literal, so a bash `${VAR}` would be read by JS and interpolated away.
  */
-export function cloudInit(opts: {
-  serverId:    string
-  basecampUrl: string
-  token:       string
-  outpostPort: number
-}): string {
-  // `set -eu` and a failing curl is deliberate: a machine whose enrollment did
-  // not happen must not come up looking healthy. The deadline on the Basecamp
-  // side is what turns that into a reported failure rather than a silent one.
+export function installScript(): string {
   return `#!/bin/bash
 set -euo pipefail
+
+: "$BASECAMP_URL"   # where this machine reports to
+: "$SERVER_ID"      # which row it is
+: "$ENROLL_TOKEN"   # single-use, short-lived, and the only secret here
+OUTPOST_PORT="$OUTPOST_PORT"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
@@ -143,9 +151,9 @@ export PATH="$BUN_INSTALL/bin:$PATH"
 
 # The exchange. This is the only moment the enrollment token is used, and the
 # only moment this machine has no credential of its own.
-ENROLL=$(curl -fsSL -X POST "${opts.basecampUrl}/servers/${opts.serverId}/enroll" \\
+ENROLL=$(curl -fsSL -X POST "$BASECAMP_URL/servers/$SERVER_ID/enroll" \\
   -H 'content-type: application/json' \\
-  -d "{\\"token\\":\\"${opts.token}\\"}")
+  -d "{\\"token\\":\\"$ENROLL_TOKEN\\"}")
 
 OUTPOST_SECRET=$(echo "$ENROLL" | grep -o '"secret":"[^"]*"' | cut -d'"' -f4)
 OUTPOST_PUBLIC_URL=$(echo "$ENROLL" | grep -o '"publicUrl":"[^"]*"' | cut -d'"' -f4)
@@ -157,11 +165,11 @@ fi
 
 install -d -m 0700 /etc/basecamp
 cat > /etc/basecamp/outpost.env <<ENVEOF
-OUTPOST_SERVER_ID=${opts.serverId}
+OUTPOST_SERVER_ID=$SERVER_ID
 OUTPOST_SECRET=$OUTPOST_SECRET
 OUTPOST_PUBLIC_URL=$OUTPOST_PUBLIC_URL
-OUTPOST_PORT=${opts.outpostPort}
-BASECAMP_URL=${opts.basecampUrl}
+OUTPOST_PORT=$OUTPOST_PORT
+BASECAMP_URL=$BASECAMP_URL
 ENVEOF
 chmod 0600 /etc/basecamp/outpost.env
 
@@ -184,4 +192,46 @@ UNITEOF
 systemctl daemon-reload
 systemctl enable --now outpost.service
 `
+}
+
+/**
+ * The cloud-init a provisioned machine boots with — the shared install with its
+ * four inputs baked in, because a booting machine has nobody to type them.
+ */
+export function cloudInit(opts: {
+  serverId:    string
+  basecampUrl: string
+  token:       string
+  outpostPort: number
+}): string {
+  const script = installScript().replace(/^#!\/bin\/bash\n/, '')
+  return `#!/bin/bash
+BASECAMP_URL=${JSON.stringify(opts.basecampUrl)}
+SERVER_ID=${JSON.stringify(opts.serverId)}
+ENROLL_TOKEN=${JSON.stringify(opts.token)}
+OUTPOST_PORT=${JSON.stringify(String(opts.outpostPort))}
+export BASECAMP_URL SERVER_ID ENROLL_TOKEN OUTPOST_PORT
+${script}`
+}
+
+/**
+ * What a person pastes on a machine they already own.
+ *
+ * The script is fetched unauthenticated and carries nothing; the token rides as
+ * an environment variable rather than in the URL, so it stays out of access logs
+ * and out of any proxy in between. `sudo env` and not `sudo` alone: sudo drops
+ * the environment by default, and the script would then fail on its first line
+ * rather than halfway through an install.
+ */
+export function installCommand(opts: {
+  serverId:    string
+  basecampUrl: string
+  token:       string
+  outpostPort: number
+}): string {
+  return `curl -fsSL ${opts.basecampUrl}/install.sh | sudo env `
+    + `BASECAMP_URL=${opts.basecampUrl} `
+    + `SERVER_ID=${opts.serverId} `
+    + `ENROLL_TOKEN=${opts.token} `
+    + `OUTPOST_PORT=${opts.outpostPort} bash`
 }

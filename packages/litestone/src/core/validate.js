@@ -277,7 +277,7 @@ export function applyTransforms(data, model) {
 // decidable here with no read of the stored row: a REQUIRED field is present
 // in every valid parent, by induction from the column's own type, so a patch
 // into it really is partial; an OPTIONAL one may be absent, so it is a create.
-function validateTypedJson(value, typeName, typeMap, strict, path, errors, mode = 'full') {
+function validateTypedJson(value, typeName, typeMap, strict, path, errors, mode = 'full', enums = null) {
   const type = typeMap?.get(typeName)
   if (!type) return  // unknown type — should have been caught at parse time
 
@@ -332,34 +332,77 @@ function validateTypedJson(value, typeName, typeMap, strict, path, errors, mode 
       continue
     }
 
-    // Underlying-type check
+    // A patch stays a patch only into a field guaranteed to be there. Into an
+    // optional one json_patch replaces, so it is a create — and everything
+    // below a create is being created too.
+    const childMode = mode === 'partial'
+      ? (field.type.optional ? 'create' : 'partial')
+      : mode === 'create' ? 'create' : 'full'
+
+    // ONE value against this field's declared type.
+    //
+    // Split out because the chain used to run on the array itself: a
+    // `Leaf[]` was checked for being an array and its elements were then
+    // graded by nothing, whatever they held (`FJS-1030`). Everything a
+    // declared type can be has an arm here, and the last one is the reason —
+    // a name that is neither a builtin nor Json used to fall off the end in
+    // silence, which is how an enum member and a directly-nested type both
+    // came to be unvalidated (`FJS-1031`).
+    const checkOne = (v, p) => {
+      const expected = field.type.name
+      if (expected === 'String'     && typeof v !== 'string') errors.push({ path: p, message: 'must be a string' })
+      else if (expected === 'Int' && (typeof v !== 'number' || !Number.isInteger(v))) errors.push({ path: p, message: 'must be an integer' })
+      else if (expected === 'Float'    && typeof v !== 'number') errors.push({ path: p, message: 'must be a number' })
+      else if (expected === 'Boolean' && typeof v !== 'boolean') errors.push({ path: p, message: 'must be a boolean' })
+      else if (expected === 'DateTime' && typeof v !== 'string') errors.push({ path: p, message: 'must be a string in ISO 8601 format' })
+      else if (expected === 'DateTime' && typeof v === 'string' && !ISO_DATE_RE.test(v)) errors.push({ path: p, message: 'must be a valid ISO 8601 datetime' })
+      else if (expected === 'Json') {
+        // Nested Json @type(Other) — recurse
+        const nestedTypeAttr = field.attributes.find(a => a.kind === 'type')
+        if (nestedTypeAttr) {
+          validateTypedJson(v, nestedTypeAttr.name, typeMap, nestedTypeAttr.strict !== false, p, errors, childMode, enums)
+        }
+      }
+      // An enum is checked before a type because the two share a namespace and
+      // a schema may declare both under one name — accepted by the parser, so
+      // the resolution order here has to be stated rather than assumed.
+      else if (enums?.has(expected)) {
+        const members = enums.get(expected)
+        if (!members.includes(v))
+          errors.push({ path: p, message: `must be one of: ${members.join(', ')}` })
+      }
+      // A field typed as another type directly — `one Leaf`, not
+      // `one Json @type(Leaf)`. It carries no @type attribute, so it inherits
+      // the parent's strictness: there is nothing on the field to say otherwise
+      // and a nested document is part of the same document.
+      else if (typeMap?.has(expected)) {
+        validateTypedJson(v, expected, typeMap, strict, p, errors, childMode, enums)
+      }
+      // Anything else is a name parse time should have rejected. Falling
+      // through silently is what this whole function was doing.
+    }
+
     if (field.type.array) {
       if (!Array.isArray(fieldValue)) {
         errors.push({ path: fieldPath, message: `must be an array of ${field.type.name}` })
         continue
       }
-    } else {
-      const expected = field.type.name
-      if (expected === 'String'     && typeof fieldValue !== 'string') errors.push({ path: fieldPath, message: 'must be a string' })
-      else if (expected === 'Int' && (typeof fieldValue !== 'number' || !Number.isInteger(fieldValue))) errors.push({ path: fieldPath, message: 'must be an integer' })
-      else if (expected === 'Float'    && typeof fieldValue !== 'number') errors.push({ path: fieldPath, message: 'must be a number' })
-      else if (expected === 'Boolean' && typeof fieldValue !== 'boolean') errors.push({ path: fieldPath, message: 'must be a boolean' })
-      else if (expected === 'DateTime' && typeof fieldValue !== 'string') errors.push({ path: fieldPath, message: 'must be a string in ISO 8601 format' })
-      else if (expected === 'DateTime' && typeof fieldValue === 'string' && !ISO_DATE_RE.test(fieldValue)) errors.push({ path: fieldPath, message: 'must be a valid ISO 8601 datetime' })
-      else if (expected === 'Json') {
-        // Nested Json @type(Other) — recurse
-        const nestedTypeAttr = field.attributes.find(a => a.kind === 'type')
-        if (nestedTypeAttr) {
-          // A patch stays a patch only into a field guaranteed to be there.
-          // Into an optional one json_patch replaces, so it is a create — and
-          // everything below a create is being created too.
-          const childMode = mode === 'partial'
-            ? (field.type.optional ? 'create' : 'partial')
-            : mode === 'create' ? 'create' : 'full'
-          validateTypedJson(fieldValue, nestedTypeAttr.name, typeMap, nestedTypeAttr.strict !== false, fieldPath, errors, childMode)
+      fieldValue.forEach((el, i) => {
+        if (el == null) {
+          errors.push({ path: [...fieldPath, i], message: `must be a ${field.type.name}` })
+          return
         }
-      }
+        checkOne(el, [...fieldPath, i])
+        // A validator on an array field grades each ELEMENT. Run on the array
+        // it graded the wrong thing quietly — `@length(1, 40)` against a list
+        // measures how many entries it has.
+        for (const err of validateField(field.name, el, field.attributes))
+          errors.push({ path: [...fieldPath, i, ...err.path.slice(1)], message: err.message })
+      })
+      continue
     }
+
+    checkOne(fieldValue, fieldPath)
 
     // Field-level validators (@email, @regex, @length, ...) work the same
     // inside a type as on a column.
@@ -377,9 +420,9 @@ function validateTypedJson(value, typeName, typeMap, strict, path, errors, mode 
  * 'full' where it may stand at null, because json_patch replaces a null target
  * rather than merging into it.
  */
-export function validateJsonPatch(patch, typeName, typeMap, strict, path, rootMode) {
+export function validateJsonPatch(patch, typeName, typeMap, strict, path, rootMode, enums = null) {
   const errors = []
-  validateTypedJson(patch, typeName, typeMap, strict, path, errors, rootMode)
+  validateTypedJson(patch, typeName, typeMap, strict, path, errors, rootMode, enums)
   return errors
 }
 
@@ -508,11 +551,15 @@ export function validateField(fieldName, value, attributes) {
 
 // ─── Model validation ─────────────────────────────────────────────────────────
 // Runs all field-level validators + model-level $validate rules from extensions.
+// `enums` (optional) is a Map<enumName, string[]> — separate from `typeMap`
+// rather than folded into it because the parser accepts a type and an enum
+// under one name, so a single lookup could not say which was meant.
+//
 // `typeMap` (optional) is a Map<typeName, typeDecl> used when a field has
 // `Json @type(T)` — the JSON value is recursively validated against the type's
 // shape. Throws ValidationError if anything fails.
 
-export function validate(data, model, computedFns, typeMap) {
+export function validate(data, model, computedFns, typeMap, enums = null) {
   const errors = []
 
   // Field-level validators
@@ -554,7 +601,7 @@ export function validate(data, model, computedFns, typeMap) {
     if (typeMap && field.type.name === 'Json' && value != null) {
       const typeAttr = field.attributes.find(a => a.kind === 'type')
       if (typeAttr) {
-        validateTypedJson(value, typeAttr.name, typeMap, typeAttr.strict !== false, [field.name], errors)
+        validateTypedJson(value, typeAttr.name, typeMap, typeAttr.strict !== false, [field.name], errors, 'full', enums)
       }
     }
   }

@@ -35,9 +35,13 @@ if (!await narrate(context)) return
 
 context.config.__step = 6
 
-if (!needs(context, ['serverId', 'dbFile', 'secret', 'token', 'workspaceId', 'basecamp', 'outpost'], {
+// `outpostSecret` is the machine's own, minted at 05. It is needed here because
+// `ensureFleet({ outpost: true })` below RESTARTS the outpost when nothing is
+// answering, and starting it on any other key is a machine Basecamp refuses.
+if (!needs(context, ['serverId', 'dbFile', 'secret', 'outpostSecret', 'token', 'workspaceId', 'basecamp', 'outpost'], {
   from: {
     serverId: '04-server', dbFile: '02-basecamp', secret: '02-basecamp',
+    outpostSecret: '05-outpost',
     token: '03-setup', workspaceId: '03-setup',
     basecamp: '01-machine', outpost: '01-machine',
   },

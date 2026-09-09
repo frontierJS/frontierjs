@@ -953,9 +953,17 @@ function createView(view) {
 }
 
 // ─── MATERIALIZED VIEW ────────────────────────────────────────────────────────
-// Materialized views are real tables kept in sync via triggers.
-// Strategy: full refresh — on any write to a source table, DELETE + re-INSERT.
+// Materialized views are real tables. TWO refresh strategies, and the schema
+// already says which without a second word for it: `@@refreshOn` names source
+// models and installs triggers, and its absence means the table is rebuilt when
+// `refresh()` is called.
+//
+// Either way the refresh is a full rebuild — DELETE + re-INSERT from `@@sql`.
 // Simpler and safer than incremental updates for aggregation queries.
+//
+// What the trigger strategy costs is why the other one exists: SQLite fires a
+// ROW trigger, so a `createMany` of 10,000 rows re-aggregates the source 10,000
+// times, synchronously, inside the write's own transaction (`FJS-971`).
 //
 // DDL emitted:
 //   CREATE TABLE "viewName" (field columns...) STRICT;
@@ -976,7 +984,9 @@ function createMaterializedView(view) {
 
   lines.push(
     `-- Materialized view: ${view.name}`,
-    `-- Kept in sync with: ${view.refreshOn.join(', ')}`,
+    view.refreshOn.length
+      ? `-- Kept in sync with: ${view.refreshOn.join(', ')}`
+      : `-- Refreshed on demand: db.${view.name}.refresh()`,
     `CREATE TABLE IF NOT EXISTS "${view.name}" (`,
     colDefs.join(',\n'),
     `) STRICT;`,

@@ -1404,6 +1404,32 @@ const CHECKS = {
           if (/^\s*(?:const|let|var)\b/.test(lines[back])) break
           kept = named(lines[back])
         }
+        // The other spelling, and the one a GENERATOR reaches for: the call is
+        // a statement and the assignment is inside the callback that resolves
+        // it.
+        //
+        //   orders.service.get(id)
+        //     .then(row => { record = row })
+        //
+        // The walk above cannot see it — it goes backward, looking for the
+        // wrapped ternary a person writes, and this assignment is forward. So
+        // `fli check` was silent on the shape `fli admin:generate` emits, once
+        // per model, which is the worst place for a blind spot: a hand-written
+        // screen is one screen and a generated one is every screen.
+        //
+        // Bounded the same way and for the same reason — three lines, and only
+        // while the chain is still open, so an assignment further down the file
+        // is not paired with a call it has nothing to do with.
+        for (let fwd = i + 1; !kept && fwd < lines.length && fwd - i <= 3; fwd++) {
+          // The line must CONTINUE this call — a leading `.then` and nothing
+          // else. Accepting any line holding an arrow was the loose version and
+          // it reported `total` for `lines.forEach(x => { total = … })` three
+          // lines under an unrelated one-shot read.
+          if (!/^\s*\.(?:then|catch|finally)\b/.test(lines[fwd])) break
+          const inner = lines[fwd].match(/=>\s*{?\s*([A-Za-z_$][\w$]*)\s*=(?!=)/)
+          if (inner) kept = inner[1]
+        }
+
         if (!kept) continue
         const assign = [null, kept]
 
@@ -2955,8 +2981,14 @@ function declaredColumns(text) {
   let current  = null
   let depth    = 0
 
+  let inBlock = false
   for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i]
+    // The braces are counted on the STRIPPED line, which is the half that
+    // matters here: this scan closes a model when depth reaches zero, so a `}`
+    // inside a note — `// e.g. { "a": 1 }` — ends it early and every field
+    // after it is invisible to the rule. Measured: four columns become two.
+    const [raw, still] = withoutComments(lines[i], inBlock)
+    inBlock = still
 
     const open = raw.match(/^\s*model\s+([A-Za-z_]\w*)/)
     if (open && depth === 0) {
@@ -2970,7 +3002,7 @@ function declaredColumns(text) {
     if (depth <= 0) { current = null; continue }
 
     const trimmed = raw.trim()
-    if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('@@')) continue
+    if (!trimmed || trimmed.startsWith('@@')) continue
 
     // A field line is `name Type …`. A relation field is one too and is compared
     // like any other — a package that declares one means it.
@@ -3102,10 +3134,14 @@ function capabilityModels({ text }) {
   const out   = []
   const lines = text.split('\n')
   let current = null
+  let inBlock = false
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    if (line.trim().startsWith('//')) continue
+    // `withoutComments` rather than skipping a line that STARTS with one: this
+    // scan tests for `@@capabilities` anywhere in the line, so a note about the
+    // grid would put a model in it.
+    const [line, still] = withoutComments(lines[i], inBlock)
+    inBlock = still
     const m = line.match(/^\s*model\s+([A-Za-z_][A-Za-z0-9_]*)/)
     if (m) { current = { name: m[1], gate: null, gateSource: null, gateLine: 0, grid: false }; out.push(current); continue }
     if (!current) continue
@@ -3129,6 +3165,33 @@ function capabilityModels({ text }) {
   return out.filter(m => m.grid)
 }
 
+/**
+ * A `.lite` line with its comment text removed, carrying block state across
+ * lines. Answers `[code, stillInBlock]`.
+ *
+ * One owner because there were two readings and both were wrong in the same
+ * direction: a line scan that skips a line STARTING with `//` still reads a
+ * trailing one, so `// was @@gate("7") once` declared a gate and a comma inside
+ * a note split a declared move in half. Both are the same mistake — comment
+ * text is content to a regex and is not content to the language.
+ *
+ * Both of the language's forms, which is what litestone's own lexer drops. A
+ * quoted string is NOT lexed here, so a `//` inside one reads as a comment; no
+ * schema in this repo has one, and the alternative is a string lexer inside a
+ * line scan that exists to need no parser at all.
+ */
+function withoutComments(line, inBlock = false) {
+  let out = ''
+  for (let i = 0; i < line.length; i++) {
+    const two = line.slice(i, i + 2)
+    if (inBlock) { if (two === '*/') { inBlock = false; i++ } continue }
+    if (two === '//') return [out, false]
+    if (two === '/*') { inBlock = true; i++; continue }
+    out += line[i]
+  }
+  return [out, inBlock]
+}
+
 function declaredGates({ text }) {
   const out   = []
   const lines = text.split('\n')
@@ -3140,9 +3203,14 @@ function declaredGates({ text }) {
     return GATE_LEVELS[t.toUpperCase()] ?? null
   }
 
+  let inBlock = false
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    if (line.trim().startsWith('//')) continue          // `///` is a doc comment and starts with it
+    // The comment goes before the match rather than the line being skipped when
+    // it STARTS with one: a trailing `// was @@gate("7") once` is a level this
+    // schema does not declare, and `gate-unreachable` then reports a rung
+    // nobody can reach that nobody wrote.
+    const [line, still] = withoutComments(lines[i], inBlock)
+    inBlock = still
     const m = line.match(/^\s*model\s+([A-Za-z_][A-Za-z0-9_]*)/)
     if (m) { model = m[1]; continue }
 
@@ -3196,9 +3264,28 @@ function declaredMoves({ text }) {
     if (at === -1 || lines[i].trim().startsWith('//')) continue
 
     // To the balanced close — the block spans as many lines as it likes.
-    let depth = 0, body = '', open = false, j = i
+    //
+    // Comments are dropped AS THEY ARE READ, and that is not tidiness. The
+    // clause split below is on top-level commas, so one comma inside a `//`
+    // note splits a move in half: the name is lost and the fragments either
+    // side arrive as moves nobody declared. Measured on basecamp, whose
+    // `loseContact` sits under a six-line comment carrying three commas — the
+    // move went missing from the declared set and this rule reported a working
+    // call as one that "has never worked", while listing a STATE among the
+    // moves it thought were declared.
+    //
+    // They go before the balance scan rather than after it because a `(` or a
+    // `)` inside a comment breaks that scan the same way. What counts as a
+    // comment is `withoutComments`, which `declaredGates` reads by too — the
+    // same mistake was in both, one function apart.
+    let depth = 0, body = '', open = false, j = i, inBlock = false
     scan: for (; j < lines.length; j++) {
-      for (const c of (j === i ? lines[j].slice(at) : lines[j])) {
+      // Sliced first, then stripped: on the opening line `at` indexes the
+      // ORIGINAL text, so removing a comment before taking the slice would
+      // move the offset out from under it.
+      const [src, still] = withoutComments(j === i ? lines[j].slice(at) : lines[j], inBlock)
+      inBlock = still
+      for (const c of src) {
         if (c === '(') { depth++; open = true }
         if (open) body += c
         if (c === ')' && --depth === 0) break scan

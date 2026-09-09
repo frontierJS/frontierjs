@@ -39,9 +39,12 @@ if (!await narrate(context)) return
 
 context.config.__step = 7
 
-if (!needs(context, ['appId', 'dbFile', 'token', 'workspaceId', 'basecamp', 'outpost'], {
+// `outpostSecret` for the same reason 06 needs it: ensureFleet restarts the
+// machine when nothing is answering, and it may only start on its own key.
+if (!needs(context, ['appId', 'dbFile', 'outpostSecret', 'token', 'workspaceId', 'basecamp', 'outpost'], {
   from: {
     appId: '06-command', dbFile: '02-basecamp',
+    outpostSecret: '05-outpost',
     token: '03-setup', workspaceId: '03-setup',
     basecamp: '01-machine', outpost: '01-machine',
   },

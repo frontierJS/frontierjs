@@ -292,7 +292,7 @@ CREATE TABLE IF NOT EXISTS "notification" (
   "contextId" TEXT,
   "readAt" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("contextType" IN ('Deployment', 'AlertEvent', 'JobRun', 'Workspace')),
+  CHECK ("contextType" IN ('Deployment', 'AlertEvent', 'JobRun', 'Server', 'Workspace')),
   FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_notification_userId_readAt" ON "notification" ("userId", "readAt");
@@ -305,7 +305,7 @@ CREATE TABLE IF NOT EXISTS "notification_preference" (
   "email" INTEGER NOT NULL DEFAULT 0,
   "inApp" INTEGER NOT NULL DEFAULT 1,
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("kind" IN ('deploy_success', 'deploy_failed', 'alert_firing', 'alert_resolved', 'member_joined', 'job_failed', 'weekly_digest')),
+  CHECK ("kind" IN ('deploy_success', 'deploy_failed', 'alert_firing', 'alert_resolved', 'server_unreachable', 'member_joined', 'job_failed', 'weekly_digest')),
   UNIQUE ("userId", "kind"),
   FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;
@@ -410,7 +410,6 @@ CREATE TABLE IF NOT EXISTS "server" (
   "sshUser" TEXT NOT NULL DEFAULT 'root',
   "sshKeyId" TEXT,
   "outpostVersion" TEXT,
-  "outpostUrl" TEXT,
   "lastHeartbeatAt" TEXT,
   "enrollTokenHash" TEXT,
   "enrollExpiresAt" TEXT,
@@ -597,6 +596,7 @@ CREATE TABLE IF NOT EXISTS "server_event" (
   "message" TEXT NOT NULL,
   "metadata" TEXT NOT NULL DEFAULT '{}',
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("kind" IN ('created', 'removed', 'reboot_requested', 'drain_started', 'drain_cancelled', 'provision_requested', 'provision_created', 'provision_ready', 'provision_timeout', 'destroy_requested', 'destroy_finished', 'enrollment_issued', 'sync_requested', 'status_synced', 'status_sync_ignored', 'sync_failed', 'sync_no_account', 'sync_unsupported', 'sync_unrecognized', 'came_online', 'unreachable', 'recipe_ran', 'recipe_failed', 'cleanup_queued', 'cleanup_ran', 'cleanup_failed', 'volume_removed', 'volumes_pruned')),
   FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_server_event_serverId" ON "server_event" ("serverId");
@@ -857,7 +857,7 @@ CREATE TABLE IF NOT EXISTS "deployment" (
   "durationMs" INTEGER,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("status" IN ('pending', 'building', 'pushing', 'deploying', 'success', 'failed', 'cancelled', 'rolled_back')),
+  CHECK ("status" IN ('pending', 'building', 'success', 'failed', 'cancelled', 'rolled_back')),
   FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE,
   FOREIGN KEY ("environmentId") REFERENCES "environment" ("id"),
   FOREIGN KEY ("triggeredBy") REFERENCES "user" ("id")

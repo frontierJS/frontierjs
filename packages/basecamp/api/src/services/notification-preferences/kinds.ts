@@ -44,6 +44,10 @@ export const NOTIFICATION_KINDS: NotificationKindDef[] = [
     description: 'A deployment stopped at a step that failed.',
     email: true,  inApp: true },
 
+  { kind: 'server_unreachable', label: 'Server unreachable',
+    description: 'A machine stopped checking in. Its apps may still be running — nobody here can tell.',
+    email: true,  inApp: true },
+
   { kind: 'alert_firing',   label: 'Alert firing',
     description: 'An alert rule crossed its threshold.',
     email: true,  inApp: true },

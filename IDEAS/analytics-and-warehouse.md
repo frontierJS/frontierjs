@@ -122,9 +122,13 @@ a hole under every possible answer to the scope question, and therefore unblocke
 
 ## Still open
 
-- **[FJS-D229](../ISSUES.md#fjs-d229) — what holds analytical data.** The only new
-  commitment; deliberately not ruled with the scope. Answer is *SQLite* until real
-  strain, and [FJS-971](../ISSUES.md#fjs-971) is where strain shows first.
+- **[FJS-D229](../ISSUES.md#fjs-d229) — what holds analytical data. Ruled 2026-09-08 as
+  [FJS-D248](../DECISIONS.md#fjs-d248): SQLite.** The trigger this entry named is gone —
+  [FJS-971](../ISSUES.md#fjs-971)'s refresh ceiling became a choice in
+  [FJS-D245](../DECISIONS.md#fjs-d245) — and the question splits: reading our file with
+  another engine (`ATTACH … (READ_ONLY)`) costs nothing and needs no driver, while STORAGE
+  also has to be FED, which [FJS-D247](../DECISIONS.md#fjs-d247) measured we cannot do. A
+  fourth driver waits on a latency budget missed on real row counts, EXPLAIN recorded.
 - **[FJS-D230](../DECISIONS.md#fjs-d230) — where a report stops being Studio's. Ruled
   2026-09-07: Studio PREVIEWS, the app ISSUES.** Filed on the premise that Studio has no
   access story, which is false — its *Acting as* picker is a real `$setAuth`. What it
@@ -185,7 +189,8 @@ views. No warehouse, no new storage. Studio keeps previewing and gains the discl
 
 **Phase 3 — the rest, only when something strains.** Ingest from foreign sources is the
 connector treadmill and `FJS-D153`'s rule applies unchanged: a vendor lives in its own
-package. Storage is [FJS-D229](../ISSUES.md#fjs-d229) and waits for evidence.
+package. Storage is ruled — SQLite ([FJS-D248](../DECISIONS.md#fjs-d248)) — and a second engine
+waits on a measurement rather than on evidence in general.
 
 **The bound to hold on to**: this is *analytics for the app*, not an enterprise data
 warehouse. Past a few hundred GB the comparison is with Snowflake and it is lost. Write

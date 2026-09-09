@@ -72,7 +72,12 @@ const sys = () => ($.db as { asSystem(): Record<string, any> }).asSystem()
  * case.
  */
 async function declaredFields(system: any): Promise<CustomField[]> {
-  return await system.customField.findMany({})
+  // An audience is a predicate over CUSTOMERS, so the vocabulary it compiles
+  // against is the customer's — and `$declaredFields()` is narrowed to the model
+  // it was called on, which is the whole reason to reach for it over a findMany:
+  // one declaring table serves every extensible model, and a key another model
+  // declares would be a term this accepts and then matches nobody on.
+  return await system.customer.$declaredFields()
 }
 
 /**

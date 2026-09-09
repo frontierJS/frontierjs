@@ -182,3 +182,166 @@ describe('the parser says which mistake was made', () => {
     expect(msg).toMatch(/missing required field 'createdAt'/)
   })
 })
+
+// ─── every write path files an entry ──────────────────────────────────────────
+//
+// The completeness claim lived in `docs/audit-logging.md` and in nothing else
+// (`FJS-1042`). `emitLogs` has eighteen hand-placed call sites against
+// `fireEvent`'s three, so *does this verb log* is restated per verb the way
+// `verbs-rules.test.ts`'s rules are — and announce got the enumeration this
+// funnel never did, which is the wrong way round: an announcement that stops
+// firing is a screen that does not move, and an entry that stops being filed is
+// discovered by asking the trail a question it cannot answer.
+//
+// One case per named path, run against a real trail. Each asserts the OPERATION
+// and the rows it names, because an entry filed under the wrong verb satisfies
+// any test that only counts.
+
+describe('every write path files an entry (FJS-1042)', () => {
+
+  const SCHEMA = `
+    database main { path ":memory:" model AuditRow }
+    model AuditRow { ${TRAIL} }
+    model Thing {
+      id      Int     @id
+      name    String
+      state   String  @default("draft")
+      deletedAt DateTime?
+      @@softDelete
+      @@log(main)
+    }
+    model Quiet { id Int @id  name String }
+  `
+
+  // The trail as the assertions read it: operation, the ids it named, and
+  // whether it carried snapshots. Field-level entries would double every row,
+  // so the model-level ones are what an enumeration over VERBS is about.
+  async function trail(db: any) {
+    await tick()
+    const rows = await db.asSystem().auditRow.findMany({ orderBy: { id: 'asc' } })
+    return rows.filter((r: any) => r.field === null)
+      .map((r: any) => ({ op: r.operation, records: r.records, before: r.before, after: r.after }))
+  }
+
+  async function fresh() {
+    const db = await client(SCHEMA)
+    return db
+  }
+
+  test('create · createMany', async () => {
+    const db = await fresh()
+    await db.asSystem().thing.create({ data: { id: 1, name: 'one' } })
+    expect(await trail(db)).toEqual([{ op: 'create', records: [1], before: null, after: { id: 1, name: 'one', state: 'draft', deletedAt: null } }])
+
+    const db2 = await fresh()
+    await db2.asSystem().thing.createMany({ data: [{ id: 1, name: 'one' }, { id: 2, name: 'two' }] })
+    const t2 = await trail(db2)
+    expect(t2).toHaveLength(1)
+    expect(t2[0].op).toBe('create')
+    expect(t2[0].records).toEqual([1, 2])
+    // Documented: a bulk write names its rows and never their contents.
+    expect(t2[0].before).toBeNull()
+    expect(t2[0].after).toBeNull()
+    db.$close(); db2.$close()
+  })
+
+  test('update · updateMany', async () => {
+    const db = await fresh()
+    await db.asSystem().thing.createMany({ data: [{ id: 1, name: 'one' }, { id: 2, name: 'two' }] })
+    await db.asSystem().thing.update({ where: { id: 1 }, data: { state: 'live' } })
+    const one = (await trail(db)).at(-1)
+    expect(one.op).toBe('update')
+    expect(one.records).toEqual([1])
+    // The single-row half is the one that carries snapshots, and the pair with
+    // the bulk row above is what makes the asymmetry an assertion rather than
+    // an accident.
+    expect(one.before.state).toBe('draft')
+    expect(one.after.state).toBe('live')
+
+    await db.asSystem().thing.updateMany({ where: {}, data: { state: 'archived' } })
+    const many = (await trail(db)).at(-1)
+    expect(many.op).toBe('update')
+    expect(many.records).toEqual([1, 2])
+    expect(many.before).toBeNull()
+    db.$close()
+  })
+
+  test('upsert files under what it DID — create, then update', async () => {
+    // Single `upsert` reaches the trail transitively: it delegates to create
+    // and to update. That is the one path in the eleven with no `emitLogs` of
+    // its own, so it is the one an enumeration is most likely to lose.
+    const db = await fresh()
+    await db.asSystem().thing.upsert({ where: { id: 1 }, create: { id: 1, name: 'one' }, update: { name: 'one' } })
+    expect((await trail(db)).at(-1).op).toBe('create')
+    await db.asSystem().thing.upsert({ where: { id: 1 }, create: { id: 1, name: 'one' }, update: { name: 'moved' } })
+    expect((await trail(db)).at(-1).op).toBe('update')
+    db.$close()
+  })
+
+  test('upsertMany splits its batch, because it did both', async () => {
+    const db = await fresh()
+    await db.asSystem().thing.create({ data: { id: 1, name: 'one' } })
+    await db.asSystem().thing.upsertMany({
+      data: [{ id: 1, name: 'moved' }, { id: 2, name: 'two' }],
+      conflictTarget: ['id'],
+      update: ['name'],
+    })
+    const ops = (await trail(db)).map((r: any) => r.op)
+    expect(ops.filter((o: string) => o === 'create')).toHaveLength(2)
+    expect(ops.filter((o: string) => o === 'update')).toHaveLength(1)
+    db.$close()
+  })
+
+  test('remove · removeMany · restore — a soft delete files, and coming back files as update', async () => {
+    const db = await fresh()
+    await db.asSystem().thing.createMany({ data: [{ id: 1, name: 'one' }, { id: 2, name: 'two' }] })
+
+    await db.asSystem().thing.remove({ where: { id: 1 } })
+    const rm = (await trail(db)).at(-1)
+    expect(rm.op).toBe('delete')
+    expect(rm.records).toEqual([1])
+
+    // Documented: a restored row CHANGED STATE, it was not created. Filing it
+    // as `create` would make the trail claim the row did not exist before.
+    await db.asSystem().thing.restore({ where: { id: 1 } })
+    expect((await trail(db)).at(-1).op).toBe('update')
+
+    await db.asSystem().thing.removeMany({ where: {} })
+    const rmm = (await trail(db)).at(-1)
+    expect(rmm.op).toBe('delete')
+    expect(rmm.records).toEqual([1, 2])
+    db.$close()
+  })
+
+  test('delete · deleteMany — the hard path files too', async () => {
+    // A hard delete is the write with the most to answer for and the least
+    // left to read: after it there is no row, so an entry that was never filed
+    // cannot be reconstructed from anything.
+    const db = await fresh()
+    await db.asSystem().thing.createMany({ data: [{ id: 1, name: 'one' }, { id: 2, name: 'two' }] })
+
+    await db.asSystem().thing.delete({ where: { id: 1 } })
+    const d = (await trail(db)).at(-1)
+    expect(d.op).toBe('delete')
+    expect(d.records).toEqual([1])
+    expect(d.before.name).toBe('one')
+
+    await db.asSystem().thing.deleteMany({ where: {} })
+    const dm = (await trail(db)).at(-1)
+    expect(dm.op).toBe('delete')
+    expect(dm.records).toEqual([2])
+    db.$close()
+  })
+
+  test('a model that declares no trail files nothing', async () => {
+    // The control. Every row above passes against an engine that logged every
+    // write of every model, which is a different defect wearing this test's
+    // green.
+    const db = await fresh()
+    await db.asSystem().quiet.create({ data: { id: 1, name: 'one' } })
+    await db.asSystem().quiet.update({ where: { id: 1 }, data: { name: 'two' } })
+    await db.asSystem().quiet.delete({ where: { id: 1 } })
+    expect(await trail(db)).toEqual([])
+    db.$close()
+  })
+})

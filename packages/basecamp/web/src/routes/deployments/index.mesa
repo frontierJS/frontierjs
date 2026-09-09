@@ -41,7 +41,7 @@ title: Deployments
   })
   $.onDestroy(off)
 
-  // A tone per state, decided once. 'deploying' has no tone on purpose — it is
+  // A tone per state, decided once. 'building' has no tone on purpose — it is
   // in progress, which is neither good nor bad news.
   const TONE = {
     success:     'success',

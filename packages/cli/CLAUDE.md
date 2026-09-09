@@ -559,6 +559,21 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   `gateAuth` is derived and installed unconditionally, so the column could only
   ever say one word. The raw routes are where that question has an answer that
   varies, and `--ungraded` is where it is asked.
+- **`core/app-entry.js` owns the committed API surface — where it is, what wrote
+  it, what it says, and what to say when it is absent.** `readApiSurface` lived
+  there AND in `commands/project/_module.md` until `FJS-D240`, in five pieces,
+  and the missing-file sentence had already drifted between the two copies. It
+  calls `surfaceFile` and `generatedBy` rather than restating them, which is what
+  makes the collapse permanent. The command module imports it the same way it
+  imports `readAppAtlas`, so one module answers both of `project:map`'s questions
+  about the app, and `tests/project-helpers.test.js` reaches the parser by plain
+  import rather than through a regex over a `<script>` block.
+- **`app:atlas` and `project:map` are TWO commands and `FJS-D223` does not reach
+  them** (`FJS-D240`). D223's test is ONE READER — `core/repo-atlas.js` reads no
+  files at all, so those two pages were always one collection drawn twice. These
+  are two collections that overlap. **`--atlas` and `--layer` are the collection
+  axis; `--as` is the presentation axis** — folding a second command in would add
+  a third value to the first axis and offer no new presentation.
 - **`readAppAtlas` has two callers and ANSWERS a failure rather than throwing
   one.** `app:atlas` renders the model; `project:map --atlas` (default on) folds
   its jobs, notifications and principal halves into a page otherwise built from
@@ -568,9 +583,9 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   disagree about which app they described, so the spawn is in `core/app-entry.js`
   and neither command owns it. **The failure is returned because the two callers
   need it differently**: `app:atlas` has nothing without the model and stops,
-  while `project:map`'s whole property is that it needs no bun and no running
-  server — so a missing bun or an app that will not build costs it three panels
-  and leaves every file-derived one intact. The page prints WHICH of the three
+  while for `project:map` the model is one section of a report whose others are
+  read from files — so a missing bun or an app that will not build costs it three
+  panels and leaves every file-derived one intact. The page prints WHICH of the three
   reasons it was (`--no-atlas`, a boot failure, no snapshot), because an app with
   no jobs and an app nobody could boot must not draw the same empty table.
 - **`project:map --as=serve` has ONE viewer and `collectIssues` has a test.** Both of its

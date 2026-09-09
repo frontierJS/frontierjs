@@ -180,7 +180,7 @@ export function createDeploymentsService(app: BasecampApp) {
     async remove() {
       const deployment = await getScoped('deployment', 'Deployment')
 
-      // `cancel: [pending, building, pushing, deploying] -> cancelled` is the
+      // `cancel: [pending, building] -> cancelled` is the
       // guard, declared on the model. Writing the status IS the enforced path;
       // `transition()` is sugar for the move alone and this one stamps
       // `finishedAt` with it.
@@ -192,6 +192,138 @@ export function createDeploymentsService(app: BasecampApp) {
       return updated
     },
 
+
+    // ── rollback — POST /deployments/:id  X-Service-Method: rollback ──
+    //
+    // Put back what this release replaced.
+    //
+    // Every part of this was already being written and none of it was read:
+    // `previousDeploymentId` is chained on every create under a comment saying
+    // a rollback would want it, `configSnapshot` records what the app looked
+    // like at release time, and `rollback: success -> rolled_back @gate(5)` is
+    // declared on the model — while four screens carried a tone for a state no
+    // write could produce (`FJS-517`).
+    //
+    // ─── What a rollback IS here ─────────────────────────────────────
+    //
+    // A NEW release of the OLD bytes, not a rerun of the old row. A Deployment
+    // records what shipped and when; re-running one would rewrite that, and the
+    // fact that somebody rolled back at 11pm on a Friday is the thing an
+    // operator most wants to find afterwards.
+    //
+    // **The config comes from the TARGET and never from the app.** That is the
+    // whole of what separates this from a redeploy: `App.config` is the desired
+    // state somebody has since edited, and rolling back to the old image with
+    // the new config puts back neither release.
+    //
+    // ─── Why the retire happens HERE and not when the replacement lands ──
+    //
+    // `rolled_back` is a DECISION, not an outcome — an operator with standing 5
+    // withdrew this release — so it is written at the moment the decision is
+    // made, and `@gate(5)` on the move is what grades them, at the Data
+    // boundary, before anything is created (Invariant 6). Deferring it to the
+    // replacement's success would put the authority check on a system write in
+    // a job, where no standing is left to grade.
+    //
+    // A replacement that then fails is three accurate rows rather than one
+    // wrong one: this release withdrawn, the replacement `failed`, and
+    // `App.status` still saying what is actually running.
+    async rollback() {
+      const being = await deployInScope(String($.id))
+
+      // ─── The order, which is the whole of what this method has to get right ──
+      //
+      // Grade, then validate, then MOVE, then create. Nothing before the move
+      // writes anything, so every refusal below leaves the release exactly as it
+      // was — a first deploy answered *there is nothing to roll back to* with
+      // the row already retired would be the worst outcome available here.
+      //
+      // The grade is the SCHEMA's own answer, asked rather than restated: it is
+      // the same list the screen reads to decide whether to draw the button. It
+      // is not the enforcement — `transition()` below is, at the Data boundary
+      // (Invariant 6) — it is what puts the refusal in front of the writes.
+      const move = (await db().deployment.transitions(being))
+        .find((t: any) => t.name === 'rollback')
+      if (!move?.allowed) throw new BadRequest(
+        being.status === 'success'
+          ? `Rolling back a release takes a higher standing than shipping one.`
+          : `A ${being.status} release cannot be rolled back — only one that shipped.`)
+
+      const target = being.previousDeploymentId
+        ? await db().deployment.findUnique({ where: { id: being.previousDeploymentId } })
+        : null
+
+      // Nothing to go back to. Named rather than answered with an empty
+      // release: the first deploy of an app has no predecessor, and that is a
+      // different sentence from a predecessor that has gone.
+      if (!target) throw new BadRequest(
+        being.previousDeploymentId
+          ? `The release this one replaced is no longer here, so there is nothing to put back.`
+          : `This was the first release of this app — there is nothing to roll back to.`)
+
+      // The bytes, as that release recorded them. `builtImage` is a digest and
+      // `toImage` is the name a registry pulls by, so the digest is preferred
+      // and the name travels with it.
+      const image = (target.toImage ?? target.builtImage) as string | null
+      if (!image) throw new BadRequest(
+        `The release this one replaced recorded no image, so there is nothing to put back.`)
+
+      const into = await db().app.findFirst({ where: { id: being.appId, workspaceId: ws() } })
+      if (!into) throw new NotFound(`App '${being.appId}' not found in this workspace`)
+
+      // Asked here for `create`'s reason: the person who pressed the button is
+      // still looking, and a release that fails a second later tells them their
+      // app is broken where this tells them what to do.
+      const executor = await resolveExecutor(app, being.appId)
+      if (!isExecutor(executor)) throw new BadRequest(executor.reason)
+
+      // The move, and the enforcement: `success -> rolled_back @gate(5)` is the
+      // model's and so is the level. Everything above this line was a read.
+      await db().deployment.transition(being.id, 'rollback')
+
+      const replacement = await db().deployment.create({ data: {
+        appId:         being.appId,
+        environmentId: being.environmentId,
+        workspaceId:   ws(),
+        trigger:       'rollback',
+        // What was running, and what is going back on.
+        fromImage:     being.toImage ?? being.builtImage ?? null,
+        toImage:       image,
+        builtImage:    target.builtImage ?? null,
+        // The target's, never the app's — see above.
+        configSnapshot: target.configSnapshot ?? {},
+        commitSha:      target.commitSha ?? null,
+        commitMessage:  target.commitMessage ?? null,
+        branch:         target.branch ?? null,
+        author:         target.author ?? null,
+        // The release this one replaces, which is `create`'s own meaning for
+        // the column: the one that was current before it.
+        previousDeploymentId: being.id,
+        triggeredBy:    actor() === 'system' ? null : actor(),
+      } })
+
+      await db().deploymentStep.createMany({
+        data: buildInitialSteps(into.type).map(name => ({
+          deploymentId: replacement.id, name, status: 'pending',
+        })),
+      })
+
+      await app.jobs.dispatch(deploymentRun, {
+        deployment_id: replacement.id,
+        app_id:        being.appId,
+        workspace_id:  ws(),
+      }, { queue: 'deployments', priority: 5 })
+
+      app.events.emit('deployment:rolled_back', {
+        id: being.id, replacement: replacement.id, workspace_id: ws(),
+      })
+      await pushRow(being.id)
+
+      // The REPLACEMENT is the answer: it is the row the screen navigates to
+      // and the one with a status worth watching. The retired release is on the
+      // page the caller is already looking at, and the push above updates it.
+      return replacement
+    },
 
     // ── The engine's writes ───────────────────────────────────────────
     //

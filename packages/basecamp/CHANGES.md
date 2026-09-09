@@ -1,5 +1,526 @@
 # Changes — Basecamp
 
+## 2026-09-09 — `capability-ladder`'s two findings are answered, and the answer is now enforced
+
+`packages/basecamp/CLAUDE.md` already said these two were *answered, not
+ignored*, and nothing checked it — advice that fails open, one tier up from the
+rule it is about. `check-baseline.json` holds the answer now, so a third
+`@@capabilities` model fails the build.
+
+Both are the exemption [`FJS-D146`](../../DECISIONS.md#fjs-d146) names when it
+mandates this very check: a deliberately high floor under a grid. The failure it
+warns about needs a role that HOLDS a grant and sits BELOW the write level, and
+basecamp has none — measured rather than argued: `core/gate.ts` maps viewer and
+billing to 2 and developer to 4, and `core/capabilities.ts` grants viewer `[]`
+and billing `[]` on both models, so every grant is held at 4 or above, which is
+where the gate writes. The grid narrows WITHIN developers and admins, which is
+the thing a ladder cannot say.
+
+Flattening to `@@gate("2")` was the alternative and it is the worse one: it
+would make the hand-stamped grant table the only thing between a viewer and
+`Server.delete`, and seven writers stamp it.
+
+**Undecidable for `fli check` rather than merely unstated** — the role→level and
+role→grant maps are app source with no declared shape, so a rule reading them
+would be guessing at two module layouts. The two role sets are named in the
+baseline entry, so a role gaining a grant below level 4 makes it visibly false in
+the diff.
+
+## 2026-09-09 — the enrollment token is returned beside the command
+
+`servers.issueEnrollment` returned the token only INSIDE the install command it
+prints, so the one caller that is an installer rather than a person had to
+recover it with a regex over a shell string — re-deriving the input from the
+output ([`FJS-1041`](../../ISSUES.md#fjs-1041)). It is a field now. Nothing new
+is disclosed: the value was already in that string, single-use, behind
+`@gate(5)`.
+
+Also corrected the header block in `api/src/core/hooks.ts`, which described the
+fleet-wide fallback as present and temporary ninety lines above the function
+that had removed it.
+
+## 2026-09-09 — a refusal is not a fault, and a bad id is not a miss
+
+Two conflations behind [`FJS-1018`](../../ISSUES.md#fjs-1018), and the second is
+app-wide.
+
+**Every thrown service error was logged at ERROR.** The `error:` hook in
+`api/src/app.ts` wrote one line at one level for everything, so an appliance
+nobody configured, a stranger's 401 and every 403 the gate exists to give all
+read as breakage — and buried the 5xx that was. It now grades on the status
+junction already decided: `ctx.error` is a FrameworkError and `code` is its HTTP
+status, read rather than re-derived, because that mapping has an owner. Two
+tiers, not three — the app either FAILED (5xx, somebody looks) or REFUSED (4xx,
+it worked). A finer ladder is a judgement about which refusals matter, which
+belongs on the screen reading the log.
+
+**`Portal service 'null' not found` answered three different questions**: no id
+at all (`$.id` is null), a caller that interpolated an empty value (the STRING
+`'null'`, which `!id` does not catch), and an appliance genuinely gone. A reader
+could not tell a bug in this app from a configuration somebody removed.
+`portal.get` and `portal.create` separate them by status — a value that cannot
+be an id is a 400 that says so, a real id nobody serves stays a 404 — and
+`ServiceHealthBody`'s guard widened to the string forms.
+
+The originating screen is still unfound and the row stays open for that alone.
+The level test is graded against the SHIPPED hook by capturing what the real
+logger wrote, not against a copy retyped in the test, which is the same failure
+one layer along. Measured: stubbing the level grading reds 1, removing the id
+guard reds 2.
+
+## 2026-09-09 — `service-as-system`'s four findings are answered rather than open
+
+All four are `app.db.asSystem()` inside `api/**/services/**` and all four are
+deliberate, so the answer is a baseline entry with the reasoning in it rather
+than a code change. `metrics.service.ts` is not the hazard at all — junction's
+metric models carry no `workspaceId` column, so there is no tenant to cross;
+`hub.service.ts` IS the cross-workspace tier behind one `requireSystemAdmin()`;
+`job-schedule.ts`'s is `restoreSchedules`, called once at boot with no request in
+scope and required to span every workspace; and `scopes.ts`'s is `apiKeyGuard`,
+which reads the row that DECIDES the caller's access and confines it by hand on
+the next line.
+
+The baseline is a COUNT, so a legitimate site removed and an illegitimate one
+added nets to four — the four paths are named in `check-baseline.json` so a diff
+that moves one shows. Verified as a live gate: a fifth `app.db.asSystem()` under
+`services/` reds the rule.
+
+## 2026-09-08 — the cleanup screen had every numerator and no denominator
+
+**A gap three documents named, whose blocker died last week.** `PROJECT_STATE.md`
+and `docs/SCREENS.md` twice said the per-server disk bars were not built and all
+three named the same reason: *they need free space on `/`, which is a different
+reading from `docker system df`*. `packages/outpost`'s `vitals.js` reads exactly
+that — `statfs('/')` with `df`'s own denominator — and has since `FJS-1027`, so
+the sentence was describing a machine that had started answering.
+
+**What it costs to be without it**: /cleanup/ told an operator *12 GB
+reclaimable by these targets*, which is not a number anybody can act on. 12 GB on
+a disk at 40% is not worth a sweep and on one at 96% is tonight's incident, and
+the screen held the numerator alone.
+
+`cleanup.usage` now answers `fullness` and `fullnessAt` per machine, read off the
+heartbeat rather than the disk report — **a different wire on a different clock**,
+so a machine can have either reading without the other and the card says which
+one is missing. The bar is `@frontierjs/ui`'s `Bar` at `tone="auto"`; the
+success → warning → danger ladder is the kit's and no threshold is retyped here.
+
+**Absent is the whole design, because on this number zero is not a small
+answer** — it renders as a green bar saying the disk is empty, which is the
+opposite of what an unheard-from machine means. Measured against stubs:
+answering an absent reading as `0` reds **3** rows, hanging the bar off the
+DOCKER report reds **2**, and the screen drawing `0%` where the sentence belongs
+reds **1** drive row, whose failure text is literally `Disk in use 0%`.
+
+**`FJS-1039` was found in the doing and is the same rule at the write end.**
+`health` is an open Json document another process writes, and `Number(null)` is
+**0** — so a reading a machine sent as `null`, meaning *I could not take this*,
+was the one spelling that wrote a real point at zero and drew a graph off it.
+Three readers coerced that way. `readingOf` in `core/server-metrics.ts` is now
+the one rule, asked by the writer and by `cleanup.usage`; the browser cannot
+import it, so `ServerHealthBody` states the shape a second time and says so.
+Two suite rows, paired with a sibling key that survives the same check-in.
+
+Three drive rows in `bun run verify`: one machine in two states, which is the
+only place absent and zero can be told apart, because they are the same value to
+every reader that coerces and opposite claims on a screen.
+
+
+## 2026-09-08 — a database is two paths, and only one of them was ever stated
+
+**`FJS-633`.** `database main` and `database audit` are separate declarations
+with separate env vars, and every caller that wanted an isolated run named one
+of them. `db/test/seed.test.ts` gave the seeder a scratch CWD and got both moved
+by accident of the mechanism; `web/test/verify-screens.mjs` redirected
+`DATABASE_URL` and ran with `cwd: PKG`, so every audit row its checks generated
+landed in the developer's own `db/audit/`. Neither drive failed and neither said
+anything.
+
+Both now state `AUDIT_PATH` beside `DATABASE_URL`, and that is what made the
+second half safe: `core/db.ts` passes `resolveFrom: 'schema'`, so nothing is
+isolated by where a process happened to start and the app answers the same
+database from the package root, from `api/`, or from a generator rerun anywhere
+else. **Measured as a pair** — seeding with both stated left the developer's
+trail at 489 rows and put 322 in the scratch directory, so the trail moved
+rather than being switched off.
+
+**Two things the doing of it found, and one of them was mine.**
+
+**The anchor is the APP ROOT, not the schema's directory.** `schemaAnchor` takes
+the schema file's directory and steps out of it when it is named `db` — which is
+where this schema lives. Rewriting the two defaults relative to `db/` therefore
+moved them: the database became `packages/basecamp/basecamp.db` and the trail sat
+beside it, litestone migrated the new file to the full schema, and a 319-check
+drive ran green against a database nobody meant. Caught by probing where one
+audit row actually landed, which is the only thing that would have shown it.
+
+**A table count cannot tell a stray database from the real one.** Without the
+anchor, opening the client from `api/` created `api/basecamp.db` at 970 KB
+carrying the same 50 tables, because litestone migrates what it finds. So the
+assertion is about the FILE, and `db/test/db-paths.test.ts` carries three: the
+anchor is passed, both defaults are written for it, and every caller redirecting
+one path names the other. Its control is the row that matters — a scan reading a
+key nothing uses reports every file as compliant.
+
+The consequence is available and not taken: the API snapshots can move into
+`api/` the way `example`'s have. That costs a `removedSnapshots` allowance in
+CI's `snapshots` phase and is a separate change from the one that unblocked it.
+
+## 2026-09-08 — a machine's history gets a vocabulary, and a dead column goes
+
+**`ServerEvent.kind` is `enum ServerEventKind`.** It was a free `String`.
+Twenty-eight values had accumulated across six files with no list anywhere, so
+*what can happen to a machine* was answerable only by grepping — and
+`servers.logEvent` takes the kind off a payload, typed `string`, with
+`recordServerEvent` swallowing a failed write, so a misspelled kind landed as a
+row and rendered on the machine's own trail as whatever had been typed.
+
+**The enum's win is that the vocabulary has one place and a bad value cannot
+land, not that a bad write becomes loud.** The job seam still warns rather than
+throwing, and that is right — a run that finished is not a run to fail over a
+history line. What changed is that the CHECK refuses the value below the API as
+well as at it, and every writer is typed by `schema.d.ts`.
+
+**What keeps the enum an owner is the second test, not the first.** An enum is
+only one place while every writer uses it, so `api/test/server-events.test.ts`
+scans what the app actually WRITES and holds the two lists together in both
+directions — an undeclared kind is a row that fails at runtime where nobody is
+looking, and a declared kind nothing writes is a vocabulary that has outlived
+its code. The scan reads four shapes, because there are four ways a line is
+written, and the fourth is a kind CHOSEN at the call
+(`exitCode === 0 ? 'recipe_ran' : 'recipe_failed'`). That ternary is anchored to
+the call: there are ten snake_case ternaries under `api/src/` and nine are about
+something else, so a free-standing pattern would report `debug` and `api_key` as
+event kinds. **Measured**: a kind dropped from the enum reds 1, a kind declared
+that nothing writes reds 2, and pointing the scan at a shape that does not exist
+reds 1 — the last being the control, since a tripwire that matches nothing
+passes both directions vacuously.
+
+The machine's trail now renders `humanize(event.kind)`. The identifier is the
+schema's axis and the label is the reader's, and `@frontierjs/toolbelt/inflect`
+owns the second.
+
+**`Server.outpostUrl` is deleted** ([FJS-743](../../ISSUES.md)). Declared,
+migrated, written by nothing, and by the end referenced by nothing at all. The
+row named two answers — write it beside the target registration, or drop it —
+and the measurement picked the second: the address is not derivable and is not
+this app's to state. The machine sends `outpost_url` in its own heartbeat and
+`servers.heartbeat` puts it into the `outpost:<id>` descriptor, which is what
+every outbound send resolves through. A column beside it is one fact in two
+stores written by two calls that are not one transaction — register succeeds,
+the row write fails, and an operator reads a stale address and concludes the
+machine moved. *Where is this machine reached* stays unanswerable from the
+`Server` row, and the honest form of that is a read of the registry on `get`;
+nothing asks for it, so nothing is owed.
+
+## 2026-09-08 — a release can be put back
+
+`rollback: success -> rolled_back @gate(5)` was declared on `Deployment`,
+`previousDeploymentId` was chained on every create under a comment saying a
+rollback would want it, `configSnapshot` recorded what the app looked like at
+release time, and four screens carried a tone for `rolled_back` — while
+`grep -rni rollback` over `api/` and `web/` returned **one comment and nothing
+else** ([`FJS-517`](../../ISSUES.md#fjs-517)).
+
+**A rollback is a NEW release of the OLD bytes**, never a rerun of the old row.
+A Deployment records what shipped and when; re-running one would rewrite that,
+and the fact that somebody rolled back at 11pm on a Friday is the thing an
+operator most wants to find afterwards.
+
+**The config comes from the TARGET and never from the app.** That is the whole
+of what separates this from a redeploy: `App.config` is desired state somebody
+has since edited, and putting the old image back with the new settings is
+neither release — on a row that looks correct from every screen.
+
+**The order is what the method had to get right.** Grade, validate, MOVE, then
+create. Nothing before the move writes anything, so a first deploy answers
+*there is nothing to roll back to* with the release exactly where it was — where
+*move first, look second* retires it and then discovers it has nowhere to go.
+The grade is the schema's own answer, asked rather than restated; the
+enforcement is still `transition()` at the Data boundary (Invariant 6).
+
+### Two stages deleted rather than given producers
+
+`pushing` and `deploying` were the other two moves in that row. The push was
+collapsed into one call to the machine on purpose, so the only thing that ever
+wrote either was the seed — a dev database showing a release in a state the
+running app can never reach, on screens that toned it. `ready` on `ServerStatus`
+was the same shape one issue earlier and went the same way. A registry push
+landing later costs one enum value and one move.
+
+`litestone release` calls it a **contract**: a database holding a `deploying`
+row fails that row's next write. `bun run db:reset` and reseed.
+
+### The engine's three moves are marked `@system`
+
+`build`, `succeed` and `fail` are the job's and it writes them through
+`asSystem()` already. `deployments.patch` allows `status` and a developer
+reaches it, so without the marking a release could be walked to `success` by
+hand — a fabricated history on the surface that answers *what shipped*.
+`cancel` and `rollback` stay a person's. This is the third strand `FJS-517` said
+was waiting on the same decision (`IDEAS/permission-sets.md` step 7).
+
+
+## 2026-09-08 — a second cloud, and what it found in the boundary
+
+`hetzner` had been in `ProviderKind` since P1 with no connector, so the enum
+named a cloud this app could not speak to. It has one now, and a stand-in of its
+own on 8124.
+
+**The point was never the vendor.** One connector can only show a boundary is
+consistent with ITSELF; `ComputeConnector` was written alongside DigitalOcean
+and had no way to be graded. Three of its fields turned out to be DigitalOcean's
+shape wearing a general name.
+
+**A price is per LOCATION.** `cpx11` is €5.18 in Nuremberg and €5.77 in
+Helsinki, so `ComputeSize.priceMinor` would have had to choose — and the number
+it chose is quoted on the wizard's cost line and copied onto `Server.plan`, the
+two places this app may not be casually wrong about money. It is
+`prices: Record<region, minor>` now, and its KEYS are the availability list, so
+the separate `regions` field is gone: a size is offered where it is priced, and
+two fields saying one thing could disagree.
+
+**A machine is marked with LABELS.** `MachineSpec.tags` was `string[]`; Hetzner
+has no tags, only a label map whose keys must match a grammar a colon is not in,
+so `basecamp:server:<id>` is not a key it accepts. A connector handed the
+flattened string would have had to parse that spelling back out of it, and every
+connector re-deriving one grammar is how two of them disagree — a machine marked
+in a spelling reconciliation cannot select on is the orphan the mark exists to
+prevent. The caller states a `MachineMark` and each connector spells it.
+
+**And the mark now comes back OUT.** `machineTag()` claimed three readers and
+had two: reconcile swept on the fleet tag and matched by vendor id, so the
+identity tag was written and read by nothing. `ComputeMachine.serverId` makes an
+orphan say which row it thinks it is.
+
+Beside those: memory as a float of gigabytes, nine state words to DO's four, a
+nested address object, a delete answering 200 with a body where DO answers 204
+with none, and a page maximum of 50 that a copied constant would have had
+silently clamped.
+
+**Two second origins on the money screens went with it.** `/servers/provision/`
+and `/cloud-spend/` each carried `Intl.NumberFormat(…).format(minor / 100)`
+under a comment saying the divisor belongs to the currency. One owner now,
+`web/src/money.js`, over `@frontierjs/toolbelt/units`.
+
+**What grades it is an oracle.** `two clouds, one vocabulary` runs one script
+over both connectors and names no vendor in it; its control is that the two are
+NOT one vendor answering twice, since every parity assertion is satisfied by a
+copy-pasted connector pointed at the first one's dialect. Measured against
+stubs: collapsing the price map reds 3 rows, writing the mark in DigitalOcean's
+spelling reds 7 — every create fails, because the stand-in applies Hetzner's own
+key grammar — and removing the read-back reds 2 at Hetzner and 3 at DO.
+
+`compute.test.ts` 65 → 92, `verify:provision` 50 → 61. `providers/compute/sink.ts`
+is `digitalocean-sink.ts`, since a file called *the* sink beside `digitalocean.ts`
+reads as the boundary's and is one vendor's.
+
+
+## 2026-09-08 — a machine that dies is noticed
+
+`ServerStatus.unreachable` was the target of no transition: five appearances as
+a from-state, none as a to-state, so the machine could leave a state it could
+never enter. `lastHeartbeatAt` was written by the heartbeat and read by three
+screens to print *"4h ago"*, and nothing compared it to a clock. **A machine
+that died stayed `online` for ever**, green on every screen
+([`FJS-1021`](../../ISSUES.md#fjs-1021)).
+
+The way back was already built and unreachable by construction: `checkIn:
+[pending, installing, unreachable] -> online` has always accepted the return.
+What was missing was the departure — `loseContact: online -> unreachable
+@system`, driven by `jobs/server-reachability.job.ts` on the scrape's own
+minute.
+
+**A sweep, not a timer per machine.** A timer armed at check-in and cancelled by
+the next one dies with the deploy that restarts the process, and every machine
+then reads `online` until it checks in again — which is exactly the machine that
+never will.
+
+**Three of the four verdicts do not move a row**, and that is where the content
+is. `not-watched` — `stopped` and `draining` are states an operator PUT the
+machine in, and `installing` is an enrollment that never completed.
+`never-spoke` — `online` on the vendor's word with no check-in ever, named
+rather than counted, because *never arrived* and *stopped arriving* have
+different fixes. `answering`. Only then `quiet`.
+
+**The deadline was already declared and read by nobody.**
+`HubConfig.heartbeatTimeoutSeconds` is `@default(120) @gte(30) @lte(3600)` and
+the hub settings screen renders it under a hint describing this exact behavior.
+The sweep reads it, so the knob works. `notices.js` stopped deriving a second,
+softer *heartbeat overdue* warning off a 10-minute constant of its own — two
+deadlines, one of them in a browser, disagreeing for anybody who changed the
+setting.
+
+**No drive could have caught this and none can now**: every browser drive here
+checks in and asserts immediately, so nothing lets time pass. The clock is a
+parameter — `sweepUnreachable({ at })` — and `api/test/reachability.test.ts`
+stands at chosen instants. Every row that moves a machine is paired with one
+that must not.
+
+`Server` joined `NotificationContext` and `server_unreachable` the kind
+vocabulary, in all three lists.
+
+
+## 2026-09-08 — every machine holds its own key, and the fleet key is gone
+
+`docs/PROVISIONING.md` P5, and it closes what P3 opened.
+
+**An imported machine can be handed a credential.** `servers.issueEnrollment`
+mints the same single-use token a provisioned machine gets from cloud-init and
+returns the one command that spends it — issued at admin standing, through the
+same `requireWorkspaceRole` hook every other authority on that service is
+declared with. Running it again replaces the token, which is also how one is
+revoked: there is no separate verb, because overwriting the hash is the
+revocation. The machine's screen offers it when the row has no credential, and
+shows the command once.
+
+**One install script, two ways of arriving.** A provisioned machine gets it as
+`user_data` with its four inputs baked in; an imported machine gets it as a
+command with the four on the command line. `GET /install.sh` serves it,
+unauthenticated — safe because it carries no credential at all: the token rides
+as an environment variable, so it stays out of access logs, out of any proxy
+between, and out of the shell history of whoever pasted it. Two copies of an
+install is two things to keep in step and the one nobody runs is the one that
+rots.
+
+**The fleet key is no longer an authentication input.** A machine with no
+`outpostSecretId` is refused rather than rescued. Then the OUTBOUND fallback
+turned out to be unreachable and went too — a target is registered by
+`heartbeat` and nowhere else, heartbeat is behind the signature guard, and that
+guard now refuses a machine with no credential, so a machine that could take a
+fleet-key branch cannot reach the code that would offer one. That absence is
+asserted rather than asserted about: the refusal is measured, and so is there
+being no target afterwards.
+
+`OUTPOST_SECRET` is removed from `core/env.ts` and from `deploy/build.mjs`.
+Leaving it declared — required, at that — would be a variable an operator sets,
+a deploy writes, and nothing reads.
+
+**Adopting this means re-enrolling every machine.** Each one is refused until it
+runs the command. Paid once, and the alternative is one string that opens every
+machine kept for convenience.
+
+**Two drives got truer for it.** `verify` enrolls its machines before acting as
+them and holds a key PER MACHINE, resolved the way the app resolves one — path
+id for a heartbeat, `server_id` for the two reports — and its real Outpost is
+built with the key of the machine it actually stands in for, because two
+machines are two keys. `verify:provision` is 50 checks and covers the panel, the
+command's shape and the served script.
+
+
+## 2026-09-08 — the disk picture is kept, and read off the fold
+
+`DiskUsage` is `@@unique([serverId])` — one row per machine, overwritten by
+every report — so *how full was this box before Tuesday's sweep* was not stale,
+it was gone. [`FJS-956`](../../ISSUES.md#fjs-956) named it and deferred it, with
+the design already settled: the row stays a snapshot, because a second table of
+readings beside the metric store would be a second owner of one idea.
+
+`core/server-metrics.ts` grew `DISK_READINGS` beside `SERVER_READINGS` — one
+module owns every `server.*` series name — and `applyDiskReport` writes them
+from the same numbers it writes the row from, so the graph and the badge cannot
+answer differently about one instant.
+
+**Two series, and both are sums.** `docker system df` spreads *how much disk is
+docker using* across images, containers and the build cache, which is its
+arrangement and not a question anybody asks; what is kept is what is held and
+what a sweep would free. A sum cannot be split back apart later and that cost is
+paid knowingly — the ten figures are on the row, on the screen and in the
+estimate beside every button, so the detail is a click away and it was the TREND
+that had nowhere to live.
+
+**`cleanup.usage` reads the HOURLY FOLD, never the raw tier.** Raw points live
+48 hours and this graph spans a week, so a raw read answers *nothing happened
+before Tuesday* for every machine — and looks perfect on a database written a
+minute ago. `max` rather than the mean, because a disk graph is read for its
+high-water mark. The hours are ordered DESC and reversed: the read is bounded,
+and a bound that truncates has to drop the OLDEST hours, where ascending with a
+limit silently stops the graph days ago.
+
+The screen holds no list of what the lines are called — `usage` answers the
+declaration beside the figures, which is [`FJS-1027`](../../ISSUES.md#fjs-1027)'s
+lesson one table along.
+
+7 new rows in `api/test/services.test.ts`, each sum paired with the wrong sum
+somebody writes first.
+
+## 2026-09-08 — a machine we bought can now come online
+
+`docs/PROVISIONING.md` P3. Enrollment minted a per-machine secret, cloud-init
+wrote it onto the box, the outpost signed with it — and `requireOutpostSignature`
+compared every check-in against the fleet-wide `OUTPOST_SECRET`. Two sides,
+different keys. **A machine Basecamp provisioned could never come online**, and
+the whole suite was green: own secret 401, fleet key 200, row stuck at
+`installing` forever.
+
+**The key is now the machine's.** A row carrying `outpostSecretId` is verified
+against that secret and **refused on the fleet key** — the fleet key is one
+string every machine holds, so accepting it for an enrolled machine would leave
+any compromised box able to forge that machine's check-in, which is the thing
+per-machine credentials exist to stop.
+
+**Which machine a request is about comes from a per-endpoint table, not a
+header.** The id is already in every guarded request — `servers.heartbeat` in
+the path, both `report` methods as `server_id` in the body — so a header would
+be a second place it can be wrong with nothing comparing the two. An endpoint
+guarded with no row resolves to null, and null refuses rather than falling
+through to the fleet key. So does an unknown machine, and so does an
+`outpostSecretId` naming a row that is gone: that last one is the branch that
+would otherwise silently re-open the hole for exactly the machine it had closed.
+
+**Every refusal on this door is now one sentence.** The caller is
+unauthenticated by definition, so *no such machine* and *that signature is
+wrong* must not be distinguishable — telling them apart tells a stranger which
+server ids are real. Asserted as three refusals compared to each other.
+
+**The fleet fallback survives for imported machines alone** and is deliberate:
+they had no install to be handed a credential at. P5 gives them one, and the
+fallback goes with it.
+
+Six checks in `compute.test.ts`, six in `verify:provision`, every one a pair.
+Measured against a stub that always answers the fleet key: **4 of 6 unit rows go
+red**, and the two that stay green are the controls. The drive now carries the
+machine all the way — it reads the REAL enrollment token out of the dispatched
+job's payload, which is where `servers.provision` put it and the only place it
+exists outside the machine, exchanges it, and signs with what comes back. The
+page that has been open since before the machine existed says `online` with
+nothing refreshing it.
+
+
+## 2026-09-08 — one form was two acts, and nobody could find the second
+
+Provisioning shipped working and undiscoverable. The add-server form decided
+which act it performed from a dropdown four fields in, and a workspace with no
+provider key saw that dropdown as a dead control with one placeholder in it. A
+person looking for *buy a machine* found a button called **Add server** and a
+form asking for an IP address.
+
+**`/servers/create/` is gone.** `/servers/provision/` buys a machine at a cloud;
+`/servers/import/` records one that already exists. No alias, no redirect — the
+old path is not a spelling of either. The list offers both by name, the command
+palette has an entry per act in the same words, and `infra-graph` and
+`cloud-spend` point at provisioning rather than at *add a server*.
+
+**The empty case is the one that mattered.** No cloud account now renders a
+panel saying so, what a provider key is, and a link straight at Secrets — plus
+a link to importing, for somebody who has a machine already. A workspace with
+exactly ONE account has it chosen for them: one account is not a choice, and
+making somebody pick their only one is the last step of a setup they just
+finished.
+
+**Splitting found a defect the merged screen hid.** `pending` is not decidable
+from the status alone — a machine being bought sits there until the job picks it
+up, an imported one sits there forever — so the progress strip was telling
+operators their own box was *queued for the provisioning job*, a sentence that
+would never come true. `registerMethod` is the discriminator and was already on
+the row. Found by asserting the import path, which is the half a rename would
+otherwise have left broken in silence.
+
+`verify:provision` is 40 checks now, and covers both acts, the empty state and
+the two entry points. `verify` clicks **Import existing** for the machine it
+adds by address.
+
+
 ## 2026-09-08 — the wizard, in a browser, and four defects it found
 
 `docs/PROVISIONING.md` phase 2 is closed. `verify:provision` is the drive — 29

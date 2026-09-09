@@ -19,6 +19,7 @@ import { DIRECTIVE_PARAMS }          from '@frontierjs/toolbelt/directives'
 import { levelPasses }               from '@frontierjs/toolbelt/gate'
 import { hookChainMessage }          from '@frontierjs/toolbelt/hooks'
 import { derefFieldSchema, fieldShape } from '@frontierjs/toolbelt/jsonschema'
+import { humanize }                    from '@frontierjs/toolbelt/inflect'
 
 // `derefFieldSchema` is `@frontierjs/toolbelt/jsonschema`'s — the same walk
 // jetty's resource needs, and one of the pure halves that moved to the
@@ -43,6 +44,11 @@ const _CARRIED = [
   // object with eight properties apart from a shape somebody declared — and
   // the control table has to answer differently for the two.
   'x-litestone-file',
+  // What the Data boundary will REFUSE, so a generated header does not offer a
+  // sort that throws and a bar does not offer a filter that 400s. Emitted only
+  // as exceptions — absent means yes, a string says why not — which is why they
+  // are carried rather than defaulted: the absence IS the answer.
+  'x-sortable', 'x-filterable',
   // `@immutable` on a model that declares a `@seals` move. There is no
   // `readOnly` beside it, deliberately: the column is writable while the row is
   // a draft and frozen once it seals, and that difference lives in the ROW —
@@ -332,34 +338,42 @@ export function registeredControls() {
 }
 
 function _fromRegistry(rule, ctx) {
-  if (!_controls.size) return null
+  return _askRegistry(_controls, rule, ctx, { noun: 'control', key: 'control' })
+}
 
-  for (const [name, resolve] of [..._controls].reverse()) {
+// One walker for both registries. The control half and the display half differ
+// only in which map they read and which key names the answer, and copying the
+// walk would put the decline rule, the throw guard and the `by` stamp in two
+// places — three rules whose whole value is being the same for both.
+function _askRegistry(entries, rule, ctx, { noun, key }) {
+  if (!entries.size) return null
+
+  for (const [name, resolve] of [...entries].reverse()) {
     let answer
     try {
       answer = resolve(rule, ctx)
     } catch (err) {
       // One bad resolver must not take every form in the app down with it, and
       // it must not do that quietly either.
-      console.warn(`[field-rules] registered control '${name}' threw and was skipped — ${err?.message ?? err}`)
+      console.warn(`[field-rules] registered ${noun} '${name}' threw and was skipped — ${err?.message ?? err}`)
       continue
     }
 
     if (answer == null || answer === false) continue
-    if (typeof answer === 'string') answer = { control: answer }
+    if (typeof answer === 'string') answer = { [key]: answer }
 
     if (typeof answer !== 'object' || Array.isArray(answer)) {
       console.warn(
-        `[field-rules] registered control '${name}' answered ${typeof answer} — a resolver answers a ` +
-        'control name, a descriptor object, or null to decline. Ignored.')
+        `[field-rules] registered ${noun} '${name}' answered ${typeof answer} — a resolver answers a ` +
+        `${noun} name, a descriptor object, or null to decline. Ignored.`)
       continue
     }
 
-    const claimed = answer.control
+    const claimed = answer[key]
     if (claimed !== null && (typeof claimed !== 'string' || !claimed)) {
       console.warn(
-        `[field-rules] registered control '${name}' answered a descriptor with no \`control\` name. ` +
-        'Answer null to decline; `{ control: null, reason }` to say a field deliberately has none.')
+        `[field-rules] registered ${noun} '${name}' answered a descriptor with no \`${key}\` name. ` +
+        `Answer null to decline; \`{ ${key}: null, reason }\` to say a field deliberately has none.`)
       continue
     }
 
@@ -620,6 +634,376 @@ export function formFieldList(fields, { only, except, model } = {}) {
   }
 
   return out
+}
+
+// ── Displays ──────────────────────────────────────────────────────────────────
+//
+// **A control renders a value for EDITING; a display renders it for READING,
+// and they are not the same function.** `controlFor` named this surface from
+// the inside before it existed, refusing a read-only column with *a read-only
+// value shown on a form is a detail renderer wearing a control's clothes*.
+//
+// The two tables disagree at their FIRST branch, which is why they are two
+// tables rather than one with a mode: a control refuses `@system`, `@computed`,
+// `@generated`, `@from` and `@version` by rule and never offers them to a
+// registry at all, and those are among the columns a table most wants. Where
+// the two agree they agree on a NAME, which is the only thing that has to
+// cross.
+//
+// The two-registration split is `FJS-D17`'s and is unchanged: `registerDisplay`
+// here, because the naming side must run in plain Node, and
+// `registerDisplayComponent` in `@frontierjs/ui`, because the rendering side
+// may not import sierra.
+
+/** name → resolve. Iteration order is registration order; consulted reversed. */
+const _displays = new Map()
+
+/**
+ * Contribute a display.
+ *
+ *   registerDisplay('duration', (rule) =>
+ *     rule['x-litestone-kind'] === 'duration' ? 'duration' : null)
+ *
+ * The same contract as `registerControl` in every respect — a name, a full
+ * descriptor, or null to decline; last registered asked first; a resolver that
+ * throws is skipped loudly — because it is the same mechanism and a second set
+ * of rules for the mirror surface would be a second thing to learn.
+ *
+ * @returns {() => void} the undo, for a test teardown or an HMR dispose
+ */
+export function registerDisplay(name, resolve) {
+  if (typeof name !== 'string' || !name) {
+    throw new TypeError('registerDisplay(name, resolve) — name must be a non-empty string')
+  }
+  if (typeof resolve !== 'function') {
+    throw new TypeError(
+      `registerDisplay('${name}') — resolve must be a function (rule, ctx) => name | descriptor | null`)
+  }
+  _displays.delete(name)
+  _displays.set(name, resolve)
+  return () => { if (_displays.get(name) === resolve) _displays.delete(name) }
+}
+
+/** Remove a registration by name. Answers whether there was one. */
+export function unregisterDisplay(name) {
+  return _displays.delete(name)
+}
+
+/** What is registered, in the order `displayFor` asks them. Diagnostics. */
+export function registeredDisplays() {
+  return [..._displays.keys()].reverse()
+}
+
+/**
+ * How this column's value is RENDERED.
+ *
+ *   { display: 'text'|'number'|'money'|'time'|'date'|'boolean'|'enum'|
+ *              'relation'|'file'|'json'|'list'|'markdown'|null,
+ *     …whatever that renderer needs, reason? }
+ *
+ * `display: null` is an answer and not an omission, exactly as `controlFor`'s
+ * is: a type this table does not know keeps its place in the column list with
+ * the sentence beside it. Filtering it out would reproduce, inside the
+ * generator, the bug the generator exists to end — a column added to `.lite`
+ * that never appears and nothing saying so.
+ *
+ * **Nothing is refused here for being read-only.** That is the whole difference
+ * from `controlFor`, and it is what lets a generated table show a `@computed`
+ * total and a server-written status.
+ *
+ * What is answered from the DECLARATION rather than from the value's JS type is
+ * the point of the table: `@money` holds minor units, so `1299` is a price
+ * rendered wrongly in the way that looks right, and only the schema knows the
+ * currency that sets the scale. Likewise an enum's `@label`, a relation's label
+ * column, and whether a `DateTime` is an instant or a wall clock.
+ *
+ * @param {object} rule  one entry from buildFieldRules()
+ * @param {{field?: string, model?: string}} [ctx]
+ */
+export function displayFor(rule, ctx = {}) {
+  if (!rule || typeof rule !== 'object') return { display: null, reason: 'no rule' }
+
+  const registered = _askRegistry(_displays, rule, ctx, { noun: 'display', key: 'display' })
+  if (registered) return registered
+
+  return _builtinDisplay(rule)
+}
+
+/**
+ * What the built-in table alone would answer, registrations ignored.
+ *
+ * Exported for `defaultControlFor`'s reason: a resolver that wants to add to an
+ * answer rather than replace it asks for the default and spreads it.
+ */
+export function defaultDisplayFor(rule) {
+  return _builtinDisplay(rule)
+}
+
+function _builtinDisplay(rule) {
+  if (!rule || typeof rule !== 'object') return { display: null, reason: 'no rule' }
+
+  // A value set is asked before the foreign key for `controlFor`'s reason
+  // exactly: it is strictly more information about the same column, and a bound
+  // FK read as a plain relation would resolve a label through the wrong table.
+  if (rule.values) {
+    return {
+      display:    'enum',
+      set:        rule.values.set,
+      model:      rule.values.model,
+      valueField: rule.values.value,
+      labelField: rule.values.label,
+    }
+  }
+
+  // `rule.options` is `@label` on the members, normalized by buildFieldRules.
+  // Passing it through is the difference between a status cell reading
+  // *Awaiting payment* and reading `awaiting_payment`.
+  if (Array.isArray(rule.enum)) return { display: 'enum', options: rule.options ?? rule.enum }
+
+  // A foreign key holds an id and nobody recognizes an id. The related model
+  // travels so the renderer can resolve its label column the way a picker does.
+  if (rule.references) {
+    return {
+      display:    'relation',
+      model:      rule.references.model,
+      valueField: rule.references.field,
+      relation:   rule.references.relation,
+    }
+  }
+
+  // Before the Json branch, for the reason the control table has the same
+  // ordering: a File column $refs FileRef, which derefs to an ordinary object,
+  // so a document viewer would render a storage key, a bucket and a provider.
+  if (rule['x-litestone-file']) return { display: 'file' }
+
+  // The declaration decides, never the JS type. Both of these are integers.
+  if (rule['x-money']) return { display: 'money', currency: rule['x-money'].currency }
+  if (rule['x-scale'] != null) return { display: 'scale', scale: rule['x-scale'] }
+
+  // An instant and a wall clock are different values that arrive as the same
+  // string, and which zone resolved one is not recoverable from the string.
+  if (rule['x-time']) return { display: 'time', time: rule['x-time'] }
+
+  if (rule.contentMediaType === 'text/markdown') return { display: 'markdown' }
+
+  switch (rule.type) {
+    case 'boolean': return { display: 'boolean' }
+    case 'integer':
+    case 'number':  return { display: 'number' }
+    case 'string':  return rule.format === 'date-time' || rule.format === 'date'
+      ? { display: 'time', time: { kind: rule.format === 'date' ? 'date' : 'instant' } }
+      : { display: 'text' }
+    case 'array':   return { display: 'list' }
+
+    // A Json column arrives as `{ type: null }` rather than as `object` — the
+    // seed says `Json` and the emitter describes no shape — so all three
+    // spellings are one branch here, the same way the control table takes them.
+    //
+    // A `$ref` nothing resolved looks identical from here and is not the same
+    // fact: `buildFieldRules` is the only thing that could still tell them
+    // apart, so it marks the first, and a marked one says so rather than
+    // pretending to be a document.
+    case 'object':
+    case null:
+    case undefined: return rule.unresolvedRef
+      ? { display: null, reason: `unresolved $ref ${rule.unresolvedRef}` }
+      : { display: 'json' }
+
+    default: return { display: null, reason: `no display for type ${rule.type}` }
+  }
+}
+
+/**
+ * What a column's HEADER says.
+ *
+ * `@label` in the seed wins, which is the whole reason it is a declaration —
+ * `providerRef` reads as *Provider reference* on every table in the app without
+ * one of them saying so. Failing that, the name is humanized for a READER,
+ * which is the axis `@frontierjs/toolbelt/inflect` owns and the one that may
+ * change without the storage and shape axes moving.
+ *
+ * NOT `fieldLabel`, which is the same question for a validation MESSAGE and
+ * answers a bare column name rather than a humanized one — *placedAt must be a
+ * string* is a sentence about a field a caller sent, and a table header is a
+ * word a person reads.
+ */
+export function columnLabel(name, rule) {
+  return rule?.title ?? rule?.references?.relation ?? humanize(name)
+}
+
+/**
+ * Which OPERATOR a filter over this kind of column asks with.
+ *
+ * **A filter is a second binding on `displayFor`'s names rather than a third
+ * resolver**, and the reason is that the naming is already done. `controlFor`
+ * cannot serve it — measured over this repo's two apps, 61 of `example`'s 346
+ * filterable columns and 32 of basecamp's 482 answer `control: null` for being
+ * read-only, and those are precisely what an operator filters by: a `@from`
+ * rollup, a foreign key, the `@version`. A control refuses them BY RULE and
+ * never offers them to a registry. `displayFor` refuses nothing for being
+ * read-only, so a column already has one kind, named once.
+ *
+ * So this is a TABLE and not a resolver: display name → the question a filter
+ * asks of that kind. The component that renders it is the kit's half
+ * (`registerFilterComponent`), exactly as a display's is.
+ *
+ *   text                        → contains          a box, matched loosely
+ *   number · money · scale·time → gte + lte         a range
+ *   enum · relation             → in                several values
+ *   boolean                     → equals            any · yes · no
+ *   list                        → hasSome           several values
+ *   json · file                 → null, with a reason
+ *
+ * **The `null` rows are the ones the Data boundary would refuse**, and they are
+ * here rather than left out so a caller can say why a column offers no filter.
+ * `$checkWhere` throws BY NAME for a text operator on a column holding a JSON
+ * document, an array or a file reference — a substring match against a
+ * serialized document is a plausible answer rather than an error, which is the
+ * failure mode this whole surface exists to end.
+ *
+ * @param {string|null} display  a name from `displayFor`
+ * @returns {{op: string|string[], kind: 'text'|'range'|'set'|'exact', reason?: string}|null}
+ */
+export function filterOpFor(display) {
+  switch (display) {
+    case 'text':     return { op: 'contains', kind: 'text' }
+    case 'number':
+    case 'money':
+    case 'scale':
+    case 'time':     return { op: ['gte', 'lte'], kind: 'range' }
+    case 'enum':
+    case 'relation': return { op: 'in', kind: 'set' }
+    case 'boolean':  return { op: 'equals', kind: 'exact' }
+    case 'list':     return { op: 'hasSome', kind: 'set' }
+
+    // Stated rather than absent, and each with the boundary's own reason: a
+    // text operator on one of these matches the serialized document, which
+    // looks like an answer.
+    case 'json':     return { op: null, kind: null, reason: 'a Json document matches as text, punctuation included' }
+    case 'file':     return { op: null, kind: null, reason: 'a file reference is a document, not a value to compare' }
+    case 'markdown': return { op: 'contains', kind: 'text' }
+
+    default:         return null
+  }
+}
+
+/**
+ * The table's column list, ranked./**
+ * The table's column list, ranked.
+ *
+ * NOT `formFieldList`, and the reason is a rule rather than a detail. **A form
+ * shows what is WRITABLE; a table shows what is READABLE and IDENTIFYING**, and
+ * the two sets differ at both ends: `@system`, `@computed`, `@generated`,
+ * `@from` and `@version` are `readOnly` and absent from a form BY RULE, and a
+ * server-written status or a computed total is among the columns a table most
+ * wants. Nothing is dropped here for being read-only.
+ *
+ * **Quantity is the other half.** A form showing every writable column is
+ * right; a table showing forty columns is not a table. So this needs an input a
+ * field list never needed — *which few columns identify this row to a person* —
+ * and the answer is ranked rather than sliced. A slice off `Object.keys` is
+ * presentation decided by the order columns happen to sit in a file people
+ * reorder for unrelated reasons, which is presentation decided badly and
+ * invisibly.
+ *
+ * Five tiers, each a stated reason to be near the front:
+ *
+ *   label     — the column that NAMES the row (`@@label`, or a conventional
+ *               name). A `scan` answer is deliberately not taken: it is the
+ *               first plain string, which is the arbitrariness this replaces
+ *   identify  — `x-identify`, a unique tuple minus the members that only scope
+ *               it. The business key a person recognizes: an sku, a reference
+ *   state     — a bound enum or a value set. The column somebody filters by
+ *   quantity  — money and time, which is what a row is usually compared on
+ *   rest      — declaration order, which is the right answer once the columns
+ *               that had a reason to lead are in front of it
+ *
+ * `only` bypasses the ranking entirely and its order wins, because naming the
+ * columns is also naming the order you want them in. That is the escape hatch,
+ * and `omitted` is what keeps it from being a silent one.
+ *
+ * **Everything not returned comes back in `omitted` WITH A REASON.** Filtering
+ * silently would reproduce, inside the generator, the bug the generator exists
+ * to end: a column added to `.lite` that does not appear and nothing says so.
+ *
+ * @param {Record<string, object>} fields  from buildFieldRules()
+ * @param {{only?: string[], except?: string[], limit?: number,
+ *          identify?: string[], label?: string}} [opts]
+ *   `identify` is the model's `x-identify`; `label` its `x-label-field`.
+ * @returns {{columns: Array<{name, rule, tier}>, omitted: Array<{name, reason}>}}
+ */
+export function columnList(fields, { only, except, limit = 6, identify, label } = {}) {
+  const rules   = fields && typeof fields === 'object' ? fields : {}
+  const known   = Object.keys(rules)
+  const removed = new Set(Array.isArray(except) ? except : [])
+  const omitted = []
+
+  // An `only` or an `except` naming a field the model does not have is usually
+  // a rename that left the table behind, and is reported the way `formFieldList`
+  // reports one rather than ignored.
+  for (const name of removed)
+    if (!(name in rules)) omitted.push({ name, reason: 'excluded, but no such field on this model' })
+
+  if (Array.isArray(only) && only.length) {
+    const columns = []
+    for (const name of only) {
+      if (removed.has(name)) { omitted.push({ name, reason: 'named by only and by except' }); continue }
+      if (!(name in rules)) { omitted.push({ name, reason: 'no such field on this model' }); continue }
+      columns.push({
+        name, rule: rules[name], tier: 'named',
+        label:       columnLabel(name, rules[name]),
+        sortable:    !rules[name]?.['x-sortable'],
+        sortRefusal: rules[name]?.['x-sortable'] ?? null,
+      })
+    }
+    for (const name of known)
+      if (!only.includes(name) && !removed.has(name)) omitted.push({ name, reason: 'not named by only' })
+    return { columns, omitted }
+  }
+
+  const identifying = new Set(Array.isArray(identify) ? identify : [])
+  // `declared` and `conventional` are answers; `scan` and `fallback` are the
+  // guesses this function exists to stop making.
+  const named = label ?? (() => {
+    const info = labelFieldInfo(rules, null)
+    return info.source === 'declared' || info.source === 'conventional' ? info.field : null
+  })()
+
+  const tierOf = (name, rule) => {
+    if (name === named)                       return 'label'
+    if (identifying.has(name))                return 'identify'
+    if (rule.values || rule.enum)             return 'state'
+    if (rule['x-money'] || rule['x-time'])    return 'quantity'
+    return 'rest'
+  }
+
+  const RANK = { label: 0, identify: 1, state: 2, quantity: 3, rest: 4 }
+  const ranked = known
+    .filter(name => !removed.has(name))
+    .map((name, order) => ({ name, rule: rules[name], tier: tierOf(name, rules[name]), order }))
+    // Declaration order breaks a tie, so a schema stays readable as a table:
+    // within one tier the file's order is the only ordering anybody stated.
+    .sort((a, b) => RANK[a.tier] - RANK[b.tier] || a.order - b.order)
+
+  for (const name of removed)
+    if (name in rules) omitted.push({ name, reason: 'excluded by the caller' })
+
+  const cap = Number.isInteger(limit) && limit > 0 ? limit : ranked.length
+  for (const c of ranked.slice(cap))
+    omitted.push({ name: c.name, reason: `beyond the ${cap}-column limit (ranked ${c.tier})` })
+
+  return {
+    columns: ranked.slice(0, cap).map(({ name, rule, tier }) => ({
+      name, rule, tier,
+      label:    columnLabel(name, rule),
+      // Absent means yes. A string is the boundary's own reason, carried so a
+      // caller can say why a header does not offer a sort rather than just not
+      // offering one.
+      sortable: !rule?.['x-sortable'],
+      sortRefusal: rule?.['x-sortable'] ?? null,
+    })),
+    omitted,
+  }
 }
 
 /**

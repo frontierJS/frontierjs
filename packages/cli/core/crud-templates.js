@@ -38,6 +38,8 @@ const KIT = {
   header:  `import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'`,
   spinner: `import Spinner       from '@frontierjs/ui/components/feedback/Spinner.mesa'`,
   table:   `import Table         from '@frontierjs/ui/components/display/Table.mesa'`,
+  cell:    `import Cell          from '@frontierjs/ui/components/display/Cell.mesa'`,
+  filters: `import FilterBar     from '@frontierjs/ui/components/display/FilterBar.mesa'`,
 }
 
 // The id column is asked for rather than assumed: `@id` may be on any column,
@@ -69,34 +71,26 @@ function gateNotice(res, op) {
  * @param {string}   o.basePath        '/users/' — where this model's pages live
  * @param {string[]} o.imports         lines that bring the resource into scope
  * @param {string}   o.res             the resource expression in that scope
- * @param {{key:string,label:string}[]} [o.columns]  named at generate time
- * @param {boolean}  [o.deriveColumns] take the first few off the schema instead
+ * @param {string[]} [o.only]      pin the column set instead of ranking it
  * @param {boolean}  [o.rowDelete]     a delete button per row
  * @param {boolean}  [o.gate]          grade the buttons against the session
  * @param {string}   [o.sessionImport] required when `gate` is set
  */
 export function listPage(o) {
-  // Two ways to answer "which columns", and both are a judgement being made
-  // somewhere: named here, in a file a person edits, or taken off the schema in
-  // order for an admin that has to cover every model without being written per
-  // model. Everything after this point is the same page.
-  const fields = o.deriveColumns
-    ? `  // The one choice in this file that is not a consequence of the schema:
-  // how many columns fit. Reorder or extend — the names come from the schema
-  // either way.
-  const fields = [
-    { key: idField, label: idField },
-    ...Object.keys(${o.res}.fields)
-      .filter(f => f !== idField)
-      .slice(0, 5)
-      .map(f => ({ key: f, label: f })),
-  ]`
-    : `  // Which of a model's columns belong in a table is a judgement, and this is
-  // the file to make it in — the form pages derive their fields, this one does
-  // not. \`label\` is what the header shows; \`key\` is read off the record.
-  const fields = [
-${(o.columns ?? []).map(c => `    { key: '${c.key}', label: '${c.label}' },`).join('\n')}
-  ]`
+  // WHICH COLUMNS is asked of the resource, which is the one place that can
+  // answer it: `columns()` ranks the read schema — the column that NAMES the
+  // row, then the business key the seed declares as `x-identify`, then a bound
+  // enum, then money and time — and reports everything it left out.
+  //
+  // This used to be two branches and both were a judgement made in the wrong
+  // place. One took `Object.keys(fields).slice(0, 5)`, described in this file
+  // as the one choice in it that is not a consequence of the schema — and under
+  // row tenancy it led every table with the tenant column, which holds the same
+  // value in every row on screen. The other named the columns at generate time,
+  // which froze them at the moment the file was written.
+  const only = Array.isArray(o.only) && o.only.length
+    ? `{ only: ${JSON.stringify(o.only)} }`
+    : ''
 
   const session = o.sessionImport ? `  ${o.sessionImport}\n` : ''
 
@@ -156,35 +150,77 @@ title: ${o.title}
 <script>
 ${o.imports.map(l => '  ' + l).join('\n')}
   import { useStore } from '@frontierjs/sierra/junction'
+  import { page, goto } from '@frontierjs/sierra/router'
+  import { encodeQueryString } from '@frontierjs/toolbelt/query'
+  import { directiveParams } from '@frontierjs/toolbelt/directives'
 ${session}
   ${KIT.alert}
   ${KIT.button}
   ${KIT.header}
   ${KIT.table}
+  ${KIT.cell}
+  ${KIT.filters}
 
 ${idFieldLine(o.res)}
 
   const { get: rows, unsubscribe } = useStore(${o.res}.store)
   $.onDestroy(unsubscribe)
 
-${fields}
+  // Ranked from the schema, with the header text taken from each column's
+  // declared label where it has one. To pin the set instead, name them:
+  // columns({ only: ['a', 'b'] }).
+  //
+  // omitted is every column this table does NOT show, each with the reason, so
+  // a column added to the schema that does not appear here is answerable
+  // without reading this file.
+  const { columns: cols, omitted } = ${o.res}.columns(${only})
 
-  const columns = [...fields, { key: '_actions', label: '' }]
+  // A header is sortable where the SCHEMA says the column can be ordered by —
+  // x-sortable is emitted only as an exception, so absent means yes and a
+  // string says why not. Offering one the Data boundary refuses is a header
+  // that throws on click, which is the one thing a generated table must not do.
+  const columns = [
+    ...cols.map(c => ({ key: c.name, label: c.label, sortable: c.sortable })),
+    { key: '_actions', label: '' },
+  ]
+
+  // Which columns a bar may offer, with which question, and whether the model
+  // answers a search at all -- a search box is drawn only where the schema
+  // declares the full-text index, since below one the Data boundary refuses.
+  // Same ranking as the table, so the filters are over the columns you can see.
+  const { filters, search } = ${o.res}.filters()
+
+  // The URL's whole query, put back together.
+  //
+  // splitParams takes every prefixed key OUT of page.query and into
+  // page.directives under an unprefixed name (Invariant 10), so page.query
+  // alone is the filters and nothing else. A bar handed that has no sort, no
+  // page size and no search to show -- and, worse, hands back a query missing
+  // them, so typing in a filter box silently drops the sort a header just set.
+  // directiveParams is parseDirectives' inverse off the same table, so this
+  // cannot go stale when a directive is added.
+  const urlQuery = { ...page.query, ...directiveParams(page.directives) }
+
+  // Sort and filter both live in the URL (Invariant 10), so this page writes
+  // the query and lets the router bring it back — which is what makes a
+  // filtered, sorted list a LINK rather than a state somebody has to recreate.
+  function apply(query) {
+    goto(page.path + encodeQueryString(query))
+  }
+
+  function sortBy(key, dir) {
+    apply({ ...urlQuery, $orderBy: { [key]: dir } })
+  }
 
   let error = null
 
-  ${o.res}.load().catch(e => { error = e.message })
-${gateState}${removeFn}
-  // A cell is rendered rather than interpolated: \`null\` reads as an empty box,
-  // a boolean as \`true\`, and a Json column as \`[object Object]\`.
-  function cell(record, name) {
-    const v = record[name]
-    if (v === null || v === undefined) return '—'
-    if (typeof v === 'boolean') return v ? 'yes' : 'no'
-    if (typeof v === 'object')  return JSON.stringify(v)
-    return String(v)
-  }
-${SC}
+  // The filter lives in the URL (Invariant 10): page.query is the filters and
+  // page.directives the $limit / $offset / $orderBy, split by the same module
+  // the bridge reads a request with. So a filtered list is a LINK — copied,
+  // bookmarked, and survived by the back button — and a detail screen can point
+  // at its own child rows without this page knowing anything about them.
+  ${o.res}.load(page.query, page.directives).catch(e => { error = e.message })
+${gateState}${removeFn}${SC}
 
 <SectionHeader title="${o.heading}" level={1}>
   {#snippet action()}
@@ -194,10 +230,12 @@ ${SC}
 
 {#if error}<Alert tone="danger">{error}</Alert>{/if}
 
-<Table {columns} rows={rows()} striped hover emptyText="Nothing here yet.">
+<FilterBar {filters} {search} value={urlQuery} onchange={apply} />
+
+<Table {columns} rows={rows()} striped hover emptyText="Nothing here yet." onsort={sortBy}>
   {#snippet row(record)}
     <tr>
-      {#each fields as c}<td>{cell(record, c.key)}</td>{/each}
+      {#each cols as c}<td><Cell value={record[c.name]} column={c} {record} /></td>{/each}
       <td class="cluster">
         <Button variant="link" href={'${o.basePath}' + record[idField] + '/'}>Open</Button>${rowDelete}
       </td>
@@ -270,6 +308,42 @@ export function editPage(o) {
   const session = o.sessionImport ? `  ${o.sessionImport}\n` : ''
   const watch   = o.gate ? '\n  $: session.level\n' : ''
 
+  // A child link needs the ROUTE its model landed on, and that is the one thing
+  // this page cannot derive: a child knows its model and its foreign key, and
+  // only the command writing the folders knows where they went. So the caller
+  // hands over an import of the map it wrote — one module, imported by every
+  // detail page, because thirty-two inlined copies of one map is the same
+  // written-twice failure this file exists to end. No import, no children
+  // section: a scaffold writes one model and has nowhere to link.
+  const kids = o.childRoutesImport
+    ? {
+        imp: `  ${o.childRoutesImport}\n`,
+        script: `
+  // The child collections, each a link into that model's own list filtered by
+  // this row. A nested table is the richer answer and it is a judgement per
+  // screen; a link is the one that is right without knowing the model, it costs
+  // no second query on a page nobody asked one of, and because the list reads
+  // its query off the URL the link IS the filter — copied, bookmarked, and
+  // survived by the back button.
+  //
+  // A child whose model this admin did not write has no route to point at and
+  // is left out rather than linked into a 404.
+  const children = ${o.res}.children()
+    .filter(c => c.foreignKey && childRoutes[c.model])
+    .map(c => ({ ...c, href: childRoutes[c.model] + '?' + c.foreignKey + '=' + id }))
+`,
+        markup: `{#if record && children.length}
+  <p class="cluster">
+    {#each children as c}
+      <Button variant="link" href={c.href}>{c.field}</Button>
+    {/each}
+  </p>
+{/if}
+
+`,
+      }
+    : { imp: '', script: '', markup: '' }
+
   return `---
 title: ${o.title}
 ---
@@ -281,23 +355,43 @@ ${session}
   ${KIT.button}
   ${KIT.header}
   ${KIT.spinner}
+  ${KIT.cell}
+${kids.imp}
 
 ${idFieldLine(o.res)}${watch}
 
   // Read once at setup: navigating to a different id remounts the component.
   const id = page.params.id
 
-  // \`null\` until it arrives, and <Form> is not rendered before then — it seeds
+  // null until it arrives, and <Form> is not rendered before then — it seeds
   // its baseline from the record it is given, so handing it a blank now and the
   // row later would make every field look edited.
   let record   = null
   let failed   = null
   let deleting = false
 
-  ${o.res}.service.get(id)
-    .then(row => { record = row })
-    .catch(e => { failed = e.message })
+  // WATCHED, not fetched once. service.get() is the raw proxy and answers a
+  // plain object, so a write from another tab, a job or a webhook reaches the
+  // store and never this screen — which looks correct the whole time, because a
+  // screen re-reads after its OWN actions and never after anyone else's
+  // (FJS-533). record() subscribes to the same node the list is a view over.
+  //
+  // Where this service's get() answers MORE than the row — an include, a count
+  // assembled per call — declare it: record(id, { composed: true }), or the
+  // first announcement drops the children.
+  const row     = ${o.res}.record(id)
+  const unwatch = row.subscribe(v => { record = v })
+  row.ready.catch(e => { failed = e.message })
 
+  $.onDestroy(() => { unwatch?.(); row.release?.() })
+
+  // What the FORM cannot show, which is most of what a person opens a record
+  // to read: a computed total, a generated name, a system timestamp, the
+  // version. A form shows what is WRITABLE, so all of that is missing from one
+  // by rule — this is the surface controlFor names when it refuses a value for
+  // being the server's.
+  const { columns: facts } = ${o.res}.summary()
+${kids.script}
   async function remove() {
     if (!confirm('Delete ' + id + '?')) return
     failed   = null
@@ -320,7 +414,18 @@ ${SC}
 
 {#if failed}<Alert tone="danger">{failed}</Alert>{/if}
 
-${o.gate ? gateNotice(o.res, 'patch') : ''}{#if record}
+${o.gate ? gateNotice(o.res, 'patch') : ''}{#if record && facts.length}
+  <dl class="facts">
+    {#each facts as c}
+      <div>
+        <dt>{c.label}</dt>
+        <dd><Cell value={record[c.name]} column={c} {record} /></dd>
+      </div>
+    {/each}
+  </dl>
+{/if}
+
+${kids.markup}{#if record}
   <!-- The same <${o.form} /> the create page renders, and that is the point:
        the fields are the model's, so they are written down once. \`method\` is
        left at 'auto' — the record carries an id, so this saves as a patch, and

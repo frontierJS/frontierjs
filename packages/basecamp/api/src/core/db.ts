@@ -20,24 +20,35 @@
 // passing both here would mean the deployment's DATABASE_URL is read and then
 // ignored.
 //
-// Both declared paths resolve against the PROCESS CWD, not this file — the
-// database and the audit trail alike. Start the API from the package root or
-// they land somewhere surprising.
+// Both declared paths resolve against the APP ROOT, not the process CWD, so the
+// app opens the same database from the package root, from api/, or from a
+// generator rerun anywhere else.
 //
-// That is a property this app DEPENDS on rather than merely tolerates, so do not
-// "fix" it with `resolveFrom: 'schema'`: db/test/seed.test.ts isolates a run by
-// giving it a scratch CWD, and it redirects `database main` by env var and
-// `database audit` by the CWD alone. Anchoring sends that audit log back to the
-// shared db/audit/ and the suite fails on a locked database (`FJS-449`).
+// The root is derived from the schema FILE and is not its directory:
+// `schemaAnchor` steps out of a directory named `db`, which is where this
+// schema lives. So the two declared paths keep the spelling they had when the
+// CWD was the anchor — `./db/basecamp.db`, `./db/audit/` — and rewriting them
+// relative to `db/` moves both. That is not theoretical: doing it put the
+// database at packages/basecamp/basecamp.db and the trail at
+// packages/basecamp/audit/, and litestone migrated the new file to the full
+// schema, so a 319-check drive ran green against a database nobody meant.
 //
-// `database audit` DOES have an env var — `AUDIT_PATH` — and nothing sets it,
-// which is why the CWD is still what isolates it. The two drives disagree about
-// this: db/test/seed.test.ts isolates by CWD and gets an isolated trail, while
-// web/test/verify-screens.mjs redirects DATABASE_URL and runs with `cwd: PKG`,
-// so its audit rows land in the developer's own db/audit/ (`FJS-633`). Setting
-// AUDIT_PATH in both is what would make `resolveFrom: 'schema'` safe here, and
-// it is also what would let the API's snapshots move into api/ the way
-// example's have.
+// The anchor used to be the CWD, and it was load-bearing rather than incidental:
+// a database here is TWO declared paths, and every isolating caller stated one
+// of them and inherited the other from the directory it happened to run in.
+// That is why the two drives disagreed — db/test/seed.test.ts gave the seeder a
+// scratch CWD and got both moved, web/test/verify-screens.mjs redirected
+// DATABASE_URL and ran with `cwd: PKG`, so its audit rows landed in the
+// developer's own db/audit/ with nothing failing either way (`FJS-633`).
+//
+// Anchoring is only safe once both are STATED, which is what changed: every
+// caller that redirects one now names the other. `FJS-449` is the failure that
+// made the CWD load-bearing in the first place — an anchored audit log going
+// back to the shared db/audit/ and the suite locking on it — and it cannot
+// happen to a caller that names AUDIT_PATH.
+//
+// A deployment is unaffected — it binds both absolutely (/data/basecamp.db,
+// /data/audit/) and an absolute path has no anchor.
 
 import { createClient, GatePlugin } from '@frontierjs/litestone'
 import { env, DEV_ENCRYPTION_KEY } from './env.ts'
@@ -73,6 +84,9 @@ export async function createBasecampDb(): Promise<BasecampDb> {
   // that same client with THIS schema's shapes on it. Nothing downstream casts.
   return createClient({
     path:          SCHEMA_PATH,
+    // A relative declared path is anchored to the schema rather than to
+    // wherever the process was started. See the header.
+    resolveFrom:   'schema',
     encryptionKey: env.ENCRYPTION_KEY,
     // Supplying a GatePlugin REPLACES the one a @@gate-carrying schema installs
     // for itself. Supplying none does not turn gates off — the default resolver

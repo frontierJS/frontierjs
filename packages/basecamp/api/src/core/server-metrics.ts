@@ -58,6 +58,26 @@ export const SERVER_UNKEPT: Record<string, string> = {
 export const SERVER_SERIES = SERVER_READINGS.map(r => r.name)
 
 /**
+ * One reading off a check-in's `health` document, or `null`.
+ *
+ * `health` is an open Json document written by another process, so every value
+ * in it is whatever that process sent. The rule is strict on purpose: `null`
+ * and `''` both pass `Number()` as **0**, and a disk reading of 0% is the one
+ * wrong answer this number must never give — it reads as an empty disk, which
+ * is the opposite of the state an operator needs to see.
+ *
+ * The writer and every reader ask this, so *what counts as a reading* is one
+ * rule rather than one per caller.
+ */
+export function readingOf(
+  health: Record<string, unknown> | null | undefined,
+  key:    string,
+): number | null {
+  const value = health?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+/**
  * Keep whatever of this check-in is a number.
  *
  * A missing key is silence rather than a zero: an outpost that stopped
@@ -83,11 +103,121 @@ export async function recordHealth(
 
   const when = Date.parse(at)
   for (const reading of SERVER_READINGS) {
-    const value = Number(health[reading.key])
-    if (!Number.isFinite(value)) continue
+    const value = readingOf(health, reading.key)
+    if (value === null) continue
     await metrics.record(reading.name, value, {
       // `gauge`, and it matters: a percentage read as a counter would have every
       // fall reported as a reset and every hour's `increase` invented.
+      type:   'gauge',
+      unit:   reading.unit,
+      labels: { serverId },
+      at:     Number.isFinite(when) ? when : Date.now(),
+    })
+  }
+}
+
+// ─── the disk picture, kept ──────────────────────────────────────────────
+//
+// `DiskUsage` is the same shape `Server.health` is and has the same hole in it:
+// `@@unique([serverId])`, one row per machine, overwritten by every report. So
+// *how full was this box before Tuesday's sweep* was not stale, it was gone —
+// which is the question `CleanupRun`'s own schema comment says a disk filling up
+// again asks (`FJS-956` named this and deferred it).
+//
+// **The row stays a snapshot and that is settled.** A second table of
+// readings-over-time beside the metric store would be a second owner of the same
+// idea; the store is where a series lives.
+//
+// ─── Two series, and both are SUMS ───────────────────────────────────────
+//
+// The report carries ten numbers and none of them is *how much disk is docker
+// using* — that figure is spread across images, containers and the build cache,
+// which is `docker system df`'s own arrangement and not a question anybody asks.
+// So what is kept is the two a person actually reads: what is held, and what a
+// sweep would free.
+//
+// A sum cannot be split back apart later, and that is the cost. It is paid
+// knowingly: the ten figures are on the row, on the cleanup screen and in the
+// estimate beside every button, so the detail is a click away and it is the
+// TREND that had nowhere to live. Ten series per machine would also be ten
+// `@@unique` identities minted per machine, permanent, to answer a question
+// nobody asked.
+
+/** The DiskUsage columns these series are computed from. Narrower than the row
+ *  on purpose — a reading that needed a column not named here would be reading
+ *  the disk report rather than summarising it. */
+export interface DiskFigures {
+  imageBytes:                 number
+  buildCacheBytes:            number
+  imagesReclaimableBytes:     number
+  containersReclaimableBytes: number
+  buildCacheReclaimableBytes: number
+}
+
+export interface DiskReading {
+  name:  string
+  unit:  string
+  label: string
+  /** Computed from the row, never read off one column — see above. */
+  of:    (figures: DiskFigures) => number
+}
+
+export const DISK_READINGS: DiskReading[] = [
+  {
+    name:  'server.dockerBytes',
+    unit:  'bytes',
+    label: 'Docker on disk',
+    // Containers contribute only a reclaimable figure to `docker system df`, so
+    // there is no container size to add here. A machine's writable layers are
+    // not measured by this report and this number does not claim to include
+    // them.
+    of: f => f.imageBytes + f.buildCacheBytes,
+  },
+  {
+    name:  'server.dockerReclaimableBytes',
+    unit:  'bytes',
+    label: 'Reclaimable',
+    // Volumes are NOT in this sum, and the omission is the same one
+    // `cleanup.usage` makes for the fleet total: an unused volume's bytes come
+    // from `Volume`, which owns per-disk sizes, and adding a figure from a
+    // second table would double-count the first time a report was missed.
+    of: f => f.imagesReclaimableBytes + f.containersReclaimableBytes + f.buildCacheReclaimableBytes,
+  },
+]
+
+export const DISK_SERIES = DISK_READINGS.map(r => r.name)
+
+/**
+ * Keep the disk picture this report just wrote.
+ *
+ * Called by `applyDiskReport`, which is the one owner of *the outpost's disk
+ * words → what this app stores*; keeping the series anywhere else would put a
+ * second reader on the same wire.
+ *
+ * `at` is the instant the report is FOR. A disk report rides the Outpost's slow
+ * clock — five minutes against the heartbeat's thirty seconds — so a queued one
+ * describes a machine as it was several minutes ago, and stamping it `now`
+ * would draw the wrong hour.
+ */
+export async function recordDiskUsage(
+  app:      BasecampApp,
+  serverId: string,
+  figures:  DiskFigures,
+  at:       string,
+): Promise<void> {
+  const metrics = (app as { metrics?: { record: Function } }).metrics
+  // Same reason `recordHealth` asks: a Basecamp built without the plugin is a
+  // legitimate configuration, and a disk report that threw for want of a metric
+  // store would take the cleanup screen's figures down with it.
+  if (!metrics) return
+
+  const when = Date.parse(at)
+  for (const reading of DISK_READINGS) {
+    const value = reading.of(figures)
+    if (!Number.isFinite(value)) continue
+    await metrics.record(reading.name, value, {
+      // `gauge`. Bytes on a disk go both ways — that is what a sweep IS — and a
+      // counter would report every reclaim as a reset.
       type:   'gauge',
       unit:   reading.unit,
       labels: { serverId },

@@ -1,5 +1,17 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-08 — the js-yaml floor is stated
+
+`FJS-1038`. `js-yaml` is a declared RUNTIME dependency here — `.mesa` frontmatter
+is parsed with it — so an advisory against it reaches every app that installs
+sierra, which is what the `advisories` phase grades and what turned it red on a
+tree nobody had changed.
+
+The range was both the fix and the bug: `^4.1.0` already admitted the patched
+4.3.2, so nothing was pinned to a vulnerable copy deliberately — the lockfile had
+simply resolved 4.3.1, and a caret says nothing about a floor somebody has a
+reason for. `^4.3.2` states it.
+
 ## 2026-09-07 — the router still drops an unknown `$` name, on purpose
 
 Junction's bridge refuses one with a 400; this router does not, and the call site
