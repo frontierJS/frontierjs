@@ -67,11 +67,17 @@ indent_style = tab
 // ─── the framework packages an app can be given ───────────────────────────────
 // The runtime half of the same decision. `fli new` writes a subset of these,
 // chosen by the surfaces asked for. It is not every publishable package: what
-// an app is OFFERED is a product decision, and `testing`, `email-kit` and
-// `toolbelt` are deliberately absent for now. `ui` is IN: every CRUD page
-// `fli scaffold` and `fli admin:generate` write is built on it — `<Form
-// {resource} />` with no children is the generated form — so a scaffold without
-// it produces pages that cannot resolve their own imports. The list lives here rather than in
+// an app is OFFERED is a product decision, and `testing` and `email-kit` are
+// deliberately absent for now.
+//
+// **A package a GENERATOR imports is not a product decision.** `ui` is IN
+// because every CRUD page `fli scaffold` and `fli admin:generate` write is
+// built on it — `<Form {resource} />` with no children is the generated form —
+// so a scaffold without it produces pages that cannot resolve their own
+// imports. `toolbelt` was on the absent list while the same sentence had become
+// true of it: the generated list page imports `encodeQueryString` and
+// `directiveParams`, and `bun run build` exited 1 on a freshly scaffolded app
+// (`FJS-1045`). Adding a generator import is therefore a change to this list. The list lives here rather than in
 // the command because the `registry` CI phase asks the npm registry whether it
 // can serve every name in it — a scaffold that installs a package nobody
 // published is an app that cannot start, and nothing else in the repo compares
@@ -93,6 +99,7 @@ export const FJS_PACKAGES = {
   '@frontierjs/caravan':        'latest',
   '@frontierjs/notifications':  'latest',
   '@frontierjs/jetty':          'latest',
+  '@frontierjs/toolbelt':       'latest',
 }
 
 export const APP_DEV_DEPS = {

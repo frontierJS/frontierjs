@@ -132,6 +132,12 @@ const CLEAN = {
                                         "    const row = await leads.service.get(id)\n" +
                                         "    return row.name\n  }\n</script>\n" +
                                         "<style>\n  .card { --pad: 4px; gap: var(--gap); padding: var(--pad) }\n</style>\n",
+  // A co-located part whose prefix matches its folder, so `route-part-prefix`
+  // RUNS over the clean tree rather than skipping — a rule that only ever skips
+  // is what this file exists to catch — and finds nothing, because a name that
+  // claims its own folder is the shape the rule is quiet on.
+  'web/src/routes/leads/index.mesa':    '<div></div>\n',
+  'web/src/routes/leads/_leads.Row.mesa': '<tr></tr>\n',
   'web/src/resources/Lead.mesa':        resource('leads'),
   'web/src/resources/Account.mesa':     resource('accounts'),
   // The third surface. It is in the clean app because every rule must RUN
@@ -296,6 +302,70 @@ describe('the clean app', () => {
     // rules could not see is the result this file is written to make impossible.
     expect(skipped).toEqual([])
     expect(ran.length).toBe(RULES.filter(r => r.scope === 'app').length)
+  })
+})
+
+describe('a co-located part that names a folder (FJS-D249)', () => {
+  // The rule grades a CLAIM, not a convention: sierra rules the roles of a
+  // route file and says nothing about what a component is called, and neither
+  // does this. Only a dotted lowercase prefix claims a folder, so every other
+  // spelling below is a control — a rule that fired on them would be a naming
+  // mandate, which is the thing that was deliberately not ruled.
+
+  test('a prefix naming another folder is an error', () => {
+    const root = tree('rpp-fork', {
+      ...CLEAN,
+      'web/src/routes/contacts/index.mesa':        '<div></div>\n',
+      'web/src/routes/contacts/_clients.Row.mesa': '<tr></tr>\n',
+    })
+    const { findings } = only(root, 'route-part-prefix')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].file).toContain('_clients.Row.mesa')
+    // The remedy is in the message, because the fork that produces this has
+    // four files and the reader needs the new name rather than the rule.
+    expect(findings[0].message).toContain('_contacts.Row.mesa')
+  })
+
+  test('the same shape one character right is silent', () => {
+    // The negative control, and it is the test: a rule that fired on every
+    // dotted prefix would satisfy the case above on its own.
+    const root = tree('rpp-ok', {
+      ...CLEAN,
+      'web/src/routes/contacts/index.mesa':         '<div></div>\n',
+      'web/src/routes/contacts/_contacts.Row.mesa': '<tr></tr>\n',
+    })
+    expect(only(root, 'route-part-prefix').findings).toEqual([])
+  })
+
+  test('a name that claims no folder is not graded', () => {
+    // `_module` is the layout and reserved; `_Plural.mesa` and `Row.mesa` are
+    // legal co-located components under sierra's own rules and say nothing
+    // about where they live.
+    const root = tree('rpp-unclaimed', {
+      ...CLEAN,
+      'web/src/routes/contacts/index.mesa':   '<div></div>\n',
+      'web/src/routes/contacts/_module.mesa': '<div></div>\n',
+      'web/src/routes/contacts/_Plural.mesa': '<ul></ul>\n',
+      'web/src/routes/contacts/Row.mesa':     '<tr></tr>\n',
+    })
+    expect(only(root, 'route-part-prefix').findings).toEqual([])
+  })
+
+  test('a dynamic segment is a folder no prefix can match', () => {
+    // `routes/[id]/` is named by the parameter, so grading a part against it
+    // would report every app that puts one there — a rule firing on a shape it
+    // cannot have an opinion about.
+    const root = tree('rpp-dynamic', {
+      ...CLEAN,
+      'web/src/routes/contacts/[id]/index.mesa':        '<div></div>\n',
+      'web/src/routes/contacts/[id]/_contacts.Row.mesa': '<tr></tr>\n',
+    })
+    expect(only(root, 'route-part-prefix').findings).toEqual([])
+  })
+
+  test('an app with no dotted prefix anywhere skips', () => {
+    const root = tree('rpp-none', { 'db/schema.lite': SCHEMA, 'web/src/routes/index.mesa': '<div></div>\n' })
+    expect(only(root, 'route-part-prefix').skipped.length).toBe(1)
   })
 })
 

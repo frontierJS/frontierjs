@@ -1,5 +1,88 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-08 — `route-part-prefix`
+
+A new `fli check` rule, error. A co-located route part is named whatever the app
+likes; a dotted lowercase prefix is a CLAIM about the folder that owns it, and a
+fork that copies a folder keeps the source's prefix — so
+`routes/contacts/_clients.Row.mesa` is false about its own location
+([`FJS-D250`](../../DECISIONS.md#fjs-d250)).
+
+The convention itself is deliberately not adopted: both apps in this tree hold
+four `_*.mesa` files and all four are `_module.mesa`, so a mandate would fail the
+apps we ship on the day it landed. `_module` is reserved, `_Plural.mesa` and
+`Row.mesa` claim nothing, a `[id]/` segment is a folder no prefix can match, and
+an app writing no dotted prefix never sees the rule.
+
+## 2026-09-09 — the `scaffold` phase asks whether the app names what it imports
+
+`FJS-1045` shipped through a green `scaffold` phase and was caught by one
+tutorial lesson, because the two install the app differently
+([`FJS-1048`](../../ISSUES.md#fjs-1048)). `vendorWorkspacePackages` writes an
+`overrides` entry per packed package — it has to, or the framework packages'
+dependencies on EACH OTHER resolve from npm — and bun installs and hoists all
+seventeen. So the app resolves a package it never declared, and the phase whose
+whole job is *does a scaffolded app work* passed on a tree where it did not.
+
+The overrides are load-bearing and were not the thing to remove. The step is:
+**every `@frontierjs/*` the app's own source imports must be named in its own
+`package.json`**, both dependency fields, since `cli` and `config` are
+legitimately dev ones. It runs after `fli scaffold Note`, so the source it reads
+includes the four files that command generates — which is what makes it the
+other end of the unit guard in `tests/app-config.test.js` rather than a copy:
+that one reads the TEMPLATES against the catalog, this reads the app that was
+actually WRITTEN against its own manifest, and neither set contains the other.
+
+**The first version of this step passed against a deliberately broken manifest**
+and that is the part worth keeping. `readdirSync` was never imported by
+`scaffold-build.mjs`; the walk's own `catch` turned the ReferenceError into
+silence, and an empty result reads exactly like a clean app. So the count of
+packages SEEN is now asserted before the list of undeclared ones — *nothing is
+wrong* and *nothing was read* are the same answer otherwise, which is this
+phase's own hazard one level in.
+
+Measured by re-running the whole phase with the `FJS-1045` fix stubbed out: it
+names all four sites, including the `users/` page that started it, and passes
+with 7 packages seen once the fix is back.
+
+## 2026-09-09 — a scaffolded app is given every package its generated pages import
+
+Every CRUD list page `fli scaffold` and `fli admin:generate` write imports
+`encodeQueryString` and `directiveParams`, and `toolbelt` sat on
+`FJS_PACKAGES`'s *deliberately absent* list — so a freshly scaffolded app could
+not resolve its own pages and `bun run build` exited 1
+([`FJS-1045`](../../ISSUES.md#fjs-1045)). The front door.
+
+The comment listing the absence already argued the case against itself: it says
+`ui` is IN because a scaffold without it *produces pages that cannot resolve
+their own imports*, which had become exactly true of toolbelt. It now states the
+rule rather than the instance — **a package a GENERATOR imports is not a product
+decision.** `testing` and `email-kit` are absent because an app is offered them
+or not; adding a generator import is a change to that list.
+
+**Nothing in the repo could see it.** The `scaffold` CI phase builds a
+scaffolded app and passes, because it packs seventeen tarballs and swaps nine
+dependencies to the working tree, so a transitive toolbelt is resolvable however
+the app declares it. Bun installs into `.bun/` with symlinks, so a package an app
+does not NAME is not resolvable by name from its own source — which is the
+difference between that phase and a real `fli new`. Only `tutor` walks the
+registry path, and it caught both this and `tutor:ui` one lesson later.
+
+The guard is the cheap half of that, in `tests/app-config.test.js`: scan what
+the template modules write, and hold it against the catalog AND against the
+`useUI` block read out of `new.md` rather than restated. Two halves, measured
+separately — dropping toolbelt from the catalog reds 1, dropping it from the
+deps block reds 1 — because a package can be offered and not written.
+
+**A guard separating template text from a module's own imports was tried and
+thrown away.** It cannot be done line-shaped: `widget-surface.js` carries an
+import from `@frontierjs/sierra/build` at column 0 inside a template literal, so
+it is indistinguishable from a real one, and the heuristic read as working only
+because there was nothing for it to skip. The test counts both and says why that
+is sound — a framework package the cli imports is one an app is already offered,
+and the only over-report would be `testing` or `email-kit`, which is worth a
+look rather than a false alarm.
+
 ## 2026-09-09 — `register:check` grades a row's section against its id
 
 `ISSUES.md` holds two registers in one file. The reader tells them apart by

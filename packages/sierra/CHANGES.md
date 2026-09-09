@@ -1,5 +1,21 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-08 — `back(fallback)`
+
+`back()` was `window.history.back()` and nothing else, so on the entry a user
+ARRIVED at — a deep link, a fresh tab, a link from mail — it walked them out of
+the app. It now takes an optional fallback and uses it only there
+([`FJS-D251`](../../DECISIONS.md#fjs-d251)).
+
+Where back goes is DERIVED: the router already stamps `index` on entries it
+owns, so nothing is stored, no page declares anything, and there is no
+`data-return` attribute — navigation is not the kit's, and the kit depends on no
+router. A `?return=` was refused for being a caller-supplied path followed
+without checking, which is the open redirect `verify:oauth` already tests.
+
+*Which of three callers* a form returns to is still real history's answer. A page
+that must not be returned to is `goto(..., { replace: true })`.
+
 ## 2026-09-08 — the js-yaml floor is stated
 
 `FJS-1038`. `js-yaml` is a declared RUNTIME dependency here — `.mesa` frontmatter

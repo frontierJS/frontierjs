@@ -1520,6 +1520,35 @@ function withArgValidation(table, model, ctx) {
     }
   }
 
+  // ─── the guards a call's OPTIONS get, in one sequence ──────────────────────
+  //
+  // Every place a caller can name a column — `where`, `orderBy`, `select`,
+  // `include` — plus the two shape checks and the field-read narrowing. It is a
+  // function rather than a block inside `wrap` because `search` takes
+  // `(query, opts)` and cannot go through `wrap` at all, so its guards were a
+  // hand copy of this list and had drifted: `checkOrderBy` was never added to
+  // it, while `search()` honors the option (`FJS-1044`), and `select` had been
+  // forgotten there once already (`FJS-601`). A verb outside the argv shape is a
+  // verb every future guard has to remember.
+  //
+  // Answers the args, because the field-read narrowing REWRITES them.
+  const guardArgs = (args, method, isWrite) => {
+    checkTakeSkip(args, method)
+    // Before the key checks: an unknown key on a read only warns, and a
+    // guarded one is spelled right.
+    if (checkGuarded()) {
+      const found = collectGuardedArgs(args, modelName, guardedMap)
+      if (found.length) throw guardedArgsError(found, modelName, method)
+    }
+    checkWhereKeys(args?.where, whereKeys, modelName, method, isWrite, scopeNames, ctx)
+    checkOrderBy(args, method)
+    checkSelect(args, method, isWrite)
+    checkIncludeArgs(args?.include, modelName, method, ctx, isWrite)
+    // After the key checks, so a caller naming a column that does not exist
+    // still hears about the typo rather than a predicate they cannot see.
+    return checkFieldRead() ? applyFieldRead(args, method) : args
+  }
+
   // async wrappers so a validation failure is a REJECTION, matching how the
   // underlying methods fail — a sync throw from a promise-returning API is a
   // third failure mode nobody handles.
@@ -1527,23 +1556,7 @@ function withArgValidation(table, model, ctx) {
   const wrap = (method, isWrite) => {
     const fn = table[method]
     if (typeof fn !== 'function') return
-    out[method] = async (args = {}) => {
-      checkTakeSkip(args, method)
-      // Before the key checks: an unknown key on a read only warns, and a
-      // guarded one is spelled right.
-      if (checkGuarded()) {
-        const found = collectGuardedArgs(args, modelName, guardedMap)
-        if (found.length) throw guardedArgsError(found, modelName, method)
-      }
-      checkWhereKeys(args?.where, whereKeys, modelName, method, isWrite, scopeNames, ctx)
-      checkOrderBy(args, method)
-      checkSelect(args, method, isWrite)
-      checkIncludeArgs(args?.include, modelName, method, ctx, isWrite)
-      // After the key checks, so a caller naming a column that does not exist
-      // still hears about the typo rather than a predicate they cannot see.
-      if (checkFieldRead()) args = applyFieldRead(args, method)
-      return fn.call(table, args)
-    }
+    out[method] = async (args = {}) => fn.call(table, guardArgs(args, method, isWrite))
   }
   for (const m of ARG_READ_METHODS)  wrap(m, false)
   for (const m of ARG_WRITE_METHODS) wrap(m, true)
@@ -1561,22 +1574,13 @@ function withArgValidation(table, model, ctx) {
     }
   }
 
-  // search(query, opts) — the where filter rides in opts
+  // search(query, opts) — the only read whose options are not the first
+  // argument, which is why it is here and not in ARG_READ_METHODS. It takes the
+  // SAME sequence, so a guard added above reaches it without anyone
+  // remembering to.
   if (typeof table.search === 'function') {
     const fn = table.search
-    out.search = async (q, opts = {}) => {
-      checkTakeSkip(opts, 'search')
-      if (checkGuarded()) {
-        const found = collectGuardedArgs(opts, modelName, guardedMap)
-        if (found.length) throw guardedArgsError(found, modelName, 'search')
-      }
-      checkWhereKeys(opts?.where, whereKeys, modelName, 'search', false, scopeNames, ctx)
-      // search() honors `select` and validated neither its container nor its
-      // keys — FJS-601's refusal reached every read but this one.
-      checkSelect(opts, 'search', false)
-      if (checkFieldRead()) opts = applyFieldRead(opts, 'search')
-      return fn.call(table, q, opts)
-    }
+    out.search = async (q, opts = {}) => fn.call(table, q, guardArgs(opts, 'search', false))
   }
   return out
 }
@@ -8721,6 +8725,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     //   limit      max rows to return (default 20)
     //   offset     skip rows (default 0)
     //   where      additional filter on base table (applied after FTS match)
+    //   orderBy    sort the MATCHED rows by a column instead of by relevance
     //   select     column allowlist (same as findMany)
     //   include    relations to include (same as findMany)
     //   highlight  { field, open, close } — wrap matched terms in HTML
@@ -8728,13 +8733,30 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     //   withRank   include _rank (BM25 score) on each row — default true
     //   withDeleted / onlyDeleted — soft delete mode (same as findMany)
     //
-    // Returns rows from the base table ordered by relevance (best match first).
+    // Returns rows from the base table ordered by relevance (best match first),
+    // or by `orderBy` when the caller states one.
     // Adds _rank (BM25), _highlight, _snippet where requested.
+    //
+    // ── where the paging happens, and why it MOVES ─────────────────────────
+    //
+    // By relevance, step 1 pages on the FTS index itself: rank lives there, so
+    // LIMIT lets SQLite stop early. A caller's order is over BASE columns the
+    // index does not carry, and the fts table carries columns of the SAME NAMES
+    // as the indexed ones — so ordering in step 1 would need a join in which
+    // an unqualified column is ambiguous and SQLite picks one silently.
+    //
+    // So the ordered path collects every matching rowid in step 1 and pages in
+    // step 2, over the base table alone, through the same `buildOrderBy` and
+    // the same `columnMap` every other read uses. Materializing the match set
+    // is the cost of the request rather than of the implementation: no engine
+    // can page a base-column order without knowing what matched. The relevance
+    // path is untouched and stays the default.
 
     async search(query, {
       limit       = 20,
       offset      = 0,
       where,
+      orderBy,
       select,
       include,
       highlight,
@@ -8830,10 +8852,17 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         ftsParams.push(...filterParams)
       }
 
+      // A caller's order is applied in step 2, so this pass has to hand it the
+      // WHOLE match set — a LIMIT here would page by relevance and then sort
+      // the page, which is a different query and looks like a working one.
+      const ordered = orderBy != null
+
       ftsSql += ` ORDER BY rank`
 
-      if (limit  != null) ftsSql += ` LIMIT ${Number(limit)}`
-      if (offset)         ftsSql += ` OFFSET ${Number(offset)}`
+      if (!ordered) {
+        if (limit  != null) ftsSql += ` LIMIT ${Number(limit)}`
+        if (offset)         ftsSql += ` OFFSET ${Number(offset)}`
+      }
 
       const _nt = needsTiming()
 
@@ -8892,22 +8921,53 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       }
       let   baseSql    = `SELECT ${sqlCols} FROM "${tableName}" WHERE ${whereSql}`
 
+      // The caller's order, over the base table alone — the same builder and
+      // the same columnMap findMany uses, so a `@map`ped column and a `@from`
+      // rollup sort here exactly as they do there. The KEYS were graded before
+      // the call (`checkOrderBy`), which matters more here than anywhere: a bad
+      // sort key answers the right rows in the wrong order, and nothing about
+      // that is visible.
+      if (ordered) {
+        const orderSql = buildOrderBy(orderBy, baseParams, columnMap)
+        if (orderSql) baseSql += ` ORDER BY ${orderSql}`
+        if (limit != null) baseSql += ` LIMIT ${Number(limit)}`
+        if (offset)        baseSql += ` OFFSET ${Number(offset)}`
+      }
+
       const baseRows = readAll(readDb.query(baseSql).all(...baseParams), { computedFields: ps?.requestedFields })
       if (!baseRows.length) return []
 
-      // ── Step 3: attach rank + extras, sort by original FTS rank order ──────
-      const rowById = new Map(baseRows.map(r => [r.id, r]))
-
+      // ── Step 3: attach rank + extras, in the order the query decided ──────
+      //
+      // Two orders and the walk decides which survives. By relevance the rows
+      // come back in whatever order SQLite read them, so the FTS hits are
+      // walked and the rows looked up. Under a caller's order step 2 already
+      // sorted AND paged, so walking the hits would put rank back — the rows
+      // are walked instead and the per-row extras looked up by rowid.
       const result = []
-      for (const ftsRow of ftsRows) {
-        const row = rowById.get(ftsRow.rowid)
-        if (!row) continue  // filtered out by where clause or soft delete
 
-        if (withRank)  row._rank      = ftsRow.rank
-        if (hlByRowid) row._highlight = hlByRowid.get(ftsRow.rowid)
-        if (snipByRowid) row._snippet = snipByRowid.get(ftsRow.rowid)
+      if (ordered) {
+        for (const row of baseRows) {
+          // `row.id` and not `idField`, because the FTS table's content_rowid is
+          // the column literally named `id` — which is also what the branch
+          // below keys its map on, and the two must not answer differently.
+          if (withRank)    row._rank      = rankByRowid.get(row.id)
+          if (hlByRowid)   row._highlight = hlByRowid.get(row.id)
+          if (snipByRowid) row._snippet   = snipByRowid.get(row.id)
+          result.push(row)
+        }
+      } else {
+        const rowById = new Map(baseRows.map(r => [r.id, r]))
+        for (const ftsRow of ftsRows) {
+          const row = rowById.get(ftsRow.rowid)
+          if (!row) continue  // filtered out by where clause or soft delete
 
-        result.push(row)
+          if (withRank)  row._rank      = ftsRow.rank
+          if (hlByRowid) row._highlight = hlByRowid.get(ftsRow.rowid)
+          if (snipByRowid) row._snippet = snipByRowid.get(ftsRow.rowid)
+
+          result.push(row)
+        }
       }
 
       // ── Step 4: resolve includes + trim select ────────────────────────────

@@ -27,6 +27,53 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d250"></a>2026-09-08 · `FJS-D250` — A co-located route part is named whatever the app likes, and a prefix that names a folder must name ITS folder. `fli check` grades the claim, never the convention.
+
+`FJS-D117` asked whether a co-located part carries its folder in its NAME and
+whether `fli check` grades it. Sierra rules the ROLES of a route file —
+`index.mesa` routes, `_module.mesa` is the layout, `_prefix` and PascalCase are
+components ([classify.js](packages/sierra/src/scanner/classify.js)) — and says
+nothing about what a component is CALLED. **It goes on saying nothing.**
+
+**The convention is not adopted, and the measurement is why.** Both apps in this
+tree hold four `_*.mesa` files between them and all four are `_module.mesa`.
+There is not one `_prefix.Part.mesa` anywhere. A house rule with no instance here
+would fail the apps we ship on the day it landed, and `fli check` grades a claim
+with an AUTHORITY in the tree rather than what a paragraph argues.
+
+**But the failure D117 measured is real and is a different statement.** A fork
+copies a folder wholesale and keeps the source folder's prefix, so
+`routes/contacts/` ends up holding `_clients.Row.mesa`. That file is **false
+about its own location**, and deciding so needs no convention adopted anywhere:
+the name made a claim and the tree answers it.
+
+So the rule is `route-part-prefix`, an error, and it is narrow by construction.
+Only a dotted lowercase prefix claims a folder. `_module` is the layout and is
+reserved. `_Plural.mesa` and a bare `Row.mesa` are legal components under
+sierra's own rules and say nothing about where they live, so they are not graded
+— a rule that fired on them would be the naming mandate this ruling declines. A
+dynamic segment is a folder no prefix can match, so a part inside `[id]/` is
+graded against nothing rather than against brackets. **An app that never writes a
+dotted prefix never sees the rule**, which is what makes an unadopted convention
+cost nothing.
+
+**And the row outlived its own blocker.** D117 recorded *blocked behind
+`FJS-D114`*; D114 was ruled 2026-08-22, seventeen days before this. That is
+`FJS-1033`'s complaint one file over — a register goes stale in the closing
+direction, and a block nobody re-checks reads exactly like a live one.
+
+The nine, answered before the edit: no new origin — the folder name is the
+authority and it is already there; no new concept, since nothing is coined and
+the mandate is refused; the complexity is the problem's; predictability improves
+because a false name is now answered where it is written; one owner,
+`core/checks.js`, which already owns everything derived from the file tree; the
+boundary is one rule id with a skip; and the failure mode is proportional, the
+rule being silent for every app that does not opt in by writing a prefix. *Can it
+be wrong without anything saying so* is answered by the test's controls — the
+same shape one character right, an unclaimed name, a dynamic segment, and an app
+with no prefixes at all — because a rule that fired on everything would satisfy
+the fork case on its own.
+
 ### <a id="fjs-d239"></a>2026-09-07 · `FJS-D239` — a gate is written as DIGITS, and the named form is deleted. `FJS-D43` is reversed by its own corpus.
 
 `FJS-D43` made `@@gate(read: READER, write: USER, delete: OWNER)` canonical and
@@ -6967,6 +7014,52 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 `core/errors.ts`.
 
 ## UI substrate (Mesa)
+
+### <a id="fjs-d251"></a>2026-09-08 · `FJS-D251` — Where *back* goes is DERIVED, not declared. `back(fallback)` uses real history where this app owns the previous entry, and an app-authored path where it does not.
+
+`FJS-D118` asked whether a page states where back goes and whether that is an
+attribute, listing three places the state could live: `history.state`, a
+`?return=` on the URL, or a store. **All three lose to not storing it.**
+
+The router already stamps `index` on every entry it owns
+([router/index.js](packages/sierra/src/router/index.js)), so *is the previous
+entry mine* is answerable at the moment `back()` is called, from state the
+browser is already holding. Nothing is written, nothing is remembered, and no
+page declares anything.
+
+What was actually broken is smaller than the question: `back()` was
+`window.history.back()` and nothing else, so on the entry a user ARRIVED at — a
+deep link, a fresh tab, a link from mail — it walks them out of the app. `back()`
+now takes an optional fallback and uses it only there.
+
+**The three candidates, and why each is refused.** An **attribute** would put
+navigation on `@frontierjs/ui`'s delegated listener, and the kit does not depend
+on a router; that ownership split is exactly why D118 was not ruled with
+`FJS-D115` and it holds. **`?return=`** is a caller-supplied path, which is an
+open redirect the moment it is followed without checking — auth paid for that
+lesson once and `verify:oauth` tests it, and a second surface with the same shape
+is a second place to get it wrong. A **store** dies on reload, which is the case
+the feature exists for. The fallback is a path the app WROTE, read from neither
+the URL nor the DOM, which is what keeps this a navigation primitive rather than
+a redirector.
+
+**What it deliberately does not solve.** *Which of three callers* a form returns
+to is answered by real history and by nothing here. A page that must not be
+returned to — the form just submitted — is `goto(..., { replace: true })` at the
+moment it is left, which sierra already takes. An app that genuinely needs a
+chosen return TARGET has a route parameter it designs and validates, and that is
+the app's, not the router's.
+
+The nine, answered before the edit: no new origin, since the index already
+exists; the concept budget SHRINKS, because `data-return` is refused and nothing
+is coined; the complexity is the problem's; predictability improves — one
+function answers *where does back go* and its answer is derivable by reading it;
+one owner, sierra's router, which is the only thing that knows the history stack
+and the route table; the boundary is one optional argument; the failure mode is
+proportional, and the option that was NOT taken is the one with an open redirect
+in it. *Can it be wrong without anything saying so* is why the test is a pair —
+first entry takes the fallback, a pushed entry does not — since a `back()` frozen
+either way satisfies one row alone.
 
 ### <a id="fjs-d249"></a>2026-09-08 · `FJS-D249` — The `x-` keys come in TWO POLARITIES, and `x-search` is a FACT key. What a boundary refuses is emitted per column; what a model IS, per model.
 `x-search` on a model names the columns `@@fts` indexes, and its absence means

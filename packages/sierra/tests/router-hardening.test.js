@@ -19,7 +19,7 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest'
 
 import {
-  initRouter, goto, beforeNavigate, isActive, page, _resetPage,
+  initRouter, goto, back, beforeNavigate, isActive, page, _resetPage,
 } from '../src/router/index.js'
 import { matchRoute } from '../src/router/match.js'
 import { _resetInternals } from '../src/router/internals.js'
@@ -166,6 +166,62 @@ afterEach(() => {
   while (unsubs.length) unsubs.pop()()
   delete globalThis.window
   delete globalThis.document
+})
+
+// ─── FJS-D251 — back() with nowhere to go ────────────────────────────────────
+
+describe('back(fallback) — the entry this app does not own', () => {
+  // `history.back()` alone walks the user OUT of the app on the entry they
+  // arrived at, which is every deep link, every fresh tab, every link from
+  // mail. The router already stamps `index` on entries it owns, so the answer
+  // is derived here and stored nowhere.
+  //
+  // The two rows are a PAIR. A `back()` that always took the fallback would
+  // satisfy the first on its own, and one that never did would satisfy the
+  // second — only together do they say the index is being read.
+
+  test('the first entry with a fallback navigates instead of leaving', async () => {
+    await boot('/leads/')
+    const backs = []
+    window.history.back = () => backs.push(1)
+
+    await back('/admin/')
+    await tick(10)
+
+    expect(backs).toHaveLength(0)
+    expect(S.path).toBe('/admin/')
+  })
+
+  test('an entry this app pushed uses real history, fallback or not', async () => {
+    await boot('/leads/')
+    await goto('/admin/')
+    await tick(10)
+    const landed = S.path
+    const backs = []
+    window.history.back = () => backs.push(1)
+
+    await back('/login/')
+    await tick(10)
+
+    // Real history is asked, and the fallback is NOT taken — the address is
+    // where the push left it, because the stub back() moves nothing.
+    expect(backs).toHaveLength(1)
+    expect(S.path).toBe(landed)
+  })
+
+  test('no fallback is the old behavior, on either entry', async () => {
+    // The escape hatch has to keep working: `back()` is called from a toolbar
+    // that knows nothing about the page it is on.
+    await boot('/leads/')
+    const backs = []
+    window.history.back = () => backs.push(1)
+
+    await back()
+    await tick(10)
+
+    expect(backs).toHaveLength(1)
+    expect(S.path).toBe('/leads/')
+  })
 })
 
 // ─── FJS-789 — the Back button walks past every guard ────────────────────────

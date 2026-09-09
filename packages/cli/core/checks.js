@@ -68,6 +68,8 @@ export const RULES = [
     title: 'a resource has a <script module>' },
   { id: 'resource-file-name',   scope: 'app',  severity: 'error', invariant: 19,
     title: 'a resource file is named for its model' },
+  { id: 'route-part-prefix',    scope: 'app',  severity: 'error', invariant: null,
+    title: 'a co-located part whose prefix names a folder names ITS folder' },
   { id: 'resource-one-per-file', scope: 'app', severity: 'error', invariant: 19,
     title: 'one Resource per file' },
   { id: 'vite-strict-port',     scope: 'app',  severity: 'error', invariant: null,
@@ -510,6 +512,7 @@ const CHECKS = {
   // conclusion `modelNameFor()` reaches when it misses — except it warns into a
   // browser console at run time and degrades to a bare `make()`, so validation,
   // labels and field rules all stop being schema-derived without anything failing.
+
   'resource-file-name': ({ root }) => {
     const files = resourceFiles(root)
     if (!files.length) return { skipped: 'no .mesa files in web/src/resources/' }
@@ -578,6 +581,47 @@ const CHECKS = {
                  `model, say so with model:.`,
       })
     }
+    return { findings }
+  },
+
+  // Sierra rules the ROLES of a route file and says nothing about what a
+  // co-located component is CALLED, and this rule does not either (`FJS-D250`).
+  // What it grades is a name that already made a claim: `_orders.Row.mesa`
+  // says it belongs to `routes/orders/`, and the way that becomes false is a
+  // FORK — a folder copied wholesale keeps the source folder's prefix, so the
+  // one thing the name was for is the one thing it is now lying about. An app
+  // that writes no dotted prefix never sees this rule.
+  'route-part-prefix': ({ root }) => {
+    const findings = []
+    let looked = 0
+
+    for (const routes of routeDirs(root)) {
+      walk(routes, 6, dir => {
+        // The route SEGMENT, which is the folder the prefix is a claim about.
+        // A dynamic segment (`[id]`) is a name no prefix can match, so a part
+        // inside one is graded against nothing rather than against brackets.
+        const folder = basename(dir)
+        if (folder.startsWith('[')) return
+
+        for (const name of safeRead(dir)) {
+          if (extname(name) !== '.mesa') continue
+          const base = basename(name, '.mesa')
+          // `_module` is the layout and is reserved; `_Plural.mesa` and a bare
+          // `Row.mesa` claim no folder. Only a dotted lowercase prefix does.
+          const prefix = base.match(/^_([a-z][a-z0-9-]*)\./)?.[1]
+          if (!prefix) continue
+          looked++
+          if (prefix === folder) continue
+          findings.push({
+            file: join(dir, name),
+            message: `is named _${prefix}.* but sits in ${folder}/. A dotted prefix is a claim about the ` +
+                     `folder that owns the part — rename it _${folder}.${base.slice(prefix.length + 2)}.mesa, ` +
+                     `or drop the prefix if the part is not this route's.`,
+          })
+        }
+      })
+    }
+    if (!looked && !findings.length) return { skipped: 'no _prefix.Part.mesa files' }
     return { findings }
   },
 
@@ -2864,6 +2908,22 @@ function stripComments(src) {
   return src
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+}
+
+// Every surface's route tree. A surface is a directory beside `db/`
+// (Invariant 3) and `src/routes` is the default sierra reads; a surface that
+// moved it says so in its own config, which `staticSurfaces` already parses for
+// the static ones. Probed rather than derived from where a vite config sits.
+function routeDirs(root) {
+  const out = []
+  for (const name of safeRead(root)) {
+    const dir = join(root, name, 'src', 'routes')
+    try { if (statSync(dir).isDirectory()) out.push(dir) } catch { /* not a surface */ }
+  }
+  for (const s of staticSurfaces(root)) if (!out.includes(s.routes)) {
+    try { if (statSync(s.routes).isDirectory()) out.push(s.routes) } catch { /* declared, not written */ }
+  }
+  return out
 }
 
 function resourceFiles(root) {

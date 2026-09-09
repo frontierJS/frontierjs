@@ -735,12 +735,33 @@ query without both directions, and junction's client already held a
 field-by-field copy of the write half. `directiveParams` is beside
 `parseDirectives` in the owner, off the same rows.
 
-### Still open
+### Built — the header and the box, side by side
 
-**`FJS-1044`** — `$orderBy` is dropped in silence under `$search`. Junction hands
-`table.search()` an `orderBy` its destructure does not name, and `search()` orders
-by BM25 rank alone. Now reachable from one screen: a header and a box, side by
-side. Three honest answers and the choice is not obvious.
+**`FJS-1044` is closed and it is `search()` that changed.** Of the three answers
+— refuse the pair, honor the order, disable a control — only the middle one
+survived the questions. Refusing sends every caller to *fetch all and sort in
+JS*, which cannot page: a workaround the road would be creating. Doing it in the
+bar leaves HTTP, WS and every service caller silently wrong, and the Data
+boundary owns what a read does.
+
+The doctrine that looked like it forbade this does not. `query.js`'s *an `@@fts`
+`$search` filters and cannot be ordered by* sits in a paragraph about which KEYS
+a caller may name — `$search` is not a sortable key, which is silent on ordering
+a result SET. That citation was mine, in the issue, and it was wrong.
+
+**Paging MOVES rather than the sort being applied to a page.** By relevance it
+stays on the FTS index, where rank lives and a LIMIT lets SQLite stop early;
+under a caller's order it moves to the base table, because ordering in step 1
+would need a join in which an unqualified column is ambiguous — the fts table
+carries columns of the same NAMES as the indexed ones. Materializing the match
+set is the cost of the request: nothing can page a base-column order without
+knowing what matched.
+
+**The reason it could happen was the shape of the verb.** `search` is the only
+read whose options are not the first argument, so it cannot go through the
+generic wrapper and its guards were a hand copy — `checkOrderBy` was never added
+to the copy, and `select` had been forgotten there once already (`FJS-601`).
+Both take one sequence now, so this cannot recur by omission.
 
 ---
 

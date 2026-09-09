@@ -49,7 +49,7 @@
 
 import { spawnSync }                                  from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync,
-         copyFileSync, rmSync, mkdtempSync }           from 'node:fs'
+         copyFileSync, rmSync, mkdtempSync, readdirSync } from 'node:fs'
 import { join, dirname, resolve }                      from 'node:path'
 import { fileURLToPath }                               from 'node:url'
 import { tmpdir, homedir }                             from 'node:os'
@@ -324,6 +324,47 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
     const b2 = run('bun', ['run', 'build'], { cwd: app })
     if (b2.status !== 0) return fail('bun run build failed after `fli scaffold Note`', b2.output)
     log('  ✓ a model scaffolded into it, and it still builds')
+
+    // ── 6b · the app names every framework package it imports ────
+    //
+    // A green build here is NOT that claim, and the difference is why this step
+    // exists. `vendorWorkspacePackages` writes an `overrides` entry for every
+    // package it packed — it has to, or the packages' dependencies on EACH
+    // OTHER resolve from npm — and bun installs and hoists all of them. So an
+    // app that imports a package it never declared resolves it anyway, here and
+    // only here.
+    //
+    // That is not hypothetical. Every generated CRUD list page imported
+    // `@frontierjs/toolbelt`, which `fli new` did not put in the manifest;
+    // this phase built it green while `fli new` on a real machine exited 1 on
+    // an unresolvable import, and the only thing in the repo that could see it
+    // was one tutorial lesson (`FJS-1045`).
+    //
+    // Read off the app that was actually WRITTEN rather than off the templates,
+    // which is the other end of the same rule: `fli scaffold Note` has just run,
+    // so the source scanned here includes the four files it generated, and the
+    // unit guard in `packages/cli/tests/app-config.test.js` cannot reach those.
+    const imports = undeclaredFrameworkImports(app)
+
+    // The control first. A walk that reached no source at all reports a clean
+    // app, so the count is what separates *nothing is wrong* from *nothing was
+    // read* — the two are the same answer otherwise, and this step gave the
+    // wrong one for its first run.
+    if (imports.seen < 3)
+      return fail(
+        `the framework-import scan saw only ${imports.seen} package(s) across the app's source — ` +
+        'a scaffolded full-stack app imports litestone, junction, sierra, mesa and more, so the ' +
+        'walk read nothing and its clean answer means nothing',
+        JSON.stringify(imports, null, 2))
+
+    if (imports.undeclared.length)
+      return fail(
+        'the scaffolded app imports a framework package its own package.json does not declare — ' +
+        'it resolves here because the packed overrides hoist every package, and fails on a real ' +
+        '`fli new`. Add it to FJS_PACKAGES and to the surface block in commands/project/new.md',
+        imports.undeclared.join('\n'))
+
+    log(`  ✓ every framework package it imports is one it declares (${imports.seen} seen)`)
 
     // ── 7 · the OTHER surface ────────────────────────────────
     // `bun run build` is `web/`, and for the life of `fli make:site` that was
@@ -1044,6 +1085,59 @@ function exec(cmd, argv, { verbose = false, ...opts } = {}) {
 // Every publishable workspace package, not only the ones the scaffold names.
 // Overrides bite only for what is actually depended on, and packing the rest
 // costs a second while proving each one still packs at all.
+
+/**
+ * Framework packages the app's own source imports and its manifest does not name.
+ *
+ * The manifest is BOTH dependency fields: `@frontierjs/cli` and
+ * `@frontierjs/config` are dev dependencies an app legitimately imports from a
+ * config file, and reporting those would be a finding nobody can act on.
+ *
+ * A subpath is not a package — `@frontierjs/toolbelt/query` is installed by the
+ * name before the second slash, and that is what a manifest can declare.
+ */
+function undeclaredFrameworkImports(app) {
+  let manifest
+  try { manifest = JSON.parse(readFileSync(join(app, 'package.json'), 'utf8')) } catch { return [] }
+  const declared = new Set([
+    ...Object.keys(manifest.dependencies ?? {}),
+    ...Object.keys(manifest.devDependencies ?? {}),
+  ])
+
+  const SOURCE = /\.(?:ts|tsx|js|mjs|mesa)$/
+  const out = []
+  // Every framework import the walk actually saw, declared or not. The COUNT is
+  // the control and it is not decoration: `walk` swallows a directory it cannot
+  // read, so a scan that reaches nothing returns an empty list — which is the
+  // same answer as a clean app. This step passed against a deliberately broken
+  // manifest exactly once, because `readdirSync` was not imported and the
+  // catch turned the ReferenceError into silence.
+  const seen = new Set()
+
+  const walk = (dir) => {
+    let entries
+    try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return }
+    for (const e of entries) {
+      if (e.name === 'node_modules' || e.name === 'dist' || e.name.startsWith('.')) continue
+      const full = join(dir, e.name)
+      if (e.isDirectory()) { walk(full); continue }
+      if (!SOURCE.test(e.name)) continue
+      const src = readFileSync(full, 'utf8')
+      for (const m of src.matchAll(/from\s+['"](@frontierjs\/[^'"]+)['"]/g)) {
+        const pkg = m[1].split('/').slice(0, 2).join('/')
+        seen.add(pkg)
+        if (declared.has(pkg)) continue
+        const at = `${full.slice(app.length + 1)} → ${m[1]}`
+        if (!out.includes(at)) out.push(at)
+      }
+    }
+  }
+
+  for (const surface of ['api', 'web', 'site', 'widgets', 'extension', 'db'])
+    walk(join(app, surface))
+
+  return { undeclared: out, seen: seen.size }
+}
 
 function publishablePackages() {
   const dir = join(ROOT, 'packages')

@@ -194,6 +194,24 @@ describe('$search answers the list envelope', () => {
     return db
   }
 
+  // Three rows whose id order, rank order and body order all differ, so no
+  // assertion below can pass by coincidence.
+  async function rankedDb(): Promise<AnyClient> {
+    const db = await createClient({
+      db: ':memory:',
+      schema: `model Doc {
+        id   Int    @id
+        body String
+        @@fts([body])
+      }`,
+    }) as unknown as AnyClient
+    const t = (db as unknown as Record<string, { create(a: unknown): Promise<unknown> }>).doc!
+    await t.create({ data: { id: 1, body: 'm widget'                 } })
+    await t.create({ data: { id: 2, body: 'z widget widget widget'   } })
+    await t.create({ data: { id: 3, body: 'a widget widget'          } })
+    return db
+  }
+
   test('a match answers rows and a total', async () => {
     // It answered `{"limit":20,"offset":0}` — the branch destructured
     // `{ rows, total }` off the array `search()` returns, so a search that
@@ -204,6 +222,59 @@ describe('$search answers the list envelope', () => {
 
     expect(out.data.map(r => r.id)).toEqual([1])
     expect(out.total).toBe(1)
+  })
+
+  test('$orderBy reaches the search and is HONORED, where relevance is the default', async () => {
+    // FJS-1044. This branch built `args.orderBy` and handed it to
+    // `table.search(query, args)`, whose destructure did not name the option —
+    // so the key fell on the floor and the rows came back by BM25 rank under a
+    // URL that said otherwise. A dead argument one package hands another, which
+    // is why the assertion lives HERE: litestone's own test proves the verb,
+    // and only this one proves the crossing.
+    //
+    // Asserted as a PAIR. Rank is still the default and is a different list, so
+    // a boundary that ignored the directive fails the first and one that always
+    // sorted fails the second.
+    const svc = createService({ name: 'docs', model: 'Doc' })
+
+    const ordered = await svc.find(ctx(await rankedDb(), {
+      service: 'docs', directives: { search: 'widget', orderBy: { body: 'asc' } },
+    })) as { data: { id: number }[]; total: number }
+    expect(ordered.data.map(r => r.id)).toEqual([3, 1, 2])
+    expect(ordered.total).toBe(3)
+
+    const ranked = await svc.find(ctx(await rankedDb(), {
+      service: 'docs', directives: { search: 'widget' },
+    })) as { data: { id: number }[] }
+    expect(ranked.data.map(r => r.id)).toEqual([2, 3, 1])
+  })
+
+  test('a sort key the boundary refuses is refused through the search path too', async () => {
+    // The guards on `search` were a hand copy of the generic wrapper's list and
+    // `checkOrderBy` was not in it, so an unsortable key was a silent no-op
+    // here where every other read refused it by name. A wrong sort returns the
+    // RIGHT rows in the WRONG order, which nothing downstream can see.
+    //
+    // The NAME and not a status: `ValidationError` carries none, because
+    // turning a thrown value into an HTTP status has exactly one owner and it
+    // is the bridge (Invariant 4) — `toFrameworkError` maps by `err.name`. The
+    // `@@fts` row below asserts a status because litestone stamps that one
+    // itself, which is the difference rather than an inconsistency here.
+    const err = await createService({ name: 'docs', model: 'Doc' })
+      .find(ctx(await rankedDb(), {
+        service: 'docs', directives: { search: 'widget', orderBy: { nope: 'asc' } },
+      })).catch((e: Error) => e) as Error
+
+    expect(err).toBeInstanceOf(Error)
+    expect(err.name).toBe('ValidationError')
+    expect(err.message).toContain('nope')
+
+    // The control one character away: the same call on a real column answers.
+    const ok = await createService({ name: 'docs', model: 'Doc' })
+      .find(ctx(await rankedDb(), {
+        service: 'docs', directives: { search: 'widget', orderBy: { body: 'asc' } },
+      })) as { data: { id: number }[] }
+    expect(ok.data.map(r => r.id)).toEqual([3, 1, 2])
   })
 
   test('a model with no @@fts refuses with a 400, not a 500', async () => {

@@ -9,7 +9,8 @@ import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath }          from 'node:url'
 
 import {
-  EDITORCONFIG, APP_DEV_DEPS, appTsconfig, appBiomeJson, appCheckScripts, appWorkflow,
+  EDITORCONFIG, APP_DEV_DEPS, FJS_PACKAGES,
+  appTsconfig, appBiomeJson, appCheckScripts, appWorkflow,
 } from '../core/app-config.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -160,5 +161,87 @@ describe('what fli new actually writes', () => {
     // the command is a second answer that no test would contradict.
     expect(source).not.toContain('function makeTsconfig')
     expect(source).not.toContain('moduleResolution')
+  })
+})
+
+// ─── a package a GENERATOR imports is not a product decision (FJS-1045) ──────
+//
+// `FJS_PACKAGES` is what an app is OFFERED, and that half genuinely is a
+// product call — `testing` and `email-kit` are absent on purpose. But a package
+// the generated FILES import is not a choice at all: a scaffolded app that does
+// not declare it cannot resolve its own pages, and `bun run build` exits 1 on
+// the front door.
+//
+// It shipped that way. Every generated CRUD list page imports
+// `encodeQueryString` and `directiveParams`, and `toolbelt` sat on the absent
+// list while the comment beside it argued the case for `ui` in exactly these
+// words. **Nothing in the repo could see it**: the `scaffold` CI phase packs
+// seventeen tarballs and swaps nine dependencies to the working tree, so a
+// transitive copy is resolvable however the app declares it — only the `tutor`
+// phase walks the registry path a real `fli new` walks, and it walks it once
+// per full run.
+//
+// This is the cheap half of that guard: no scaffold, no install, no network —
+// read what the templates import and hold it against what the manifest gets.
+
+describe('every framework package a generator imports is one a scaffold declares', () => {
+  const TEMPLATE_MODULES = ['core/crud-templates.js', 'core/app-schema.js', 'core/widget-surface.js']
+
+  /** `@frontierjs/toolbelt/query` → `@frontierjs/toolbelt`. A subpath is not a
+   *  package: what an app installs is the name before the second slash. */
+  const packageOf = (spec) => spec.split('/').slice(0, 2).join('/')
+
+  function importedByTemplates() {
+    const found = new Map()
+    for (const rel of TEMPLATE_MODULES) {
+      let src
+      try { src = readFileSync(join(CLI, rel), 'utf8') } catch { continue }
+      for (const m of src.matchAll(/from '(@frontierjs\/[^']+)'/g)) {
+        const pkg = packageOf(m[1])
+        if (!found.has(pkg)) found.set(pkg, [])
+        found.get(pkg).push(`${rel} → ${m[1]}`)
+      }
+    }
+    return found
+  }
+
+  test('the templates import nothing the app is not given', () => {
+    // Every `@frontierjs/…` in these modules is counted, without trying to
+    // separate text written INTO an app from an import the module performs for
+    // its own use. That distinction is not cheaply decidable — `widget-surface`
+    // writes `import … from '@frontierjs/sierra/build'` at column 0 inside a
+    // template literal, so it is indistinguishable from a real one by any
+    // line-shaped test, and a heuristic here would read as working precisely
+    // because there is currently nothing for it to skip.
+    //
+    // Counting both is sound rather than lazy: a package the cli imports for
+    // its own job is one this repo depends on, and every framework package in
+    // that set is already offered to an app. The one shape it would over-report
+    // is the cli importing something an app is deliberately never given —
+    // `testing`, `email-kit` — which is worth a look rather than a false alarm.
+    const imported = importedByTemplates()
+
+    // The control, and it is the assertion that keeps the row below honest: a
+    // scan that matched nothing passes vacuously, which is exactly what a
+    // tripwire reading the wrong file looks like.
+    expect(imported.size).toBeGreaterThan(0)
+    expect([...imported.keys()]).toContain('@frontierjs/toolbelt')
+
+    const undeclared = [...imported.entries()]
+      .filter(([pkg]) => !(pkg in FJS_PACKAGES))
+      .map(([pkg, where]) => `${pkg} (${where.join(', ')})`)
+    expect(undeclared).toEqual([])
+  })
+
+  test('a UI app is given every package its generated pages import', () => {
+    // `FJS_PACKAGES` is the catalog; this is the SUBSET a scaffold actually
+    // writes, which is the half that decides whether the build works. Read off
+    // the command rather than restated — the two drifted apart once already.
+    const src  = readFileSync(join(CLI, 'commands', 'project', 'new.md'), 'utf8')
+    const uiBlock = src.slice(src.indexOf('if (useUI) {'), src.indexOf('if (useExtension) {'))
+    expect(uiBlock.length).toBeGreaterThan(0)
+
+    for (const pkg of importedByTemplates().keys())
+      expect(uiBlock).toContain(`deps['${pkg}']`)
   })
 })

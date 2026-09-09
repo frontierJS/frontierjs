@@ -381,9 +381,30 @@ export async function goto(path, queryParams = {}, options = {}) {
   await _navigate(url, { replace, scroll })
 }
 
-/** Navigate back in history */
-export function back() {
-  window.history.back()
+/**
+ * Navigate back in history, with an app-authored fallback for when there is
+ * nowhere to go.
+ *
+ * `history.back()` alone walks the user OUT of the app on the entry they
+ * arrived at — a deep link, a fresh tab, a link from mail. The router already
+ * stamps `index` on every entry it owns, so *is the previous entry mine* is
+ * derived here rather than stored anywhere: no attribute on the markup, no
+ * `?return=` (a caller-supplied path followed without checking is an open
+ * redirect), no store that dies on the reload this is for (`FJS-D251`).
+ *
+ * `fallback` is a path this app wrote. It is never read off the URL or the DOM,
+ * which is what keeps this a navigation primitive rather than a redirector.
+ *
+ * WHICH of three callers a form should return to is answered by real history
+ * and by nothing here. A page that must not be returned to — the form just
+ * submitted — is a `goto(..., { replace: true })` at the moment it is left.
+ *
+ * @param {string} [fallback]  path to go to when this app owns no previous entry
+ */
+export function back(fallback) {
+  const owned = (window.history.state?.index ?? 0) > 0
+  if (owned || !fallback) { window.history.back(); return }
+  return goto(fallback, {}, { replace: true })
 }
 
 /** Navigate forward in history */
