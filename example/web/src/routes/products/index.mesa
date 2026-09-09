@@ -15,8 +15,8 @@ title: Products
   // render three columns. A `@from` is a correlated subquery: no extra round
   // trip, no column to go stale, and no summary method to keep in step with
   // the screen that reads it.
-  import { products }      from '../../resources/Product.mesa'
-  import { productImages } from '../../resources/ProductImage.mesa'
+  import { products }      from '@/resources/Product.mesa'
+  import { productImages } from '@/resources/ProductImage.mesa'
   import { session } from '@/session.js'
   import { prefs }   from '@/prefs.js'
   import { money }   from '@/money.js'
